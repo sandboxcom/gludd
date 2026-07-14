@@ -9,6 +9,7 @@ are path-confined: any path that, once normalized, does not live under
 Self-contained: imports nothing from sibling connector modules and defines its
 own reader protocol so it can be unit-tested with a canned, injected reader
 (no real ``/proc`` access required).
+
 """
 
 from __future__ import annotations

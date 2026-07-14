@@ -24,8 +24,9 @@
  *
  * Default ON. Fail-open: any throw/exception → allow (don't wedge the editor).
  */
-import * as fs from "fs";
-import type { PluginAPI } from "@opencode/plugin";
+import * as fs from "node:fs";
+import type { Plugin } from "@opencode-ai/plugin";
+import { isSubagent, reportAlive } from "../lib/shared.ts";
 
 /** Lock file path (overridable via GLUDD_COMMIT_LOCK_PATH). */
 const LOCK_PATH: string = process.env.GLUDD_COMMIT_LOCK_PATH || "/tmp/gludd-commit.lock";
@@ -54,19 +55,6 @@ export const DENY_MESSAGE =
 
 /** Tracks whether the CURRENT tool call holds the lock (for release in after). */
 let _heldByThisCall = false;
-
-function _reportAlive(): void {
-  try {
-    const alivePath = "/tmp/gludd-plugin-alive.json";
-    const alive = fs.existsSync(alivePath)
-      ? (JSON.parse(fs.readFileSync(alivePath, "utf8")) as Record<string, unknown>)
-      : {};
-    alive["enforce-commit-lock"] = { last_seen: Date.now() };
-    fs.writeFileSync(alivePath, JSON.stringify(alive), "utf8");
-  } catch {
-    // fail-open
-  }
-}
 
 /** Returns true if the bash command invokes a commit-shaped make target. */
 export function isCommitCommand(cmd: string): boolean {
@@ -111,9 +99,11 @@ export function releaseLock(): void {
   }
 }
 
-export default function commitLockPlugin(api: PluginAPI): void {
+export default function commitLockPlugin(api: Plugin): void {
   api.tool.execute.before((params) => {
-    _reportAlive();
+    // process.env.OPENCODE_SUBAGENT guard
+    if (isSubagent()) return
+    reportAlive("enforce-commit-lock");
     _heldByThisCall = false;
     try {
       if (process.env.GLUDD_COMMIT_LOCK_ENFORCE === "0") return;

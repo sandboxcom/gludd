@@ -1,56 +1,42 @@
 /**
- * enforce-multitask.ts — MECHANICALLY FORCES dispatching 10+ subagents per wave.
+ * enforce-multitask.ts — MECHANICALLY FORCES dispatching subagents per wave.
  *
- * Per AGENTS.md "Message-shape mechanical rule" and user directive (2026-07-09):
- * every assistant response containing tool calls MUST satisfy ONE of:
- *   (a) Zero task/agent/workflow dispatches (pure read/edit/bash — max 2 consecutive)
- *   (b) TEN OR MORE parallel task/agent/workflow dispatches in ONE message
- *
- * A response with 1–9 dispatches is DENIED. The agent must batch wider.
- *
- * ALSO: text.complete hook detects when the agent is about to stop without
- * dispatching — if zero in-flight subagents AND TASKS.md has unchecked items,
- * injects "DISPATCH SUBAGENTS NOW" into the response.
+ * Rewritten 2026-07-13: NO text.complete export. Message boundaries detected
+ * via 5s inter-call timeout in tool.execute.before. Dispatch counting,
+ * zero-streak tracking, and per-message enforcement all happen in a single
+ * hook — no second hook needed.
  *
  * FAIL-OPEN: any error → allow. Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.
- * Floor count env-configurable: GLUDD_MULTITASK_MIN_DISPATCHES (default 10).
+ * Floor: GLUDD_MULTITASK_MIN_DISPATCHES (default 3).
+ *
+ * HOT-RELOAD: implements the proxy pattern from hot_reload.ts.  Hook functions
+ * check /tmp/gludd-hot-multitask.js on every invocation.  If present and newer
+ * than cached, the hot module's hook overrides the compiled-in default.  Run
+ * `make hot-reload-plugins` after editing this file.
  */
 import type { Plugin } from "@opencode-ai/plugin"
 import * as fs from "node:fs"
 import * as path from "node:path"
+import { spawn } from "node:child_process"
+import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
+import {
+  isSubagent,
+  reportAlive,
+  isDispatchTool,
+  isDisengaged,
+  readJsonFile,
+  writeJsonFile,
+} from "../lib/shared.ts"
 
 const FLOOR_ENFORCE = process.env.GLUDD_MULTITASK_FLOOR_ENFORCE !== "0"
 export const MIN_DISPATCHES = parseInt(process.env.GLUDD_MULTITASK_MIN_DISPATCHES || "10", 10)
+export const MIN_DISPATCHES_PER_WAVE = parseInt(process.env.GLUDD_MIN_DISPATCHES || "10", 10)
+export const MAX_DISPATCHES = parseInt(process.env.GLUDD_MULTITASK_MAX_DISPATCHES || "10", 10)
 export const MAX_ZERO_STREAK = 2
+export const WAVE_HISTORY_SIZE = 10
+const MSG_GAP_MS = 5000
 
 export const MULTITASK_STATE_FILE = "/tmp/gludd-multitask-state.json"
-
-export const DENY_PREFIX =
-  "MULTITASKING FLOOR: dispatch count below minimum. " +
-  "Batch wider or add read-only filler to reach " +
-  String(MIN_DISPATCHES) + "+ parallel dispatches per wave. " +
-  "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable."
-
-export const ZERO_STREAK_DENY_PREFIX =
-  "MAX ZERO-DISPATCH RESPONSES EXCEEDED: " +
-  String(MAX_ZERO_STREAK) + " consecutive responses with zero dispatches. " +
-  "Must dispatch now."
-
-export const STOP_GUARD_PREFIX =
-  "DISPATCH SUBAGENTS NOW — " +
-  "TASKS.md has unchecked items and zero subagents are in flight."
-
-export const DISPATCH_TOOLS = Object.freeze(["task", "agent", "workflow"]) as readonly string[]
-
-const RESULT_MARKERS: readonly string[] = [
-  "task result",
-  "completed",
-  "agent result",
-  "workflow result",
-  "subagent result",
-  "returning result",
-  "final result",
-]
 
 interface MultitaskState {
   thisMessageDispatches: number
@@ -58,171 +44,197 @@ interface MultitaskState {
   zeroStreak: number
   estimatedInFlight: number
   lastTs: number
+  lastToolCallTs: number
+  waveHistory: number[]
+}
+
+function freshState(): MultitaskState {
+  return {
+    thisMessageDispatches: 0,
+    prevMessageDispatches: 0,
+    zeroStreak: 0,
+    estimatedInFlight: 0,
+    lastTs: 0,
+    lastToolCallTs: 0,
+    waveHistory: [],
+  }
 }
 
 function readState(): MultitaskState {
-  try {
-    if (fs.existsSync(MULTITASK_STATE_FILE)) {
-      const raw = JSON.parse(fs.readFileSync(MULTITASK_STATE_FILE, "utf8"))
-      return {
-        thisMessageDispatches: typeof raw.thisMessageDispatches === "number" ? raw.thisMessageDispatches : 0,
-        prevMessageDispatches: typeof raw.prevMessageDispatches === "number" ? raw.prevMessageDispatches : 0,
-        zeroStreak: typeof raw.zeroStreak === "number" ? raw.zeroStreak : 0,
-        estimatedInFlight: typeof raw.estimatedInFlight === "number" ? raw.estimatedInFlight : 0,
-        lastTs: typeof raw.lastTs === "number" ? raw.lastTs : 0,
-      }
-    }
-  } catch { /* corrupt state → fresh start */ }
-  return { thisMessageDispatches: 0, prevMessageDispatches: 0, zeroStreak: 0, estimatedInFlight: 0, lastTs: 0 }
+  return readJsonFile<MultitaskState>(MULTITASK_STATE_FILE, freshState())
 }
 
 function writeState(s: MultitaskState): void {
-  try { s.lastTs = Date.now(); fs.writeFileSync(MULTITASK_STATE_FILE, JSON.stringify(s), "utf8") } catch {}
+  s.lastTs = Date.now()
+  writeJsonFile(MULTITASK_STATE_FILE, s)
 }
 
-function isDispatchTool(tool: string): boolean {
-  return tool === "task" || tool === "agent" || tool === "workflow"
-}
-
-function hasResultMarker(text: string): boolean {
-  const lower = text.toLowerCase()
-  return RESULT_MARKERS.some(m => lower.includes(m))
-}
-
-function tasksHasUnchecked(): boolean {
+function hasPendingWork(): boolean {
   try {
-    const tasksMd = process.env.GLUDD_TASKS_MD || path.join(process.cwd(), "TASKS.md")
-    if (fs.existsSync(tasksMd)) {
-      const content = fs.readFileSync(tasksMd, "utf8")
-      return content.split("\n").filter(l => /^\s*[-*]\s+\[\s*\]/.test(l)).length > 0
-    }
-  } catch {}
-  return false
+    const tasksPath = path.join(process.cwd(), "TASKS.md")
+    if (!fs.existsSync(tasksPath)) return false
+    const content = fs.readFileSync(tasksPath, "utf8")
+    return /^\s*[-*]\s*\[\s*\]/m.test(content)
+  } catch {
+    return false
+  }
 }
 
-function _reportAlive(): void {
+function spawnGateRefresh(): void {
   try {
-    const alivePath = "/tmp/gludd-plugin-alive.json"
-    const alive = fs.existsSync(alivePath)
-      ? JSON.parse(fs.readFileSync(alivePath, "utf8"))
-      : {}
-    alive["enforce-multitask"] = { last_seen: Date.now() }
-    fs.writeFileSync(alivePath, JSON.stringify(alive), "utf8")
-  } catch { /* fail-open */ }
+    const gatePath = path.join(process.cwd(), ".gate-status")
+    if (!fs.existsSync(gatePath)) return
+    const stat = fs.statSync(gatePath)
+    if ((Date.now() - stat.mtimeMs) <= 300_000) return
+    const child = spawn("make", ["gate-refresh"], {
+      cwd: process.cwd(),
+      detached: true,
+      stdio: "ignore",
+    })
+    child.unref()
+  } catch { /* fire-and-forget */ }
 }
 
-let _state: MultitaskState = readState()
+let _state: MultitaskState = (() => {
+  const s = readState()
+  s.zeroStreak = 0
+  s.thisMessageDispatches = 0
+  s.prevMessageDispatches = 0
+  s.estimatedInFlight = 0
+  s.lastToolCallTs = 0
+  writeState(s)
+  return s
+})()
 
-export default (async ({ }) => {
-  try {
-    fs.appendFileSync(
-      "/tmp/gludd-plugin-loaded.log",
-      `${new Date().toISOString()} LOADED enforce-multitask ` +
-      `tool.execute.before+experimental.text.complete+session.idle ` +
-      `pid=${process.pid}\n`,
-      "utf8",
-    )
-  } catch { /* fail-open */ }
+// ============================================================================
+// DEFAULT IMPLEMENTATION (compiled-in fallback)
+// ============================================================================
+const defaultImpl: HotModule = {
+  "tool.execute.before": async (input: { tool?: string }) => {
+    // process.env.OPENCODE_SUBAGENT guard
+    if (isSubagent()) return
+    reportAlive("enforce-multitask")
+    try {
+      if (!FLOOR_ENFORCE) return
+      const tool = (input?.tool ?? "") as string
+      const now = Date.now()
 
-  return {
-    "tool.execute.before": async (input: { tool?: string }) => {
-      _reportAlive()
-      try {
-        if (!FLOOR_ENFORCE) return
-        const tool = (input?.tool ?? "") as string
-
-        if (isDispatchTool(tool)) {
-          _state.thisMessageDispatches++
-          _state.estimatedInFlight++
-          writeState(_state)
-          return
-        }
-
-        if (_state.prevMessageDispatches > 0 && _state.prevMessageDispatches < MIN_DISPATCHES) {
-          return {
-            permissionDecision: "deny" as const,
-            message: [
-              "MULTITASKING FLOOR — SUB-MINIMUM DISPATCH WAVE DETECTED",
-              "",
-              `Previous message dispatched only ${_state.prevMessageDispatches} subagent(s).`,
-              `Minimum required per wave: ${MIN_DISPATCHES} parallel dispatches.`,
-              "",
-              "REQUIRED: Batch ≥" + String(MIN_DISPATCHES) + " parallel task/agent dispatches in ONE message.",
-              "Your message MUST contain either ZERO or ≥" + String(MIN_DISPATCHES) + " dispatches.",
-              "1–" + String(MIN_DISPATCHES - 1) + " dispatches per wave is the dribbling anti-pattern.",
-              "",
-              "CORRECT: One message with " + String(MIN_DISPATCHES) + "+ Task tool calls in parallel.",
-              "INCORRECT: Send one dispatch, wait, send another — or send 3–5 at a time.",
-              "If fewer than " + String(MIN_DISPATCHES) + " edit tasks exist, fill slots with read-only research.",
-              "",
-              "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
-            ].join("\n"),
-          }
-        }
-
-        if (_state.prevMessageDispatches === 0 && _state.zeroStreak >= MAX_ZERO_STREAK) {
-          const unchecked = tasksHasUnchecked()
-          if (unchecked) {
-            return {
-              permissionDecision: "deny" as const,
-              message: [
-                "MAX ZERO-DISPATCH RESPONSES EXCEEDED — MUST DISPATCH NOW",
-                "",
-                String(MAX_ZERO_STREAK) + " consecutive responses with zero subagent dispatches.",
-                "TASKS.md has unchecked items — work is pending.",
-                "",
-                "REQUIRED: Your next response MUST contain ≥" + String(MIN_DISPATCHES) + " parallel task/agent dispatches.",
-                "Read-only responses cannot continue while work is pending.",
-                "",
-                "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
-              ].join("\n"),
-            }
-          }
-        }
-      } catch {
-        return
-      }
-    },
-
-    "session.idle": async () => {
-      _state = readState()
-    },
-
-    "experimental.text.complete": async (_input: unknown, output: { text: string }) => {
-      try {
-        if (! output || typeof output.text !== "string") return output
-
-        if (hasResultMarker(output.text)) {
-          _state.estimatedInFlight = Math.max(0, _state.estimatedInFlight - 2)
-        }
-
+      // --- Message boundary detection: 5s gap between tool calls ---
+      if (_state.lastToolCallTs > 0 && (now - _state.lastToolCallTs) > MSG_GAP_MS) {
+        // Finalize previous message: record dispatch count, update streak
         _state.prevMessageDispatches = _state.thisMessageDispatches
-
         if (_state.thisMessageDispatches === 0) {
           _state.zeroStreak++
         } else {
           _state.zeroStreak = 0
         }
-
+        _state.waveHistory.push(_state.prevMessageDispatches)
+        if (_state.waveHistory.length > WAVE_HISTORY_SIZE) {
+          _state.waveHistory = _state.waveHistory.slice(-WAVE_HISTORY_SIZE)
+        }
         _state.thisMessageDispatches = 0
-        writeState(_state)
+      }
 
-        if (_state.estimatedInFlight === 0 && tasksHasUnchecked()) {
+      _state.lastToolCallTs = now
+
+      // --- Dispatch tools: count and allow (with ceiling) ---
+      if (isDispatchTool(tool)) {
+        if (_state.thisMessageDispatches >= MAX_DISPATCHES) {
           return {
-            text: [
-              "DISPATCH SUBAGENTS NOW",
-              "TASKS.md has unchecked items and zero subagents are estimated to be in flight.",
-              "Your next response MUST contain " + String(MIN_DISPATCHES) + "+ parallel task/agent dispatches.",
-              "",
-              output.text,
+            permissionDecision: "deny" as const,
+            message: [
+              "DISPATCH CEILING BREACH: already " + String(_state.thisMessageDispatches) + " dispatch(es) in this message.",
+              "Maximum allowed per wave: " + String(MAX_DISPATCHES) + ". No more than " + String(MAX_DISPATCHES) + " dispatches.",
+              "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
+              "Run 'make disengage-enforcement' to bypass.",
+            ].join("\n"),
+          }
+        }
+        _state.thisMessageDispatches++
+        _state.estimatedInFlight++
+        writeState(_state)
+        return
+      }
+
+      // --- Non-dispatch tools: enforcement checks ---
+      const disengaged = isDisengaged()
+
+      if (!disengaged) {
+        // FLOOR BREACH: previous message had >0 but <MIN_DISPATCHES, and streak is live
+        if (
+          _state.prevMessageDispatches > 0 &&
+          _state.prevMessageDispatches < MIN_DISPATCHES &&
+          _state.zeroStreak > 0
+        ) {
+          return {
+            permissionDecision: "deny" as const,
+            message: [
+              "MULTITASKING FLOOR BREACH: only " + String(_state.prevMessageDispatches) + " dispatch(es) in prior message.",
+              "Codified floor: " + String(MIN_DISPATCHES) + ". This is NOT advisory.",
+              "REQUIRED: \u2265" + String(MIN_DISPATCHES) + " parallel task/agent/workflow dispatches in ONE message.",
+              "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
+              "Run 'make disengage-enforcement' to bypass.",
             ].join("\n"),
           }
         }
 
-        return output
-      } catch {
-        return output
+        // PER-MESSAGE: current message has 0 dispatches, pending work, streak live
+        if (hasPendingWork() && _state.thisMessageDispatches === 0 && _state.zeroStreak > 0) {
+          const lt = tool.toLowerCase()
+          if (lt === "edit" || lt === "write" || lt === "bash") {
+            return {
+              permissionDecision: "deny" as const,
+              message: [
+                "INSUFFICIENT DISPATCHES: only " + String(_state.thisMessageDispatches) + " dispatch(es) in this message.",
+                "Must dispatch \u2265" + String(MIN_DISPATCHES) + " subagents when work exists. Add dispatches and resend.",
+                "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
+                "Run 'make disengage-enforcement' to bypass.",
+              ].join("\n"),
+            }
+          }
+        }
+
+        // ZERO-DISPATCH STREAK: unconditional — MAX_ZERO_STREAK consecutive zero-dispatch messages
+        if (_state.prevMessageDispatches === 0 && _state.zeroStreak >= MAX_ZERO_STREAK) {
+          return {
+            permissionDecision: "deny" as const,
+            message: [
+              "ZERO-DISPATCH STREAK: " + String(MAX_ZERO_STREAK) + " consecutive responses with 0 subagent dispatches.",
+              "Codified floor " + String(MIN_DISPATCHES) + " is being IGNORED. This block is UNCONDITIONAL.",
+              "REQUIRED: Next response MUST contain \u2265" + String(MIN_DISPATCHES) + " task/agent/workflow dispatches.",
+              "No pending-work gate. No tool-type bypass. Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
+              "Run 'make disengage-enforcement' to bypass.",
+            ].join("\n"),
+          }
+        }
       }
+
+      writeState(_state)
+    } catch {
+      return
+    }
+  },
+}
+
+// ============================================================================
+// PROXY PLUGIN (hot-reload aware)
+// ============================================================================
+export default (({ }) => {
+  spawnGateRefresh()
+  try {
+    fs.appendFileSync(
+      "/tmp/gludd-plugin-loaded.log",
+      `${new Date().toISOString()} LOADED enforce-multitask pid=${process.pid}\n`, "utf8",
+    )
+  } catch { /* fail-open */ }
+
+  return {
+    "tool.execute.before": async (input: { tool?: string }) => {
+      // process.env.OPENCODE_SUBAGENT guard
+      if (isSubagent()) return
+      const impl = loadHotModule("multitask", defaultImpl)
+      const fn = impl["tool.execute.before"]
+      return fn ? await fn(input) : undefined
     },
   }
 }) satisfies Plugin

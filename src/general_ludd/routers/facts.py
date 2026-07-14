@@ -29,8 +29,7 @@ import shutil
 import subprocess
 from typing import Any, cast
 
-from fastapi import FastAPI
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from fastapi import FastAPI, HTTPException
 from starlette.requests import Request
 
 from general_ludd.db.repository import (
@@ -39,6 +38,7 @@ from general_ludd.db.repository import (
     TaskReturnRepository,
     TodoRepository,
 )
+from general_ludd.routers._util import get_session_factory as _get_session_factory
 from general_ludd.routers.accounting import _build_accountant as _build_accounting_accountant
 from general_ludd.routers.coordination import _coordination_facet
 
@@ -64,10 +64,6 @@ def _resolve_trace_project_id(request: Any, query_project_id: str | None) -> str
     if scope is not None:
         return scope
     return query_project_id
-
-
-def _get_session_factory(app: FastAPI) -> async_sessionmaker[AsyncSession] | None:
-    return getattr(app.state, "_session_factory", None)
 
 
 def _models_facet(app: FastAPI) -> dict[str, object]:
@@ -505,6 +501,12 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         """
         bounded = max(1, min(limit, _DEFAULT_TRACE_LIMIT * 5))
         scope = _resolve_trace_project_id(request, project_id)
+        if scope is None:
+            raise HTTPException(
+                status_code=400,
+                detail="project_id is required for /api/traces — "
+                "supply a ?project_id= query parameter or use a project-scoped bearer token",
+            )
         return _traces_facet(
             app, limit=bounded, todo_id=todo_id, project_id=scope
         )

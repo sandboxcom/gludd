@@ -9,6 +9,69 @@ from urllib.parse import urlparse
 from general_ludd.security.ssrf import _ip_addr_is_blocked, host_is_blocked
 from general_ludd.security.ssrf import is_url_blocked as _is_url_blocked
 
+_CREDENTIAL_PATTERNS: list[tuple[re.Pattern[str], str]] = [
+    (re.compile(r"https?://[^@\s]+:[^@\s]+@", re.IGNORECASE), "https://[REDACTED_CREDS_IN_URL]@"),
+    (re.compile(r"sk-[A-Za-z0-9_-]{20,}", re.IGNORECASE), "[REDACTED_OPENAI_KEY]"),
+    (re.compile(r"x-api-key\s*[:=]\s*\S+", re.IGNORECASE), "[REDACTED_X_API_KEY]"),
+    (re.compile(r"(?:api[_-]?key|apikey|api_key)\s*[:=]\s*\S+", re.IGNORECASE), "[REDACTED_API_KEY]"),
+    (re.compile(r"(?:Authorization|auth)\s*[:=]\s*Bearer\s+\S+", re.IGNORECASE), "[REDACTED_BEARER_TOKEN]"),
+    (re.compile(r"(?:Authorization|auth)\s*[:=]\s*Basic\s+\S+", re.IGNORECASE), "[REDACTED_BASIC_AUTH]"),
+    (re.compile(r"(?:token|secret|password|passwd|pwd)\s*[:=]\s*\S+", re.IGNORECASE), "[REDACTED_CREDENTIAL]"),
+]
+
+# H.22: redact internal/blocked URLs and hostnames from error messages so SSRF
+# rejections never disclose the target address to callers or logs.
+_INTERNAL_HOST_PATTERNS: list[tuple[re.Pattern[str], str]] = [
+    # IPv4 loopback (127.0.0.0/8)
+    (re.compile(r"\b127\.\d{1,3}\.\d{1,3}\.\d{1,3}\b"), "[REDACTED_LOOPBACK_IP]"),
+    # IPv6 loopback
+    (re.compile(r"\[::1\]"), "[REDACTED_LOOPBACK_IP]"),
+    # IPv6 loopback uncompressed
+    (re.compile(r"\b(::1|0:0:0:0:0:0:0:1)\b"), "[REDACTED_LOOPBACK_IP]"),
+    # Cloud metadata IPs
+    (re.compile(r"\b169\.254\.169\.254\b"), "[REDACTED_METADATA_IP]"),
+    (re.compile(r"\b100\.100\.100\.200\b"), "[REDACTED_METADATA_IP]"),
+    # RFC-1918 private ranges
+    (re.compile(r"\b10\.\d{1,3}\.\d{1,3}\.\d{1,3}\b"), "[REDACTED_PRIVATE_IP]"),
+    (re.compile(r"\b172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}\b"), "[REDACTED_PRIVATE_IP]"),
+    (re.compile(r"\b192\.168\.\d{1,3}\.\d{1,3}\b"), "[REDACTED_PRIVATE_IP]"),
+    # Link-local
+    (re.compile(r"\b169\.254\.(?!169\.254\b)\d{1,3}\.\d{1,3}\b"), "[REDACTED_LINK_LOCAL_IP]"),
+    # Known internal hostnames (SSRF targets)
+    (re.compile(r"\blocalhost\.localdomain\b", re.IGNORECASE), "[REDACTED_INTERNAL_HOST]"),
+    (re.compile(r"\bmetadata\.google\.internal\b", re.IGNORECASE), "[REDACTED_INTERNAL_HOST]"),
+    (re.compile(r"\binstance-data(\.\S+)?\b", re.IGNORECASE), "[REDACTED_INTERNAL_HOST]"),
+    # literal localhost (word-boundary to avoid false positives in e.g. "localhostname")
+    (re.compile(r"\blocalhost\b", re.IGNORECASE), "[REDACTED_INTERNAL_HOST]"),
+    # localhost with port
+    (re.compile(r"\blocalhost:\d+\b", re.IGNORECASE), "[REDACTED_INTERNAL_HOST]"),
+]
+
+
+def sanitize_error_message(text: str) -> str:
+    """Redact credential-bearing text and internal URLs from exception messages.
+
+    Strips API keys, Bearer tokens, Basic auth tokens, passwords, URLs with
+    embedded credentials, OpenAI-style API keys (``sk-...``), and header-style
+    API keys from the given string. Also redacts loopback/private/internal
+    IP addresses and known SSRF-target hostnames so error messages never
+    disclose internal network details.
+
+    Returns the sanitized string with each match replaced by a
+    ``[REDACTED_*]`` token.
+
+    Safe to call on any string including empty strings and strings without
+    credentials; those pass through unchanged.
+    """
+    if not text:
+        return text
+    result = text
+    for pattern, replacement in _CREDENTIAL_PATTERNS:
+        result = pattern.sub(replacement, result)
+    for pattern, replacement in _INTERNAL_HOST_PATTERNS:
+        result = pattern.sub(replacement, result)
+    return result
+
 _PATH_TRAVERSAL = re.compile(r"(?:\.\./|\.\.\\)")
 _ABSOLUTE_PATH = re.compile(r"^/|^[A-Za-z]:\\")
 _JOB_ID_PATTERN = re.compile(r"^[A-Z0-9_\-]+$")

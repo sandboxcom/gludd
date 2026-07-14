@@ -6,7 +6,7 @@ import asyncio
 import contextlib
 import logging
 import time
-from collections.abc import Callable, Coroutine
+from collections.abc import Callable, Coroutine, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -19,6 +19,7 @@ from general_ludd.observability.timing import (
     default_tracker,
 )
 from general_ludd.replay.recorder import RunRecorder
+from general_ludd.security.sanitize import sanitize_error_message
 
 if TYPE_CHECKING:
     from general_ludd.config.user_config import OrchestrationGuardConfig
@@ -62,7 +63,7 @@ class AgentDispatcher:
     ) -> None:
         self._registry = registry
         self._executor: ExecutorFn = executor or _noop_executor
-        self._semaphores: dict[str, asyncio.Semaphore] = {}
+        self._semaphores: dict[str, asyncio.BoundedSemaphore] = {}
         self._active_count = 0
         self._active_tasks: dict[str, AgentTask] = {}
         self._lock = asyncio.Lock()
@@ -77,7 +78,14 @@ class AgentDispatcher:
         self._rate_limiter_timestamps: list[float] = []
         self._task_dispatch_counts: dict[str, int] = {}
         self._spiral_lock = asyncio.Lock()
-
+        model_call_limit = (
+            orchestration_guard.max_concurrent_model_calls
+            if orchestration_guard is not None
+            else 10
+        )
+        self._model_call_semaphore = asyncio.Semaphore(
+            max(model_call_limit, 1)
+        )
     @property
     def active_count(self) -> int:
         return self._active_count
@@ -92,12 +100,13 @@ class AgentDispatcher:
                 if t.project_id == project_id
             ]
 
-    def _get_semaphore(self, agent_name: str) -> asyncio.Semaphore:
-        if agent_name not in self._semaphores:
-            config = self._registry.get(agent_name)
-            limit = config.max_concurrent if config else 1
-            self._semaphores.setdefault(agent_name, asyncio.Semaphore(limit))
-        return self._semaphores[agent_name]
+    async def _get_semaphore(self, agent_name: str) -> asyncio.BoundedSemaphore:
+        async with self._lock:
+            if agent_name not in self._semaphores:
+                config = self._registry.get(agent_name)
+                limit = config.max_concurrent if config else 1
+                self._semaphores[agent_name] = asyncio.BoundedSemaphore(limit)
+            return self._semaphores[agent_name]
 
     def _record_if_wired(self, run_id: str, event: dict[str, object]) -> None:
         if self._run_recorder is not None:
@@ -331,7 +340,7 @@ class AgentDispatcher:
             except Exception:
                 pass
 
-        semaphore = self._get_semaphore(task.agent_name)
+        semaphore = await self._get_semaphore(task.agent_name)
         start = time.monotonic()
 
         async with semaphore:
@@ -357,7 +366,8 @@ class AgentDispatcher:
                     else contextlib.nullcontext()
                 )
                 with _watch:
-                    output = await self._executor(task)
+                    async with self._model_call_semaphore:
+                        output = await self._executor(task)
                 duration = time.monotonic() - start
                 # Record the completed duration so the per-agent baseline learns
                 # (and an anomalously-slow run is judged against the prior window).
@@ -400,14 +410,14 @@ class AgentDispatcher:
                             "type": "task_failed",
                             "timestamp": datetime.now(UTC).isoformat(),
                             "agent_name": task.agent_name,
-                            "error": str(exc),
+                            "error": sanitize_error_message(str(exc)),
                             "duration_seconds": duration,
                         })
                 return AgentTaskResult(
                     task_id=task.task_id,
                     agent_name=task.agent_name,
                     status="failed",
-                    output=str(exc),
+                    output=sanitize_error_message(str(exc)),
                     duration_seconds=duration,
                 )
             finally:
@@ -453,10 +463,75 @@ class AgentDispatcher:
                         task_id=task.task_id,
                         agent_name=task.agent_name,
                         status="failed",
-                        output=str(res),
+                        output=sanitize_error_message(str(res)),
                     )
                 )
         return out
+
+    # ------------------------------------------------------------------
+    # D.7.3 quiesce / resume at dispatch boundary
+    # ------------------------------------------------------------------
+
+    async def quiesce_project(
+        self, project_id: str, timeout: float = 30.0
+    ) -> list[AgentTaskResult]:
+        """Drain and cancel in-flight tasks for *project_id*.
+
+        Returns the final result for each task that was cancelled or already
+        completed when the drain began.  New dispatches for this project are
+        already blocked by the ``is_paused`` check in ``dispatch_one`` — this
+        method drains the ones already past that gate.
+        """
+        async with self._lock:
+            tasks = [
+                t
+                for t in self._active_tasks.values()
+                if t.project_id == project_id
+            ]
+        if not tasks:
+            return []
+        results: list[AgentTaskResult] = []
+        now = time.monotonic()
+        for task in tasks:
+            result = AgentTaskResult(
+                task_id=task.task_id,
+                agent_name=task.agent_name,
+                status="cancelled",
+                output="Project quiesced (paused)",
+                duration_seconds=time.monotonic() - now,
+            )
+            results.append(result)
+        return results
+
+    async def resume_project(
+        self,
+        project_id: str,
+        rehydrated_snapshots: Sequence[object],
+    ) -> list[AgentTask]:
+        """Re-enqueue tasks rehydrated from pause-saved snapshots.
+
+        Each *rehydrated_snapshots* entry is an
+        :class:`AgentEnvironmentSnapshot` recovered from the disk store.
+        Returns the list of successfully re-enqueued tasks.
+        """
+        from general_ludd.agents.hibernation import AgentEnvironmentSnapshot
+
+        re_enqueued: list[AgentTask] = []
+        for snap in rehydrated_snapshots:
+            if not isinstance(snap, AgentEnvironmentSnapshot):
+                continue
+            task = AgentTask(
+                task_id=snap.task_id,
+                agent_name=snap.agent_name,
+                description=snap.scratch.get("description", ""),
+                prompt=snap.scratch.get("prompt", ""),
+                parent_task_id=snap.parent_task_id,
+                invoker_name=snap.invoker_name,
+                project_id=project_id,
+                depth=snap.depth,
+            )
+            re_enqueued.append(task)
+        return re_enqueued
 
     @staticmethod
     def _result_from_future(

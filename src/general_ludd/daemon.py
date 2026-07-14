@@ -7,6 +7,7 @@ import contextlib
 import logging
 import os
 import sys
+import threading
 import time
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
@@ -25,7 +26,12 @@ from general_ludd.ansible.runner import AnsibleRunnerAdapter
 from general_ludd.config.binary_paths import BinaryPaths
 from general_ludd.config.loader import load_user_config
 from general_ludd.config.model_routing import ModelRoutingConfig, load_model_routing
-from general_ludd.config.project_dir import find_project_gludd_dir, merge_config, project_config_path
+from general_ludd.config.project_dir import (
+    find_project_gludd_dir,
+    merge_config,
+    project_config_path,
+    validate_project_overlay,
+)
 from general_ludd.config.task_loader import discover_task_definitions
 from general_ludd.config.user_config import UserConfig
 from general_ludd.controllers.budget import RunBudgetGuard
@@ -59,6 +65,7 @@ from general_ludd.infra.utilization import UtilizationTracker
 from general_ludd.ipc import WriteQueue
 from general_ludd.logging.project_log import ProjectLogAdapter
 from general_ludd.mcp.loader import load_mcp_config
+from general_ludd.memory.local import LocalAgentMemory
 from general_ludd.metrics.collector import MetricsCollector
 from general_ludd.models.deployment_health import (
     DeploymentHealthChecker,
@@ -97,6 +104,44 @@ from general_ludd.skills.registry import SkillRegistry
 from general_ludd.writer import WriterProcess
 
 logger = ProjectLogAdapter(logging.getLogger(__name__))
+
+_STARTUP_UNSET: object = object()
+"""Sentinel for app.state fields that are None at construction time and populated
+during _lifespan.  Distinct from None so 'intentionally None' is not conflated
+with 'not yet initialized'."""
+
+_PUBLIC_PATHS_FROZEN = frozenset({
+    "/healthz", "/readyz", "/api/status", "/api/todos", "/api/human-todos",
+    "/api/webmcp",
+    "/docs", "/openapi.json", "/redoc",
+})
+_RECEIVER_PREFIXES_FROZEN = ("/v1/", "/ingest/")
+_SAFE_METHODS_FROZEN = frozenset({"GET", "HEAD", "OPTIONS"})
+
+
+def is_public_path(method: str, path: str) -> bool:
+    if path.startswith(_RECEIVER_PREFIXES_FROZEN):
+        return True
+    if method.upper() not in _SAFE_METHODS_FROZEN:
+        return False
+    if path in _PUBLIC_PATHS_FROZEN or path == "/docs" or path.startswith("/docs/"):
+        return True
+    return path.startswith("/render/")
+
+
+def _get_app_adaptive_router(app: FastAPI) -> Any:
+    """Return ``app.state._adaptive_router``, logging a WARNING if unset.
+
+    The sentinel :data:`_STARTUP_UNSET` distinguishes 'never set' (startup not
+    complete) from 'intentionally None' (the adaptive router is disabled).
+    """
+    val = getattr(app.state, "_adaptive_router", _STARTUP_UNSET)
+    if val is _STARTUP_UNSET:
+        logger.warning(
+            "_adaptive_router accessed before initialization on app.state"
+        )
+        return None
+    return val
 
 
 def _compaction_config_dict(uc: Any) -> dict[str, Any]:
@@ -206,6 +251,13 @@ def load_startup_config(config_dir: str | None = None) -> dict[str, Any]:
             logger.warning("Failed to load project config overlay %s: %s", proj_cfg, exc)
             return
         if not proj_data:
+            return
+        try:
+            validate_project_overlay(proj_data)
+        except Exception as exc:
+            logger.warning(
+                "Project config overlay rejected (dangerous fields): %s", exc
+            )
             return
         uc = cfg["user_config"]
         user_dict: dict[str, Any] = (
@@ -396,7 +448,9 @@ def build_secrets_resolver(
         class _LazyProjectSecrets:
             def __init__(self, base: Any):
                 self._base = base
-            def resolve(self, alias_name: str) -> str | None:
+            def resolve(self, alias_name: str, project_id: str | None = None) -> str | None:
+                if project_id:
+                    return self.for_project(project_id).resolve(alias_name)
                 result = self._base.resolve(alias_name)
                 if isinstance(result, str):
                     return result
@@ -897,6 +951,30 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         db_config: dict[str, Any] = {}
         uc = startup_config.get("user_config")
         bc = _parse_budget_config(uc)
+        if uc and hasattr(uc, "network"):
+            net = uc.network
+            if net.host in ("0.0.0.0", "::"):
+                logger.warning(
+                    "Network host is set to %r — daemon is binding to all interfaces. "
+                    "allowed_cidr=%s. Restrict to minimal CIDR set.",
+                    net.host,
+                    net.allowed_cidr,
+                )
+                app.state._allowed_cidr = list(net.allowed_cidr)
+            elif net.host in ("127.0.0.1", "localhost", "::1") and not net.allowed_cidr:
+                _loopback_cidrs = ["127.0.0.0/8", "::1/128"]
+                app.state._allowed_cidr = _loopback_cidrs
+                logger.info(
+                    "Network host is %r — auto-enforcing loopback CIDRs %s",
+                    net.host,
+                    _loopback_cidrs,
+                )
+            else:
+                app.state._allowed_cidr = (
+                    list(net.allowed_cidr) if net.allowed_cidr else []
+                )
+            app.state._network_host = net.host
+            app.state._network_port = net.port
         if uc and hasattr(uc, "database"):
             db_config = uc.database or {}
         _db_override: str | None = getattr(app.state, "_db_path_override", None)
@@ -1047,6 +1125,21 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         _codebase_indexer = CodebaseIndexer()
         app.state._codebase_indexer = _codebase_indexer
         logger.info("CodebaseIndexer initialised (cache: %s)", _codebase_indexer.cache_dir)
+
+        from general_ludd.retrieval.searx_client import SearxNGClient
+        app.state._searx_client = SearxNGClient()
+
+        from general_ludd.searx.install import ensure_searx_initialized, ensure_searx_installed
+        from general_ludd.searx.server import SearXServer
+        ensure_searx_installed()
+        ensure_searx_initialized()
+        searx_server = SearXServer()
+        searx_server.ensure_started()
+        app.state._searx_server = searx_server
+        logger.info("SearXNG server started on %s", searx_server.get_instance_url())
+
+        from general_ludd.retrieval.research_index import ResearchIndex
+        app.state._research_index = ResearchIndex()
 
         def _update_ansible_env(
             paths: list[Any], env: dict[str, str]
@@ -1369,6 +1462,8 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         estimation_tracker = EstimationTracker()
         app.state._adversarial_detector = adversarial_detector
         app.state._estimation_tracker = estimation_tracker
+        daemon_state["_adversarial_detector"] = adversarial_detector
+        daemon_state["_estimation_tracker"] = estimation_tracker
         logger.info(
             "Wired adversarial detector (%d patterns) and estimation tracker",
             len(adversarial_detector.get_all_categories()),
@@ -1554,6 +1649,11 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                         "MCP startup failed (continuing without MCP)",
                         exc_info=True,
                     )
+                    if mcp_client is not None:
+                        try:
+                            await mcp_client.stop_all()
+                        except Exception:
+                            logger.warning("MCP cleanup during startup failure also failed", exc_info=True)
                     mcp_client = None
         app.state._mcp_client = mcp_client
 
@@ -1633,6 +1733,10 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         memory_repo = MemoryRepository(session_factory=session_factory)
         app.state._memory_repo = memory_repo
 
+        local_memory = LocalAgentMemory()
+        app.state._local_memory = local_memory
+        logger.info("LocalAgentMemory initialised (cache: %s)", local_memory.cache_dir)
+
         sandbox_executor = SandboxExecutor(timeout=30)
 
         _cfg_dir = getattr(app.state, "_config_dir", None)
@@ -1704,6 +1808,39 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 working_dir=_deploy_working_dir,
             )
             app.state._deployment_manager = deployment_manager
+
+        service_discovery = None
+        if uc is not None and getattr(uc, "service_discovery_enabled", True):
+            from general_ludd.infra.service_catalog import DEFAULT_CATALOG_PATH
+            searx_url = getattr(uc, "service_discovery_searx_url", "http://localhost:8888")
+            catalog_path = getattr(uc, "service_discovery_catalog_path", DEFAULT_CATALOG_PATH)
+            from general_ludd.service_discovery.pipeline import ServiceDiscoveryPipeline
+            service_discovery = ServiceDiscoveryPipeline(
+                searx_url=searx_url,
+                catalog_path=catalog_path,
+            )
+            logger.info("ServiceDiscoveryPipeline wired: searx=%s catalog=%s", searx_url, catalog_path)
+
+        searx_model_discoverer = None
+        if model_gateway is not None:
+            from general_ludd.infra.model_search import SEARX_DEFAULT_URL
+            from general_ludd.models.searx_discoverer import SearxModelDiscoverer
+            _srv = getattr(app.state, "_searx_server", None)
+            _discover_url = _srv.get_instance_url() if _srv else None
+            searx_model_discoverer = SearxModelDiscoverer(
+                gateway=model_gateway,
+                searx_url=_discover_url or SEARX_DEFAULT_URL,
+            )
+            try:
+                searx_model_discoverer.sync_models()
+            except Exception:
+                logger.info("SearX model discoverer sync skipped at startup", exc_info=True)
+            app.state._searx_model_discoverer = searx_model_discoverer
+            logger.info(
+                "SearxModelDiscoverer wired: searx=%s index=%d",
+                _discover_url or "default",
+                searx_model_discoverer.index_size,
+            )
 
         event_loop = EventLoop(
             worker_base_url="http://localhost:8000",
@@ -1793,6 +1930,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 app.state, "_compaction_aggressiveness_controller", None
             ),
             credit_tracker=getattr(app.state, "_credit_tracker", None),
+            service_discovery=service_discovery,
         )
         app.state.event_loop = event_loop
         app.state.event_loop._runner = runner
@@ -1940,12 +2078,17 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                         # call does not leak held budget.
                         budget_manager.release_reservation(task.task_id)
                         return "deferred:budget_exhausted"
+                if task.agent_name == "research":
+                    from general_ludd.agents.researcher import ResearcherAgent
+                    searx = getattr(app.state, "_searx_client", None)
+                    agent = ResearcherAgent(searx_client=searx)
+                    report = await agent.research(query=task.prompt)
+                    return report.model_dump_json()
                 try:
                     call_kwargs: dict[str, Any] = {}
                     if getattr(task, "tools", None):
                         call_kwargs["tools"] = task.tools
-                    result = await asyncio.to_thread(
-                        model_gateway.call_model_with_retry,
+                    result = await model_gateway.call_model_with_retry(
                         profile_id,
                         [{"role": "user", "content": task.prompt}],
                         **call_kwargs,
@@ -2092,6 +2235,12 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         except Exception as ornith_exc:
             logger.warning("Failed to launch Ornith MCP subprocess: %s", ornith_exc)
 
+    # S.1: Seal the process registry so no code path can modify it
+    # (register/deregister/reap) after daemon initialization.
+    from general_ludd.process.registry import default_registry as _proc_default_registry
+
+    _proc_default_registry().seal()
+
     yield
 
     # ── Slurm shutdown: scancel all active jobs owned by this daemon ──────
@@ -2146,13 +2295,19 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         try:
             await pipeline_controller.stop()
         except Exception:
-            logger.warning("pipeline_controller.stop() failed during shutdown", exc_info=True)
+            logger.warning(
+                "pipeline_controller.stop() failed during shutdown", exc_info=True
+            )
+            raise
     mcp_client_ref = getattr(app.state, "_mcp_client", None)
     if mcp_client_ref is not None:
         try:
             await mcp_client_ref.stop_all()
         except Exception:
-            logger.warning("mcp_client.stop_all() failed during shutdown", exc_info=True)
+            logger.warning(
+                "mcp_client.stop_all() failed during shutdown", exc_info=True
+            )
+            raise
     _el = event_loop if event_loop is not None else getattr(app.state, "event_loop", None)
     if _el is not None:
         _el.stop()
@@ -2204,6 +2359,10 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 _ornith_proc.kill()
                 with contextlib.suppress(Exception):
                     await _ornith_proc.wait()
+    _searx_srv = getattr(app.state, "_searx_server", None)
+    if _searx_srv is not None:
+        with contextlib.suppress(Exception):
+            _searx_srv.stop()
 
 
 def _build_sts_audit_logger(session_factory: Any) -> Any:
@@ -2258,6 +2417,8 @@ def _get_or_create_subsystems(app: FastAPI) -> dict[str, Any]:
         app.state._hook_system = HookSystem(event_bus=app.state._event_bus)
     if not hasattr(app.state, "_worker_broadcaster") or app.state._worker_broadcaster is None:
         app.state._worker_broadcaster = WorkerBroadcaster()
+    if not hasattr(app.state, "_reload_lock") or app.state._reload_lock is None:
+        app.state._reload_lock = threading.Lock()
     return {
         "bus": app.state._event_bus,
         "hooks": app.state._hook_system,
@@ -2308,7 +2469,13 @@ def _get_or_create_extended_subsystems(
     if session_factory is not None and (
         not hasattr(app.state, "_adaptive_router")
         or app.state._adaptive_router is None
+        or app.state._adaptive_router is _STARTUP_UNSET
     ):
+        if getattr(app.state, "_adaptive_router", None) is _STARTUP_UNSET:
+            logger.warning(
+                "_adaptive_router was still _STARTUP_UNSET during "
+                "_get_or_create_extended_subsystems; constructing now"
+            )
         benchmark_repo = BenchmarkRepository(session_factory=session_factory)
         quantization_map: dict[str, tuple[str, float]] = {}
         tracker = getattr(app.state, "_quantization_tracker", None)
@@ -2412,6 +2579,7 @@ def create_daemon_app(
     app.state._event_bus = None
     app.state._hook_system = None
     app.state._worker_broadcaster = None
+    app.state._reload_lock = None
     app.state._db_path_override = _db_path_override
     app.state._config_dir = config_dir
     app.state._templates_dir = templates_dir
@@ -2421,12 +2589,15 @@ def create_daemon_app(
     app.state._utilization_tracker = None
     app.state._model_registry = None
     app.state._skill_registry = None
-    app.state._adaptive_router = None
+    app.state._adaptive_router = _STARTUP_UNSET
     app.state._deployment_health_router = None
     app.state._execution_engine = None
     app.state._self_update_audit_sink = None
     app.state._compaction_compactor = None
     app.state._compaction_metrics = None
+    app.state._allowed_cidr = []
+    app.state._network_host = "127.0.0.1"
+    app.state._network_port = 8000
     app.state._startup_config = load_startup_config(config_dir)
     app.state._project_gludd_dir = app.state._startup_config.get("project_gludd_dir")
     app.state._model_performance_router = None
@@ -2441,25 +2612,18 @@ def create_daemon_app(
     from general_ludd.hardware.probe import probe_hardware
     app.state._hardware = probe_hardware()
 
-    _psk = os.environ.get("GLUDD_PSK", "")
-    # P1 fix: FAIL-CLOSED by default when no PSK is set.
-    # Non-public paths are DENIED (503) unless the operator explicitly opts out
-    # via GLUDD_ALLOW_NO_AUTH=1 (development/test only).
-    # GLUDD_REQUIRE_AUTH is kept for backward compat: when set it forces
-    # fail-closed even if GLUDD_ALLOW_NO_AUTH=1 is also set.
-    _allow_no_auth = os.environ.get("GLUDD_ALLOW_NO_AUTH", "").strip().lower() in {
-        "1", "true", "yes", "on",
-    }
-    _require_auth_env = os.environ.get("GLUDD_REQUIRE_AUTH", "").strip().lower() in {
-        "1", "true", "yes", "on",
-    }
-    # GLUDD_REQUIRE_AUTH overrides GLUDD_ALLOW_NO_AUTH — fail-closed wins.
-    if _require_auth_env:
-        _allow_no_auth = False
-    _no_auth = not _psk
-    # When no PSK: require_auth is True (fail-closed) unless the operator has
-    # explicitly opted out with GLUDD_ALLOW_NO_AUTH=1.
-    _require_auth = _no_auth and not _allow_no_auth
+    # C20: use the SHARED load_auth_posture helper so the daemon and worker
+    # cannot drift. GLUDD_PSK_DISABLE and GLUDD_ALLOW_NO_AUTH are both accepted
+    # as opt-out; GLUDD_REQUIRE_AUTH forces fail-closed.
+    from general_ludd.security.auth import load_auth_posture
+
+    _posture = load_auth_posture("daemon")
+    _psk = _posture.psk
+    _no_auth = _posture.no_auth
+    _require_auth = _posture.require_auth
+    # Back-compat: derive _allow_no_auth from posture (no PSK + not requiring
+    # auth means the operator opted out via GLUDD_PSK_DISABLE or GLUDD_ALLOW_NO_AUTH).
+    _allow_no_auth = _no_auth and not _require_auth
     app.state._psk = _psk
     app.state._no_auth = _no_auth
     app.state._require_auth = _require_auth
@@ -2471,13 +2635,14 @@ def create_daemon_app(
         logger.warning(
             "SECURITY: GLUDD_PSK is not set — the daemon will REFUSE all "
             "non-public paths (503, fail-closed). Set GLUDD_PSK to enable auth. "
-            "For development only, set GLUDD_ALLOW_NO_AUTH=1 to allow unauthenticated "
-            "access (leaves the entire /admin surface open to any caller)."
+            "For development only, set GLUDD_PSK_DISABLE=1 (or "
+            "GLUDD_ALLOW_NO_AUTH=1) to allow unauthenticated access (leaves "
+            "the entire /admin surface open to any caller)."
         )
     elif _no_auth and _allow_no_auth:
         # Explicit dev opt-out: LOUD warning that auth is intentionally disabled.
         logger.warning(
-            "SECURITY: GLUDD_PSK is not set and GLUDD_ALLOW_NO_AUTH=1 — the "
+            "SECURITY: GLUDD_PSK is not set and auth is disabled — the "
             "daemon is running with admin auth DISABLED (no_auth mode). The "
             "entire /admin surface is open to any caller that can reach the port. "
             "Set GLUDD_PSK to enable auth."
@@ -2590,6 +2755,27 @@ def create_daemon_app(
         metrics.counter_inc("gludd_http_responses_total", {"status": status})
         return response
 
+    @app.middleware("http")
+    async def cidr_middleware(request: Any, call_next: Any) -> Any:
+        cidrs: list[str] = getattr(app.state, "_allowed_cidr", None) or []
+        if cidrs:
+            client_host = getattr(request.client, "host", None) if request.client else None
+            if client_host is not None:
+                import ipaddress as _ipaddress
+                client_ip = _ipaddress.ip_address(client_host)
+                allowed = any(
+                    client_ip in _ipaddress.ip_network(cidr, strict=False)
+                    for cidr in cidrs
+                )
+                if not allowed:
+                    from fastapi.responses import JSONResponse
+                    logger.warning("CIDR deny: %s not in allowed_cidr=%s", client_host, cidrs)
+                    return JSONResponse(
+                        status_code=403,
+                        content={"error": "forbidden", "reason": "client IP not in allowed_cidr"},
+                    )
+        return await call_next(request)
+
     if log_level == "debug":
         logging.getLogger("httpx").setLevel(logging.DEBUG)
         logging.getLogger("httpcore").setLevel(logging.DEBUG)
@@ -2679,9 +2865,13 @@ def create_daemon_app(
                 status_code=503,
                 content={"status": "degraded", "reason": str(degraded)[:200]},
             )
-        # Check whether the event-loop task has completed/been cancelled
         el_task = getattr(app.state, "_event_loop_task", None)
-        if el_task is not None and el_task.done():
+        if el_task is None:
+            return JSONResponse(
+                status_code=503,
+                content={"status": "not_ready", "reason": "daemon_not_initialized"},
+            )
+        if el_task.done():
             reason = "event_loop_cancelled" if el_task.cancelled() else "event_loop_done"
             return JSONResponse(
                 status_code=503,
@@ -2829,9 +3019,11 @@ def create_daemon_app(
         facts,
         features,
         filestore,
+        git_history,
         human_todos,
         integrity,
         maintenance,
+        make,
         mcp,
         memory,
         messages,
@@ -2889,6 +3081,7 @@ def create_daemon_app(
     deployments.register(app, daemon_state)
     processes.register(app, daemon_state)
     filestore.register(app, daemon_state)
+    git_history.register(app, daemon_state)
     human_todos.register(app, daemon_state)
     integrity.register(app, daemon_state)
     signing.register(app, daemon_state)
@@ -2903,6 +3096,7 @@ def create_daemon_app(
     self_improve.register(app, daemon_state)
     self_update.register(app, daemon_state)
     maintenance.register(app, daemon_state)
+    make.register(app, daemon_state)
     remediation.register(app, daemon_state)
     review.register(app, daemon_state)
     ornith.register(app, daemon_state)
@@ -3003,6 +3197,8 @@ def create_daemon_app(
 
     from general_ludd.routers import stream as _stream_router
     _stream_router.register(app, daemon_state)
+    from general_ludd.routers import terraform_state as _terraform_state_router
+    _terraform_state_router.register(app, daemon_state)
 
     from general_ludd.routers.observe import wire_observability
 

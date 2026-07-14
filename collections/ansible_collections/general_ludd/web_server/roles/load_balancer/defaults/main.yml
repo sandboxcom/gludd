@@ -1,0 +1,24 @@
+---
+lb_method: round_robin
+sticky_session: cookie
+health_check_interval: 10
+health_check_timeout: 5
+unhealthy_threshold: 3
+healthy_threshold: 2
+backend_servers:
+  - host: "10.0.1.10"
+    port: 80
+    weight: 1
+  - host: "10.0.1.11"
+    port: 80
+    weight: 1
+backup_servers: []
+listen_port: 80
+server_name: localhost
+circuit_breaker:
+  max_connections: 1000
+  max_pending_requests: 500
+  max_retries: 3
+blue_green_enabled: false
+canary_enabled: false
+lb_type: nginx

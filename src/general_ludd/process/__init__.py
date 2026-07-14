@@ -19,6 +19,12 @@ from general_ludd.process.registry import (
     ManagedProcess,
     ProcessRegistry,
     default_registry,
+    set_default_registry,
 )
 
-__all__ = ["ManagedProcess", "ProcessRegistry", "default_registry"]
+__all__ = [
+    "ManagedProcess",
+    "ProcessRegistry",
+    "default_registry",
+    "set_default_registry",
+]

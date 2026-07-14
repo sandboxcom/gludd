@@ -1,0 +1,84 @@
+---
+# CA business & legal chain research
+# Uses gludd_model_call to query AI about CA jurisdiction, parent company,
+# past incidents, ownership chains, and applicable laws.
+
+- name: Research CA business and legal context
+  general_ludd.agent.gludd_model_call:
+    prompt: |
+      You are a CA business analyst researching certificate authority
+      "{{ ssl_cert_ca_name | default('unknown') }}" for jurisdiction and legal risk.
+
+      Research the following and return a structured response:
+      1. Parent company and ultimate ownership chain
+      2. Jurisdiction country and applicable laws (GDPR, CLOUD Act, FISA, etc.)
+      3. Past security incidents or misissuance events
+      4. Current root program membership (Mozilla, Apple, Google, Microsoft)
+      5. Audit history (WebTrust, ETSI, etc.)
+      6. Key customers and market segments
+      7. Any government ownership or influence
+
+      CA to research: {{ ssl_cert_ca_name | default('unknown') }}
+      Additional CA identifier (if known): {{ ssl_cert_ca_identifier | default('') }}
+    model_label: "{{ ssl_cert_model_label }}"
+    max_tokens: 1024
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: ca_research
+  no_log: "{{ psk | length > 0 }}"
+  when: not ansible_check_mode
+  tags: [research, model_call]
+
+- name: Map CA jurisdiction to applicable laws
+  general_ludd.agent.gludd_model_call:
+    prompt: |
+      For a Certificate Authority located in {{ ssl_cert_ca_jurisdiction | default('unknown') }},
+      list all applicable data-intercept and extraterritorial laws that could
+      compel the CA to disclose private keys or intercept traffic:
+
+      Include assessment of:
+      - Mutual Legal Assistance Treaties (MLATs) with the US
+      - Intelligence-sharing alliances (Five Eyes, Nine Eyes, Fourteen Eyes)
+      - Domestic surveillance laws
+      - Data localization requirements
+      - Government ability to compel key disclosure
+
+      Return a structured risk assessment.
+    model_label: "{{ ssl_cert_model_label }}"
+    max_tokens: 768
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: jurisdiction_law_map
+  no_log: "{{ psk | length > 0 }}"
+  when:
+    - not ansible_check_mode
+    - ssl_cert_ca_jurisdiction | default('') | length > 0
+  tags: [jurisdiction, legal]
+
+- name: Load jurisdiction cross-reference data
+  ansible.builtin.include_vars:
+    file: ca_jurisdictions.yml
+    name: ca_jurisdiction_data
+  when: ssl_cert_ca_jurisdiction_lookup | bool
+
+- name: Cross-reference known CA data with research
+  ansible.builtin.set_fact:
+    ca_known_data: >-
+      {{ ca_jurisdiction_data.ca_jurisdictions[ssl_cert_ca_name | default('unknown') | lower | replace(' ', '_')] | default({}) }}
+  when: ssl_cert_ca_jurisdiction_lookup | bool
+
+- name: Write chain research artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'ca_name': ssl_cert_ca_name | default('unknown'),
+        'ca_identifier': ssl_cert_ca_identifier | default(''),
+        'ca_jurisdiction': ssl_cert_ca_jurisdiction | default(''),
+        'research_response': ca_research.text | default('(not available)'),
+        'law_mapping': jurisdiction_law_map.text | default('(not available)'),
+        'known_data': ca_known_data | default({}),
+        'timestamp': ansible_date_time.iso8601
+      } | to_nice_json }}
+    dest: "{{ ssl_cert_artifact_dir }}/ca-chain-research.json"
+    mode: "0644"
+  tags: [artifact]

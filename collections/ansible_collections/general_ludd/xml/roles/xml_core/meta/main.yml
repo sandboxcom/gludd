@@ -1,0 +1,18 @@
+---
+galaxy_info:
+  role_name: xml_core
+  author: Agentic Harness Agent
+  description: >
+    XML parsing, XPath querying, and namespace handling. Supports extract,
+    modify, and validate operations. Uses Python xml.etree.ElementTree (stdlib)
+    for basic parsing and lxml (optional) for full XPath 1.0 support.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

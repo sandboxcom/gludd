@@ -173,6 +173,8 @@ else
     # straight through to pytest.
     ( set +e; python3 scripts/heavy_sem.py "${HEAVY_MAX_PAR:-3}" gludd-heavy -- \
         uv run python scripts/adaptive_test.py tests/ -q \
+        --cov=general_ludd --cov-report=term-missing --cov-report=xml \
+        --cov-fail-under=85 \
         --basetemp="${BASETEMP}"; \
       echo $? > "${RC_FILE}" ) 2>&1 | tee "${LOG_FILE}"
 fi

@@ -1,0 +1,7 @@
+---
+log_dir: /var/log/nginx
+access_log_format: combined
+error_log_level: warn
+rotation: daily
+retention_days: 30
+syslog_enabled: false

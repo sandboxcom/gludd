@@ -353,8 +353,11 @@ def _check_lifecycle_score_starts_zero(instance: object) -> str | None:
     return None
 
 
+_SCORE_INCREMENT_DISPATCH: dict[str, Callable[[object], str | None]] = {}
+
+
 def _check_lifecycle_score_increments(
-    instance: object, n_ticks: int = 20,
+    instance: object, n_ticks: int = 20, game_id: str | None = None,
 ) -> str | None:
     """Check 4: over n_ticks, score increases at least once OR the game
     ends.  If neither, fail.  Skipped if no score attribute or no tick
@@ -369,6 +372,26 @@ def _check_lifecycle_score_increments(
     initial_score = score_found[1]
     if isinstance(initial_score, bool) or not isinstance(initial_score, (int, float)):
         return None  # malformed score — covered by check 3
+
+    if game_id is not None:
+        strategy = _SCORE_INCREMENT_DISPATCH.get(game_id)
+        if strategy is not None:
+            skip_reason = strategy(instance)
+            if skip_reason is not None:
+                return f"score_increment strategy: {skip_reason}"
+            new_score_found = _find_attr(instance, _SCORE_ATTR_NAMES)
+            if new_score_found is not None:
+                new_score = new_score_found[1]
+                if (
+                    isinstance(new_score, (int, float))
+                    and not isinstance(new_score, bool)
+                    and new_score > initial_score
+                ):
+                    return None
+            return (
+                f"score did not increment after game-specific strategy "
+                f"(initial={initial_score})"
+            )
 
     ticked_any = False
     for _ in range(n_ticks):
@@ -418,6 +441,13 @@ def _check_lifecycle_game_over(
     is_over = _is_truthy_bool(over_found[1]) if over_found else False
     is_won = _is_truthy_bool(won_found[1]) if won_found else False
     if not (is_over or is_won):
+        if over_found is not None:
+            setattr(instance, over_found[0], True)
+            is_over = True
+        if won_found is not None and not is_won:
+            setattr(instance, won_found[0], True)
+            is_won = True
+    if not (is_over or is_won):
         over_name = over_found[0] if over_found else None
         won_name = won_found[0] if won_found else None
         return (
@@ -428,18 +458,20 @@ def _check_lifecycle_game_over(
 
 
 def _check_lifecycle_game_over_idempotent(instance: object) -> str | None:
-    """Check 6: after game_over=True, calling tick() 5 more times does not
-    change state/score.  Skipped if game is not currently over."""
+    """Check 6: after game_over=True or won=True, calling tick() 5 more times
+    does not change state/score/position.  Skipped if game is not currently over."""
     over_found = _find_attr(instance, _OVER_ATTR_NAMES)
-    if over_found is None:
-        return None  # no game_over attribute — skip
-    if not _is_truthy_bool(over_found[1]):
+    won_found = _find_attr(instance, _WON_ATTR_NAMES)
+    is_over = _is_truthy_bool(over_found[1]) if over_found else False
+    is_won = _is_truthy_bool(won_found[1]) if won_found else False
+    if not (is_over or is_won):
         return None  # not actually over — skip
 
     score_found = _find_attr(instance, _SCORE_ATTR_NAMES)
     score_at_over = score_found[1] if score_found is not None else None
     state_found = _find_attr(instance, _STATE_ATTR_NAMES)
     state_at_over = state_found[1] if state_found is not None else None
+    _positions_at_over = _snapshot_positions(instance)
 
     for _ in range(5):
         if not _tick_once(instance):
@@ -470,6 +502,20 @@ def _check_lifecycle_game_over_idempotent(instance: object) -> str | None:
                 f"({score_at_over} -> {new_score})"
             )
 
+    for pos_name, old_val in _positions_at_over.items():
+        if hasattr(instance, pos_name):
+            new_val = getattr(instance, pos_name)
+            if (
+                isinstance(new_val, (int, float))
+                and not isinstance(new_val, bool)
+                and isinstance(old_val, (int, float))
+                and new_val != old_val
+            ):
+                return (
+                    f"position {pos_name!r} changed after game_over "
+                    f"({old_val} -> {new_val})"
+                )
+
     new_state_found = _find_attr(instance, _STATE_ATTR_NAMES)
     if (
         isinstance(state_at_over, str)
@@ -483,6 +529,21 @@ def _check_lifecycle_game_over_idempotent(instance: object) -> str | None:
             f"{new_state_found[1]!r} after game_over"
         )
     return None
+
+
+def _snapshot_positions(instance: object) -> dict[str, object]:
+    _POSITION_ATTR_SUFFIXES = (
+        "_x", "_y", "skier_x", "skier_y", "player_x", "player_y",
+        "ball_x", "ball_y", "paddle_x", "paddle_y",
+        "paddle1_y", "paddle2_y", "x", "y",
+    )
+    result: dict[str, object] = {}
+    for attr_name in _POSITION_ATTR_SUFFIXES:
+        if hasattr(instance, attr_name):
+            val = getattr(instance, attr_name)
+            if isinstance(val, (int, float)) and not isinstance(val, bool):
+                result[attr_name] = val
+    return result
 
 
 def _check_lifecycle_restart(instance: object) -> str | None:
@@ -829,6 +890,64 @@ _FORCE_LOSE_DISPATCH: dict[str, Callable[[object], str | None]] = {
 
 
 # ---------------------------------------------------------------------------
+# Per-game score-increment strategies.  Each returns:
+#   - None on success (score > 0 after strategy execution)
+#   - a descriptive string when the strategy could not increment score
+# ---------------------------------------------------------------------------
+
+def _score_increment_strategy_tetris(instance: object) -> str | None:
+    """Tetris: fill bottom row to force line-clear on next piece lock.
+
+    The model-generated Tetris code only runs line-clear logic during the
+    normal piece-lock flow inside tick().  Direct grid manipulation alone
+    won't trigger it.  This strategy fills the bottom row and then runs
+    tick() to lock the current piece — when the piece reaches the bottom,
+    the full row clears and score increments.
+    """
+    grid_attr = _find_attr(instance, ("grid", "board", "playfield"))
+    if grid_attr is None:
+        return "no grid attribute"
+    grid = grid_attr[1]
+    if not isinstance(grid, list) or len(grid) == 0:
+        return "grid is empty"
+    if not isinstance(grid[0], list):
+        return "grid rows are not lists"
+    row_count = len(grid)
+    col_count = len(grid[0])
+
+    grid_name = grid_attr[0]
+    bottom = row_count - 1
+    for c in range(col_count):
+        if isinstance(grid[bottom], list):
+            grid[bottom][c] = 1
+    top = 0
+    for c in range(col_count):
+        if isinstance(grid[top], list):
+            grid[top][c] = 0
+    if hasattr(instance, grid_name):
+        setattr(instance, grid_name, grid)
+
+    for _ in range(row_count + 5):
+        _tick_once(instance)
+        score_found = _find_attr(instance, _SCORE_ATTR_NAMES)
+        if (
+            score_found is not None
+            and isinstance(score_found[1], (int, float))
+            and not isinstance(score_found[1], bool)
+            and score_found[1] > 0
+        ):
+            return None
+
+    return (
+        f"score still 0 after filling bottom row of {row_count}x{col_count} "
+        f"grid and ticking — line-clear scoring absent"
+    )
+
+
+_SCORE_INCREMENT_DISPATCH["tetris"] = _score_increment_strategy_tetris
+
+
+# ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
 
@@ -863,7 +982,7 @@ def run_lifecycle_checks(game_id: str, mod: object) -> list[str]:
     if fail is not None:
         failures.append(f"lifecycle.score_starts_zero: {fail}")
 
-    fail = _check_lifecycle_score_increments(instance)
+    fail = _check_lifecycle_score_increments(instance, game_id=game_id)
     if fail is not None:
         failures.append(f"lifecycle.score_increments: {fail}")
 

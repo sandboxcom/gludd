@@ -8,6 +8,7 @@ module-level HTTP client; the transport is injected for mocked tests.
 
 Normalized record keys: ts, source, kind, level_or_status, message, value,
 labels, raw.
+
 """
 
 from __future__ import annotations

@@ -1,0 +1,29 @@
+---
+galaxy_info:
+  role_name: forward_proxy
+  author: general_ludd
+  description: >-
+    Forward and transparent proxy configuration for Squid, tinyproxy, and privoxy.
+    Handles ACLs, authentication, caching, and SSL interception.
+  license: MIT
+  platforms:
+    - name: EL
+      versions:
+        - "8"
+        - "9"
+    - name: Ubuntu
+      versions:
+        - focal
+        - jammy
+        - noble
+    - name: Debian
+      versions:
+        - bullseye
+        - bookworm
+  galaxy_tags:
+    - web
+    - proxy
+    - squid
+    - forward_proxy
+    - security
+dependencies: []

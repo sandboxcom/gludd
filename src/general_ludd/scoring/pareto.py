@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import math
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from general_ludd.schemas.benchmark import TaskType
 
 
 class ParetoRouter:
@@ -14,6 +17,10 @@ class ParetoRouter:
     on both axes simultaneously. Routing by the frontier avoids picking
     dominated models — ones that are both more expensive AND lower quality
     than another available option.
+
+    Attributes:
+        cost_weight: Default cost weight for ``pick_winner`` (0-1).
+        quality_weight: Default quality weight for ``pick_winner`` (0-1).
     """
 
     def __init__(
@@ -86,7 +93,11 @@ class ParetoRouter:
         return [candidates[idx] for idx, _ in frontier]
 
     def pick_winner(
-        self, frontier: list[dict[str, Any]]
+        self,
+        frontier: list[dict[str, Any]],
+        *,
+        cost_weight: float | None = None,
+        quality_weight: float | None = None,
     ) -> dict[str, Any] | None:
         """Pick the best candidate from the Pareto frontier using composite score.
 
@@ -95,11 +106,26 @@ class ParetoRouter:
 
         Returns the candidate with the highest composite score, or ``None``
         if the frontier is empty.
+
+        Args:
+            frontier: Non-dominated candidates from ``route_by_pareto_frontier``.
+            cost_weight: Override the instance's cost weight for this call.
+            quality_weight: Override the instance's quality weight for this call.
+
+        If neither override is provided the instance defaults are used (0.5, 0.5
+        unless overridden at construction time).
         """
         if not frontier:
             return None
         if len(frontier) == 1:
             return frontier[0]
+
+        cw = cost_weight if cost_weight is not None else self._cost_weight
+        qw = (
+            quality_weight
+            if quality_weight is not None
+            else self._quality_weight
+        )
 
         costs = [float(c["cost"]) for c in frontier]
         qualities = [float(c["quality"]) for c in frontier]
@@ -121,11 +147,25 @@ class ParetoRouter:
             quality_norm = (
                 (quality - quality_min) / quality_range if quality_range > 0 else 0.0
             )
-            score = (
-                quality_norm * self._quality_weight
-                - cost_norm * self._cost_weight
-            )
+            score = quality_norm * qw - cost_norm * cw
             if score > best_score:
                 best_score = score
                 best = cand
         return best
+
+    def pick_winner_for_task(
+        self, frontier: list[dict[str, Any]], task_type: TaskType
+    ) -> dict[str, Any] | None:
+        """Pick the best candidate using per-task cost/quality weights.
+
+        Looks up ``RoleWeights`` for *task_type* and delegates to
+        ``pick_winner`` with those weights.  Different task categories need
+        different trade-offs — security fixes should never be skimped on cost,
+        documentation can be cheap.
+        """
+        from general_ludd.routing_roles.weights import weights_for
+
+        w = weights_for(task_type)
+        return self.pick_winner(
+            frontier, cost_weight=w.cost, quality_weight=w.quality
+        )

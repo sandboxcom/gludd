@@ -1,0 +1,111 @@
+---
+# associations.yml — Association mapping
+# Maps parent/subsidiary, board members, shareholders, partners,
+# and competitors.  Builds entity relationship graph.
+
+- name: Initialize association mapping
+  ansible.builtin.set_fact:
+    entity_associations:
+      entity_name: "{{ entity_name }}"
+      nodes: []
+      edges: []
+      hubs: []
+
+# ── SearX association search ──
+- name: SearX search for board members and executives
+  ansible.builtin.uri:
+    url: "{{ entity_data_sources.searx.base_url }}{{ entity_data_sources.searx.endpoints.search }}"
+    method: GET
+    body_format: json
+    headers:
+      Accept: "application/json"
+    timeout: 30
+  vars:
+    query: "{{ entity_name }} board of directors executives leadership"
+    categories: "general"
+    page: 1
+  register: searx_board_result
+  when: entity_research_use_searx | bool
+  ignore_errors: true
+
+- name: SearX search for investors and shareholders
+  ansible.builtin.uri:
+    url: "{{ entity_data_sources.searx.base_url }}{{ entity_data_sources.searx.endpoints.search }}"
+    method: GET
+    body_format: json
+    headers:
+      Accept: "application/json"
+    timeout: 30
+  vars:
+    query: "{{ entity_name }} investors shareholders funding rounds"
+    categories: "general"
+    page: 1
+  register: searx_investor_result
+  when: entity_research_use_searx | bool
+  ignore_errors: true
+
+- name: SearX search for competitors
+  ansible.builtin.uri:
+    url: "{{ entity_data_sources.searx.base_url }}{{ entity_data_sources.searx.endpoints.search }}"
+    method: GET
+    body_format: json
+    headers:
+      Accept: "application/json"
+    timeout: 30
+  vars:
+    query: "{{ entity_name }} competitors market share"
+    categories: "general"
+    page: 1
+  register: searx_competitor_result
+  when: entity_research_use_searx | bool
+  ignore_errors: true
+
+- name: SearX search for subsidiaries and parent company
+  ansible.builtin.uri:
+    url: "{{ entity_data_sources.searx.base_url }}{{ entity_data_sources.searx.endpoints.search }}"
+    method: GET
+    body_format: json
+    headers:
+      Accept: "application/json"
+    timeout: 30
+  vars:
+    query: "{{ entity_name }} parent company subsidiaries acquired"
+    categories: "general"
+    page: 1
+  register: searx_corporate_result
+  when: entity_research_use_searx | bool
+  ignore_errors: true
+
+# ── OpenCorporates officers ──
+- name: OpenCorporates officer search
+  ansible.builtin.uri:
+    url: "{{ entity_data_sources.opencorporates.base_url }}/officers/search"
+    method: GET
+    body_format: json
+    headers:
+      Authorization: "{{ opencorporates_api_token | ternary('Token token=' + opencorporates_api_token, '') }}"
+    timeout: 30
+  vars:
+    query_strings:
+      q: "{{ entity_name }}"
+  register: oc_officer_result
+  when: entity_research_use_opencorporates | bool
+  ignore_errors: true
+
+# ── Compile association edges ──
+- name: Register root entity node
+  ansible.builtin.set_fact:
+    entity_associations: "{{ entity_associations | combine({
+      'nodes': entity_associations.nodes + [{
+        'name': entity_name,
+        'type': 'root',
+        'jurisdiction': (entity_discovered.jurisdiction | default('')),
+        'industry': (entity_discovered.industry_classification.naics | default('')),
+      }]
+    }) }}"
+
+- name: Write association mapping artifact
+  ansible.builtin.copy:
+    content: "{{ entity_associations | to_nice_json }}"
+    dest: "{{ entity_research_artifact_dir }}/entity_associations.json"
+    mode: "0644"

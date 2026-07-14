@@ -1,0 +1,8 @@
+- hosts: localhost
+  gather_facts: false
+  roles:
+    - role: /Users/shawnwilson/gludd/collections/ansible_collections/general_ludd/agent/roles/log_analyzer
+      log_analyzer_glob: "/Users/shawnwilson/tmp/pytest-of-shawnwilson/pytest-6769/test_ingests_multiple_log_file0/logs/*.log"
+      log_analyzer_output_dir: "/Users/shawnwilson/tmp/pytest-of-shawnwilson/pytest-6769/test_ingests_multiple_log_file0/output"
+      log_analyzer_error_rate_threshold: 0.3
+      log_analyzer_min_cluster_size: 2

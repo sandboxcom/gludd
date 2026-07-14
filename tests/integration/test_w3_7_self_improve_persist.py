@@ -81,10 +81,9 @@ class TestSelfImprovePersistence:
         # The harness's in-memory enqueue must NOT be the persistence path.
         fake_harness.enqueue_todos.assert_not_called()
 
-    async def test_config_auto_queue_true_yields_queued(self, session_factory, monkeypatch):
-        """Opt-in: self_improve.auto_queue: true restores immediate QUEUED
-        admission (for deployments where self-modification without review is
-        acceptable), instead of the secure APPROVAL_REQUIRED default."""
+    async def test_config_auto_queue_config_value_is_ignored(self, session_factory, monkeypatch):
+        """C13: auto_queue removed. Setting self_improve.auto_queue: true in
+        config MUST be ignored — todos still land in APPROVAL_REQUIRED."""
         factory = session_factory
 
         fake_findings = [{"type": "missing_tests", "file": "y.py", "severity": "high",
@@ -114,7 +113,8 @@ class TestSelfImprovePersistence:
             repo = TodoRepository(session)
             rows = await repo.list_all()
             persisted = next(r for r in rows if r.title == "Add tests for y.py")
-            assert persisted.status == TodoStatus.QUEUED.value
+            assert persisted.status == TodoStatus.APPROVAL_REQUIRED.value
+            assert persisted.status != TodoStatus.QUEUED.value
 
     async def test_self_improve_stamps_tick_project_id(self, session_factory, monkeypatch):
         """W3.7/H2: a persisted self-improve todo must carry the tick's project_id

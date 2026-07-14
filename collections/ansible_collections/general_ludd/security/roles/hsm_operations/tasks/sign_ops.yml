@@ -1,0 +1,194 @@
+---
+# sign_ops.yml — HSM signing operations
+
+- name: Validate signing parameters
+  ansible.builtin.assert:
+    that:
+      - hsm_operations__pkcs11_module | length > 0
+      - hsm_operations__key_label | length > 0
+    fail_msg: >
+      hsm_operations__pkcs11_module and hsm_operations__key_label are required
+      for signing operations.
+
+# ── Sign a CSR using HSM key ──
+- name: Stat CSR file
+  ansible.builtin.stat:
+    path: "{{ hsm_operations__csr_path }}"
+  register: _hsm_sign_csr_stat
+  when: hsm_operations__mode == 'sign_csr'
+
+- name: Fail if CSR not found
+  ansible.builtin.fail:
+    msg: "CSR file not found: {{ hsm_operations__csr_path }}"
+  when:
+    - hsm_operations__mode == 'sign_csr'
+    - not _hsm_sign_csr_stat.stat.exists | default(false)
+
+- name: Build OpenSSL PKCS#11 engine config
+  ansible.builtin.tempfile:
+    state: file
+    suffix: ".cnf"
+  register: _hsm_openssl_cnf
+  when: hsm_operations__mode in ['sign_csr', 'self_sign']
+
+- name: Write OpenSSL PKCS#11 engine section
+  ansible.builtin.copy:
+    content: |
+      openssl_conf = openssl_init
+      [openssl_init]
+      engines = engine_section
+      [engine_section]
+      pkcs11 = pkcs11_section
+      [pkcs11_section]
+      engine_id = pkcs11
+      dynamic_path = {{ hsm_operations__engine_path | default('/opt/homebrew/lib/engines/libpkcs11.dylib') }}
+      MODULE_PATH = {{ hsm_operations__pkcs11_module }}
+      init = 0
+    dest: "{{ _hsm_openssl_cnf.path }}"
+    mode: "0600"
+  when:
+    - hsm_operations__mode in ['sign_csr', 'self_sign']
+    - _hsm_openssl_cnf is defined
+
+- name: Sign CSR with HSM key via OpenSSL PKCS#11 engine
+  ansible.builtin.command:
+    cmd: >-
+      openssl x509 -req
+      -engine pkcs11
+      -in "{{ hsm_operations__csr_path }}"
+      -CAkeyform engine
+      -CAkey "{{ hsm_operations__key_label }}"
+      -{{ hsm_operations__sign_hash }}
+      -out "{{ hsm_operations__cert_output }}"
+      -days {{ hsm_operations__cert_days | default(365) }}
+  environment:
+    OPENSSL_CONF: "{{ _hsm_openssl_cnf.path }}"
+  register: _hsm_sign_csr
+  changed_when: true
+  no_log: true
+  when:
+    - hsm_operations__mode == 'sign_csr'
+    - _hsm_openssl_cnf is defined
+    - not ansible_check_mode
+
+# ── Sign arbitrary data ──
+- name: Sign data with HSM key
+  ansible.builtin.command:
+    cmd: >-
+      pkcs11-tool --module "{{ hsm_operations__pkcs11_module }}"
+      --slot {{ hsm_operations__slot_id }}
+      --login --login-type {{ hsm_operations__user_type }}
+      --sign
+      --mechanism {{ hsm_operations__sign_mechanism | default('RSA-PKCS') }}
+      --label "{{ hsm_operations__key_label }}"
+      --input-file "{{ hsm_operations__data_to_sign }}"
+      --output-file "{{ hsm_operations__artifact_dir }}/signature.bin"
+  register: _hsm_sign_data
+  changed_when: true
+  no_log: true
+  when:
+    - hsm_operations__mode == 'sign_data'
+    - hsm_operations__data_to_sign | default('') | length > 0
+    - not ansible_check_mode
+
+# ── Verify signature ──
+- name: Verify signature using public key
+  ansible.builtin.command:
+    cmd: >-
+      pkcs11-tool --module "{{ hsm_operations__pkcs11_module }}"
+      --slot {{ hsm_operations__slot_id }}
+      --login --login-type {{ hsm_operations__user_type }}
+      --verify
+      --mechanism {{ hsm_operations__sign_mechanism | default('RSA-PKCS') }}
+      --label "{{ hsm_operations__key_label }}"
+      --input-file "{{ hsm_operations__data_signed }}"
+      --signature-file "{{ hsm_operations__artifact_dir }}/signature.bin"
+  register: _hsm_verify_sig
+  changed_when: false
+  no_log: true
+  when:
+    - hsm_operations__mode == 'verify_sig'
+    - hsm_operations__data_signed | default('') | length > 0
+    - not ansible_check_mode
+
+- name: Set verification result
+  ansible.builtin.set_fact:
+    _hsm_sig_valid: "{{ _hsm_verify_sig.rc == 0 }}"
+  when:
+    - hsm_operations__mode == 'verify_sig'
+    - _hsm_verify_sig is defined
+
+# ── Create self-signed certificate with HSM key ──
+- name: Build self-signed cert subject line
+  ansible.builtin.set_fact:
+    _hsm_subject: >-
+      /CN={{ hsm_operations__cert_cn | default('localhost') }}
+      {% if hsm_operations__cert_o | default('') | length > 0 %}/O={{ hsm_operations__cert_o }}{% endif %}
+      {% if hsm_operations__cert_ou | default('') | length > 0 %}/OU={{ hsm_operations__cert_ou }}{% endif %}
+  when: hsm_operations__mode == 'self_sign'
+
+- name: Create self-signed cert using HSM key
+  ansible.builtin.command:
+    cmd: >-
+      openssl req -new -x509
+      -engine pkcs11
+      -keyform engine
+      -key "{{ hsm_operations__key_label }}"
+      -{{ hsm_operations__sign_hash }}
+      -out "{{ hsm_operations__cert_output }}"
+      -days {{ hsm_operations__cert_days | default(365) }}
+      -subj "{{ _hsm_subject }}"
+  environment:
+    OPENSSL_CONF: "{{ _hsm_openssl_cnf.path }}"
+  register: _hsm_self_sign
+  changed_when: true
+  no_log: true
+  when:
+    - hsm_operations__mode == 'self_sign'
+    - _hsm_openssl_cnf is defined
+    - not ansible_check_mode
+
+# ── AI-assisted signing diagnostics ──
+- name: Request signing diagnostic analysis from model
+  general_ludd.agent.gludd_model_call:
+    daemon_url: "{{ hsm_operations__daemon_url }}"
+    psk: "{{ hsm_operations__psk }}"
+    prompt: >-
+      You are an HSM/PKI diagnostic expert. Analyze the signing operation
+      result. Mode: {{ hsm_operations__mode }}. Key label: {{ hsm_operations__key_label }}.
+      Sign mechanism: {{ hsm_operations__sign_mechanism | default('RSA-PKCS') }}.
+
+      {% if hsm_operations__mode == 'sign_csr' %}
+      CSR signing exit code: {{ _hsm_sign_csr.rc | default(-1) }}
+      Stderr (first 2000 chars): {{ _hsm_sign_csr.stderr | default('')[:2000] }}
+      {% elif hsm_operations__mode == 'verify_sig' %}
+      Signature valid: {{ _hsm_sig_valid | default('unknown') }}
+      Verify exit code: {{ _hsm_verify_sig.rc | default(-1) }}
+      {% endif %}
+
+      Diagnose any errors and provide corrective steps in 3 bullet points or fewer.
+    model_profile: "{{ hsm_operations__model_profile | default('') }}"
+  register: _hsm_sign_diag_result
+  no_log: "{{ hsm_operations__psk | length > 0 }}"
+  when:
+    - hsm_operations__enable_model_call | bool
+    - not ansible_check_mode
+
+# ── Write signing artifact ──
+- name: Write signing operations artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'hsm_operations',
+        'phase': 'sign_ops',
+        'mode': hsm_operations__mode,
+        'status': 'completed',
+        'key_label': hsm_operations__key_label,
+        'mechanism': hsm_operations__sign_mechanism | default('RSA-PKCS'),
+        'hash': hsm_operations__sign_hash,
+        'cert_output': hsm_operations__cert_output | default(''),
+        'signature_valid': _hsm_sig_valid | default(none),
+        'diagnostics': _hsm_sign_diag_result.answer | default('')
+      } | to_nice_json }}
+    dest: "{{ hsm_operations__artifact_dir }}/hsm_sign_ops.json"
+    mode: "0640"

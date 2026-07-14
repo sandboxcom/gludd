@@ -436,8 +436,20 @@ class TestEvidencePolicyGuardrail:
 
 
 class TestMakeTargetSmokeTests:
-    def test_make_qa_passes(self):
-        pytest.skip("make qa runs full test suite including this test (recursive timeout)")
+    def test_make_targets_referenced_in_makefile(self):
+        import re
+        import subprocess
+        result = subprocess.run(
+            ["make", "-qp"],
+            capture_output=True, text=True,
+            cwd=str(ROOT),
+        )
+        targets = set(re.findall(r"^(\S+):", result.stdout, re.MULTILINE))
+        essential = {"test", "lint", "typecheck", "gate", "qa"}
+        missing = essential - targets
+        assert not missing, (
+            f"Essential make targets missing from Makefile: {missing}"
+        )
 
 
 class TestGateStatusEnforcement:

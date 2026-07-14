@@ -1,0 +1,23 @@
+---
+galaxy_info:
+  role_name: html_css_core
+  author: Agentic Harness Agent
+  description: >
+    HTML5 validation, CSS syntax checking, responsive design audit, and semantic
+    structure analysis. Supports W3C validation, media query parsing for breakpoint
+    coverage, and ARIA landmark detection. Uses Python stdlib html.parser and regex
+    for CSS property checking.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies:
+  - role: node
+    src: {}
+    version: ""
+    when: "{{ validate_w3c | bool }}"

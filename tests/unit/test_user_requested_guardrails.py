@@ -272,21 +272,21 @@ class TestJobSpecAdversarial:
 
         from general_ludd.schemas.job import JobSpec
         with pytest.raises(ValidationError):
-            JobSpec(playbook="p.yml", queue="core", work_type="code")
+            JobSpec(**{"playbook": "p.yml", "queue": "core", "work_type": "code"})
 
     def test_missing_playbook_raises(self):
         from pydantic import ValidationError
 
         from general_ludd.schemas.job import JobSpec
         with pytest.raises(ValidationError):
-            JobSpec(job_id="j1", queue="core", work_type="code")
+            JobSpec(**{"job_id": "j1", "queue": "core", "work_type": "code"})
 
     def test_missing_queue_raises(self):
         from pydantic import ValidationError
 
         from general_ludd.schemas.job import JobSpec
         with pytest.raises(ValidationError):
-            JobSpec(job_id="j1", playbook="p.yml", work_type="code")
+            JobSpec(**{"job_id": "j1", "playbook": "p.yml", "work_type": "code"})
 
     def test_valid_jobspec_passes(self):
         from general_ludd.schemas.job import JobSpec
@@ -302,7 +302,7 @@ class TestTaskReturnAdversarial:
 
         from general_ludd.schemas.task_return import TaskReturn
         with pytest.raises(ValidationError):
-            TaskReturn(job_id="j1", playbook="p.yml", queue="core")
+            TaskReturn(**{"job_id": "j1", "playbook": "p.yml", "queue": "core"})
 
     def test_valid_task_return_passes(self):
         from general_ludd.schemas.task_return import TaskReturn
@@ -344,7 +344,7 @@ class TestQueueAdversarial:
 
         from general_ludd.schemas.queue import Queue
         with pytest.raises(ValidationError):
-            Queue()
+            Queue(**{})
 
     def test_valid_queue_passes(self):
         from general_ludd.schemas.queue import Queue
@@ -377,7 +377,7 @@ class TestTaskDecisionAdversarial:
     def test_invalid_decision_raises(self):
         from general_ludd.schemas.task_decision import TaskDecision
         with pytest.raises(ValueError):
-            TaskDecision(decision="maybe")
+            TaskDecision(**{"decision": "maybe"})
 
 
 class TestDaemonRequestModels:
@@ -388,35 +388,35 @@ class TestDaemonRequestModels:
 
         from general_ludd.daemon import AddModelRequest
         with pytest.raises(ValidationError):
-            AddModelRequest()
+            AddModelRequest(**{})
 
     def test_add_project_request_missing_fields(self):
         from pydantic import ValidationError
 
         from general_ludd.daemon import AddProjectRequest
         with pytest.raises(ValidationError):
-            AddProjectRequest()
+            AddProjectRequest(**{})
 
     def test_set_weight_request_missing_fields(self):
         from pydantic import ValidationError
 
         from general_ludd.daemon import SetWeightRequest
         with pytest.raises(ValidationError):
-            SetWeightRequest()
+            SetWeightRequest(**{})
 
     def test_register_hook_request_missing_fields(self):
         from pydantic import ValidationError
 
         from general_ludd.daemon import RegisterHookRequest
         with pytest.raises(ValidationError):
-            RegisterHookRequest()
+            RegisterHookRequest(**{})
 
     def test_log_level_request_invalid(self):
         from pydantic import ValidationError
 
         from general_ludd.daemon import LogLevelRequest
         with pytest.raises(ValidationError):
-            LogLevelRequest()
+            LogLevelRequest(**{})
 
 
 class TestGuardrailConfigAdversarial:

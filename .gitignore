@@ -3,6 +3,7 @@ __pycache__/
 *.pyo
 .venv/
 .gludd/
+_run_test_local_memory.py
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/

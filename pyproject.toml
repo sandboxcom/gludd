@@ -1,6 +1,6 @@
 [project]
 name = "general-ludd-agent"
-version = "0.1.0-beta.3"
+version = "0.1.0-beta.4"
 description = "General Ludd Agent — the black swan agentic coding system with Ansible runners and multi-model AI agents"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -32,8 +32,6 @@ dependencies = [
     "jsonschema>=4.21",
     "pyyaml>=6.0.2",
     "hvac>=2.3.0",
-    "langchain>=1.3.9",
-    "langchain-openai>=0.3.0",
     "requests>=2.32.0",
     "tree-sitter>=0.24.0",
     "tree-sitter-python>=0.23.0",
@@ -127,20 +125,22 @@ known-first-party = ["general_ludd"]
 [tool.mypy]
 python_version = "3.11"
 strict = true
+explicit_package_bases = true
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
-# Sandbox backends (security/sandboxes/*) — re-enabled 2026-07-10 (E3).
-# Previously excluded because of in-flight PermissionSpec/Capability API surface;
-# the schema has since landed.
-exclude = ["scripts/"]
+exclude = ["scripts/", "tests/unit/test_injection_patterns.py", "tests/unit/test_sql_injection_patterns.py", "tests/unit/test_ci_push_guard.py", "src/general_ludd/abtest/"]
 
 [[tool.mypy.overrides]]
 module = ["scripts", "scripts.*"]
 follow_imports = "skip"
 
 [[tool.mypy.overrides]]
-module = ["ansible.*", "hvac.*", "psycopg.*", "yaml.*", "tree_sitter.*", "tree_sitter_python.*", "huggingface_hub.*", "diskcache.*", "watchdog.*", "croniter.*", "jsonschema", "googleapiclient.*", "google.*", "azure.*", "ansible_runner"]
+module = ["ansible.*", "hvac.*", "psycopg.*", "yaml.*", "tree_sitter.*", "tree_sitter_python.*", "huggingface_hub.*", "diskcache.*", "watchdog.*", "croniter.*", "jsonschema", "googleapiclient.*", "google.*", "azure.*", "ansible_runner", "hcl2", "botocore.*", "lxml", "lxml.etree", "lxml.*", "multitasking_backlog_check", "gen_status_table", "classify_agent_error", "ext", "pyVim", "pyVim.*", "pyVmomi", "pyVmomi.*", "scapy", "scapy.*", "xmlsec", "openai", "openai.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["tests.fixtures", "tests.fixtures.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
@@ -159,11 +159,11 @@ disable_error_code = ["type-arg"]
 module = ["tests", "tests.*"]
 disallow_untyped_defs = false
 disallow_untyped_calls = false
-check_untyped_defs = false
+check_untyped_defs = true
 disallow_incomplete_defs = false
 warn_return_any = false
 warn_unused_ignores = false
-disable_error_code = ["attr-defined", "arg-type", "no-any-return", "return", "type-arg", "misc", "union-attr", "assignment", "method-assign", "var-annotated", "index", "operator", "call-overload", "truthy-function", "unused-ignore", "untyped-decorator", "type-var", "name-defined", "call-arg", "return-value", "no-redef", "comparison-overlap", "redundant-cast", "import-not-found", "func-returns-value", "list-item", "typeddict-unknown-key", "typeddict-item", "name-match"]
+disable_error_code = ["arg-type", "attr-defined", "type-arg", "index", "operator", "union-attr", "assignment", "comparison-overlap", "var-annotated", "misc", "name-defined", "has-type", "type-var", "call-overload", "return-value", "list-item", "untyped-decorator", "redundant-cast", "truthy-function", "no-redef", "name-match", "unused-ignore", "typeddict-unknown-key", "typeddict-item", "dict-item"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -185,7 +185,7 @@ source = ["general_ludd"]
 omit = ["tests/*"]
 
 [tool.coverage.report]
-fail_under = 70
+fail_under = 85
 show_missing = true
 exclude_lines = [
     "pragma: no cover",

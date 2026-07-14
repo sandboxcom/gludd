@@ -1,0 +1,232 @@
+---
+# code_audit.yml — scan source code for SQL injection patterns
+#
+# Scans Python, Go, and JavaScript files for SQL injection vulnerabilities:
+# string concatenation, f-strings, format(), %-formatting in SQL statements,
+# ORM raw SQL without parameterization, dynamic identifiers.
+# Uses grep with extended regex. Report-only.
+
+- name: Stat the scan target
+  ansible.builtin.stat:
+    path: "{{ scan_target }}"
+  register: _sql_target_stat
+
+- name: Fail if scan target does not exist
+  ansible.builtin.fail:
+    msg: "Scan target {{ scan_target }} does not exist"
+  when: not _sql_target_stat.stat.exists
+
+# ── Python: String concatenation in SQL ────────────────────────────────────
+
+- name: Scan Python — f-string SQL injection
+  ansible.builtin.command:
+    cmd: >-
+      grep -rPn --include="*.py"
+      "(execute|executemany|executescript|raw)\s*\(\s*f['\"]"
+      "{{ scan_target }}"
+  register: _sql_py_fstring
+  changed_when: false
+  failed_when: _sql_py_fstring.rc == 2
+
+- name: Scan Python — .format() SQL injection
+  ansible.builtin.command:
+    cmd: >-
+      grep -rPn --include="*.py"
+      "(execute|executemany|executescript|raw)\s*\(.+\.format\("
+      "{{ scan_target }}"
+  register: _sql_py_format
+  changed_when: false
+  failed_when: _sql_py_format.rc == 2
+
+- name: Scan Python — %-formatting SQL injection
+  ansible.builtin.command:
+    cmd: >-
+      grep -rPn --include="*.py"
+      "(execute|executemany|executescript|raw)\s*\(.+%\s*("
+      "{{ scan_target }}"
+  register: _sql_py_percent
+  changed_when: false
+  failed_when: _sql_py_percent.rc == 2
+
+- name: Scan Python — string concatenation in SQL
+  ansible.builtin.command:
+    cmd: >-
+      grep -rPn --include="*.py"
+      "(execute|executemany|executescript|raw)\s*\(.+\+\s*['\"]"
+      "{{ scan_target }}"
+  register: _sql_py_concat
+  changed_when: false
+  failed_when: _sql_py_concat.rc == 2
+
+- name: Scan Python — bare SQL keywords in execute
+  ansible.builtin.command:
+    cmd: >-
+      grep -rPin --include="*.py"
+      "\.execute\s*\(\s*['\"].*(SELECT|INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|TRUNCATE|UNION|EXEC)"
+      "{{ scan_target }}"
+  register: _sql_py_bare_sql
+  changed_when: false
+  failed_when: _sql_py_bare_sql.rc == 2
+
+# ── Python: ORM raw SQL without parameterization ───────────────────────────
+
+- name: Scan Python — Django raw query without parameters
+  ansible.builtin.command:
+    cmd: >-
+      grep -rPn --include="*.py"
+      "(\.raw\(|RawSQL\(|\.extra\(|connection\.cursor.*\.execute\(|\.cursor.*\.execute\()"
+      "{{ scan_target }}"
+  register: _sql_py_django_raw
+  changed_when: false
+  failed_when: _sql_py_django_raw.rc == 2
+
+- name: Scan Python — SQLAlchemy text() with string formatting
+  ansible.builtin.command:
+    cmd: >-
+      grep -rPn --include="*.py"
+      "text\s*\(\s*f['\"]|text\s*\(.+\.format\(|text\s*\(.+%\(|text\s*\(.+\+\s*"
+      "{{ scan_target }}"
+  register: _sql_py_sqlalchemy_text
+  changed_when: false
+  failed_when: _sql_py_sqlalchemy_text.rc == 2
+
+- name: Scan Python — Peewee raw SQL
+  ansible.builtin.command:
+    cmd: >-
+      grep -rPn --include="*.py"
+      "(\.raw\(|RawQuery\(|fn\..*\(.*SQL)"
+      "{{ scan_target }}"
+  register: _sql_py_peewee_raw
+  changed_when: false
+  failed_when: _sql_py_peewee_raw.rc == 2
+
+# ── Python: Dynamic identifiers (table/column/group-by names) ──────────────
+
+- name: Scan Python — dynamic table/column names
+  ansible.builtin.command:
+    cmd: >-
+      grep -rPn --include="*.py"
+      "(table_name|column_name|order_by|group_by|sort_by|sort_direction)\s*=\s*"
+      "{{ scan_target }}"
+  register: _sql_py_dynamic_ident
+  changed_when: false
+  failed_when: _sql_py_dynamic_ident.rc == 2
+
+# ── Go: string concatenation in database queries ───────────────────────────
+
+- name: Scan Go — fmt.Sprintf with SQL
+  ansible.builtin.command:
+    cmd: >-
+      grep -rPn --include="*.go"
+      "fmt\.Sprintf\s*\(.*(SELECT|INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|FROM|WHERE|JOIN)"
+      "{{ scan_target }}"
+  register: _sql_go_sprintf
+  changed_when: false
+  failed_when: _sql_go_sprintf.rc == 2
+
+- name: Scan Go — string concatenation with SQL
+  ansible.builtin.command:
+    cmd: >-
+      grep -rPn --include="*.go"
+      "(db\.Query|db\.Exec|db\.QueryRow)\s*\(.+\+\s*"
+      "{{ scan_target }}"
+  register: _sql_go_concat
+  changed_when: false
+  failed_when: _sql_go_concat.rc == 2
+
+- name: Scan Go — bare query string without placeholders
+  ansible.builtin.command:
+    cmd: >-
+      grep -rPn --include="*.go"
+      "(Query|Exec|QueryRow)\s*\(\s*['\"].*(SELECT|INSERT|UPDATE|DELETE)"
+      "{{ scan_target }}"
+  register: _sql_go_bare
+  changed_when: false
+  failed_when: _sql_go_bare.rc == 2
+
+# ── JavaScript: string concatenation in database queries ───────────────────
+
+- name: Scan JavaScript — template literal SQL injection
+  ansible.builtin.command:
+    cmd: >-
+      grep -rPn --include="*.js" --include="*.ts" --include="*.jsx" --include="*.tsx"
+      "(\.query|\.execute|\.raw|\.all|\.run)\s*\(\s*`[^`]*(SELECT|INSERT|UPDATE|DELETE|DROP|ALTER|CREATE)"
+      "{{ scan_target }}"
+  register: _sql_js_template
+  changed_when: false
+  failed_when: _sql_js_template.rc == 2
+
+- name: Scan JavaScript — string concatenation SQL
+  ansible.builtin.command:
+    cmd: >-
+      grep -rPn --include="*.js" --include="*.ts" --include="*.jsx" --include="*.tsx"
+      "(\.query|\.execute|\.raw|\.all|\.run)\s*\(.+\+\s*['\"]"
+      "{{ scan_target }}"
+  register: _sql_js_concat
+  changed_when: false
+  failed_when: _sql_js_concat.rc == 2
+
+- name: Scan JavaScript — string concatenation in SQL
+  ansible.builtin.command:
+    cmd: >-
+      grep -rPn --include="*.js" --include="*.ts" --include="*.jsx" --include="*.tsx"
+      "(\.query|\.execute|\.raw)\s*\(\s*['\"]"
+      "{{ scan_target }}"
+  register: _sql_js_bare
+  changed_when: false
+  failed_when: _sql_js_bare.rc == 2
+
+# ── Collate code findings ──────────────────────────────────────────────────
+
+- name: Collate code audit findings
+  ansible.builtin.set_fact:
+    _sql_code_findings: >-
+      {{
+        (
+          ([{'severity': 'critical', 'pattern': 'Python f-string SQL', 'rule': 'SQLI-PY-001', 'language': 'python',
+             'location': item, 'snippet': item, 'remediation': 'Use parameterized queries: cursor.execute("SELECT * FROM t WHERE id=?", (user_input,)) or SQLAlchemy ORM'}
+            for item in _sql_py_fstring.stdout_lines if _sql_py_fstring.rc == 0])
+          + ([{'severity': 'critical', 'pattern': 'Python .format() SQL', 'rule': 'SQLI-PY-002', 'language': 'python',
+               'location': item, 'snippet': item, 'remediation': 'Replace .format() with parameterized placeholders (?, :name, %s)'}
+              for item in _sql_py_format.stdout_lines if _sql_py_format.rc == 0])
+          + ([{'severity': 'critical', 'pattern': 'Python %-formatting SQL', 'rule': 'SQLI-PY-003', 'language': 'python',
+               'location': item, 'snippet': item, 'remediation': 'Replace %s / %(name)s with DB-API parameterized placeholders'}
+              for item in _sql_py_percent.stdout_lines if _sql_py_percent.rc == 0])
+          + ([{'severity': 'critical', 'pattern': 'Python string concat SQL', 'rule': 'SQLI-PY-004', 'language': 'python',
+               'location': item, 'snippet': item, 'remediation': 'Use parameterized queries instead of string concatenation'}
+              for item in _sql_py_concat.stdout_lines if _sql_py_concat.rc == 0])
+          + ([{'severity': 'high', 'pattern': 'Python bare SQL in execute', 'rule': 'SQLI-PY-005', 'language': 'python',
+               'location': item, 'snippet': item, 'remediation': 'Verify parameters are properly escaped. Prefer ORM or parameterized queries.'}
+              for item in _sql_py_bare_sql.stdout_lines if _sql_py_bare_sql.rc == 0])
+          + ([{'severity': 'high', 'pattern': 'Django raw query', 'rule': 'SQLI-PY-006', 'language': 'python',
+               'location': item, 'snippet': item, 'remediation': 'Use .raw() params argument or switch to ORM queryset methods'}
+              for item in _sql_py_django_raw.stdout_lines if _sql_py_django_raw.rc == 0])
+          + ([{'severity': 'high', 'pattern': 'SQLAlchemy text() + format', 'rule': 'SQLI-PY-007', 'language': 'python',
+               'location': item, 'snippet': item, 'remediation': 'Use text() with bound parameters: text("SELECT * FROM t WHERE id=:id").bindparams(id=user_input)'}
+              for item in _sql_py_sqlalchemy_text.stdout_lines if _sql_py_sqlalchemy_text.rc == 0])
+          + ([{'severity': 'medium', 'pattern': 'Peewee raw SQL', 'rule': 'SQLI-PY-008', 'language': 'python',
+               'location': item, 'snippet': item, 'remediation': 'Prefer Peewee ORM expressions; if raw SQL needed, use parameterized form'}
+              for item in _sql_py_peewee_raw.stdout_lines if _sql_py_peewee_raw.rc == 0])
+          + ([{'severity': 'medium', 'pattern': 'Dynamic SQL identifiers', 'rule': 'SQLI-PY-009', 'language': 'python',
+               'location': item, 'snippet': item, 'remediation': 'Validate table/column names against allowlist; never interpolate into SQL'}
+              for item in _sql_py_dynamic_ident.stdout_lines if _sql_py_dynamic_ident.rc == 0])
+          + ([{'severity': 'critical', 'pattern': 'Go fmt.Sprintf SQL', 'rule': 'SQLI-GO-001', 'language': 'go',
+               'location': item, 'snippet': item, 'remediation': 'Use db.Query("SELECT * FROM t WHERE id=?", userInput) with placeholders'}
+              for item in _sql_go_sprintf.stdout_lines if _sql_go_sprintf.rc == 0])
+          + ([{'severity': 'critical', 'pattern': 'Go string concat SQL', 'rule': 'SQLI-GO-002', 'language': 'go',
+               'location': item, 'snippet': item, 'remediation': 'Use parameterized queries: db.Query("SELECT * FROM t WHERE id=?", id)'}
+              for item in _sql_go_concat.stdout_lines if _sql_go_concat.rc == 0])
+          + ([{'severity': 'high', 'pattern': 'Go bare query string', 'rule': 'SQLI-GO-003', 'language': 'go',
+               'location': item, 'snippet': item, 'remediation': 'Verify query uses only constants; if user input is involved, use placeholders'}
+              for item in _sql_go_bare.stdout_lines if _sql_go_bare.rc == 0])
+          + ([{'severity': 'critical', 'pattern': 'JS/TS template literal SQL', 'rule': 'SQLI-JS-001', 'language': 'javascript',
+               'location': item, 'snippet': item, 'remediation': 'Use parameterized queries or prepared statements: db.query("SELECT * FROM t WHERE id=?", [userInput])'}
+              for item in _sql_js_template.stdout_lines if _sql_js_template.rc == 0])
+          + ([{'severity': 'critical', 'pattern': 'JS/TS string concat SQL', 'rule': 'SQLI-JS-002', 'language': 'javascript',
+               'location': item, 'snippet': item, 'remediation': 'Use parameterized queries instead of string concatenation'}
+              for item in _sql_js_concat.stdout_lines if _sql_js_concat.rc == 0])
+          + ([{'severity': 'high', 'pattern': 'JS/TS bare query string', 'rule': 'SQLI-JS-003', 'language': 'javascript',
+               'location': item, 'snippet': item, 'remediation': 'Review for user-controlled input in query string; use placeholders'}
+              for item in _sql_js_bare.stdout_lines if _sql_js_bare.rc == 0])
+        )
+      }}

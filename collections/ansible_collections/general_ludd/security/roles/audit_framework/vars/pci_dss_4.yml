@@ -1,0 +1,568 @@
+pci_dss_4:
+  category: PCI_DSS_4
+  version: "4.0"
+  description: >
+    Payment Card Industry Data Security Standard version 4.0. Establishes
+    technical and operational requirements for protecting cardholder data.
+  requirements:
+    - id: "1"
+      name: Install and Maintain Network Security Controls
+      description: >
+        Network security controls (NSCs) must be installed, configured,
+        and maintained to protect the CDE from untrusted networks.
+      severity: high
+      sub_requirements:
+        - id: "1.1"
+          name: Processes and Mechanisms for Network Security Controls
+          description: >
+            All network security control policies and procedures are
+            documented, kept current, in use, and known to all affected parties.
+          severity: high
+          requirements:
+            - Document network security control policies and operating procedures
+            - Assign ownership for NSCs
+            - Review policies annually
+        - id: "1.2"
+          name: Network Security Controls Configuration
+          description: >
+            Configuration standards for NSCs are defined, implemented,
+            and maintained.
+          severity: high
+          requirements:
+            - Maintain accurate network diagrams showing CDE boundaries
+            - Maintain current configuration standards for all NSCs
+            - Ensure NSCs deny all traffic by default
+            - Review NSC rule sets at least every 6 months
+            - Implement stateful inspection for network traffic
+            - Justify business need for all services/protocols/ports allowed
+        - id: "1.3"
+          name: Unauthorized Access to CDE on Wireless Networks
+          description: >
+            Unauthorized wireless access to CDE is prohibited.
+          severity: high
+          requirements:
+            - Restrict unauthorized wireless access to CDE
+            - Implement WPA2-Enterprise or WPA3 with AES encryption
+            - Change default wireless settings and credentials
+        - id: "1.4"
+          name: Network Connections Between Trusted and Untrusted Networks
+          description: >
+            Network connections between trusted and untrusted networks
+            are controlled.
+          severity: high
+          requirements:
+            - Implement DMZ to limit inbound/outbound traffic to only necessary
+            - Prohibit direct public access between internet and CDE
+            - Implement anti-spoofing measures for internal addresses
+            - Do not disclose private IPs to unauthorized parties
+        - id: "1.5"
+          name: Risks to CDE from Mobile/Computing Devices
+          description: >
+            Risks to the CDE from computing devices able to connect to both
+            untrusted networks and the CDE are managed.
+          severity: medium
+          requirements:
+            - Maintain security controls on all computing devices connecting to CDE
+            - Ensure anti-malware is installed and current on all devices
+
+    - id: "2"
+      name: Apply Secure Configurations to All System Components
+      description: >
+        System configurations must be hardened and securely managed across
+        all system components in the CDE.
+      severity: high
+      sub_requirements:
+        - id: "2.1"
+          name: Processes and Mechanisms for Security Configurations
+          description: >
+            Policies and procedures for applying secure configurations
+            are documented and in use.
+          severity: high
+          requirements:
+            - Document configuration management policies and procedures
+            - Assign ownership for configuration standards
+        - id: "2.2"
+          name: System Components Configured Securely
+          description: >
+            System components are configured and managed securely using
+            industry-accepted hardening standards.
+          severity: high
+          requirements:
+            - Apply CIS benchmarks or vendor hardening guidance
+            - Configure only one primary function per server
+            - Disable unnecessary services, protocols, daemons
+            - Remove unnecessary scripts, drivers, features, components
+            - Remove all default accounts and passwords
+            - Implement only necessary functionality per component
+        - id: "2.3"
+          name: Wireless Environments Securely Configured
+          description: >
+            Wireless environments are configured and managed securely.
+          severity: high
+          requirements:
+            - Change default encryption keys on wireless devices
+            - Change default SNMP community strings
+            - Change default passwords on access points
+            - Enable logging on wireless devices
+            - Change vendor default settings before deployment
+
+    - id: "3"
+      name: Protect Stored Account Data
+      description: >
+        Cardholder data stored must be protected using strong encryption,
+        access controls, and data retention policies.
+      severity: high
+      sub_requirements:
+        - id: "3.1"
+          name: Processes and Mechanisms for Protecting Stored Account Data
+          description: >
+            Policies and procedures for protecting stored account data
+            are documented and in use.
+          severity: high
+          requirements:
+            - Document data retention and disposal policies
+            - Define data retention and disposal schedules
+        - id: "3.2"
+          name: Storage of Sensitive Authentication Data
+          description: >
+            Sensitive authentication data must not be stored after authorization,
+            even if encrypted.
+          severity: high
+          requirements:
+            - Do not store full track data, CVV, or PIN after authorization
+            - Securely delete any SAD that may have been stored inadvertently
+        - id: "3.3"
+          name: PAN Display Restricted
+          description: >
+            PAN must be masked when displayed; only the first six and last
+            four digits are the maximum that can be displayed.
+          severity: high
+          requirements:
+            - Mask PAN when displayed
+            - Limit PAN display to personnel with legitimate need
+        - id: "3.4"
+          name: PAN Made Unreadable
+          description: >
+            PAN must be rendered unreadable anywhere it is stored using one-way
+            hashing, truncation, tokenization, or strong cryptography.
+          severity: high
+          requirements:
+            - Use one-way hashing with salt for stored PAN
+            - Use truncation, tokenization, or strong cryptography
+            - Implement key management processes
+        - id: "3.5"
+          name: Cryptographic Key Protection
+          description: >
+            Keys used to protect stored account data must be secured against
+            disclosure and misuse.
+          severity: high
+          requirements:
+            - Restrict access to cryptographic keys to fewest custodians
+            - Store keys securely in the fewest possible locations
+            - Store secret and private keys in encrypted form
+            - Maintain key custodians documentation
+        - id: "3.6"
+          name: Cryptographic Key Management Processes
+          description: >
+            Key management processes and procedures covering the entire key
+            lifecycle must be implemented.
+          severity: high
+          requirements:
+            - Generate strong cryptographic keys
+            - Securely distribute keys
+            - Securely store keys
+            - Implement key rotation policy
+            - Retire or replace known compromised keys
+            - Split knowledge and dual control for key management
+        - id: "3.7"
+          name: Data Retention Minimization
+          description: >
+            Cardholder data storage must be limited to that which is required
+            for legal, regulatory, or business purposes.
+          severity: medium
+          requirements:
+            - Identify and document data retention requirements
+            - Implement secure deletion processes no longer than quarterly
+            - Retain data only as long as necessary
+
+    - id: "4"
+      name: Protect Cardholder Data with Strong Cryptography During Transmission
+      description: >
+        Cardholder data must be protected when transmitted over open,
+        public networks using strong cryptography and security protocols.
+      severity: high
+      sub_requirements:
+        - id: "4.1"
+          name: Processes and Mechanisms for Encrypted Transmission
+          description: >
+            Policies and procedures for encrypted transmission of cardholder
+            data are documented and in use.
+          severity: high
+          requirements:
+            - Document encryption policies for data in transit
+            - Review cryptographic cipher suites and protocols annually
+        - id: "4.2"
+          name: PAN Secured During Transmission
+          description: >
+            PAN must be encrypted using strong cryptography during
+            transmission over open, public networks.
+          severity: high
+          requirements:
+            - Use TLS 1.2 or higher for all transmission of cardholder data
+            - Disable weak protocols: SSL, early TLS
+            - Use strong cipher suites and disable weak/insecure ones
+            - Enforce certificate validity and trust chain
+
+    - id: "5"
+      name: Protect All Systems and Networks from Malicious Software
+      description: >
+        Systems must be protected against malware and regularly updated
+        with anti-virus software and patches.
+      severity: high
+      sub_requirements:
+        - id: "5.1"
+          name: Processes and Mechanisms for Anti-Malware
+          description: >
+            Policies and procedures for protecting against malware are
+            documented and in use.
+          severity: high
+          requirements:
+            - Document anti-malware policies and operating procedures
+            - Review anti-malware policies annually
+        - id: "5.2"
+          name: Malicious Software Protection
+          description: >
+            All system components, especially those commonly affected by
+            malware, must have anti-malware protection.
+          severity: high
+          requirements:
+            - Deploy anti-malware on all systems commonly affected
+            - Ensure anti-malware cannot be disabled or altered by users
+            - Perform periodic scans at least weekly
+            - Enable automatic updates for anti-malware signatures
+            - Maintain audit logs of anti-malware activities
+        - id: "5.3"
+          name: Anti-Phishing Mechanisms
+          description: >
+            Anti-phishing mechanisms protect against phishing and
+            social engineering attacks.
+          severity: medium
+          requirements:
+            - Implement anti-phishing technologies for email and web
+            - Conduct regular security awareness training including phishing
+            - Implement DMARC, DKIM, and SPF for email
+
+    - id: "6"
+      name: Develop and Maintain Secure Systems and Software
+      description: >
+        Systems and software must be developed and maintained securely,
+        including timely application of security patches.
+      severity: high
+      sub_requirements:
+        - id: "6.1"
+          name: Processes and Mechanisms for Secure Systems and Software
+          description: >
+            Policies and procedures for developing and maintaining secure
+            systems and software are documented and in use.
+          severity: high
+          requirements:
+            - Document software development lifecycle policies
+            - Establish process for identifying and ranking vulnerabilities
+        - id: "6.2"
+          name: Bespoke and Custom Software Developed Securely
+          description: >
+            Bespoke and custom software must be developed securely.
+          severity: high
+          requirements:
+            - Train developers in secure coding techniques
+            - Review code for vulnerabilities before release
+            - Protect software from unauthorized modification
+            - Use secure development lifecycle methodology
+        - id: "6.3"
+          name: Security Vulnerabilities Identified and Addressed
+          description: >
+            Security vulnerabilities must be identified and addressed
+            promptly using a risk-based approach.
+          severity: high
+          requirements:
+            - Install applicable security patches within 30 days of release
+            - Apply critical patches within 14 days
+            - Maintain inventory of all system components and their patch status
+            - Identify and rank new vulnerabilities using industry sources
+
+    - id: "7"
+      name: Restrict Access to System Components and Cardholder Data by Business Need to Know
+      description: >
+        Access to system components and cardholder data must be restricted
+        to individuals whose job requires such access.
+      severity: high
+      sub_requirements:
+        - id: "7.1"
+          name: Processes and Mechanisms for Access Control
+          description: >
+            Policies and procedures for access control are documented
+            and in use.
+          severity: high
+          requirements:
+            - Document access control policies and procedures
+            - Define roles and responsibilities for access management
+        - id: "7.2"
+          name: Access to System Components and Data
+          description: >
+            Access to system components and data must be defined and assigned
+            based on job classification and function.
+          severity: high
+          requirements:
+            - Define access needs for each role
+            - Restrict access to privileged user IDs to least privilege
+            - Assign access based on individual personnel classification
+            - Require documented approval for all access requests
+            - Review user access at least every 6 months
+
+    - id: "8"
+      name: Identify Users and Authenticate Access to System Components
+      description: >
+        All users must be uniquely identified and authenticated before
+        gaining access to system components or cardholder data.
+      severity: high
+      sub_requirements:
+        - id: "8.1"
+          name: Processes and Mechanisms for User Identification
+          description: >
+            Policies and procedures for user identification and
+            authentication are documented and in use.
+          severity: high
+          requirements:
+            - Document user identification and authentication policies
+            - Assign unique IDs to all users
+        - id: "8.2"
+          name: User Identification and Related Accounts
+          description: >
+            User identification and related accounts must be properly
+            managed throughout the account lifecycle.
+          severity: high
+          requirements:
+            - Require unique user IDs for all users
+            - Control addition, deletion, and modification of user IDs
+            - Immediately revoke access for terminated users
+            - Remove or disable inactive accounts after 90 days
+            - Disable vendor remote access accounts when not in use
+        - id: "8.3"
+          name: Strong Authentication
+          description: >
+            Strong authentication must be used for users and administrators
+            accessing system components.
+          severity: high
+          requirements:
+            - Enforce MFA for all remote access to CDE
+            - Enforce MFA for all access to CDE for administrative purposes
+            - Require minimum password length of 12 characters (or 8 with MFA)
+            - Enforce password history of at least 4 previous passwords
+            - Enforce password changes at least every 90 days
+            - Lock out user accounts after not more than 10 failed attempts
+
+    - id: "9"
+      name: Restrict Physical Access to Cardholder Data
+      description: >
+        Physical access to systems and media containing cardholder data
+        must be controlled and monitored.
+      severity: high
+      sub_requirements:
+        - id: "9.1"
+          name: Processes and Mechanisms for Physical Access Controls
+          description: >
+            Policies and procedures for physical access controls are
+            documented and in use.
+          severity: high
+          requirements:
+            - Document physical security policies and procedures
+            - Review physical access controls annually
+        - id: "9.2"
+          name: Facility Entry Controls
+          description: >
+            Physical access to facilities where CDE is housed must be
+            controlled and monitored.
+          severity: high
+          requirements:
+            - Use video cameras or access control mechanisms at entry points
+            - Monitor physical access to the CDE
+            - Restrict physical access to network jacks in public areas
+            - Distinguish between onsite personnel and visitors
+        - id: "9.3"
+          name: Physical Access to Media
+          description: >
+            Physical access to any media containing cardholder data must
+            be strictly controlled.
+          severity: high
+          requirements:
+            - Store media in a secure location
+            - Control media distribution and maintain inventory
+            - Destroy media when no longer needed
+            - Maintain a media inventory log
+
+    - id: "10"
+      name: Log and Monitor All Access to System Components and Cardholder Data
+      description: >
+        Audit trails must be implemented to log access to system components
+        and cardholder data, and logs must be regularly reviewed.
+      severity: high
+      sub_requirements:
+        - id: "10.1"
+          name: Processes and Mechanisms for Logging and Monitoring
+          description: >
+            Policies and procedures for audit logging and monitoring are
+            documented and in use.
+          severity: high
+          requirements:
+            - Document logging and monitoring policies and procedures
+            - Review logging policies annually
+        - id: "10.2"
+          name: Audit Log Implementation
+          description: >
+            Audit logs must be implemented to support detection,
+            investigation, and response to anomalies.
+          severity: high
+          requirements:
+            - Log all user access to system components and cardholder data
+            - Log all actions taken by individuals with root/admin privileges
+            - Log access to all audit trails
+            - Log invalid access attempts
+            - Log creation, modification, deletion of system-level objects
+            - Record timestamp, user ID, event type, affected component
+        - id: "10.3"
+          name: Audit Log Protection
+          description: >
+            Audit log entries and audit log files must be protected
+            from tampering and unauthorized modification.
+          severity: high
+          requirements:
+            - Protect audit trails from unauthorized modification
+            - Back up audit trail files to a centralized log server
+            - Use file integrity monitoring on audit logs
+        - id: "10.4"
+          name: Audit Log Review
+          description: >
+            Audit logs must be reviewed to identify anomalies or
+            suspicious activity.
+          severity: high
+          requirements:
+            - Review security events daily
+            - Review logs of other system components periodically
+            - Follow up on exceptions and anomalies
+            - Retain audit logs for at least 12 months
+
+    - id: "11"
+      name: Test Security of Systems and Networks Regularly
+      description: >
+        Security systems and processes must be regularly tested to ensure
+        they are effective.
+      severity: high
+      sub_requirements:
+        - id: "11.1"
+          name: Processes and Mechanisms for Regular Security Testing
+          description: >
+            Policies and procedures for security testing are documented
+            and in use.
+          severity: high
+          requirements:
+            - Document testing policies and procedures
+            - Define scope and frequency of security testing
+        - id: "11.2"
+          name: Wireless Access Point Testing
+          description: >
+            Unauthorized wireless access points must be identified and
+            addressed quarterly.
+          severity: medium
+          requirements:
+            - Perform wireless analyzer scans quarterly
+            - Maintain inventory of authorized wireless access points
+            - Investigate and remediate unauthorized WAPs
+        - id: "11.3"
+          name: External and Internal Vulnerability Scans
+          description: >
+            Vulnerability scans must be performed regularly.
+          severity: high
+          requirements:
+            - Perform internal vulnerability scans quarterly
+            - Perform external vulnerability scans quarterly
+            - Perform scans after any significant network change
+            - Remediate high-risk vulnerabilities per risk ranking
+        - id: "11.4"
+          name: Penetration Testing
+          description: >
+            Penetration testing must be performed to validate
+            security controls.
+          severity: high
+          requirements:
+            - Perform external penetration testing annually
+            - Perform internal penetration testing annually
+            - Conduct segmentation testing every 6 months
+            - Correct exploitable vulnerabilities found during testing
+        - id: "11.5"
+          name: Intrusion Detection and Prevention
+          description: >
+            Detect and respond to network intrusions and unexpected
+            file changes.
+          severity: high
+          requirements:
+            - Deploy intrusion-detection/prevention systems at network perimeter
+            - Use file integrity monitoring on critical system files
+            - Generate alerts for suspicious events
+            - Compare FIM results at least weekly
+
+    - id: "12"
+      name: Support Information Security with Organizational Policies and Programs
+      description: >
+        A comprehensive information security policy must be maintained
+        and disseminated.
+      severity: medium
+      sub_requirements:
+        - id: "12.1"
+          name: Comprehensive Information Security Policy
+          description: >
+            A comprehensive information security policy that governs the
+            organization must be published and maintained.
+          severity: medium
+          requirements:
+            - Establish, publish, maintain, and disseminate security policy
+            - Review security policy at least annually
+            - Define information security roles and responsibilities
+        - id: "12.2"
+          name: Acceptable Use Policies
+          description: >
+            Acceptable use policies for end-user technologies must
+            be documented.
+          severity: medium
+          requirements:
+            - Define acceptable use for critical technologies
+            - Require user acknowledgment of acceptable use policies
+        - id: "12.3"
+          name: Security Awareness Training
+          description: >
+            A formal security awareness program must be implemented.
+          severity: medium
+          requirements:
+            - Deliver security awareness training at time of hire and annually
+            - Require personnel to acknowledge training
+            - Include phishing and social engineering in training
+        - id: "12.4"
+          name: Incident Response
+          description: >
+            An incident response plan must be maintained and tested.
+          severity: high
+          requirements:
+            - Establish and maintain incident response plan
+            - Test incident response plan annually
+            - Designate a 24x7 incident response capability
+            - Include PCI DSS scope in incident response plan
+        - id: "12.5"
+          name: Manage Third-Party Service Providers
+          description: >
+            Policies and procedures to manage service providers with
+            whom account data is shared must be maintained.
+          severity: high
+          requirements:
+            - Maintain list of all third-party service providers
+            - Maintain written agreements including security responsibilities
+            - Establish process for engaging service providers
+            - Monitor service provider PCI DSS compliance annually

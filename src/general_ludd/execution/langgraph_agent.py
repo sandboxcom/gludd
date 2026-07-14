@@ -3,13 +3,6 @@
 Wraps ``langgraph.prebuilt.create_react_agent`` + ``ToolNode`` so the daemon's
 event loop can dispatch autonomous tool-using agents through LangGraph's native
 agent runtime instead of the custom while-loop in ``tool_loop.py``.
-
-Follow-up items (not yet implemented):
-  - SLM context compaction between iterations (langgraph middleware/checkpointer hook)
-  - Tool auditor + situation store integration (wrap ToolNode.invoke or use a
-    custom pre-node hook)
-  - Per-tool timeout (langgraph ToolNode calls tools synchronously; timeout
-    would need a custom async tool wrapper or a graph interrupt)
 """
 
 from __future__ import annotations
@@ -18,8 +11,10 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING, Any
 
+from general_ludd.budget_guard_check import budget_pre_check
 from general_ludd.mcp.registry import MCPToolRegistry
 from general_ludd.mcp.transport import MCPTransportError
+from general_ludd.sandbox.enforcer import SandboxEnforcer, SandboxNotAvailableError
 from general_ludd.security.capability_lattice import check_dispatch
 
 if TYPE_CHECKING:
@@ -29,6 +24,7 @@ logger = logging.getLogger(__name__)
 
 MAX_TOOL_ITERATIONS = 10
 PER_TOOL_TIMEOUT_SECONDS = 30
+MAX_TOTAL_TOKENS_DEFAULT = 100_000
 
 
 class LangGraphAgentLoop:
@@ -53,6 +49,10 @@ class LangGraphAgentLoop:
         mcp_registry: MCPToolRegistry | None = None,
         role: str | None = None,
         tool_auditor: Any = None,
+        budget_guard: Any = None,
+        adversarial_detector: Any = None,
+        max_total_tokens: int | None = None,
+        sandbox_enforcer: SandboxEnforcer | None = None,
     ) -> None:
         self._gateway = model_gateway
         self._chat_model = chat_model
@@ -62,6 +62,10 @@ class LangGraphAgentLoop:
         self._auditor = tool_auditor
         self._role = role
         self._mcp_registry = mcp_registry
+        self._budget_guard = budget_guard
+        self._adversarial_detector = adversarial_detector
+        self._max_total_tokens = max_total_tokens or MAX_TOTAL_TOKENS_DEFAULT
+        self._sandbox_enforcer = sandbox_enforcer
         if mcp_registry is None and mcp_client is not None:
             self._mcp_registry = getattr(mcp_client, "_registry", None)
 
@@ -105,6 +109,18 @@ class LangGraphAgentLoop:
         if self._role is not None:
             check_dispatch(self._role, "mcp")
 
+        if self._budget_guard is not None:
+            denial = budget_pre_check(self._budget_guard)
+            if denial is not None:
+                logger.warning(
+                    "LangGraphAgentLoop budget denied for job %s: %s",
+                    job.job_id, denial,
+                )
+                raise RuntimeError(
+                    f"LangGraph agent loop budget exhausted for job "
+                    f"{job.job_id}: {denial}"
+                )
+
         langchain_tools = await self._build_langchain_tools()
         model = await self._resolve_chat_model(langchain_tools)
 
@@ -147,9 +163,46 @@ class LangGraphAgentLoop:
             raise
 
         output_messages = result.get("messages", [])
+
+        cumulative_tokens = 0
+        for msg in output_messages:
+            usage = getattr(msg, "usage_metadata", {}) or {}
+            input_tokens = int(usage.get("input_tokens", 0))
+            output_tokens = int(usage.get("output_tokens", 0))
+            cumulative_tokens += input_tokens + output_tokens
+        if cumulative_tokens > self._max_total_tokens:
+            logger.warning(
+                "LangGraphAgentLoop token limit exceeded for job %s: %d > %d",
+                job.job_id, cumulative_tokens, self._max_total_tokens,
+            )
+            raise RuntimeError(
+                f"LangGraph agent loop total tokens {cumulative_tokens} exceeded "
+                f"limit {self._max_total_tokens} for job {job.job_id}"
+            )
+
+        final_content = ""
         for msg in reversed(output_messages):
             if hasattr(msg, "content") and msg.content and getattr(msg, "type", "") == "ai":
-                return str(msg.content)
+                final_content = str(msg.content)
+                break
+
+        if self._adversarial_detector is not None and final_content:
+            scan_result = self._adversarial_detector.scan_text(
+                final_content, file_path=f"langgraph_agent:{job.job_id}"
+            )
+            if scan_result.blocked:
+                logger.warning(
+                    "LangGraphAgentLoop adversarial scan blocked output "
+                    "for job %s: %s",
+                    job.job_id, scan_result.summary,
+                )
+                raise RuntimeError(
+                    f"LangGraph agent loop output blocked by adversarial "
+                    f"scan for job {job.job_id}: {scan_result.summary}"
+                )
+
+        if final_content:
+            return final_content
 
         logger.warning(
             "LangGraph agent loop: no AI message with content found for job %s",
@@ -190,7 +243,12 @@ class LangGraphAgentLoop:
         return self._chat_model
 
     async def _build_langchain_tools(self) -> list[Any]:
-        """Convert MCP tools to LangChain tools with capability gates + timeouts."""
+        """Convert MCP tools to LangChain tools with capability gates + timeouts.
+
+        When a tool_auditor is configured, each tool invocation is gated
+        through ``auditor.audit()`` before execution, and
+        ``record_success()`` / ``record_error()`` is called after.
+        """
         if self._mcp_client is None:
             return []
 
@@ -206,23 +264,68 @@ class LangGraphAgentLoop:
 
             mcp_client = self._mcp_client
             timeout = self._per_tool_timeout
+            auditor = self._auditor
+            sandbox_enforcer = self._sandbox_enforcer
 
             async def _execute(
                 _name: str = tool_name,
                 _srv_id: str = server_id,
                 _client: Any = mcp_client,
                 _tmo: float = timeout,
+                _auditor: Any = auditor,
+                _sandbox: Any = sandbox_enforcer,
                 **kwargs: Any,
             ) -> str:
+                if _sandbox is not None:
+                    try:
+                        _sandbox.verify_ready()
+                    except SandboxNotAvailableError as exc:
+                        return (
+                            f"Tool error: sandbox not available — "
+                            f"refusing to execute {_name!r}: {exc}"
+                        )
+                    for _key, _val in kwargs.items():
+                        if isinstance(_val, str) and _key in (
+                            "path", "file", "file_path", "workdir", "output",
+                            "dir", "directory", "cwd", "out_path",
+                        ):
+                            try:
+                                _sandbox.confine_path(_val)
+                            except Exception as exc:
+                                return (
+                                    f"Tool error: path {_val!r} escapes sandbox "
+                                    f"for tool {_name!r}: {exc}"
+                                )
+                if _auditor is not None:
+                    verdict = _auditor.audit(
+                        _name, kwargs,
+                        task_context="langgraph_agent",
+                    )
+                    if verdict is not None and not verdict.allowed:
+                        return (
+                            f"Tool error: tool call blocked by auditor: "
+                            f"{verdict.classification}. "
+                            f"{verdict.reason} "
+                            f"Do not retry this call. Use a different approach."
+                        )
                 try:
                     result = await asyncio.wait_for(
                         _client.call_tool(_srv_id, _name, kwargs),
                         timeout=_tmo,
                     )
+                    if _auditor is not None:
+                        _auditor.record_success(_name, kwargs, result)
                     return str(result)
                 except TimeoutError:
+                    if _auditor is not None:
+                        _auditor.record_error(
+                            _name, kwargs,
+                            f"timeout after {_tmo}s",
+                        )
                     return f"Tool error: {_name!r} timed out after {_tmo}s"
                 except Exception as exc:
+                    if _auditor is not None:
+                        _auditor.record_error(_name, kwargs, str(exc))
                     return f"Tool error: {exc}"
 
             lc_tool = StructuredTool.from_function(

@@ -1,0 +1,61 @@
+---
+- name: Verify — merge succeeded
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    repo_path: "/tmp/gludd-molecule-merge-repo"
+    feature_branch: "molecule/feature-merge-test"
+
+  tasks:
+    - name: Load persisted merge result
+      ansible.builtin.slurp:
+        src: "/tmp/gludd-molecule-merge-result.json"
+      register: raw
+
+    - name: Parse merge result
+      ansible.builtin.set_fact:
+        merge_res: "{{ raw.content | b64decode | from_json }}"
+
+    - name: Assert merge result reports success
+      ansible.builtin.assert:
+        that:
+          - merge_res.success | bool
+          - merge_res.strategy == 'ff'
+          - merge_res.sha is defined
+          - merge_res.sha | length >= 7
+        fail_msg: "merge result indicates failure: {{ merge_res }}"
+        success_msg: "merge result: success=true, strategy=ff, SHA returned"
+
+    - name: Verify feature branch is merged into main
+      ansible.builtin.shell:
+        cmd: "git branch --merged main"
+        chdir: "{{ repo_path }}"
+      register: _merged_branches
+      changed_when: false
+
+    - name: Assert feature branch appears in merged branches
+      ansible.builtin.assert:
+        that:
+          - feature_branch in _merged_branches.stdout
+        fail_msg: "feature branch {{ feature_branch }} not merged into main"
+        success_msg: "feature branch {{ feature_branch }} is merged into main"
+
+    - name: Verify feature.txt exists on main
+      ansible.builtin.shell:
+        cmd: "git show main:feature.txt"
+        chdir: "{{ repo_path }}"
+      register: _feature_file
+      changed_when: false
+
+    - name: Assert feature file content is on main
+      ansible.builtin.assert:
+        that:
+          - "'feature work' in _feature_file.stdout"
+        fail_msg: "feature.txt not found on main branch"
+        success_msg: "feature.txt present on main with expected content"
+
+    - name: Clean up throwaway repo
+      ansible.builtin.file:
+        path: "{{ repo_path }}"
+        state: absent

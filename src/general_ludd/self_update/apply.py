@@ -37,7 +37,6 @@ from typing import Any
 
 from general_ludd.security.auth import verify_psk
 from general_ludd.security.capability_lattice import (
-    PROTECTED_PATH_SEGMENTS,
     CapabilityError,
     ProtectedPathError,
     check_self_modification,
@@ -45,28 +44,6 @@ from general_ludd.security.capability_lattice import (
 )
 from general_ludd.security.path_canonicalizer import is_denied_path
 from general_ludd.self_update.model import ApplyTier, ChangeKind, SelfUpdatePlan, SelfUpdateRequest
-
-#: Path substrings that are NEVER auto-applicable even WITH an approval token —
-#: the harness control surface. Mutating these would let a self-update disable
-#: the guards that constrain it, so they are hard-denied at this layer too
-#: (defence in depth on top of the capability lattice).
-_HARD_DENY_SUBSTRINGS: tuple[str, ...] = (
-    "/.opencode/",
-    "/.claude/",
-    "settings.json",
-    "settings.local.json",
-)
-
-#: Bare path SEGMENTS hard-denied regardless of a leading slash.  DERIVED from
-#: the canonical :data:`capability_lattice.PROTECTED_PATH_SEGMENTS` so the two
-#: deny-lists cannot drift: adding a harness control-surface segment to the
-#: lattice automatically hard-denies it here too.  The ``/.claude/`` /
-#: ``/.opencode/`` substrings above only match when a slash precedes the
-#: directory, so a workspace-RELATIVE target like ``.opencode/plugin/evil.ts``
-#: (``.opencode`` at position 0) would EVADE them; matching the canonical
-#: segments at ANY position closes that drift.  Additive only — never loosens
-#: the existing absolute-path coverage.
-_HARD_DENY_SEGMENTS: tuple[str, ...] = tuple(sorted(PROTECTED_PATH_SEGMENTS))
 
 
 class ApplyOutcome:

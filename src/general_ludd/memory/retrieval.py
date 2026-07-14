@@ -34,13 +34,14 @@ class MemoryRetriever:
         agent_id: str,
         query_text: str,
         task_type: str | None = None,
+        project_id: str | None = None,
         top_k: int = 10,
         min_score: float = 0.0,
     ) -> list[ScoredMemory]:
         from general_ludd.memory.episodic import EpisodicMemoryRecorder
 
         recorder = EpisodicMemoryRecorder(self._repo)
-        episodes = await recorder.list_episodes(agent_id, limit=500)
+        episodes = await recorder.list_episodes(agent_id, project_id=project_id, limit=500)
         results: list[ScoredMemory] = []
 
         query_lower = query_text.lower()

@@ -1,0 +1,24 @@
+---
+galaxy_info:
+  role_name: design_research
+  author: Agentic Harness Agent
+  description: >
+    Research and analyze design elements from websites. Fetches target URLs,
+    extracts CSS (stylesheets + inline), identifies design tokens (colors, fonts,
+    spacing), captures layout structure, and detects CSS frameworks. Uses Python
+    stdlib (urllib, re) for fetching and parsing; cssutils optional for structured
+    CSS parsing.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies:
+  - role: node
+    src: {}
+    version: ""
+    when: false

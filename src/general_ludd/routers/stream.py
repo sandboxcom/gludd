@@ -26,7 +26,12 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from general_ludd.stream import SUPPORTED_PROCESSOR_TOOLS, RoleCloner
+from general_ludd.stream import (
+    _SAFE_BINARY_RE,
+    SUPPORTED_PROCESSOR_TOOLS,
+    RoleCloner,
+    _parse_processor_args,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +57,13 @@ class StreamDispatchRequest(BaseModel):
     def _validate_role_name(cls, v: str) -> str:
         if not _ROLE_NAME_RE.match(v):
             raise ValueError("role must be a simple identifier ([A-Za-z0-9_-]+)")
+        return v
+
+    @field_validator("role")
+    @classmethod
+    def _validate_role_no_traversal(cls, v: str) -> str:
+        if "/" in v or "\\" in v or ".." in v:
+            raise ValueError("role must not contain path traversal characters")
         return v
 
 
@@ -123,6 +135,21 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                         f"{sorted(SUPPORTED_PROCESSOR_TOOLS)}"
                     ),
                 )
+            if tool in {"whisper.cpp", "ffmpeg"}:
+                binary = req.processor.get("binary", tool)
+                if not _SAFE_BINARY_RE.match(str(binary)):
+                    raise HTTPException(
+                        status_code=422,
+                        detail=(
+                            f"processor.binary {binary!r} contains unsafe characters; "
+                            f"expected [a-zA-Z0-9_./-]+"
+                        ),
+                    )
+                extra_args = req.processor.get("args", "")
+                try:
+                    _parse_processor_args(str(extra_args))
+                except ValueError as exc:
+                    raise HTTPException(status_code=422, detail=str(exc)) from exc
 
         task_id = f"STREAM-{uuid.uuid4().hex[:12].upper()}"
 

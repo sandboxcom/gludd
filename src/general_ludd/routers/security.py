@@ -584,6 +584,19 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                 status_code=409,
                 content={"error": f"escalation already {row['status']}"},
             )
+        human_reviewer = cast(str | None, req.get("human_reviewer"))
+        if not human_reviewer or human_reviewer == row["agent_id"]:
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "error": "self_approval_forbidden",
+                    "detail": (
+                        "Permission escalation requires a reviewer different from "
+                        "the requesting agent. Provide a human_reviewer that is "
+                        "not the agent_id."
+                    ),
+                },
+            )
         reason = cast(str, req.get("reason") or "approved")
         human_spec = _get_human_spec(app)
         agent_spec = _get_issuer_spec(app)
@@ -617,7 +630,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             )
         _get_audit_log(app).record_issue(token)
         row["status"] = "approved"
-        row["human_reviewer"] = req.get("human_reviewer")
+        row["human_reviewer"] = human_reviewer
         row["decided_at"] = datetime.now(UTC).isoformat()
         row["decided_reason"] = reason
         # Propagate to the linked HumanTodo (if any) so the human queue
@@ -626,7 +639,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             app,
             row,
             status="done",
-            resolver=cast(str, req.get("human_reviewer") or "system"),
+            resolver=human_reviewer,
             reason=reason,
         )
         return {
@@ -652,15 +665,28 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                 status_code=400,
                 content={"error": "reason is required to deny an escalation"},
             )
+        human_reviewer = cast(str | None, req.get("human_reviewer"))
+        if not human_reviewer or human_reviewer == row["agent_id"]:
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "error": "self_denial_forbidden",
+                    "detail": (
+                        "Permission escalation denial requires a reviewer different "
+                        "from the requesting agent. Provide a human_reviewer that is "
+                        "not the agent_id."
+                    ),
+                },
+            )
         row["status"] = "denied"
-        row["human_reviewer"] = req.get("human_reviewer")
+        row["human_reviewer"] = human_reviewer
         row["decided_at"] = datetime.now(UTC).isoformat()
         row["decided_reason"] = str(reason)
         await _resolve_human_todo_for_escalation(
             app,
             row,
             status="dismissed",
-            resolver=cast(str, req.get("human_reviewer") or "system"),
+            resolver=human_reviewer,
             reason=str(reason),
         )
         return {"id": esc_id, "status": "denied", "decided_reason": reason}

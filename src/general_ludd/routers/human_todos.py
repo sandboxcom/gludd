@@ -15,6 +15,7 @@ PSK-gated.
 
 from __future__ import annotations
 
+import contextlib
 import json as _json
 import logging
 from datetime import datetime
@@ -32,6 +33,7 @@ from general_ludd.db.repository import (
     InvalidTransitionError,
     TodoRepository,
 )
+from general_ludd.notifications.dispatcher import FALLBACK_NOTIFICATION_CONFIG, NotificationDispatcher
 from general_ludd.schemas.todo import TodoStatus
 
 logger = logging.getLogger(__name__)
@@ -89,6 +91,22 @@ class AddTagRequest(BaseModel):
 
 
 def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
+    dispatch_config: dict[str, object] = {}
+    for key in ("notification_config", "user_config"):
+        if key in _daemon_state:
+            cfg = _daemon_state[key]
+            if hasattr(cfg, "notifications"):
+                nc = cfg.notifications
+                dispatch_config = {
+                    "enabled": nc.enabled,
+                    "backends": nc.backends,
+                    "min_priority": nc.min_priority,
+                }
+                break
+    if not dispatch_config:
+        dispatch_config = dict(FALLBACK_NOTIFICATION_CONFIG)
+    notifier = NotificationDispatcher(dispatch_config)
+
     @app.post("/api/human-todos", status_code=201)
     async def api_create_human_todo(req: CreateHumanTodoRequest) -> dict[str, object]:
         if req.category not in HUMAN_TODO_CATEGORIES:
@@ -142,6 +160,8 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                             exc,
                         )
             await session.commit()
+            with contextlib.suppress(Exception):
+                notifier.dispatch(_human_todo_to_dict(row))
             return _human_todo_to_dict(row)
 
     @app.get("/api/human-todos")

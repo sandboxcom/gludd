@@ -1,0 +1,38 @@
+---
+# sql_injection role defaults — SQL injection attack, audit, and remediation
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Artifact output
+artifact_dir: "/tmp/gludd-sql-injection"
+
+# Scan target: file or directory to audit
+scan_target: "."
+scan_languages:
+  - python
+  - go
+  - javascript
+
+# Log audit
+web_log_path: ""
+db_log_path: ""
+
+# Remediation output format
+remediation_output: "markdown"
+
+# Attack simulation (report-only, never execute)
+simulate_attacks: false
+attack_target_url: ""
+attack_parameter: ""
+
+# Severity thresholds
+fail_on_critical: true
+fail_on_high: true
+
+# Report-only: never mutates, never auto-patches
+enable_auto_patch: false
+
+# Message handoff recipient
+handoff_recipient: ""

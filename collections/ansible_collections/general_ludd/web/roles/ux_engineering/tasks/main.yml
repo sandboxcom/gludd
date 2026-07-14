@@ -1,0 +1,79 @@
+---
+# ux_engineering role — Usability, accessibility, visual hierarchy, z-axis analysis
+#
+# Operations: audit | check
+
+- name: Validate inputs
+  ansible.builtin.assert:
+    that:
+      - ux_engineering_target_url_or_file | length > 0
+      - ux_engineering_accessibility_standard in ['wcag21_a', 'wcag21_aa', 'wcag22_aa', 'wcag22_aaa']
+    fail_msg: "ux_engineering: target_url_or_file and valid accessibility_standard required"
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir | default('/tmp/gludd-web/ux_engineering') }}"
+    state: directory
+    mode: "0755"
+
+- name: Execute ux_engineering Python script
+  ansible.builtin.script:
+    cmd: >-
+      {{ role_path }}/files/ux_engineering.py
+      --target "{{ ux_engineering_target_url_or_file }}"
+      --accessibility-standard "{{ ux_engineering_accessibility_standard }}"
+      {% if ux_engineering_check_z_index | bool %}--check-z-index{% endif %}
+      {% if ux_engineering_check_visual_hierarchy | bool %}--check-visual-hierarchy{% endif %}
+      {% if ux_engineering_usability_heuristics | bool %}--usability-heuristics{% endif %}
+      --output-dir "{{ ux_engineering_output_dir | default('/tmp/gludd-web/ux_engineering') }}"
+  register: _uxe_result
+  changed_when: _uxe_result.rc == 0
+  failed_when: false
+
+- name: Set result from script output
+  ansible.builtin.set_fact:
+    _uxe_status: "ok"
+    _uxe_output: "{{ _uxe_result.stdout | default('') }}"
+    _uxe_verdict: "audit_complete"
+  when:
+    - _uxe_result is defined
+    - _uxe_result.rc is defined
+    - _uxe_result.rc == 0
+
+- name: Set error from script failure
+  ansible.builtin.set_fact:
+    _uxe_status: "error"
+    _uxe_errors: "{{ _uxe_result.stderr | default('unknown error') }}"
+    _uxe_verdict: "audit_failed"
+  when:
+    - _uxe_result is defined
+    - _uxe_result.rc is defined
+    - _uxe_result.rc != 0
+
+- name: Write ux_engineering.json artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'ux_engineering',
+        'status': _uxe_status | default('error'),
+        'target': ux_engineering_target_url_or_file,
+        'accessibility_standard': ux_engineering_accessibility_standard,
+        'checks': {
+          'z_index': ux_engineering_check_z_index | default(false),
+          'visual_hierarchy': ux_engineering_check_visual_hierarchy | default(false),
+          'usability_heuristics': ux_engineering_usability_heuristics | default(false),
+        },
+        'verdict': _uxe_verdict | default('unknown'),
+        'output': _uxe_output | default(''),
+        'errors': _uxe_errors | default('')
+      } | to_nice_json }}
+    dest: "{{ artifact_dir | default('/tmp/gludd-web/ux_engineering') }}/ux_engineering.json"
+    mode: "0644"
+
+- name: Report ux_engineering completion
+  ansible.builtin.debug:
+    msg: >-
+      ux_engineering: status={{ _uxe_status | default('error') }}
+      target={{ ux_engineering_target_url_or_file }}
+      standard={{ ux_engineering_accessibility_standard }}
+      verdict={{ _uxe_verdict | default('unknown') }}

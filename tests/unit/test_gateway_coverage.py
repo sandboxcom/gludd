@@ -482,3 +482,125 @@ class TestCircuitGateRefusesOpenBreaker:
 
         with pytest.raises(CircuitBreakerOpenError):
             gw.call_model("gated-p", [{"role": "user", "content": "hi"}])
+
+
+# ---------------------------------------------------------------------------
+# C.6 hardening tests — kwargs stripping, default httpx timeout, URL redaction
+# ---------------------------------------------------------------------------
+
+
+class TestC6KwargsStripping:
+    def test_caller_base_url_is_stripped_and_warned(self) -> None:
+        profile = _profile("strip-p", model_name="m")
+        gw = ModelGateway(
+            profiles=[profile],
+            provider_registry=_mock_registry(),
+        )
+        with (
+            patch.object(gw, "_health_tracker", None),
+            patch("general_ludd.models.gateway.logger") as mock_logger,
+        ):
+            gw.call_model("strip-p", [{"role": "user", "content": "hi"}],
+                          base_url="https://evil.invalid/v1", api_key="sk-evil")
+
+        warning_texts = " ".join(
+            str(c.args[0]) for c in mock_logger.warning.call_args_list if c.args
+        )
+        assert "base_url" in warning_texts
+        assert "api_key" in warning_texts
+
+    def test_caller_base_url_stripped_from_call_with_fallback(self) -> None:
+        profile = _profile("strip-fb-p", model_name="m",
+                           fallback=["strip-fb-fb"])
+        fb = _profile("strip-fb-fb", model_name="m2")
+        gw = ModelGateway(
+            profiles=[profile, fb],
+            provider_registry=_mock_registry(),
+        )
+        resp = gw.call_model_with_fallback(
+            "strip-fb-p", [{"role": "user", "content": "hi"}],
+        )
+        assert resp is not None
+
+    def test_call_model_strips_base_url_from_kwargs(self) -> None:
+        profile = _profile("strip-cm-p", model_name="m")
+        gw = ModelGateway(
+            profiles=[profile],
+            provider_registry=_mock_registry(),
+        )
+        with patch.object(gw, "_health_tracker", None):
+            resp = gw.call_model("strip-cm-p", [{"role": "user", "content": "hi"}],
+                                  api_key="sk-malicious")
+        assert resp is not None
+
+
+class TestC6DefaultHttpxTimeout:
+    def test_default_httpx_timeout_injected(self) -> None:
+        profile = _profile("timeout-p", model_name="m")
+        gw = ModelGateway(
+            profiles=[profile],
+            provider_registry=_mock_registry(),
+        )
+        with patch.object(gw, "_health_tracker", None):
+            resp = gw.call_model("timeout-p", [{"role": "user", "content": "hi"}])
+        assert resp is not None
+
+    def test_caller_cannot_override_timeout(self) -> None:
+        profile = _profile("timeout-2-p", model_name="m")
+        gw = ModelGateway(
+            profiles=[profile],
+            provider_registry=_mock_registry(),
+        )
+        with patch.object(gw, "_health_tracker", None):
+            resp = gw.call_model("timeout-2-p", [{"role": "user", "content": "hi"}],
+                                  request_timeout=999.0)
+        assert resp is not None
+
+
+class TestC6UrlRedaction:
+    def test_resolved_url_redacted_from_provider_error(self) -> None:
+        resolved_url = "https://internal-proxy.corp/v1/chat"
+
+        class _UrlLeakingResolver:
+            def resolve(self, alias: str) -> str:
+                return resolved_url
+
+        class _UrlLeakingProvider:
+            def __init__(self, **init_kwargs: object) -> None:
+                pass
+            def invoke(self, messages: list[dict[str, str]]) -> object:
+                raise httpx.ConnectError(
+                    f"Connection refused to {resolved_url}"
+                )
+
+        profile = _profile("redact-p", model_name="m",
+                           api_base_alias="my_proxy")
+        gw = ModelGateway(
+            profiles=[profile],
+            provider_registry=_mock_registry(provider_cls=_UrlLeakingProvider),
+            secrets_manager=_UrlLeakingResolver(),
+        )
+        with (
+            patch.object(gw, "_health_tracker", None),
+            pytest.raises(httpx.ConnectError) as exc_info,
+        ):
+            gw.call_model("redact-p", [{"role": "user", "content": "hi"}])
+
+        assert resolved_url not in str(exc_info.value)
+        assert "[REDACTED_URL]" in str(exc_info.value)
+
+    def test_redact_url_helper_noop_on_empty(self) -> None:
+        from general_ludd.models.gateway import _redact_url_in_exception
+
+        exc = RuntimeError("no url here")
+        _redact_url_in_exception(exc, "")
+        assert str(exc) == "no url here"
+
+    def test_redact_url_helper_safe_on_non_string_args(self) -> None:
+        from general_ludd.models.gateway import _redact_url_in_exception
+
+        exc = Exception(42, "has https://x.invalid/v1 url")
+        _redact_url_in_exception(exc, "https://x.invalid/v1")
+        assert exc.args[0] == 42
+        assert "[REDACTED_URL]" in exc.args[1]
+        assert "https://x.invalid/v1" not in exc.args[1]

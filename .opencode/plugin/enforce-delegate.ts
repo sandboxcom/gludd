@@ -1,6 +1,9 @@
 import type { Plugin } from "@opencode-ai/plugin"
+import { execSync } from "node:child_process"
 import * as fs from "node:fs"
 import * as path from "node:path"
+import { isSubagent, reportAlive, isDisengaged, isDispatchTool, isReadTool } from "../lib/shared.ts"
+import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
 
 // enforce-delegate.ts — opencode-native port of the Claude orchestration hooks
 // that govern SUBAGENT DISPATCH and MAIN-THREAD DELEGATION discipline.
@@ -23,7 +26,7 @@ import * as path from "node:path"
 // CONFIG (mirrors the claude env var names so the same knobs work in opencode)
 // ============================================================================
 const FLOOR = parseInt(process.env.CLAUDE_AGENT_FLOOR || "10", 10)
-const TARGET = parseInt(process.env.CLAUDE_AGENT_TARGET || "14", 10)
+const TARGET = parseInt(process.env.CLAUDE_AGENT_TARGET || "6", 10)
 
 const MODEL_UTIL_STATE = process.env.GLUDD_MODEL_UTIL_STATE || "/tmp/gludd-model-util.json"
 const MODEL_UTIL_WINDOW = parseInt(process.env.GLUDD_MODEL_UTIL_WINDOW || "20", 10)
@@ -39,7 +42,7 @@ const FORCE_DELEGATE_STATE = process.env.GLUDD_FORCE_DELEGATE_STATE || "/tmp/glu
 
 // MAINTHREAD STREAK (2026-06-29 strengthening): consecutive main-thread mutating
 // tool calls with no intervening dispatch. After MAINTHREAD_THRESHOLD (default
-// 4) consecutive calls, the 5th is HARD-DENIED. Default ON; disable with
+// 2) consecutive calls, the 3rd is HARD-DENIED. Default ON; disable with
 // GLUDD_MAINTHREAD_STREAK_ENFORCE=0.
 //
 // P8 FIX (2026-07-09 — polarity trap): previously MAINTHREAD_STREAK_ENABLED was
@@ -57,7 +60,7 @@ const FORCE_DELEGATE_STATE = process.env.GLUDD_FORCE_DELEGATE_STATE || "/tmp/glu
 // caps cannot interfere.
 const MAINTHREAD_STREAK_ENABLED = (process.env.GLUDD_MAINTHREAD_STREAK_ENFORCE || "1") !== "0"
 const MAINTHREAD_STREAK_FILE = process.env.GLUDD_MAINTHREAD_STREAK_FILE || "/tmp/gludd-mainthread-streak.json"
-const MAINTHREAD_THRESHOLD = parseInt(process.env.GLUDD_MAINTHREAD_THRESHOLD || "4", 10)
+const MAINTHREAD_THRESHOLD = parseInt(process.env.GLUDD_MAINTHREAD_THRESHOLD || "2", 10)
 
 // READ-GRINDING detection (2026-07-09 — multitasking audit P1 fix).
 // Investigation tools (grep/glob/file-view) don't count toward the
@@ -98,6 +101,10 @@ let _probeFailCount = 0
 const PROBE_FAIL_THRESHOLD = parseInt(process.env.GLUDD_PROBE_FAIL_THRESHOLD || "3", 10)
 
 function countLiveAgents(): number | null {
+  if (process.env.GLUDD_LIVE_AGENTS_COUNT) {
+    const n = parseInt(process.env.GLUDD_LIVE_AGENTS_COUNT, 10)
+    if (!Number.isNaN(n)) return n
+  }
   const recordFailure = (reason: string): number | null => {
     _probeFailCount += 1
     if (_probeFailCount >= PROBE_FAIL_THRESHOLD) {
@@ -111,7 +118,6 @@ function countLiveAgents(): number | null {
     return null
   }
   try {
-    const { execSync } = require("node:child_process")
     const out = execSync(
       "python3 " + path.join(process.cwd(), "scripts", "agent_liveness.py") + " --count",
       {
@@ -287,7 +293,6 @@ function diskSnapshot(): { freeGb: number, venvCount: number } {
     }
   }
   try {
-    const { execSync } = require("node:child_process")
     const out = execSync(
       `python3 -c "import shutil, pathlib; st = shutil.disk_usage('${process.cwd()}'); ` +
       `wt = pathlib.Path('${process.cwd()}/.claude/worktrees'); ` +
@@ -400,12 +405,12 @@ function enforceForceDelegate(
 ): string | null {
   try {
     if (!FORCE_DELEGATE_ENABLED) return null
+    if (isDisengaged()) return null
 
     const command = ((args?.command as string) || "").trim()
     const filePath = ((args?.filePath as string) || "").trim()
 
-    const isAgentOrTask = tool === "task" || tool === "agent" || tool === "workflow"
-    if (isAgentOrTask) {
+    if (isDispatchTool(tool)) {
       saveForceDelegateState({ consecutive_targeted: 0, consecutive_denied: 0 })
       return null
     }
@@ -559,13 +564,17 @@ function writeStreak(n: number): void {
 // dispatch so time-based detection can distinguish a legitimate burst from
 // a grinding spree.
 // ---------------------------------------------------------------------------
+const READ_GRIND_STALE_MS = parseFloat(process.env.GLUDD_READ_GRIND_STALE_MS || "60000")
+
 function loadReadGrindState(): { count: number; lastDispatchTs: number } {
   try {
     const obj = JSON.parse(fs.readFileSync(READ_GRIND_FILE, "utf8"))
-    return {
-      count: typeof obj.count === "number" ? obj.count : 0,
-      lastDispatchTs: typeof obj.lastDispatchTs === "number" ? obj.lastDispatchTs : Date.now(),
+    const count = typeof obj.count === "number" ? obj.count : 0
+    const lastDispatchTs = typeof obj.lastDispatchTs === "number" ? obj.lastDispatchTs : Date.now()
+    if (count > 0 && (Date.now() - lastDispatchTs) > READ_GRIND_STALE_MS) {
+      return { count: 0, lastDispatchTs: Date.now() }
     }
+    return { count, lastDispatchTs }
   } catch {
     return { count: 0, lastDispatchTs: Date.now() }
   }
@@ -579,22 +588,15 @@ function saveReadGrindState(count: number, lastDispatchTs: number): void {
   } catch { /* fail open */ }
 }
 
-function isReadTool(tool: string): boolean {
-  return tool === "read" || tool === "grep" || tool === "glob"
-}
-
 function isMainthreadTool(tool: string): boolean {
   // Only mutation tools gated here — investigation tools tracked separately.
   return ["edit", "write", "bash"].includes(tool)
 }
 
-function isDelegateTool(tool: string): boolean {
-  return tool === "task" || tool === "workflow" || tool === "agent"
-}
-
 function mainthreadBudgetBefore(tool: string): string | null {
   try {
     if (!MAINTHREAD_STREAK_ENABLED) return null
+    if (isDisengaged()) return null
 
     // Read-grind check (separate from the edit-streak below): investigation
     // tools don't count toward the edit/write/bash streak, but they DO count
@@ -659,7 +661,7 @@ function mainthreadBudgetBefore(tool: string): string | null {
 
 function mainthreadBudgetAfter(tool: string): void {
   try {
-    if (isDelegateTool(tool)) {
+    if (isDispatchTool(tool)) {
       writeStreak(0)
       // Reset the read-grind counter + update dispatch timestamp.
       saveReadGrindState(0, Date.now())
@@ -674,17 +676,8 @@ function mainthreadBudgetAfter(tool: string): void {
 }
 
 // ============================================================================
-// PLUGIN
+// PLUGIN HELPERS
 // ============================================================================
-function _reportAlive(): void {
-  try {
-    const alive: Record<string, any> = {}
-    try { if (fs.existsSync("/tmp/gludd-plugin-alive.json")) { const d = JSON.parse(fs.readFileSync("/tmp/gludd-plugin-alive.json", "utf8")); if (typeof d === "object" && d !== null) Object.assign(alive, d) } } catch {}
-    alive["enforce-delegate"] = { last_seen: Date.now() }
-    fs.writeFileSync("/tmp/gludd-plugin-alive.json", JSON.stringify(alive), "utf8")
-  } catch {}
-}
-
 // Per-plugin heartbeat — runtime evidence that tool.execute.before ACTUALLY
 // fires. Fail-open. Distinct from the shared alive.json.
 function _writeHeartbeat(): void {
@@ -694,7 +687,46 @@ function _writeHeartbeat(): void {
   } catch { /* fail-open */ }
 }
 
-export default (async ({ }) => {
+// ============================================================================
+// DEFAULT IMPLEMENTATION (compiled-in fallback)
+// ============================================================================
+export const defaultImpl = {
+  "tool.execute.before": async (input, output) => {
+    // process.env.OPENCODE_SUBAGENT guard
+    if (isSubagent()) return
+    reportAlive("enforce-delegate")
+    _writeHeartbeat()
+    const tool = input.tool
+    const args = output?.args
+
+    // task/agent/workflow dispatch — model utilization + disk discipline
+    if (isDispatchTool(tool)) {
+      const modelMsg = enforceModelUtilization(args)
+      if (modelMsg) throw new Error(modelMsg)
+
+      const diskMsg = enforceDiskDiscipline(args)
+      if (diskMsg) throw new Error(diskMsg)
+    }
+
+    // all tools — force-delegate + mainthread budget
+    // (Each of these is FAIL-OPEN internally; they return null on any error.)
+    const forceMsg = enforceForceDelegate(tool, args)
+    if (forceMsg) throw new Error(forceMsg)
+
+    const budgetMsg = mainthreadBudgetBefore(tool)
+    if (budgetMsg) throw new Error(budgetMsg)
+  },
+
+  "tool.execute.after": async (input, _output) => {
+    // mainthread budget streak counter — never throws
+    mainthreadBudgetAfter(input.tool)
+  },
+}
+
+// ============================================================================
+// PROXY PLUGIN (hot-reload aware)
+// ============================================================================
+export default (({ }) => {
   // LOADED self-check: proves opencode invoked the factory (registered, not
   // merely present on disk). Appended to the shared log.
   try {
@@ -708,32 +740,16 @@ export default (async ({ }) => {
   } catch { /* fail-open */ }
   return {
     "tool.execute.before": async (input, output) => {
-      _reportAlive()
-      _writeHeartbeat()
-      const tool = input.tool
-      const args = output?.args
-
-      // task/agent/workflow dispatch — model utilization + disk discipline
-      if (tool === "task" || tool === "agent" || tool === "workflow") {
-        const modelMsg = enforceModelUtilization(args)
-        if (modelMsg) throw new Error(modelMsg)
-
-        const diskMsg = enforceDiskDiscipline(args)
-        if (diskMsg) throw new Error(diskMsg)
-      }
-
-      // all tools — force-delegate + mainthread budget
-      // (Each of these is FAIL-OPEN internally; they return null on any error.)
-      const forceMsg = enforceForceDelegate(tool, args)
-      if (forceMsg) throw new Error(forceMsg)
-
-      const budgetMsg = mainthreadBudgetBefore(tool)
-      if (budgetMsg) throw new Error(budgetMsg)
+      // process.env.OPENCODE_SUBAGENT guard
+      if (isSubagent()) return
+      const impl = loadHotModule("delegate", defaultImpl)
+      const fn = impl["tool.execute.before"]
+      return fn ? await fn(input, output) : undefined
     },
-
-    "tool.execute.after": async (input, _output) => {
-      // mainthread budget streak counter — never throws
-      mainthreadBudgetAfter(input.tool)
+    "tool.execute.after": async (input, output) => {
+      const impl = loadHotModule("delegate", defaultImpl)
+      const fn = impl["tool.execute.after"]
+      return fn ? await fn(input, output) : undefined
     },
   }
 }) satisfies Plugin

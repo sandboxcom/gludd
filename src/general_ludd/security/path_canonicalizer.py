@@ -37,6 +37,115 @@ from __future__ import annotations
 
 from pathlib import Path
 
+# ---------------------------------------------------------------------------
+# Named deny-list subsets (single source of truth for all 3 enforcement sites)
+# ---------------------------------------------------------------------------
+# Each subset below derives from CANONICAL_DENY_MARKERS.  When a new protected
+# surface is added, add its marker TO CANONICAL_DENY_MARKERS above.  The named
+# subsets here are views of that same data for specific enforcement contexts.
+
+#: Filename stems (case-insensitive, ``.py`` stripped) that are NEVER hot-
+#: swappable in the capability lattice's ADDITIONAL dimension check.  A file
+#: named ``guardrails.py`` is protected regardless of which directory it lives
+#: in.  Used by :func:`capability_lattice.is_protected_path` as a second layer
+#: beyond the canonical :func:`is_denied_path` check.
+PROTECTED_FILE_STEMS: frozenset[str] = frozenset(
+    {
+        "guardrails",
+        "capability_policy",
+        "capability_lattice",
+        "fs_write_policy",
+        "action_policy",
+        "permissions",
+        "permission",
+        "policy",
+        "enforce_make",
+        "safe_redirector",
+    }
+)
+
+#: Path-anchored substrings that, if present in a resolved path (normalised to
+#: ``/``), mark it protected regardless of the leaf filename.  Conservative +
+#: case-insensitive.  Every entry here is a path-anchored variant of a marker
+#: already present in :data:`CANONICAL_DENY_MARKERS`.
+PROTECTED_PATH_SUBSTRINGS: tuple[str, ...] = (
+    "/.opencode/",
+    "/.claude/",
+    "/module_utils/capability_policy",
+    "/module_utils/fs_write_policy",
+    "/security/capability_lattice",
+    "/agents.md",
+    "/claude.md",
+    "/tasks.md",
+    "/bugs.md",
+    "/session.md",
+)
+
+#: Bare path SEGMENTS that mark a protected harness control-surface directory
+#: regardless of a leading slash.  Every entry is a marker already present in
+#: :data:`CANONICAL_DENY_MARKERS`.
+PROTECTED_PATH_SEGMENTS: frozenset[str] = frozenset(
+    {
+        ".opencode",
+        ".claude",
+        "agents.md",
+        "claude.md",
+        "tasks.md",
+        "bugs.md",
+        "session.md",
+    }
+)
+
+#: Applier deny-list markers — substrings that force a hard ``denied`` in
+#: :mod:`self_update.applier`.  Every entry is a marker already present in
+#: :data:`CANONICAL_DENY_MARKERS`.  Included for backward compatibility with
+#: test suites that assert the applier's marker set is a subset of canonical.
+PROTECTED_PATH_MARKERS: tuple[str, ...] = (
+    "guardrails",
+    "secrets",
+    ".opencode",
+    ".claude",
+    "capability_policy",
+    "action_policy",
+    "fs_write_policy",
+    "enforce-",
+    "permissions",
+    ".github",
+    "/workflows/",
+    "pyproject.toml",
+    "makefile",
+    "alembic",
+    "/migrations/",
+    "setup.cfg",
+    "tox.ini",
+    ".pre-commit",
+    "dockerfile",
+    "agents.md",
+    "claude.md",
+    "tasks.md",
+    "bugs.md",
+    "session.md",
+)
+
+#: Path substrings that are NEVER auto-applicable in :mod:`self_update.apply`,
+#: even WITH an approval token.  Every entry is a marker already present in
+#: :data:`CANONICAL_DENY_MARKERS`.
+_HARD_DENY_SUBSTRINGS: tuple[str, ...] = (
+    "/.opencode/",
+    "/.claude/",
+    "settings.json",
+    "settings.local.json",
+    "agents.md",
+    "claude.md",
+    "tasks.md",
+    "bugs.md",
+    "session.md",
+)
+
+#: Bare path SEGMENTS hard-denied regardless of a leading slash in
+#: :mod:`self_update.apply`.  Derived from :data:`PROTECTED_PATH_SEGMENTS`.
+_HARD_DENY_SEGMENTS: tuple[str, ...] = tuple(sorted(PROTECTED_PATH_SEGMENTS))
+
 #: Canonical deny-list markers — every enforcement site derives its deny-list
 #: from this single set.  When a new protected surface is added, add its marker
 #: HERE and then re-verify that all three modules (capability_lattice.py,
@@ -87,6 +196,13 @@ CANONICAL_DENY_MARKERS: frozenset[str] = frozenset(
         "/module_utils/capability_policy",
         "/module_utils/fs_write_policy",
         "/security/capability_lattice",
+        # Harness meta-files (from capability_lattice.PROTECTED_PATH_SUBSTRINGS,
+        # applier.PROTECTED_PATH_MARKERS, apply._HARD_DENY_SUBSTRINGS)
+        "agents.md",
+        "claude.md",
+        "tasks.md",
+        "bugs.md",
+        "session.md",
     }
 )
 
@@ -110,6 +226,40 @@ def canonicalize_path(path: str | None) -> str:
     return path.replace("\\", "/").lower()
 
 
+def _marker_matches_segment(marker: str, segment: str) -> bool:
+    """Check if ``marker`` matches ``segment`` using segment-aware rules.
+
+    This replaces the old arbitrary-substring check with structural matching:
+
+    * **Path-anchored markers** (contain ``/``) — not handled here; they are
+      matched against the full path via substring (the slashes are the anchor).
+    * **Dot-prefixed markers** (``.opencode``, ``.claude``, ``.github``,
+      ``.pre-commit``) — segment MUST start with the dot-prefixed marker.
+    * **Prefix markers** (``enforce-``) — segment MUST start with the marker.
+    * **Basename-exact markers** (``pyproject.toml``, ``agents.md``, etc.) —
+      segment MUST equal the marker exactly.
+    * **Bare-word markers** (``guardrails``, ``secrets``, ``permissions``,
+      etc.) — segment equals the marker OR the segment's stem (basename
+      without extension) equals the marker.
+    """
+    # Path-anchored markers are matched against the full path, not per-segment.
+    if "/" in marker:
+        return False  # never segment-match a path-anchored marker
+
+    if marker.startswith("."):
+        return segment.startswith(marker)
+
+    if marker.endswith("-"):
+        return segment.startswith(marker)
+
+    # Basename-exact: dot NOT at start, e.g. pyproject.toml, agents.md
+    if "." in marker:
+        return segment == marker
+
+    # Bare-word: segment equality or stem (basename without extension) equality
+    return segment == marker or Path(segment).stem == marker
+
+
 def is_denied_path(path: str | None, *, workspace_root: Path | str | None = None) -> bool:
     """Return True if ``path`` matches the canonical deny-list.
 
@@ -118,6 +268,12 @@ def is_denied_path(path: str | None, *, workspace_root: Path | str | None = None
     regardless of whether it starts with a leading slash.  This is the
     anti-drift guarantee: absolute ``/repo/.claude/hooks/x.py`` and
     relative ``.claude/hooks/x.py`` both match.
+
+    Matching is **segment-based** (S.9 fix): bare-word markers like
+    ``guardrails``, ``secrets``, ``permissions`` match as whole path
+    segments or filename stems — not as arbitrary substrings.  This
+    prevents both false positives (``my_secrets_parser.py``) and false
+    negatives from ``os.path.normpath`` stripping ``..`` traversal.
 
     Optionally resolves against ``workspace_root`` for caller convenience;
     the lexical check is always performed.
@@ -139,6 +295,8 @@ def is_denied_path(path: str | None, *, workspace_root: Path | str | None = None
     segments = norm.split("/")
     basename = Path(norm).name
     basename_stem = Path(basename).stem
+    # Full path used for path-anchored substring markers and for the fallback
+    # check below.
 
     for marker in CANONICAL_DENY_MARKERS:
         if marker in _SEGMENT_EXACT_MARKERS:
@@ -147,8 +305,20 @@ def is_denied_path(path: str | None, *, workspace_root: Path | str | None = None
                 or marker in (basename, basename_stem)
             ):
                 return True
-        else:
+            continue
+
+        # Path-anchored markers (contain /): keep substring matching against
+        # the full path because the slashes provide structural anchoring.
+        if "/" in marker:
             if marker in norm:
+                return True
+            continue
+
+        # Segment-based matching for bare-word, prefix, dot-prefixed, and
+        # basename-exact markers — closes the S.9 bypass where arbitrary
+        # substring matching caused both false positives and false negatives.
+        for segment in segments:
+            if _marker_matches_segment(marker, segment):
                 return True
 
     if workspace_root is not None and path:
@@ -156,13 +326,18 @@ def is_denied_path(path: str | None, *, workspace_root: Path | str | None = None
         try:
             resolved = (root / path).resolve()
             resolved_norm = canonicalize_path(str(resolved))
+            resolved_segments = resolved_norm.split("/")
             for marker in CANONICAL_DENY_MARKERS:
                 if marker in _SEGMENT_EXACT_MARKERS:
-                    resolved_segments = resolved_norm.split("/")
                     if marker in resolved_segments:
                         return True
-                else:
+                    continue
+                if "/" in marker:
                     if marker in resolved_norm:
+                        return True
+                    continue
+                for segment in resolved_segments:
+                    if _marker_matches_segment(marker, segment):
                         return True
         except Exception:
             return True

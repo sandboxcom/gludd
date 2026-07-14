@@ -1,18 +1,16 @@
-"""W5.6 (AUTH blocker): worker /jobs/* endpoints require PSK auth.
+"""C20: worker /jobs/* endpoints require PSK auth (fail-closed by default).
 
 The daemon enforces a pre-shared-key (GLUDD_PSK) on all non-public paths
 (daemon.py auth_and_stats_middleware). The worker historically accepted any
 caller who could reach the port — anyone on the network could make it run
-arbitrary registered playbooks. This test pins the same PSK contract on the
-worker:
+arbitrary registered playbooks. This test pins the fail-closed PSK contract:
 
   - GLUDD_PSK set + no Authorization header  -> 401 (BEFORE any 501/200 logic)
   - GLUDD_PSK set + wrong token               -> 401
   - GLUDD_PSK set + correct Bearer token      -> endpoint's normal behavior
-  - GLUDD_PSK unset                           -> no auth enforced (back-compat)
+  - GLUDD_PSK unset (fail-closed)             -> 403 (C20: fail-closed by default)
+  - GLUDD_PSK unset + GLUDD_PSK_DISABLE=1     -> pass-through (back-compat escape)
   - /healthz is always public
-
-TDD: written before the middleware exists.
 """
 from __future__ import annotations
 
@@ -115,18 +113,39 @@ class TestWorkerAuth:
             resp = client.get("/healthz")
         assert resp.status_code == 200
 
-    def test_no_psk_set_means_no_auth(self):
-        """Back-compat: when GLUDD_PSK is unset, existing callers still work."""
+    def test_no_psk_set_fail_closed_403(self):
+        """C20: when GLUDD_PSK is unset, fail-closed with 403 (not fail-open)."""
         import os
 
         env = dict(os.environ)
         env.pop("GLUDD_PSK", None)
+        env.pop("GLUDD_PSK_DISABLE", None)
+        env.pop("GLUDD_ALLOW_NO_AUTH", None)
         with patch.dict("os.environ", env, clear=True):
             app = create_app(gateway=None)
             client = TestClient(app)
-            # validate still returns its 501 (no auth gate), not 401
             resp = client.post("/jobs/validate", json=_EXEC_PAYLOAD)
-        assert resp.status_code == 501
+        assert resp.status_code == 403, (
+            f"unauthenticated /jobs/validate with no PSK returned {resp.status_code}, "
+            "expected 403 (C20: fail-closed by default)"
+        )
+
+    def test_psk_disable_allows_pass_through(self):
+        """C20: GLUDD_PSK_DISABLE=1 is the back-compat escape, allows pass-through."""
+        import os
+
+        env = dict(os.environ)
+        env.pop("GLUDD_PSK", None)
+        env.pop("GLUDD_ALLOW_NO_AUTH", None)
+        env["GLUDD_PSK_DISABLE"] = "1"
+        with patch.dict("os.environ", env, clear=True):
+            app = create_app(gateway=None)
+            client = TestClient(app)
+            resp = client.post("/jobs/validate", json=_EXEC_PAYLOAD)
+        assert resp.status_code == 501, (
+            f"disabled auth /jobs/validate returned {resp.status_code}, "
+            "expected 501 (pass-through when auth disabled)"
+        )
 
     def test_docs_prefix_collision_is_not_public(self):
         """SECURITY: ``/docs_evil`` must NOT inherit public status from ``/docs``.

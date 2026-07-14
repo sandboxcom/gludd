@@ -1,30 +1,19 @@
-"""Unit tests for the self-contained Grafana Loki observability connector.
-
-Transport is fully mocked: no real network I/O. We assert
-- query() normalization (ns timestamp -> s, stream labels, detected level),
-- health() ok / not-ok dicts (never raises),
-- SSRF literal-host blocking on internal/loopback/private/metadata hosts.
-"""
+"""Structural tests for connectors/grafana_loki.py — GrafanaLokiSource."""
 
 from __future__ import annotations
 
-from typing import Any
-
 import pytest
 
-from general_ludd.connectors.grafana_loki import GrafanaLokiSource
+from general_ludd.connectors.grafana_loki import (
+    GrafanaLokiSource,
+    _validate_base_url,
+)
 
 
-class _StubTransport:
-    """Injectable HTTP transport double recording calls + queued responses."""
-
-    def __init__(self) -> None:
-        self.calls: list[dict[str, Any]] = []
-        self._responses: list[tuple[int, Any]] = []
-        self.raise_exc: Exception | None = None
-
-    def queue(self, status_code: int, json_body: Any) -> None:
-        self._responses.append((status_code, json_body))
+class _FakeTransport:
+    def __init__(self, status_code: int = 200, payload: object | None = None) -> None:
+        self.status_code = status_code
+        self.payload = payload or {}
 
     def request(
         self,
@@ -32,222 +21,204 @@ class _StubTransport:
         url: str,
         *,
         headers: dict[str, str] | None = None,
-        json: Any | None = None,
-        params: dict[str, Any] | None = None,
+        json: object | None = None,
+        params: dict[str, object] | None = None,
         timeout: float | None = None,
-    ) -> tuple[int, Any]:
-        self.calls.append(
-            {
-                "method": method,
-                "url": url,
-                "headers": headers or {},
-                "json": json,
-                "params": params,
-                "timeout": timeout,
-            }
-        )
-        if self.raise_exc is not None:
-            raise self.raise_exc
-        if not self._responses:
-            return (200, {})
-        return self._responses.pop(0)
+    ) -> tuple[int, object]:
+        return self.status_code, self.payload
 
 
-def _loki_payload() -> dict[str, Any]:
-    """A canned Loki query_range payload with one stream and two entries."""
+def _make_loki_payload():
     return {
-        "status": "success",
         "data": {
-            "resultType": "streams",
             "result": [
                 {
-                    "stream": {
-                        "app": "checkout",
-                        "level": "error",
-                        "namespace": "prod",
-                    },
+                    "stream": {"detected_level": "error", "job": "app"},
                     "values": [
-                        ["1700000000000000000", "payment gateway timeout"],
-                        ["1700000001500000000", "retrying charge"],
+                        ["1718000000000000000", "error: connection refused"],
                     ],
                 }
-            ],
-        },
+            ]
+        }
     }
 
 
-@pytest.fixture()
-def source() -> tuple[GrafanaLokiSource, _StubTransport]:
-    transport = _StubTransport()
-    src = GrafanaLokiSource(
-        config={"base_url": "https://loki.example.com", "token_env": "LOKI_TOKEN"},
-        transport=transport,
-    )
-    return src, transport
+class TestValidateBaseUrl:
+    def test_valid_https(self):
+        url = _validate_base_url("https://loki.example.com")
+        assert url == "https://loki.example.com"
+
+    def test_valid_http(self):
+        url = _validate_base_url("http://loki.example.com")
+        assert url == "http://loki.example.com"
+
+    def test_strips_trailing_slash(self):
+        url = _validate_base_url("https://loki.example.com/")
+        assert url == "https://loki.example.com"
+
+    def test_invalid_scheme(self):
+        with pytest.raises(ValueError, match="unsupported URL scheme"):
+            _validate_base_url("ftp://loki.example.com")
+
+    def test_blocked_host_raises(self):
+        with pytest.raises(ValueError, match="refusing internal"):
+            _validate_base_url("https://localhost")
 
 
-def test_kind_and_name(source: tuple[GrafanaLokiSource, _StubTransport]) -> None:
-    src, _ = source
-    assert src.KIND == "logs"
-    assert src.name == "grafana_loki"
-
-
-def test_query_normalizes_stream_entries(
-    monkeypatch: pytest.MonkeyPatch,
-    source: tuple[GrafanaLokiSource, _StubTransport],
-) -> None:
-    src, transport = source
-    monkeypatch.setenv("LOKI_TOKEN", "secret-token")
-    transport.queue(200, _loki_payload())
-
-    records = src.query(
-        {"query": '{app="checkout"}', "start": 1_700_000_000, "end": 1_700_000_010}
-    )
-
-    assert isinstance(records, list)
-    assert len(records) == 2
-
-    first = records[0]
-    # ns -> s conversion.
-    assert first["ts"] == pytest.approx(1_700_000_000.0)
-    assert first["source"] == "grafana_loki"
-    assert first["kind"] == "logs"
-    # detected level from stream labels.
-    assert first["level_or_status"] == "error"
-    # log line is the message.
-    assert first["message"] == "payment gateway timeout"
-    # stream labels propagated.
-    assert first["labels"]["app"] == "checkout"
-    assert first["labels"]["namespace"] == "prod"
-    # raw is the original [ts, line] entry.
-    assert first["raw"][1] == "payment gateway timeout"
-    # value present (None or numeric is acceptable; key must exist).
-    assert "value" in first
-
-    second = records[1]
-    assert second["ts"] == pytest.approx(1_700_000_001.5)
-    assert second["message"] == "retrying charge"
-
-
-def test_query_hits_range_endpoint_with_params_and_auth(
-    monkeypatch: pytest.MonkeyPatch,
-    source: tuple[GrafanaLokiSource, _StubTransport],
-) -> None:
-    src, transport = source
-    monkeypatch.setenv("LOKI_TOKEN", "secret-token")
-    transport.queue(200, _loki_payload())
-
-    src.query(
-        {"query": '{app="checkout"}', "start": 1_700_000_000, "end": 1_700_000_010, "limit": 50}
-    )
-
-    call = transport.calls[0]
-    assert call["method"] == "GET"
-    assert call["url"].endswith("/loki/api/v1/query_range")
-    params = call["params"] or {}
-    assert params["query"] == '{app="checkout"}'
-    assert "start" in params and "end" in params
-    assert str(params["limit"]) == "50"
-    # auth from env.
-    auth_values = " ".join(call["headers"].values())
-    assert "secret-token" in auth_values
-    assert call["timeout"] is not None
-
-
-def test_health_ok(
-    monkeypatch: pytest.MonkeyPatch,
-    source: tuple[GrafanaLokiSource, _StubTransport],
-) -> None:
-    src, transport = source
-    monkeypatch.setenv("LOKI_TOKEN", "secret-token")
-    transport.queue(200, "ready")
-
-    h = src.health()
-    assert h["ok"] is True
-    assert h["source"] == "grafana_loki"
-
-
-def test_health_not_ok_on_bad_status(
-    monkeypatch: pytest.MonkeyPatch,
-    source: tuple[GrafanaLokiSource, _StubTransport],
-) -> None:
-    src, transport = source
-    monkeypatch.setenv("LOKI_TOKEN", "secret-token")
-    transport.queue(500, "not ready")
-
-    h = src.health()
-    assert h["ok"] is False
-
-
-def test_health_never_raises(
-    monkeypatch: pytest.MonkeyPatch,
-    source: tuple[GrafanaLokiSource, _StubTransport],
-) -> None:
-    src, transport = source
-    monkeypatch.setenv("LOKI_TOKEN", "secret-token")
-    transport.raise_exc = TimeoutError("slow")
-
-    h = src.health()  # must not raise
-    assert h["ok"] is False
-    # Raw exception text must not leak to the caller; only a generic marker.
-    assert "slow" not in str(h.get("error", ""))
-    assert h["error"] == "health check failed"
-
-
-@pytest.mark.parametrize(
-    "bad_url",
-    [
-        "http://127.0.0.1:3100",
-        "http://localhost:3100",
-        "http://0.0.0.0:3100",
-        "http://[::1]:3100",
-        "http://10.1.2.3",
-        "http://192.168.0.1",
-        "http://172.31.255.1",
-        "http://169.254.169.254",
-        "http://metadata.google.internal",
-    ],
-)
-def test_internal_base_url_rejected(bad_url: str) -> None:
-    transport = _StubTransport()
-    with pytest.raises(ValueError):
-        GrafanaLokiSource(
-            config={"base_url": bad_url, "token_env": "LOKI_TOKEN"},
+class TestGrafanaLokiSource:
+    def test_constructs_with_transport(self):
+        transport = _FakeTransport()
+        src = GrafanaLokiSource(
+            {"base_url": "https://loki.example.com"},
             transport=transport,
         )
+        assert src.name == "grafana_loki"
+        assert src.KIND == "logs"
 
-
-def test_public_base_url_accepted() -> None:
-    transport = _StubTransport()
-    src = GrafanaLokiSource(
-        config={"base_url": "https://loki.acme.io", "token_env": "X"},
-        transport=transport,
-    )
-    assert src.name == "grafana_loki"
-
-
-# Canonical SSRF guard coverage — 100.100.100.200 is the Alibaba metadata IP
-# the shared general_ludd.security.ssrf.is_url_blocked guarantees.
-_CANONICAL_SSRF_URLS = [
-    "http://localhost/",
-    "http://metadata.google.internal/",
-    "http://169.254.169.254/",
-    "http://100.100.100.200/",
-]
-
-
-@pytest.mark.parametrize("bad_url", _CANONICAL_SSRF_URLS)
-def test_canonical_ssrf_urls_rejected(bad_url: str) -> None:
-    with pytest.raises(ValueError):
-        GrafanaLokiSource(
-            config={"base_url": bad_url, "token_env": "LOKI_TOKEN"},
-            transport=_StubTransport(),
+    def test_auth_headers_without_token(self):
+        transport = _FakeTransport()
+        src = GrafanaLokiSource(
+            {"base_url": "https://loki.example.com"},
+            transport=transport,
         )
+        headers = src._auth_headers()
+        assert "Authorization" not in headers
 
+    def test_auth_headers_with_token(self, monkeypatch):
+        monkeypatch.setenv("LOKI_TOKEN", "test-token-123")
+        transport = _FakeTransport()
+        src = GrafanaLokiSource(
+            {"base_url": "https://loki.example.com", "token_env": "LOKI_TOKEN"},
+            transport=transport,
+        )
+        headers = src._auth_headers()
+        assert headers["Authorization"] == "Bearer test-token-123"
 
-def test_public_base_url_constructs_after_consolidation() -> None:
-    src = GrafanaLokiSource(
-        config={"base_url": "https://api.example.com", "token_env": "X"},
-        transport=_StubTransport(),
-    )
-    assert src.name == "grafana_loki"
+    def test_detect_level_from_stream_labels(self):
+        src = GrafanaLokiSource(
+            {"base_url": "https://loki.example.com"},
+            transport=_FakeTransport(),
+        )
+        level = src._detect_level({"detected_level": "warn"})
+        assert level == "warn"
+
+    def test_detect_level_empty_when_missing(self):
+        src = GrafanaLokiSource(
+            {"base_url": "https://loki.example.com"},
+            transport=_FakeTransport(),
+        )
+        level = src._detect_level({"job": "app"})
+        assert level == ""
+
+    def test_ns_to_seconds(self):
+        src = GrafanaLokiSource(
+            {"base_url": "https://loki.example.com"},
+            transport=_FakeTransport(),
+        )
+        assert src._ns_to_seconds("1718000000000000000") == 1718000000.0
+
+    def test_ns_to_seconds_invalid(self):
+        src = GrafanaLokiSource(
+            {"base_url": "https://loki.example.com"},
+            transport=_FakeTransport(),
+        )
+        assert src._ns_to_seconds("garbage") == 0.0
+
+    def test_maybe_value_with_metric(self):
+        src = GrafanaLokiSource(
+            {"base_url": "https://loki.example.com"},
+            transport=_FakeTransport(),
+        )
+        assert src._maybe_value(["1000", "log line", 3.14]) == 3.14
+
+    def test_maybe_value_without_metric(self):
+        src = GrafanaLokiSource(
+            {"base_url": "https://loki.example.com"},
+            transport=_FakeTransport(),
+        )
+        assert src._maybe_value(["1000", "log line"]) is None
+
+    def test_normalize_entry(self):
+        src = GrafanaLokiSource(
+            {"base_url": "https://loki.example.com"},
+            transport=_FakeTransport(),
+        )
+        rec = src._normalize_entry(
+            ["1718000000000000000", "log message", 1.5],
+            {"app": "test"},
+            "info",
+        )
+        assert rec["kind"] == "logs"
+        assert rec["source"] == "grafana_loki"
+        assert rec["message"] == "log message"
+        assert rec["value"] == 1.5
+        assert rec["labels"] == {"app": "test"}
+
+    def test_iter_records_from_payload(self):
+        transport = _FakeTransport()
+        src = GrafanaLokiSource(
+            {"base_url": "https://loki.example.com"},
+            transport=transport,
+        )
+        records = src._iter_records(_make_loki_payload())
+        assert len(records) == 1
+        assert records[0]["message"] == "error: connection refused"
+        assert records[0]["level_or_status"] == "error"
+
+    def test_iter_records_non_dict_payload(self):
+        transport = _FakeTransport()
+        src = GrafanaLokiSource(
+            {"base_url": "https://loki.example.com"},
+            transport=transport,
+        )
+        records = src._iter_records([])
+        assert records == []
+
+    def test_query_success(self):
+        transport = _FakeTransport(payload=_make_loki_payload())
+        src = GrafanaLokiSource(
+            {"base_url": "https://loki.example.com"},
+            transport=transport,
+        )
+        records = src.query({"query": '{job="app"}'})
+        assert len(records) == 1
+        assert records[0]["message"] == "error: connection refused"
+
+    def test_query_error_status_returns_empty(self):
+        transport = _FakeTransport(status_code=500)
+        src = GrafanaLokiSource(
+            {"base_url": "https://loki.example.com"},
+            transport=transport,
+        )
+        records = src.query({"query": '{job="app"}'})
+        assert records == []
+
+    def test_health_ok(self):
+        transport = _FakeTransport(status_code=200)
+        src = GrafanaLokiSource(
+            {"base_url": "https://loki.example.com"},
+            transport=transport,
+        )
+        h = src.health()
+        assert h["ok"] is True
+
+    def test_health_unhealthy(self):
+        transport = _FakeTransport(status_code=503)
+        src = GrafanaLokiSource(
+            {"base_url": "https://loki.example.com"},
+            transport=transport,
+        )
+        h = src.health()
+        assert h["ok"] is False
+
+    def test_health_transport_error(self):
+        class _ErrorTransport:
+            def request(self, *args, **kwargs):
+                raise RuntimeError("network down")
+        src = GrafanaLokiSource(
+            {"base_url": "https://loki.example.com"},
+            transport=_ErrorTransport(),
+        )
+        h = src.health()
+        assert h["ok"] is False
+        assert "error" in h

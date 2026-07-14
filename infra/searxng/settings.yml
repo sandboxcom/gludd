@@ -1,0 +1,215 @@
+# SearXNG settings — research-optimised configuration for gludd.
+# Academic/technical engines weighted higher; general-web engines available as fallback.
+
+use_default_settings: false
+
+search:
+  safe_search: 0
+  autocomplete: ""
+  default_lang: "en"
+  formats:
+    - html
+    - json
+
+  # ------------------------------------------------------------------
+  # Engine configuration: research-optimised weighting
+  # ------------------------------------------------------------------
+  # Weight multiplier rules:
+  #   1.0 = default, 2.0 = double weight, 0.5 = half weight
+  #   disabled = engine is registered but never queried by default
+  #
+  # Tiers:
+  #   Academic (weight 2.0) — peer-reviewed or pre-print sources.
+  #   Technical (weight 1.5) — documentation, Q&A, repos.
+  #   General (weight 1.0) — web search fallback.
+  #   News   (weight 0.5) — supplemental, used only with time_range.
+  # ------------------------------------------------------------------
+
+  engines:
+    # ---- Academic / Research (weight 2.0) ----
+    - name: arxiv
+      engine: arxiv
+      shortcut: arxiv
+      weight: 2.0
+      timeout: 8.0
+
+    - name: pubmed
+      engine: pubmed
+      shortcut: pubmed
+      weight: 2.0
+      timeout: 8.0
+
+    - name: semantic scholar
+      engine: semantic_scholar
+      shortcut: s2
+      weight: 2.0
+      timeout: 8.0
+
+    - name: core
+      engine: core
+      shortcut: core
+      weight: 2.0
+      timeout: 8.0
+
+    - name: openaire
+      engine: openaire
+      shortcut: oa
+      weight: 2.0
+      timeout: 8.0
+
+    - name: crossref
+      engine: crossref
+      shortcut: doi
+      weight: 2.0
+      timeout: 8.0
+
+    - name: dblp
+      engine: dblp
+      shortcut: dblp
+      weight: 2.0
+      timeout: 8.0
+
+    # ---- Technical / Docs (weight 1.5) ----
+    - name: github
+      engine: github
+      shortcut: gh
+      weight: 1.5
+      timeout: 6.0
+
+    - name: gitlab
+      engine: gitlab
+      weight: 1.5
+      timeout: 6.0
+
+    - name: stackoverflow
+      engine: stackoverflow
+      shortcut: so
+      weight: 1.5
+      timeout: 6.0
+
+    - name: wikipedia
+      engine: wikipedia
+      shortcut: wp
+      weight: 1.5
+      timeout: 6.0
+
+    - name: mdn
+      engine: mdn
+      shortcut: mdn
+      weight: 1.5
+      timeout: 6.0
+
+    - name: pypi
+      engine: pypi
+      shortcut: pypi
+      weight: 1.5
+      timeout: 6.0
+
+    - name: npm
+      engine: npm
+      shortcut: npm
+      weight: 1.5
+      timeout: 6.0
+
+    # ---- General web (weight 1.0) ----
+    - name: duckduckgo
+      engine: duckduckgo
+      shortcut: ddg
+      weight: 1.0
+      timeout: 6.0
+
+    - name: google
+      engine: google
+      shortcut: go
+      weight: 1.0
+      timeout: 8.0
+      disabled: true  # disabled by default; enable via engines= param
+
+    - name: brave
+      engine: brave
+      shortcut: br
+      weight: 1.0
+      timeout: 6.0
+
+    - name: qwant
+      engine: qwant
+      shortcut: qw
+      weight: 1.0
+      timeout: 6.0
+
+    - name: startpage
+      engine: startpage
+      shortcut: sp
+      weight: 1.0
+      timeout: 6.0
+
+    # ---- News (weight 0.5, supplemental) ----
+    - name: google news
+      engine: google_news
+      shortcut: gn
+      weight: 0.5
+      timeout: 6.0
+      disabled: true
+
+    - name: bing news
+      engine: bing_news
+      weight: 0.5
+      timeout: 6.0
+      disabled: true
+
+    # ---- Packages / Repos ----
+    - name: crates.io
+      engine: crates
+      shortcut: crates
+      weight: 1.0
+      timeout: 6.0
+
+server:
+  secret_key: "${SEARXNG_SECRET}"
+  bind_address: "0.0.0.0:8080"
+  limiter: true
+  image_proxy: false
+  # Only allow localhost (gludd daemon) — no public exposure
+  public_instance: false
+
+ui:
+  static_use_hash: true
+  default_theme: simple
+  default_locale: en
+
+redis:
+  url: ""
+
+outgoing:
+  request_timeout: 10.0
+  max_request_timeout: 15.0
+  useragent_suffix: "gludd-searxng/1.0"
+  # Pool connections for efficiency
+  pool_connections: 100
+  pool_maxsize: 20
+  enable_http2: true
+
+engines:
+  - name: google cache
+    engine: google_cache
+    disabled: true
+
+  - name: google play apps
+    engine: google_play_apps
+    disabled: true
+
+  - name: google play movies
+    engine: google_play_movies
+    disabled: true
+
+  - name: google images
+    engine: google_images
+    disabled: true
+
+  - name: google videos
+    engine: google_videos
+    disabled: true
+
+  - name: google maps
+    engine: google_maps
+    disabled: true

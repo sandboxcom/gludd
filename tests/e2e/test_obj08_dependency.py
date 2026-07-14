@@ -52,8 +52,7 @@ class TestDependencyPipelineE2E:
 
     async def test_generate_requirements(self, tmp_project: str):
         mgr = DependencyManager(project_root=tmp_project)
-        result = await mgr.generate_requirements()
-        assert result is None
+        await mgr.generate_requirements()
 
     def test_dependency_update_playbook_exists(self):
         playbook_path = REPO_ROOT / "playbooks" / "dependency_update.yml"

@@ -1,0 +1,8 @@
+---
+saml_processor_file: ""
+saml_processor_xml: ""
+saml_processor_validate_signature: false
+saml_processor_extract_attributes: true
+saml_processor_issuer: ""
+saml_processor_output_file: "/tmp/gludd-xml/saml_processor/output.json"
+saml_processor_python: "{{ ansible_python_interpreter | default('/usr/bin/env python3') }}"

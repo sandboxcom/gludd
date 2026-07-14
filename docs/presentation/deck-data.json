@@ -1,947 +1,260 @@
 {
-  "version": "0.1.0-beta.3",
-  "git_sha": "e43bf99",
-  "test_count": 23006,
-  "role_count": 109,
+  "version": "0.1.0-beta.2",
+  "git_sha": "1d5ec00",
+  "test_count": 38207,
+  "role_count": 111,
   "features": [
     {
-      "name": "D-04/D-05/D-06/D-29/D-30/D-31 security items (batch-4 branch)",
-      "pct": "\u2713 0%",
-      "evidence": "**PASS** *(file-refs only)*: ABANDONED: branch feature/security-batch4 superseded; all items independently implemented in master"
+      "name": "Subsystem",
+      "pct": "Status",
+      "evidence": "Detail"
+    },
+    {
+      "name": "Enforcement plugins",
+      "pct": "13/13 BLOCKING",
+      "evidence": "100+ hook-runtime tests pass"
+    },
+    {
+      "name": "Terraform",
+      "pct": "18 stacks complete",
+      "evidence": "HTTP state backend, workload-aware deployment profiles"
+    },
+    {
+      "name": "Ansible collections",
+      "pct": "4 core collections",
+      "evidence": "agent, security, business, networking"
+    },
+    {
+      "name": "Model deployment",
+      "pct": "SearX-based model search",
+      "evidence": "WorkloadType profiles, ansible infra deploy"
     }
   ],
-  "generated_at": "2026-07-10T17:44:50Z",
+  "generated_at": "2026-07-14T07:27:30Z",
   "game_audit": {
-    "report_generated": "2026-07-09T21:13:29Z",
+    "report_generated": "2026-07-14T06:33:02Z",
     "games": {
       "snake": {
         "game_id": "snake",
-        "imported": true,
-        "instantiated": true,
-        "checks_passed": 10,
-        "checks_total": 13,
-        "checks": {
-          "import_and_instantiate": {
-            "passed": true,
-            "desc": "class imports and instantiates without error"
-          },
-          "tick_loop": {
-            "passed": true,
-            "desc": "tick() returns bool for 100 frames without error"
-          },
-          "direction_change": {
-            "passed": true,
-            "desc": "input('down') then tick advances snake downward"
-          },
-          "wall_collision": {
-            "passed": true,
-            "desc": "snake hitting wall returns game_over True"
-          },
-          "food_eating": {
-            "passed": true,
-            "desc": "moving onto food cell increments score and length"
-          },
-          "render_state": {
-            "passed": true,
-            "desc": "render_state() returns dict with expected keys"
-          },
-          "lifecycle_initial_state": {
-            "passed": false,
-            "desc": "fresh instance state is 'ready'/'menu' (NOT 'playing')"
-          },
-          "lifecycle_start": {
-            "passed": false,
-            "desc": "calling start() transitions state to 'playing'"
-          },
-          "lifecycle_score_starts_zero": {
-            "passed": true,
-            "desc": "score is 0 at start of play"
-          },
-          "lifecycle_score_increments": {
-            "passed": false,
-            "desc": "score increases after positive event"
-          },
-          "lifecycle_game_over": {
-            "passed": true,
-            "desc": "triggering lose condition sets game_over=True and state='game_over'"
-          },
-          "lifecycle_game_over_idempotent": {
-            "passed": true,
-            "desc": "tick()/move() after game_over does not change state"
-          },
-          "lifecycle_restart": {
-            "passed": true,
-            "desc": "restart() resets score to 0, game_over to False, state to 'ready'"
-          }
-        },
-        "tokens_in": 522,
-        "tokens_out": 655,
+        "imported": false,
+        "instantiated": false,
+        "checks_passed": 0,
+        "checks_total": 0,
+        "checks": {},
+        "tokens_in": 0,
+        "tokens_out": 0,
         "tool_calls": 0,
-        "content_len": 2499,
-        "model": "unknown",
+        "content_len": 0,
+        "model": "",
         "phases": {
-          "model_call": 5383.7,
-          "extract_code": 0.1,
-          "ast_parse": 1.1,
-          "game_verify": 2.1
+          "model_call": 0.0,
+          "extract_code": 0.0,
+          "ast_parse": 0.0,
+          "game_verify": 0.0
         },
         "errors": [],
-        "gaps": [],
-        "feature_failures": []
+        "gaps": []
       },
       "tetris": {
         "game_id": "tetris",
-        "imported": true,
-        "instantiated": true,
-        "checks_passed": 11,
-        "checks_total": 13,
-        "checks": {
-          "import_and_instantiate": {
-            "passed": true,
-            "desc": "class imports and instantiates without error"
-          },
-          "tick_gravity": {
-            "passed": true,
-            "desc": "tick() moves piece down one row"
-          },
-          "line_clear": {
-            "passed": true,
-            "desc": "filling a row clears it and increments score"
-          },
-          "rotation": {
-            "passed": true,
-            "desc": "rotate_cw changes piece orientation"
-          },
-          "hard_drop": {
-            "passed": true,
-            "desc": "hard_drop instantly places piece"
-          },
-          "render_state": {
-            "passed": true,
-            "desc": "render_state() returns dict with expected keys"
-          },
-          "lifecycle_initial_state": {
-            "passed": false,
-            "desc": "fresh instance state is 'ready'/'menu' (NOT 'playing')"
-          },
-          "lifecycle_start": {
-            "passed": true,
-            "desc": "calling start() transitions state to 'playing'"
-          },
-          "lifecycle_score_starts_zero": {
-            "passed": true,
-            "desc": "score is 0 at start of play"
-          },
-          "lifecycle_score_increments": {
-            "passed": false,
-            "desc": "score increases after positive event"
-          },
-          "lifecycle_game_over": {
-            "passed": true,
-            "desc": "triggering lose condition sets game_over=True and state='game_over'"
-          },
-          "lifecycle_game_over_idempotent": {
-            "passed": true,
-            "desc": "tick()/move() after game_over does not change state"
-          },
-          "lifecycle_restart": {
-            "passed": true,
-            "desc": "restart() resets score to 0, game_over to False, state to 'ready'"
-          }
-        },
-        "tokens_in": 584,
-        "tokens_out": 1948,
+        "imported": false,
+        "instantiated": false,
+        "checks_passed": 0,
+        "checks_total": 0,
+        "checks": {},
+        "tokens_in": 0,
+        "tokens_out": 0,
         "tool_calls": 0,
-        "content_len": 7486,
-        "model": "unknown",
+        "content_len": 0,
+        "model": "",
         "phases": {
-          "model_call": 12688.0,
-          "extract_code": 0.1,
-          "ast_parse": 4.5,
-          "game_verify": 2.8
-        },
-        "errors": [],
-        "gaps": [],
-        "feature_failures": [
-          "lifecycle.score_increments: score did not increment in 20 ticks and game did not end (initial=0)",
-          "lifecycle.game_over: lose condition forced but game_over/won flag not set (checked over_attr='game_over', won_attr=None)"
-        ]
-      },
-      "minesweeper": {
-        "game_id": "minesweeper",
-        "imported": true,
-        "instantiated": true,
-        "checks_passed": 11,
-        "checks_total": 14,
-        "checks": {
-          "import_and_instantiate": {
-            "passed": true,
-            "desc": "class imports and instantiates without error"
-          },
-          "reveal_safe": {
-            "passed": true,
-            "desc": "revealing a non-mine cell returns 'ok'"
-          },
-          "reveal_mine": {
-            "passed": true,
-            "desc": "revealing a mine cell returns 'mine' and game_over=True"
-          },
-          "flood_fill": {
-            "passed": true,
-            "desc": "revealing a 0 cell auto-reveals adjacent cells"
-          },
-          "flag_toggle": {
-            "passed": false,
-            "desc": "flag() toggles between flagged/unflagged"
-          },
-          "win_detection": {
-            "passed": true,
-            "desc": "revealing all non-mine cells sets won=True"
-          },
-          "render_state": {
-            "passed": true,
-            "desc": "render_state() returns dict with expected keys"
-          },
-          "lifecycle_initial_state": {
-            "passed": false,
-            "desc": "fresh instance state is 'ready'/'menu' (NOT 'playing')"
-          },
-          "lifecycle_start": {
-            "passed": false,
-            "desc": "calling start() transitions state to 'playing'"
-          },
-          "lifecycle_score_starts_zero": {
-            "passed": true,
-            "desc": "score is 0 at start of play"
-          },
-          "lifecycle_score_increments": {
-            "passed": true,
-            "desc": "score increases after positive event"
-          },
-          "lifecycle_game_over": {
-            "passed": true,
-            "desc": "triggering lose condition sets game_over=True and state='game_over'"
-          },
-          "lifecycle_game_over_idempotent": {
-            "passed": true,
-            "desc": "tick()/move() after game_over does not change state"
-          },
-          "lifecycle_restart": {
-            "passed": true,
-            "desc": "restart() resets score to 0, game_over to False, state to 'ready'"
-          }
-        },
-        "tokens_in": 613,
-        "tokens_out": 1280,
-        "tool_calls": 0,
-        "content_len": 5161,
-        "model": "unknown",
-        "phases": {
-          "model_call": 7399.9,
+          "model_call": 0.0,
           "extract_code": 0.0,
-          "ast_parse": 1.5,
-          "game_verify": 3.2
+          "ast_parse": 0.0,
+          "game_verify": 0.0
         },
         "errors": [],
-        "gaps": [],
-        "feature_failures": [
-          "reveal returned unexpected value: 'no_op'"
-        ]
+        "gaps": []
       },
       "checkers": {
         "game_id": "checkers",
-        "imported": true,
-        "instantiated": true,
-        "checks_passed": 13,
-        "checks_total": 14,
-        "checks": {
-          "import_and_instantiate": {
-            "passed": true,
-            "desc": "class imports and instantiates without error"
-          },
-          "valid_move": {
-            "passed": true,
-            "desc": "valid diagonal move returns valid=True"
-          },
-          "invalid_move": {
-            "passed": true,
-            "desc": "moving to occupied square returns valid=False"
-          },
-          "capture": {
-            "passed": true,
-            "desc": "jump capture removes opponent piece"
-          },
-          "king_promotion": {
-            "passed": true,
-            "desc": "piece reaching back rank becomes king"
-          },
-          "game_over": {
-            "passed": true,
-            "desc": "no valid moves sets game_over=True"
-          },
-          "render_state": {
-            "passed": true,
-            "desc": "render_state() returns dict with expected keys"
-          },
-          "lifecycle_initial_state": {
-            "passed": false,
-            "desc": "fresh instance state is 'ready'/'menu' (NOT 'playing')"
-          },
-          "lifecycle_start": {
-            "passed": true,
-            "desc": "calling start() transitions state to 'playing'"
-          },
-          "lifecycle_score_starts_zero": {
-            "passed": true,
-            "desc": "score is 0 at start of play"
-          },
-          "lifecycle_score_increments": {
-            "passed": true,
-            "desc": "score increases after positive event"
-          },
-          "lifecycle_game_over": {
-            "passed": true,
-            "desc": "triggering lose condition sets game_over=True and state='game_over'"
-          },
-          "lifecycle_game_over_idempotent": {
-            "passed": true,
-            "desc": "tick()/move() after game_over does not change state"
-          },
-          "lifecycle_restart": {
-            "passed": true,
-            "desc": "restart() resets score to 0, game_over to False, state to 'ready'"
-          }
-        },
-        "tokens_in": 728,
-        "tokens_out": 2202,
+        "imported": false,
+        "instantiated": false,
+        "checks_passed": 0,
+        "checks_total": 0,
+        "checks": {},
+        "tokens_in": 0,
+        "tokens_out": 0,
         "tool_calls": 0,
-        "content_len": 8326,
-        "model": "unknown",
+        "content_len": 0,
+        "model": "",
         "phases": {
-          "model_call": 14207.1,
-          "extract_code": 0.1,
-          "ast_parse": 2.7,
-          "game_verify": 2.9
-        },
-        "errors": [],
-        "gaps": [],
-        "feature_failures": []
-      },
-      "skifree": {
-        "game_id": "skifree",
-        "imported": true,
-        "instantiated": true,
-        "checks_passed": 7,
-        "checks_total": 13,
-        "checks": {
-          "import_and_instantiate": {
-            "passed": true,
-            "desc": "class imports and instantiates without error"
-          },
-          "tick_movement": {
-            "passed": true,
-            "desc": "tick() moves skier down the course"
-          },
-          "left_right": {
-            "passed": true,
-            "desc": "input('left') changes skier x position"
-          },
-          "tree_collision": {
-            "passed": true,
-            "desc": "overlapping a tree sets crashed=True"
-          },
-          "course_completion": {
-            "passed": true,
-            "desc": "reaching bottom sets finished=True"
-          },
-          "render_state": {
-            "passed": true,
-            "desc": "render_state() returns dict with expected keys"
-          },
-          "lifecycle_initial_state": {
-            "passed": false,
-            "desc": "fresh instance state is 'ready'/'menu' (NOT 'playing')"
-          },
-          "lifecycle_start": {
-            "passed": false,
-            "desc": "calling start() transitions state to 'playing'"
-          },
-          "lifecycle_score_starts_zero": {
-            "passed": false,
-            "desc": "score is 0 at start of play"
-          },
-          "lifecycle_score_increments": {
-            "passed": false,
-            "desc": "score increases after positive event"
-          },
-          "lifecycle_game_over": {
-            "passed": false,
-            "desc": "triggering lose condition sets game_over=True and state='game_over'"
-          },
-          "lifecycle_game_over_idempotent": {
-            "passed": true,
-            "desc": "tick()/move() after game_over does not change state"
-          },
-          "lifecycle_restart": {
-            "passed": false,
-            "desc": "restart() resets score to 0, game_over to False, state to 'ready'"
-          }
-        },
-        "tokens_in": 677,
-        "tokens_out": 1318,
-        "tool_calls": 0,
-        "content_len": 4844,
-        "model": "unknown",
-        "phases": {
-          "model_call": 5682.6,
-          "extract_code": 0.1,
-          "ast_parse": 16.8,
-          "game_verify": 4.5
-        },
-        "errors": [],
-        "gaps": [],
-        "feature_failures": [
-          "lifecycle.game_over: lose condition forced but game_over/won flag not set (checked over_attr='crashed', won_attr=None)"
-        ]
-      },
-      "banana": {
-        "game_id": "banana",
-        "imported": true,
-        "instantiated": true,
-        "checks_passed": 12,
-        "checks_total": 13,
-        "checks": {
-          "import_and_instantiate": {
-            "passed": true,
-            "desc": "class imports and instantiates without error"
-          },
-          "throw_arc": {
-            "passed": true,
-            "desc": "throw(45, 10) produces trajectory with multiple points"
-          },
-          "building_hit": {
-            "passed": true,
-            "desc": "throw at low angle hits a building"
-          },
-          "gorilla_hit": {
-            "passed": true,
-            "desc": "direct hit on gorilla returns hit_type='gorilla1' or 'gorilla2'"
-          },
-          "turn_alternation": {
-            "passed": true,
-            "desc": "current_player changes after each throw"
-          },
-          "render_state": {
-            "passed": true,
-            "desc": "render_state() returns dict with expected keys"
-          },
-          "lifecycle_initial_state": {
-            "passed": false,
-            "desc": "fresh instance state is 'ready'/'menu' (NOT 'playing')"
-          },
-          "lifecycle_start": {
-            "passed": true,
-            "desc": "calling start() transitions state to 'playing'"
-          },
-          "lifecycle_score_starts_zero": {
-            "passed": true,
-            "desc": "score is 0 at start of play"
-          },
-          "lifecycle_score_increments": {
-            "passed": true,
-            "desc": "score increases after positive event"
-          },
-          "lifecycle_game_over": {
-            "passed": true,
-            "desc": "triggering lose condition sets game_over=True and state='game_over'"
-          },
-          "lifecycle_game_over_idempotent": {
-            "passed": true,
-            "desc": "tick()/move() after game_over does not change state"
-          },
-          "lifecycle_restart": {
-            "passed": true,
-            "desc": "restart() resets score to 0, game_over to False, state to 'ready'"
-          }
-        },
-        "tokens_in": 767,
-        "tokens_out": 1553,
-        "tool_calls": 0,
-        "content_len": 6111,
-        "model": "unknown",
-        "phases": {
-          "model_call": 9145.6,
-          "extract_code": 0.1,
-          "ast_parse": 9.7,
-          "game_verify": 1.8
-        },
-        "errors": [],
-        "gaps": [],
-        "feature_failures": [
-          "throw trajectory must be a non-empty list, got []"
-        ]
-      },
-      "pong": {
-        "game_id": "pong",
-        "imported": true,
-        "instantiated": true,
-        "checks_passed": 10,
-        "checks_total": 13,
-        "checks": {
-          "import_and_instantiate": {
-            "passed": true,
-            "desc": "class imports and instantiates without error"
-          },
-          "pong_ball_move": {
-            "passed": true,
-            "desc": "ball position changes after tick()"
-          },
-          "pong_wall_bounce": {
-            "passed": true,
-            "desc": "ball bounces off top or bottom wall (dy flips)"
-          },
-          "pong_paddle_move": {
-            "passed": true,
-            "desc": "paddle moves in response to input"
-          },
-          "pong_scoring": {
-            "passed": true,
-            "desc": "score increments when ball passes paddle"
-          },
-          "render_state": {
-            "passed": true,
-            "desc": "render_state() returns dict with expected keys"
-          },
-          "lifecycle_initial_state": {
-            "passed": false,
-            "desc": "fresh instance state is 'ready'/'menu' (NOT 'playing')"
-          },
-          "lifecycle_start": {
-            "passed": true,
-            "desc": "calling start() transitions state to 'playing'"
-          },
-          "lifecycle_score_starts_zero": {
-            "passed": false,
-            "desc": "score is 0 at start of play"
-          },
-          "lifecycle_score_increments": {
-            "passed": true,
-            "desc": "score increases after positive event"
-          },
-          "lifecycle_game_over": {
-            "passed": false,
-            "desc": "triggering lose condition sets game_over=True and state='game_over'"
-          },
-          "lifecycle_game_over_idempotent": {
-            "passed": true,
-            "desc": "tick()/move() after game_over does not change state"
-          },
-          "lifecycle_restart": {
-            "passed": true,
-            "desc": "restart() resets score to 0, game_over to False, state to 'ready'"
-          }
-        },
-        "tokens_in": 728,
-        "tokens_out": 967,
-        "tool_calls": 0,
-        "content_len": 3252,
-        "model": "unknown",
-        "phases": {
-          "model_call": 5692.2,
+          "model_call": 0.0,
           "extract_code": 0.0,
-          "ast_parse": 0.8,
-          "game_verify": 1.3
+          "ast_parse": 0.0,
+          "game_verify": 0.0
         },
         "errors": [],
-        "gaps": [],
-        "feature_failures": []
+        "gaps": []
       },
       "breakout": {
         "game_id": "breakout",
-        "imported": true,
-        "instantiated": true,
-        "checks_passed": 9,
-        "checks_total": 13,
-        "checks": {
-          "import_and_instantiate": {
-            "passed": true,
-            "desc": "class imports and instantiates without error"
-          },
-          "brk_ball_moves": {
-            "passed": true,
-            "desc": "ball position changes after tick()"
-          },
-          "brk_brick_smash": {
-            "passed": true,
-            "desc": "tick loop destroys at least one brick"
-          },
-          "brk_paddle_bounce": {
-            "passed": true,
-            "desc": "ball bounces when hitting paddle area"
-          },
-          "brk_life_loss": {
-            "passed": true,
-            "desc": "lives decrement when ball passes bottom"
-          },
-          "render_state": {
-            "passed": true,
-            "desc": "render_state() returns dict with expected keys"
-          },
-          "lifecycle_initial_state": {
-            "passed": false,
-            "desc": "fresh instance state is 'ready'/'menu' (NOT 'playing')"
-          },
-          "lifecycle_start": {
-            "passed": false,
-            "desc": "calling start() transitions state to 'playing'"
-          },
-          "lifecycle_score_starts_zero": {
-            "passed": false,
-            "desc": "score is 0 at start of play"
-          },
-          "lifecycle_score_increments": {
-            "passed": false,
-            "desc": "score increases after positive event"
-          },
-          "lifecycle_game_over": {
-            "passed": true,
-            "desc": "triggering lose condition sets game_over=True and state='game_over'"
-          },
-          "lifecycle_game_over_idempotent": {
-            "passed": true,
-            "desc": "tick()/move() after game_over does not change state"
-          },
-          "lifecycle_restart": {
-            "passed": true,
-            "desc": "restart() resets score to 0, game_over to False, state to 'ready'"
-          }
-        },
-        "tokens_in": 815,
-        "tokens_out": 959,
+        "imported": false,
+        "instantiated": false,
+        "checks_passed": 0,
+        "checks_total": 0,
+        "checks": {},
+        "tokens_in": 0,
+        "tokens_out": 0,
         "tool_calls": 0,
-        "content_len": 3596,
-        "model": "unknown",
+        "content_len": 0,
+        "model": "",
         "phases": {
-          "model_call": 6512.8,
+          "model_call": 0.0,
           "extract_code": 0.0,
-          "ast_parse": 0.9,
-          "game_verify": 1.9
+          "ast_parse": 0.0,
+          "game_verify": 0.0
         },
         "errors": [],
-        "gaps": [],
-        "feature_failures": []
+        "gaps": []
       },
       "maze_runner": {
         "game_id": "maze_runner",
-        "imported": true,
-        "instantiated": true,
-        "checks_passed": 9,
-        "checks_total": 12,
-        "checks": {
-          "import_and_instantiate": {
-            "passed": true,
-            "desc": "class imports and instantiates without error"
-          },
-          "maze_moves": {
-            "passed": false,
-            "desc": "input('right') moves player on a path cell"
-          },
-          "maze_wall_blocks": {
-            "passed": true,
-            "desc": "moving into a wall cell blocks movement"
-          },
-          "maze_reach_end": {
-            "passed": true,
-            "desc": "reaching end position sets won=True"
-          },
-          "render_state": {
-            "passed": true,
-            "desc": "render_state() returns dict with expected keys"
-          },
-          "lifecycle_initial_state": {
-            "passed": false,
-            "desc": "fresh instance state is 'ready'/'menu' (NOT 'playing')"
-          },
-          "lifecycle_start": {
-            "passed": false,
-            "desc": "calling start() transitions state to 'playing'"
-          },
-          "lifecycle_score_starts_zero": {
-            "passed": true,
-            "desc": "score is 0 at start of play"
-          },
-          "lifecycle_score_increments": {
-            "passed": true,
-            "desc": "score increases after positive event"
-          },
-          "lifecycle_game_over": {
-            "passed": true,
-            "desc": "triggering lose condition sets game_over=True and state='game_over'"
-          },
-          "lifecycle_game_over_idempotent": {
-            "passed": true,
-            "desc": "tick()/move() after game_over does not change state"
-          },
-          "lifecycle_restart": {
-            "passed": true,
-            "desc": "restart() resets score to 0, game_over to False, state to 'ready'"
-          }
-        },
-        "tokens_in": 601,
-        "tokens_out": 865,
+        "imported": false,
+        "instantiated": false,
+        "checks_passed": 0,
+        "checks_total": 0,
+        "checks": {},
+        "tokens_in": 0,
+        "tokens_out": 0,
         "tool_calls": 0,
-        "content_len": 3326,
-        "model": "unknown",
+        "content_len": 0,
+        "model": "",
         "phases": {
-          "model_call": 7105.9,
+          "model_call": 0.0,
           "extract_code": 0.0,
-          "ast_parse": 0.9,
-          "game_verify": 1.6
+          "ast_parse": 0.0,
+          "game_verify": 0.0
         },
         "errors": [],
-        "gaps": [],
-        "feature_failures": [
-          "lifecycle.game_over: lose condition forced but game_over/won flag not set (checked over_attr='game_over', won_attr='won')"
-        ]
-      },
-      "word_guesser": {
-        "game_id": "word_guesser",
-        "imported": true,
-        "instantiated": true,
-        "checks_passed": 12,
-        "checks_total": 13,
-        "checks": {
-          "import_and_instantiate": {
-            "passed": true,
-            "desc": "class imports and instantiates without error"
-          },
-          "wg_correct_letter": {
-            "passed": true,
-            "desc": "guessing a letter in the word reveals positions"
-          },
-          "wg_wrong_letter": {
-            "passed": true,
-            "desc": "guessing a wrong letter increments wrong_guesses"
-          },
-          "wg_win_word": {
-            "passed": true,
-            "desc": "guessing all letters sets won=True"
-          },
-          "wg_lose_max": {
-            "passed": true,
-            "desc": "reaching max_guesses sets game_over=True and won=False"
-          },
-          "render_state": {
-            "passed": true,
-            "desc": "render_state() returns dict with expected keys"
-          },
-          "lifecycle_initial_state": {
-            "passed": false,
-            "desc": "fresh instance state is 'ready'/'menu' (NOT 'playing')"
-          },
-          "lifecycle_start": {
-            "passed": true,
-            "desc": "calling start() transitions state to 'playing'"
-          },
-          "lifecycle_score_starts_zero": {
-            "passed": true,
-            "desc": "score is 0 at start of play"
-          },
-          "lifecycle_score_increments": {
-            "passed": true,
-            "desc": "score increases after positive event"
-          },
-          "lifecycle_game_over": {
-            "passed": true,
-            "desc": "triggering lose condition sets game_over=True and state='game_over'"
-          },
-          "lifecycle_game_over_idempotent": {
-            "passed": true,
-            "desc": "tick()/move() after game_over does not change state"
-          },
-          "lifecycle_restart": {
-            "passed": true,
-            "desc": "restart() resets score to 0, game_over to False, state to 'ready'"
-          }
-        },
-        "tokens_in": 704,
-        "tokens_out": 728,
-        "tool_calls": 0,
-        "content_len": 2857,
-        "model": "unknown",
-        "phases": {
-          "model_call": 5733.4,
-          "extract_code": 0.0,
-          "ast_parse": 0.7,
-          "game_verify": 1.5
-        },
-        "errors": [],
-        "gaps": [],
-        "feature_failures": [
-          "lifecycle.game_over: lose condition forced but game_over/won flag not set (checked over_attr='game_over', won_attr='won')"
-        ]
+        "gaps": []
       },
       "memory_match": {
         "game_id": "memory_match",
-        "imported": true,
-        "instantiated": true,
-        "checks_passed": 8,
-        "checks_total": 13,
-        "checks": {
-          "import_and_instantiate": {
-            "passed": true,
-            "desc": "class imports and instantiates without error"
-          },
-          "mm_flip_cards": {
-            "passed": true,
-            "desc": "flip() reveals a card and returns valid dict"
-          },
-          "mm_match_pair": {
-            "passed": true,
-            "desc": "matching two cards with same value sets matched=True"
-          },
-          "mm_mismatch_flips": {
-            "passed": true,
-            "desc": "non-matching pair flips back after second card"
-          },
-          "mm_all_matched": {
-            "passed": false,
-            "desc": "game ends when all cards are matched"
-          },
-          "render_state": {
-            "passed": true,
-            "desc": "render_state() returns dict with expected keys"
-          },
-          "lifecycle_initial_state": {
-            "passed": false,
-            "desc": "fresh instance state is 'ready'/'menu' (NOT 'playing')"
-          },
-          "lifecycle_start": {
-            "passed": true,
-            "desc": "calling start() transitions state to 'playing'"
-          },
-          "lifecycle_score_starts_zero": {
-            "passed": false,
-            "desc": "score is 0 at start of play"
-          },
-          "lifecycle_score_increments": {
-            "passed": false,
-            "desc": "score increases after positive event"
-          },
-          "lifecycle_game_over": {
-            "passed": false,
-            "desc": "triggering lose condition sets game_over=True and state='game_over'"
-          },
-          "lifecycle_game_over_idempotent": {
-            "passed": true,
-            "desc": "tick()/move() after game_over does not change state"
-          },
-          "lifecycle_restart": {
-            "passed": true,
-            "desc": "restart() resets score to 0, game_over to False, state to 'ready'"
-          }
-        },
-        "tokens_in": 702,
-        "tokens_out": 716,
+        "imported": false,
+        "instantiated": false,
+        "checks_passed": 0,
+        "checks_total": 0,
+        "checks": {},
+        "tokens_in": 0,
+        "tokens_out": 0,
         "tool_calls": 0,
-        "content_len": 2935,
-        "model": "unknown",
+        "content_len": 0,
+        "model": "",
         "phases": {
-          "model_call": 3893.2,
-          "extract_code": 0.1,
-          "ast_parse": 0.8,
-          "game_verify": 1.8
+          "model_call": 0.0,
+          "extract_code": 0.0,
+          "ast_parse": 0.0,
+          "game_verify": 0.0
         },
         "errors": [],
-        "gaps": [],
-        "feature_failures": []
+        "gaps": []
       },
-      "tic_tac_toe": {
-        "game_id": "tic_tac_toe",
-        "imported": true,
-        "instantiated": true,
-        "checks_passed": 11,
-        "checks_total": 13,
-        "checks": {
-          "import_and_instantiate": {
-            "passed": true,
-            "desc": "class imports and instantiates without error"
-          },
-          "ttt_legal_move": {
-            "passed": true,
-            "desc": "move on empty cell returns valid=True"
-          },
-          "ttt_illegal_reject": {
-            "passed": true,
-            "desc": "move on occupied cell returns valid=False"
-          },
-          "ttt_three_in_row": {
-            "passed": true,
-            "desc": "three in a row sets winner and game_over"
-          },
-          "ttt_board_full_draw": {
-            "passed": true,
-            "desc": "full board with no winner sets draw=True"
-          },
-          "render_state": {
-            "passed": true,
-            "desc": "render_state() returns dict with expected keys"
-          },
-          "lifecycle_initial_state": {
-            "passed": false,
-            "desc": "fresh instance state is 'ready'/'menu' (NOT 'playing')"
-          },
-          "lifecycle_start": {
-            "passed": false,
-            "desc": "calling start() transitions state to 'playing'"
-          },
-          "lifecycle_score_starts_zero": {
-            "passed": true,
-            "desc": "score is 0 at start of play"
-          },
-          "lifecycle_score_increments": {
-            "passed": true,
-            "desc": "score increases after positive event"
-          },
-          "lifecycle_game_over": {
-            "passed": true,
-            "desc": "triggering lose condition sets game_over=True and state='game_over'"
-          },
-          "lifecycle_game_over_idempotent": {
-            "passed": true,
-            "desc": "tick()/move() after game_over does not change state"
-          },
-          "lifecycle_restart": {
-            "passed": true,
-            "desc": "restart() resets score to 0, game_over to False, state to 'ready'"
-          }
-        },
-        "tokens_in": 753,
-        "tokens_out": 1410,
+      "minesweeper": {
+        "game_id": "minesweeper",
+        "imported": false,
+        "instantiated": false,
+        "checks_passed": 0,
+        "checks_total": 0,
+        "checks": {},
+        "tokens_in": 0,
+        "tokens_out": 0,
         "tool_calls": 0,
-        "content_len": 5445,
-        "model": "unknown",
+        "content_len": 0,
+        "model": "",
         "phases": {
-          "model_call": 6635.6,
-          "extract_code": 0.1,
-          "ast_parse": 269.7,
-          "game_verify": 4.5
+          "model_call": 0.0,
+          "extract_code": 0.0,
+          "ast_parse": 0.0,
+          "game_verify": 0.0
         },
         "errors": [],
-        "gaps": [],
-        "feature_failures": []
+        "gaps": []
+      },
+      "skifree": {
+        "game_id": "skifree",
+        "imported": false,
+        "instantiated": false,
+        "checks_passed": 0,
+        "checks_total": 0,
+        "checks": {},
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "tool_calls": 0,
+        "content_len": 0,
+        "model": "",
+        "phases": {
+          "model_call": 0.0,
+          "extract_code": 0.0,
+          "ast_parse": 0.0,
+          "game_verify": 0.0
+        },
+        "errors": [],
+        "gaps": []
+      },
+      "pong": {
+        "game_id": "pong",
+        "imported": false,
+        "instantiated": false,
+        "checks_passed": 0,
+        "checks_total": 0,
+        "checks": {},
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "tool_calls": 0,
+        "content_len": 0,
+        "model": "",
+        "phases": {
+          "model_call": 0.0,
+          "extract_code": 0.0,
+          "ast_parse": 0.0,
+          "game_verify": 0.0
+        },
+        "errors": [],
+        "gaps": []
+      },
+      "word_guesser": {
+        "game_id": "word_guesser",
+        "imported": false,
+        "instantiated": false,
+        "checks_passed": 0,
+        "checks_total": 0,
+        "checks": {},
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "tool_calls": 0,
+        "content_len": 0,
+        "model": "",
+        "phases": {
+          "model_call": 0.0,
+          "extract_code": 0.0,
+          "ast_parse": 0.0,
+          "game_verify": 0.0
+        },
+        "errors": [],
+        "gaps": []
       }
     },
     "summary": {
-      "total_games": 12,
-      "games_imported": 12,
-      "games_fully_verified": 0,
-      "total_tokens_in": 8194,
-      "total_tokens_out": 14601,
-      "total_latency_ms": 90420.7,
-      "total_latency_s": 90.42,
-      "most_tokens": "checkers",
-      "most_latency": "checkers"
+      "total_games": 10,
+      "games_imported": 0,
+      "games_fully_verified": 10,
+      "total_tokens_in": 0,
+      "total_tokens_out": 0,
+      "total_latency_ms": 0.0,
+      "total_latency_s": 0.0,
+      "most_tokens": "snake",
+      "most_latency": "snake"
     }
   }
 }

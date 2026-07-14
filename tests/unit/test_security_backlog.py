@@ -22,8 +22,12 @@ from general_ludd.security.security_backlog import (
     run_backlog_checks,
 )
 
-_EXPLICIT_OPEN_IDS = frozenset({"D-11", "D-13", "D-17"})
-_PROBE_IDS = frozenset({"D-07", "D-14", "D-18", "D-27"})
+_EXPLICIT_OPEN_IDS = frozenset(
+    {"D-11", "D-12", "D-13", "D-17", "D-19", "D-26", "D-30"}
+)
+_PROBE_IDS = frozenset(
+    {"D-07", "D-10", "D-14", "D-18", "D-25", "D-27", "D-28", "D-29"}
+)
 
 
 class TestSecurityBacklogResult:
@@ -232,10 +236,117 @@ class TestD18ProbeRegressionDetection:
         assert "event_loop.loop" in detail
 
 
+class TestD10ProbeRegressionDetection:
+    """Prove the D-10 probe (MAX_BODY_BYTES) is a REAL check."""
+
+    def test_fails_if_max_body_bytes_missing(self, monkeypatch) -> None:
+        import general_ludd.receiver.router as router_mod
+
+        monkeypatch.delattr(router_mod, "MAX_BODY_BYTES")
+        passed, detail = sb._check_d10_body_size_limit()
+        assert passed is False
+        assert "MAX_BODY_BYTES" in detail
+
+    def test_fails_if_source_removes_reference(self, monkeypatch) -> None:
+        import general_ludd.receiver.router as router_mod
+
+        monkeypatch.setattr(
+            sb,
+            "_read_module_source",
+            lambda mod: "" if mod is router_mod else sb.inspect.getsource(mod),
+        )
+        passed, detail = sb._check_d10_body_size_limit()
+        assert passed is False
+        assert "MAX_BODY_BYTES" in detail
+
+
+class TestD25ProbeRegressionDetection:
+    """Prove the D-25 probe (recursion_limit + _max_depth) is a REAL check."""
+
+    def test_fails_if_recursion_limit_missing(self, monkeypatch) -> None:
+        import general_ludd.execution.langgraph_agent as lg_mod
+
+        monkeypatch.setattr(
+            sb,
+            "_read_module_source",
+            lambda mod: "" if mod is lg_mod else sb.inspect.getsource(mod),
+        )
+        passed, detail = sb._check_d25_stack_depth_cap()
+        assert passed is False
+        assert "recursion_limit" in detail
+
+    def test_fails_if_max_depth_missing(self, monkeypatch) -> None:
+
+        def _fake_source(mod: object) -> str:
+            if getattr(mod, "__name__", "") == "general_ludd.ag2_lifecycle.hooks":
+                return ""
+            return sb.inspect.getsource(mod)
+
+        monkeypatch.setattr(sb, "_read_module_source", _fake_source)
+        passed, detail = sb._check_d25_stack_depth_cap()
+        assert passed is False
+        assert "_max_depth" in detail
+
+
+class TestD28ProbeRegressionDetection:
+    """Prove the D-28 probe (NetworkPolicy) is a REAL check."""
+
+    def test_fails_if_network_policy_missing(self, monkeypatch) -> None:
+        import general_ludd.ansible.network_policy as np_mod
+
+        monkeypatch.delattr(np_mod, "NetworkPolicy")
+        passed, detail = sb._check_d28_network_policy()
+        assert passed is False
+        assert "NetworkPolicy" in detail
+
+    def test_fails_if_scan_playbook_tasks_missing(self, monkeypatch) -> None:
+        import general_ludd.ansible.network_policy as np_mod
+
+        monkeypatch.delattr(np_mod, "scan_playbook_tasks")
+        passed, detail = sb._check_d28_network_policy()
+        assert passed is False
+        assert "scan_playbook_tasks" in detail
+
+    def test_fails_if_core_runner_stops_referencing(self, monkeypatch) -> None:
+        import general_ludd.ansible.core_runner as cr_mod
+
+        monkeypatch.setattr(
+            sb,
+            "_read_module_source",
+            lambda mod: "" if mod is cr_mod else sb.inspect.getsource(mod),
+        )
+        passed, detail = sb._check_d28_network_policy()
+        assert passed is False
+        assert "network_policy" in detail
+
+
+class TestD29ProbeRegressionDetection:
+    """Prove the D-29 probe (clone timeout) is a REAL check."""
+
+    def test_fails_if_clone_removes_timeout(self, monkeypatch) -> None:
+        import general_ludd.git_automation.repo as repo_mod
+
+        def _fake_clone(self, *args, **kwargs):  # pragma: no cover - never called
+            raise NotImplementedError
+
+        monkeypatch.setattr(repo_mod.GitAutomation, "clone", _fake_clone)
+        passed, detail = sb._check_d29_clone_timeout()
+        assert passed is False
+        assert "timeout" in detail
+
+    def test_fails_if_clone_missing_entirely(self, monkeypatch) -> None:
+        import general_ludd.git_automation.repo as repo_mod
+
+        monkeypatch.delattr(repo_mod.GitAutomation, "clone")
+        passed, detail = sb._check_d29_clone_timeout()
+        assert passed is False
+        assert "no longer exists" in detail
+
+
 class TestMainExitCodeSemantics:
     def test_main_returns_zero_when_all_probes_pass(self) -> None:
-        # Against the real tree, all three probes are landed — the gate is green
-        # even though 21 of 24 items are honestly OPEN.
+        # Against the real tree, all probes are landed — the gate is green
+        # even though many items are honestly OPEN.
         assert sb._main() == 0
 
     def test_main_returns_nonzero_on_probe_regression(self, monkeypatch, capsys) -> None:
@@ -249,10 +360,6 @@ class TestMainExitCodeSemantics:
         assert "D-27" in out
 
     def test_main_stays_zero_when_only_open_items_present(self, monkeypatch, capsys) -> None:
-        # Force every checker to report OPEN (simulating "nothing landed yet")
-        # except leave the probes untouched -- but here we directly verify that
-        # OPEN items alone (the D-07/D-11/D-13/D-17/default set) never flip the
-        # exit code, regardless of how many of them exist.
         rc = sb._main()
         out = capsys.readouterr().out
         assert "OPEN=" in out

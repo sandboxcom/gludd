@@ -89,6 +89,19 @@ COMMANDS
         [QUERY]             Search query
         --limit N           Max results (default: 20)
         --daemon-url URL    Daemon URL
+      searx-search        Search models via SearXNG
+        [QUERY]             Search query
+        --source SRC        Source: huggingface, github, web (default: huggingface)
+        --searx-url URL     SearXNG instance URL
+      deploy              Deploy a model found via SearXNG
+        NAME                Model name to find and deploy
+        --provider P        Cloud provider (default: aws)
+        --engine E          Engine: vllm or llamacpp (default: vllm)
+        --workload-type W   Workload type (default: realtime_api)
+        --searx-url URL     SearXNG instance URL
+        --region REGION     Cloud region
+        --gpu-count N       Number of GPUs (default: 1)
+        --max-cost N        Max cost in USD (default: 10.0)
       downloaded          List downloaded models
         --daemon-url URL    Daemon URL
       discover            Discover free models from providers
@@ -195,6 +208,12 @@ COMMANDS
         --force             Force SIGKILL after SIGTERM
       results             Get final results for a completed test
         TESTFILE            Test file path (required)
+
+    searx               SearXNG meta-search engine commands
+      start               Start the local SearXNG server
+      stop                Stop the local SearXNG server
+      status              Check if SearXNG is running
+      config              Show/generate SearXNG configuration
 
     filestore           Filestore management commands
       list [PATH]         List filestore contents (default: /)
@@ -365,6 +384,29 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     models_search.add_argument("--daemon-url", default="http://localhost:8000")
     models_search.set_defaults(func=_cmd_models_search)
 
+    models_searx_search = models_sub.add_parser("searx-search", help="Search models via SearXNG")
+    models_searx_search.add_argument("query", nargs="?", default="", help="Search query")
+    models_searx_search.add_argument("--source", default="huggingface",
+                                     choices=["huggingface", "github", "web"],
+                                     help="Search source (default: huggingface)")
+    models_searx_search.add_argument("--searx-url", default=None, help="SearXNG instance URL")
+    models_searx_search.set_defaults(func=_cmd_models_searx_search)
+
+    models_deploy = models_sub.add_parser("deploy", help="Deploy a model found via SearXNG")
+    models_deploy.add_argument("name", help="Model name to find and deploy")
+    models_deploy.add_argument("--provider", default="aws", help="Cloud provider (aws, gcp, azure)")
+    models_deploy.add_argument("--engine", default="vllm", choices=["vllm", "llamacpp"],
+                               help="Inference engine")
+    models_deploy.add_argument("--workload-type", default="realtime_api",
+                               choices=["batch_inference", "realtime_api", "fine_tuning",
+                                        "speculative_decoding", "embedding_generation"],
+                               help="Workload pattern")
+    models_deploy.add_argument("--searx-url", default=None, help="SearXNG instance URL")
+    models_deploy.add_argument("--region", default=None, help="Cloud region")
+    models_deploy.add_argument("--gpu-count", type=int, default=1, help="Number of GPUs")
+    models_deploy.add_argument("--max-cost", type=float, default=10.0, help="Max cost in USD")
+    models_deploy.set_defaults(func=_cmd_models_deploy)
+
     models_downloaded = models_sub.add_parser("downloaded", help="List downloaded models")
     models_downloaded.add_argument("--daemon-url", default="http://localhost:8000")
     models_downloaded.set_defaults(func=_cmd_models_downloaded)
@@ -477,6 +519,22 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
 
     add_project_paths_subparser(proj_sub)
 
+    config_parser = sub.add_parser("config", help="User configuration commands")
+    config_parser.set_defaults(func=None)
+    config_sub = config_parser.add_subparsers(dest="config_command")
+
+    tf_parser = config_sub.add_parser("terraform", help="Terraform variable defaults")
+    tf_sub = tf_parser.add_subparsers(dest="terraform_command")
+
+    tf_get = tf_sub.add_parser("get", help="Show terraform variable defaults")
+    tf_get.add_argument("--field", default=None, help="Specific field to show")
+    tf_get.set_defaults(func=_cmd_config_terraform_get)
+
+    tf_set = tf_sub.add_parser("set", help="Set a terraform variable default")
+    tf_set.add_argument("field", help="Field name (e.g. region, instance_type, gpu_count)")
+    tf_set.add_argument("value", help="New value")
+    tf_set.set_defaults(func=_cmd_config_terraform_set)
+
     mcp_parser = sub.add_parser("mcp", help="MCP server catalog commands")
     mcp_parser.set_defaults(func=None)
     mcp_sub = mcp_parser.add_subparsers(dest="mcp_command")
@@ -544,6 +602,10 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     compute_launch.add_argument("--max-cost", type=float, default=10.0, help="Max cost in USD")
     compute_launch.add_argument("--no-spot", action="store_true", help="Disable spot instances")
     compute_launch.add_argument("--engine", default="vllm", help="Inference engine (vllm or llamacpp)")
+    compute_launch.add_argument("--workload-type", default="",
+                               choices=["batch_inference", "realtime_api", "fine_tuning",
+                                        "speculative_decoding", "embedding_generation"],
+                               help="Workload pattern to optimize deployment for")
     compute_launch.add_argument("--daemon-url", default="http://localhost:8000")
     compute_launch.set_defaults(func=_cmd_compute_launch)
 
@@ -561,6 +623,40 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     leaderboard_parser.add_argument("--task-type", default=None, help="Filter by task type")
     leaderboard_parser.add_argument("--daemon-url", default="http://localhost:8000")
     leaderboard_parser.set_defaults(func=_cmd_leaderboard)
+
+    pause_parser = sub.add_parser("pause", help="Pause a project or model")
+    pause_parser.set_defaults(func=None)
+    pause_sub = pause_parser.add_subparsers(dest="pause_command")
+
+    pause_list = pause_sub.add_parser("list", help="List paused entities")
+    pause_list.add_argument("--daemon-url", default="http://localhost:8000")
+    pause_list.set_defaults(func=_cmd_pause_list)
+
+    pause_project = pause_sub.add_parser("project", help="Pause a project")
+    pause_project.add_argument("target_id", help="Project ID to pause")
+    pause_project.add_argument("--reason", default="", help="Reason for pausing")
+    pause_project.add_argument("--daemon-url", default="http://localhost:8000")
+    pause_project.set_defaults(func=_cmd_pause_project)
+
+    pause_model = pause_sub.add_parser("model", help="Pause a model")
+    pause_model.add_argument("target_id", help="Model ID to pause")
+    pause_model.add_argument("--reason", default="", help="Reason for pausing")
+    pause_model.add_argument("--daemon-url", default="http://localhost:8000")
+    pause_model.set_defaults(func=_cmd_pause_model)
+
+    resume_parser = sub.add_parser("resume", help="Resume a paused project or model")
+    resume_parser.set_defaults(func=None)
+    resume_sub = resume_parser.add_subparsers(dest="resume_command")
+
+    resume_project = resume_sub.add_parser("project", help="Resume a project")
+    resume_project.add_argument("target_id", help="Project ID to resume")
+    resume_project.add_argument("--daemon-url", default="http://localhost:8000")
+    resume_project.set_defaults(func=_cmd_resume_project)
+
+    resume_model = resume_sub.add_parser("model", help="Resume a model")
+    resume_model.add_argument("target_id", help="Model ID to resume")
+    resume_model.add_argument("--daemon-url", default="http://localhost:8000")
+    resume_model.set_defaults(func=_cmd_resume_model)
 
     help_p = sub.add_parser("help", help="Show full manual")
     help_p.set_defaults(func=_cmd_help)
@@ -609,6 +705,12 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
 
     add_audit_plugins_subparser(sub)
     audit_plugins_parser = sub.choices["audit-plugins"]
+
+    # `gludd collection` — multi-version collection management.
+    from general_ludd.cli_collection import add_collection_subparser
+
+    add_collection_subparser(sub)
+    collection_parser = sub.choices["collection"]
 
     integrity_parser = sub.add_parser("integrity", help="File integrity monitoring commands")
     int_sub = integrity_parser.add_subparsers(dest="integrity_command")
@@ -895,6 +997,24 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     add_ornith_subparser(sub)
     ornith_parser = sub.choices["ornith"]
 
+    # `gludd searx` — SearXNG meta-search engine management.
+    searx_parser = sub.add_parser("searx", help="SearXNG meta-search engine commands")
+    searx_sub = searx_parser.add_subparsers(dest="searx_command")
+    searx_start = searx_sub.add_parser("start", help="Start the local SearXNG server")
+    searx_start.set_defaults(func=_cmd_searx)
+    searx_stop = searx_sub.add_parser("stop", help="Stop the local SearXNG server")
+    searx_stop.set_defaults(func=_cmd_searx)
+    searx_status = searx_sub.add_parser("status", help="Check if SearXNG is running")
+    searx_status.set_defaults(func=_cmd_searx)
+    searx_config = searx_sub.add_parser("config", help="Show/generate SearXNG configuration")
+    searx_config.set_defaults(func=_cmd_searx)
+
+    # `gludd service` — service discovery and catalog browsing.
+    from general_ludd.cli_service_commands import add_service_subparser
+
+    add_service_subparser(sub)
+    sub.choices["service"]
+
     # `gludd deploy-check` — static model-deployment misconfig detector.
     from general_ludd.cli_deploy_check import add_deploy_check_subparser
 
@@ -906,6 +1026,15 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
 
     add_core_changes_subparser(sub)
     core_changes_parser = sub.choices["core-changes"]
+
+    make_parser = sub.add_parser("make", help="Run a make target via MakeRunner")
+    make_parser.add_argument("target", help="Make target to run (e.g. test, lint, gate)")
+    make_parser.add_argument("--cwd", default=None, help="Working directory for make")
+    make_parser.add_argument("--timeout", type=int, default=None, help="Timeout in seconds")
+    make_parser.add_argument("--env", nargs="*", default=None,
+                             help="Extra env vars (KEY=VALUE ...)")
+    make_parser.add_argument("--stream", action="store_true", help="Stream phase markers")
+    make_parser.set_defaults(func=_cmd_make)
 
     # `gludd account` — account backup, deletion, and cloud retention policy.
     from general_ludd.cli_account import add_account_subparser
@@ -938,6 +1067,35 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     tbg_results.add_argument("testfile", help="Test file path")
     tbg_results.set_defaults(func=_cmd_testbg_results)
 
+    test_parser = sub.add_parser("test", help="Test runner commands")
+    test_parser.set_defaults(func=None)
+    test_sub = test_parser.add_subparsers(dest="test_command")
+
+    test_bg_parser = test_sub.add_parser("background", help="Background test runner commands")
+    test_bg_parser.set_defaults(func=None)
+    testbg2_sub = test_bg_parser.add_subparsers(dest="testbg_command")
+
+    tbg2_launch = testbg2_sub.add_parser("launch", help="Launch a test in the background")
+    tbg2_launch.add_argument("testfile", help="Test file path")
+    tbg2_launch.add_argument("--wait", action="store_true", help="Block until test completes")
+    tbg2_launch.set_defaults(func=_cmd_testbg_launch)
+
+    tbg2_status = testbg2_sub.add_parser("status", help="Check status of a background test")
+    tbg2_status.add_argument("testfile", help="Test file path")
+    tbg2_status.set_defaults(func=_cmd_testbg_status)
+
+    tbg2_poll = testbg2_sub.add_parser("poll-all", help="Status for all tracked background tests")
+    tbg2_poll.set_defaults(func=_cmd_testbg_poll_all)
+
+    tbg2_kill = testbg2_sub.add_parser("kill", help="Kill a background test")
+    tbg2_kill.add_argument("testfile", help="Test file path")
+    tbg2_kill.add_argument("--force", action="store_true", help="Force SIGKILL after SIGTERM")
+    tbg2_kill.set_defaults(func=_cmd_testbg_kill)
+
+    tbg2_results = testbg2_sub.add_parser("results", help="Get final results for a completed test")
+    tbg2_results.add_argument("testfile", help="Test file path")
+    tbg2_results.set_defaults(func=_cmd_testbg_results)
+
     subcommand_map = {
         "login": login_parser,
         "models": models_parser,
@@ -964,10 +1122,17 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
         "ornith": ornith_parser,
         "deploy-check": deploy_check_parser,
         "core-changes": core_changes_parser,
+        "make": make_parser,
         "payment": payment_parser,
         "account": account_parser,
         "audit-plugins": audit_plugins_parser,
+        "collection": collection_parser,
+        "config": config_parser,
+        "searx": searx_parser,
         "test-bg": testbg_parser,
+        "test": test_parser,
+        "pause": pause_parser,
+        "resume": resume_parser,
     }
 
     return parser, subcommand_map
@@ -1158,6 +1323,106 @@ def _cmd_onboard(args: argparse.Namespace) -> None:
         f"role={role_arn}\nConfig written: {config_path}"
     )
     sys.exit(0)
+
+
+def _cmd_searx(args: argparse.Namespace) -> None:
+    from general_ludd.searx.config import SearXConfig
+    from general_ludd.searx.install import ensure_searx_initialized, ensure_searx_installed
+    from general_ludd.searx.server import SearXServer
+
+    cmd = getattr(args, "searx_command", None)
+    if cmd == "start":
+        ensure_searx_installed()
+        ensure_searx_initialized()
+        server = SearXServer()
+        if server.ensure_started():
+            print(f"SearXNG running at {server.get_instance_url()}")
+        else:
+            print("ERROR: SearXNG failed to start", file=sys.stderr)
+            sys.exit(1)
+    elif cmd == "stop":
+        server = SearXServer()
+        server.stop()
+        print("SearXNG stopped")
+    elif cmd == "status":
+        server = SearXServer(external_url=None)
+        if server.is_running():
+            print(f"SearXNG running at {server.get_instance_url()}")
+        else:
+            print("SearXNG not running")
+            sys.exit(1)
+    elif cmd == "config":
+        path = SearXConfig().generate()
+        print(f"Settings written to {path}")
+        import yaml
+        with open(path) as f:
+            print(yaml.safe_dump(yaml.safe_load(f), default_flow_style=False))
+
+
+def _cmd_config_terraform_get(args: argparse.Namespace) -> None:
+    from pathlib import Path
+
+    from general_ludd.config.user_config import TerraformConfig, UserConfig
+
+    config_path = Path.home() / ".config" / "general-ludd" / "user.yml"
+    tc: TerraformConfig
+    if config_path.exists():
+        user_cfg = UserConfig.from_yaml(config_path)
+        tc = user_cfg.terraform
+    else:
+        tc = TerraformConfig()
+
+    if args.field:
+        val = getattr(tc, args.field, None)
+        if val is None:
+            print(f"Unknown terraform field: {args.field}")
+            sys.exit(1)
+        print(f"{args.field} = {val}")
+    else:
+        data = tc.model_dump()
+        for k, v in sorted(data.items()):
+            if isinstance(v, str):
+                print(f"{k:28} = \"{v}\"")
+            else:
+                print(f"{k:28} = {v}")
+
+
+def _cmd_config_terraform_set(args: argparse.Namespace) -> None:
+    from pathlib import Path
+
+    from general_ludd.config.user_config import TerraformConfig
+
+    valid_fields = set(TerraformConfig.model_fields.keys())
+    if args.field not in valid_fields:
+        print(f"Unknown terraform field: {args.field}")
+        print(f"Valid fields: {', '.join(sorted(valid_fields))}")
+        sys.exit(1)
+
+    config_path = Path.home() / ".config" / "general-ludd" / "user.yml"
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+
+    import yaml
+    data: dict[str, object] = {}
+    if config_path.exists():
+        with open(config_path) as f:
+            data = yaml.safe_load(f) or {}
+
+    raw_terraform: object = data.get("terraform", {})
+    tf_data: dict[str, object] = cast(dict[str, object], raw_terraform) if isinstance(raw_terraform, dict) else {}
+    tf_data[args.field] = args.value
+
+    try:
+        TerraformConfig.model_validate(tf_data)
+    except Exception as exc:
+        print(f"Validation error for {args.field}={args.value!r}: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    data["terraform"] = tf_data
+    with open(config_path, "w") as f:
+        yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+
+    print(f"terraform.{args.field} = {args.value}")
+    print(f"Written to {config_path}")
 
 
 def main() -> None:
@@ -1496,6 +1761,61 @@ def _cmd_health(args: argparse.Namespace) -> None:
     print(json.dumps(data, indent=2))
 
 
+def _cmd_pause_list(args: argparse.Namespace) -> None:
+    data = _http_call("GET", f"{args.daemon_url}/api/pause", timeout=10.0)
+    if data is None:
+        return
+    print(json.dumps(data, indent=2))
+
+
+def _cmd_pause_project(args: argparse.Namespace) -> None:
+    data = _http_call(
+        "POST",
+        f"{args.daemon_url}/api/pause/project",
+        json={"target_id": args.target_id, "reason": args.reason},
+        timeout=10.0,
+    )
+    if data is None:
+        return
+    print(json.dumps(data, indent=2))
+
+
+def _cmd_pause_model(args: argparse.Namespace) -> None:
+    data = _http_call(
+        "POST",
+        f"{args.daemon_url}/api/pause/model",
+        json={"target_id": args.target_id, "reason": args.reason},
+        timeout=10.0,
+    )
+    if data is None:
+        return
+    print(json.dumps(data, indent=2))
+
+
+def _cmd_resume_project(args: argparse.Namespace) -> None:
+    data = _http_call(
+        "POST",
+        f"{args.daemon_url}/api/resume/project",
+        json={"target_id": args.target_id},
+        timeout=10.0,
+    )
+    if data is None:
+        return
+    print(json.dumps(data, indent=2))
+
+
+def _cmd_resume_model(args: argparse.Namespace) -> None:
+    data = _http_call(
+        "POST",
+        f"{args.daemon_url}/api/resume/model",
+        json={"target_id": args.target_id},
+        timeout=10.0,
+    )
+    if data is None:
+        return
+    print(json.dumps(data, indent=2))
+
+
 def _cmd_project_add(args: argparse.Namespace) -> None:
     import json
 
@@ -1585,6 +1905,51 @@ def _cmd_models_search(args: argparse.Namespace) -> None:
         if r.get("downloads") is not None:
             print(f"    Downloads: {r['downloads']:,}")
         print()
+
+
+def _cmd_models_searx_search(args: argparse.Namespace) -> None:
+    """Search for models via SearXNG meta-search engine."""
+    from general_ludd.infra.model_search import SearXModelSearch
+
+    searcher = SearXModelSearch(base_url=args.searx_url)
+    results = searcher.search_models(args.query, source=args.source)
+    if not results:
+        print("No models found via SearXNG.")
+        return
+    print(f"Found {len(results)} model(s) for query: {args.query!r}")
+    for r in results:
+        print(f"\n  {r.name}")
+        if r.params_count:
+            print(f"    Params: {r.params_count}B")
+        if r.license:
+            print(f"    License: {r.license}")
+        if r.quantizations_available:
+            print(f"    Quants: {', '.join(r.quantizations_available)}")
+        print(f"    URL: {r.source_url}")
+
+
+def _cmd_models_deploy(args: argparse.Namespace) -> None:
+    """Deploy a model found via SearXNG search."""
+    import json
+
+    from general_ludd.infra.model_deploy import deploy_from_search
+
+    try:
+        result = deploy_from_search(
+            args.name,
+            provider=args.provider,
+            engine=args.engine,
+            workload_type=args.workload_type,
+            searx_url=args.searx_url,
+            region=args.region,
+            gpu_count=args.gpu_count,
+            max_cost=args.max_cost,
+        )
+    except ValueError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    print(json.dumps(result, indent=2, default=str))
 
 
 def _cmd_models_downloaded(args: argparse.Namespace) -> None:
@@ -1948,6 +2313,7 @@ def _cmd_compute_launch(args: argparse.Namespace) -> None:
         "max_cost_usd": args.max_cost,
         "spot": not args.no_spot,
         "engine": args.engine,
+        "workload_type": args.workload_type,
     }
     if args.region:
         payload["region"] = args.region
@@ -3854,6 +4220,50 @@ def _cmd_testbg_results(args: argparse.Namespace) -> None:
     runner = BackgroundTestRunner()
     result = runner.results(args.testfile)
     print(json.dumps(result, indent=2))
+
+
+def _cmd_make(args: argparse.Namespace) -> None:
+    from general_ludd.commands.make import MakeRunner
+
+    env_extra: dict[str, str] | None = None
+    if args.env:
+        env_extra = {}
+        for pair in args.env:
+            if "=" in pair:
+                k, v = pair.split("=", 1)
+                env_extra[k] = v
+
+    runner = MakeRunner(cwd=args.cwd)
+    if args.stream:
+        phases_seen: list[str] = []
+
+        def _cb(phase: str) -> None:
+            phases_seen.append(phase)
+            print(f"[PHASE] {phase}")
+
+        result = runner.run(
+            args.target,
+            timeout_s=args.timeout,
+            env_extra=env_extra,
+            stream=True,
+            stream_callback=_cb,
+        )
+    else:
+        result = runner.run(
+            args.target,
+            timeout_s=args.timeout,
+            env_extra=env_extra,
+        )
+
+    print(json.dumps({
+        "target": result.target,
+        "exit_code": result.exit_code,
+        "success": result.success,
+        "duration_s": result.duration_s,
+        "timed_out": result.timed_out,
+        "phases": result.phases,
+    }, indent=2))
+    sys.exit(0 if result.success else 1)
 
 
 if __name__ == "__main__":

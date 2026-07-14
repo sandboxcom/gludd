@@ -86,6 +86,27 @@ class ComputeConfig(BaseModel):
     # opt in to unverified TLS against a vSphere endpoint with a self-signed
     # or otherwise untrusted certificate.
     vsphere_verify_ssl: bool = True
+    # Workload-aware deployment: selects the serving profile (batch, realtime,
+    # fine-tuning, speculative, embedding). Empty string = no workload override.
+    workload_type: str = ""
+    # Optional explicit overrides for the deployment optimizer knobs.
+    # Keys: context_length, max_tokens, batch_size, tensor_parallel,
+    # gpu_memory_utilization, quantization, threads, max_num_seqs,
+    # enforce_eager, enable_prefix_caching, enable_chunked_prefill, kv_cache_dtype.
+    deployment_profile: dict[str, object] | None = None
+
+    @field_validator("workload_type")
+    @classmethod
+    def _validate_workload_type(cls, v: str) -> str:
+        if v == "":
+            return v
+        allowed = {"batch_inference", "realtime_api", "fine_tuning",
+                   "speculative_decoding", "embedding_generation"}
+        if v not in allowed:
+            raise ValueError(
+                f"workload_type must be one of {allowed!r} or empty string, got {v!r}"
+            )
+        return v
 
     @field_validator("gpu_count")
     @classmethod

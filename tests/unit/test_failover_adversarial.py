@@ -105,7 +105,14 @@ class TestFailoverEventRecording:
         chain = ModelFailoverChain("p", ["f1"])
         chain.record_failover("p", "f1", "429 too many requests")
         events = chain.get_failover_events()
-        assert events == [{"from": "p", "to": "f1", "error": "429 too many requests"}]
+        assert len(events) == 1
+        e = events[0]
+        assert e["from"] == "p"
+        assert e["to"] == "f1"
+        assert e["error"] == "429 too many requests"
+        assert e["attempt"] == 1
+        assert e["exception_type"] == "unknown"
+        assert isinstance(e["timestamp"], float)
 
     def test_events_recorded_in_order_walking_the_chain(self):
         # Simulate a real loop exhausting the chain p -> f1 -> f2.
@@ -152,11 +159,10 @@ class TestFailoverEventRecording:
         # that from/to are actually in the configured chain.
         chain = ModelFailoverChain("p", ["f1"])
         chain.record_failover("ghost", "phantom", "err")
-        assert chain.get_failover_events()[0] == {
-            "from": "ghost",
-            "to": "phantom",
-            "error": "err",
-        }
+        e = chain.get_failover_events()[0]
+        assert e["from"] == "ghost"
+        assert e["to"] == "phantom"
+        assert e["error"] == "err"
 
     def test_duplicate_failover_events_are_appended_not_collapsed(self):
         chain = ModelFailoverChain("p", ["f1"])

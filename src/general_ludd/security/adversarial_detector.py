@@ -26,7 +26,11 @@ from enum import StrEnum
 from typing import Any
 
 from general_ludd.security.fix_not_disable import ActionIntent
-from general_ludd.security.sanitize import confine_path_multi, workspace_roots
+from general_ludd.security.sanitize import (
+    confine_path,
+    confine_path_multi,
+    workspace_roots,
+)
 
 
 class Severity(StrEnum):
@@ -610,26 +614,39 @@ class AdversarialCodeDetector:
 
         ``file_path`` is jailed with the same realpath+commonpath confinement
         used by the other admin path-confined endpoints (integrity, models,
-        skills routers) — :func:`general_ludd.security.sanitize.confine_path_multi`
-        — so this is safe to expose to a caller-controlled (PSK-gated) HTTP
-        request without becoming an arbitrary-file-read primitive.
+        skills routers) — :func:`general_ludd.security.sanitize.confine_path` /
+        :func:`general_ludd.security.sanitize.confine_path_multi` — so this is
+        safe to expose to a caller-controlled (PSK-gated) HTTP request without
+        becoming an arbitrary-file-read primitive.
 
-        The default allowlist is :func:`general_ludd.security.sanitize.workspace_roots`
-        (process CWD + system temp dir). ``allowed_root`` is an escape hatch for
+        When ``allowed_root`` is ``None``, the default allowlist is
+        :func:`general_ludd.security.sanitize.workspace_roots` (process CWD +
+        system temp dir). When ``allowed_root`` IS specified (escape hatch for
         tests and legitimate internal callers that need to scan a path outside
-        that default (e.g. a project checkout elsewhere on disk); it is added to
-        the default roots rather than replacing them.
+        the default), ONLY that root is checked — the default roots are NOT
+        appended, so symlink escapes from the specified root are correctly
+        rejected even if the resolved target happens to lie inside a default
+        root.
 
         Raises:
             PermissionError: ``file_path`` does not resolve inside any allowed
                 root (path traversal, absolute-path escape, or symlink escape).
         """
-        roots = workspace_roots(allowed_root)
-        confined = confine_path_multi(file_path, roots)
-        if confined is None:
-            raise PermissionError(
-                f"scan_file: path {file_path!r} escapes the allowed roots {roots!r}"
-            )
+        if allowed_root is not None:
+            confined = confine_path(file_path, allowed_root)
+            if confined is None:
+                raise PermissionError(
+                    f"scan_file: path {file_path!r} escapes the allowed root "
+                    f"{allowed_root!r}"
+                )
+        else:
+            roots = workspace_roots()
+            confined = confine_path_multi(file_path, roots)
+            if confined is None:
+                raise PermissionError(
+                    f"scan_file: path {file_path!r} escapes the allowed roots "
+                    f"{roots!r}"
+                )
 
         try:
             with open(confined, encoding="utf-8") as f:

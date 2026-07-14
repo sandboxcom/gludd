@@ -19,12 +19,19 @@ the cloned role for execution via the existing job queue.
 from __future__ import annotations
 
 import json
+import re
+import shlex
 import shutil
 import uuid
 from pathlib import Path
 from typing import Any
 
-__all__ = ["RoleCloner"]
+__all__ = [
+    "SUPPORTED_PROCESSOR_TOOLS",
+    "_FORBIDDEN_SHELL_CHARS",
+    "_SAFE_BINARY_RE",
+    "RoleCloner",
+]
 
 # Supported external processor tool kinds. Unknown tool kinds raise ValueError.
 SUPPORTED_PROCESSOR_TOOLS: frozenset[str] = frozenset(
@@ -32,6 +39,40 @@ SUPPORTED_PROCESSOR_TOOLS: frozenset[str] = frozenset(
 )
 
 _DEFAULT_WORK_ROOT = Path("/tmp/gludd-stream-clones")
+
+_SAFE_BINARY_RE = re.compile(r"^(?!.*\.\.)[a-zA-Z0-9_./-]+$")
+
+_FORBIDDEN_SHELL_CHARS: frozenset[str] = frozenset(
+    "`$();|&<>!\n\r'\"\\\0"
+)
+
+_ARG_FORBIDDEN_CHARS: frozenset[str] = frozenset("`$();|&!<>\n\r\0")
+
+
+def _parse_processor_args(raw: str) -> list[str]:
+    if not raw.strip():
+        return []
+    try:
+        tokens = shlex.split(raw)
+    except ValueError as exc:
+        raise ValueError(
+            f"processor args {raw!r} contain malformed shell quoting"
+        ) from exc
+    for token in tokens:
+        if "\0" in token:
+            raise ValueError(
+                "processor arg contains null byte"
+            )
+        if "\n" in token or "\r" in token:
+            raise ValueError(
+                "processor arg contains newline/carriage-return"
+            )
+        for ch in token:
+            if ch in _ARG_FORBIDDEN_CHARS:
+                raise ValueError(
+                    f"processor arg {token!r} contains forbidden shell character {ch!r}"
+                )
+    return tokens
 
 
 class RoleCloner:
@@ -74,6 +115,14 @@ class RoleCloner:
             raise FileNotFoundError(f"Role {role_name!r} not found under {roles_root}")
         self.work_root.mkdir(parents=True, exist_ok=True)
         clone_path = self.work_root / f"{role_name}-{uuid.uuid4().hex}"
+        src = src.resolve()
+        roles_root = (self.collection_root / "roles").resolve()
+        try:
+            src.relative_to(roles_root)
+        except ValueError:
+            raise ValueError(
+                f"Role {role_name!r} resolves outside {roles_root}"
+            ) from None
         shutil.copytree(src, clone_path)
 
         (clone_path / "clone-overrides.json").write_text(
@@ -127,8 +176,22 @@ class RoleCloner:
         clone_path: Path, processor: dict[str, Any], *, kind: str
     ) -> Path:
         binary = processor.get("binary", kind)
-        extra_args = processor.get("args", "")
+        extra_args_raw = processor.get("args", "")
+        binary_str = str(binary)
+        if not _SAFE_BINARY_RE.match(binary_str):
+            raise ValueError(
+                f"processor binary {binary!r} contains unsafe characters; "
+                f"expected [a-zA-Z0-9_./-]+"
+            )
+        if binary_str.startswith("-"):
+            raise ValueError(
+                f"processor binary {binary!r} starts with '-'; "
+                f"leading-dash may be interpreted as an exec flag"
+            )
+        extra_args_list = _parse_processor_args(str(extra_args_raw))
         out_path = clone_path / "process-chunk.sh"
+        quoted_binary = shlex.quote(binary_str)
+        quoted_args = [shlex.quote(a) for a in extra_args_list]
         lines = [
             "#!/usr/bin/env bash",
             f"# Auto-generated {kind} chunk processor.",
@@ -137,8 +200,13 @@ class RoleCloner:
             'if [ -z "${CHUNK_PATH:-}" ]; then',
             '  CHUNK_PATH="$1"',
             'fi',
-            f'exec {binary} {extra_args} "$CHUNK_PATH"',
+            f"PROCESSOR_BINARY={quoted_binary}",
         ]
+        if quoted_args:
+            lines.append(f"PROCESSOR_ARGS=({' '.join(quoted_args)})")
+        else:
+            lines.append("PROCESSOR_ARGS=()")
+        lines.append('exec "${PROCESSOR_BINARY}" "${PROCESSOR_ARGS[@]}" -- "$CHUNK_PATH"')
         out_path.write_text("\n".join(lines) + "\n")
         out_path.chmod(0o755)
         return out_path

@@ -65,8 +65,8 @@ def _gateway_with_secret() -> ModelGateway:
         model_profile_id="flagship",
         provider="openai",
         model_name="glm-4.6",
-        api_key=_SECRET_VALUE,
-        api_base="https://api.example.com",
+        credential_alias=_SECRET_VALUE,
+        api_base_alias="https://api.example.com",
     )
     gw = MagicMock(spec=ModelGateway)
     gw.list_profiles.return_value = [profile]

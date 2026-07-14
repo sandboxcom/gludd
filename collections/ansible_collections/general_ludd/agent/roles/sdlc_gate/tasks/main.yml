@@ -1,0 +1,753 @@
+---
+# sdlc_gate role — COMPOSING FAIL-CLOSED SDLC pipeline gate
+#
+# Codifies the AI-DLC research corpus into a runtime-enforceable pipeline gate.
+# Each stage of the SDLC (intake → planning → implementation → review →
+# gate → integration → deployment → operate) carries entry and exit gates
+# that MUST be satisfied for a task to advance.
+#
+# Mirrors the composing fail-closed pattern of security_gate and the
+# fail-closed enforcement of enforcement_gate. A missing required check
+# or artifact = gate_passed: false = pipeline blocked.
+#
+# Operations:
+#   check_stage_entry  — verify entry gate for a stage is satisfied
+#   check_stage_exit   — verify exit gate (all roles complete, all checks pass)
+#   advance_stage      — mark stage complete, produce validation token, emit event
+#   audit_token_chain  — walk the token chain, report missing/broken tokens
+#   list_stages        — enumerate all stages and their status
+#   validate_pipeline  — end-to-end pipeline health check
+#
+# SAFE-BY-DEFAULT: never mutates the repo. Report-only unless
+# fail_closed=true (default), which fails the playbook on gate block.
+
+# ── Validate inputs ──────────────────────────────────────────────────────────
+
+- name: Assert operation is set and valid
+  ansible.builtin.assert:
+    that:
+      - operation | length > 0
+      - >-
+        operation in ['check_stage_entry', 'check_stage_exit', 'advance_stage',
+                      'audit_token_chain', 'list_stages', 'validate_pipeline']
+    fail_msg: >-
+      operation must be one of: check_stage_entry, check_stage_exit, advance_stage,
+      audit_token_chain, list_stages, validate_pipeline. Got: '{{ operation }}'.
+
+- name: Assert stage is valid for stage-scoped operations
+  ansible.builtin.assert:
+    that:
+      - stage | length > 0
+      - >-
+        stage in ['intake', 'planning', 'implementation', 'review', 'gate',
+                  'integration', 'deployment', 'operate']
+    fail_msg: >-
+      Invalid stage '{{ stage }}'. Must be one of: intake, planning, implementation,
+      review, gate, integration, deployment, operate.
+  when: operation in ['check_stage_entry', 'check_stage_exit', 'advance_stage']
+
+# ── Gather context ───────────────────────────────────────────────────────────
+
+- name: Gather live daemon facts
+  general_ludd.agent.gludd_facts:
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: live_facts
+  no_log: "{{ psk | length > 0 }}"
+  when: not ansible_check_mode
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Read SDLC pipeline configuration
+  ansible.builtin.slurp:
+    src: "{{ sdlc_config }}"
+  register: _sg_sdlc_config_raw
+
+- name: Parse SDLC config
+  ansible.builtin.set_fact:
+    _sg_sdlc_config: "{{ _sg_sdlc_config_raw.content | b64decode | from_yaml }}"
+
+- name: Extract pipeline stages from config
+  ansible.builtin.set_fact:
+    _sg_pipeline_stages: "{{ _sg_sdlc_config.pipeline_stages }}"
+    _sg_quality_gates: "{{ _sg_sdlc_config.quality_gates }}"
+    _sg_evidence_bundles: "{{ _sg_sdlc_config.evidence_bundles }}"
+    _sg_role_mapping: "{{ _sg_sdlc_config.role_stage_mapping }}"
+    _sg_blocking_stages: "{{ _sg_sdlc_config.blocking_stages }}"
+    _sg_stage_timeouts: "{{ _sg_sdlc_config.stage_timeouts }}"
+
+- name: Build stage index
+  ansible.builtin.set_fact:
+    _sg_stage_index: >-
+      {%- set idx = {} -%}
+      {%- for s in _sg_pipeline_stages -%}
+        {%- set _ = idx.update({s.stage: {'number': s.number, 'entry_gate': s.entry_gate, 'exit_gate': s.exit_gate, 'roles': s.roles, 'validation_token': s.validation_token, 'evidence': s.evidence, 'blocking': s.blocking, 'timeout_minutes': s.timeout_minutes}}) -%}
+      {%- endfor -%}
+      {{ idx }}
+
+- name: Set current stage config
+  ansible.builtin.set_fact:
+    _sg_stage_config: "{{ _sg_stage_index[stage] }}"
+    _sg_stage_number: "{{ _sg_stage_index[stage].number }}"
+  when: operation in ['check_stage_entry', 'check_stage_exit', 'advance_stage']
+
+# ── Timeout check ────────────────────────────────────────────────────────────
+
+- name: Compute effective timeout from config or override
+  ansible.builtin.set_fact:
+    _sg_timeout_minutes: >-
+      {{ (stage_timeout_minutes | int) if (stage_timeout_minutes | default(0) | int > 0)
+         else (_sg_stage_timeouts[stage] | default(60) | int) }}
+  when: operation in ['check_stage_entry', 'check_stage_exit', 'advance_stage']
+
+# ══════════════════════════════════════════════════════════════════════════════
+# OPERATION: check_stage_entry — verify entry gate for a stage is satisfied
+# ══════════════════════════════════════════════════════════════════════════════
+
+- name: "[check_stage_entry] Check entry gate conditions"
+  block:
+
+    - name: "[check_stage_entry] Check previous stage token exists (when stage > 0)"
+      ansible.builtin.stat:
+        path: "{{ artifact_dir }}/{{ _sg_pipeline_stages[_sg_stage_number | int - 1].validation_token }}.json"
+      register: _sg_prev_token_stat
+      when: (_sg_stage_number | int) > 0
+
+    - name: "[check_stage_entry] Check task_id is set"
+      ansible.builtin.set_fact:
+        _sg_task_id_present: "{{ task_id | length > 0 }}"
+
+    - name: "[check_stage_entry] Collate entry gate results"
+      ansible.builtin.set_fact:
+        _sg_entry_checks:
+          - condition: "task_id_present"
+            passed: "{{ task_id | length > 0 }}"
+            severity: "critical"
+          - condition: "previous_stage_token"
+            passed: "{{ (_sg_stage_number | int) == 0 or (_sg_prev_token_stat.stat.exists | default(false)) }}"
+            severity: "{{ 'critical' if (_sg_stage_number | int) > 0 else 'na' }}"
+
+    - name: "[check_stage_entry] Determine entry gate passed"
+      ansible.builtin.set_fact:
+        _sg_entry_gate_passed: >-
+          {{
+            (_sg_entry_checks | selectattr('severity', 'equalto', 'critical')
+                               | selectattr('passed', 'equalto', false)
+                               | list | length == 0)
+          }}
+
+    - name: "[check_stage_entry] Build block reasons"
+      ansible.builtin.set_fact:
+        _sg_block_reasons: >-
+          {{
+            _sg_entry_checks
+            | selectattr('passed', 'equalto', false)
+            | map(attribute='condition')
+            | list
+          }}
+
+    - name: "[check_stage_entry] Write entry gate artifact"
+      ansible.builtin.copy:
+        content: >-
+          {{ {
+            'role': 'sdlc_gate',
+            'operation': 'check_stage_entry',
+            'stage': stage,
+            'stage_number': _sg_stage_number | int,
+            'entry_gate_passed': _sg_entry_gate_passed | bool,
+            'checks': _sg_entry_checks,
+            'block_reasons': _sg_block_reasons,
+            'token_chain': {
+              'previous_stage': (_sg_pipeline_stages[_sg_stage_number | int - 1].stage | default('none')),
+              'previous_token_present': _sg_prev_token_stat.stat.exists | default(false) if (_sg_stage_number | int) > 0 else null
+            },
+            'system_context': {
+              'backlog_size': live_facts.ansible_facts.gludd.todos.backlog_size | default(0) | int
+            }
+          } | to_nice_json }}
+        dest: "{{ artifact_dir }}/sdlc_entry_{{ stage }}.json"
+        mode: "0644"
+
+  when: operation == 'check_stage_entry'
+
+# ══════════════════════════════════════════════════════════════════════════════
+# OPERATION: check_stage_exit — verify exit gate for a stage
+# ══════════════════════════════════════════════════════════════════════════════
+
+- name: "[check_stage_exit] Check exit gate conditions"
+  block:
+
+    # -- Check primary role artifacts exist --
+    - name: "[check_stage_exit] Stat primary role artifacts"
+      ansible.builtin.stat:
+        path: "{{ artifact_dir }}/{{ item }}.json"
+      register: _sg_role_artifact_stats
+      loop: "{{ _sg_stage_config.roles.primary | default([]) }}"
+      loop_control:
+        label: "{{ item }}"
+      when: _sg_stage_config.roles.primary is defined
+
+    - name: "[check_stage_exit] Stat security role artifacts"
+      ansible.builtin.stat:
+        path: "{{ artifact_dir }}/{{ item }}.json"
+      register: _sg_sec_role_artifact_stats
+      loop: "{{ _sg_stage_config.roles.security | default([]) }}"
+      loop_control:
+        label: "{{ item }}"
+      when: _sg_stage_config.roles.security is defined
+
+    - name: "[check_stage_exit] Collate role completion"
+      ansible.builtin.set_fact:
+        _sg_primary_roles_status: >-
+          {%- set results = [] -%}
+          {%- for item in _sg_role_artifact_stats.results | default([]) -%}
+            {%- set _ = results.append({
+              'role': item.item,
+              'artifact_present': item.stat.exists | default(false),
+              'severity': 'critical'
+            }) -%}
+          {%- endfor -%}
+          {{ results }}
+        _sg_security_roles_status: >-
+          {%- set results = [] -%}
+          {%- for item in _sg_sec_role_artifact_stats.results | default([]) -%}
+            {%- set _ = results.append({
+              'role': item.item,
+              'artifact_present': item.stat.exists | default(false),
+              'severity': 'critical'
+            }) -%}
+          {%- endfor -%}
+          {{ results }}
+
+    # -- Check evidence bundle artifacts --
+    - name: "[check_stage_exit] Stat evidence bundle artifacts"
+      ansible.builtin.stat:
+        path: "{{ item.path | default(artifact_dir + '/' + item.artifact) }}"
+      register: _sg_evidence_stats
+      loop: "{{ (_sg_evidence_bundles[stage].required | default([])) }}"
+      loop_control:
+        label: "{{ item.artifact }}"
+      when: _sg_evidence_bundles[stage].required is defined
+
+    - name: "[check_stage_exit] Collate evidence status"
+      ansible.builtin.set_fact:
+        _sg_evidence_status: >-
+          {%- set results = [] -%}
+          {%- for item in _sg_evidence_stats.results | default([]) -%}
+            {%- set _ = results.append({
+              'artifact': item.item.artifact,
+              'present': item.stat.exists | default(false),
+              'severity': 'critical'
+            }) -%}
+          {%- endfor -%}
+          {{ results }}
+
+    # -- Check quality gate results for the stage --
+    - name: "[check_stage_exit] Read quality gate artifacts for verification"
+      ansible.builtin.slurp:
+        src: "{{ artifact_dir }}/{{ checker }}.json"
+      register: _sg_qg_slurps
+      loop: >-
+        {{ (_sg_stage_config.roles.gatekeeper | default([]))
+           + (_sg_stage_config.roles.primary | default([]))
+           + (_sg_stage_config.roles.security | default([])) }}
+      loop_control:
+        loop_var: checker
+        label: "{{ checker }}"
+      failed_when: false
+      when:
+        - _sg_stage_config.roles.gatekeeper is defined
+        - item.stat.exists | default(false)
+
+    - name: "[check_stage_exit] Extract quality gate verdicts"
+      ansible.builtin.set_fact:
+        _sg_qg_verdicts: >-
+          {%- set verdicts = [] -%}
+          {%- for slurp in _sg_qg_slurps.results | default([]) -%}
+            {%- if slurp.content | default('') | length > 0 -%}
+              {%- set parsed = slurp.content | b64decode | from_json | default({}) -%}
+              {%- set verdict = parsed.get('gate_passed', parsed.get('verdict', parsed.get('gate_result', parsed.get('status', 'unknown')))) -%}
+              {%- set _ = verdicts.append({
+                'checker': slurp.checker,
+                'verdict': verdict,
+                'passed': verdict in [true, 'PASS', 'approve', 'completed', 'archived', 'initialized']
+              }) -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {{ verdicts }}
+
+    - name: "[check_stage_exit] Determine exit gate passed (fail-closed)"
+      ansible.builtin.set_fact:
+        _sg_exit_checks_complete: >-
+          {%- set all_checks = [] -%}
+          {%- for r in _sg_primary_roles_status | default([]) -%}
+            {%- set _ = all_checks.append(r.artifact_present) -%}
+          {%- endfor -%}
+          {%- for e in _sg_evidence_status | default([]) -%}
+            {%- set _ = all_checks.append(e.present) -%}
+          {%- endfor -%}
+          {%- for q in _sg_qg_verdicts | default([]) -%}
+            {%- set _ = all_checks.append(q.passed) -%}
+          {%- endfor -%}
+          {{ all_checks | length > 0 and (false not in all_checks) }}
+        _sg_exit_gate_passed: >-
+          {{ _sg_exit_checks_complete | bool }}
+
+    - name: "[check_stage_exit] Build consolidated block reasons"
+      ansible.builtin.set_fact:
+        _sg_exit_block_reasons: >-
+          {%- set reasons = [] -%}
+          {%- for r in _sg_primary_roles_status | default([]) -%}
+            {%- if not r.artifact_present -%}
+              {%- set _ = reasons.append('missing_role_artifact:' + r.role) -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {%- for e in _sg_evidence_status | default([]) -%}
+            {%- if not e.present -%}
+              {%- set _ = reasons.append('missing_evidence:' + e.artifact) -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {%- for q in _sg_qg_verdicts | default([]) -%}
+            {%- if not q.passed -%}
+              {%- set _ = reasons.append('quality_gate_failed:' + q.checker + '=' + (q.verdict | string)) -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {{ reasons }}
+
+    # -- Write exit gate artifact --
+    - name: "[check_stage_exit] Write exit gate artifact"
+      ansible.builtin.copy:
+        content: >-
+          {{ {
+            'role': 'sdlc_gate',
+            'operation': 'check_stage_exit',
+            'stage': stage,
+            'stage_number': _sg_stage_number | int,
+            'exit_gate_passed': _sg_exit_gate_passed | bool,
+            'exit_checks_complete': _sg_exit_checks_complete | bool,
+            'primary_roles': _sg_primary_roles_status | default([]),
+            'security_roles': _sg_security_roles_status | default([]),
+            'evidence_bundle': _sg_evidence_status | default([]),
+            'quality_gate_verdicts': _sg_qg_verdicts | default([]),
+            'block_reasons': _sg_exit_block_reasons | default([]),
+            'blocking': _sg_stage_config.blocking | default(false),
+            'timeout_minutes': _sg_timeout_minutes | int,
+            'validation_token': _sg_stage_config.validation_token,
+            'next_stage': (_sg_pipeline_stages[_sg_stage_number | int + 1].stage
+                           if (_sg_stage_number | int + 1 < _sg_pipeline_stages | length)
+                           else 'terminal'),
+            'system_context': {
+              'backlog_size': live_facts.ansible_facts.gludd.todos.backlog_size | default(0) | int,
+              'success_rate': live_facts.ansible_facts.gludd.history.success_rate | default(0) | float
+            }
+          } | to_nice_json }}
+        dest: "{{ artifact_dir }}/sdlc_exit_{{ stage }}.json"
+        mode: "0644"
+
+    # -- Notify on block --
+    - name: "[check_stage_exit] Send block notification"
+      general_ludd.agent.gludd_message:
+        state: send
+        sender: sdlc_gate
+        recipient: "{{ handoff_recipient }}"
+        topic: "{{ topic_prefix }}_stage_blocked"
+        body: >-
+          {{ {
+            'stage': stage,
+            'stage_number': _sg_stage_number | int,
+            'exit_gate_passed': false,
+            'block_reasons': _sg_exit_block_reasons | default([]),
+            'task_id': task_id,
+            'task_name': task_name,
+            'timestamp': ansible_date_time.iso8601
+          } | to_json }}
+        priority: "high"
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk }}"
+      no_log: "{{ psk | length > 0 }}"
+      when:
+        - handoff_recipient | length > 0
+        - notify_on_block | bool
+        - not (_sg_exit_gate_passed | bool)
+        - not ansible_check_mode
+
+    # -- Fail on block (when fail_closed=true) --
+    - name: "[check_stage_exit] Fail on exit gate block (FAIL-CLOSED)"
+      ansible.builtin.fail:
+        msg: >-
+          SDLC exit gate BLOCKED for stage '{{ stage }}' (task={{ task_id }}):
+          {{ _sg_exit_block_reasons | default([]) | join(', ') }}.
+          Pipeline requires these issues to be resolved before advancing
+          to stage '{{ (_sg_pipeline_stages[_sg_stage_number | int + 1].stage if (_sg_stage_number | int + 1 < _sg_pipeline_stages | length) else 'terminal') }}'.
+      when:
+        - fail_closed | bool
+        - not (_sg_exit_gate_passed | bool)
+
+  when: operation == 'check_stage_exit'
+
+# ══════════════════════════════════════════════════════════════════════════════
+# OPERATION: advance_stage — mark stage complete, produce token, emit event
+# ══════════════════════════════════════════════════════════════════════════════
+
+- name: "[advance_stage] Advance to next stage"
+  block:
+
+    # First run the exit gate check — can't advance if exit gate fails
+    - name: "[advance_stage] Run exit gate check first"
+      ansible.builtin.include_tasks: main.yml
+      vars:
+        operation: "check_stage_exit"
+
+    - name: "[advance_stage] Determine next stage"
+      ansible.builtin.set_fact:
+        _sg_next_stage: >-
+          {{ (_sg_pipeline_stages[_sg_stage_number | int + 1].stage
+              if (_sg_stage_number | int + 1 < _sg_pipeline_stages | length)
+              else 'terminal') }}
+
+    - name: "[advance_stage] Write validation token artifact"
+      ansible.builtin.copy:
+        content: >-
+          {{ {
+            'token': _sg_stage_config.validation_token,
+            'stage': stage,
+            'stage_number': _sg_stage_number | int,
+            'task_id': task_id,
+            'task_name': task_name,
+            'produced_at': ansible_date_time.iso8601,
+            'next_stage': _sg_next_stage,
+            'producer': 'general_ludd.agent.sdlc_gate'
+          } | to_nice_json }}
+        dest: "{{ artifact_dir }}/{{ _sg_stage_config.validation_token }}.json"
+        mode: "0644"
+
+    - name: "[advance_stage] Emit stage transition event"
+      general_ludd.agent.gludd_message:
+        state: send
+        sender: sdlc_gate
+        recipient: "{{ handoff_recipient }}"
+        topic: "{{ topic_prefix }}_stage_advanced"
+        body: >-
+          {{ {
+            'stage_from': stage,
+            'stage_to': _sg_next_stage,
+            'validation_token': _sg_stage_config.validation_token,
+            'task_id': task_id,
+            'task_name': task_name,
+            'timestamp': ansible_date_time.iso8601
+          } | to_json }}
+        priority: "normal"
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk }}"
+      no_log: "{{ psk | length > 0 }}"
+      when:
+        - handoff_recipient | length > 0
+        - notify_on_advance | bool
+        - not ansible_check_mode
+
+    - name: "[advance_stage] Write advancement artifact"
+      ansible.builtin.copy:
+        content: >-
+          {{ {
+            'role': 'sdlc_gate',
+            'operation': 'advance_stage',
+            'status': 'advanced',
+            'stage_from': stage,
+            'stage_number_from': _sg_stage_number | int,
+            'stage_to': _sg_next_stage,
+            'validation_token_produced': _sg_stage_config.validation_token,
+            'task_id': task_id,
+            'task_name': task_name,
+            'advanced_at': ansible_date_time.iso8601
+          } | to_nice_json }}
+        dest: "{{ artifact_dir }}/sdlc_advance_{{ stage }}.json"
+        mode: "0644"
+
+  when:
+    - operation == 'advance_stage'
+    - _sg_exit_gate_passed | default(false) | bool
+
+# ══════════════════════════════════════════════════════════════════════════════
+# OPERATION: audit_token_chain — walk the validation token chain
+# ══════════════════════════════════════════════════════════════════════════════
+
+- name: "[audit_token_chain] Audit validation token chain"
+  block:
+
+    - name: "[audit_token_chain] Build expected token list from config"
+      ansible.builtin.set_fact:
+        _sg_token_chain: >-
+          {%- set tokens = [] -%}
+          {%- for s in _sg_pipeline_stages -%}
+            {%- set _ = tokens.append({
+              'token': s.validation_token,
+              'stage': s.stage,
+              'number': s.number,
+              'expected_path': artifact_dir + '/' + s.validation_token + '.json'
+            }) -%}
+          {%- endfor -%}
+          {{ tokens }}
+
+    - name: "[audit_token_chain] Stat each validation token file"
+      ansible.builtin.stat:
+        path: "{{ item.expected_path }}"
+      register: _sg_token_stats
+      loop: "{{ _sg_token_chain }}"
+      loop_control:
+        label: "{{ item.token }}"
+
+    - name: "[audit_token_chain] Read present token files for content verification"
+      ansible.builtin.slurp:
+        src: "{{ item.item.expected_path }}"
+      register: _sg_token_slurps
+      loop: "{{ _sg_token_stats.results }}"
+      loop_control:
+        label: "{{ item.item.token }}"
+      when: item.stat.exists | default(false)
+
+    - name: "[audit_token_chain] Build token chain audit report"
+      ansible.builtin.set_fact:
+        _sg_token_audit:
+          chain: >-
+            {%- set chain = [] -%}
+            {%- for stat in _sg_token_stats.results -%}
+              {%- set token_info = {'token': stat.item.token,
+                                    'stage': stat.item.stage,
+                                    'number': stat.item.number,
+                                    'present': stat.stat.exists | default(false)} -%}
+              {%- if stat.stat.exists | default(false) -%}
+                {%- set slurp = _sg_token_slurps.results | selectattr('item.item.token', 'equalto', stat.item.token) | first | default({}) -%}
+                {%- if slurp.content | default('') | length > 0 -%}
+                  {%- set parsed = slurp.content | b64decode | from_json | default({}) -%}
+                  {%- set _ = token_info.update({
+                    'valid': parsed.token == stat.item.token,
+                    'task_id_match': parsed.task_id == task_id if task_id | length > 0 else null,
+                    'has_next_stage': parsed.next_stage | default('') | length > 0,
+                    'produced_at': parsed.produced_at | default('unknown')
+                  }) -%}
+                {%- else -%}
+                  {%- set _ = token_info.update({'valid': false, 'error': 'empty_file'}) -%}
+                {%- endif -%}
+              {%- endif -%}
+              {%- set _ = chain.append(token_info) -%}
+            {%- endfor -%}
+            {{ chain }}
+          chain_health:
+            total_present: "{{ _sg_token_audit.chain | selectattr('present') | list | length }}"
+            total_expected: "{{ _sg_token_chain | length }}"
+            valid_tokens: "{{ _sg_token_audit.chain | selectattr('valid', 'equalto', true) | list | length }}"
+            first_missing: >-
+              {{ (_sg_token_audit.chain
+                  | selectattr('present', 'equalto', false)
+                  | map(attribute='token')
+                  | first) | default('none') }}
+          task_id: "{{ task_id }}"
+
+    - name: "[audit_token_chain] Write token chain audit artifact"
+      ansible.builtin.copy:
+        content: >-
+          {{ _sg_token_audit | to_nice_json }}
+        dest: "{{ artifact_dir }}/sdlc_token_chain_audit.json"
+        mode: "0644"
+
+  when: operation == 'audit_token_chain'
+
+# ══════════════════════════════════════════════════════════════════════════════
+# OPERATION: list_stages — enumerate all stages and their status
+# ══════════════════════════════════════════════════════════════════════════════
+
+- name: "[list_stages] List all pipeline stages"
+  block:
+
+    - name: "[list_stages] Stat entry gate artifacts for every stage"
+      ansible.builtin.stat:
+        path: "{{ artifact_dir }}/sdlc_entry_{{ item }}.json"
+      register: _sg_list_entry_stats
+      loop: "{{ _sg_pipeline_stages | map(attribute='stage') | list }}"
+      loop_control:
+        label: "{{ item }}"
+
+    - name: "[list_stages] Stat exit gate artifacts for every stage"
+      ansible.builtin.stat:
+        path: "{{ artifact_dir }}/sdlc_exit_{{ item }}.json"
+      register: _sg_list_exit_stats
+      loop: "{{ _sg_pipeline_stages | map(attribute='stage') | list }}"
+      loop_control:
+        label: "{{ item }}"
+
+    - name: "[list_stages] Stat validation token artifacts for every stage"
+      ansible.builtin.stat:
+        path: "{{ artifact_dir }}/{{ item.validation_token }}.json"
+      register: _sg_list_token_stats
+      loop: "{{ _sg_pipeline_stages }}"
+      loop_control:
+        label: "{{ item.validation_token }}"
+
+    - name: "[list_stages] Build stage table"
+      ansible.builtin.set_fact:
+        _sg_stage_table: >-
+          {%- set table = [] -%}
+          {%- for stage_config in _sg_pipeline_stages -%}
+            {%- set stage_name = stage_config.stage -%}
+            {%- set entry_stat = _sg_list_entry_stats.results | selectattr('item', 'equalto', stage_name) | first | default({}) -%}
+            {%- set exit_stat = _sg_list_exit_stats.results | selectattr('item', 'equalto', stage_name) | first | default({}) -%}
+            {%- set token_stat = _sg_list_token_stats.results | selectattr('item.validation_token', 'equalto', stage_config.validation_token) | first | default({}) -%}
+            {%- set _ = table.append({
+              'stage': stage_name,
+              'number': stage_config.number,
+              'entry_gated': entry_stat.stat.exists | default(false),
+              'exit_gated': exit_stat.stat.exists | default(false),
+              'token_produced': token_stat.stat.exists | default(false),
+              'validation_token': stage_config.validation_token,
+              'blocking': stage_config.blocking,
+              'roles_primary': stage_config.roles.primary | default([]),
+              'roles_security': stage_config.roles.security | default([]),
+              'timeout_minutes': stage_config.timeout_minutes
+            }) -%}
+          {%- endfor -%}
+          {{ table }}
+
+    - name: "[list_stages] Determine current stage (last stage with exit gate)"
+      ansible.builtin.set_fact:
+        _sg_current_stage: >-
+          {%- set current = 'intake' -%}
+          {%- for s in (_sg_stage_table | selectattr('exit_gated') | list) -%}
+            {%- set current = s.stage -%}
+          {%- endfor -%}
+          {{ current }}
+
+    - name: "[list_stages] Write stage listing artifact"
+      ansible.builtin.copy:
+        content: >-
+          {{ {
+            'role': 'sdlc_gate',
+            'operation': 'list_stages',
+            'current_stage': _sg_current_stage,
+            'stages': _sg_stage_table,
+            'totals': {
+              'entry_gated': _sg_stage_table | selectattr('entry_gated') | list | length,
+              'exit_gated': _sg_stage_table | selectattr('exit_gated') | list | length,
+              'tokens_produced': _sg_stage_table | selectattr('token_produced') | list | length,
+              'total_stages': _sg_stage_table | length
+            },
+            'task_id': task_id
+          } | to_nice_json }}
+        dest: "{{ artifact_dir }}/sdlc_stage_list.json"
+        mode: "0644"
+
+  when: operation == 'list_stages'
+
+# ══════════════════════════════════════════════════════════════════════════════
+# OPERATION: validate_pipeline — end-to-end pipeline health check
+# ══════════════════════════════════════════════════════════════════════════════
+
+- name: "[validate_pipeline] Validate full pipeline health"
+  block:
+
+    - name: "[validate_pipeline] Assert SDLC config is parseable"
+      ansible.builtin.assert:
+        that:
+          - _sg_sdlc_config.pipeline_stages | length >= 8
+          - _sg_sdlc_config.quality_gates | length >= 5
+          - _sg_sdlc_config.evidence_bundles | length >= 8
+          - _sg_sdlc_config.role_stage_mapping | length >= 8
+          - _sg_sdlc_config.blocking_stages is defined
+        fail_msg: "SDLC config at {{ sdlc_config }} is invalid or incomplete."
+
+    - name: "[validate_pipeline] Verify all stages have required roles"
+      ansible.builtin.set_fact:
+        _sg_stage_role_defects: >-
+          {%- set defects = [] -%}
+          {%- for s in _sg_pipeline_stages -%}
+            {%- if s.roles.primary is not defined or s.roles.primary | length == 0 -%}
+              {%- set _ = defects.append(s.stage + ': no primary roles') -%}
+            {%- endif -%}
+            {%- if s.validation_token is not defined or s.validation_token | length == 0 -%}
+              {%- set _ = defects.append(s.stage + ': no validation token') -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {{ defects }}
+
+    - name: "[validate_pipeline] Verify token chain is contiguous"
+      ansible.builtin.set_fact:
+        _sg_token_chain_defects: >-
+          {%- set defects = [] -%}
+          {%- for i in range(1, _sg_pipeline_stages | length) -%}
+            {%- set prev_token = _sg_pipeline_stages[i-1].validation_token -%}
+            {%- set curr_stage = _sg_pipeline_stages[i].stage -%}
+            {%- if prev_token | length == 0 -%}
+              {%- set _ = defects.append('broken chain: stage ' ~ (i-1) | string ~ ' has empty token') -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {{ defects }}
+
+    - name: "[validate_pipeline] Check blocking stages are properly configured"
+      ansible.builtin.set_fact:
+        _sg_blocking_defects: >-
+          {%- set defects = [] -%}
+          {%- for s in _sg_pipeline_stages | selectattr('blocking') -%}
+            {%- if s.exit_gate is not defined or s.exit_gate | length == 0 -%}
+              {%- set _ = defects.append(s.stage + ': blocking but no exit_gate defined') -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {{ defects }}
+
+    - name: "[validate_pipeline] Determine pipeline health"
+      ansible.builtin.set_fact:
+        _sg_pipeline_healthy: >-
+          {{
+            (_sg_stage_role_defects | length == 0)
+            and (_sg_token_chain_defects | length == 0)
+            and (_sg_blocking_defects | length == 0)
+          }}
+        _sg_pipeline_defects: >-
+          {{ _sg_stage_role_defects + _sg_token_chain_defects + _sg_blocking_defects }}
+
+    - name: "[validate_pipeline] Write pipeline health artifact"
+      ansible.builtin.copy:
+        content: >-
+          {{ {
+            'role': 'sdlc_gate',
+            'operation': 'validate_pipeline',
+            'pipeline_healthy': _sg_pipeline_healthy | bool,
+            'defects': _sg_pipeline_defects,
+            'stage_count': _sg_pipeline_stages | length,
+            'quality_gate_count': _sg_quality_gates | length,
+            'evidence_bundle_count': _sg_evidence_bundles | length,
+            'role_stage_mapping_count': _sg_role_mapping | length,
+            'blocking_stages': _sg_blocking_stages,
+            'config_version': _sg_sdlc_config.version | default('unknown')
+          } | to_nice_json }}
+        dest: "{{ artifact_dir }}/sdlc_pipeline_health.json"
+        mode: "0644"
+
+  when: operation == 'validate_pipeline'
+
+# ── Report completion ────────────────────────────────────────────────────────
+
+- name: Report sdlc_gate completion
+  ansible.builtin.debug:
+    msg: >-
+      sdlc_gate: operation={{ operation }}
+      stage={{ stage | default('n/a') }}
+      {% if operation == 'check_stage_exit' %}
+      exit_gate_passed={{ _sg_exit_gate_passed | default('n/a') }}
+      block_reasons={{ _sg_exit_block_reasons | default([]) | join(', ') or 'none' }}
+      next_stage={{ (_sg_pipeline_stages[_sg_stage_number | int + 1].stage if (_sg_stage_number | int + 1 < _sg_pipeline_stages | length) else 'terminal') }}
+      {% elif operation == 'check_stage_entry' %}
+      entry_gate_passed={{ _sg_entry_gate_passed | default('n/a') }}
+      block_reasons={{ _sg_block_reasons | default([]) | join(', ') or 'none' }}
+      {% elif operation == 'validate_pipeline' %}
+      pipeline_healthy={{ _sg_pipeline_healthy | default('n/a') }}
+      defects={{ _sg_pipeline_defects | default([]) | length }}
+      {% elif operation == 'audit_token_chain' %}
+      tokens_present={{ _sg_token_audit.chain_health.total_present | default(0) }}/{{ _sg_token_audit.chain_health.total_expected | default(0) }}
+      first_missing={{ _sg_token_audit.chain_health.first_missing | default('none') }}
+      {% elif operation == 'list_stages' %}
+      current_stage={{ _sg_current_stage | default('intake') }}
+      exit_gated={{ _sg_stage_table | selectattr('exit_gated') | list | length }}/{{ _sg_stage_table | length }}
+      {% endif %}

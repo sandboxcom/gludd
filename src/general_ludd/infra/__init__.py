@@ -1,6 +1,51 @@
 """Infrastructure — compute, deployment, Slurm, local inference, terraform."""
 
+from __future__ import annotations
+
+from general_ludd.infra.compute import (
+    ComputeConfig,
+    ComputeInstance,
+    ComputeProvider,
+    GPUType,
+    InferenceEngine,
+)
+from general_ludd.infra.cost_tracker import (
+    CloudProvider,
+    InfraCostRecord,
+    InfraCostTracker,
+)
+from general_ludd.infra.deployment import DeploymentManager, SecretsResolver
+from general_ludd.infra.deployment_optimizer import (
+    WORKLOAD_PROFILES,
+    ModelDeploymentProfile,
+    ModelProfile,
+    WorkloadType,
+)
+from general_ludd.infra.gpu_metrics import GPUMetrics, GPUMetricsCollector
+from general_ludd.infra.local_inference import (
+    LocalInferenceManager,
+    LocalServer,
+    LocalServerConfig,
+)
+from general_ludd.infra.model_search import ModelSearchResult, SearXModelSearch
+from general_ludd.infra.providers import ProviderInfo, ProviderRegistry
+from general_ludd.infra.slurm import (
+    SlurmAdapter,
+    SlurmJobConfig,
+    SlurmJobInfo,
+    SlurmJobMonitor,
+    SlurmJobState,
+    SlurmNotInstalledError,
+)
+from general_ludd.infra.terraform import TerraformGenerator
+from general_ludd.infra.utilization import (
+    ComputeEndpoint,
+    TaskRouting,
+    UtilizationTracker,
+)
+
 __all__ = (
+    "WORKLOAD_PROFILES",
     "CloudProvider",
     "ComputeConfig",
     "ComputeEndpoint",
@@ -16,8 +61,12 @@ __all__ = (
     "LocalInferenceManager",
     "LocalServer",
     "LocalServerConfig",
+    "ModelDeploymentProfile",
+    "ModelProfile",
+    "ModelSearchResult",
     "ProviderInfo",
     "ProviderRegistry",
+    "SearXModelSearch",
     "SecretsResolver",
     "SlurmAdapter",
     "SlurmJobConfig",
@@ -28,39 +77,5 @@ __all__ = (
     "TaskRouting",
     "TerraformGenerator",
     "UtilizationTracker",
-)
-
-from general_ludd.infra.compute import (
-    ComputeConfig,
-    ComputeInstance,
-    ComputeProvider,
-    GPUType,
-    InferenceEngine,
-)
-from general_ludd.infra.cost_tracker import (
-    CloudProvider,
-    InfraCostRecord,
-    InfraCostTracker,
-)
-from general_ludd.infra.deployment import DeploymentManager, SecretsResolver
-from general_ludd.infra.gpu_metrics import GPUMetrics, GPUMetricsCollector
-from general_ludd.infra.local_inference import (
-    LocalInferenceManager,
-    LocalServer,
-    LocalServerConfig,
-)
-from general_ludd.infra.providers import ProviderInfo, ProviderRegistry
-from general_ludd.infra.slurm import (
-    SlurmAdapter,
-    SlurmJobConfig,
-    SlurmJobInfo,
-    SlurmJobMonitor,
-    SlurmJobState,
-    SlurmNotInstalledError,
-)
-from general_ludd.infra.terraform import TerraformGenerator
-from general_ludd.infra.utilization import (
-    ComputeEndpoint,
-    TaskRouting,
-    UtilizationTracker,
+    "WorkloadType",
 )

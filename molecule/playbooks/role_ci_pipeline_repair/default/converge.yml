@@ -11,7 +11,7 @@
   tasks:
     - name: Invoke ci_pipeline_repair (report-only; scans fake workflow file)
       ansible.builtin.include_role:
-        name: general_ludd.agent.ci_pipeline_repair
+        name: general_ludd.operations.ci_pipeline_repair
       vars:
         daemon_url: "http://127.0.0.1:{{ mock_port }}"
         psk: ""

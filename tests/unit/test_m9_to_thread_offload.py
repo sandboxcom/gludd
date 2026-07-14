@@ -54,6 +54,7 @@ def _make_adapter(tmp: str, job_id: str) -> MagicMock:
 
 class TestWorkerExecuteToThreadOffload:
     @pytest.mark.asyncio
+    @patch.dict(os.environ, {"GLUDD_PSK_DISABLE": "1"})
     @patch("general_ludd.worker.app.asyncio.to_thread", new_callable=AsyncMock)
     @patch("general_ludd.worker.app.get_runner")
     async def test_worker_execute_offloads_run_playbook_via_to_thread(
@@ -105,6 +106,7 @@ class TestWorkerExecuteToThreadOffload:
         assert run_playbook_dispatched, "run_playbook was never dispatched via asyncio.to_thread"
 
     @pytest.mark.asyncio
+    @patch.dict(os.environ, {"GLUDD_PSK_DISABLE": "1"})
     @patch("general_ludd.worker.app.get_runner")
     async def test_worker_execute_keeps_event_loop_responsive(
         self, mock_get_runner: MagicMock

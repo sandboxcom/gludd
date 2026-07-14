@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import math
 import threading
@@ -24,6 +25,7 @@ from general_ludd.models.timeout_detector import (
 )
 from general_ludd.observability.langsmith_tracer import LangSmithTracer
 from general_ludd.observability.token_cost import default_token_tracker
+from general_ludd.security.sanitize import sanitize_error_message
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +66,30 @@ class _HealthTrackerProtocol(Protocol):
     def is_healthy(self, model_id: str, admit_probe: bool = ...) -> bool: ...
     def record_success(self, model_id: str) -> None: ...
     def record_event(self, event: object) -> None: ...
+
+
+def _is_healthy_with_timeout(
+    tracker: _HealthTrackerProtocol,
+    profile_id: str,
+    *,
+    timeout: float = 5.0,
+) -> bool:
+    result: list[bool] = [False]
+    exc_info: list[BaseException | None] = [None]
+
+    def _check() -> None:
+        try:
+            result[0] = tracker.is_healthy(profile_id)
+        except Exception as exc:  # pragma: no cover - defensive
+            exc_info[0] = exc
+            result[0] = False
+
+    t = threading.Thread(target=_check, daemon=True)
+    t.start()
+    t.join(timeout=timeout)
+    if t.is_alive():
+        return False
+    return result[0]
 
 
 class _BudgetGuardProtocol(Protocol):
@@ -167,6 +193,7 @@ class ModelProfile(BaseModel):
     latency_class: str | None = None
     quality_class: str | None = None
     fallback_profiles: list[str] = Field(default_factory=list)
+    max_failover_retries: int = 3
     probe_enabled: bool = False
     # Anti-thundering-herd cap (test 13a / docs/audit/FAILOVER_GAPS.md
     # fallback-concurrency-limit): bounds how many callers may be in-flight to
@@ -242,6 +269,28 @@ def _attach_correlation_id(
     if correlation_id is not None:
         response.correlation_id = correlation_id
     return response
+
+
+def _redact_url_in_exception(exc: BaseException, url: str) -> None:
+    """Redact a specific resolved URL from an exception's args in-place.
+
+    C.6 hardening: provider error messages (httpx.ConnectError,
+    httpx.HTTPStatusError, etc.) can embed the literal resolved base_url,
+    e.g. "Connection refused to https://actual-proxy.internal/v1/chat".
+    This replaces every occurrence with ``[REDACTED_URL]`` so the internal
+    endpoint is never exposed to the caller via the exception trace.
+    Safe on any exception type; a no-op when ``url`` is empty.
+    """
+    if not url:
+        return
+    try:
+        new_args = tuple(
+            arg.replace(url, "[REDACTED_URL]") if isinstance(arg, str) else arg
+            for arg in exc.args
+        )
+        exc.args = new_args
+    except Exception:
+        pass
 
 
 def _enrich_all_down_message(
@@ -760,10 +809,10 @@ class ModelGateway:
         except Exception:
             logger.warning(
                 "project-scoped secrets unavailable for project_id=%r; "
-                "falling back to the shared resolver",
+                "refusing to fall back to shared resolver (fail-closed)",
                 project_id,
             )
-            return base
+            return None
 
     def _invoke_and_bill(
         self,
@@ -837,6 +886,9 @@ class ModelGateway:
                         f"(redacted) for profile '{profile_id}'"
                     )
                 init_kwargs["base_url"] = base_url
+        _resolved_base_url: str | None = cast(
+            str | None, init_kwargs.get("base_url")
+        )
         extra_body: dict[str, object] = kwargs.pop("extra_body", {})
         for key in ("guided_json", "guided_regex", "guided_choice",
                       "guided_grammar", "guided_whitespace_pattern"):
@@ -918,6 +970,7 @@ class ModelGateway:
         try:
             raw_response = chat_model.invoke(lc_messages)
         except Exception as exc:
+            _redact_url_in_exception(exc, _resolved_base_url or "")
             self.record_timeout_on_failure(profile_id, exc)
             # Surface the failure in the metrics facet too (previously ONLY the
             # health tracker recorded primary/fallback failures, so an operator
@@ -934,7 +987,7 @@ class ModelGateway:
                         success=False,
                         cost_per_input_token=profile.cost_per_input_token,
                         cost_per_output_token=profile.cost_per_output_token,
-                        error=str(exc),
+                        error=sanitize_error_message(str(exc)),
                     )
                 except Exception:  # pragma: no cover - metrics must never break the call
                     logger.debug(
@@ -1121,7 +1174,7 @@ class ModelGateway:
             response=response,
         )
 
-    def call_model_with_retry(
+    async def call_model_with_retry(
         self,
         profile_id: str,
         messages: list[dict[str, str]],
@@ -1151,8 +1204,6 @@ class ModelGateway:
         out of ``**kwargs`` (never forwarded to the provider constructor).
         See docs/audit/FAILOVER_GAPS.md (correlation-id-propagation).
         """
-        import time as _time
-
         import httpx
 
         profile = self._profiles.get(profile_id)
@@ -1163,6 +1214,7 @@ class ModelGateway:
         policy = TimeoutRetryPolicy(
             max_retries=max_retries,
             base_backoff_seconds=base_backoff_seconds,
+            failover_after_retries=profile.max_failover_retries,
         )
 
         # If primary is already unhealthy, skip straight to fallbacks. Each
@@ -1226,15 +1278,15 @@ class ModelGateway:
 
         _attempt_counter: list[int] = [0]
         _last_exc: list[BaseException | None] = [None]
-        # Cumulative-backoff cap: _time.sleep is synchronous and blocks the
-        # calling thread. With overload_max_retries=10 and
-        # overload_max_backoff=120s the worst-case cumulative sleep is 10x120s =
-        # 1200s (~20 minutes) on a single call — effectively a DoS of the thread
-        # pool. We track total wall-clock time spent sleeping and stop sleeping
-        # once the cap is exceeded, letting the retry exhaust naturally (tenacity
-        # continues retrying, but immediately rather than waiting). The cap is
-        # intentionally generous (300s = 5 minutes) so that legitimate overload
-        # back-pressure is still respected for the first few retries.
+        # Cumulative-backoff cap: backoff sleep now uses asyncio.sleep so the
+        # event loop is not blocked during retry waits. With overload_max_retries=10
+        # and overload_max_backoff=120s the worst-case cumulative sleep is 10x120s =
+        # 1200s (~20 minutes) of retries. We track total wall-clock time spent
+        # sleeping and stop sleeping once the cap is exceeded, letting the retry
+        # exhaust naturally (tenacity continues retrying, but immediately rather
+        # than waiting). The cap is intentionally generous (300s = 5 minutes) so
+        # that legitimate overload back-pressure is still respected for the first
+        # few retries.
         _MAX_CUMULATIVE_SLEEP_S: float = 300.0
         _cumulative_sleep_s: list[float] = [0.0]
 
@@ -1276,7 +1328,7 @@ class ModelGateway:
             decision = policy.decide(kind, _attempt_counter[0])
             return bool(decision.should_retry)
 
-        def _before_sleep(retry_state: tenacity.RetryCallState) -> None:
+        async def _before_sleep(retry_state: tenacity.RetryCallState) -> None:
             """Perform policy-computed backoff sleep between retry attempts.
 
             DOUBLE-COUNT FIX: this callback used to also record a TimeoutEvent on
@@ -1317,7 +1369,7 @@ class ModelGateway:
                         )
                     else:
                         actual_sleep = min(wait_s, remaining_budget)
-                        _time.sleep(actual_sleep)
+                        await asyncio.sleep(actual_sleep)
                         _cumulative_sleep_s[0] += actual_sleep
 
         # Overload kinds (PROVIDER_ERROR, RATE_LIMITED) use the higher retry cap
@@ -1325,7 +1377,7 @@ class ModelGateway:
         # exhaust the overload budget.
         _exhausted = False
         try:
-            for attempt in tenacity.Retrying(
+            async for attempt in tenacity.AsyncRetrying(
                 retry=tenacity.retry_if_exception(_is_retryable),
                 wait=tenacity.wait_none(),
                 stop=tenacity.stop_after_attempt(policy._overload_max_retries),
@@ -1335,7 +1387,8 @@ class ModelGateway:
                 with attempt:
                     _attempt_counter[0] = attempt.retry_state.attempt_number
                     try:
-                        result = self.call_model(
+                        result = await asyncio.to_thread(
+                            self.call_model,
                             profile_id, messages,
                             _skip_health_check=True,
                             **kwargs,
@@ -1372,7 +1425,8 @@ class ModelGateway:
         # just one hop), and records success/failure for the ones it attempts
         # (Fix 3).
         fallback_ids = list(profile.fallback_profiles)
-        result, last_fb_exc, attempts = self._walk_fallbacks(
+        result, last_fb_exc, attempts = await asyncio.to_thread(
+            self._walk_fallbacks,
             fallback_ids, messages,
             from_profile_id=profile_id,
             from_error=_last_exc[0],
@@ -1388,7 +1442,7 @@ class ModelGateway:
             # the primary's own exhaustion reason ahead of every fallback hop
             # attempts already recorded, then enrich the exception's message
             # in place (type is preserved) so it names every provider tried.
-            primary_reason = str(_last_exc[0]) if _last_exc[0] is not None else "unknown"
+            primary_reason = sanitize_error_message(str(_last_exc[0])) if _last_exc[0] is not None else "unknown"
             full_attempts = [
                 {"profile_id": profile_id, "reason": primary_reason},
                 *attempts,
@@ -1447,7 +1501,12 @@ class ModelGateway:
         return result
 
     def _record_failover(
-        self, from_profile_id: str, to_profile_id: str, error: str
+        self,
+        from_profile_id: str,
+        to_profile_id: str,
+        error: str,
+        *,
+        exception_type: str | None = None,
     ) -> None:
         """Best-effort observability hook fired on every fallback hop walked.
 
@@ -1459,7 +1518,10 @@ class ModelGateway:
         See docs/audit/FAILOVER_GAPS.md (failover-metrics-facets).
         """
         try:
-            self._failover_log.record_failover(from_profile_id, to_profile_id, error)
+            self._failover_log.record_failover(
+                from_profile_id, to_profile_id, error,
+                exception_type=exception_type,
+            )
         except Exception:  # pragma: no cover - defensive; must never break the call
             logger.debug("failover_log.record_failover failed", exc_info=True)
         collector = self._metrics_collector
@@ -1489,6 +1551,11 @@ class ModelGateway:
         (cycle-safe: a fallback chain that loops back to an earlier profile,
         including ``from_profile_id`` itself, is not retried).
 
+        S.3: before attempting each fallback, pre-checks the health (with a
+        timeout) AND the budget (via ``check_budget``). Over-budget and
+        unhealthy fallbacks are skipped so the chain can try the next one
+        rather than aborting entirely.
+
         Returns (response, None, attempts) on success, or
         (None, last_exc, attempts) if every reachable profile failed.
         ``attempts`` records, in call order, each profile actually attempted
@@ -1506,6 +1573,9 @@ class ModelGateway:
         queue: list[str] = list(fallback_ids)
         prev_id = from_profile_id
         depth: int = 0
+        # S.3: extract budget params for per-fallback pre-check
+        estimated_cost: float = kwargs.get("estimated_cost", 0.0)
+        budget_remaining: float = kwargs.get("budget_remaining", float("inf"))
         while queue:
             fb_id = queue.pop(0)
             depth += 1
@@ -1514,35 +1584,64 @@ class ModelGateway:
             if fb_id in visited:
                 continue
             visited.add(fb_id)
-            if tracker is not None and not tracker.is_healthy(fb_id):
-                # Circuit open for this fallback: skip without billing/calling.
+            # S.3: health check with timeout (hung tracker = unhealthy)
+            if tracker is not None and not _is_healthy_with_timeout(tracker, fb_id):
+                continue
+            # S.3: budget pre-check before attempting fallback (skip over-budget)
+            if (
+                estimated_cost > 0.0
+                and not math.isinf(estimated_cost)
+                and not self.check_budget(fb_id, estimated_cost, budget_remaining, messages=messages)
+            ):
+                attempts.append({
+                    "profile_id": fb_id,
+                    "reason": (
+                        f"budget exceeded before attempt "
+                        f"(estimated={estimated_cost}, remaining={budget_remaining})"
+                    ),
+                })
+                last_exc = BudgetExceededError(
+                    f"Fallback '{fb_id}' estimated cost {estimated_cost} "
+                    f"exceeds remaining budget {budget_remaining}"
+                )
                 continue
             if prev_id is not None:
                 self._record_failover(
-                    prev_id, fb_id, str(last_exc) if last_exc is not None else ""
+                    prev_id,
+                    fb_id,
+                    sanitize_error_message(str(last_exc)) if last_exc is not None else "",
+                    exception_type=type(last_exc).__qualname__ if last_exc is not None else None,
                 )
             try:
                 result = self._call_fallback(fb_id, messages, **kwargs)
             except BudgetExceededError:
-                # F-F: a budget rejection on the fallback path MUST propagate.
-                # Previously the bare ``except Exception`` below swallowed it and
-                # continued to the next fallback, spending past the per-profile
-                # budget ceiling. Re-raise (mirrors _try_call_model /
-                # call_model_with_fallback) so the budget gate is enforced.
-                raise
+                # S.3: budget rejection at call time — skip this fallback and try
+                # the next one. The pre-check above should have caught most cases,
+                # but a race (budget consumed between pre-check and call) can still
+                # trigger this. Skipping one is safe; the caller's budget_remaining
+                # hasn't changed for other fallbacks with different pricing.
+                attempts.append({
+                    "profile_id": fb_id,
+                    "reason": "budget exceeded at call time",
+                })
+                last_exc = BudgetExceededError(
+                    f"Fallback '{fb_id}' budget exceeded at call time"
+                )
+                prev_id = fb_id
+                continue
             except SSRFRejectionError:
                 # F-E: an SSRF egress rejection on the fallback path MUST
                 # propagate. _try_call_model already re-raises it, but the bare
                 # ``except Exception`` below would re-swallow it here and continue
                 # to the next fallback, silently routing past the blocked egress.
-                # Re-raise (mirrors BudgetExceededError) so the SSRF guard hard-
-                # stops the chain instead of falling open.
+                # Re-raise so the SSRF guard hard-stops the chain instead of
+                # falling open.
                 raise
             except ModelPausedError:
                 raise
             except Exception as exc:  # try the next hop (this fallback's own chain)
                 last_exc = exc
-                attempts.append({"profile_id": fb_id, "reason": str(exc)})
+                attempts.append({"profile_id": fb_id, "reason": sanitize_error_message(str(exc))})
                 prev_id = fb_id
                 next_profile = self._profiles.get(fb_id)
                 if next_profile is not None:
@@ -1624,6 +1723,11 @@ class ModelGateway:
         messages: list[dict[str, str]],
         **kwargs: Any,
     ) -> ModelResponse | None:
+        if (
+            self._health_tracker is not None
+            and not self._health_tracker.is_healthy(profile_id)
+        ):
+            return None
         try:
             return self.call_model(profile_id, messages, **kwargs)
         except SSRFRejectionError:
@@ -1645,14 +1749,13 @@ class ModelGateway:
         budget_remaining: float = float("inf"),
         **kwargs: Any,
     ) -> ModelResponse:
-        # D-04: gate primary on health tracker before attempting call
+        # S.3: gate primary on health tracker before attempting call,
+        # using _try_call_model which has its own built-in health gate
+        # and properly threads budget params through to call_model.
         primary_healthy = (
             self._health_tracker is None
             or self._health_tracker.is_healthy(profile_id)
         )
-        # Thread budget params into kwargs so _try_call_model / _walk_fallbacks
-        # forward them to call_model (they are explicit keyword-only params of
-        # call_model_with_fallback, NOT in **kwargs).
         _call_kwargs: dict[str, Any] = {
             "estimated_cost": estimated_cost,
             "budget_remaining": budget_remaining,
@@ -1660,15 +1763,18 @@ class ModelGateway:
         }
         if primary_healthy:
             try:
-                return self.call_model(profile_id, messages, **_call_kwargs)
+                result = self._try_call_model(profile_id, messages, **_call_kwargs)
+                if result is not None:
+                    return result
+                primary_exc = RuntimeError(
+                    f"Primary '{profile_id}' returned None (health or provider error)"
+                )
             except SSRFRejectionError:
                 raise
             except BudgetExceededError:
                 raise
             except ModelPausedError:
                 raise
-            except Exception as exc:
-                primary_exc = exc
         else:
             primary_exc = None
 
@@ -1680,7 +1786,7 @@ class ModelGateway:
 
         all_attempts: list[dict[str, str]] = []
         if primary_exc is not None:
-            all_attempts.append({"profile_id": profile_id, "reason": str(primary_exc)})
+            all_attempts.append({"profile_id": profile_id, "reason": sanitize_error_message(str(primary_exc))})
 
         # D-04: route fallback walk through _walk_fallbacks (health-gated)
         result, last_exc, fallback_attempts = self._walk_fallbacks(
@@ -1737,7 +1843,7 @@ class ModelGateway:
             try:
                 self._broadcaster.broadcast_model_update(action, model_id, broadcast_payload)
             except Exception as exc:
-                logger.warning("Worker broadcast failed for model %s: %s", action, exc)
+                logger.warning("Worker broadcast failed for model %s: %s", action, sanitize_error_message(str(exc)))
 
     @staticmethod
     def select_cost_effective_profile(

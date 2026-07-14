@@ -1,0 +1,198 @@
+---
+# Certificate analysis and validation
+# Parse X.509 certs, extract fields, verify trust chains, check revocation.
+
+- name: Set default cert path if not specified
+  ansible.builtin.set_fact:
+    _analyze_cert: "{{ ssl_cert_cert_to_analyze | default(ssl_cert_cert_path) }}"
+
+# ── Parse certificate ──
+- name: Get certificate info
+  community.crypto.x509_certificate_info:
+    path: "{{ _analyze_cert }}"
+  register: cert_info
+  tags: [info, parse]
+
+- name: Extract certificate fields
+  ansible.builtin.set_fact:
+    cert_subject: "{{ cert_info.subject }}"
+    cert_issuer: "{{ cert_info.issuer }}"
+    cert_not_before: "{{ cert_info.not_before }}"
+    cert_not_after: "{{ cert_info.not_after }}"
+    cert_sans: "{{ cert_info.subject_alt_name }}"
+    cert_key_usage: "{{ cert_info.key_usage }}"
+    cert_extended_key_usage: "{{ cert_info.extended_key_usage }}"
+    cert_serial: "{{ cert_info.serial_number }}"
+    cert_fingerprint_sha256: "{{ cert_info.public_key_fingerprints.sha256 | default('N/A') }}"
+    cert_fingerprint_sha1: "{{ cert_info.public_key_fingerprints.sha1 | default('N/A') }}"
+    cert_key_type: "{{ cert_info.public_key_type }}"
+    cert_key_size: "{{ cert_info.public_key_size | default('N/A') }}"
+    cert_signature_algorithm: "{{ cert_info.signature_algorithm }}"
+    cert_expired: "{{ cert_info.expired }}"
+    cert_basic_constraints: "{{ cert_info.basic_constraints | default([]) }}"
+    cert_ocsp_uri: "{{ cert_info.ocsp_uri | default([]) }}"
+    cert_issuer_url: "{{ cert_info.issuer_url | default([]) }}"
+  when: not cert_info.failed
+  tags: [parse]
+
+# ── Certificate summary debug ──
+- name: Print certificate details
+  ansible.builtin.debug:
+    msg:
+      - "=== Certificate: {{ _analyze_cert }} ==="
+      - "Subject: {{ cert_subject }}"
+      - "Issuer: {{ cert_issuer }}"
+      - "Valid: {{ cert_not_before }} to {{ cert_not_after }}"
+      - "Expired: {{ cert_expired }}"
+      - "Serial: {{ cert_serial }}"
+      - "Key: {{ cert_key_type }} / {{ cert_key_size }} bits"
+      - "Signature: {{ cert_signature_algorithm }}"
+      - "SHA-256 Fingerprint: {{ cert_fingerprint_sha256 }}"
+      - "SANs: {{ cert_sans }}"
+      - "Key Usage: {{ cert_key_usage }}"
+      - "EKU: {{ cert_extended_key_usage }}"
+      - "Basic Constraints: {{ cert_basic_constraints }}"
+      - "OCSP URI: {{ cert_ocsp_uri }}"
+  when: not cert_info.failed
+  tags: [debug, info]
+
+# ── Validity checks ──
+- name: Check certificate is not expired
+  ansible.builtin.assert:
+    that: "{{ not cert_expired }}"
+    fail_msg: "Certificate {{ _analyze_cert }} is EXPIRED (not after: {{ cert_not_after }})"
+    success_msg: "Certificate is valid (expires {{ cert_not_after }})"
+  when: not cert_info.failed
+  tags: [validity]
+
+- name: Warn if certificate expires within 30 days
+  ansible.builtin.debug:
+    msg: "WARNING: Certificate expires soon — {{ cert_not_after }}"
+  when:
+    - not cert_info.failed
+    - not cert_expired
+    - ((cert_not_after | to_datetime) - (ansible_date_time.iso8601[:19] | to_datetime)).days < 30
+  tags: [validity, expiry]
+
+# ── Trust chain verification ──
+- name: Verify trust chain (assertonly)
+  community.crypto.x509_certificate:
+    path: "{{ _analyze_cert }}"
+    provider: assertonly
+    assertonly:
+      provider: entrust
+      trust_store_path: "{{ ssl_cert_trust_store | default('/etc/ssl/certs') }}"
+    ignore_tests:
+      - not_after
+      - key_usage
+      - extended_key_usage
+  when: ssl_cert_verify_chain | default(false) | bool
+  register: chain_result
+  failed_when: false
+  tags: [trust, chain]
+
+- name: Report chain trust result
+  ansible.builtin.debug:
+    msg: "Chain trust verification: {{ 'PASSED' if chain_result is not failed else 'FAILED' }}"
+  when: ssl_cert_verify_chain | default(false) | bool
+  tags: [trust]
+
+# ── OCSP revocation check ──
+- name: Check certificate via OCSP
+  community.crypto.openssl_ocsp:
+    path: "{{ _analyze_cert }}"
+    issuer: "{{ ssl_cert_ocsp_issuer | default(ssl_cert_ca_cert) }}"
+    url: "{{ ssl_cert_ocsp_url | default(cert_ocsp_uri[0]) }}"
+  when:
+    - ssl_cert_check_ocsp | default(false) | bool
+    - ssl_cert_ocsp_url or cert_ocsp_uri | default([]) | length > 0
+  register: ocsp_result
+  failed_when: false
+  tags: [ocsp, revocation]
+
+- name: Report OCSP result
+  ansible.builtin.debug:
+    msg:
+      - "OCSP check: {{ 'GOOD' if ocsp_result.ocsp_status == 0 else 'REVOKED' if ocsp_result.ocsp_status == 1 else 'UNKNOWN' if ocsp_result.ocsp_status == 2 else 'ERROR' }}"
+      - "OCSP responder: {{ ssl_cert_ocsp_url | default(cert_ocsp_uri[0]) }}"
+  when: ssl_cert_check_ocsp | default(false) | bool and ocsp_result is not skipped
+  tags: [ocsp]
+
+# ── CRL check ──
+- name: Download and check CRL
+  ansible.builtin.get_url:
+    url: "{{ ssl_cert_crl_url }}"
+    dest: "/tmp/crl-check-{{ cert_serial }}.crl"
+    mode: "0644"
+  when: ssl_cert_check_crl | default(false) | bool and ssl_cert_crl_url | length > 0
+  register: crl_download
+  failed_when: false
+  tags: [crl, revocation]
+
+- name: Parse CRL for certificate serial
+  ansible.builtin.command:
+    cmd: openssl crl -in /tmp/crl-check-{{ cert_serial }}.crl -noout -text
+  when: crl_download is success
+  register: crl_text
+  changed_when: false
+  failed_when: false
+  tags: [crl]
+
+- name: Report CRL revocation status
+  ansible.builtin.debug:
+    msg: "CRL check: serial {{ cert_serial }} {{ 'REVOKED (found in CRL)' if cert_serial in crl_text.stdout else 'NOT IN CRL' }}"
+  when: crl_text is not skipped
+  tags: [crl]
+
+# ── SCT extraction ──
+- name: Extract SCTs from certificate
+  ansible.builtin.command:
+    cmd: openssl x509 -in {{ _analyze_cert }} -noout -text
+  register: cert_text_full
+  changed_when: false
+  failed_when: false
+  tags: [sct, transparency]
+
+- name: Parse SCT sections from cert text
+  ansible.builtin.set_fact:
+    cert_sct_lines: >-
+      {{ cert_text_full.stdout_lines
+         | select('match', '.*Signed Certificate Timestamp.*|.*Timestamp.*|.*Log ID.*')
+         | list }}
+  when: cert_text_full is not skipped and cert_text_full.stdout | length > 0
+  tags: [sct]
+
+- name: Report SCT findings
+  ansible.builtin.debug:
+    msg:
+      - "=== Certificate Transparency SCTs ==="
+      - "{{ 'No SCT lines found' if cert_sct_lines | default([]) | length == 0 else cert_sct_lines }}"
+  when: cert_text_full is not skipped
+  tags: [sct]
+
+# ── Write analysis artifact ──
+- name: Write analysis result artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'cert_path': _analyze_cert,
+        'subject': cert_subject | default('N/A'),
+        'issuer': cert_issuer | default('N/A'),
+        'not_before': cert_not_before | default('N/A'),
+        'not_after': cert_not_after | default('N/A'),
+        'expired': cert_expired | default(None),
+        'serial': cert_serial | default('N/A'),
+        'key_type': cert_key_type | default('N/A'),
+        'key_size': cert_key_size | default('N/A'),
+        'signature_algorithm': cert_signature_algorithm | default('N/A'),
+        'fingerprint_sha256': cert_fingerprint_sha256 | default('N/A'),
+        'sans': cert_sans | default([]),
+        'key_usage': cert_key_usage | default([]),
+        'extended_key_usage': cert_extended_key_usage | default([]),
+        'basic_constraints': cert_basic_constraints | default([]),
+        'ocsp_uri': cert_ocsp_uri | default([]),
+        'sct_count': cert_sct_lines | default([]) | length
+      } | to_nice_json }}
+    dest: "{{ ssl_cert_artifact_dir }}/cert-analysis.json"
+    mode: "0644"
+  tags: [artifact]

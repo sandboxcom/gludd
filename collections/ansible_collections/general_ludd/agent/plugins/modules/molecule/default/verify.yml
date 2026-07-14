@@ -1,0 +1,68 @@
+---
+- name: Verify — infra_deploy and infra_destroy module structure
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    module_root: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/collections/ansible_collections/general_ludd/agent/plugins/modules"
+  tasks:
+    - name: "Assert infra_deploy.py exists"
+      ansible.builtin.stat:
+        path: "{{ module_root }}/infra_deploy.py"
+      register: _deploy_stat
+      failed_when: not _deploy_stat.stat.exists
+
+    - name: "Assert infra_destroy.py exists"
+      ansible.builtin.stat:
+        path: "{{ module_root }}/infra_destroy.py"
+      register: _destroy_stat
+      failed_when: not _destroy_stat.stat.exists
+
+    - name: "Slurp infra_deploy.py"
+      ansible.builtin.slurp:
+        src: "{{ module_root }}/infra_deploy.py"
+      register: _deploy_content
+
+    - name: "Assert infra_deploy contains DOCUMENTATION string"
+      ansible.builtin.assert:
+        that:
+          - "{{ _deploy_content.content | b64decode is search('DOCUMENTATION:') }}"
+          - "{{ _deploy_content.content | b64decode is search('module: infra_deploy') }}"
+          - "{{ _deploy_content.content | b64decode is search('AnsibleModule') }}"
+          - "{{ _deploy_content.content | b64decode is search('deploy') }}"
+        fail_msg: "infra_deploy.py must define DOCUMENTATION, AnsibleModule, and deploy"
+
+    - name: "Slurp infra_destroy.py"
+      ansible.builtin.slurp:
+        src: "{{ module_root }}/infra_destroy.py"
+      register: _destroy_content
+
+    - name: "Assert infra_destroy contains DOCUMENTATION string"
+      ansible.builtin.assert:
+        that:
+          - "{{ _destroy_content.content | b64decode is search('DOCUMENTATION:') }}"
+          - "{{ _destroy_content.content | b64decode is search('module: infra_destroy') }}"
+          - "{{ _destroy_content.content | b64decode is search('AnsibleModule') }}"
+          - "{{ _destroy_content.content | b64decode is search('destroy') }}"
+        fail_msg: "infra_destroy.py must define DOCUMENTATION, AnsibleModule, and destroy"
+
+    - name: "Assert infra_deploy has role allowlist check"
+      ansible.builtin.assert:
+        that:
+          - "{{ _deploy_content.content | b64decode is search('infra_access') }}"
+          - "{{ _deploy_content.content | b64decode is search('can_deploy') }}"
+        fail_msg: "infra_deploy.py must check role against infra access policy"
+
+    - name: "Assert infra_destroy has role allowlist check"
+      ansible.builtin.assert:
+        that:
+          - "{{ _destroy_content.content | b64decode is search('infra_access') }}"
+          - "{{ _destroy_content.content | b64decode is search('can_destroy') }}"
+        fail_msg: "infra_destroy.py must check role against infra access policy"
+
+    - name: "Assert check_mode is supported in both modules"
+      ansible.builtin.assert:
+        that:
+          - "{{ _deploy_content.content | b64decode is search('supports_check_mode=True') }}"
+          - "{{ _destroy_content.content | b64decode is search('supports_check_mode=True') }}"
+        fail_msg: "both infra modules must support check_mode"

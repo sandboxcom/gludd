@@ -19,6 +19,7 @@ Contract:
     socket; a TCP base_url triggers a literal-host SSRF block (no DNS).
   * ``health() -> dict`` — never raises; ``{"ok": bool, "detail": str}``.
   * ``query(spec) -> list[dict]`` — normalized records.
+
 """
 
 from __future__ import annotations

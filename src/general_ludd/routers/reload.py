@@ -14,6 +14,11 @@ from general_ludd.events.types import ConfigReloadedEvent
 from general_ludd.prompts.registry import PromptRegistry
 from general_ludd.reload.hot_reloader import HotReloader, ReloadScope
 from general_ludd.security import is_safe_fetch_url
+from general_ludd.self_update.module_snapshot import (
+    ModuleSnapshot,
+    restore_modules,
+    snapshot_modules,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +31,19 @@ _MAX_HEADER_VAL_LEN = 1024
 
 class ReloadRequest(BaseModel):
     scope: str = "all"
+    snapshot_modules: list[str] | None = Field(
+        default=None,
+        description="Module names to snapshot before reload (for rollback support). "
+        "When None, snapshots all currently-loaded general_ludd modules.",
+    )
+
+
+class RollbackRequest(BaseModel):
+    module_names: list[str] | None = Field(
+        default=None,
+        description="Module names to restore. When None, restores all modules "
+        "in the most recent snapshot.",
+    )
 
 
 class RegisterWorkerRequest(BaseModel):
@@ -100,6 +118,24 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             _proj_skills = Path(_proj_dir) / "skills"
             if _proj_skills.is_dir():
                 _skills_dirs.append(str(_proj_skills))
+        # Snapshot modules before reload so a failed reload can be rolled back.
+        import logging
+        import sys
+        _rl_logger = logging.getLogger(__name__)
+        names_to_snapshot = req.snapshot_modules
+        if names_to_snapshot is None:
+            names_to_snapshot = [
+                n for n in sys.modules
+                if n.startswith("general_ludd") and sys.modules[n] is not None
+            ]
+        if names_to_snapshot:
+            pre_snapshot = snapshot_modules(names_to_snapshot)
+            app.state._module_snapshot = pre_snapshot
+            _rl_logger.info(
+                "module snapshot taken: %d modules, %d warnings",
+                len(pre_snapshot.modules), len(pre_snapshot.warnings),
+            )
+
         reloader = HotReloader(
             config_dir=app.state._config_dir or "/tmp/gl-config",
             event_bus=subsys["bus"],
@@ -110,13 +146,49 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             skills_dirs=_skills_dirs if _skills_dirs else None,
             skill_registry=getattr(app.state, "_skill_registry", None),
             prompt_registry=getattr(app.state, "_prompt_registry", None),
+            reload_lock=getattr(app.state, "_reload_lock", None),
         )
         scope = ReloadScope(req.scope)
         # reloader.reload is a sync op that (deep inside) does serial blocking
         # httpx.post per worker via the broadcaster — offload it so the whole
         # reload doesn't freeze the event loop.
         result = await asyncio.to_thread(reloader.reload, scope)
-        return {"success": result.success, "scope": result.scope, "details": result.details, "error": result.error}
+        return {
+            "success": result.success,
+            "scope": result.scope,
+            "details": result.details,
+            "error": result.error,
+            "snapshot_modules": len(pre_snapshot.modules) if names_to_snapshot else 0,
+        }
+
+    @app.post("/admin/rollback")
+    async def admin_rollback(req: RollbackRequest) -> dict[str, object]:
+        snapshot: ModuleSnapshot | None = getattr(
+            app.state, "_module_snapshot", None
+        )
+        if snapshot is None or not snapshot.modules:
+            return {
+                "success": False,
+                "error": "no module snapshot available — run /admin/reload first",
+                "restored": [],
+            }
+        if req.module_names is not None:
+            filtered = {
+                n: m for n, m in snapshot.modules.items()
+                if n in set(req.module_names)
+            }
+            snapshot = ModuleSnapshot(
+                modules=filtered,
+                snapshot_at=snapshot.snapshot_at,
+                warnings=snapshot.warnings,
+            )
+        restored = restore_modules(snapshot)
+        app.state._module_snapshot = None
+        return {
+            "success": len(restored) > 0,
+            "restored": restored,
+            "warnings": snapshot.warnings,
+        }
 
     @app.post("/admin/config/reload")
     async def admin_config_reload() -> dict[str, object]:

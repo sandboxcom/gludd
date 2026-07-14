@@ -256,12 +256,99 @@ class TestMatcherVerdicts:
 # Fail-open contract — any throw inside the hook must not wedge the editor.
 # --------------------------------------------------------------------------- #
 class TestFailOpenContract:
-    def test_catch_does_not_rethrow(self):
+    def test_catch_does_not_rethrow_non_deny(self):
         src = _plugin_source()
         catch_idx = src.find("catch")
         assert catch_idx != -1, "must have a catch block for fail-open"
-        window = src[catch_idx:catch_idx + 300]
-        # The catch block must be empty or a benign log — it must NOT re-throw.
-        assert "throw" not in window, (
-            "catch block must not re-throw (fail-open). Window: " + window
+        window = src[catch_idx:catch_idx + 400]
+        # The catch re-throws only for permissionDecision==="deny" errors;
+        # all other throwables (malformed input, type errors) are swallowed.
+        assert "permissionDecision" in window, (
+            "catch must check permissionDecision before re-throwing"
+        )
+
+
+# --------------------------------------------------------------------------- #
+# tool.execute.before hook — commit-message enforcement.
+# --------------------------------------------------------------------------- #
+class TestToolExecuteBefore:
+    """The tool.execute.before hook blocks commit-shaped make targets whose
+    MSG= parameter contains done-claims without evidence. It is the surviving
+    enforcement surface after text.complete was removed.
+    """
+
+    def test_tool_execute_before_hook_registered(self):
+        """Source must define a tool.execute.before hook (single string key)."""
+        src = _plugin_source()
+        assert src.count('"tool.execute.before"') >= 1, (
+            "tool.execute.before hook must be registered in defaultImpl"
+        )
+
+    def test_tool_execute_before_subagent_guard(self):
+        """must call isSubagent() and return early in subagent context."""
+        src = _plugin_source()
+        # The defaultImpl block and the export default block both have
+        # isSubagent() guards.
+        assert src.count("isSubagent()") >= 2, (
+            "tool.execute.before must guard with isSubagent() in both "
+            "defaultImpl and export default"
+        )
+
+    def test_tool_execute_before_env_var_disable(self):
+        """must honor GLUDD_VERIFIED_CLAIMS_ENFORCE=0."""
+        src = _plugin_source()
+        assert "GLUDD_VERIFIED_CLAIMS_ENFORCE" in src, (
+            "tool.execute.before must honor GLUDD_VERIFIED_CLAIMS_ENFORCE=0"
+        )
+
+    def test_tool_execute_before_bash_only(self):
+        """must only fire for bash/Bash tool — falls through for others."""
+        src = _plugin_source()
+        assert 'toolName !== "bash"' in src and 'toolName !== "Bash"' in src, (
+            "tool.execute.before must return early for non-bash tools"
+        )
+
+    def test_tool_execute_before_commit_targets(self):
+        """must only fire for commit-shaped make targets."""
+        src = _plugin_source()
+        assert "git-commit" in src, (
+            "tool.execute.before must check for git-commit in the command"
+        )
+        required = ["git-commit", "commit-no-verify", "repo-commit",
+                    "ship-commit", "test-and-commit"]
+        for target in required:
+            assert target in src, (
+                f"tool.execute.before must include {target} in commit-target set"
+            )
+
+    def test_tool_execute_before_msg_extraction(self):
+        """must extract MSG= parameter from toolInput to inspect commit message."""
+        src = _plugin_source()
+        assert "MSG" in src, (
+            "tool.execute.before must extract MSG from toolInput"
+        )
+        assert "toolInput" in src, (
+            "tool.execute.before must read toolInput from the context"
+        )
+
+    def test_tool_execute_before_calls_should_block(self):
+        """must call shouldBlock() on the extracted message."""
+        src = _plugin_source()
+        assert "shouldBlock" in src, (
+            "tool.execute.before must delegate to shouldBlock for verdict"
+        )
+
+    def test_tool_execute_before_deny_throw(self):
+        """must throw with permissionDecision: deny on violation."""
+        src = _plugin_source()
+        assert 'permissionDecision' in src and '"deny"' in src, (
+            "tool.execute.before must throw permissionDecision: deny on block"
+        )
+
+    def test_tool_execute_before_non_commit_passthrough(self):
+        """must return (allow) for non-commit make targets like make test."""
+        src = _plugin_source()
+        # The regex only matches commit targets; everything else falls through.
+        assert "cmd.startsWith" in src, (
+            "tool.execute.before must check cmd.startsWith('make ') before matching"
         )

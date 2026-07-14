@@ -1,0 +1,98 @@
+---
+# prompt_injection — remediate.yml
+# Remediation guidance for LLM prompt injection defenses.
+# Read-only report tasks — NEVER mutates the repo.
+
+- name: Set fact _pi_input_sanitization
+  ansible.builtin.set_fact:
+    _pi_input_sanitization:
+      category: "Input Sanitization"
+      description: "Filter and validate user input before it reaches the LLM"
+      strategies:
+        - name: "Input length limits"
+          description: "Reject or truncate inputs exceeding a reasonable character/token limit"
+          guidance: "Set per-request token limits; 4k tokens is a common safe ceiling for user input"
+        - name: "Character filtering"
+          description: "Strip control characters, Unicode confusables, and non-printable bytes"
+          guidance: "Normalize Unicode (NFKC), reject homoglyph attacks, strip zero-width characters"
+        - name: "Format validation"
+          description: "Validate input against expected schemas; reject unexpected structures"
+          guidance: "If the input should be JSON, parse it as JSON before passing to the LLM"
+        - name: "Semantic filtering"
+          description: "Use a classifier to score input for injection/jailbreak intent"
+          guidance: "Deploy Meta PromptGuard or similar classifier before the LLM call; block score > threshold"
+
+- name: Set fact _pi_output_filtering
+  ansible.builtin.set_fact:
+    _pi_output_filtering:
+      category: "Output Filtering"
+      description: "Scrub LLM output to prevent data leakage and mitigate successful injections"
+      strategies:
+        - name: "Output scrubbing"
+          description: "Strip system prompts, internal instructions, or PII from LLM responses"
+          guidance: "Regex-match known system prompt phrases and redact; never expose raw model output"
+        - name: "PII and sensitive data detection"
+          description: "Scan output for credentials, API keys, internal identifiers"
+          guidance: "Run the same secret-scan pipeline on LLM output that you run on source code"
+        - name: "Refusal training"
+          description: "Fine-tune or prompt-engineer the model to refuse dangerous requests firmly"
+          guidance: "Include refusal examples in the system prompt; train on adversarial refusal datasets"
+        - name: "Canary tokens"
+          description: "Embed unique canary strings in system prompts to detect leaks"
+          guidance: "If a canary token appears in output or external logs, the system prompt was exfiltrated"
+
+- name: Set fact _pi_adversarial_detection
+  ansible.builtin.set_fact:
+    _pi_adversarial_detection:
+      category: "Adversarial Detection"
+      description: "Detect injection attempts in real time using statistical and behavioral signals"
+      strategies:
+        - name: "Perplexity-based detection"
+          description: "Flag inputs with unusually high or low perplexity under a benign language model"
+          guidance: "High perplexity → encoded/obfuscated payload. Low perplexity → may be a known jailbreak template."
+        - name: "Inconsistency checks"
+          description: "Compare model responses to the same input rephrased; injection causes divergence"
+          guidance: "Send rephrased input to a second instance; if outputs diverge sharply, flag for review"
+        - name: "Multi-model verification"
+          description: "Run the same input through multiple models; compare refusal rates"
+          guidance: "If model A refuses but model B complies, the input may be a targeted jailbreak"
+        - name: "Prompt fingerprinting"
+          description: "Hash and track user prompts to detect repeated jailbreak templates"
+          guidance: "Maintain a fingerprint DB of known attack patterns; auto-block matches"
+
+- name: Set fact _pi_system_design
+  ansible.builtin.set_fact:
+    _pi_system_design:
+      category: "System Design"
+      description: "Architectural defenses that limit blast radius even if injection succeeds"
+      strategies:
+        - name: "Prompt hardening"
+          description: "Use delimiters, explicit boundaries, and layered instructions to resist overrides"
+          guidance: "Wrap user input in XML/CDATA-style delimiters; separate instructions from data with '---' fences"
+        - name: "Least-privilege tool access"
+          description: "Restrict which tools the LLM can invoke based on context; never grant write access by default"
+          guidance: "Tool allowlists per user/session; require confirmation for destructive operations"
+        - name: "Human-in-the-loop"
+          description: "Require human approval for destructive actions, external API calls, or data mutations"
+          guidance: "Every tool call that writes, deletes, or sends data must queue for human review"
+        - name: "Rate limiting"
+          description: "Limit requests per user/session to slow down injection brute-force attempts"
+          guidance: "Per-user token buckets; exponential backoff on repeated blocked prompts"
+
+- name: Compile _pi_remediation_suggestions fact
+  ansible.builtin.set_fact:
+    _pi_remediation_suggestions:
+      source: "general_ludd.security.prompt_injection — remediate.yml"
+      generated_at: "{{ ansible_date_time.iso8601 }}"
+      categories:
+        - "{{ _pi_input_sanitization }}"
+        - "{{ _pi_output_filtering }}"
+        - "{{ _pi_adversarial_detection }}"
+        - "{{ _pi_system_design }}"
+      total_strategies: >-
+        {{
+          (_pi_input_sanitization.strategies | length)
+          + (_pi_output_filtering.strategies | length)
+          + (_pi_adversarial_detection.strategies | length)
+          + (_pi_system_design.strategies | length)
+        }}

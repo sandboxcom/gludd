@@ -1,0 +1,110 @@
+---
+# auto_retire_service role — mark vanished services as deprecated.
+#
+# Accepts service_name (str, required), service_catalog_path (default
+# ".gludd/service_catalog.yml"), reason (str, default "vanished from SearX
+# discovery").
+#
+# NEVER deletes connector files — keeps full audit trail.
+
+- name: Validate required service_name is provided
+  ansible.builtin.fail:
+    msg: "service_name is required for auto_retire_service"
+  when: service_name is not defined or service_name | length == 0
+
+- name: Check service catalog exists
+  ansible.builtin.stat:
+    path: "{{ service_catalog_path }}"
+  register: catalog_stat
+
+- name: Fail early if service catalog is missing
+  ansible.builtin.fail:
+    msg: "Service catalog not found at {{ service_catalog_path }}"
+  when: not catalog_stat.stat.exists
+
+- name: Load service catalog from YAML
+  ansible.builtin.slurp:
+    src: "{{ service_catalog_path }}"
+  register: catalog_raw
+
+- name: Parse service catalog
+  ansible.builtin.set_fact:
+    catalog_data: "{{ catalog_raw.content | b64decode | from_yaml }}"
+
+- name: Check if service is present in catalog
+  ansible.builtin.set_fact:
+    service_exists: "{{ service_name in (catalog_data.services | default({})) }}"
+
+- name: Report if service not found in catalog
+  ansible.builtin.debug:
+    msg: "Service '{{ service_name }}' not found in catalog at {{ service_catalog_path }} — skipping"
+  when: not service_exists
+
+- name: Capture retired_at timestamp
+  ansible.builtin.set_fact:
+    retired_at: "{{ ansible_date_time.iso8601 }}"
+
+- name: Mark service as inactive in catalog
+  vars:
+    _svc: "{{ catalog_data.services[service_name] }}"
+    _updated_svc: "{{ _svc | combine({'status': 'inactive', 'retired_at': retired_at, 'retirement_reason': reason}) }}"
+    _updated_services: "{{ catalog_data.services | combine({service_name: _updated_svc}) }}"
+    _updated_catalog: "{{ catalog_data | combine({'services': _updated_services}) }}"
+  ansible.builtin.copy:
+    content: "{{ _updated_catalog | to_nice_yaml }}"
+    dest: "{{ service_catalog_path }}"
+    mode: "0644"
+  when: service_exists
+
+- name: Remove from active pricing sources if present
+  vars:
+    _svc: "{{ catalog_data.services[service_name] }}"
+  ansible.builtin.set_fact:
+    pricing_removed: >-
+      {%- if 'pricing_sources' in _svc and _svc.pricing_sources | length > 0 -%}
+      true
+      {%- else -%}
+      false
+      {%- endif -%}
+  when: service_exists
+
+- name: Strip pricing sources from retired service
+  vars:
+    _svc: "{{ catalog_data.services[service_name] }}"
+  ansible.builtin.debug:
+    msg: "Removed {{ _svc.pricing_sources | default([]) | length }} pricing source(s) for {{ service_name }}"
+  when:
+    - service_exists
+    - pricing_removed | default(false)
+
+- name: Ensure retirement log directory exists
+  ansible.builtin.file:
+    path: "{{ retirement_log_path | dirname }}"
+    state: directory
+    mode: "0755"
+
+- name: Append retirement event to audit log
+  ansible.builtin.lineinfile:
+    path: "{{ retirement_log_path }}"
+    line: >-
+      {{ retired_at }} | {{ service_name }} | {{ reason }} | status=inactive
+    create: yes
+    mode: "0644"
+  when: service_exists
+
+- name: Count total retirement events in log
+  ansible.builtin.shell:
+    cmd: "wc -l < {{ retirement_log_path }}"
+  register: retirement_count_raw
+  changed_when: false
+  when: service_exists
+
+- name: Report retirement summary
+  ansible.builtin.debug:
+    msg:
+      - "Retired service: {{ service_name }}"
+      - "Reason: {{ reason }}"
+      - "Timestamp: {{ retired_at }}"
+      - "Catalog updated: {{ service_catalog_path }}"
+      - "Total retirement events logged: {{ (retirement_count_raw.stdout | trim) if service_exists else '0' }}"
+      - "Connector files preserved (not deleted) for audit"

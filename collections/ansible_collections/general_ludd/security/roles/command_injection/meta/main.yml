@@ -1,0 +1,21 @@
+---
+galaxy_info:
+  role_name: command_injection
+  author: Agentic Harness Agent
+  description: >
+    Command injection awareness role: attack vectors, code audit, remediation
+    guidance, and tool awareness. Scans source code for os.system, subprocess
+    shell=True, os.popen, eval/exec, and string-concatenation command
+    construction patterns. Generates remediation suggestions with safe
+    alternatives (subprocess.run args list, shlex.quote, allowlist validation).
+    Report-only — NEVER mutates the repo.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

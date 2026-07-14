@@ -17,11 +17,11 @@ import os
 from pathlib import Path
 
 from general_ludd.security.capability_lattice import (
-    PROTECTED_PATH_SUBSTRINGS,
     is_protected_path,
 )
 from general_ludd.security.path_canonicalizer import (
     CANONICAL_DENY_MARKERS,
+    PROTECTED_PATH_SUBSTRINGS,
     canonicalize_path,
     is_denied_path,
 )

@@ -1,0 +1,22 @@
+---
+galaxy_info:
+  role_name: javascript_debug
+  author: Agentic Harness Agent
+  description: >
+    JavaScript syntax checking, error pattern analysis, source map verification,
+    and bundle analysis. Uses Python stdlib for regex-based syntax checks and
+    optionally integrates with eslint for advanced linting.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies:
+  - role: node
+    src: {}
+    version: ""
+    when: "{{ operation == 'lint' }}"

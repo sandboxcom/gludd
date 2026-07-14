@@ -1,10 +1,19 @@
 {
-  "enforce-deadline.ts": "337e5143d2f96c50265cf60475a3ec41c6be9610d219bc7046ecc3a9ff00ad56",
-  "enforce-delegate.ts": "0a758feae3d24f66eae49c4ce081769dfe4363bb5d3ddbfb0afbfc06edf8f18e",
-  "enforce-deletion-gate.ts": "3720dccffd160251cc1a1abf57578254cb0f8913df9a68a0fcfacaf9b3775c97",
-  "enforce-floor.ts": "33281df96cdab6d4e470b2bfd47f86e713616cb7315ea961e26c9bd16c564b4c",
-  "enforce-make.ts": "fc61a947f281a18a65819a6f202a460e2e4a976e2c464647b2ed0bdbeb6e3465",
-  "enforce-session-start.ts": "9b8c3d0bb41ebb0f1fc4bc741d56f7fc3605a707b0c5fa01e76e1a924a2b247d",
-  "enforce-stop.ts": "f79af40a6da9ca3974cdb132eb7e55ad56d9fffe8ab777497364a53be26b6910",
-  "watchdog.ts": "pending_hash"
+  "enforce-clean-tree.ts": "03400151fbd1de5b89567d0d80d2513486bb8bbc3e597e24c280299809184bcf",
+  "enforce-commit-lock.ts": "a3293b987131908831741dc370e2c0e1bda47cb9cffea4aafecb22428f3481c4",
+  "enforce-deadline.ts": "81788d158c61f5ce5b212d9e7d634e13e962468c0f9960d1e023faa6ad12053c",
+  "enforce-delegate.ts": "15b6f1ed8395bf8bc087892d29d054ef0a2407f357ad5c179367584ef1f2ea47",
+  "enforce-deletion-gate.ts": "4ed00cda796e2cb1192ff0f76a9036998adda40f242f0a4a5ccc7ea4997040a3",
+  "enforce-enhancement-ratio.ts": "9250d02534fed356adccba7c1c5bcaa8793c4be9f4efcff6304492c48e72263f",
+  "enforce-floor.ts": "be0bb8da80e67f95fcb640f6212b2b0ff6f8c2f21cd5b3ae86e5ba0d020feeda",
+  "enforce-make.ts": "1605573ae694058168256f643a99d766f86711e729b92bc6a4504d87b4ed6a6f",
+  "enforce-multitask.ts": "fc64b99439bb06a67ab9e72544de349f3a4d7be3da78eda38db1db75901bff0d",
+  "enforce-no-suppressions.ts": "ccb9a104709639c7e4706642724082e072f53844ac42cd528c6e06a26640bd8b",
+  "enforce-no-wait.ts": "7bc1bf2cb019dfc68e1163711ad17cb1d134556dd4b8015b97a231c9d8503616",
+  "enforce-session-start.ts": "54b62cfdb1c4224a3905a877d1174e76ec3cce192212fb897e59a03803c4c848",
+  "enforce-stop.ts": "aa7faacc5889c7d6291ecdd06100253ca54d1620de61f81a53cf4aebfb11704c",
+  "enforce-verified-claims.ts": "f90c7d9aa9904da0d0758d5130453a0f5128e2ff55d8cfe720fc870f5893ecad",
+  "hot_reload.ts": "395078e9911ea967cb88a0151ce97dd6c9cb38e6379be29214c4f1e0092af1b9",
+  "plugins/watchdog.ts": "b392ef40a4632944233c2abc9459f2ac07aaf108820fce006fa723579c638c5a",
+  "shared.ts": "675325cc02554225d0d2a6b86dac928cb138b7f3a93f532d2e79ad4698e919b5"
 }

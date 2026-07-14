@@ -1,0 +1,30 @@
+---
+galaxy_info:
+  role_name: load_balancer
+  author: general_ludd
+  description: >-
+    Load balancer configuration supporting nginx and HAProxy backends.
+    Covers L4/L7 balancing, session persistence, health checks, circuit
+    breaking, blue-green deployments, and canary releases.
+  license: MIT
+  platforms:
+    - name: EL
+      versions:
+        - "8"
+        - "9"
+    - name: Ubuntu
+      versions:
+        - focal
+        - jammy
+        - noble
+    - name: Debian
+      versions:
+        - bullseye
+        - bookworm
+  galaxy_tags:
+    - web
+    - load_balancer
+    - nginx
+    - haproxy
+    - high_availability
+dependencies: []

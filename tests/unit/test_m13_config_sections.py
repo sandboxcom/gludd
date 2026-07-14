@@ -12,8 +12,10 @@ CONSUMED_KEYS = {
     "model_routing",
     "database",
     "agents",
+    "orchestration",
     "process_isolation",
     "budget",
+    "network",
 }
 
 OPTIONAL_KEYS_WITH_DEFAULTS = {

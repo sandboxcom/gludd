@@ -16,7 +16,8 @@ from general_ludd.agents.types import AgentConfig, AgentPermission, AgentType
 class AgentRegistry:
     def __init__(self) -> None:
         self._agents: dict[str, AgentConfig] = {}
-        self._renderer = BehaviorRenderer()
+        from general_ludd.retrieval.agentic_context import AgenticContextInjector
+        self._renderer = BehaviorRenderer(prompt_enhancer=AgenticContextInjector())
         self._sealed: bool = False
 
     def register(self, config: AgentConfig) -> None:
@@ -126,6 +127,21 @@ def default_registry() -> AgentRegistry:
         permissions=AgentPermission(
             can_edit=True,
             can_bash=True,
+            can_read=True,
+            can_dispatch_subagents=False,
+            allowed_subagents=[],
+        ),
+        max_concurrent=3,
+        behavior=subagent_behavior,
+    ))
+
+    registry.register(AgentConfig(
+        name="research",
+        description="Research agent — SearXNG-powered web research with source verification and citation tracking",
+        type=AgentType.SUBAGENT,
+        permissions=AgentPermission(
+            can_edit=False,
+            can_bash=False,
             can_read=True,
             can_dispatch_subagents=False,
             allowed_subagents=[],

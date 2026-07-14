@@ -1,0 +1,20 @@
+---
+galaxy_info:
+  role_name: log_prompt_evaluator
+  author: Agentic Harness Agent
+  description: >
+    Analyses agent logs (conversation transcripts, CoT traces) to evaluate
+    prompt quality, classify prompt types, score conciseness/specificity/
+    context-utilization/output-quality, identify waste patterns, and generate
+    actionable recommendations for prompt improvement. Supports A/B prompt
+    variant comparison. REPORT-ONLY — never mutates.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

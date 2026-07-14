@@ -1,0 +1,121 @@
+---
+# html_css_core role — HTML5 validation, CSS syntax checking, responsive design
+#
+# Operations: validate_html | check_css | responsive_boilerplate | semantic_audit
+#
+# Graceful degradation:
+#   - html_file absent → status=error, error=missing_html_file
+#   - css_file absent for check_css → status=error, error=missing_css_file
+#   - W3C validator unreachable → status=warn, validate_w3c=false
+
+- name: Validate inputs
+  ansible.builtin.assert:
+    that:
+      - html_file | length > 0
+    fail_msg: "html_css_core: html_file is required"
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Check HTML file exists
+  ansible.builtin.stat:
+    path: "{{ html_file }}"
+  register: _hcc_html_stat
+
+- name: Handle missing HTML file
+  ansible.builtin.set_fact:
+    _hcc_status: "error"
+    _hcc_valid: false
+    _hcc_errors: "html_file not found: {{ html_file }}"
+    _hcc_verdict: "missing_input"
+  when: not _hcc_html_stat.stat.exists | default(false)
+
+- name: Check CSS file exists
+  ansible.builtin.stat:
+    path: "{{ css_file }}"
+  register: _hcc_css_stat
+  when: css_file | length > 0
+
+- name: Execute html_css_core Python script
+  ansible.builtin.script:
+    cmd: >-
+      {{ role_path }}/files/html_css.py
+      --html "{{ html_file }}"
+      --operation "{{ operation }}"
+      --output "{{ artifact_dir }}/html_css_core.json"
+      {% if css_file | length > 0 %}--css "{{ css_file }}"{% endif %}
+      {% if validate_w3c %}--validate-w3c{% endif %}
+      {% if responsive_check %}--responsive{% endif %}
+      {% if target_breakpoints | length > 0 %}--breakpoints '{{ target_breakpoints | to_json }}'{% endif %}
+      {% if operation == 'semantic_audit' %}--semantic-audit{% endif %}
+  register: _hcc_result
+  changed_when: _hcc_result.rc == 0
+  failed_when: false
+  when: _hcc_html_stat.stat.exists | default(false)
+
+- name: Parse script output
+  ansible.builtin.set_fact:
+    _hcc_parsed: "{{ (_hcc_result.stdout | from_json) if _hcc_result.rc == 0 else {} }}"
+  when:
+    - _hcc_html_stat.stat.exists | default(false)
+    - _hcc_result is defined
+    - _hcc_result.rc == 0
+
+- name: Set success result
+  ansible.builtin.set_fact:
+    _hcc_status: "ok"
+    _hcc_valid: "{{ _hcc_parsed.valid | bool }}"
+    _hcc_errors: "{{ _hcc_parsed.errors | default([]) }}"
+    _hcc_warnings: "{{ _hcc_parsed.warnings | default([]) }}"
+    _hcc_verdict: "{{ operation }}_complete"
+    _hcc_semantic_tree: "{{ _hcc_parsed.semantic_tree | default({}) }}"
+    _hcc_responsive_pass: "{{ _hcc_parsed.responsive_pass | default(false) }}"
+    _hcc_css_valid: "{{ _hcc_parsed.css_valid | default(false) }}"
+  when:
+    - _hcc_html_stat.stat.exists | default(false)
+    - _hcc_result is defined
+    - _hcc_result.rc is defined
+    - _hcc_result.rc == 0
+
+- name: Set error from script failure
+  ansible.builtin.set_fact:
+    _hcc_status: "error"
+    _hcc_valid: false
+    _hcc_errors: "{{ _hcc_result.stderr | default('unknown error') }}"
+    _hcc_verdict: "{{ operation }}_failed"
+  when:
+    - _hcc_html_stat.stat.exists | default(false)
+    - _hcc_result is defined
+    - _hcc_result.rc is defined
+    - _hcc_result.rc != 0
+
+- name: Write html_css_core.json artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'html_css_core',
+        'status': _hcc_status,
+        'operation': operation,
+        'html_file': html_file,
+        'css_file': css_file | default(''),
+        'valid': _hcc_valid | bool,
+        'css_valid': _hcc_css_valid | default(false) | bool,
+        'responsive_pass': _hcc_responsive_pass | default(false) | bool,
+        'verdict': _hcc_verdict,
+        'errors': _hcc_errors | default([]),
+        'warnings': _hcc_warnings | default([]),
+        'semantic_tree': _hcc_semantic_tree | default({})
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/html_css_core.json"
+    mode: "0644"
+
+- name: Report html_css_core completion
+  ansible.builtin.debug:
+    msg: >-
+      html_css_core: status={{ _hcc_status }}
+      operation={{ operation }}
+      valid={{ _hcc_valid | bool }}
+      verdict={{ _hcc_verdict }}

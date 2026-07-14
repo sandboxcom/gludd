@@ -53,12 +53,12 @@ VALID_TRANSITIONS: dict[TodoStatus, set[TodoStatus]] = {
     # MANUAL_HOLD allows an operator to pause a pending schedule without
     # cancelling it. CANCELLED retires the schedule permanently.
     TodoStatus.SCHEDULED: {TodoStatus.QUEUED, TodoStatus.CANCELLED, TodoStatus.MANUAL_HOLD},
-    # APPROVAL_REQUIRED is the human-gate holding state for self-improve todos
-    # (see self_improve/gate.py: auto_queue defaults to False). A human releases
-    # a held todo to QUEUED (approve) or retires it to CANCELLED (reject) via
-    # SelfImproveApprovalManager; MANUAL_HOLD lets an operator park it further.
-    # Without this entry TodoRepository.transition() would reject the release and
-    # self-improve todos would strand in APPROVAL_REQUIRED forever.
+    # APPROVAL_REQUIRED is the human-gate holding state for self-improve todos.
+    # A human releases a held todo to QUEUED (approve) or retires it to
+    # CANCELLED (reject) via SelfImproveApprovalManager; MANUAL_HOLD lets an
+    # operator park it further. Without this entry TodoRepository.transition()
+    # would reject the release and self-improve todos would strand in
+    # APPROVAL_REQUIRED forever.
     TodoStatus.APPROVAL_REQUIRED: {TodoStatus.QUEUED, TodoStatus.CANCELLED, TodoStatus.MANUAL_HOLD},
     TodoStatus.QUEUED: {TodoStatus.ACTIVE, TodoStatus.FAILED, TodoStatus.BLOCKED, TodoStatus.BLOCKED_ON_HUMAN},
     TodoStatus.ACTIVE: {
@@ -78,6 +78,9 @@ VALID_TRANSITIONS: dict[TodoStatus, set[TodoStatus]] = {
     TodoStatus.FAILED: {TodoStatus.QUEUED},
     TodoStatus.COMPLETE: set(),
 }
+
+_MAX_PRIORITY: int = 1000
+_MIN_PRIORITY: int = 0
 
 
 # Fields that callers are permitted to set via TodoRepository.create().
@@ -227,6 +230,13 @@ class TodoRepository:
                 f"supplied by callers: {sorted(bad_fields)}"
             )
         for key, value in todo_data.items():
+            if key == "priority":
+                if not isinstance(value, int) or isinstance(value, bool):
+                    raise ValueError(f"create() rejected: priority must be an integer, got {type(value).__name__}")
+                if value < _MIN_PRIORITY:
+                    todo_data[key] = _MIN_PRIORITY
+                elif value > _MAX_PRIORITY:
+                    todo_data[key] = _MAX_PRIORITY
             if isinstance(value, str) and len(value.encode()) > cls._MAX_TEXT_BYTES:
                 raise ValueError(
                     f"create() rejected: field '{key}' exceeds the "
@@ -253,6 +263,14 @@ class TodoRepository:
             stmt = stmt.where(TodoModel.project_id == _pid)
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
+
+    async def get_by_ids(self, todo_ids: list[str], project_id: str | None = None) -> dict[str, TodoModel]:
+        _pid = self._resolve_pid(project_id)
+        stmt = select(TodoModel).where(TodoModel.todo_id.in_(todo_ids))
+        if _pid is not None:
+            stmt = stmt.where(TodoModel.project_id == _pid)
+        result = await self._session.execute(stmt)
+        return {t.todo_id: t for t in result.scalars().all()}
 
     @classmethod
     def _validate_update_fields(cls, updates: dict[str, Any]) -> None:
@@ -438,6 +456,8 @@ class TodoRepository:
         stmt = select(TodoModel).where(TodoModel.status == TodoStatus.QUEUED.value)
         if _pid is not None:
             stmt = stmt.where(TodoModel.project_id == _pid)
+        else:
+            stmt = stmt.where(TodoModel.project_id.is_(None))
         # FIFO fairness: claim oldest QUEUED todos first so a backlog of newer
         # todos can never indefinitely starve an older one. Without an explicit
         # ORDER BY, row order is database-defined (undefined) and starvation is
@@ -762,7 +782,7 @@ class AuditEventRepository:
         entity_type: str,
         entity_id: str,
         project_id: str | None = None,
-        details: str | None = None,
+        details: str = "{}",
     ) -> AuditEventModel:
         if project_id is None:
             raise ValueError(
@@ -801,7 +821,7 @@ class AuditEventRepository:
             entity_type=entity_type,
             entity_id=entity_id,
             project_id=project_id,
-            details=_json.dumps(details) if details is not None else None,
+            details=_json.dumps(details) if details is not None else "{}",
         )
 
     async def list_by_entity(self, entity_type: str, entity_id: str, limit: int = 50) -> list[AuditEventModel]:
@@ -1116,35 +1136,8 @@ class PromptProfileRepository:
     async def list_for_task_type(self, task_type: str) -> list[PromptProfileModel]:
         import json as _json
 
-        from sqlalchemy import or_
-
-        # SQLite LIKE prefilter narrows the scan to rows the Python backstop below
-        # could possibly accept, while never dropping one it would (no false
-        # negatives). Accepted shapes:
-        #   - "[]"                       -> empty list, "match all"
-        #   - '...."<task_type>"....'    -> textually contains the quoted token
-        #   - rows whose value is not a well-formed JSON array (does not start
-        #     with '[' or does not end with ']') -> json.loads will raise and the
-        #     backstop treats them as empty ("match all"), so they must survive.
-        # LIKE wildcards in task_type are escaped so e.g. "a%b" matches literally.
-        # The json.loads pass is the correctness backstop against LIKE false
-        # positives (e.g. "foo" appearing inside "foobar").
-        escaped = (
-            task_type.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-        )
-        col = PromptProfileModel.task_types
         stmt = (
             select(PromptProfileModel)
-            .where(
-                or_(
-                    col.is_(None),
-                    col.like("[]"),
-                    col.like(f'%"{escaped}"%', escape="\\"),
-                    col.notlike("[%"),
-                    col.notlike("%]"),
-                )
-            )
-            # P12: defensive cap (dead API path).
             .limit(_DEFAULT_LIST_LIMIT)
         )
         result = await self._session.execute(stmt)
@@ -1152,10 +1145,15 @@ class PromptProfileRepository:
         out: list[PromptProfileModel] = []
         for row in rows:
             try:
-                types = _json.loads(row.task_types or "[]")
+                types_raw = _json.loads(row.task_types or "[]")
             except Exception:
+                types_raw = []
+            if isinstance(types_raw, list):
+                types: list[str] = types_raw
+            elif isinstance(types_raw, str):
+                types = [types_raw]
+            else:
                 types = []
-            # Empty list means "match all task types"
             if not types or task_type in types:
                 out.append(row)
         return out
@@ -2128,6 +2126,31 @@ class HumanTodoRepository:
             resolution_text=f"superseded by {new_id}: {reason}",
         )
 
+    async def get_done_for_parent(
+        self, parent_todo_id: str
+    ) -> HumanTodoModel | None:
+        """Return the most-recently-resolved DONE human-todo for a parent agent todo.
+
+        Filters in SQL (not Python) so callers are not loading every recent
+        human-todo row per dispatch. E12: replaces the N+1 pattern where
+        EventLoop._resolve_human_input_for_todo loaded all 50 human-todos and
+        filtered in Python.
+        """
+        stmt = (
+            select(HumanTodoModel)
+            .where(
+                HumanTodoModel.parent_agent_todo_id == parent_todo_id,
+                HumanTodoModel.status == "done",
+            )
+            .order_by(
+                HumanTodoModel.resolved_at.desc().nulls_last(),
+                HumanTodoModel.updated_at.desc(),
+            )
+            .limit(1)
+        )
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def add_tag(self, human_todo_id: str, tag: str) -> HumanTodoModel:
         import json as _json
 
@@ -2787,13 +2810,16 @@ class MemoryRepository:
             raise RuntimeError("MemoryRepository: no session or session_factory")
 
     async def _get_with_session(
-        self, session: AsyncSession, agent_id: str, key: str, namespace: str
+        self, session: AsyncSession, agent_id: str, key: str, namespace: str,
+        project_id: str | None = None,
     ) -> MemoryRecordModel | None:
         stmt = select(MemoryRecordModel).where(
             MemoryRecordModel.agent_id == agent_id,
             MemoryRecordModel.key == key,
             MemoryRecordModel.namespace == namespace,
         )
+        if project_id is not None:
+            stmt = stmt.where(MemoryRecordModel.project_id == project_id)
         result = await session.execute(stmt)
         row = result.scalar_one_or_none()
         if row is not None and self._is_expired(row):
@@ -2803,10 +2829,11 @@ class MemoryRepository:
         return row
 
     async def get(
-        self, agent_id: str, key: str, namespace: str = "default"
+        self, agent_id: str, key: str, namespace: str = "default",
+        project_id: str | None = None,
     ) -> MemoryRecordModel | None:
         async with self._resolve_session() as session:
-            return await self._get_with_session(session, agent_id, key, namespace)
+            return await self._get_with_session(session, agent_id, key, namespace, project_id)
 
     async def set(
         self,
@@ -2814,6 +2841,7 @@ class MemoryRepository:
         key: str,
         value: str,
         namespace: str = "default",
+        project_id: str | None = None,
         ttl_seconds: int | None = None,
     ) -> MemoryRecordModel:
         from sqlalchemy.dialects.sqlite import insert as sqlite_insert
@@ -2827,27 +2855,29 @@ class MemoryRepository:
                     key=key,
                     value=value,
                     namespace=namespace,
+                    project_id=project_id,
                     ttl_seconds=ttl_seconds,
                     created_at=now,
                     updated_at=now,
                 )
                 .on_conflict_do_update(
                     index_elements=["agent_id", "key", "namespace"],
-                    set_={"value": value, "ttl_seconds": ttl_seconds, "updated_at": now},
+                    set_={"value": value, "project_id": project_id, "ttl_seconds": ttl_seconds, "updated_at": now},
                 )
             )
             await session.execute(stmt)
             await session.flush()
-            row = await self._get_with_session(session, agent_id, key, namespace)
+            row = await self._get_with_session(session, agent_id, key, namespace, project_id)
             assert row is not None
             await session.refresh(row)
             return row
 
     async def delete(
-        self, agent_id: str, key: str, namespace: str = "default"
+        self, agent_id: str, key: str, namespace: str = "default",
+        project_id: str | None = None,
     ) -> bool:
         async with self._resolve_session() as session:
-            row = await self._get_with_session(session, agent_id, key, namespace)
+            row = await self._get_with_session(session, agent_id, key, namespace, project_id)
             if row is None:
                 return False
             await session.delete(row)
@@ -2858,6 +2888,7 @@ class MemoryRepository:
         self,
         agent_id: str,
         namespace: str = "default",
+        project_id: str | None = None,
         limit: int = 100,
     ) -> list[MemoryRecordModel]:
         async with self._resolve_session() as session:
@@ -2871,6 +2902,8 @@ class MemoryRepository:
             )
             if namespace != "*":
                 stmt = stmt.where(MemoryRecordModel.namespace == namespace)
+            if project_id is not None:
+                stmt = stmt.where(MemoryRecordModel.project_id == project_id)
             result = await session.execute(stmt)
             rows = list(result.scalars().all())
             return [r for r in rows if not self._is_expired(r)]

@@ -276,7 +276,7 @@ def test_query_transport_exception_yields_error_record():
     records = src.query({})
     assert len(records) == 1
     assert records[0]["level_or_status"] == "error"
-    assert "connection refused" in records[0]["message"]
+    assert "transport error: RuntimeError" in records[0]["message"]
 
 
 def test_query_non_text_payload_is_error():

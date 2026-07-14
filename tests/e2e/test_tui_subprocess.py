@@ -46,7 +46,11 @@ def _subprocess_env() -> dict[str, str]:
     if existing:
         parts.extend(existing.split(os.pathsep))
     seen: set[str] = set()
-    ordered = [p for p in parts if not (p in seen or seen.add(p))]
+    ordered = []
+    for p in parts:
+        if p not in seen:
+            seen.add(p)
+            ordered.append(p)
     env["PYTHONPATH"] = os.pathsep.join(ordered)
     env["TERM"] = "xterm-256color"
     return env

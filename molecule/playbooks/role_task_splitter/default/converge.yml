@@ -1,0 +1,22 @@
+---
+- name: Converge - run task_splitter role with a complex multi-file task
+  hosts: localhost
+  connection: local
+  gather_facts: true
+  tasks:
+    - name: Invoke task_splitter with a complex task
+      ansible.builtin.include_role:
+        name: general_ludd.agent.task_splitter
+      vars:
+        task_description: >-
+          Refactor the entire authentication module to support OAuth2, SAML,
+          and LDAP backends. Update the user model, migration scripts, API
+          endpoints, TUI login form, and write comprehensive integration tests.
+        task_context: "Related to issue #452 — auth needs multi-provider support"
+        max_subtasks: 5
+        artifact_dir: "/tmp/gludd-task-splitter-test"
+
+    - name: Read the artifact written by the role
+      ansible.builtin.slurp:
+        src: "/tmp/gludd-task-splitter-test/task_splitter_result.json"
+      register: _splitter_artifact

@@ -1,0 +1,1073 @@
+---
+# =============================================================================
+# ai_sdlc.yml — AI Development Lifecycle Pipeline Configuration
+# =============================================================================
+#
+# Codifies the AI-DLC research corpus into gludd's runtime pipeline:
+#
+#   Sources:
+#     1. AWS Well-Architected ML Lens — 6 pillars applied to ML lifecycle
+#     2. Microsoft CAF for AI — 6-phase model (Strategy→Plan→Ready→Govern→Secure→Manage)
+#     3. Google Cloud MLOps — CI/CD for ML with quality gates
+#     4. NIST AI RMF — Govern→Map→Measure→Manage with 200+ GenAI actions
+#     5. AI-SDLC Protocol Language (arXiv:2606.20615) — 2+N team pattern, validation tokens
+#     6. Agentic Agile-V (arXiv:2605.20456) — SCOPE-V loop, conversation-to-contract gate,
+#        evidence-bundle acceptance
+#     7. Rethinking SE for Agentic AI (arXiv:2604.10599) — verification-first lifecycles
+#     8. AI Assurance Pyramid (arXiv:2605.23459) — 5-layer testing strategy
+#
+#   Maps each framework component to gludd's event loop:
+#       claim → dispatch → review → reconcile
+#
+# =============================================================================
+
+# ── Version & metadata ────────────────────────────────────────────────────────
+version: "1.0"
+codified: "2026-07-11"
+description: "AI-DLC research codified into gludd's agentic SDLC pipeline"
+
+# ── Framework Mappings ────────────────────────────────────────────────────────
+#
+# Each framework is mapped to gludd's event loop phases.
+# "claim"   = task intake + specification
+# "dispatch"= implementation by agent
+# "review"  = quality gate + acceptance
+# "reconcile" = merge/deploy decision
+#
+frameworks:
+  aws_ml_lens:
+    source: "AWS Well-Architected Machine Learning Lens"
+    url: "https://docs.aws.amazon.com/wellarchitected/latest/machine-learning-lens/"
+    pillars:
+      operational_excellence:
+        gludd_phase: [dispatch, review]
+        roles: [agent_task, gate_triage, enforcement_gate]
+        description: "Automated CI/CD for ML, repeatable playbooks, observability"
+      security:
+        gludd_phase: [claim, dispatch, review, reconcile]
+        roles: [security_gate, security_review, secret_scan, threat_model]
+        description: "Access control, data protection, model integrity"
+      reliability:
+        gludd_phase: [review, reconcile]
+        roles: [gate_triage, flaky_quarantine, validate_and_push]
+        description: "Recoverability, test coverage, failure handling"
+      performance_efficiency:
+        gludd_phase: [dispatch]
+        roles: [model_routing, cost_audit, budget_guard]
+        description: "Right-sized compute, model selection, spend caps"
+      cost_optimization:
+        gludd_phase: [dispatch, review]
+        roles: [cost_audit, cost_optimization_auditor, credit_audit]
+        description: "Resource management, model efficiency, spend tracking"
+      sustainability:
+        gludd_phase: [dispatch, review]
+        roles: [dead_code_auditor, dry_code_auditor, cost_optimization_auditor]
+        description: "Minimize waste, optimize resource usage"
+
+  microsoft_caf_ai:
+    source: "Microsoft Cloud Adoption Framework for AI"
+    phases:
+      - name: strategy
+        gludd_phase: claim
+        roles: [story_create, estimate_story, backlog_groom]
+        description: "Define AI strategy, business objectives, success criteria"
+      - name: plan
+        gludd_phase: claim
+        roles: [sprint_plan, spec_lifecycle, parallel_planner]
+        description: "Organize work, plan sprints, define acceptance criteria"
+      - name: ready
+        gludd_phase: claim
+        roles: [project_init, enforce_disengage, security_requirements]
+        description: "Environment setup, tooling, permissions, guardrails"
+      - name: govern
+        gludd_phase: [review, reconcile]
+        roles: [enforcement_gate, deletion_gate, budget_guard]
+        description: "Policy enforcement, compliance, cost management"
+      - name: secure
+        gludd_phase: [claim, dispatch, review, reconcile]
+        roles: [security_gate, threat_model, sbom_generate, supply_chain_verify]
+        description: "Security posture, vulnerability management, supply chain"
+      - name: manage
+        gludd_phase: [reconcile]
+        roles: [release_build, observe_deploy_correlator, soc_analyst]
+        description: "Operations, monitoring, incident response, optimization"
+
+  google_mlops:
+    source: "Google Cloud MLOps — Practitioners Guide to MLOps"
+    phases:
+      - name: data_quality_gate
+        gludd_phase: claim
+        roles: [triage_issue, backlog_guard_audit]
+        checks: [spec_exists, acceptance_criteria_defined, size_estimated]
+        description: "Input quality: is the task spec well-formed?"
+      - name: model_quality_gate
+        gludd_phase: dispatch
+        roles: [model_routing, budget_guard]
+        checks: [budget_available, model_healthy, fallback_configured]
+        description: "Model readiness: is the selected model available and affordable?"
+      - name: code_quality_gate
+        gludd_phase: review
+        roles: [lint_and_check, type_safety_audit, scan_conflict_markers]
+        checks: [lint_pass, typecheck_pass, collect_pass, scan_clean]
+        description: "Code quality: does the output pass static analysis?"
+      - name: test_quality_gate
+        gludd_phase: review
+        roles: [run_tests, coverage_audit, flaky_quarantine]
+        checks: [tests_pass, coverage_floor_met, no_new_flaky]
+        description: "Test integrity: do tests pass and maintain coverage?"
+      - name: security_quality_gate
+        gludd_phase: review
+        roles: [security_gate, secret_scan, security_review]
+        checks: [no_critical_findings, no_secrets_leaked, review_complete]
+        description: "Security posture: does the change meet security requirements?"
+      - name: deploy_quality_gate
+        gludd_phase: reconcile
+        roles: [validate_and_push, release_build, ci_pipeline_verify]
+        checks: [push_eligible, ci_green, artifact_published]
+        description: "Deployment readiness: is the artifact safe to ship?"
+
+  nist_ai_rmf:
+    source: "NIST AI Risk Management Framework (AI RMF 1.0)"
+    phases:
+      - name: govern
+        gludd_phase: [claim, reconcile]
+        roles: [enforcement_gate, budget_guard, guardrail_pattern]
+        genai_actions_adopted:
+          - "GV-1.1: Define AI risk tolerance"
+          - "GV-2.1: Establish accountability structure"
+          - "GV-3.1: Map legal/regulatory requirements"
+          - "GV-4.1: Organizational risk management integration"
+          - "GV-5.1: Workforce training and augmentation"
+        codified_as:
+          - "guardrail_pattern role (3-layer enforcement)"
+          - "enforcement_gate role (fail-closed gate)"
+          - "AGENTS.md guardrail integrity policy"
+          - "security_gate role (composing security checks)"
+      - name: map
+        gludd_phase: claim
+        roles: [triage_issue, backlog_groom, story_create, spec_lifecycle]
+        genai_actions_adopted:
+          - "MAP-1.1: Intended purpose and beneficial use"
+          - "MAP-2.1: Context of use documentation"
+          - "MAP-3.1: Document task specification"
+          - "MAP-4.1: Assess limitations and capabilities"
+          - "MAP-5.1: Categorize risk potential"
+        codified_as:
+          - "spec_lifecycle APPROACH.md + BUSINESS_CONTEXT.md"
+          - "story_create acceptance_criteria"
+          - "triage_issue severity classification"
+      - name: measure
+        gludd_phase: review
+        roles: [gate_triage, coverage_audit, test_matrix, code_reviewer]
+        genai_actions_adopted:
+          - "MEAS-1.1: Quantify performance against benchmarks"
+          - "MEAS-2.1: Evaluate correctness and robustness"
+          - "MEAS-3.1: Track and report adverse impacts"
+          - "MEAS-4.1: Document residual risks"
+          - "MEAS-5.1: Establish monitoring thresholds"
+        evidence_required:
+          - gate_output: ".gate-status with all phases passing"
+          - test_coverage: "≥70% or baseline-maintained"
+          - review_verdict: "approve or comment (not request_changes)"
+        codified_as:
+          - "gate_triage flaky-vs-real classification"
+          - "code_reviewer structured findings"
+          - "security_gate severity-based blocking"
+          - "enforcement_gate per-phase pass requirement"
+      - name: manage
+        gludd_phase: reconcile
+        roles: [reconciliation, validate_and_push, release_build, observe_deploy_correlator]
+        genai_actions_adopted:
+          - "MNG-1.1: Risk treatment (accept, mitigate, transfer, avoid)"
+          - "MNG-2.1: Monitoring and improvement plan"
+          - "MNG-3.1: User feedback and incident response"
+          - "MNG-4.1: Documentation and communication"
+          - "MNG-5.1: Continuous improvement lifecycle"
+        codified_as:
+          - "reconcile: approve → merge; retry → re-dispatch; reject → close"
+          - "observe_error_spike_rca for incident response"
+          - "retrospective role for sprint-level improvement"
+
+  ai_sdlc_protocol:
+    source: "AI-SDLC Protocol Language (arXiv:2606.20615)"
+    team_pattern: "2+N model"
+    teams:
+      human_pair:
+        roles: [product_owner, domain_expert]
+        gludd_roles: [story_create, estimate_story, sprint_plan]
+        description: "Two humans define requirements, set priorities, accept deliverables"
+      agent_cluster:
+        roles: [n_agents, reviewer, integrator]
+        gludd_roles: [agent_task, code_reviewer, enforcement_gate, security_gate]
+        gludd_floor: 10
+        description: "N parallel agents + reviewer + integrator, floor-enforced"
+      protocol_verbs:
+        claim:
+          verb: "CLAIM"
+          gludd_action: "event_loop claims runnable todos from queue"
+          validation_token_type: "spec_token"
+          description: "Claim a task for implementation"
+        plan:
+          verb: "PLAN"
+          gludd_action: "spec_lifecycle create_task+approve_task or parallel_planner"
+          validation_token_type: "approach_token"
+          description: "Plan the implementation before coding"
+        implement:
+          verb: "IMPLEMENT"
+          gludd_action: "agent_task dispatch with worktree isolation"
+          validation_token_type: "code_token"
+          description: "Implement the planned changes"
+        review:
+          verb: "REVIEW"
+          gludd_action: "code_reviewer for correctness; security_gate for security"
+          validation_token_type: "review_token"
+          description: "Independent review by different model/profile"
+        test:
+          verb: "TEST"
+          gludd_action: "run_tests, coverage_audit, test_matrix"
+          validation_token_type: "test_token"
+          description: "Automated test suite execution with coverage threshold"
+        gate:
+          verb: "GATE"
+          gludd_action: "gate_triage (per-phase), enforcement_gate (composing), security_gate (composing)"
+          validation_token_type: "gate_token"
+          description: "Composing quality gates — all must pass"
+        release:
+          verb: "RELEASE"
+          gludd_action: "validate_and_push + release_build + ci_pipeline_verify"
+          validation_token_type: "release_token"
+          description: "Production deployment with artifact verification"
+    validation_token_chain:
+      - token: spec_token
+        produced_by: "story_create OR spec_lifecycle.approve_task"
+        consumed_by: "agent_task"
+        format: "JSON artifact in artifact_dir/spec_lifecycle_<name>.json"
+      - token: approach_token
+        produced_by: "spec_lifecycle.approve_task (APPROACH.md written)"
+        consumed_by: "agent_task.claim"
+        format: "JSON artifact with approved_at timestamp"
+      - token: code_token
+        produced_by: "agent_task completion"
+        consumed_by: "code_reviewer"
+        format: "git commit hash + diff"
+      - token: review_token
+        produced_by: "code_reviewer (verdict: approve)"
+        consumed_by: "gate_triage"
+        format: "JSON artifact with verdict + findings"
+      - token: test_token
+        produced_by: "run_tests (all passing; coverage maintained)"
+        consumed_by: "enforcement_gate"
+        format: ".gate-status with test phase PASS"
+      - token: gate_token
+        produced_by: "enforcement_gate OR security_gate (gate_passed=true)"
+        consumed_by: "validate_and_push"
+        format: "JSON artifact with gate_result: PASS"
+      - token: release_token
+        produced_by: "release_build + ci_pipeline_verify (conclusion: success)"
+        consumed_by: "retrospective"
+        format: "verify-release-artifact PASS + gh release view"
+
+  agentic_agile_v:
+    source: "Agentic Agile-V (arXiv:2605.20456)"
+    phases:
+      SCOPE_V_loop:
+        description: "Continuous cycle: stake → capability → outcome → pivot → evaluate → validate"
+        gludd_mapping:
+          stake: "story_create + business_context (agile/scrum roles)"
+          capability: "sprint_plan + estimate_story + spec_lifecycle.approve_task"
+          outcome: "agent_task + implement_change + write_tests"
+          pivot: "retrospective + sprint_review"
+          evaluate: "gate_triage + run_tests + coverage_audit"
+          validate: "security_gate + enforcement_gate + validate_and_push"
+      conversation_to_contract_gate:
+        description: "The boundary between human-agent conversation (open-ended planning) and contractual implementation (locked SPEC)"
+        gludd_mapping: "spec_lifecycle.approve_task — once APPROACH.md is written and approved, the plan is IMMUTABLE"
+        enforcement: "spec_lifecycle.complete_task requires all acceptance_criteria to be checked, enforcing the contract"
+        roles: [spec_lifecycle, story_create, sprint_plan]
+      evidence_bundle_acceptance:
+        description: "A task is accepted only when its evidence-bundle (commit SHAs, test pass counts, review verdict, gate output) is verified, not on the agent's assertion of completion"
+        gludd_mapping: "AGENTS.md 'Done Claims Require Observable Verification Evidence' table"
+        roles: [enforcement_gate, gate_triage, verify_feature_claims]
+        evidence_requirements:
+          scope_evidence:
+            - acceptance_criteria: "All ACs checked in task.yml"
+            - business_context: "BUSINESS_CONTEXT.md references resolved"
+          execution_evidence:
+            - commits: "All commit SHAs with messages"
+            - diff: "Unified diff of changes"
+          quality_evidence:
+            - gate: ".gate-status PASS (lint 0, typecheck ≤ baseline, collect 0, tests pass)"
+            - coverage: "Coverage maintained or improved"
+          review_evidence:
+            - code_review: "code_reviewer verdict: approve"
+            - security: "security_gate gate_passed: true"
+          deployment_evidence:
+            - push: "verify-remote BRANCH=<b> SHA=<sha> → VERIFIED"
+            - ci: "ci-verdict → conclusion: success, headSha matches"
+            - artifact: "verify-release-artifact PASS + gh release view"
+
+  verification_first:
+    source: "Rethinking SE for Agentic AI (arXiv:2604.10599)"
+    principles:
+      verification_before_implementation:
+        description: "Tests written BEFORE implementation code (TDD enforced)"
+        gludd_mapping: "AGENTS.md TDD Policy — 'write a failing test FIRST, run it, THEN write code'"
+        enforcement: "enforce-make.ts prints TDD reminder on src/ edits; test-count gate requires 0 collection errors before commit"
+      layered_verification:
+        description: "Multiple verification layers catch different classes of defects"
+        gludd_mapping: "gate_triage (structural) + code_reviewer (correctness) + security_gate (security) + enforcement_gate (compliance)"
+        layers:
+          - structural: "lint, typecheck, collect-check"
+          - behavioral: "unit tests, integration tests, e2e tests"
+          - correctness: "code review heuristics (bare except, debug prints, type: ignore, TODO, oversized hunks)"
+          - security: "secret scanning, SAST, dependency audit, SBOM verification"
+          - compliance: "enforcement gate (gate freshness, push guard, force-push tracking)"
+      verification_is_observable:
+        description: "Verification output is machine-readable, not subject to interpretation"
+        gludd_mapping: "AGENTS.md verification evidence table — every claim requires machine-produced measurement in the same message"
+      fail_closed_by_default:
+        description: "Any missing check = BLOCK (not PASS), per the security_gate and enforcement_gate pattern"
+        gludd_mapping: "security_gate: missing check → gate_passed=false; enforcement_gate: fail-closed on every phase"
+
+  ai_assurance_pyramid:
+    source: "AI Assurance Pyramid (arXiv:2605.23459)"
+    layers:
+      - layer: 5
+        name: production_monitoring
+        roles: [observe_deploy_correlator, observe_error_spike_rca, soc_analyst]
+        frequency: continuous
+        description: "Runtime monitoring, incident response, drift detection"
+      - layer: 4
+        name: deployment_testing
+        roles: [validate_and_push, ci_pipeline_verify, release_build]
+        frequency: per-release
+        description: "Integration testing, canary deployment, smoke tests"
+      - layer: 3
+        name: integration_testing
+        roles: [test_matrix, run_tests, flaky_quarantine]
+        frequency: per-commit
+        description: "Cross-module integration, contract tests, xdist stability"
+      - layer: 2
+        name: unit_testing
+        roles: [run_tests, coverage_audit, test_deadline_check]
+        frequency: per-change
+        description: "Per-function correctness, edge cases, TDD cycle"
+      - layer: 1
+        name: static_analysis
+        roles: [lint_and_check, type_safety_audit, scan_conflict_markers]
+        frequency: per-change
+        description: "Lint, typecheck, collect-check, secret scanning"
+
+# ── SDLC Pipeline Stages — gludd's canonical lifecycle ───────────────────────
+#
+# The authoritative pipeline that gludd enforces. Each stage has:
+#   - entry_gate: what must be satisfied before entering this stage
+#   - roles: the Ansible roles that execute work in this stage
+#   - exit_gate: what must be satisfied before advancing to the next stage
+#   - validation_token: the token produced on successful exit
+#   - evidence: artifacts that prove the stage completed correctly
+#   - blocking: whether failure at this stage blocks downstream work (fail-closed)
+#   - timeout_minutes: maximum allowed duration for this stage
+#
+pipeline_stages:
+  # ── STAGE 0: Intake ─────────────────────────────────────────────────────
+  - stage: intake
+    number: 0
+    description: "Task creation, specification, and acceptance criteria definition"
+    gludd_event_loop_phase: claim
+    entry_gate:
+      - "project exists and is active (project_id valid)"
+      - "required permissions assigned to agent"
+    roles:
+      primary: [triage_issue, story_create, backlog_groom]
+      optional: [spec_lifecycle, estimate_story]
+    exit_gate:
+      - "task has title, description, and type"
+      - "acceptance criteria defined (≥1 AC)"
+      - "size estimate present"
+      - "priority assigned (P0/P1/P2)"
+    validation_token: spec_token
+    evidence:
+      - "task.yml in spec pipeline drafts/"
+      - "BUSINESS_CONTEXT.md with acceptance criteria"
+      - "artifact_dir/intake.json"
+    blocking: false
+    timeout_minutes: 30
+
+  # ── STAGE 1: Planning ───────────────────────────────────────────────────
+  - stage: planning
+    number: 1
+    description: "Approach design, task decomposition, sprint allocation"
+    gludd_event_loop_phase: claim
+    entry_gate:
+      - "intake stage completed (spec_token present)"
+      - "acceptance criteria exist"
+    roles:
+      primary: [spec_lifecycle, sprint_plan]
+      optional: [parallel_planner, estimate_story, sprint_board_report]
+    exit_gate:
+      - "APPROACH.md written and approved (approve_task run)"
+      - "task assigned to sprint or backlog"
+      - "implementation plan is immutable (per conversation-to-contract gate)"
+      - "dependencies identified"
+    validation_token: approach_token
+    evidence:
+      - "APPROACH.md in spec pipeline active/"
+      - "task.yml stage=active, approved_at set"
+      - "sprint assignment recorded"
+      - "artifact_dir/planning.json"
+    blocking: false
+    timeout_minutes: 60
+
+  # ── STAGE 2: Implementation ─────────────────────────────────────────────
+  - stage: implementation
+    number: 2
+    description: "Code generation, TDD cycle, worktree-isolated editing"
+    gludd_event_loop_phase: dispatch
+    entry_gate:
+      - "planning stage completed (approach_token present)"
+      - "APPROACH.md is immutable"
+      - "model budget available (budget_guard check)"
+      - "clean git tree (enforce-clean-tree.ts)"
+    roles:
+      primary: [agent_task, implement_change, write_tests]
+      optional: [refactor_code, dependency_update, debug_failure]
+    exit_gate:
+      - "implementation commits exist on worktree branch"
+      - "all new code has tests (TDD policy verified)"
+      - "tests pass locally (make test-iso)"
+      - "no lint/typecheck/suppression regressions"
+      - "model spend recorded (spend_limiter)"
+    validation_token: code_token
+    evidence:
+      - "commit SHA(s) on agent branch"
+      - "test pass count (make test-count)"
+      - "agent_worktree branch name"
+      - "artifact_dir/implementation.json"
+    blocking: false
+    timeout_minutes: 120
+
+  # ── STAGE 3: Review ─────────────────────────────────────────────────────
+  - stage: review
+    number: 3
+    description: "Multi-layer quality assessment: code review, security review, test verification"
+    gludd_event_loop_phase: review
+    entry_gate:
+      - "implementation stage completed (code_token present)"
+      - "commits on agent branch"
+      - "tests passing locally"
+    roles:
+      primary: [code_reviewer, run_tests, gate_triage]
+      security: [security_gate, security_review, secret_scan, sbom_generate, supply_chain_verify]
+      optional: [coverage_audit, test_matrix, flaky_quarantine, lint_and_check, type_safety_audit]
+    exit_gate:
+      review:
+        - "code_reviewer verdict: approve (no high-severity findings)"
+        - "gate_triage: ALL PASSED (lint 0, typecheck ≤ baseline, collect 0, test pass)"
+      security:
+        - "security_gate gate_passed: true (all required checks present, no blocking findings)"
+        - "secret_scan: no secrets leaked"
+        - "sbom_generate: SBOM produced"
+      quality:
+        - "coverage maintained or above baseline"
+        - "no new suppression comments (# noqa, # type: ignore)"
+        - "no flaky test regressions"
+    validation_token: review_token
+    evidence:
+      - "code_reviewer.json (verdict + findings)"
+      - "gate_triage.json (gate_passed, per-phase results)"
+      - "security_gate.json (gate_passed, per-check results)"
+      - "artifact_dir/review.json"
+    blocking: true
+    timeout_minutes: 120
+
+  # ── STAGE 4: Gate ───────────────────────────────────────────────────────
+  - stage: gate
+    number: 4
+    description: "Composing gate: enforcement checks, compliance, push eligibility"
+    gludd_event_loop_phase: review
+    entry_gate:
+      - "review stage completed (review_token present)"
+      - "all review sub-stages passed"
+    roles:
+      primary: [enforcement_gate]
+      optional: [verify_feature_claims, coverage_audit]
+    exit_gate:
+      - "gate complete AND fresh (≤30 min old)"
+      - "gate passed (all phases green)"
+      - "per-phase: lint_pass, typecheck_pass, collect_pass, test_pass"
+      - "push guard: no CI-pending, cooldown satisfied, cancelled-run cap not exceeded"
+      - "all reviewed ACs checked in task.yml"
+    validation_token: gate_token
+    evidence:
+      - "enforcement_gate.json (gate_result: PASS)"
+      - ".gate-status file (fresh + PASS)"
+      - "gate_triage.md report"
+      - "artifact_dir/gate.json"
+    blocking: true
+    timeout_minutes: 180
+
+  # ── STAGE 5: Integration ─────────────────────────────────────────────────
+  - stage: integration
+    number: 5
+    description: "Merge to master, branch cleanup, push to remote"
+    gludd_event_loop_phase: reconcile
+    entry_gate:
+      - "gate stage completed (gate_token present)"
+      - "enforcement_gate: PASS"
+    roles:
+      primary: [validate_and_push, git_commit_push]
+      optional: [agent_orchestrate]
+    exit_gate:
+      - "agent-merge successful (worktree branch → master, --no-ff)"
+      - "verify-remote BRANCH=master SHA=<tip> → VERIFIED"
+      - "agent-cleanup (worktree removed, branch deleted)"
+      - "git tree clean on main checkout"
+    validation_token: merge_token
+    evidence:
+      - "merge commit SHA on master"
+      - "verify-remote output (VERIFIED master@<sha>)"
+      - "artifact_dir/integration.json"
+    blocking: true
+    timeout_minutes: 30
+
+  # ── STAGE 6: Deployment ──────────────────────────────────────────────────
+  - stage: deployment
+    number: 6
+    description: "CI/CD pipeline execution, artifact publication, release management"
+    gludd_event_loop_phase: reconcile
+    entry_gate:
+      - "integration stage completed (merge_token present)"
+      - "push verified on remote"
+    roles:
+      primary: [release_build, ci_pipeline_verify]
+      optional: [ci_annotations_poll, ci_pipeline_repair]
+    exit_gate:
+      - "CI run completed (build.yml → conclusion: success)"
+      - "CI headSha matches master tip"
+      - "all test shards pass (both Python versions)"
+      - "molecule scenarios pass"
+      - "platform builds succeed (linux, macos, windows)"
+      - "coverage job green"
+      - "release job: assets published (≥1 downloadable asset)"
+    validation_token: release_token
+    evidence:
+      - "ci-verdict output (run id + conclusion: success)"
+      - "verify-release-artifact PASS"
+      - "gh release view (isDraft: false, assets ≥ 1, download URLs)"
+      - "artifact_dir/deployment.json"
+    blocking: true
+    timeout_minutes: 120
+
+  # ── STAGE 7: Operate ─────────────────────────────────────────────────────
+  - stage: operate
+    number: 7
+    description: "Post-deployment monitoring, observability, continuous improvement"
+    gludd_event_loop_phase: reconcile
+    entry_gate:
+      - "deployment stage completed (release_token present)"
+      - "release artifact verified"
+    roles:
+      primary: [observe_deploy_correlator, observe_error_spike_rca, soc_analyst, retrospective]
+      optional: [observe_latency_regression, observe_saturation_capacity, observe_security_signal, report_metrics, sprint_review]
+    exit_gate:
+      - "deployment health green (no error spikes within observation window)"
+      - "metrics collected and within thresholds"
+      - "retrospective completed"
+      - "improvement backlog items filed (if any)"
+    validation_token: production_token
+    evidence:
+      - "/api/metrics snapshot at deploy + observation window"
+      - "observe_deploy_correlator artifact"
+      - "retrospective markdown report"
+      - "artifact_dir/operate.json"
+    blocking: false
+    timeout_minutes: 1440
+
+# ── Quality Gate Configuration ────────────────────────────────────────────────
+#
+# Each quality gate is a checkpoint that the sdlc_gate role enforces.
+# Gates can be composed per the security_gate pattern (fail-closed:
+# missing check = gate_passed=false).
+#
+quality_gates:
+  spec_gate:
+    description: "Specification completeness gate"
+    checks:
+      - id: spec_gate_001
+        check: title_present
+        kind: structural
+        severity: critical
+        description: "Task has a non-empty title"
+        enforcement: "fail"
+      - id: spec_gate_002
+        check: acceptance_criteria_defined
+        kind: structural
+        severity: critical
+        description: "≥1 acceptance criterion defined"
+        enforcement: "fail"
+      - id: spec_gate_003
+        check: size_estimated
+        kind: structural
+        severity: high
+        description: "Task size estimate present (XS/S/M/L/XL)"
+        enforcement: "fail"
+      - id: spec_gate_004
+        check: business_context_written
+        kind: content
+        severity: high
+        description: "BUSINESS_CONTEXT.md exists with problem/outcome/ACs"
+        enforcement: "warn"
+
+  approach_gate:
+    description: "Planning approach gate"
+    checks:
+      - id: approach_gate_001
+        check: approach_documented
+        kind: structural
+        severity: critical
+        description: "APPROACH.md written and approved"
+        enforcement: "fail"
+      - id: approach_gate_002
+        check: plan_immutable
+        kind: structural
+        severity: critical
+        description: "APPROACH.md is in active/ stage (approved), not drafts/"
+        enforcement: "fail"
+      - id: approach_gate_003
+        check: dependencies_mapped
+        kind: content
+        severity: medium
+        description: "Dependencies on other tasks/modules identified"
+        enforcement: "warn"
+      - id: approach_gate_004
+        check: sprint_assigned
+        kind: process
+        severity: low
+        description: "Task assigned to a sprint or explicitly deferred"
+        enforcement: "warn"
+
+  implementation_gate:
+    description: "Implementation quality gate"
+    checks:
+      - id: impl_gate_001
+        check: commits_exist
+        kind: structural
+        severity: critical
+        description: "≥1 commit on the worktree branch"
+        enforcement: "fail"
+      - id: impl_gate_002
+        check: tests_written
+        kind: tdd
+        severity: critical
+        description: "≥1 test file created or modified (TDD compliance)"
+        enforcement: "fail"
+      - id: impl_gate_003
+        check: test_count_zero_collection_errors
+        kind: quality
+        severity: critical
+        description: "make test-count shows 0 collection errors"
+        enforcement: "fail"
+      - id: impl_gate_004
+        check: no_suppression_comments
+        kind: style
+        severity: high
+        description: "No #noqa, #type:ignore, #pylint:, #fmt: added"
+        enforcement: "fail"
+      - id: impl_gate_005
+        check: budget_not_exhausted
+        kind: spend
+        severity: high
+        description: "Model spend within budget; spend_limiter not breached"
+        enforcement: "fail"
+
+  review_gate:
+    description: "Multi-layer review gate (composing)"
+    checks:
+      - id: review_gate_001
+        check: code_review_approved
+        kind: review
+        severity: high
+        description: "code_reviewer verdict: approve (no high-severity findings)"
+        enforcement: "fail"
+      - id: review_gate_002
+        check: gate_all_passed
+        kind: quality
+        severity: critical
+        description: "make gate output: ALL PASSED (lint 0, typecheck ≤ baseline, collect 0, tests pass)"
+        enforcement: "fail"
+      - id: review_gate_003
+        check: security_gate_passed
+        kind: security
+        severity: critical
+        description: "security_gate gate_passed: true — all required checks present and passing"
+        enforcement: "fail"
+      - id: review_gate_004
+        check: no_secrets_leaked
+        kind: security
+        severity: critical
+        description: "No secrets in diff (detect-secrets / secret_scan pass)"
+        enforcement: "fail"
+      - id: review_gate_005
+        check: coverage_maintained
+        kind: quality
+        severity: medium
+        description: "Test coverage maintained or above baseline"
+        enforcement: "warn"
+      - id: review_gate_006
+        check: sbom_generated
+        kind: supply_chain
+        severity: medium
+        description: "SBOM generated for changed dependencies"
+        enforcement: "warn"
+
+  release_gate:
+    description: "Release readiness gate"
+    checks:
+      - id: release_gate_001
+        check: enforcement_gate_pass
+        kind: compliance
+        severity: critical
+        description: "enforcement_gate gate_result: PASS"
+        enforcement: "fail"
+      - id: release_gate_002
+        check: gate_fresh
+        kind: compliance
+        severity: critical
+        description: ".gate-status is fresh (≤30 min old) and PASS"
+        enforcement: "fail"
+      - id: release_gate_003
+        check: merge_verified
+        kind: git
+        severity: critical
+        description: "verify-remote BRANCH=master confirms remote tip matches"
+        enforcement: "fail"
+      - id: release_gate_004
+        check: ci_green
+        kind: ci
+        severity: critical
+        description: "build.yml → conclusion: success, headSha matches master tip"
+        enforcement: "fail"
+      - id: release_gate_005
+        check: artifact_published
+        kind: release
+        severity: critical
+        description: "verify-release-artifact PASS — tag has ≥1 downloadable asset"
+        enforcement: "fail"
+      - id: release_gate_006
+        check: molecule_pass
+        kind: ci
+        severity: high
+        description: "All molecule scenarios pass on CI"
+        enforcement: "fail"
+      - id: release_gate_007
+        check: platform_builds_pass
+        kind: ci
+        severity: medium
+        description: "Platform builds succeed (linux, macos, windows)"
+        enforcement: "warn"
+
+# ── Evidence Requirements per Stage ───────────────────────────────────────────
+#
+# From arXiv:2605.20456 (Agentic Agile-V evidence-bundle acceptance):
+# each stage MUST produce specific evidence artifacts before the next stage
+# can begin. This section is machine-checked by sdlc_gate.
+#
+evidence_bundles:
+  intake:
+    required:
+      - artifact: "intake.json"
+        path: "{{ artifact_dir }}/intake.json"
+        schema_version: 1
+        fields: [task_name, acceptance_criteria, size, priority, created_at]
+    optional:
+      - artifact: "BUSINESS_CONTEXT.md"
+        path: "{{ spec_root }}/active/{{ task_name }}/BUSINESS_CONTEXT.md"
+
+  planning:
+    required:
+      - artifact: "planning.json"
+        path: "{{ artifact_dir }}/planning.json"
+        schema_version: 1
+        fields: [task_name, approach_approved, sprint, approved_at]
+      - artifact: "APPROACH.md"
+        path: "{{ spec_root }}/active/{{ task_name }}/APPROACH.md"
+    optional:
+      - artifact: "task.yml"
+        path: "{{ spec_root }}/active/{{ task_name }}/task.yml"
+
+  implementation:
+    required:
+      - artifact: "implementation.json"
+        path: "{{ artifact_dir }}/implementation.json"
+        schema_version: 1
+        fields: [task_name, commits, test_count, branch, spent_usd]
+    optional:
+      - artifact: "git_diff"
+        kind: "git diff on worktree branch"
+
+  review:
+    required:
+      - artifact: "code_reviewer.json"
+        path: "{{ artifact_dir }}/code_reviewer.json"
+        fields: [verdict, finding_count]
+      - artifact: "gate_triage.json"
+        path: "{{ artifact_dir }}/gate_triage.json"
+        fields: [gate_passed, next_action, flaky_signatures_found, real_failure_signals]
+    optional:
+      - artifact: "security_gate.json"
+        path: "{{ artifact_dir }}/security_gate.json"
+        fields: [gate_passed, block_on_severity]
+      - artifact: "coverage.json"
+        path: "{{ artifact_dir }}/coverage.json"
+      - artifact: "sbom.json"
+        path: "{{ artifact_dir }}/sbom.json"
+
+  gate:
+    required:
+      - artifact: "enforcement_gate.json"
+        path: "{{ artifact_dir }}/enforcement_gate.json"
+        fields: [gate_result, gate_complete, gate_passed, gate_fresh, per_phase]
+      - artifact: ".gate-status"
+        path: "{{ repo_path }}/.gate-status"
+        check: "contains 'PASS' and mtime ≤ 1800 seconds"
+
+  integration:
+    required:
+      - artifact: "integration.json"
+        path: "{{ artifact_dir }}/integration.json"
+        fields: [merge_sha, verify_remote_output, branch_cleaned]
+
+  deployment:
+    required:
+      - artifact: "deployment.json"
+        path: "{{ artifact_dir }}/deployment.json"
+        fields: [ci_run_id, ci_conclusion, ci_head_sha, artifact_verified]
+      - artifact: "ci_verdict"
+        kind: "make ci-verdict output"
+        check: "conclusion: success AND headSha matches branch tip"
+      - artifact: "release_view"
+        kind: "gh release view output"
+        check: "isDraft: false AND assets ≥ 1 AND download URLs present"
+
+  operate:
+    required:
+      - artifact: "operate.json"
+        path: "{{ artifact_dir }}/operate.json"
+        fields: [deployment_health, error_spike_detected, metrics_url, retrospective_completed]
+    optional:
+      - artifact: "retrospective.md"
+        path: "{{ artifact_dir }}/retrospective.md"
+
+# ── Role-to-Stage Mapping ─────────────────────────────────────────────────────
+#
+# Every existing gludd role mapped to its SDLC pipeline stage.
+# Used by sdlc_gate to verify that all required roles for a stage
+# have executed before advancing.
+#
+role_stage_mapping:
+  intake:
+    required: [triage_issue, story_create]
+    gatekeeper: [backlog_groom, estimate_story]
+  planning:
+    required: [spec_lifecycle, sprint_plan]
+    gatekeeper: [estimate_story, story_create]
+  implementation:
+    required: [agent_task, implement_change]
+    gatekeeper: [write_tests, refactor_code, dependency_update]
+  review:
+    required: [code_reviewer, gate_triage]
+    security: [security_gate, security_review, secret_scan, sbom_generate, supply_chain_verify]
+    gatekeeper: [coverage_audit, run_tests, lint_and_check, type_safety_audit]
+  gate:
+    required: [enforcement_gate]
+    gatekeeper: [verify_feature_claims]
+  integration:
+    required: [validate_and_push, git_commit_push]
+    gatekeeper: [agent_orchestrate]
+  deployment:
+    required: [release_build, ci_pipeline_verify]
+    gatekeeper: [ci_annotations_poll, ci_pipeline_repair]
+  operate:
+    required: [observe_deploy_correlator, retrospective]
+    gatekeeper: [observe_error_spike_rca, soc_analyst, sprint_review, report_metrics]
+
+# ── Blocking vs Non-Blocking Stages ───────────────────────────────────────────
+#
+# Blocking stages: failure halts the pipeline. The event loop will not
+# advance the task to the next state until the gate passes.
+# Non-blocking stages: failure logs a warning but does not stop work.
+# Mirrors the enforcement_gate fail-closed pattern.
+#
+blocking_stages:
+  review: true
+  gate: true
+  integration: true
+  deployment: true
+
+# ── Timeout Configuration ─────────────────────────────────────────────────────
+#
+# Maximum allowed duration per stage before the task_deadline_check role
+# or task_watchdog.py escalates (mirrors the `TASK DEADLINE EXCEEDED`
+# pattern from enforce-deadline.ts).
+#
+stage_timeouts:
+  intake: 30
+  planning: 60
+  implementation: 120
+  review: 120
+  gate: 180
+  integration: 30
+  deployment: 120
+  operate: 1440
+
+# ── Model Routing per Stage ───────────────────────────────────────────────────
+#
+# Model selection for each SDLC stage. Review and security gates use
+# different models than implementation for independence (per the
+# Chain-of-Verification principle: verification model ≠ generation model).
+#
+stage_model_routing:
+  intake:
+    model: planner
+    temperature: 0.3
+    max_tokens: 4096
+  planning:
+    model: planner
+    temperature: 0.2
+    max_tokens: 8192
+  implementation:
+    model: coder
+    temperature: 0.7
+    max_tokens: 16384
+  review:
+    code_review:
+      model: reviewer
+      temperature: 0.1
+      max_tokens: 8192
+    test:
+      model: coder
+      temperature: 0.0
+  security:
+    model: reviewer
+    temperature: 0.0
+    max_tokens: 4096
+  deploy:
+    model: weak
+    temperature: 0.0
+
+# ── NIST AI RMF GenAI Action Adoption Matrix ─────────────────────────────────
+#
+# Tracks which of the 200+ GenAI-specific actions from NIST AI RMF
+# are adopted in gludd's pipeline. Each entry references the specific
+# role, plugin, or policy that implements it.
+#
+nist_genai_adoption_matrix:
+  govern:
+    accountability:
+      GV-1.1-risk-tolerance:
+        adopted: true
+        implemented_by: "enforcement_gate fail-closed pattern; guardrail_pattern role"
+        status: "codified"
+      GV-2.1-accountability:
+        adopted: true
+        implemented_by: "AGENTS.md guardrail integrity policy; BUGS.md incident tracking"
+        status: "codified"
+      GV-3.1-legal-regulatory:
+        adopted: true
+        implemented_by: "security_gate composing check (sbom_generate, supply_chain_verify)"
+        status: "codified"
+      GV-4.1-org-risk-integration:
+        adopted: true
+        implemented_by: "BlockerDetector chronic_blockers → remediation dispatcher"
+        status: "codified"
+      GV-5.1-workforce-augmentation:
+        adopted: true
+        implemented_by: "10-agent floor; session-start orchestration; CRT's agent-floor rule"
+        status: "codified"
+  map:
+    context:
+      MAP-1.1-intended-purpose:
+        adopted: true
+        implemented_by: "story_create BUSINESS_CONTEXT.md; triage_issue"
+        status: "codified"
+      MAP-2.1-context-of-use:
+        adopted: true
+        implemented_by: "spec_lifecycle APPROACH.md; sprint_plan"
+        status: "codified"
+      MAP-4.1-capability-limitations:
+        adopted: true
+        implemented_by: "estimate_story sizing; budget_guard cost estimation"
+        status: "codified"
+      MAP-5.1-risk-categorization:
+        adopted: true
+        implemented_by: "triage_issue severity classification; P0/P1/P2 priority"
+        status: "codified"
+  measure:
+    evaluation:
+      MEAS-1.1-benchmark-performance:
+        adopted: true
+        implemented_by: "gate_triage gate output; benchmark/langgraph_bench.py"
+        status: "codified"
+      MEAS-2.1-correctness-robustness:
+        adopted: true
+        implemented_by: "code_reviewer structured findings; test_matrix"
+        status: "codified"
+      MEAS-3.1-track-adverse-impacts:
+        adopted: true
+        implemented_by: "BUGS.md incident tracking; observe_error_spike_rca"
+        status: "codified"
+      MEAS-4.1-document-residual-risk:
+        adopted: true
+        implemented_by: "security_gate severity-based blocking; blocker_detector"
+        status: "codified"
+      MEAS-5.1-monitoring-thresholds:
+        adopted: true
+        implemented_by: "observe_deploy_correlator; /api/metrics"
+        status: "codified"
+  manage:
+    operations:
+      MNG-1.1-risk-treatment:
+        adopted: true
+        implemented_by: "reconcile: approve/retry/reject; remediation dispatcher"
+        status: "codified"
+      MNG-2.1-monitoring-improvement:
+        adopted: true
+        implemented_by: "retrospective role; self_improve_ab_test; self_improve_promote"
+        status: "codified"
+      MNG-3.1-incident-response:
+        adopted: true
+        implemented_by: "soc_analyst; observe_error_spike_rca; observe_security_signal"
+        status: "codified"
+      MNG-4.1-documentation-communication:
+        adopted: true
+        implemented_by: "spec_lifecycle COMPLETION_REPORT.md; TASKS.md evidence"
+        status: "codified"
+      MNG-5.1-continuous-improvement:
+        adopted: true
+        implemented_by: "retrospective; self_improve_propose; AGENTS.md codify-improvements"
+        status: "codified"
+
+# ── Observability Requirements ────────────────────────────────────────────────
+#
+# Per gludd's "No Unseen Events" invariant (AGENTS.md line 175):
+# every SDLC stage transition MUST emit an observable event.
+#
+stage_observability:
+  events:
+    stage_entered:
+      emitter: "sdlc_gate role (stage_entered message)"
+      channel: "gludd_message topic=sdlc_stage_transition"
+      payload: ["stage", "task_name", "entry_gate_status", "timestamp"]
+    stage_exited:
+      emitter: "sdlc_gate role (stage_exited message)"
+      channel: "gludd_message topic=sdlc_stage_transition"
+      payload: ["stage", "task_name", "exit_gate_status", "validation_token", "next_stage", "timestamp"]
+    gate_blocked:
+      emitter: "sdlc_gate role (gate_blocked message, priority=high)"
+      channel: "gludd_message topic=sdlc_gate_blocked"
+      payload: ["stage", "task_name", "block_reasons", "timestamp"]
+  metrics:
+    stage_duration_seconds: "Emitted per stage as a gauge via /api/metrics"
+    stage_pass_rate: "Per-stage pass/fail rate tracked via MetricsCollector"
+    token_chain_health: "Validation token chain health (present/missing/broken per token)"

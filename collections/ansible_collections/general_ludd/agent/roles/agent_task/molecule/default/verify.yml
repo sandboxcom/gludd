@@ -1,0 +1,228 @@
+---
+- name: Verify — agent_task role structure and YAML integrity
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    role_root: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/collections/ansible_collections/general_ludd/agent/roles/agent_task"
+    task_files:
+      - main.yml
+    required_dirs:
+      - tasks
+      - defaults
+      - meta
+    required_defaults:
+      - repo_path
+      - work_type
+      - todo_id
+      - model_profile
+      - route_by_complexity
+      - skill_name
+      - skill_vars
+      - quality_gate_cmd
+      - worktree_base
+      - worktree_branch
+      - worktree_path
+      - artifact_dir
+      - commit_prefix
+      - daemon_url
+      - psk
+      - capability_role
+      - enable_git_push
+    required_meta_fields:
+      - role_name
+      - author
+      - description
+      - license
+      - min_ansible_version
+
+  tasks:
+    # ── 1. Directory and file existence ──────────────────────────────────
+
+    - name: "1a. Assert role root directory exists"
+      ansible.builtin.stat:
+        path: "{{ role_root }}"
+      register: _role_stat
+      failed_when: not _role_stat.stat.exists
+
+    - name: "1b. Assert required subdirectories exist"
+      ansible.builtin.stat:
+        path: "{{ role_root }}/{{ item }}"
+      register: _subdirs
+      loop: "{{ required_dirs }}"
+      failed_when: not _subdirs.results | map(attribute='stat.exists') | list is all
+
+    - name: "1c. Assert required task files exist"
+      ansible.builtin.stat:
+        path: "{{ role_root }}/tasks/{{ item }}"
+      register: _task_files
+      loop: "{{ task_files }}"
+      failed_when: not _task_files.results | map(attribute='stat.exists') | list is all
+
+    - name: "1d. Assert defaults/main.yml exists"
+      ansible.builtin.stat:
+        path: "{{ role_root }}/defaults/main.yml"
+      register: _defaults_stat
+      failed_when: not _defaults_stat.stat.exists
+
+    - name: "1e. Assert meta/main.yml exists"
+      ansible.builtin.stat:
+        path: "{{ role_root }}/meta/main.yml"
+      register: _meta_stat
+      failed_when: not _meta_stat.stat.exists
+
+    # ── 2. YAML validity ─────────────────────────────────────────────────
+
+    - name: "2a. Slurp task files"
+      ansible.builtin.slurp:
+        src: "{{ role_root }}/tasks/{{ item }}"
+      register: _slurped_tasks
+      loop: "{{ task_files }}"
+
+    - name: "2b. Assert task file YAML parses as list with >=1 item"
+      ansible.builtin.assert:
+        that:
+          - "{{ (_slurped_tasks.results | selectattr('item', 'eq', item) | first).content | b64decode | from_yaml is iterable }}"
+          - "{{ ((_slurped_tasks.results | selectattr('item', 'eq', item) | first).content | b64decode | from_yaml) | length >= 1 }}"
+        fail_msg: "{{ item }} must parse as a non-empty list of tasks"
+      loop: "{{ task_files }}"
+      loop_control:
+        label: "{{ item }}"
+
+    - name: "2c. Assert defaults/main.yml parses as dict"
+      ansible.builtin.slurp:
+        src: "{{ role_root }}/defaults/main.yml"
+      register: _slurped_defaults
+
+    - name: "2d. Validate defaults YAML structure"
+      ansible.builtin.assert:
+        that:
+          - "{{ (_slurped_defaults.content | b64decode | from_yaml) is mapping }}"
+        fail_msg: "defaults/main.yml must parse as a dict"
+
+    - name: "2e. Assert meta/main.yml parses as dict"
+      ansible.builtin.slurp:
+        src: "{{ role_root }}/meta/main.yml"
+      register: _slurped_meta
+
+    - name: "2f. Validate meta YAML structure"
+      ansible.builtin.assert:
+        that:
+          - "{{ (_slurped_meta.content | b64decode | from_yaml) is mapping }}"
+        fail_msg: "meta/main.yml must parse as a dict"
+
+    # ── 3. Lifecycle completeness ────────────────────────────────────────
+
+    - name: "3a. Slurp tasks/main.yml"
+      ansible.builtin.slurp:
+        src: "{{ role_root }}/tasks/main.yml"
+      register: _main_slurp
+
+    - name: "3b. Assert required lifecycle modules are referenced"
+      ansible.builtin.assert:
+        that:
+          - "{{ _main_slurp.content | b64decode is search('gludd_db') }}"
+          - "{{ _main_slurp.content | b64decode is search('gludd_worktree') }}"
+          - "{{ _main_slurp.content | b64decode is search('gludd_agent_run') }}"
+          - "{{ _main_slurp.content | b64decode is search('gludd_git') }}"
+        fail_msg: "agent_task must reference gludd_db, gludd_worktree, gludd_agent_run, gludd_git modules"
+
+    - name: "3c. Assert block+rescue+always pattern exists"
+      ansible.builtin.assert:
+        that:
+          - "{{ _main_slurp.content | b64decode is search('block:') }}"
+          - "{{ _main_slurp.content | b64decode is search('rescue:') }}"
+          - "{{ _main_slurp.content | b64decode is search('always:') }}"
+        fail_msg: "agent_task must use block/rescue/always pattern for lifecycle safety"
+
+    - name: "3d. Assert rescue marks todo failed"
+      ansible.builtin.assert:
+        that:
+          - "{{ _main_slurp.content | b64decode is regex_search(\"rescue:.*todo_update_status.*failed\", multiline=true) or _main_slurp.content | b64decode is regex_search(\"status:.*failed\", multiline=true) }}"
+        fail_msg: "agent_task rescue block must mark todo as failed"
+
+    - name: "3e. Assert always block cleans up worktree"
+      ansible.builtin.assert:
+        that:
+          - "{{ _main_slurp.content | b64decode is regex_search(\"always:.*state: absent\", multiline=true) or _main_slurp.content | b64decode is regex_search(\"always:.*gludd_worktree\", multiline=true) }}"
+        fail_msg: "agent_task always block must remove worktree (state: absent)"
+
+    - name: "3f. Assert required vars validated at start"
+      ansible.builtin.assert:
+        that:
+          - "{{ _main_slurp.content | b64decode is search('Validate required role variables') }}"
+        fail_msg: "agent_task must validate required variables at start of tasks"
+
+    - name: "3g. Assert quality gate step exists"
+      ansible.builtin.assert:
+        that:
+          - "{{ _main_slurp.content | b64decode is search('quality_gate_cmd') }}"
+        fail_msg: "agent_task must include a quality gate step"
+
+    - name: "3h. Assert artifact is written"
+      ansible.builtin.assert:
+        that:
+          - "{{ _main_slurp.content | b64decode is search('agent_task_result.json') }}"
+        fail_msg: "agent_task must write agent_task_result.json artifact"
+
+    # ── 4. Meta galaxy_info fields ───────────────────────────────────────
+
+    - name: "4a. Parse meta/main.yml"
+      ansible.builtin.set_fact:
+        _meta_doc: "{{ _slurped_meta.content | b64decode | from_yaml }}"
+
+    - name: "4b. Assert galaxy_info.role_name is agent_task"
+      ansible.builtin.assert:
+        that:
+          - _meta_doc.galaxy_info.role_name == 'agent_task'
+        fail_msg: "meta galaxy_info.role_name must be 'agent_task', got {{ _meta_doc.galaxy_info.role_name | default('(missing)') }}"
+
+    - name: "4c. Assert galaxy_info has required fields"
+      ansible.builtin.assert:
+        that:
+          - _meta_doc.galaxy_info['{{ item }}'] is defined
+        fail_msg: "meta galaxy_info missing field: {{ item }}"
+      loop: "{{ required_meta_fields }}"
+      loop_control:
+        label: "galaxy_info.{{ item }}"
+
+    # ── 5. Defaults completeness ─────────────────────────────────────────
+
+    - name: "5a. Parse defaults/main.yml"
+      ansible.builtin.set_fact:
+        _defaults: "{{ _slurped_defaults.content | b64decode | from_yaml }}"
+
+    - name: "5b. Assert all required default keys exist"
+      ansible.builtin.assert:
+        that:
+          - "'{{ item }}' in _defaults"
+        fail_msg: "defaults/main.yml missing key: {{ item }}"
+      loop: "{{ required_defaults }}"
+      loop_control:
+        label: "{{ item }}"
+
+    - name: "5c. Assert safe defaults — enable_git_push is false"
+      ansible.builtin.assert:
+        that:
+          - _defaults.enable_git_push | bool == false
+        fail_msg: "enable_git_push must default to false (no push unless explicitly enabled)"
+
+    - name: "5d. Assert safe defaults — repo_path is empty"
+      ansible.builtin.assert:
+        that:
+          - _defaults.repo_path == ""
+        fail_msg: "repo_path must default to empty string (must be explicitly set per invocation)"
+
+    # ── 6. Forbidden patterns ────────────────────────────────────────────
+
+    - name: "6a. Assert no force-push in tasks"
+      ansible.builtin.assert:
+        that:
+          - "{{ _main_slurp.content | b64decode is not regex_search('force.push', ignorecase=true) }}"
+        fail_msg: "agent_task must not contain force-push commands"
+
+    - name: "6b. Assert no --no-verify in tasks"
+      ansible.builtin.assert:
+        that:
+          - "{{ _main_slurp.content | b64decode is not search('--no-verify') }}"
+        fail_msg: "agent_task must not contain --no-verify (bypasses pre-commit hooks)"

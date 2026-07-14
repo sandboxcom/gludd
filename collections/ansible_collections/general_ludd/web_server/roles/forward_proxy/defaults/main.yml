@@ -1,0 +1,17 @@
+---
+proxy_type: squid
+port: 3128
+allowed_networks:
+  - "10.0.0.0/8"
+  - "172.16.0.0/12"
+  - "192.168.0.0/16"
+auth_method: none
+cache_dir: /var/spool/squid
+cache_size_mb: 2048
+ssl_bump_enabled: false
+transparent_mode: false
+max_object_size_mb: 128
+log_dir: /var/log/squid
+dns_nameservers:
+  - "8.8.8.8"
+allow_direct: false

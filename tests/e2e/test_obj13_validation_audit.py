@@ -16,6 +16,7 @@ class TestValidationRunnerImportAndInit:
             todo_id="TODO-001",
             worktree_path="/tmp/worktree",
             test_commands=["echo ok"],
+            expected_worktree_root="/tmp",
         )
         assert runner.todo_id == "TODO-001"
         assert runner.worktree_path == "/tmp/worktree"
@@ -26,6 +27,7 @@ class TestValidationRunnerImportAndInit:
             todo_id="TODO-002",
             worktree_path="/tmp",
             test_commands=[],
+            expected_worktree_root="/tmp",
         )
         assert runner.test_commands == []
 
@@ -37,6 +39,7 @@ class TestValidationRunnerExecution:
                 todo_id="TODO-010",
                 worktree_path=tmpdir,
                 test_commands=["echo '1 passed'"],
+                expected_worktree_root=tmpdir,
                 # echo is an arbitrary stand-in test runner here, not a real
                 # one; opt out of the runner allowlist for this smoke test.
                 enforce_runner_allowlist=False,
@@ -45,13 +48,19 @@ class TestValidationRunnerExecution:
             assert isinstance(result, ValidationResult)
 
     def test_create_child_todos_for_failures_empty(self):
-        runner = ValidationRunner(todo_id="TODO-011", worktree_path="/tmp", test_commands=[])
+        runner = ValidationRunner(
+            todo_id="TODO-011", worktree_path="/tmp", test_commands=[],
+            expected_worktree_root="/tmp",
+        )
         result = ValidationResult(success=True, passed_count=5, failed_count=0, output="ok")
         children = runner.create_child_todos_for_failures(result)
         assert children == []
 
     def test_create_child_todos_with_failures(self):
-        runner = ValidationRunner(todo_id="TODO-012", worktree_path="/tmp", test_commands=[])
+        runner = ValidationRunner(
+            todo_id="TODO-012", worktree_path="/tmp", test_commands=[],
+            expected_worktree_root="/tmp",
+        )
         result = ValidationResult(
             success=False,
             passed_count=3,
@@ -65,7 +74,10 @@ class TestValidationRunnerExecution:
         assert children[0]["category"] == "test_failure"
 
     def test_create_child_todos_no_tests_found(self):
-        runner = ValidationRunner(todo_id="TODO-013", worktree_path="/tmp", test_commands=[])
+        runner = ValidationRunner(
+            todo_id="TODO-013", worktree_path="/tmp", test_commands=[],
+            expected_worktree_root="/tmp",
+        )
         result = ValidationResult(success=False, passed_count=0, failed_count=0, output="")
         children = runner.create_child_todos_for_failures(result)
         assert len(children) == 1

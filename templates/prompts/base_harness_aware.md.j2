@@ -62,3 +62,22 @@ prefix is treated as unverifiable and the decision is downgraded to
 Include one or more of these in `evidence_refs`. Multiple refs must ALL pass for
 the decision to be accepted as `complete`. Omitting `evidence_refs` or using
 unprefixed strings forces a `needs_more_work` downgrade.
+
+## Available Make Targets
+
+Bash is restricted to `make <target>` only. Use `make list-targets` to discover
+all available targets. Below are the essential categories — always verify with
+`make list-targets` before invoking an unfamiliar target.
+
+| Category | Key targets |
+|----------|------------|
+| Testing | `test`, `test-unit`, `test-e2e`, `test-specific`, `test-count`, `test-guardrails`, `collect-check`, `smoke` |
+| Quality | `lint`, `lint-fix`, `typecheck`, `healthcheck`, `gate`, `gate-lite`, `qa`, `validate` |
+| Git | `git-status`, `git-diff`, `git-log`, `git-add`, `git-commit`, `ship-commit`, `verify-state` |
+| CI | `ci-verdict`, `ci-verdict-safe`, `ci-verdict-fast`, `require-ci-green` |
+| Watchdog | `watchdog-auto`, `watchdog-status`, `watchdog-start` |
+| Gate | `gate-background`, `gate-status-check`, `gate-kill`, `gate-tail`, `gate-logs` |
+| Agent | `agent-worktree`, `agent-merge`, `agent-cleanup`, `agent-worktree-list` |
+| Release | `release-cut`, `release-promote`, `release-branch-new`, `verify-release-artifact` |
+| Setup | `init`, `sync`, `bootstrap`, `clean`, `dist` |
+| Diagnostic | `list-targets`, `list-tests`, `verify-state`, `check-plugin-liveness` |

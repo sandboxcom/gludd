@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 import time
 from dataclasses import dataclass, field
 
@@ -50,6 +51,7 @@ class WorkerBroadcaster:
         allowlist: set[str] | None = None,
     ) -> None:
         self._workers: dict[str, WorkerInfo] = {}
+        self._lock = threading.Lock()
         self._stale_threshold = stale_threshold_seconds
         # Defense-in-depth worker-identity allowlist (task #18). When configured,
         # the daemon only broadcasts a reload / model-sync — and, critically, the
@@ -97,24 +99,33 @@ class WorkerBroadcaster:
                 worker.address,
             )
             return
-        self._workers[worker.worker_id] = worker
+        with self._lock:
+            self._workers[worker.worker_id] = worker
 
     def unregister(self, worker_id: str) -> None:
-        self._workers.pop(worker_id, None)
+        with self._lock:
+            self._workers.pop(worker_id, None)
 
     def heartbeat(self, worker_id: str) -> None:
-        w = self._workers.get(worker_id)
-        if w:
-            w.last_seen = time.time()
+        with self._lock:
+            w = self._workers.get(worker_id)
+            if w:
+                w.last_seen = time.time()
+
+    def _snapshot_workers(self) -> list[WorkerInfo]:
+        with self._lock:
+            return list(self._workers.values())
 
     def list_workers(self) -> list[WorkerInfo]:
-        return list(self._workers.values())
+        with self._lock:
+            return list(self._workers.values())
 
     def cleanup_stale(self) -> None:
         now = time.time()
-        stale = [wid for wid, w in self._workers.items() if now - w.last_seen > self._stale_threshold]
-        for wid in stale:
-            self._workers.pop(wid, None)
+        with self._lock:
+            stale = [wid for wid, w in self._workers.items() if now - w.last_seen > self._stale_threshold]
+            for wid in stale:
+                self._workers.pop(wid, None)
 
     @staticmethod
     def _auth_headers() -> dict[str, str]:
@@ -136,7 +147,7 @@ class WorkerBroadcaster:
                 ": reload broadcast is UNRESTRICTED — the daemon PSK will be sent to "
                 "every registered safe worker. Set GLUDD_WORKER_ALLOWLIST to restrict."
             )
-        for w in self._workers.values():
+        for w in self._snapshot_workers():
             # Defense in depth (allowlist gate, task #18): only broadcast — and only
             # send the PSK — to explicitly permitted workers. Checked BEFORE the SSRF
             # guard so a non-allowlisted target is refused outright.
@@ -209,7 +220,7 @@ class WorkerBroadcaster:
                 "sent to every registered safe worker. Set GLUDD_WORKER_ALLOWLIST to "
                 "restrict."
             )
-        for w in self._workers.values():
+        for w in self._snapshot_workers():
             # Defense in depth (allowlist gate, task #18): only broadcast — and only
             # send the PSK — to explicitly permitted workers. Checked BEFORE the SSRF
             # guard so a non-allowlisted target is refused outright.
@@ -270,7 +281,7 @@ class WorkerBroadcaster:
 
     def ping_all(self) -> dict[str, bool]:
         results = {}
-        for w in self._workers.values():
+        for w in self._snapshot_workers():
             # Defense in depth (task #37): re-validate the address at send time,
             # identically to the PSK-bearing broadcast_* methods, so the health
             # probe is NEVER issued to a plain-http / loopback / link-local /

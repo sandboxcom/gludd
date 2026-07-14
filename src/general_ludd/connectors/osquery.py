@@ -10,6 +10,7 @@ passed as a single argv element.
 The connector is intentionally self-contained: it imports nothing from sibling
 connector modules and defines its own runner protocol so it can be unit-tested
 with a canned, injected runner (no real ``osqueryi`` binary required).
+
 """
 
 from __future__ import annotations

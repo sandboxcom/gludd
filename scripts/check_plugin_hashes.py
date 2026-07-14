@@ -37,18 +37,28 @@ def _now_ms() -> int:
     return int(time.time() * 1000)
 
 
+def _scan_ts_dir(directory: Path, result: dict[str, str], prefix: str = "") -> None:
+    """Scan a directory for .ts files and add their hashes to result."""
+    if not directory.is_dir():
+        return
+    for f in sorted(directory.glob("*.ts")):
+        try:
+            content = f.read_bytes()
+            key = f"{prefix}{f.name}"
+            result[key] = hashlib.sha256(content).hexdigest()
+        except OSError:
+            continue
+
+
 def compute_hashes(plugin_dir: Path | None = None) -> dict[str, str]:
-    """Return {filename: sha256_hex} for all .ts files in plugin_dir."""
+    """Return {filename: sha256_hex} for all .ts files in plugin_dir and plugins_dir."""
     pd = Path(plugin_dir) if plugin_dir else PLUGIN_DIR
     if not pd.is_dir():
         return {}
     result: dict[str, str] = {}
-    for f in sorted(pd.glob("*.ts")):
-        try:
-            content = f.read_bytes()
-            result[f.name] = hashlib.sha256(content).hexdigest()
-        except OSError:
-            continue
+    _scan_ts_dir(pd, result)
+    plugins_dir = pd.parent / "plugins"
+    _scan_ts_dir(plugins_dir, result, prefix="plugins/")
     return result
 
 

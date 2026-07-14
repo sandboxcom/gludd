@@ -18,6 +18,7 @@ Contract
   ``ts, source, kind, level_or_status, message, value, labels, raw``.
 * The HTTP transport is injectable; the default uses ``httpx``. Time-bound,
   no ``shell=True``.
+
 """
 
 from __future__ import annotations

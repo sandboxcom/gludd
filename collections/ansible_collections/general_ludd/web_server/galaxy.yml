@@ -1,0 +1,25 @@
+---
+namespace: general_ludd
+name: web_server
+version: 0.1.0
+readme: README.md
+description: >
+  Web server automation roles — HTTP server setup (nginx/apache), SSL/TLS
+  configuration with certificate management, CGI/WSGI/ASGI gateway wiring,
+  and logging middleware with rotation and analysis.
+license:
+  - MIT
+authors:
+  - Agentic Harness Agent <agent@harness.local>
+tags:
+  - web
+  - http
+  - nginx
+  - apache
+  - ssl
+  - tls
+  - wsgi
+  - asgi
+  - logging
+  - middleware
+dependencies: {}

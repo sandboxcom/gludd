@@ -29,11 +29,13 @@ class CrossTaskLearner:
         self._repo = memory_repo
         self._model_gateway = model_gateway
 
-    async def learn_patterns(self, agent_id: str) -> dict[str, Any]:
+    async def learn_patterns(
+        self, agent_id: str, project_id: str | None = None,
+    ) -> dict[str, Any]:
         from general_ludd.memory.episodic import EpisodicMemoryRecorder
 
         recorder = EpisodicMemoryRecorder(self._repo)
-        all_episodes = await recorder.list_episodes(agent_id, limit=1000)
+        all_episodes = await recorder.list_episodes(agent_id, project_id=project_id, limit=1000)
 
         if not all_episodes:
             return {"patterns_found": 0, "total_episodes": 0, "message": "no episodes to learn from"}
@@ -98,6 +100,7 @@ class CrossTaskLearner:
         agent_id: str,
         task_type: str,
         query_context: str = "",
+        project_id: str | None = None,
     ) -> dict[str, Any]:
         from general_ludd.memory.retrieval import MemoryRetriever
 
@@ -107,6 +110,7 @@ class CrossTaskLearner:
             agent_id,
             query_text=query,
             task_type=task_type,
+            project_id=project_id,
             top_k=5,
         )
 
@@ -128,7 +132,7 @@ class CrossTaskLearner:
         from general_ludd.memory.consolidation import MemoryConsolidator
 
         consolidator = MemoryConsolidator(self._repo)
-        consolidated = await consolidator.get_consolidated(agent_id, task_type=task_type)
+        consolidated = await consolidator.get_consolidated(agent_id, task_type=task_type, project_id=project_id)
         for summary in consolidated:
             error_patterns = summary.get("error_patterns", [])
             for pat in error_patterns[:3]:
@@ -150,8 +154,10 @@ class CrossTaskLearner:
             "top_match_score": results[0].score if results else 0.0,
         }
 
-    async def generate_improvement_report(self, agent_id: str) -> dict[str, Any]:
-        patterns = await self.learn_patterns(agent_id)
+    async def generate_improvement_report(
+        self, agent_id: str, project_id: str | None = None,
+    ) -> dict[str, Any]:
+        patterns = await self.learn_patterns(agent_id, project_id=project_id)
 
         if patterns["total_episodes"] == 0:
             return patterns

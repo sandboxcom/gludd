@@ -1,0 +1,32 @@
+---
+- name: Prepare - create a local bare source repo for SSRF-safe cloning
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    source_repo: "/tmp/molecule-clone-source"
+    cleanup_target: "/tmp/molecule-clone-target"
+
+  tasks:
+    - name: Remove stale repos from prior runs
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ source_repo }}"
+        - "{{ cleanup_target }}"
+
+    - name: Create bare source repository with an initial commit
+      ansible.builtin.shell:
+        cmd: |
+          set -e
+          mkdir -p "{{ source_repo }}"
+          cd "{{ source_repo }}"
+          git init -q
+          git config user.email "molecule@git-automation.test"
+          git config user.name "Molecule Clone Test"
+          git config commit.gpgsign false
+          echo "hello from molecule clone test" > README.md
+          git add README.md
+          git commit -q -m "initial seed commit"
+      changed_when: true

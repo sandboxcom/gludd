@@ -19,6 +19,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from general_ludd.db.models import OrnithTrainingPairModel
+from general_ludd.ornith.sandbox import confine_export_path
 from general_ludd.ornith.training_repo import (
     OrnithInvocation,
     OrnithTrainingRepo,
@@ -279,11 +280,9 @@ class TrainingDataCollector:
 
         Returns the path to the written file.
         """
-        if out_path is None:
-            ts = int(_now().timestamp())
-            out_path = Path(".") / f"finetuning-dataset-{ts}.jsonl"
-
-        out = Path(out_path)
+        ts = int(_now().timestamp())
+        default_name = f"finetuning-dataset-{ts}.jsonl"
+        out = confine_export_path(out_path, default_name)
         out.parent.mkdir(parents=True, exist_ok=True)
 
         pairs = await self._repo.list_pairs(
@@ -314,11 +313,9 @@ class TrainingDataCollector:
         (including pending and negative-reward examples) so the RL trainer
         sees the full rollout distribution.
         """
-        if out_path is None:
-            ts = int(_now().timestamp())
-            out_path = Path(".") / f"rollout-log-{ts}.jsonl"
-
-        out = Path(out_path)
+        ts = int(_now().timestamp())
+        default_name = f"rollout-log-{ts}.jsonl"
+        out = confine_export_path(out_path, default_name)
         out.parent.mkdir(parents=True, exist_ok=True)
 
         pairs = await self._repo.list_pairs(limit=limit, status=None)

@@ -158,8 +158,11 @@ class ClickHouseStatsSource:
             return {"ok": False, "detail": self._driver_error or _DRIVER_UNAVAILABLE}
         try:
             executor("SELECT 1 AS metric, 1 AS value")
-        except Exception:
-            logger.warning("clickhouse_stats probe failed", exc_info=True)
+        except Exception as exc:
+            logger.warning(
+                "clickhouse_stats probe failed: %s", type(exc).__name__,
+                exc_info=False,
+            )
             return {"ok": False, "detail": "probe failed"}
         return {"ok": True, "detail": "ok"}
 

@@ -3,11 +3,12 @@ from __future__ import annotations
 import os
 from typing import cast
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import JSONResponse
 
 from general_ludd.secrets.cosign import delete_cosign_key, generate_and_store_cosign_key, read_cosign_key
 from general_ludd.secrets.gitsign import read_gitsign_config, write_gitsign_config
+from general_ludd.security.auth import check_admin_token
 
 # Allowlisted root that output_dir must nest under.  Using the FileStore root
 # keeps cosign key exports in the same location the rest of the daemon uses for
@@ -41,10 +42,29 @@ def _validate_output_dir(output_dir: str | None) -> str | None:
     return resolved
 
 
+def _require_admin_privilege(
+    x_admin_token: str | None = Header(default=None, alias="X-Admin-Token"),
+) -> None:
+    admin_token = os.environ.get("GLUDD_ADMIN_TOKEN", "").strip()
+    if not admin_token:
+        raise HTTPException(
+            status_code=503,
+            detail="admin_token_required: GLUDD_ADMIN_TOKEN not configured",
+        )
+    if not check_admin_token(x_admin_token or "", admin_token):
+        raise HTTPException(
+            status_code=403,
+            detail="forbidden: invalid admin token",
+        )
+
+
 def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
 
     @app.post("/admin/signing/cosign/generate")
-    async def admin_cosign_generate(req: dict[str, object]) -> object:
+    async def admin_cosign_generate(
+        req: dict[str, object],
+        _priv: None = Depends(_require_admin_privilege),
+    ) -> object:
         resolver = getattr(app.state, "_secrets_resolver", None)
         if resolver is None or not hasattr(resolver, "write_secret"):
             return JSONResponse(status_code=503, content={"error": "secrets resolver not available"})
@@ -66,7 +86,10 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         return {"key_name": key.key_name, "public_key": key.public_key, "created_at": key.created_at}
 
     @app.get("/admin/signing/cosign/list/{project_id}")
-    async def admin_cosign_list(project_id: str) -> object:
+    async def admin_cosign_list(
+        project_id: str,
+        _priv: None = Depends(_require_admin_privilege),
+    ) -> object:
         resolver = getattr(app.state, "_secrets_resolver", None)
         if resolver is None or not hasattr(resolver, "read_secret"):
             return JSONResponse(status_code=503, content={"error": "secrets resolver not available"})
@@ -90,7 +113,11 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         return keys
 
     @app.get("/admin/signing/cosign/{project_id}/{key_name}")
-    async def admin_cosign_read(project_id: str, key_name: str) -> object:
+    async def admin_cosign_read(
+        project_id: str,
+        key_name: str,
+        _priv: None = Depends(_require_admin_privilege),
+    ) -> object:
         resolver = getattr(app.state, "_secrets_resolver", None)
         if resolver is None or not hasattr(resolver, "read_secret"):
             return JSONResponse(status_code=503, content={"error": "secrets resolver not available"})
@@ -103,7 +130,11 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         return {"key_name": key.key_name, "public_key": key.public_key, "created_at": key.created_at}
 
     @app.delete("/admin/signing/cosign/{project_id}/{key_name}")
-    async def admin_cosign_delete(project_id: str, key_name: str) -> object:
+    async def admin_cosign_delete(
+        project_id: str,
+        key_name: str,
+        _priv: None = Depends(_require_admin_privilege),
+    ) -> object:
         resolver = getattr(app.state, "_secrets_resolver", None)
         if resolver is None or not hasattr(resolver, "delete_secret"):
             return JSONResponse(status_code=503, content={"error": "secrets resolver not available"})
@@ -114,7 +145,10 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         return {"status": "deleted", "project_id": project_id, "key_name": key_name}
 
     @app.post("/admin/signing/gitsign/config")
-    async def admin_gitsign_write(req: dict[str, object]) -> object:
+    async def admin_gitsign_write(
+        req: dict[str, object],
+        _priv: None = Depends(_require_admin_privilege),
+    ) -> object:
         resolver = getattr(app.state, "_secrets_resolver", None)
         if resolver is None or not hasattr(resolver, "write_secret"):
             return JSONResponse(status_code=503, content={"error": "secrets resolver not available"})
@@ -133,7 +167,10 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         return {"status": "ok"}
 
     @app.get("/admin/signing/gitsign/{project_id}")
-    async def admin_gitsign_read(project_id: str) -> object:
+    async def admin_gitsign_read(
+        project_id: str,
+        _priv: None = Depends(_require_admin_privilege),
+    ) -> object:
         resolver = getattr(app.state, "_secrets_resolver", None)
         if resolver is None or not hasattr(resolver, "read_secret"):
             return JSONResponse(status_code=503, content={"error": "secrets resolver not available"})

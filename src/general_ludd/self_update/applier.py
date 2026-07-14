@@ -12,6 +12,9 @@ Safety contract (fail-closed throughout):
 * A capability the checker does not allow -> ``denied``.
 * Any target path matching the built-in PROTECTED_PATH deny-list -> ``denied``,
   regardless of capability. This list always wins.
+* **H.17 signature verification.** If ``verify_signature`` is supplied, the
+  caller MUST provide a ``content_signature`` and a ``public_key``; the applier
+  verifies the Ed25519 signature BEFORE any write. Missing/invalid → ``denied``.
 * ``config`` / ``yaml`` / ``role`` kinds: the change must parse as YAML
   (``yaml.safe_load``); only then is it written via the injected ``SafeWriter``
   -> ``applied``. A parse error or a writer error -> ``denied``.
@@ -25,6 +28,7 @@ from __future__ import annotations
 
 import os
 import urllib.parse
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Protocol, runtime_checkable
@@ -33,52 +37,7 @@ import yaml
 
 ApplyStatus = Literal["applied", "proposed", "denied"]
 
-# Substrings that, if present in any target path, force a hard ``denied`` —
-# regardless of the granted capability. These cover the guardrail/secret/policy
-# surface that self-update must NEVER rewrite. Matching is substring-based and
-# case-insensitive so path-form variations (``./``, nested dirs) cannot smuggle
-# a protected target past the check.
-PROTECTED_PATH_MARKERS: tuple[str, ...] = (
-    "guardrails",
-    "secrets",
-    ".opencode",
-    ".claude",
-    "capability_policy",
-    "action_policy",
-    "fs_write_policy",
-    "enforce-",
-    "permissions",
-    # CI/build surface — rewriting these could exfiltrate build-runner secrets
-    # or silently disable guardrails. Path comparison is already lowercased in
-    # _first_protected(), so these lowercase markers match case-insensitively.
-    ".github",
-    "/workflows/",
-    "pyproject.toml",
-    "makefile",
-    "alembic",
-    "/migrations/",
-    "setup.cfg",
-    "tox.ini",
-    ".pre-commit",
-    "dockerfile",
-)
-
-# Bare-word markers that must match a whole PATH SEGMENT (or exact basename),
-# not an arbitrary substring.  This prevents ``alembic`` from blocking
-# ``src/alembic_runner.py``, ``makefile`` from blocking
-# ``utils/makefile_parser.py``, and ``dockerfile`` from blocking
-# ``src/dockerfile_parser.py``.
-#
-# A marker listed here is matched when:
-#   • it equals any individual segment of the lowercased, normalised path, OR
-#   • it equals the lowercased basename (covers ``Makefile`` at repo root).
-#
-# All other PROTECTED_PATH_MARKERS continue to be matched as substrings.
-_SEGMENT_EXACT_MARKERS: frozenset[str] = frozenset(
-    {"alembic", "makefile", "dockerfile"}
-)
-
-# Kinds whose change content is validated as YAML and then written in place.
+#: Kinds whose change content is validated as YAML and then written in place.
 _YAML_KINDS: frozenset[str] = frozenset({"config", "yaml", "role"})
 
 
@@ -156,7 +115,16 @@ def _first_protected(
     from general_ludd.security.path_canonicalizer import is_denied_path
 
     for path in target_paths:
-        normalised = os.path.normpath(urllib.parse.unquote(path))
+        decoded = urllib.parse.unquote(path)
+
+        # S.9 fix: check the raw (pre-normpath) path BEFORE os.path.normpath
+        # collapses ``..`` traversal.  Without this, ``guardrails/../../etc``
+        # becomes ``../../etc`` — the ``guardrails`` marker is stripped and
+        # the protected-path check bypasses entirely.
+        if is_denied_path(decoded):
+            return path
+
+        normalised = os.path.normpath(decoded)
         lowered = normalised.lower()
 
         # Lexical check via the canonical deny-list — catches substring and
@@ -259,8 +227,44 @@ class UpdateApplier:
         self._capability_checker = capability_checker
         self._workspace_root = workspace_root
 
-    def apply(self, plan: UpdatePlan, change_content: str) -> ApplyResult:
+    def apply(
+        self,
+        plan: UpdatePlan,
+        change_content: str,
+        *,
+        content_signature: str = "",
+        public_key: str = "",
+        verify_signature: Callable[[str, str, str], bool] | None = None,
+    ) -> ApplyResult:
         target_paths = list(plan.target_paths)
+
+        # 0. H.17 cryptographic signature verification (runs BEFORE any gate).
+        #    A missing signature / key / verifier when the verifier is supplied
+        #    → fail closed immediately. No content is ever written without
+        #    a valid Ed25519 detached signature over the exact payload.
+        if verify_signature is not None:
+            if not content_signature or not public_key:
+                return ApplyResult(
+                    status="denied",
+                    target_paths=target_paths,
+                    evidence="signature verification configured but no "
+                    "content_signature or public_key provided — refusing to apply",
+                )
+            try:
+                ok = verify_signature(change_content, content_signature, public_key)
+            except Exception as exc:
+                return ApplyResult(
+                    status="denied",
+                    target_paths=target_paths,
+                    evidence=f"signature verification raised: {exc}",
+                )
+            if not ok:
+                return ApplyResult(
+                    status="denied",
+                    target_paths=target_paths,
+                    evidence="signature verification failed — content may be "
+                    "tampered, unsigned, or signed with a different key",
+                )
 
         # 1. Capability gate. Fail closed on anything not explicitly allowed
         #    (including a checker that itself raises).

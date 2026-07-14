@@ -16,10 +16,13 @@ from __future__ import annotations
 import logging
 import multiprocessing
 import os
+from pathlib import Path
 from typing import Any
 
 import yaml
 from pydantic import BaseModel, Field, field_validator
+
+from general_ludd.ansible.file_tracker import FileChangeTracker
 
 logger = logging.getLogger(__name__)
 
@@ -642,8 +645,12 @@ class CoreAnsibleRunner:
 
         self._collected_events = []
 
+        file_tracker = FileChangeTracker(repo_root=Path.cwd())
+        runner_kwargs["event_handler"] = file_tracker.event_handler
+
         try:
             runner_obj = ansible_runner.run(**runner_kwargs)
+            self._file_tracker = file_tracker
         except Exception as exc:
             return AnsibleResult(
                 status="failed",
@@ -696,6 +703,21 @@ class CoreAnsibleRunner:
         become: bool = False,
         extra_env: dict[str, str] | None = None,
     ) -> AnsibleResult:
+        # Pre-set ansible collections env vars so that AnsibleCollectionConfig
+        # (which reads ANSIBLE_COLLECTIONS_PATH at module-import time and caches
+        # it) picks up the correct paths.  The post-import os.environ swap below
+        # is too late — the cached value is already stale by then.
+        _ansible_env_restore: dict[str, str | None] = {}
+        if extra_env:
+            for _ak in (
+                "ANSIBLE_COLLECTIONS_PATH",
+                "ANSIBLE_ROLES_PATH",
+                "ANSIBLE_COLLECTIONS_PATHS",
+            ):
+                if _ak in extra_env:
+                    _ansible_env_restore[_ak] = os.environ.get(_ak)
+                    os.environ[_ak] = extra_env[_ak]
+
         from ansible import context
         from ansible.executor.playbook_executor import PlaybookExecutor
         from ansible.inventory.manager import InventoryManager
@@ -712,6 +734,15 @@ class CoreAnsibleRunner:
             init_plugin_loader()
         except Exception:  # pragma: no cover - older cores auto-init on use
             pass
+
+        # Restore pre-existing ansible env values after AnsibleCollectionConfig
+        # has read the overridden paths.  The full env swap below takes over from
+        # here.
+        for _k, _v in _ansible_env_restore.items():
+            if _v is None:
+                os.environ.pop(_k, None)
+            else:
+                os.environ[_k] = _v
 
         loader = DataLoader()
 

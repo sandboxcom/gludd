@@ -1,0 +1,21 @@
+---
+namespace: general_ludd
+name: security
+version: 0.2.0
+readme: README.md
+description: >
+  Security-focused roles for SSL/TLS, HSM, injection testing, audit
+  frameworks, and adversarial detection.
+license:
+  - MIT
+authors:
+  - Agentic Harness Agent <agent@harness.local>
+tags:
+  - security
+  - ssl
+  - tls
+  - hsm
+  - audit
+  - injection
+  - adversarial
+dependencies: {}

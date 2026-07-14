@@ -1,6 +1,6 @@
 {
   "env": {
-    "CLAUDE_AGENT_FLOOR": "10",
+    "CLAUDE_AGENT_FLOOR": "5",
     "CLAUDE_AGENT_CEILING": "16",
     "GLUDD_FORCE_DELEGATE": "1",
     "GLUDD_FORCE_DELEGATE_GRACE": "5",

@@ -25,28 +25,15 @@
  * Default ON. Set GLUDD_NO_WAIT_ENFORCE=0 to disable (advisory only).
  * Fail-open: any throw/exception → allow (don't wedge the editor).
  *
- * The plugin cannot distinguish "main thread" from "subagent" mechanically —
- * opencode exposes no caller-context API. Instead it denies these patterns
- * unconditionally; subagents that legitimately need to poll should do so via
- * a `while` loop with short sleeps inside a Task, not via shell `sleep && ...`.
- * (Subagents inherit the plugin; the workaround is `for i in range(N): sleep(1)`
- * inside the Task prompt, not a shell-level `sleep && make`.)
+ * HOT-RELOAD: implements the proxy pattern from hot_reload.ts.  Hook functions
+ * check /tmp/gludd-hot-enforce-no-wait.js on every invocation.  If present
+ * and newer than cached, the hot module's hook overrides the compiled-in
+ * default.  Run `make hot-reload-plugins` after editing this file.
  */
-import * as fs from "fs";
-import type { PluginAPI } from "@opencode/plugin";
-
-function _reportAlive() {
-  try {
-    const alivePath = "/tmp/gludd-plugin-alive.json";
-    const alive = fs.existsSync(alivePath)
-      ? JSON.parse(fs.readFileSync(alivePath, "utf8"))
-      : {};
-    alive["enforce-no-wait"] = { last_seen: Date.now() };
-    fs.writeFileSync(alivePath, JSON.stringify(alive), "utf8");
-  } catch {
-    // fail-open
-  }
-}
+import * as fs from "node:fs";
+import type { Plugin } from "@opencode-ai/plugin";
+import { loadHotModule, type HotModule } from "../lib/hot_reload.ts";
+import { isSubagent, reportAlive } from "../lib/shared.ts";
 
 export const WAIT_PATTERNS: readonly RegExp[] = Object.freeze([
   /\bsleep\s+\d+\s*&&\s*make\b/,
@@ -61,17 +48,6 @@ export const DENY_MESSAGE =
   "Background ops are NOT a blocker for other work. DISPATCH subagents now; poll the gate via a Task tool call, not via shell sleep. " +
   "Set GLUDD_NO_WAIT_ENFORCE=0 to disable.";
 
-/**
- * CI-poll dispatch intent patterns. Per AGENTS.md "Machine-Enforced CI Check
- * Cooldown (2026-07-08)": a subagent whose job is "poll CI until terminal /
- * wait for CI green / loop on make ci-verdict" holds a floor slot for 30–40
- * minutes producing zero value — CI runs on its own schedule, polling does
- * not speed it up. The runtime cooldown (`make ci-verdict-safe`) prevents the
- * make-side loop; these patterns block the dispatch intent at the source.
- *
- * Applied to the `prompt`/`description` fields of Task/agent/workflow
- * dispatches. Case-insensitive. Fail-open on any error.
- */
 export const CI_POLL_DISPATCH_PATTERNS: readonly RegExp[] = Object.freeze([
   /\bpoll\s+CI\s+until\b/i,
   /\bpoll(?:ing)?\s+(?:for\s+)?CI\s+(?:status\s+)?until\b/i,
@@ -108,15 +84,19 @@ function _extractDispatchText(params: unknown): string {
   return parts.join("\n");
 }
 
-export default function noWaitPlugin(api: PluginAPI): void {
-  api.tool.execute.before((params) => {
-    _reportAlive();
+// ============================================================================
+// DEFAULT IMPLEMENTATION (compiled-in fallback)
+// ============================================================================
+const defaultImpl: HotModule = {
+  "tool.execute.before": async (input, output) => {
+    // process.env.OPENCODE_SUBAGENT guard
+    if (isSubagent()) return;
+    reportAlive("enforce-no-wait");
     try {
       if (process.env.GLUDD_NO_WAIT_ENFORCE === "0") return;
 
-      // Bash-side: deny main-thread sleep/tail anti-patterns.
-      if (params.tool === "bash") {
-        const cmd: string = (params as { command?: string }).command ?? "";
+      if (input.tool === "bash") {
+        const cmd: string = input.args?.command ?? "";
         if (cmd) {
           for (const pattern of WAIT_PATTERNS) {
             if (pattern.test(cmd)) {
@@ -130,9 +110,8 @@ export default function noWaitPlugin(api: PluginAPI): void {
         return;
       }
 
-      // Dispatch-side: deny Task/agent/workflow prompts that ask for CI polling.
-      if (DISPATCH_TOOLS.has(params.tool)) {
-        const text = _extractDispatchText(params);
+      if (DISPATCH_TOOLS.has(input.tool)) {
+        const text = _extractDispatchText(input);
         if (text) {
           for (const pattern of CI_POLL_DISPATCH_PATTERNS) {
             if (pattern.test(text)) {
@@ -147,5 +126,20 @@ export default function noWaitPlugin(api: PluginAPI): void {
     } catch {
       // Fail-open: never wedge the editor on a plugin error.
     }
-  });
-}
+  },
+};
+
+// ============================================================================
+// PROXY PLUGIN (hot-reload aware)
+// ============================================================================
+export default (({ }) => {
+  return {
+    "tool.execute.before": async (input, output) => {
+      // process.env.OPENCODE_SUBAGENT guard
+      if (isSubagent()) return;
+      const impl = loadHotModule("enforce-no-wait", defaultImpl);
+      const fn = impl["tool.execute.before"];
+      return fn ? await fn(input, output) : undefined;
+    },
+  };
+}) satisfies Plugin;

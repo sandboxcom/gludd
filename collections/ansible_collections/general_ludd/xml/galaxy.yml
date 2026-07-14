@@ -1,0 +1,24 @@
+---
+namespace: general_ludd
+name: xml
+version: 0.1.0
+readme: README.md
+authors:
+  - Agentic Harness Agent
+description: >
+  Core XML processing collection — parsing, XPath querying, namespace handling,
+  XSD schema generation from XML instances, and XSLT transformation application.
+license: MIT
+license_file: ""
+tags:
+  - xml
+  - xsd
+  - xslt
+  - schema
+  - transformation
+dependencies: {}
+repository: ""
+documentation: ""
+homepage: ""
+issues: ""
+build_ignore: []

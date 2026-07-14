@@ -203,6 +203,22 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             "models": [_serialize_discovered_profile(p) for p in ranked],
         }
 
+    @app.post("/admin/models/discover-searx")
+    async def admin_models_discover_searx(request: Request) -> dict[str, object]:
+        discoverer = getattr(app.state, "_searx_model_discoverer", None)
+        if discoverer is None:
+            raise HTTPException(
+                status_code=503, detail="SearX model discoverer not wired"
+            )
+        body = await _parse_request_body(request)
+        query = cast(str, body.get("query", "LLM"))
+        added = discoverer.discover_now(query)
+        return {
+            "success": True,
+            "discovered_count": added,
+            "index_size": discoverer.index_size,
+        }
+
     @app.get("/admin/models/discovered")
     async def admin_models_discovered() -> dict[str, object]:
         profiles = getattr(app.state, "_discovered_profiles", None)

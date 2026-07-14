@@ -1,0 +1,101 @@
+---
+# load_balancer — configure LB method, session stickiness, health checks, failover.
+
+- name: "Validate required vars"
+  ansible.builtin.assert:
+    that:
+      - lb_type in ["nginx", "haproxy"]
+      - lb_method in ["round_robin", "least_conn", "ip_hash", "random", "least_time", "hash"]
+      - sticky_session in ["cookie", "ip", "route", "none"]
+    fail_msg: >-
+      load_balancer requires valid lb_type, lb_method, and sticky_session values.
+
+- name: "Ensure backend servers defined"
+  ansible.builtin.assert:
+    that:
+      - backend_servers | length > 0
+    fail_msg: "backend_servers must contain at least one server."
+
+- name: "Install load balancer package"
+  ansible.builtin.package:
+    name: "{{ lb_type }}"
+    state: present
+
+- name: "Configure nginx load balancer"
+  when: lb_type == "nginx"
+  block:
+    - name: "Generate nginx upstream config with LB method"
+      ansible.builtin.template:
+        src: nginx_lb_upstream.conf.j2
+        dest: "/etc/nginx/conf.d/upstream_{{ server_name }}.conf"
+        mode: "0644"
+      notify: reload nginx
+
+    - name: "Generate nginx server block for load balancing"
+      ansible.builtin.template:
+        src: nginx_lb_server.conf.j2
+        dest: "/etc/nginx/sites-available/{{ server_name }}.conf"
+        mode: "0644"
+      notify: reload nginx
+
+    - name: "Enable nginx LB site"
+      ansible.builtin.file:
+        src: "/etc/nginx/sites-available/{{ server_name }}.conf"
+        dest: "/etc/nginx/sites-enabled/{{ server_name }}.conf"
+        state: link
+      notify: reload nginx
+
+    - name: "Configure blue-green upstream"
+      when: blue_green_enabled | bool
+      ansible.builtin.template:
+        src: nginx_blue_green.conf.j2
+        dest: "/etc/nginx/conf.d/upstream_bluegreen.conf"
+        mode: "0644"
+      notify: reload nginx
+
+    - name: "Configure canary upstream"
+      when: canary_enabled | bool
+      ansible.builtin.template:
+        src: nginx_canary.conf.j2
+        dest: "/etc/nginx/conf.d/upstream_canary.conf"
+        mode: "0644"
+      notify: reload nginx
+
+    - name: "Validate nginx configuration"
+      ansible.builtin.command: nginx -t
+      changed_when: false
+
+- name: "Configure HAProxy load balancer"
+  when: lb_type == "haproxy"
+  block:
+    - name: "Generate HAProxy LB config"
+      ansible.builtin.template:
+        src: haproxy_lb.cfg.j2
+        dest: /etc/haproxy/haproxy.cfg
+        mode: "0644"
+      notify: reload haproxy
+
+    - name: "Validate HAProxy configuration"
+      ansible.builtin.command: haproxy -c -f /etc/haproxy/haproxy.cfg
+      changed_when: false
+
+- name: "Configure health check monitoring"
+  block:
+    - name: "Install health check script"
+      ansible.builtin.template:
+        src: health_check.sh.j2
+        dest: /usr/local/bin/lb_health_check.sh
+        mode: "0755"
+
+    - name: "Schedule periodic health checks"
+      ansible.builtin.cron:
+        name: "lb_health_check"
+        minute: "*/{{ health_check_interval // 60 or 1 }}"
+        job: "/usr/local/bin/lb_health_check.sh"
+        state: present
+
+- name: "Ensure load balancer service is enabled and started"
+  ansible.builtin.service:
+    name: "{{ lb_type }}"
+    state: started
+    enabled: true

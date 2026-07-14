@@ -45,5 +45,13 @@ terraform {
       source  = "runpod/runpod"
       version = "~> 1.0"
     }
+    libvirt = {
+      source  = "dmacvicar/libvirt"
+      version = "~> 0.7"
+    }
+    qemu = {
+      source  = "jvzq/qemu"
+      version = "~> 0.1"
+    }
   }
 }

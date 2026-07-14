@@ -1,10 +1,9 @@
 """C13: Self-improve gate bypasses — tests.
 
-Four bypasses fixed:
-1. auto_queue defaults to False (no silent self-modification)
+Three bypasses fixed:
+1. auto_queue removed (no config-driven bypass)
 2. allow_auto_promote backdoor removed
-3. Human-approval path is reachable end-to-end
-4. POST /admin/self-improve/apply non-config-tier goes through gate
+3. Human-approval path reachable end-to-end
 """
 
 from __future__ import annotations
@@ -23,16 +22,25 @@ from general_ludd.self_improve.approval import (
 from general_ludd.self_improve.gate import GateDecision, SelfImproveGate
 
 
-class TestAutoQueueDefault:
-    def test_auto_queue_defaults_to_false(self) -> None:
-        gate = SelfImproveGate()
-        assert gate.auto_queue is False
+class TestAutoQueueRemoved:
+    def test_auto_queue_is_not_a_parameter(self) -> None:
+        import inspect
 
-    def test_auto_queue_cannot_be_implicitly_enabled(self) -> None:
+        sig = inspect.signature(SelfImproveGate.__init__)
+        param_names = list(sig.parameters.keys())
+        assert "auto_queue" not in param_names, (
+            "auto_queue parameter must be removed from SelfImproveGate (C13 bypass)"
+        )
+
+    def test_constructing_with_auto_queue_raises(self) -> None:
+        with pytest.raises(TypeError):
+            SelfImproveGate(auto_queue=True)  # type: ignore[call-arg]
+
+    def test_auto_queue_from_config_is_not_consumed(self) -> None:
         gate = SelfImproveGate()
-        decision = gate.evaluate({}, open_count=0)
-        assert decision.initial_status == TodoStatus.APPROVAL_REQUIRED.value
-        assert decision.initial_status != TodoStatus.QUEUED.value
+        assert not hasattr(gate, "auto_queue"), (
+            "SelfImproveGate must not have auto_queue attribute (C13 bypass)"
+        )
 
 
 class TestAutoPromoteBackdoorRemoved:
@@ -179,7 +187,6 @@ class TestSingleChokePoint:
         decision = gate.evaluate({"title": "test"}, open_count=0)
         assert isinstance(decision, GateDecision)
         assert decision.admitted is True
-        assert decision.initial_status in {
-            TodoStatus.APPROVAL_REQUIRED.value,
-            TodoStatus.QUEUED.value,
-        }
+        assert decision.initial_status == TodoStatus.APPROVAL_REQUIRED.value, (
+            "Gate must always return APPROVAL_REQUIRED (auto_queue removed, C13)"
+        )

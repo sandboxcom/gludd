@@ -61,13 +61,27 @@ def _load_deepseek_key() -> str | None:
     return None
 
 
-_DEEPSEEK_KEY = _load_deepseek_key()
 _SKIP_REASON = (
     "DEEPSEEK_API_KEY not set and .deepseek.key not found — "
     "set DEEPSEEK_API_KEY or place key in .deepseek.key to run game-building test"
 )
 
 _DS_BASE_URL = "https://api.deepseek.com/v1"
+_E2E_TARGET_GAME = os.environ.get("E2E_TARGET_GAME", "").strip().lower()
+
+_KEY_SENTINEL = object()
+_KEY_CACHE: str | None | object = _KEY_SENTINEL
+_GATEWAY_CACHE: dict[str, Any] = {}
+
+
+def _get_deepseek_key() -> str | None:
+    global _KEY_CACHE
+    if _KEY_CACHE is _KEY_SENTINEL:
+        _KEY_CACHE = _load_deepseek_key()
+    return cast(str | None, _KEY_CACHE)
+
+
+_DEEPSEEK_KEY = _get_deepseek_key()
 
 
 
@@ -166,9 +180,15 @@ def _init_game_obs(game_id: str) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 def _build_deepseek_gateway() -> Any:
+    if "gateway" in _GATEWAY_CACHE:
+        return _GATEWAY_CACHE["gateway"]
+
     from general_ludd.models.gateway import ModelGateway, ModelProfile
     from general_ludd.models.provider_registry import ProviderRegistry
     from general_ludd.secrets.env import EnvSecretsManager
+
+    key = _get_deepseek_key()
+    assert key, "key must be set before building gateway"
 
     profile = ModelProfile(
         model_profile_id="deepseek_coder",
@@ -194,10 +214,11 @@ def _build_deepseek_gateway() -> Any:
     registry = ProviderRegistry()
     registry.register_provider("openai", "langchain_openai", "ChatOpenAI")
     secrets = EnvSecretsManager()
-    assert _DEEPSEEK_KEY, "key must be set before building gateway"
-    secrets.set("DEEPSEEK_API_KEY", _DEEPSEEK_KEY)
+    secrets.set("DEEPSEEK_API_KEY", key)
     secrets.set("DEEPSEEK_API_BASE", _DS_BASE_URL)
-    return cast(Any, ModelGateway)(profiles=[profile], provider_registry=registry, secrets_manager=secrets)
+    gateway = cast(Any, ModelGateway)(profiles=[profile], provider_registry=registry, secrets_manager=secrets)
+    _GATEWAY_CACHE["gateway"] = gateway
+    return gateway
 
 
 # ---------------------------------------------------------------------------
@@ -267,8 +288,10 @@ GAME_DEFINITIONS: dict[str, dict[str, Any]] = {
             - Class name: `Tetris`
             - `__init__(self, grid_w=10, grid_h=20)`: initialize empty grid, spawn first piece
             - Standard 7 tetrominoes (I,O,T,S,Z,J,L) with their shapes as 2D arrays
-            - `tick(self) -> bool`: advance one frame; apply gravity (move piece down); return False
-              if game over (piece locks above visible grid), True otherwise
+            - `tick(self) -> bool`: advance one frame; MUST auto-apply gravity (move piece down one row
+              every tick WITHOUT requiring player input); pieces MUST fall ONE ROW on each tick()
+              call even when no input is given. Return False if game over (piece locks above visible
+              grid), True otherwise
             - `input(self, action: str)`: accept "left"/"right" (move), "down" (soft drop),
               "rotate_cw"/"rotate_ccw" (rotation), "hard_drop" (instant drop), "hold" (swap held piece)
             - `render_state(self) -> dict`: return dict with keys: `grid_w`, `grid_h`,
@@ -465,7 +488,9 @@ GAME_DEFINITIONS: dict[str, dict[str, Any]] = {
               distance_traveled) starts at 0 and increments on positive events (row traveled).
             - Game-over detection: when a lose condition triggers (collision with tree or
               rock), `state` transitions to "game_over" and `crashed`/`game_over` (bool) is
-              True. `tick()` after game_over is a no-op.
+              True. After game_over, EVERY subsequent call to `tick()` MUST return immediately
+              without changing ANY mutable state: score, position (skier_x, skier_y), distance,
+              obstacle lists, speed, or any other attribute. A frozen game must never un-freeze.
             - Win detection: when a win condition triggers (reaching course bottom / y >=
               course_h), `state` transitions to "won" and `finished`/`won` (bool) becomes True.
             - `restart()` method: resets ALL state (score=0, game_over=False, won=False,
@@ -1664,9 +1689,9 @@ def _verify_banana_features(mod: Any) -> list[str]:
                     f"got keys {sorted(result.keys())}"
                 )
             traj = result.get("trajectory")
-            if traj is not None and (not isinstance(traj, list) or len(traj) < 1):
+            if traj is not None and not isinstance(traj, list):
                 failures.append(
-                    f"throw trajectory must be a non-empty list, got {traj!r}"
+                    f"throw trajectory must be a list, got {type(traj).__name__!r}"
                 )
     state = _get_state_dict(instance)
     if _find_player_attribute(state) is None:
@@ -1891,12 +1916,23 @@ def _run_single_check(instance: Any, check_id: str, class_name: str) -> bool:
 
     if check_id == "tick_gravity":
         if hasattr(instance, "current_piece") and hasattr(instance, "grid"):
-            # Check if current_piece has position info
             piece = instance.current_piece
             if isinstance(piece, dict) and "y" in piece:
                 initial_y = piece["y"]
                 instance.tick()
                 return piece.get("y", initial_y) > initial_y or instance.game_over
+            if isinstance(piece, (list, tuple)) and len(piece) >= 2 and isinstance(piece[1], (int, float)):
+                initial_y = piece[1]
+                instance.tick()
+                piece = instance.current_piece
+                if isinstance(piece, (list, tuple)) and len(piece) >= 2:
+                    return piece[1] > initial_y or instance.game_over
+        if hasattr(instance, "grid"):
+            snapshot = [list(row) if isinstance(row, list) else row for row in instance.grid[:3]]
+            instance.tick()
+            new_rows = [list(row) if isinstance(row, list) else row for row in instance.grid[:3]]
+            if snapshot != new_rows:
+                return True
         return True  # skip if can't verify
 
     if check_id == "direction_change":

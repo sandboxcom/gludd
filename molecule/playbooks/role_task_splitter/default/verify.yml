@@ -1,0 +1,59 @@
+---
+- name: Verify - task_splitter artifact structure
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Read artifact from disk
+      ansible.builtin.slurp:
+        src: "/tmp/gludd-task-splitter-test/task_splitter_result.json"
+      register: _artifact
+
+    - name: Parse JSON artifact
+      ansible.builtin.set_fact:
+        _parsed: "{{ _artifact.content | b64decode | from_json }}"
+
+    - name: Verify should_split is boolean
+      ansible.builtin.assert:
+        that:
+          - "_parsed.should_split is defined"
+          - "_parsed.should_split is boolean"
+        fail_msg: "should_split must be a boolean"
+        success_msg: "PASS: should_split is a boolean"
+
+    - name: Verify reasoning is a string
+      ansible.builtin.assert:
+        that:
+          - "_parsed.reasoning is defined"
+          - "_parsed.reasoning is string"
+          - "_parsed.reasoning | length > 0"
+        fail_msg: "reasoning must be a non-empty string"
+        success_msg: "PASS: reasoning is present"
+
+    - name: Verify cost_benefit_ratio is a number
+      ansible.builtin.assert:
+        that:
+          - "_parsed.cost_benefit_ratio is defined"
+          - "_parsed.cost_benefit_ratio is number"
+        fail_msg: "cost_benefit_ratio must be a number"
+        success_msg: "PASS: cost_benefit_ratio is a number"
+
+    - name: Verify subtasks list structure (when split)
+      ansible.builtin.assert:
+        that:
+          - "_parsed.subtasks is defined"
+          - "_parsed.subtasks is iterable"
+          - "_parsed.subtasks | length > 0"
+          - "_parsed.subtasks[0].title is defined"
+          - "_parsed.subtasks[0].description is defined"
+          - "_parsed.subtasks[0].expected_duration is defined"
+        fail_msg: "subtasks must be a non-empty list with title/description/expected_duration"
+        success_msg: "PASS: subtasks list structure valid"
+
+    - name: Verify generated_at is present
+      ansible.builtin.assert:
+        that:
+          - "_parsed.generated_at is defined"
+          - "_parsed.generated_at | length > 0"
+        fail_msg: "generated_at timestamp must be present"
+        success_msg: "PASS: generated_at timestamp present"

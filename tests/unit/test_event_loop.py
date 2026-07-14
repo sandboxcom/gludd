@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from general_ludd.event_loop.lease import reclaim_expired_leases
-from general_ludd.event_loop.loop import EventLoop
+from general_ludd.event_loop.loop import EventLoop, _compute_todo_estimate
 from general_ludd.schemas.task_decision import TaskDecision
 from general_ludd.schemas.task_return import TaskReturn, TaskReturnStatus
 from general_ludd.schemas.todo import Todo, TodoStatus
@@ -63,6 +63,8 @@ class TestEventLoop:
             "dispatch_return_review_jobs",
             "evaluate_pid_controllers",
             "refill_task_buckets",
+            "run_scheduler",
+            "sdlc_gate",
             "claim_runnable_todos",
             "evaluate_rules",
             "dispatch_execute_jobs",
@@ -1313,3 +1315,17 @@ class TestPhaseRefreshModelPerformance:
         loop._total_ticks = 5
         await loop._phase_refresh_model_performance()
         repo.refresh_recent_stats.assert_awaited_once()
+
+
+class TestComputeTodoEstimate:
+    def test_low_resource_no_confidence(self):
+        todo = type("Todo", (), {"resource_profile": "low_resource", "confidence": None})()
+        assert _compute_todo_estimate(todo) == 0.05
+
+    def test_high_resource_confidence_08(self):
+        todo = type("Todo", (), {"resource_profile": "high_resource", "confidence": 0.8})()
+        assert _compute_todo_estimate(todo) == 0.7
+
+    def test_medium_resource_confidence_10(self):
+        todo = type("Todo", (), {"resource_profile": "medium_resource", "confidence": 1.0})()
+        assert _compute_todo_estimate(todo) == 0.125

@@ -1,0 +1,116 @@
+---
+# design_research role — fetch website, extract CSS tokens, analyze layout
+#
+# Operations: fetch | extract_tokens | analyze_layout | full_audit
+#
+# Graceful degradation:
+#   - target_url unreachable → status=error, error=url_unreachable
+#   - CSS not found → status=warn, css_found=false
+#   - Rate-limited → status=error, error=rate_limited, retry_after=N
+
+- name: Validate inputs
+  ansible.builtin.assert:
+    that:
+      - target_url | length > 0
+    fail_msg: "design_research: target_url is required"
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Execute design_research Python script
+  ansible.builtin.script:
+    cmd: >-
+      {{ role_path }}/files/design_research.py
+      --url "{{ target_url }}"
+      --operation "{{ operation }}"
+      --output "{{ artifact_dir }}/design_research.json"
+      --artifacts "{{ artifact_dir }}"
+      {% if extract_colors %}--extract-colors{% endif %}
+      {% if extract_fonts %}--extract-fonts{% endif %}
+      {% if extract_spacing %}--extract-spacing{% endif %}
+      {% if extract_layout %}--extract-layout{% endif %}
+      --max-depth {{ max_depth }}
+  register: _dr_result
+  changed_when: _dr_result.rc == 0
+  failed_when: false
+
+- name: Parse script output
+  ansible.builtin.set_fact:
+    _dr_parsed: "{{ (_dr_result.stdout | from_json) if _dr_result.rc == 0 else {} }}"
+  when:
+    - _dr_result is defined
+    - _dr_result.rc == 0
+
+- name: Set success result
+  ansible.builtin.set_fact:
+    _dr_status: "ok"
+    _dr_url_fetched: "{{ _dr_parsed.url_fetched | default(false) }}"
+    _dr_color_palette: "{{ _dr_parsed.colors | default({}) }}"
+    _dr_font_stacks: "{{ _dr_parsed.fonts | default([]) }}"
+    _dr_spacing_scale: "{{ _dr_parsed.spacing | default({}) }}"
+    _dr_layout_structure: "{{ _dr_parsed.layout | default({}) }}"
+    _dr_framework_detected: "{{ _dr_parsed.framework | default('unknown') }}"
+    _dr_verdict: "{{ operation }}_complete"
+  when:
+    - _dr_result is defined
+    - _dr_result.rc == 0
+
+- name: Set error from script failure
+  ansible.builtin.set_fact:
+    _dr_status: "error"
+    _dr_url_fetched: false
+    _dr_errors: "{{ _dr_result.stderr | default('unknown error') }}"
+    _dr_verdict: "{{ operation }}_failed"
+  when:
+    - _dr_result is defined
+    - _dr_result.rc is defined
+    - _dr_result.rc != 0
+
+- name: Write design_research.json artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'design_research',
+        'status': _dr_status,
+        'operation': operation,
+        'target_url': target_url,
+        'url_fetched': _dr_url_fetched | default(false) | bool,
+        'colors': _dr_color_palette | default({}),
+        'fonts': _dr_font_stacks | default([]),
+        'spacing': _dr_spacing_scale | default({}),
+        'layout': _dr_layout_structure | default({}),
+        'framework': _dr_framework_detected | default('unknown'),
+        'verdict': _dr_verdict
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/design_research.json"
+    mode: "0644"
+
+- name: Save fetched HTML
+  ansible.builtin.copy:
+    content: "{{ _dr_parsed.html | default('') }}"
+    dest: "{{ artifact_dir }}/fetched_page.html"
+    mode: "0644"
+  when:
+    - _dr_parsed.get('html', '') | length > 0
+    - _dr_status == 'ok'
+
+- name: Save extracted CSS
+  ansible.builtin.copy:
+    content: "{{ _dr_parsed.css | default('') }}"
+    dest: "{{ artifact_dir }}/extracted_styles.css"
+    mode: "0644"
+  when:
+    - _dr_parsed.get('css', '') | length > 0
+    - _dr_status == 'ok'
+
+- name: Report design_research completion
+  ansible.builtin.debug:
+    msg: >-
+      design_research: status={{ _dr_status }}
+      operation={{ operation }}
+      url={{ target_url }}
+      framework={{ _dr_framework_detected | default('unknown') }}
+      verdict={{ _dr_verdict }}

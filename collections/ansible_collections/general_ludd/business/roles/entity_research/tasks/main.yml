@@ -1,0 +1,64 @@
+---
+# entity_research role — entry point
+# Conditionally includes sub-tasks by category.  Each category is gated
+# by an enable boolean so callers pay only for the tasks they need.
+# Tags allow selective execution: --tags discover,associations,assets,...
+
+- name: Create output directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - "{{ entity_research_output_dir }}"
+    - "{{ entity_research_artifact_dir }}"
+  when: entity_research_discover | bool
+
+- name: Verify entity name provided
+  ansible.builtin.assert:
+    that:
+      - entity_name | length > 0
+    fail_msg: "entity_name is required for entity_research"
+  when: entity_research_discover | bool or
+        entity_research_associations | bool or
+        entity_research_assets | bool
+
+- name: Entity discovery
+  ansible.builtin.include_tasks: discover.yml
+  when: entity_research_discover | bool
+  tags: [discover]
+
+- name: Association mapping
+  ansible.builtin.include_tasks: associations.yml
+  when: entity_research_associations | bool
+  tags: [associations]
+
+- name: Asset discovery
+  ansible.builtin.include_tasks: assets.yml
+  when: entity_research_assets | bool
+  tags: [assets]
+
+- name: Public exposure analysis
+  ansible.builtin.include_tasks: exposure.yml
+  when: entity_research_exposure | bool
+  tags: [exposure]
+
+- name: Risk analysis
+  ansible.builtin.include_tasks: risks.yml
+  when: entity_research_risks | bool
+  tags: [risks]
+
+- name: Consumer demographics
+  ansible.builtin.include_tasks: demographics.yml
+  when: entity_research_demographics | bool
+  tags: [demographics]
+
+- name: SearX continuous monitoring
+  ansible.builtin.include_tasks: searx_monitor.yml
+  when: entity_research_searx_monitor | bool
+  tags: [searx_monitor, monitor]
+
+- name: Generate output artifacts
+  ansible.builtin.include_tasks: output.yml
+  when: entity_research_generate_output | bool
+  tags: [output]

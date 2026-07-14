@@ -8,8 +8,6 @@ TDD: write the test first.
 """
 from __future__ import annotations
 
-import pytest
-
 
 class TestReloadModelsHonesty:
     def test_models_reloaded_false_when_no_routing_file(self, tmp_path):
@@ -70,15 +68,25 @@ class TestReloadModelsHonesty:
     def test_reload_manager_unknown_reload_id_returns_failed_status(self):
         """ReloadManager.execute_reload for an unknown reload_id must report
         failure, not success."""
-        try:
-            from general_ludd.reload.manager import ReloadManager
-        except ImportError:
-            pytest.skip("ReloadManager not importable")
+        from general_ludd.reload.manager import ReloadManager
 
         rm = ReloadManager()
-        # Unknown reload_id — must fail gracefully
         result = rm.execute_reload("nonexistent-reload-id-xyz")
         assert result.status == "failed", (
             f"Expected status='failed' for unknown reload_id, got {result.status!r}"
         )
-        assert result.message, "Failed result must include a message"
+        assert result.message == "Unknown reload_id"
+
+    def test_reload_manager_known_id_completes(self):
+        """execute_reload for a known (requested) reload_id must complete with no_op."""
+        from general_ludd.reload.manager import ReloadManager, ReloadType
+
+        rm = ReloadManager()
+        requested = rm.request_reload(ReloadType.CONFIG)
+        assert requested.status == "pending"
+
+        result = rm.execute_reload(requested.reload_id)
+        assert result.status == "no_op", (
+            f"Expected status='no_op' for known reload_id, got {result.status!r}"
+        )
+        assert result.reload_type == ReloadType.CONFIG

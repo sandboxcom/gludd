@@ -1,0 +1,162 @@
+---
+# audit_parse — parse audit specification documents (PDF/DOCX/HTML)
+#
+# Takes audit_framework__spec_path (local path or URL).
+# Detects format by extension, uses open-source parsers.
+# Optionally dispatches to gludd_model_call for structured requirement extraction.
+
+- name: Assert spec path is set
+  ansible.builtin.assert:
+    that:
+      - audit_framework__spec_path | default('') | length > 0
+    fail_msg: "audit_framework__spec_path is required for audit_parse"
+
+- name: Set spec path fact
+  ansible.builtin.set_fact:
+    _ap_spec_path: "{{ audit_framework__spec_path }}"
+
+# ── Fetch if URL ───────────────────────────────────────────────────────────────
+
+- name: Determine if spec path is a URL
+  ansible.builtin.set_fact:
+    _ap_is_url: "{{ audit_framework__spec_path is match('^https?://') }}"
+
+- name: Fetch spec document from URL
+  ansible.builtin.uri:
+    url: "{{ audit_framework__spec_path }}"
+    method: GET
+    return_content: true
+    timeout: 60
+  register: _ap_fetched
+  no_log: false
+  when: _ap_is_url | bool
+
+- name: Write fetched content to temp file
+  ansible.builtin.copy:
+    content: "{{ _ap_fetched.content }}"
+    dest: "{{ audit_framework__artifact_dir }}/_spec_fetched.tmp"
+    mode: "0644"
+  when:
+    - _ap_is_url | bool
+    - _ap_fetched.status | default(0) == 200
+
+- name: Override spec path to temp file (URL fetched)
+  ansible.builtin.set_fact:
+    _ap_spec_path: "{{ audit_framework__artifact_dir }}/_spec_fetched.tmp"
+  when:
+    - _ap_is_url | bool
+    - _ap_fetched.status | default(0) == 200
+
+# ── Detect format and parse ────────────────────────────────────────────────────
+
+- name: Determine file extension
+  ansible.builtin.set_fact:
+    _ap_extension: "{{ _ap_spec_path | regex_search('\\.([a-zA-Z0-9]+)$', '\\1') | first | default('unknown') | lower }}"
+
+- name: Parse PDF with pdftotext
+  ansible.builtin.command:
+    cmd: "pdftotext {{ _ap_spec_path | quote }} -"
+  register: _ap_parsed
+  changed_when: false
+  failed_when: false
+  when: _ap_extension in ['pdf']
+
+- name: Parse DOCX with python3 docx2txt
+  ansible.builtin.command:
+    cmd: "python3 -c \"import docx2txt; print(docx2txt.process('{{ _ap_spec_path }}'))\""
+  register: _ap_parsed
+  changed_when: false
+  failed_when: false
+  when: _ap_extension in ['docx']
+
+- name: Parse HTML with python3 html2text
+  ansible.builtin.command:
+    cmd: "python3 -c \"import html2text; print(html2text.html2text(open('{{ _ap_spec_path }}').read()))\""
+  register: _ap_parsed
+  changed_when: false
+  failed_when: false
+  when: _ap_extension in ['html', 'htm']
+
+- name: Read plain text as-is (unknown extension)
+  ansible.builtin.slurp:
+    src: "{{ _ap_spec_path }}"
+  register: _ap_parsed_slurp
+  when: _ap_extension not in ['pdf', 'docx', 'html', 'htm']
+
+- name: Set parsed text from command output
+  ansible.builtin.set_fact:
+    _ap_parsed_text: "{{ _ap_parsed.stdout | default('') }}"
+  when: _ap_extension in ['pdf', 'docx', 'html', 'htm'] and _ap_parsed.stdout is defined
+
+- name: Set parsed text from slurp (unknown format)
+  ansible.builtin.set_fact:
+    _ap_parsed_text: "{{ _ap_parsed_slurp.content | default('') | b64decode }}"
+  when: _ap_extension not in ['pdf', 'docx', 'html', 'htm']
+
+- name: Set empty parsed text on failure
+  ansible.builtin.set_fact:
+    _ap_parsed_text: ""
+  when: _ap_parsed_text is not defined
+
+# ── Optional AI extraction via gludd_model_call ───────────────────────────────
+
+- name: Dispatch AI extraction of structured requirements
+  general_ludd.agent.gludd_model_call:
+    daemon_url: "{{ daemon_url | default('http://localhost:5680') }}"
+    psk: "{{ psk | default('') }}"
+    prompt: >-
+      You are an audit compliance analyst. Extract ALL security and compliance
+      requirements from this specification document into a structured checklist.
+
+      Document content:
+      {{ _ap_parsed_text[:4000] }}
+
+      Return a JSON array of objects with fields: requirement_id, category,
+      description, severity (critical/high/medium/low), and evidence_needed.
+      Only include clear, actionable requirements.
+    model_profile: "{{ audit_framework__model_profile | default('') }}"
+  register: _ap_model_result
+  no_log: "{{ (psk | default('')) | length > 0 }}"
+  when:
+    - audit_framework__enable_model_call | default(false) | bool
+    - _ap_parsed_text | length > 0
+    - not ansible_check_mode
+
+- name: Parse model-extracted checklist
+  ansible.builtin.set_fact:
+    _ap_checklist: >-
+      {{
+        (_ap_model_result.answer | default('[]') | from_json)
+        if _ap_model_result is defined and _ap_model_result.answer is defined
+        else []
+      }}
+  when: audit_framework__enable_model_call | default(false) | bool
+
+- name: Use raw parsed text as checklist when model call disabled
+  ansible.builtin.set_fact:
+    _ap_checklist:
+      - raw_text: "{{ _ap_parsed_text[:2000] }}"
+        note: "model_call disabled — raw parsed text; set audit_framework__enable_model_call: true for structured extraction"
+  when: not (audit_framework__enable_model_call | default(false) | bool)
+
+# ── Write parsed checklist artifact ────────────────────────────────────────────
+
+- name: Write parsed checklist JSON
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'audit_framework',
+        'mode': 'audit_parse',
+        'spec_path': audit_framework__spec_path,
+        'format': _ap_extension,
+        'is_url': _ap_is_url | default(false),
+        'parsed_length': _ap_parsed_text | length,
+        'model_assisted': audit_framework__enable_model_call | default(false),
+        'checklist': _ap_checklist
+      } | to_nice_json }}
+    dest: "{{ audit_framework__artifact_dir }}/parsed_checklist.json"
+    mode: "0644"
+
+- name: Report audit parse completion
+  ansible.builtin.debug:
+    msg: "Audit parse complete: spec={{ audit_framework__spec_path }}, format={{ _ap_extension }}, parsed={{ _ap_parsed_text | length }} chars"

@@ -1,0 +1,20 @@
+---
+galaxy_info:
+  role_name: ssl_cert
+  namespace: general_ludd
+  author: Gludd Agent
+  description: >
+    SSL/TLS certificate management — mint, analyze, chain research,
+    CA compliance, algorithm evaluation, HSM/smartcard operations,
+    ASN.1 parsing, and CA jurisdiction lookup.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: ["8", "9"]
+    - name: Ubuntu
+      versions: [focal, jammy, noble]
+    - name: MacOSX
+      versions: [all]
+  galaxy_tags: [ssl, tls, x509, certificate, hsm, pkcs11, compliance, ocsp, crl]
+dependencies: []

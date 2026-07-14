@@ -1,0 +1,184 @@
+---
+- name: Verify — budget_guard role structure and YAML integrity
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    role_root: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/collections/ansible_collections/general_ludd/agent/roles/budget_guard"
+    task_files:
+      - main.yml
+    required_dirs:
+      - tasks
+      - defaults
+      - meta
+    required_defaults:
+      - daemon_url
+      - psk
+      - budget_fail_threshold_usd
+      - budget_fail_on_exhausted
+      - artifact_dir
+    required_meta_fields:
+      - role_name
+      - author
+      - description
+      - license
+      - min_ansible_version
+
+  tasks:
+    # ── 1. Directory and file existence ──────────────────────────────────
+
+    - name: "1a. Assert role root directory exists"
+      ansible.builtin.stat:
+        path: "{{ role_root }}"
+      register: _role_stat
+      failed_when: not _role_stat.stat.exists
+
+    - name: "1b. Assert required subdirectories exist"
+      ansible.builtin.stat:
+        path: "{{ role_root }}/{{ item }}"
+      register: _subdirs
+      loop: "{{ required_dirs }}"
+      failed_when: not _subdirs.results | map(attribute='stat.exists') | list is all
+
+    - name: "1c. Assert required task files exist"
+      ansible.builtin.stat:
+        path: "{{ role_root }}/tasks/{{ item }}"
+      register: _task_files
+      loop: "{{ task_files }}"
+      failed_when: not _task_files.results | map(attribute='stat.exists') | list is all
+
+    - name: "1d. Assert defaults/main.yml exists"
+      ansible.builtin.stat:
+        path: "{{ role_root }}/defaults/main.yml"
+      register: _defaults_stat
+      failed_when: not _defaults_stat.stat.exists
+
+    - name: "1e. Assert meta/main.yml exists"
+      ansible.builtin.stat:
+        path: "{{ role_root }}/meta/main.yml"
+      register: _meta_stat
+      failed_when: not _meta_stat.stat.exists
+
+    # ── 2. YAML validity ─────────────────────────────────────────────────
+
+    - name: "2a. Slurp task files"
+      ansible.builtin.slurp:
+        src: "{{ role_root }}/tasks/{{ item }}"
+      register: _slurped_tasks
+      loop: "{{ task_files }}"
+
+    - name: "2b. Assert task file YAML parses as list with >=1 item"
+      ansible.builtin.assert:
+        that:
+          - "{{ (_slurped_tasks.results | selectattr('item', 'eq', item) | first).content | b64decode | from_yaml is iterable }}"
+          - "{{ ((_slurped_tasks.results | selectattr('item', 'eq', item) | first).content | b64decode | from_yaml) | length >= 1 }}"
+        fail_msg: "{{ item }} must parse as a non-empty list of tasks"
+      loop: "{{ task_files }}"
+      loop_control:
+        label: "{{ item }}"
+
+    - name: "2c. Assert defaults/main.yml parses as dict"
+      ansible.builtin.slurp:
+        src: "{{ role_root }}/defaults/main.yml"
+      register: _slurped_defaults
+
+    - name: "2d. Validate defaults YAML structure"
+      ansible.builtin.assert:
+        that:
+          - "{{ (_slurped_defaults.content | b64decode | from_yaml) is mapping }}"
+        fail_msg: "defaults/main.yml must parse as a dict"
+
+    - name: "2e. Assert meta/main.yml parses as dict"
+      ansible.builtin.slurp:
+        src: "{{ role_root }}/meta/main.yml"
+      register: _slurped_meta
+
+    - name: "2f. Validate meta YAML structure"
+      ansible.builtin.assert:
+        that:
+          - "{{ (_slurped_meta.content | b64decode | from_yaml) is mapping }}"
+        fail_msg: "meta/main.yml must parse as a dict"
+
+    # ── 3. Task file references gludd_spend module ───────────────────────
+
+    - name: "3a. Slurp tasks/main.yml for gludd_spend reference"
+      ansible.builtin.slurp:
+        src: "{{ role_root }}/tasks/main.yml"
+      register: _main_slurp
+
+    - name: "3b. Assert budget guard calls gludd_spend module"
+      ansible.builtin.assert:
+        that:
+          - "{{ _main_slurp.content | b64decode is search('gludd_spend') }}"
+        fail_msg: "budget_guard tasks/main.yml must reference gludd_spend module"
+
+    - name: "3c. Assert budget guard has fail-closed path"
+      ansible.builtin.assert:
+        that:
+          - "{{ _main_slurp.content | b64decode is search('budget_fail_on_exhausted') }}"
+          - "{{ _main_slurp.content | b64decode is search('fail:') or _main_slurp.content | b64decode is search('ansible.builtin.fail') }}"
+        fail_msg: "budget_guard must have a fail-closed path (fail_on_exhausted + fail task)"
+
+    - name: "3d. Assert budget guard writes artifact (audit-only pattern)"
+      ansible.builtin.assert:
+        that:
+          - "{{ _main_slurp.content | b64decode is search('artifact_dir') }}"
+          - "{{ _main_slurp.content | b64decode is search('copy:') or _main_slurp.content | b64decode is search('ansible.builtin.copy') }}"
+        fail_msg: "budget_guard must write an artifact (audit-only pattern)"
+
+    # ── 4. Meta galaxy_info fields ───────────────────────────────────────
+
+    - name: "4a. Parse meta/main.yml"
+      ansible.builtin.set_fact:
+        _meta_doc: "{{ _slurped_meta.content | b64decode | from_yaml }}"
+
+    - name: "4b. Assert galaxy_info.role_name is budget_guard"
+      ansible.builtin.assert:
+        that:
+          - _meta_doc.galaxy_info.role_name == 'budget_guard'
+        fail_msg: "meta galaxy_info.role_name must be 'budget_guard', got {{ _meta_doc.galaxy_info.role_name | default('(missing)') }}"
+
+    - name: "4c. Assert galaxy_info has required fields"
+      ansible.builtin.assert:
+        that:
+          - _meta_doc.galaxy_info['{{ item }}'] is defined
+        fail_msg: "meta galaxy_info missing field: {{ item }}"
+      loop: "{{ required_meta_fields }}"
+      loop_control:
+        label: "galaxy_info.{{ item }}"
+
+    # ── 5. Defaults completeness ─────────────────────────────────────────
+
+    - name: "5a. Parse defaults/main.yml"
+      ansible.builtin.set_fact:
+        _defaults: "{{ _slurped_defaults.content | b64decode | from_yaml }}"
+
+    - name: "5b. Assert all required default keys exist"
+      ansible.builtin.assert:
+        that:
+          - "'{{ item }}' in _defaults"
+        fail_msg: "defaults/main.yml missing key: {{ item }}"
+      loop: "{{ required_defaults }}"
+      loop_control:
+        label: "{{ item }}"
+
+    - name: "5c. Assert safe defaults — fail_on_exhausted is false"
+      ansible.builtin.assert:
+        that:
+          - _defaults.budget_fail_on_exhausted | bool == false
+        fail_msg: "budget_fail_on_exhausted must default to false (safe default — warn, don't block)"
+
+    - name: "5d. Assert budget_fail_threshold_usd is non-negative"
+      ansible.builtin.assert:
+        that:
+          - (_defaults.budget_fail_threshold_usd | float) >= 0
+        fail_msg: "budget_fail_threshold_usd must be >= 0"
+
+    # ── 6. Forbidden patterns ────────────────────────────────────────────
+
+    - name: "6a. Assert tasks/main.yml does not contain spend mutation"
+      ansible.builtin.assert:
+        that:
+          - "{{ _main_slurp.content | b64decode is not search('state: configure') }}"
+          - "{{ _main_slurp.content | b64decode is not search('limit_usd') }}"
+        fail_msg: "budget_guard is audit-only — must not mutate spend limits"

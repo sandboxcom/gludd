@@ -20,6 +20,7 @@ Zipkin HTTP API
   of traces; each trace is a list of v2 spans.
 
 One record is emitted per span. Zipkin span ``duration`` is in microseconds.
+
 """
 
 from __future__ import annotations

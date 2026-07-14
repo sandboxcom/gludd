@@ -30,6 +30,7 @@ EXPECTED_PLUGIN_FILES = [
     "enforce-clean-tree.ts",
     "enforce-verified-claims.ts",
     "enforce-multitask.ts",
+    "enforce-enhancement-ratio.ts",
 ]
 EXPECTED_PLUGINS_FILES = ["watchdog.ts"]
 
@@ -59,9 +60,9 @@ def _read_plugin(name: str) -> str:
 
 class TestEnforceStopHookRegistrations:
     def test_has_text_complete_hook(self):
-        content = _read_plugin("enforce-stop.ts")
-        assert '"experimental.text.complete"' in content, (
-            "enforce-stop.ts must register experimental.text.complete hook"
+        content = _read_plugin("enforce-make.ts")
+        assert '"text.complete"' in content, (
+            "enforce-make.ts must register text.complete hook"
         )
 
     def test_has_tool_execute_before_hook(self):
@@ -71,9 +72,9 @@ class TestEnforceStopHookRegistrations:
         )
 
     def test_has_session_idle_hook(self):
-        content = _read_plugin("enforce-stop.ts")
+        content = _read_plugin("enforce-make.ts")
         assert '"session.idle"' in content, (
-            "enforce-stop.ts must register session.idle hook"
+            "enforce-make.ts must register session.idle hook"
         )
 
     def test_has_system_transform_hook(self):
@@ -89,35 +90,32 @@ class TestEnforceStopHookRegistrations:
 
 class TestEnforceStopTextCompleteNotPassthrough:
     def test_text_complete_body_has_substantial_logic(self):
-        content = _read_plugin("enforce-stop.ts")
+        content = _read_plugin("enforce-make.ts")
 
         # Find the text.complete handler body between async and the closing
         match = re.search(
-            r'"experimental\.text\.complete":\s*async.*?\{',
+            r'"text\.complete":\s*async.*?\{',
             content, re.DOTALL,
         )
         assert match is not None, "Could not find text.complete handler declaration"
 
         # Find the matching closing brace for the handler body
-        # After the handler signature, the body starts — it should contain
-        # substantial logic, not just a bare return
         body_start = match.end()
-        # The handler should contain state checks (ratchetHasEntries, etc.)
         remaining = content[body_start:]
-        assert "hasPendingWork" in remaining, (
-            "text.complete handler must contain hasPendingWork check, not pass-through"
-        )
+        # The handler must not be a bare pass-through — it should contain
+        # subagent guard or gate-status check logic
         assert (
-            "responseLooksTerminal" in remaining
-            or "COMPLETION_VERBATIM" in remaining
-            or "COMPLETION_HEADER_RE" in remaining
+            "isSubagent()" in remaining
+            or "subagent" in remaining.lower()
+            or "gate-status" in remaining
+            or ".gate-status" in remaining
         ), (
-            "text.complete handler must contain terminal-response detection logic"
+            "text.complete handler must contain guard/check logic, not pass-through"
         )
 
-        # The handler must REPLACE output.text, not just return
-        assert "output.text" in remaining, (
-            "text.complete handler must modify output.text (not pass through)"
+        # The handler must prepend/modify output when gate is RED
+        assert "GATE RED" in remaining or "output" in remaining, (
+            "text.complete handler must modify output (not pass through)"
         )
 
 

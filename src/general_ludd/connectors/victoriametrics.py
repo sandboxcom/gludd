@@ -19,6 +19,7 @@ Contract
   metric ``__name__`` label becomes the record ``message``.
 * The HTTP transport is injectable; the default uses ``httpx``. Time-bound,
   no ``shell=True``.
+
 """
 
 from __future__ import annotations

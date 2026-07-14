@@ -4,10 +4,28 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
 
 from general_ludd.config.model_routing import ModelRoutingConfig
+
+_WORLD_OPEN_HOSTS = frozenset({"0.0.0.0", "::"})
+
+
+class NetworkConfig(BaseModel):
+    host: str = "127.0.0.1"
+    port: int = 8000
+    allowed_cidr: list[str] = []
+
+    @model_validator(mode="after")
+    def _require_cidr_for_world_open(self) -> NetworkConfig:
+        if self.host in _WORLD_OPEN_HOSTS and not self.allowed_cidr:
+            raise ValueError(
+                f"Host {self.host!r} binds to all interfaces. "
+                f"Set allowed_cidr to an explicit allowlist "
+                f"(e.g. ['10.0.0.0/8']) or use 127.0.0.1 for loopback-only."
+            )
+        return self
 
 
 class ObservabilityConfig(BaseModel):
@@ -127,6 +145,32 @@ class _YamlSettingsSource(PydanticBaseSettingsSource):
         return {k: v for k, v in self._data.items()}
 
 
+class TerraformConfig(BaseModel):
+    """User-configurable terraform variable defaults for GPU compute stacks.
+
+    Mirrors the variables defined in infra/terraform/modules/vllm-server/variables.tf
+    and infra/terraform/modules/llamacpp-server/variables.tf. Values set here
+    override ComputeConfig defaults when the TerraformGenerator builds tfvars.
+    """
+
+    container_image: str = ""
+    model_name: str = ""
+    gpu_count: int = 1
+    extra_args: str = ""
+    region: str = "us-east-1"
+    instance_type: str = ""
+    max_cost_usd: float = 10.0
+    timeout_minutes: float = 60.0
+    disk_size_gb: int = 100
+    allowed_cidr: str = "127.0.0.1/32"
+    guided_decoding_backend: str = "outlines"
+    enable_structured_outputs: bool = True
+    grammar_file: str = ""
+    provider: str = "aws"
+    gpu_type: str = "t4"
+    engine: str = "vllm"
+
+
 class HumanInTheLoopConfig(BaseModel):
     enabled: bool = False
     confidence_threshold: float = 0.7
@@ -148,6 +192,8 @@ class OrchestrationGuardConfig(BaseModel):
     max_dispatches_per_window: int = 0
     dispatch_rate_window_s: float = 60.0
     enforce_capability_escalation: bool = True
+    max_concurrent_model_calls: int = 10
+    task_split_threshold_effort: str = "medium"
 
 
 class IssuesConfig(BaseModel):
@@ -156,6 +202,12 @@ class IssuesConfig(BaseModel):
     github_owner: str = ""
     github_repo: str = ""
     github_label: str = "gludd"
+
+
+class NotificationsConfig(BaseModel):
+    enabled: bool = False
+    backends: dict[str, Any] = {"stdout": {}}
+    min_priority: str = "high"
 
 
 class UserConfig(BaseSettings):
@@ -187,6 +239,7 @@ class UserConfig(BaseSettings):
     process_isolation: dict[str, Any] = {}
     budget: dict[str, Any] = {}
     database: dict[str, Any] = {}
+    network: NetworkConfig = NetworkConfig()
     observability: ObservabilityConfig = ObservabilityConfig()
     queues: list[dict[str, Any]] = []
     connectors: list[dict[str, Any]] = []
@@ -220,6 +273,7 @@ class UserConfig(BaseSettings):
     # Deletion gate: threshold for lines removed before requiring DELETION_REASON env var.
     # Set to 0 to disable the gate. Override via GLUDD_DELETION_GATE_THRESHOLD.
     issues: IssuesConfig = IssuesConfig()
+    notifications: NotificationsConfig = NotificationsConfig()
     deletion_gate_threshold: int = 5
     # LangChain/LangGraph integration feature flags. All default OFF so existing
     # behaviour is unchanged unless explicitly enabled.
@@ -228,6 +282,7 @@ class UserConfig(BaseSettings):
     use_langchain_retry: bool = False
     use_hub: bool = False
     checkpointing: dict[str, Any] = {"enabled": False}
+    terraform: TerraformConfig = TerraformConfig()
     human_in_the_loop: HumanInTheLoopConfig = HumanInTheLoopConfig()
     compute_idle_check_interval_ticks: int = 60
     compute_idle_teardown_threshold_ticks: int = 3

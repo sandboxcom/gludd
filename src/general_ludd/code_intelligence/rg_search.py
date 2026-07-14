@@ -23,6 +23,8 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from general_ludd.security.path_canonicalizer import is_denied_path
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_TIMEOUT = 30.0
@@ -56,9 +58,15 @@ class RgResult:
 class RgSearch:
     """Build, run, and parse ``rg --json`` searches with a bundled-binary fallback."""
 
-    def __init__(self, rg_path: str | None = None, timeout: float = DEFAULT_TIMEOUT) -> None:
+    def __init__(
+        self,
+        rg_path: str | None = None,
+        timeout: float = DEFAULT_TIMEOUT,
+        allowed_roots: list[str] | None = None,
+    ) -> None:
         self._rg_path = rg_path
         self._timeout = timeout
+        self._allowed_roots = allowed_roots
 
     # --- binary location ------------------------------------------------
 
@@ -174,6 +182,34 @@ class RgSearch:
                 return None
         return None
 
+    # --- path confinement -----------------------------------------------
+
+    def _validate_root(self, root: str) -> RgResult | None:
+        """Return an error ``RgResult`` if ``root`` is outside allowed dirs, else ``None``.
+
+        Resolves ``root`` to an absolute path and checks it is under at least
+        one allowed root.  Also checks the resolved path against the deny-list
+        in :mod:`general_ludd.security.path_canonicalizer`.
+        """
+        try:
+            resolved = Path(root).resolve()
+        except OSError:
+            return RgResult(available=False, error=f"Cannot resolve root: {root}")
+
+        if is_denied_path(str(resolved)):
+            return RgResult(available=False, error=f"Path denied: {root}")
+
+        allowed = self._allowed_roots if self._allowed_roots else [str(Path().cwd())]
+        for allowed_root in allowed:
+            try:
+                allowed_resolved = Path(allowed_root).resolve()
+                resolved.relative_to(allowed_resolved)
+                return None
+            except (ValueError, OSError):
+                continue
+
+        return RgResult(available=False, error=f"Path outside allowed directories: {root}")
+
     # --- run ------------------------------------------------------------
 
     def search(
@@ -192,6 +228,10 @@ class RgSearch:
         ``available=True``), exit >= 2 = rg error (``available=True`` with the
         stderr surfaced in ``error``).
         """
+        root_err = self._validate_root(root)
+        if root_err is not None:
+            return root_err
+
         rg = self._resolve_rg()
         if not rg:
             return RgResult(available=False, error="ripgrep (rg) not found")

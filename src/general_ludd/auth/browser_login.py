@@ -28,6 +28,7 @@ Non-automatable parts (documented in README.md):
 
 from __future__ import annotations
 
+import abc
 import base64
 import hashlib
 import http.server
@@ -155,20 +156,20 @@ def list_services() -> list[str]:
 # ---- credential storage ----------------------------------------------------
 
 
-class CredentialStore:
+class CredentialStore(abc.ABC):
     """Abstract credential storage backend.
 
     Implementations store and retrieve OAuth tokens / API keys for services.
     """
 
-    def store(self, service: str, credential: str, metadata: dict[str, Any] | None = None) -> None:
-        raise NotImplementedError
+    @abc.abstractmethod
+    def store(self, service: str, credential: str, metadata: dict[str, Any] | None = None) -> None: ...
 
-    def retrieve(self, service: str) -> str | None:
-        raise NotImplementedError
+    @abc.abstractmethod
+    def retrieve(self, service: str) -> str | None: ...
 
-    def store_metadata(self, service: str, metadata: dict[str, Any]) -> None:
-        pass
+    @abc.abstractmethod
+    def store_metadata(self, service: str, metadata: dict[str, Any]) -> None: ...
 
 
 class EnvCredentialStore(CredentialStore):
@@ -283,6 +284,16 @@ class OpenBaoCredentialStore(CredentialStore):
         except Exception:
             logger.debug("OpenBao credential retrieval failed for %s", service)
         return None
+
+    def store_metadata(self, service: str, metadata: dict[str, Any]) -> None:
+        path = f"{self._NS}/{service}"
+        try:
+            existing = self._sm.read_secret(path)
+            payload: dict[str, Any] = dict(existing) if existing else {}
+            payload["metadata"] = json.dumps(metadata)
+            self._sm.write_secret(path, payload)
+        except Exception:
+            logger.debug("OpenBao metadata store failed for %s", service)
 
 
 # ---- PKCE helpers -----------------------------------------------------------

@@ -1,0 +1,17 @@
+---
+namespace: general_ludd
+name: business
+version: 0.2.0
+readme: README.md
+description: >
+  Business-domain roles for entity research and corporate intelligence.
+license:
+  - MIT
+authors:
+  - Agentic Harness Agent <agent@harness.local>
+tags:
+  - business
+  - entity-research
+  - corporate
+  - intelligence
+dependencies: {}

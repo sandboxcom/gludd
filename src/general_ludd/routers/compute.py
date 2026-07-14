@@ -141,19 +141,41 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         provider_str = cast(str, req.get("provider", ""))
         gpu_str = cast(str, req.get("gpu_type", ""))
         model_name = cast(str, req.get("model_name", ""))
-        if not provider_str or not gpu_str or not model_name:
+        if not gpu_str or not model_name:
             raise HTTPException(
                 status_code=422,
-                detail="provider, gpu_type, and model_name are required",
+                detail="gpu_type and model_name are required",
             )
-        try:
-            provider = ComputeProvider(provider_str)
-        except ValueError:
-            raise HTTPException(status_code=422, detail=f"Unknown provider: {provider_str}") from None
         try:
             gpu_type = GPUType(gpu_str)
         except ValueError:
             raise HTTPException(status_code=422, detail=f"Unknown GPU type: {gpu_str}") from None
+
+        if not provider_str:
+            from general_ludd.infra.discovery import LocalProbe, discover_all
+            from general_ludd.infra.providers import ProviderRegistry
+
+            resources = discover_all([LocalProbe()])
+            if resources:
+                resource = resources[0]
+                if resource.gpu_count > 0:
+                    try:
+                        provider_info = ProviderRegistry().get_cheapest_for_gpu(gpu_type)
+                        provider = provider_info.provider
+                    except KeyError:
+                        raise HTTPException(
+                            status_code=422,
+                            detail=f"No provider supports GPU type: {gpu_str}",
+                        ) from None
+                else:
+                    provider = ComputeProvider.AWS
+            else:
+                provider = ComputeProvider.AWS
+        else:
+            try:
+                provider = ComputeProvider(provider_str)
+            except ValueError:
+                raise HTTPException(status_code=422, detail=f"Unknown provider: {provider_str}") from None
         try:
             engine = InferenceEngine(cast(str, req.get("engine", "vllm")))
         except ValueError:

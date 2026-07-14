@@ -1,299 +1,490 @@
-"""TDD tests for DynamicDispatcher and parse_tool_calls.
-
-All handlers are FAKE (lambda or dict-based) — no live daemon required.
-"""
+"""Structural tests for src/general_ludd/dispatch/dynamic_dispatcher.py."""
 
 from __future__ import annotations
 
+import inspect
 import json
-from typing import Any, cast
 
 import pytest
 
 from general_ludd.dispatch.dynamic_dispatcher import (
+    PRIVILEGED_KINDS,
     UNRESTRICTED_ROLE,
     DispatchResult,
     DynamicDispatcher,
     ToolCall,
     parse_tool_calls,
+    structured_tool_calls_to_calls,
 )
 
-# ---------------------------------------------------------------------------
-# parse_tool_calls — valid inputs
-# ---------------------------------------------------------------------------
-
-class TestParseToolCallsValid:
-    def test_single_dict_with_kind_and_name(self):
-        raw = {"kind": "role", "name": "validator", "args": {"target": "src/"}}
-        calls = parse_tool_calls(raw)
-        assert len(calls) == 1
-        assert calls[0].kind == "role"
-        assert calls[0].name == "validator"
-        assert calls[0].args == {"target": "src/"}
-
-    def test_single_dict_no_args_defaults_empty(self):
-        raw = {"kind": "skill", "name": "grep-skill"}
-        calls = parse_tool_calls(raw)
-        assert len(calls) == 1
-        assert calls[0].args == {}
-
-    def test_tool_calls_list_shape(self):
-        raw = {
-            "tool_calls": [
-                {"kind": "mcp", "name": "filesystem", "args": {"op": "read"}},
-                {"kind": "skill", "name": "summarise", "args": {}},
-            ]
-        }
-        calls = parse_tool_calls(raw)
-        assert len(calls) == 2
-        assert calls[0].kind == "mcp"
-        assert calls[1].kind == "skill"
-
-    def test_json_string_single_call(self):
-        payload = json.dumps({"kind": "collection", "name": "tasks", "args": {}})
-        calls = parse_tool_calls(payload)
-        assert len(calls) == 1
-        assert calls[0].kind == "collection"
-
-    def test_json_string_tool_calls_list(self):
-        payload = json.dumps({
-            "tool_calls": [
-                {"kind": "role", "name": "planner"},
-            ]
-        })
-        calls = parse_tool_calls(payload)
-        assert len(calls) == 1
-
-    def test_args_defaults_to_empty_when_not_dict(self):
-        """Non-dict args are silently replaced with {} rather than crashing."""
-        raw = {"kind": "mcp", "name": "tool", "args": "not-a-dict"}
-        calls = parse_tool_calls(raw)
-        assert calls[0].args == {}
-
-    def test_tool_calls_skips_items_without_name(self):
-        raw = {
-            "tool_calls": [
-                {"kind": "role"},          # no name → skip
-                {"kind": "skill", "name": "ok"},
-            ]
-        }
-        calls = parse_tool_calls(raw)
-        assert len(calls) == 1
-        assert calls[0].name == "ok"
+# ── ToolCall ───────────────────────────────────────────────────────────
 
 
-# ---------------------------------------------------------------------------
-# parse_tool_calls — malformed inputs
-# ---------------------------------------------------------------------------
-
-class TestParseToolCallsMalformed:
-    def test_empty_string_returns_empty(self):
-        assert parse_tool_calls("") == []
-
-    def test_non_json_string_returns_empty(self):
-        assert parse_tool_calls("not json at all") == []
-
-    def test_plain_list_returns_empty(self):
-        # Top-level list is not the expected shape
-        assert cast(Any, parse_tool_calls)([]) == []
-
-    def test_empty_dict_returns_empty(self):
-        assert parse_tool_calls({}) == []
-
-    def test_dict_without_kind_and_name_returns_empty(self):
-        assert parse_tool_calls({"foo": "bar"}) == []
-
-    def test_tool_calls_key_not_list_returns_empty(self):
-        raw = {"tool_calls": "not-a-list"}
-        assert parse_tool_calls(raw) == []
-
-    def test_json_null_returns_empty(self):
-        assert parse_tool_calls("null") == []
-
-    def test_json_number_returns_empty(self):
-        assert parse_tool_calls("42") == []
+def test_toolcall_instantiation_with_all_fields() -> None:
+    tc = ToolCall(kind="role", name="run_playbook", args={"playbook": "deploy.yml"})
+    assert tc.kind == "role"
+    assert tc.name == "run_playbook"
+    assert tc.args == {"playbook": "deploy.yml"}
 
 
-# ---------------------------------------------------------------------------
-# DynamicDispatcher — routing per kind
-# ---------------------------------------------------------------------------
-
-class TestDynamicDispatcherRouting:
-    def _make_dispatcher(self) -> DynamicDispatcher:
-        return DynamicDispatcher(
-            role_handler=lambda name, args: f"role:{name}",
-            mcp_handler=lambda name, args: {"mcp_result": name, "args": args},
-            skill_handler=lambda name, args: f"skill:{name}:{args}",
-            collection_handler=lambda name, args: [name],
-            role=UNRESTRICTED_ROLE,
-        )
-
-    @pytest.mark.asyncio
-    async def test_role_handler_called(self):
-        d = self._make_dispatcher()
-        result = await d.dispatch(ToolCall(kind="role", name="planner", args={}))
-        assert result.ok is True
-        assert result.output == "role:planner"
-        assert result.kind == "role"
-        assert result.name == "planner"
-
-    @pytest.mark.asyncio
-    async def test_mcp_handler_called_with_args(self):
-        d = self._make_dispatcher()
-        result = await d.dispatch(ToolCall(kind="mcp", name="fs", args={"op": "read"}))
-        assert result.ok is True
-        assert result.output == {"mcp_result": "fs", "args": {"op": "read"}}
-
-    @pytest.mark.asyncio
-    async def test_skill_handler_called(self):
-        d = self._make_dispatcher()
-        result = await d.dispatch(ToolCall(kind="skill", name="summarise", args={"q": 1}))
-        assert result.ok is True
-        assert "summarise" in result.output
-
-    @pytest.mark.asyncio
-    async def test_collection_handler_called(self):
-        d = self._make_dispatcher()
-        result = await d.dispatch(ToolCall(kind="collection", name="tasks", args={}))
-        assert result.ok is True
-        assert result.output == ["tasks"]
+def test_toolcall_default_args_is_empty_dict() -> None:
+    tc = ToolCall(kind="skill", name="revealjs")
+    assert tc.args == {}
 
 
-# ---------------------------------------------------------------------------
-# DynamicDispatcher — unknown kind fail-closed
-# ---------------------------------------------------------------------------
-
-class TestDynamicDispatcherUnknownKind:
-    @pytest.mark.asyncio
-    async def test_unknown_kind_returns_error_result(self):
-        d = DynamicDispatcher(
-            role_handler=lambda n, a: "ok", role=UNRESTRICTED_ROLE
-        )
-        result = await cast(Any, d).dispatch(ToolCall(kind="unknown_xyz", name="foo", args={}))
-        assert result.ok is False
-        assert result.error is not None
-        assert "unknown_kind" in result.error
-
-    @pytest.mark.asyncio
-    async def test_no_handlers_at_all_fail_closed(self):
-        d = DynamicDispatcher(role=UNRESTRICTED_ROLE)
-        result = await d.dispatch(ToolCall(kind="role", name="planner", args={}))
-        assert result.ok is False
-
-    @pytest.mark.asyncio
-    async def test_kind_not_registered_fail_closed(self):
-        """Dispatcher has some handlers but the specific kind is absent."""
-        d = DynamicDispatcher(
-            skill_handler=lambda n, a: "ok", role=UNRESTRICTED_ROLE
-        )
-        result = await d.dispatch(ToolCall(kind="mcp", name="tool", args={}))
-        assert result.ok is False
-        assert "mcp" in (result.error or "")
-
-    @pytest.mark.asyncio
-    async def test_error_result_has_name_and_kind(self):
-        d = DynamicDispatcher(role=UNRESTRICTED_ROLE)
-        result = await d.dispatch(ToolCall(kind="role", name="my-tool", args={}))
-        assert result.name == "my-tool"
-        assert result.kind == "role"
+def test_toolcall_kind_accepts_literal_values() -> None:
+    for kind in ("role", "collection", "mcp", "skill"):
+        tc = ToolCall(kind=kind, name="x")  # type: ignore[arg-type]
+        assert tc.kind == kind
 
 
-# ---------------------------------------------------------------------------
-# DynamicDispatcher — handler raises exception → fail-closed
-# ---------------------------------------------------------------------------
-
-class TestDynamicDispatcherHandlerError:
-    @pytest.mark.asyncio
-    async def test_handler_exception_gives_error_result(self):
-        def _bad_handler(name: str, args: dict) -> str:
-            raise RuntimeError("boom-internal-detail")
-
-        d = DynamicDispatcher(role_handler=_bad_handler, role=UNRESTRICTED_ROLE)
-        result = await d.dispatch(ToolCall(kind="role", name="bad", args={}))
-        assert result.ok is False
-        # The raw exception detail must NOT leak to the caller — it is logged
-        # server-side (exc_info=True). The client gets a generic marker.
-        assert result.error == "handler_error"
-        assert "boom-internal-detail" not in (result.error or "")
-
-    @pytest.mark.asyncio
-    async def test_handler_exception_does_not_raise(self):
-        """dispatch() must never propagate handler exceptions."""
-        def _explode(name: str, args: dict) -> str:
-            raise ValueError("explode")
-
-        d = DynamicDispatcher(mcp_handler=_explode, role=UNRESTRICTED_ROLE)
-        # Should not raise:
-        result = await d.dispatch(ToolCall(kind="mcp", name="x", args={}))
-        assert result.ok is False
+# ── DispatchResult + to_dict ───────────────────────────────────────────
 
 
-# ---------------------------------------------------------------------------
-# DynamicDispatcher — dispatch_all aggregation
-# ---------------------------------------------------------------------------
+def test_dispatchresult_success_to_dict() -> None:
+    dr = DispatchResult(ok=True, kind="role", name="run_playbook", output={"status": "ok"})
+    d = dr.to_dict()
+    assert d == {"ok": True, "kind": "role", "name": "run_playbook", "output": {"status": "ok"}, "error": None}
 
-class TestDynamicDispatcherDispatchAll:
-    @pytest.mark.asyncio
-    async def test_dispatch_all_returns_list_same_length(self):
-        d = DynamicDispatcher(
-            role_handler=lambda n, a: "ok",
-            skill_handler=lambda n, a: "skill-ok",
-            role=UNRESTRICTED_ROLE,
-        )
-        calls = [
-            ToolCall(kind="role", name="planner"),
-            ToolCall(kind="skill", name="scan"),
-            ToolCall(kind="mcp", name="missing"),  # no mcp handler → fail-closed
+
+def test_dispatchresult_error_to_dict() -> None:
+    dr = DispatchResult(ok=False, kind="mcp", name="bad_tool", error="handler_error")
+    d = dr.to_dict()
+    assert d["ok"] is False
+    assert d["error"] == "handler_error"
+    assert d["output"] is None
+
+
+def test_dispatchresult_default_fields_are_empty() -> None:
+    dr = DispatchResult(ok=False)
+    assert dr.kind == ""
+    assert dr.name == ""
+    assert dr.output is None
+    assert dr.error is None
+
+
+def test_dispatchresult_to_dict_includes_all_keys() -> None:
+    dr = DispatchResult(ok=True, kind="collection", name="ping", output="pong")
+    d = dr.to_dict()
+    assert set(d.keys()) == {"ok", "kind", "name", "output", "error"}
+
+
+# ── parse_tool_calls — dict input ─────────────────────────────────────
+
+
+def test_parse_tool_calls_dict_with_tool_calls_list() -> None:
+    raw = {"tool_calls": [{"kind": "role", "name": "run", "args": {"x": 1}}]}
+    result = parse_tool_calls(raw)
+    assert len(result) == 1
+    assert result[0].kind == "role"
+    assert result[0].name == "run"
+    assert result[0].args == {"x": 1}
+
+
+def test_parse_tool_calls_dict_single_call() -> None:
+    raw = {"kind": "mcp", "name": "fetch"}
+    result = parse_tool_calls(raw)
+    assert len(result) == 1
+    assert result[0].kind == "mcp"
+    assert result[0].name == "fetch"
+
+
+def test_parse_tool_calls_dict_with_multiple_tool_calls() -> None:
+    raw = {
+        "tool_calls": [
+            {"kind": "role", "name": "a"},
+            {"kind": "mcp", "name": "b"},
         ]
-        results = await d.dispatch_all(calls)
-        assert len(results) == 3
-
-    @pytest.mark.asyncio
-    async def test_dispatch_all_mixed_ok_and_fail(self):
-        d = DynamicDispatcher(
-            role_handler=lambda n, a: "ok", role=UNRESTRICTED_ROLE
-        )
-        calls = [
-            ToolCall(kind="role", name="a"),
-            ToolCall(kind="mcp", name="b"),   # unknown → fail
-        ]
-        results = await d.dispatch_all(calls)
-        assert results[0].ok is True
-        assert results[1].ok is False
-
-    @pytest.mark.asyncio
-    async def test_dispatch_all_empty_list(self):
-        d = DynamicDispatcher(role=UNRESTRICTED_ROLE)
-        assert await d.dispatch_all([]) == []
-
-    @pytest.mark.asyncio
-    async def test_dispatch_all_order_preserved(self):
-        order: list[str] = []
-
-        def _handler(name: str, args: dict) -> str:
-            order.append(name)
-            return name
-
-        d = DynamicDispatcher(role_handler=_handler, role=UNRESTRICTED_ROLE)
-        calls = [ToolCall(kind="role", name=n) for n in ["a", "b", "c"]]
-        await d.dispatch_all(calls)
-        assert order == ["a", "b", "c"]
+    }
+    result = parse_tool_calls(raw)
+    assert len(result) == 2
+    assert [c.name for c in result] == ["a", "b"]
 
 
-# ---------------------------------------------------------------------------
-# DispatchResult.to_dict
-# ---------------------------------------------------------------------------
+def test_parse_tool_calls_skips_non_dict_items_in_list() -> None:
+    raw = {"tool_calls": ["not-a-dict", 42, {"kind": "role", "name": "valid"}]}
+    result = parse_tool_calls(raw)
+    assert len(result) == 1
+    assert result[0].name == "valid"
 
-class TestDispatchResultToDict:
-    def test_to_dict_ok(self):
-        r = DispatchResult(ok=True, kind="role", name="x", output={"a": 1})
-        d = r.to_dict()
-        assert d["ok"] is True
-        assert d["output"] == {"a": 1}
-        assert d["error"] is None
 
-    def test_to_dict_error(self):
-        r = DispatchResult(ok=False, kind="mcp", name="y", error="oops")
-        d = r.to_dict()
-        assert d["ok"] is False
-        assert d["error"] == "oops"
+def test_parse_tool_calls_skips_items_without_name() -> None:
+    raw = {"tool_calls": [{"kind": "role"}, {"kind": "mcp", "name": ""}]}
+    result = parse_tool_calls(raw)
+    assert len(result) == 0
+
+
+def test_parse_tool_calls_missing_kind_defaults_to_unknown() -> None:
+    raw = {"tool_calls": [{"name": "test"}]}
+    result = parse_tool_calls(raw)
+    assert len(result) == 1
+    assert result[0].kind == "unknown"
+    assert result[0].name == "test"
+
+
+def test_parse_tool_calls_kind_none_defaults_to_unknown() -> None:
+    raw = {"tool_calls": [{"kind": None, "name": "test"}]}
+    result = parse_tool_calls(raw)
+    assert len(result) == 1
+    assert result[0].kind == "unknown"
+
+
+def test_parse_tool_calls_tool_calls_not_a_list_returns_empty() -> None:
+    result = parse_tool_calls({"tool_calls": "not-a-list"})
+    assert result == []
+
+
+def test_parse_tool_calls_dict_without_kind_or_tool_calls() -> None:
+    result = parse_tool_calls({"unrelated": 1})
+    assert result == []
+
+
+# ── parse_tool_calls — JSON string input ──────────────────────────────
+
+
+def test_parse_tool_calls_json_string_with_tool_calls_list() -> None:
+    raw = json.dumps({"tool_calls": [{"kind": "skill", "name": "render"}]})
+    result = parse_tool_calls(raw)
+    assert len(result) == 1
+    assert result[0].kind == "skill"
+
+
+def test_parse_tool_calls_json_string_single_call() -> None:
+    raw = json.dumps({"kind": "collection", "name": "ping"})
+    result = parse_tool_calls(raw)
+    assert len(result) == 1
+    assert result[0].kind == "collection"
+
+
+def test_parse_tool_calls_invalid_json_returns_empty() -> None:
+    result = parse_tool_calls("{not valid json}")
+    assert result == []
+
+
+def test_parse_tool_calls_empty_string_returns_empty() -> None:
+    result = parse_tool_calls("")
+    assert result == []
+
+
+def test_parse_tool_calls_json_that_is_not_a_dict() -> None:
+    result = parse_tool_calls("42")
+    assert result == []
+    result2 = parse_tool_calls("[1, 2, 3]")
+    assert result2 == []
+
+
+def test_parse_tool_calls_json_string_with_extra_whitespace() -> None:
+    raw = '  \n  {"tool_calls": [{"kind": "mcp", "name": "tool"}]}  \n '
+    result = parse_tool_calls(raw)
+    assert len(result) == 1
+    assert result[0].name == "tool"
+
+
+# ── parse_tool_calls — edge cases ─────────────────────────────────────
+
+
+def test_parse_tool_calls_handles_name_truncation() -> None:
+    long_name = "x" * 300
+    raw = {"tool_calls": [{"kind": "role", "name": long_name}]}
+    result = parse_tool_calls(raw)
+    assert len(result) == 1
+    assert len(result[0].name) == 256
+    assert result[0].name == long_name[:256]
+
+
+def test_parse_tool_calls_handles_kind_truncation() -> None:
+    long_kind = "x" * 100
+    raw = {"tool_calls": [{"kind": long_kind, "name": "test"}]}
+    result = parse_tool_calls(raw)
+    assert len(result) == 1
+    assert len(result[0].kind) == 64
+    assert result[0].kind == long_kind[:64]
+
+
+def test_parse_tool_calls_args_not_a_dict_defaults_to_empty() -> None:
+    raw = {"tool_calls": [{"kind": "role", "name": "test", "args": "not-a-dict"}]}
+    result = parse_tool_calls(raw)
+    assert len(result) == 1
+    assert result[0].args == {}
+
+
+def test_parse_tool_calls_missing_args_defaults_to_empty_dict() -> None:
+    raw = {"tool_calls": [{"kind": "role", "name": "test"}]}
+    result = parse_tool_calls(raw)
+    assert result[0].args == {}
+
+
+def test_parse_tool_calls_name_not_a_string_returns_empty() -> None:
+    raw = {"tool_calls": [{"kind": "role", "name": 42}]}
+    result = parse_tool_calls(raw)
+    assert result == []
+
+
+# ── UNRESTRICTED_ROLE ──────────────────────────────────────────────────
+
+
+def test_unrestricted_role_is_an_object_instance() -> None:
+    assert isinstance(UNRESTRICTED_ROLE, object)
+    assert type(UNRESTRICTED_ROLE) is object
+
+
+def test_unrestricted_role_is_identity_sentinel() -> None:
+    assert UNRESTRICTED_ROLE is UNRESTRICTED_ROLE
+
+
+def test_unrestricted_role_is_not_another_object_instance() -> None:
+    another = object()
+    assert UNRESTRICTED_ROLE is not another
+
+
+def test_unrestricted_role_is_not_none() -> None:
+    assert UNRESTRICTED_ROLE is not None
+
+
+def test_unrestricted_role_is_not_a_string() -> None:
+    assert not isinstance(UNRESTRICTED_ROLE, str)
+
+
+def test_unrestricted_role_equality_would_not_work_with_forgery() -> None:
+    forged = "__unrestricted__"
+    assert forged != UNRESTRICTED_ROLE
+    assert UNRESTRICTED_ROLE is not forged
+
+
+# ── PRIVILEGED_KINDS ──────────────────────────────────────────────────
+
+
+def test_privileged_kinds_is_a_frozenset() -> None:
+    assert isinstance(PRIVILEGED_KINDS, frozenset)
+
+
+def test_privileged_kinds_contains_expected_values() -> None:
+    assert "role" in PRIVILEGED_KINDS
+    assert "collection" in PRIVILEGED_KINDS
+    assert "mcp" in PRIVILEGED_KINDS
+    assert "skill" in PRIVILEGED_KINDS
+
+
+def test_privileged_kinds_length_is_four() -> None:
+    assert len(PRIVILEGED_KINDS) == 4
+
+
+def test_privileged_kinds_does_not_contain_unknown_value() -> None:
+    assert "unknown" not in PRIVILEGED_KINDS
+    assert "" not in PRIVILEGED_KINDS
+
+
+# ── structured_tool_calls_to_calls ────────────────────────────────────
+
+
+def test_structured_tool_calls_to_calls_valid() -> None:
+    raw = [
+        {
+            "id": "call_1",
+            "type": "function",
+            "function": {"name": "get_weather", "arguments": '{"city": "NYC"}'},
+        }
+    ]
+    result = structured_tool_calls_to_calls(raw)
+    assert len(result) == 1
+    assert result[0].kind == "mcp"
+    assert result[0].name == "get_weather"
+    assert result[0].args == {"city": "NYC"}
+
+
+def test_structured_tool_calls_to_calls_arguments_already_dict() -> None:
+    raw = [{"id": "c1", "type": "function", "function": {"name": "calc", "arguments": {"a": 1}}}]
+    result = structured_tool_calls_to_calls(raw)
+    assert result[0].args == {"a": 1}
+
+
+def test_structured_tool_calls_to_calls_invalid_json_arguments() -> None:
+    raw = [{"id": "c1", "function": {"name": "test", "arguments": "{bad"}}]
+    result = structured_tool_calls_to_calls(raw)
+    assert result[0].args == {}
+
+
+def test_structured_tool_calls_to_calls_none_input_returns_empty() -> None:
+    assert structured_tool_calls_to_calls(None) == []
+
+
+def test_structured_tool_calls_to_calls_empty_list_returns_empty() -> None:
+    assert structured_tool_calls_to_calls([]) == []
+
+
+def test_structured_tool_calls_to_calls_skips_non_dict_items() -> None:
+    raw: list[dict[str, object] | None] = [
+        "not-a-dict",  # type: ignore[list-item]
+        {"id": "c1", "function": {"name": "valid"}},
+    ]
+    result = structured_tool_calls_to_calls(raw)  # type: ignore[arg-type]
+    assert len(result) == 1
+    assert result[0].name == "valid"
+
+
+def test_structured_tool_calls_to_calls_missing_function_field() -> None:
+    raw = [{"id": "c1"}]
+    result = structured_tool_calls_to_calls(raw)
+    assert result == []
+
+
+def test_structured_tool_calls_to_calls_function_not_a_dict() -> None:
+    raw = [{"id": "c1", "function": "not-a-dict"}]
+    result = structured_tool_calls_to_calls(raw)
+    assert result == []
+
+
+def test_structured_tool_calls_to_calls_missing_name_skipped() -> None:
+    raw = [{"id": "c1", "function": {"arguments": "{}"}}]
+    result = structured_tool_calls_to_calls(raw)
+    assert result == []
+
+
+def test_structured_tool_calls_to_calls_name_truncation() -> None:
+    long_name = "x" * 300
+    raw = [{"id": "c1", "function": {"name": long_name, "arguments": "{}"}}]
+    result = structured_tool_calls_to_calls(raw)
+    assert len(result[0].name) == 256
+
+
+# ── DynamicDispatcher ─────────────────────────────────────────────────
+
+
+def test_dispatcher_handlers_registered_via_init() -> None:
+    def handler(_name: str, _args: dict) -> str:
+        return "ok"
+
+    dd = DynamicDispatcher(role_handler=handler)
+    assert "role" in dd._handlers
+    assert dd._handlers["role"] is handler
+
+
+def test_dispatcher_handlers_none_means_no_handler() -> None:
+    dd = DynamicDispatcher()
+    assert "role" not in dd._handlers
+    assert "mcp" not in dd._handlers
+
+
+@pytest.mark.asyncio
+async def test_dispatcher_dispatch_unknown_kind_fails_closed() -> None:
+    dd = DynamicDispatcher()
+    call = ToolCall(kind="nonexistent", name="bad")  # type: ignore[arg-type]
+    result = await dd.dispatch(call)
+    assert result.ok is False
+    assert result.error == "unknown_kind:nonexistent"
+
+
+@pytest.mark.asyncio
+async def test_dispatcher_dispatch_known_kind_with_handler() -> None:
+    def handler(_name: str, _args: dict) -> str:
+        return "result_string"
+
+    dd = DynamicDispatcher(role_handler=handler, role=UNRESTRICTED_ROLE)
+    call = ToolCall(kind="role", name="test")
+    result = await dd.dispatch(call)
+    assert result.ok is True
+    assert result.output == "result_string"
+
+
+@pytest.mark.asyncio
+async def test_dispatcher_dispatch_handler_exception_caught() -> None:
+    def handler(_name: str, _args: dict) -> str:
+        raise RuntimeError("boom")
+
+    dd = DynamicDispatcher(role_handler=handler, role=UNRESTRICTED_ROLE)
+    call = ToolCall(kind="role", name="test")
+    result = await dd.dispatch(call)
+    assert result.ok is False
+    assert result.error == "handler_error"
+
+
+@pytest.mark.asyncio
+async def test_dispatcher_dispatch_async_handler() -> None:
+    async def handler(_name: str, _args: dict) -> str:
+        return "async_result"
+
+    dd = DynamicDispatcher(skill_handler=handler, role=UNRESTRICTED_ROLE)
+    call = ToolCall(kind="skill", name="test")
+    result = await dd.dispatch(call)
+    assert result.ok is True
+    assert result.output == "async_result"
+
+
+@pytest.mark.asyncio
+async def test_dispatcher_dispatch_all_accumulates_results() -> None:
+    call_history: list[str] = []
+
+    def handler(name: str, _args: dict) -> str:
+        call_history.append(name)
+        return name
+
+    dd = DynamicDispatcher(role_handler=handler, role=UNRESTRICTED_ROLE)
+    calls = [ToolCall(kind="role", name="a"), ToolCall(kind="role", name="b")]
+    results = await dd.dispatch_all(calls)
+    assert call_history == ["a", "b"]
+    assert len(results) == 2
+    assert all(r.ok for r in results)
+
+
+@pytest.mark.asyncio
+async def test_dispatcher_role_none_denies_privileged_kinds() -> None:
+    def handler(_name: str, _args: dict) -> str:
+        return "should_not_run"
+
+    dd = DynamicDispatcher(role_handler=handler, role=None)
+    call = ToolCall(kind="role", name="test")
+    result = await dd.dispatch(call)
+    assert result.ok is False
+    assert result.error == "capability_denied"
+
+
+@pytest.mark.asyncio
+async def test_dispatcher_unrestricted_role_bypasses_gate() -> None:
+    def handler(_name: str, _args: dict) -> str:
+        return "bypassed"
+
+    dd = DynamicDispatcher(role_handler=handler, role=UNRESTRICTED_ROLE)
+    call = ToolCall(kind="role", name="test")
+    result = await dd.dispatch(call)
+    assert result.ok is True
+    assert result.output == "bypassed"
+
+
+@pytest.mark.asyncio
+async def test_dispatcher_unrestricted_role_uses_identity_check() -> None:
+    def handler(_name: str, _args: dict) -> str:
+        return "only_with_sentinel"
+
+    dd = DynamicDispatcher(role_handler=handler, role=UNRESTRICTED_ROLE)
+    sentinel_copy = UNRESTRICTED_ROLE
+    dd._role = sentinel_copy
+    call = ToolCall(kind="role", name="test")
+    result = await dd.dispatch(call)
+    assert result.ok is True
+
+
+@pytest.mark.asyncio
+async def test_dispatcher_forged_role_string_blocked() -> None:
+    def handler(_name: str, _args: dict) -> str:
+        return "should_not_run"
+
+    dd = DynamicDispatcher(role_handler=handler, role="__unrestricted__")
+    call = ToolCall(kind="role", name="test")
+    result = await dd.dispatch(call)
+    assert result.ok is False
+
+
+def test_dispatcher_list_available_returns_registered_kinds() -> None:
+    dd = DynamicDispatcher(role_handler=lambda n, a: "ok", mcp_handler=lambda n, a: "ok")
+    kinds = dd.list_available()
+    assert "registered_kinds" in kinds
+    assert set(kinds["registered_kinds"]) == {"role", "mcp"}
+
+
+def test_dispatcher_list_available_empty_when_no_handlers() -> None:
+    dd = DynamicDispatcher()
+    assert dd.list_available() == {"registered_kinds": []}
+
+
+def test_dispatcher_dispatch_is_async_function() -> None:
+    assert inspect.iscoroutinefunction(DynamicDispatcher.dispatch)

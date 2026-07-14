@@ -197,7 +197,13 @@ class TodoModel(Base):
     risk_level: Mapped[str] = mapped_column(String(16), nullable=False, default="low")
     work_type: Mapped[str] = mapped_column(String(32), nullable=False, default="unknown", index=True)
     resource_profile: Mapped[str] = mapped_column(String(32), nullable=False, default="low_resource")
-    parent_todo_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    estimated_cost_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
+    actual_cost_accrued: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    parent_todo_id: Mapped[str | None] = mapped_column(
+        String(32),
+        ForeignKey("todos.todo_id", ondelete="SET NULL"),
+        nullable=True,
+    )
     child_todo_ids: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     acceptance_criteria: Mapped[str | None] = mapped_column(Text, nullable=True)
     definition_of_done: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -272,6 +278,12 @@ class TodoModel(Base):
         # (e.g. list_due_scheduled, claim variants filtering on queue) benefit
         # from this covering index that matches WHERE + time sort.
         Index("ix_todos_status_queue_scheduled", "status", "queue", "scheduled_at"),
+        # E12: _reap_stuck_todos queries WHERE status='active' AND updated_at < cutoff.
+        # status alone is indexed; this composite makes the reaper query index-only.
+        Index("ix_todos_status_updated_at", "status", "updated_at"),
+        # H.14: priority bounded at DB level so direct SQL writes can't bypass
+        # the application-layer clamping in TodoRepository._validate_create_data.
+        CheckConstraint("priority >= 0 AND priority <= 1000", name="ck_todos_priority_range"),
     )
 
     __mapper_args__: ClassVar[dict[str, Any]] = {"version_id_col": version}
@@ -347,6 +359,14 @@ class TaskReturnModel(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    __table_args__ = (
+        Index("ix_task_returns_status_created", "status", "created_at"),
+        # E12: claim_unreviewed queries WHERE status='created' AND project_id=?
+        # ORDER BY created_at ASC. The 2-column index on (status,created_at)
+        # doesn't cover the project_id filter; this 3-column composite does.
+        Index("ix_task_returns_status_project_created", "status", "project_id", "created_at"),
+    )
+
 
 class TaskDecisionModel(Base):
     __tablename__ = "task_decisions"
@@ -364,7 +384,11 @@ class TaskDecisionModel(Base):
         nullable=True,
         index=True,
     )
-    matched_todo_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    matched_todo_id: Mapped[str | None] = mapped_column(
+        String(32),
+        ForeignKey("todos.todo_id", ondelete="SET NULL"),
+        nullable=True,
+    )
     decision: Mapped[str] = mapped_column(String(32), nullable=False)
     confidence: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     evidence_refs: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
@@ -516,6 +540,7 @@ class BucketLeaseModel(Base):
 
     __table_args__ = (
         UniqueConstraint("bucket_key", "holder_id", name="uq_bucket_lease"),
+        Index("ix_bucket_leases_key_expires", "bucket_key", "expires_at"),
     )
 
 
@@ -747,6 +772,12 @@ class MemoryRecordModel(Base):
     __tablename__ = "memory_records"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_gen_memory_id)
+    project_id: Mapped[str | None] = mapped_column(
+        String(32),
+        ForeignKey("projects.project_id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     agent_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     key: Mapped[str] = mapped_column(String(256), nullable=False)
     value: Mapped[str] = mapped_column(Text, nullable=False, default="")
@@ -870,7 +901,10 @@ class HumanTodoModel(Base):
     # The agent todo whose progress is blocked on this human-todo. NULL when
     # the agent is merely logging a need (no parent todo to block).
     parent_agent_todo_id: Mapped[str | None] = mapped_column(
-        String(32), nullable=True, index=True
+        String(32),
+        ForeignKey("todos.todo_id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
     agent_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     session_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)

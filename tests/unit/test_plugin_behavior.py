@@ -720,31 +720,31 @@ class TestEnforceStopCiPendingOrRed:
 # 4. enforce-floor.ts — floor/target/ceiling constants
 # --------------------------------------------------------------------------- #
 class TestEnforceFloorConstants:
-    """The three band constants must be 10/14/16 (user directive 2026-06-22)."""
+    """The three band constants must be 5/6/8 (cost-efficiency directive 2026-07-11)."""
 
-    def test_floor_constant_is_10(self):
+    def test_floor_constant_is_5(self):
         src = ENFORCE_FLOOR.read_text()
         # 2026-07-01 refactor: FLOOR/CEILING now come from a `_tunable(
         # overridePath, envVar, dflt)` helper (adds /tmp override reads) instead
         # of an inline parseInt. The env-var name and the default literal are the
         # load-bearing parts — accept the _tunable form while still pinning the
-        # default at "10".
+        # default at "5".
         m = re.search(
             r"const\s+FLOOR\s*=\s*_tunable\s*\([^)]*CLAUDE_AGENT_FLOOR[^)]*[\"'](\d+)[\"']\s*\)",
             src,
         )
         assert m, (
             "FLOOR constant declaration not found — expected "
-            "_tunable(\"/tmp/gludd-floor-override\", \"CLAUDE_AGENT_FLOOR\", \"10\")"
+            "_tunable(\"/tmp/gludd-floor-override\", \"CLAUDE_AGENT_FLOOR\", \"5\")"
         )
-        assert m.group(1) == "10", (
-            f"FLOOR default is {m.group(1)}, expected 10 "
-            "(user directive 2026-06-22 raised the floor from 6 to 10)"
+        assert m.group(1) == "5", (
+            f"FLOOR default is {m.group(1)}, expected 5 "
+            "(cost-efficiency directive 2026-07-11 lowered floor to 5)"
         )
 
-    def test_target_constant_is_14(self):
+    def test_target_constant_is_6(self):
         src = ENFORCE_FLOOR.read_text()
-        # TARGET still uses parseInt(process.env.CLAUDE_AGENT_TARGET || "14"),
+        # TARGET still uses parseInt(process.env.CLAUDE_AGENT_TARGET || "6"),
         # now wrapped in Math.min(..., CEILING) so it can never exceed the
         # ceiling. Accept the Math.min wrapper while still pinning the default.
         m = re.search(
@@ -753,25 +753,25 @@ class TestEnforceFloorConstants:
         )
         assert m, (
             "TARGET constant declaration not found — expected "
-            "Math.min(parseInt(process.env.CLAUDE_AGENT_TARGET || \"14\", 10), CEILING)"
+            "Math.min(parseInt(process.env.CLAUDE_AGENT_TARGET || \"6\", 10), CEILING)"
         )
-        assert m.group(1) == "14", (
-            f"TARGET default is {m.group(1)}, expected 14"
+        assert m.group(1) == "6", (
+            f"TARGET default is {m.group(1)}, expected 6"
         )
 
-    def test_ceiling_constant_is_16(self):
+    def test_ceiling_constant_is_8(self):
         src = ENFORCE_FLOOR.read_text()
-        # See test_floor_constant_is_10 — CEILING now uses the _tunable helper.
+        # See test_floor_constant_is_5 — CEILING now uses the _tunable helper.
         m = re.search(
             r"const\s+CEILING\s*=\s*_tunable\s*\([^)]*CLAUDE_AGENT_CEILING[^)]*[\"'](\d+)[\"']\s*\)",
             src,
         )
         assert m, (
             "CEILING constant declaration not found — expected "
-            "_tunable(\"/tmp/gludd-ceiling-override\", \"CLAUDE_AGENT_CEILING\", \"16\")"
+            "_tunable(\"/tmp/gludd-ceiling-override\", \"CLAUDE_AGENT_CEILING\", \"8\")"
         )
-        assert m.group(1) == "16", (
-            f"CEILING default is {m.group(1)}, expected 16"
+        assert m.group(1) == "8", (
+            f"CEILING default is {m.group(1)}, expected 8"
         )
 
     def test_all_three_constants_present(self):
@@ -981,9 +981,9 @@ class TestEnforceDelegateMainthreadStreak:
             src,
         )
         assert m, "MAINTHREAD_THRESHOLD declaration not found"
-        assert m.group(1) == "4", (
-            f"MAINTHREAD_THRESHOLD default is {m.group(1)}, expected 4 — the "
-            "5th consecutive mutating call must be the one that blocks"
+        assert m.group(1) == "2", (
+            f"MAINTHREAD_THRESHOLD default is {m.group(1)}, expected 2 — the "
+            "3rd consecutive mutating call must be the one that blocks"
         )
         # mainthreadBudgetBefore must compare streak >= threshold (via
         # `streak < MAINTHREAD_THRESHOLD ... return null` inverted — i.e. the
@@ -1131,7 +1131,85 @@ class TestEnforceDelegateMainthreadStreak:
 
 
 # --------------------------------------------------------------------------- #
-# 4e. enforce-delegate.ts — countLiveAgents probe fail-closed (P2 fix)
+# 4e. enforce-delegate.ts — disengage escape (W.1 fix, 2026-07-12)
+# --------------------------------------------------------------------------- #
+# The disengage escape (/tmp/gludd-watchdog-disengage.json) must allow edits
+# to proceed when enforcement is disengaged. Both enforceForceDelegate() and
+# mainthreadBudgetBefore() must call isDisengaged() and return null (allow)
+# when disengagement is active.
+class TestEnforceDelegateDisengageEscape:
+    """Disengage escape must allow ALL tool calls to proceed when active."""
+
+    def test_is_disengaged_function_exists(self):
+        src = ENFORCE_DELEGATE.read_text()
+        assert "function isDisengaged" in src, (
+            "isDisengaged() function missing from enforce-delegate.ts — "
+            "the disengage escape cannot work without it"
+        )
+
+    def test_is_disengaged_reads_watchdog_disengage_file(self):
+        src = ENFORCE_DELEGATE.read_text()
+        assert "/tmp/gludd-watchdog-disengage.json" in src, (
+            "isDisengaged() must read /tmp/gludd-watchdog-disengage.json "
+            "to detect when the operator has disengaged enforcement"
+        )
+
+    def test_enforce_force_delegate_checks_disengaged(self):
+        """enforceForceDelegate() must return null when isDisengaged() is true,
+        skipping ALL blocks so edits can proceed."""
+        src = ENFORCE_DELEGATE.read_text()
+        handler = src.split("function enforceForceDelegate")[1]
+        assert "isDisengaged()" in handler, (
+            "enforceForceDelegate must call isDisengaged() — "
+            "without it, disengage-enforcement cannot bypass force-delegate"
+        )
+
+    def test_mainthread_budget_before_checks_disengaged(self):
+        """mainthreadBudgetBefore() must return null when isDisengaged() is true,
+        so the mainthread streak blocker does not fire during disengagement."""
+        src = ENFORCE_DELEGATE.read_text()
+        handler = src.split("function mainthreadBudgetBefore")[1]
+        assert "isDisengaged()" in handler, (
+            "mainthreadBudgetBefore must call isDisengaged() — "
+            "without it, disengage-enforcement cannot bypass the streak blocker"
+        )
+
+    def test_disengage_allows_writes_when_active(self):
+        """When the disengage file has a valid disengage_until timestamp, edits,
+        writes, and mutating bash must be allowed through."""
+        src = ENFORCE_DELEGATE.read_text()
+        # isDisengaged() must check disengage_until > now
+        assert "disengage_until" in src, (
+            "isDisengaged must check the disengage_until field"
+        )
+        assert "effective > now" in src or "d.disengage_until > now" in src, (
+            "isDisengaged must compare disengage timestamp against current time"
+        )
+
+    def test_disengage_max_duration_clamped(self):
+        """The disengage must be clamped to MAX_DISENGAGE_MS (1 hour) to prevent
+        indefinite disengagement."""
+        src = ENFORCE_DELEGATE.read_text()
+        assert "MAX_DISENGAGE_MS" in src, (
+            "MAX_DISENGAGE_MS constant must exist to clamp disengage duration"
+        )
+        assert "Math.min" in src or "3_600_000" in src, (
+            "isDisengaged must clamp disengage_until via Math.min to "
+            "prevent indefinite disengagement"
+        )
+
+    def test_floor_disengage_early_return_exists(self):
+        """enforce-floor.ts must have an early disengage check that resets
+        the streak counters and returns before any enforcement blocks."""
+        src = ENFORCE_FLOOR.read_text()
+        assert "disengagedEarly = true" in src, (
+            "enforce-floor must set disengagedEarly when /tmp/gludd-watchdog-disengage.json "
+            "has a valid disengage_until timestamp"
+        )
+
+
+# --------------------------------------------------------------------------- #
+# 4f. enforce-delegate.ts — countLiveAgents probe fail-closed (P2 fix)
 # --------------------------------------------------------------------------- #
 # Audit gap P2 (2026-07-09): countLiveAgents() returned null on ANY probe error
 # (python3 missing, agent_liveness.py threw, non-integer stdout), and callers
@@ -1655,4 +1733,117 @@ class TestEnforceFloorCeilingDenyAndProbeAsymmetry:
         assert "BUGS.md" in src, (
             "Floor-deny message must list BUGS.md as one of the open-work "
             "signals it consulted"
+        )
+
+
+# ── enforce-stop.ts: RESEARCH FINDING on text.complete hook scope ──────────
+# 2026-07-12: The RESEARCH FINDING comment documents that opencode's
+# text.complete hook only fires on LLM-generated text, never on tool output
+# (Read/Grep/Glob/Bash results). The _input.role field does not exist in the
+# text.complete payload. Therefore isToolOutput / role-based guard is dead code.
+# These tests verify the RESEARCH FINDING is present and isToolOutput is absent.
+
+
+class TestEnforceStopResearchFinding:
+    """RESEARCH FINDING in enforce-stop.ts text.complete documents that the hook
+    only fires on agent-generated text, never on tool output. isToolOutput guard
+    is dead code and must NOT be present."""
+
+    ENFORCE_STOP = Path(__file__).resolve().parents[2] / ".opencode/plugin/enforce-stop.ts"
+
+    @staticmethod
+    def _src() -> str:
+        return TestEnforceStopResearchFinding.ENFORCE_STOP.read_text()
+
+    def test_research_finding_comment_present(self):
+        """RESEARCH FINDING comment must be present in text.complete handler."""
+        src = self._src()
+        assert "RESEARCH FINDING" in src, (
+            "enforce-stop.ts text.complete must have RESEARCH FINDING comment — "
+            "it documents that the hook only fires on LLM text, never tool output"
+        )
+
+    def test_isToolOutput_not_present(self):
+        """isToolOutput must NOT be present — it is documented as dead code
+        in the RESEARCH FINDING comment."""
+        src = self._src()
+        assert "isToolOutput" not in src, (
+            "isToolOutput must NOT be in enforce-stop.ts — "
+            "RESEARCH FINDING documents it as dead code "
+            "(_input.role does not exist in text.complete payload)"
+        )
+
+    def test_delegate_first_after_research_finding(self):
+        """DELEGATE-FIRST nag must appear AFTER the RESEARCH FINDING comment.
+        The finding documents scope before enforcement logic runs."""
+        src = self._src()
+        guard_idx = src.find("RESEARCH FINDING")
+        assert guard_idx >= 0
+        after_guard = src[guard_idx:]
+        delegate_idx = after_guard.find("DELEGATE-FIRST")
+        assert delegate_idx >= 0, (
+            "DELEGATE-FIRST nag must exist in text.complete, "
+            "after the RESEARCH FINDING comment"
+        )
+
+    def test_false_done_after_research_finding(self):
+        """FALSE-DONE detection must appear AFTER the RESEARCH FINDING comment."""
+        src = self._src()
+        guard_idx = src.find("RESEARCH FINDING")
+        after_guard = src[guard_idx:]
+        fd_idx = after_guard.find("FALSE-DONE")
+        assert fd_idx >= 0, (
+            "FALSE-DONE detection must appear after RESEARCH FINDING comment"
+        )
+
+    def test_hasLocalWork_after_research_finding(self):
+        """hasLocalWork block must appear AFTER the RESEARCH FINDING comment."""
+        src = self._src()
+        guard_idx = src.find("RESEARCH FINDING")
+        after_guard = src[guard_idx:]
+        lw_idx = after_guard.find("hasLocalWork")
+        assert lw_idx >= 0, (
+            "hasLocalWork block must appear after RESEARCH FINDING comment"
+        )
+
+    def test_ratchet_after_research_finding(self):
+        """RATCHET block must appear AFTER the RESEARCH FINDING comment."""
+        src = self._src()
+        guard_idx = src.find("RESEARCH FINDING")
+        after_guard = src[guard_idx:]
+        r_idx = after_guard.find("RATCHET")
+        assert r_idx >= 0, (
+            "RATCHET block must appear after RESEARCH FINDING comment"
+        )
+
+    def test_stop_pattern_after_research_finding(self):
+        """Stop-pattern detection must appear AFTER the RESEARCH FINDING comment."""
+        src = self._src()
+        guard_idx = src.find("RESEARCH FINDING")
+        after_guard = src[guard_idx:]
+        assert (
+            "STOP_PATTERN_PHRASES" in after_guard
+            or "COMPLETION_VERBATIM" in after_guard
+            or "responseLooksTerminal" in after_guard
+        ), (
+            "Stop-pattern detection must appear after RESEARCH FINDING comment"
+        )
+
+    def test_readSharedStreak_after_research_finding(self):
+        """readSharedStreak() must appear AFTER the RESEARCH FINDING comment."""
+        src = self._src()
+        guard_idx = src.find("RESEARCH FINDING")
+        after_guard = src[guard_idx:]
+        assert "readSharedStreak" in after_guard, (
+            "readSharedStreak must appear after RESEARCH FINDING comment"
+        )
+
+    def test_return_after_research_finding(self):
+        """RESEARCH FINDING must be followed by enforcement code that uses
+        return (not throw) to skip enforcement."""
+        src = self._src()
+        guard_idx = src.find("RESEARCH FINDING")
+        snippet = src[guard_idx:guard_idx + 600]
+        assert "return" in snippet, (
+            "enforcement code after RESEARCH FINDING must use return (not throw)"
         )

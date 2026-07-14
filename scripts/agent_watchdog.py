@@ -35,6 +35,7 @@ Usage:
 from __future__ import annotations
 
 import enum
+import glob
 import hashlib
 import json
 import os
@@ -198,6 +199,51 @@ _alerted_anomalies: dict[str, float] = {}
 _ALERTED_PRUNE_SECS = 1800  # 30 minutes
 _POLL_CYCLE_COUNT = 0
 _POLL_CYCLE_PRUNE_INTERVAL = 100  # prune every ~17 min (100 * 10s)
+
+
+WATCHDOG_LOG_ROTATION_MB = 10
+WATCHDOG_LOG_KEEP_MB = 1
+WATCHDOG_LOG_DIR = Path("/tmp")
+WATCHDOG_LOG_ROTATE_INTERVAL_SECS = 600
+_WATCHDOG_LAST_LOG_ROTATE: float = 0.0
+WATCHDOG_LOG_ROTATE_SKIP_PATTERNS = ("gludd-stderr-", "gludd-stdout-", "gludd-stdio-")
+
+
+def _rotate_watchdog_logs() -> None:
+    """Truncate /tmp/gludd-*.log files that exceed WATCHDOG_LOG_ROTATION_MB.
+
+    Keeps only the last WATCHDOG_LOG_KEEP_MB of content, so a runaway log
+    (e.g. a plugin debug log writing to /tmp) never fills the drive.
+    Called from the watchdog main loop at most every WATCHDOG_LOG_ROTATE_INTERVAL_SECS.
+    """
+    global _WATCHDOG_LAST_LOG_ROTATE
+    now = time.time()
+    if now - _WATCHDOG_LAST_LOG_ROTATE < WATCHDOG_LOG_ROTATE_INTERVAL_SECS:
+        return
+    _WATCHDOG_LAST_LOG_ROTATE = now
+
+    for pattern in ("/tmp/gludd-*.log", "/tmp/gludd-*.warnings.log"):
+        for log_path_str in glob.glob(pattern):
+            log_path = Path(log_path_str)
+            if not log_path.is_file():
+                continue
+            name = log_path.name
+            if any(name.startswith(p) for p in WATCHDOG_LOG_ROTATE_SKIP_PATTERNS):
+                continue
+            try:
+                sz = log_path.stat().st_size
+                if sz < WATCHDOG_LOG_ROTATION_MB * 1024 * 1024:
+                    continue
+                keep_bytes = WATCHDOG_LOG_KEEP_MB * 1024 * 1024
+                with log_path.open("rb") as f:
+                    f.seek(max(0, sz - keep_bytes))
+                    f.readline()
+                    tail = f.read()
+                log_path.write_bytes(tail)
+                new_sz = log_path.stat().st_size
+                _log(f"LOG ROTATION: {name} {sz / (1024*1024):.1f}MB → {new_sz / (1024*1024):.1f}MB (threshold {WATCHDOG_LOG_ROTATION_MB}MB)")
+            except Exception:
+                pass
 
 
 def _prune_alerted_anomalies(now_epoch: float | None = None) -> None:
@@ -1781,6 +1827,13 @@ def _check_plugin_hashes() -> None:
                     current[f.name] = hashlib.sha256(f.read_bytes()).hexdigest()
                 except Exception:
                     pass
+        plugins_dir = _WORKSPACE / ".opencode" / "plugins"
+        if plugins_dir.is_dir():
+            for f in sorted(plugins_dir.glob("*.ts")):
+                try:
+                    current[f"plugins/{f.name}"] = hashlib.sha256(f.read_bytes()).hexdigest()
+                except Exception:
+                    pass
 
         stored = {}
         if manifest.is_file():
@@ -2326,26 +2379,27 @@ def check_and_reset() -> dict:
     has_pending_work = tasks_unchecked or ratchet_count > 0 or gate_red or ci_pending
     has_any_work = has_pending_work or ci_pending
 
-    # ── Gate-status injection: when CI is pending/red and .gate-status is otherwise
-    #     clean, write a CI-FAIL line. The enforce-stop.ts plugin reads .gate-status
-    #     to compute hasLocalWork. Without this, text-only responses pass through
-    #     unblocked when CI is the only pending work.
+    # ── CI-status injection: when CI is pending/red, write to .ci-status.
+    #     The enforce-stop.ts plugin reads BOTH .gate-status (for local checks)
+    #     and .ci-status (for CI status). Writes to .gate-status directly were
+    #     destructive — they overwrote lint/typecheck/test PASS lines with just
+    #     "CI FAIL pending → GATE: FAILED", causing enforce-stop to blank ALL
+    #     text including subagent task_results. The separation fixes that.
     #
     #     ONLY inject when a concrete run_id exists (a real CI run for a pushed
     #     commit). When run_id is None, ci-verdict found NO run for the local
     #     HEAD — the commit hasn't been pushed yet, so there is no CI work to
     #     wait on. Injecting in that case creates a chicken-and-egg: the commit
     #     can never land (gate red) and CI can never start (no push). ──
-    if ci_pending and ci_run_id is not None and not gate_red:
+    if ci_pending and ci_run_id is not None:
         try:
-            gs = Path(_GATE_STATUS)
-            gs.parent.mkdir(parents=True, exist_ok=True)
-            gs.write_text(
-                f"=== GATE {datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')} ===\n"
+            ci_status = Path(".ci-status")
+            ci_status.parent.mkdir(parents=True, exist_ok=True)
+            ci_status.write_text(
+                f"=== CI {datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')} ===\n"
                 f"CI FAIL pending (run {ci_run_id})\n"
-                f"=== GATE: FAILED ===\n"
+                f"suggested_action: wait_for_ci\n"
             )
-            gate_red = True
             has_pending_work = True
         except Exception:
             pass
@@ -2738,6 +2792,7 @@ def main(argv: list[str] | None = None) -> int:
             check_push_status()
             _check_gate_background()
             _check_plugin_liveness_periodic()
+            _rotate_watchdog_logs()
         except Exception as exc:
             _log(f"error: {exc}")
         time.sleep(POLL_SECS)

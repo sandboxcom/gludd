@@ -1,0 +1,72 @@
+---
+# sdlc_gate role defaults — FAIL-CLOSED, REPORT-ONLY
+#
+# SAFE-BY-DEFAULT: never mutates the repo. enable_git_push=false ensures
+# no side effects. enable_model_call=false ensures no model spend.
+#
+# Mirrors: security_gate (composing check) + enforcement_gate (fail-closed)
+# Config: reads SDLC pipeline spec from config/ai_sdlc.yml
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Artifact output
+artifact_dir: "/tmp/gludd-sdlc-gate"
+
+# SDLC pipeline configuration file
+sdlc_config: "{{ playbook_dir }}/config/ai_sdlc.yml"
+
+# The operation to perform:
+#   check_stage_entry   — verify entry gate for a stage is satisfied
+#   check_stage_exit    — verify exit gate for a stage (all roles complete, checks pass)
+#   advance_stage       — mark stage complete, produce token, emit event
+#   audit_token_chain   — walk the token chain, report missing/broken tokens
+#   list_stages         — enumerate all stages and their status
+#   validate_pipeline   — end-to-end pipeline health check
+operation: "check_stage_exit"
+
+# Stage name (from config/ai_sdlc.yml pipeline_stages)
+# Valid: intake, planning, implementation, review, gate, integration, deployment, operate
+stage: "review"
+
+# Task context
+task_id: ""
+task_name: ""
+repo_path: "."
+
+# Fail-closed? When true, a failed gate = ansible.builtin.fail (playbook stops).
+# When false, gate_passed is returned but the playbook continues.
+fail_closed: true
+
+# ------ Gate check toggles (per-phase) ------
+
+# Missing check = gate_passed=false (like security_gate fail-closed)
+require_id_documentation: true
+
+# ------ Entry gate requirements ------
+require_stage_entry_gate: true
+require_task_id: "{{ task_id | length > 0 }}"
+require_previous_stage_complete: true
+require_timeout_not_expired: true
+
+# ------ Exit gate requirements ------
+require_primary_roles_complete: true
+require_security_roles_complete: false
+require_all_gate_checks_pass: true
+require_evidence_artifacts_present: true
+require_token_written: true
+
+# ------ Timeout ------
+# Default timeout from ai_sdlc.yml stage_timeouts, overridable per invocation
+stage_timeout_minutes: 60
+
+# ------ Message handoff ------
+handoff_recipient: ""
+notify_on_block: true
+notify_on_advance: true
+topic_prefix: "sdlc"
+
+# ------ Destructive ops guard ------
+enable_git_push: false
+enable_model_call: false

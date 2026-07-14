@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from typing import cast
 
 from fastapi import FastAPI, HTTPException
 
 from general_ludd.ansible.galaxy import get_builtin_modules, install_galaxy, search_galaxy
+from general_ludd.ansible.paths import (
+    list_collection_versions,
+    resolve_collections_paths,
+)
 
 
 def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
@@ -61,3 +66,55 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                 detail="template rejected by sandbox",
             ) from None
         return {"rendered": rendered}
+
+    @app.get("/admin/ansible/collections/versions")
+    async def admin_collections_versions(
+        namespace: str,
+        collection: str | None = None,
+    ) -> dict[str, object]:
+        base = _resolve_collections_base(app)
+        if base is None:
+            raise HTTPException(
+                status_code=404,
+                detail="No collections directory found",
+            )
+        versions = list_collection_versions(base, namespace, collection)
+        return {"namespace": namespace, "versions": versions}
+
+    @app.post("/admin/ansible/collections/activate")
+    async def admin_collections_activate(
+        req: dict[str, object],
+    ) -> dict[str, object]:
+        namespace = cast(str, req.get("namespace"))
+        collection = cast(str, req.get("collection"))
+        if not namespace or not collection:
+            raise HTTPException(
+                status_code=400,
+                detail="namespace and collection are required",
+            )
+        version: str | None = cast(str | None, req.get("version"))
+        runner = getattr(app.state, "_runner", None)
+        if runner is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Ansible runner not available",
+            )
+        activation_root = runner.activate_collection(
+            namespace, collection, version=version,
+        )
+        return {
+            "namespace": namespace,
+            "collection": collection,
+            "activation_root": str(activation_root),
+        }
+
+
+def _resolve_collections_base(app: FastAPI) -> Path | None:
+    project_root = getattr(app.state, "_project_root", None)
+    entries = resolve_collections_paths(
+        project_root=Path(project_root) if project_root else None,
+    )
+    for entry in entries:
+        if entry.path.is_dir():
+            return entry.path
+    return None

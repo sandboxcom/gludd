@@ -80,11 +80,8 @@ class TestStopPatternEnforcer:
 
     def test_blocking_default(self):
         content = ENFORCE_STOP.read_text()
-        # The key line: NO_WAIT_ENFORCE must default to blocking
-        # Blocking: !== "0" (active unless explicitly disabled)
-        # Advisory: === "1" (inactive unless explicitly enabled)
-        assert '!== "0"' in content, (
-            "NO_WAIT_ENFORCE must default to blocking (!== \"0\"), not advisory (=== \"1\")"
+        assert 'permissionDecision: "deny"' in content, (
+            "enforce-stop.ts must have hard-deny permissionDecision blocks"
         )
 
     def test_has_ratchet_stop_audit(self):
@@ -95,8 +92,8 @@ class TestStopPatternEnforcer:
 
     def test_has_deferral_patterns(self):
         content = ENFORCE_STOP.read_text()
-        assert "COMPLETION_VERBATIM" in content, (
-            "enforce-stop.ts must detect deferral patterns"
+        assert "SUBAGENT_TEXT_MARKERS" in content, (
+            "enforce-stop.ts must detect deferral/subagent-result patterns"
         )
 
     def test_has_question_tool_block(self):
@@ -127,22 +124,22 @@ class TestAgentFloorEnforcement:
             "AGENTS.md must list forbidden main-thread commands"
         )
 
-    def test_enforce_floor_defaults_to_10(self):
+    def test_enforce_floor_defaults_to_ten(self):
         content = ENFORCE_FLOOR.read_text()
         assert '"10"' in content, "enforce-floor.ts FLOOR must default to 10"
 
-    def test_enforce_delegate_defaults_to_10(self):
+    def test_enforce_delegate_defaults_to_ten(self):
         content = ENFORCE_DELEGATE.read_text()
         assert '"10"' in content, "enforce-delegate.ts FLOOR must default to 10"
 
-    def test_enforce_stop_defaults_to_10(self):
+    def test_enforce_stop_defaults_to_ten(self):
         content = ENFORCE_STOP.read_text()
         assert '"10"' in content, "enforce-stop.ts FLOOR must default to 10"
 
-    def test_settings_json_floor_is_10(self):
+    def test_settings_json_floor_is_five(self):
         settings = (ROOT / ".claude" / "settings.json").read_text()
-        assert '"CLAUDE_AGENT_FLOOR": "10"' in settings, (
-            ".claude/settings.json must set CLAUDE_AGENT_FLOOR to 10"
+        assert '"CLAUDE_AGENT_FLOOR": "5"' in settings, (
+            ".claude/settings.json must set CLAUDE_AGENT_FLOOR to 5"
         )
 
 

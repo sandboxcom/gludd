@@ -1,0 +1,65 @@
+---
+- name: Verify - gludd_make ran make targets and returned structured results
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Load persisted results
+      ansible.builtin.slurp:
+        src: "/tmp/gludd-test-make-results.json"
+      register: results_raw
+
+    - name: Parse results
+      ansible.builtin.set_fact:
+        results: "{{ results_raw.content | b64decode | from_json }}"
+
+    - name: Assert make hello succeeded
+      ansible.builtin.assert:
+        that:
+          - results.hello.success | bool
+          - results.hello.exit_code == 0
+          - results.hello.changed == false
+          - results.hello.failed == false
+          - results.hello.target == "hello"
+          - "'hello from molecule test_gludd_make' in results.hello.stdout_tail"
+        fail_msg: "make hello expected success: {{ results.hello }}"
+        success_msg: "make hello succeeded with expected stdout"
+
+    - name: Assert make versions succeeded
+      ansible.builtin.assert:
+        that:
+          - results.versions.success | bool
+          - results.versions.exit_code == 0
+          - "'make version:' in results.versions.stdout_tail"
+        fail_msg: "make versions expected success: {{ results.versions }}"
+        success_msg: "make versions succeeded with version output"
+
+    - name: Assert make bad failed (non-zero exit but not timed out)
+      ansible.builtin.assert:
+        that:
+          - results.bad.success == false
+          - results.bad.exit_code != 0
+          - results.bad.timed_out == false
+          - results.bad.failed == true
+        fail_msg: "make bad expected non-zero exit: {{ results.bad }}"
+        success_msg: "make bad correctly reported failure"
+
+    - name: Assert structured fields are present
+      ansible.builtin.assert:
+        that:
+          - results.hello.duration_s | float >= 0
+          - results.hello.stderr_tail is defined
+          - results.hello.phases is defined
+          - results.hello.timed_out == false
+          - results.hello.oom_killed == false
+          - results.hello.error is not defined
+        fail_msg: "make hello missing structured fields: {{ results.hello }}"
+        success_msg: "make hello returned all structured fields"
+
+    - name: Cleanup fixture files
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "/tmp/gludd-test-make-Makefile"
+        - "/tmp/gludd-test-make-results.json"

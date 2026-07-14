@@ -1,5 +1,7 @@
 """Stdlib-only MCP server wrapping the ornith binary via subprocess."""
 
+from __future__ import annotations
+
 import datetime
 import hashlib
 import json
@@ -8,6 +10,8 @@ import subprocess
 import sys
 from collections import OrderedDict
 from typing import Any
+
+from general_ludd.ornith.sandbox import ornith_sandbox_preexec
 
 _NOT_INSTALLED_ERROR = "ornith not installed (ORNITH_ENABLED not set)"
 
@@ -152,6 +156,7 @@ class OrnithMCPServer:
             capture_output=True,
             text=True,
             timeout=self._timeout_seconds,
+            preexec_fn=ornith_sandbox_preexec,
         )
 
         parsed: dict[str, Any]
@@ -208,7 +213,7 @@ def _jsonrpc_error(req_id: Any, code: int, message: str) -> str:
     )
 
 
-def _handle_request(server: "OrnithMCPServer", request: dict[str, Any]) -> str:
+def _handle_request(server: OrnithMCPServer, request: dict[str, Any]) -> str:
     req_id = request.get("id")
     method = request.get("method")
     params = request.get("params") or {}

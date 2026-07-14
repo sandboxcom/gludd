@@ -1,0 +1,13 @@
+---
+soap_handler_wsdl_url: ""
+soap_handler_operation_name: ""
+soap_handler_parameters: {}
+soap_handler_soap_version: "1.1"
+soap_handler_security_headers: ""
+soap_handler_raw_envelope: ""
+soap_handler_parse_mode: false
+soap_handler_soap_action: ""
+soap_handler_endpoint_url: ""
+soap_handler_namespace: ""
+soap_handler_output_file: "/tmp/gludd-xml/soap_handler/output.json"
+soap_handler_python: "{{ ansible_python_interpreter | default('/usr/bin/env python3') }}"

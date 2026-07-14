@@ -18,6 +18,7 @@ The HTTP transport is a simple callable injected via ``config["transport"]``.
 It is called as ``transport(method, path, query, base_url, timeout)`` and must
 return a ``_DockerResponse`` (``.status``, ``.headers``, ``.body`` bytes). A default
 transport built on the stdlib is provided for real use; tests inject a fake.
+
 """
 
 from __future__ import annotations

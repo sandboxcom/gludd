@@ -132,7 +132,8 @@ class GrafanaOnCallSource:
         try:
             token = self._token()
         except _MissingToken as exc:
-            return {"ok": False, "detail": str(exc)}
+            logger.warning("grafana_oncall missing token", exc_info=True)
+            return {"ok": False, "detail": type(exc).__name__}
         try:
             with self._client() as client:
                 resp = client.get(

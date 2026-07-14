@@ -2,7 +2,180 @@
 
 All notable changes to this project are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/); this project adheres to semantic versioning.
 
-## [0.1.0-beta.3] — 2026-07-10
+## [Unreleased]
+
+### Added
+- L.3 SearX model gateway wiring: SearxModelDiscoverer bridges SearXModelSearch→ModelGateway with TTL cache + fallback
+- 66 new notification dispatcher unit tests
+- POST /admin/models/discover-searx endpoint for on-demand model refresh
+- Crash recovery improvements: session.idle dead code removal, stale state cleanup
+
+### Fixed
+- OpenCode 1.17.9 session.idle crash vector removed from enforce-make.ts
+- manifest_signing import fixed (manifest_signer) — collection error resolved
+- BUGS.md stale (in_progress) tag cleaned up
+
+### Changed
+- README status table refreshed for v0.1.0-beta.4
+- SESSION.md archived (722→129 lines), old sessions moved to docs/archive/
+- Presentation deck updated with current metrics (38,207 tests, 111 roles)
+
+## [0.1.0-beta.4] — 2026-07-14 — Session 29-33: enforcement plugin Node v26 compat fixes, hot-reload proxy hardening, e2e test surge, opencode 1.17.9 compat
+
+### Session 29 (2026-07-13) — Enforcement Plugin Node v26 Compatibility + E2E Test Surge
+
+**Hot-reload proxy hardening (all 14 plugins):**
+- All 14 enforcement plugins converted to hot-reload proxy pattern — 13/13 hot modules built and deployed via `make hot-reload-plugins`
+- enforce-clean-tree.ts: `execSync` fix (`import { execSync }` instead of `require('child_process').execSync`) + proxy conversion to hot-reload (a68de353)
+- enforce-stop.ts: deduplication refactor using shared.ts helpers, removing 185 lines of redundant logic (ad2f32fb)
+- build_hot_modules.js: extraction fix — hot module build script corrected to properly extract and wrap all 14 plugin exports
+- Zero `require()` anti-pattern calls in all plugin files — `make check-node-v26-compat` passes 2/2 (plugin files + hot modules)
+
+**Enforcement e2e test surge:**
+- 204 enforcement e2e tests across 12 test files covering: floor, delegate, stop, deadline, no-wait, session-start, clean-tree, verified-claims, no-suppressions, enhancement-ratio, deletion-gate, and watchdog plugins
+- Functional hook runtime tests expanded — actual plugin hooks invoked via `node -e` with constructed arguments
+
+**Opencode 1.17.9 compatibility (29fe19f0):**
+- Moved shared.ts and hot_reload.ts from `.opencode/plugin/` to `.opencode/lib/` — opencode 1.17.9 no longer treats `.opencode/plugin/` directories as auto-registered plugins
+- Removed `event:` and `session.idle:` hooks from all 14 enforcement plugins — these hook types were dropped in 1.17.9
+- Fixed async export pattern: `async function name() { ... }` replaced with `const name = async () => { ... }` to prevent parse errors under `--experimental-strip-types`
+- Updated all plugin imports from `./shared.ts` → `../lib/shared.ts` (14 files touched, 48 insertions, 101 deletions)
+
+**Fixes:**
+- Ratchet conftest hook (E.5): conftest.py hook recalculates ratchet baseline after plugin edits, preventing stale-gate false negatives
+- Watchdog `env_disable` flake fix: `GLUDD_WATCHDOG_ENABLE=0` now reliably suppresses watchdog restart instead of racing with the daemon start
+
+### Session 25 (2026-07-12) — Enforcement Infrastructure + 4 Collections + Phase S/H/C/D/E/AG Fixes
+
+**Enforcement Infrastructure:**
+- All 10 enforcement plugins converted from advisory to BLOCKING
+- Plugin hot-reload proxy pattern — enforcement code changes take effect via `make hot-reload-plugins`
+- Functional hook test harness: 85 runtime tests across 8+ plugins (test_hook_runtime.py)
+- enforce-make.ts: now blocks non-make bash commands + metacharacters with permissionDecision:deny
+- enforce-deadline.ts: now blocks tasks exceeding timeout (was console.warn only)
+- enforce-enhancement-ratio.ts: now blocks fix-only dispatch waves (was advisory)
+- GLUDD_FLOOR_ENFORCE env var escape hatch added to enforce-floor.ts
+- text.complete dedup across 6 competing plugins
+- _isSubagent() infinite recursion fixed in all 14 plugins
+- OPENCODE_SUBAGENT file-based fallback detection added
+- verify-plugin-manifest: now detects _isSubagent recursion bugs (62 checks)
+- verify-enforcement: confirms all 10 plugins BLOCKING
+- CI pipeline discipline: ci-safe-push, ci-busy-check, deploy-and-forget
+- Subagent floor raised 7→10 in all enforcement config
+
+**New Tooling:**
+- coverage-gaps checker: codified audit scanning 570 modules (make check-coverage-gaps)
+- TDD compliance guardrail: pre-commit check for test coverage on modified source files
+- TDD allowlist config: documented exemptions
+- Disk discipline: cleanup target (497MB freed), log rotation in watchdog, pre-commit disk check
+- reload-enforcement / disengage-enforcement / rearm-enforcement / enforcement-status targets
+- e2e enforcement chain test: 30 tests verifying full multi-plugin hook chain
+
+**Collections Created:**
+- general_ludd.xml (9 roles): xml_core, xsd_generator, xslt_transformer, html_processor, soap_handler, saml_processor, docbook_converter, gradle_parser, plist_parser
+- general_ludd.web (6 roles): html_css_core, javascript_debug, design_research, framework_integration, ux_engineering, design_system
+- general_ludd.web_server (8 roles): http_server, ssl_config, cgi_wsgi, logging_middleware, reverse_proxy, forward_proxy, load_balancer, security_hardening
+- log_prompt_evaluator role: analyze agent prompts + CoT, score quality, recommend improvements
+
+**Fixes Applied (34 items across 6 phases):**
+- Phase S: S.5 details NOT NULL, S.6 task_type substring, S.9 applier bypass, S.10 integrity path, S.11 validation cwd, S.12 bunx pin, S.13 DB FK, S.14 daemon sleep async, S.15 dispatch sentinel, S.16 run_until_complete, S.17 migration batch, S.18 unused deps
+- Phase H: H.3 readyz, H.4 langgraph-auditor, H.5 humangate checkpointer, H.6 langgraph-factory, H.9 MCP stopall, H.10 uvx pin, H.13 Ornith sandbox, H.14 priority bound, H.19 stream CMDI
+- Phase C: C.5 integrity store, C.17 git-automation, C.19 cross-tenant traces, C.21 alpha4 leftovers, C.24 daemon network defaults, C.26 async-lifecycle
+- Phase D: D.7.1 pause-resume, D.10 file-claim livelock
+- Phase E: E.4 noqa guardrail 3-layer, E.10 DB session across dispatch
+- Phase AG: AG.1 eval framework design doc, AG.2 lifecycle hook expansion design, AG.6 formal agent role metadata
+
+**Documentation:**
+- docs/XML_COLLECTION.md (975 lines)
+- docs/WEB_COLLECTION.md (1442 lines)
+- docs/WEB_SERVER_COLLECTION.md (1066 lines)
+- docs/LOG_PROMPT_EVALUATOR.md (260 lines)
+- docs/AGENT_EVALUATION_FRAMEWORK.md
+- docs/LIFECYCLE_HOOK_EXPANSION.md
+- AGENTS.md: self-test quality rule, plugin tuning, subagent isolation, disk discipline, priority stacking reinforcement, TDD compliance guardrail
+
+---
+
+### Collections (Session 25)
+
+- **XML Collection** (`general_ludd.xml`) — 9 Ansible roles for XML/HTML/SOAP/SAML/DocBook/DITA/Gradle/plist/XSD/XSLT processing. Shared `xml_utils.py` module (16 functions: parse, validate, transform, query, diff, canonicalize, schema-generate, namespace-resolve, entity-escape, pretty-print, merge, split, extract, xinclude-resolve, xpointer-eval, catalog-resolve). `docs/XML_COLLECTION.md` (975 lines). 47 unit tests.
+- **Web Design Collection** (`general_ludd.web`) — 6 Ansible roles: `html_css_core` (HTML5/CSS3/responsive), `javascript_debug` (JS debugging/error handling/bundle analysis), `design_research` (extract colors/fonts/spacing/layout from websites), `framework_integration` (React/Next.js/HTMX/GraphQL/REST), `ux_engineering` (WCAG accessibility, Nielsen usability, z-axis stacking), `design_system` (spacing/color/typography tokens). Shared `web_utils.py` module (25 functions). `docs/WEB_COLLECTION.md` (1442 lines). 76 unit tests.
+- **Web Server Collection** (`general_ludd.web_server`) — 8 Ansible roles: `http_server`, `ssl_config`, `cgi_wsgi`, `logging_middleware`, `reverse_proxy`, `forward_proxy`, `load_balancer`, `security_hardening`. Shared `web_server_utils.py` module. `docs/WEB_SERVER_COLLECTION.md`.
+
+### Enforcement (Waves 10-12)
+
+- **All 10 enforcement plugins now BLOCKING** — enforce-deadline and enforce-enhancement-ratio converted from advisory to blocking; zero advisory-only plugins remain.
+- **Hot-reload proxy pattern** — all 13 plugins (enforce-floor, enforce-multitask, enforce-delegate, enforce-stop, enforce-deadline, enforce-enhancement-ratio, enforce-no-suppressions, enforce-no-wait, enforce-deletion-gate, enforce-session-start, enforce-clean-tree, enforce-verified-claims, watchdog) support hot-reload via `/tmp/gludd-hot-*.js` proxy files. `make hot-reload-plugins` target builds and deploys without opencode restart.
+- **Functional hook test harness** — `scripts/test_hook_runtime.py` invokes actual plugin hooks via `node -e` with constructed arguments (68 runtime tests across 8 plugins).
+- **Enforcement management targets** — `make reload-enforcement`, `make disengage-enforcement`, `make enforcement-status`, `make check-enhancement-ratio`.
+- **CI pipeline discipline** — `make ci-safe-push` (cooldown-gated push), `make deploy-and-forget` (push + record timestamp), `make ci-busy-check` (detect in-flight CI runs before push).
+
+### Phases (C, D, H, S)
+
+- **Phase H**: H.3 readyz endpoint, H.4 langgraph-auditor, H.5 humangate checkpointer (12 tests), H.6 langgraph-factory role (41 tests)
+- **Phase C**: C.5 integrity store daemon wiring, C.17 git-automation, C.19 cross-tenant isolation, C.21 alpha4 prep, C.26 async-lifecycle patterns
+- **Phase D**: D.7.1 pause-resume persistence (34 tests), D.10 file-claim integration
+- **Phase S**: S.5-S.12 (6 fixes, 118+ new tests)
+- **Phase AG** (research): 16 items from Amazon Strands, CrewAI, AutoGen, LangGraph gap analysis added to TASKS.md
+
+### E2E / Game
+
+- Z.1-Z.7 game gap fixes: CRITICAL daemon pipeline fixed, game_over flag resolved
+
+### Documentation
+
+- `docs/XML_COLLECTION.md`, `docs/WEB_COLLECTION.md`, `docs/WEB_SERVER_COLLECTION.md`
+- README.md restructured with 4 collection sub-sections (`agent`, `security`, `business`, `networking`, `xml`, `web`, `web_server`)
+- SESSION.md and CHANGELOG.md updated for session 25 closure
+
+### Documentation
+- **Collection split documentation** — FQCN references updated across all docs to reflect domain-based collection split: security roles moved from `general_ludd.agent.*` to `general_ludd.security.*`. README restructured with 4 collection sub-sections (`agent`, `security`, `business`, `networking`).
+- **SSL Certificate Management System** — comprehensive reference doc covering architecture, Ansible roles (`ssl_cert`, `hsm_operations`), Python module APIs (`certificate.py`, `asn1.py`, `algorithms.py`, `hsm.py`, `compliance.py`, `pin.py`), 6-standard compliance matrix, and security considerations. `docs/SSL_CERT_SYSTEM.md`.
+- **Security Roles reference** — `docs/SECURITY_ROLES.md`: overview of all 6 security roles (`ssl_cert`, `hsm_operations`, `audit_framework`, `sql_injection`, `command_injection`, `prompt_injection`), interoperability matrix, SearX integration for framework updates, tool awareness matrix, and sample audit flow for web app security assessment.
+- **Networking System** — `docs/NETWORKING_SYSTEM.md`: 7-mode networking role (`general_ludd.networking.networking`), ScapyAdapter Python API, Wireshark Lua dissector templates, tool awareness matrix (tshark, nmap, tcpdump, zeek, hping3, etc.), and packet analysis + dissector creation workflow examples.
+- **Business Research System** — `docs/BUSINESS_RESEARCH_SYSTEM.md`: entity research role (`general_ludd.business.entity_research`), 6 research capabilities (discovery, associations, assets, exposure, risks, demographics), SearX continuous monitoring, and entity graph visualization via DOT export.
+- **XML Collection** — `docs/XML_COLLECTION.md`: added `general_ludd.xml` collection with 9 roles for XML/HTML/SOAP/SAML/DocBook/DITA/Gradle/plist/XSD/XSLT processing, `xml_utils.py` shared Python module (16 functions), and full reference doc (975 lines).
+- **Web Design Collection** — Added `general_ludd.web` collection with 6 roles for web page design: `html_css_core` (HTML5/CSS3/responsive), `javascript_debug` (JS debugging/error handling/bundle analysis), `design_research` (extract colors/fonts/spacing/layout from websites), `framework_integration` (React/Next.js/HTMX/GraphQL/REST), `ux_engineering` (WCAG accessibility, Nielsen usability, z-axis stacking), `design_system` (spacing/color/typography tokens). Includes `web_utils.py` shared module and `docs/WEB_COLLECTION.md`.
+- **Web Server Collection** — Added `general_ludd.web_server` collection with 8 roles: `http_server`, `ssl_config`, `cgi_wsgi`, `logging_middleware`, `reverse_proxy`, `forward_proxy`, `load_balancer`, `security_hardening`. Includes `web_server_utils.py` shared module and `docs/WEB_SERVER_COLLECTION.md`.
+
+### Security Hardening (Phase H)
+- **H.7** — Project overlay deny-list: field-level blocklist prevents untrusted project config from overriding critical fields (connectors, database.url, budget, issues, self_improve gates). 70 tests.
+- **H.15** — MCP startup orphan cleanup: partial multi-server MCP startup failure now cleans up already-spawned subprocesses instead of orphaning them. 10 tests.
+- **H.8** — Memory cross-project bleed fix: `MemoryRecordModel` gained project_id isolation with migration 030. 32 tests.
+- **H.16** — SSRF numeric IP: decimal/octal/hex IP literal encodings no longer bypass `host_is_blocked`. 28 tests.
+- **H.17** — Signing verification: self-update + hot-reload now require cryptographic signature verification. (fc776d8f)
+- **H.23** — Gateway credential leak: raw provider-exception text now redacted from admin-visible facets and replay records. 11 tests.
+- **MCP argv validation extended** to python/node launchers. (fc776d8f)
+
+### Features (Phase D)
+- **D.2** — `run_project_gate` wired into review/reconcile path for external projects. 24 tests.
+- **D.4** — DAST driver + findings parser (ZAP-baseline wrapper). 97 tests. (fbbeec19)
+- **D.12** — Slack connector: outbound notifications + channel history read, SSRF-guarded. (0cccee7f)
+- **D.14** — Background test runner exposed via `make` target + CLI subcommand. (0a07421d)
+- **D.15** — Pricing sources static→live: CachedSource with TTL cache + static fallback. (651dfc33)
+- **D.22** — task_splitter Ansible role for analyzing complex tasks and recommending parallel subtask decomposition.
+
+### Quality/Coverage (Phase E)
+- **E.8** — Router HTTP layer tests: 202 endpoint-level tests across 9 routers previously only covered by registration smoke tests.
+- **E.2** — E2E audit closure: 150 new e2e tests (50 auth + 19 sts + 39 adversarial_detector + 28 dispatcher + 14 ipc).
+- **E.3** — Lint/type config gaps closed: mypy covers tests/, .pre-commit-config.yaml added.
+- **E.7** — Zero-test modules: 49 tests for previously-untested modules (cli_payment, self_update/router, renderers/cache, event_loop/benchmark, renderers/executor).
+
+### Enforcement (Waves 24-27)
+- 11 enforcement plugin subagent-awareness fix: all plugins now skip injection when `OPENCODE_SUBAGENT=1`. (a04b5046)
+- enforce-multitask dispatch-count blocking: structurally blocks under-dispatched waves.
+- enforce-delegate threshold tightened 4→2.
+- Plugin test coverage surge: 101 floor + 52 deletion-gate + 60 delegate + 38 deadline + 19 task-ledger tests.
+- enforce-enhancement-ratio.ts: machine-enforced ≥50% enhancement per dispatch wave with 56 tests.
+
+### Enforcement (Waves 10-12)
+- Enforcement infrastructure hardened: all 10 enforcement plugins now BLOCKING (was 2 advisory-only). Functional hook test harness (68 runtime tests). Plugin hot-reload proxy pattern — enforcement code changes take effect without opencode restart via `make hot-reload-plugins`. CI pipeline discipline tooling (`make ci-safe-push`, `make deploy-and-forget`). Phase S fixes (S.5-S.12, 6 fixes, 118+ new tests).
+
+### Post-Ship (Phase S)
+- **S.1** — Registry seal + default_registry swap: registry sealed at construction, default_registry swapped atomically at daemon startup. 13 tests.
+- **S.5-S.12** — 6 enforcement + CI discipline fixes (118+ new tests).
+
+
 
 ### Architecture (beta.3 Phase B)
 - B3.1.1 IPC broker (Broker + WriteQueue) + B3.1.2 read-only engine factory

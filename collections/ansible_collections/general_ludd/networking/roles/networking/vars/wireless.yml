@@ -1,0 +1,459 @@
+---
+wifi:
+  standards:
+    - name: "802.11a"
+      year: 1999
+      max_rate: "54 Mbps"
+      freq_bands: [5 GHz]
+      modulation: OFDM
+      channel_width: "20 MHz"
+    - name: "802.11b"
+      year: 1999
+      max_rate: "11 Mbps"
+      freq_bands: [2.4 GHz]
+      modulation: DSSS / CCK
+      channel_width: "22 MHz"
+    - name: "802.11g"
+      year: 2003
+      max_rate: "54 Mbps"
+      freq_bands: [2.4 GHz]
+      modulation: OFDM / DSSS
+      channel_width: "20 MHz"
+    - name: "802.11n"
+      year: 2009
+      max_rate: "600 Mbps"
+      freq_bands: [2.4 GHz, 5 GHz]
+      modulation: OFDM + MIMO (up to 4 streams)
+      channel_width: "20/40 MHz"
+    - name: "802.11ac"
+      year: 2013
+      max_rate: "6.9 Gbps"
+      freq_bands: [5 GHz]
+      modulation: OFDM + MU-MIMO (up to 8 streams) + 256-QAM
+      channel_width: "20/40/80/160 MHz"
+    - name: "802.11ax"
+      year: 2019
+      max_rate: "9.6 Gbps"
+      freq_bands: [2.4 GHz, 5 GHz]
+      modulation: OFDMA + 1024-QAM + MU-MIMO + BSS Coloring
+      channel_width: "20/40/80/160 MHz"
+    - name: "802.11be"
+      year: 2024
+      max_rate: "46 Gbps"
+      freq_bands: [2.4 GHz, 5 GHz, 6 GHz]
+      modulation: OFDMA + 4096-QAM + 16x16 MU-MIMO + Multi-Link Operation
+      channel_width: "20/40/80/160/320 MHz"
+  security:
+    wpa2:
+      description: >
+        Wi-Fi Protected Access 2. AES-CCMP encryption with 802.1X
+        (Enterprise) or Pre-Shared Key (Personal). Vulnerable to
+        KRACK (key reinstallation attacks) on 4-way handshake.
+        PMKID hash brute-forceable if RSN IE leaks.
+      encryption: AES-CCMP (mandatory), TKIP (legacy fallback)
+      auth_method: "802.1X/EAP (Enterprise), PSK (Personal)"
+    wpa3:
+      description: >
+        WPA3-Personal uses SAE (Simultaneous Authentication of Equals)
+        dragonfly handshake — resists offline dictionary attacks.
+        WPA3-Enterprise requires 192-bit CNSA Suite B. Protected
+        Management Frames (PMF) mandatory. Forward secrecy by default.
+      encryption: GCMP-256 (Enterprise), AES-CCMP-128 (Personal)
+      auth_method: "SAE (Personal), EAP-TLS/PEAP/TTLS + 192-bit (Enterprise)"
+  eap:
+    - name: EAP-TLS
+      description: Mutual certificate-based authentication. Gold standard for WPA2/3 Enterprise.
+    - name: PEAP
+      description: Protected EAP — TLS tunnel with inner MSCHAPv2 or EAP-GTC. Server-side cert only by default.
+    - name: EAP-TTLS
+      description: Tunneled TLS — server cert authenticates tunnel; any inner method (PAP, CHAP, MSCHAPv2) passes.
+    - name: EAP-FAST
+      description: Flexible Authentication via Secure Tunneling. PAC-based or server-certificate authenticated.
+    - name: EAP-SIM
+      description: GSM SIM-based authentication. Used by mobile carriers for Wi-Fi offloading.
+    - name: EAP-AKA
+      description: UMTS/USIM authentication. Enhanced variant of EAP-SIM for 3G/4G.
+    - name: EAP-PWD
+      description: Password-only EAP using dragonfly key exchange. Alternative to PEAP without PKI dependency.
+  radius:
+    description: >
+      Remote Authentication Dial-In User Service. AAA protocol
+      (Authentication, Authorization, Accounting) using UDP. RADIUS
+      server (port 1812 auth, 1813 acct) behind the AP/WLC forwards
+      802.1X EAP messages via RADIUS Access-Request/Accept/Reject.
+      Supports framed routes, VLAN assignment, and CoA (Change of
+      Authorization, RFC 5176).
+    ports:
+      authentication: 1812
+      accounting: 1813
+    protocol: UDP (RFC 2865/2866)
+
+bluetooth:
+  classic:
+    versions:
+      - version: "1.0/1.1"
+        rate: "721 kbps"
+        range: "10m"
+      - version: "2.0/2.1 +EDR"
+        rate: "3 Mbps"
+        range: "10m (up to 100m Class 1)"
+      - version: "3.0 +HS"
+        rate: "24 Mbps (via 802.11 AMP)"
+        range: "10m"
+  ble:
+    versions:
+      - version: "4.0"
+        features: Low Energy (BLE), 1 Mbps, GATT profiles
+      - version: "4.2"
+        features: LE Secure Connections, Data Length Extension, IPv6/6LoWPAN
+      - version: "5.0"
+        features: 2x speed (2 Mbps), 4x range, 8x advertising capacity, LE Long Range (Coded PHY)
+      - version: "5.1"
+        features: Direction Finding (AoA/AoD), GATT caching
+      - version: "5.2"
+        features: LE Audio, Isochronous Channels, LE Power Control, EATT
+      - version: "5.3"
+        features: Connection Subrating, Channel Classification, Periodic Advertising Enhancement
+      - version: "5.4"
+        features: Periodic Advertising with Responses (PAwR), Encrypted Advertising Data, LE GATT Security Levels
+  profiles:
+    - acronym: GAP
+      description: Generic Access Profile — device discovery, connection, security modes
+    - acronym: GATT
+      description: Generic Attribute Profile — service/characteristic hierarchy for BLE data exchange
+    - acronym: A2DP
+      description: Advanced Audio Distribution Profile — stereo audio streaming
+    - acronym: HFP
+      description: Hands-Free Profile — in-car calling, voice recognition
+    - acronym: HID
+      description: Human Interface Device — keyboards, mice, game controllers
+    - acronym: SPP
+      description: Serial Port Profile — RS-232 emulation over Bluetooth
+    - acronym: AVRCP
+      description: Audio/Video Remote Control Profile — media playback control
+    - acronym: PAN
+      description: Personal Area Networking Profile — IP networking over Bluetooth
+    - acronym: FTP
+      description: File Transfer Profile — browse/transfer files on remote device
+    - acronym: BIP
+      description: Basic Imaging Profile — image push/pull
+  pairing:
+    methods:
+      - name: Just Works
+        description: No MITM protection; numeric comparison bypassed. Used when one device lacks display/input.
+      - name: Numeric Comparison
+        description: Both devices display a 6-digit number; user confirms match. MITM protected.
+      - name: Passkey Entry
+        description: User enters a 6-digit PIN on one device displayed by the other. MITM protected.
+      - name: Out of Band (OOB)
+        description: Pairing data exchanged via NFC or other non-Bluetooth channel. MITM protected.
+  security:
+    modes:
+      - "Security Mode 1 (non-secure)"
+      - "Security Mode 2 (service-level enforced)"
+      - "Security Mode 3 (link-level enforced)"
+      - "Security Mode 4 (SSP — Secure Simple Pairing, post-2.1)"
+
+aredn:
+  description: >
+    Amateur Radio Emergency Data Network. Mesh networking on amateur
+    radio frequencies (typically 2.4/5.8 GHz Part 97 in US). Uses OLSR
+    (Optimized Link State Routing) mesh protocol. Nodes auto-discover
+    peers and relay traffic. Provides VoIP, video, file sharing, and
+    services over RF mesh. Firmware based on OpenWrt.
+  frequencies:
+    - 2390-2450 MHz (13 cm band)
+    - 5650-5925 MHz (5 cm band)
+    - 3300-3500 MHz (9 cm band, region-dependent)
+    - 902-928 MHz (33 cm band, US only)
+  modes:
+    - Mesh (auto-peering OLSR)
+    - DtD (Direct Link, non-mesh PtP)
+    - LAN AP (local Wi-Fi access for users)
+  topology: Ad-hoc mesh with ETX metric; automatic route failover
+  hardware:
+    - Ubiquiti (Rocket, NanoStation, Bullet, PowerBeam)
+    - MikroTik (BaseBox, NetMetal, RBMetal, LDF)
+    - TP-Link CPE series
+    - GL.iNet travel routers (some models)
+
+lora:
+  description: >
+    Long Range — spread-spectrum modulation for low-power wide-area
+    networks (LPWAN). Chirp Spread Spectrum (CSS) with coding rates
+    4/5 to 4/8. Range up to 15 km rural, 2-5 km urban. Low data rates
+    (0.3-50 kbps) but excellent link budget (~168 dB). ISM band
+    operation; no license required.
+  classes:
+    A:
+      description: >
+        Baseline. Two short downlink windows after each uplink
+        (RX1, RX2). Lowest power; highest battery life. Required
+        by all LoRaWAN devices.
+    B:
+      description: >
+        Adds scheduled ping slots for downlink. Synchronized to
+        network beacons. Better downlink latency than Class A.
+        Moderate battery life increase.
+    C:
+      description: >
+        Continuous listening except when transmitting. Maximum
+        downlink capacity, but always-powered. Gateways, actuators,
+        mains-powered sensors.
+  frequencies:
+    regional:
+      - region: EU868
+        frequencies: "863-870 MHz"
+        duty_cycle: 1% (sub-band) or 0.1% (overall)
+      - region: US915
+        frequencies: "902-928 MHz"
+        duty_cycle: No limit (FHSS)
+      - region: AU915
+        frequencies: "915-928 MHz"
+        duty_cycle: No limit
+      - region: AS923
+        frequencies: "923 MHz (Asia)"
+        duty_cycle: Varies by country
+      - region: IN865
+        frequencies: "865-867 MHz (India)"
+        duty_cycle: No limit DSSS
+      - region: CN470
+        frequencies: "470-510 MHz (China)"
+        duty_cycle: Varies
+  spreading_factors:
+    - SF7 (highest data rate, shortest range)
+    - SF8
+    - SF9
+    - SF10
+    - SF11
+    - SF12 (lowest data rate, longest range, best sensitivity)
+  lora_wan:
+    architecture:
+      layers:
+        - "End Devices (sensors, actuators)"
+        - "Gateways (LoRa→IP bridge, typically 8-channel)"
+        - "Network Server (deduplication, MAC layer, ADR)"
+        - "Join Server (over-the-air activation, root key)"
+        - "Application Server (payload decryption, data processing)"
+    device_classes:
+      - "OTAA (Over-The-Air Activation) — recommended, uses DevEUI + AppKey + JoinEUI"
+      - "ABP (Activation By Personalization) — no join, static session keys; less secure"
+
+zigbee:
+  description: >
+    IEEE 802.15.4-based mesh protocol for low-power, low-data-rate
+    IoT. Operates in 2.4 GHz globally (also 868/915 MHz regionally).
+    250 kbps at 2.4 GHz. Mesh topology with up to 65,000 nodes per
+    network. Zigbee Alliance (now CSA — Connectivity Standards Alliance).
+  versions:
+    - "Zigbee 2004 (obsolete)"
+    - "Zigbee 2006 (obsolete)"
+    - "Zigbee 2007 / Zigbee PRO"
+    - "Zigbee 3.0 (unified application profiles, 2016)"
+    - "Zigbee PRO 2023 (security enhancements, sub-GHz EU/US support)"
+  topologies:
+    - Star (Coordinator + End Devices)
+    - Mesh (Coordinator + Routers + End Devices)
+    - Cluster Tree
+  profiles:
+    - "ZHA (Zigbee Home Automation)"
+    - "ZLL (Zigbee Light Link)"
+    - "ZBA (Zigbee Building Automation)"
+    - "ZSE (Zigbee Smart Energy)"
+    - "ZHC (Zigbee Health Care)"
+    - "ZRS (Zigbee Retail Services)"
+  security:
+    - Network Key (AES-128-CCM, shared across network)
+    - Link Key (per-device, AES-128-CCM)
+    - Trust Center (ZC distributes keys, manages joins)
+    - Install Code (pre-shared 16-byte code + CRC, Zigbee 3.0)
+    - Centralized vs. Distributed security model
+
+z_wave:
+  description: >
+    Sub-GHz mesh protocol for home automation. Operates at region-
+    specific frequencies below 1 GHz (no Wi-Fi/Bluetooth interference).
+    9.6-100 kbps data rate. Up to 232 nodes per network. Source-routed
+    mesh with up to 4 hops. ITU-T G.9959 standard.
+  frequencies:
+    - "US: 908.42 MHz"
+    - "EU: 868.42 MHz"
+    - "AU/NZ: 921.42 MHz"
+    - "HK: 919.82 MHz"
+    - "IN: 865.2 MHz"
+    - "JP: 922-926 MHz"
+    - "RU: 869.0 MHz"
+  topology: Source-routed mesh (Controller maintains topology map)
+  device_classes:
+    - Controllers (Primary/Secondary)
+    - Slaves (routing and non-routing)
+  security:
+    S0:
+      description: Original Z-Wave security. AES-128-OFB with 3-byte MAC. Vulnerable to downgrade during pairing.
+    S2:
+      description: >
+        Z-Wave Plus v2 security. ECDH key exchange. Three classes:
+        S2 Unauthenticated (sensors), S2 Authenticated (locks),
+        S2 Access Control (garage doors). DSK PIN pairing.
+
+thread:
+  description: >
+    IPv6-based mesh networking protocol built on IEEE 802.15.4 and
+    6LoWPAN. Designed for IoT — low power, reliable, self-healing.
+    Each node has a routable IPv6 address. No single point of failure:
+    any Router can become the Leader. AES-128 encryption mandatory.
+    Developed by Thread Group (Google/Nest, Samsung, ARM, etc.).
+  layers:
+    - "IEEE 802.15.4 PHY/MAC"
+    - "6LoWPAN (IPv6 header compression, fragmentation)"
+    - "UDP (transport)"
+    - "CoAP (application, like HTTP for constrained devices)"
+  roles:
+    - End Device (ED) — sleepy, attaches to a single Router
+    - Router (REED — Router-Eligible End Device) — can promote to Router
+    - Router — forwards traffic, part of the mesh backbone
+    - Leader — single Router elected for network management (partitioning, router-ID)
+    - Border Router — connects Thread mesh to Wi-Fi/Ethernet (internet gateway)
+  security:
+    - Network-wide pre-shared key (commissioning credential)
+    - DTLS for commissioner-to-joiner
+    - AES-128-CCM for all mesh links
+    - Certificate-based commissioning (Thread 1.2+)
+  border_router:
+    - Bridges Thread mesh to external IP network
+    - Advertises Thread network prefix via DHCPv6-PD
+    - Required for Matter over Thread operation
+    - Multiple border routers for redundancy
+
+matter:
+  description: >
+    IP-based smart home connectivity standard from CSA. Unified
+    application layer over Thread, Wi-Fi, and Ethernet. Formerly
+    Project CHIP (Connected Home over IP). Uses IPv6 exclusively.
+    Multi-admin: devices can join multiple ecosystems (Apple Home,
+    Google Home, Amazon Alexa) simultaneously.
+  layers:
+    - "Transport: TCP/UDP over IPv6"
+    - "Secure Channel: CASES (Certificate-Authenticated Session Establishment)"
+    - "Interaction Model: Read, Write, Subscribe, Invoke"
+    - "Data Model: Clusters (standardized device capabilities)"
+  device_types:
+    - "Lights (on/off, dimmable, color)"
+    - "Locks (door, deadbolt)"
+    - "Sensors (contact, motion, temperature, humidity, occupancy)"
+    - "Thermostats and HVAC"
+    - "Blinds and window coverings"
+    - "TVs and media players"
+    - "Bridges (for non-Matter devices)"
+    - "Controllers (app / hub that manages Matter fabric)"
+  commissioning:
+    - Manual pairing code (11-digit + check digit, printed on device)
+    - QR code scan (standard Matter QR)
+    - NFC tap
+    - BLE for initial onboarding (Wi-Fi credentials, Thread network key)
+  security:
+    - DAC (Device Attestation Certificate) — factory-provisioned, verifies authenticity
+    - PASE (Passcode-Authenticated Session Establishment) for commissioning
+    - CASE (Certificate-Authenticated Session Establishment) for operational
+    - Group keys for multicast messages
+    - AES-CCM (128-bit) for all data frames
+
+cellular:
+  lte:
+    categories:
+      - cat: CAT-1
+        downlink: "10 Mbps"
+        uplink: "5 Mbps"
+        description: Basic LTE; IoT baseline
+      - cat: CAT-M1 (eMTC)
+        downlink: "1 Mbps"
+        uplink: "1 Mbps"
+        description: LTE for IoT; voice support (VoLTE), mobility, 1.4 MHz BW
+      - cat: CAT-NB1 (NB-IoT)
+        downlink: "~127 kbps"
+        uplink: "~159 kbps"
+        description: Narrowband IoT; 180 kHz BW; deep indoor penetration; no mobility
+      - cat: CAT-4
+        downlink: "150 Mbps"
+        uplink: "50 Mbps"
+        description: Consumer MBB baseline
+      - cat: CAT-6
+        downlink: "300 Mbps"
+        uplink: "50 Mbps"
+        description: Carrier aggregation (2x20 MHz)
+      - cat: CAT-12
+        downlink: "600 Mbps"
+        uplink: "100 Mbps"
+        description: 3x CA, 256-QAM
+      - cat: CAT-18
+        downlink: "1.2 Gbps"
+        uplink: "150 Mbps"
+        description: 5x CA, 256-QAM, 4x4 MIMO
+  nr:
+    description: >
+      5G New Radio — OFDM-based air interface. FR1 (sub-6 GHz,
+      410 MHz - 7.125 GHz) and FR2 (mmWave, 24.25 - 52.6 GHz).
+      Flexible numerology: 15/30/60/120/240 kHz subcarrier spacing.
+      Massive MIMO (64T64R+), beamforming, network slicing.
+    bands:
+      - band: n1
+        frequency: "2100 MHz FDD"
+        region: Global (refarmed 3G)
+      - band: n3
+        frequency: "1800 MHz FDD"
+        region: Global (refarmed LTE)
+      - band: n28
+        frequency: "700 MHz FDD"
+        region: APAC, EMEA (long range)
+      - band: n41
+        frequency: "2500 MHz TDD"
+        region: Global (Sprint/China Mobile)
+      - band: n77
+        frequency: "3300-4200 MHz TDD"
+        region: C-Band, global
+      - band: n78
+        frequency: "3300-3800 MHz TDD"
+        region: C-Band, EU/Asia/AU
+      - band: n79
+        frequency: "4400-5000 MHz TDD"
+        region: Japan, China
+      - band: n257
+        frequency: "26.5-29.5 GHz TDD"
+        region: mmWave, US
+      - band: n258
+        frequency: "24.25-27.5 GHz TDD"
+        region: mmWave, EU/China
+      - band: n260
+        frequency: "37-40 GHz TDD"
+        region: mmWave, US
+      - band: n261
+        frequency: "27.5-28.35 GHz TDD"
+        region: mmWave, US (Verizon)
+    features:
+      - "eMBB (Enhanced Mobile Broadband) — multi-Gbps peak"
+      - "URLLC (Ultra Reliable Low Latency) — <1ms air interface"
+      - "mMTC (Massive Machine Type Communications) — 1M devices/km²"
+      - "Network Slicing — dedicated virtual networks per use case"
+      - "Service-Based Architecture (SBA) — cloud-native 5G Core"
+      - "CUPS (Control/User Plane Separation)"
+      - "Multi-Access Edge Computing (MEC)"
+      - "LAA/NR-U (unlicensed spectrum operation)"
+      - "Device-to-Device (sidelink, V2X)"
+  esim:
+    description: >
+      Embedded SIM (eUICC). GSMA SGP.02 (M2M) and SGP.22 (Consumer)
+      architectures. Remote SIM provisioning: download operator profiles
+      over-the-air. No physical SIM swap needed. MFF2 (SON-8) and
+      WLCSP form factors. Used in IoT, wearables, automotive.
+    spec: "GSMA SGP.22 v2.4 (Consumer), SGP.02 v4.2 (M2M)"
+  generations:
+    "1G":
+      description: Analog voice (AMPS, NMT, TACS). 1980s. No data.
+    "2G":
+      description: Digital voice (GSM, CDMA). SMS. GPRS (2.5G) added packet data (~114 kbps). EDGE (2.75G) ~384 kbps.
+    "3G":
+      description: UMTS/HSPA. WCDMA. Data ~42 Mbps (DC-HSPA+). Video calling. CDMA2000/EV-DO. 2000s-2020s (sunsetting).
+    "4G":
+      description: LTE/LTE-A. All-IP. OFDM/MIMO. Up to 1 Gbps (LTE-A Pro). VoLTE. Current global baseline.
+    "5G":
+      description: NR. eMBB/URLLC/mMTC. Multi-Gbps. ~1ms latency. Network slicing. Standalone (SA) and Non-Standalone (NSA) modes.

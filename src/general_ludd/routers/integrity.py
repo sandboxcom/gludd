@@ -13,7 +13,7 @@ from general_ludd.integrity.scanner import (
     IntegrityKeyError,
     sign_change_openbao,
 )
-from general_ludd.security.sanitize import is_path_within
+from general_ludd.security.sanitize import confine_path_multi
 from general_ludd.validation.gap_analyzer import GapAnalyzer
 from general_ludd.validation.log_auditor import LogAuditor
 
@@ -40,6 +40,7 @@ def _scan_roots(app: FastAPI) -> list[str]:
 
     tmp = tempfile.gettempdir()
     roots = [
+        os.getcwd(),
         os.environ.get("GLUDD_WORKSPACE", ""),
         str(getattr(app.state, "_config_dir", "") or ""),
         os.path.expanduser("~/.config/gludd"),
@@ -55,17 +56,22 @@ def _scan_roots(app: FastAPI) -> list[str]:
 
 
 def _confine_scan_paths(app: FastAPI, paths: list[object]) -> list[str]:
-    """Validate each requested scan path lies inside an allowed root, else 422."""
+    """Validate each requested scan path lies inside an allowed root, else 422.
+
+    Returns the real (resolved) canonical path for each accepted candidate so
+    callers cannot bypass confinement via symlink swaps (TOCTOU).
+    """
     roots = _scan_roots(app)
     confined: list[str] = []
     for raw in paths:
         p = str(raw)
-        if not any(is_path_within(p, root) for root in roots):
+        resolved = confine_path_multi(p, roots)
+        if resolved is None:
             raise HTTPException(
                 status_code=422,
                 detail=f"scan path escapes the allowed roots: {p!r}",
             )
-        confined.append(p)
+        confined.append(resolved)
     return confined
 
 
@@ -292,7 +298,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             (repo_root,) = _confine_scan_paths(app, [raw_root])
         else:
             roots = _scan_roots(app)
-            repo_root = roots[0] if roots else "."
+            repo_root = roots[0] if roots else os.getcwd()
         analyzer = GapAnalyzer()
         report = analyzer.analyze(sprint_path=sprint_path, repo_root=repo_root)
         return {

@@ -1,0 +1,161 @@
+---
+# Algorithm security tasks
+# Evaluate algorithms against security standards, compare algorithms,
+# recommend minimum key sizes for security levels, flag deprecated algorithms.
+# Algorithm data lives in vars/algorithms.yml (included at role scope).
+
+- name: Load algorithm security data
+  ansible.builtin.include_vars:
+    file: algorithms.yml
+    name: _ssl_algorithms_data
+  tags: [algorithms, always]
+
+# ── Algorithm evaluation ──
+- name: Evaluate algorithm against security standards
+  ansible.builtin.set_fact:
+    _algo_group: >-
+      {%- if ssl_cert_key_type | default('RSA') == 'RSA' %}rsa
+      {%- elif ssl_cert_key_type | default('RSA') == 'ECDSA' %}ecdsa
+      {%- elif ssl_cert_key_type | default('RSA') == 'Ed25519' %}eddsa
+      {%- elif ssl_cert_key_type | default('RSA') == 'DSA' %}dsa
+      {%- else %}unknown{%- endif -%}
+    _algo_id: >-
+      {%- if ssl_cert_key_type | default('RSA') == 'RSA' %}rsa-{{ ssl_cert_key_size }}
+      {%- elif ssl_cert_key_type | default('RSA') == 'ECDSA' %}ecdsa-{{ ssl_cert_ec_curve | replace('secp', 'p') }}
+      {%- elif ssl_cert_key_type | default('RSA') == 'Ed25519' %}ed25519
+      {%- elif ssl_cert_key_type | default('RSA') == 'DSA' %}dsa-{{ ssl_cert_key_size }}
+      {%- else %}unknown{%- endif -%}
+  tags: [algorithms]
+
+- name: Lookup algorithm metadata
+  ansible.builtin.set_fact:
+    _algo_meta: >-
+      {{ _ssl_algorithms_data.algorithms[_algo_group][_algo_id]
+         | default({}) }}
+  tags: [algorithms]
+
+- name: Assert algorithm is not deprecated
+  ansible.builtin.assert:
+    that:
+      - _algo_meta.nist_status | default('unknown') not in ['deprecated', 'forbidden']
+    fail_msg: >-
+      Algorithm {{ _algo_id }} is DEPRECATED (nist_status: {{ _algo_meta.nist_status | default('unknown') }}).
+      Deprecation date: {{ _algo_meta.deprecation_date | default('N/A') }}.
+    success_msg: "Algorithm {{ _algo_id }} is approved (nist_status: {{ _algo_meta.nist_status }})"
+  when: _algo_meta | length > 0
+  tags: [algorithms]
+
+- name: Assert algorithm meets security level
+  ansible.builtin.assert:
+    that:
+      - (_algo_meta.security_bits | default(0) | int) >= (ssl_cert_security_level | int)
+    fail_msg: >-
+      Algorithm {{ _algo_id }} provides {{ _algo_meta.security_bits | default(0) }} bits
+      of security, below required {{ ssl_cert_security_level }} bits.
+    success_msg: "Algorithm {{ _algo_id }} provides {{ _algo_meta.security_bits }} security bits (required {{ ssl_cert_security_level }})"
+  when: _algo_meta | length > 0
+  tags: [algorithms]
+
+# ── Minimum key size recommendation ──
+- name: Recommend minimum key sizes for security level
+  ansible.builtin.set_fact:
+    min_key_recommendations:
+      rsa:
+        "80-bit": 1024
+        "112-bit": 2048
+        "128-bit": 3072
+        "192-bit": 7680
+        "256-bit": 15360
+      ecdsa:
+        "128-bit": "P-256"
+        "192-bit": "P-384"
+        "256-bit": "P-521"
+      eddsa:
+        "128-bit": "Ed25519"
+        "224-bit": "Ed448"
+      hashes:
+        "128-bit": "SHA-256"
+        "192-bit": "SHA-384"
+        "256-bit": "SHA-512"
+    current_requirements:
+      security_level: "{{ ssl_cert_security_level }}-bit"
+      recommended_rsa_size: >-
+        {{ 3072 if ssl_cert_security_level | int <= 128
+           else (7680 if ssl_cert_security_level | int <= 192
+           else 15360) }}
+      recommended_ec_curve: >-
+        {{ 'P-256' if ssl_cert_security_level | int <= 128
+           else ('P-384' if ssl_cert_security_level | int <= 192
+           else 'P-521') }}
+      recommended_hash: >-
+        {{ 'SHA-256' if ssl_cert_security_level | int <= 128
+           else ('SHA-384' if ssl_cert_security_level | int <= 192
+           else 'SHA-512') }}
+  tags: [algorithms]
+
+- name: Print key size recommendations
+  ansible.builtin.debug:
+    msg:
+      - "=== Key Size Recommendations ({{ ssl_cert_security_level }}-bit security) ==="
+      - "RSA: {{ current_requirements.recommended_rsa_size }} bits"
+      - "ECDSA: {{ current_requirements.recommended_ec_curve }}"
+      - "Hash: {{ current_requirements.recommended_hash }}"
+      - ""
+      - "=== Full Reference Table ==="
+      - "RSA: 80→1024, 128→3072, 192→7680, 256→15360"
+      - "ECDSA: 128→P-256, 192→P-384, 256→P-521"
+      - "EdDSA: 128→Ed25519, 224→Ed448"
+      - "Hash: 128→SHA-256, 192→SHA-384, 256→SHA-512"
+  tags: [algorithms, debug]
+
+# ── Compare two algorithms ──
+- name: Compare two algorithms
+  ansible.builtin.set_fact:
+    algo_comparison:
+      algorithm_a:
+        id: "{{ ssl_cert_compare_algo_a | default('rsa-3072') }}"
+        meta: "{{ _ssl_algorithms_data.algorithms | selectattr(ssl_cert_compare_algo_a | default('rsa-3072')) | default({}) }}"
+      algorithm_b:
+        id: "{{ ssl_cert_compare_algo_b | default('ecdsa-p256') }}"
+      recommendation: "ECDSA P-256 provides equivalent 128-bit security to RSA-3072 with 8× smaller keys and 10-100× faster signing."
+  when: ssl_cert_compare_algorithms | default(false) | bool
+  tags: [algorithms, compare]
+
+- name: Print algorithm comparison
+  ansible.builtin.debug:
+    msg:
+      - "=== Algorithm Comparison ==="
+      - "A: {{ ssl_cert_compare_algo_a | default('rsa-3072') }}"
+      - "B: {{ ssl_cert_compare_algo_b | default('ecdsa-p256') }}"
+      - "Security-bits A/B: equivalent at 128-bit"
+      - ""
+      - "General guidance:"
+      - "• ECDSA: 10-100× faster signing than equivalent RSA; 8× smaller keys"
+      - "• Ed25519: deterministic nonces (no RNG failure risk); constant-time by design"
+      - "• RSA-4096: ~128-bit security; very slow keygen and signing"
+      - "• PQC (ML-DSA): post-quantum; large signatures (2-50 KB); slower"
+  when: ssl_cert_compare_algorithms | default(false) | bool
+  tags: [algorithms, compare]
+
+# ── Deprecation scan ──
+- name: Scan for deprecated algorithms in data
+  ansible.builtin.set_fact:
+    deprecated_algorithms: >-
+      {%- set deprecated = [] -%}
+      {%- for group, algs in _ssl_algorithms_data.algorithms.items() -%}
+      {%- for alg_id, meta in algs.items() -%}
+      {%- if meta.nist_status in ['deprecated', 'forbidden'] -%}
+      {%- set _ = deprecated.append(group + '.' + alg_id) -%}
+      {%- endif -%}
+      {%- endfor -%}
+      {%- endfor -%}
+      {{ deprecated }}
+  tags: [algorithms]
+
+- name: Report deprecated algorithms
+  ansible.builtin.debug:
+    msg:
+      - "=== Deprecated Algorithms ==="
+      - "{{ deprecated_algorithms | default([]) }}"
+  when: deprecated_algorithms | default([]) | length > 0
+  tags: [algorithms, deprecation]

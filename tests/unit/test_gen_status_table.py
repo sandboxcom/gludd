@@ -824,29 +824,30 @@ class TestRealManifestSmoke:
     checked-in README).
     """
 
+    @pytest.fixture(autouse=True)
+    def _require_manifest(self):
+        manifest_path = _REPO_ROOT / "docs" / "features.yml"
+        assert manifest_path.exists(), (
+            f"{manifest_path} is required for manifest smoke tests — "
+            "ensure docs/features.yml is tracked and populated"
+        )
+
     def test_real_manifest_loads(self) -> None:
         manifest_path = _REPO_ROOT / "docs" / "features.yml"
-        if not manifest_path.exists():
-            pytest.skip("docs/features.yml not present")
         sections = _load_manifest(manifest_path)
         assert len(sections) > 0, "expected at least one section"
 
     def test_real_manifest_renders_fast(self) -> None:
         manifest_path = _REPO_ROOT / "docs" / "features.yml"
-        if not manifest_path.exists():
-            pytest.skip("docs/features.yml not present")
         sections = _load_manifest(manifest_path)
         verifier = FeatureVerifier(repo_root=str(_REPO_ROOT), runner=lambda _: 1)
         block = _generate_block(sections, verifier, _REPO_ROOT, fast=True)
         assert len(block) > 100
-        # All section titles should appear.
         for sec in sections:
             assert sec.get("title", "") in block
 
     def test_real_manifest_all_features_have_required_keys(self) -> None:
         manifest_path = _REPO_ROOT / "docs" / "features.yml"
-        if not manifest_path.exists():
-            pytest.skip("docs/features.yml not present")
         sections = _load_manifest(manifest_path)
         for sec in sections:
             assert "title" in sec, f"section missing title: {sec}"

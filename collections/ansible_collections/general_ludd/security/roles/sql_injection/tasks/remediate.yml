@@ -1,0 +1,135 @@
+---
+# remediate.yml — generate remediation guidance for SQL injection findings
+#
+# For each code finding, generates parameterized query examples, ORM-safe
+# alternatives, input validation rules, and WAF rules. Output is advisory
+# report — never mutates source files.
+
+- name: Remediation requires code findings
+  ansible.builtin.fail:
+    msg: "No code findings to remediate — _sql_code_findings is empty"
+  when: _sql_code_findings | default([]) | length == 0
+
+# ── Generate per-finding remediation ───────────────────────────────────────
+
+- name: Build remediation catalog
+  ansible.builtin.set_fact:
+    _sql_remediations: >-
+      {{
+        _sql_code_findings | map('combine', {
+          'remediation_detail': {
+            'parameterized_query': _sql_remediation_template.parameterized,
+            'orm_alternative': _sql_remediation_template.orm,
+            'input_validation': _sql_remediation_template.input_validation,
+            'waf_rule': _sql_remediation_template.waf
+          }
+        }) | list
+      }}
+
+- name: Build per-language remediation examples
+  ansible.builtin.set_fact:
+    _sql_remediation_template:
+      parameterized: |
+        Parameterized query — the gold standard: user data is sent separately
+        from the SQL structure, making injection structurally impossible.
+
+        Python (DB-API):
+          cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+          cursor.execute("SELECT * FROM users WHERE name = :name", {"name": user_input})
+
+        Go (database/sql):
+          db.Query("SELECT * FROM users WHERE id = ?", userID)
+          db.Exec("INSERT INTO users (name) VALUES (?)", userName)
+
+        JavaScript (node-postgres / mysql2):
+          pool.query("SELECT * FROM users WHERE id = $1", [userId])
+          connection.execute("SELECT * FROM users WHERE name = ?", [userName])
+      orm: |
+        ORM-safe alternatives — the ORM handles parameterization automatically.
+
+        SQLAlchemy (Python):
+          User.query.filter(User.id == user_id).all()
+          session.query(User).filter(User.name == user_input).first()
+
+        Django ORM (Python):
+          User.objects.filter(id=user_id)
+          User.objects.raw("SELECT * FROM users WHERE id = %s", [user_id])
+
+        Peewee (Python):
+          User.select().where(User.id == user_id)
+          User.raw("SELECT * FROM users WHERE id = ?", user_id)
+
+        GORM (Go):
+          db.Where("id = ?", userID).Find(&user)
+
+        Sequelize (JavaScript):
+          User.findAll({ where: { id: userId } })
+          sequelize.query("SELECT * FROM users WHERE id = ?", { replacements: [userId] })
+
+        Prisma (JavaScript):
+          prisma.user.findUnique({ where: { id: userId } })
+          prisma.$queryRaw`SELECT * FROM users WHERE id = ${userId}`
+      input_validation: |
+        Input validation rules — validate and sanitize user input before it
+        reaches the database layer.
+
+        1. Type enforcement: ensure numeric IDs are integers
+           if not isinstance(user_id, int):
+               raise ValueError("user_id must be integer")
+
+        2. Allowlist for dynamic identifiers (table/column names):
+           ALLOWED_TABLES = {"users", "products", "orders"}
+           if table_name not in ALLOWED_TABLES:
+               raise ValueError(f"Invalid table: {table_name}")
+
+        3. Reject known dangerous characters:
+           DANGEROUS = {"'", '"', ';', '--', '/*', '*/', 'xp_', 'exec '}
+           if any(d in user_input.lower() for d in DANGEROUS):
+               raise ValueError("Invalid input detected")
+
+        4. Length limits:
+           if len(user_input) > 100:
+               raise ValueError("Input too long")
+
+        5. Regex allowlist:
+           import re
+           if not re.match(r'^[a-zA-Z0-9_]+$', table_name):
+               raise ValueError("Invalid identifier")
+      waf: |
+        WAF rules for blocking known attack patterns — deploy at the
+        reverse proxy / load balancer layer.
+
+        ModSecurity (mod_security2/mod_security3):
+          SecRule ARGS "@rx (?i)(union\s+(all\s+)?select)" "id:100001,deny,status:403,msg:'SQLi — UNION SELECT'"
+          SecRule ARGS "@rx (?i)(sleep\(\d+\)|benchmark\(\d+|WAITFOR\s+DELAY)" "id:100002,deny,status:403,msg:'SQLi — time-based'"
+          SecRule ARGS "@rx (?i)(information_schema|sqlite_master|pg_database)" "id:100003,deny,status:403,msg:'SQLi — schema probe'"
+          SecRule ARGS "@rx (?i)(xp_cmdshell|xp_dirtree|LOAD_FILE|INTO\s+OUTFILE)" "id:100004,deny,status:403,msg:'SQLi — command execution'"
+          SecRule ARGS "@rx (?i)(;\s*(drop|insert|update|delete|alter|create|exec))" "id:100005,deny,status:403,msg:'SQLi — stacked queries'"
+
+        AWS WAF (JSON):
+          {
+            "Name": "SQLi-UNION-SELECT",
+            "Priority": 1,
+            "Statement": {
+              "ByteMatchStatement": {
+                "SearchString": "UNION SELECT",
+                "FieldToMatch": { "Body": {}, "QueryString": {} },
+                "TextTransformations": [{ "Type": "LOWERCASE" }]
+              }
+            }
+          }
+
+        Cloudflare WAF (expression):
+          (http.request.uri.query contains "union select" or
+           http.request.uri.query contains "sleep(" or
+           http.request.uri.query contains "information_schema")
+
+        nginx + lua (openresty):
+          access_by_lua_block {
+            local args = ngx.req.get_uri_args()
+            for k, v in pairs(args) do
+              if v:lower():match("union%s+(all%s+)?select") then
+                ngx.exit(403)
+              end
+            end
+          }

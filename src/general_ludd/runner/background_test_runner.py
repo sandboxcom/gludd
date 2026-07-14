@@ -21,12 +21,13 @@ import json
 import os
 import re
 import signal
-import subprocess
 import sys
 import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+from general_ludd.commands.make import MakeRunner
 
 STATUS_DIR = Path(".gate-logs")
 
@@ -101,14 +102,12 @@ class BackgroundTestRunner:
                     "testfile": testfile,
                 }
 
-        cmd = ["make", "test-specific", f"TESTFILE={testfile}"]
-        with open(log_file, "w", encoding="utf-8") as log_fh:
-            proc = subprocess.Popen(
-                cmd,
-                stdout=log_fh,
-                stderr=subprocess.STDOUT,
-                close_fds=True,
-            )
+        runner = MakeRunner()
+        proc, _ = runner.spawn(
+            "test-specific",
+            extra_args=[f"TESTFILE={testfile}"],
+            log_file=log_file,
+        )
 
         pid_path.write_text(str(proc.pid))
 

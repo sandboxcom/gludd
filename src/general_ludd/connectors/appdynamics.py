@@ -20,6 +20,7 @@ Design contract (shared by all gludd APM connectors):
   ``ts, source, kind, level_or_status, message, value, labels, raw``.
 * The HTTP transport is injectable and every call is time-bounded.
   ``shell=True`` is never used.
+
 """
 
 from __future__ import annotations

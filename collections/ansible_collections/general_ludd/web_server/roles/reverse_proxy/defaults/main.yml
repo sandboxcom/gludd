@@ -1,0 +1,18 @@
+---
+proxy_type: nginx
+upstream_servers:
+  - host: "127.0.0.1"
+    port: 3000
+lb_method: round_robin
+health_check_path: "/health"
+cache_enabled: false
+cache_ttl: 3600
+listen_port: 443
+server_name: localhost
+ssl_enabled: true
+proxy_read_timeout: 60
+proxy_connect_timeout: 5
+proxy_send_timeout: 60
+websocket_enabled: false
+grpc_enabled: false
+extra_backends: []

@@ -211,7 +211,7 @@ def test_fallback_does_not_loop_holds():
     pa = _profile("a", fallback_profiles=["b"])
     pb = _profile("b", fallback_profiles=["a"])
     gw = _gateway_with(chat, [pa, pb])
-    with pytest.raises(CircuitBreakerOpenError, match="failed for 'a'"):
+    with pytest.raises(CircuitBreakerOpenError, match="providers down"):
         gw.call_model_with_fallback("a", [{"role": "user", "content": "hi"}])
 
 

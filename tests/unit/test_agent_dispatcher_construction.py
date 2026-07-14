@@ -16,12 +16,12 @@ class TestAgentDispatcherDaemonConstruction:
     def test_construct_rejects_model_gateway_kwarg(self):
         registry = AgentRegistry()
         with pytest.raises(TypeError):
-            AgentDispatcher(registry=registry, model_gateway=None)
+            AgentDispatcher(registry=registry, **{"model_gateway": None})
 
     def test_construct_rejects_session_factory_kwarg(self):
         registry = AgentRegistry()
         with pytest.raises(TypeError):
-            AgentDispatcher(registry=registry, session_factory=None)
+            AgentDispatcher(registry=registry, **{"session_factory": None})
 
     def test_construct_with_custom_executor(self):
         registry = AgentRegistry()

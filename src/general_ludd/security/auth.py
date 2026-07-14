@@ -63,22 +63,30 @@ def load_auth_posture(
     psk = (source.get("GLUDD_PSK", "") or "").strip()
     no_auth = not psk
     # Default-secure: when NO PSK is configured, REQUIRE auth (fail-closed) unless
-    # the operator explicitly opts into no-auth via GLUDD_ALLOW_NO_AUTH (parallel to
-    # the daemon and the test conftest). Without this the worker served
-    # unauthenticated by default (fail-open) whenever no PSK + no GLUDD_REQUIRE_AUTH.
-    _allow_no_auth = source.get("GLUDD_ALLOW_NO_AUTH", "").strip().lower() in {
+    # the operator explicitly opts into no-auth via GLUDD_PSK_DISABLE=1.
+    # Without this the worker served unauthenticated by default (fail-open)
+    # whenever no PSK + no GLUDD_REQUIRE_AUTH.
+    _auth_disabled_psk_disable = source.get("GLUDD_PSK_DISABLE", "").strip().lower() in {
         "1",
         "true",
         "yes",
         "on",
     }
-    require_auth = require_auth_env(source) or (no_auth and not _allow_no_auth)
+    _auth_disabled_allow_no_auth = source.get("GLUDD_ALLOW_NO_AUTH", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    _auth_disabled = _auth_disabled_psk_disable or _auth_disabled_allow_no_auth
+    require_auth = require_auth_env(source) or (no_auth and not _auth_disabled)
     if no_auth and require_auth:
         import logging
 
         logging.getLogger("general_ludd.security.auth").warning(
-            "GLUDD_REQUIRE_AUTH is set but no GLUDD_PSK configured for the %s "
-            "surface: failing CLOSED (503) on all non-public paths.",
+            "No GLUDD_PSK configured for the %s surface: failing CLOSED on "
+            "all non-public paths. Set GLUDD_PSK to enable auth, or "
+            "GLUDD_PSK_DISABLE=1 / GLUDD_ALLOW_NO_AUTH=1 to explicitly disable it.",
             surface,
         )
     return AuthPosture(
@@ -109,6 +117,19 @@ def verify_psk(presented: str, expected: str) -> bool:
     if not presented or not expected:
         return False
     return hmac.compare_digest(presented, expected)
+
+
+def _load_admin_token(env: Mapping[str, str] | None = None) -> str:
+    source = env if env is not None else os.environ
+    return (source.get("GLUDD_ADMIN_TOKEN", "") or "").strip()
+
+
+def check_admin_token(header_value: str, expected: str | None = None) -> bool:
+    if expected is None:
+        expected = _load_admin_token()
+    if not header_value or not expected:
+        return False
+    return hmac.compare_digest(header_value.strip(), expected)
 
 
 def require_auth_env(env: Mapping[str, str] | None = None) -> bool:

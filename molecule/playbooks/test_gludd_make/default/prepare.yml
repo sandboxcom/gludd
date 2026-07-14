@@ -1,0 +1,21 @@
+---
+# Create a tiny Makefile in /tmp so the gludd_make module has a real
+# make target to exercise.  The module runs `make <target>` locally;
+# no mock daemon is needed.
+- name: Prepare - create Makefile fixture
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Write test Makefile
+      ansible.builtin.copy:
+        content: |
+          .PHONY: hello versions
+          hello:
+          	@echo "hello from molecule test_gludd_make"
+          versions:
+          	@echo "make version: $(MAKE_VERSION)"
+          bad:
+          	@exit 1
+        dest: "/tmp/gludd-test-make-Makefile"
+        mode: "0644"

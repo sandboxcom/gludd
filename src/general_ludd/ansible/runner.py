@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -17,7 +18,11 @@ import yaml
 
 from general_ludd.ansible.core_runner import CoreAnsibleRunner
 from general_ludd.ansible.isolation import ProcessIsolationConfig
-from general_ludd.ansible.paths import resolve_collections_paths, to_ansible_env
+from general_ludd.ansible.paths import (
+    activate_collection_version,
+    resolve_collections_paths,
+    to_ansible_env,
+)
 from general_ludd.events.types import PlaybookRegisteredEvent
 from general_ludd.security.sanitize import sanitize_job_id
 
@@ -72,6 +77,8 @@ class AnsibleRunnerAdapter:
             Path(project_root) if project_root else None
         )
         self._collections_env: dict[str, str] = {}
+        self._version_activation_roots: list[Path] = []
+        self._version_cleanup_dirs: list[Path] = []
         self._refresh_collections_env()
         self._core_runner = CoreAnsibleRunner(
             process_isolation=isolation_config,
@@ -108,6 +115,37 @@ class AnsibleRunnerAdapter:
                 "Resolved ansible collections search path (precedence high→low): %s",
                 rendered,
             )
+
+    def activate_collection(self, namespace: str, collection: str, version: str | None = None) -> Path:
+        base: Path | None = None
+        proj_root = self._project_root
+        if proj_root is not None:
+            candidate = proj_root / ".gludd" / "collections"
+            if candidate.is_dir():
+                base = candidate
+        if base is None:
+            entries = resolve_collections_paths(project_root=self._project_root)
+            for entry in entries:
+                if entry.path.is_dir():
+                    base = entry.path
+                    break
+        if base is None:
+            raise FileNotFoundError(
+                f"No collections directory found for {namespace}.{collection}"
+            )
+        root, cleanup = activate_collection_version(
+            base, namespace=namespace, collection=collection, version=version
+        )
+        if cleanup is not None and cleanup not in self._version_cleanup_dirs:
+            self._version_cleanup_dirs.append(cleanup)
+        self._version_activation_roots.append(root)
+        return root
+
+    def clear_collection_versions(self) -> None:
+        for d in self._version_cleanup_dirs:
+            shutil.rmtree(d, ignore_errors=True)
+        self._version_cleanup_dirs.clear()
+        self._version_activation_roots.clear()
 
     def resolve_playbook(self, playbook_name: str) -> str:
         if playbook_name not in self.registry:
@@ -200,6 +238,16 @@ class AnsibleRunnerAdapter:
                 **self._collections_env,
                 **(env or {}),
             }
+            if self._version_activation_roots:
+                activation_paths = os.pathsep.join(str(r) for r in self._version_activation_roots)
+                existing_cp = _merged_env.get("ANSIBLE_COLLECTIONS_PATH", "")
+                _merged_env["ANSIBLE_COLLECTIONS_PATH"] = (
+                    activation_paths + os.pathsep + existing_cp if existing_cp else activation_paths
+                )
+                existing_rp = _merged_env.get("ANSIBLE_ROLES_PATH", "")
+                _merged_env["ANSIBLE_ROLES_PATH"] = (
+                    activation_paths + os.pathsep + existing_rp if existing_rp else activation_paths
+                )
             result = self._core_runner.run_playbook(
                 playbook_path=playbook_path,
                 extravars=extravars or {},

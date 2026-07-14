@@ -349,7 +349,7 @@ def test_health_never_raises_on_transport_exception() -> None:
     src = _source(transport)
     h = src.health()
     assert h["ok"] is False
-    assert "connection refused" in h["detail"]
+    assert h["detail"] == "transport error: RuntimeError"
 
 
 def test_query_returns_empty_on_transport_exception() -> None:

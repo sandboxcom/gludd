@@ -11,6 +11,8 @@ from pathlib import Path
 
 from pydantic import BaseModel, field_validator
 
+from general_ludd.runtime.manifest_signer import ManifestSigner
+
 # Characters that must never appear in an output dir. Even though the subprocess
 # calls use argv list-form (no shell), these are rejected as defense-in-depth so
 # a future refactor to a shell form cannot reintroduce an injection sink, and so
@@ -77,6 +79,8 @@ class BundleResult:
     manifest_path: str
     checksum_path: str
     success: bool
+    sig_path: str = ""
+    signature_valid: bool = False
 
 
 class PipBundleBuilder:
@@ -144,6 +148,9 @@ class PipBundleBuilder:
         manifest_path = os.path.join(output_dir, "MANIFEST.json")
         Path(manifest_path).write_text(manifest.model_dump_json(indent=2))
 
+        sig_result = ManifestSigner().sign(manifest_path)
+        sig_path = sig_result.sig_path if sig_result.success else ""
+
         checksum_lines = [f"{v}  {k}" for k, v in checksums.items()]
         checksum_path = os.path.join(output_dir, "CHECKSUMS.sha256")
         Path(checksum_path).write_text("\n".join(checksum_lines) + "\n")
@@ -155,4 +162,6 @@ class PipBundleBuilder:
             manifest_path=manifest_path,
             checksum_path=checksum_path,
             success=True,
+            sig_path=sig_path,
+            signature_valid=sig_result.success,
         )

@@ -20,6 +20,7 @@ class EventBus:
         self._history_size = history_size
         self._next_id = 0
         self._lock = threading.Lock()
+        self._history_lock = threading.Lock()
         self._background_tasks: set[asyncio.Task[Any]] = set()
 
     def subscribe(self, event_type: EventType | str, callback: Callable[..., Any]) -> str:
@@ -85,9 +86,10 @@ class EventBus:
             )
 
         if self._history_size > 0:
-            self._history.append(event)
-            if len(self._history) > self._history_size:
-                self._history = self._history[-self._history_size:]
+            with self._history_lock:
+                self._history.append(event)
+                if len(self._history) > self._history_size:
+                    self._history = self._history[-self._history_size:]
 
         return delivered
 
@@ -157,7 +159,8 @@ class EventBus:
             )
 
     def get_history(self) -> list[Event]:
-        return list(self._history)
+        with self._history_lock:
+            return list(self._history)
 
     def clear(self) -> None:
         with self._lock:

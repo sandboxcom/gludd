@@ -37,6 +37,7 @@ Record shape (one dict per sample)::
         "labels": dict[str, str],    # {queue, vhost, node, metric, ...}
         "raw": Any,                  # original API object
     }
+
 """
 
 from __future__ import annotations

@@ -8,6 +8,7 @@ import importlib
 import logging
 import os
 import sys
+import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -32,6 +33,11 @@ from general_ludd.security.capability_lattice import (
     ProtectedPathError,
     check_self_modification,
 )
+from general_ludd.self_update.module_snapshot import (
+    ModuleSnapshot,
+    restore_modules,
+    snapshot_modules,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +49,10 @@ class ReloadScope(enum.StrEnum):
     SKILLS = "skills"
     CONFIG = "config"
     ALL = "all"
+
+
+class ReloadBusyError(Exception):
+    """Raised when a reload is requested while another is in progress."""
 
 
 @dataclass
@@ -73,6 +83,9 @@ class HotReloader:
         skill_registry: Any = None,
         model_gateway: Any = None,
         prompt_registry: Any = None,
+        min_reload_interval_s: float = 0.05,
+        reload_lock: threading.Lock | None = None,
+        reload_timeout_s: float = 30.0,
     ) -> None:
         self._config_dir = Path(config_dir)
         self._event_bus = event_bus
@@ -85,11 +98,43 @@ class HotReloader:
         self._model_gateway = model_gateway
         self._prompt_registry = prompt_registry
         self._last_state = _ReloadState()
-        # Playbooks seen on the previous reload — used to detect removals so a
-        # PlaybookRemovedEvent fires when a registered playbook disappears.
         self._known_playbooks: set[str] = set()
+        self._reload_lock = reload_lock if reload_lock is not None else threading.Lock()
+        self._reload_timeout_s = reload_timeout_s
+        self._min_reload_interval_s = min_reload_interval_s
+        self._last_reload_at: dict[str, float] = {}
+
+    @contextlib.contextmanager
+    def _reload_slot(self, key: str) -> Any:
+        acquired = self._reload_lock.acquire(timeout=self._reload_timeout_s)
+        if not acquired:
+            raise ReloadBusyError(
+                f"Reload lock acquisition timeout after {self._reload_timeout_s}s (key={key})"
+            )
+        try:
+            last = self._last_reload_at.get(key)
+            if last is not None:
+                elapsed = time.time() - last
+                if elapsed < self._min_reload_interval_s:
+                    raise ReloadBusyError(
+                        f"Reload too soon for {key}: {elapsed:.3f}s < {self._min_reload_interval_s}s"
+                    )
+            yield
+        finally:
+            self._last_reload_at[key] = time.time()
+            self._reload_lock.release()
 
     def reload(self, scope: ReloadScope) -> ReloadResult:
+        try:
+            with self._reload_slot(f"scope:{scope.value}"):
+                return self._reload_impl(scope)
+        except ReloadBusyError as exc:
+            return ReloadResult(success=False, scope=scope.value, error=str(exc))
+        except Exception as exc:
+            logger.exception("Unhandled exception during reload scope=%s", scope.value)
+            return ReloadResult(success=False, scope=scope.value, error=str(exc))
+
+    def _reload_impl(self, scope: ReloadScope) -> ReloadResult:
         self._publish(ReloadRequestedEvent(scope=scope.value))
         self._last_state = _ReloadState(previous_config=self._snapshot())
 
@@ -116,6 +161,30 @@ class HotReloader:
             return ReloadResult(success=False, scope=scope.value, error=str(exc))
 
     def reload_code_module(
+        self,
+        module_name: str,
+        candidate_source_path: str,
+        health_check: Callable[[], bool] | None = None,
+        role: str | None = None,
+        base_source_path: str | None = None,
+        expected_sha256: str | None = None,
+    ) -> ReloadResult:
+        try:
+            with self._reload_slot(f"module:{module_name}"):
+                return self._reload_code_module_impl(
+                    module_name,
+                    candidate_source_path,
+                    health_check,
+                    role,
+                    base_source_path,
+                    expected_sha256,
+                )
+        except ReloadBusyError as exc:
+            scope = "code_module"
+            details: dict[str, object] = {"module": module_name}
+            return self._code_reload_failure(scope, details, str(exc))
+
+    def _reload_code_module_impl(
         self,
         module_name: str,
         candidate_source_path: str,
@@ -186,6 +255,8 @@ class HotReloader:
                 scope, details, "module has no __file__ (not file-backed)"
             )
         live_path = Path(live_path_str)
+        with contextlib.suppress(OSError):
+            live_path = Path(os.path.realpath(live_path_str))
         details["live_path"] = str(live_path)
 
         # Self-modification guards (issue #58): refuse protected guard files
@@ -267,15 +338,19 @@ class HotReloader:
             )
 
         # Swap resolved bytes over live path + reload.
+        mod_snapshot: ModuleSnapshot | None = None
         try:
             # Write via a temp + os.replace for an atomic same-dir swap.
             tmp_path = live_path.with_suffix(live_path.suffix + ".candidate.tmp")
             tmp_path.write_bytes(resolved_bytes)
             os.replace(tmp_path, live_path)
             self._invalidate_source_cache(live_path)
+            mod_snapshot = snapshot_modules([module_name])
             importlib.reload(module)
         except Exception as exc:
             rb = self._restore_module_bytes(module, live_path, original_bytes)
+            if mod_snapshot is not None and mod_snapshot.modules:
+                restore_modules(mod_snapshot)
             details["rollback_verified"] = rb
             return self._code_reload_failure(
                 scope,
@@ -326,6 +401,24 @@ class HotReloader:
         return ReloadResult(success=True, scope=scope, details=details)
 
     def reload_changed_modules(
+        self,
+        repo_dir: str,
+        changed_paths: list[str],
+        health_check: Callable[[], bool] | None = None,
+        role: str | None = None,
+    ) -> ReloadResult:
+        try:
+            with self._reload_slot("changed_modules"):
+                return self._reload_changed_modules_impl(
+                    repo_dir, changed_paths, health_check, role
+                )
+        except ReloadBusyError as exc:
+            return ReloadResult(
+                success=False, scope="changed_modules",
+                details={}, error=str(exc),
+            )
+
+    def _reload_changed_modules_impl(
         self,
         repo_dir: str,
         changed_paths: list[str],

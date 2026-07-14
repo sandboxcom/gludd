@@ -1,0 +1,95 @@
+---
+# forward_proxy — install and configure forward/transparent proxy.
+
+- name: "Validate required vars"
+  ansible.builtin.assert:
+    that:
+      - proxy_type in ["squid", "tinyproxy", "privoxy"]
+    fail_msg: >-
+      forward_proxy requires proxy_type 'squid', 'tinyproxy', or 'privoxy'.
+      Got proxy_type={{ proxy_type | default('<undefined>') }}.
+
+- name: "Install forward proxy package"
+  ansible.builtin.package:
+    name: "{{ proxy_type }}"
+    state: present
+
+- name: "Configure Squid"
+  when: proxy_type == "squid"
+  block:
+    - name: "Generate Squid config"
+      ansible.builtin.template:
+        src: squid.conf.j2
+        dest: /etc/squid/squid.conf
+        mode: "0640"
+      notify: reload squid
+
+    - name: "Ensure cache directory"
+      ansible.builtin.file:
+        path: "{{ cache_dir }}"
+        state: directory
+        owner: proxy
+        group: proxy
+        mode: "0750"
+
+    - name: "Initialize Squid cache"
+      ansible.builtin.command: squid -z
+      args:
+        creates: "{{ cache_dir }}/00"
+      changed_when: false
+
+    - name: "Configure Squid auth"
+      when: auth_method != "none"
+      block:
+        - name: "Install htpasswd for basic auth"
+          when: auth_method == "basic"
+          ansible.builtin.package:
+            name: apache2-utils
+            state: present
+
+        - name: "Generate basic auth file"
+          when: auth_method == "basic"
+          ansible.builtin.htpasswd:
+            path: /etc/squid/passwd
+            name: "{{ squid_user | default('proxy') }}"
+            password: "{{ squid_password | default('changeme') }}"
+            owner: proxy
+            group: proxy
+            mode: "0640"
+
+    - name: "Validate Squid configuration"
+      ansible.builtin.command: squid -k parse
+      changed_when: false
+
+- name: "Configure tinyproxy"
+  when: proxy_type == "tinyproxy"
+  block:
+    - name: "Generate tinyproxy config"
+      ansible.builtin.template:
+        src: tinyproxy.conf.j2
+        dest: /etc/tinyproxy/tinyproxy.conf
+        mode: "0640"
+      notify: reload tinyproxy
+
+- name: "Configure privoxy"
+  when: proxy_type == "privoxy"
+  block:
+    - name: "Generate privoxy config"
+      ansible.builtin.template:
+        src: privoxy_config.j2
+        dest: /etc/privoxy/config
+        mode: "0640"
+      notify: reload privoxy
+
+    - name: "Generate privoxy user action file"
+      ansible.builtin.template:
+        src: privoxy_user.action.j2
+        dest: /etc/privoxy/user.action
+        mode: "0644"
+      notify: reload privoxy
+
+- name: "Ensure proxy service is enabled and started"
+  ansible.builtin.service:
+    name: "{{ proxy_type }}"
+    state: started
+    enabled: true

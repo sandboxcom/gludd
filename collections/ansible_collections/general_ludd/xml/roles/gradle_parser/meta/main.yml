@@ -1,0 +1,20 @@
+---
+galaxy_info:
+  role_name: gradle_parser
+  namespace: general_ludd
+  author: Agentic Harness Agent
+  description: >
+    Gradle build file parser — parse Groovy/Kotlin DSL in build.gradle and
+    settings.gradle. Extract dependencies, plugins, and repositories.
+    Modify version numbers, add/remove dependencies, and generate
+    dependency reports.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

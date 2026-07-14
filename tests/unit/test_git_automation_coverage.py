@@ -109,16 +109,17 @@ class TestCreateBranch:
     def test_create_branch(self, mock_run: MagicMock):
         result = GitAutomation(".").create_branch("feature-x")
         assert result == "feature-x"
-        # `--` ends option parsing so a dash-leading name can't be an option.
-        # Fix 1: _run_git now also passes a bounded timeout + non-interactive env.
-        mock_run.assert_called_once()
-        call = mock_run.call_args
-        assert call.args[0] == ["git", "checkout", "-b", "feature-x", "--"]
-        assert call.kwargs["cwd"] == "."
-        assert call.kwargs["check"] is True
-        assert call.kwargs["timeout"] == 60.0
-        assert call.kwargs["env"]["GIT_TERMINAL_PROMPT"] == "0"
-        assert call.kwargs["env"]["GIT_ASKPASS"] == "echo"
+        # C.17: create_branch now does collision detection (branch list) + checkout.
+        assert mock_run.call_count == 2
+        # First call: branch listing for collision detection
+        assert mock_run.call_args_list[0].args[0] == ["git", "branch", "--format=%(refname:short)"]
+        # Second call: checkout -b
+        assert mock_run.call_args_list[1].args[0] == ["git", "checkout", "-b", "feature-x", "--"]
+        assert mock_run.call_args_list[1].kwargs["cwd"] == "."
+        assert mock_run.call_args_list[1].kwargs["check"] is True
+        assert mock_run.call_args_list[1].kwargs["timeout"] == 60.0
+        assert mock_run.call_args_list[1].kwargs["env"]["GIT_TERMINAL_PROMPT"] == "0"
+        assert mock_run.call_args_list[1].kwargs["env"]["GIT_ASKPASS"] == "echo"
 
 
 class TestCommit:
@@ -375,7 +376,7 @@ class TestMergeBranch:
         "general_ludd.git_automation.repo.subprocess.run",
         side_effect=[
             _ok(),
-            _fail(stderr="CONFLICT (content): Merge conflict in file.txt", returncode=1),
+            subprocess.CalledProcessError(1, ["git", "merge"], stderr="CONFLICT (content): Merge conflict in file.txt"),
         ],
     )
     def test_merge_conflict(self, mock_run: MagicMock):
@@ -388,7 +389,7 @@ class TestMergeBranch:
         "general_ludd.git_automation.repo.subprocess.run",
         side_effect=[
             _ok(),
-            _fail(stderr="merge failed", returncode=1),
+            subprocess.CalledProcessError(1, ["git", "merge"], stderr="merge failed"),
         ],
     )
     def test_merge_failure_no_conflict(self, mock_run: MagicMock):

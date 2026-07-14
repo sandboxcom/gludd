@@ -790,6 +790,44 @@
     "server_id": "ansible"
   },
   {
+    "name": "general_ludd.agent.gludd_make",
+    "description": "Run a make target via the MakeRunner abstraction — Runs a C(make) target through the C(MakeRunner) subprocess wrapper with proper sanitized environment, bounded output capture, and per-target timeout. Supports both blocking and streaming modes. Returns structured result (rc, stdout_tail, stderr_tail, success, phases).",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "target": {
+          "type": "string"
+        },
+        "extra_args": {
+          "type": "array",
+          "default": []
+        },
+        "cwd": {
+          "type": "string"
+        },
+        "timeout_s": {
+          "type": "integer"
+        },
+        "env_extra": {
+          "type": "object"
+        },
+        "stream": {
+          "type": "boolean",
+          "default": false
+        },
+        "no_log": {
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "target"
+      ]
+    },
+    "server_id": "ansible"
+  },
+  {
     "name": "general_ludd.agent.gludd_mcp_tool",
     "description": "Invoke an MCP tool (honest placeholder — not yet wired) — Per the W3.9 decision in TASKS.md (MCP honestly fenced): the daemon loads C(mcp_servers) config but passes C(mcp_client=None) — no MCP tools can be called through the daemon today. This module exists so playbooks can reference C(general_ludd.agent.gludd_mcp_tool) without import errors; it always returns C(not_implemented=true) and C(failed=false) so callers can C(when: not mcp_result.not_implemented) gate around it cleanly. When MCP wiring (W3.9 option a) is completed, replace the body of this module and remove this note.",
     "input_schema": {

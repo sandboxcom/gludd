@@ -219,7 +219,8 @@ class ParcaSource:
                 timeout=self._timeout,
             )
         except Exception as exc:
-            return {"ok": False, "detail": f"transport error: {exc}"}
+            logger.warning("parca health check failed", exc_info=True)
+            return {"ok": False, "detail": f"transport error: {type(exc).__name__}"}
 
         if resp.status_code == 200:
             return {"ok": True, "detail": "QueryRange reachable (HTTP 200)"}

@@ -33,12 +33,15 @@ __all__ = (
     "get_alembic_config",
     "get_async_session",
     "get_default_db_url",
+    "get_tenant",
     "init_async_engine",
     "init_engine_from_config",
     "is_sqlite_url",
     "json_dumps",
+    "reset_tenant",
     "run_wal_pragmas",
     "seed_initial_queues",
+    "set_tenant",
     "stamp_head",
 )
 
@@ -85,4 +88,9 @@ from general_ludd.db.session import (
     json_dumps,
     run_wal_pragmas,
     seed_initial_queues,
+)
+from general_ludd.db.tenant import (
+    get_tenant,
+    reset_tenant,
+    set_tenant,
 )

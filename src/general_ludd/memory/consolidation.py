@@ -43,12 +43,13 @@ class MemoryConsolidator:
     async def consolidate(
         self,
         agent_id: str,
+        project_id: str | None = None,
         force: bool = False,
     ) -> dict[str, Any]:
         from general_ludd.memory.episodic import EpisodicMemoryRecorder
 
         recorder = EpisodicMemoryRecorder(self._repo)
-        all_episodes = await recorder.list_episodes(agent_id, limit=1000)
+        all_episodes = await recorder.list_episodes(agent_id, project_id=project_id, limit=1000)
 
         if len(all_episodes) < self._min_episodes and not force:
             return {"consolidated": 0, "reason": "insufficient episodes", "total": len(all_episodes)}
@@ -94,6 +95,7 @@ class MemoryConsolidator:
                 key=key,
                 value=value,
                 namespace=CONSOLIDATED_NAMESPACE,
+                project_id=project_id,
             )
             consolidated_count += 1
 
@@ -106,6 +108,7 @@ class MemoryConsolidator:
                         key="model_insight",
                         value=model_summary,
                         namespace=CONSOLIDATED_NAMESPACE,
+                        project_id=project_id,
                     )
                     consolidated_count += 1
             except Exception as exc:
@@ -188,10 +191,10 @@ class MemoryConsolidator:
             return None
 
     async def get_consolidated(
-        self, agent_id: str, task_type: str | None = None
+        self, agent_id: str, task_type: str | None = None, project_id: str | None = None,
     ) -> list[dict[str, Any]]:
         rows = await self._repo.list_by_namespace(
-            agent_id, namespace=CONSOLIDATED_NAMESPACE, limit=100
+            agent_id, namespace=CONSOLIDATED_NAMESPACE, project_id=project_id, limit=100
         )
         results = []
         for row in rows:

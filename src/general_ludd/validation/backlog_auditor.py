@@ -27,6 +27,8 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
+from general_ludd.security.sanitize import confine_path_multi, workspace_roots
+
 # Statuses that assert the work is finished and therefore get re-adjudicated.
 _COMPLETED_STATUSES = frozenset({"complete", "completed", "done"})
 
@@ -70,11 +72,18 @@ class BacklogAuditReport:
 
 
 def _real_file_reader(path: str) -> str | None:
-    """Default reader: read a file's text, or ``None`` if it does not exist."""
-    if not os.path.isfile(path):
+    """Default reader: read a file's text, or ``None`` if it does not exist.
+
+    Paths are confined to workspace roots (process CWD + system temp dir) to
+    prevent an arbitrary-file-read primitive if wired without an injected reader.
+    """
+    confined = confine_path_multi(path, workspace_roots())
+    if confined is None:
+        return None
+    if not os.path.isfile(confined):
         return None
     try:
-        with open(path, encoding="utf-8", errors="replace") as fh:
+        with open(confined, encoding="utf-8", errors="replace") as fh:
             return fh.read()
     except OSError:
         return None

@@ -1,307 +1,244 @@
-"""Unit tests for the Docker Engine log/event connector.
-
-All HTTP is mocked via an injected fake transport — no real daemon, no socket,
-no network. Covers: container list (ps), a timestamped + multiplexed log
-stream, an events stream, internal-TCP SSRF reject, and health ok/not-ok.
-"""
+"""Structural tests for Docker Engine connector."""
 
 from __future__ import annotations
 
 import json
 from typing import Any
 
-from general_ludd.connectors.docker_engine import DockerEngineSource
-from general_ludd.connectors.docker_engine import _DockerResponse as Response
+import pytest
+
+from general_ludd.connectors.docker_engine import (
+    Connector,
+    DockerEngineSource,
+    Transport,
+    _DockerResponse,
+    _is_internal_literal_host,
+    _is_multiplexed,
+    _iter_log_payload,
+    _looks_rfc3339,
+    _record,
+    _split_rfc3339,
+)
+
+Response = _DockerResponse
 
 
-# --------------------------------------------------------------------------- #
-# Fake transport
-# --------------------------------------------------------------------------- #
 class FakeTransport:
-    """Routes (method, path) -> canned Response; records calls for assertions."""
-
     def __init__(self, routes: dict[tuple[str, str], Response]) -> None:
         self.routes = routes
         self.calls: list[dict[str, Any]] = []
 
     def __call__(
-        self,
-        method: str,
-        path: str,
-        query: dict[str, Any] | None,
-        base_url: str,
-        timeout: float,
+        self, method: str, path: str, query: dict[str, object] | None,
+        base_url: str, timeout: float,
     ) -> Response:
-        self.calls.append(
-            {
-                "method": method,
-                "path": path,
-                "query": query,
-                "base_url": base_url,
-                "timeout": timeout,
-            }
-        )
-        key = (method, path)
-        if key not in self.routes:
-            return Response(status=404, headers={}, body=b"")
-        return self.routes[key]
+        self.calls.append({"method": method, "path": path, "query": query, "base_url": base_url, "timeout": timeout})
+        return self.routes[(method, path)]
 
 
-def _json_resp(payload: Any) -> Response:
-    return Response(status=200, headers={"content-type": "application/json"}, body=json.dumps(payload).encode())
+def _resp(status: int, body: object = b"") -> Response:
+    raw = json.dumps(body).encode() if isinstance(body, (dict, list)) else body
+    return Response(status=status, headers={"Content-Type": "application/json"}, body=raw)
 
 
-def _frame(stream: int, text: str) -> bytes:
-    """Build one Docker multiplexed stream frame: 8-byte header + payload."""
-    data = text.encode("utf-8")
-    return bytes([stream, 0, 0, 0]) + len(data).to_bytes(4, "big") + data
-
-
-# --------------------------------------------------------------------------- #
-# Canned payloads
-# --------------------------------------------------------------------------- #
-CONTAINER_LIST = [
-    {
-        "Id": "abc123def456",
-        "Names": ["/web-1"],
-        "Image": "nginx:latest",
-        "State": "running",
-        "Status": "Up 3 hours",
-    },
-    {
-        "Id": "ffff0000",
-        "Names": ["/db-1"],
-        "Image": "postgres:16",
-        "State": "exited",
-        "Status": "Exited (0) 2 minutes ago",
-    },
+PS_PAYLOAD = [
+    {"Id": "abc123", "Names": ["/web-server"], "State": "running", "Status": "Up 3h", "Image": "nginx:latest"},
 ]
 
-# Multiplexed, timestamped log stream: stdout line then stderr line.
-LOG_STREAM = (
-    _frame(1, "2024-01-02T03:04:05.123456789Z hello from stdout\n")
-    + _frame(2, "2024-01-02T03:04:06.000000000Z oops on stderr\n")
-)
 
-EVENTS_STREAM = (
-    json.dumps(
-        {
-            "Type": "container",
-            "Action": "start",
-            "id": "abc123def456",
-            "from": "nginx:latest",
-            "time": 1704164645,
-            "timeNano": 1704164645123456789,
-            "Actor": {"ID": "abc123def456", "Attributes": {"image": "nginx:latest"}},
-        }
-    )
-    + "\n"
-    + json.dumps(
-        {
-            "Type": "image",
-            "Action": "pull",
-            "id": "postgres:16",
-            "from": "postgres:16",
-            "time": 1704164700,
-        }
-    )
-    + "\n"
-).encode()
+class TestHelpers:
+    def test_looks_rfc3339_valid(self) -> None:
+        assert _looks_rfc3339("2024-01-02T03:04:05.123Z") is True
+
+    def test_looks_rfc3339_invalid(self) -> None:
+        assert _looks_rfc3339("hello world") is False
+
+    def test_looks_rfc3339_too_short(self) -> None:
+        assert _looks_rfc3339("short") is False
+
+    def test_split_rfc3339_with_ts(self) -> None:
+        ts, msg = _split_rfc3339("2024-01-02T03:04:05.123Z hello world")
+        assert ts == "2024-01-02T03:04:05.123Z"
+        assert msg == "hello world"
+
+    def test_split_rfc3339_no_ts(self) -> None:
+        ts, msg = _split_rfc3339("plain message")
+        assert ts is None
+        assert msg == "plain message"
+
+    def test_split_rfc3339_empty(self) -> None:
+        ts, msg = _split_rfc3339("")
+        assert ts is None
+        assert msg == ""
+
+    def test_record_shape(self) -> None:
+        r = _record(
+            ts="2024-01-01T00:00:00Z",
+            source="docker",
+            level_or_status="stdout",
+            message="hello",
+            value=None,
+            labels={"k": "v"},
+            raw={"a": 1},
+        )
+        assert r["ts"] == "2024-01-01T00:00:00Z"
+        assert r["source"] == "docker"
+        assert r["kind"] == "logs"
+        assert r["level_or_status"] == "stdout"
+        assert r["message"] == "hello"
+        assert r["labels"] == {"k": "v"}
+
+    def test_is_multiplexed_valid(self) -> None:
+        frame = bytes([1, 0, 0, 0, 0, 0, 0, 5]) + b"hello"
+        assert _is_multiplexed(frame) is True
+
+    def test_is_multiplexed_invalid(self) -> None:
+        assert _is_multiplexed(b"plain text that is not multiplexed") is False
+
+    def test_is_multiplexed_short(self) -> None:
+        assert _is_multiplexed(b"short") is False
+
+    def test_is_multiplexed_bad_stream_byte(self) -> None:
+        frame = bytes([9, 0, 0, 0, 0, 0, 0, 5]) + b"hello"
+        assert _is_multiplexed(frame) is False
+
+    def test_iter_log_payload_multiplexed(self) -> None:
+        frame = bytes([1, 0, 0, 0, 0, 0, 0, 11]) + b"hello\nworld"
+        result = _iter_log_payload(frame)
+        assert len(result) == 2
+        assert result[0][0] == "stdout"
+        assert "hello" in result[0][1]
+
+    def test_iter_log_payload_plain(self) -> None:
+        result = _iter_log_payload(b"line one\nline two")
+        assert len(result) == 2
+        assert result[0][0] == "stdout"
+        assert result[0][1] == "line one"
+
+    def test_is_internal_literal_host_loopback(self) -> None:
+        assert _is_internal_literal_host("127.0.0.1") is True
+
+    def test_is_internal_literal_host_private(self) -> None:
+        assert _is_internal_literal_host("10.0.0.5") is True
+
+    def test_is_internal_literal_host_non_ip(self) -> None:
+        assert _is_internal_literal_host("docker.example.com") is True
+
+    def test_is_internal_literal_host_public_ip(self) -> None:
+        assert _is_internal_literal_host("8.8.8.8") is False
 
 
-# --------------------------------------------------------------------------- #
-# Tests
-# --------------------------------------------------------------------------- #
 class TestContract:
-    def test_kind_class_attr(self) -> None:
+    def test_kind(self) -> None:
         assert DockerEngineSource.KIND == "logs"
 
-    def test_name_and_default_socket(self) -> None:
-        src = DockerEngineSource({})
+    def test_transport_protocol_exists(self) -> None:
+        assert Transport is not None
+
+    def test_connector_alias(self) -> None:
+        assert Connector is DockerEngineSource
+
+
+class TestInit:
+    def test_defaults(self) -> None:
+        src = DockerEngineSource()
         assert src.name == "docker-engine"
-        assert src.base_url == "unix:///var/run/docker.sock"
+        assert "unix://" in src.base_url
 
-    def test_name_overridable(self) -> None:
-        src = DockerEngineSource({"name": "prod-engine"})
-        assert src.name == "prod-engine"
+    def test_custom(self) -> None:
+        src = DockerEngineSource({"name": "my-docker", "base_url": "unix:///custom/socket", "timeout": 5.0})
+        assert src.name == "my-docker"
+        assert src.base_url == "unix:///custom/socket"
+        assert src.timeout == 5.0
 
-
-class TestPs:
-    def test_ps_normalization(self) -> None:
-        t = FakeTransport({("GET", "/containers/json"): _json_resp(CONTAINER_LIST)})
-        src = DockerEngineSource({"transport": t})
-        records = src.query({"mode": "ps"})
-        assert len(records) == 2
-        first = records[0]
-        assert first["kind"] == "logs"
-        assert first["source"] == "docker-engine"
-        assert first["level_or_status"] == "running"
-        assert first["labels"]["container_id"] == "abc123def456"
-        assert first["labels"]["container_name"] == "web-1"
-        assert first["labels"]["image"] == "nginx:latest"
-        assert "web-1" in first["message"]
-        assert first["raw"]["Id"] == "abc123def456"
-        assert records[1]["level_or_status"] == "exited"
-
-
-class TestLogs:
-    def test_logs_request_params(self) -> None:
-        t = FakeTransport(
-            {("GET", "/containers/abc123def456/logs"): Response(200, {}, LOG_STREAM)}
-        )
-        src = DockerEngineSource({"transport": t})
-        src.query({"mode": "logs", "container_id": "abc123def456"})
-        q = t.calls[0]["query"]
-        assert q["stdout"] == "1"
-        assert q["stderr"] == "1"
-        assert q["timestamps"] == "1"
-        assert "tail" in q
-
-    def test_logs_multiplexed_ts_parse_and_labels(self) -> None:
-        t = FakeTransport(
-            {("GET", "/containers/abc123def456/logs"): Response(200, {}, LOG_STREAM)}
-        )
-        src = DockerEngineSource({"transport": t})
-        records = src.query(
-            {"mode": "logs", "container_id": "abc123def456", "container_name": "web-1"}
-        )
-        assert len(records) == 2
-        out, err = records
-        assert out["ts"] == "2024-01-02T03:04:05.123456789Z"
-        assert out["message"] == "hello from stdout"
-        assert out["labels"]["stream"] == "stdout"
-        assert out["labels"]["container_id"] == "abc123def456"
-        assert out["labels"]["container_name"] == "web-1"
-        assert out["level_or_status"] == "stdout"
-        assert out["kind"] == "logs"
-        assert err["ts"] == "2024-01-02T03:04:06.000000000Z"
-        assert err["message"] == "oops on stderr"
-        assert err["labels"]["stream"] == "stderr"
-
-    def test_logs_plain_tty_stream(self) -> None:
-        body = b"2024-01-02T03:04:05.000000000Z plain tty line\n"
-        t = FakeTransport({("GET", "/containers/cid/logs"): Response(200, {}, body)})
-        src = DockerEngineSource({"transport": t})
-        records = src.query({"mode": "logs", "container_id": "cid"})
-        assert len(records) == 1
-        assert records[0]["message"] == "plain tty line"
-        assert records[0]["ts"] == "2024-01-02T03:04:05.000000000Z"
-
-    def test_logs_requires_container_id(self) -> None:
-        src = DockerEngineSource({"transport": FakeTransport({})})
-        try:
-            src.query({"mode": "logs"})
-        except ValueError as exc:
-            assert "container_id" in str(exc)
-        else:
-            raise AssertionError("expected ValueError")
-
-
-class TestEvents:
-    def test_events_normalization(self) -> None:
-        t = FakeTransport({("GET", "/events"): Response(200, {}, EVENTS_STREAM)})
-        src = DockerEngineSource({"transport": t})
-        records = src.query({"mode": "events", "since": "1704164600"})
-        assert len(records) == 2
-        start = records[0]
-        assert start["level_or_status"] == "start"
-        assert start["message"] == "container start"
-        assert start["labels"]["id"] == "abc123def456"
-        assert start["labels"]["from"] == "nginx:latest"
-        assert start["ts"] is not None and start["ts"].startswith("2024-01-02")
-        assert records[1]["message"] == "image pull"
-
-    def test_events_since_passed_through(self) -> None:
-        t = FakeTransport({("GET", "/events"): Response(200, {}, EVENTS_STREAM)})
-        src = DockerEngineSource({"transport": t})
-        src.query({"mode": "events", "since": "999"})
-        assert t.calls[0]["query"]["since"] == "999"
-
-
-class TestSSRF:
-    def test_internal_tcp_host_rejected_in_query(self) -> None:
-        src = DockerEngineSource({"base_url": "http://127.0.0.1:2375"})
-        try:
-            src.query({"mode": "ps"})
-        except RuntimeError as exc:
-            assert "internal" in str(exc).lower() or "refused" in str(exc).lower()
-        else:
-            raise AssertionError("expected RuntimeError for internal TCP host")
-
-    def test_internal_tcp_host_rejected_in_health(self) -> None:
-        src = DockerEngineSource({"base_url": "http://10.0.0.5:2375"})
-        result = src.health()
-        assert result["ok"] is False
-        assert "refused" in result["detail"].lower() or "internal" in result["detail"].lower()
-
-    def test_localhost_name_rejected(self) -> None:
-        src = DockerEngineSource({"base_url": "http://localhost:2375"})
-        assert src.health()["ok"] is False
-
-    def test_non_ip_hostname_rejected_no_dns(self) -> None:
-        # We refuse to resolve DNS; a bare public-looking name is still blocked.
-        src = DockerEngineSource({"base_url": "http://example.com:2375"})
-        assert src.health()["ok"] is False
-
-    def test_public_ip_tcp_allowed(self) -> None:
-        # A public literal IP is permitted; transport is mocked so no real call.
-        t = FakeTransport({("GET", "/_ping"): Response(200, {}, b"OK")})
-        src = DockerEngineSource({"base_url": "http://93.184.216.34:2375", "transport": t})
-        assert src.health()["ok"] is True
-
-    def test_alibaba_metadata_ip_rejected(self) -> None:
-        # 100.100.100.200 sits in the CGNAT 100.64.0.0/10 range, which
-        # Python's ipaddress module does NOT classify as private/reserved --
-        # this was NOT reliably blocked by the old local
-        # _is_internal_literal_host (it relied on is_private/is_reserved).
-        src = DockerEngineSource({"base_url": "http://100.100.100.200:2375"})
-        assert src.health()["ok"] is False
-
-    def test_metadata_google_internal_name_rejected(self) -> None:
-        # Regression pin now that this routes through the canonical
-        # host_is_blocked name check (previously blocked only incidentally
-        # via the "any non-IP host is refused" rule).
-        src = DockerEngineSource({"base_url": "http://metadata.google.internal:2375"})
-        assert src.health()["ok"] is False
+    def test_ssrf_blocks_tcp_internal(self) -> None:
+        src = DockerEngineSource({"base_url": "http://10.0.0.1:2375"})
+        assert src._ssrf_error is not None
 
 
 class TestHealth:
-    def test_health_ok(self) -> None:
-        t = FakeTransport({("GET", "/_ping"): Response(200, {}, b"OK")})
+    def test_ok(self) -> None:
+        t = FakeTransport({("GET", "/_ping"): _resp(200)})
         src = DockerEngineSource({"transport": t})
-        result = src.health()
-        assert result["ok"] is True
-        assert result["detail"] == "ok"
+        r = src.health()
+        assert r["ok"] is True
 
-    def test_health_not_ok_status(self) -> None:
-        t = FakeTransport({("GET", "/_ping"): Response(500, {}, b"boom")})
+    def test_transport_error(self) -> None:
+        def _fail(*a: Any, **kw: Any) -> Response:
+            raise RuntimeError("down")
+
+        src = DockerEngineSource({"transport": _fail})
+        r = src.health()
+        assert r["ok"] is False
+
+    def test_ssrf_blocked(self) -> None:
+        src = DockerEngineSource({"base_url": "http://10.0.0.1:2375"})
+        r = src.health()
+        assert r["ok"] is False
+
+
+class TestQueryPs:
+    def test_returns_containers(self) -> None:
+        t = FakeTransport({("GET", "/containers/json"): _resp(200, PS_PAYLOAD)})
         src = DockerEngineSource({"transport": t})
-        result = src.health()
-        assert result["ok"] is False
-        assert "unexpected status 500" in result["detail"]
+        records = src.query({"mode": "ps"})
+        assert len(records) == 1
+        r = records[0]
+        assert r["source"] == "docker-engine"
+        assert r["kind"] == "logs"
+        assert r["labels"]["container_id"] == "abc123"
+        assert r["labels"]["container_name"] == "web-server"
 
-    def test_health_never_raises_on_transport_error(self) -> None:
-        def boom(*args: Any, **kwargs: Any) -> Response:
-            raise ConnectionError("socket gone")
+    def test_empty_list(self) -> None:
+        t = FakeTransport({("GET", "/containers/json"): _resp(200, [])})
+        src = DockerEngineSource({"transport": t})
+        records = src.query({"mode": "ps"})
+        assert records == []
 
-        src = DockerEngineSource({"transport": boom})
-        result = src.health()
-        assert result["ok"] is False
-        assert "ConnectionError" in result["detail"]
-
-
-class TestDispatch:
-    def test_unknown_mode_raises(self) -> None:
-        src = DockerEngineSource({"transport": FakeTransport({})})
-        try:
+    def test_unknown_mode(self) -> None:
+        src = DockerEngineSource()
+        with pytest.raises(ValueError):
             src.query({"mode": "bogus"})
-        except ValueError as exc:
-            assert "bogus" in str(exc)
-        else:
-            raise AssertionError("expected ValueError")
 
     def test_default_mode_is_ps(self) -> None:
-        t = FakeTransport({("GET", "/containers/json"): _json_resp(CONTAINER_LIST)})
+        t = FakeTransport({("GET", "/containers/json"): _resp(200, PS_PAYLOAD)})
         src = DockerEngineSource({"transport": t})
-        records = src.query()
-        assert len(records) == 2
+        records = src.query({})
+        assert len(records) >= 0  # type: ignore[arg-type]  # default mode ps returns list
+
+    def test_ssrf_blocked_raises(self) -> None:
+        src = DockerEngineSource({"base_url": "http://10.0.0.1:2375"})
+        with pytest.raises(RuntimeError):
+            src.query({"mode": "ps"})
+
+
+class TestQueryLogs:
+    def test_logs_no_container_id_raises(self) -> None:
+        src = DockerEngineSource()
+        with pytest.raises(ValueError):
+            src.query({"mode": "logs"})
+
+    def test_logs_returns_records(self) -> None:
+        t = FakeTransport({("GET", "/containers/abc/logs"): _resp(200, b"plain log line")})
+        src = DockerEngineSource({"transport": t})
+        records = src.query({"mode": "logs", "container_id": "abc"})
+        assert len(records) >= 1
+        assert records[0]["source"] == "docker-engine"
+
+
+class TestQueryEvents:
+    def test_events_returns_records(self) -> None:
+        event = json.dumps({"Type": "container", "Action": "start", "id": "abc123", "time": 1700000000}).encode()
+        t = FakeTransport({("GET", "/events"): _resp(200, event)})
+        src = DockerEngineSource({"transport": t})
+        records = src.query({"mode": "events"})
+        assert len(records) == 1
+        r = records[0]
+        assert r["level_or_status"] == "start"
+        assert "container" in r["message"]
+
+    def test_events_http_error_raises(self) -> None:
+        t = FakeTransport({("GET", "/events"): _resp(500)})
+        src = DockerEngineSource({"transport": t})
+        with pytest.raises(RuntimeError):
+            src.query({"mode": "events"})

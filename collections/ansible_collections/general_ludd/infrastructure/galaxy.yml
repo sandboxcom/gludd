@@ -1,0 +1,18 @@
+---
+namespace: general_ludd
+name: infrastructure
+version: 0.2.0
+readme: README.md
+description: >
+  Infrastructure roles for service discovery, auto-registration, and
+  auto-retirement.
+license:
+  - MIT
+authors:
+  - Agentic Harness Agent <agent@harness.local>
+tags:
+  - infrastructure
+  - service-discovery
+  - auto-registration
+  - auto-retirement
+dependencies: {}

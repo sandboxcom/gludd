@@ -12,6 +12,7 @@ import time
 from collections import OrderedDict
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from sqlalchemy import select
@@ -37,6 +38,8 @@ from general_ludd.db.repository import (
     TodoRepository,
     VariableNamespaceRepository,
 )
+from general_ludd.db.tenant import reset_tenant as _reset_tenant
+from general_ludd.db.tenant import set_tenant as _set_tenant
 from general_ludd.event_loop.lease import reclaim_expired_leases
 from general_ludd.execution.graph_checkpointer import TickCheckpointer
 from general_ludd.execution.human_gate import HumanGate
@@ -93,6 +96,7 @@ PHASE_ORDER = [
     "evaluate_pid_controllers",
     "refill_task_buckets",
     "run_scheduler",
+    "sdlc_gate",
     "claim_runnable_todos",
     "evaluate_rules",
     "dispatch_execute_jobs",
@@ -104,6 +108,7 @@ PHASE_ORDER = [
     "remediate_blocked_tasks",
     "self_improve",
     "poll_issue_sources",
+    "service_discovery",
     "emit_tick_metrics",
 ]
 
@@ -275,6 +280,21 @@ def _playbook_for_work_type(
     return _WORK_TYPE_PLAYBOOK_MAP.get(work_type, default)
 
 
+_RESOURCE_BASE_COST: dict[str, float] = {
+    "low_resource": 0.05,
+    "medium_resource": 0.25,
+    "high_resource": 1.0,
+}
+
+
+def _compute_todo_estimate(todo: object) -> float:
+    resource_profile: str = getattr(todo, "resource_profile", "low_resource") or "low_resource"
+    confidence: float | None = getattr(todo, "confidence", None)
+    base_cost = _RESOURCE_BASE_COST.get(resource_profile, 0.05)
+    effective_confidence = 0.5 if confidence is None else float(confidence)
+    return round(base_cost * (1.5 - effective_confidence), 4)
+
+
 class EventLoop:
     def __init__(
         self,
@@ -327,6 +347,7 @@ class EventLoop:
         ephemeral_account_manager: Any | None = None,
         inbound_queue: WriteQueue | None = None,
         checkpoint_manager: Any | None = None,
+        service_discovery: Any | None = None,
     ) -> None:
         self.worker_base_url = worker_base_url
         self.config = config or {}
@@ -343,6 +364,7 @@ class EventLoop:
         self._consensus_reviewer = consensus_reviewer
         self._langgraph_reviewer = langgraph_reviewer
         self._model_gateway = model_gateway
+        self._mock_gateway: Any = None
         self._dispatcher = dispatcher
         self._spend_limiter = spend_limiter  # may be overwritten post-construction by the daemon
         self._pause_controller = pause_controller
@@ -468,6 +490,8 @@ class EventLoop:
         # empties this queue between ticks (non-blocking) and applies each
         # Envelope inside its own DB session. None = drain disabled (no-op).
         self._inbound_queue: WriteQueue | None = inbound_queue
+        self._service_discovery = service_discovery
+        self._service_discovery_last_run: float = 0.0
 
     def _track_background_task(self, task: asyncio.Task[None]) -> None:
         """Register a fire-and-forget task so its reference is held until done.
@@ -574,6 +598,9 @@ class EventLoop:
         self, todo: Any, default_model_profile: str = "default"
     ) -> tuple[str | None, str | None, Any | None]:
         if self._adaptive_router is None:
+            logger.warning(
+                "_adaptive_router not initialized; skipping adaptive prompt routing"
+            )
             return None, None, None
         work_type = _safe_str(todo, "work_type", "feature") or "feature"
         task_type = _work_type_to_task_type(work_type)
@@ -705,6 +732,9 @@ class EventLoop:
                 self._push_retry_count = previous.get("_push_retry_count", self._push_retry_count)
         # M14 (W3.14): select ONE project per tick before phases run; reset after.
         self._tick_project_id = self._select_tick_project_id()
+        # C.3: propagate tenant context into thread-pool workers so sessions
+        # created inside asyncio.to_thread carry the project_id filter.
+        _tenant_token = _set_tenant(self._tick_project_id)
         start = time.monotonic()
         try:
             needs_own_session = self.session is None and self._session_factory is not None
@@ -750,6 +780,9 @@ class EventLoop:
         finally:
             # M14 (W3.14): always reset tick-scoped project selection after the tick.
             self._tick_project_id = None
+            # C.3: clear tenant context after tick so thread workers in
+            # subsequent ticks do not inherit a stale project_id.
+            _reset_tenant(_tenant_token)
         elapsed = time.monotonic() - start
         self._tick_metrics["tick_duration_ms"] = elapsed * 1000
         if self._daemon_state is not None:
@@ -1052,12 +1085,43 @@ class EventLoop:
             and bool(self.config.get("consensus_review", {}).get("enabled", False))
             and self._consensus_reviewer is not None
         )
+        review_cfg = (
+            self.config.get("review", {}) if isinstance(self.config, dict) else {}
+        )
         if (
             (_has_standard or _has_consensus)
             and self._active_session is not None
             and self._todo_repo is not None
         ):
-            await self._review_in_process(tr)
+            in_process_timeout = float(review_cfg.get("in_process_timeout", 600.0))
+            try:
+                await asyncio.wait_for(
+                    self._review_in_process(tr),
+                    timeout=in_process_timeout,
+                )
+            except TimeoutError:
+                logger.warning(
+                    "In-process review for return %s (job_id=REVIEW-%s) timed out "
+                    "after %.0fs; releasing claim and blocking todo",
+                    tr.return_id,
+                    tr.return_id,
+                    in_process_timeout,
+                )
+                if self._active_session is not None:
+                    with contextlib.suppress(Exception):
+                        tr.status = "created"
+                    if hasattr(tr, "updated_at"):
+                        with contextlib.suppress(Exception):
+                            tr.updated_at = datetime.now(UTC)
+                    with contextlib.suppress(Exception):
+                        await self._active_session.flush()
+                if self._todo_repo is not None:
+                    with contextlib.suppress(Exception):
+                        todo = await self._todo_repo.get_by_id(tr.todo_id)
+                        if todo is not None:
+                            await self._todo_repo.transition(
+                                tr.todo_id, TodoStatus.BLOCKED, todo.version
+                            )
             return
         project_id_val = getattr(tr, "project_id", None)
         if not isinstance(project_id_val, str):
@@ -1443,6 +1507,65 @@ class EventLoop:
         self._tick_metrics["scheduled_promoted"] = promoted
         self._tick_metrics["scheduled_spawned"] = spawned
 
+    async def _phase_sdlc_gate(self) -> None:
+        if not isinstance(self.config, dict):
+            return
+        sdlc_cfg = self.config.get("ai_sdlc", {})
+        if not sdlc_cfg:
+            return
+        enforce = sdlc_cfg.get("enforce", False)
+        stages = sdlc_cfg.get("pipeline_stages", {})
+        results: dict[str, Any] = {
+            "enforce": enforce,
+            "stages_checked": 0,
+            "stages_blocked": 0,
+            "stage_results": {},
+        }
+        for stage_name, stage_spec in stages.items():
+            if not isinstance(stage_spec, dict):
+                continue
+            entry_gates = stage_spec.get("entry_gates", {})
+            exit_gates = stage_spec.get("exit_gates", {})
+            entry_checks: list[str] = []
+            exit_checks: list[str] = []
+            stage_result: dict[str, object] = {
+                "entry_passed": True,
+                "exit_passed": True,
+                "entry_checks": entry_checks,
+                "exit_checks": exit_checks,
+            }
+            required_artifact_dir = stage_spec.get("artifact_dir")
+            if required_artifact_dir:
+                artifact_path = Path(required_artifact_dir)
+                if not artifact_path.exists():
+                    stage_result["entry_passed"] = False
+                    entry_checks.append(
+                        f"artifact_dir missing: {required_artifact_dir}"
+                    )
+            for gate_name, gate_spec in entry_gates.items():
+                if isinstance(gate_spec, dict) and gate_spec.get("required"):
+                    stage_result["entry_passed"] = False
+                    entry_checks.append(
+                        f"entry gate unsatisfied: {gate_name}"
+                    )
+            for gate_name, gate_spec in exit_gates.items():
+                if isinstance(gate_spec, dict) and gate_spec.get("required"):
+                    stage_result["exit_passed"] = False
+                    exit_checks.append(
+                        f"exit gate unsatisfied: {gate_name}"
+                    )
+            if not stage_result["entry_passed"] or not stage_result["exit_passed"]:
+                results["stages_blocked"] += 1
+            results["stages_checked"] += 1
+            results["stage_results"][stage_name] = stage_result
+        self._tick_state["sdlc_gate_results"] = results
+        if enforce and results["stages_blocked"] > 0:
+            logger.warning(
+                "SDLC gate: %d/%d stages blocked (enforce=true)",
+                results["stages_blocked"],
+                results["stages_checked"],
+            )
+
     async def _phase_claim_runnable_todos(self) -> None:
         if self._todo_repo is None:
             return
@@ -1497,29 +1620,33 @@ class EventLoop:
         else:
             claimed = await self._todo_repo.claim_runnable(limit=effective_limit)
         self._tick_state["claimed_todos"] = claimed
+        # ── Resource estimation: set estimated_cost_usd per claimed todo ──
+        if claimed and self._active_session is not None:
+            for todo in claimed:
+                todo.estimated_cost_usd = _compute_todo_estimate(todo)
         # H15 (W2.5): record a bucket lease per claimed todo so a crashed tick's
         # work can be reclaimed once the lease expires.
         if claimed and self._active_session is not None:
-            from general_ludd.event_loop.lease import acquire_lease
+            from general_ludd.event_loop.lease import acquire_leases_batch
             holder = f"tick-{self._total_ticks}"
+            bucket_keys = []
             for todo in claimed:
                 bucket_key = _safe_str(todo, "queue", "core") or "core"
                 todo_id = _safe_str(todo, "todo_id", "") or ""
-                try:
-                    await acquire_lease(
-                        self._active_session,
-                        bucket_key=f"{bucket_key}:{todo_id}",
-                        holder_id=holder,
-                        project_id=project_id,
-                    )
-                except Exception as exc:
-                    logger.warning(
-                        "Lease acquisition failed for todo %s (bucket=%s): %s",
-                        todo_id,
-                        bucket_key,
-                        exc,
-                        exc_info=True,
-                    )
+                bucket_keys.append(f"{bucket_key}:{todo_id}")
+            try:
+                await acquire_leases_batch(
+                    self._active_session,
+                    bucket_keys,
+                    holder_id=holder,
+                    project_id=project_id,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Batch lease acquisition failed for %d todos: %s",
+                    len(bucket_keys), exc,
+                    exc_info=True,
+                )
 
     async def _phase_dispatch_execute_jobs(self) -> None:
         claimed = self._tick_state.get("claimed_todos", [])
@@ -1857,6 +1984,10 @@ class EventLoop:
 
         Only terminal-and-done human-todos are surfaced (dismissed todos
         cancel the parent agent todo, so it never re-dispatches).
+
+        E12: replaced the Python-side filter-over-all-rows pattern with a
+        SQL-side WHERE parent_agent_todo_id=? AND status='done' LIMIT 1 query
+        via HumanTodoRepository.get_done_for_parent.
         """
         factory = self._session_factory
         if factory is None:
@@ -1868,19 +1999,9 @@ class EventLoop:
         try:
             async with factory() as session:
                 repo = HumanTodoRepository(session)
-                rows = await repo.list_all(limit=50)
-                # Most recent DONE human-todo naming this parent.
-                done_for_this = [
-                    r for r in rows
-                    if r.parent_agent_todo_id == todo_id and r.status == "done"
-                ]
-                if not done_for_this:
+                top = await repo.get_done_for_parent(todo_id)
+                if top is None:
                     return None
-                done_for_this.sort(
-                    key=lambda r: r.resolved_at or r.updated_at,
-                    reverse=True,
-                )
-                top = done_for_this[0]
                 return top.human_resolution
         except Exception as exc:
             logger.warning(
@@ -2151,7 +2272,8 @@ class EventLoop:
             _model_call_start = time.monotonic()
             _model_call_success = False
             _model_call_error: str | None = None
-            if self._model_gateway is not None and is_generation_work_type(
+            _eff_gateway = self._mock_gateway if self._mock_gateway is not None else self._model_gateway
+            if _eff_gateway is not None and is_generation_work_type(
                 _safe_str(todo, "work_type", "code") or "code"
             ):
                 # Deployment health check: before calling the model, verify
@@ -2216,7 +2338,7 @@ class EventLoop:
                     )
                     model_response, model_tool_calls = await self._bounded_to_thread(
                         invoke_model_for_generation,
-                        self._model_gateway,
+                        _eff_gateway,
                         job_id=job_id,
                         work_type=_safe_str(todo, "work_type", "code") or "code",
                         model_profile=resolved_model_profile,
@@ -2291,8 +2413,8 @@ class EventLoop:
                 _output_tokens = len(model_response or "") // 4
                 _profile_id = resolved_model_profile or "default"
                 _profile_obj: Any = None
-                if self._model_gateway is not None:
-                    _profile_obj = self._model_gateway.get_profile(_profile_id)
+                if _eff_gateway is not None:
+                    _profile_obj = _eff_gateway.get_profile(_profile_id)
                 _cost_usd = 0.0
                 if _profile_obj is not None and hasattr(_profile_obj, "cost_per_input_token"):
                     _cost_usd = (
@@ -2423,12 +2545,26 @@ class EventLoop:
                         from general_ludd.execution.langgraph_agent import LangGraphAgentLoop
 
                         auditor = ToolCallAuditor()
+                        _adversarial_detector = None
+                        if self._daemon_state is not None:
+                            _adversarial_detector = self._daemon_state.get(
+                                "_adversarial_detector"
+                            )
+                        _max_total_tokens = (
+                            self.config.get("tool_loop", {})
+                            .get("max_total_tokens", None)
+                            if isinstance(self.config, dict)
+                            else None
+                        )
                         tool_loop = LangGraphAgentLoop(
                             model_gateway=self._model_gateway,
                             mcp_client=self._mcp_client,
                             mcp_registry=self._mcp_tool_registry,
                             role="event_loop",
                             tool_auditor=auditor,
+                            budget_guard=self._budget_guard,
+                            adversarial_detector=_adversarial_detector,
+                            max_total_tokens=_max_total_tokens,
                         )
                         logger.debug(
                             "EventLoop: using LangGraphAgentLoop for Phase-2"
@@ -3134,6 +3270,10 @@ class EventLoop:
             stmt = stmt.where(TaskDecisionModel.project_id == project_id)
         result = await self._active_session.execute(stmt)
         decisions = list(result.scalars().all())
+        todo_ids = [d.matched_todo_id for d in decisions if d.matched_todo_id]
+        todo_map: dict[str, Any] = {}
+        if todo_ids and self._todo_repo is not None:
+            todo_map = await self._todo_repo.get_by_ids(todo_ids, project_id=project_id)
         reconciled = 0
         push_failures = 0
         for d in decisions:
@@ -3151,11 +3291,11 @@ class EventLoop:
                     d.decision == "complete"
                     and d.matched_todo_id not in self._pushed_work
                 ):
-                    todo = await self._todo_repo.get_by_id(d.matched_todo_id)
+                    todo = todo_map.get(d.matched_todo_id)
                     if todo is not None and await self._attempt_completed_push(todo):
                         push_failures += 1
                 continue
-            todo = await self._todo_repo.get_by_id(d.matched_todo_id)
+            todo = todo_map.get(d.matched_todo_id)
             if todo is None or todo.status != TodoStatus.REVIEWING_RETURN.value:
                 continue
             new_status = self._decision_to_status(d.decision)
@@ -3204,6 +3344,55 @@ class EventLoop:
                     new_status = self._decision_to_status(_verified.decision)
                     if new_status is None:
                         continue
+            # D2: gate a still-COMPLETE decision behind the EXTERNAL target
+            # project's own quality gate when it declares one via project.yml.
+            # This mirrors the gate in decision_applier.py (apply_decision) so
+            # the reconcile phase applies the same quality-gate policy as the
+            # review phase. Fail-safe: any error resolving/running the gate
+            # leaves the decision unchanged.
+            if d.decision == "complete" and _repo_root is not None:
+                _ws = Path(_repo_root)
+                if (_ws / "project.yml").is_file():
+                    from general_ludd.quality.project_gate import run_project_gate
+                    try:
+                        _gate_report = await self._bounded_to_thread(
+                            run_project_gate, str(_ws)
+                        )
+                    except Exception as exc:
+                        logger.warning(
+                            "Reconcile: project gate errored for decision %s "
+                            "(repo_root=%s): %s — leaving decision unchanged "
+                            "(fail-safe)",
+                            decision_id, _repo_root, exc,
+                        )
+                    else:
+                        if isinstance(_gate_report, dict) and not _gate_report.get("passed"):
+                            _checks = _gate_report.get("checks")
+                            _lines: list[str] = []
+                            if isinstance(_checks, list):
+                                for _c in _checks:
+                                    if (
+                                        isinstance(_c, dict)
+                                        and not _c.get("passed", True)
+                                    ):
+                                        _s = _c.get("summary")
+                                        if isinstance(_s, str) and _s:
+                                            _lines.append(_s)
+                                        else:
+                                            _lines.append(
+                                                f"{_c.get('name', 'check')}: FAIL"
+                                            )
+                            _fail_summary = (
+                                "; ".join(_lines)
+                                if _lines
+                                else "project gate FAILED"
+                            )
+                            logger.warning(
+                                "Reconcile: project gate FAILED for decision %s "
+                                "— downgrading complete -> needs_more_work: %s",
+                                decision_id, _fail_summary,
+                            )
+                            new_status = TodoStatus.NEEDS_MORE_WORK
             # Human-in-the-loop gate: when config ``review.human_in_the_loop`` is
             # enabled and the decision confidence is below the configured
             # threshold, pause via LangGraph interrupt() for human approval.
@@ -3320,19 +3509,21 @@ class EventLoop:
             )
             return False
 
-        # D10 (#53): exponential backoff with jitter — after the first
-        # failure, add a jittered sleep so competing workers don't retry
-        # in lockstep (both claim, both see conflict, both release, repeat).
-        # The tick-based window still skips most ticks; the jitter breaks
-        # the exact-phase alignment that causes the livelock.
+        # D10 (#53): exponential backoff with jitter + per-todo hash offset.
+        # Two todos at the same retry_count that use only tick % window
+        # always check the same tick — they collide deterministically.
+        # Per-todo offset (hash(tid) % window) spreads their check ticks
+        # apart, making deterministic collision structurally impossible.
+        # The jittered sleep after still provides runtime de-sync.
         retry_count = self._push_retry_count.get(tid, 0)
         if retry_count > 0:
             window = 2 ** min(retry_count, 6)  # cap at 64-tick window
             tick = self._total_ticks
-            if tick % window != 0:
+            offset = abs(hash(tid)) % window
+            if (tick + offset) % window != 0:
                 logger.debug(
-                    "#53: backoff skip for %s (retry %d, tick %d, window %d)",
-                    tid, retry_count, tick, window,
+                    "#53: backoff skip for %s (retry %d, tick %d, window %d, offset %d)",
+                    tid, retry_count, tick, window, offset,
                 )
                 return True  # signal failure so ledger skips marking pushed
             # D10: jittered backoff to break retry-phase alignment
@@ -3675,6 +3866,12 @@ class EventLoop:
                             "Failed to record infra cost for teardown of %s: %s",
                             ep.endpoint_id, _exc,
                         )
+                else:
+                    logger.warning(
+                        "_infra_tracker not initialized; cannot record GPU cost "
+                        "for teardown of %s",
+                        ep.endpoint_id,
+                    )
                 if self._deployment_manager is not None:
                     try:
                         await self._deployment_manager.destroy(ep.endpoint_id)
@@ -3684,6 +3881,12 @@ class EventLoop:
                             ep.endpoint_id, exc,
                         )
                         continue
+                else:
+                    logger.warning(
+                        "_deployment_manager not initialized; cannot destroy "
+                        "idle endpoint %s",
+                        ep.endpoint_id,
+                    )
                 self._utilization_tracker.unregister_endpoint(ep.endpoint_id)
                 idle_tracking.pop(ep.endpoint_id, None)
                 torn_down.append(ep.endpoint_id)
@@ -4284,14 +4487,10 @@ class EventLoop:
     ) -> int:
         if self._todo_repo is None or self._active_session is None:
             return 0
-        # Admission gate (W3.7): cap how many self-improve todos may be open at
-        # once and decide each admitted todo's initial status. auto_queue
-        # defaults to False so self-authored code/test work is parked in
-        # APPROVAL_REQUIRED for a human review gate rather than silently
-        # executing (a self-modification approval bypass otherwise). Held todos
-        # are released via `gludd self-improve approve/reject` or the daemon
-        # /self-improve/approvals routes. Set self_improve.auto_queue: true in
-        # config to opt back into immediate QUEUED admission.
+        # Admission gate (W3.7 / C13): cap how many self-improve todos may be
+        # open at once. All admitted todos land in APPROVAL_REQUIRED — the
+        # SelfImproveApprovalManager wired human-approval path is the ONLY way
+        # to release a held todo. auto_queue was removed (C13 bypass).
         from general_ludd.self_improve.gate import SelfImproveGate
 
         si_cfg = self.config.get("self_improve", {}) if isinstance(self.config, dict) else {}
@@ -4299,7 +4498,6 @@ class EventLoop:
             si_cfg = {}
         gate = SelfImproveGate(
             max_open=si_cfg.get("max_open", 10),
-            auto_queue=si_cfg.get("auto_queue", False),
         )
         terminal = {
             TodoStatus.COMPLETE.value,
@@ -4390,7 +4588,11 @@ class EventLoop:
             )
         # Log current routing decisions.
         router: Any = getattr(self, "_adaptive_router", None)
-        if router is not None and hasattr(router, "current_routing_decisions"):
+        if router is None:
+            logger.warning(
+                "_adaptive_router not initialized; skipping routing decision capture"
+            )
+        elif hasattr(router, "current_routing_decisions"):
             try:
                 decisions = await router.current_routing_decisions()
                 self._tick_metrics["model_routing_decisions"] = len(decisions)
@@ -4424,6 +4626,33 @@ class EventLoop:
                 logger.info("Polled %d new issue(s) into intake queue", persisted)
         except Exception as exc:
             logger.warning("Issue source polling failed: %s", exc)
+
+    async def _phase_service_discovery(self) -> None:
+        if self._service_discovery is None:
+            return
+        cfg = self.config if isinstance(self.config, dict) else {}
+        enabled = cfg.get("service_discovery_enabled", True)
+        if not enabled:
+            return
+        interval = cfg.get("service_discovery_interval_seconds", 86400)
+        now = time.monotonic()
+        if now - self._service_discovery_last_run < interval:
+            return
+        self._service_discovery_last_run = now
+        try:
+            report = await self._bounded_to_thread(
+                self._service_discovery.run_discovery_pipeline,
+            )
+            logger.info(
+                "Service discovery: %d new, %d changed, %d retired, %d total, %d errors",
+                len(getattr(report, "new_services", []) or []),
+                len(getattr(report, "changed_services", []) or []),
+                len(getattr(report, "retired_services", []) or []),
+                getattr(report, "total_discovered", 0),
+                len(getattr(report, "errors", []) or []),
+            )
+        except Exception as exc:
+            logger.warning("Service discovery tick failed: %s", exc, exc_info=True)
 
     async def _phase_emit_tick_metrics(self) -> None:
         logger.info("Tick metrics: %s", self._tick_metrics)
@@ -4521,6 +4750,7 @@ class EventLoop:
                 },
                 takeaway=str(takeaway)[:500] if takeaway else "",
                 error_message=str(error_msg)[:500] if error_msg else "",
+                project_id=getattr(todo, "project_id", None),
             )
             self._tick_metrics.setdefault("episodes_recorded", 0)
             self._tick_metrics["episodes_recorded"] += 1
@@ -4537,7 +4767,7 @@ class EventLoop:
                 min_episodes_to_consolidate=10,
             )
             agent_id = str(self._tick_project_id or "gludd")
-            result = await consolidator.consolidate(agent_id)
+            result = await consolidator.consolidate(agent_id, project_id=self._tick_project_id)
             if result["consolidated"] > 0:
                 self._tick_metrics["memory_consolidated"] = result["consolidated"]
                 self._tick_metrics["memory_episodes_consolidated"] = result.get(

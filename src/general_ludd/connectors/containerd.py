@@ -16,6 +16,7 @@ shell-free:
 The connector never raises out of :meth:`health` and emits normalized records
 with the canonical fields ``ts, source, kind, level_or_status, message, value,
 labels, raw``.
+
 """
 
 from __future__ import annotations

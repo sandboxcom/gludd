@@ -24,6 +24,7 @@ from general_ludd.agents.tool_adapter import AgentToolAdapter
 from general_ludd.execution.langgraph_agent import LangGraphAgentLoop
 from general_ludd.execution.tool_loop import ToolCallLoop
 from general_ludd.models.failover import ModelFailoverChain
+from general_ludd.security.capability_lattice import _BUILTIN as _KNOWN_ROLES
 
 
 class AgentCapabilities:
@@ -198,6 +199,7 @@ class AgentCapabilities:
     def make_langgraph_tool_loop(
         self,
         model_gateway: object,
+        role: str,
         mcp_client: object = None,
         mcp_registry: object = None,
     ) -> LangGraphAgentLoop:
@@ -210,12 +212,27 @@ class AgentCapabilities:
         Per-role capability gating and server_id resolution are preserved
         inside the returned loop.  SLM compaction and tool auditing are
         noted as follow-up items (see ``langgraph_agent.py``).
+
+        ``role`` is REQUIRED — the loop's capability gate (``check_dispatch``)
+        uses it to enforce per-role dispatch permissions.  Only known roles
+        from the capability lattice are accepted.
         """
+        if not role or not isinstance(role, str) or not role.strip():
+            raise ValueError(
+                f"make_langgraph_tool_loop: role is required, got {role!r}"
+            )
+        role = role.strip()
+        if role not in _KNOWN_ROLES:
+            raise ValueError(
+                f"make_langgraph_tool_loop: unknown role {role!r}; "
+                f"valid roles: {sorted(_KNOWN_ROLES.keys())}"
+            )
         return LangGraphAgentLoop(
             model_gateway=model_gateway,
-            chat_model=None,  # resolved per-run via _resolve_chat_model
+            chat_model=None,
             mcp_client=mcp_client,
             mcp_registry=cast(MCPToolRegistry | None, mcp_registry),
+            role=role,
         )
 
     def make_graph_gateway(

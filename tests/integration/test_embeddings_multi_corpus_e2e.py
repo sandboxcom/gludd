@@ -29,6 +29,7 @@ class TestMultiCorpusSearchRequestValidation:
             text="How do I deploy a model?",
             corpora=["skills", "task_types", "prompts", "traces", "events"],
             top_k=10,
+            include_embeddings=False,
         )
         assert len(req.corpora) == 5
         assert req.text == "How do I deploy a model?"
@@ -38,6 +39,8 @@ class TestMultiCorpusSearchRequestValidation:
         req = MultiCorpusSearchRequest(
             text="test",
             corpora=["skills"],
+            top_k=5,
+            include_embeddings=False,
         )
         assert req.corpora == ["skills"]
 
@@ -46,6 +49,8 @@ class TestMultiCorpusSearchRequestValidation:
             MultiCorpusSearchRequest(
                 text="test",
                 corpora=["metrics"],  # not in valid set
+                top_k=5,
+                include_embeddings=False,
             )
 
     def test_empty_corpora_rejected(self) -> None:
@@ -53,6 +58,8 @@ class TestMultiCorpusSearchRequestValidation:
             MultiCorpusSearchRequest(
                 text="test",
                 corpora=[],  # min_length=1
+                top_k=5,
+                include_embeddings=False,
             )
 
     def test_top_k_bounds_enforced(self) -> None:
@@ -61,12 +68,14 @@ class TestMultiCorpusSearchRequestValidation:
                 text="test",
                 corpora=["skills"],
                 top_k=0,  # ge=1
+                include_embeddings=False,
             )
         with pytest.raises(ValidationError):
             MultiCorpusSearchRequest(
                 text="test",
                 corpora=["skills"],
                 top_k=21,  # le=20
+                include_embeddings=False,
             )
 
     def test_text_length_bounded(self) -> None:
@@ -74,11 +83,15 @@ class TestMultiCorpusSearchRequestValidation:
             MultiCorpusSearchRequest(
                 text="x" * 20001,
                 corpora=["skills"],
+                top_k=5,
+                include_embeddings=False,
             )
 
     def test_all_five_corpora_accepted(self) -> None:
         for corpus in ("skills", "task_types", "prompts", "traces", "events"):
-            req = MultiCorpusSearchRequest(text="test", corpora=[corpus])
+            req = MultiCorpusSearchRequest(
+                text="test", corpora=[corpus], top_k=5, include_embeddings=False
+            )
             assert corpus in req.corpora
 
 
@@ -130,18 +143,24 @@ class TestSingleCorpusSearchRequest:
 
     def test_valid_corpora_accepted(self) -> None:
         for corpus in ("skills", "task_types", "prompts", "traces", "events"):
-            req = EmbeddingSearchRequest(text="test", corpus=corpus)
+            req = EmbeddingSearchRequest(
+                text="test", corpus=corpus, top_k=5, include_embeddings=False, project_id=None
+            )
             assert req.corpus == corpus
 
     def test_invalid_corpus_rejected(self) -> None:
         with pytest.raises(ValidationError):
-            EmbeddingSearchRequest(text="test", corpus="unknown")
+            EmbeddingSearchRequest(
+                text="test", corpus="unknown", top_k=5, include_embeddings=False, project_id=None
+            )
 
     def test_project_id_for_tenant_isolation(self) -> None:
         req = EmbeddingSearchRequest(
             text="test",
             corpus="events",
             project_id="proj-42",
+            top_k=5,
+            include_embeddings=False,
         )
         assert req.project_id == "proj-42"
 

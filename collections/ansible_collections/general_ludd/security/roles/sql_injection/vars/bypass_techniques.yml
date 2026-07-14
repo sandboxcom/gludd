@@ -1,0 +1,147 @@
+---
+# WAF Bypass Techniques — common methods to evade Web Application Firewalls
+
+bypass_techniques:
+  encoding:
+    - technique: "URL encoding"
+      description: "Encode SQL keywords with URL encoding"
+      example: "%55%4E%49%4F%4E%20%53%45%4C%45%43%54 (UNION SELECT)"
+      waf_evasion: "Many WAFs decode once; double-encoding bypasses"
+      detection_difficulty: "easy — normalize before matching"
+
+    - technique: "Double URL encoding"
+      description: "Encode already-encoded characters"
+      example: "%2555%254E%2549%254F%254E (UNION)"
+      waf_evasion: "WAF may decode once, web server decodes again"
+      detection_difficulty: "moderate — normalize iteratively"
+
+    - technique: "Hex encoding"
+      description: "Encode strings as hex (MySQL-specific)"
+      example: "0x554e494f4e2053454c454354"
+      waf_evasion: "WAF may not decode hex strings"
+      detection_difficulty: "easy — hex-decode before matching"
+
+    - technique: "Unicode encoding"
+      description: "Use Unicode escapes"
+      example: "\u0055\u004E\u0049\u004F\u004E"
+      waf_evasion: "Many WAFs do not normalize Unicode"
+      detection_difficulty: "moderate — Unicode-normalize before matching"
+
+    - technique: "CHAR() function"
+      description: "Build strings with CHAR()/CHR()"
+      example: "CHAR(85,78,73,79,78) — builds 'UNION'"
+      waf_evasion: "WAF sees function calls, not keywords"
+      detection_difficulty: "moderate — detect CHAR/CHR with suspicious arg counts"
+
+    - technique: "Base64 encoding"
+      description: "Base64-encode payload"
+      example: "VU5JT04gU0VMRUNU (UNION SELECT in base64)"
+      waf_evasion: "WAF does not decode base64 in parameters"
+      detection_difficulty: "hard — requires base64 detection + decoding"
+
+  comment_obfuscation:
+    - technique: "Inline comments"
+      description: "Break keywords with comments"
+      example: "UN/**/ION SE/**/LECT"
+      waf_evasion: "WAF may not strip comments before matching"
+      detection_difficulty: "easy — strip comments before matching"
+
+    - technique: "Nested comments"
+      description: "Nested comment structures"
+      example: "UN/*!50000ION*/ SELECT"
+      waf_evasion: "Nested removal is complex; some WAFs fail"
+      detection_difficulty: "moderate — recursively strip comments"
+
+    - technique: "Versioned comments (MySQL)"
+      description: "Execute code only if MySQL version >= N"
+      example: "/*!50000UNION*//*!50000SELECT*/"
+      waf_evasion: "WAF treats as comments; MySQL executes"
+      detection_difficulty: "moderate — detect /*!N pattern"
+
+  whitespace_alternatives:
+    - technique: "Newline injection"
+      description: "Replace spaces with newlines"
+      example: "UNION%0aSELECT"
+      waf_evasion: "WAF may not normalize whitespace"
+      detection_difficulty: "easy — normalize all whitespace"
+
+    - technique: "Tab injection"
+      description: "Replace spaces with tabs"
+      example: "UNION%09SELECT"
+      waf_evasion: "WAF may match only literal space"
+      detection_difficulty: "easy — normalize all whitespace"
+
+    - technique: "Null byte injection"
+      description: "Insert null byte to terminate string early"
+      example: "UNION%00 SELECT"
+      waf_evasion: "WAF may stop processing at null byte"
+      detection_difficulty: "moderate — strip null bytes before matching"
+
+    - technique: "Multi-byte space"
+      description: "Use multi-byte whitespace characters (Japanese spaces, etc.)"
+      example: "UNION%E3%80%80SELECT (ideographic space)"
+      waf_evasion: "WAF may not know all Unicode whitespace"
+      detection_difficulty: "hard — requires Unicode whitespace normalization"
+
+  logical:
+    - technique: "String concatenation"
+      description: "Build keywords via concatenation"
+      example: "CONCAT('UN','ION',' SEL','ECT')"
+      waf_evasion: "WAF sees string functions, not final keyword"
+      detection_difficulty: "hard — requires taint tracking"
+
+    - technique: "Case variation"
+      description: "Mix upper/lower case"
+      example: "uNiOn SeLeCt"
+      waf_evasion: "Case-sensitive WAFs miss keywords"
+      detection_difficulty: "easy — case-insensitive matching"
+
+    - technique: "Replaced keywords"
+      description: "Use synonyms or equivalent constructs"
+      example: "UNI%53ELECT (hex-encode middle char — MySQL)"
+      waf_evasion: "WAF may not recognize obfuscated keyword"
+      detection_difficulty: "hard — requires pattern recognition"
+
+    - technique: "HTTP parameter pollution"
+      description: "Split payload across duplicate parameters"
+      example: "?id=1+UNION&id=SELECT"
+      waf_evasion: "WAF checks each parameter individually"
+      detection_difficulty: "hard — requires combined-parameter analysis"
+
+    - technique: "HTTP parameter fragmentation"
+      description: "Split payload across multiple request parameters"
+      example: "?a=1 UNION&b= SELECT username&c= FROM users"
+      waf_evasion: "No single parameter looks malicious"
+      detection_difficulty: "hard — requires cross-parameter analysis"
+
+  http_tricks:
+    - technique: "Content-Type evasion"
+      description: "Change Content-Type to bypass form-encoded rules"
+      example: "Send SQLi payload with Content-Type: application/json"
+      waf_evasion: "WAF may only check application/x-www-form-urlencoded"
+      detection_difficulty: "moderate — check all content types"
+
+    - technique: "HTTP method swap"
+      description: "Use POST for GET-expected parameters"
+      example: "POST /page?id=' UNION SELECT..."
+      waf_evasion: "WAF may only inspect query string on GET"
+      detection_difficulty: "moderate — inspect all methods"
+
+    - technique: "Chunked transfer encoding"
+      description: "Split payload across HTTP chunks"
+      example: "Chunk 1: ' UNION, Chunk 2:  SELECT ..."
+      waf_evasion: "WAF may not reassemble chunks"
+      detection_difficulty: "hard — requires reassembly"
+
+    - technique: "Multipart form-data bypass"
+      description: "Hide SQLi in multipart form data"
+      example: "Content-Disposition: form-data; name=\"id\"\n' UNION SELECT"
+      waf_evasion: "WAF may skip multipart bodies"
+      detection_difficulty: "moderate — parse multipart bodies"
+
+  ipc:
+    - technique: "Protocol-level fragmentation"
+      description: "Fragment payload across TCP segments"
+      example: "TCP segment 1: ' UN, TCP segment 2: ION SELECT"
+      waf_evasion: "WAF may not reassemble TCP streams"
+      detection_difficulty: "hard — requires full TCP reassembly"

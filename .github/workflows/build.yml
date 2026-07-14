@@ -108,6 +108,34 @@ jobs:
         env:
           GLUDD_PSK: ""
 
+      - name: Build hot-reload modules
+        # Auto-build hot-reload JS modules from current plugin .ts source so CI
+        # always tests with the freshest plugin code.  Ensures enforcement
+        # runtime tests exercise hot-module paths, not stale pre-built artifacts.
+        run: |
+          make hot-reload-plugins
+        env:
+          GLUDD_PSK: ""
+
+      - name: Verify hot-reload modules fresh
+        # Fails if any /tmp/gludd-hot-*.js is stale (older than its .ts source)
+        # or contains non-stripped TS artifacts.  Forces a make hot-reload-plugins
+        # before the gate can pass — no stale enforcement modules in CI.
+        run: |
+          make check-hot-reload-fresh
+        env:
+          GLUDD_PSK: ""
+
+      - name: Enforcement hook runtime tests
+        # Verifies all 10 enforcement plugins are structurally in BLOCKING mode
+        # (not advisory-only). Scans each plugin source for deny/throw patterns
+        # and checks no GLUDD_*_ENFORCE=0 env vars are set. CI goes red if any
+        # plugin is weakened — structural prevention of advisory-only regression.
+        run: |
+          make verify-enforcement
+        env:
+          GLUDD_PSK: ""
+
       - name: Check status table current (fast)
         if: startsWith(github.ref, 'refs/tags/v')
         # Verify README.md status table matches docs/features.yml generation.
@@ -243,8 +271,8 @@ jobs:
         # `coverage` job downstream can merge them into a single canonical
         # coverage.xml.  --cov-report= suppresses per-shard terminal/xml output
         # (noise across 12 shard legs); the merged report is produced by the
-        # `coverage` job.  --cov-fail-under=0 disables the pyproject.toml
-        # fail_under=70 gate, which only applies to a FULL test run.
+        # `coverage` job.  Coverage gate is enforced by the `coverage` job
+        # downstream via pyproject.toml fail_under=70.
         run: |
           TESTPATHS="${{ matrix.testpaths }}"
           EXCLUDES="${{ matrix.exclude }}"
@@ -294,7 +322,6 @@ jobs:
           # the #45 local-OOM fix is unchanged.)
           uv run python scripts/adaptive_test.py $FILES \
             --cov=general_ludd --cov-report= \
-            --cov-fail-under=0 \
             -v \
             || { RC=$?; [ $RC -eq 5 ] && exit 0 || exit $RC; }
           # pytest-cov under xdist can leave parallel-named .coverage.<host>.<pid>
@@ -371,21 +398,18 @@ jobs:
             find coverage-data -name '.coverage.*' -exec cp {} .coverage-shards/ \;
           fi
           ls -la .coverage-shards/ || true
-          # Guard the combine: coverage-reporting is NON-GATING (no fail_under
-          # here; the shards run --cov-fail-under=0). This job first ran only
-          # after the test-shards started passing, exposing a latent bug where
-          # an empty shard-data glob made `coverage combine` exit 1 and sink the
-          # whole (otherwise-green) run. If no shard data is present, skip
-          # gracefully rather than fail — the tests themselves already passed.
+          # Guard the combine: coverage-reporting is GATING (fail_under=70
+          # inherited from pyproject.toml). This job first ran only after the
+          # test-shards started passing, exposing a latent bug where an empty
+          # shard-data glob made `coverage combine` exit 1 and sink the whole
+          # (otherwise-green) run. If no shard data is present, skip gracefully
+          # rather than fail — the tests themselves already passed.
           if ls .coverage-shards/.coverage.* >/dev/null 2>&1; then
             uv run coverage combine --keep .coverage-shards/.coverage.*
             uv run coverage xml
-            # --fail-under=0 overrides the fail_under=70 this invocation would
-            # otherwise inherit from pyproject.toml's [tool.coverage.report]
-            # (mirrors the per-shard --cov-fail-under=0 in test-shard above).
-            # Without it this job's "NON-GATING" claim (see the guard comment
-            # below) is false: a coverage dip alone can turn this step red.
-            uv run coverage report --skip-covered --fail-under=0
+            # fail_under=70 is inherited from pyproject.toml's [tool.coverage.report].
+            # A coverage dip below 70% will turn this step red, blocking the release.
+            uv run coverage report --skip-covered
           else
             echo "No shard coverage data found — skipping combine (reporting-only, non-gating; shards passed)."
           fi

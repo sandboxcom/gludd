@@ -15,6 +15,7 @@ Contract (shared across general_ludd.connectors.*):
   * ``health() -> {'ok', 'detail'}`` never raises
   * ``query(spec) -> list[dict]`` normalized records with keys:
     ts, source, kind, level_or_status, message, value, labels, raw
+
 """
 
 from __future__ import annotations

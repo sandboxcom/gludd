@@ -1,0 +1,104 @@
+---
+- name: Validate SOAP parameters
+  ansible.builtin.assert:
+    that:
+      - soap_handler_operation_name | length > 0
+    fail_msg: "soap_handler_operation_name is required"
+  when: not (soap_handler_parse_mode | bool)
+
+- name: Execute SOAP handler
+  ansible.builtin.command:
+    argv:
+      - "{{ soap_handler_python }}"
+      - -c
+      - |
+        import json, sys
+
+        wsdl_url = {{ soap_handler_wsdl_url | to_json }}
+        operation_name = {{ soap_handler_operation_name | to_json }}
+        parameters = {{ soap_handler_parameters | to_json }}
+        soap_version = {{ soap_handler_soap_version | to_json }}
+        security_headers = {{ soap_handler_security_headers | to_json }}
+        raw_envelope = {{ soap_handler_raw_envelope | to_json }}
+        parse_mode = {{ soap_handler_parse_mode | to_json }}
+        soap_action = {{ soap_handler_soap_action | to_json }}
+        endpoint_url = {{ soap_handler_endpoint_url | to_json }}
+        output_file = {{ soap_handler_output_file | to_json }}
+
+        def soap_ns(ver):
+            return {
+                "1.1": {
+                    "envelope": "http://schemas.xmlsoap.org/soap/envelope/",
+                    "encoding": "http://schemas.xmlsoap.org/soap/encoding/",
+                },
+                "1.2": {
+                    "envelope": "http://www.w3.org/2003/05/soap-envelope",
+                    "encoding": "http://www.w3.org/2003/05/soap-encoding",
+                },
+            }.get(ver, {})
+
+        nss = soap_ns(soap_version)
+        env_ns = nss.get("envelope", "http://schemas.xmlsoap.org/soap/envelope/")
+
+        if parse_mode:
+            import xml.etree.ElementTree as ET
+            if raw_envelope.startswith("<?xml") or raw_envelope.startswith("<"):
+                tree = ET.fromstring(raw_envelope)
+            else:
+                with open(raw_envelope, "rb") as f:
+                    tree = ET.fromstring(f.read())
+
+            def strip_ns(tag):
+                return tag.split("}", 1)[1] if "}" in tag else tag
+
+            body = tree.find(f"{{{env_ns}}}Body")
+            fault = tree.find(f"{{{env_ns}}}Body/{{{env_ns}}}Fault") if body is not None else None
+            header = tree.find(f"{{{env_ns}}}Header")
+
+            result = {
+                "mode": "parse",
+                "soap_version": soap_version,
+                "header": ET.tostring(header, encoding="unicode") if header is not None else None,
+                "body": ET.tostring(body, encoding="unicode") if body is not None else None,
+                "fault": ET.tostring(fault, encoding="unicode") if fault is not None else None,
+                "has_fault": fault is not None,
+            }
+        else:
+            parts = []
+            parts.append(f'<?xml version="1.0" encoding="UTF-8"?>')
+            parts.append(f'<soap:Envelope xmlns:soap="{env_ns}">')
+
+            if security_headers:
+                parts.append('<soap:Header>')
+                parts.append(security_headers)
+                parts.append('</soap:Header>')
+
+            parts.append('<soap:Body>')
+            parts.append(f'<{operation_name} xmlns="{soap_handler_namespace}">')
+            for key, value in parameters.items():
+                parts.append(f"<{key}>{value}</{key}>")
+            parts.append(f'</{operation_name}>')
+            parts.append('</soap:Body>')
+            parts.append('</soap:Envelope>')
+
+            result = {
+                "mode": "build",
+                "soap_version": soap_version,
+                "envelope": "\n".join(parts),
+                "endpoint": endpoint_url,
+                "soap_action": soap_action,
+            }
+
+        with open(output_file, "w") as f:
+            json.dump(result, f, default=str)
+  changed_when: true
+  register: _soap_result
+
+- name: Read SOAP output
+  ansible.builtin.slurp:
+    src: "{{ soap_handler_output_file }}"
+  register: _soap_output
+
+- name: Set SOAP result fact
+  ansible.builtin.set_fact:
+    soap_handler_result: "{{ _soap_output.content | b64decode | from_json }}"

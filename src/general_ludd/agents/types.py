@@ -50,3 +50,4 @@ class AgentTask:
     project_id: str | None = None  # #51: enables pause-gate on dispatch
     depth: int = 0  # D11: subagent nesting depth for max-depth guard
     tools: list[dict[str, object]] | None = None
+    estimated_effort: str = "medium"  # small, medium, large — for task splitter gating

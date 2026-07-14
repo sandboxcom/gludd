@@ -1,0 +1,9 @@
+---
+# xslt_transformer role defaults
+
+xslt_file: ""
+xml_input: ""
+output_file: "/tmp/gludd-xslt-transformer/output"
+output_format: "xml"
+params: {}
+artifact_dir: "/tmp/gludd-xslt-transformer"

@@ -59,7 +59,15 @@ def _confidence_threshold(config: dict[str, Any] | None) -> float:
         return _DEFAULT_CONFIDENCE_THRESHOLD
 
 
-def _build_gate_graph() -> Any:
+def _build_gate_graph(checkpointer: Any | None = None) -> Any:
+    if checkpointer is None and _LANGGRAPH_AVAILABLE:
+        try:
+            from langgraph.checkpoint.memory import InMemorySaver
+
+            checkpointer = InMemorySaver()
+        except ImportError:
+            pass
+
     builder = StateGraph(_GateState)
 
     def gate_node(state: _GateState) -> dict[str, str]:
@@ -70,7 +78,7 @@ def _build_gate_graph() -> Any:
     builder.add_node("gate", gate_node)
     builder.set_entry_point("gate")
     builder.set_finish_point("gate")
-    return builder.compile()
+    return builder.compile(checkpointer=checkpointer)
 
 
 class HumanGate:

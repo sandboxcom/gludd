@@ -49,10 +49,10 @@ DEADLINES_FILE = os.environ.get(
 STALE_FILE = os.environ.get("GLUDD_TASK_STALE_FILE", "/tmp/gludd-task-stale.json")
 KILLED_FILE = os.environ.get("GLUDD_TASK_KILLED_FILE", "/tmp/gludd-task-killed.json")
 WATCHDOG_PID_FILE = os.environ.get(
-    "GLUDD_TASK_WATCHDOG_PID", "/tmp/gludd-task-watchdog.pid"
+    "GLUDD_TASK_WATCHDOG_PID", ".gate-logs/task-watchdog.pid"
 )
 WATCHDOG_LOG = os.environ.get(
-    "GLUDD_TASK_WATCHDOG_LOG", "/tmp/gludd-task-watchdog.log"
+    "GLUDD_TASK_WATCHDOG_LOG", ".gate-logs/task-watchdog.log"
 )
 
 TIMEOUT_MS = int(os.environ.get("GLUDD_TASK_TIMEOUT_MS", "300000"))

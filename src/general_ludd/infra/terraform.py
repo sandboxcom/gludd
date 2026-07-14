@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import shlex
 import textwrap
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -100,6 +101,10 @@ def _engine_serve_cmd(config: ComputeConfig) -> str:
     shlex.quote'd so that no value can break out of its argument position and
     inject shell commands.  This is the primary mitigation for the cloud-init
     RCE vector; the field_validators in compute.py are defense-in-depth.
+
+    Workload-aware: when workload_type is set, engine-specific flags for
+    tensor_parallel, max_model_len, max_num_seqs, enforce_eager, etc. are
+    appended from the deployment profile.
     """
     image = _container_image(config)
     base_argv = [
@@ -110,8 +115,45 @@ def _engine_serve_cmd(config: ComputeConfig) -> str:
     ]
     if config.engine == InferenceEngine.LLAMACPP:
         argv = [*base_argv, "-m", shlex.quote(config.model_name), "--host", "0.0.0.0", "--port", "8000"]
+        # Workload-aware flags for llama.cpp
+        if config.workload_type:
+            profile = config.deployment_profile or {}
+            tp = profile.get("tensor_parallel")
+            if tp and isinstance(tp, int) and tp > 1:
+                argv.extend(["--tensor-split", str(tp)])
+            ctx = profile.get("context_length")
+            if ctx and isinstance(ctx, int) and ctx > 0:
+                argv.extend(["--ctx-size", str(ctx)])
+            batch = profile.get("batch_size")
+            if batch and isinstance(batch, int):
+                argv.extend(["--batch-size", str(batch)])
+            threads = profile.get("threads")
+            if threads and isinstance(threads, int) and threads > 0:
+                argv.extend(["--threads", str(threads)])
     else:
+        # vLLM — build serve command with model name first
         argv = [*base_argv, "--model", shlex.quote(config.model_name), "--host", "0.0.0.0", "--port", "8000"]
+        # Workload-aware flags for vLLM
+        if config.workload_type:
+            profile = config.deployment_profile or {}
+            tp = profile.get("tensor_parallel")
+            if tp and isinstance(tp, int) and tp > 1:
+                argv.extend(["--tensor-parallel-size", str(tp)])
+            ctx = profile.get("context_length")
+            if ctx and isinstance(ctx, int) and ctx > 0:
+                argv.extend(["--max-model-len", str(ctx)])
+            seqs = profile.get("max_num_seqs")
+            if seqs and isinstance(seqs, int):
+                argv.extend(["--max-num-seqs", str(seqs)])
+            gmu = profile.get("gpu_memory_utilization")
+            if gmu and isinstance(gmu, (int, float)):
+                argv.extend(["--gpu-memory-utilization", str(gmu)])
+            eager = profile.get("enforce_eager")
+            if eager is True:
+                argv.append("--enforce-eager")
+            quant = profile.get("quantization")
+            if quant and isinstance(quant, str) and quant not in ("", "bf16", "fp16"):
+                argv.extend(["--quantization", str(quant)])
     # Join with spaces; fixed tokens are already safe, user-supplied tokens are quoted.
     return " ".join(argv)
 
@@ -129,7 +171,32 @@ def _user_data_script(config: ComputeConfig) -> str:
         f'echo "MAX_COST={config.max_cost_usd}" >> /etc/environment\n'
         f'echo "TIMEOUT_MIN={config.timeout_minutes}" >> /etc/environment\n'
     )
+    if config.workload_type:
+        script += f'echo "WORKLOAD_TYPE={config.workload_type}" >> /etc/environment\n'
     return script
+
+
+def _override_apply(terraform_config: object | None) -> Callable[[str, object], object]:
+    """Return a callable that resolves a field value with TerraformConfig override.
+
+    If terraform_config is set and has a non-default/non-empty value for the
+    given field, that value wins. Otherwise the compute default is returned.
+    """
+    def _resolve(key: str, compute_default: object) -> object:
+        if terraform_config is None:
+            return compute_default
+        tcv = getattr(terraform_config, key, None)
+        if tcv is None:
+            return compute_default
+        if isinstance(tcv, bool) and tcv is True:
+            return tcv  # booleans: True is a valid override vs default True
+        if isinstance(tcv, str) and tcv == "":
+            return compute_default
+        if isinstance(tcv, (int, float)) and tcv == 0:
+            # 0 is a valid override for gpu_count=1 etc. — allow it.
+            pass
+        return tcv
+    return _resolve
 
 
 class TerraformGenerator:
@@ -137,13 +204,17 @@ class TerraformGenerator:
         self,
         state_backend_selector: StateBackendSelector | None = None,
         deployment_optimization_config: DeploymentOptimizationConfig | None = None,
+        terraform_config: object | None = None,
     ) -> None:
-        # Optional state-backend selector (design doc §10 #2). When attached,
+        # Optional state-backend selector (design doc \u00a710 #2). When attached,
         # every generated main.tf is prepended with the appropriate
         # ``terraform { backend "..." {} }`` block. ``None`` preserves the
         # legacy local-state default (no backend block emitted).
         self._state_backend_selector = state_backend_selector
         self._deployment_optimization_config = deployment_optimization_config
+        # User-configurable TerraformConfig (from general_ludd.config.user_config).
+        # Fields set here act as overrides for ComputeConfig defaults in build_tfvars.
+        self._terraform_config = terraform_config
 
     def generate(self, config: ComputeConfig) -> str:
         body = self._generate_body(config)
@@ -167,6 +238,7 @@ class TerraformGenerator:
             ComputeProvider.DIGITAL_OCEAN: self._generate_generic,
             ComputeProvider.ORACLE: self._generate_generic,
             ComputeProvider.VMWARE: self._generate_vsphere,
+            ComputeProvider.KUBERNETES: self._generate_kubernetes,
         }
         handler = dispatch.get(config.provider, self._generate_generic)
         return handler(config)
@@ -189,27 +261,69 @@ class TerraformGenerator:
         All string values are passed through :func:`escape_tfvar_value` so the
         output is always a syntactically valid HCL tfvars file regardless of
         the characters in the config fields. Numeric values are emitted bare.
+
+        User-configurable TerraformConfig overrides are applied on top of
+        ComputeConfig defaults: a non-empty/non-default field in TerraformConfig
+        wins over the corresponding ComputeConfig field.
+
+        Workload-aware: emits workload_type, context_length, max_tokens,
+        batch_size, tensor_parallel, gpu_memory_utilization, quantization,
+        threads, max_num_seqs, enforce_eager, enable_prefix_caching,
+        enable_chunked_prefill, and kv_cache_dtype when set.
         """
-        image = _container_image(config)
+        _apply_override = _override_apply(self._terraform_config)
+        _ci = _container_image(config)
+
+        engine = config.engine.value
+        prefix = f"{engine}_"
         lines: list[str] = [
             f"provider       = {escape_tfvar_value(config.provider.value)}",
             f"engine         = {escape_tfvar_value(config.engine.value)}",
             f"gpu_type       = {escape_tfvar_value(config.gpu_type.value)}",
-            f"gpu_count      = {config.gpu_count}",
-            f"model_name     = {escape_tfvar_value(config.model_name)}",
-            f"container_image = {escape_tfvar_value(image)}",
-            f"disk_size_gb   = {config.disk_size_gb}",
-            f"max_cost_usd   = {escape_tfvar_value(str(config.max_cost_usd))}",
-            f"timeout_minutes = {escape_tfvar_value(str(config.timeout_minutes))}",
-            f"allowed_cidr   = {escape_tfvar_value(config.allowed_cidr)}",
+            f"gpu_count      = {_apply_override('gpu_count', config.gpu_count)}",
+            f"model_name     = {escape_tfvar_value(str(_apply_override('model_name', config.model_name)))}",
+            f"container_image = {escape_tfvar_value(str(_apply_override('container_image', _ci)))}",
+            f"disk_size_gb   = {_apply_override('disk_size_gb', config.disk_size_gb)}",
+            f"max_cost_usd   = {escape_tfvar_value(str(_apply_override('max_cost_usd', config.max_cost_usd)))}",
+            f"timeout_minutes = {escape_tfvar_value(str(_apply_override('timeout_minutes', config.timeout_minutes)))}",
+            f"allowed_cidr   = {escape_tfvar_value(str(_apply_override('allowed_cidr', config.allowed_cidr)))}",
+            f"extra_args      = {escape_tfvar_value(str(_apply_override('extra_args', '')))}",
+            f"instance_type   = {escape_tfvar_value(str(_apply_override('instance_type', '')))}",
         ]
-        if config.region is not None:
-            lines.append(f"region         = {escape_tfvar_value(config.region)}")
+        region_val = _apply_override('region', config.region or "us-east-1")
+        lines.append(f"region         = {escape_tfvar_value(str(region_val))}")
+
+        # Workload-aware deployment tfvars.
+        wt = config.workload_type or "batch_inference"
+        lines.append(f"workload_type              = {escape_tfvar_value(wt)}")
+
+        profile = config.deployment_profile or {}
+        default_profile: dict[str, object] = {
+            "context_length": 32768,
+            "max_tokens": 4096,
+            "batch_size": 256,
+            "tensor_parallel": 0,
+            "gpu_memory_utilization": 0.90,
+            "quantization": "",
+            "threads": 0,
+            "max_num_seqs": 256,
+            "enforce_eager": False,
+            "enable_prefix_caching": True,
+            "enable_chunked_prefill": True,
+            "kv_cache_dtype": "auto",
+        }
+        for key, default_val in default_profile.items():
+            val = profile.get(key, default_val)
+            if isinstance(val, bool):
+                lines.append(f"{prefix}{key} = {str(val).lower()}")
+            elif isinstance(val, str):
+                lines.append(f"{prefix}{key} = {escape_tfvar_value(val)}")
+            else:
+                lines.append(f"{prefix}{key} = {val}")
+
         if self._deployment_optimization_config is not None:
             d = self._deployment_optimization_config
-            engine = config.engine.value
             gpu = config.gpu_type.value
-            prefix = f"{engine}_"
             raw_preset = d.get_preset(engine, gpu)
             if hardware_preset is not None:
                 raw_preset.update(hardware_preset)
@@ -223,6 +337,24 @@ class TerraformGenerator:
                     lines.append(f"{tfvar_name} = {escape_tfvar_value(value)}")
                 else:
                     lines.append(f"{tfvar_name} = {value}")
+        # User-configurable overrides from TerraformConfig for inference feature flags.
+        if self._terraform_config is not None:
+            gdb = _apply_override(
+                'guided_decoding_backend',
+                getattr(config, 'guided_decoding_backend', 'outlines'),
+            )
+            lines.append(f"guided_decoding_backend    = {escape_tfvar_value(str(gdb))}")
+            eso = _apply_override(
+                'enable_structured_outputs',
+                getattr(config, 'enable_structured_outputs', True),
+            )
+            lines.append(f"enable_structured_outputs  = {str(eso).lower()}")
+            grammar = _apply_override(
+                'grammar_file',
+                getattr(config, 'grammar_file', None) or "",
+            )
+            if grammar:
+                lines.append(f"grammar_file               = {escape_tfvar_value(str(grammar))}")
         return "\n".join(lines) + "\n"
 
     def _generate_aws(self, config: ComputeConfig) -> str:
@@ -604,7 +736,7 @@ class TerraformGenerator:
             }}
         """)
 
-    def _generate_vsphere(self, config: ComputeConfig) -> str:
+    def _generate_vsphere(self, config: ComputeConfig, **kwargs: str) -> str:
         # Lazy-import pyvmomi so it is NOT a hard top-level dependency; the
         # vSphere provider only needs the SDK for direct vAPI calls (inventory
         # discovery, customization spec validation), which Terraform itself
@@ -627,10 +759,10 @@ class TerraformGenerator:
 
         image = _container_image(config)
         user_data = _user_data_script(config)
-        datacenter = "DC0"
-        cluster = "Cluster0"
-        datastore = "datastore0"
-        network = "VM Network"
+        datacenter = kwargs.get("datacenter", "DC0")
+        cluster = kwargs.get("cluster", "Cluster0")
+        datastore = kwargs.get("datastore", "datastore0")
+        network = kwargs.get("network", "VM Network")
 
         return textwrap.dedent(f"""\
             terraform {{
@@ -678,5 +810,42 @@ class TerraformGenerator:
 
             output "endpoint_url" {{
               value = module.vllm_server.endpoint_url
+            }}
+        """)
+
+    def _generate_kubernetes(self, config: ComputeConfig) -> str:
+        image = _container_image(config)
+        engine = escape_tfvar_value(config.engine.value)
+        model_name = escape_tfvar_value(config.model_name)
+
+        return textwrap.dedent(f"""\
+            terraform {{
+              required_providers {{
+                kubernetes = {{
+                  source  = "hashicorp/kubernetes"
+                  version = "~> 2.30"
+                }}
+              }}
+            }}
+
+            provider "kubernetes" {{}}
+
+            module "inference_server" {{
+              source = "../../infra/terraform/modules/kubernetes-deploy"
+
+              image        = {escape_tfvar_value(image)}
+              model_name   = {model_name}
+              engine       = {engine}
+              gpu_count    = {config.gpu_count}
+              replicas     = 1
+              service_port = 8000
+            }}
+
+            output "instance_ip" {{
+              value = module.inference_server.service_endpoint
+            }}
+
+            output "endpoint_url" {{
+              value = "http://${{module.inference_server.service_endpoint}}/v1"
             }}
         """)

@@ -127,6 +127,33 @@ class ProcessRegistry:
     def __init__(self) -> None:
         self._procs: dict[int, ManagedProcess] = {}
         self._lock = threading.RLock()
+        self._sealed: bool = False
+
+    def seal(self) -> None:
+        """Prevent further structural modification after daemon initialization.
+
+        Once sealed the registry rejects ``register``, ``deregister``, and
+        ``reap`` — the mutation surface that could be abused to inject or
+        evict entries after the daemon's trusted setup phase is complete.
+        Read-only operations (``get``, ``is_managed``, ``list``, ``is_alive``,
+        ``signal``) remain available.
+
+        Sealing is one-way and idempotent: calling ``seal`` a second time is
+        a no-op.
+        """
+        self._sealed = True
+
+    @property
+    def is_sealed(self) -> bool:
+        """True after :meth:`seal` has been called."""
+        return self._sealed
+
+    def _require_unsealed(self, operation: str) -> None:
+        if self._sealed:
+            raise ProcessRegistryError(
+                f"Registry is sealed — cannot {operation} after daemon init. "
+                f"Call seal() only after all managed processes are registered."
+            )
 
     # -- registration -----------------------------------------------------
 
@@ -144,7 +171,10 @@ class ProcessRegistry:
 
         ``create_time`` is captured now so later signals can verify identity. If
         ``pgid`` is not supplied it is best-effort resolved via ``os.getpgid``.
+
+        Raises :class:`ProcessRegistryError` if the registry is sealed.
         """
+        self._require_unsealed("register")
         command_list = [command] if isinstance(command, str) else list(command)
         if pgid is None:
             try:
@@ -166,7 +196,11 @@ class ProcessRegistry:
         return record
 
     def deregister(self, pid: int) -> ManagedProcess | None:
-        """Drop a process from the registry (e.g. after it exits). Idempotent."""
+        """Drop a process from the registry (e.g. after it exits). Idempotent.
+
+        Raises :class:`ProcessRegistryError` if the registry is sealed.
+        """
+        self._require_unsealed("deregister")
         with self._lock:
             return self._procs.pop(int(pid), None)
 
@@ -297,7 +331,10 @@ class ProcessRegistry:
 
         Returns the list of PIDs evicted. Safe to call periodically from the
         event loop to keep the registry bounded.
+
+        Raises :class:`ProcessRegistryError` if the registry is sealed.
         """
+        self._require_unsealed("reap")
         evicted: list[int] = []
         with self._lock:
             for pid, record in list(self._procs.items()):
@@ -321,3 +358,24 @@ def default_registry() -> ProcessRegistry:
             if _DEFAULT_REGISTRY is None:
                 _DEFAULT_REGISTRY = ProcessRegistry()
     return _DEFAULT_REGISTRY
+
+
+def set_default_registry(registry: ProcessRegistry) -> None:
+    """Eagerly set the process-wide singleton registry and seal it.
+
+    Must be called before any code calls ``default_registry()``. After this
+    call the registry is sealed — ``register``, ``deregister``, and ``reap``
+    are rejected until shutdown.
+
+    Called once from the daemon's startup sequence so the process registry
+    exists and is immutable before the HTTP server accepts requests.
+    """
+    global _DEFAULT_REGISTRY
+    with _DEFAULT_REGISTRY_LOCK:
+        if _DEFAULT_REGISTRY is not None:
+            raise RuntimeError(
+                "default_registry is already set — eager init must happen "
+                "before any code calls default_registry()"
+            )
+        registry.seal()
+        _DEFAULT_REGISTRY = registry

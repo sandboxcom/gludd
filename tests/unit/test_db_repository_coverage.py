@@ -30,6 +30,7 @@ from sqlalchemy.orm import sessionmaker
 
 from general_ludd.db.models import Base
 from general_ludd.db.repository import (
+    AuditEventRepository,
     QueueRepository,
     TaskReturnRepository,
     TodoRepository,
@@ -512,3 +513,78 @@ class TestBulkOrderingContract:
         returned_ids = [r["return_id"] for r in out["recent"]]
         # Newest-first: RET-ORD-4 .. RET-ORD-0.
         assert returned_ids == list(reversed(ids))
+
+
+# ---------------------------------------------------------------------------
+# S.5 — AuditEventRepository details=NULL guard (D1/CA-DB1)
+# ---------------------------------------------------------------------------
+
+
+class TestAuditEventDetailsNullGuard:
+    """details is NOT NULL with default="{}" on AuditEventModel.
+    Explicit None passed through create() or record_typed() overrides the
+    column default and would insert NULL absent an application-layer guard."""
+
+    async def test_create_defaults_details_to_empty_json(
+        self, async_session: AsyncSession
+    ):
+        repo = AuditEventRepository(async_session)
+        row = await repo.create(
+            event_type="test",
+            entity_type="todo",
+            entity_id="DEAD",
+            project_id="proj-1",
+        )
+        assert row.details == "{}"
+
+    async def test_create_explicit_none_guarded_to_empty_json(
+        self, async_session: AsyncSession
+    ):
+        repo = AuditEventRepository(async_session)
+        row = await repo.create(
+            event_type="test",
+            entity_type="todo",
+            entity_id="DEAD",
+            project_id="proj-1",
+            details=None,
+        )
+        assert row.details == "{}"
+
+    async def test_record_typed_none_details_guarded(
+        self, async_session: AsyncSession
+    ):
+        from general_ludd.db.models import AuditEventType
+
+        repo = AuditEventRepository(async_session)
+        row = await repo.record_typed(
+            event_type=AuditEventType.TODO_CREATED,
+            entity_type="todo",
+            entity_id="DEAD",
+            project_id="proj-1",
+            details=None,
+        )
+        assert row.details == "{}"
+
+    async def test_record_typed_valid_dict_serialized(
+        self, async_session: AsyncSession
+    ):
+        from general_ludd.db.models import AuditEventType
+
+        repo = AuditEventRepository(async_session)
+        row = await repo.record_typed(
+            event_type=AuditEventType.TODO_CREATED,
+            entity_type="todo",
+            entity_id="DEAD",
+            project_id="proj-1",
+            details={"key": "value"},
+        )
+        assert row.details == '{"key": "value"}'
+
+    async def test_details_column_spec_is_not_null_with_default(
+        self,
+    ):
+        from general_ludd.db.models import AuditEventModel
+
+        col = AuditEventModel.__table__.c.details
+        assert not col.nullable
+        assert col.default.arg == "{}"

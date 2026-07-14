@@ -1,0 +1,19 @@
+---
+galaxy_info:
+  role_name: design_system
+  namespace: general_ludd
+  author: Agentic Harness Agent
+  description: >
+    Design system token extraction and generation — parse CSS to extract
+    spacing scales, color palettes, typography systems, and generate
+    standardized design token outputs (JSON/CSS custom properties/SCSS).
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

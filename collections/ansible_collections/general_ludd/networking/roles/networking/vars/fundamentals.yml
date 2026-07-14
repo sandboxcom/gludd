@@ -1,0 +1,690 @@
+---
+osi_model:
+  - layer: 1
+    name: Physical
+    protocols:
+      - Ethernet (IEEE 802.3)
+      - Wi-Fi (IEEE 802.11)
+      - Bluetooth (IEEE 802.15.1)
+      - DSL
+      - SONET/SDH
+      - USB
+    pdu: Bit / Symbol
+    equipment:
+      - Repeater
+      - Hub
+      - Modem
+      - Transceiver
+      - Cable
+    description: >
+      Transmits raw bit streams over a physical medium. Defines electrical,
+      mechanical, and procedural interfaces. No addressing or framing.
+  - layer: 2
+    name: Data Link
+    protocols:
+      - Ethernet
+      - Wi-Fi (MAC sublayer)
+      - PPP
+      - ARP
+      - VLAN (IEEE 802.1Q)
+      - STP (IEEE 802.1D)
+      - LACP
+      - LLDP
+    pdu: Frame
+    equipment:
+      - Switch
+      - Bridge
+      - Wireless Access Point
+      - NIC
+    description: >
+      Provides node-to-node data transfer with MAC addressing, frame
+      delimiting, and error detection (CRC). Split into MAC and LLC
+      sublayers. Switches operate at this layer.
+  - layer: 3
+    name: Network
+    protocols:
+      - IPv4
+      - IPv6
+      - ICMP
+      - IGMP
+      - IPsec
+      - OSPF
+      - BGP
+      - RIP
+      - EIGRP
+    pdu: Packet
+    equipment:
+      - Router
+      - Layer-3 Switch
+      - Firewall
+    description: >
+      Provides logical addressing and path determination. Routes packets
+      between networks using routing protocols. Handles fragmentation
+      and reassembly. IP is the dominant protocol.
+  - layer: 4
+    name: Transport
+    protocols:
+      - TCP
+      - UDP
+      - SCTP
+      - DCCP
+      - QUIC (partially L4)
+    pdu: Segment (TCP) / Datagram (UDP)
+    equipment:
+      - Load Balancer
+      - Gateway
+      - Stateful Firewall
+    description: >
+      Provides end-to-end communication services: reliability, flow
+      control, multiplexing. TCP guarantees ordered delivery with
+      retransmission; UDP is connectionless and low-latency.
+  - layer: 5
+    name: Session
+    protocols:
+      - NetBIOS
+      - RPC
+      - PPTP
+      - SOCKS
+      - SIP (session establishment)
+    pdu: Data
+    equipment:
+      - Proxy Server
+    description: >
+      Manages sessions (connections) between applications. Handles
+      establishment, maintenance, synchronization, and termination.
+      Often merged with L6 in modern stacks.
+  - layer: 6
+    name: Presentation
+    protocols:
+      - TLS/SSL
+      - ASCII
+      - JPEG
+      - MPEG
+      - XDR
+      - MIME
+    pdu: Data
+    equipment:
+      - SSL/TLS Accelerator
+    description: >
+      Translates data between application and network formats. Handles
+      encryption, compression, and character encoding. TLS operates
+      primarily here.
+  - layer: 7
+    name: Application
+    protocols:
+      - HTTP/HTTPS
+      - DNS
+      - DHCP
+      - SSH
+      - SMTP
+      - FTP
+      - SNMP
+      - NTP
+      - LDAP
+      - SIP
+      - RDP
+      - MQTT
+      - gRPC
+    pdu: Data
+    equipment:
+      - Application Firewall
+      - API Gateway
+      - Reverse Proxy
+    description: >
+      Provides network services directly to user applications. The
+      interface between the network and the software. HTTP, DNS, and
+      SSH are among the most commonly used L7 protocols.
+
+tcp_ip_stack:
+  arp:
+    layer: "2.5 (L2/L3 bridge)"
+    rfc: 826
+    description: >
+      Address Resolution Protocol — resolves IPv4 addresses to MAC
+      addresses on a local network segment. Broadcasts "who has IP X?"
+      and the owner replies with its MAC.
+    pdu: ARP Frame
+    key_fields:
+      - name: Hardware Type
+        description: Ethernet = 1
+      - name: Protocol Type
+        description: IPv4 = 0x0800
+      - name: Operation
+        description: Request = 1, Reply = 2
+      - name: Sender MAC / Sender IP
+        description: Requestor identity
+      - name: Target MAC / Target IP
+        description: Target being resolved
+  ip:
+    layer: 3
+    rfc: 791 (IPv4), 8200 (IPv6)
+    description: >
+      Internet Protocol — provides best-effort, connectionless datagram
+      delivery across networks. Handles addressing, fragmentation, and TTL.
+    pdu: Packet / Datagram
+    key_fields:
+      - name: Version
+        description: 4 for IPv4, 6 for IPv6
+      - name: Source Address
+        description: 32-bit IPv4 or 128-bit IPv6 sender
+      - name: Destination Address
+        description: 32-bit IPv4 or 128-bit IPv6 receiver
+      - name: TTL / Hop Limit
+        description: Decremented by each router; packet dropped at 0
+      - name: Protocol / Next Header
+        description: Encapsulated protocol (6=TCP, 17=UDP, 1=ICMP)
+      - name: Total Length
+        description: Entire datagram size in bytes
+      - name: Fragment Offset
+        description: Position in reassembled datagram
+  icmp:
+    layer: 3
+    rfc: 792 (ICMPv4), 4443 (ICMPv6)
+    description: >
+      Internet Control Message Protocol — error reporting and network
+      diagnostics. Used by ping (Echo Request/Reply), traceroute
+      (Time Exceeded), and path MTU discovery.
+    pdu: ICMP Message
+    key_fields:
+      - name: Type
+        description: 0=Echo Reply, 8=Echo Request, 3=Dest Unreachable, 11=Time Exceeded
+      - name: Code
+        description: Sub-type for the given Type
+      - name: Identifier / Sequence
+        description: Match requests to replies (ping)
+  tcp:
+    layer: 4
+    rfc: 793, 7323 (extensions)
+    description: >
+      Transmission Control Protocol — connection-oriented, reliable,
+      ordered byte-stream delivery. Features: 3-way handshake, flow
+      control, congestion control, selective ACK.
+    pdu: Segment
+    key_fields:
+      - name: Source Port
+        description: Sender application port (16-bit)
+      - name: Destination Port
+        description: Receiver application port (16-bit)
+      - name: Sequence Number
+        description: Byte offset of first data byte in this segment
+      - name: Acknowledgment Number
+        description: Next expected sequence number (if ACK flag set)
+      - name: Flags
+        description: SYN, ACK, FIN, RST, PSH, URG, ECE, CWR
+      - name: Window Size
+        description: Receiver's available buffer space
+      - name: Checksum
+        description: Integrity check over pseudo-header + segment
+  udp:
+    layer: 4
+    rfc: 768
+    description: >
+      User Datagram Protocol — connectionless, minimal-overhead
+      datagram delivery. No handshake, no retransmission, no ordering.
+      Used for DNS, streaming, VoIP, gaming.
+    pdu: Datagram
+    key_fields:
+      - name: Source Port
+        description: Optional sender port (16-bit)
+      - name: Destination Port
+        description: Receiver application port (16-bit)
+      - name: Length
+        description: Total datagram size including header
+      - name: Checksum
+        description: Optional in IPv4; mandatory in IPv6
+  dns:
+    layer: 7
+    rfc: 1034, 1035
+    description: >
+      Domain Name System — hierarchical, distributed naming system.
+      Resolves names to IPs and vice-versa. UDP port 53 for queries;
+      TCP for zone transfers and large responses.
+    pdu: DNS Message
+    key_fields:
+      - name: Transaction ID
+        description: Matches query to response
+      - name: Flags (QR, Opcode, RCODE)
+        description: Query/Response, operation, response code
+      - name: Questions
+        description: Name, type (A, AAAA, MX, NS, etc.), class
+      - name: Answers / Authority / Additional
+        description: RR sets for each section
+  dhcp:
+    layer: 7
+    rfc: 2131
+    description: >
+      Dynamic Host Configuration Protocol — auto-assigns IP addresses,
+      subnet masks, gateways, DNS servers. Four-message exchange:
+      DISCOVER → OFFER → REQUEST → ACK.
+    pdu: DHCP Message
+    key_fields:
+      - name: Op Code
+        description: 1=Request, 2=Reply
+      - name: Client MAC
+        description: Hardware address of requestor
+      - name: Yiaddr
+        description: Your (assigned) IP address
+      - name: Options
+        description: Subnet mask, router, DNS, lease time, etc.
+  http:
+    layer: 7
+    rfc: 9110 (HTTP/1.1), 9113 (HTTP/2), 9114 (HTTP/3)
+    description: >
+      Hypertext Transfer Protocol — application-layer request/response
+      protocol. HTTP/1.1 is text-based over TCP; HTTP/2 is binary
+      multiplexed over TCP; HTTP/3 uses QUIC over UDP.
+    pdu: Message (Request or Response)
+    key_fields:
+      - name: Method
+        description: GET, POST, PUT, DELETE, HEAD, OPTIONS, PATCH
+      - name: URI / Path
+        description: Resource identifier
+      - name: Status Code
+        description: 1xx-5xx; reflects outcome
+      - name: Headers
+        description: Host, Content-Type, Authorization, Cache-Control
+  https:
+    layer: 7
+    rfc: 9110 + 8446 (TLS 1.3)
+    description: >
+      HTTP over TLS — encrypts HTTP traffic end-to-end. TLS handshake
+      establishes session keys; server authenticated via X.509
+      certificate chain. Default port 443.
+    pdu: TLS Record → HTTP Message
+    key_fields:
+      - name: TLS Version
+        description: 1.2 or 1.3 negotiated
+      - name: Cipher Suite
+        description: TLS_AES_256_GCM_SHA384, etc.
+      - name: Server Certificate
+        description: X.509 certificate chain
+      - name: SNI
+        description: Server Name Indication from ClientHello
+  smtp:
+    layer: 7
+    rfc: 5321
+    description: >
+      Simple Mail Transfer Protocol — mail transfer between MTAs.
+      Port 25 (plain), 587 (submission), 465 (SMTPS). Commands:
+      HELO/EHLO, MAIL FROM, RCPT TO, DATA, QUIT.
+    pdu: SMTP Message
+    key_fields:
+      - name: Envelope Sender
+        description: MAIL FROM address
+      - name: Recipients
+        description: RCPT TO addresses
+      - name: Headers
+        description: From, To, Subject, Date, Message-ID
+      - name: Body
+        description: Email content (MIME encoded)
+  ftp:
+    layer: 7
+    rfc: 959
+    description: >
+      File Transfer Protocol — client-server file transfer. Control
+      connection on port 21; data connection on port 20 (active) or
+      ephemeral (passive). Commands: USER, PASS, RETR, STOR, LIST.
+    pdu: FTP Command / Response
+    key_fields:
+      - name: Command
+        description: 4-character alpha command
+      - name: Reply Code
+        description: 3-digit status (200=OK, 530=Login incorrect)
+      - name: Data Mode
+        description: ASCII, Binary (IMAGE)
+      - name: PASV
+        description: Passive-mode data connection parameters
+  ssh:
+    layer: 7
+    rfc: 4251-4254
+    description: >
+      Secure Shell — encrypted remote login and command execution.
+      Key exchange → server authentication → session encryption.
+      Supports port forwarding, X11 forwarding, SFTP subsystem.
+    pdu: SSH Packet
+    key_fields:
+      - name: Protocol Version
+        description: SSH-2.0 negotiated
+      - name: Key Exchange Algorithm
+        description: curve25519-sha256, ecdh-sha2-nistp256
+      - name: Host Key
+        description: Server's public key fingerprint
+      - name: Cipher
+        description: aes256-gcm, chacha20-poly1305
+      - name: MAC
+        description: Message Authentication Code algorithm
+      - name: Authentication Method
+        description: publickey, password, keyboard-interactive
+  ntp:
+    layer: 7
+    rfc: 5905
+    description: >
+      Network Time Protocol — synchronizes clocks across packet-switched
+      networks. Hierarchical stratum model (0-15). Uses UDP port 123.
+    pdu: NTP Packet
+    key_fields:
+      - name: Leap Indicator
+        description: Warns of impending leap second
+      - name: Stratum
+        description: Distance from reference clock (1-15)
+      - name: Reference Timestamp
+        description: Time the server last synced
+      - name: Transmit Timestamp
+        description: Time packet left client/server
+  bgp:
+    layer: 7
+    rfc: 4271
+    description: >
+      Border Gateway Protocol — the routing protocol of the internet.
+      Exchanges network reachability (NLRI) between Autonomous Systems.
+      TCP port 179. Path-vector protocol using AS_PATH for loop prevention.
+    pdu: BGP Update Message
+    key_fields:
+      - name: AS_PATH
+        description: Sequence of ASNs the route traversed
+      - name: NEXT_HOP
+        description: IP of the next router to forward to
+      - name: LOCAL_PREF
+        description: Local preference for outbound path selection
+      - name: MED
+        description: Multi-Exit Discriminator for inbound path selection
+      - name: COMMUNITY
+        description: Tags for routing policy (e.g., no-export)
+      - name: NLRI
+        description: Network Layer Reachability Information (prefixes)
+  ospf:
+    layer: 3
+    rfc: 2328
+    description: >
+      Open Shortest Path First — link-state IGP. Uses Dijkstra SPF to
+      compute shortest path. Areas connected to backbone area 0. LSA
+      types: 1 (Router), 2 (Network), 3 (Summary), 5 (External).
+    pdu: OSPF Packet
+    key_fields:
+      - name: Type
+        description: Hello, Database Description, LSR, LSU, LSAck
+      - name: Router ID
+        description: Unique 32-bit OSPF identifier
+      - name: Area ID
+        description: Area this packet belongs to
+      - name: LSAs
+        description: Link State Advertisements carried in LSU
+  mpls:
+    layer: "2.5"
+    rfc: 3031
+    description: >
+      Multi-Protocol Label Switching — forwards packets based on short
+      labels rather than IP lookups. Supports traffic engineering, VPNs
+      (L3VPN, L2VPN, VPLS). Label stack with 20-bit label value.
+    pdu: MPLS Frame
+    key_fields:
+      - name: Label Value
+        description: 20-bit forwarding identifier
+      - name: EXP / TC
+        description: 3-bit experimental / traffic class
+      - name: S (Bottom of Stack)
+        description: 1 = last label in stack
+      - name: TTL
+        description: 8-bit time-to-live
+
+subnetting:
+  ipv4:
+    classes:
+      A:
+        range: "1.0.0.0 - 126.255.255.255"
+        default_mask: "255.0.0.0 (/8)"
+        hosts: 16777214
+      B:
+        range: "128.0.0.0 - 191.255.255.255"
+        default_mask: "255.255.0.0 (/16)"
+        hosts: 65534
+      C:
+        range: "192.0.0.0 - 223.255.255.255"
+        default_mask: "255.255.255.0 (/24)"
+        hosts: 254
+      D:
+        range: "224.0.0.0 - 239.255.255.255"
+        default_mask: "N/A"
+        hosts: "N/A (Multicast)"
+      E:
+        range: "240.0.0.0 - 255.255.255.255"
+        default_mask: "N/A"
+        hosts: "N/A (Reserved)"
+    cidr_notation: >
+      Classless Inter-Domain Routing (CIDR) uses prefix notation
+      (e.g., /24 = 255.255.255.0) to express subnet masks. Replaces
+      classful addressing since 1993. Permits variable-length subnet
+      masking (VLSM).
+    private_ranges:
+      - "10.0.0.0/8 (RFC 1918)"
+      - "172.16.0.0/12 (RFC 1918)"
+      - "192.168.0.0/16 (RFC 1918)"
+      - "169.254.0.0/16 (Link-Local, RFC 3927)"
+      - "100.64.0.0/10 (CGNAT, RFC 6598)"
+      - "198.18.0.0/15 (Benchmarking, RFC 2544)"
+  ipv6:
+    address_format: >
+      128-bit addresses written as 8 groups of 4 hex digits, separated
+      by colons (e.g., 2001:0db8:85a3:0000:0000:8a2e:0370:7334).
+      Leading zeros and all-zero groups can be compressed.
+    types:
+      - Unicast (Global, Link-Local fe80::/10, Unique Local fc00::/7)
+      - Multicast (ff00::/8)
+      - Anycast (shared unicast address)
+    special_addresses:
+      loopback: "::1/128"
+      unspecified: "::/128"
+      link_local: "fe80::/10"
+      unique_local: "fc00::/7"
+      multicast: "ff00::/8"
+      documentation: "2001:db8::/32"
+      6to4: "2002::/16"
+      teredo: "2001:0000::/32"
+
+tcp_state_machine:
+  states:
+    - name: LISTEN
+      description: Server waiting for connection request (SYN).
+    - name: SYN-SENT
+      description: Client sent SYN, waiting for SYN-ACK.
+    - name: SYN-RECEIVED
+      description: Server received SYN, sent SYN-ACK, waiting for ACK.
+    - name: ESTABLISHED
+      description: Connection open; bidirectional data flow.
+    - name: FIN-WAIT-1
+      description: Active close — sent FIN, waiting for ACK or FIN.
+    - name: FIN-WAIT-2
+      description: Active close — received ACK to FIN, waiting for peer FIN.
+    - name: CLOSE-WAIT
+      description: Passive close — received FIN, waiting for local app to close.
+    - name: CLOSING
+      description: Both sides sent FIN simultaneously; waiting for ACK.
+    - name: LAST-ACK
+      description: Passive close — sent FIN, waiting for final ACK.
+    - name: TIME-WAIT
+      description: Active close — received FIN, sent ACK; waiting 2*MSL.
+    - name: CLOSED
+      description: No connection; initial and terminal state.
+  flags:
+    SYN:
+      bit: 0x02
+      description: Synchronize sequence numbers; initiates connection.
+    SYN-ACK:
+      bit: 0x12
+      description: Combined SYN + ACK; server response to SYN.
+    ACK:
+      bit: 0x10
+      description: Acknowledgment field is valid; present on all segments after SYN.
+    FIN:
+      bit: 0x01
+      description: Sender has finished sending data; initiates graceful close.
+    RST:
+      bit: 0x04
+      description: Reset the connection abnormally; used on refused ports.
+  windowing:
+    description: >
+      Sliding window flow control: receiver advertises available buffer
+      space (window size) in the ACK. Sender limits in-flight data to
+      min(cwnd, rwnd). Window scaling option (RFC 7323) allows up to
+      1 GB window via shift factor (0-14).
+    scale_factor: "0-14 (effective window = advertised * 2^scale)"
+  congestion_control:
+    - algorithm: Tahoe
+      description: >
+        Slow start (cwnd doubles per RTT) until threshold or loss.
+        On loss (3 dup ACKs or timeout), cwnd=1, enter slow start.
+    - algorithm: Reno
+      description: >
+        Adds fast retransmit and fast recovery. On 3 dup ACKs: cut
+        cwnd in half (not to 1), enter congestion avoidance.
+    - algorithm: NewReno
+      description: >
+        Improves Reno: fast recovery handles multiple losses per
+        window. Does not exit fast recovery until all lost segments
+        are ACKed.
+    - algorithm: CUBIC
+      description: >
+        Default in Linux since 2.6.19. Uses cubic function for cwnd
+        growth, independent of RTT. Better utilization of high-BDP
+        paths than Reno variants.
+    - algorithm: BBR
+      description: >
+        Bottleneck Bandwidth and Round-trip (Google). Models the path
+        rather than reacting to loss. Probes bandwidth and RTT,
+        pacing at estimated bottleneck rate. Avoids bufferbloat.
+
+dns_resolution:
+  recursive:
+    description: >
+      A recursive resolver receives a client query and, if it does not
+      have the answer cached, works through the DNS hierarchy:
+      root → TLD → authoritative nameservers. The resolver returns the
+      final answer (or error) to the client. Most ISP and public DNS
+      (e.g., 8.8.8.8) are recursive.
+    steps:
+      - Client sends query for example.com A to recursive resolver
+      - Resolver queries a root server for the .com NS
+      - Resolver queries .com TLD server for example.com NS
+      - Resolver queries example.com authoritative NS for the A record
+      - Resolver caches and returns the answer to the client
+  authoritative:
+    description: >
+      Authoritative nameservers hold the definitive records for a zone.
+      They answer queries with data from their zone files; they do not
+      recurse for the client. Primaries hold the master zone file;
+      secondaries transfer via AXFR/IXFR.
+    zone_types:
+      - Primary (master) — writable zone source
+      - Secondary (slave) — read-only replica via zone transfer
+      - Stub — minimal NS glue for delegation
+      - Forward — delegates to designated forwarders
+  root_servers:
+    - hostname: a.root-servers.net
+      ipv4: "198.41.0.4"
+      ipv6: "2001:503:ba3e::2:30"
+      operator: Verisign
+    - hostname: b.root-servers.net
+      ipv4: "170.247.170.2"
+      ipv6: "2801:1b8:10::b"
+      operator: USC-ISI
+    - hostname: c.root-servers.net
+      ipv4: "192.33.4.12"
+      ipv6: "2001:500:2::c"
+      operator: Cogent Communications
+    - hostname: d.root-servers.net
+      ipv4: "199.7.91.13"
+      ipv6: "2001:500:2d::d"
+      operator: University of Maryland
+    - hostname: e.root-servers.net
+      ipv4: "192.203.230.10"
+      ipv6: "2001:500:a8::e"
+      operator: NASA
+    - hostname: f.root-servers.net
+      ipv4: "192.5.5.241"
+      ipv6: "2001:500:2f::f"
+      operator: Internet Systems Consortium
+    - hostname: g.root-servers.net
+      ipv4: "192.112.36.4"
+      ipv6: "2001:500:12::d0d"
+      operator: US DoD NIC
+    - hostname: h.root-servers.net
+      ipv4: "198.97.190.53"
+      ipv6: "2001:500:1::53"
+      operator: US Army Research Lab
+    - hostname: i.root-servers.net
+      ipv4: "192.36.148.17"
+      ipv6: "2001:7fe::53"
+      operator: Netnod
+    - hostname: j.root-servers.net
+      ipv4: "192.58.128.30"
+      ipv6: "2001:503:c27::2:30"
+      operator: Verisign
+    - hostname: k.root-servers.net
+      ipv4: "193.0.14.129"
+      ipv6: "2001:7fd::1"
+      operator: RIPE NCC
+    - hostname: l.root-servers.net
+      ipv4: "199.7.83.42"
+      ipv6: "2001:500:9f::42"
+      operator: ICANN
+    - hostname: m.root-servers.net
+      ipv4: "202.12.27.33"
+      ipv6: "2001:dc3::35"
+      operator: WIDE Project
+  record_types:
+    - type: A
+      description: IPv4 address record
+      example: "example.com. 3600 IN A 93.184.216.34"
+    - type: AAAA
+      description: IPv6 address record
+      example: "example.com. 3600 IN AAAA 2606:2800:220:1:248:1893:25c8:1946"
+    - type: CNAME
+      description: Canonical name (alias)
+      example: "www.example.com. 3600 IN CNAME example.com."
+    - type: MX
+      description: Mail exchanger (priority + host)
+      example: "example.com. 3600 IN MX 10 mail.example.com."
+    - type: NS
+      description: Authoritative nameserver
+      example: "example.com. 86400 IN NS ns1.example.com."
+    - type: SOA
+      description: Start of Authority (zone metadata)
+      example: "example.com. 3600 IN SOA ns1 rname 2024010101 7200 3600 1209600 86400"
+    - type: PTR
+      description: Pointer (reverse DNS lookup)
+      example: "34.216.184.93.in-addr.arpa. IN PTR example.com."
+    - type: TXT
+      description: Arbitrary text (SPF, DKIM, verification)
+      example: "example.com. 3600 IN TXT \"v=spf1 -all\""
+    - type: SRV
+      description: Service locator
+      example: "_sip._tcp.example.com. 3600 IN SRV 10 60 5060 sip.example.com."
+    - type: CAA
+      description: Certification Authority Authorization
+      example: "example.com. 3600 IN CAA 0 issue \"letsencrypt.org\""
+    - type: NAPTR
+      description: Naming Authority Pointer (ENUM, SIP)
+      example: "example.com. IN NAPTR 100 10 \"U\" \"E2U+sip\" \"!^.*$!sip:info@example.com!\""
+    - type: DS
+      description: Delegation Signer (DNSSEC)
+      example: "example.com. 86400 IN DS 370 13 2 BE74..."
+  dnssec:
+    description: >
+      DNS Security Extensions add origin authentication and data
+      integrity to DNS via public-key cryptography. Uses RRSIG
+      records for signatures; DNSKEY for zone public keys; DS for
+      delegation signer chain; NSEC/NSEC3 for authenticated denial
+      of existence. DANE (RFC 6698) uses TLSA records for TLS cert
+      pinning via DNSSEC.
+    record_types:
+      - RRSIG — signature over an RRset
+      - DNSKEY — zone's public signing key
+      - DS — Delegation Signer, hash of child's DNSKEY
+      - NSEC / NSEC3 — authenticated denial of existence
+      - CDNSKEY / CDS — child-side delegation signer
+  edns:
+    description: >
+      Extension Mechanisms for DNS (EDNS0, RFC 6891) extends DNS
+      message size beyond 512 bytes, supports DNSSEC (DO bit),
+      client subnet (ECS), and other options. OPT pseudo-RR in
+      additional section signals support.

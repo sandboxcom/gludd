@@ -1,0 +1,10 @@
+---
+gradle_parser_file: ""
+gradle_parser_operation: "list-deps"
+gradle_parser_dep_group: ""
+gradle_parser_dep_name: ""
+gradle_parser_new_version: ""
+gradle_parser_dep_configuration: "implementation"
+gradle_parser_output_file: "/tmp/gludd-xml/gradle_parser/output.json"
+gradle_parser_artifact_dir: "/tmp/gludd-xml/gradle_parser"
+gradle_parser_python: "{{ ansible_python_interpreter | default('/usr/bin/env python3') }}"

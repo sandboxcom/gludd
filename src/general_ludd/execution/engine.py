@@ -184,7 +184,8 @@ def _build_system_prompt(
     )
     base = "\n".join(lines)
     if behavior is not None:
-        renderer = BehaviorRenderer()
+        from general_ludd.retrieval.agentic_context import AgenticContextInjector
+        renderer = BehaviorRenderer(prompt_enhancer=AgenticContextInjector())
         behavior_block = renderer.render(behavior)
         base = behavior_block + "\n\n" + base
 

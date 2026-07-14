@@ -597,7 +597,7 @@ class TestBudgetPreCheckRealInstances:
 
         # try_charge(cost_usd) alone is missing required kwarg 'kind'
         with pytest.raises(TypeError):
-            limiter.try_charge(0.0)  # missing kind=
+            limiter.try_charge(**{"cost_usd": 0.0})  # missing kind=
 
     # ------------------------------------------------------------------
     # Unknown guard interface — fail-closed

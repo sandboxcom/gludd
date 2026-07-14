@@ -592,7 +592,7 @@ class TestEscalationRequest:
         assert data["status"] == "pending"
         assert data["human_todo_id"] is None
         assert any(
-            "no session factory" in rec.message for rec in caplog.records
+            "no session factory" in rec.getMessage() for rec in caplog.records
         ), "expected a warning that the escalation will not surface a HumanTodo"
 
         # The row is still recorded and visible even though no HumanTodo fired.
@@ -656,7 +656,7 @@ class TestEscalationApprove:
         esc_id = create.json()["id"]
 
         resp = client.post(
-            f"/admin/perm/escalations/{esc_id}/approve", json={"reason": "ok"}
+            f"/admin/perm/escalations/{esc_id}/approve", json={"reason": "ok", "human_reviewer": "alice"}
         )
         assert resp.status_code == 403
         assert resp.json()["error"] == "permission_denied"

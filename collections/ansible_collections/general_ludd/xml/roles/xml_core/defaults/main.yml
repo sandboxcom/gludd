@@ -1,0 +1,10 @@
+---
+# xml_core role defaults
+
+input_file: ""
+xpath_query: ""
+namespaces: {}
+output_file: "/tmp/gludd-xml-core/output.xml"
+operation: "extract"
+artifact_dir: "/tmp/gludd-xml-core"
+python_interpreter: "{{ ansible_python_interpreter | default('/usr/bin/env python3') }}"

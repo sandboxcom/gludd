@@ -25,7 +25,10 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-from general_ludd.security.path_canonicalizer import is_denied_path
+from general_ludd.security.path_canonicalizer import (
+    PROTECTED_FILE_STEMS,
+    is_denied_path,
+)
 
 # ---------------------------------------------------------------------------
 # Capability vocabulary
@@ -34,47 +37,6 @@ from general_ludd.security.path_canonicalizer import is_denied_path
 #: Path component that marks the agent's own Ansible source tree.  A write whose
 #: resolved path contains this component is a *self-modification*.
 COLLECTIONS_COMPONENT = "collections"
-
-#: Filename stems (case-insensitive, ``.py`` stripped) that are NEVER hot-
-#: swappable: the guardrail / policy / permission surface itself.  Hot-reloading
-#: any of these would let a self-improvement turn disable the very guards that
-#: constrain it, so the reloader refuses them outright — even for a role that
-#: otherwise holds ``collections_self_modify``.
-PROTECTED_FILE_STEMS: frozenset[str] = frozenset(
-    {
-        "guardrails",
-        "capability_policy",
-        "capability_lattice",
-        "fs_write_policy",
-        "action_policy",
-        "permissions",
-        "permission",
-        "policy",
-        "enforce_make",
-    }
-)
-
-#: Substrings that, if present in a resolved path (normalised to ``/``), mark it
-#: protected regardless of the leaf filename — the harness/guardrail config
-#: surface.  Conservative + case-insensitive.
-PROTECTED_PATH_SUBSTRINGS: tuple[str, ...] = (
-    "/.opencode/",
-    "/.claude/",
-    "/module_utils/capability_policy",
-    "/module_utils/fs_write_policy",
-    "/security/capability_lattice",
-)
-
-#: Bare path SEGMENTS that mark a protected harness control-surface directory
-#: regardless of a leading slash.  The ``/.claude/`` / ``/.opencode/`` substrings
-#: above only match when a slash precedes the directory, so a workspace-RELATIVE
-#: target like ``.claude/hooks/evil.py`` (no leading slash, ``.claude`` at
-#: position 0) would EVADE them.  Matching ``.claude`` / ``.opencode`` as a whole
-#: path segment (path split on ``/``) at ANY position closes that drift against
-#: the sibling ``self_update/applier.py`` deny-list — which already catches the
-#: relative form.  This only ADDS the relative case; it never loosens the
-#: existing absolute-path coverage.
-PROTECTED_PATH_SEGMENTS: frozenset[str] = frozenset({".opencode", ".claude"})
 
 
 class CapabilityError(Exception):
