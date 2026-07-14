@@ -11,9 +11,10 @@ Each line ticked when `make gate` is green and evidence is pasted.
 | A | CI Green + Release | 1 | 6 | 83% |
 | D | Feature Completeness | 0 | 22 | 100% |
 | E | Quality/Coverage | 0 | 15 | 100% |
-| **Total Active** | | **1** | **43** | **98%** |
+| I | Stale Backlog + Integration | 0 | 15 | 0% |
+| **Total Active** | | **1** | **58** | **98%** |
 | *Archived* | *14 phases* | *0* | *188* | *100%* |
-| **Grand Total** | | **1** | **231** | **99.6%** |
+| **Grand Total** | | **1** | **246** | **99.6%** |
 
 ---
 
@@ -80,6 +81,38 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [x] E.13 — Nag-free subagent output test: verify DELEGATE-FIRST/READ-GRINDING nag text is NOT injected into subagent task_result output | priority: medium | effort: small | status: completed | evidence: 10 tests pass, verified all nag texts guarded by OPENCODE_SUBAGENT
 - [x] E.14 — Enforcement e2e tests: no-wait + no-suppressions plugin verification | priority: low | effort: small | status: completed | evidence: 45 e2e tests across test_no_wait_e2e.py + test_no_suppressions_e2e.py, commit 23b915b6
 - [x] E.15 — Additional plugin e2e tests: commit-lock, watchdog, enforce-multitask, hot-reload proxy, clean-tree, enforce-stop | priority: low | effort: medium | status: completed | evidence: 217+ e2e tests across 6 new test files (test_commit_lock_e2e.py, test_watchdog_e2e.py, test_enforce_multitask_e2e.py, test_hot_reload_proxy_e2e.py, test_verify_plugin_manifest_e2e.py, test_clean_tree_e2e.py), commits a3a6a237→1a225981. All 13 plugins hot-reload proxied (cc133b2e). enforce-stop Node v26 compat (1b6f18e6). 30,718 collected.
+
+---
+
+## Phase I — Stale Backlog + Integration Stubs (15 items, 0% complete)
+
+Items beyond A.4: 4 stale BACKLOG findings still OPEN after re-triage + 11 TODO(integration) comments remaining in source.
+
+### I.1 — Stale BACKLOG findings (4 items)
+
+- [ ] I.1.1 — Ansible `process_isolation` silent no-op: podman-present path still unconfined (`core_runner.py:235-251`). Runs unconfined when podman is on PATH. OPEN, no spec item yet. | priority: medium | effort: medium | status: pending
+- [ ] I.1.2 — Per-project secret isolation dead: `for_project` has 0 callers in `secrets/`. SEC-5b fixed only `resolve()` bypass, not per-project scoping. Unscoped resolve still leaks secrets across projects. | priority: high | effort: medium | status: pending
+- [ ] I.1.3 — ToolCallLoop capability-lattice bypass: Phase-2 binds+executes EVERY MCP tool with no role/capability check (only `_TOOL_USE_WORK_TYPES` gate). No role threaded through MCP dispatch. | priority: high | effort: medium | status: pending | see: C15 partial
+- [ ] I.1.4 — Worker broadcast PSK leak: `worker_broadcast.py:34` POSTs `Bearer <GLUDD_PSK>` to any registered address over http with no validation. MITIGATED (secure-by-default config) but not structurally fixed. | priority: medium | effort: small | status: pending | see: C8
+
+### I.2 — TODO(integration) comments (11 items)
+
+9 pricing-source stubs in `src/general_ludd/pricing_intel/sources.py` — each marked `TODO(integration): Add live fetch`:
+
+- [ ] I.2.1 — Anthropic rates: live fetch via web-scraping or SDK metadata (`sources.py:216`) | priority: low | effort: small | status: pending
+- [ ] I.2.2 — OpenAI pricing: scrape or SDK query (`sources.py:303`) | priority: low | effort: small | status: pending
+- [ ] I.2.3 — RunPod: GraphQL API query for instance pricing (`sources.py:399`) | priority: low | effort: small | status: pending
+- [ ] I.2.4 — Lambda Labs: REST API instance pricing (`sources.py:717`) | priority: low | effort: small | status: pending
+- [ ] I.2.5 — AWS: machine-readable pricing bulk ingest (`sources.py:821`) | priority: low | effort: medium | status: pending
+- [ ] I.2.6 — GCP: Cloud Billing API SKU-based pricing (`sources.py:1175`) | priority: low | effort: medium | status: pending
+- [ ] I.2.7 — HuggingFace: Endpoint API live per-instance rates (`sources.py:1541`) | priority: low | effort: small | status: pending
+- [ ] I.2.8 — Z.AI: SDK or HTML scraping (`sources.py:1639`) | priority: low | effort: small | status: pending
+- [ ] I.2.9 — Module-level integration note: wire live-fetch pattern across all pricing stubs (`sources.py:6`) | priority: low | effort: small | status: pending
+
+2 FileClaimRegistry integration stubs in `src/general_ludd/scheduling/planner.py`:
+
+- [ ] I.2.10 — `planner.py:22`: when FileClaimRegistry (#31) merged, source live file-claims as resource set instead of caller-declared files list | priority: medium | effort: small | status: pending
+- [ ] I.2.11 — `planner.py:68`: OrchestrationPlanner class-level note: extend for live file-claim integration | priority: medium | effort: small | status: pending
 
 ---
 
