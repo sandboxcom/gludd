@@ -12,6 +12,13 @@ serving config dict for vLLM or llama.cpp that:
   supports it) that fits in VRAM,
 * sets dtype and flash-attn.
 
+Workload-aware deployment (2026-07): the optimizer accepts a
+:class:`WorkloadType` that tunes the config for the specific serving pattern
+(batch inference, realtime API, fine-tuning, speculative decoding,
+embedding generation). Each workload has a :class:`ModelDeploymentProfile`
+that overrides context_length, max_tokens, batch_size, tensor_parallel,
+gpu_memory, quantization, threads, and other knobs.
+
 The KV-cache formula (the core sizing primitive) is exposed as
 :func:`kv_cache_bytes` so it can be unit-tested in isolation.
 
@@ -22,6 +29,7 @@ than a config that might OOM or thrash.
 
 from __future__ import annotations
 
+import enum
 from dataclasses import dataclass
 from typing import TypedDict
 
@@ -29,11 +37,129 @@ __all__ = [
     "CLOUD_INSTANCE_TABLE",
     "GPU_TABLE",
     "HardwareProfile",
+    "ModelDeploymentProfile",
     "ModelProfile",
+    "WorkloadType",
     "hardware_profile_for",
     "kv_cache_bytes",
     "recommend_config",
 ]
+
+
+# ---------------------------------------------------------------------------
+# Workload type enum
+# ---------------------------------------------------------------------------
+
+
+class WorkloadType(enum.StrEnum):
+    BATCH_INFERENCE = "batch_inference"
+    REALTIME_API = "realtime_api"
+    FINE_TUNING = "fine_tuning"
+    SPECULATIVE_DECODING = "speculative_decoding"
+    EMBEDDING_GENERATION = "embedding_generation"
+
+
+# ---------------------------------------------------------------------------
+# Model deployment profile — workload-specific overrides
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ModelDeploymentProfile:
+    """Workload-specific overrides for a model serving config.
+
+    Fields set to ``None`` mean "use the optimizer's default / computed value".
+    Only the fields relevant to the workload are set; the rest flow through
+    from the base ``recommend_config`` output.
+    """
+
+    context_length: int | None = None
+    max_tokens: int | None = None
+    batch_size: int | None = None
+    tensor_parallel: int | None = None
+    gpu_memory_utilization: float | None = None
+    quantization: str | None = None
+    threads: int | None = None
+    max_num_seqs: int | None = None
+    enforce_eager: bool | None = None
+    enable_prefix_caching: bool | None = None
+    enable_chunked_prefill: bool | None = None
+    kv_cache_dtype: str | None = None
+
+    def apply(self, config: dict[str, object]) -> dict[str, object]:
+        """Merge workload-specific overrides into a base config dict.
+
+        Only overrides non-None fields; all other keys pass through unchanged.
+        """
+        merged = dict(config)
+        if self.context_length is not None:
+            merged["max_model_len"] = self.context_length
+        if self.max_tokens is not None:
+            merged["max_tokens"] = self.max_tokens
+        if self.batch_size is not None:
+            merged["batch_size"] = self.batch_size
+        if self.tensor_parallel is not None:
+            merged["tensor_parallel_size"] = self.tensor_parallel
+        if self.gpu_memory_utilization is not None:
+            merged["gpu_memory_utilization"] = self.gpu_memory_utilization
+        if self.quantization is not None:
+            merged["quantization"] = self.quantization
+        if self.threads is not None:
+            merged["threads"] = self.threads
+        if self.max_num_seqs is not None:
+            merged["max_num_seqs"] = self.max_num_seqs
+        if self.enforce_eager is not None:
+            merged["enforce_eager"] = self.enforce_eager
+        if self.enable_prefix_caching is not None:
+            merged["enable_prefix_caching"] = self.enable_prefix_caching
+        if self.enable_chunked_prefill is not None:
+            merged["enable_chunked_prefill"] = self.enable_chunked_prefill
+        if self.kv_cache_dtype is not None:
+            merged["kv_cache_dtype"] = self.kv_cache_dtype
+        return merged
+
+
+# Workload → profile mapping. Each profile overrides knobs that differ from
+# the optimizer's default serving config for that workload pattern.
+# ``None`` fields flow through from the base recommend_config output.
+WORKLOAD_PROFILES: dict[WorkloadType, ModelDeploymentProfile] = {
+    WorkloadType.BATCH_INFERENCE: ModelDeploymentProfile(
+        batch_size=128,
+        max_num_seqs=256,
+        enable_prefix_caching=True,
+        enable_chunked_prefill=True,
+    ),
+    WorkloadType.REALTIME_API: ModelDeploymentProfile(
+        batch_size=8,
+        max_num_seqs=64,
+        enable_prefix_caching=True,
+        enable_chunked_prefill=False,
+        enforce_eager=False,
+    ),
+    WorkloadType.FINE_TUNING: ModelDeploymentProfile(
+        context_length=8192,
+        batch_size=4,
+        max_num_seqs=8,
+        gpu_memory_utilization=0.85,
+        enforce_eager=True,
+        enable_prefix_caching=False,
+        enable_chunked_prefill=False,
+    ),
+    WorkloadType.SPECULATIVE_DECODING: ModelDeploymentProfile(
+        batch_size=1,
+        max_num_seqs=32,
+        enforce_eager=True,
+        enable_prefix_caching=True,
+    ),
+    WorkloadType.EMBEDDING_GENERATION: ModelDeploymentProfile(
+        context_length=512,
+        batch_size=256,
+        max_num_seqs=512,
+        gpu_memory_utilization=0.95,
+        enable_prefix_caching=False,
+        enable_chunked_prefill=False,
+    ),
+}
 
 
 # ---------------------------------------------------------------------------
@@ -467,23 +593,51 @@ def recommend_config(
     gpu_memory_utilization: float | None = None,
     max_num_seqs: int | None = None,
     desired_max_len: int | None = None,
+    workload_type: WorkloadType | None = None,
 ) -> dict[str, object]:
     """Recommend a serving config dict for ``engine`` in {vllm, llamacpp}.
 
     Returns a dict carrying the chosen knobs. Fail-closed throughout: TP defaults
     to 1 unless NVLink truly supports it, FP8 only when ``supports_fp8``, and the
     quant/length are shrunk until they fit VRAM.
+
+    When ``workload_type`` is given, the appropriate :class:`ModelDeploymentProfile`
+    overrides are merged on top of the base config (batch_size, max_num_seqs,
+    context_length, gpu_memory_utilization, etc.).
     """
     engine = engine.lower()
     if engine not in ("vllm", "llamacpp"):
         raise ValueError(f"unsupported engine {engine!r}")
 
+    if workload_type is not None and workload_type not in WorkloadType:
+        raise ValueError(f"unknown workload_type {workload_type!r}")
+
     d = _RecommendDefaults()
-    gmu = d.gpu_memory_utilization if gpu_memory_utilization is None else gpu_memory_utilization
+
+    # Workload profile overrides the defaults BEFORE the base config is built.
+    profile = WORKLOAD_PROFILES.get(workload_type) if workload_type is not None else None
+
+    # Track which knobs were explicitly passed by the caller — they must win
+    # over the workload profile even during the post-hoc apply() merge.
+    explicit_keys: set[str] = set()
+    if gpu_memory_utilization is not None:
+        explicit_keys.add("gpu_memory_utilization")
+    if max_num_seqs is not None:
+        explicit_keys.add("max_num_seqs")
+    if desired_max_len is not None:
+        explicit_keys.add("context_length")
+
+    gmu = (profile.gpu_memory_utilization if profile and profile.gpu_memory_utilization is not None
+           else d.gpu_memory_utilization)
+    gmu = gpu_memory_utilization if gpu_memory_utilization is not None else gmu
     if not (0.0 < gmu <= 0.95):
         raise ValueError("gpu_memory_utilization must be in (0, 0.95]")
-    seqs = d.max_num_seqs if max_num_seqs is None else max_num_seqs
-    want_len = d.desired_max_len if desired_max_len is None else desired_max_len
+    seqs = (profile.max_num_seqs if profile and profile.max_num_seqs is not None
+            else d.max_num_seqs)
+    seqs = max_num_seqs if max_num_seqs is not None else seqs
+    want_len = (profile.context_length if profile and profile.context_length is not None
+                else d.desired_max_len)
+    want_len = desired_max_len if desired_max_len is not None else want_len
 
     # llama.cpp can partially offload, so it may proceed with a quant that does
     # not fully fit; vLLM must fully fit (KV is pre-allocated).
@@ -491,12 +645,32 @@ def recommend_config(
         model, hardware, engine, gmu, allow_partial=(engine == "llamacpp")
     )
 
+    # Workload-specific quantization override (e.g. embedding may prefer int8).
+    if profile and profile.quantization is not None and "quantization" not in explicit_keys:
+        quant = profile.quantization
+        dtype = _dtype_for_quant(quant, hardware)
+
     # KV dtype: use fp8 KV only when the card supports fp8; else 16-bit.
     kv_dtype = "fp8" if hardware.supports_fp8 else "fp16"
+    if profile and profile.kv_cache_dtype is not None and "kv_cache_dtype" not in explicit_keys:
+        kv_dtype = profile.kv_cache_dtype
 
     if engine == "vllm":
-        return _recommend_vllm(model, hardware, quant, dtype, kv_dtype, gmu, seqs, want_len)
-    return _recommend_llamacpp(model, hardware, quant, dtype, kv_dtype, gmu, seqs, want_len)
+        base = _recommend_vllm(model, hardware, quant, dtype, kv_dtype, gmu, seqs, want_len)
+    else:
+        base = _recommend_llamacpp(model, hardware, quant, dtype, kv_dtype, gmu, seqs, want_len)
+
+    if profile is not None:
+        merged = profile.apply(base)
+        for key in explicit_keys:
+            if key == "gpu_memory_utilization":
+                merged["gpu_memory_utilization"] = gmu
+            elif key == "max_num_seqs":
+                merged["max_num_seqs"] = seqs
+            elif key == "context_length":
+                merged["max_model_len"] = want_len
+        return merged
+    return base
 
 
 def _recommend_vllm(

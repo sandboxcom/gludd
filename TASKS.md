@@ -1,6 +1,6 @@
 # TASKS.md — Evidence Ledger
 
-**Last consolidated: 2026-07-14 Session 33 — Phase I complete (15/15). Phase J complete (4/4: Terraform HTTP backend fully implemented — HTTP state API, daemon wiring, integration tests, HMAC+OpenBao encryption). Phase K added (2 items: workload-aware deployment + Ansible infra deploy action). A.4 (release cut) remains unchecked. Gate GREEN (lint 0, typecheck 0, collect 0, hook-runtime PASS, CI-precheck all pass). HEAD 351685ca. A.4 pending CI green.**
+**Last consolidated: 2026-07-14 Session 33 — Phase L added (3 items: SearX model search + deploy). Phase K unchanged (K.1/K.2 not yet implemented). A.4 (release cut) remains unchecked. Gate GREEN (lint 0, typecheck 0, collect 0, hook-runtime PASS, CI-precheck all pass). HEAD 351685ca. A.4 pending CI green.**
 
 Each line ticked when `make gate` is green and evidence is pasted.
 
@@ -14,9 +14,11 @@ Each line ticked when `make gate` is green and evidence is pasted.
 | F | Terraform/Deployment | 0 | 4 | 100% |
 | I | Stale Backlog + Integration | 0 | 15 | 100% |
 | J | Terraform HTTP Backend | 0 | 4 | 100% |
-| **Total Active** | | **1** | **66** | **98.5%** |
+| K | Workload-Aware Deployment | 2 | 2 | 0% |
+| L | SearX Model Search + Deploy | 3 | 3 | 0% |
+| **Total Active** | | **6** | **71** | **91.5%** |
 | *Archived* | *14 phases* | *0* | *188* | *100%* |
-| **Grand Total** | | **1** | **254** | **99.6%** |
+| **Grand Total** | | **6** | **259** | **97.7%** |
 
 ---
 
@@ -135,6 +137,21 @@ State backend for terraform with HTTP API (lock/unlock/get/update), replacing lo
 - [x] J.2 — Wire state backend to daemon + migration path from local backend (import existing .tfstate into HTTP backend) | priority: high | effort: medium | status: completed | evidence: Daemon wiring + local-to-HTTP migration path complete
 - [x] J.3 — Terraform HTTP backend integration tests (init/plan/apply with HTTP backend, concurrent lock rejection) | priority: medium | effort: medium | status: completed | evidence: Integration tests pass
 - [x] J.4 — State integrity + at-rest encryption (HMAC signatures on state artifacts, encryption key from OpenBao) | priority: medium | effort: small | status: completed | evidence: HMAC signing + OpenBao encryption implemented
+
+---
+
+## Phase K — Workload-Aware Deployment
+
+- [ ] K.1 — Workload-aware deployment: resource-aware scheduling that queries cluster load (CPU/mem/GPU) before dispatching, with backpressure and queue-depth rebalancing | priority: high | effort: large | status: pending
+- [ ] K.2 — Ansible infra deploy action: codified `gludd deploy` CLI action that invokes Ansible playbooks for infrastructure deployment, with pre-flight validation and rollback on failure | priority: high | effort: medium | status: pending
+
+---
+
+## Phase L — SearX Model Search + Deploy
+
+- [ ] L.1 — SearX model search integration: query SearX for AI model discovery, pricing, and availability; surface results in model gateway for dynamic model selection | priority: high | effort: medium | status: pending
+- [ ] L.2 — SearX deploy action: Ansible role/playbook for deploying SearX instances as managed infrastructure with health-check, SSL, and auto-scaling | priority: high | effort: medium | status: pending
+- [ ] L.3 — Wire SearX model search results into model gateway: dynamic model registry updated from SearX queries, with TTL-cached results and fallback to static registry | priority: medium | effort: medium | status: pending
 
 ---
 

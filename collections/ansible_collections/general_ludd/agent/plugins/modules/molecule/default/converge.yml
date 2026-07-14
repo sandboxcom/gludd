@@ -1,0 +1,68 @@
+---
+- name: Converge — infra_deploy and infra_destroy module check-mode smoke
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: "Check-mode deploy with allowed role"
+      infra_deploy:
+        stack: test-stack
+        provider: aws
+        engine: vllm
+        gpu_type: a100_80
+        gpu_count: 1
+        role: admin
+      register: _deploy
+      check_mode: true
+
+    - name: "Assert check-mode deploy returns expected shape"
+      ansible.builtin.assert:
+        that:
+          - _deploy is not failed
+          - _deploy.changed == false
+          - "'msg' in _deploy"
+
+    - name: "Deploy with denied role should fail"
+      infra_deploy:
+        stack: test-stack
+        provider: aws
+        engine: vllm
+        role: viewer
+      register: _denied_deploy
+      ignore_errors: true
+      check_mode: true
+
+    - name: "Assert denied role deploy fails"
+      ansible.builtin.assert:
+        that:
+          - _denied_deploy is failed
+          - "'denied by access policy' in _denied_deploy.msg"
+
+    - name: "Check-mode destroy with allowed role"
+      infra_destroy:
+        instance_id: i-fake-id
+        provider: aws
+        role: admin
+      register: _destroy
+      check_mode: true
+
+    - name: "Assert check-mode destroy returns expected shape"
+      ansible.builtin.assert:
+        that:
+          - _destroy is not failed
+          - _destroy.changed == false
+          - "'msg' in _destroy"
+
+    - name: "Destroy with denied role should fail"
+      infra_destroy:
+        instance_id: i-fake-id
+        provider: aws
+        role: viewer
+      register: _denied_destroy
+      ignore_errors: true
+      check_mode: true
+
+    - name: "Assert denied role destroy fails"
+      ansible.builtin.assert:
+        that:
+          - _denied_destroy is failed
+          - "'denied by access policy' in _denied_destroy.msg"
