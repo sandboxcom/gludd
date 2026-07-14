@@ -29,8 +29,9 @@ import {
 } from "../lib/shared.ts"
 
 const FLOOR_ENFORCE = process.env.GLUDD_MULTITASK_FLOOR_ENFORCE !== "0"
-export const MIN_DISPATCHES = parseInt(process.env.GLUDD_MULTITASK_MIN_DISPATCHES || "3", 10)
-export const MIN_DISPATCHES_PER_WAVE = parseInt(process.env.GLUDD_MIN_DISPATCHES || "3", 10)
+export const MIN_DISPATCHES = parseInt(process.env.GLUDD_MULTITASK_MIN_DISPATCHES || "10", 10)
+export const MIN_DISPATCHES_PER_WAVE = parseInt(process.env.GLUDD_MIN_DISPATCHES || "10", 10)
+export const MAX_DISPATCHES = parseInt(process.env.GLUDD_MULTITASK_MAX_DISPATCHES || "10", 10)
 export const MAX_ZERO_STREAK = 2
 export const WAVE_HISTORY_SIZE = 10
 const MSG_GAP_MS = 5000
@@ -136,8 +137,19 @@ const defaultImpl: HotModule = {
 
       _state.lastToolCallTs = now
 
-      // --- Dispatch tools: count and allow ---
+      // --- Dispatch tools: count and allow (with ceiling) ---
       if (isDispatchTool(tool)) {
+        if (_state.thisMessageDispatches >= MAX_DISPATCHES) {
+          return {
+            permissionDecision: "deny" as const,
+            message: [
+              "DISPATCH CEILING BREACH: already " + String(_state.thisMessageDispatches) + " dispatch(es) in this message.",
+              "Maximum allowed per wave: " + String(MAX_DISPATCHES) + ". No more than " + String(MAX_DISPATCHES) + " dispatches.",
+              "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
+              "Run 'make disengage-enforcement' to bypass.",
+            ].join("\n"),
+          }
+        }
         _state.thisMessageDispatches++
         _state.estimatedInFlight++
         writeState(_state)

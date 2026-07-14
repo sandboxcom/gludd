@@ -2261,7 +2261,7 @@ Every assistant response containing tool calls MUST satisfy ONE of:
 
 A response with exactly 1 task dispatch is a **policy violation** when ≥2 known work items remain. The agent MUST either batch wider to 2 OR justify why only 1 dispatch is possible.
 
-**NOTE (2026-07-12):** The COST-EFFICIENCY DIRECTIVE above overrides the old "10-agent floor" and "≥5 dispatches per wave" rules. The floor is now 7 agents max. Single dispatches (1) with ≥2 pending items trigger enforcement. Zero dispatches over ≥2 consecutive responses trigger enforcement.
+**NOTE (2026-07-13):** The COST-EFFICIENCY DIRECTIVE above sets the floor at EXACTLY 10 agents per wave. Dispatch 10 at a time. Single dispatches (1) with ≥2 pending items trigger enforcement. Zero dispatches over ≥2 consecutive responses trigger enforcement.
 
 **Never**: make a single-task-dispatch message and wait for the result when ≥2 work items are known. Either fan out wider, or do non-blocking work inline while the wave runs.
 
