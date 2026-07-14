@@ -4,12 +4,12 @@ import tempfile
 from pathlib import Path
 
 from general_ludd.renderers.registry import (
+    RendererMeta,
     RendererRegistry,
     RendererSpec,
     _coerce_int,
-    _resolve_default_playbooks_dir,
     _companion_schema,
-    RendererMeta,
+    _resolve_default_playbooks_dir,
 )
 
 

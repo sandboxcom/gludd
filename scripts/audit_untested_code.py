@@ -172,6 +172,16 @@ def _python_finds_test(py_file: Path) -> bool:
                 if tname.startswith(f"test_{joined}_"):
                     return True
 
+    # ── Glob fallback: catch singular/plural mismatches ──────────────────
+    # e.g., src/general_ludd/connectors/slack.py (plural dir)
+    #       → test_connector_slack.py (singular prefix) — exact match misses it.
+    for test_dir in (TESTS_UNIT, TESTS_INTEGRATION):
+        if not test_dir.exists():
+            continue
+        for pattern in (f"test_connector*{stem}*.py", f"test_*{stem}*.py"):
+            if list(test_dir.glob(pattern)):
+                return True
+
     return False
 
 
