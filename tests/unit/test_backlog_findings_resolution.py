@@ -24,11 +24,11 @@ class Test1ProcessIsolationFailClosed:
     def test_isolation_requested_no_runner_is_fail_closed(self):
         from general_ludd.ansible.core_runner import (
             _HAS_ANSIBLE_RUNNER,
-            CoreRunner,
+            CoreAnsibleRunner,
         )
 
         iso_conf = SimpleNamespace(enabled=True)
-        runner = CoreRunner(process_isolation=iso_conf)
+        runner = CoreAnsibleRunner(process_isolation=iso_conf)
 
         if _HAS_ANSIBLE_RUNNER:
             pytest.skip("ansible-runner installed — cannot test fail-closed path")
@@ -62,11 +62,11 @@ class Test2ForProjectWiring:
     daemon._LazyProjectSecrets -> gateway._resolver_for_project()."""
 
     def test_for_project_method_exists_on_daemon_wrapper(self):
-        from general_ludd.daemon import _LazyProjectSecrets  # type: ignore[attr-defined]
-        from general_ludd.secrets.manager import SecretsManager
+        from general_ludd.daemon import build_secrets_resolver
 
-        base = SecretsManager()
-        wrapper = _LazyProjectSecrets(base)
+        wrapper = build_secrets_resolver(
+            openbao_config=None, projects_active=True
+        )
         assert hasattr(wrapper, "for_project")
         assert callable(wrapper.for_project)
 

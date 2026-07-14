@@ -214,7 +214,9 @@ class SearXModelSearch:
                 return lic
         m = re.search(r"(?:license|licensed under)\s+([A-Za-z0-9\-\.]+(?:\s+v?\d+\.?\d*)?)", text, re.IGNORECASE)
         if m:
-            return m.group(1).strip().lower()
+            captured = m.group(1).strip().lower()
+            if any(c.isdigit() or c == "-" for c in captured):
+                return captured
         return ""
 
 

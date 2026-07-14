@@ -16,11 +16,11 @@ All notable changes to this project are documented here. Format follows [Keep a 
 - BUGS.md stale (in_progress) tag cleaned up
 
 ### Changed
-- README status table refreshed for v0.1.0-beta.4
+- README status table refreshed for v0.1.0-beta.1
 - SESSION.md archived (722→129 lines), old sessions moved to docs/archive/
 - Presentation deck updated with current metrics (38,207 tests, 111 roles)
 
-## [0.1.0-beta.4] — 2026-07-14 — Session 29-33: enforcement plugin Node v26 compat fixes, hot-reload proxy hardening, e2e test surge, opencode 1.17.9 compat
+## [0.1.0-beta.1] — 2026-07-14 — Session 29-33: enforcement plugin Node v26 compat fixes, hot-reload proxy hardening, e2e test surge, opencode 1.17.9 compat
 
 ### Session 29 (2026-07-13) — Enforcement Plugin Node v26 Compatibility + E2E Test Surge
 

@@ -63,7 +63,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         check-plugin-liveness check-plugin-health write-plugin-manifest restart-opencode disengage-enforcement reload-enforcement \
         rearm-enforcement enforcement-status \
         hot-reload-plugins hot-reload-status hot-reload-clean \
-        verify-release-artifact git-tag-rm release-cut release-recut release-create \
+        verify-release-artifact git-tag-rm release-cut release-recut release-create release-delete \
         verify-feature-claims audit-coverage gate-audit coverage-json \
         tf-cache-setup tf-init tf-validate tf-cache-warm tf-versions-check tf-clean \
         deck deck-serve deck-preview deck-data deck-honesty \
@@ -180,6 +180,15 @@ help:
 	@echo "  clean-untracked       Remove reinvention-of-wheel files"
 	@echo "  clean-hooks           Remove legacy hook scripts"
 	@echo "  clean-plugins         No-op (false-done merged into enforce-stop.ts)"
+	@echo ""
+	@echo "  --- Release ---"
+	@echo "  release-list          List all GitHub releases"
+	@echo "  release-view TAG=..   Show a published GitHub Release + its assets"
+	@echo "  release-create TAG=.. Build artifacts and publish a GitHub Release"
+	@echo "  release-cut TAG=.. MSG=.. The single release command (6 fail-closed steps)"
+	@echo "  release-recut TAG=..  Re-trigger CI release job for an existing tag"
+	@echo "  release-delete TAG=.. Delete GitHub Release + local + remote git tags"
+	@echo "  verify-release-artifact TAG=.. Confirm a release has published assets (exit 0 = shipped)"
 	@echo ""
 	@echo "  --- Build + Deploy ---"
 	@echo "  dist                  Build distribution tarball"
@@ -1596,6 +1605,10 @@ gha-usage:
 	@echo "Billing (requires admin):"
 	@gh api /orgs/sandboxcom/settings/billing/actions --jq '{total_minutes_used: .total_minutes_used, total_paid_minutes_used: .total_paid_minutes_used, included_minutes: .included_minutes}' 2>/dev/null || echo "  Billing not accessible (requires admin)"
 
+# List all GitHub releases for sandboxcom/gludd.
+release-list:
+	@gh release list -R sandboxcom/gludd --limit 20
+
 # Confirm a published GitHub Release + list its downloadable assets.
 release-view:
 	@[ -n "$(TAG)" ] || { echo "Usage: make release-view TAG=v0.1.0-alpha.1"; exit 1; }
@@ -1664,6 +1677,14 @@ release-cut:
 		sleep 60; \
 	done; \
 	echo "WARNING: release artifact not found after 10 minutes"; exit 1
+
+# Delete a GitHub Release and its associated git tags (local + remote).
+# Usage: make release-delete TAG=v0.1.0-alpha.1
+release-delete:
+	@[ -n "$(TAG)" ] || { echo "Usage: make release-delete TAG=v0.1.0-alpha.1"; exit 1; }
+	@gh release delete "$(TAG)" -R sandboxcom/gludd --yes 2>/dev/null || echo "(release not found on GitHub)"
+	@git tag -d "$(TAG)" 2>/dev/null || echo "(tag not found locally)"
+	@git push sandboxcom :refs/tags/"$(TAG)" 2>/dev/null || echo "(tag not found on remote)"
 
 # Manual fallback: build artifacts and publish a GitHub Release via gh.
 # Usage: make release-create TAG=v0.1.0-alpha.1

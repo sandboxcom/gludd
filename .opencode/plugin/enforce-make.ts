@@ -944,6 +944,12 @@ const defaultImpl: HotModule = {
           "    turns diagnosing. BUGS.md records bash-diagnosis-relapse incidents.",
           "",
           "STOP-PATTERN DETECTION: Text-only responses with pending work are BLOCKED.",
+          "",
+          "ROOT-CAUSE-ONLY FIX: Fix root causes, never symptoms.",
+          "  - Guardrail/plugin broken? Fix the logic, don't disable it.",
+          "  - CI red? Fix the tests, don't skip them. Release blocked? Fix blocker, don't bypass.",
+          "  - See AGENTS.md \"Root-Cause-Only Fix Policy.\"",
+          "",
           "Full rationale in AGENTS.md. This contract is all you need for mechanics.",
           "",
         ].join("\n");
