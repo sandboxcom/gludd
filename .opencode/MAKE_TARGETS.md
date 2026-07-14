@@ -225,12 +225,17 @@ Auto-generated from Makefile (3252 lines). Subagents: use ONLY these targets. An
 | `ci-pyver-list` | | List available Python versions |
 | `ci-version-sim` | | Simulate CI version injection |
 | `release-view` | `TAG='v...'` | View GitHub Release + assets |
-| `release-cut` | `TAG='v...' MSG='...'` | Full release pipeline |
+| `release-cut` | `TAG='v...' MSG='...'` | **The only sanctioned publish path.** Full fail-closed release pipeline |
 | `release-recut` | `TAG='v...'` | Re-trigger release |
-| `release-create` | `TAG='v...'` | Manual release creation |
+| `release-create` | `TAG='v...'` | **DRAFT-ONLY** CI-green-gated single-binary fallback — **cannot publish a public release**. Not an alternative to `release-cut` |
 | `release-validate` | | Build and validate release |
-| `verify-release-artifact` | `TAG='v...'` | Confirm published assets |
+| `release-upload-assets` | `TAG='v...' FILES='...'` | Add assets to an existing release (repair path, idempotent) |
+| `verify-release-completeness` | `TAG='v...'` | **THE RELEASE GATE** — all 12 artifact categories + prerelease-flag + version-stamped names + no zero-size assets |
+| `verify-release-artifact` | `TAG='v...'` | **NOT the gate** — only proves "non-draft + ≥1 asset". Use `verify-release-completeness` |
 | `require-ci-green` | `SHA=...` | CI-green precondition |
+
+> Release procedure: **`docs/RELEASE_RUNBOOK.md`**. A tag is not a release, and
+> "has assets" is not a *complete* release.
 
 ## Plugin / Enforcement
 

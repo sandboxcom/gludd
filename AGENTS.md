@@ -357,7 +357,7 @@ code/workflow" is NOT done — authorship is not verification.
 | Committed | Commit hash from `make git-log` + the gate evidence above |
 | Pushed | `make verify-remote BRANCH=<b> SHA=<sha>` → `VERIFIED <branch>@<sha>` |
 | CI-green | `make ci-verdict BRANCH=<b>` → `conclusion: success` + headSha == branch tip |
-| Shipped / released | `make verify-release-artifact TAG=<t>` PASS + `gh release view` showing isDraft:false, assets ≥ 1, download URL(s) |
+| Shipped / released | `make verify-release-completeness TAG=<t>` PASS + `gh release view` showing isDraft:false + download URL(s). (`verify-release-artifact` is NOT the gate — it only proves "non-draft + ≥1 asset".) |
 
 An unverified "done" is indistinguishable from a false claim — this project's history
 (false alpha.3 ship, 12 confirmed-inert features, the reviewer silently failing, the
@@ -2049,8 +2049,25 @@ against HEAD. It queries GitHub Actions via `gh run list` and is fail-closed:
 
 ## CRITICAL: A Release is an Artifact, Not a Tag (codified)
 
+> **⚠ 2026-07-14 CORRECTION — read this before the rest of the section.**
+> The gate named throughout the text below (`make verify-release-artifact`) is
+> **NOT the release gate**. It only proves "non-draft + at least one asset", so a
+> release carrying one binary and no SBOM, no checksums, and no Linux build passes
+> it. **`make verify-release-completeness TAG=<tag>` is the real gate** — it checks
+> 12 artifact categories, the prerelease-flag-vs-tag shape, version-stamped asset
+> names, and zero-size assets, and CI runs it as a blocking step on tag builds.
+> Wherever this section says `verify-release-artifact`, read
+> `verify-release-completeness`. Related: **`make release-create` cannot publish a
+> public release** — it is a CI-green-gated, **draft-only** single-binary fallback;
+> `make release-cut TAG=… MSG='…'` is the only sanctioned publish path. Full
+> procedure: **`docs/RELEASE_RUNBOOK.md`**.
+>
+> This correction exists because `verify-release-artifact` passing is exactly how
+> v0.1.0-beta.1 was declared shipped with 1 of 12 required assets.
+
 **A version is NOT done until its Build-and-Release CI run is GREEN and
-`make verify-release-artifact TAG=<tag>` exits 0 (published assets confirmed).**
+`make verify-release-completeness TAG=<tag>` exits 0 (all required published assets
+confirmed).**
 
 This was codified after neither `v0.1.0-alpha.2` nor `v0.1.0-alpha.3` ever
 produced a downloadable artifact: the gate was red on both releases, so the
@@ -2223,6 +2240,30 @@ This is the structural fix for the recurring "concurrent subagents trampled the
 shared tree" failure mode. Tests:
 `tests/unit/test_agent_worktree_targets.py`. Make targets: `agent-worktree`,
 `agent-merge`, `agent-cleanup`, `agent-worktree-list`.
+
+#### ⚠️ KNOWN GAP: git locking is broken inside worktrees (read before running a wide worktree wave)
+
+**Verified 2026-07-14**, `src/general_ludd/git_automation/locking.py:120-131`
++ `:267-280`. The cross-process lock-file locator (`_git_dir()`) checks
+`os.path.isdir(repo/.git)` to find where to place the flock. **Inside a git
+worktree `.git` is a FILE, not a directory**, so the check fails, `_git_dir()`
+returns `None`, and `git_repo_lock` silently falls back to an in-process
+`threading.RLock`. Because every `make agent-worktree`-spawned subagent is its
+own OS **process**, that fallback gives **zero cross-process serialization**.
+Right now, nothing stops two worktree-agent processes from interleaving writes
+if they both run mutating git operations against this repo at the same time.
+
+**What this does NOT affect:** read-only git ops, and the routine case above
+(each agent committing inside its own worktree/branch) — that stays low-risk.
+**What this DOES affect:** running `make agent-merge` / `agent-merge-dev` /
+`git-tag-push` / `git-push-sandboxcom` from more than one place concurrently.
+Those already MUST be serialized through the orchestrator on the main checkout
+per this section — the caveat is that this is currently discipline only, with
+**no mechanical lock backing it** while the worktree bug is open. Do not
+dispatch two subagents in the same wave that both merge/tag/push against this
+repo. Fix: `git rev-parse --git-common-dir` (specced, not yet built — see
+`docs/design/NEXT_RELEASE_BETA2_SPEC.md`). Full writeup:
+`docs/MULTITASKING_POLICY.md`.
 
 ### Subagent dispatch reliability rules
 

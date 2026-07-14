@@ -46,11 +46,32 @@ class TestReleaseTargetsExist:
             "release-create must create/upload the release via gh"
         )
 
-    def test_release_create_verifies_artifact(self):
-        """release-create must confirm the artifact via verify-release-artifact."""
+    def test_release_create_is_ci_gated_and_draft_only(self):
+        """release-create must be CI-gated and publish draft-only, pointing the
+        operator at verify-release-completeness to finish the release.
+
+        release-create cannot produce the full artifact matrix (only CI can,
+        via the per-platform build jobs), so the old `verify-release-artifact`
+        check (non-draft + >=1 asset) was too weak: v0.1.0-beta.1 shipped
+        publicly with 1/12 assets on a RED SHA through the old ungated version
+        of this target. The new contract is stronger: gate on CI-green before
+        building/publishing anything, always create the release as a draft
+        (never auto-publish a partial release), and direct the operator to run
+        verify-release-completeness before un-drafting.
+        """
         recipe = _recipe("release-create")
-        assert "verify-release-artifact" in recipe, (
-            "release-create must verify the published artifact"
+        assert "require-ci-green" in recipe, (
+            "release-create must gate on CI-green before publishing "
+            "(AGENTS.md: Release Pipeline Must Be CI-Green)"
+        )
+        assert "--draft" in recipe, (
+            "release-create must publish as a draft — it cannot produce the "
+            "full artifact matrix on its own, so it must never auto-publish "
+            "a partial release"
+        )
+        assert "verify-release-completeness" in recipe, (
+            "release-create must direct the operator to verify-release-completeness "
+            "before the draft can be un-drafted"
         )
 
 

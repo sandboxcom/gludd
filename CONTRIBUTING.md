@@ -164,8 +164,12 @@ make feature-done  MSG='feature/short-name'   # test, merge to master with --no-
 - Never force-push. Never mutate `master`/`main`/`release/*` from a
   worktree-isolated agent — shared-branch mutations happen on the main checkout
   only (see `AGENTS.md § Branch-landing integrity`).
-- Release branches are immutable once their remote tip is CI-green. Use
-  `make release-branch-new` and `make release-promote` — never hand-craft tags.
+- Release branches are immutable once their remote tip is CI-green. Never
+  hand-craft tags: `make release-cut TAG='<tag>' MSG='<message>'` is the only
+  sanctioned publish path (it is fail-closed on CI-green for the exact SHA, then
+  verifies the published release with `verify-release-completeness`). To redo a
+  bad tag, use `make release-recut TAG='<tag>'`. Full procedure:
+  `docs/RELEASE_RUNBOOK.md`.
 
 ---
 
@@ -274,6 +278,17 @@ push, forcing `-nv` (no-verify) bypasses that defeat the lint/secret guards.
   BRANCH=agent-<name>` (remove), `make agent-worktree-list` (diagnostic).
   Read-only research tasks stay on the main checkout. See `AGENTS.md §
   Worktree-per-subagent`.
+- **⚠ Cross-process git locking does not work inside a worktree.**
+  `git_automation/locking.py` (`_git_dir()`, lines 120-131) picks its lock file by
+  testing `os.path.isdir(repo/.git)`. Inside a worktree `.git` is a **file**, so the
+  test fails, and `git_repo_lock` **silently skips the cross-process flock**, leaving
+  only an in-process `threading.RLock`. Each worktree agent is a separate process, so
+  that gives **zero** cross-process protection. Read-only git ops and file-disjoint
+  editing are unaffected — the exposure is concurrent git **mutations**. Until the fix
+  lands (`git rev-parse --git-common-dir`, specced in
+  `docs/design/NEXT_RELEASE_BETA2_SPEC.md`), **serialize every mutating git operation**:
+  run `agent-merge` / tag / push from the main checkout, one at a time, and never
+  dispatch two agents in the same wave that both merge/tag/push.
 
 ### CI cooldown — fire-and-forget
 
@@ -323,7 +338,15 @@ measurement that proves it. Authorship is not verification. (See `AGENTS.md §
 | Commit | Commit hash from `make git-log`. |
 | Push | `make verify-remote BRANCH=… SHA=…` → `VERIFIED …`. |
 | CI green | `make ci-verdict BRANCH=…` → `conclusion: success` + matching headSha. |
-| Release | `make verify-release-artifact TAG=…` PASS + `gh release view`. |
+| Release | `make verify-release-completeness TAG=…` PASS + `gh release view` (isDraft:false). |
+
+**`make verify-release-artifact` is NOT the release gate** — it only proves "non-draft
+and ≥1 asset exists", which a release with one binary and no SBOM, no checksums and no
+Linux build still passes. `make verify-release-completeness TAG=…` is the real gate (12
+artifact categories, prerelease-flag-vs-tag, version-stamped asset names, no zero-size
+assets). Likewise, **`make release-create` cannot publish a public release** — it is a
+CI-green-gated, **draft-only** single-binary fallback. `make release-cut TAG=… MSG='…'`
+is the only sanctioned publish path. Full procedure: `docs/RELEASE_RUNBOOK.md`.
 
 ### CI polling
 
