@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from unittest import mock
 
-import pytest
-
 from general_ludd.infra.gpu_info_adapter import (
     _CC_BY_ARCH,
     gpu_info_from_gpu_type,
@@ -149,7 +147,7 @@ class TestGpuInfoFromGpuType:
             return_value=mock_hp,
         ) as mock_hpf:
             gpu_info_from_gpu_type("H100")
-            args, kwargs = mock_hpf.call_args
+            args, _kwargs = mock_hpf.call_args
             assert args[1] == 1
 
 

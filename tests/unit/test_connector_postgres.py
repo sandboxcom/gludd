@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any, cast
+from typing import Any
 
 import pytest
 
 from general_ludd.connectors.postgres_stats import PostgresStatsSource, _to_float, _utc_now_epoch
-
 
 Row = dict[str, Any]
 
@@ -98,7 +97,13 @@ class TestQueryReplication:
 
 class TestQueryDatabase:
     def test_database_rows(self) -> None:
-        rows: list[Row] = [{"datname": "mydb", "xact_commit": 100, "xact_rollback": 5, "blks_read": 50, "blks_hit": 500}]
+        rows: list[Row] = [{
+            "datname": "mydb",
+            "xact_commit": 100,
+            "xact_rollback": 5,
+            "blks_read": 50,
+            "blks_hit": 500,
+        }]
         src = PostgresStatsSource(executor=_canned({"pg_stat_database": rows}))
         records = src.query("database")
         assert len(records) == 4

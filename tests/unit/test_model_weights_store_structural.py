@@ -34,14 +34,14 @@ class TestModelWeightStoreErrors:
         with TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "weights.json"
             path.write_text("{corrupt")
-            with pytest.raises(Exception):
+            with pytest.raises(json.JSONDecodeError):
                 ModelWeightStore.load(path)
 
     def test_load_non_json_file_raises(self):
         with TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "weights.json"
             path.write_text("not json at all")
-            with pytest.raises(Exception):
+            with pytest.raises(json.JSONDecodeError):
                 ModelWeightStore.load(path)
 
 

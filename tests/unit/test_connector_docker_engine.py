@@ -10,6 +10,7 @@ import pytest
 from general_ludd.connectors.docker_engine import (
     Connector,
     DockerEngineSource,
+    Transport,
     _DockerResponse,
     _is_internal_literal_host,
     _is_multiplexed,
@@ -17,9 +18,7 @@ from general_ludd.connectors.docker_engine import (
     _looks_rfc3339,
     _record,
     _split_rfc3339,
-    Transport,
 )
-
 
 Response = _DockerResponse
 
@@ -73,7 +72,15 @@ class TestHelpers:
         assert msg == ""
 
     def test_record_shape(self) -> None:
-        r = _record(ts="2024-01-01T00:00:00Z", source="docker", level_or_status="stdout", message="hello", value=None, labels={"k": "v"}, raw={"a": 1})
+        r = _record(
+            ts="2024-01-01T00:00:00Z",
+            source="docker",
+            level_or_status="stdout",
+            message="hello",
+            value=None,
+            labels={"k": "v"},
+            raw={"a": 1},
+        )
         assert r["ts"] == "2024-01-01T00:00:00Z"
         assert r["source"] == "docker"
         assert r["kind"] == "logs"

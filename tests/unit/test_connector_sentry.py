@@ -175,7 +175,10 @@ class TestQuery:
 
     def test_limit_cap(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("SENTRY_TOKEN", "tok")
-        issues = [{"id": str(i), "title": "Test", "culprit": "x", "status": "resolved", "level": "warning", "count": "1"} for i in range(10)]
+        issues = [
+            {"id": str(i), "title": "Test", "culprit": "x", "status": "resolved", "level": "warning", "count": "1"}
+            for i in range(10)
+        ]
         t = FakeTransport([_resp(200, issues)])
         src = SentrySource(_cfg(transport=t))
         records = src.query({"limit": 3})
@@ -193,7 +196,13 @@ class TestQuery:
 class TestFetchEvent:
     def test_fetch_event(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("SENTRY_TOKEN", "tok")
-        event = {"id": "evt1", "title": "Error detail", "culprit": "app.py", "level": "error", "dateCreated": "2026-01-01T00:00:00Z"}
+        event = {
+            "id": "evt1",
+            "title": "Error detail",
+            "culprit": "app.py",
+            "level": "error",
+            "dateCreated": "2026-01-01T00:00:00Z",
+        }
         t = FakeTransport([_resp(200, event)])
         src = SentrySource(_cfg(transport=t))
         result = src.fetch_event("issue-1")

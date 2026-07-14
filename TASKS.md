@@ -1,6 +1,6 @@
 # TASKS.md — Evidence Ledger
 
-**Last consolidated: 2026-07-13 Session 30 — 1 OPEN item (A.4 release cut). 231 items (230 completed, 1 pending = 99.6%). CI green pending for A.4 release. Recent commits: 581dbfc (session-start read-only bypass), ae811203 (enforce-make fixes), 0da7a71 (audit script + 121 tests), f4242c05 (coverage baseline + verified-claims tests).**
+**Last consolidated: 2026-07-13 Session 31 — 1 OPEN item (A.4 release cut). 231 items (230 completed, 1 pending = 99.6%). 9 enforcement plugin bugs fixed (FLOOR alignment, input shapes, camelCase fields, dispatch-block). Runtime invocation tests added (test_enforcement_runtime_invoke.py). Gate green: lint 0, typecheck 0, collect 0, hook-runtime PASS. ~70+ test files written (connectors/sandbox/cli/agents/lifecycle/modules). Untested modules: ~125 (down from 196). A.4 release pending CI green.**
 
 Each line ticked when `make gate` is green and evidence is pasted.
 

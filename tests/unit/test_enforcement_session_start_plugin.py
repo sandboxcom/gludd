@@ -58,11 +58,11 @@ class TestPluginRegistration:
 
 
 class TestKeyConstants:
-    def test_min_dispatches_default_is_10(self):
+    def test_min_dispatches_default_is_3(self):
         src = _src()
         m = re.search(r'GLUDD_SESSION_START_MIN_DISPATCHES \|\| "(\d+)"', src)
         assert m, "MIN_DISPATCHES default not found"
-        assert m.group(1) == "10"
+        assert m.group(1) == "3"
 
     def test_enforce_default_is_true(self):
         src = _src()
@@ -102,12 +102,14 @@ class TestKeyConstants:
         assert m, "HARD_DENY_SECS default not found"
         assert m.group(1) == "120"
 
-    def test_effective_min_uses_math_max_of_min_dispatches_and_floor(self):
+    def test_effective_min_uses_math_min_of_min_dispatches_and_floor(self):
         src = _src()
-        assert "Math.max(MIN_DISPATCHES" in src, (
-            "EFFECTIVE_MIN must use Math.max(MIN_DISPATCHES, ...)"
+        assert "Math.min(MIN_DISPATCHES" in src, (
+            "EFFECTIVE_MIN must use Math.min(MIN_DISPATCHES, FLOOR)"
         )
-        assert "Math.min" in src, "EFFECTIVE_MIN must also clamp via Math.min"
+        assert "const EFFECTIVE_MIN = Math.min(MIN_DISPATCHES, FLOOR)" in src, (
+            "EFFECTIVE_MIN formula must be Math.min(MIN_DISPATCHES, FLOOR)"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -798,9 +800,9 @@ def _is_task_file_read(tool: str, input_obj: dict | None) -> bool:
         return False
 
 
-MIN_DISPATCHES = 10
-FLOOR = 7
-EFFECTIVE_MIN = max(MIN_DISPATCHES, min(FLOOR, 7))
+MIN_DISPATCHES = 3
+FLOOR = 10
+EFFECTIVE_MIN = min(MIN_DISPATCHES, FLOOR)
 FRESH_SECS = 600
 
 ENFORCE = True
