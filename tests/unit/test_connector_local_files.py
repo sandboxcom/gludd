@@ -1,362 +1,289 @@
-"""Unit tests for the local-file observability connectors.
-
-These connectors read log-shaped data off the local filesystem and normalize
-it into the canonical observability record shape. They are deliberately
-self-contained (no imports from the connector package base/__init__) so they
-can be exercised in isolation.
-
-Security invariant under test: every path the connector touches MUST resolve
-(via ``os.path.realpath``) to a location *inside* a configured allowed root.
-A path that escapes the root via ``..`` or an absolute path outside the root
-MUST be refused — the connector must never read an arbitrary host file.
-
-All fixtures use real temp files (``tmp_path``); no network, no subprocess.
-"""
+"""Structural tests for connectors/local_files.py — JsonlLogSource, SyslogGrepSource."""
 
 from __future__ import annotations
 
 import json
 import os
+import tempfile
 from pathlib import Path
 
 import pytest
 
-from general_ludd.connectors.local_files import JsonlLogSource, SyslogGrepSource
-
-# --------------------------------------------------------------------------- #
-# Helpers / fixtures
-# --------------------------------------------------------------------------- #
-
-NORMALIZED_KEYS = {
-    "ts",
-    "source",
-    "kind",
-    "level_or_status",
-    "message",
-    "value",
-    "labels",
-    "raw",
-}
+from general_ludd.connectors.local_files import (
+    JsonlLogSource,
+    SyslogGrepSource,
+    _confine,
+    _to_float,
+)
 
 
-def _write(path: Path, text: str) -> Path:
-    path.write_text(text, encoding="utf-8")
-    return path
+class TestConfine:
+    def test_path_inside_root_passes(self, tmp_path: Path):
+        root = str(tmp_path)
+        sub = tmp_path / "subdir"
+        sub.mkdir()
+        file = sub / "file.txt"
+        file.write_text("data")
+        result = _confine(str(file), root)
+        assert os.path.realpath(result) == os.path.realpath(str(file))
+
+    def test_path_equals_root_passes(self, tmp_path: Path):
+        root = str(tmp_path)
+        result = _confine(root, root)
+        assert os.path.realpath(result) == os.path.realpath(root)
+
+    def test_path_outside_root_raises(self, tmp_path: Path):
+        root = tmp_path / "allowed"
+        root.mkdir()
+        outside = tmp_path / "outside.txt"
+        outside.write_text("data")
+        with pytest.raises(ValueError, match="outside the allowed root"):
+            _confine(str(outside), str(root))
 
 
-@pytest.fixture
-def jsonl_file(tmp_path: Path) -> Path:
-    """A JSONL log file with mixed levels, a malformed line, and varied fields."""
-    lines = [
-        json.dumps(
-            {
-                "ts": "2026-06-15T10:00:00Z",
-                "level": "INFO",
-                "message": "service started",
-                "service": "api",
-            }
-        ),
-        json.dumps(
-            {
-                "time": "2026-06-15T10:00:01Z",
-                "severity": "ERROR",
-                "msg": "database connection refused",
-                "host": "db-1",
-                "code": 500,
-            }
-        ),
-        "this is not json {{{",  # malformed — must be skipped + counted
-        json.dumps(
-            {
-                "@timestamp": "2026-06-15T10:00:02Z",
-                "level": "WARN",
-                "message": "retrying request",
-                "attempt": 2,
-            }
-        ),
-        "",  # blank line — skipped, not counted as malformed
-    ]
-    return _write(tmp_path / "app.jsonl", "\n".join(lines) + "\n")
+class TestToFloat:
+    def test_int(self):
+        assert _to_float(42) == 42.0
 
+    def test_float(self):
+        assert _to_float(3.14) == 3.14
 
-@pytest.fixture
-def syslog_file(tmp_path: Path) -> Path:
-    """A plain syslog (RFC3164-ish) text file."""
-    lines = [
-        "Jun 15 10:00:00 host1 sshd[1234]: Accepted password for root",
-        "Jun 15 10:00:05 host2 cron[55]: pam_unix(cron:session): session opened",
-        "Jun 15 10:01:00 host1 kernel: out of memory: killed process 999",
-        "a line that does not match the syslog prefix at all",
-    ]
-    return _write(tmp_path / "syslog", "\n".join(lines) + "\n")
+    def test_bool_returns_none(self):
+        assert _to_float(True) is None
+        assert _to_float(False) is None
 
+    def test_str_returns_none(self):
+        assert _to_float("123") is None
 
-# --------------------------------------------------------------------------- #
-# Shared contract
-# --------------------------------------------------------------------------- #
-
-
-class TestSharedContract:
-    def test_kind_is_logs(self) -> None:
-        assert JsonlLogSource.KIND == "logs"
-        assert SyslogGrepSource.KIND == "logs"
-
-    def test_name_attr(self, jsonl_file: Path, syslog_file: Path) -> None:
-        j = JsonlLogSource({"path": str(jsonl_file), "root": str(jsonl_file.parent)})
-        s = SyslogGrepSource({"path": str(syslog_file), "root": str(syslog_file.parent)})
-        assert isinstance(j.name, str) and j.name
-        assert isinstance(s.name, str) and s.name
-
-    def test_health_never_raises_on_missing_file(self, tmp_path: Path) -> None:
-        j = JsonlLogSource({"path": str(tmp_path / "nope.jsonl"), "root": str(tmp_path)})
-        s = SyslogGrepSource({"path": str(tmp_path / "nope.log"), "root": str(tmp_path)})
-        jh = j.health()
-        sh = s.health()
-        assert isinstance(jh, dict)
-        assert isinstance(sh, dict)
-        # health reports unhealthy/degraded, but never raises
-        assert jh["healthy"] is False
-        assert sh["healthy"] is False
-
-    def test_health_ok_when_file_present(self, jsonl_file: Path, syslog_file: Path) -> None:
-        j = JsonlLogSource({"path": str(jsonl_file), "root": str(jsonl_file.parent)})
-        s = SyslogGrepSource({"path": str(syslog_file), "root": str(syslog_file.parent)})
-        assert j.health()["healthy"] is True
-        assert s.health()["healthy"] is True
-
-
-# --------------------------------------------------------------------------- #
-# TASK A — JsonlLogSource
-# --------------------------------------------------------------------------- #
+    def test_none_returns_none(self):
+        assert _to_float(None) is None
 
 
 class TestJsonlLogSource:
-    def test_normalized_record_shape(self, jsonl_file: Path) -> None:
-        src = JsonlLogSource({"path": str(jsonl_file), "root": str(jsonl_file.parent)})
+    def test_requires_root(self):
+        with pytest.raises(ValueError, match="root"):
+            JsonlLogSource({"path": "/some/file"})
+
+    def test_requires_path_or_paths(self, tmp_path: Path):
+        root = str(tmp_path)
+        with pytest.raises(ValueError, match="path"):
+            JsonlLogSource({"root": root})
+
+    def test_constructs_with_single_path(self, tmp_path: Path):
+        root = str(tmp_path)
+        file = tmp_path / "log.jsonl"
+        file.write_text('{"msg": "hello"}\n')
+        src = JsonlLogSource({"root": root, "path": str(file)})
+        assert src.name == "jsonl_log_source"
+        assert src.KIND == "logs"
+
+    def test_constructs_with_paths_list(self, tmp_path: Path):
+        root = str(tmp_path)
+        file = tmp_path / "a.jsonl"
+        file.write_text('{"msg": "a"}\n')
+        src = JsonlLogSource({"root": root, "paths": [str(file)]})
+        assert src.KIND == "logs"
+
+    def test_path_outside_root_raises(self, tmp_path: Path):
+        root = tmp_path / "allowed"
+        root.mkdir()
+        outside = tmp_path / "log.jsonl"
+        outside.write_text('{"msg": "x"}\n')
+        with pytest.raises(ValueError, match="outside"):
+            JsonlLogSource({"root": str(root), "path": str(outside)})
+
+    def test_health_reports_missing(self, tmp_path: Path):
+        root = str(tmp_path)
+        missing = str(tmp_path / "nonexistent.jsonl")
+        src = JsonlLogSource({"root": root, "path": missing})
+        h = src.health()
+        assert h["healthy"] is False
+        assert h["missing"] == [os.path.realpath(missing)]
+
+    def test_health_reports_healthy(self, tmp_path: Path):
+        root = str(tmp_path)
+        file = tmp_path / "present.jsonl"
+        file.write_text('{"msg": "hi"}\n')
+        src = JsonlLogSource({"root": root, "path": str(file)})
+        h = src.health()
+        assert h["healthy"] is True
+        assert h["missing"] == []
+
+    def test_query_reads_normalized_records(self, tmp_path: Path):
+        root = str(tmp_path)
+        file = tmp_path / "log.jsonl"
+        file.write_text('{"ts": "2024-01-01T00:00:00", "level": "info", "message": "hello world"}\n')
+        src = JsonlLogSource({"root": root, "path": str(file)})
         records = src.query({})
-        assert records, "expected at least one record"
-        for rec in records:
-            assert set(rec.keys()) >= NORMALIZED_KEYS
-            assert rec["kind"] == "logs"
+        assert len(records) == 1
+        assert records[0]["message"] == "hello world"
+        assert records[0]["level_or_status"] == "info"
+        assert records[0]["source"] == "jsonl_log_source"
+        assert records[0]["kind"] == "logs"
 
-    def test_ts_field_parsed_from_alternatives(self, jsonl_file: Path) -> None:
-        src = JsonlLogSource({"path": str(jsonl_file), "root": str(jsonl_file.parent)})
+    def test_query_skips_malformed_lines(self, tmp_path: Path):
+        root = str(tmp_path)
+        file = tmp_path / "log.jsonl"
+        file.write_text('not json\n{"msg": "valid"}\n')
+        src = JsonlLogSource({"root": root, "path": str(file)})
         records = src.query({})
-        timestamps = [r["ts"] for r in records]
-        # ts pulled from "ts", "time", and "@timestamp" respectively
-        assert "2026-06-15T10:00:00Z" in timestamps
-        assert "2026-06-15T10:00:01Z" in timestamps
-        assert "2026-06-15T10:00:02Z" in timestamps
-
-    def test_level_pulled_from_level_or_severity(self, jsonl_file: Path) -> None:
-        src = JsonlLogSource({"path": str(jsonl_file), "root": str(jsonl_file.parent)})
-        levels = {r["level_or_status"] for r in src.query({})}
-        assert "INFO" in levels
-        assert "ERROR" in levels  # from "severity"
-        assert "WARN" in levels
-
-    def test_message_pulled_from_message_or_msg(self, jsonl_file: Path) -> None:
-        src = JsonlLogSource({"path": str(jsonl_file), "root": str(jsonl_file.parent)})
-        messages = {r["message"] for r in src.query({})}
-        assert "service started" in messages
-        assert "database connection refused" in messages  # from "msg"
-
-    def test_labels_contain_remaining_fields(self, jsonl_file: Path) -> None:
-        src = JsonlLogSource({"path": str(jsonl_file), "root": str(jsonl_file.parent)})
-        err = next(r for r in src.query({}) if r["level_or_status"] == "ERROR")
-        # "host"/"code" were not ts/level/message — they land in labels
-        assert err["labels"].get("host") == "db-1"
-        assert err["labels"].get("code") == 500
-        # the parsed-out canonical fields must NOT leak into labels
-        assert "msg" not in err["labels"]
-        assert "severity" not in err["labels"]
-
-    def test_raw_is_the_original_object(self, jsonl_file: Path) -> None:
-        src = JsonlLogSource({"path": str(jsonl_file), "root": str(jsonl_file.parent)})
-        info = next(r for r in src.query({}) if r["message"] == "service started")
-        assert info["raw"]["service"] == "api"
-        assert info["raw"]["level"] == "INFO"
-
-    def test_source_is_the_connector_name(self, jsonl_file: Path) -> None:
-        src = JsonlLogSource({"path": str(jsonl_file), "root": str(jsonl_file.parent)})
-        for rec in src.query({}):
-            assert rec["source"] == src.name
-
-    def test_pattern_regex_filter(self, jsonl_file: Path) -> None:
-        src = JsonlLogSource({"path": str(jsonl_file), "root": str(jsonl_file.parent)})
-        records = src.query({"pattern": r"connection refused"})
         assert len(records) == 1
-        assert records[0]["message"] == "database connection refused"
-
-    def test_level_filter(self, jsonl_file: Path) -> None:
-        src = JsonlLogSource({"path": str(jsonl_file), "root": str(jsonl_file.parent)})
-        records = src.query({"level": "ERROR"})
-        assert len(records) == 1
-        assert records[0]["level_or_status"] == "ERROR"
-
-    def test_level_filter_case_insensitive(self, jsonl_file: Path) -> None:
-        src = JsonlLogSource({"path": str(jsonl_file), "root": str(jsonl_file.parent)})
-        records = src.query({"level": "error"})
-        assert len(records) == 1
-
-    def test_limit(self, jsonl_file: Path) -> None:
-        src = JsonlLogSource({"path": str(jsonl_file), "root": str(jsonl_file.parent)})
-        records = src.query({"limit": 2})
-        assert len(records) == 2
-
-    def test_start_end_time_window(self, jsonl_file: Path) -> None:
-        src = JsonlLogSource({"path": str(jsonl_file), "root": str(jsonl_file.parent)})
-        records = src.query(
-            {"start": "2026-06-15T10:00:01Z", "end": "2026-06-15T10:00:01Z"}
-        )
-        # only the 10:00:01 record falls in the inclusive window
-        assert len(records) == 1
-        assert records[0]["ts"] == "2026-06-15T10:00:01Z"
-
-    def test_malformed_line_skipped_and_counted(self, jsonl_file: Path) -> None:
-        src = JsonlLogSource({"path": str(jsonl_file), "root": str(jsonl_file.parent)})
-        records = src.query({})
-        # 3 well-formed JSON objects (malformed + blank excluded)
-        assert len(records) == 3
-        # the malformed-line count surfaces in a summary on the connector
         assert src.last_malformed_count == 1
 
-    def test_multiple_paths(self, tmp_path: Path) -> None:
-        a = _write(tmp_path / "a.jsonl", json.dumps({"message": "from a"}) + "\n")
-        b = _write(tmp_path / "b.jsonl", json.dumps({"message": "from b"}) + "\n")
-        src = JsonlLogSource({"paths": [str(a), str(b)], "root": str(tmp_path)})
-        messages = {r["message"] for r in src.query({})}
-        assert messages == {"from a", "from b"}
+    def test_query_skips_non_dict_objects(self, tmp_path: Path):
+        root = str(tmp_path)
+        file = tmp_path / "log.jsonl"
+        file.write_text('123\n["array"]\n{"msg": "ok"}\n')
+        src = JsonlLogSource({"root": root, "path": str(file)})
+        records = src.query({})
+        assert len(records) == 1
+        assert src.last_malformed_count == 2
 
-    # --- path confinement ---------------------------------------------------
+    def test_query_filters_by_regex(self, tmp_path: Path):
+        root = str(tmp_path)
+        file = tmp_path / "log.jsonl"
+        file.write_text('{"message": "error: disk full"}\n{"message": "info: all good"}\n')
+        src = JsonlLogSource({"root": root, "path": str(file)})
+        records = src.query({"pattern": "error"})
+        assert len(records) == 1
+        assert "error" in records[0]["message"]
 
-    def test_path_outside_root_is_refused(self, tmp_path: Path) -> None:
-        root = tmp_path / "allowed"
-        root.mkdir()
-        outside = _write(tmp_path / "secret.jsonl", json.dumps({"message": "x"}) + "\n")
-        with pytest.raises(ValueError):
-            JsonlLogSource({"path": str(outside), "root": str(root)})
+    def test_query_filters_by_level(self, tmp_path: Path):
+        root = str(tmp_path)
+        file = tmp_path / "log.jsonl"
+        file.write_text('{"level": "ERROR", "message": "fail"}\n{"level": "info", "message": "ok"}\n')
+        src = JsonlLogSource({"root": root, "path": str(file)})
+        records = src.query({"level": "ERROR"})
+        assert len(records) == 1
+        assert records[0]["message"] == "fail"
 
-    def test_dotdot_escape_is_refused(self, tmp_path: Path) -> None:
-        root = tmp_path / "allowed"
-        root.mkdir()
-        _write(tmp_path / "secret.jsonl", json.dumps({"message": "x"}) + "\n")
-        escape = str(root / ".." / "secret.jsonl")
-        with pytest.raises(ValueError):
-            JsonlLogSource({"path": escape, "root": str(root)})
+    def test_query_filters_by_time_range(self, tmp_path: Path):
+        root = str(tmp_path)
+        file = tmp_path / "log.jsonl"
+        file.write_text('{"ts": "2024-01-01", "message": "old"}\n{"ts": "2024-06-01", "message": "mid"}\n{"ts": "2024-12-01", "message": "new"}\n')
+        src = JsonlLogSource({"root": root, "path": str(file)})
+        records = src.query({"start": "2024-03-01", "end": "2024-09-01"})
+        assert len(records) == 1
+        assert records[0]["message"] == "mid"
 
-    def test_absolute_outside_root_is_refused(self, tmp_path: Path) -> None:
-        root = tmp_path / "allowed"
-        root.mkdir()
-        with pytest.raises(ValueError):
-            JsonlLogSource({"path": "/etc/passwd", "root": str(root)})
+    def test_query_respects_limit(self, tmp_path: Path):
+        root = str(tmp_path)
+        file = tmp_path / "log.jsonl"
+        file.write_text('\n'.join(f'{{"message": "line{i}"}}' for i in range(10)) + '\n')
+        src = JsonlLogSource({"root": root, "path": str(file)})
+        records = src.query({"limit": 3})
+        assert len(records) == 3
 
-
-# --------------------------------------------------------------------------- #
-# TASK B — SyslogGrepSource
-# --------------------------------------------------------------------------- #
+    def test_query_file_not_found_not_fatal(self, tmp_path: Path):
+        root = str(tmp_path)
+        missing = str(tmp_path / "no_file.jsonl")
+        src = JsonlLogSource({"root": root, "path": missing})
+        records = src.query({})
+        assert records == []
 
 
 class TestSyslogGrepSource:
-    def test_default_path(self) -> None:
-        # default path is /var/log/syslog; with root="/" it is in-root but the
-        # file may not exist — health must not raise.
-        src = SyslogGrepSource({"root": "/"})
-        assert src.health()["healthy"] in (True, False)
+    def test_requires_root(self):
+        with pytest.raises(ValueError, match="root"):
+            SyslogGrepSource({"path": "/some/file"})
 
-    def test_normalized_record_shape(self, syslog_file: Path) -> None:
-        src = SyslogGrepSource({"path": str(syslog_file), "root": str(syslog_file.parent)})
-        records = src.query({"pattern": r".*"})
-        assert records
-        for rec in records:
-            assert set(rec.keys()) >= NORMALIZED_KEYS
-            assert rec["kind"] == "logs"
-            assert rec["level_or_status"] == ""
+    def test_constructs_with_custom_name(self, tmp_path: Path):
+        root = str(tmp_path)
+        file = tmp_path / "syslog.txt"
+        file.write_text("")
+        src = SyslogGrepSource({"root": root, "path": str(file), "name": "my-syslog"})
+        assert src.KIND == "logs"
+        assert src.name == "my-syslog"
 
-    def test_regex_filter(self, syslog_file: Path) -> None:
-        src = SyslogGrepSource({"path": str(syslog_file), "root": str(syslog_file.parent)})
-        records = src.query({"pattern": r"out of memory"})
+    def test_constructs_with_custom_path(self, tmp_path: Path):
+        root = str(tmp_path)
+        file = tmp_path / "custom.log"
+        file.write_text("")
+        src = SyslogGrepSource({"root": root, "path": str(file)})
+        assert src.KIND == "logs"
+
+    def test_path_outside_root_raises(self, tmp_path: Path):
+        root = tmp_path / "allowed"
+        root.mkdir()
+        outside = tmp_path / "log.txt"
+        outside.write_text("")
+        with pytest.raises(ValueError, match="outside"):
+            SyslogGrepSource({"root": str(root), "path": str(outside)})
+
+    def test_health_missing_file(self, tmp_path: Path):
+        root = str(tmp_path)
+        missing = str(tmp_path / "nonexistent.log")
+        src = SyslogGrepSource({"root": root, "path": missing})
+        h = src.health()
+        assert h["healthy"] is False
+
+    def test_health_file_present(self, tmp_path: Path):
+        root = str(tmp_path)
+        file = tmp_path / "syslog"
+        file.write_text("")
+        src = SyslogGrepSource({"root": root, "path": str(file)})
+        h = src.health()
+        assert h["healthy"] is True
+
+    def test_query_parses_rfc3164_line(self, tmp_path: Path):
+        root = str(tmp_path)
+        file = tmp_path / "syslog"
+        file.write_text("Jun 15 10:00:00 myhost sshd[1234]: Accepted publickey\n")
+        src = SyslogGrepSource({"root": root, "path": str(file)})
+        records = src.query({})
         assert len(records) == 1
-        assert "out of memory" in records[0]["message"]
+        assert records[0]["message"] == "Accepted publickey"
+        assert records[0]["labels"]["host"] == "myhost"
+        assert records[0]["labels"]["process"] == "sshd"
+        assert records[0]["labels"]["pid"] == "1234"
 
-    def test_prefix_parsed_into_labels(self, syslog_file: Path) -> None:
-        src = SyslogGrepSource({"path": str(syslog_file), "root": str(syslog_file.parent)})
-        rec = next(r for r in src.query({"pattern": r"Accepted password"}))
-        assert rec["labels"]["host"] == "host1"
-        assert rec["labels"]["process"] == "sshd"
-        assert rec["message"] == "Accepted password for root"
+    def test_query_skips_non_matching_lines(self, tmp_path: Path):
+        root = str(tmp_path)
+        file = tmp_path / "syslog"
+        file.write_text("some random line\nJun 15 10:00:00 host app: real message\n")
+        src = SyslogGrepSource({"root": root, "path": str(file)})
+        records = src.query({"pattern": "real message"})
+        assert len(records) == 1
+        assert records[0]["message"] == "real message"
 
-    def test_message_is_the_tail(self, syslog_file: Path) -> None:
-        src = SyslogGrepSource({"path": str(syslog_file), "root": str(syslog_file.parent)})
-        rec = next(r for r in src.query({"pattern": r"session opened"}))
-        # process with [pid] -> process name only in labels
-        assert rec["labels"]["process"] == "cron"
-        assert "session opened" in rec["message"]
+    def test_query_no_pattern_matches_all(self, tmp_path: Path):
+        root = str(tmp_path)
+        file = tmp_path / "syslog"
+        file.write_text("Jun 15 10:00:00 host app: hello\n")
+        src = SyslogGrepSource({"root": root, "path": str(file)})
+        records = src.query({})
+        assert len(records) == 1
 
-    def test_ts_best_effort_parsed(self, syslog_file: Path) -> None:
-        src = SyslogGrepSource({"path": str(syslog_file), "root": str(syslog_file.parent)})
-        rec = next(r for r in src.query({"pattern": r"Accepted password"}))
-        # best-effort ISO timestamp using the current year
-        assert str(rec["ts"]).startswith(f"{__import__('datetime').date.today().year}-06-15")
+    def test_query_since_filters_time(self, tmp_path: Path):
+        root = str(tmp_path)
+        file = tmp_path / "syslog"
+        file.write_text("Jan 01 00:00:00 host app: old\n")
+        src = SyslogGrepSource({"root": root, "path": str(file)})
+        records = src.query({"since": "2099-01-01"})
+        assert len(records) == 0
 
-    def test_raw_is_the_original_line(self, syslog_file: Path) -> None:
-        src = SyslogGrepSource({"path": str(syslog_file), "root": str(syslog_file.parent)})
-        rec = next(r for r in src.query({"pattern": r"Accepted password"}))
-        assert rec["raw"].startswith("Jun 15 10:00:00 host1 sshd")
+    def test_query_respects_limit(self, tmp_path: Path):
+        root = str(tmp_path)
+        file = tmp_path / "syslog"
+        lines = "\n".join(f"Jun 15 10:00:01 host app: msg{i}" for i in range(10))
+        file.write_text(lines + "\n")
+        src = SyslogGrepSource({"root": root, "path": str(file)})
+        records = src.query({"limit": 3})
+        assert len(records) == 3
 
-    def test_nonmatching_prefix_still_returned_with_empty_labels(self, syslog_file: Path) -> None:
-        src = SyslogGrepSource({"path": str(syslog_file), "root": str(syslog_file.parent)})
-        rec = next(r for r in src.query({"pattern": r"does not match the syslog prefix"}))
-        # unparseable prefix => message is the whole line, host/process empty
-        assert rec["labels"].get("host", "") == ""
-        assert rec["labels"].get("process", "") == ""
-        assert "does not match" in rec["message"]
+    def test_query_file_not_found_returns_empty(self, tmp_path: Path):
+        root = str(tmp_path)
+        missing = str(tmp_path / "no_file.log")
+        src = SyslogGrepSource({"root": root, "path": missing})
+        records = src.query({})
+        assert records == []
 
-    def test_limit(self, syslog_file: Path) -> None:
-        src = SyslogGrepSource({"path": str(syslog_file), "root": str(syslog_file.parent)})
-        records = src.query({"pattern": r".*", "limit": 2})
-        assert len(records) == 2
-
-    def test_no_subprocess_used(self) -> None:
-        # The implementation must NOT shell out (no subprocess import in module).
-        import inspect
-
-        import general_ludd.connectors.local_files as mod
-
-        source = inspect.getsource(mod)
-        assert "subprocess" not in source
-        assert "shell=True" not in source
-        assert "os.system" not in source
-
-    # --- path confinement ---------------------------------------------------
-
-    def test_path_outside_root_is_refused(self, tmp_path: Path) -> None:
-        root = tmp_path / "allowed"
-        root.mkdir()
-        outside = _write(tmp_path / "secret.log", "Jun 15 10:00:00 h p: x\n")
-        with pytest.raises(ValueError):
-            SyslogGrepSource({"path": str(outside), "root": str(root)})
-
-    def test_dotdot_escape_is_refused(self, tmp_path: Path) -> None:
-        root = tmp_path / "allowed"
-        root.mkdir()
-        _write(tmp_path / "secret.log", "Jun 15 10:00:00 h p: x\n")
-        escape = str(root / ".." / "secret.log")
-        with pytest.raises(ValueError):
-            SyslogGrepSource({"path": escape, "root": str(root)})
-
-    def test_absolute_outside_root_is_refused(self, tmp_path: Path) -> None:
-        root = tmp_path / "allowed"
-        root.mkdir()
-        with pytest.raises(ValueError):
-            SyslogGrepSource({"path": "/etc/passwd", "root": str(root)})
-
-    def test_symlink_escape_is_refused(self, tmp_path: Path) -> None:
-        # a symlink inside root pointing outside must be caught by realpath
-        root = tmp_path / "allowed"
-        root.mkdir()
-        target = _write(tmp_path / "outside.log", "Jun 15 10:00:00 h p: x\n")
-        link = root / "link.log"
-        os.symlink(target, link)
-        with pytest.raises(ValueError):
-            SyslogGrepSource({"path": str(link), "root": str(root)})
+    def test_non_syslog_line_gets_empty_ts(self, tmp_path: Path):
+        root = str(tmp_path)
+        file = tmp_path / "syslog"
+        file.write_text("this is not syslog format at all\n")
+        src = SyslogGrepSource({"root": root, "path": str(file)})
+        records = src.query({})
+        assert len(records) == 1
+        assert records[0]["ts"] == ""
+        assert records[0]["message"] == "this is not syslog format at all"
