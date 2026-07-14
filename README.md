@@ -73,33 +73,20 @@ when a `v*` tag is pushed (the `release` job in `.github/workflows/build.yml` is
 ## Feature & Task Completion Status
 
 <!-- STATUS-TABLE:START -->
+*(auto-generated with `--fast`; `test:` refs checked by file existence only — run `make gen-status-table` locally to verify tests pass)*
 
-### Overall
-261 items | 99.6% complete | 1 pending (L.3 SearX gateway wiring)
 
-### Core Infrastructure
+### Security Hardening
 
-| Subsystem | Status | Detail |
+| Feature / Task | Verified % | Evidence |
 |---|---|---|
-| Enforcement plugins | 13/13 BLOCKING | 100+ hook-runtime tests pass |
-| Terraform | 18 stacks complete | HTTP state backend, workload-aware deployment profiles |
-| Ansible collections | 4 core collections | agent, security, business, networking |
-| Model deployment | SearX-based model search | WorkloadType profiles, ansible infra deploy |
+| D-04/D-05/D-06/D-29/D-30/D-31 security items (batch-4 branch) | ✓ 0% | **PASS** *(file-refs only)*: ABANDONED: branch feature/security-batch4 superseded; all items independently implemented in master |
 
-### Testing & Quality
+### Orchestration / Agents
 
-| Metric | Value |
-|---|---|
-| Tests collected | 38,207 |
-| Collection errors | 0 |
-| Secrets e2e tests | 108 |
-| No secrets leaked outside Vault | Confirmed |
-
-### Development
-
-| Metric | Value |
-|---|---|
-| Commits ahead of master | 224+ |
+| Feature / Task | Verified % | Evidence |
+|---|---|---|
+| Watchdog/stall detection improvements (mt-6-watchdog branch) | ✗ 0% | **PENDING**: Abandoned branch; code rescoped into master. Original branch deleted. Feature reclassified to reflect actual implementation status. |
 
 <!-- STATUS-TABLE:END -->
 
