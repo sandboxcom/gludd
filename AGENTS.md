@@ -86,6 +86,61 @@ The `enforce-enhancement-ratio.ts` plugin mechanically enforces the ratio rule:
 4. **`make batch-push` pushes the CURRENT branch.** Verify which branch you're on with `make verify-state` before pushing.
 5. **Enforced by:** `.opencode/plugin/enforce-clean-tree.ts` and this section. A push to master that adds commits beyond what development has is a policy violation.
 
+## CRITICAL: Single-Source Feature Development
+
+**Every feature, Makefile target, config change, or shared-infrastructure edit MUST
+land on exactly ONE branch first, then be merged/cherry-picked to other branches.
+Never create the same feature independently on two branches.**
+
+### The incident (ci-await duplication, 2026-07-14)
+
+A Makefile target (`ci-await`) was independently created on both `master` and
+`development` by two different subagents working in parallel. When the branches
+merged, the Makefile had duplicate targets and merge conflicts. This is the
+classic "parallel independent development of the same thing" anti-pattern.
+
+### Rules (each is machine-enforced)
+
+1. **Features land on development first.** Create the feature on `development`,
+   commit, push, then merge `development→master`. Never create the same feature
+   on `master` and `development` independently.
+2. **Emergency fixes on master get backported.** If a fix is urgently needed on
+   `master`, create it there, then IMMEDIATELY cherry-pick or merge it to
+   `development`. The fix must exist on BOTH branches before any further
+   feature work lands on either.
+3. **Shared-infrastructure files are single-writer.** When a subagent is
+   modifying a Makefile, config file, or any shared infrastructure file
+   (Makefile, `opencode.json`, `AGENTS.md`, `.claude/settings.json`,
+   `config/*.yml`, `.github/workflows/*.yml`), it MUST record which branch
+   it is working on, and the orchestrator MUST NOT dispatch another agent to
+   modify the same file on a different branch.
+4. **No parallel Makefile edits on different branches.** Makefile targets,
+   config keys, and shared infrastructure MUST NOT be created independently
+   on both `master` and `development`. If a target is needed on both branches,
+   create it on one, merge it to the other.
+5. **Duplicate target detection at gate time.** `make check-duplicate-targets`
+   scans the Makefile for targets declared more than once. Duplicate targets
+   are a hard gate failure. This catches the ci-await class of bug before it
+   reaches a merge.
+
+### Enforcement
+
+- **Script:** `scripts/check_duplicate_targets.py` — parses the Makefile,
+  extracts all target declarations (lines matching `^[a-zA-Z_-]+:.*` at
+  column 0), and flags any target that appears more than once. Exit 0 on
+  clean, exit 1 on duplicates found.
+- **Make target:** `make check-duplicate-targets` — runs the script.
+- **Gate:** `make gate` includes `check-duplicate-targets` as a prerequisite.
+- **Prompt:** this section — proactive instruction for every agent and
+  subagent reading AGENTS.md.
+
+### What this prevents
+
+- Two subagents independently adding the same Makefile target on different branches
+- Config drift between master and development from independent edits
+- Merge conflicts in shared infrastructure files from parallel development
+- Duplicate target errors at `make` invocation time
+
 ### Enforcement
 
 - `enforce-floor.ts`: floor=10, ceiling=10, target=10 (updated 2026-07-12)

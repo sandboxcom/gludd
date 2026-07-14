@@ -70,7 +70,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         script-count strip-enforce-stop test-hooks-live test-hook-runtime \
         verify-enforcement \
         ci-view ci-rerun ci-trigger ci-active ci-job-log \
-        ci-busy-check ci-safe-push pre-push-check push-guarded \
+        ci-busy-check ci-safe-push pre-push-check push-guarded ci-await \
         git-index git-search git-stats agent-report \
         searx-up searx-down searx-test searx-start searx-stop searx-status searx-install \
         log-agent-result disk-guard disk-check check-disk disk \
@@ -135,6 +135,7 @@ help:
 	@echo "  tf-clean              Remove the shared plugin cache"
 	@echo ""
 	@echo "  --- Git ---"
+	@echo "  (Single-source policy: features land on development first, then merge to master)"
 	@echo "  git-status            Show git status"
 	@echo "  git-diff              Show diff stats"
 	@echo "  git-staged            Show staged changes"
@@ -156,6 +157,7 @@ help:
 	@echo "  git-search Q='...'           Search indexed git history"
 	@echo "  git-stats                    Show git history index statistics"
 	@echo "  agent-report                 Agent activity dashboard (reads /tmp/gludd-agent-results.jsonl)"
+	@echo "  check-duplicate-targets           Detect Makefile targets declared on parallel branches"
 	@echo "  agent-worktree-dev BRANCH=<name>  Isolated git worktree from development branch"
 	@echo "  agent-merge-dev BRANCH=<name>     Merge a subagent worktree branch into development"
 	@echo "  development-push             Push the development branch to remote"
@@ -434,7 +436,7 @@ check-opencode-ready:
 check-opencode-integrity:
 	@$(UV) run python3 scripts/check_opencode_integrity.py
 
-gate: check-opencode-integrity validate-task-ledger check-dispatch-dedup check-subagent-guards verify-plugin-manifest check-skills-frontmatter check-coverage-gaps check-plugin-syntax check-plugin-runtime check-plugin-imports
+gate: check-opencode-integrity validate-task-ledger check-dispatch-dedup check-subagent-guards verify-plugin-manifest check-skills-frontmatter check-coverage-gaps check-plugin-syntax check-plugin-runtime check-plugin-imports check-duplicate-targets
 	@rm -f .gate-failed
 	@echo "=== GATE $(shell date -u +%Y-%m-%dT%H:%M:%SZ) ===" > .gate-status
 	@# OBSERVABILITY INVARIANT (see AGENTS.md "No unseen events"): every gate phase
@@ -1418,6 +1420,14 @@ ci-wait:
 		ELAPSED=$$((ELAPSED + INTERVAL)); \
 	done; \
 	echo "=== CI-WAIT: timed out after $$MAX_WAIT seconds ==="; exit 1
+
+# Poll CI for a branch until it reaches a TERMINAL state (success/failure).
+# Exit codes: 0=SUCCESS, 1=FAILURE, 2=TIMEOUT (still pending).
+# Unlike ci-wait (which only exits on GREEN and hardcodes BRANCH=master),
+# ci-await accepts BRANCH= and detects terminal failure states too.
+# Usage: make ci-await BRANCH=development [TIMEOUT=3600]
+ci-await:
+	@$(PYTHON) scripts/ci_await.py $(or $(BRANCH),master) $(or $(TIMEOUT),3600)
 
 git-pull-sandboxcom:
 	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git pull --rebase sandboxcom master
@@ -2778,6 +2788,10 @@ auto-update-ledger:
 # --- Task ledger validation: check-* naming convention alias ---
 check-task-ledger:
 	@$(UV) run python scripts/validate_task_ledger.py
+
+# --- Duplicate target detection: prevent parallel-branch Makefile collisions (ci-await bug class) ---
+check-duplicate-targets:
+	@$(UV) run python scripts/check_duplicate_targets.py
 
 # --- Dispatch dedup: cross-reference /tmp/gludd-dispatched-tasks.json against TASKS.md completed items ---
 check-dispatch-dedup:

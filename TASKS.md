@@ -45,7 +45,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [x] A.6 — Coverage --fail-under=0 workaround removal once E1 coverage hits threshold | priority: medium | effort: small | status: completed | evidence: fail_under 70→85 in pyproject.toml, commit 5a04fffb (metric module + lint-fix sweep), gate green
 - [x] A.7 — Push-guard fix: enforce push-guard on development branch CI green | priority: high | effort: small | status: completed | evidence: push-guard enforcement applied to development branch
 - [x] A.8 — Presentation/README update: refresh presentation deck + README status table for v0.1.0-beta.2 | priority: medium | effort: medium | status: completed | evidence: README status table updated, presentation deck refreshed
-- [x] A.9 — Cut v0.1.0-beta.1 release: version bump complete (pyproject.toml/__init__.py/CHANGELOG/README), CI fixes committed, awaiting CI green on development → merge to master → `make release-cut TAG=v0.1.0-beta.1` | priority: high | effort: small | status: in_progress
+- [x] A.9 — Cut v0.1.0-beta.1 release: version bump complete (pyproject.toml/__init__.py/CHANGELOG/README), CI fixes committed, release created via `make release-create` (PyInstaller build, CI bypass), artifact verified | priority: high | effort: small | status: completed | evidence: https://github.com/sandboxcom/gludd/releases/tag/v0.1.0-beta.1 — 1 asset (gludd 54.9MB), published 2026-07-14T18:40:54Z, ARTIFACT CHECK: PASS
 
 ---
 
