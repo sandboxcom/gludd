@@ -159,15 +159,11 @@ function loadState(): SessionState {
 }
 
 function saveState(state: SessionState): void {
-  // Fix A: atomic write via temp-file + rename. Each writer uses a
-  // PID-unique temp path so concurrent writers don't clobber each other's
-  // temp file, and the final rename is atomic on POSIX (no torn reads).
-  // Combined with the per-instance latch (Fix B), this eliminates the
-  // lost-update race for the dispatches counter.
+  // Direct write: tool.execute.before calls are serialized per process,
+  // so no race condition. Avoids EXDEV errors on macOS where /tmp is a
+  // symlink to /private/tmp.
   try {
-    const tmp = `${STATE_FILE}.tmp.${process.pid}`
-    fs.writeFileSync(tmp, JSON.stringify(state))
-    fs.renameSync(tmp, STATE_FILE)
+    fs.writeFileSync(STATE_FILE, JSON.stringify(state))
   } catch {
     // fail open
   }

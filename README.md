@@ -88,13 +88,6 @@ when a `v*` tag is pushed (the `release` job in `.github/workflows/build.yml` is
 |---|---|---|
 | Watchdog/stall detection improvements (mt-6-watchdog branch) | ✗ 0% | **PENDING**: Abandoned branch; code rescoped into master. Original branch deleted. Feature reclassified to reflect actual implementation status. |
 
-### Enforcement Infrastructure
-
-| Feature / Task | Verified % | Evidence |
-|---|---|---|
-| 13/13 hot-reload capable plugins | ✓ 100% | 0 require() calls (all ES module import); `make check-node-v26-compat` 2/2 PASS |
-| Enforcement self-tests | ✓ 100% | 221 e2e tests; 52 functional hook runtime tests across 8 plugins |
-
 <!-- STATUS-TABLE:END -->
 
 ## Backlog
