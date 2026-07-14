@@ -2220,7 +2220,7 @@ secrets-scrub:
 # secrets-baseline: rebuild the .secrets.baseline
 secrets-baseline:
 	@echo "[secrets-baseline] scanning tracked files with detect-secrets (typically 30-90s on this repo)..."
-	@$(UV) run detect-secrets scan --exclude-files 'sandboxcom_github_rsa|sandboxcom_github_rsa.pub' --force-use-of-scan-output > .secrets.baseline.tmp
+	@$(UV) run detect-secrets scan --exclude-files 'sandboxcom_github_rsa|sandboxcom_github_rsa.pub' > .secrets.baseline.tmp
 	@$(PYTHON) -c "import json; d=json.load(open('.secrets.baseline.tmp')); print('[secrets-baseline] OK: valid JSON, %d files carry flagged (baselined) secrets' % len(d.get('results', {})))"
 	@mv -f .secrets.baseline.tmp .secrets.baseline
 	@echo "[secrets-baseline] wrote .secrets.baseline ($$(wc -c < .secrets.baseline | tr -d ' ') bytes)"
