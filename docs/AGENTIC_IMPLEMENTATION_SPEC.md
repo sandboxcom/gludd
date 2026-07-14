@@ -17,7 +17,7 @@ gludd is an autonomous agentic-SDLC daemon: todos in → AI implements → AI re
 1. **CI GREEN as a standing invariant.** Both GitHub Actions workflows on `sandboxcom/gludd` conclude `success` on `master` HEAD:
    - `.github/workflows/build.yml` ("Build and Release") — gate, 10 test shards, coverage, molecule, packaging.
    - `.github/workflows/pages.yml` ("Deploy Presentation to Pages") — deck build + Pages deploy. (The Pages **site** now exists — created 2026-07-09 via `make pages-enable`, `build_type=workflow`, URL `https://sandboxcom.github.io/gludd/`. Deploys were failing only because the site had never been created.)
-2. **v0.1.0-beta.2 shipped**: `make release-cut TAG='v0.1.0-beta.2' ...` + `make verify-release-artifact TAG='v0.1.0-beta.2'` succeed against a CONFIRMED-GREEN CI run for that exact SHA.
+2. **v0.1.0-beta.1 shipped**: `make release-cut TAG='v0.1.0-beta.1' ...` + `make verify-release-artifact TAG='v0.1.0-beta.1'` succeed against a CONFIRMED-GREEN CI run for that exact SHA. (Code version is `0.1.0-beta.1`; no beta release has been cut yet.)
 3. **Feature-complete**: every work item in §3 is closed with evidence, or explicitly re-triaged as REFUTED/deferred with a written rationale in `TASKS.md`.
 4. **Docs truthful**: README, the reveal.js deck, and the design docs describe what the code actually does (stale-doc items in §3.6 closed).
 
@@ -169,9 +169,9 @@ The authoritative failure inventory is from run **29055665462** (master @ `a7ab5
 
 ### 3.2 Wave B — Release (P0)
 
-> **B1 — Ship v0.1.0-beta.2.**
+> **B1 — Ship v0.1.0-beta.1.**
 > Precondition: Wave A green (CONFIRMED via `make ci-verdict-safe` for the exact SHA).
-> Steps: `make release-cut TAG='v0.1.0-beta.2' MSG='Release v0.1.0-beta.2'` → `make verify-release-artifact TAG='v0.1.0-beta.2'` → tick the `TASKS.md` "Ship v0.1.0-beta.2" item with evidence (release URL + asset list from `make release-view TAG=...`).
+> Steps: `make release-cut TAG='v0.1.0-beta.1' MSG='Release v0.1.0-beta.1'` → `make verify-release-artifact TAG='v0.1.0-beta.1'` → tick the `TASKS.md` "Ship v0.1.0-beta.1" item with evidence (release URL + asset list from `make release-view TAG=...`).
 > Acceptance: `gh release view` shows the tag, non-draft, with the `dist/gludd` asset.
 
 > **B2 — Pages deploy green + live presentation URL.**

@@ -6,6 +6,29 @@
 
 ---
 
+## RELEASE HISTORY
+
+### Alpha releases (shipped)
+
+| Tag | Date | Assets | Status |
+|-----|------|--------|--------|
+| `v0.1.0-alpha.1` | 2026-06 (est.) | 8 | shipped |
+| `v0.1.0-alpha.3` | 2026-06-24 | 11 | shipped |
+| `v0.1.0-alpha.5` | 2026-07-02 | 12 | shipped — **last shipped release** |
+
+### Alpha releases (never shipped / deleted)
+
+| Tag | Reason |
+|-----|--------|
+| `v0.1.0-alpha.2` | Deleted — was draft release, 0 assets |
+| `v0.1.0-alpha.4` | Never existed as a GitHub Release |
+
+### Beta releases
+
+**No beta release has ever been cut.** Tags `v0.1.0-beta.1` through `v0.1.0-beta.4` do not exist as GitHub Releases. Code versions `0.1.0-beta.2` through `0.1.0-beta.4` exist only in `pyproject.toml`/`__init__.py` — version bumps without a corresponding release cut.
+
+---
+
 ## SESSION 34 — 2026-07-14 (current)
 
 - **HEAD: `034ce6ab`** on `development` branch
