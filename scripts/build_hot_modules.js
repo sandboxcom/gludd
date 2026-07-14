@@ -68,6 +68,8 @@ function tsToJs(content) {
     .replace(/:\s+(string|number|boolean|any|void|never|unknown|object)(\[\])?\s*,/g, ",")
     .replace(/:\s+(string|number|boolean|any|void|never|unknown|object)(\[\])?\s*\)/g, ")")
     .replace(/: (string|number|boolean|any|void|never)\b/g, "")
+    .replace(/(\w+):\s+\w+(?=\s*[,)])/g, "$1")
+    .replace(/(\w+):\s*\{[^{}]*\}(?:\s*[&|]\s*(?:\w+(?:<[^>]*>)?))*(?=\s*[,)])/g, "$1")
     .replace(/catch \{/g, "catch (e) {")
     .replace(/catch\s*\n\s*\{/g, "catch (e) {")
   ;
