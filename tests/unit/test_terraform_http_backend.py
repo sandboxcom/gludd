@@ -38,9 +38,9 @@ class TestGenerateHttpBackendBlock:
     def test_address_lock_unlock_all_same_url(self) -> None:
         block = generate_http_backend_block("prod", "https://gludd.example.com")
         lines = block.splitlines()
-        addr_line = next(l for l in lines if "address" in l)
-        lock_line = next(l for l in lines if "lock_address" in l)
-        unlock_line = next(l for l in lines if "unlock_address" in l)
+        addr_line = next(line for line in lines if "address" in line)
+        lock_line = next(line for line in lines if "lock_address" in line)
+        unlock_line = next(line for line in lines if "unlock_address" in line)
         addr_val = addr_line.split('"')[1]
         lock_val = lock_line.split('"')[1]
         unlock_val = unlock_line.split('"')[1]
