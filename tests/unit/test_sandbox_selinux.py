@@ -2,14 +2,8 @@
 
 from __future__ import annotations
 
-from general_ludd.security.sandboxes import Capability
-from general_ludd.security.sandboxes import PermissionSpec
-from general_ludd.security.sandboxes import SandboxTarget
-from general_ludd.security.sandboxes.linux_selinux import SELinuxBackend
-from general_ludd.security.sandboxes.linux_selinux import _fc_for
-from general_ludd.security.sandboxes.linux_selinux import _te_for
-from general_ludd.security.sandboxes.linux_selinux import render_fc
-from general_ludd.security.sandboxes.linux_selinux import render_te
+from general_ludd.security.sandboxes import Capability, PermissionSpec, SandboxTarget
+from general_ludd.security.sandboxes.linux_selinux import SELinuxBackend, _fc_for, _te_for, render_fc, render_te
 
 
 def _make_spec(capabilities=None, denied=None, agent_type="test-agent"):

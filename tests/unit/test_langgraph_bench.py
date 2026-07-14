@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import json
 
-from general_ludd.benchmark.langgraph_bench import BenchmarkRunner
-from general_ludd.benchmark.langgraph_bench import ComparisonResult
-from general_ludd.benchmark.langgraph_bench import MagicMockPromptRegistry
-from general_ludd.benchmark.langgraph_bench import _compute_stats
-from general_ludd.benchmark.langgraph_bench import _time_sync
+from general_ludd.benchmark.langgraph_bench import (
+    BenchmarkRunner,
+    ComparisonResult,
+    MagicMockPromptRegistry,
+    _compute_stats,
+    _time_sync,
+)
 
 
 def test_comparison_result_dataclass_defaults():

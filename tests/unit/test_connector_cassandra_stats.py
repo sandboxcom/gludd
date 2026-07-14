@@ -2,11 +2,7 @@
 
 from __future__ import annotations
 
-import os
 from collections.abc import Sequence
-from typing import Any
-
-import pytest
 
 from general_ludd.connectors.cassandra_stats import (
     CassandraRow,
@@ -50,11 +46,11 @@ class TestSplitSample:
         assert value == 42.0
 
     def test_malformed_line(self):
-        name, labels, value = _split_sample("only_one_part")
+        name, _labels, _value = _split_sample("only_one_part")
         assert name is None
 
     def test_nan_value_returns_none(self):
-        name, labels, value = _split_sample("metric NaN")
+        name, _labels, value = _split_sample("metric NaN")
         assert name == "metric"
         assert value is None
 

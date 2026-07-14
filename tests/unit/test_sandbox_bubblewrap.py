@@ -2,13 +2,8 @@
 
 from __future__ import annotations
 
-import pytest
-
-from general_ludd.security.sandboxes import Capability
-from general_ludd.security.sandboxes import PermissionSpec
-from general_ludd.security.sandboxes import SandboxTarget
-from general_ludd.security.sandboxes.linux_bubblewrap import BubblewrapBackend
-from general_ludd.security.sandboxes.linux_bubblewrap import render_argv
+from general_ludd.security.sandboxes import Capability, PermissionSpec, SandboxTarget
+from general_ludd.security.sandboxes.linux_bubblewrap import BubblewrapBackend, render_argv
 
 
 def _make_spec(capabilities=None, denied=None, agent_type="test-agent"):

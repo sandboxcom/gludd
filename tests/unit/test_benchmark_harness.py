@@ -6,8 +6,6 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock
 
-import pytest
-
 from general_ludd.ag15_benchmarks.benchmark_harness import (
     BenchmarkResult,
     BenchmarkSuite,
@@ -134,7 +132,7 @@ class TestBenchmarkSuite:
             BenchmarkResult(benchmark="b1", task_id="t1", score=1.0, agent_name="agent1", duration_ms=10, attempts=1, resolved=True),
         ]
         out = tmp_path / "report.json"
-        report = suite.report(output_path=out)
+        suite.report(output_path=out)
         assert out.exists()
         data = json.loads(out.read_text())
         assert data["agent"] == "agent1"

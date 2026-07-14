@@ -2,12 +2,7 @@
 
 from __future__ import annotations
 
-import os
-
-import pytest
-
-from general_ludd.issue_sources.gitlab_issues import GitLabIssueSource
-from general_ludd.issue_sources.gitlab_issues import _PRIORITY_LABELS
+from general_ludd.issue_sources.gitlab_issues import _PRIORITY_LABELS, GitLabIssueSource
 
 
 class FakeHTTPResponse:

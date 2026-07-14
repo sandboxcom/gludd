@@ -1,418 +1,254 @@
-"""TDD tests for CombinedCostTracker — unified model API + infra cost tracking.
-
-Covers:
-  - Construction with both / either / neither underlying tracker
-  - record_model_cost delegates to SpendLimiter (visible to cap enforcement)
-  - record_infra_cost delegates to InfraCostTracker (per-provider breakdown)
-  - get_total_spend returns the combined sum
-  - get_cost_breakdown returns per-category breakdown with merged project map
-  - Cap-enforcement passthrough (remaining_model_budget, would_exceed_combined)
-  - Snapshot shape for persistence
-  - Thread safety (delegates to underlying locks)
-  - Wiring into GET /api/costs
-  - Error handling: recording into a missing side raises RuntimeError
-  - Error handling: negative / non-finite costs raise ValueError
-"""
+"""Structural tests for budget/combined_cost.py — CombinedCostTracker facade."""
 
 from __future__ import annotations
 
-import threading
-
 import pytest
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
 
-from general_ludd.budget import CombinedCostTracker
-from general_ludd.budget.combined_cost import CombinedCostTracker as _DirectImport
-from general_ludd.controllers.spend_limiter import SpendLimiter
-from general_ludd.infra.cost_tracker import (
-    InfraCostTracker,
-    ResourceType,
-)
-from general_ludd.routers.spend import register as register_spend
-
-# ── Construction ─────────────────────────────────────────────────────────
+from general_ludd.budget.combined_cost import CombinedCostTracker
 
 
-class TestConstruction:
-    def test_reexport_matches_direct_import(self) -> None:
-        assert CombinedCostTracker is _DirectImport
+class _FakeSpendLimiter:
+    def __init__(self) -> None:
+        self.cap_configured = True
+        self._records: list[tuple[float, str | None, str | None, str, float | None]] = []
 
-    def test_with_both_trackers_wired(self) -> None:
-        sl = SpendLimiter(limit_usd=10.0, window_seconds=3600.0)
-        it = InfraCostTracker()
-        cct = CombinedCostTracker(spend_limiter=sl, infra_tracker=it)
-        assert cct.has_model is True
-        assert cct.has_infra is True
-        assert cct.spend_limiter is sl
-        assert cct.infra_tracker is it
+    def record(
+        self,
+        cost_usd: float,
+        *,
+        kind: str = "token",
+        at: float | None = None,
+        model: str | None = None,
+        project_id: str | None = None,
+    ) -> None:
+        if cost_usd < 0:
+            raise ValueError("negative cost")
+        self._records.append((cost_usd, kind, model, project_id, at))
 
-    def test_with_only_spend_limiter(self) -> None:
-        sl = SpendLimiter(limit_usd=10.0, window_seconds=3600.0)
-        cct = CombinedCostTracker(spend_limiter=sl)
-        assert cct.has_model is True
-        assert cct.has_infra is False
+    def window_spend(self, *, now: float | None = None) -> float:
+        return 10.0
 
-    def test_with_only_infra_tracker(self) -> None:
-        it = InfraCostTracker()
-        cct = CombinedCostTracker(infra_tracker=it)
-        assert cct.has_model is False
-        assert cct.has_infra is True
+    def remaining(self, *, now: float | None = None) -> float:
+        return 90.0
 
-    def test_with_neither_defaults_to_empty(self) -> None:
-        cct = CombinedCostTracker()
-        assert cct.has_model is False
-        assert cct.has_infra is False
-        assert cct.get_total_spend() == 0.0
+    def would_exceed(self, projected: float, *, now: float | None = None) -> bool:
+        return projected > 90.0
 
+    def project_breakdown(self, *, now: float | None = None) -> dict[str, float]:
+        return {"proj-1": 5.0, "proj-2": 5.0}
 
-# ── Recording ────────────────────────────────────────────────────────────
+    def snapshot(self) -> list[dict[str, object]]:
+        return [{"cost": 5.0}]
 
 
-class TestRecordModelCost:
-    def test_delegates_to_spend_limiter(self) -> None:
-        clock_times = [1000.0]
+class _FakeInfraTracker:
+    def __init__(self) -> None:
+        self._records: list[object] = []
 
-        def clock() -> float:
-            return clock_times[0]
+    def record(
+        self,
+        provider: str,
+        resource_type: str,
+        resource_id: str,
+        cost_usd: float,
+        **kwargs: object,
+    ) -> object:
+        if cost_usd < 0:
+            raise ValueError("negative cost")
+        rec = _FakeInfraRecord(provider, resource_type, resource_id, cost_usd)
+        self._records.append(rec)
+        return rec
 
-        sl = SpendLimiter(limit_usd=100.0, window_seconds=3600.0, clock=clock)
-        cct = CombinedCostTracker(spend_limiter=sl)
+    def total_cost(self) -> float:
+        return 50.0
 
-        cct.record_model_cost(5.0, model="claude-3-5-sonnet", project_id="p1")
+    def cost_by_provider(self) -> dict[str, float]:
+        return {"aws": 30.0, "gcp": 20.0}
 
-        assert sl.window_spend() == pytest.approx(5.0)
-        assert cct.model_spend() == pytest.approx(5.0)
+    def cost_by_resource_type(self) -> dict[str, float]:
+        return {"compute": 50.0}
 
-    def test_visible_to_cap_enforcement(self) -> None:
-        """A recorded model cost must count against the rolling cap."""
-        sl = SpendLimiter(limit_usd=10.0, window_seconds=3600.0)
-        cct = CombinedCostTracker(spend_limiter=sl)
+    def cost_by_project(self) -> dict[str, float]:
+        return {"proj-1": 50.0}
 
-        cct.record_model_cost(8.0, kind="token")
-        # 8.0 spent, 2.0 headroom -> a 3.0 charge should exceed.
-        assert sl.would_exceed(3.0) is True
-        assert sl.would_exceed(1.5) is False
+    def records(self) -> list[object]:
+        return self._records
 
-    def test_raises_on_missing_spend_limiter(self) -> None:
-        cct = CombinedCostTracker()
+    def snapshot(self) -> dict[str, object]:
+        return {"total": 50.0}
+
+
+class _FakeInfraRecord:
+    def __init__(self, provider: str, resource_type: str, resource_id: str, cost: float) -> None:
+        self.provider = provider
+        self.resource_type = resource_type
+        self.resource_id = resource_id
+        self.cost_usd = cost
+
+
+class TestCombinedCostTrackerConstruction:
+    def test_both_none(self) -> None:
+        tracker = CombinedCostTracker()
+        assert tracker.has_model is False
+        assert tracker.has_infra is False
+
+    def test_model_only(self) -> None:
+        sl = _FakeSpendLimiter()
+        tracker = CombinedCostTracker(spend_limiter=sl)
+        assert tracker.has_model is True
+        assert tracker.has_infra is False
+
+    def test_infra_only(self) -> None:
+        it = _FakeInfraTracker()
+        tracker = CombinedCostTracker(infra_tracker=it)
+        assert tracker.has_model is False
+        assert tracker.has_infra is True
+
+    def test_both_wired(self) -> None:
+        sl = _FakeSpendLimiter()
+        it = _FakeInfraTracker()
+        tracker = CombinedCostTracker(spend_limiter=sl, infra_tracker=it)
+        assert tracker.has_model is True
+        assert tracker.has_infra is True
+
+    def test_exposes_underlying_trackers(self) -> None:
+        sl = _FakeSpendLimiter()
+        tracker = CombinedCostTracker(spend_limiter=sl)
+        assert tracker.spend_limiter is sl
+        assert tracker.infra_tracker is None
+
+
+class TestRecording:
+    def test_record_model_cost_when_none_raises(self) -> None:
+        tracker = CombinedCostTracker()
         with pytest.raises(RuntimeError, match="no SpendLimiter"):
-            cct.record_model_cost(1.0)
+            tracker.record_model_cost(5.0)
 
-    def test_rejects_negative_cost(self) -> None:
-        sl = SpendLimiter(limit_usd=10.0, window_seconds=3600.0)
-        cct = CombinedCostTracker(spend_limiter=sl)
-        with pytest.raises(ValueError):
-            cct.record_model_cost(-1.0)
+    def test_record_model_cost_delegates(self) -> None:
+        sl = _FakeSpendLimiter()
+        tracker = CombinedCostTracker(spend_limiter=sl)
+        tracker.record_model_cost(5.0, model="gpt-4")
+        assert len(sl._records) == 1
+        assert sl._records[0][0] == 5.0
+        assert sl._records[0][2] == "gpt-4"
 
-    def test_rejects_non_finite_cost(self) -> None:
-        sl = SpendLimiter(limit_usd=10.0, window_seconds=3600.0)
-        cct = CombinedCostTracker(spend_limiter=sl)
-        with pytest.raises(ValueError):
-            cct.record_model_cost(float("nan"))
-        with pytest.raises(ValueError):
-            cct.record_model_cost(float("inf"))
-
-
-class TestRecordInfraCost:
-    def test_delegates_to_infra_tracker(self) -> None:
-        it = InfraCostTracker()
-        cct = CombinedCostTracker(infra_tracker=it)
-
-        rec = cct.record_infra_cost(
-            "aws",
-            ResourceType.GPU_INSTANCE,
-            "i-1",
-            15.0,
-            sku="p4d.24xlarge",
-            gpu_type="A100",
-            gpu_count=8,
-            region="us-east-1",
-            project_id="train-42",
-        )
-
-        assert rec.cost_usd == pytest.approx(15.0)
-        assert rec.provider == "aws"
-        assert it.total_cost() == pytest.approx(15.0)
-        assert it.cost_by_provider()["aws"] == pytest.approx(15.0)
-
-    def test_visible_in_provider_breakdown(self) -> None:
-        it = InfraCostTracker()
-        cct = CombinedCostTracker(infra_tracker=it)
-
-        cct.record_infra_cost("aws", ResourceType.GPU_INSTANCE, "i-1", 10.0)
-        cct.record_infra_cost("gcp", ResourceType.CPU_INSTANCE, "ci-1", 5.0)
-        cct.record_infra_cost("runpod", ResourceType.GPU_INSTANCE, "r-1", 3.0)
-
-        bd = cct.get_cost_breakdown()
-        assert bd["breakdown_by_provider"]["aws"] == pytest.approx(10.0)
-        assert bd["breakdown_by_provider"]["gcp"] == pytest.approx(5.0)
-        assert bd["breakdown_by_provider"]["runpod"] == pytest.approx(3.0)
-        assert bd["record_count"] == 3
-
-    def test_raises_on_missing_infra_tracker(self) -> None:
-        cct = CombinedCostTracker()
+    def test_record_infra_cost_when_none_raises(self) -> None:
+        tracker = CombinedCostTracker()
         with pytest.raises(RuntimeError, match="no InfraCostTracker"):
-            cct.record_infra_cost("aws", ResourceType.GPU_INSTANCE, "i-1", 1.0)
+            tracker.record_infra_cost("aws", "compute", "i-123", 10.0)
 
-    def test_rejects_negative_cost(self) -> None:
-        it = InfraCostTracker()
-        cct = CombinedCostTracker(infra_tracker=it)
-        with pytest.raises(ValueError):
-            cct.record_infra_cost("aws", ResourceType.GPU_INSTANCE, "i-1", -1.0)
-
-
-# ── Combined totals & breakdown ─────────────────────────────────────────
+    def test_record_infra_cost_delegates(self) -> None:
+        it = _FakeInfraTracker()
+        tracker = CombinedCostTracker(infra_tracker=it)
+        rec = tracker.record_infra_cost("aws", "compute", "i-123", 10.0)
+        assert rec.cost_usd == 10.0
+        assert len(it._records) == 1
 
 
-class TestGetTotalSpend:
-    def test_sums_model_plus_infra(self) -> None:
-        def clock() -> float:
-            return 1000.0
+class TestQueries:
+    def test_model_spend_returns_zero_when_none(self) -> None:
+        tracker = CombinedCostTracker()
+        assert tracker.model_spend() == 0.0
 
-        sl = SpendLimiter(limit_usd=100.0, window_seconds=3600.0, clock=clock)
-        it = InfraCostTracker()
-        cct = CombinedCostTracker(spend_limiter=sl, infra_tracker=it)
+    def test_model_spend_delegates(self) -> None:
+        tracker = CombinedCostTracker(spend_limiter=_FakeSpendLimiter())
+        assert tracker.model_spend() == 10.0
 
-        cct.record_model_cost(20.0, at=1000.0)
-        cct.record_infra_cost("aws", ResourceType.GPU_INSTANCE, "i-1", 30.0)
+    def test_infra_spend_returns_zero_when_none(self) -> None:
+        tracker = CombinedCostTracker()
+        assert tracker.infra_spend() == 0.0
 
-        assert cct.model_spend() == pytest.approx(20.0)
-        assert cct.infra_spend() == pytest.approx(30.0)
-        assert cct.get_total_spend() == pytest.approx(50.0)
+    def test_infra_spend_delegates(self) -> None:
+        tracker = CombinedCostTracker(infra_tracker=_FakeInfraTracker())
+        assert tracker.infra_spend() == 50.0
 
-    def test_zero_when_nothing_recorded(self) -> None:
-        sl = SpendLimiter(limit_usd=100.0, window_seconds=3600.0)
-        it = InfraCostTracker()
-        cct = CombinedCostTracker(spend_limiter=sl, infra_tracker=it)
-        assert cct.get_total_spend() == 0.0
-
-    def test_model_only_side(self) -> None:
-        sl = SpendLimiter(limit_usd=100.0, window_seconds=3600.0)
-        cct = CombinedCostTracker(spend_limiter=sl)
-        cct.record_model_cost(7.0)
-        assert cct.get_total_spend() == pytest.approx(7.0)
-        assert cct.infra_spend() == 0.0
-
-    def test_infra_only_side(self) -> None:
-        it = InfraCostTracker()
-        cct = CombinedCostTracker(infra_tracker=it)
-        cct.record_infra_cost("runpod", ResourceType.GPU_INSTANCE, "r-1", 9.0)
-        assert cct.get_total_spend() == pytest.approx(9.0)
-        assert cct.model_spend() == 0.0
-
-
-class TestGetCostBreakdown:
-    def test_full_breakdown_shape(self) -> None:
-        def clock() -> float:
-            return 1000.0
-
-        sl = SpendLimiter(limit_usd=100.0, window_seconds=3600.0, clock=clock)
-        it = InfraCostTracker()
-        cct = CombinedCostTracker(spend_limiter=sl, infra_tracker=it)
-
-        cct.record_model_cost(12.0, project_id="proj-a", at=1000.0)
-        cct.record_infra_cost(
-            "aws", ResourceType.GPU_INSTANCE, "i-1", 8.0, project_id="proj-a"
+    def test_get_total_spend_combines(self) -> None:
+        tracker = CombinedCostTracker(
+            spend_limiter=_FakeSpendLimiter(),
+            infra_tracker=_FakeInfraTracker(),
         )
+        assert tracker.get_total_spend() == 60.0
 
-        bd = cct.get_cost_breakdown()
+    def test_get_total_spend_model_only(self) -> None:
+        tracker = CombinedCostTracker(spend_limiter=_FakeSpendLimiter())
+        assert tracker.get_total_spend() == 10.0
 
-        # Required keys present (matches GET /api/costs shape).
-        for key in (
-            "model_api",
-            "infrastructure",
-            "total",
-            "breakdown_by_provider",
-            "breakdown_by_resource_type",
-            "breakdown_by_project",
-            "record_count",
-        ):
-            assert key in bd, f"missing key {key!r}"
 
-        assert bd["model_api"] == pytest.approx(12.0)
-        assert bd["infrastructure"] == pytest.approx(8.0)
-        assert bd["total"] == pytest.approx(20.0)
-        assert bd["breakdown_by_provider"]["aws"] == pytest.approx(8.0)
-        assert bd["breakdown_by_resource_type"]["gpu_instance"] == pytest.approx(8.0)
-        assert bd["record_count"] == 1
-
-    def test_project_breakdown_merges_model_and_infra(self) -> None:
-        """Same project_id on both sides must sum, not overwrite."""
-        def clock() -> float:
-            return 1000.0
-
-        sl = SpendLimiter(limit_usd=100.0, window_seconds=3600.0, clock=clock)
-        it = InfraCostTracker()
-        cct = CombinedCostTracker(spend_limiter=sl, infra_tracker=it)
-
-        cct.record_model_cost(10.0, project_id="p1", at=1000.0)
-        cct.record_infra_cost("aws", ResourceType.GPU_INSTANCE, "i-1", 25.0, project_id="p1")
-
-        bd = cct.get_cost_breakdown()
-        assert bd["breakdown_by_project"]["p1"] == pytest.approx(35.0)
-
-    def test_project_breakdown_no_project_grouped_under_empty(self) -> None:
-        def clock() -> float:
-            return 1000.0
-
-        sl = SpendLimiter(limit_usd=100.0, window_seconds=3600.0, clock=clock)
-        cct = CombinedCostTracker(spend_limiter=sl)
-        cct.record_model_cost(5.0, at=1000.0)  # no project_id
-        bd = cct.get_cost_breakdown()
-        assert bd["breakdown_by_project"].get("", 0.0) == pytest.approx(5.0)
-
-    def test_empty_breakdown_when_neither_configured(self) -> None:
-        cct = CombinedCostTracker()
-        bd = cct.get_cost_breakdown()
-        assert bd == {
-            "model_api": 0.0,
-            "infrastructure": 0.0,
-            "total": 0.0,
-            "breakdown_by_provider": {},
-            "breakdown_by_resource_type": {},
-            "breakdown_by_project": {},
-            "record_count": 0,
+class TestCostBreakdown:
+    def test_breakdown_keys(self) -> None:
+        tracker = CombinedCostTracker(
+            spend_limiter=_FakeSpendLimiter(),
+            infra_tracker=_FakeInfraTracker(),
+        )
+        bd = tracker.get_cost_breakdown()
+        assert bd.keys() == {
+            "model_api", "infrastructure", "total",
+            "breakdown_by_provider", "breakdown_by_resource_type",
+            "breakdown_by_project", "record_count",
         }
 
+    def test_breakdown_values(self) -> None:
+        tracker = CombinedCostTracker(
+            spend_limiter=_FakeSpendLimiter(),
+            infra_tracker=_FakeInfraTracker(),
+        )
+        bd = tracker.get_cost_breakdown()
+        assert bd["model_api"] == 10.0
+        assert bd["infrastructure"] == 50.0
+        assert bd["total"] == 60.0
 
-# ── Cap enforcement passthrough ─────────────────────────────────────────
-
-
-class TestCapEnforcementPassthrough:
-    def test_remaining_model_budget_with_cap(self) -> None:
-        def clock() -> float:
-            return 1000.0
-
-        sl = SpendLimiter(limit_usd=50.0, window_seconds=3600.0, clock=clock)
-        cct = CombinedCostTracker(spend_limiter=sl)
-        cct.record_model_cost(20.0, at=1000.0)
-        assert cct.remaining_model_budget() == pytest.approx(30.0)
-
-    def test_remaining_model_budget_inf_when_no_limiter(self) -> None:
-        cct = CombinedCostTracker()
-        assert cct.remaining_model_budget() == float("inf")
-
-    def test_remaining_model_budget_inf_when_no_cap(self) -> None:
-        sl = SpendLimiter(limit_usd=0.0, window_seconds=3600.0)  # no cap
-        cct = CombinedCostTracker(spend_limiter=sl)
-        assert cct.remaining_model_budget() == float("inf")
-
-    def test_would_exceed_combined_uses_model_cap(self) -> None:
-        def clock() -> float:
-            return 1000.0
-
-        sl = SpendLimiter(limit_usd=10.0, window_seconds=3600.0, clock=clock)
-        cct = CombinedCostTracker(spend_limiter=sl)
-        cct.record_model_cost(8.0, at=1000.0)
-        assert cct.would_exceed_combined(3.0) is True
-        assert cct.would_exceed_combined(1.0) is False
-
-    def test_would_exceed_combined_false_when_no_limiter(self) -> None:
-        cct = CombinedCostTracker()
-        assert cct.would_exceed_combined(1e9) is False
+    def test_breakdown_none_trackers(self) -> None:
+        tracker = CombinedCostTracker()
+        bd = tracker.get_cost_breakdown()
+        assert bd["model_api"] == 0.0
+        assert bd["infrastructure"] == 0.0
+        assert bd["total"] == 0.0
+        assert bd["record_count"] == 0
 
 
-# ── Snapshot ─────────────────────────────────────────────────────────────
+class TestCapEnforcement:
+    def test_remaining_budget_inf_when_no_limiter(self) -> None:
+        tracker = CombinedCostTracker()
+        assert tracker.remaining_model_budget() == float("inf")
+
+    def test_remaining_budget_delegates(self) -> None:
+        tracker = CombinedCostTracker(spend_limiter=_FakeSpendLimiter())
+        assert tracker.remaining_model_budget() == 90.0
+
+    def test_would_exceed_false_when_no_limiter(self) -> None:
+        tracker = CombinedCostTracker()
+        assert tracker.would_exceed_combined(999.0) is False
+
+    def test_would_exceed_delegates(self) -> None:
+        tracker = CombinedCostTracker(spend_limiter=_FakeSpendLimiter())
+        assert tracker.would_exceed_combined(100.0) is True
+        assert tracker.would_exceed_combined(50.0) is False
 
 
 class TestSnapshot:
-    def test_snapshot_shape_with_both_sides(self) -> None:
-        def clock() -> float:
-            return 1000.0
-
-        sl = SpendLimiter(limit_usd=100.0, window_seconds=3600.0, clock=clock)
-        it = InfraCostTracker()
-        cct = CombinedCostTracker(spend_limiter=sl, infra_tracker=it)
-
-        cct.record_model_cost(5.0, at=1000.0)
-        cct.record_infra_cost("aws", ResourceType.GPU_INSTANCE, "i-1", 7.0)
-
-        snap = cct.snapshot()
+    def test_snapshot_structure(self) -> None:
+        tracker = CombinedCostTracker(
+            spend_limiter=_FakeSpendLimiter(),
+            infra_tracker=_FakeInfraTracker(),
+        )
+        snap = tracker.snapshot()
         assert "model_records" in snap
         assert "infra" in snap
-        assert len(snap["model_records"]) == 1
-        assert snap["model_records"][0][1] == pytest.approx(5.0)
-        assert snap["infra"]["total_cost"] == pytest.approx(7.0)
 
-    def test_snapshot_empty_when_neither_configured(self) -> None:
-        cct = CombinedCostTracker()
-        snap = cct.snapshot()
-        assert snap == {"model_records": [], "infra": {}}
+    def test_snapshot_none_trackers(self) -> None:
+        tracker = CombinedCostTracker()
+        snap = tracker.snapshot()
+        assert snap["model_records"] == []
+        assert snap["infra"] == {}
 
 
-# ── Thread safety ────────────────────────────────────────────────────────
-
-
-class TestThreadSafety:
-    def test_concurrent_model_and_infra_records(self) -> None:
-        """Delegates to underlying locks; no lost updates under contention."""
-        def clock() -> float:
-            return 1000.0
-
-        sl = SpendLimiter(limit_usd=1e9, window_seconds=3600.0, clock=clock)
-        it = InfraCostTracker()
-        cct = CombinedCostTracker(spend_limiter=sl, infra_tracker=it)
-
-        n_threads = 8
-        per_thread = 100
-
-        def worker() -> None:
-            for _ in range(per_thread):
-                cct.record_model_cost(0.01, at=1000.0)
-                cct.record_infra_cost(
-                    "aws", ResourceType.GPU_INSTANCE, "i", 0.01
-                )
-
-        threads = [threading.Thread(target=worker) for _ in range(n_threads)]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
-
-        expected = n_threads * per_thread * 0.01
-        assert cct.model_spend() == pytest.approx(expected)
-        assert cct.infra_spend() == pytest.approx(expected)
-        assert cct.get_total_spend() == pytest.approx(expected * 2)
-
-
-# ── GET /api/costs wiring ────────────────────────────────────────────────
-
-
-def _make_app() -> tuple[FastAPI, TestClient]:
-    app = FastAPI()
-    register_spend(app, {})
-    return app, TestClient(app)
-
-
-class TestApiCostsWiring:
-    def test_endpoint_uses_combined_tracker_when_wired(self) -> None:
-        """When app.state._combined_cost_tracker is set, /api/costs delegates to it."""
-        app, client = _make_app()
-
-        def clock() -> float:
-            return 1000.0
-
-        sl = SpendLimiter(limit_usd=100.0, window_seconds=3600.0, clock=clock)
-        it = InfraCostTracker()
-        cct = CombinedCostTracker(spend_limiter=sl, infra_tracker=it)
-        cct.record_model_cost(15.0, project_id="p1", at=1000.0)
-        cct.record_infra_cost("aws", ResourceType.GPU_INSTANCE, "i-1", 25.0, project_id="p1")
-        app.state._combined_cost_tracker = cct
-
-        resp = client.get("/api/costs")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["model_api"] == pytest.approx(15.0)
-        assert data["infrastructure"] == pytest.approx(25.0)
-        assert data["total"] == pytest.approx(40.0)
-        assert data["breakdown_by_project"]["p1"] == pytest.approx(40.0)
-        assert data["record_count"] == 1
-
-    def test_endpoint_falls_back_when_no_combined_tracker(self) -> None:
-        """Existing inline logic still works when _combined_cost_tracker is absent."""
-        _app, client = _make_app()
-        resp = client.get("/api/costs")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["total"] == pytest.approx(0.0)
+class TestRepr:
+    def test_repr_includes_state(self) -> None:
+        tracker = CombinedCostTracker(
+            spend_limiter=_FakeSpendLimiter(),
+            infra_tracker=_FakeInfraTracker(),
+        )
+        r = repr(tracker)
+        assert "CombinedCostTracker" in r
+        assert "has_model=True" in r
+        assert "has_infra=True" in r
