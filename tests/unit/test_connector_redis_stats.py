@@ -7,10 +7,8 @@ health, executor injection, and _utc_now_epoch.
 
 from __future__ import annotations
 
-import importlib
-import math
-import os
-from typing import Mapping, Sequence, cast
+from collections.abc import Mapping, Sequence
+from typing import cast
 
 import pytest
 
@@ -28,7 +26,6 @@ from general_ludd.connectors.redis_stats import (
     _to_float,
     _utc_now_epoch,
 )
-
 
 # =========================================================================== #
 # Module-level constants
@@ -316,7 +313,7 @@ class TestGetExecutor:
 
     def test_tries_default_with_valid_config(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("TEST_REDIS_URL", "redis://localhost:6379")
-        redis = pytest.importorskip("redis")
+        pytest.importorskip("redis")
         src = RedisStatsSource(config={"url_env": "TEST_REDIS_URL"})
         ex = src._get_executor()
         assert callable(ex)

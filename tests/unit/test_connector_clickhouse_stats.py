@@ -5,16 +5,15 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 
 from general_ludd.connectors.clickhouse_stats import (
+    _QUERIES,
     ClickhouseConfig,
     ClickhouseHealthResult,
     ClickhouseQuerySpec,
     ClickhouseRow,
     ClickHouseStatsSource,
     Executor,
-    _QUERIES,
     _num,
 )
-
 
 # ---------------------------------------------------------------------------
 # Proof-of-existence: imports resolve, classes/functions/constants exist
@@ -144,7 +143,6 @@ class TestQuery:
 
     def test_query_with_metric_executor(self):
         def metric_exec(sql: str) -> Sequence[ClickhouseRow]:
-            table = "system.metrics"
             return [{"metric": "Query", "value": 42}]
 
         source = ClickHouseStatsSource(executor=metric_exec)

@@ -1,8 +1,6 @@
 """Structural TDD unit tests for mysql_stats connector."""
 
 import importlib
-from datetime import UTC, datetime
-from typing import TypedDict
 
 import pytest
 

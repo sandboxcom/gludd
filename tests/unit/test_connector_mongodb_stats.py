@@ -3,9 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any
-
-import pytest
 
 from general_ludd.connectors.mongodb_stats import (
     MongoConfig,
@@ -20,7 +17,6 @@ from general_ludd.connectors.mongodb_stats import (
     _member_optime,
     _num,
 )
-
 
 # ---------------------------------------------------------------------------
 # TypedDict existence

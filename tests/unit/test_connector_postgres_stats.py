@@ -15,14 +15,13 @@ import pytest
 from general_ludd.connectors import postgres_stats as mod
 from general_ludd.connectors.base import NormalizedRecord
 from general_ludd.connectors.postgres_stats import (
+    PgRow,
     PostgresConfig,
     PostgresHealthResult,
     PostgresStatsSource,
-    PgRow,
     _to_float,
     _utc_now_epoch,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers

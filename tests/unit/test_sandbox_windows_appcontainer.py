@@ -1,11 +1,7 @@
 from __future__ import annotations
 
 import sys
-from typing import Any
-from unittest import mock
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 from general_ludd.security.permissions import Capability, PermissionSpec
 from general_ludd.security.sandboxes import Finding, SandboxHandle, SandboxTarget
@@ -19,7 +15,6 @@ from general_ludd.security.sandboxes.windows_appcontainer import (
     _net_allow_rules,
     render_icacls,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
