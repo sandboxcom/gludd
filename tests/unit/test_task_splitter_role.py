@@ -289,8 +289,10 @@ class TestArtifactWireFormat:
             "ansible.builtin.set_fact",
             "ansible.builtin.copy",
         }
+        _task_attrs = {"name", "changed_when", "failed_when", "when", "register",
+                       "notify", "tags", "become", "ignore_errors", "no_log"}
         for task in tasks:
-            module = next(iter(task.keys() - {"name"}), None)
+            module = next(iter(task.keys() - _task_attrs), None)
             assert module in allowed_modules, (
                 f"task uses unexpected module: {module}"
             )

@@ -107,7 +107,10 @@ Pre-existing commits on this branch (carried from master: `f1318f09`, `1b6f18e6`
 | **Audit false-positives** | `audit_untested_code.py` false-positive fixes for structural test classification; untested modules reduced 196→7 | staged |
 | **README status table** | Refreshed to current v0.1.0-beta.2 status | `81080b48` |
 | **~200+ test files** | 130 (wave 1) + 224 + 139 + 280 + 8 structural + 470 + 185 = 1,436+ TDD tests across ~200+ files; all modules now structurally covered | `26292054`, `6ea6f5cc`, `9569b10d`, `e96b85ec`, `2ee1ba1f`, `391aaca6`, `81080b48` |
-| **Gate fixes** | Gate-lite assertion drift, stale gate-status handling, phase-aware enforcement all resolved | `41bcc62b`, `81080b48` |
+| **Gate fixes** | Gate-lite assertion drift, stale gate-status handling, phase-aware enforcement resolved; further gate fixes in progress | `41bcc62b`, `81080b48` |
+| **ci-precheck script** | New CI precheck script added to validate release readiness before push | staged |
+| **build_hot_modules fixes** | Proxy extraction bug resolved; hot modules rebuilt (13/13) | staged |
+| **Enforcement dispatch counting** | Per-wave dispatch counting verified working across all plugins | staged |
 
 ### Commits This Session (10 on master)
 
@@ -137,7 +140,7 @@ Pre-existing commits on this branch (carried from master: `f1318f09`, `1b6f18e6`
 3. [ ] A.4 release cut
 
 ### Last Updated
-- **2026-07-13 — Session 30 (FINAL).** On `master` branch, HEAD `81080b48`. 10 commits this session (26292054..81080b48). Enforcement bugs fixed: saveState EXDEV, FLOOR=10 alignment, input shapes, dispatch counting, camelCase. MIN/MAX_DISPATCHES=10 hardcoded. 1,436+ TDD tests across ~200+ files. Untested modules reduced 196→7. Debug logging added to dispatch hook. Gate fixes applied. Audit false-positives fixed. README status table refreshed. Working tree CLEAN. CI pending.
+- **2026-07-14 — Session 30 (FINAL).** On `master` branch, HEAD `81080b48`. 10 commits this session (26292054..81080b48). Enforcement bugs fixed: saveState EXDEV, FLOOR=10 alignment, input shapes, dispatch counting, camelCase. MIN/MAX_DISPATCHES=10 hardcoded. 1,436+ TDD tests across ~200+ files. Untested modules reduced 196→7. Debug logging added to dispatch hook. Gate fixes applied; further fixes in progress. ci-precheck script added for release readiness validation. build_hot_modules proxy extraction bug fixed; hot modules rebuilt (13/13). Per-wave enforcement dispatch counting verified working. Audit false-positives fixed. README status table refreshed. Working tree CLEAN. CI pending.
 
 ---
 

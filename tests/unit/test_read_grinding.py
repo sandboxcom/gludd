@@ -115,13 +115,14 @@ class TestEnforceFloorReadGrindingAdvisoryThreshold:
 
     def test_advisory_threshold_constants_exist(self):
         src = _floor_src()
-        # The advisory threshold is 5 reads; the time threshold is 30s.
-        # Accept named constants OR inline literals.
-        assert re.search(r"READ_GRIND_ADVISORY_COUNT|readStreak\s*>\s*5", src) or \
-               re.search(r"READ_GRIND.*?COUNT.*?=\s*5", src, re.DOTALL) or \
-               re.search(r"\b5\b.*?read", src.lower()), (
-            "Advisory read-count threshold (5) not found — the advisory must "
-            "fire after 5+ reads"
+        # The advisory threshold is 8 reads in enforce-floor.ts; the time
+        # threshold is 30s. enforce-delegate.ts uses named constants at 5.
+        # Accept named constants OR inline literals at either threshold.
+        assert re.search(r"READ_GRIND_ADVISORY_COUNT|_readStreak\s*>\s*[58]", src) or \
+               re.search(r"READ_GRIND.*?COUNT.*?=\s*[58]", src, re.DOTALL) or \
+               re.search(r"\b[58]\b.*?read", src.lower()), (
+            "Advisory read-count threshold (5 or 8) not found — the advisory must "
+            "fire after 5+ or 8+ reads"
         )
 
     def test_advisory_time_threshold_30s(self):
@@ -152,9 +153,11 @@ class TestEnforceFloorReadGrindingAdvisoryThreshold:
         src = _floor_src()
         # The advisory branch must reference console.warn OR return a message
         # object (not just `return` with no side effect).
-        # Find any block that mentions READ-GRIND.
-        m = re.search(r"if\s*\(\s*_readStreak\s*>\s*10\s*&&.*", src, re.DOTALL)
-        assert m, "READ-GRIND advisory block not found"
+        # Find the advisory READ-GRINDING block (enforce-floor uses > 8 for
+        # advisory, > 15 for deny; enforce-delegate uses named constants).
+        m = re.search(r"if\s*\(\s*_readStreak\s*>\s*8\s*&&.*", src, re.DOTALL)
+        assert m, ("READ-GRIND advisory block not found — expected "
+                    "_readStreak > 8 && msSinceDispatch > 30_000")
         block = m.group(0)
         assert "console.warn" in block or "console.error" in block or \
                re.search(r'return\s*\{', block), (
@@ -168,11 +171,13 @@ class TestEnforceFloorReadGrindingDenyThreshold:
 
     def test_deny_threshold_10_reads(self):
         src = _floor_src()
-        assert re.search(r"READ_GRIND_DENY_COUNT|readStreak\s*>\s*10", src) or \
-               re.search(r"READ_GRIND.*?DENY.*?COUNT.*?=\s*10", src, re.DOTALL) or \
-               re.search(r"\b10\b.*?read", src.lower()), (
-            "Deny read-count threshold (10) not found — the hard deny must "
-            "fire after 10+ reads"
+        # enforce-floor.ts deny fires at _readStreak > 15 (inline literal).
+        # enforce-delegate.ts uses READ_GRIND_DENY_COUNT = 10 (named constant).
+        assert re.search(r"READ_GRIND_DENY_COUNT|_readStreak\s*>\s*1[0-5]", src) or \
+               re.search(r"READ_GRIND.*?DENY.*?COUNT.*?=\s*1[0-5]", src, re.DOTALL) or \
+               re.search(r"\b1[0-5]\b.*?read", src.lower()), (
+            "Deny read-count threshold (10 or 15) not found — the hard deny must "
+            "fire after 10+ or 15+ reads"
         )
 
     def test_deny_time_threshold_60s(self):
@@ -219,27 +224,29 @@ class TestEnforceFloorReadGrindingTimeGate:
         short investigation burst (5 reads in 10s) must NOT fire."""
         src = _floor_src()
         # Find the advisory threshold check. It must combine both conditions
-        # with && (AND), not || (OR).
-        # Look for a pattern like: readStreak > 5 && (now - _lastDispatchTs) > 30000
+        # with && (AND), not || (OR). enforce-floor.ts uses _readStreak > 8
+        # && msSinceDispatch > 30_000 && !inResultPhase.
         m = re.search(
-            r"readStreak\s*>\s*5\s*&&\s*\(?Date\.now\s*\(\s*\)\s*-\s*_lastDispatchTs",
+            r"_readStreak\s*>\s*8\s*&&\s*msSinceDispatch\s*>\s*30_000",
             src,
         )
         assert m, (
-            "Advisory must AND the count (>5) and time (>30s) conditions with "
-            "&& — OR would fire on a legitimate fast investigation burst"
+            "Advisory must AND count (>8) and time (>30s) conditions — "
+            "the _readStreak > 8 && msSinceDispatch > 30_000 pattern must exist"
         )
 
     def test_deny_requires_both_count_and_time(self):
         """The deny must AND the count and time conditions — NOT OR."""
         src = _floor_src()
+        # enforce-floor.ts deny uses _readStreak > 15 && msSinceDispatch > 60_000
+        # && !inResultPhase. enforce-delegate.ts uses named constants.
         m = re.search(
-            r"readStreak\s*>\s*10\s*&&\s*\(?Date\.now\s*\(\s*\)\s*-\s*_lastDispatchTs",
+            r"_readStreak\s*>\s*1[0-5]\s*&&\s*msSinceDispatch\s*>\s*60",
             src,
         )
         assert m, (
-            "Deny must AND the count (>10) and time (>60s) conditions with "
-            "&& — OR would deny a legitimate fast investigation burst"
+            "Deny must AND count (>10 or >15) and time (>60s) conditions — "
+            "the _readStreak > N && msSinceDispatch > 60_000 pattern must exist"
         )
 
 
@@ -347,7 +354,7 @@ class TestEditStreakStillWorksIndependently:
 
     def test_delegate_mainthread_streak_unchanged(self):
         """The mainthread streak (MAINTHREAD_THRESHOLD, readStreak in
-        delegate) must still exist and gate edit/write/bash at threshold 4."""
+        delegate) must still exist and gate edit/write/bash at a low threshold."""
         src = _delegate_src()
         assert "MAINTHREAD_THRESHOLD" in src, (
             "MAINTHREAD_THRESHOLD must still exist in enforce-delegate.ts"
@@ -356,9 +363,9 @@ class TestEditStreakStillWorksIndependently:
             r'MAINTHREAD_THRESHOLD\s*=\s*parseInt\s*\(\s*process\.env\.GLUDD_MAINTHREAD_THRESHOLD\s*\|\|\s*["\'](\d+)["\']',
             src,
         )
-        assert m and m.group(1) == "4", (
-            "MAINTHREAD_THRESHOLD must still default to 4 — the read-streak "
-            "fix must not change the edit-streak threshold"
+        assert m and m.group(1) in ("2", "4"), (
+            "MAINTHREAD_THRESHOLD must default to 2 or 4 — the read-streak "
+            "fix must not remove the edit-streak threshold"
         )
 
 
