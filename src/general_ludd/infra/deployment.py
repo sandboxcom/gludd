@@ -148,6 +148,45 @@ class DeploymentManager:
         finally:
             pass  # no env cleanup needed — we never touched os.environ
 
+    async def plan(self, config: ComputeConfig) -> dict[str, Any]:
+        auth_env = self._build_auth_env(config)
+        plan_dir = os.path.join(self._working_dir, f"p-{uuid.uuid4().hex[:12]}")
+        os.makedirs(plan_dir, exist_ok=True)
+        hcl = self._generator.generate(config)
+        with open(os.path.join(plan_dir, "main.tf"), "w") as f:
+            f.write(hcl)
+        await self._run_terraform(["init", "-input=false"], cwd=plan_dir, env=auth_env)
+        binary = self._binary_resolver.get_infra_binary()
+        proc = await asyncio.create_subprocess_exec(
+            binary, "plan", "-detailed-exitcode", "-input=false",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=plan_dir,
+            env=auth_env,
+        )
+        stdout, stderr = await proc.communicate()
+        changes = proc.returncode == 2
+        if proc.returncode not in (0, 2):
+            raise RuntimeError(
+                f"terraform plan failed (rc={proc.returncode}): {stderr.decode()}"
+            )
+        return {
+            "changes_present": changes,
+            "stdout": stdout.decode(),
+            "stderr": stderr.decode(),
+            "returncode": proc.returncode,
+        }
+
+    async def validate(self, config: ComputeConfig) -> dict[str, Any]:
+        auth_env = self._build_auth_env(config)
+        val_dir = os.path.join(self._working_dir, f"v-{uuid.uuid4().hex[:12]}")
+        os.makedirs(val_dir, exist_ok=True)
+        hcl = self._generator.generate(config)
+        with open(os.path.join(val_dir, "main.tf"), "w") as f:
+            f.write(hcl)
+        await self._run_terraform(["init", "-input=false"], cwd=val_dir, env=auth_env)
+        return await self._run_terraform(["validate", "-json"], cwd=val_dir, env=auth_env)
+
     async def destroy(self, instance_id: str) -> None:
         # W2.3 (C5): refuse to destroy an instance we have no record of. Running
         # terraform destroy blind was the money-leak — it could tear down the

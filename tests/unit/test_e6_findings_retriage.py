@@ -186,6 +186,31 @@ def test_worker_broadcast_has_ssrf_guard() -> None:
     assert broadcast_pos is not None, "broadcast_reload must exist"
 
 
+# --- BACKLOG_FINDINGS: Ansible process_isolation podman-path (OPEN) ---
+
+
+def test_process_isolation_podman_present_still_unconfined() -> None:
+    """Podman-present path does not auto-enforce process isolation (OPEN).
+
+    The run_playbook method gates on ``iso.enabled``, but there is no
+    automatic podman-detection that forces ``enabled=True`` when podman
+    is on PATH. If the caller does not explicitly set ``process_isolation``
+    with ``enabled=True``, the playbook runs unconfined even when podman
+    is available.
+    """
+    core_runner = ROOT / "src" / "general_ludd" / "ansible" / "core_runner.py"
+    content = core_runner.read_text()
+    # The gap: there is no auto-detection of podman that would set enabled=True.
+    # "which podman" / "podman on PATH" does NOT appear as an auto-enable gate.
+    assert "shutil.which" not in content or "podman" not in content.lower(), (
+        "podman auto-detection is NOT wired — this is expected (OPEN)"
+    )
+    # Confirm the isolation gate is explicitly opt-in (iso.enabled), not auto.
+    assert "iso.enabled" in content or "iso = self._process_isolation" in content, (
+        "isolation gate must exist for this test to be meaningful"
+    )
+
+
 # --- BACKLOG_FINDINGS: per-project secret isolation (OPEN) ---
 
 
@@ -203,6 +228,60 @@ def test_for_project_has_zero_callers_in_secrets_dir() -> None:
             break
     assert not found, (
         "for_project in secrets/ still has 0 callers — this is expected (OPEN)"
+    )
+
+
+# --- BACKLOG_FINDINGS: runtime bundle unsigned manifest (OPEN) ---
+
+
+def test_runtime_bundle_manifest_is_unsigned() -> None:
+    """MANIFEST.json is not cryptographically signed (OPEN).
+
+    release.py cross-checks CHECKSUMS.sha256 against MANIFEST.json and
+    detects missing/extra files, but the manifest itself is unsigned.
+    Tamper-then-rewrite-both still passes. No cryptographic signature
+    (cosign, gitsign, pgp) is applied to the bundle manifest.
+    """
+    release_py = ROOT / "src" / "general_ludd" / "runtime" / "release.py"
+    content = release_py.read_text()
+    # None of the signing-related modules are imported for manifest verification
+    for sign_import in ("cosign", "gitsign", "pgp", "signify", "ed25519", "ecdsa"):
+        assert sign_import not in content, (
+            f"release.py does NOT use {sign_import} — manifest is unsigned (OPEN)"
+        )
+    # verify / validate_signature / public_key should be absent from release.py
+    assert "verify_signature" not in content, (
+        "no signature verification exists — manifest is unsigned (OPEN)"
+    )
+    assert "_check_pip_bundle" in content, (
+        "_check_pip_bundle must exist for this test to be meaningful"
+    )
+
+
+# --- BACKLOG_FINDINGS: code_intelligence rg_search unconfined (OPEN) ---
+
+
+def test_rg_search_root_unconfined() -> None:
+    """rg_search ``root`` parameter has no path-prefix jail (OPEN).
+
+    ``build_argv`` passes the caller-supplied ``root`` directly to ``rg``
+    after ``--``, with no confinement check (no realpath-resolution, no
+    prefix-whitelist/deny-list, no chroot-equivalent). The flag allowlist
+    (_SAFE_FLAGS) restricts extra flags but does not constrain the search
+    directory.
+    """
+    rg_search_py = ROOT / "src" / "general_ludd" / "code_intelligence" / "rg_search.py"
+    content = rg_search_py.read_text()
+    # Confinement primitives that would close this gap — none is present
+    for confinement_token in (
+        "realpath", "_confine", "_jail", "prefix_", "chroot",
+        "_validate_root", "_safe_root", "allowed_roots",
+    ):
+        assert confinement_token not in content, (
+            f"rg_search.py has no {confinement_token!r} — root is unconfined (OPEN)"
+        )
+    assert "_SAFE_FLAGS" in content, (
+        "_SAFE_FLAGS must exist for this test to be meaningful"
     )
 
 
