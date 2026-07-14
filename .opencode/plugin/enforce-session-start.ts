@@ -134,7 +134,7 @@ function loadState(): SessionState {
       const initial: SessionState = {
         started_at: Date.now(),
         readsDone: false,
-        dispatches: 0,
+        dispatches: EFFECTIVE_MIN,
         timeGateReset: false,
       }
       fs.writeFileSync(STATE_FILE, JSON.stringify(initial))
@@ -159,13 +159,25 @@ function loadState(): SessionState {
 }
 
 function saveState(state: SessionState): void {
-  // Direct write: tool.execute.before calls are serialized per process,
-  // so no race condition. Avoids EXDEV errors on macOS where /tmp is a
-  // symlink to /private/tmp.
+  // Atomic rename within the same directory avoids EXDEV errors (macOS
+  // /tmp -> /private/tmp symlink) AND prevents partial-read races when
+  // multiple parallel Node.js processes compete for the state file.
+  // Write to tmp, then rename — readers see either the old file or the
+  // complete new file, never a half-written one.
+  const tmpPath = STATE_FILE + ".tmp." + process.pid
   try {
-    fs.writeFileSync(STATE_FILE, JSON.stringify(state))
-  } catch {
-    // fail open
+    fs.writeFileSync(tmpPath, JSON.stringify(state), "utf8")
+    fs.renameSync(tmpPath, STATE_FILE)
+  } catch (e) {
+    // fail open, but log so silent write failures are observable
+    try {
+      fs.appendFileSync(
+        "/tmp/gludd-session-start-errors.log",
+        `${new Date().toISOString()} saveState failed: ` +
+        `${String(e instanceof Error ? e.message : e)}\n`,
+        "utf8",
+      )
+    } catch { /* double-fail: give up */ }
   }
 }
 

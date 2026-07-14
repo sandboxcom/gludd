@@ -1,0 +1,20 @@
+# qemu-llamacpp stack tfvars example (Terraform Phase 2)
+# Copy to qemu-llamacpp.tfvars and fill in real values.
+# Auth (ssh_public_key) is the only required credential.
+
+name            = "gludd-llamacpp"
+vcpus           = 8
+memory_mb       = 65536
+disk_size_gb    = 200
+
+storage_pool    = "default"
+network_name    = "default"
+host_port       = 8001
+
+ssh_public_key  = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI..."
+
+engine          = "llamacpp"
+model           = "/models/Llama-3.1-70B-Q4_K_M.gguf"
+container_image = "ghcr.io/ggerganov/llama.cpp:server"
+gpus            = 1
+extra_args      = "--n-gpu-layers 80 --ctx-size 8192"

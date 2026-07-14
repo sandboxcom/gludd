@@ -483,6 +483,22 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
 
     add_project_paths_subparser(proj_sub)
 
+    config_parser = sub.add_parser("config", help="User configuration commands")
+    config_parser.set_defaults(func=None)
+    config_sub = config_parser.add_subparsers(dest="config_command")
+
+    tf_parser = config_sub.add_parser("terraform", help="Terraform variable defaults")
+    tf_sub = tf_parser.add_subparsers(dest="terraform_command")
+
+    tf_get = tf_sub.add_parser("get", help="Show terraform variable defaults")
+    tf_get.add_argument("--field", default=None, help="Specific field to show")
+    tf_get.set_defaults(func=_cmd_config_terraform_get)
+
+    tf_set = tf_sub.add_parser("set", help="Set a terraform variable default")
+    tf_set.add_argument("field", help="Field name (e.g. region, instance_type, gpu_count)")
+    tf_set.add_argument("value", help="New value")
+    tf_set.set_defaults(func=_cmd_config_terraform_set)
+
     mcp_parser = sub.add_parser("mcp", help="MCP server catalog commands")
     mcp_parser.set_defaults(func=None)
     mcp_sub = mcp_parser.add_subparsers(dest="mcp_command")
@@ -1071,6 +1087,7 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
         "account": account_parser,
         "audit-plugins": audit_plugins_parser,
         "collection": collection_parser,
+        "config": config_parser,
         "searx": searx_parser,
         "test-bg": testbg_parser,
         "test": test_parser,
@@ -1300,6 +1317,72 @@ def _cmd_searx(args: argparse.Namespace) -> None:
         import yaml
         with open(path) as f:
             print(yaml.safe_dump(yaml.safe_load(f), default_flow_style=False))
+
+
+def _cmd_config_terraform_get(args: argparse.Namespace) -> None:
+    from pathlib import Path
+
+    from general_ludd.config.user_config import TerraformConfig, UserConfig
+
+    config_path = Path.home() / ".config" / "general-ludd" / "user.yml"
+    tc: TerraformConfig
+    if config_path.exists():
+        user_cfg = UserConfig.from_yaml(config_path)
+        tc = user_cfg.terraform
+    else:
+        tc = TerraformConfig()
+
+    if args.field:
+        val = getattr(tc, args.field, None)
+        if val is None:
+            print(f"Unknown terraform field: {args.field}")
+            sys.exit(1)
+        print(f"{args.field} = {val}")
+    else:
+        data = tc.model_dump()
+        for k, v in sorted(data.items()):
+            if isinstance(v, str):
+                print(f"{k:28} = \"{v}\"")
+            else:
+                print(f"{k:28} = {v}")
+
+
+def _cmd_config_terraform_set(args: argparse.Namespace) -> None:
+    from pathlib import Path
+
+    from general_ludd.config.user_config import TerraformConfig
+
+    valid_fields = set(TerraformConfig.model_fields.keys())
+    if args.field not in valid_fields:
+        print(f"Unknown terraform field: {args.field}")
+        print(f"Valid fields: {', '.join(sorted(valid_fields))}")
+        sys.exit(1)
+
+    config_path = Path.home() / ".config" / "general-ludd" / "user.yml"
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+
+    import yaml
+    data: dict[str, object] = {}
+    if config_path.exists():
+        with open(config_path) as f:
+            data = yaml.safe_load(f) or {}
+
+    raw_terraform: object = data.get("terraform", {})
+    tf_data: dict[str, object] = cast(dict[str, object], raw_terraform) if isinstance(raw_terraform, dict) else {}
+    tf_data[args.field] = args.value
+
+    try:
+        TerraformConfig.model_validate(tf_data)
+    except Exception as exc:
+        print(f"Validation error for {args.field}={args.value!r}: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    data["terraform"] = tf_data
+    with open(config_path, "w") as f:
+        yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+
+    print(f"terraform.{args.field} = {args.value}")
+    print(f"Written to {config_path}")
 
 
 def main() -> None:

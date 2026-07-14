@@ -1,20 +1,21 @@
 # TASKS.md — Evidence Ledger
 
-**Last consolidated: 2026-07-14 Session 33 — Untested modules: 0 (down from 196). Enforcement: saveState fixed, FLOOR hardcoded to 10, isDispatchTool imported from shared.ts, MIN/MAX_DISPATCHES=10, dispatch hook detection debug logging added. Gate GREEN (lint 0, typecheck 0, collect 0, hook-runtime PASS). CI pending. A.4 release pending CI green.**
+**Last consolidated: 2026-07-14 Session 33 — Untested modules: 0 (down from 196). Enforcement: saveState fixed, FLOOR hardcoded to 10, isDispatchTool imported from shared.ts, MIN/MAX_DISPATCHES=10, dispatch hook detection debug logging added. Terraform: QEMU e2e tests (14 vllm + 24 llamacpp), TerraformConfig wired to user config + CLI, DeploymentManager plan/validate methods, QEMU cross-platform detection. Gate GREEN (lint 0, typecheck 0, collect 0, hook-runtime PASS, CI-precheck all pass). A.4 pending CI green.**
 
 Each line ticked when `make gate` is green and evidence is pasted.
 
-## Pending Items Summary (2026-07-13)
+## Pending Items Summary (2026-07-14)
 
 | Phase | Description | Pending | Total | % Complete |
 |-------|-------------|---------|-------|------------|
 | A | CI Green + Release | 1 | 6 | 83% |
 | D | Feature Completeness | 0 | 22 | 100% |
 | E | Quality/Coverage | 0 | 15 | 100% |
+| F | Terraform/Deployment | 0 | 4 | 100% |
 | I | Stale Backlog + Integration | 0 | 15 | 0% |
-| **Total Active** | | **1** | **58** | **98%** |
+| **Total Active** | | **1** | **62** | **98%** |
 | *Archived* | *14 phases* | *0* | *188* | *100%* |
-| **Grand Total** | | **1** | **246** | **99.6%** |
+| **Grand Total** | | **1** | **250** | **99.6%** |
 
 ---
 
@@ -81,6 +82,15 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [x] E.13 — Nag-free subagent output test: verify DELEGATE-FIRST/READ-GRINDING nag text is NOT injected into subagent task_result output | priority: medium | effort: small | status: completed | evidence: 10 tests pass, verified all nag texts guarded by OPENCODE_SUBAGENT
 - [x] E.14 — Enforcement e2e tests: no-wait + no-suppressions plugin verification | priority: low | effort: small | status: completed | evidence: 45 e2e tests across test_no_wait_e2e.py + test_no_suppressions_e2e.py, commit 23b915b6
 - [x] E.15 — Additional plugin e2e tests: commit-lock, watchdog, enforce-multitask, hot-reload proxy, clean-tree, enforce-stop | priority: low | effort: medium | status: completed | evidence: 217+ e2e tests across 6 new test files (test_commit_lock_e2e.py, test_watchdog_e2e.py, test_enforce_multitask_e2e.py, test_hot_reload_proxy_e2e.py, test_verify_plugin_manifest_e2e.py, test_clean_tree_e2e.py), commits a3a6a237→1a225981. All 13 plugins hot-reload proxied (cc133b2e). enforce-stop Node v26 compat (1b6f18e6). 30,718 collected.
+
+---
+
+## Phase F — Terraform/Deployment Infrastructure (4 items, 100% complete)
+
+- [x] F.1 — Terraform QEMU e2e tests (14 vllm + 24 llamacpp) | priority: high | effort: large | status: completed | evidence: 38 e2e tests pass across vllm (14) + llamacpp (24) QEMU scenarios
+- [x] F.2 — TerraformConfig wired to user config + CLI subcommands | priority: high | effort: medium | status: completed | evidence: TerraformConfig integrated into UserConfig model + CLI tf-init/tf-validate/tf-plan subcommands
+- [x] F.3 — DeploymentManager plan/validate methods | priority: high | effort: medium | status: completed | evidence: DeploymentManager.plan() + DeploymentManager.validate() methods implemented and tested
+- [x] F.4 — QEMU cross-platform detection (macOS/Linux/Windows) | priority: medium | effort: medium | status: completed | evidence: qemu_detect.py with platform detection for darwin/linux/win32, used by terraform provisioner
 
 ---
 

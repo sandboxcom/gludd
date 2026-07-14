@@ -11,7 +11,12 @@ from general_ludd.config.model_routing import (
     load_model_routing,
 )
 from general_ludd.config.task_loader import discover_task_definitions, load_task_definitions
-from general_ludd.config.user_config import AgentConfig, ConfigLayer, UserConfig
+from general_ludd.config.user_config import (
+    AgentConfig,
+    ConfigLayer,
+    TerraformConfig,
+    UserConfig,
+)
 
 __all__ = [
     "AgentConfig",
@@ -19,6 +24,7 @@ __all__ = [
     "BinaryPaths",
     "ConfigLayer",
     "ModelRoutingConfig",
+    "TerraformConfig",
     "UserConfig",
     "build_config_layer",
     "build_router_from_config",
