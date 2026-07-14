@@ -2,7 +2,25 @@
 
 All notable changes to this project are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/); this project adheres to semantic versioning.
 
-## [Unreleased] — since beta.3 (2026-07-13) — Session 29: enforcement plugin Node v26 compat fixes, hot-reload proxy hardening, e2e test surge, opencode 1.17.9 compat
+## [Unreleased]
+
+### Added
+- L.3 SearX model gateway wiring: SearxModelDiscoverer bridges SearXModelSearch→ModelGateway with TTL cache + fallback
+- 66 new notification dispatcher unit tests
+- POST /admin/models/discover-searx endpoint for on-demand model refresh
+- Crash recovery improvements: session.idle dead code removal, stale state cleanup
+
+### Fixed
+- OpenCode 1.17.9 session.idle crash vector removed from enforce-make.ts
+- manifest_signing import fixed (manifest_signer) — collection error resolved
+- BUGS.md stale (in_progress) tag cleaned up
+
+### Changed
+- README status table refreshed for v0.1.0-beta.4
+- SESSION.md archived (722→129 lines), old sessions moved to docs/archive/
+- Presentation deck updated with current metrics (38,207 tests, 111 roles)
+
+## [0.1.0-beta.4] — 2026-07-14 — Session 29-33: enforcement plugin Node v26 compat fixes, hot-reload proxy hardening, e2e test surge, opencode 1.17.9 compat
 
 ### Session 29 (2026-07-13) — Enforcement Plugin Node v26 Compatibility + E2E Test Surge
 
