@@ -110,9 +110,13 @@ collision). Effort: S.
 
 **R-9 — Bundled-binary pins stay real (NEW).** 🔧 ripgrep sha fixed this
 session (official `4cf9f274…4d8e`, verified: `shasum -c` OK, bundled).
-REMAINING: osquery macOS asset name 404s
-(`osquery-5.10.2.macos_arm64.tar.gz` does not exist upstream — fix in flight);
-add a CI check that every pinned URL+sha in
+FIXED: osquery macOS asset name 404
+(`osquery-5.10.2.macos_arm64.tar.gz` did not exist upstream —
+`bootstrap.py::_osquery_download_url` now builds the real 5.10.2 asset
+names, `osquery-5.10.2_1.macos_x86_64.tar.gz` for darwin any-arch and
+`osquery-5.10.2_1.linux_{x86_64,aarch64}.tar.gz` for linux; verified via a
+live `make bundle-binaries` run — osquery downloaded a real ~24MB tarball,
+HTTP 200, no 404). REMAINING: add a CI check that every pinned URL+sha in
 `scripts/download_bundled_binaries.py` and the Makefile actually resolves
 (HEAD request) so dead pins are caught before release week.
 

@@ -93,9 +93,29 @@ class GitHistoryIndexer:
         ]
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
         if proc.returncode != 0:
-            raise RuntimeError(f"git log failed: {proc.stderr}")
+            stderr = proc.stderr or ""
+            # A path that is not a git repo (or a repo with no commits yet) has
+            # ZERO commits to index -- that is an empty result, not an error.
+            # Any OTHER git failure is still surfaced, so real breakage is never
+            # silently swallowed.
+            benign = ("not a git repository", "does not have any commits yet")
+            if any(marker in stderr.lower() for marker in benign):
+                return
+            raise RuntimeError(f"git log failed: {stderr}")
 
-        blocks = proc.stdout.strip().split("\n__COMMIT__\n")
+        # The --format above EMITS the __COMMIT__ marker as the first line of
+        # every record, so stdout STARTS with "__COMMIT__\n". Splitting on the
+        # newline-prefixed "\n__COMMIT__\n" therefore leaves the very first
+        # (newest) block still carrying its own marker line, shifting that
+        # commit's fields by one (hash <- "__COMMIT__", author <- sha, date <-
+        # "T", message <- date). Strip the leading marker so every block starts
+        # at the hash and the split offsets below line up for ALL commits.
+        stdout = proc.stdout.strip()
+        marker = "__COMMIT__\n"
+        if stdout.startswith(marker):
+            stdout = stdout[len(marker):]
+
+        blocks = stdout.split("\n__COMMIT__\n")
         for block in blocks:
             if not block.strip():
                 continue
@@ -194,26 +214,42 @@ class GitHistoryIndexer:
             where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
             joined = any([query, path_filter])
 
+            # NOTE: sqlite only allows a DISTINCT aggregate with exactly one
+            # argument, so GROUP_CONCAT(DISTINCT f.path, '|') (two args) raises
+            # "DISTINCT aggregates must have exactly one argument". Deduplicate
+            # (hash, path) pairs in an inner subquery instead, then GROUP_CONCAT
+            # the already-distinct paths without DISTINCT — same semantics
+            # (matched rows per the WHERE filter, deduped paths, '|'-joined).
             if joined:
                 select_sql = f"""
-                    SELECT c.hash, c.author, c.date, c.message, c.insertions, c.deletions,
-                           GROUP_CONCAT(DISTINCT f.path, '|') AS paths
-                    FROM commits c
-                    JOIN files_changed f ON c.hash = f.commit_hash
-                    WHERE {where_sql}
-                    GROUP BY c.hash
-                    ORDER BY c.date DESC
+                    SELECT hash, author, date, message, insertions, deletions,
+                           GROUP_CONCAT(path, '|') AS paths
+                    FROM (
+                        SELECT DISTINCT c.hash AS hash, c.author AS author, c.date AS date,
+                               c.message AS message, c.insertions AS insertions,
+                               c.deletions AS deletions, f.path AS path
+                        FROM commits c
+                        JOIN files_changed f ON c.hash = f.commit_hash
+                        WHERE {where_sql}
+                    )
+                    GROUP BY hash
+                    ORDER BY date DESC
                     LIMIT ? OFFSET ?
                 """
             else:
                 select_sql = f"""
-                    SELECT c.hash, c.author, c.date, c.message, c.insertions, c.deletions,
-                           GROUP_CONCAT(DISTINCT f.path, '|') AS paths
-                    FROM commits c
-                    LEFT JOIN files_changed f ON c.hash = f.commit_hash
-                    WHERE {where_sql}
-                    GROUP BY c.hash
-                    ORDER BY c.date DESC
+                    SELECT hash, author, date, message, insertions, deletions,
+                           GROUP_CONCAT(path, '|') AS paths
+                    FROM (
+                        SELECT DISTINCT c.hash AS hash, c.author AS author, c.date AS date,
+                               c.message AS message, c.insertions AS insertions,
+                               c.deletions AS deletions, f.path AS path
+                        FROM commits c
+                        LEFT JOIN files_changed f ON c.hash = f.commit_hash
+                        WHERE {where_sql}
+                    )
+                    GROUP BY hash
+                    ORDER BY date DESC
                     LIMIT ? OFFSET ?
                 """
 

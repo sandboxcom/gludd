@@ -91,10 +91,11 @@ class TestCrossPlatformUrls:
                         # openbao: the generic URL builder hardcodes amd64 in the filename.
                         if name == "openbao" and arch == "arm64":
                             continue
-                        # osquery only publishes linux-amd64 + darwin tarballs.
-                        if name == "osquery" and (
-                            os_name == "windows" or (os_name == "linux" and arch == "arm64")
-                        ):
+                        # osquery publishes linux (amd64+arm64, as x86_64/aarch64
+                        # assets) and a single universal darwin tarball; only
+                        # windows (msi/zip, no tar.gz) is unpublished for this
+                        # tar-only bootstrapper.
+                        if name == "osquery" and os_name == "windows":
                             continue
                         # codebase-memory-mcp: Windows publishes .zip only (not tar.gz).
                         if name == "codebase-memory-mcp" and os_name == "windows":

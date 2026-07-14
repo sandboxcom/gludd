@@ -103,6 +103,30 @@ class TestGitHistoryIndexer:
         assert len(results) >= 1
         assert any("security" in r.message for r in results)
 
+    def test_search_by_query_multiple_files_does_not_crash(self, tmp_path: Path) -> None:
+        # Regression test: sqlite3.OperationalError: DISTINCT aggregates must
+        # have exactly one argument. GROUP_CONCAT(DISTINCT f.path, '|') passes
+        # TWO arguments (expr + separator) alongside DISTINCT, which sqlite
+        # rejects outright -- any query-mode search() call with a commit that
+        # touches >1 file hits this. Reproduces `make git-search Q=...`.
+        db_path = tmp_path / "index.db"
+        git_dir = tmp_path / "repo"
+        git_dir.mkdir()
+        subprocess.run(["git", "-C", str(git_dir), "init"], capture_output=True)
+        subprocess.run(["git", "-C", str(git_dir), "config", "user.email", "t@t.com"], capture_output=True)
+        subprocess.run(["git", "-C", str(git_dir), "config", "user.name", "T"], capture_output=True)
+        (git_dir / "a.py").write_text("a=1")
+        (git_dir / "b.py").write_text("b=1")
+        subprocess.run(["git", "-C", str(git_dir), "add", "a.py", "b.py"], capture_output=True)
+        subprocess.run(["git", "-C", str(git_dir), "commit", "-m", "RG_SHA256 checksum fix"], capture_output=True)
+
+        indexer = GitHistoryIndexer(repo_path=git_dir, db_path=db_path)
+        indexer.index()
+
+        results = indexer.search(query="RG_SHA256")
+        assert len(results) == 1
+        assert set(results[0].matched_paths) == {"a.py", "b.py"}
+
     def test_search_by_author(self, tmp_path: Path) -> None:
         db_path = tmp_path / "index.db"
         git_dir = tmp_path / "repo"
@@ -207,6 +231,47 @@ class TestGitHistoryIndexer:
         indexer.index()
         results = indexer.search(query="nonexistent")
         assert results == []
+
+    def test_index_non_git_repo_returns_zero_not_raises(self, tmp_path: Path) -> None:
+        # Regression: a non-repo path has ZERO commits to index -- an empty
+        # result, not a crash. Previously `git log` exited non-zero and
+        # _parse_git_log raised RuntimeError("git log failed: fatal: not a git
+        # repository ...").
+        db_path = tmp_path / "index.db"
+        not_a_repo = tmp_path / "plain_dir"
+        not_a_repo.mkdir()
+        indexer = GitHistoryIndexer(repo_path=not_a_repo, db_path=db_path)
+        assert indexer.index() == 0
+        assert indexer.search() == []
+
+    def test_newest_commit_fields_are_not_shifted(self, tmp_path: Path) -> None:
+        # Regression: stdout STARTS with "__COMMIT__\n", but the split delimiter
+        # is "\n__COMMIT__\n", so the first/newest block kept its own marker
+        # line and every field shifted by one -- hash='__COMMIT__', author=<sha>,
+        # date='T', message=<iso-date>. Assert the NEWEST commit parses cleanly.
+        db_path = tmp_path / "index.db"
+        git_dir = tmp_path / "repo"
+        git_dir.mkdir()
+        subprocess.run(["git", "-C", str(git_dir), "init"], capture_output=True)
+        subprocess.run(["git", "-C", str(git_dir), "config", "user.email", "t@t.com"], capture_output=True)
+        subprocess.run(["git", "-C", str(git_dir), "config", "user.name", "Zoe"], capture_output=True)
+        (git_dir / "old.py").write_text("old=1")
+        subprocess.run(["git", "-C", str(git_dir), "add", "old.py"], capture_output=True)
+        subprocess.run(["git", "-C", str(git_dir), "commit", "-m", "older commit"], capture_output=True)
+        (git_dir / "new.py").write_text("new=1")
+        subprocess.run(["git", "-C", str(git_dir), "add", "new.py"], capture_output=True)
+        subprocess.run(["git", "-C", str(git_dir), "commit", "-m", "newest commit"], capture_output=True)
+
+        indexer = GitHistoryIndexer(repo_path=git_dir, db_path=db_path)
+        indexer.index()
+
+        newest = indexer.search(limit=1)[0]
+        assert newest.message == "newest commit"
+        assert newest.author == "Zoe"
+        assert newest.hash != "__COMMIT__"
+        assert len(newest.hash) == 40
+        assert newest.date.startswith("20")
+        assert newest.matched_paths == ["new.py"]
 
     def test_reindex_is_idempotent(self, tmp_path: Path) -> None:
         db_path = tmp_path / "index.db"

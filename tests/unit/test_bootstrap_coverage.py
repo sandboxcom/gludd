@@ -258,27 +258,39 @@ class TestGetDownloadUrl:
         url = bootstrapper.get_download_url("osquery")
         assert url is not None
         assert "osquery/osquery/releases/download/5.10.2" in url
-        assert url.endswith("osquery-5.10.2.linux_x86_64.tar.gz")
+        # Verified against the real 5.10.2 release asset list: linux assets
+        # carry a "_1" build-revision infix before the OS component.
+        assert url.endswith("osquery-5.10.2_1.linux_x86_64.tar.gz")
 
     @patch("general_ludd.filestore.bootstrap.platform.machine", return_value="arm64")
     @patch("general_ludd.filestore.bootstrap.platform.system", return_value="Darwin")
-    def test_osquery_macos_arm64(self, mock_sys, mock_mach, bootstrapper):
+    def test_osquery_macos_arm64_resolves_to_only_published_tarball(self, mock_sys, mock_mach, bootstrapper):
+        # osquery 5.10.2 publishes only ONE macOS tarball — "macos_x86_64"
+        # — there is no separate "macos_arm64" asset (arm64 native support
+        # ships only in the .pkg). Apple Silicon must resolve to that same
+        # x86_64-named asset (runs under Rosetta 2); this was the exact
+        # 404: the old code built a macos_arm64.tar.gz URL that does not
+        # exist.
         url = bootstrapper.get_download_url("osquery")
         assert url is not None
-        assert url.endswith("osquery-5.10.2.macos_arm64.tar.gz")
+        assert url.endswith("osquery-5.10.2_1.macos_x86_64.tar.gz")
 
     @patch("general_ludd.filestore.bootstrap.platform.machine", return_value="x86_64")
     @patch("general_ludd.filestore.bootstrap.platform.system", return_value="Darwin")
     def test_osquery_macos_x86_64(self, mock_sys, mock_mach, bootstrapper):
         url = bootstrapper.get_download_url("osquery")
         assert url is not None
-        assert url.endswith("osquery-5.10.2.macos_x86_64.tar.gz")
+        assert url.endswith("osquery-5.10.2_1.macos_x86_64.tar.gz")
 
     @patch("general_ludd.filestore.bootstrap.platform.machine", return_value="aarch64")
     @patch("general_ludd.filestore.bootstrap.platform.system", return_value="Linux")
-    def test_osquery_linux_arm64_unavailable(self, mock_sys, mock_mach, bootstrapper):
-        # osquery 5.10.2 publishes no linux arm64 tarball -> None.
-        assert bootstrapper.get_download_url("osquery") is None
+    def test_osquery_linux_arm64_uses_aarch64_asset(self, mock_sys, mock_mach, bootstrapper):
+        # osquery 5.10.2 DOES publish a linux arm64 tarball, just under the
+        # asset-name "aarch64" rather than "arm64". The old code treated
+        # this platform as unpublished (returned None); it should resolve.
+        url = bootstrapper.get_download_url("osquery")
+        assert url is not None
+        assert url.endswith("osquery-5.10.2_1.linux_aarch64.tar.gz")
 
     @patch("general_ludd.filestore.bootstrap.platform.machine", return_value="amd64")
     @patch("general_ludd.filestore.bootstrap.platform.system", return_value="Windows")

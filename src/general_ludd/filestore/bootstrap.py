@@ -251,28 +251,51 @@ class BinaryBootstrapper:
     def _osquery_download_url(os_name: str, arch: str) -> str | None:
         """Build the osquery 5.10.2 GitHub release-asset URL.
 
-        Assets are named ``osquery-<ver>.<os>_<arch>.tar.gz`` where ``os`` is
-        ``linux`` or ``macos`` and ``arch`` is osquery's own naming
-        (``x86_64`` / ``arm64`` — NOT the ``amd64`` the bootstrapper normalizes
-        to). Returns ``None`` for platform/arch combos osquery does not publish
-        a tarball for (e.g. Windows ships an .msi, not a .tar.gz, and linux
-        arm64 has no 5.10.2 tarball).
+        Verified directly against the real 5.10.2 release asset list
+        (``GET /repos/osquery/osquery/releases/tags/5.10.2``), which does
+        NOT match the naming this function previously assumed:
+
+          - linux:  ``osquery-5.10.2_1.linux_x86_64.tar.gz`` and
+                     ``osquery-5.10.2_1.linux_aarch64.tar.gz`` — note the
+                     ``_1`` build-revision infix between the version and the
+                     OS, and ``aarch64`` (not ``arm64``) for the ARM asset.
+                     The previous code built ``osquery-5.10.2.linux_x86_64.
+                     tar.gz`` (missing ``_1``, always 404) and treated linux
+                     arm64 as unpublished (it *is* published, just under
+                     ``aarch64``).
+          - macOS:  only ONE tarball is published —
+                     ``osquery-5.10.2_1.macos_x86_64.tar.gz`` — there is no
+                     ``macos_arm64.tar.gz`` asset for this release (Apple
+                     Silicon support for 5.10.2 ships only in the universal
+                     ``.pkg``, which this tar-only bootstrapper does not
+                     unpack). This is the exact 404 this bootstrapper was
+                     hitting on Apple Silicon: it built
+                     ``osquery-5.10.2.macos_arm64.tar.gz``, which does not
+                     exist. This x86_64 tarball is used for BOTH amd64 and
+                     arm64 Macs — on arm64 the extracted ``osqueryi`` runs
+                     under Rosetta 2 (it is an Intel binary, not a universal
+                     one), which the caller is responsible for having
+                     available; there is no other tar.gz option for arm64.
+          - windows: only ``.msi``/``.zip`` assets are published (no
+                     ``.tar.gz``), so windows keeps returning ``None`` — this
+                     bootstrapper only knows how to unpack ``.tar.gz`` via
+                     :meth:`_extract_executable_member`.
+
+        Returns ``None`` for platform/arch combos osquery does not publish a
+        tarball for.
         """
-        # Map the normalized arch back to osquery's release-asset naming.
-        osq_arch = {"amd64": "x86_64", "arm64": "arm64"}.get(arch)
-        if osq_arch is None:
-            return None
         if os_name == "darwin":
-            asset_os = "macos"
-        elif os_name == "linux":
-            asset_os = "linux"
-            # osquery 5.10.2 publishes only an x86_64 linux tarball.
-            if osq_arch != "x86_64":
+            # Only one macOS tarball is published (x86_64); arm64 has no
+            # native tar.gz for 5.10.2, so both arches resolve here (runs
+            # under Rosetta 2 on Apple Silicon).
+            return f"{OSQUERY_BASE_URL}/osquery-{OSQUERY_VERSION}_1.macos_x86_64.tar.gz"
+        if os_name == "linux":
+            # Map the normalized arch back to osquery's release-asset naming.
+            osq_arch = {"amd64": "x86_64", "arm64": "aarch64"}.get(arch)
+            if osq_arch is None:
                 return None
-        else:
-            return None
-        filename = f"osquery-{OSQUERY_VERSION}.{asset_os}_{osq_arch}.tar.gz"
-        return f"{OSQUERY_BASE_URL}/{filename}"
+            return f"{OSQUERY_BASE_URL}/osquery-{OSQUERY_VERSION}_1.linux_{osq_arch}.tar.gz"
+        return None
 
     @staticmethod
     def _codebase_memory_download_url(os_name: str, arch: str) -> str | None:
