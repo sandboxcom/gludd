@@ -121,6 +121,13 @@ A  tests/unit/test_model_search_searx.py
 3. [ ] Phase I.1 backlog resolution (4 stale BACKLOG findings)
 4. [ ] Phase I.2 integration stub resolution (11 TODO(integration) markers)
 
+### New Capability: ci-await (2026-07-14)
+
+- `make ci-await BRANCH=<b> [TIMEOUT=<s>]` — polls CI for a branch until terminal state
+- Script: `scripts/ci_await.py` — subprocess poll loop with timestamped heartbeats
+- Returns: 0=GREEN, 1=RED, 2=TIMEOUT (default 1800s)
+- Uses gh CLI directly (no sub-shell `make ci-verdict` nesting)
+
 ### Last Updated
 - **2026-07-14 — Session 30 (FINAL).** On `master` branch, HEAD `b1582967`. 19 commits on master (26292054..b1582967). Enforcement bugs fixed: saveState EXDEV, FLOOR=10 alignment, input shapes, dispatch counting, camelCase. 1,896+ TDD tests. 0 untested modules. 13/13 hot modules built. CI pending.
 

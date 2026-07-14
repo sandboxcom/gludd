@@ -70,6 +70,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         script-count strip-enforce-stop test-hooks-live test-hook-runtime \
         verify-enforcement \
         ci-view ci-rerun ci-trigger ci-active ci-job-log \
+        ci-await \
         ci-busy-check ci-safe-push pre-push-check push-guarded \
         git-index git-search git-stats agent-report \
         searx-up searx-down searx-test searx-start searx-stop searx-status searx-install \
@@ -191,6 +192,16 @@ help:
 	@echo "  ansible-syntax        Validate playbook syntax"
 	@echo "  playbook-list         List registered playbooks"
 	@echo "  molecule-test         Run molecule tests"
+	@echo ""
+	@echo "  --- CI ---"
+	@echo "  ci-await BRANCH=<b> [TIMEOUT=<s>]  Poll CI for branch until terminal (green/red/timeout)"
+	@echo "  ci-verdict-safe        Cooldown-enforced CI check (prefer over bare ci-verdict)"
+	@echo "  ci-dashboard           One-shot compact CI run listing"
+	@echo "  ci-diagnose            Fetch CI failure annotations and group by root cause"
+	@echo "  ci-cooldown-status     Show remaining cooldown seconds"
+	@echo "  ci-view RUN=<id>       Show CI run details (jobs, steps, failures)"
+	@echo "  ci-active              List active/in-flight CI runs"
+	@echo "  ci-greenness           CI reliability ratio (green / total completed)"
 	@echo ""
 	@echo "  --- Git Remote ---"
 	@echo "  git-remote-sandboxcom Configure sandboxcom GitHub remote with SSH key"
@@ -1409,6 +1420,20 @@ ci-wait:
 		ELAPSED=$$((ELAPSED + INTERVAL)); \
 	done; \
 	echo "=== CI-WAIT: timed out after $$MAX_WAIT seconds ==="; exit 1
+
+# ci-await: Poll CI for a branch until terminal (green/red) with timestamped
+# heartbearts. The polling loop runs in a Python subprocess — no sleep on the
+# main thread. Returns 0=GREEN, 1=RED, 2=TIMEOUT.
+#
+# Usage:
+#   make ci-await BRANCH=master                  (30 min default timeout)
+#   make ci-await BRANCH=development TIMEOUT=900 (15 min timeout)
+#
+# CRITICAL: do NOT dispatch this as a subagent that holds a slot for 30 min.
+# Use this at natural breaks to get a definitive CI verdict.
+ci-await:
+	@if [ -z "$(BRANCH)" ]; then echo "Usage: make ci-await BRANCH=<branch> [TIMEOUT=<seconds>]"; exit 1; fi
+	@$(PYTHON) scripts/ci_await.py "$(BRANCH)" --timeout $(or $(TIMEOUT),1800)
 
 git-pull-sandboxcom:
 	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git pull --rebase sandboxcom master
