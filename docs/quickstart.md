@@ -63,10 +63,16 @@ No setup is required. The daemon is SQLite-only; any non-SQLite URL is refused a
 
 ### Step 3: Select a Model Profile
 
-Model profiles are in `config/model_profiles/`. The default is `zai_coder`. To use a
-different provider, copy the example profile and edit it:
+> **Read this or nothing will work.** The daemon discovers its config directory as
+> `$GLUDD_CONFIG_DIR` → `~/.config/general-ludd` → `/etc/general-ludd`. **The repo's
+> own `config/` directory is NOT on that path** — it holds examples to copy, not
+> files the daemon reads. See "The silent no-op trap" below.
+
+The example profiles live in the repo at `config/model_profiles/`. Copy the one you
+want into the discovery path and edit it:
 
 ```bash
+mkdir -p ~/.config/general-ludd/model_profiles
 cp config/model_profiles/openai_example.yml ~/.config/general-ludd/model_profiles/openai.yml
 ```
 
@@ -75,6 +81,29 @@ Then update `~/.config/general-ludd/general-ludd.yml`:
 ```yaml
 model_routing:
   default_profile: openai_gpt4
+```
+
+Alternatively, point the daemon straight at the repo's config tree:
+
+```bash
+export GLUDD_CONFIG_DIR="$PWD/config"
+```
+
+### The silent no-op trap (read before filing a bug)
+
+If you start the daemon **from a repo checkout without `GLUDD_CONFIG_DIR` set**, it
+finds no `model_profiles/`. No profiles load, the model gateway stays `None`, and the
+dispatcher silently falls back to a **no-op executor**. Every task you dispatch then
+comes back `status="completed"` with **empty output**, **no warning is logged**, and
+`/healthz` and `/readyz` still return 200/ready.
+
+Symptom: **agents "succeed" instantly and do nothing.** Fix: set `GLUDD_CONFIG_DIR`,
+or install the config into `~/.config/general-ludd/`.
+
+Verify before you submit work:
+
+```bash
+gludd models router-status   # must list an active profile — an empty list means you are in the trap
 ```
 
 ### Step 4: Start the Daemon
@@ -178,7 +207,12 @@ uv run gludd skills install tdd-discipline
 
 ## Next Steps
 
+- Read `docs/CONFIG_REFERENCE.md` — the authoritative config reference, including the
+  **experimental flags you must not enable** (`GLUDD_WRITER_MODE=subprocess`,
+  `pipeline.enabled`)
 - Read `docs/configuration.md` for full config options
 - Read `docs/architecture.md` to understand how the system works
-- Explore `config/` for model profiles, agent definitions, etc.
+- Read `docs/RELEASE_RUNBOOK.md` if you are cutting a release
+- Explore `config/` for model profiles, agent definitions, etc. (examples to copy —
+  the daemon does not read this directory)
 - Run `make help` to see all available make targets

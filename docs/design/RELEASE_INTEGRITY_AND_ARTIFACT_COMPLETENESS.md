@@ -100,13 +100,49 @@ REMAINING (next release):
   - container-image (GHCR) parity check with the workflow's `container` job;
   - signature/provenance verification once artifacts are signed.
 
-**R-8 — Local packaging targets must be version-correct (NEW, from audit).**
-`deb-package`/`rpm-package`/`DMG_NAME`/`WINDOWS_INSTALLER` interpolate
-`$(VERSION)` which only CI sets — a bare local run yields `gludd__amd64.deb`
-with an empty `Version:`. Default `VERSION` from `pyproject.toml` in the
-Makefile. Also: `macos-dmg` hardcodes `-macos-arm64` regardless of host arch;
-`rpm-package` uses a fixed shared `/tmp/gludd-rpmbuild` (concurrent-build
-collision). Effort: S.
+**R-8 — Local packaging targets (CORRECTED 2026-07-14 — the original claim was
+WRONG; do not act on it).**
+
+~~`$(VERSION)` is undefined in the Makefile~~ — **REFUTED.** `Makefile:2771`
+defines it: `VERSION := $(shell $(UV) run python -c "from general_ludd import
+__version__; print(__version__)")`. It resolves correctly from
+`src/general_ludd/__init__.py`, and `.deb`/`.rpm` substitute it into their
+`VERSION_PLACEHOLDER` templates (`Makefile:2938`, `:2952`). The earlier audit
+claim that a local `make deb-package` yields an empty `Version:` was false.
+Left here as a record, because a spec that sends someone to "fix" working code
+is worse than no spec.
+
+**Real, remaining issues in the same area:**
+- **`dist/windows/gludd.nsi` silently defaults to version `0.0.0`.** It has
+  `!ifndef VERSION` / `!define VERSION "0.0.0"`. The Makefile *does* pass
+  `-DVERSION=$(VERSION)` (`:2992`) and CI does too (build.yml:632), so it is not
+  broken today — but if either ever stops passing it, makensis emits
+  `gludd-0.0.0-setup-x86_64.exe` **without erroring**. Given that beta.1 shipped
+  1-of-12 assets unnoticed, a silently mislabelled installer is exactly the
+  failure class to eliminate. Fix: `!ifndef VERSION` → `!error "VERSION must be
+  passed via -DVERSION"`. Effort: S.
+- `macos-dmg` hardcodes `-macos-arm64` (`DMG_NAME`, `:2964`) regardless of host
+  arch — an x86_64 mac would produce a mislabelled dmg. Effort: S.
+- `rpm-package` uses a fixed shared `/tmp/gludd-rpmbuild` (`:2950`) — concurrent
+  builds collide. Effort: S.
+- `dist/rpm/gludd.spec:30` has a hardcoded changelog date. Cosmetic.
+
+**R-13 — The `/Users/` leak guard covers only the tarball (NEW, and it already
+cost us).** The only developer-path guard is
+`grep -rIl -e '/Users/' -e 'Mac.localdomain' $(TARBALL_DIR)` — implemented twice
+(inline in `dist` at `Makefile:2920-2923`, and as `dist-path-check` at
+`:2323-2328`) — and **both only check `dist/general-ludd-agent-*` after a build**.
+`dist-path-check` has **zero references in `.github/`**: it is not wired into
+`make gate`, `make lint`, or any workflow. So `molecule/`, `playbooks/`,
+`roles/`, `collections/`, `src/`, `scripts/` and the Makefile itself are
+**entirely unguarded** — which is precisely why four molecule scenarios shipped
+with hardcoded `/Users/shawnwilson/...` paths that cannot exist on a CI runner,
+and why a **shipped** collection role
+(`collections/.../roles/log_analyzer/playbook.yml`) carried a personal
+pytest-tmp path. Note `make ansible-syntax` only covers `playbooks/*.yml` and
+`make lint` is ruff over `src`+`tests`, so **neither is structurally capable of
+catching a YAML path bug**. Fix: a repo-wide tracked-file lint (excluding
+`docs/` and the guard's own lines) wired into `gate` + CI. Effort: S.
 
 **R-12 — Installer FORMATS are wrong for a daemon, and nothing is signed (NEW,
 operator-raised 2026-07-14).**

@@ -176,11 +176,31 @@ make help        # list all available make targets
 
 ### Start the Daemon
 
-```bash
-# Quick start with defaults (SQLite, no model key — will warn)
-uv run gludd daemon --port 8000
+> **⚠ Read this first — the #1 "why does nothing happen?" trap.**
+>
+> Config discovery is `$GLUDD_CONFIG_DIR` → `~/.config/general-ludd` →
+> `/etc/general-ludd`. **The repo's own `config/` directory is NOT on that path.**
+>
+> If you start the daemon from a repo checkout **without `GLUDD_CONFIG_DIR` set**, no
+> model profiles load, the model gateway stays `None`, and the dispatcher silently
+> falls back to a **no-op executor** — every dispatched agent returns
+> `status="completed"` with **empty output** and **no warning**, while `/healthz` and
+> `/readyz` still return 200/ready. Agents appear to succeed instantly and do nothing.
+>
+> Set the config dir before you start:
+>
+> ```bash
+> export GLUDD_CONFIG_DIR="$PWD/config"     # from a source checkout
+> ```
+>
+> Then confirm: `gludd models router-status` must list an active profile. An empty
+> list means you are in the trap.
 
-# With a config directory and model profile
+```bash
+# From a source checkout — point at the repo's config tree
+GLUDD_CONFIG_DIR="$PWD/config" uv run gludd daemon --port 8000
+
+# With an installed config directory
 uv run gludd daemon --config-dir ~/.config/general-ludd --port 8000
 ```
 
@@ -714,6 +734,71 @@ login_api_key: "{{ lookup('env', 'GITHUB_TOKEN') }}"
 
 The redirect server binds **only** on loopback (127.0.0.1) — it is never reachable off-host.
 
+## Releases
+
+Full procedure: **[docs/RELEASE_RUNBOOK.md](docs/RELEASE_RUNBOOK.md)** — read it before
+touching any release target.
+
+```bash
+make release-cut TAG=v0.1.0-beta.2 MSG='release notes'
+```
+
+`release-cut` is the **only sanctioned path**. It is fail-closed: it refuses to tag
+unless CI is green for the exact SHA, pushes the annotated tag (which is what triggers
+the CI release job), and then verifies the published release.
+
+**A tag is not a release, and "has assets" is not "complete".**
+
+- **`make verify-release-completeness TAG=...` is the real gate.** It checks 12 artifact
+  categories — 4 platform binaries (linux-x86_64, linux-aarch64, macos-arm64,
+  windows-x86_64), `.deb`, `.rpm`, `.dmg`, `.exe` installer, checksums, SBOM, `LICENSE`,
+  `THIRD_PARTY_LICENSES` — plus: the prerelease flag must match the tag shape
+  (`-alpha`/`-beta`/`-rc` ⇒ prerelease), asset names must carry the tag's version, and no
+  asset may be zero-size. CI runs it as a **blocking step** on tag builds.
+- **`make verify-release-artifact` is NOT the gate.** It only proves "non-draft and at
+  least one asset exists" — a release with one binary and no SBOM, no checksums and no
+  Linux build passes it.
+- **`make release-create` cannot publish a public release.** It is a CI-green-gated,
+  **draft-only** single-binary fallback for bootstrap situations.
+- **A poll timeout means "still building", not "failed".** A cold tag-triggered matrix
+  build takes **30–60 minutes**; the local poll gives up after ~10. Re-check with
+  `make verify-release-completeness TAG=...` rather than assuming the release is broken.
+
+Repairing an already-published release:
+
+```bash
+make release-upload-assets TAG=v0.1.0-beta.2 FILES='...'   # idempotent (--clobber)
+make release-set-prerelease TAG=v0.1.0-beta.2
+make verify-release-completeness TAG=v0.1.0-beta.2
+```
+
+**Provenance rule:** only ever upload **CI-built artifacts from the tagged SHA**. Never
+upload locally-built binaries — that falsifies what users are running. If the tagged SHA
+is red, cut a new tag from a green SHA instead of back-filling.
+
+### The `dist/` directory is half-tracked
+
+`dist/` is **not** a pure build-output directory. It holds hand-authored **build inputs**
+that the packaging targets read —
+
+| Input | Read by |
+|---|---|
+| `dist/install.sh`, `dist/README.md`, `dist/general-ludd.service` | `make dist` |
+| `dist/debian/control` | `make deb-package` |
+| `dist/rpm/gludd.spec` | `make rpm-package` |
+| `dist/windows/gludd.nsi` | `make windows-installer` |
+
+— alongside **gitignored build outputs** (`dist/gludd`, `dist/binaries/`, tarballs,
+`.deb`/`.rpm`/`.dmg`/`.exe`, `dist/*.json`).
+
+**Deleting `dist/` to "clean up" breaks `make dist`** (it fails at
+`chmod: dist/install.sh: No such file or directory`). Use `make dist-clean`, which
+removes only the outputs. Check `.gitignore` before removing anything under `dist/`.
+
+Note that a local `make dist` cannot produce the full 12-asset set — the Linux and
+Windows artifacts come from the CI matrix. That is expected, and it is why releases must
+come from CI.
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contributor guide.
@@ -759,7 +844,21 @@ make test-count     # 0 collection errors
 
 ## Configuration Reference
 
-See [docs/CONFIG_REFERENCE.md](docs/CONFIG_REFERENCE.md) for the full reference. Quick index:
+See [docs/CONFIG_REFERENCE.md](docs/CONFIG_REFERENCE.md) for the full reference.
+
+**Config discovery is `$GLUDD_CONFIG_DIR` → `~/.config/general-ludd` →
+`/etc/general-ludd`. The `config/` directory below is NOT on that path** — these files
+are examples to copy (or to point `GLUDD_CONFIG_DIR` at). See the warning under
+[Start the Daemon](#start-the-daemon).
+
+### Feature flags that are NOT safe to enable
+
+| Flag | Status |
+|---|---|
+| `GLUDD_WRITER_MODE=subprocess` | **DO NOT USE — structurally non-functional.** The in-process `WriteQueue` cannot reach the writer subprocess, a config-shape bug keeps the child in a stub branch, and HTTP workers get a read-only engine. Enabling it **breaks every write endpoint**. `inline` (the default) is the only working mode. |
+| `pipeline.enabled` (feature #77) | **EXPERIMENTAL — do not enable.** Its gate is hardcoded `return True`, and its anti-clobber merge can never detect a conflict. Harmless today only because nothing feeds it. |
+
+Quick index:
 
 | File | Purpose |
 |------|---------|

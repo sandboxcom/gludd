@@ -10,11 +10,31 @@ configuration (including budget settings) is in
 [docs/CONFIG_REFERENCE.md](../CONFIG_REFERENCE.md). The quick reference below
 covers day-to-day health/budget checks and troubleshooting entry points.
 
+**The troubleshooting table lives in
+[CONFIG_REFERENCE.md §4](../CONFIG_REFERENCE.md#4-troubleshooting)** — start there for
+symptom → cause → fix.
+
+## The first thing to check: are model profiles actually loaded?
+
+Config discovery is `$GLUDD_CONFIG_DIR` → `~/.config/general-ludd` → `/etc/general-ludd`.
+**The repo's own `config/` directory is NOT on that path.** A daemon started from a
+checkout without `GLUDD_CONFIG_DIR` loads no model profiles, the model gateway stays
+`None`, and the dispatcher silently falls back to a **no-op executor**: every dispatched
+agent returns `status="completed"` with **empty output** and no warning, while `/healthz`
+and `/readyz` still return 200/ready.
+
+```bash
+gludd models router-status   # MUST list an active profile — empty means the daemon can do no work
+```
+
+**`/healthz` returning ok does not mean the daemon can do any work.** Treat
+`models router-status` as the real liveness check.
+
 ## Quick Reference
 
 ### Health Checks
 ```bash
-# Daemon health
+# Daemon health (liveness only — does NOT prove model profiles loaded)
 curl http://localhost:8000/healthz
 
 # Full status with facts

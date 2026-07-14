@@ -192,6 +192,24 @@ will fail if scenarios are removed.
 
 ## Configuration Layers
 
+### Config directory discovery
+
+The daemon locates its config directory in this order:
+
+```
+$GLUDD_CONFIG_DIR  →  ~/.config/general-ludd  →  /etc/general-ludd
+```
+
+**The repo's own `config/` directory is NOT on that path** — it holds examples to copy.
+
+If no config directory is found, `load_model_profiles()` returns `[]`, `model_gateway`
+stays `None`, and the dispatcher **silently falls back to a no-op executor**: dispatched
+agents return `status="completed"` with empty output and no warning logged, while
+`/healthz` and `/readyz` still report 200/ready. This is the most common cause of "the
+daemon runs but agents do nothing" — set `GLUDD_CONFIG_DIR` when running from a checkout.
+
+### Value layering (within the discovered directory)
+
 ```
 Environment Variables (highest priority)
     ↓
@@ -223,7 +241,13 @@ GitHub Actions (`.github/workflows/build.yml`):
 2. **molecule** — all molecule scenarios after gate passes
 3. **linux / macos / windows** — PyInstaller binary + tarball, timestamped alpha version on push;
    stable version on tag (`v*`)
-4. **release** — uploads artifacts as a GitHub Release
+4. **release** (tag builds only) — publishes the GitHub Release, then runs
+   `scripts/verify_release_completeness.py` as a **blocking** final step: 12 artifact
+   categories, the prerelease-flag-vs-tag-shape rule, version-stamped asset names, and no
+   zero-size assets. An incomplete release fails the workflow.
+
+A cold tag-triggered matrix build takes **30–60 minutes**. See
+[RELEASE_RUNBOOK.md](RELEASE_RUNBOOK.md) for the operator procedure.
 
 CI is currently being stabilized — consult the Actions tab for real current status.
 

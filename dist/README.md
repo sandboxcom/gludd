@@ -176,13 +176,38 @@ make help        # list all available make targets
 
 ### Start the Daemon
 
-```bash
-# Quick start with defaults (SQLite, no model key — will warn)
-uv run gludd daemon --port 8000
+> **⚠ Read this first — the #1 "why does nothing happen?" trap.**
+>
+> Config discovery is `$GLUDD_CONFIG_DIR` → `~/.config/general-ludd` →
+> `/etc/general-ludd`. **The repo's own `config/` directory is NOT on that path.**
+>
+> If you start the daemon from a source checkout **without `GLUDD_CONFIG_DIR` set**, no
+> model profiles load, the model gateway stays `None`, and the dispatcher silently falls
+> back to a **no-op executor** — every dispatched agent returns `status="completed"` with
+> **empty output** and **no warning**, while `/healthz` and `/readyz` still return
+> 200/ready. Agents appear to succeed instantly and do nothing.
+>
+> (A tarball install is unaffected: it writes its config to `/etc/general-ludd/`, which
+> *is* on the discovery path.)
+>
+> Confirm with `gludd models router-status` — it must list an active profile.
 
-# With a config directory and model profile
-uv run gludd daemon --config-dir ~/.config/general-ludd --port 8000
+```bash
+# From a source checkout — point at the repo's config tree
+GLUDD_CONFIG_DIR="$PWD/config" uv run gludd daemon --port 8000
+
+# With an installed config directory (tarball / package install)
+uv run gludd daemon --config-dir /etc/general-ludd --port 8000
 ```
+
+### Feature flags that are NOT safe to enable
+
+- **`GLUDD_WRITER_MODE=subprocess`** — **DO NOT USE.** Structurally non-functional: the
+  in-process `WriteQueue` cannot reach the writer subprocess, a config-shape bug keeps
+  the child in a stub branch, and HTTP workers get a read-only engine. Enabling it
+  **breaks every write endpoint**. `inline` (the default) is the only working mode.
+- **`pipeline.enabled`** (feature #77) — **EXPERIMENTAL, do not enable.** Its gate is
+  hardcoded `return True` and its anti-clobber merge can never detect a conflict.
 
 ### Submit Your First Todo
 

@@ -15,15 +15,21 @@ run the daemon end-to-end.
 ## TL;DR — minimal path (3 commands)
 
 ```bash
-make init                       # 1. install deps (uv sync) + create dirs
-export ZAI_API_KEY=sk-...       # 2. configure ONE model provider
-gludd daemon                    # 3. start server (127.0.0.1:8000)
+make init                          # 1. install deps (uv sync) + create dirs
+export ZAI_API_KEY=sk-...          # 2. configure ONE model provider
+export GLUDD_CONFIG_DIR="$PWD/config"  # 3. REQUIRED from a repo checkout — see §2.0
+gludd daemon                       # 4. start server (127.0.0.1:8000)
 # in another shell:
+gludd models router-status         # MUST list a profile — empty means step 3 was skipped
 gludd add "Write a hello-world test" --work-type code
-gludd status                    # watch the todo move to completed
+gludd status                       # watch the todo move to completed
 ```
 
 That is the whole product spine. Everything below is detail.
+
+> **Do not skip step 3.** The repo's `config/` directory is not on the config
+> discovery path. Without `GLUDD_CONFIG_DIR`, no model profiles load and every
+> agent silently "completes" with empty output. See §2.0.
 
 ---
 
@@ -332,7 +338,11 @@ router-status` (against a running daemon) lists the active profile.
 
 ### Step 3 — Start the daemon
 
+**From a repo checkout, set `GLUDD_CONFIG_DIR` first** (§2.0) — otherwise no model
+profiles load and the dispatcher silently no-ops.
+
 ```bash
+export GLUDD_CONFIG_DIR="$PWD/config"
 gludd daemon
 # or with flags:
 gludd daemon --host 127.0.0.1 --port 8000 --log-level info --tick-interval 1.0
@@ -348,6 +358,11 @@ registers model/MCP/permission subsystems.
 (equivalently `gludd health`). The first tick logs show the event loop
 running. Binding to a non-loopback host auto-generates and prints a `GLUDD_PSK`
 — all clients must then send `Authorization: Bearer <psk>`.
+
+> **`/healthz` and `/readyz` returning 200/ready does NOT prove the daemon can do
+> any work.** They report 200 even when zero model profiles loaded and the
+> dispatcher is a no-op. The real liveness check is
+> `gludd models router-status` — it must list an active profile. See §2.0.
 
 **Verified:** the daemon factory and event loop import cleanly
 (`make healthcheck`); full boot behaviour is pinned by
@@ -410,9 +425,38 @@ make gate-background && make gate-status-check
 
 ---
 
-## 5. Cross-references
+## 5. Experimental flags — DO NOT ENABLE
+
+These knobs exist in the code and in config schemas but are **not functional**.
+They are listed here so operators do not "discover" them and turn them on.
+
+### `GLUDD_WRITER_MODE=subprocess` — structurally non-functional
+
+Setting this **breaks every write endpoint.** Three independent defects:
+
+- The `WriteQueue` is an in-process deque with no IPC, while the writer is a
+  real subprocess — the queue **cannot reach the writer child** at all.
+- A config-shape bug leaves the writer child permanently in a stub branch, so it
+  never does any work.
+- HTTP workers are handed a genuinely read-only engine (`PRAGMA query_only=ON`).
+
+Net effect: writes are rejected and the writer does nothing.
+**`inline` (the default) is the only working mode.** Do not set this variable.
+
+### `pipeline.enabled` (feature #77) — EXPERIMENTAL, do not enable
+
+The pipeline feature's quality gate is hardcoded to `return True` — it reports
+"GREEN — committed" for a validation that never ran — and its anti-clobber merge
+passes the repo's own content as both the merge base and "ours", so it **can
+never detect a conflict**. It is harmless today only because nothing feeds it.
+Leave `pipeline.enabled` off.
+
+---
+
+## 6. Cross-references
 
 - `docs/quickstart.md` — fast-path narrative version of §3
+- `docs/RELEASE_RUNBOOK.md` — cutting a release and verifying it actually shipped
 - `docs/configuration.md` — detailed `general-ludd.yml` field reference
 - `docs/model-setup.md` — model provider onboarding
 - `docs/PROVIDER_ONBOARDING.md` — adding a new provider
