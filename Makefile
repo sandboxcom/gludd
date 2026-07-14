@@ -748,6 +748,9 @@ strip-enforce-stop:
 test-hook-runtime:
 	@$(UV) run python scripts/test_hook_runtime.py -v
 
+test-hook-fire:
+	@node --experimental-strip-types /tmp/test-hook-fire.ts
+
 bisect-ts-parse:
 	@$(PYTHON) scripts/bisect_ts_parse.py
 
@@ -3989,3 +3992,6 @@ restore-opencode:
 # ── untested-module discovery ────────────────────────────────────────────────
 find-untested:
 	$(PYTHON) scripts/find_untested_modules.py
+
+test-hot-module-load:
+	@node --experimental-strip-types -e "try { const m = require('/tmp/gludd-hot-enforce-session-start.js'); console.log('LOADED OK: typeof default=' + typeof m.default + ', keys=' + Object.keys(m).join()); } catch(e) { console.log('LOAD FAILED: ' + e.message); console.log('FALLBACK: loadHotModule would use defaultImpl'); }"

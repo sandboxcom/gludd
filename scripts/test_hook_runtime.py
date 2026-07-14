@@ -2055,6 +2055,36 @@ try {{
     _clean_state_files(state_file)
 
 
+def test_session_start_dispatch_increment_and_bash_deny():
+    """task tool increments dispatches; bash with dispatches<10 then denied."""
+    state_file = os.path.join("/tmp", f"test-ss-dispatch-inc-{os.getpid()}.json")
+    _fresh_session_state(state_file, readsDone=True, dispatches=0)
+    code = f"""\
+const fs = await import('node:fs')
+const mod = await import('{PLUGIN_DIR}/enforce-session-start.ts')
+const plugin = await mod.default({{}})
+// Call 1: task dispatch → should increment dispatches to 1
+await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
+const state1 = JSON.parse(fs.readFileSync('{state_file}', 'utf8'))
+const dp1 = state1.dispatches
+// Call 2: bash (non-dispatch, non-read) → should deny (dispatches=1 < 10)
+let denied = false
+let msg = ''
+try {{
+  await plugin['tool.execute.before']({{tool: 'bash'}}, undefined)
+}} catch (e) {{
+  denied = true
+  msg = e.message
+}}
+console.log(JSON.stringify({{dp1, denied, hasProtocol: msg.includes('SESSION START PROTOCOL')}}))
+"""
+    result = _run_ts(code, env_override={"GLUDD_SESSION_STATE": state_file})
+    assert result["dp1"] == 1, f"Expected dispatches=1 after task call, got: {result}"
+    assert result["denied"] == True, f"Expected deny on bash with dispatches=1<10, got: {result}"
+    assert result["hasProtocol"] == True, f"Deny message missing SESSION START PROTOCOL: {result}"
+    _clean_state_files(state_file)
+
+
 # ---------------------------------------------------------------------------
 # enforce-make.ts  —  bash command enforcement (non-make + metachar blocking)
 # ---------------------------------------------------------------------------

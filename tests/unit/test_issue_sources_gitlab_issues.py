@@ -219,8 +219,8 @@ def test_module_exports():
 
 
 def test_http_response_protocol():
+
     from general_ludd.issue_sources.gitlab_issues import HTTPResponse
-    from typing import Protocol, runtime_checkable
     assert HTTPResponse.__class__.__name__ == "_ProtocolMeta"
     assert hasattr(HTTPResponse, "__protocol_attrs__")
 
@@ -234,8 +234,8 @@ def test_http_response_satisfies():
 
 
 def test_http_transport_protocol():
+
     from general_ludd.issue_sources.gitlab_issues import HTTPTransport
-    from typing import Protocol, runtime_checkable
     assert HTTPTransport.__class__.__name__ == "_ProtocolMeta"
     assert hasattr(HTTPTransport, "__protocol_attrs__")
 
@@ -261,7 +261,7 @@ def test_is_internal_host_delegates():
 # -- default transport --------------------------------------------------
 
 def test_default_transport_returns_callable():
-    from general_ludd.issue_sources.gitlab_issues import _default_transport, HTTPTransport
+    from general_ludd.issue_sources.gitlab_issues import _default_transport
     transport = _default_transport()
     assert callable(transport)
 

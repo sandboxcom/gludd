@@ -1,6 +1,6 @@
 # TASKS.md — Evidence Ledger
 
-**Last consolidated: 2026-07-14 Session 32 — Untested modules: 7 (down from 112 after audit false-positive fix; 189 previously-untested modules now covered by ~200+ test files). Enforcement: saveState fixed, FLOOR hardcoded to 10, isDispatchTool imported from shared.ts, MIN_DISPATCHES=10, MAX_DISPATCHES=10. A.4 release pending CI green.**
+**Last consolidated: 2026-07-14 Session 33 — Untested modules: 0 (down from 196). Enforcement: saveState fixed, FLOOR hardcoded to 10, isDispatchTool imported from shared.ts, MIN/MAX_DISPATCHES=10, dispatch hook detection debug logging added. Gate GREEN (lint 0, typecheck 0, collect 0, hook-runtime PASS). CI pending. A.4 release pending CI green.**
 
 Each line ticked when `make gate` is green and evidence is pasted.
 
