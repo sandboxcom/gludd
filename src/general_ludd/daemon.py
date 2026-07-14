@@ -448,7 +448,9 @@ def build_secrets_resolver(
         class _LazyProjectSecrets:
             def __init__(self, base: Any):
                 self._base = base
-            def resolve(self, alias_name: str) -> str | None:
+            def resolve(self, alias_name: str, project_id: str | None = None) -> str | None:
+                if project_id:
+                    return self.for_project(project_id).resolve(alias_name)
                 result = self._base.resolve(alias_name)
                 if isinstance(result, str):
                     return result

@@ -7,6 +7,8 @@ import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from general_ludd.runtime.manifest_signer import ManifestSigner
+
 
 @dataclass
 class ReleaseValidationResult:
@@ -14,6 +16,7 @@ class ReleaseValidationResult:
     pip_bundle_valid: bool
     container_valid: bool
     manifest_valid: bool
+    signature_valid: bool = False
     errors: list[str] = field(default_factory=list)
 
 
@@ -25,12 +28,14 @@ class ReleaseArtifactValidator:
         pip_bundle_valid = self._check_pip_bundle(artifacts_path, errors)
         container_valid = self._check_container(artifacts_path, version, errors)
         manifest_valid = self._check_manifest(artifacts_path, version, errors)
+        signature_valid = self._check_signature(artifacts_path, errors)
 
         return ReleaseValidationResult(
             valid=len(errors) == 0,
             pip_bundle_valid=pip_bundle_valid,
             container_valid=container_valid,
             manifest_valid=manifest_valid,
+            signature_valid=signature_valid,
             errors=errors,
         )
 
@@ -150,4 +155,17 @@ class ReleaseArtifactValidator:
             errors.append("MANIFEST.json is not valid JSON")
             return False
 
+        return True
+
+    def _check_signature(self, artifacts_path: Path, errors: list[str]) -> bool:
+        manifest_file = artifacts_path / "MANIFEST.json"
+        sig_file = artifacts_path / "MANIFEST.json.sig"
+
+        if not sig_file.exists():
+            return False
+
+        result = ManifestSigner().verify(str(manifest_file), str(sig_file))
+        if not result.success:
+            errors.extend(result.errors)
+            return False
         return True

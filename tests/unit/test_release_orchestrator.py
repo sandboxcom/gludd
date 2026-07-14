@@ -54,6 +54,7 @@ def _validation_result(valid: bool = True, **overrides) -> ReleaseValidationResu
         pip_bundle_valid=valid,
         container_valid=valid,
         manifest_valid=valid,
+        signature_valid=False,
         errors=[],
     )
     defaults.update(overrides)
@@ -88,6 +89,8 @@ class TestBuildAndValidateReleasePipOnlyHappyPath:
                 "wheel_path": "/out/w.whl",
                 "sdist_path": "/out/s.tar.gz",
                 "manifest_path": "/out/MANIFEST.json",
+                "sig_path": "",
+                "signature_valid": False,
             },
             "container": None,
             "validation": {
@@ -95,6 +98,7 @@ class TestBuildAndValidateReleasePipOnlyHappyPath:
                 "pip_bundle_valid": True,
                 "container_valid": True,
                 "manifest_valid": True,
+                "signature_valid": False,
                 "errors": [],
             },
         }

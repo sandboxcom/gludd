@@ -3,7 +3,6 @@
 FETCH STRATEGY LEGEND (used in each class docstring):
   LIVE    — fetches from a real public pricing API; sources reflect actual live data.
   STATIC  — hardcoded table with documented source URL; prices accurate at recorded date.
-             A TODO(integration) note marks where live fetch should be added.
   TODO    — billing terms registered but price fetch not yet implemented.
 
 BILLING SEMANTICS ACCURACY NOTE:
@@ -20,6 +19,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import time
 from typing import Any, Protocol, runtime_checkable
 
@@ -212,8 +212,8 @@ class AnthropicSource:
 
     Anthropic does not publish a machine-readable pricing API.
     Prices documented from the public pricing page.
-
-    # TODO(integration): Add web-scraping or poll Anthropic SDK metadata for live rates.
+    Live pricing is available via LiteLLMJSONSource("anthropic") which fetches
+    from the litellm cross-provider catalog.
 
     Billing:
       - terms: postpaid_per_use (Stripe per-call billing; no prepaid balance)
@@ -299,9 +299,8 @@ class OpenAISource:
 
     OpenAI does not publish a machine-readable public pricing API (the /v1/models
     endpoint lists models but not their prices).
-
-    # TODO(integration): Scrape https://openai.com/api/pricing or use OpenAI SDK
-    # metadata to get live prices; alternatively parse the pricing page HTML.
+    Live pricing is available via LiteLLMJSONSource("openai") which fetches
+    from the litellm cross-provider catalog.
 
     Billing:
       - terms: postpaid_per_use (credit/debit card billed per API call)
@@ -396,10 +395,8 @@ _RUNPOD_SPOT: list[tuple[str, str, int, float]] = [
 class RunPodSource:
     """FETCH STRATEGY: STATIC — hardcoded from https://www.runpod.io/gpu-instance/pricing (2025-Q4).
 
-    # TODO(integration): RunPod GraphQL API (https://graphql-spec.runpod.io/) exposes
-    # live GPU availability and pricing. Use the gpuTypes query with minMemoryInGb filter.
-    # Auth: RunPod API key in Authorization header.
-    # Example: https://www.runpod.io/docs/references/graphql/queries/gpu-types
+    Live pricing is available via ``RunPodPricingSource`` (GraphQL API), wrapped
+    in ``CachedSource`` with this static source as fallback.
 
     BILLING SEMANTICS (PREPAID — critical distinction):
       - Customer must maintain a positive credit balance (top up via card/crypto).
@@ -714,11 +711,8 @@ _LAMBDA_ONDEMAND: list[tuple[str, str, int, float]] = [
 class LambdaLabsSource:
     """FETCH STRATEGY: STATIC — hardcoded from https://lambdalabs.com/service/gpu-cloud/pricing (2025-Q4).
 
-    # TODO(integration): Lambda Labs exposes a REST API for instance pricing.
-    # See: https://docs.lambdalabs.com/cloud/rate-limits-and-quotas/
-    # API endpoint: GET https://cloud.lambdalabs.com/api/v1/instance-types
-    # Auth: Lambda API key in Authorization header (Bearer).
-    # Returns available instance types with pricing per USD/hour.
+    Live pricing is available via ``LambdaLabsPricingSource`` (REST API), wrapped
+    in ``CachedSource`` with this static source as fallback.
 
     BILLING SEMANTICS (PREPAID/PER-MINUTE — key distinctions):
       - Credit card charged on consumption; no monthly invoice.
@@ -818,11 +812,8 @@ _AWS_GPU_INSTANCES: list[tuple[str, str, int, float, bool]] = [
 class AWSSource:
     """FETCH STRATEGY: STATIC — hardcoded from https://aws.amazon.com/ec2/pricing/on-demand/ (2025-Q4).
 
-    # TODO(integration): AWS publishes machine-readable pricing at:
-    # https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonEC2/current/index.json
-    # This is a ~1GB JSON file. Use the filtered endpoint or AWS Pricing API:
-    # https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_pricing_GetProducts.html
-    # Filter by: serviceCode=AmazonEC2, instanceType=p3/p4d/p5/g5, tenancy=Shared, os=Linux
+    Live pricing is available via ``AWSPricingSource`` (boto3 GetProducts API),
+    wrapped in ``CachedSource`` with this static source as fallback.
 
     BILLING SEMANTICS (POSTPAID — critical distinction from RunPod/Lambda):
       - AWS bills POSTPAID to a monthly invoice. No prepaid balance required.
@@ -1172,11 +1163,8 @@ _GCP_GPU_INSTANCES: list[tuple[str, str, int, float, bool]] = [
 class GCPSource:
     """FETCH STRATEGY: STATIC — hardcoded from https://cloud.google.com/compute/gpus-pricing (2025-Q4).
 
-    # TODO(integration): GCP Cloud Billing API (SKU-based):
-    # https://cloud.google.com/billing/docs/reference/rest/v1/services.skus/list
-    # Filter by: serviceId=6F81-5844-456A (Compute Engine), resourceFamily=Compute,
-    # description contains "GPU". Requires GCP service account credentials.
-    # Alternatively use: https://cloudpricingcalculator.appspot.com/static/data/pricelist.json
+    Live pricing is available via ``GCPPricingSource`` (Cloud Billing SKU catalog),
+    wrapped in ``CachedSource`` with this static source as fallback.
 
     BILLING SEMANTICS (POSTPAID — same model as AWS):
       - GCP bills per SECOND for VM instances (1-minute minimum per instance start).
@@ -1538,9 +1526,8 @@ class HuggingFaceSource:
     the account and not published as a price list, so ``fetch_model_prices()``
     returns ``[]``.
 
-    # TODO(integration): HuggingFace Endpoint API exposes live per-instance
-    # pricing at https://api.endpoints.huggingface.cloud/v2/endpoint/ — it
-    # requires an HF token (not a public API), so it is not used here.
+    Live pricing is available via ``HuggingFacePricingSource`` (scrapes the HF
+    pricing page), wrapped in ``CachedSource`` with this static source as fallback.
 
     BILLING SEMANTICS (PREPAID / PER-HOUR):
       - Dedicated endpoints bill per HOUR against a prepaid account balance.
@@ -1636,8 +1623,8 @@ class ZAISource:
     USD per 1,000,000 tokens; we convert to USD per 1,000 tokens (divide by 1000)
     to match the ModelPrice convention used by the other sources.
 
-    # TODO(integration): Add HTML scraping of the pricing page (or a Z.AI SDK
-    # metadata call) to refresh these rates automatically.
+    Live pricing is available via ``ZAIPricingSource`` (scrapes the Z.AI pricing
+    page), wrapped in ``CachedSource`` with this static source as fallback.
 
     Billing:
       - terms: postpaid_per_use (billed per API call; no prepaid balance)
@@ -2022,6 +2009,397 @@ class CachedSource:
 
 
 # ---------------------------------------------------------------------------
+# Lambda Labs — LIVE compute prices via REST API
+# ---------------------------------------------------------------------------
+# Source: GET https://cloud.lambdalabs.com/api/v1/instance-types
+# Spec:   https://docs.lambdalabs.com/cloud/api
+# Auth:   ``LAMBDA_API_KEY`` environment variable sent as
+#         ``Authorization: Bearer <key>``. If unset, the source skips cleanly
+#         (returns ``[]`` and logs a warning) — it is dormant without credentials.
+#
+# The instance-types endpoint returns a flat dict keyed by instance type ID,
+# each containing ``instance_type.price_cents_per_hour`` (integer cents) and
+# ``instance_type.specs.gpus``. Lambda bills per MINUTE, so we convert
+# cents/hr → USD/hr → USD/min to match the static LambdaLabsSource.
+# ---------------------------------------------------------------------------
+
+
+class LambdaLabsPricingSource:
+    """FETCH STRATEGY: LIVE — Lambda Labs Cloud API (REST).
+
+    Queries the Lambda Labs ``/api/v1/instance-types`` endpoint for live GPU
+    instance pricing. Returns one ``ComputePrice`` per instance type, with
+    per-minute pricing (cents/hour / 100 / 60).
+
+    Auth: ``LAMBDA_API_KEY`` environment variable, sent as
+    ``Authorization: Bearer <key>``. If unset, the source skips cleanly
+    (returns ``[]`` and logs a warning) — it is dormant without credentials.
+
+    SLUG NOTE: Uses ``"lambda_labs_live"`` (not ``"lambda_labs"``) to avoid
+    colliding with the static ``LambdaLabsSource`` in the catalog's
+    first-match-wins ``_source_for`` lookup.
+
+    BILLING SEMANTICS (same PREPAID/PER-MINUTE as LambdaLabsSource):
+      - Credit card charged on consumption; no monthly invoice.
+      - Billed per MINUTE (min 1 min).
+      - Payment failure = service stop.
+    """
+
+    _ENDPOINT = "https://cloud.lambdalabs.com/api/v1/instance-types"
+    _SOURCE = (
+        "Lambda Labs Cloud API "
+        "(GET /api/v1/instance-types) — "
+        "https://docs.lambdalabs.com/cloud/api"
+    )
+
+    def provider_slug(self) -> str:
+        return "lambda_labs_live"
+
+    def billing(self) -> ProviderBilling:
+        return ProviderBilling(
+            provider="lambda_labs_live",
+            granularity=BillingGranularity.per_minute,
+            terms=BillingTerms.prepaid_balance,
+            currency="USD",
+            min_charge=None,
+            spot_available=True,
+            notes=(
+                "Billed per MINUTE (min 1 min). Live pricing via Lambda Labs "
+                "Cloud API. Charges hit credit card on consumption. "
+                "Source: https://docs.lambdalabs.com/cloud/api"
+            ),
+        )
+
+    def fetch_model_prices(self) -> list[ModelPrice]:
+        return []
+
+    def fetch_compute_prices(self) -> list[ComputePrice]:
+        api_key = os.environ.get("LAMBDA_API_KEY")
+        if not api_key:
+            logger.warning(
+                "Lambda Labs fetch skipped: LAMBDA_API_KEY not set"
+            )
+            return []
+
+        try:
+            with httpx.Client(timeout=20.0) as client:
+                resp = client.get(
+                    self._ENDPOINT,
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                    },
+                )
+                if resp.status_code != 200:
+                    logger.warning(
+                        "Lambda Labs API returned HTTP %s", resp.status_code
+                    )
+                    return []
+                data = resp.json()
+        except Exception as exc:
+            logger.warning("Lambda Labs fetch failed: %s", exc)
+            return []
+
+        raw = data.get("data") or {}
+        if not isinstance(raw, dict) or not raw:
+            logger.warning("Lambda Labs API returned no instance types")
+            return []
+
+        fetched_at = time.time()
+        results: list[ComputePrice] = []
+
+        for type_id, entry in raw.items():
+            if not isinstance(entry, dict):
+                continue
+            inst = entry.get("instance_type") or {}
+            if not isinstance(inst, dict):
+                continue
+            try:
+                cents_per_hour = int(inst.get("price_cents_per_hour") or 0)
+            except (TypeError, ValueError):
+                continue
+            if cents_per_hour <= 0:
+                continue
+            specs = inst.get("specs") or {}
+            gpu_count_raw = (specs or {}).get("gpus") if isinstance(specs, dict) else None
+            try:
+                gpu_count = int(gpu_count_raw) if gpu_count_raw is not None else None
+            except (TypeError, ValueError):
+                gpu_count = None
+            description = str(inst.get("description") or type_id)
+
+            usd_per_hour = cents_per_hour / 100.0
+            usd_per_minute = usd_per_hour / 60.0
+
+            results.append(
+                ComputePrice(
+                    provider="lambda_labs_live",
+                    sku=type_id,
+                    usd_per_unit=usd_per_minute,
+                    granularity=BillingGranularity.per_minute,
+                    spot=False,
+                    terms=BillingTerms.prepaid_balance,
+                    fetched_at=fetched_at,
+                    source=self._SOURCE,
+                    gpu_count=gpu_count,
+                    gpu_type=description,
+                    notes=(
+                        f"{description}. ${usd_per_hour:.4f}/hr = "
+                        f"${usd_per_minute:.6f}/min (billed per minute)."
+                    ),
+                )
+            )
+
+        return results
+
+
+# ---------------------------------------------------------------------------
+# HuggingFace — LIVE compute prices via HTML scrape
+# ---------------------------------------------------------------------------
+# Source: https://huggingface.co/pricing (public HTML page; no auth required)
+# The dedicated-endpoints pricing table lists GPU types with USD/hour rates.
+# There is no machine-readable public catalog for dedicated endpoint pricing,
+# so this source scrapes the HTML page and extracts GPU names + prices via
+# regex. The static ``HuggingFaceSource`` is the fallback when scraping fails.
+# ---------------------------------------------------------------------------
+
+
+_HF_PRICE_RE = re.compile(
+    r'(?:NVIDIA\s*)?((?:RTX\s*)?(?:Tesla\s*)?[ATVLHR]\d+\s*(?:SXM\d+\s*)?\d*\s*GB?)'
+    r'.*?\$(\d+\.?\d*)\s*/?\s*hr',
+    re.IGNORECASE,
+)
+
+_HF_ENDPOINT = "https://huggingface.co/pricing"
+
+
+class HuggingFacePricingSource:
+    """FETCH STRATEGY: LIVE — scrapes https://huggingface.co/pricing (public HTML).
+
+    The HuggingFace pricing page does not expose a machine-readable API for
+    dedicated endpoint GPU pricing. This source fetches the HTML page and
+    extracts GPU names + USD/hour rates via regex. On any parse failure it
+    returns ``[]`` (fail-soft); the ``CachedSource`` wrapper falls back to
+    the static ``HuggingFaceSource``.
+
+    SLUG NOTE: Uses ``"huggingface_live"`` (not ``"huggingface"``) to avoid
+    colliding with the static source.
+
+    BILLING SEMANTICS (same PREPAID / PER-HOUR as HuggingFaceSource):
+      - Dedicated endpoints billed per HOUR against a prepaid balance.
+    """
+
+    _SOURCE = "https://huggingface.co/pricing#dedicated-endpoints"
+
+    def provider_slug(self) -> str:
+        return "huggingface_live"
+
+    def billing(self) -> ProviderBilling:
+        return ProviderBilling(
+            provider="huggingface_live",
+            granularity=BillingGranularity.per_hour,
+            terms=BillingTerms.prepaid_balance,
+            currency="USD",
+            min_charge=None,
+            spot_available=False,
+            notes=(
+                "Dedicated Endpoints bill per HOUR against a prepaid account "
+                "balance; live prices scraped from the HF pricing page. "
+                "Source: https://huggingface.co/pricing#dedicated-endpoints"
+            ),
+        )
+
+    def fetch_model_prices(self) -> list[ModelPrice]:
+        return []
+
+    def fetch_compute_prices(self) -> list[ComputePrice]:
+        try:
+            with httpx.Client(timeout=20.0) as client:
+                resp = client.get(_HF_ENDPOINT)
+                if resp.status_code != 200:
+                    logger.warning(
+                        "HuggingFace pricing page returned HTTP %s",
+                        resp.status_code,
+                    )
+                    return []
+                html = resp.text
+        except Exception as exc:
+            logger.warning("HuggingFace pricing fetch failed: %s", exc)
+            return []
+
+        matches = _HF_PRICE_RE.findall(html)
+        if not matches:
+            logger.warning(
+                "HuggingFace pricing scrape: no GPU price matches found"
+            )
+            return []
+
+        fetched_at = time.time()
+        results: list[ComputePrice] = []
+        seen: set[str] = set()
+
+        for gpu_raw, usd_str in matches:
+            gpu_type = gpu_raw.strip()
+            if not gpu_type:
+                continue
+            try:
+                usd_per_hour = float(usd_str)
+            except (TypeError, ValueError):
+                continue
+            if usd_per_hour <= 0:
+                continue
+
+            sku = f"hf-{gpu_type.lower().replace(' ', '-')}-live"
+            if sku in seen:
+                continue
+            seen.add(sku)
+
+            results.append(
+                ComputePrice(
+                    provider="huggingface_live",
+                    sku=sku,
+                    usd_per_unit=usd_per_hour,
+                    granularity=BillingGranularity.per_hour,
+                    spot=False,
+                    terms=BillingTerms.prepaid_balance,
+                    fetched_at=fetched_at,
+                    source=self._SOURCE,
+                    gpu_count=1,
+                    gpu_type=gpu_type,
+                    notes=(
+                        f"Dedicated Endpoint (reserved). ${usd_per_hour:.2f}/hr. "
+                        "Scraped from HF pricing page."
+                    ),
+                )
+            )
+
+        return results
+
+
+# ---------------------------------------------------------------------------
+# Z.AI — LIVE model prices via HTML scrape
+# ---------------------------------------------------------------------------
+# Source: https://docs.z.ai/guides/overview/pricing (public HTML; no auth)
+# Z.AI publishes GLM model pricing as an HTML table with USD per 1M tokens.
+# There is no machine-readable pricing API, so this source scrapes the HTML
+# and extracts model names + prices via regex. The static ``ZAISource`` is
+# the fallback when scraping fails.
+# ---------------------------------------------------------------------------
+
+_ZAI_PRICE_RE = re.compile(
+    r'([Gg][Ll][Mm][-\u2013\u2014\s]*[\d.]+).*?'
+    r'\$(\d+\.?\d*)\s*/\s*1M.*?input.*?'
+    r'\$(\d+\.?\d*)\s*/\s*1M.*?output',
+    re.IGNORECASE | re.DOTALL,
+)
+
+_ZAI_TABLE_RE = re.compile(
+    r'([Gg][Ll][Mm][-\u2013\u2014\s]*[\d.]+).*?\$(\d+\.?\d*).*?\$(\d+\.?\d*)',
+    re.IGNORECASE | re.DOTALL,
+)
+
+_ZAI_ENDPOINT = "https://docs.z.ai/guides/overview/pricing"
+
+
+class ZAIPricingSource:
+    """FETCH STRATEGY: LIVE — scrapes https://docs.z.ai/guides/overview/pricing.
+
+    Z.AI does not publish a machine-readable pricing API. This source fetches
+    the HTML pricing page and extracts GLM model names + USD/1M token prices
+    via regex, then converts to USD/1K tokens. On any parse failure it returns
+    ``[]`` (fail-soft); the ``CachedSource`` wrapper falls back to the static
+    ``ZAISource``.
+
+    SLUG NOTE: Uses ``"zai_live"`` (not ``"zai"``) to avoid colliding with
+    the static source.
+
+    Billing:
+      - terms: postpaid_per_use
+      - granularity: per_token
+    """
+
+    _SOURCE = "https://docs.z.ai/guides/overview/pricing"
+
+    def provider_slug(self) -> str:
+        return "zai_live"
+
+    def billing(self) -> ProviderBilling:
+        return ProviderBilling(
+            provider="zai_live",
+            granularity=BillingGranularity.per_token,
+            terms=BillingTerms.postpaid_per_use,
+            currency="USD",
+            min_charge=None,
+            spot_available=False,
+            notes=(
+                "Billed per API call per token; no prepaid balance required. "
+                "Live prices scraped from the Z.AI pricing page. "
+                "Source: https://docs.z.ai/guides/overview/pricing"
+            ),
+        )
+
+    def fetch_model_prices(self) -> list[ModelPrice]:
+        try:
+            with httpx.Client(timeout=20.0) as client:
+                resp = client.get(_ZAI_ENDPOINT)
+                if resp.status_code != 200:
+                    logger.warning(
+                        "Z.AI pricing page returned HTTP %s", resp.status_code
+                    )
+                    return []
+                html = resp.text
+        except Exception as exc:
+            logger.warning("Z.AI pricing fetch failed: %s", exc)
+            return []
+
+        stripped = re.sub(r"<[^>]+>", " ", html)
+        collapsed = re.sub(r"\s+", " ", stripped)
+
+        matches = _ZAI_PRICE_RE.findall(collapsed)
+        if not matches:
+            matches = _ZAI_TABLE_RE.findall(collapsed)
+
+        if not matches:
+            logger.warning(
+                "Z.AI pricing scrape: no GLM price matches found"
+            )
+            return []
+
+        fetched_at = time.time()
+        results: list[ModelPrice] = []
+        seen: set[str] = set()
+
+        for model_raw, inp_str, out_str in matches:
+            model_id = re.sub(r"[\u2013\u2014\s]+", "-", model_raw.strip()).lower()
+            if not model_id or model_id in seen:
+                continue
+            seen.add(model_id)
+            try:
+                inp_per_1m = float(inp_str)
+                out_per_1m = float(out_str)
+            except (TypeError, ValueError):
+                continue
+            if inp_per_1m <= 0 and out_per_1m <= 0:
+                continue
+
+            results.append(
+                ModelPrice(
+                    provider="zai",
+                    model_id=model_id,
+                    input_usd_per_1k=inp_per_1m / 1000.0,
+                    output_usd_per_1k=out_per_1m / 1000.0,
+                    fetched_at=fetched_at,
+                    source=self._SOURCE,
+                    notes=f"Scraped from Z.AI pricing page. ${inp_per_1m}/1M input, ${out_per_1m}/1M output.",
+                )
+            )
+
+        return results
+
+    def fetch_compute_prices(self) -> list[ComputePrice]:
+        return []
+
+
+# ---------------------------------------------------------------------------
 # Registry: all available sources
 # ---------------------------------------------------------------------------
 
@@ -2037,16 +2415,19 @@ def all_sources() -> list[PricingSource]:
         OpenRouterSource(),
         AnthropicSource(),
         OpenAISource(),
-        LiteLLMJSONSource("anthropic"),
-        LiteLLMJSONSource("openai"),
+        CachedSource(LiteLLMJSONSource("anthropic"), AnthropicSource()),
+        CachedSource(LiteLLMJSONSource("openai"), OpenAISource()),
         LiteLLMJSONSource("fireworks_ai"),
         CachedSource(RunPodPricingSource(), RunPodSource()),
         RunPodSource(),
         LambdaLabsSource(),
+        CachedSource(LambdaLabsPricingSource(), LambdaLabsSource()),
         AWSSource(),
         CachedSource(AWSPricingSource(), AWSSource()),
         GCPSource(),
         CachedSource(GCPPricingSource(), GCPSource()),
         HuggingFaceSource(),
+        CachedSource(HuggingFacePricingSource(), HuggingFaceSource()),
         ZAISource(),
+        CachedSource(ZAIPricingSource(), ZAISource()),
     ]

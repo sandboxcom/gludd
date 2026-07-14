@@ -31,6 +31,8 @@ def build_and_validate_release(
             "wheel_path": bundle.wheel_path,
             "sdist_path": bundle.sdist_path,
             "manifest_path": bundle.manifest_path,
+            "sig_path": bundle.sig_path,
+            "signature_valid": bundle.signature_valid,
         },
         "container": None,
     }
@@ -54,6 +56,7 @@ def build_and_validate_release(
         "pip_bundle_valid": validation.pip_bundle_valid,
         "container_valid": validation.container_valid,
         "manifest_valid": validation.manifest_valid,
+        "signature_valid": validation.signature_valid,
         "errors": validation.errors,
     }
     return report

@@ -19,19 +19,30 @@ Usage::
     # result["parallel_now"] == ["task-a", "task-b"]  (batch 0; task-c must wait)
     # result["batches"]      == [["task-a", "task-b"], ["task-c"]]
 
-# TODO(integration): when FileClaimRegistry (#31) is merged, source live
-# file-claims as the resource set instead of the caller-declared files list.
-# Wire: planner.plan_work(registry.current_claims()) at the start of each
-# orchestrator tick so the planner sees *actual* in-flight file locks, not just
-# the declared intent.
+Live claim integration — supply a FileClaimRegistry to source active in-flight
+file locks as blocking resources::
+
+    from general_ludd.coordination.file_claims import FileClaimRegistry
+    registry = FileClaimRegistry()
+    registry.claim("worker-1", ["src/foo.py"])
+    planner = OrchestrationPlanner(registry)
+    result = planner.plan_with_live_claims([
+        {"id": "task-b", "files": ["src/foo.py"], "depends_on": [], "is_greenfield": False},
+        {"id": "task-c", "files": ["src/bar.py"], "depends_on": [], "is_greenfield": False},
+    ])
+    # task-b touches src/foo.py which worker-1 currently claims → deferred
+    # task-c touches src/bar.py (unclaimed) → runs in batch 0
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from general_ludd.scheduling.scheduler import Scheduler, WorkItem
+
+if TYPE_CHECKING:
+    from general_ludd.coordination.file_claims import FileClaimRegistry
 
 
 @dataclass
@@ -64,12 +75,16 @@ class OrchestrationPlanner:
     exclusive resources) and its upstream dependencies — this planner computes
     the concurrency-safe parallel batches via Scheduler.plan().
 
-    This is the correct place to extend for live file-claim integration.
-    See the module-level TODO(integration) note.
+    When a FileClaimRegistry is supplied, live in-flight file claims are
+    sourced as blocking resources via ``plan_with_live_claims()`` so that
+    work items touching claimed files defer until the claims are released.
     """
 
-    def __init__(self) -> None:
+    _VIRTUAL_CLAIM_HOLDER_ID = "__live_file_claims__"
+
+    def __init__(self, registry: FileClaimRegistry | None = None) -> None:
         self._scheduler = Scheduler()
+        self._registry = registry
 
     def plan_work(self, items: list[dict[str, Any]]) -> dict[str, Any]:
         """Compute concurrency-safe parallel batches from a list of work-item dicts.
@@ -122,6 +137,84 @@ class OrchestrationPlanner:
         """
         result = self.plan_work(items)
         return list(result["parallel_now"])
+
+    # ------------------------------------------------------------------
+    # Live claim integration
+    # ------------------------------------------------------------------
+
+    def live_claim_conflicts(self, items: list[dict[str, Any]]) -> dict[str, list[str]]:
+        """Check which work items would conflict with active file claims.
+
+        Consults the FileClaimRegistry (if configured) and returns a mapping
+        from item ids to the list of files they declare that are currently
+        claimed by another worker.
+
+        Returns an empty dict when no registry is configured or no conflicts exist.
+        """
+        if self._registry is None:
+            return {}
+        live_claims = self._registry.all_claims()
+        if not live_claims:
+            return {}
+        conflicts: dict[str, list[str]] = {}
+        for item in items:
+            item_id: str = item["id"]
+            item_files: list[str] = list(item.get("files") or [])
+            conflicting_files = [f for f in item_files if f in live_claims]
+            if conflicting_files:
+                conflicts[item_id] = conflicting_files
+        return conflicts
+
+    def plan_with_live_claims(self, items: list[dict[str, Any]]) -> dict[str, Any]:
+        """Compute batches respecting active file claims from the FileClaimRegistry.
+
+        Behaves identically to ``plan_work()`` when no registry is configured or
+        when no live claims exist.  When active claims are present, a virtual
+        ``__live_file_claims__`` item holds all currently-claimed files, and any
+        work item that overlaps with those files is made dependent on that
+        virtual item — naturally serializing it into a later batch.
+
+        The virtual item is stripped from the returned ``batches`` and
+        ``parallel_now`` so callers see only real work items.
+        """
+        if self._registry is None:
+            return self.plan_work(items)
+
+        live_claims = self._registry.all_claims()
+        if not live_claims:
+            return self.plan_work(items)
+
+        claimed_files = set(live_claims.keys())
+
+        virtual_item: dict[str, Any] = {
+            "id": self._VIRTUAL_CLAIM_HOLDER_ID,
+            "files": sorted(claimed_files),
+            "depends_on": [],
+            "is_greenfield": False,
+        }
+
+        augmented_items: list[dict[str, Any]] = [virtual_item]
+        for item in items:
+            augmented = dict(item)
+            item_files = list(item.get("files") or [])
+            if set(item_files) & claimed_files:
+                augmented["depends_on"] = list(
+                    set(augmented.get("depends_on") or []) | {self._VIRTUAL_CLAIM_HOLDER_ID}
+                )
+            augmented_items.append(augmented)
+
+        result = self.plan_work(augmented_items)
+
+        result["batches"] = [
+            [iid for iid in batch if iid != self._VIRTUAL_CLAIM_HOLDER_ID]
+            for batch in result["batches"]
+        ]
+        result["batches"] = [b for b in result["batches"] if b]
+        result["parallel_now"] = [
+            iid for iid in result["parallel_now"] if iid != self._VIRTUAL_CLAIM_HOLDER_ID
+        ]
+
+        return result
 
     # ------------------------------------------------------------------
     # Private helpers

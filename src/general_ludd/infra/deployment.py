@@ -21,7 +21,7 @@ _REGISTRY_FILE = "deployments.json"
 
 
 class SecretsResolver(Protocol):
-    def resolve(self, alias_name: str) -> str | None: ...
+    def resolve(self, alias_name: str, project_id: str | None = None) -> str | None: ...
 
 
 class DeploymentManager:
