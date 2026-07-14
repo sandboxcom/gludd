@@ -135,15 +135,61 @@ past the `dispatcher.py:126-132` guard. **Fix:** persist + rehydrate `depth`.
 
 ## HIGH — dead gates and unwired flagship capability
 
-### S7. ApprovalGate is a dead HITL gate
-`approval/gate.py:31-33` — the class is `return ApprovalResponse(request=…)`;
-decision is always PENDING, nothing can APPROVE/DENY. G7 HITL has no decision
-mechanism. **Fix:** back it with the human-todos resolve surface.
+### S7. ApprovalGate is a dead HITL gate — and is never called at all
+Deep-audit CONFIRMED, broader than drafted. `approval/gate.py:31-33` returns
+`ApprovalResponse(request=request)` with `decision` defaulting to PENDING — no
+path can ever produce APPROVED/DENIED. But the sharper fact: **`request_approval`
+has zero production call sites** (every caller is a test). daemon.py:1355-1356
+instantiates the gate onto `app.state._approval_gate`, and `routers/approval.py`
+exposes exactly one endpoint — `GET /admin/approval/status`, which reports
+`{"wired": …, "gate_type": …}`. G7 HITL is scaffolding that is instantiated,
+parked, introspected for "is it wired", and never invoked.
 
-### S8. Pause/resume drops all conversation history
-`pause_controller.py:185-195` leaves `snapshot.messages == []`; resumed agents
-restart cold while the API returns `"resumed": true`. **Fix:** persist and
-rehydrate messages; the `hibernation.py` docstring already promises this.
+**The decision surface it needs already exists and works**: `routers/human_todos.py`.
+`PATCH /api/human-todos/{id}` (219-332) resolves to done/dismissed, requires
+`human_resolver`+`human_resolution`, unblocks the linked parent agent todo
+(`BLOCKED_ON_HUMAN` → `QUEUED`/`CANCELLED`, 273-299), and already syncs
+permission-escalation rows via `security.py:_sync_escalation_from_human_todo`.
+**Fix:** make ApprovalGate a thin adapter over human-todos (`request_approval`
+creates a `HumanTodoModel` with `category="permission_escalation"`;
+`check_decision` maps done→APPROVED, dismissed→DENIED); blocking/resume then
+comes for free from the existing wiring. Then **wire real callers** —
+`routers/security.py` escalation creation and
+`routers/self_improve.py:_ConfigTierCapabilityChecker` each roll their own ad
+hoc gating today. Note there are currently **three unrelated approve/deny
+mechanisms** (ApprovalGate, human_todos, and security.py's in-memory
+`_escalation_store`); consolidate on human-todos.
+
+### S8. Pause/resume drops conversation history — and the router bypasses the correct path
+Deep-audit CONFIRMED, bundle with S6 (same code path, same commit).
+`pause_controller.py:185-195` builds the snapshot with **neither `messages=` nor
+`depth=`**, so both silently take their zero defaults. `AgentTask`
+(`agents/types.py:42-54`) has **no messages field at all** — so even a populated
+snapshot would have nowhere to land on resume.
+
+The damning detail: `AgentDispatcher.resume_project` (dispatcher.py:506-534)
+**already threads `depth=snap.depth` correctly**, and
+`PauseController.resume_rehydrate` (pause_controller.py:203-242) calls it — but
+that path is **dead in production**. `routers/pause.py:123-179` bypasses it
+entirely with its own inline rehydration loop that drops `depth`. So the fix for
+S6 is partly "stop bypassing the code that already works."
+
+Why messages are unreachable at quiesce: real history lives inside the live
+`ModelGateway`/`ToolCallLoop` call, seeded per-dispatch from `task.prompt` alone
+(daemon.py:2093), and `_active_tasks` only ever holds the *dispatch-time*
+`AgentTask`. `hibernation.py:messages_from_dicts()` (164-197) is the documented
+bridge for exactly this — and is **called only in tests**. Same for
+`HibernationController.parked()` (533-561): zero production callers.
+`pause_controller` also reaches past the policy layer straight into
+`hibernation._store.dehydrate_async(snap)`, bypassing the
+min_depth/min_context_messages dehydration policy.
+
+**Fix:** add `messages` to `AgentTask`; seed `gateway.call_model` from
+`task.messages` when present (daemon.py:2093); populate `depth=`/`messages=` in
+`quiesce_project`; delete the inline loop in `routers/pause.py` and call
+`resume_rehydrate`. **Open trace needed:** exactly where in-flight message state
+is reachable from `AgentDispatcher._active_tasks` at the quiesce boundary — the
+dispatcher must keep `AgentTask.messages` updated as the tool loop progresses.
 
 ### S9. EvidenceChecker marks any claim supported given any non-empty sources
 `review/evidence_checker.py:45-47, 64-70` pools every `file:line` fragment from
