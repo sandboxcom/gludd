@@ -358,6 +358,57 @@ intended.)
 - **S26** `/admin/code/suggest-model` (`routers/models.py:384-397`) swallows
   router crashes as `"insufficient_historical_data"` — a broken router looks
   like cold-start. Distinguish the two.
+- **S27 — tenant contextvar is WRITE-ONLY (security-relevant; peer-verified
+  2026-07-14).** `db/tenant.py:28` defines `get_tenant()`, and `db/__init__.py`
+  re-exports it — but **nothing in `src/` ever calls it**. The event loop
+  (`loop.py:737`, `:785`) only calls `set_tenant`/`reset_tenant`; the value is
+  written and never read. The only `get_tenant()` call sites in the repo are in
+  `tests/unit/test_db_tenant_scoping.py` (~20 hits), which exercise contextvar
+  get/set/reset semantics **in isolation, never wired into a query**. Also
+  confirmed: the `event.listens_for` hooks at `db/session.py:47`/`:106` are
+  sqlite-PRAGMA-only, **not** tenant filters. So the contextvar-based tenant
+  scoping is **not enforcing anything** — it is the same "plumbing exists,
+  nothing consumes it" shape as S1/S2/P-3, but on a **tenant-isolation
+  boundary**. This is the mechanism that would be expected to prevent
+  cross-tenant reads, and the tests give false assurance that it works.
+  **Fix:** either wire `get_tenant()` into the query path (a SQLAlchemy
+  `with_loader_criteria` / session event that injects `project_id`/tenant
+  filtering), or delete the contextvar and its tests and rely solely on the
+  explicit per-repository scoping — **but do not leave a dead isolation control
+  that tests claim is live.**
+
+  **The real mechanism is ALSO unscoped by default (peer-verified, and this is
+  the sharper finding).** The actual tenant filter is a separate pattern:
+  repositories take an explicit `project_id` ctor arg / `.scoped(session,
+  project_id)`, **defaulting to `None` = unscoped** unless a caller passes it.
+  And the very module that sets the dead contextvar does **not scope its own
+  repos**: `loop.py:745-748` and `:1817-1818` construct `TodoRepository(session)`,
+  `VariableNamespaceRepository(job_session)`, `TaskReturnRepository(job_session)`
+  with **no project_id**. So neither mechanism is enforcing isolation on the main
+  tick/dispatch path. Concrete instance: `routers/accounting.py:163-167` opens a
+  session and calls `todo_repo.list_all()` / `role_repo.list_all()` **unscoped**,
+  pulling **every project's rows**, then buckets by `t.project_id` in a Python
+  dict afterward (`:169`, `:191`) — correct output, but a full-tenant table scan
+  on every request, with isolation enforced only by an in-memory dict lookup
+  rather than by the query. Fix must make scoping the **default** (fail-closed),
+  not an opt-in argument callers can forget.
+
+- **S28 — model-call logging is a silent no-op in production (peer-verified).**
+  `ModelPerformanceRepository.record_call_sync` (`db/repository.py:2410-2463`) is
+  called from `worker/app.py:400` on the live path. It does
+  `asyncio.run(self.record_call(..., session=None))` (`:2455`); `record_call`
+  resolves `eff_session = session or self._resolve_session()` (`:2389`); and
+  `_resolve_session()` (`:2684-2697`) — **despite a docstring claiming it lazily
+  creates a session from `session_factory`** — does no such thing: it just
+  **raises `RuntimeError`** when `session_factory is not None and session is
+  None`. Since `daemon.py:1972-1974` constructs the repo with
+  `session_factory=session_factory` and no session, **every production
+  `record_call_sync()` raises**, and the exception is **swallowed** by the bare
+  `except` at `:2456-2463`. Net: model-performance telemetry is never recorded —
+  which also starves the scoring/routing data this repo makes decisions on (cf.
+  S19's `code_quality_score = 0.5`). **Fix:** make `_resolve_session()` actually
+  build a session from the factory (or pass one in), and stop swallowing the
+  exception — a telemetry write that always fails must be loud.
 
 ## LOW / descope-or-delete (dead code enshrined by tests)
 

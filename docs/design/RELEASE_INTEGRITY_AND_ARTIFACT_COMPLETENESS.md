@@ -108,6 +108,44 @@ Makefile. Also: `macos-dmg` hardcodes `-macos-arm64` regardless of host arch;
 `rpm-package` uses a fixed shared `/tmp/gludd-rpmbuild` (concurrent-build
 collision). Effort: S.
 
+**R-12 — Installer FORMATS are wrong for a daemon, and nothing is signed (NEW,
+operator-raised 2026-07-14).**
+
+*Windows — `.exe` should be `.msi`.* `make windows-installer` builds an NSIS
+`.exe` (`dist/windows/gludd.nsi`), and the verifier's category is literally
+`.exe installer (Windows)`. An NSIS `.exe` is fine for a consumer GUI app, but
+gludd is a **service**, and an `.exe` is effectively opaque to managed
+deployment. **MSI is the correct format**: it is what `msiexec`, Group Policy,
+Intune and SCCM consume, and it provides real silent-install semantics
+(`/qn`), proper Add/Remove Programs registration, per-machine installs,
+upgrade/downgrade logic via ProductCode/UpgradeCode, and transactional
+rollback. Recommend **WiX Toolset** to produce a signed `.msi`, and update
+`EXPECTED_CATEGORIES` in `verify_release_completeness.py` accordingly (accept
+`.msi`; keep `.exe` only if we deliberately ship both).
+
+*macOS — `.dmg` is present but is not an installer.* We DO already ship a
+`.dmg` (`make macos-dmg`), so that category is satisfied. But a `.dmg` is a
+**disk image**, not an installer: it cannot install a launchd plist, create
+`/usr/local/var` state dirs, or run post-install steps. Today's dmg just wraps
+the binary plus a shell `install.sh`, which is why `dist/install.sh` is copied
+into the staging dir at all. For a **daemon**, the correct macOS artifact is a
+**`.pkg`** (productbuild/pkgbuild), which can run preinstall/postinstall
+scripts and register the launchd job. Recommend shipping a signed+notarized
+`.pkg` as the primary macOS installer and keeping the `.dmg` (or a plain
+tarball) as the manual/portable option.
+
+*Signing/notarization is the bigger gap than either format.* Nothing we ship is
+signed. An unsigned `.dmg`/`.pkg` is blocked by **Gatekeeper** ("cannot be
+opened because the developer cannot be verified") unless the user right-click-
+opens or runs `xattr -d com.apple.quarantine`; an unsigned `.exe`/`.msi` trips
+**SmartScreen**. A signed-but-unnotarized macOS artifact still fails on modern
+macOS — notarization (`notarytool` + stapling) is required, not optional.
+Needs: an Apple Developer ID Application + Installer cert and an Authenticode
+(ideally EV/Azure Trusted Signing) cert, stored as CI secrets. **Until signing
+exists, document the manual bypass in the release notes** rather than letting
+users hit an opaque OS block. Add signature verification to the completeness
+verifier once signing lands (R-7 already reserves this).
+
 **R-10 — CI concurrency must not evict a commit's only verdict (NEW, CRITICAL —
 this is the mechanism that made beta.1 possible).**
 `.github/workflows/build.yml:46-48`:
