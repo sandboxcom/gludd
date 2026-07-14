@@ -249,8 +249,16 @@ intended.)
 - **S19** `code_quality_score = 0.5` constant (`observability/recorder.py:25`)
   reaches live model-quality routing via loop.py:2804 → repository.py:995-1002.
   Pass real test results or exclude the constant from scoring.
-- **S20** QualityGateChecker fail-open: `quality/gate.py:79`
-  `g.get("passed", True)` (sibling preflight.py:379 is fail-closed).
+- **S20** QualityGateChecker fail-open: CONFIRMED — `quality/gate.py:79`
+  `all(g.get("passed", True) ...)` treats a gate dict **missing** the `passed`
+  key as PASSED; the sibling `preflight.py:379` uses `.get("passed", False)`
+  (fail-closed). Severity is low *today* only because `enforce()` has zero
+  production callers — but that makes it a landmine: the completion-gate fix
+  (beta.2 Wave 2) wires `enforce()` into production for the first time, so
+  **flip the default to `False` in the same change**. Verified safe: every
+  existing `enforce([...])` call in `test_quality_gate.py` / `test_quality.py`
+  supplies `passed` explicitly, so the flip breaks **no existing test**.
+  Add a regression test: `enforce([{"gate": "x"}])["all_passed"] is False`.
 - **S21** `ck_todos_priority_range` model CHECK (models.py:286) absent from the
   alembic chain — `test_alembic_create_all_parity.py:363` is RED today.
 - **S22** AgentCapabilities defaults to bare `AgentRegistry()`
