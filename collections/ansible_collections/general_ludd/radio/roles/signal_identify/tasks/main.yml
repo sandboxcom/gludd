@@ -1,0 +1,39 @@
+---
+# signal_identify role — entry point
+
+- name: Validate parameters
+  ansible.builtin.assert:
+    that:
+      - signal_identify_sample_rate | int > 0
+      - signal_identify_method in ["fft", "cyclostationary", "auto"]
+    fail_msg: "sample_rate must be > 0; method must be fft / cyclostationary / auto"
+
+- name: Check numpy availability
+  ansible.builtin.command: "{{ ansible_python_interpreter }} -c 'import numpy; import scipy.signal'"
+  register: _py_check
+  changed_when: false
+  failed_when: false
+
+- name: Skip — missing dependencies
+  ansible.builtin.debug:
+    msg: "numpy/scipy not available — skipping signal identification"
+  when: _py_check.rc != 0
+
+- name: Identify signals
+  ansible.builtin.command: >
+    {{ ansible_python_interpreter }}
+    -c '
+    import json, numpy as np
+    from scipy.signal import spectrogram
+    data = np.fromfile("{{ signal_identify_input_file }}", dtype=np.int16)
+    iq = data[::2] + 1j * data[1::2]
+    f, t, Sxx = spectrogram(np.abs(iq), {{ signal_identify_sample_rate }},
+                            nperseg=1024, noverlap=512)
+    peaks = np.where(Sxx.max(axis=0) > {{ signal_identify_threshold_db }})
+    print(json.dumps({"peaks_detected": len(peaks[0]),
+                       "freq_range": [float(f[0]), float(f[-1])]}))
+    '
+  register: _result
+  when:
+    - signal_identify_enabled | bool
+    - _py_check.rc == 0

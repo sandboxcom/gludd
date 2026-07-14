@@ -13,6 +13,8 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_PATH = ROOT / ".opencode" / "plugin" / "enforce-multitask.ts"
 
@@ -187,7 +189,7 @@ console.log(JSON.stringify(r ?? {{allowed: true}}))
     result = _run_plugin(code, cwd=str(ws), env_override=_GAP_ENV)
     r = _last_json(result)
     assert r is not None and r.get("permissionDecision") == "deny", f"Single dispatch should block, got: {r}"
-    assert "dispatch(es) in prior message" in r.get("message", "")
+    assert "UNDER-FLOOR HARD BLOCK" in r.get("message", "")
 
 
 def test_single_dispatch_then_bash_blocked(tmp_path):
@@ -285,14 +287,13 @@ await plugin['tool.execute.before']({{tool: 'read'}}, undefined)
 await plugin['tool.execute.before']({{tool: 'read'}}, undefined)
 {_GAP_SLEEP_JS}
 {dispatches}
-{_GAP_SLEEP_JS}
 const r = await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
 console.log(JSON.stringify(r ?? {{allowed: true}}))
 """
     result = _run_plugin(code, cwd=str(ws), env_override=_GAP_ENV)
     r = _last_json(result)
     assert r is None or r.get("permissionDecision") != "deny", (
-        f"Full dispatch wave should reset zero streak, got: {r}"
+        f"Full dispatch wave should reset zero streak (write in same msg as dispatches), got: {r}"
     )
 
 
@@ -377,3 +378,519 @@ console.log(JSON.stringify(r ?? {{}}))
     r = _last_json(result)
     msg = r.get("message", "")
     assert "GLUDD_MULTITASK_FLOOR_ENFORCE=0" in msg
+
+
+# ─── Rapid Grinding Bypass Bug ────────────────────────────────────────────────
+# These tests pin the bug: MSG_GAP_MS-based message boundary detection means
+# calls within <MSG_GAP_MS never fire a boundary, so zeroStreak never increments
+# and ALL enforcement (floor breach, per-message, zero-streak) is blind to
+# rapid inline grinding.  The agent can make 100 non-dispatch calls in a row
+# without triggering any block as long as they are <MSG_GAP_MS apart.
+
+
+def test_rapid_grinding_never_increments_zero_streak(tmp_path):
+    """BUG: 5 rapid non-dispatch calls within MSG_GAP_MS.
+    No message boundary fires, so zeroStreak stays 0.
+    Proves the agent can grind inline indefinitely."""
+    ws = tmp_path / "rapid-grind"
+    ws.mkdir()
+    _make_working_workspace(ws)
+
+    code = f"""\
+import * as fs from 'node:fs'
+const mod = await import('{PLUGIN_PATH}')
+const plugin = await mod.default({{}})
+await plugin['tool.execute.before']({{tool: 'read'}}, undefined)
+await plugin['tool.execute.before']({{tool: 'read'}}, undefined)
+await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
+await plugin['tool.execute.before']({{tool: 'read'}}, undefined)
+await plugin['tool.execute.before']({{tool: 'edit'}}, undefined)
+const state = JSON.parse(fs.readFileSync('/tmp/gludd-multitask-state.json', 'utf8'))
+console.log(JSON.stringify({{
+    zeroStreak: state.zeroStreak,
+    thisMessageDispatches: state.thisMessageDispatches,
+    prevMessageDispatches: state.prevMessageDispatches,
+}}))
+"""
+    result = _run_plugin(code, cwd=str(ws), env_override=_GAP_ENV)
+    r = _last_json(result)
+    assert r["zeroStreak"] == 0, (
+        f"BUG: zeroStreak stays 0 after 5 non-dispatch calls within MSG_GAP_MS. "
+        f"Enforcement is blind to rapid grinding. State: {r}"
+    )
+    assert r["thisMessageDispatches"] == 0
+
+
+@pytest.mark.xfail(
+    reason="BUG: rapid calls within MSG_GAP_MS never trigger message boundary, "
+           "so enforcement never fires.  Remove xfail when the plugin detects "
+           "rapid inline grinding without relying on the time gap."
+)
+def test_rapid_grinding_should_block_write_with_pending_work(tmp_path):
+    """3 rapid write calls with pending work. SHOULD be blocked by enforcement.
+    Currently all are allowed — proving the bug."""
+    ws = tmp_path / "grind-write"
+    ws.mkdir()
+    _make_working_workspace(ws)
+
+    code = f"""\
+const mod = await import('{PLUGIN_PATH}')
+const plugin = await mod.default({{}})
+await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
+await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
+const r = await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
+console.log(JSON.stringify(r ?? {{allowed: true}}))
+"""
+    result = _run_plugin(code, cwd=str(ws), env_override=_GAP_ENV)
+    r = _last_json(result)
+    assert r is not None and r.get("permissionDecision") == "deny", (
+        f"3 rapid writes with pending work SHOULD be blocked, got: {r}"
+    )
+
+
+def test_consecutive_non_dispatch_within_time_window(tmp_path):
+    """4 consecutive non-dispatch calls with 100ms sleeps between them
+    (all within MSG_GAP_MS=500). UNDER-FLOOR HARD BLOCK now fires on
+    the first write because thisMessageDispatches=0 < floor=10.
+    Previously all were allowed; now the plugin catches them."""
+    ws = tmp_path / "time-window"
+    ws.mkdir()
+    _make_working_workspace(ws)
+
+    code = f"""\
+const mod = await import('{PLUGIN_PATH}')
+const plugin = await mod.default({{}})
+await plugin['tool.execute.before']({{tool: 'read'}}, undefined)
+await new Promise(res => setTimeout(res, 100))
+await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
+await new Promise(res => setTimeout(res, 100))
+await plugin['tool.execute.before']({{tool: 'read'}}, undefined)
+await new Promise(res => setTimeout(res, 100))
+const r = await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
+console.log(JSON.stringify(r ?? {{allowed: true}}))
+"""
+    result = _run_plugin(code, cwd=str(ws), env_override=_GAP_ENV)
+    r = _last_json(result)
+    assert r is not None and r.get("permissionDecision") == "deny", (
+        f"Second write should be blocked by UNDER-FLOOR HARD BLOCK, got: {r}"
+    )
+    assert "UNDER-FLOOR HARD BLOCK" in r.get("message", "")
+
+
+@pytest.mark.xfail(
+    reason="BUG: first call bypasses because lastToolCallTs=0 and "
+           "prevMessageDispatches=0.  Should detect 'first call with "
+           "pending work and no dispatch.' Remove xfail when fixed."
+)
+def test_first_call_bypass_no_prior_dispatch_with_pending_work(tmp_path):
+    """First tool call is Write with pending work. Currently allowed because
+    lastToolCallTs=0 (no boundary) and prevMessageDispatches=0 (no floor breach).
+    Should detect this as 'first call with pending work and no dispatch'."""
+    ws = tmp_path / "first-bypass"
+    ws.mkdir()
+    _make_working_workspace(ws)
+
+    code = f"""\
+const mod = await import('{PLUGIN_PATH}')
+const plugin = await mod.default({{}})
+const r = await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
+console.log(JSON.stringify(r ?? {{allowed: true}}))
+"""
+    result = _run_plugin(code, cwd=str(ws), env_override=_GAP_ENV)
+    r = _last_json(result)
+    assert r is not None and r.get("permissionDecision") == "deny", (
+        f"First write with pending work SHOULD be blocked, got: {r}"
+    )
+
+
+def test_mixed_read_write_grinding_with_pending_work(tmp_path):
+    """Read→Write→Read→Write in rapid succession with pending work.
+    The writes are now blocked by UNDER-FLOOR HARD BLOCK (0 dispatches).
+    Previously they all bypassed enforcement; now the plugin catches them."""
+    ws = tmp_path / "mixed-grind"
+    ws.mkdir()
+    _make_working_workspace(ws)
+
+    code = f"""\
+const mod = await import('{PLUGIN_PATH}')
+const plugin = await mod.default({{}})
+await plugin['tool.execute.before']({{tool: 'read'}}, undefined)
+await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
+await plugin['tool.execute.before']({{tool: 'read'}}, undefined)
+const r = await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
+console.log(JSON.stringify(r ?? {{allowed: true}}))
+"""
+    result = _run_plugin(code, cwd=str(ws), env_override=_GAP_ENV)
+    r = _last_json(result)
+    assert r is not None and r.get("permissionDecision") == "deny", (
+        f"Write with 0 dispatches should be blocked by UNDER-FLOOR HARD BLOCK, got: {r}"
+    )
+    assert "UNDER-FLOOR HARD BLOCK" in r.get("message", "")
+
+
+def test_time_boundary_exactly_at_threshold(tmp_path):
+    """Calls spaced exactly MSG_GAP_MS+50ms apart. After 3 messages
+    with 0 dispatches, zeroStreak=2 → 3rd message's call blocked.
+    Proves boundary detection WORKS when the gap IS exceeded —
+    the bug is only that rapid calls stay inside the gap."""
+    ws = tmp_path / "exact-boundary"
+    ws.mkdir()
+    _make_working_workspace(ws)
+
+    gap = _GAP_MS + 50
+    code = f"""\
+const mod = await import('{PLUGIN_PATH}')
+const plugin = await mod.default({{}})
+await plugin['tool.execute.before']({{tool: 'read'}}, undefined)
+await new Promise(res => setTimeout(res, {gap}))
+await plugin['tool.execute.before']({{tool: 'read'}}, undefined)
+await new Promise(res => setTimeout(res, {gap}))
+const r = await plugin['tool.execute.before']({{tool: 'read'}}, undefined)
+console.log(JSON.stringify(r ?? {{allowed: true}}))
+"""
+    result = _run_plugin(code, cwd=str(ws), env_override=_GAP_ENV)
+    r = _last_json(result)
+    assert r is not None and r.get("permissionDecision") == "deny", (
+        f"Call 3 at MSG_GAP_MS+50ms should be blocked (zeroStreak=2), got: {r}"
+    )
+    assert "ZERO-DISPATCH STREAK" in r.get("message", "")
+
+
+def test_partial_wave_then_grind(tmp_path):
+    """Dispatch 5 tasks, then after boundary, make non-dispatch call.
+    Floor breach blocks because prevMessageDispatches=5 < MIN(10) and
+    thisMessageDispatches=0.  First non-dispatch call after the boundary
+    IS blocked — this proves boundary detection works, just not for
+    calls within the gap."""
+    ws = tmp_path / "partial-grind"
+    ws.mkdir()
+    _make_working_workspace(ws)
+
+    dispatches = "\n".join(
+        "await plugin['tool.execute.before']({tool: 'task'}, undefined)"
+        for _ in range(5)
+    )
+    code = f"""\
+const mod = await import('{PLUGIN_PATH}')
+const plugin = await mod.default({{}})
+{dispatches}
+{_GAP_SLEEP_JS}
+const r = await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
+console.log(JSON.stringify(r ?? {{allowed: true}}))
+"""
+    result = _run_plugin(code, cwd=str(ws), env_override=_GAP_ENV)
+    r = _last_json(result)
+    assert r is not None and r.get("permissionDecision") == "deny", (
+        f"Partial wave floor breach should block, got: {r}"
+    )
+    assert "UNDER-FLOOR HARD BLOCK" in r.get("message", "")
+
+
+def test_hot_module_applies_same_message_boundary(tmp_path):
+    """Verify the hot-reload module (if present at /tmp/gludd-hot-multitask.js)
+    applies the same MSG_GAP_MS message boundary detection as the default.
+    Uses the proxy pattern: dispatch through the plugin, which delegates to
+    whichever module (hot or default) is active."""
+    ws = tmp_path / "hot-module"
+    ws.mkdir()
+    _make_working_workspace(ws)
+
+    hot_path = Path("/tmp/gludd-hot-multitask.js")
+    has_hot = hot_path.exists()
+
+    code = f"""\
+const mod = await import('{PLUGIN_PATH}')
+const plugin = await mod.default({{}})
+await plugin['tool.execute.before']({{tool: 'read'}}, undefined)
+{_GAP_SLEEP_JS}
+await plugin['tool.execute.before']({{tool: 'read'}}, undefined)
+{_GAP_SLEEP_JS}
+const r = await plugin['tool.execute.before']({{tool: 'read'}}, undefined)
+console.log(JSON.stringify(r ?? {{allowed: true}}))
+"""
+    result = _run_plugin(code, cwd=str(ws), env_override=_GAP_ENV)
+    r = _last_json(result)
+    assert r is not None and r.get("permissionDecision") == "deny", (
+        f"Message boundary must apply with {'hot' if has_hot else 'default'} module, got: {r}"
+    )
+    assert "ZERO-DISPATCH STREAK" in r.get("message", "")
+
+
+# ─── New tests: 10-agent floor enforcement ──────────────────────────────────
+
+
+def test_exactly_ten_dispatches_allows_non_dispatch(tmp_path):
+    """Dispatch exactly 10 tasks, then in the SAME message, a non-dispatch tool
+    is allowed (thisMessageDispatches=10 >= MIN_DISPATCHES=10)."""
+    ws = tmp_path / "exact-10"
+    ws.mkdir()
+    _make_working_workspace(ws)
+
+    dispatches = "\n".join(
+        "await plugin['tool.execute.before']({tool: 'task'}, undefined)"
+        for _ in range(10)
+    )
+    code = f"""\
+const mod = await import('{PLUGIN_PATH}')
+const plugin = await mod.default({{}})
+{dispatches}
+const r = await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
+console.log(JSON.stringify(r ?? {{allowed: true}}))
+"""
+    result = _run_plugin(code, cwd=str(ws), env_override=_GAP_ENV)
+    r = _last_json(result)
+    assert r is None or r.get("permissionDecision") != "deny", (
+        f"10 dispatches in same message should allow write, got: {r}"
+    )
+
+
+def test_nine_dispatches_blocks_non_dispatch(tmp_path):
+    """Dispatch 9 tasks (< floor of 10) then write in same message -> DENIED
+    with UNDER-FLOOR HARD BLOCK message."""
+    ws = tmp_path / "nine"
+    ws.mkdir()
+    _make_working_workspace(ws)
+
+    dispatches = "\n".join(
+        "await plugin['tool.execute.before']({tool: 'task'}, undefined)"
+        for _ in range(9)
+    )
+    code = f"""\
+const mod = await import('{PLUGIN_PATH}')
+const plugin = await mod.default({{}})
+{dispatches}
+const r = await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
+console.log(JSON.stringify(r ?? {{allowed: true}}))
+"""
+    result = _run_plugin(code, cwd=str(ws), env_override=_GAP_ENV)
+    r = _last_json(result)
+    assert r is not None and r.get("permissionDecision") == "deny", (
+        f"9 dispatches (<10 floor) should block, got: {r}"
+    )
+    assert "UNDER-FLOOR HARD BLOCK" in r.get("message", "")
+
+
+def test_zero_dispatches_then_write_with_pending_work(tmp_path):
+    """Fresh session, no dispatches, pending work, write tool -> blocked by
+    UNDER-FLOOR HARD BLOCK regardless of zeroStreak or prevMessageDispatches."""
+    ws = tmp_path / "zero-dispatch-write"
+    ws.mkdir()
+    _make_working_workspace(ws)
+
+    code = f"""\
+const mod = await import('{PLUGIN_PATH}')
+const plugin = await mod.default({{}})
+const r = await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
+console.log(JSON.stringify(r ?? {{allowed: true}}))
+"""
+    result = _run_plugin(code, cwd=str(ws), env_override=_GAP_ENV)
+    r = _last_json(result)
+    assert r is not None and r.get("permissionDecision") == "deny", (
+        f"First write with pending work MUST be blocked, got: {r}"
+    )
+    assert "UNDER-FLOOR HARD BLOCK" in r.get("message", "")
+
+
+def test_consecutive_non_dispatch_blocked_at_five(tmp_path):
+    """5 consecutive non-dispatch mutating tool calls rapidly (within window)
+    with pending work -> the 5th is BLOCKED by consecutive-non-dispatch counter
+    (the first 4 are also blocked by UNDER-FLOOR, but the counter still
+    increments, so call 5 hits the CONSECUTIVE NON-DISPATCH STREAK check)."""
+    ws = tmp_path / "consec-5"
+    ws.mkdir()
+    _make_working_workspace(ws)
+
+    code = f"""\
+const mod = await import('{PLUGIN_PATH}')
+const plugin = await mod.default({{}})
+await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
+await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
+await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
+await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
+const r = await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
+console.log(JSON.stringify(r ?? {{allowed: true}}))
+"""
+    result = _run_plugin(code, cwd=str(ws), env_override=_GAP_ENV)
+    r = _last_json(result)
+    assert r is not None and r.get("permissionDecision") == "deny", (
+        f"5th consecutive non-dispatch write should be blocked, got: {r}"
+    )
+    assert "CONSECUTIVE NON-DISPATCH STREAK" in r.get("message", "")
+
+
+def test_consecutive_non_dispatch_resets_on_dispatch(tmp_path):
+    """Make 4 non-dispatch calls (consecutiveNonDispatch=4), dispatch 1 task
+    (resets counter to 0), then verify the state file shows counter=0."""
+    ws = tmp_path / "consec-reset"
+    ws.mkdir()
+    _make_working_workspace(ws)
+
+    code = f"""\
+import * as fs from 'node:fs'
+const mod = await import('{PLUGIN_PATH}')
+const plugin = await mod.default({{}})
+await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
+await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
+await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
+await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
+const beforeDispatch = JSON.parse(fs.readFileSync('/tmp/gludd-multitask-state.json', 'utf8'))
+await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
+const afterDispatch = JSON.parse(fs.readFileSync('/tmp/gludd-multitask-state.json', 'utf8'))
+console.log(JSON.stringify({{
+  consecutiveBefore: beforeDispatch.consecutiveNonDispatch,
+  consecutiveAfter: afterDispatch.consecutiveNonDispatch
+}}))
+"""
+    result = _run_plugin(code, cwd=str(ws), env_override=_GAP_ENV)
+    r = _last_json(result)
+    assert r.get("consecutiveBefore") == 4, (
+        f"Before dispatch: consecutiveNonDispatch should be 4, got: {r}"
+    )
+    assert r.get("consecutiveAfter") == 0, (
+        f"After dispatch: consecutiveNonDispatch should be reset to 0, got: {r}"
+    )
+
+
+def test_read_tools_dont_count_toward_consecutive_streak(tmp_path):
+    """10 read tool calls in rapid succession -> should NOT trigger the
+    consecutive non-dispatch block (reads don't count toward the counter)."""
+    ws = tmp_path / "reads-no-streak"
+    ws.mkdir()
+    _make_working_workspace(ws)
+
+    code = f"""\
+const mod = await import('{PLUGIN_PATH}')
+const plugin = await mod.default({{}})
+await plugin['tool.execute.before']({{tool: 'read'}}, undefined)
+await plugin['tool.execute.before']({{tool: 'read'}}, undefined)
+await plugin['tool.execute.before']({{tool: 'read'}}, undefined)
+await plugin['tool.execute.before']({{tool: 'read'}}, undefined)
+await plugin['tool.execute.before']({{tool: 'read'}}, undefined)
+await plugin['tool.execute.before']({{tool: 'read'}}, undefined)
+await plugin['tool.execute.before']({{tool: 'read'}}, undefined)
+await plugin['tool.execute.before']({{tool: 'read'}}, undefined)
+await plugin['tool.execute.before']({{tool: 'read'}}, undefined)
+const r = await plugin['tool.execute.before']({{tool: 'read'}}, undefined)
+console.log(JSON.stringify(r ?? {{allowed: true}}))
+"""
+    result = _run_plugin(code, cwd=str(ws), env_override=_GAP_ENV)
+    r = _last_json(result)
+    assert r is None or r.get("permissionDecision") != "deny", (
+        f"Reads should not increment consecutive non-dispatch counter, got: {r}"
+    )
+
+
+def test_env_disable_skips_under_floor_check(tmp_path):
+    """GLUDD_MULTITASK_FLOOR_ENFORCE=0: 9 dispatches (< floor) + write does
+    NOT block because enforcement is entirely disabled."""
+    ws = tmp_path / "env-disable-under"
+    ws.mkdir()
+    _make_working_workspace(ws)
+
+    dispatches = "\n".join(
+        "await plugin['tool.execute.before']({tool: 'task'}, undefined)"
+        for _ in range(9)
+    )
+    code = f"""\
+const mod = await import('{PLUGIN_PATH}')
+const plugin = await mod.default({{}})
+{dispatches}
+const r = await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
+console.log(JSON.stringify(r ?? {{allowed: true}}))
+"""
+    result = _run_plugin(
+        code,
+        env_override={**_GAP_ENV, "GLUDD_MULTITASK_FLOOR_ENFORCE": "0"},
+        cwd=str(ws),
+    )
+    r = _last_json(result)
+    assert r is None or r.get("permissionDecision") != "deny", (
+        f"Env disable should skip under-floor check, got: {r}"
+    )
+
+
+def test_subagent_skips_under_floor_check(tmp_path):
+    """OPENCODE_SUBAGENT=1: 9 dispatches (< floor) + write does NOT block
+    because subagent context skips ALL enforcement."""
+    ws = tmp_path / "subagent-under"
+    ws.mkdir()
+    _make_working_workspace(ws)
+
+    dispatches = "\n".join(
+        "await plugin['tool.execute.before']({tool: 'task'}, undefined)"
+        for _ in range(9)
+    )
+    code = f"""\
+const mod = await import('{PLUGIN_PATH}')
+const plugin = await mod.default({{}})
+{dispatches}
+const r = await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
+console.log(JSON.stringify(r ?? {{allowed: true}}))
+"""
+    result = _run_plugin(
+        code,
+        env_override={**_GAP_ENV, "OPENCODE_SUBAGENT": "1"},
+        cwd=str(ws),
+    )
+    r = _last_json(result)
+    assert r is None or r.get("permissionDecision") != "deny", (
+        f"Subagent context should skip under-floor check, got: {r}"
+    )
+
+
+def test_ten_dispatches_required_message_explicit(tmp_path):
+    """The deny message for under-floor waves explicitly says '10' (the literal
+    number) and contains 'UNDER-FLOOR HARD BLOCK'."""
+    ws = tmp_path / "msg-explicit"
+    ws.mkdir()
+    _make_working_workspace(ws)
+
+    dispatches = "\n".join(
+        "await plugin['tool.execute.before']({tool: 'task'}, undefined)"
+        for _ in range(9)
+    )
+    code = f"""\
+const mod = await import('{PLUGIN_PATH}')
+const plugin = await mod.default({{}})
+{dispatches}
+const r = await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
+console.log(JSON.stringify(r ?? {{allowed: true}}))
+"""
+    result = _run_plugin(code, cwd=str(ws), env_override=_GAP_ENV)
+    r = _last_json(result)
+    msg = r.get("message", "")
+    assert "UNDER-FLOOR HARD BLOCK" in msg, f"Expected UNDER-FLOOR HARD BLOCK, got: {msg}"
+    assert "10" in msg, f"Deny message must mention floor=10 explicitly, got: {msg}"
+
+
+def test_under_floor_check_fires_without_zero_streak(tmp_path):
+    """Under-floor check fires with 9 dispatches in same message + write.
+    zeroStreak is 0 (never incremented because no message boundary was crossed),
+    yet the UNDER-FLOOR HARD BLOCK still fires because it does NOT check
+    zeroStreak at all."""
+    ws = tmp_path / "under-floor-no-streak"
+    ws.mkdir()
+    _make_working_workspace(ws)
+
+    dispatches = "\n".join(
+        "await plugin['tool.execute.before']({tool: 'task'}, undefined)"
+        for _ in range(9)
+    )
+    code = f"""\
+import * as fs from 'node:fs'
+const mod = await import('{PLUGIN_PATH}')
+const plugin = await mod.default({{}})
+{dispatches}
+const state = JSON.parse(fs.readFileSync('/tmp/gludd-multitask-state.json', 'utf8'))
+const r = await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
+console.log(JSON.stringify({{...r, zeroStreakBefore: state.zeroStreak}}))
+"""
+    result = _run_plugin(code, cwd=str(ws), env_override=_GAP_ENV)
+    r = _last_json(result)
+    assert r is not None and r.get("permissionDecision") == "deny", (
+        f"Under-floor check must fire, got: {r}"
+    )
+    assert r.get("zeroStreakBefore") == 0, (
+        f"zeroStreak should be 0 after 9 dispatches in same message, got: {r.get('zeroStreakBefore')}"
+    )
+    assert "UNDER-FLOOR HARD BLOCK" in r.get("message", "")

@@ -1,0 +1,13 @@
+---
+# antenna_design role — entry point
+
+- name: Validate parameters
+  ansible.builtin.assert:
+    that:
+      - antenna_design_type in ["dipole", "yagi", "loop", "patch", "discone"]
+      - antenna_design_freq_hz | int > 0
+    fail_msg: "antenna_design_type must be dipole / yagi / loop / patch / discone; freq_hz must be > 0"
+
+- name: Dispatch design mode
+  ansible.builtin.include_tasks: "design_{{ antenna_design_type }}.yml"
+  when: antenna_design_enabled | bool

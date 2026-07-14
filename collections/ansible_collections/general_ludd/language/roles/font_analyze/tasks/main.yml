@@ -1,0 +1,164 @@
+---
+# font_analyze role — analyze font files (OpenType/TrueType/WOFF/WOFF2):
+# parse font tables, extract metrics, check kerning/ligatures, validate web fonts.
+
+- name: Ensure artifact directory exists
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Analyze font file via knowledge module
+  ansible.builtin.script:
+    cmd: |
+      python3 -c "
+import json, sys, os, struct
+sys.path.insert(0, os.path.expanduser('{{ playbook_dir | default('.') }}/../../../../src'))
+
+font_file = '{{ font_file }}'
+result = {'file': font_file}
+
+if not font_file or not os.path.isfile(font_file):
+    result['error'] = f'Font file not found: {font_file}'
+else:
+    result['size_bytes'] = os.path.getsize(font_file)
+    with open(font_file, 'rb') as f:
+        header = f.read(4)
+
+    if header.startswith(b'wOFF'):
+        result['format'] = 'woff'
+    elif header.startswith(b'wOF2'):
+        result['format'] = 'woff2'
+    elif header[:4] == b'ttcf':
+        result['format'] = 'ttc'
+    elif header[:4] == b'\x00\x01\x00\x00':
+        result['format'] = 'ttf'
+    elif header[:4] == b'OTTO':
+        result['format'] = 'otf'
+    else:
+        result['format'] = 'unknown'
+
+    if {{ check_tables | lower }} and result['format'] in ('ttf', 'otf', 'ttc'):
+        try:
+            with open(font_file, 'rb') as f:
+                f.seek(0)
+                sfversion, num_tables = struct.unpack('>IH', f.read(4) + f.read(2) + b'\x00' * 2)
+                search_range, entry_selector, range_shift = struct.unpack('>HHH', f.read(6))
+                f.seek(12)
+                tables = []
+                for i in range(num_tables):
+                    tag, checksum, offset, length = struct.unpack('>4sIII', f.read(16))
+                    tables.append({'tag': tag.decode('ascii', errors='replace').strip(), 'offset': offset, 'length': length})
+                result['tables'] = tables
+                result['table_count'] = len(tables)
+        except Exception as e:
+            result['table_error'] = str(e)
+
+    if {{ check_metrics | lower }}:
+        try:
+            with open(font_file, 'rb') as f:
+                table_data = {}
+                if {{ check_tables | lower }} and result.get('tables'):
+                    for tbl in result['tables']:
+                        f.seek(tbl['offset'])
+                        table_data[tbl['tag']] = f.read(tbl['length'])
+                else:
+                    f.seek(0)
+                    head = f.read(256)
+                    table_data = {}
+                    tag = head[:4].decode('ascii', errors='replace').strip()
+                    if tag in ('\x00\x01\x00\x00', 'true'):
+                        f.seek(0)
+                        f.read(4)
+                        num_tables = struct.unpack('>H', f.read(2))[0]
+                        f.seek(12)
+                        for i in range(num_tables):
+                            ttag, checksum, offset, length = struct.unpack('>4sIII', f.read(16))
+                            ttag_str = ttag.decode('ascii', errors='replace').strip()
+                            current = f.tell()
+                            f.seek(offset)
+                            table_data[ttag_str] = f.read(length)
+                            f.seek(current)
+
+                metrics = {'em_units': 2048, 'ascent': 0, 'descent': 0, 'line_gap': 0, 'cap_height': 0, 'x_height': 0}
+                if 'head' in table_data and len(table_data['head']) >= 54:
+                    h = table_data['head']
+                    metrics['em_units'] = struct.unpack('>H', h[18:20])[0]
+                if 'hhea' in table_data and len(table_data['hhea']) >= 36:
+                    h = table_data['hhea']
+                    metrics['ascent'] = struct.unpack('>h', h[4:6])[0]
+                    metrics['descent'] = struct.unpack('>h', h[6:8])[0]
+                    metrics['line_gap'] = struct.unpack('>h', h[8:10])[0]
+                if 'OS/2' in table_data and len(table_data['OS/2']) >= 90:
+                    os2 = table_data['OS/2']
+                    metrics['cap_height'] = struct.unpack('>h', os2[88:90])[0] if len(os2) >= 90 else 0
+                    xh_off = 86 if len(os2) < 94 else 86
+                    try:
+                        metrics['x_height'] = struct.unpack('>h', os2[xh_off:xh_off+2])[0]
+                    except struct.error:
+                        pass
+                result['metrics'] = metrics
+        except Exception as e:
+            result['metrics_error'] = str(e)
+
+    if {{ check_features | lower }}:
+        features = {'has_GSUB': False, 'has_GPOS': False, 'has_kern': False}
+        if result.get('tables'):
+            tags = [t['tag'] for t in result['tables']]
+            features['has_GSUB'] = 'GSUB' in tags
+            features['has_GPOS'] = 'GPOS' in tags
+            features['has_kern'] = 'kern' in tags
+        result['features'] = features
+
+    if {{ check_variable | lower }}:
+        var_axes = []
+        if result.get('tables'):
+            for t in result['tables']:
+                if t['tag'] == 'fvar':
+                    try:
+                        with open(font_file, 'rb') as f:
+                            f.seek(t['offset'])
+                            fvar_data = f.read(t['length'])
+                            if len(fvar_data) >= 16:
+                                axis_count = struct.unpack('>H', fvar_data[8:10])[0]
+                                offset = 16
+                                for ai in range(axis_count):
+                                    if offset + 20 <= len(fvar_data):
+                                        tag = fvar_data[offset:offset+4].decode('ascii', errors='replace')
+                                        min_val, def_val, max_val = struct.unpack('>fff', fvar_data[offset+4:offset+16])
+                                        var_axes.append({'tag': tag.strip(), 'min': min_val, 'default': def_val, 'max': max_val})
+                                        offset += 20
+                    except Exception:
+                        pass
+                    break
+        result['variable_axes'] = var_axes
+
+    if {{ check_monospace | lower }}:
+        if result.get('tables'):
+            tags = [t['tag'] for t in result['tables']]
+            if 'post' in tags:
+                result['is_monospace'] = False
+            else:
+                result['is_monospace'] = None
+
+    if {{ check_web_font | lower }}:
+        fm = result['format']
+        result['web_font_valid'] = fm in ('woff', 'woff2')
+        if fm == 'ttf':
+            result['web_font_note'] = 'TrueType can be used as web font but not compressed'
+
+with open('{{ artifact_dir }}/font_analysis.json', 'w') as f:
+    json.dump(result, f, indent=2, ensure_ascii=False)
+print(f'Output: {{ artifact_dir }}/font_analysis.json')
+print(f'Format: {result.get(\"format\", \"unknown\")}')
+print(f'Tables: {result.get(\"table_count\", 0)}')
+print(f'Size: {result.get(\"size_bytes\", 0)} bytes')
+"
+  args:
+    executable: python3
+  register: font_result
+  changed_when: false
+
+- name: Print font analysis summary
+  ansible.builtin.debug:
+    msg: "{{ font_result.stdout_lines }}"

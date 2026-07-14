@@ -1,0 +1,9 @@
+---
+fuzzer: "afl++"
+fuzzer_path: "/usr/local/bin/afl-fuzz"
+output_dir: "/tmp/gludd-fuzz-target"
+corpus_dir: "/tmp/gludd-fuzz-corpus"
+enable_coverage_guided: false
+enable_mutation: false
+enable_crash_triage: false
+crash_retention_days: 30

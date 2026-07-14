@@ -1,0 +1,7 @@
+---
+# ios_security role — audit iOS security subsystems: AMFI/trustcache,
+# sandbox profiles, code-sign check.
+
+- name: Audit iOS security posture
+  ansible.builtin.debug:
+    msg: "ios_security: auditing AMFI/trustcache, sandbox profiles, code-sign check"

@@ -2123,6 +2123,103 @@ the machine-enforceable correction.
   If `release-cut` timed out on its poll, run `verify-release-artifact` manually
   after CI finishes.
 
+## CRITICAL: 10-Agent Dispatch Floor (HARD ENFORCEMENT)
+
+**Every dispatch wave MUST contain EXACTLY 10 task/agent/workflow dispatches when
+pending work exists.** This is not a guideline, not a suggestion, not an
+aspirational target — it is a **mechanically enforced hard floor.** Any response
+with <10 dispatches while `TASKS.md` has unchecked items or `config/ratchet.yml`
+has entries is a **policy violation** that the plugin will deny.
+
+### Why exactly 10
+
+A dispatch wave with fewer than 10 subagents leaves compute capacity idle. The
+COST-EFFICIENCY DIRECTIVE caps concurrent subagents at exactly 10 — the ceiling
+is also the floor. Running at 7 or 5 when 10 is permitted is leaving tokens on
+the table. Every subagent slot that goes unfilled is a slot that should be doing
+a code audit, writing a test, improving a docstring, adding a guardrail — any
+productive unit of work.
+
+### Enforcement (machine)
+
+**`enforce-multitask.ts`** mechanically blocks non-dispatch tools (Edit/Write/Bash)
+when:
+- The **prior message** had >0 but <10 dispatches (FLOOR BREACH)
+- The **current message** has 0 dispatches and pending work exists (INSUFFICIENT DISPATCHES)
+- **MAX_ZERO_STREAK** (2) consecutive responses had 0 dispatches (ZERO-DISPATCH STREAK)
+
+The plugin's `tool.execute.before` hook fires on every tool call. A dispatch wave
+resets the counters. A non-dispatch tool call with an uncleared breach is denied
+with a message naming the exact count and floor.
+
+```text
+MULTITASKING FLOOR BREACH: only 7 dispatch(es) in prior message.
+Codified floor: 10. This is NOT advisory.
+REQUIRED: ≥10 parallel task/agent/workflow dispatches in ONE message.
+```
+
+### Subagent quality requirements
+
+**Every dispatched subagent MUST produce a deliverable.** Subagent slots are
+finite — a slot filled with a bogus task is a slot stolen from real work.
+
+- **Every subagent MUST be given enough context to do real work.** Full file
+  reads, multi-step tasks — not single grep/check operations that return
+  immediately. A subagent that reports back in 30 seconds with "found nothing"
+  did no work.
+- **Subagents that only do read/grep/return-status are wasted slots.** Use the
+  read/grep/glob tools directly for single searches. Subagents exist for
+  synthesis and production — reading files, reasoning about them, and producing
+  a concrete output (a code change, a test file, a documented analysis).
+- **Each subagent task should be sized for 2–5 minutes of meaningful work.**
+  Shorter = wasteful overhead. Longer = deadline risk.
+- **"Research" subagents are NOT placeholders.** A research subagent that
+  "greps for a pattern" is filler. A research subagent that "reads 3 files,
+  cross-references their callers, and proposes a refactoring plan" does real work.
+
+### COST-EFFICIENCY DIRECTIVE interaction
+
+The COST-EFFICIENCY DIRECTIVE sets the ceiling at 10. This section sets the
+floor at 10. Together they define the sole legal dispatch wave size:
+
+| Wave size | Status | Why |
+|---|---|---|
+| 10 | **REQUIRED** | Ceiling == floor == 10. The only valid wave size when work exists. |
+| 1–9 | **DENIED** | Below floor. Plugin blocks. |
+| 0 | **DENIED** | Zero-dispatch streak builds; blocked at MAX_ZERO_STREAK=2. |
+| 11+ | **DENIED** | Above ceiling (COST-EFFICIENCY DIRECTIVE). Plugin blocks. |
+
+The COST-EFFICIENCY DIRECTIVE's other rules (terse prompts, serialized research,
+coding subagents ≤2 parallel) remain in force and are NOT overridden by this
+section.
+
+### Override
+
+| Mechanism | Effect |
+|---|---|
+| `GLUDD_MIN_DISPATCHES` env var | Override the floor (default `10`, min `2`). Set to `2` for focused single-file work. |
+| `GLUDD_MULTITASK_FLOOR_ENFORCE=0` | Disable ALL multitask enforcement entirely. |
+| `make disengage-enforcement` | Temporary emergency bypass for the current session. Expires after `MAX_DISENGAGE_MS`. |
+
+**`GLUDD_MIN_DISPATCHES` may never be set below 2.** A floor of 1 or 0
+functionally disables the multitask enforcement and is equivalent to
+`GLUDD_MULTITASK_FLOOR_ENFORCE=0` — use that instead.
+
+### "No work to dispatch"
+
+If there is genuinely no work to dispatch, then there is no pending work in
+`TASKS.md` and no entries in `config/ratchet.yml` — and the plugin's
+`hasPendingWork()` gate will not fire. The floor only applies when work exists.
+When all work is done, the plugin is silent.
+
+### Enforcement layers
+
+1. **Plugin** — `.opencode/plugin/enforce-multitask.ts` (MIN_DISPATCHES=10,
+   MIN_DISPATCHES_PER_WAVE=10, MAX_DISPATCHES=10).
+2. **Prompt** — this section.
+3. **Test** — `tests/unit/test_multitask_plugin.py`
+   `TestTenAgentFloorHardEnforcement`, `tests/unit/test_multitask_min_dispatch.py`.
+
 ## CRITICAL: Minimum 10 Subagents at All Times
 
 **You MUST maintain a MINIMUM of 10 concurrent subagent threads doing useful work at all times.** Never let the active count drop below 10 while work remains.

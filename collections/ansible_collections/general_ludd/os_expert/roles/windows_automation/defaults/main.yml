@@ -1,0 +1,14 @@
+---
+# windows_automation role defaults
+
+daemon_url: "http://localhost:8000"
+psk: ""
+
+artifact_dir: "C:\\Temp\\gludd-windows-automation"
+
+manage_psremoting: false
+manage_dsc: false
+manage_schtasks: false
+manage_unattended_install: false
+
+enable_git_push: false

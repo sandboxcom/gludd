@@ -1,0 +1,16 @@
+---
+# android_security role defaults
+
+daemon_url: "http://localhost:8000"
+psk: ""
+
+artifact_dir: "/tmp/gludd-android-security"
+
+audit_sepolicy: true
+audit_permissions: true
+audit_keystore: true
+audit_dm_verity: true
+
+adb_serial: ""
+
+enable_git_push: false

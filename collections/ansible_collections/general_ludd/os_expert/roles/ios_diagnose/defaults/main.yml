@@ -1,0 +1,16 @@
+---
+# ios_diagnose role defaults
+
+daemon_url: "http://localhost:8000"
+psk: ""
+
+artifact_dir: "/tmp/gludd-ios-diagnose"
+
+gather_ideviceinfo: true
+gather_idevicesyslog: true
+gather_idevicediagnostics: true
+gather_oslog: true
+
+device_udid: ""
+
+enable_git_push: false

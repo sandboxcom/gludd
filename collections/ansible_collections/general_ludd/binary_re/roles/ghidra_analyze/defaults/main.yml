@@ -1,0 +1,7 @@
+---
+ghidra_path: "/opt/ghidra"
+output_dir: "/tmp/gludd-ghidra-analyze"
+analysis_mode: "basic"
+enable_headless_analysis: false
+enable_scripted_export: false
+enable_function_signature: false

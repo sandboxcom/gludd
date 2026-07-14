@@ -1,0 +1,18 @@
+---
+galaxy_info:
+  role_name: marine_decode
+  author: Gludd Agent
+  description: >
+    Decode marine communication systems — AIS, NAVTEX, DSC,
+    EPIRB/SART — using rtl_ais and multimon-ng backends.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: ["8", "9"]
+    - name: Ubuntu
+      versions: [focal, jammy, noble]
+    - name: MacOSX
+      versions: [all]
+  galaxy_tags: [marine, ais, navtex, dsc, vhf, maritime]
+dependencies: []

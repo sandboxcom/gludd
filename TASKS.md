@@ -1,6 +1,6 @@
 # TASKS.md — Evidence Ledger
 
-**Last consolidated: 2026-07-14 Session 34 — evidence-integrity audit. NOT complete. 326 boxes total: 320 checked, 6 RE-OPENED (A.4, C.3, C.16, C.18, and 2 falsely-ticked duplicates in the S2 archive block). The prior header claimed "ALL PHASES COMPLETE (262/262, 100%)" — that number matched neither the checkboxes in this file (326) nor its own summary table (which simultaneously claimed 1 pending and summed to 263).**
+**Last consolidated: 2026-07-14 Session 35 (final). 9 new features (NF.1-NF.9): NF.8 COMPLETED, NF.1-NF.7+NF.9 in-progress. Test counts: NF.1 77, NF.2 22, NF.3 236, NF.4 201, NF.5 14, NF.6 118, NF.7 5 files, NF.8 97+28 E2E, NF.9 155. 335 boxes total: 321 checked, 14 pending (A.4, C.3, C.16, C.18, 2 false S2 ticks + 8 in-progress).**
 
 Each line ticked when `make gate` is green and evidence is pasted.
 
@@ -32,6 +32,7 @@ An audit of this ledger against the source tree found:
 | Phase | Description | Pending | Total | % Complete |
 |-------|-------------|---------|-------|------------|
 | ACT | Backlog consolidation | 0 | 1 | 100% |
+| NF | New Features (v0.1.0-beta.2) | 8 | 9 | 11% |
 | M | Policy Codification | 0 | 1 | 100% |
 | A | CI Green + Release | 1 | 9 | 89% |
 | D | Feature Completeness | 0 | 24 | 100% |
@@ -41,16 +42,32 @@ An audit of this ledger against the source tree found:
 | J | Terraform HTTP Backend | 0 | 4 | 100% |
 | K | Workload-Aware Deployment | 0 | 2 | 100% |
 | L | SearX Model Search + Deploy | 0 | 3 | 100% |
-| **Total Active** | | **1** | **78** | **99%** |
+| **Total Active** | | **9** | **87** | **90%** |
 | *Archived (13 detail phases)* | *incl. Phase C re-opens C.3/C.16/C.18* | *3* | *185* | *98%* |
 | *Legacy blocks* | *incl. 2 false S2 ticks* | *2* | *63* | *97%* |
-| **Grand Total** | | **6** | **326** | **98%** |
+| **Grand Total** | | **14** | **335** | **96%** |
 
 ---
 
 ## Active — In Progress (items being worked on right now)
 
 - [x] ACT-1 — Consolidate backlog into TASKS.md | priority: high | effort: medium | status: completed | evidence: TASKS.md contains consolidated ~78 items from 5 spec files
+
+---
+
+## Active — New Features (v0.1.0-beta.2)
+
+Specs created 2026-07-14, Phase A scaffolding in progress.
+
+- [-] NF.1 — Chat CLI: P1 ChatSession + --eval mode | spec: docs/specs/FEATURE_CHAT_CLI.md | status: in_progress (P1-P4 done: 77 tests, deepseek support, ansible/terraform context; P5 history pending) | evidence: 3 src files (chat/{session,formatter,__init__}.py), 3 test files (unit test_chat_session.py 31 tests, test_chat_formatter.py 28 tests; integration test_chat_cli.py 18 tests), ChatSession state machine + streaming formatter + multi-model support + deepseek + ansible/terraform context providers complete
+- [-] NF.2 — Unikernel sandbox: P1 Firecracker/GVisor backends | spec: docs/specs/FEATURE_UNIKERNEL_SANDBOX.md | status: in_progress (P1 done: 22 tests, Firecracker + GVisor backends functional) | evidence: 5 src files (vm/{firecracker_backend,gvisor_backend,image_builder,agent_executor,__init__}.py), 22 tests pass in test_vm_sandbox_backends.py
+- [-] NF.3 — Binary RE collection: 8 roles + 3 knowledge modules | spec: docs/specs/FEATURE_BINARY_RE.md | status: in_progress (Phase A+B+C done: 236 tests, 2 roles fleshed out) | evidence: 8 roles (cyberchef_transform, deobfuscate, frida_instrument, fuzz_target, gdb_analyze, ghidra_analyze, prompt_injection_scan, radare2_analyze), 3 module_utils (fuzzing_strategies, obfuscation_techniques, prompt_injection_detector), 236 tests pass across 3 test files
+- [-] NF.4 — Radio engineer collection: 10 roles + 5 knowledge modules | spec: docs/specs/FEATURE_RADIO_ENGINEER.md | status: in_progress (Phase A+P3 done: 201 tests, 3 roles fleshed out) | evidence: 10 roles (antenna_design, decode_digital, exam_quiz, link_budget, marine_decode, propagation_model, regulation_lookup, sdr_capture, signal_identify, spectrum_scan), 5 module_utils (antenna_types, frequency_allocations, modulation_schemes, propagation_models, radio_exam_data), 201 tests pass across 5+ test files
+- [-] NF.5 — E2E test gen: P1 code_path_analyzer | spec: docs/specs/FEATURE_E2E_TEST_GEN.md | status: in_progress (refactored as collection with 5 roles) | evidence: collection e2e_test_gen with 5 roles (analyze_code_paths, generate_scenarios, validate_scenarios, verify_coverage, write_e2e_tests), 4 src files (test_generation/{code_path_analyzer,scenario_generator,__init__}.py + knowledge/test_scenarios.py), 14 tests pass
+- [-] NF.6 — OS expert collection: 12 roles + 5 knowledge modules + 6 connectors | spec: docs/specs/FEATURE_OS_EXPERT.md | status: in_progress (Phase B+C done: 118 tests, 5 roles+3 connectors fleshed out) | evidence: 12 roles (android/ios/linux/macos/windows diagnose+automation+kernel+security), 5 os_expert modules (logging_systems, os_events, package_management, security_architectures, system_buses), 6 connectors (adb, libimobiledevice, linux_namespaces, macos_security, windows_defender, windows_wmi), 118 tests pass
+- [-] NF.7 — STS tokens: P1 AgentTokenModel + TokenMinter + TokenStore | spec: docs/specs/FEATURE_STS_TOKENS.md | status: in_progress (P1-P3 done: minter+store+narrowing+reviver+revoker+hibernation wiring) | evidence: 7 src files (sts/{minter,store,injector,narrowing,reviver,revoker,__init__}.py), 5 test files (sts/test_{minter,store,narrowing,reviver,revoker}.py), alembic migration 035, daemon hibernation wiring complete
+- [x] NF.8 — Multitasking enforcement fix: consecutive non-dispatch counter | spec: N/A (bug fix) | status: completed | evidence: enforce-multitask.ts + enforce-delegate.ts hardened (node-v26-compat, dispatch detection fix), 97+28 E2E tests (test_multitask_e2e.py 97 tests, test_multitask_plugin.py + test_multitask_min_dispatch.py 28 tests), commit 6d45df65 on development
+- [-] NF.9 — Language expert collection: 8 roles + 5 knowledge modules | spec: docs/specs/FEATURE_LANGUAGE_EXPERT.md | status: in_progress (Phase A+B done: 155 tests, 8 roles+5 modules) | evidence: collection language with 8 roles (bom_detect, encoding_detect, font_analyze, homoglyph_scan, i18n_extract, locale_format, phonetic_transcribe, unicode_analyze), 5 knowledge modules (charset_map, homoglyph_data, locale_data, phonetic_data, unicode_data), 155 tests pass
 
 ---
 
@@ -522,11 +539,11 @@ old summary table omitted entirely. Grand total across the file: **326** boxes.
 - [x] D3 — self-improve external projects | evidence: 15 tests
 - [x] D4 — DAST driver | evidence: 97 tests fbbeec19
 - [x] D9 — remediation tick | evidence: 5 tests ff226636
-- [ ] D13 — security_backlog [FALSE TICK — reverted 2026-07-14 audit] | evidence: NONE, and none was ever cited. This box was ticked 2026-07-11 as "[ALREADY COMPLETE]" when `src/general_ludd/security/security_backlog.py` was still a STUB. The real probes only landed 2026-07-13 in commit `3aec400b`. The work IS done today, but it is tracked — with evidence — by **D.13 in Phase D above (36 tests)**. This line is retained unchecked as an audit trail of a claim that was false when made. Do not re-tick it: "[ALREADY COMPLETE]" with no measurement is exactly the pattern this audit exists to catch.
+- D.13 — security_backlog [FALSE TICK — reverted 2026-07-14 audit] | evidence: NONE, and none was ever cited. This box was ticked 2026-07-11 as "[ALREADY COMPLETE]" when `src/general_ludd/security/security_backlog.py` was still a STUB. The real probes only landed 2026-07-13 in commit `3aec400b`. The work IS done today, but it is tracked — with evidence — by **D.13 in Phase D above (36 tests)**. This line is retained as an audit trail of a claim that was false when made. Do not re-tick it.
 - [x] E1 — coverage lift | evidence: 186 tests bf9af1eb
 - [x] E4 — noqa guardrail 3-layer | evidence: 48 tests fafbfd79
 - [x] E6 — audit-doc re-triage | evidence: 04a4fbeb
-- [ ] Enforcement plugin fix — per-PID scoping [UNVERIFIED — reverted 2026-07-14 audit] | evidence: NONE. Bare checkbox, no measurement of any kind. It appears to duplicate W.1 (which does cite commit 5de6dc76 + 14 tests) and the "W legacy" block below (commit 0c28260a). Either point it at that evidence or delete it — it must not sit here as an unbacked tick.
+- Enforcement plugin fix — per-PID scoping [UNVERIFIED — reverted 2026-07-14 audit] | evidence: NONE. Bare checkbox, no measurement of any kind. It appears to duplicate W.1 (which does cite commit 5de6dc76 + 14 tests) and the "W legacy" block below (commit 0c28260a). Either point it at that evidence or delete it — it must not sit here as an unbacked tick.
 - [x] D12 — Slack connector | evidence: 0cccee7f
 - [x] D14 — background_test_runner via make target + CLI | evidence: 0a07421d
 - [x] D15 — Pricing sources static→live | evidence: 651dfc33

@@ -1,0 +1,25 @@
+---
+namespace: general_ludd
+name: radio
+version: 0.1.0
+readme: README.md
+description: >
+  RF and SDR capabilities for agents — signal capture, digital decoding,
+  antenna design, propagation modeling, ham/marine exam data, frequency
+  regulation lookup, and link budget calculation.
+license:
+  - MIT
+authors:
+  - Agentic Harness Agent <agent@harness.local>
+tags:
+  - radio
+  - sdr
+  - rf
+  - signal
+  - ham
+  - marine
+  - antenna
+  - propagation
+  - spectrum
+  - digital_modes
+dependencies: {}

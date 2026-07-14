@@ -1,0 +1,14 @@
+---
+galaxy_info:
+  role_name: macos_diagnose
+  author: Agentic Harness Agent
+  description: >
+    Gather macOS diagnostic data: unified log, spdisaster_report, launchctl
+    service state, nvram variables, and pmset power settings. Produces a
+    structured JSON artifact and sends findings via gludd_message.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: MacOSX
+      versions: [all]
+dependencies: []

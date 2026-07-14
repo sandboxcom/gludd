@@ -1,0 +1,8 @@
+---
+gdb_path: "/usr/bin/gdb"
+output_dir: "/tmp/gludd-gdb-analyze"
+analysis_mode: "basic"
+enable_breakpoints: false
+enable_stack_trace: false
+enable_register_dump: false
+enable_scripted_analysis: false

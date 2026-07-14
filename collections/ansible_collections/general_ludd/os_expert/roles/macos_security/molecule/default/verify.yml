@@ -1,0 +1,62 @@
+---
+- name: Verify macos_security
+  hosts: localhost
+  gather_facts: false
+  vars:
+    artifact_dir: "/tmp/gludd-macos-security"
+  tasks:
+    - name: Stat artifact_dir
+      ansible.builtin.stat:
+        path: "{{ artifact_dir }}"
+      register: _dir
+    - name: Assert artifact_dir exists and is a directory
+      ansible.builtin.assert:
+        that:
+          - _dir.stat.exists
+          - _dir.stat.isdir
+        fail_msg: "{{ artifact_dir }} does not exist or is not a directory"
+
+    - name: Stat csrutil.txt
+      ansible.builtin.stat:
+        path: "{{ artifact_dir }}/csrutil.txt"
+      register: _csrutil
+    - name: Assert csrutil.txt exists
+      ansible.builtin.assert:
+        that: _csrutil.stat.exists
+        fail_msg: "{{ artifact_dir }}/csrutil.txt missing"
+
+    - name: Stat spctl.txt
+      ansible.builtin.stat:
+        path: "{{ artifact_dir }}/spctl.txt"
+      register: _spctl
+    - name: Assert spctl.txt exists
+      ansible.builtin.assert:
+        that: _spctl.stat.exists
+        fail_msg: "{{ artifact_dir }}/spctl.txt missing"
+
+    - name: Stat xprotect.txt
+      ansible.builtin.stat:
+        path: "{{ artifact_dir }}/xprotect.txt"
+      register: _xprotect
+    - name: Assert xprotect.txt exists
+      ansible.builtin.assert:
+        that: _xprotect.stat.exists
+        fail_msg: "{{ artifact_dir }}/xprotect.txt missing"
+
+    - name: Stat tccutil.txt
+      ansible.builtin.stat:
+        path: "{{ artifact_dir }}/tccutil.txt"
+      register: _tccutil
+    - name: Assert tccutil.txt exists
+      ansible.builtin.assert:
+        that: _tccutil.stat.exists
+        fail_msg: "{{ artifact_dir }}/tccutil.txt missing"
+
+    - name: Stat plist_policy/managed_preferences.txt
+      ansible.builtin.stat:
+        path: "{{ artifact_dir }}/plist_policy/managed_preferences.txt"
+      register: _plist
+    - name: Assert plist_policy/managed_preferences.txt exists
+      ansible.builtin.assert:
+        that: _plist.stat.exists
+        fail_msg: "{{ artifact_dir }}/plist_policy/managed_preferences.txt missing"

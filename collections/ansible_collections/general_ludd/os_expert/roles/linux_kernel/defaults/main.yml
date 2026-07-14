@@ -1,0 +1,15 @@
+---
+# linux_kernel role defaults
+
+daemon_url: "http://localhost:8000"
+psk: ""
+
+artifact_dir: "/tmp/gludd-linux-kernel"
+
+manage_modprobe: false
+manage_ebpf: false
+manage_namespaces: false
+manage_cgroups: false
+manage_sysctl: false
+
+enable_git_push: false

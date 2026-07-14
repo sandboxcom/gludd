@@ -1,0 +1,18 @@
+---
+galaxy_info:
+  role_name: propagation_model
+  author: Gludd Agent
+  description: >
+    Compute RF path loss using ITM (Longley-Rice), Hata-Okumura,
+    free-space, and two-ray ground reflection models.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: ["8", "9"]
+    - name: Ubuntu
+      versions: [focal, jammy, noble]
+    - name: MacOSX
+      versions: [all]
+  galaxy_tags: [propagation, path_loss, rf, itm, hata, model]
+dependencies: []

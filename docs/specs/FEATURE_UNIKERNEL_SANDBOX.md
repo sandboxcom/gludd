@@ -1,0 +1,77 @@
+# Feature: Unikernel/NanoVM Sandboxed Agent Execution
+
+**Status: DRAFT** | **Created: 2026-07-14** | **Target: v0.1.0-beta.2**
+
+## 1. Overview
+
+Tighten the gludd sandboxing stack by running agent tool-execution inside
+Firecracker microVMs or gVisor application kernels, replacing the current
+process-level (Landlock/bubblewrap/Seatbelt) isolation with hardware-virtualized
+or userspace-kernel boundaries.
+
+## 2. Viability Analysis
+
+Agents need: CPython + native extensions, ansible (subprocess/fork), git, outbound API.
+
+| Approach | Python | Ansible | Git | Network | Verdict |
+|----------|--------|---------|-----|---------|---------|
+| Firecracker | Full | Full | Yes | Yes | BEST — KVM, <5MiB overhead, <125ms boot, AWS-proven |
+| gVisor | Full | Full | Yes | Yes | GOOD — userspace kernel, no KVM needed |
+| Unikraft | Limited | No | No | Yes | Early; Python not production-grade for ansible |
+| OSv | No .so | No | No | Yes | Dead (last release Dec 2022) |
+
+**Decision**: Firecracker primary (strongest isolation). gVisor fallback when KVM
+unavailable (Docker/K8s). Existing Landlock/bubblewrap is the lowest-common-denominator.
+
+## 3. Architecture
+
+New module: `src/general_ludd/security/sandboxes/vm/`
+
+- `firecracker_backend.py` — `FirecrackerBackend(SandboxBackend)`: boots microVM
+  via Firecracker REST API.
+- `gvisor_backend.py` — `GvisorBackend(SandboxBackend)`: runs `runsc run` with OCI bundle.
+- `image_builder.py` — builds rootfs image (Alpine + gludd + deps). Cached at
+  `~/.cache/gludd/sandbox/`.
+- `agent_executor.py` — binary inside microVM: receives SandboxTarget over
+  virtio-vsock, executes command, returns ProcessResult.
+
+`SandboxConfig` gains: `backend: Literal["auto","firecracker","gvisor","process"]`,
+`image_path`, `vsock_port`.
+
+`detect.py::auto()` adds Firecracker (if /dev/kvm + binary present), gVisor (if runsc
+present), then existing chain.
+
+## 4. Implementation Plan
+
+| Phase | Scope | Duration |
+|-------|-------|----------|
+| P1 | Prototype Firecracker rootfs + boot/kill cycle. Benchmark vs Landlock. | 2-3 weeks |
+| P2 | FirecrackerBackend apply/verify/release. agent_executor.py. image_builder.py. Auto-detect chain. | 2-3 weeks |
+| P3 | Pre-built images in CI. Wire into daemon dispatch. Observability. GvisorBackend. | 1-2 weeks |
+
+## 5. Files
+
+| Action | Path |
+|--------|------|
+| Create | `src/general_ludd/security/sandboxes/vm/__init__.py` |
+| Create | `src/general_ludd/security/sandboxes/vm/firecracker_backend.py` |
+| Create | `src/general_ludd/security/sandboxes/vm/gvisor_backend.py` |
+| Create | `src/general_ludd/security/sandboxes/vm/image_builder.py` |
+| Create | `src/general_ludd/security/sandboxes/vm/agent_executor.py` |
+| Modify | `src/general_ludd/security/sandboxes/detect.py` |
+| Modify | `src/general_ludd/sandbox/enforcer.py` |
+| Modify | `Makefile` (build-sandbox-image, verify-sandbox-image) |
+| Create | `tests/unit/test_vm_sandbox_backends.py` |
+| Create | `tests/bench/test_vm_sandbox_overhead.py` |
+
+## 6. Dependencies
+
+Host: `firecracker` (v1.8+), `runsc` (gVisor), `kvm` kernel module.
+Python: `aiohttp` (existing), `pyroute2` (tap device setup).
+
+## 7. Test Plan
+
+- Unit: backends with mock Firecracker API
+- Bench: 100-agent dispatch loop — Firecracker vs Landlock
+- Integration: daemon → FirecrackerBackend → execute → verify → release
+- Regression: existing Landlock/bubblewrap backends still pass

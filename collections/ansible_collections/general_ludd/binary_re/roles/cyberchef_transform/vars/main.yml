@@ -1,0 +1,2 @@
+---
+transform_script: "{{ role_path }}/files/cyberchef.py"

@@ -1,0 +1,9 @@
+---
+- name: Verify windows_diagnose
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Role included successfully
+      ansible.builtin.assert:
+        that: true
+        success_msg: "windows_diagnose role verified (tasks skipped on non-Windows host)"

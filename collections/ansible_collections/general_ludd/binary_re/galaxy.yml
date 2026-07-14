@@ -1,0 +1,21 @@
+---
+namespace: general_ludd
+name: binary_re
+version: 0.1.0
+readme: README.md
+description: >
+  Binary reverse engineering collection providing roles for binary analysis,
+  debugging, fuzzing, disassembly, deobfuscation, and prompt-injection defense.
+license:
+  - MIT
+authors:
+  - Agentic Harness Agent <agent@harness.local>
+tags:
+  - binary
+  - reverse-engineering
+  - debugging
+  - fuzzing
+  - disassembly
+  - deobfuscation
+  - security
+dependencies: {}

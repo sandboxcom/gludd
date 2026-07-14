@@ -1,0 +1,14 @@
+---
+galaxy_info:
+  role_name: android_diagnose
+  author: Agentic Harness Agent
+  description: >
+    Gather Android diagnostic data via ADB: logcat system logs,
+    dumpsys service state, getprop system properties, and pm list
+    package inventory.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: GenericLinux
+      versions: [all]
+dependencies: []

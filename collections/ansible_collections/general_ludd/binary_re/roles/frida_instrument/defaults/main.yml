@@ -1,0 +1,8 @@
+---
+frida_tools_path: "/usr/local/bin"
+output_dir: "/tmp/gludd-frida-instrument"
+analysis_mode: "basic"
+enable_function_interception: false
+enable_memory_scanning: false
+enable_ssl_pinning_bypass: false
+enable_tracing: false

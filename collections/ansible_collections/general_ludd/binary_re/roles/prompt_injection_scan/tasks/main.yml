@@ -1,0 +1,64 @@
+---
+- name: Validate input parameters
+  ansible.builtin.fail:
+    msg: "Either target_path or input_text must be provided"
+  when:
+    - (target_path | default('.')) == '.'
+    - (input_text | default('')) == ''
+
+- name: Create output directory
+  ansible.builtin.file:
+    path: "{{ output_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Resolve collection root
+  ansible.builtin.set_fact:
+    _br_root: >-
+      {{ role_path | regex_replace('/roles/prompt_injection_scan$', '') }}
+
+- name: Build scan arguments
+  ansible.builtin.set_fact:
+    _scan_args: >-
+      {% if input_text | length > 0 %}
+      --text="{{ input_text }}"
+      {% else %}
+      --file="{{ target_path }}"
+      {% endif %}
+      --format={{ output_format }}
+      --min-severity={{ severity_threshold }}
+      --output={{ output_dir }}/prompt_injection_scan.json
+      {% if scan_obfuscation | bool %}--scan-obfuscation{% endif %}
+
+- name: Run prompt injection scan
+  ansible.builtin.command:
+    cmd: >-
+      {{ ansible_python_interpreter | default('/usr/bin/env python3') }}
+      {{ scan_script }}
+      {{ _scan_args }}
+    chdir: "{{ _br_root }}"
+  environment:
+    GLUDD_BINARY_RE_ROOT: "{{ _br_root }}"
+    PYTHONPATH: "{{ _br_root }}:{{ _br_root }}/plugins/module_utils:{{ ansible_env.PYTHONPATH | default('') }}"
+  register: _scan_result
+  changed_when: false
+  failed_when: _scan_result.rc not in [0]
+
+- name: Read scan artifact
+  ansible.builtin.slurp:
+    src: "{{ output_dir }}/prompt_injection_scan.json"
+  register: _artifact_raw
+  when: output_format == 'json'
+
+- name: Parse scan artifact
+  ansible.builtin.set_fact:
+    scan_artifact: >-
+      {{ _artifact_raw.content | b64decode | from_json
+         if (output_format == 'json' and _artifact_raw is defined and _artifact_raw.content is defined)
+         else {} }}
+
+- name: Report finding summary
+  ansible.builtin.debug:
+    msg: >-
+      Scan complete: {{ scan_artifact.get('scan', {}).get('finding_count', 0) }} findings,
+      severity {{ scan_artifact.get('scan', {}).get('overall_severity', 'unknown') }}

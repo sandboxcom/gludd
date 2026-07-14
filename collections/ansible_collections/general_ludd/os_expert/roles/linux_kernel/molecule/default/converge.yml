@@ -1,0 +1,10 @@
+---
+- name: Converge
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: "Include linux_kernel"
+      ansible.builtin.include_role:
+        name: "linux_kernel"
+      vars:
+        enable_git_push: false

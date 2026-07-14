@@ -1,0 +1,14 @@
+---
+galaxy_info:
+  role_name: macos_security
+  author: Agentic Harness Agent
+  description: >
+    Audit macOS security posture: csrutil status, spctl assessment policy,
+    XProtect malware definitions, TCC privacy database, and plist policy
+    configurations. Report-only by default.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: MacOSX
+      versions: [all]
+dependencies: []

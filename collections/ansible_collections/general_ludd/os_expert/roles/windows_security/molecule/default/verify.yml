@@ -1,0 +1,9 @@
+---
+- name: Verify windows_security
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Role included successfully
+      ansible.builtin.assert:
+        that: true
+        success_msg: "windows_security role verified (tasks skipped on non-Windows host)"

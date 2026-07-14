@@ -1,0 +1,19 @@
+---
+# phonetic_transcribe role defaults — REPORT-ONLY
+
+# Input
+input_text: ""              # Text to transcribe
+method: "arpabet"           # arpabet, ipa, soundex, metaphone, double_metaphone
+
+# CMU Dictionary
+cmu_dict_lookup: true       # Look up words in CMU Pronouncing Dictionary first
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Artifact output
+artifact_dir: "/tmp/gludd-phonetic-transcribe"
+
+# Destructive ops guard — report-only
+enable_git_push: false

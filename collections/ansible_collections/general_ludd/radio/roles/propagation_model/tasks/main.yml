@@ -1,0 +1,34 @@
+---
+# propagation_model role — entry point
+
+- name: Validate model type
+  ansible.builtin.assert:
+    that:
+      - propagation_model_type in ["free_space", "hata", "itm", "two_ray"]
+      - propagation_model_freq_hz | int > 0
+      - propagation_model_distance_m | float > 0
+    fail_msg: "type must be free_space / hata / itm / two_ray; freq_hz and distance_m must be > 0"
+
+- name: Compute path loss
+  ansible.builtin.command: >
+    {{ ansible_python_interpreter }}
+    -c '
+    from propagation_models import free_space_loss, hata_urban, two_ray_loss
+    import json
+    model = "{{ propagation_model_type }}"
+    d_m = {{ propagation_model_distance_m }}
+    f_hz = {{ propagation_model_freq_hz }}
+    h_tx = {{ propagation_model_tx_height_m }}
+    h_rx = {{ propagation_model_rx_height_m }}
+    if model == "free_space":
+        loss = free_space_loss(d_m, f_hz)
+    elif model == "hata":
+        loss = hata_urban(d_m / 1000.0, f_hz / 1e6, h_tx, h_rx)
+    elif model == "two_ray":
+        loss = two_ray_loss(d_m, h_tx, h_rx)
+    else:
+        loss = None
+    print(json.dumps({"model": model, "path_loss_db": round(loss, 2)}))
+    '
+  register: _result
+  when: propagation_model_enabled | bool

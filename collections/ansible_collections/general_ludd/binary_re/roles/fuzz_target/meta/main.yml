@@ -1,0 +1,17 @@
+---
+galaxy_info:
+  role_name: fuzz_target
+  author: Agentic Harness Agent
+  description: >
+    Fuzzing harness role — AFL++/libFuzzer setup, corpus management,
+    coverage-guided and mutation fuzzing, and crash triage. Report-only.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

@@ -1,0 +1,20 @@
+---
+galaxy_info:
+  role_name: generate_scenarios
+  author: Agentic Harness Agent
+  description: >
+    Maps code-path symbols from ModuleSymbols JSON to realistic E2E test
+    scenarios using the scenario catalog (CRUD lifecycle, auth flow, timeout
+    handling, concurrent edits, daemon restart). Produces GeneratedScenario
+    records with step sequences and coverage targets.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies:
+  - general_ludd.e2e_test_gen.analyze_code_paths

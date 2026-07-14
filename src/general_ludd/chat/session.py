@@ -1,0 +1,369 @@
+"""ChatSession: local AI chat session with REPL and --eval modes.
+
+P1: single-turn --eval mode via OpenAI-compatible HTTP API.
+P2: MessageFormatter integration for syntax-highlighted output.
+P3: Interactive REPL via prompt_toolkit with streaming output.
+P4: ansible/terraform context injection from --project-dir.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import os
+import sys
+from pathlib import Path
+from typing import TYPE_CHECKING, cast
+
+import httpx
+
+if TYPE_CHECKING:
+    from prompt_toolkit.key_binding.key_processor import KeyPressEvent
+
+from general_ludd.chat.formatter import MessageFormatter
+from general_ludd.models.provider_presets import (
+    PROVIDER_FLAGSHIP_MODELS,
+    PROVIDER_PRESETS,
+)
+
+logger = logging.getLogger(__name__)
+
+DEFAULT_SYSTEM_PROMPT = (
+    "You are a helpful AI assistant with access to ansible and terraform "
+    "for advanced system administration and infrastructure tasks."
+)
+
+DEFAULT_PROVIDER = "openai"
+DEFAULT_MODEL = "gpt-4o"
+
+MAX_INPUT_LENGTH = 32_000
+MAX_CODE_BLOCK_LENGTH = 32_000
+
+
+def _read_file_safe(path: Path, max_bytes: int = 8192) -> str | None:
+    try:
+        content = path.read_text(encoding="utf-8")
+        if len(content) > max_bytes:
+            return content[:max_bytes] + "\n... [truncated]"
+        return content
+    except Exception:
+        return None
+
+
+def _collect_ansible_context(project_dir: Path) -> str | None:
+    inventory_paths = [
+        project_dir / "inventory",
+        project_dir / "inventory.yml",
+        project_dir / "inventory.yaml",
+        project_dir / "ansible" / "inventory",
+        project_dir / "ansible" / "inventory.yml",
+        project_dir / "ansible" / "hosts",
+    ]
+    for inv_path in inventory_paths:
+        content = _read_file_safe(inv_path)
+        if content:
+            return f"[Ansible Inventory ({inv_path.relative_to(project_dir)})]\n{content}"
+    return None
+
+
+def _collect_terraform_context(project_dir: Path) -> str | None:
+    state_paths = [
+        project_dir / "terraform.tfstate",
+        project_dir / "terraform" / "terraform.tfstate",
+    ]
+    for tf_path in state_paths:
+        content = _read_file_safe(tf_path)
+        if content:
+            return f"[Terraform State ({tf_path.relative_to(project_dir)})]\n{content}"
+    return None
+
+
+def _build_context_system_prompt(project_dir: str | None, base_prompt: str) -> str:
+    if not project_dir:
+        return base_prompt
+
+    dir_path = Path(project_dir).expanduser().resolve()
+    if not dir_path.is_dir():
+        return base_prompt
+
+    parts: list[str] = [base_prompt, "", f"Project directory: {dir_path}"]
+
+    ansible_ctx = _collect_ansible_context(dir_path)
+    if ansible_ctx:
+        parts.append("")
+        parts.append(ansible_ctx)
+
+    tf_ctx = _collect_terraform_context(dir_path)
+    if tf_ctx:
+        parts.append("")
+        parts.append(tf_ctx)
+
+    return "\n".join(parts)
+
+
+class ChatSession:
+    """Manages an interactive or one-shot chat session with an AI model."""
+
+    def __init__(
+        self,
+        model: str = "default",
+        system_prompt: str | None = None,
+        eval_mode: bool = False,
+        api_base_url: str | None = None,
+        api_key: str | None = None,
+        project_dir: str | None = None,
+    ) -> None:
+        self._model_arg = model
+        base_prompt = system_prompt or DEFAULT_SYSTEM_PROMPT
+        self._system_prompt = _build_context_system_prompt(project_dir, base_prompt)
+        self.eval_mode = eval_mode
+        self.history: list[dict[str, str]] = [
+            {"role": "system", "content": self._system_prompt}
+        ]
+        self._provider, self._model_id = self._resolve_model(model)
+        self._formatter = MessageFormatter()
+        self._api_base_override = api_base_url
+        self._api_key_override = api_key
+        self._project_dir = project_dir
+
+    def _resolve_api_config(self) -> tuple[str, str]:
+        base_override = self._api_base_override
+        key_override = self._api_key_override
+        if base_override is not None and key_override is not None:
+            return base_override, key_override
+
+        preset = PROVIDER_PRESETS.get(self._provider)
+        if preset is None:
+            raise ValueError(f"Unknown provider: {self._provider!r}")
+
+        base_url = base_override if base_override is not None else cast(str, preset["api_base_url"])
+        credential_env_var = cast(str, preset["credential_env_var"])
+
+        api_key = key_override if key_override is not None else os.environ.get(credential_env_var)
+        if not api_key:
+            raise RuntimeError(
+                f"No API key found. Set the {credential_env_var} "
+                f"environment variable for provider {self._provider!r}, "
+                f"or pass --api-key."
+            )
+        return base_url, api_key
+
+    async def _post_with_retry(
+        self,
+        client: httpx.AsyncClient,
+        url: str,
+        headers: dict[str, str],
+        payload: dict[str, object],
+    ) -> httpx.Response:
+        max_retries = 2
+        last_exc: Exception | None = None
+        for attempt in range(max_retries + 1):
+            try:
+                response = await client.post(url, headers=headers, json=payload)
+                response.raise_for_status()
+                return response
+            except httpx.HTTPStatusError:
+                raise
+            except (httpx.ConnectError, httpx.TimeoutException, httpx.RemoteProtocolError) as exc:
+                last_exc = exc
+                if attempt < max_retries:
+                    delay = 2 ** attempt
+                    logger.warning(
+                        "Connection error on attempt %d/%d (retrying in %ds): %s",
+                        attempt + 1, max_retries + 1, delay, exc,
+                    )
+                    await asyncio.sleep(delay)
+        raise last_exc  # type: ignore[misc]
+
+    async def run_once(self, prompt: str) -> str:
+        prompt = self._truncate_input(prompt)
+        self.history.append({"role": "user", "content": prompt})
+
+        base_url, api_key = self._resolve_api_config()
+        url = self._build_endpoint(base_url)
+
+        async with httpx.AsyncClient(timeout=httpx.Timeout(120.0)) as client:
+            try:
+                response = await self._post_with_retry(
+                    client, url,
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    payload={
+                        "model": self._model_id,
+                        "messages": self.history,
+                    },
+                )
+            except httpx.ConnectError:
+                return "[Error: Could not connect to the API server. Check your network and API base URL.]"
+            except httpx.TimeoutException:
+                return "[Error: Request timed out. The API server may be overloaded. Try again.]"
+            except Exception as exc:
+                return f"[Error: {exc}]"
+
+        data = response.json()
+        choices = data.get("choices") or [{"message": {"content": ""}}]
+        content = str(choices[0].get("message", {}).get("content", "") or "")
+
+        if not content.strip():
+            content = "[The model returned an empty response.]"
+
+        self.history.append({"role": "assistant", "content": content})
+        return self._formatter.highlight(content)
+
+    async def stream_response(self, prompt: str) -> str:
+        prompt = self._truncate_input(prompt)
+        self.history.append({"role": "user", "content": prompt})
+
+        base_url, api_key = self._resolve_api_config()
+        url = self._build_endpoint(base_url)
+
+        try:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(120.0)) as client, client.stream(
+                "POST",
+                url,
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": self._model_id,
+                    "messages": self.history,
+                    "stream": True,
+                },
+            ) as response:
+                response.raise_for_status()
+                full_response = ""
+                async for line in response.aiter_lines():
+                    if not line or not line.startswith("data: "):
+                        continue
+                    data_str = line[len("data: "):]
+                    if data_str == "[DONE]":
+                        break
+                    try:
+                        payload = json.loads(data_str)
+                        delta = payload["choices"][0].get("delta", {})
+                        chunk = delta.get("content", "")
+                        if chunk:
+                            full_response += chunk
+                            sys.stdout.write(chunk)
+                            sys.stdout.flush()
+                    except (json.JSONDecodeError, KeyError, IndexError):
+                        continue
+        except httpx.ConnectError:
+            msg = "[Error: Could not connect to the API server. "
+            msg += "Check your network and API base URL.]"
+            print(f"\n{msg}", file=sys.stderr)
+            self.history.pop()
+            return ""
+        except httpx.TimeoutException:
+            print("\n[Error: Request timed out. The API server may be overloaded. Try again.]", file=sys.stderr)
+            self.history.pop()
+            return ""
+        except Exception as exc:
+            print(f"\n[Error: {exc}]", file=sys.stderr)
+            self.history.pop()
+            return ""
+
+        if not full_response.strip():
+            full_response = "[The model returned an empty response.]"
+
+        self.history.append({"role": "assistant", "content": full_response})
+        sys.stdout.write("\n")
+        formatted = self._formatter.highlight(full_response)
+        if formatted != full_response:
+            sys.stdout.write(formatted)
+        return full_response
+
+    async def start_repl(self) -> None:
+        """Interactive REPL loop using prompt_toolkit."""
+        try:
+            from prompt_toolkit import PromptSession
+            from prompt_toolkit.history import InMemoryHistory
+            from prompt_toolkit.key_binding import KeyBindings
+        except ImportError:
+            print(
+                "prompt_toolkit is not installed. Install it with: pip install prompt_toolkit>=3.0.0",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+        bindings = KeyBindings()
+
+        @bindings.add("c-d")
+        def _(event: KeyPressEvent) -> None:
+            event.app.exit()
+
+        session_obj = PromptSession[str](
+            history=InMemoryHistory(),
+            key_bindings=bindings,
+        )
+
+        print(f"Chat session started. Model: {self._provider}/{self._model_id}")
+        if self._project_dir:
+            print(f"Project context: {self._project_dir}")
+        print("Type your message and press Enter. Ctrl-D to exit, Ctrl-C to cancel input.\n")
+
+        consecutive_ctrl_c = 0
+
+        while True:
+            try:
+                user_input = await session_obj.prompt_async("> ")
+                consecutive_ctrl_c = 0
+            except KeyboardInterrupt:
+                consecutive_ctrl_c += 1
+                if consecutive_ctrl_c >= 2:
+                    print("\nGoodbye.")
+                    break
+                print("\n(Cancelled — Ctrl-D to exit, press Ctrl-C twice to quit)")
+                continue
+            except EOFError:
+                print("\nGoodbye.")
+                break
+
+            user_input = user_input.strip()
+            if not user_input:
+                continue
+
+            if user_input.lower() in ("exit", "quit", "/quit", "/exit"):
+                print("Goodbye.")
+                break
+
+            if len(user_input) > MAX_INPUT_LENGTH:
+                print(
+                    f"Input truncated from {len(user_input)} to {MAX_INPUT_LENGTH} characters.",
+                    file=sys.stderr,
+                )
+                user_input = user_input[:MAX_INPUT_LENGTH]
+
+            try:
+                await self.stream_response(user_input)
+            except Exception as exc:
+                print(f"\nError: {exc}", file=sys.stderr)
+
+    @staticmethod
+    def _truncate_input(text: str) -> str:
+        if len(text) > MAX_INPUT_LENGTH:
+            return text[:MAX_INPUT_LENGTH]
+        return text
+
+    @staticmethod
+    def _resolve_model(model: str) -> tuple[str, str]:
+        if model == "default":
+            return DEFAULT_PROVIDER, DEFAULT_MODEL
+        if "/" in model:
+            provider, _, model_id = model.partition("/")
+            if not model_id:
+                model_id = PROVIDER_FLAGSHIP_MODELS.get(provider, DEFAULT_MODEL)
+            return provider, model_id
+        if model in PROVIDER_FLAGSHIP_MODELS:
+            return model, PROVIDER_FLAGSHIP_MODELS[model]
+        return DEFAULT_PROVIDER, model
+
+    @staticmethod
+    def _build_endpoint(base_url: str) -> str:
+        if "/chat/completions" in base_url:
+            return base_url
+        return f"{base_url.rstrip('/')}/chat/completions"

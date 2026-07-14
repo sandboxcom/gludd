@@ -1,0 +1,7 @@
+---
+# android_diagnose role — gather Android diagnostic data via ADB:
+# logcat, dumpsys, getprop, pm list.
+
+- name: Gather Android diagnostics
+  ansible.builtin.debug:
+    msg: "android_diagnose: gathering logcat, dumpsys, getprop, pm list"

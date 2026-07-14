@@ -1,0 +1,21 @@
+---
+galaxy_info:
+  role_name: locale_format
+  author: Agentic Harness Agent
+  description: >
+    Format dates, numbers, and currency values per CLDR locale data.
+    Parses BCP 47 locale tags, applies locale-specific date patterns
+    (full/long/medium/short), number grouping and decimal separators,
+    currency symbol placement, plural rules (cardinal/ordinal/ranges),
+    RTL script detection, and locale negotiation (Accept-Language parsing).
+    Produces JSON artifact. Wires to src/general_ludd/language/locale_data.py.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

@@ -1,0 +1,14 @@
+---
+galaxy_info:
+  role_name: ios_diagnose
+  author: Agentic Harness Agent
+  description: >
+    Gather iOS diagnostic data via libimobiledevice: device info
+    (ideviceinfo), system log (idevicesyslog), diagnostics
+    (idevicediagnostics), and unified log (oslog).
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: MacOSX
+      versions: [all]
+dependencies: []

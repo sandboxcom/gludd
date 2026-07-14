@@ -1,0 +1,8 @@
+---
+# exam_quiz defaults — safe-by-default
+exam_quiz_enabled: false
+exam_quiz_exam: fcc_tech
+exam_quiz_count: 10
+exam_quiz_user_answers: []
+exam_quiz_format: json
+exam_quiz_output_dir: /tmp/gludd-exam-quiz

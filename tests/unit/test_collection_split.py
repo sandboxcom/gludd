@@ -9,7 +9,23 @@ COLLECTIONS_ROOT = ROOT / "collections"
 NS_DIR = COLLECTIONS_ROOT / "ansible_collections" / "general_ludd"
 
 EXPECTED_COLLECTIONS = sorted(
-    ["agent", "security", "formal", "business", "networking", "infrastructure", "operations"]
+    [
+        "agent",
+        "binary_re",
+        "business",
+        "e2e_test_gen",
+        "formal",
+        "infrastructure",
+        "language",
+        "networking",
+        "operations",
+        "os_expert",
+        "radio",
+        "security",
+        "web",
+        "web_server",
+        "xml",
+    ]
 )
 
 AGENT_CORE_ROLES = {"task_splitter", "agent_orchestrate", "implement_change"}

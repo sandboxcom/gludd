@@ -7,7 +7,7 @@
  * hook — no second hook needed.
  *
  * FAIL-OPEN: any error → allow. Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.
- * Floor: GLUDD_MULTITASK_MIN_DISPATCHES (default 3).
+ * Floor: GLUDD_MULTITASK_MIN_DISPATCHES (default 10).
  *
  * HOT-RELOAD: implements the proxy pattern from hot_reload.ts.  Hook functions
  * check /tmp/gludd-hot-multitask.js on every invocation.  If present and newer
@@ -23,20 +23,29 @@ import {
   isSubagent,
   reportAlive,
   isDispatchTool,
+  isReadTool,
   isDisengaged,
   readJsonFile,
   writeJsonFile,
 } from "../lib/shared.ts"
 
 const FLOOR_ENFORCE = process.env.GLUDD_MULTITASK_FLOOR_ENFORCE !== "0"
-export const MIN_DISPATCHES = parseInt(process.env.GLUDD_MULTITASK_MIN_DISPATCHES || "10", 10)
-export const MIN_DISPATCHES_PER_WAVE = parseInt(process.env.GLUDD_MIN_DISPATCHES || "10", 10)
+export const MIN_DISPATCHES = parseInt(
+  process.env.GLUDD_MIN_DISPATCHES ||
+  process.env.GLUDD_MULTITASK_MIN_DISPATCHES ||
+  "10",
+  10,
+)
 export const MAX_DISPATCHES = parseInt(process.env.GLUDD_MULTITASK_MAX_DISPATCHES || "10", 10)
 export const MAX_ZERO_STREAK = 2
 export const WAVE_HISTORY_SIZE = 10
 // Inter-call gap that marks a new agent message. Env-tunable so e2e tests can
 // drive the real boundary logic without 5s sleeps; production default unchanged.
 const MSG_GAP_MS = parseInt(process.env.GLUDD_MSG_GAP_MS || "5000", 10)
+export const CONSECUTIVE_NON_DISPATCH_THRESHOLD = parseInt(
+  process.env.GLUDD_CONSECUTIVE_NON_DISPATCH_THRESHOLD || "5", 10)
+export const CONSECUTIVE_NON_DISPATCH_WINDOW_MS = parseInt(
+  process.env.GLUDD_CONSECUTIVE_NON_DISPATCH_WINDOW_MS || "30000", 10)
 
 export const MULTITASK_STATE_FILE = "/tmp/gludd-multitask-state.json"
 
@@ -48,6 +57,8 @@ interface MultitaskState {
   lastTs: number
   lastToolCallTs: number
   waveHistory: number[]
+  consecutiveNonDispatch: number
+  consecutiveNonDispatchStartTs: number
 }
 
 function freshState(): MultitaskState {
@@ -59,6 +70,8 @@ function freshState(): MultitaskState {
     lastTs: 0,
     lastToolCallTs: 0,
     waveHistory: [],
+    consecutiveNonDispatch: 0,
+    consecutiveNonDispatchStartTs: 0,
   }
 }
 
@@ -104,6 +117,8 @@ let _state: MultitaskState = (() => {
   s.prevMessageDispatches = 0
   s.estimatedInFlight = 0
   s.lastToolCallTs = 0
+  s.consecutiveNonDispatch = 0
+  s.consecutiveNonDispatchStartTs = 0
   writeState(s)
   return s
 })()
@@ -144,59 +159,76 @@ const defaultImpl: HotModule = {
         if (_state.thisMessageDispatches >= MAX_DISPATCHES) {
           return {
             permissionDecision: "deny" as const,
-            message: [
-              "DISPATCH CEILING BREACH: already " + String(_state.thisMessageDispatches) + " dispatch(es) in this message.",
-              "Maximum allowed per wave: " + String(MAX_DISPATCHES) + ". No more than " + String(MAX_DISPATCHES) + " dispatches.",
-              "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
-              "Run 'make disengage-enforcement' to bypass.",
-            ].join("\n"),
+              message: [
+                "DISPATCH CEILING BREACH: already " + String(_state.thisMessageDispatches) + " dispatch(es) in this message.",
+                "Maximum allowed per wave: 10. DISPATCH 10 AGENTS OR YOU ARE BLOCKED.",
+                "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
+                "Run 'make disengage-enforcement' to bypass.",
+              ].join("\n"),
           }
         }
         _state.thisMessageDispatches++
         _state.estimatedInFlight++
+        _state.consecutiveNonDispatch = 0
+        _state.consecutiveNonDispatchStartTs = 0
         writeState(_state)
         return
+      }
+
+      // --- Consecutive non-dispatch detection (rapid-grinding bypass) ---
+      // If the agent makes many non-dispatch calls rapidly without
+      // dispatching, block. This catches the case where the 5s message-
+      // boundary gap never fires because calls arrive <5s apart.
+      {
+        const disengaged = isDisengaged()
+        if (!disengaged && !isReadTool(tool)) {
+          if (_state.consecutiveNonDispatchStartTs === 0) {
+            _state.consecutiveNonDispatchStartTs = now
+          }
+          if ((now - _state.consecutiveNonDispatchStartTs) < CONSECUTIVE_NON_DISPATCH_WINDOW_MS) {
+            _state.consecutiveNonDispatch++
+            if (
+              _state.consecutiveNonDispatch >= CONSECUTIVE_NON_DISPATCH_THRESHOLD &&
+              hasPendingWork()
+            ) {
+              writeState(_state)
+              return {
+                permissionDecision: "deny" as const,
+                message: [
+                  "CONSECUTIVE NON-DISPATCH STREAK: " + String(_state.consecutiveNonDispatch) + " consecutive non-dispatch tool calls with pending work.",
+                  "Floor is 10. DISPATCH 10 AGENTS OR YOU ARE BLOCKED.",
+                  "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
+                  "Run 'make disengage-enforcement' to bypass.",
+                ].join("\n"),
+              }
+            }
+          } else {
+            _state.consecutiveNonDispatch = 0
+            _state.consecutiveNonDispatchStartTs = 0
+          }
+        }
       }
 
       // --- Non-dispatch tools: enforcement checks ---
       const disengaged = isDisengaged()
 
       if (!disengaged) {
-        // FLOOR BREACH: previous message had >0 but <MIN_DISPATCHES dispatches and
-        // this message has not dispatched yet.
-        //
-        // NOTE: the third clause used to be `zeroStreak > 0`, which made this
-        // branch UNREACHABLE — the same boundary that sets prevMessageDispatches
-        // to a non-zero count also resets zeroStreak to 0, so `prev > 0` and
-        // `zeroStreak > 0` can never hold simultaneously. Gate on "no dispatch yet
-        // in the current message" instead, which is the intended escape hatch:
-        // dispatch a full wave and non-dispatch tools unblock.
-        if (
-          _state.prevMessageDispatches > 0 &&
-          _state.prevMessageDispatches < MIN_DISPATCHES &&
-          _state.thisMessageDispatches === 0
-        ) {
-          return {
-            permissionDecision: "deny" as const,
-            message: [
-              "MULTITASKING FLOOR BREACH: only " + String(_state.prevMessageDispatches) + " dispatch(es) in prior message.",
-              "Codified floor: " + String(MIN_DISPATCHES) + ". This is NOT advisory.",
-              "REQUIRED: \u2265" + String(MIN_DISPATCHES) + " parallel task/agent/workflow dispatches in ONE message.",
-              "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
-              "Run 'make disengage-enforcement' to bypass.",
-            ].join("\n"),
-          }
-        }
-
-        // PER-MESSAGE: current message has 0 dispatches, pending work, streak live
-        if (hasPendingWork() && _state.thisMessageDispatches === 0 && _state.zeroStreak > 0) {
-          const lt = tool.toLowerCase()
+        // === UNDER-FLOOR HARD BLOCK ===
+        // ANY non-dispatch mutating tool is BLOCKED when this message has fewer
+        // than MIN_DISPATCHES dispatches and pending work exists. This fires
+        // REGARDLESS of zeroStreak or prevMessageDispatches. The agent MUST
+        // dispatch >=10 agents before doing anything mutating.
+        // No grace. No exception. No thisMessageDispatches===0 gate.
+        const lt = tool.toLowerCase()
+        if (hasPendingWork() && _state.thisMessageDispatches < MIN_DISPATCHES) {
           if (lt === "edit" || lt === "write" || lt === "bash") {
+            writeState(_state)
             return {
               permissionDecision: "deny" as const,
               message: [
-                "INSUFFICIENT DISPATCHES: only " + String(_state.thisMessageDispatches) + " dispatch(es) in this message.",
-                "Must dispatch \u2265" + String(MIN_DISPATCHES) + " subagents when work exists. Add dispatches and resend.",
+                "UNDER-FLOOR HARD BLOCK: only " + String(_state.thisMessageDispatches) + " dispatch(es) in this message.",
+                "Floor is 10. DISPATCH 10 AGENTS OR YOU ARE BLOCKED.",
+                "You MUST dispatch \u226510 task/agent/workflow dispatches BEFORE any edits, writes, or bash.",
                 "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
                 "Run 'make disengage-enforcement' to bypass.",
               ].join("\n"),
@@ -204,14 +236,19 @@ const defaultImpl: HotModule = {
           }
         }
 
-        // ZERO-DISPATCH STREAK: unconditional — MAX_ZERO_STREAK consecutive zero-dispatch messages
-        if (_state.prevMessageDispatches === 0 && _state.zeroStreak >= MAX_ZERO_STREAK) {
+        // === ZERO-DISPATCH STREAK ===
+        // unconditional block after MAX_ZERO_STREAK consecutive zero-dispatch
+        // messages. zeroStreak increments at each message boundary when the
+        // prior message had 0 dispatches. At streak >=2, block regardless of
+        // hasPendingWork (catches reading-only-forever without dispatching).
+        if (_state.thisMessageDispatches === 0 && _state.zeroStreak >= MAX_ZERO_STREAK) {
+          writeState(_state)
           return {
             permissionDecision: "deny" as const,
             message: [
               "ZERO-DISPATCH STREAK: " + String(MAX_ZERO_STREAK) + " consecutive responses with 0 subagent dispatches.",
-              "Codified floor " + String(MIN_DISPATCHES) + " is being IGNORED. This block is UNCONDITIONAL.",
-              "REQUIRED: Next response MUST contain \u2265" + String(MIN_DISPATCHES) + " task/agent/workflow dispatches.",
+              "Floor is 10. This block is UNCONDITIONAL. DISPATCH 10 AGENTS NOW.",
+              "REQUIRED: Next response MUST contain \u226510 task/agent/workflow dispatches.",
               "No pending-work gate. No tool-type bypass. Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
               "Run 'make disengage-enforcement' to bypass.",
             ].join("\n"),

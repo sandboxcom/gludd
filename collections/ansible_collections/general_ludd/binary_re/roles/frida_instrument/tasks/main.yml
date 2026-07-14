@@ -1,0 +1,40 @@
+---
+- name: Validate Frida installation
+  ansible.builtin.command:
+    cmd: "{{ frida_tools_path }}/frida --version"
+  register: _frida_version
+  changed_when: false
+  failed_when: false
+
+- name: Fail if Frida not available
+  ansible.builtin.fail:
+    msg: "Frida tools not found at {{ frida_tools_path }}"
+  when: _frida_version.rc != 0
+
+- name: Create output directory
+  ansible.builtin.file:
+    path: "{{ output_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Run function interception
+  ansible.builtin.include_tasks: function_interception.yml
+  when: enable_function_interception | bool
+
+- name: Run memory scanning
+  ansible.builtin.include_tasks: memory_scanning.yml
+  when: enable_memory_scanning | bool
+
+- name: Run SSL pinning bypass
+  ansible.builtin.include_tasks: ssl_pinning_bypass.yml
+  when: enable_ssl_pinning_bypass | bool
+
+- name: Run tracing
+  ansible.builtin.include_tasks: tracing.yml
+  when: enable_tracing | bool
+
+- name: Write Frida instrumentation artifact
+  ansible.builtin.copy:
+    content: "{{ {'role': 'frida_instrument', 'status': 'completed', 'frida_version': _frida_version.stdout, 'generated_at': ansible_date_time.iso8601} | to_nice_json }}"
+    dest: "{{ output_dir }}/frida_instrument.json"
+    mode: "0644"

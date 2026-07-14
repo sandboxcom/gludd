@@ -1,0 +1,6 @@
+---
+output_dir: "/tmp/gludd-deobfuscate"
+enable_packing_detection: false
+enable_cfg_flattening_detection: false
+enable_string_deobfuscation: false
+enable_opaque_predicate_detection: false

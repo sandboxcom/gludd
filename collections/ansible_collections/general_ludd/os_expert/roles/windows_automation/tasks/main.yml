@@ -1,0 +1,325 @@
+---
+# windows_automation role — audit and manage Windows system administration:
+# PSRemoting, DSC configuration, scheduled tasks, unattended install,
+# and installed software inventory.
+# All audit tasks are read-only and run unconditionally.
+# Mutating operations are gated behind explicit manage_* boolean flags.
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+  when: ansible_os_family == 'Windows'
+
+- name: Create audit subdirectories
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}/{{ item }}"
+    state: directory
+  loop:
+    - psremoting
+    - dsc
+    - scheduled_tasks
+    - unattended
+    - software
+  when: ansible_os_family == 'Windows'
+
+# ============================================================================
+# PSRemoting audit (always safe — read-only status checks)
+# ============================================================================
+
+- name: Audit PSRemoting — Test-WSMan localhost
+  when: ansible_os_family == 'Windows'
+  ansible.windows.win_powershell:
+    script: |
+      $result = Test-WSMan -ComputerName localhost -ErrorAction SilentlyContinue
+      $result | ConvertTo-Json
+  register: _psremoting_wsman_test
+  changed_when: false
+  ignore_errors: true
+  failed_when: false
+
+- name: Write PSRemoting — Test-WSMan result
+  when:
+    - ansible_os_family == 'Windows'
+    - _psremoting_wsman_test is success
+    - _psremoting_wsman_test.output | default([]) | length > 0
+  ansible.builtin.copy:
+    content: "{{ _psremoting_wsman_test.output | default([]) | join('\n') }}"
+    dest: "{{ artifact_dir }}/psremoting/wsman_test.json"
+
+- name: Audit PSRemoting — WSMan listeners
+  when: ansible_os_family == 'Windows'
+  ansible.windows.win_powershell:
+    script: |
+      Get-WSManInstance -ResourceURI winrm/config/listener -Enumerate -ErrorAction SilentlyContinue | ConvertTo-Json
+  register: _psremoting_listeners
+  changed_when: false
+  ignore_errors: true
+  failed_when: false
+
+- name: Write PSRemoting — WSMan listeners
+  when:
+    - ansible_os_family == 'Windows'
+    - _psremoting_listeners is success
+    - _psremoting_listeners.output | default([]) | length > 0
+  ansible.builtin.copy:
+    content: "{{ _psremoting_listeners.output | default([]) | join('\n') }}"
+    dest: "{{ artifact_dir }}/psremoting/wsman_listeners.json"
+
+- name: Audit PSRemoting — WinRM service status
+  when: ansible_os_family == 'Windows'
+  ansible.windows.win_powershell:
+    script: |
+      Get-Service WinRM -ErrorAction SilentlyContinue | ConvertTo-Json
+  register: _psremoting_winrm_service
+  changed_when: false
+  ignore_errors: true
+  failed_when: false
+
+- name: Write PSRemoting — WinRM service status
+  when:
+    - ansible_os_family == 'Windows'
+    - _psremoting_winrm_service is success
+    - _psremoting_winrm_service.output | default([]) | length > 0
+  ansible.builtin.copy:
+    content: "{{ _psremoting_winrm_service.output | default([]) | join('\n') }}"
+    dest: "{{ artifact_dir }}/psremoting/winrm_service.json"
+
+- name: Manage PSRemoting — Enable-PSRemoting -Force
+  when:
+    - ansible_os_family == 'Windows'
+    - manage_psremoting | bool
+  ansible.windows.win_powershell:
+    script: |
+      Enable-PSRemoting -Force
+  register: _psremoting_enable
+  ignore_errors: true
+
+# ============================================================================
+# DSC audit (always safe — read-only configuration checks)
+# ============================================================================
+
+- name: Audit DSC — Get-DscConfigurationStatus
+  when: ansible_os_family == 'Windows'
+  ansible.windows.win_powershell:
+    script: |
+      Get-DscConfigurationStatus -ErrorAction SilentlyContinue | ConvertTo-Json
+  register: _dsc_config_status
+  changed_when: false
+  ignore_errors: true
+  failed_when: false
+
+- name: Write DSC — configuration status
+  when:
+    - ansible_os_family == 'Windows'
+    - _dsc_config_status is success
+    - _dsc_config_status.output | default([]) | length > 0
+  ansible.builtin.copy:
+    content: "{{ _dsc_config_status.output | default([]) | join('\n') }}"
+    dest: "{{ artifact_dir }}/dsc/configuration_status.json"
+
+- name: Audit DSC — Get-DscLocalConfigurationManager
+  when: ansible_os_family == 'Windows'
+  ansible.windows.win_powershell:
+    script: |
+      Get-DscLocalConfigurationManager -ErrorAction SilentlyContinue | ConvertTo-Json
+  register: _dsc_lcm
+  changed_when: false
+  ignore_errors: true
+  failed_when: false
+
+- name: Write DSC — LCM state
+  when:
+    - ansible_os_family == 'Windows'
+    - _dsc_lcm is success
+    - _dsc_lcm.output | default([]) | length > 0
+  ansible.builtin.copy:
+    content: "{{ _dsc_lcm.output | default([]) | join('\n') }}"
+    dest: "{{ artifact_dir }}/dsc/lcm_state.json"
+
+- name: Audit DSC — Test-DscConfiguration (read-only)
+  when: ansible_os_family == 'Windows'
+  ansible.windows.win_powershell:
+    script: |
+      $inDesiredState = Test-DscConfiguration -ErrorAction SilentlyContinue
+      @{ InDesiredState = $inDesiredState } | ConvertTo-Json
+  register: _dsc_test
+  changed_when: false
+  ignore_errors: true
+  failed_when: false
+
+- name: Write DSC — test result
+  when:
+    - ansible_os_family == 'Windows'
+    - _dsc_test is success
+    - _dsc_test.output | default([]) | length > 0
+  ansible.builtin.copy:
+    content: "{{ _dsc_test.output | default([]) | join('\n') }}"
+    dest: "{{ artifact_dir }}/dsc/test_result.json"
+
+- name: Manage DSC — Start-DscConfiguration -UseExisting -Wait -Force
+  when:
+    - ansible_os_family == 'Windows'
+    - manage_dsc | bool
+  ansible.windows.win_powershell:
+    script: |
+      Start-DscConfiguration -UseExisting -Wait -Force -ErrorAction Stop
+  register: _dsc_apply
+  ignore_errors: true
+
+# ============================================================================
+# Scheduled Tasks audit (always safe — read-only enumeration)
+# ============================================================================
+
+- name: Audit Scheduled Tasks — Get-ScheduledTask
+  when: ansible_os_family == 'Windows'
+  ansible.windows.win_powershell:
+    script: |
+      Get-ScheduledTask -ErrorAction SilentlyContinue | Select-Object TaskName,State,TaskPath | ConvertTo-Json
+  register: _schtasks_list
+  changed_when: false
+  ignore_errors: true
+  failed_when: false
+
+- name: Write Scheduled Tasks — list
+  when:
+    - ansible_os_family == 'Windows'
+    - _schtasks_list is success
+    - _schtasks_list.output | default([]) | length > 0
+  ansible.builtin.copy:
+    content: "{{ _schtasks_list.output | default([]) | join('\n') }}"
+    dest: "{{ artifact_dir }}/scheduled_tasks/list.json"
+
+- name: Audit Scheduled Tasks — schtasks /query (raw)
+  when: ansible_os_family == 'Windows'
+  ansible.windows.win_command: schtasks.exe /query /fo LIST /v
+  register: _schtasks_raw
+  changed_when: false
+  ignore_errors: true
+  failed_when: false
+
+- name: Write Scheduled Tasks — raw schtasks output
+  when:
+    - ansible_os_family == 'Windows'
+    - _schtasks_raw is success
+    - _schtasks_raw.stdout | default('', true) | length > 0
+  ansible.builtin.copy:
+    content: "{{ _schtasks_raw.stdout | default('') }}"
+    dest: "{{ artifact_dir }}/scheduled_tasks/schtasks_raw.txt"
+
+- name: Manage Scheduled Tasks — placeholder
+  when:
+    - ansible_os_family == 'Windows'
+    - manage_schtasks | bool
+  ansible.builtin.debug:
+    msg: "Scheduled task mutation not yet implemented; use manage_schtasks=true to enable future automation"
+
+# ============================================================================
+# Unattended Install audit (always safe — file existence checks only)
+# ============================================================================
+
+- name: Audit Unattended Install — unattend.xml detection
+  when: ansible_os_family == 'Windows'
+  ansible.windows.win_powershell:
+    script: |
+      $paths = @(
+        'C:\Windows\System32\sysprep\unattend.xml',
+        'C:\Windows\Panther\unattend.xml'
+      )
+      $result = $paths | ForEach-Object {
+        [PSCustomObject]@{
+          Path   = $_
+          Exists = Test-Path $_ -ErrorAction SilentlyContinue
+        }
+      }
+      $result | ConvertTo-Json
+  register: _unattended_unattend
+  changed_when: false
+  ignore_errors: true
+  failed_when: false
+
+- name: Write Unattended Install — unattend.xml detection
+  when:
+    - ansible_os_family == 'Windows'
+    - _unattended_unattend is success
+    - _unattended_unattend.output | default([]) | length > 0
+  ansible.builtin.copy:
+    content: "{{ _unattended_unattend.output | default([]) | join('\n') }}"
+    dest: "{{ artifact_dir }}/unattended/unattend_detection.json"
+
+- name: Audit Unattended Install — Autounattend.xml detection (all drives)
+  when: ansible_os_family == 'Windows'
+  ansible.windows.win_powershell:
+    script: |
+      $drives = Get-PSDrive -PSProvider FileSystem -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^[A-Z]$' }
+      $result = $drives | ForEach-Object {
+        $autounattendPath = "$($_.Name):\Autounattend.xml"
+        [PSCustomObject]@{
+          Drive  = "$($_.Name):"
+          Path   = $autounattendPath
+          Exists = Test-Path $autounattendPath -ErrorAction SilentlyContinue
+        }
+      }
+      $result | ConvertTo-Json
+  register: _unattended_autounattend
+  changed_when: false
+  ignore_errors: true
+  failed_when: false
+
+- name: Write Unattended Install — Autounattend.xml detection
+  when:
+    - ansible_os_family == 'Windows'
+    - _unattended_autounattend is success
+    - _unattended_autounattend.output | default([]) | length > 0
+  ansible.builtin.copy:
+    content: "{{ _unattended_autounattend.output | default([]) | join('\n') }}"
+    dest: "{{ artifact_dir }}/unattended/autounattend_detection.json"
+
+- name: Manage Unattended Install — placeholder
+  when:
+    - ansible_os_family == 'Windows'
+    - manage_unattended_install | bool
+  ansible.builtin.debug:
+    msg: "Unattended install mutation not yet implemented; use manage_unattended_install=true to enable future automation"
+
+# ============================================================================
+# Installed Software audit (always safe — registry read only)
+# ============================================================================
+
+- name: Audit Installed Software — 64-bit registry
+  when: ansible_os_family == 'Windows'
+  ansible.windows.win_powershell:
+    script: |
+      Get-ItemProperty 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*' -ErrorAction SilentlyContinue | Select-Object DisplayName,DisplayVersion,Publisher | ConvertTo-Json
+  register: _software_64bit
+  changed_when: false
+  ignore_errors: true
+  failed_when: false
+
+- name: Write Installed Software — 64-bit
+  when:
+    - ansible_os_family == 'Windows'
+    - _software_64bit is success
+    - _software_64bit.output | default([]) | length > 0
+  ansible.builtin.copy:
+    content: "{{ _software_64bit.output | default([]) | join('\n') }}"
+    dest: "{{ artifact_dir }}/software/installed.json"
+
+- name: Audit Installed Software — 32-bit (WOW6432Node) registry
+  when: ansible_os_family == 'Windows'
+  ansible.windows.win_powershell:
+    script: |
+      Get-ItemProperty 'HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*' -ErrorAction SilentlyContinue | Select-Object DisplayName,DisplayVersion,Publisher | ConvertTo-Json
+  register: _software_32bit
+  changed_when: false
+  ignore_errors: true
+  failed_when: false
+
+- name: Write Installed Software — 32-bit (WOW6432Node)
+  when:
+    - ansible_os_family == 'Windows'
+    - _software_32bit is success
+    - _software_32bit.output | default([]) | length > 0
+  ansible.builtin.copy:
+    content: "{{ _software_32bit.output | default([]) | join('\n') }}"
+    dest: "{{ artifact_dir }}/software/installed_32bit.json"

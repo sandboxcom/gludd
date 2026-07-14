@@ -1,0 +1,11 @@
+---
+# decode_digital defaults — safe-by-default
+decode_digital_enabled: false
+decode_digital_mode: auto
+decode_digital_input_file: /tmp/gludd-sdr-capture/iq_samples.bin
+decode_digital_sample_rate: 2048000
+decode_digital_tools:
+  dsd: "{{ lookup('ansible.builtin.pipe', 'command -v dsd || echo') }}"
+  multimon_ng: "{{ lookup('ansible.builtin.pipe', 'command -v multimon-ng || echo') }}"
+  direwolf: "{{ lookup('ansible.builtin.pipe', 'command -v direwolf || echo') }}"
+decode_digital_output_dir: /tmp/gludd-decode-digital

@@ -1,0 +1,14 @@
+---
+# verify_coverage role defaults
+
+test_output_dir: "tests/e2e/generated"
+source_module: ""
+test_generation_summary: ""
+artifact_dir: "/tmp/gludd-e2e-test-gen"
+daemon_url: "http://localhost:8000"
+psk: ""
+
+coverage_threshold: 85
+pytest_timeout: 300
+
+enable_git_push: false

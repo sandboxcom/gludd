@@ -1,0 +1,17 @@
+---
+- name: Verify linux_automation
+  hosts: localhost
+  gather_facts: false
+  vars:
+    artifact_dir: "/tmp/gludd-linux-automation"
+  tasks:
+    - name: Stat artifact_dir
+      ansible.builtin.stat:
+        path: "{{ artifact_dir }}"
+      register: _dir
+    - name: Assert artifact_dir exists and is a directory
+      ansible.builtin.assert:
+        that:
+          - _dir.stat.exists
+          - _dir.stat.isdir
+        fail_msg: "{{ artifact_dir }} does not exist or is not a directory"

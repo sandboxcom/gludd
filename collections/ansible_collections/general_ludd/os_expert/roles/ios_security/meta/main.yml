@@ -1,0 +1,14 @@
+---
+galaxy_info:
+  role_name: ios_security
+  author: Agentic Harness Agent
+  description: >
+    Audit iOS security posture: AMFI trust cache validation, sandbox
+    profile compliance, code-sign integrity, and kernel protection
+    status. Requires libimobiledevice access to device.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: MacOSX
+      versions: [all]
+dependencies: []

@@ -1,0 +1,8 @@
+---
+r2_path: "/usr/bin/r2"
+output_dir: "/tmp/gludd-radare2-analyze"
+analysis_mode: "basic"
+enable_disassembly: false
+enable_entropy_scan: false
+enable_string_search: false
+enable_cfg_analysis: false

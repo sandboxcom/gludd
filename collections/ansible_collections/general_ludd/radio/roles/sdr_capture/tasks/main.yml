@@ -1,0 +1,32 @@
+---
+# sdr_capture role — entry point
+
+- name: Validate required parameters
+  ansible.builtin.assert:
+    that:
+      - sdr_capture_freq_hz | int > 0
+      - sdr_capture_sample_rate | int > 0
+    fail_msg: "sdr_capture_freq_hz and sdr_capture_sample_rate must be positive integers"
+
+- name: Check tool availability
+  ansible.builtin.command: "command -v {{ sdr_capture_tool }}"
+  register: _tool_check
+  changed_when: false
+  failed_when: false
+
+- name: Skip — tool missing
+  ansible.builtin.debug:
+    msg: "{{ sdr_capture_tool }} not found — skipping SDR capture"
+  when: _tool_check.rc != 0
+
+- name: Capture IQ samples
+  ansible.builtin.command: >
+    {{ sdr_capture_tool_path }}
+    -f {{ sdr_capture_freq_hz }}
+    -s {{ sdr_capture_sample_rate }}
+    -g {{ sdr_capture_gain }}
+    -n {{ (sdr_capture_duration_sec | float * sdr_capture_sample_rate | int) | int }}
+    {{ sdr_capture_output_file }}
+  when:
+    - sdr_capture_enabled | bool
+    - _tool_check.rc == 0

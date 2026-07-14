@@ -1,0 +1,224 @@
+---
+# linux_automation role — automate Linux system maintenance: systemd
+# timers, unattended-upgrades, cron, logrotate.
+# All mutating operations default OFF via defaults/main.yml.
+
+- name: Create artifact directory
+  when: ansible_os_family in ['RedHat', 'Debian', 'Suse', 'Archlinux']
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Audit systemd timers (read-only)
+  when: ansible_os_family in ['RedHat', 'Debian', 'Suse', 'Archlinux']
+  block:
+    - name: Run systemctl list-timers
+      ansible.builtin.command: systemctl list-timers --all --no-pager
+      register: _systemd_timers
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write systemd timers to artifact_dir
+      ansible.builtin.copy:
+        content: "{{ _systemd_timers.stdout | default('') }}"
+        dest: "{{ artifact_dir }}/systemd_timers.txt"
+        mode: "0644"
+      when: _systemd_timers is success and _systemd_timers.stdout | default('', true) | length > 0
+
+- name: Audit unattended-upgrades config (read-only)
+  when: ansible_os_family in ['RedHat', 'Debian', 'Suse', 'Archlinux']
+  block:
+    - name: Check Debian/Ubuntu unattended-upgrades config
+      ansible.builtin.shell: |
+        if [ -f /etc/apt/apt.conf.d/20auto-upgrades ]; then
+          echo "=== /etc/apt/apt.conf.d/20auto-upgrades ==="
+          cat /etc/apt/apt.conf.d/20auto-upgrades
+        fi
+        if [ -f /etc/apt/apt.conf.d/50unattended-upgrades ]; then
+          echo ""
+          echo "=== /etc/apt/apt.conf.d/50unattended-upgrades ==="
+          cat /etc/apt/apt.conf.d/50unattended-upgrades
+        fi
+        if [ -f /etc/dnf/automatic.conf ]; then
+          echo ""
+          echo "=== /etc/dnf/automatic.conf ==="
+          cat /etc/dnf/automatic.conf
+        fi
+        if [ -f /etc/zypp/zypper.conf ]; then
+          echo ""
+          grep -i auto /etc/zypp/zypper.conf 2>/dev/null || echo "(no auto-update config in zypper.conf)"
+        fi
+      register: _unattended_config
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write unattended-upgrades config to artifact_dir
+      ansible.builtin.copy:
+        content: "{{ _unattended_config.stdout | default('(no unattended-upgrade config found)') }}"
+        dest: "{{ artifact_dir }}/unattended_upgrades.txt"
+        mode: "0644"
+
+- name: Audit cron entries (read-only)
+  when: ansible_os_family in ['RedHat', 'Debian', 'Suse', 'Archlinux']
+  block:
+    - name: List cron directories
+      ansible.builtin.shell: |
+        echo "=== /etc/crontab ==="
+        cat /etc/crontab 2>/dev/null || echo "(no /etc/crontab)"
+        echo ""
+        echo "=== /etc/cron.d/ ==="
+        ls -la /etc/cron.d/ 2>/dev/null || echo "(no /etc/cron.d)"
+        echo ""
+        echo "=== /etc/cron.hourly/ ==="
+        ls -la /etc/cron.hourly/ 2>/dev/null || echo "(no /etc/cron.hourly)"
+        echo ""
+        echo "=== /etc/cron.daily/ ==="
+        ls -la /etc/cron.daily/ 2>/dev/null || echo "(no /etc/cron.daily)"
+        echo ""
+        echo "=== /etc/cron.weekly/ ==="
+        ls -la /etc/cron.weekly/ 2>/dev/null || echo "(no /etc/cron.weekly)"
+        echo ""
+        echo "=== /etc/cron.monthly/ ==="
+        ls -la /etc/cron.monthly/ 2>/dev/null || echo "(no /etc/cron.monthly)"
+        echo ""
+        echo "=== /var/spool/cron/ ==="
+        ls -la /var/spool/cron/ 2>/dev/null || echo "(no /var/spool/cron)"
+      register: _cron_list
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Parse current user crontab
+      ansible.builtin.command: crontab -l
+      become: true
+      register: _crontab_user
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write cron audit to artifact_dir
+      ansible.builtin.copy:
+        content: |
+          {{ _cron_list.stdout | default('(no cron directories found)') }}
+
+          === crontab -l (root) ===
+          {{ _crontab_user.stdout | default('(no crontab)') }}
+        dest: "{{ artifact_dir }}/cron.txt"
+        mode: "0644"
+
+- name: Audit logrotate config (read-only)
+  when: ansible_os_family in ['RedHat', 'Debian', 'Suse', 'Archlinux']
+  block:
+    - name: Read logrotate configs
+      ansible.builtin.shell: |
+        echo "=== /etc/logrotate.conf ==="
+        cat /etc/logrotate.conf 2>/dev/null || echo "(no /etc/logrotate.conf)"
+        echo ""
+        echo "=== /etc/logrotate.d/ ==="
+        ls -la /etc/logrotate.d/ 2>/dev/null || echo "(no /etc/logrotate.d)"
+        if ls /etc/logrotate.d/*.conf 2>/dev/null; then
+          for f in /etc/logrotate.d/*.conf; do
+            echo ""
+            echo "=== $f ==="
+            cat "$f"
+          done
+        fi
+      register: _logrotate_config
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write logrotate config to artifact_dir
+      ansible.builtin.copy:
+        content: "{{ _logrotate_config.stdout | default('(no logrotate config found)') }}"
+        dest: "{{ artifact_dir }}/logrotate.txt"
+        mode: "0644"
+
+- name: Manage systemd timers
+  when:
+    - ansible_os_family in ['RedHat', 'Debian', 'Suse', 'Archlinux']
+    - manage_systemd_timers | bool
+  block:
+    - name: Apply systemd timer state
+      ansible.builtin.systemd:
+        name: "{{ item.name }}"
+        enabled: "{{ item.enabled }}"
+        state: "{{ item.state | default('started') }}"
+        daemon_reload: true
+      loop: "{{ systemd_timers | default([]) }}"
+      when: systemd_timers | default([]) | length > 0
+      ignore_errors: true
+
+- name: Manage unattended-upgrades
+  when:
+    - ansible_os_family in ['RedHat', 'Debian', 'Suse', 'Archlinux']
+    - manage_unattended_upgrades | bool
+  block:
+    - name: Configure unattended-upgrades (Debian/Ubuntu)
+      ansible.builtin.copy:
+        content: |
+          APT::Periodic::Update-Package-Lists "1";
+          APT::Periodic::Unattended-Upgrade "1";
+          APT::Periodic::AutocleanInterval "7";
+          {{ unattended_upgrades_extra_config | default('') }}
+        dest: /etc/apt/apt.conf.d/20auto-upgrades
+        mode: "0644"
+      when: ansible_os_family == 'Debian'
+
+    - name: Configure dnf-automatic (RHEL/Fedora)
+      ansible.builtin.copy:
+        content: |
+          [commands]
+          upgrade_type = default
+          random_sleep = 300
+          download_updates = yes
+          apply_updates = yes
+          {{ unattended_upgrades_extra_config | default('') }}
+        dest: /etc/dnf/automatic.conf
+        mode: "0644"
+      when: ansible_os_family == 'RedHat'
+
+    - name: Enable dnf-automatic timer (RHEL)
+      ansible.builtin.systemd:
+        name: dnf-automatic.timer
+        enabled: true
+        state: started
+      when: ansible_os_family == 'RedHat'
+
+- name: Manage cron entries
+  when:
+    - ansible_os_family in ['RedHat', 'Debian', 'Suse', 'Archlinux']
+    - manage_cron | bool
+  block:
+    - name: Apply cron entries
+      ansible.builtin.cron:
+        name: "{{ item.name }}"
+        job: "{{ item.job }}"
+        user: "{{ item.user | default('root') }}"
+        minute: "{{ item.minute | default('*') }}"
+        hour: "{{ item.hour | default('*') }}"
+        day: "{{ item.day | default('*') }}"
+        month: "{{ item.month | default('*') }}"
+        weekday: "{{ item.weekday | default('*') }}"
+        state: "{{ item.state | default('present') }}"
+        cron_file: "{{ item.cron_file | default(omit) }}"
+      loop: "{{ cron_entries | default([]) }}"
+      when: cron_entries | default([]) | length > 0
+      ignore_errors: true
+
+- name: Manage logrotate configs
+  when:
+    - ansible_os_family in ['RedHat', 'Debian', 'Suse', 'Archlinux']
+    - manage_logrotate | bool
+  block:
+    - name: Deploy logrotate configs
+      ansible.builtin.template:
+        src: "{{ item.src }}"
+        dest: "/etc/logrotate.d/{{ item.dest }}"
+        mode: "0644"
+      loop: "{{ logrotate_configs | default([]) }}"
+      when: logrotate_configs | default([]) | length > 0
+      ignore_errors: true

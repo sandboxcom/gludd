@@ -658,6 +658,22 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     resume_model.add_argument("--daemon-url", default="http://localhost:8000")
     resume_model.set_defaults(func=_cmd_resume_model)
 
+    chat_parser = sub.add_parser("chat", help="Interactive AI chat REPL")
+    chat_parser.add_argument("--eval", type=str, default=None, metavar="PROMPT",
+                             help="Single-turn evaluation (non-interactive)")
+    chat_parser.add_argument("--model", default="default",
+                             help="Model profile (e.g. openai/gpt-4o, deepseek/deepseek-chat)")
+    chat_parser.add_argument("--system-prompt", default=None, help="Override system prompt")
+    chat_parser.add_argument("--history", default=None, metavar="FILE",
+                             help="JSON-lines conversation history file")
+    chat_parser.add_argument("--api-base", default=os.environ.get("OPENAI_BASE_URL"),
+                             help="Override API base URL (env: OPENAI_BASE_URL)")
+    chat_parser.add_argument("--api-key", default=os.environ.get("OPENAI_API_KEY"),
+                              help="Override API key (env: OPENAI_API_KEY)")
+    chat_parser.add_argument("--project-dir", default=None, metavar="PATH",
+                              help="Project directory for ansible/terraform context injection")
+    chat_parser.set_defaults(func=_cmd_chat)
+
     help_p = sub.add_parser("help", help="Show full manual")
     help_p.set_defaults(func=_cmd_help)
 
@@ -1131,6 +1147,7 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
         "searx": searx_parser,
         "test-bg": testbg_parser,
         "test": test_parser,
+        "chat": chat_parser,
         "pause": pause_parser,
         "resume": resume_parser,
     }
@@ -2375,6 +2392,28 @@ def _cmd_leaderboard(args: argparse.Namespace) -> None:
 def _cmd_help(args: argparse.Namespace) -> None:
     print(MAN_PAGE)
     sys.exit(0)
+
+
+def _cmd_chat(args: argparse.Namespace) -> None:
+    """Interactive chat REPL or --eval single-turn mode."""
+    import asyncio
+
+    from general_ludd.chat import ChatSession
+
+    session = ChatSession(
+        model=args.model,
+        system_prompt=args.system_prompt,
+        eval_mode=args.eval is not None,
+        api_base_url=args.api_base,
+        api_key=args.api_key,
+        project_dir=getattr(args, "project_dir", None),
+    )
+
+    if args.eval:
+        result = asyncio.run(session.run_once(args.eval))
+        print(result)
+    else:
+        asyncio.run(session.start_repl())
 
 
 def _cmd_filestore_list(args: argparse.Namespace) -> None:

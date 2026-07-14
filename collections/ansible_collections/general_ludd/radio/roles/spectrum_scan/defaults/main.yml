@@ -1,0 +1,12 @@
+---
+# spectrum_scan defaults — safe-by-default
+spectrum_scan_enabled: false
+spectrum_scan_start_freq_hz: 24000000
+spectrum_scan_end_freq_hz: 1700000000
+spectrum_scan_bin_size_hz: 10000
+spectrum_scan_integration_time_ms: 100
+spectrum_scan_gain: auto
+spectrum_scan_device_index: 0
+spectrum_scan_tool: rtl_power
+spectrum_scan_tool_path: "{{ lookup('ansible.builtin.pipe', 'command -v rtl_power || echo') }}"
+spectrum_scan_output_dir: /tmp/gludd-spectrum-scan

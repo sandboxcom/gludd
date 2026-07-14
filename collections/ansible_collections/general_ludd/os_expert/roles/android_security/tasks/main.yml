@@ -1,0 +1,7 @@
+---
+# android_security role — audit Android security subsystems: sepolicy,
+# package permissions, keystore, dm-verity.
+
+- name: Audit Android security posture
+  ansible.builtin.debug:
+    msg: "android_security: auditing sepolicy-inject, pm permission, keystore, dm-verity"

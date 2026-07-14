@@ -1,0 +1,203 @@
+---
+# windows_security role — read-only audit of Windows Defender, firewall,
+# audit policy, and security configuration.
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+  when: ansible_os_family == 'Windows'
+
+- name: Create artifact subdirectories
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}\\{{ item }}"
+    state: directory
+  loop:
+    - defender
+    - firewall
+    - audit
+    - config
+  when: ansible_os_family == 'Windows'
+
+# ------------------------------------------------------------------ #
+#  Defender audit
+# ------------------------------------------------------------------ #
+- name: Audit Windows Defender
+  when:
+    - ansible_os_family == 'Windows'
+    - audit_defender | bool
+  block:
+    - name: Get-MpPreference
+      ansible.windows.win_powershell:
+        script: Get-MpPreference | ConvertTo-Json
+      register: _defender_prefs
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write defender_preferences.json
+      ansible.builtin.copy:
+        content: "{{ _defender_prefs.output | default([]) | to_json }}"
+        dest: '{{ artifact_dir }}\defender\defender_preferences.json'
+      when: _defender_prefs is success
+
+    - name: Get-MpComputerStatus
+      ansible.windows.win_powershell:
+        script: Get-MpComputerStatus | Select-Object AntivirusEnabled,AMServiceEnabled,RealTimeProtectionEnabled,AntispywareEnabled,LastScan | ConvertTo-Json
+      register: _defender_status
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write defender_status.json
+      ansible.builtin.copy:
+        content: "{{ _defender_status.output | default([]) | to_json }}"
+        dest: '{{ artifact_dir }}\defender\defender_status.json'
+      when: _defender_status is success
+
+    - name: Get-MpThreatDetection
+      ansible.windows.win_powershell:
+        script: Get-MpThreatDetection | ConvertTo-Json
+      register: _defender_threats
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write defender_threats.json
+      ansible.builtin.copy:
+        content: "{{ _defender_threats.output | default([]) | to_json }}"
+        dest: '{{ artifact_dir }}\defender\defender_threats.json'
+      when: _defender_threats is success
+
+# ------------------------------------------------------------------ #
+#  Firewall audit
+# ------------------------------------------------------------------ #
+- name: Audit Windows Firewall
+  when:
+    - ansible_os_family == 'Windows'
+    - audit_firewall | bool
+  block:
+    - name: Get-NetFirewallRule (enabled only)
+      ansible.windows.win_powershell:
+        script: Get-NetFirewallRule | Where-Object Enabled -eq True | ConvertTo-Json -Depth 3
+      register: _fw_rules
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write firewall_rules.json
+      ansible.builtin.copy:
+        content: "{{ _fw_rules.output | default([]) | to_json }}"
+        dest: '{{ artifact_dir }}\firewall\firewall_rules.json'
+      when: _fw_rules is success
+
+    - name: Get-NetFirewallProfile
+      ansible.windows.win_powershell:
+        script: Get-NetFirewallProfile | ConvertTo-Json
+      register: _fw_profiles
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write firewall_profiles.json
+      ansible.builtin.copy:
+        content: "{{ _fw_profiles.output | default([]) | to_json }}"
+        dest: '{{ artifact_dir }}\firewall\firewall_profiles.json'
+      when: _fw_profiles is success
+
+# ------------------------------------------------------------------ #
+#  Audit policy
+# ------------------------------------------------------------------ #
+- name: Audit Windows audit policy
+  when:
+    - ansible_os_family == 'Windows'
+    - audit_auditpol | bool
+  block:
+    - name: Run auditpol /get /category:*
+      ansible.windows.win_command: auditpol /get /category:*
+      register: _auditpol_raw
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write auditpol_raw.txt
+      ansible.builtin.copy:
+        content: |
+          stdout:
+          {{ _auditpol_raw.stdout | default('') }}
+
+          stderr:
+          {{ _auditpol_raw.stderr | default('') }}
+        dest: '{{ artifact_dir }}\audit\auditpol_raw.txt'
+      when: _auditpol_raw is success
+
+    - name: Get-AuditPolicy
+      ansible.windows.win_powershell:
+        script: Get-AuditPolicy | ConvertTo-Json
+      register: _audit_policy
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write audit_policy.json
+      ansible.builtin.copy:
+        content: "{{ _audit_policy.output | default([]) | to_json }}"
+        dest: '{{ artifact_dir }}\audit\audit_policy.json'
+      when: _audit_policy is success
+
+# ------------------------------------------------------------------ #
+#  Security configuration audit
+# ------------------------------------------------------------------ #
+- name: Audit Windows security configuration
+  when:
+    - ansible_os_family == 'Windows'
+    - audit_secedit | bool
+  block:
+    - name: Run secedit /export
+      ansible.windows.win_command: secedit /export /cfg {{ artifact_dir }}\config\secedit.cfg
+      register: _secedit
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Read back secedit.cfg
+      ansible.windows.win_command: type {{ artifact_dir }}\config\secedit.cfg
+      register: _secedit_cfg
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+      when: _secedit is success
+
+    - name: Write secedit_summary.txt
+      ansible.builtin.copy:
+        content: "{{ _secedit_cfg.stdout | default('') }}"
+        dest: '{{ artifact_dir }}\config\secedit_summary.txt'
+      when: _secedit_cfg is success and _secedit_cfg.stdout | default('', true) | length > 0
+
+    - name: Get-HotFix
+      ansible.windows.win_powershell:
+        script: Get-HotFix | Select-Object HotFixID,InstalledOn,Description | ConvertTo-Json
+      register: _hotfixes
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write hotfixes.json
+      ansible.builtin.copy:
+        content: "{{ _hotfixes.output | default([]) | to_json }}"
+        dest: '{{ artifact_dir }}\config\hotfixes.json'
+      when: _hotfixes is success
+
+    - name: Get-Service wuauserv
+      ansible.windows.win_powershell:
+        script: Get-Service wuauserv | ConvertTo-Json
+      register: _wuauserv
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write wuauserv.json
+      ansible.builtin.copy:
+        content: "{{ _wuauserv.output | default([]) | to_json }}"
+        dest: '{{ artifact_dir }}\config\wuauserv.json'
+      when: _wuauserv is success

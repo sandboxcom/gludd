@@ -1,0 +1,24 @@
+---
+# font_analyze role defaults — REPORT-ONLY
+
+# Input
+font_file: ""               # Path to font file (OTF/TTF/WOFF/WOFF2)
+
+# Analysis options
+check_metrics: true          # Extract font metrics (ascent, descent, line gap)
+check_tables: true           # Enumerate OpenType tables
+check_features: true         # Check for kerning, ligatures, GSUB/GPOS
+check_web_font: false        # Validate web font compatibility
+check_cjk: false             # CJK-specific checks (fullwidth, vertical metrics)
+check_variable: false        # Variable font axis detection
+check_monospace: false       # Check if font is monospace
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Artifact output
+artifact_dir: "/tmp/gludd-font-analyze"
+
+# Destructive ops guard — report-only
+enable_git_push: false

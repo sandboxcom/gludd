@@ -1,0 +1,23 @@
+---
+# bom_detect role defaults — REPORT-ONLY
+
+# Input
+input_file: ""              # Path to file to analyze
+input_bytes: ""             # Alternative: hex-encoded bytes (e.g. "efbbbf...")
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Artifact output
+artifact_dir: "/tmp/gludd-bom-detect"
+
+# Operations
+strip_bom: false            # Strip detected BOM from output
+add_bom: false              # Add a BOM to output
+add_bom_encoding: "UTF-8"   # Encoding for BOM addition
+audit_directory: false      # Recursively scan directory for BOMs
+audit_path: ""              # Directory path to audit
+
+# Destructive ops guard — report-only
+enable_git_push: false

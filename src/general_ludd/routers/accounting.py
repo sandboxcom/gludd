@@ -163,8 +163,8 @@ async def _build_accountant(app: FastAPI, quota_usd: float = 0.0) -> Accountant:
             async with factory() as session:
                 todo_repo = TodoRepository(session)
                 role_repo = RoleRunRepository(session)
-                all_todos = await todo_repo.list_all()
-                all_roles = await role_repo.list_all()
+                all_todos = await todo_repo.list_all(project_id=None)
+                all_roles = await role_repo.list_all(project_id=None)
             for t in all_todos:
                 pid = t.project_id or ""
                 # Map ORM status to accounting buckets

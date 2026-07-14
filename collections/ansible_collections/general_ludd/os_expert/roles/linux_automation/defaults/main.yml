@@ -1,0 +1,14 @@
+---
+# linux_automation role defaults
+
+daemon_url: "http://localhost:8000"
+psk: ""
+
+artifact_dir: "/tmp/gludd-linux-automation"
+
+manage_systemd_timers: false
+manage_unattended_upgrades: false
+manage_cron: false
+manage_logrotate: false
+
+enable_git_push: false

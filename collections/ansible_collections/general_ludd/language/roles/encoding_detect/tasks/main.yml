@@ -1,0 +1,111 @@
+---
+# encoding_detect role — chardet-based encoding detection and conversion:
+# detect encoding from raw bytes, convert between encodings, mojibake
+# detection and repair, encoding normalization.
+
+- name: Ensure artifact directory exists
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Detect and convert encodings via knowledge module
+  ansible.builtin.script:
+    cmd: |
+      python3 -c "
+import json, sys, os, codecs
+sys.path.insert(0, os.path.expanduser('{{ playbook_dir | default('.') }}/../../../../src'))
+from general_ludd.language.charset_map import (
+    CHARDET_CONFIDENCE_THRESHOLDS, MOJIBAKE_SIGNATURES,
+    ALL_ENCODINGS
+)
+import unicodedata
+
+result = {}
+data = None
+input_file = '{{ input_file }}'
+input_bytes = '{{ input_bytes }}'
+
+if input_file:
+    with open(input_file, 'rb') as f:
+        data = f.read()
+elif input_bytes:
+    data = bytes.fromhex(input_bytes.replace(' ', ''))
+
+if data is None:
+    result['error'] = 'No input provided'
+else:
+    result['byte_length'] = len(data)
+    min_conf = float('{{ min_confidence }}')
+
+    try:
+        import chardet
+        detected = chardet.detect(data)
+        result['detected_encoding'] = detected.get('encoding', 'unknown')
+        result['confidence'] = round(detected.get('confidence', 0.0), 4)
+    except ImportError:
+        result['detected_encoding'] = 'utf-8'
+        result['confidence'] = 0.5
+        result['fallback'] = 'chardet not available, defaulting to utf-8'
+
+    conf = result['confidence']
+    if conf >= CHARDET_CONFIDENCE_THRESHOLDS.get('trusted', 0.95):
+        result['confidence_level'] = 'trusted'
+    elif conf >= CHARDET_CONFIDENCE_THRESHOLDS.get('reliable', 0.80):
+        result['confidence_level'] = 'reliable'
+    elif conf >= CHARDET_CONFIDENCE_THRESHOLDS.get('usable', 0.50):
+        result['confidence_level'] = 'usable'
+    else:
+        result['confidence_level'] = 'entry'
+
+    target_enc = '{{ target_encoding }}'
+    detected_enc = result.get('detected_encoding', 'utf-8') or 'utf-8'
+    try:
+        decoded = data.decode(detected_enc)
+        preview = decoded[:200]
+        result['char_length'] = len(decoded)
+    except (UnicodeDecodeError, LookupError):
+        decoded = data.decode('utf-8', errors='replace')
+        preview = decoded[:200]
+        result['decode_error'] = True
+
+    try:
+        encoded_target = decoded.encode(target_enc)
+        result['target_byte_length'] = len(encoded_target)
+    except Exception:
+        result['target_encoding_error'] = True
+
+    result['converted_preview'] = preview
+
+    if {{ detect_mojibake | lower }}:
+        try:
+            text = data.decode('utf-8')
+        except UnicodeDecodeError:
+            text = data.decode('utf-8', errors='replace')
+        found_pattern = None
+        for sig_name, patterns in MOJIBAKE_SIGNATURES.items():
+            for pat in patterns:
+                if pat and pat in text:
+                    found_pattern = sig_name
+                    break
+            if found_pattern:
+                break
+        result['mojibake_detected'] = found_pattern is not None
+        result['mojibake_pattern'] = found_pattern
+
+    result['supported_encodings'] = [e['name'] for e in ALL_ENCODINGS]
+    result['supported_count'] = len(ALL_ENCODINGS)
+
+with open('{{ artifact_dir }}/encoding_detection.json', 'w') as f:
+    json.dump(result, f, indent=2, ensure_ascii=False)
+print(f'Output: {{ artifact_dir }}/encoding_detection.json')
+print(f'Detected: {result.get(\"detected_encoding\", \"unknown\")} (confidence: {result.get(\"confidence\", 0)})')
+"
+  args:
+    executable: python3
+  register: encoding_result
+  changed_when: false
+
+- name: Print encoding detection summary
+  ansible.builtin.debug:
+    msg: "{{ encoding_result.stdout_lines }}"

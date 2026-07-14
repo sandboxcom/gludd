@@ -1,0 +1,8 @@
+---
+# windows_security role — Windows-specific variables
+# All values below are OS-specific overrides; most defaults live in defaults/main.yml.
+# artifact_dir:     directory for collected security artifacts (default: C:\Temp\gludd-windows-security)
+# audit_defender:   query Windows Defender preferences, status, and threat history (default: true)
+# audit_firewall:   query enabled firewall rules and profile configuration (default: true)
+# audit_auditpol:   run auditpol /get + Get-AuditPolicy for audit policy state (default: true)
+# audit_secedit:    export security config via secedit, plus Get-HotFix + wuauserv status (default: true)

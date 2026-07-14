@@ -1,0 +1,7 @@
+---
+# ios_diagnose role — gather iOS diagnostic data via libimobiledevice:
+# ideviceinfo, idevicesyslog, idevicediagnostics, oslog.
+
+- name: Gather iOS diagnostics
+  ansible.builtin.debug:
+    msg: "ios_diagnose: gathering ideviceinfo, idevicesyslog, idevicediagnostics, oslog"

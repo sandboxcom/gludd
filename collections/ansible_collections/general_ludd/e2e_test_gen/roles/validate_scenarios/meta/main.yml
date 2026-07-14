@@ -1,0 +1,20 @@
+---
+galaxy_info:
+  role_name: validate_scenarios
+  author: Agentic Harness Agent
+  description: >
+    Validates generated E2E test scenarios against real-world usage patterns
+    via the existing ResearcherAgent (SearXNG-backed web research). Searches
+    GitHub issues, Stack Overflow, and blogs to corroborate or prune scenarios.
+    Produces a validated scenario list with confidence scores and source URLs.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies:
+  - general_ludd.e2e_test_gen.generate_scenarios

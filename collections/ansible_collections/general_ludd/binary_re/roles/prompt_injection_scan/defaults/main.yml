@@ -1,0 +1,11 @@
+---
+target_path: "."
+input_text: ""
+output_dir: "/tmp/gludd-prompt-injection-scan"
+output_format: "json"
+severity_threshold: "medium"
+scan_obfuscation: false
+enable_hex_scan: false
+enable_ascii_scan: false
+enable_js_ast_scan: false
+enable_base64_scan: false

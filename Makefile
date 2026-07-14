@@ -42,6 +42,8 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         _commit-lock-acquire check-clean-tree ship-commit-files \
         molecule-version molecule-test molecule-test-all \
         collection-roles collection-modules molecule-scenarios \
+        test-binary-re test-radio test-os-expert test-e2e-test-gen test-language test-collections \
+        molecule-test-binary-re molecule-test-radio molecule-test-os-expert molecule-test-e2e-test-gen molecule-test-language \
         move-ansible-roles \
         container-build container-run container-push \
          file-executable build-executable deb-package deb-install-deps rpm-package macos-dmg windows-installer release-artifacts dist dist-clean bundle-binaries bundle-ripgrep \
@@ -80,7 +82,8 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         install-bats test-install check-subagent-guards verify-plugin-manifest \
         check-task-ledger \
         test-service-discovery service-discover service-catalog \
-        subagent-init subagent-cleanup
+        subagent-init subagent-cleanup \
+        chat chat-eval test-chat
 
 help:
 	@echo "Usage: make [target]"
@@ -1883,6 +1886,17 @@ ci-greenness:
 	@gh run list -R sandboxcom/gludd -L 20 --json conclusion,status 2>/dev/null | $(PYTHON) -c "import sys,json; r=json.load(sys.stdin); done=[x for x in r if x.get('status')=='completed']; g=[x for x in done if x.get('conclusion')=='success']; total=len(done); print('CI greenness (last %d completed runs): %d GREEN, %d not-green = %d%%.' % (total, len(g), total-len(g), (100*len(g)//total if total else 0))); print('  -> Do NOT call CI \"reliable/green\" without quoting this ratio.')" || echo "ci-greenness-failed"
 
 # --- enabler targets for parallel verification + wider quality gates ---
+# Chat CLI
+chat:
+	@$(UV) run python -m general_ludd.cli chat $(if $(MODEL),--model $(MODEL)) $(if $(API_BASE),--api-base $(API_BASE)) $(if $(API_KEY),--api-key $(API_KEY))
+
+chat-eval:
+	@[ -n "$(PROMPT)" ] || { echo "Usage: make chat-eval PROMPT='Your prompt here' [MODEL=deepseek] [API_KEY=...]"; exit 1; }
+	@$(UV) run python -m general_ludd.cli chat --eval "$(PROMPT)" $(if $(MODEL),--model $(MODEL)) $(if $(API_BASE),--api-base $(API_BASE)) $(if $(API_KEY),--api-key $(API_KEY))
+
+test-chat:
+	@$(UV) run python -m pytest tests/unit/test_chat_session.py tests/unit/test_chat_formatter.py tests/integration/test_chat_cli.py -v
+
 # Isolated single-file pytest: unique basetemp so concurrent agent runs never
 # collide (the #40 fix). Usage: make test-iso TESTFILE=tests/... ID=<uniq>
 test-iso:
@@ -4018,6 +4032,87 @@ test-scapy-adapter:
 		echo "scapy not installed — skipping scapy adapter tests"; \
 	fi
 
+# --- Collection Tests ---
+# binary_re collection: 8 roles + 3 knowledge modules (fuzzing_strategies, obfuscation_techniques, prompt_injection_detector)
+test-binary-re:
+	@$(UV) run python -m pytest collections/ansible_collections/general_ludd/binary_re/tests/ -v
+
+# radio collection: 10 roles + 5 knowledge modules (antenna_types, frequency_allocations, modulation_schemes, propagation_models, radio_exam_data)
+test-radio:
+	@$(UV) run python -m pytest collections/ansible_collections/general_ludd/radio/tests/ -v
+
+# os_expert collection: 12 roles (Ansible-only, no Python modules yet)
+test-os-expert:
+	@if [ -d collections/ansible_collections/general_ludd/os_expert/tests ]; then \
+		$(UV) run python -m pytest collections/ansible_collections/general_ludd/os_expert/tests/ -v; \
+	else \
+		echo "os_expert collection has no Python tests yet (Ansible roles only)"; \
+	fi
+
+# Run all collection test suites
+test-collections: test-binary-re test-radio test-os-expert test-e2e-test-gen test-language
+
+# e2e_test_gen collection: 5 roles (analyze_code_paths, write_e2e_tests, generate_scenarios, verify_coverage, validate_scenarios)
+test-e2e-test-gen:
+	@if [ -d collections/ansible_collections/general_ludd/e2e_test_gen/tests ]; then \
+		$(UV) run python -m pytest collections/ansible_collections/general_ludd/e2e_test_gen/tests/ -v; \
+	else \
+		echo "e2e_test_gen collection has no Python tests yet (Ansible roles only)"; \
+	fi
+
+# language collection: 8 roles (font_analyze, phonetic_transcribe, i18n_extract, bom_detect, locale_format, homoglyph_scan, unicode_analyze, encoding_detect)
+test-language:
+	@if [ -d collections/ansible_collections/general_ludd/language/tests ]; then \
+		$(UV) run python -m pytest collections/ansible_collections/general_ludd/language/tests/ -v; \
+	else \
+		echo "language collection has no Python tests yet (Ansible roles + knowledge modules only)"; \
+	fi
+
+# molecule-test-binary-re: runs molecule scenarios for binary_re collection roles
+molecule-test-binary-re:
+	@echo "=== molecule-test-binary-re ==="
+	@if [ -d molecule/playbooks/binary_re ]; then \
+		$(MAKE) --no-print-directory molecule-test SCENARIO=binary_re; \
+	else \
+		echo "binary_re collection has no molecule scenarios in molecule/playbooks/"; \
+	fi
+
+# molecule-test-radio: runs molecule scenarios for radio collection roles
+molecule-test-radio:
+	@echo "=== molecule-test-radio ==="
+	@if [ -d molecule/playbooks/radio ]; then \
+		$(MAKE) --no-print-directory molecule-test SCENARIO=radio; \
+	else \
+		echo "radio collection has no molecule scenarios in molecule/playbooks/"; \
+	fi
+
+# molecule-test-os-expert: runs molecule scenarios for os_expert collection roles
+molecule-test-os-expert:
+	@echo "=== molecule-test-os-expert ==="
+	@if [ -d molecule/playbooks/os_expert ]; then \
+		$(MAKE) --no-print-directory molecule-test SCENARIO=os_expert; \
+	else \
+		echo "os_expert collection has no molecule scenarios in molecule/playbooks/"; \
+	fi
+
+# molecule-test-e2e-test-gen: runs molecule scenarios for e2e_test_gen collection roles
+molecule-test-e2e-test-gen:
+	@echo "=== molecule-test-e2e-test-gen ==="
+	@if [ -d molecule/playbooks/e2e_test_gen ]; then \
+		$(MAKE) --no-print-directory molecule-test SCENARIO=e2e_test_gen; \
+	else \
+		echo "e2e_test_gen collection has no molecule scenarios in molecule/playbooks/"; \
+	fi
+
+# molecule-test-language: runs molecule scenarios for language collection roles
+molecule-test-language:
+	@echo "=== molecule-test-language ==="
+	@if [ -d molecule/playbooks/language ]; then \
+		$(MAKE) --no-print-directory molecule-test SCENARIO=language; \
+	else \
+		echo "language collection has no molecule scenarios in molecule/playbooks/"; \
+	fi
+
 # Run networking role lint + syntax validation together
 networking-validate: networking-role-lint networking-role-syntax
 	@echo "networking role validation complete"
@@ -4109,3 +4204,12 @@ find-untested:
 
 test-hot-module-load:
 	@node --experimental-strip-types -e "try { const m = require('/tmp/gludd-hot-enforce-session-start.js'); console.log('LOADED OK: typeof default=' + typeof m.default + ', keys=' + Object.keys(m).join()); } catch(e) { console.log('LOAD FAILED: ' + e.message); console.log('FALLBACK: loadHotModule would use defaultImpl'); }"
+
+diag-multitask:
+	@node --experimental-strip-types _diag_multitask.ts
+
+diag-e2e:
+	@node --experimental-strip-types _diag_e2e.ts
+
+show-multitask-state:
+	@if [ -f /tmp/gludd-multitask-state.json ]; then ls -la /tmp/gludd-multitask-state.json; echo "---"; cat /tmp/gludd-multitask-state.json; else echo "File does not exist: /tmp/gludd-multitask-state.json"; fi

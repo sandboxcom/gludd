@@ -1,0 +1,24 @@
+---
+# marine_decode role — entry point
+
+- name: Validate mode
+  ansible.builtin.assert:
+    that:
+      - marine_decode_mode in ["auto", "ais", "navtex", "dsc"]
+    fail_msg: "marine_decode_mode must be auto / ais / navtex / dsc"
+
+- name: Check tool availability
+  ansible.builtin.debug:
+    msg: "Available marine tools: {{ marine_decode_tools | dict2items | selectattr('value', 'ne', '') | map(attribute='key') | list }}"
+
+- name: Skip — no tools found
+  ansible.builtin.debug:
+    msg: "No marine decode tools found — skipping"
+  when:
+    - marine_decode_tools.values() | select('ne', '') | list | length == 0
+
+- name: Dispatch decode mode
+  ansible.builtin.include_tasks: "{{ marine_decode_mode }}.yml"
+  when:
+    - marine_decode_enabled | bool
+    - marine_decode_tools.values() | select('ne', '') | list | length > 0

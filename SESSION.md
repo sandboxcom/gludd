@@ -25,19 +25,37 @@
 
 ### Beta releases
 
-**No beta release has ever been cut.** Tags `v0.1.0-beta.1` through `v0.1.0-beta.4` do not exist as GitHub Releases. Code versions `0.1.0-beta.2` through `0.1.0-beta.4` exist only in `pyproject.toml`/`__init__.py` — version bumps without a corresponding release cut.
+| Tag | Date | Assets | Status |
+|-----|------|--------|--------|
+| `v0.1.0-beta.1` | 2026-07-14 | 1/12 | published but **INCOMPLETE** — only 1 of 12 required assets (verify-release-completeness FAILED) |
+
+Code versions `0.1.0-beta.2` through `0.1.0-beta.4` exist in `pyproject.toml`/`__init__.py` — version bumps without a corresponding release cut.
 
 ---
 
-## SESSION 34 — 2026-07-14 (current)
+## SESSION 35 — 2026-07-14 (FINAL)
 
-- **HEAD: `034ce6ab`** on `development` branch
-- **Version: 0.1.0-beta.4**
-- **TASKS.md: 261/261 complete (100%)**
-- **Gate: GREEN** — lint 0, typecheck 0, collect OK, hook-runtime 99/18 pass
-- **CI: PENDING** — run 29317300683 (version bump)
-- **Working tree: CLEAN**
-- **Next:** CI green → merge to master → release cut
+- **HEAD: `6d45df65`** on `development` branch (10 commits: a2e831e1..6d45df65)
+- **Version: 0.1.0-beta.4** (pyproject.toml)
+- **CI: RED** — run 29367618767, molecule failures (pre-existing regression, molecule scenario paths fix in a2e831e1)
+- **Beta.1: INCOMPLETE** — 1/12 assets (verify-release-completeness FAILED). Release pipeline exists but artifact matrix incomplete.
+- **Enforcement: hardened 10-agent floor** — enforce-multitask.ts \+ enforce-delegate.ts node-v26-compat, dispatch detection fixed
+- **Gate: lint 0, typecheck 0, collect OK** — 38,705 tests collected, node-v26-compat 2/2 PASS
+- **9 new features (NF.1-NF.9) — final state:**
+  - NF.1 Chat CLI: in-progress (P1-P4 done: 77 tests, deepseek support, ansible/terraform context; P5 history pending)
+  - NF.2 Unikernel sandbox: in-progress (P1 done: 22 tests, Firecracker + GVisor functional)
+  - NF.3 Binary RE: in-progress (Phase A+B+C done: 236 tests, 2 roles fleshed out)
+  - NF.4 Radio engineer: in-progress (Phase A+P3 done: 201 tests, 3 roles fleshed out)
+  - NF.5 E2E test gen: in-progress (refactored as collection, 5 roles, 14 tests)
+  - NF.6 OS expert: in-progress (Phase B+C done: 118 tests, 5 roles+3 connectors fleshed out)
+  - NF.7 STS tokens: in-progress (P1-P3 done: minter+store+narrowing+reviver+revoker+hibernation wiring)
+  - NF.8 Multitasking enforcement: **COMPLETED** (enforce-multitask.ts+enforce-delegate.ts hardened, 97+28 E2E tests, commit 6d45df65)
+  - NF.9 Language expert: in-progress (Phase A+B done: 155 tests, 8 roles+5 modules)
+- **10 new collections/roles created** across binary_re, radio, os_expert, language, e2e_test_gen
+- **8 turnkey specs** in docs/specs/ (CHAT_CLI, UNIKERNEL_SANDBOX, BINARY_RE, RADIO_ENGINEER, E2E_TEST_GEN, OS_EXPERT, STS_TOKENS, LANGUAGE_EXPERT) + 7 pre-existing specs
+- **Working tree: DIRTY** — ~200+ files staged/unstaged (all new features, plugin fixes, makefile updates)
+- **Next:** commit changes, push to development, wait for CI green, then cut beta.2
+- **Last Updated: 2026-07-14 — Session 35 (FINAL).** HEAD `6d45df65` on `development`. Tree DIRTY. CI RED (run 29367618767, molecule regression). Beta.1 incomplete. 9 new features (1 completed, 8 in-progress). Gate: lint 0, typecheck 0, collect OK, 38,705 tests. node-v26-compat 2/2 PASS.
 
 ---
 
@@ -89,7 +107,7 @@ A  tests/unit/test_model_search_searx.py
 ```
 
 ### Last Updated
-- **2026-07-14 — Session 33 (current).** HEAD `1d5ec007` on `development`. Tree DIRTY (16 files). 10 commits. Gate FAILED (in progress). CI pending.
+- **2026-07-14 — Session 33 (closed).** HEAD `1d5ec007` on `development`. Tree DIRTY (16 files). 10 commits. Gate FAILED (in progress). CI pending.
 
 ---
 

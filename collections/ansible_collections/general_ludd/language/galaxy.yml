@@ -1,0 +1,28 @@
+---
+namespace: general_ludd
+name: language
+version: 0.1.0
+readme: README.md
+description: >
+  Ansible collection providing deep knowledge of all things language-related on
+  computers: Unicode, character encodings, BOMs, localization (l10n),
+  internationalization (i18n), fonts, phonetics, language standards, and text
+  processing. Serves as the authoritative in-process reference for every
+  character-, encoding-, locale-, and script-level concern.
+license:
+  - MIT
+authors:
+  - Agentic Harness Agent <agent@harness.local>
+tags:
+  - unicode
+  - encoding
+  - i18n
+  - l10n
+  - fonts
+  - phonetics
+  - language
+  - charset
+  - locale
+  - text-processing
+dependencies:
+  general_ludd.agent: ">=0.1.0"

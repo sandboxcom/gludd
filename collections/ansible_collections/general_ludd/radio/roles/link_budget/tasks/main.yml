@@ -1,0 +1,178 @@
+---
+# link_budget role — complete link budget computation
+
+- name: Validate parameters
+  ansible.builtin.assert:
+    that:
+      - link_budget_tx_power_dbm | float > 0
+      - link_budget_freq_hz | int > 0
+      - link_budget_distance_m | float > 0
+      - link_budget_model in ["free_space", "hata_urban", "hata_suburban", "hata_rural", "two_ray", "itm", "rain"]
+    fail_msg: >
+      tx_power_dbm, freq_hz, distance_m must be > 0;
+      model must be one of free_space, hata_urban, hata_suburban, hata_rural, two_ray, itm, rain
+
+- name: Compute path loss via propagation model
+  ansible.builtin.command: >
+    {{ ansible_python_interpreter }}
+    -c '
+    import json, sys
+    sys.path.insert(0, "{{ role_path }}/../../plugins/module_utils")
+    from propagation_models import predict_path_loss
+
+    model = "{{ link_budget_model }}"
+    distance_km = {{ link_budget_distance_m }} / 1000.0
+    freq_mhz = {{ link_budget_freq_hz }} / 1_000_000.0
+    result = predict_path_loss(
+        model=model,
+        distance_km=distance_km,
+        frequency_mhz=freq_mhz,
+        tx_height_m={{ link_budget_tx_height_m | default(30.0) }},
+        rx_height_m={{ link_budget_rx_height_m | default(1.5) }},
+    )
+    if "loss_db" not in result and "error" in result:
+        raise RuntimeError(result["error"])
+    print(json.dumps(result))
+    '
+  register: _path_loss
+  changed_when: false
+  when: link_budget_enabled | bool
+
+- name: Look up antenna gains
+  ansible.builtin.command: >
+    {{ ansible_python_interpreter }}
+    -c '
+    import json, sys
+    sys.path.insert(0, "{{ role_path }}/../../plugins/module_utils")
+    from antenna_types import antenna_info, radiation_pattern
+
+    tx_type = {{ link_budget_tx_antenna_type | default("None") | to_json }}
+    rx_type = {{ link_budget_rx_antenna_type | default("None") | to_json }}
+
+    tx_info = antenna_info(tx_type) if tx_type else None
+    rx_info = antenna_info(rx_type) if rx_type else None
+
+    result = {
+        "tx_antenna": {
+            "type": tx_type,
+            "nominal_gain_dbi": tx_info["gain_dbi"] if tx_info else {{ link_budget_tx_antenna_gain_dbi }},
+            "polarization": tx_info["polarization"] if tx_info else "unknown",
+            "impedance_ohms": tx_info["impedance_ohms"] if tx_info else 50.0,
+        },
+        "rx_antenna": {
+            "type": rx_type,
+            "nominal_gain_dbi": rx_info["gain_dbi"] if rx_info else {{ link_budget_rx_antenna_gain_dbi }},
+            "polarization": rx_info["polarization"] if rx_info else "unknown",
+            "impedance_ohms": rx_info["impedance_ohms"] if rx_info else 50.0,
+        },
+    }
+    print(json.dumps(result, indent=2))
+    '
+  register: _antenna_gains
+  changed_when: false
+  when: link_budget_enabled | bool
+
+- name: Compute complete link budget
+  ansible.builtin.command: >
+    {{ ansible_python_interpreter }}
+    -c '
+    import json, sys
+    sys.path.insert(0, "{{ role_path }}/../../plugins/module_utils")
+    from propagation_models import rain_attenuation
+
+    path_loss_data = json.loads(r"""{{ _path_loss.stdout }}""")
+    antenna_data = json.loads(r"""{{ _antenna_gains.stdout }}""")
+
+    path_loss_db = path_loss_data["loss_db"]
+    tx_gain_dbi = antenna_data["tx_antenna"]["nominal_gain_dbi"]
+    rx_gain_dbi = antenna_data["rx_antenna"]["nominal_gain_dbi"]
+    tx_line_loss = {{ link_budget_tx_line_loss_db }}
+    rx_line_loss = {{ link_budget_rx_line_loss_db }}
+
+    eirp_dbm = {{ link_budget_tx_power_dbm }} + tx_gain_dbi - tx_line_loss
+
+    rx_signal_dbm = eirp_dbm - path_loss_db + rx_gain_dbi - rx_line_loss
+
+    rx_sensitivity = {{ link_budget_rx_sensitivity_dbm }}
+    required_snr = {{ link_budget_required_snr_db }}
+    margin_db = rx_signal_dbm - rx_sensitivity
+
+    viable = margin_db >= required_snr
+
+    rain_atten = None
+    if {{ link_budget_rain_enabled | default(false) | lower }}:
+        freq_ghz = {{ link_budget_freq_hz }} / 1e9
+        r_result = rain_attenuation(
+            freq_ghz=freq_ghz,
+            rain_rate_mmh={{ link_budget_rain_rate_mmh | default(5.0) }},
+            distance_km={{ link_budget_distance_m }} / 1000.0,
+            polarization={{ link_budget_rain_polarization | default("\"horizontal\"") | to_json }},
+        )
+        rain_atten = r_result["total_attenuation_db"]
+        margin_db_with_rain = margin_db - rain_atten
+
+    total = {
+        "viable": viable,
+        "required_snr_db": required_snr,
+        "fade_margin_db": round(margin_db, 2),
+        "rx_signal_dbm": round(rx_signal_dbm, 2),
+        "rx_sensitivity_dbm": rx_sensitivity,
+        "path_loss_db": round(path_loss_db, 2),
+        "path_loss_model": path_loss_data["model"],
+        "path_loss_input": {
+            "distance_m": {{ link_budget_distance_m }},
+            "distance_km": round({{ link_budget_distance_m }} / 1000.0, 4),
+            "frequency_hz": {{ link_budget_freq_hz }},
+            "frequency_mhz": round({{ link_budget_freq_hz }} / 1_000_000.0, 4),
+        },
+        "eirp_dbm": round(eirp_dbm, 2),
+        "tx": {
+            "power_dbm": {{ link_budget_tx_power_dbm }},
+            "antenna_type": antenna_data["tx_antenna"]["type"],
+            "antenna_gain_dbi": tx_gain_dbi,
+            "line_loss_db": tx_line_loss,
+            "polarization": antenna_data["tx_antenna"]["polarization"],
+        },
+        "rx": {
+            "antenna_type": antenna_data["rx_antenna"]["type"],
+            "antenna_gain_dbi": rx_gain_dbi,
+            "line_loss_db": rx_line_loss,
+            "sensitivity_dbm": rx_sensitivity,
+            "polarization": antenna_data["rx_antenna"]["polarization"],
+        },
+    }
+    if rain_atten is not None:
+        total["rain_attenuation_db"] = rain_atten
+        total["fade_margin_with_rain_db"] = round(margin_db_with_rain, 2)
+        total["viable_with_rain"] = margin_db_with_rain >= required_snr
+
+    print(json.dumps(total, indent=2))
+    '
+  register: _link_budget
+  changed_when: false
+  when: link_budget_enabled | bool
+
+- name: Parse link budget result
+  ansible.builtin.set_fact:
+    link_budget_result: "{{ _link_budget.stdout | from_json }}"
+  when: link_budget_enabled | bool
+
+- name: Write JSON output
+  ansible.builtin.copy:
+    content: "{{ link_budget_result | to_nice_json }}"
+    dest: "{{ link_budget_output_dir }}/link_budget.json"
+    mode: "0644"
+  when: link_budget_enabled | bool
+
+- name: Register link budget verdict
+  ansible.builtin.set_fact:
+    link_budget_verdict:
+      role: link_budget
+      model: "{{ link_budget_model }}"
+      distance_km: "{{ (link_budget_distance_m / 1000.0) | round(4) }}"
+      path_loss_db: "{{ link_budget_result.path_loss_db }}"
+      rx_signal_dbm: "{{ link_budget_result.rx_signal_dbm }}"
+      fade_margin_db: "{{ link_budget_result.fade_margin_db }}"
+      viable: "{{ link_budget_result.viable }}"
+      output_dir: "{{ link_budget_output_dir }}"
+  when: link_budget_enabled | bool

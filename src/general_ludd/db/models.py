@@ -842,6 +842,39 @@ class StsAuditModel(Base):
     )
 
 
+class AgentTokenModel(Base):
+    """Per-subagent OpenBao AppRole token record.
+
+    Never stores secret_id — that lives only in OpenBao. Fields per
+    docs/specs/FEATURE_STS_TOKENS.md §6.
+    """
+
+    __tablename__ = "agent_tokens"
+
+    token_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    agent_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    parent_agent_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    role_name: Mapped[str] = mapped_column(String(256), nullable=False)
+    role_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    scope_hash: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    scope_actions: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow,
+    )
+    expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+    )
+    revoked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+    )
+    hydration_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    __table_args__ = (
+        Index("ix_agent_tokens_agent_id", "agent_id"),
+        Index("ix_agent_tokens_parent_agent_id", "parent_agent_id"),
+    )
+
+
 class PermissionEscalationRequestModel(Base):
     """Persistent record of a permission-escalation request.
 

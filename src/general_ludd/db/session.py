@@ -14,6 +14,7 @@ from typing import Any
 
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.orm import Session, with_loader_criteria
 
 from general_ludd.db.models import Base, QueueModel
 from general_ludd.schemas.queue import INITIAL_QUEUES
@@ -230,3 +231,36 @@ def json_dumps(obj: Any) -> str:
     import json
 
     return json.dumps(obj) if obj else "[]"
+
+
+# ---------------------------------------------------------------------------
+# Tenant-scoping: do_orm_execute listener (C.3 / S27)
+# ---------------------------------------------------------------------------
+# Inject ``WHERE project_id = current_tenant()`` into every ORM SELECT when a
+# tenant is set on the contextvar.  This is the FAIL-CLOSED default: any query
+# that runs while a tenant is active is auto-filtered.  The listener skips
+# column-load ops (LATERAL / relationship loads that don't represent a
+# principal entity fetch) and skips entirely when no tenant is set (admin /
+# cross-tenant paths).
+
+
+def _tenant_criteria(orm_class: type) -> Any:
+    from sqlalchemy import true
+
+    from general_ludd.db.tenant import get_tenant
+
+    tenant = get_tenant()
+    if tenant is None:
+        return true()
+    if not hasattr(orm_class, "project_id"):
+        return true()
+    return orm_class.project_id == tenant
+
+
+@event.listens_for(Session, "do_orm_execute")
+def _add_tenant_filter(execute_state: Any) -> None:
+    if not execute_state.is_select or execute_state.is_column_load:
+        return
+    execute_state.statement = execute_state.statement.options(
+        with_loader_criteria(Base, _tenant_criteria, include_aliases=True)
+    )

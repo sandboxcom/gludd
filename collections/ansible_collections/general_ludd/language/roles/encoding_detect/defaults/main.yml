@@ -1,0 +1,23 @@
+---
+# encoding_detect role defaults — REPORT-ONLY
+
+# Input
+input_file: ""              # Path to file to analyze
+input_bytes: ""             # Alternative: hex-encoded bytes
+
+# Detection
+min_confidence: 0.50        # Minimum confidence threshold (0.0-1.0)
+target_encoding: "utf-8"    # Encoding to convert to
+
+# Mojibake detection
+detect_mojibake: false      # Check for mojibake patterns
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Artifact output
+artifact_dir: "/tmp/gludd-encoding-detect"
+
+# Destructive ops guard — report-only
+enable_git_push: false

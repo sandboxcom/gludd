@@ -1,0 +1,24 @@
+---
+# decode_digital role — entry point
+
+- name: Validate mode
+  ansible.builtin.assert:
+    that:
+      - decode_digital_mode in ["auto", "dmr", "p25", "nxdn", "dstar", "aprs", "ft8", "wsjt"]
+    fail_msg: "decode_digital_mode must be one of: auto, dmr, p25, nxdn, dstar, aprs, ft8, wsjt"
+
+- name: Check tool availability
+  ansible.builtin.debug:
+    msg: "Available decoders: {{ decode_digital_tools | dict2items | selectattr('value', 'ne', '') | map(attribute='key') | list }}"
+
+- name: Skip — no tools found
+  ansible.builtin.debug:
+    msg: "No digital decoder tools found — skipping decode"
+  when:
+    - decode_digital_tools.values() | select('ne', '') | list | length == 0
+
+- name: Dispatch decode mode
+  ansible.builtin.include_tasks: "{{ decode_digital_mode }}.yml"
+  when:
+    - decode_digital_enabled | bool
+    - decode_digital_tools.values() | select('ne', '') | list | length > 0

@@ -1,0 +1,106 @@
+---
+# bom_detect role — detect, strip, add Byte Order Marks per encoding:
+# UTF-8 (EF BB BF), UTF-16 BE (FE FF), UTF-16 LE (FF FE),
+# UTF-32 BE (00 00 FE FF), UTF-32 LE (FF FE 00 00).
+
+- name: Ensure artifact directory exists
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Detect and handle BOMs via knowledge module
+  ansible.builtin.script:
+    cmd: |
+      python3 -c "
+import json, sys, os
+sys.path.insert(0, os.path.expanduser('{{ playbook_dir | default('.') }}/../../../../src'))
+from general_ludd.language.charset_map import (
+    BOM_SIGNATURES, BOM_BY_SEQUENCE, BOM_SIZE,
+    BOM_REQUIRED_BY_RFC, BOM_OPTIONAL_BY_RFC
+)
+
+result = {}
+data = None
+input_file = '{{ input_file }}'
+input_bytes = '{{ input_bytes }}'
+
+if input_file:
+    with open(input_file, 'rb') as f:
+        data = f.read()
+elif input_bytes:
+    data = bytes.fromhex(input_bytes.replace(' ', ''))
+
+if data is None:
+    result['bom_detected'] = False
+    result['error'] = 'No input provided'
+else:
+    result['file_size'] = len(data)
+    detected = None
+    for name, sig in BOM_SIGNATURES.items():
+        if data[:len(sig)] == sig:
+            detected = name
+            break
+    result['bom_detected'] = detected is not None
+    if detected:
+        size = BOM_SIZE.get(detected, len(BOM_SIGNATURES[detected]))
+        result['encoding'] = detected
+        result['bom_size'] = size
+        result['bom_hex'] = ' '.join(f'{b:02X}' for b in data[:size])
+        rfc_base = detected.replace('-BE', 'BE').replace('-LE', 'LE')
+        if rfc_base in BOM_REQUIRED_BY_RFC:
+            result['rfc_compliance'] = 'required'
+        elif rfc_base in BOM_OPTIONAL_BY_RFC:
+            result['rfc_compliance'] = 'optional'
+        else:
+            result['rfc_compliance'] = 'none'
+        if {{ strip_bom | lower }}:
+            stripped = data[size:]
+            result['stripped'] = ' '.join(f'{b:02X}' for b in stripped[:32]) + ('...' if len(stripped) > 32 else '')
+    else:
+        result['encoding'] = None
+        result['bom_size'] = 0
+
+    if {{ add_bom | lower }}:
+        add_enc = '{{ add_bom_encoding }}'
+        if add_enc in BOM_SIGNATURES:
+            bom_bytes = BOM_SIGNATURES[add_enc]
+            modified = bom_bytes + (data[len(bom_bytes):] if data[:len(bom_bytes)] == bom_bytes else data)
+            result['bom_added'] = add_enc
+            result['with_bom_hex'] = ' '.join(f'{b:02X}' for b in modified[:64]) + ('...' if len(modified) > 64 else '')
+
+    if {{ audit_directory | lower }}:
+        audit_path = '{{ audit_path }}'
+        if audit_path and os.path.isdir(audit_path):
+            audit_results = []
+            for root, dirs, files in os.walk(audit_path):
+                for fname in files:
+                    fpath = os.path.join(root, fname)
+                    try:
+                        with open(fpath, 'rb') as f:
+                            head = f.read(4)
+                        found = None
+                        for name, sig in BOM_SIGNATURES.items():
+                            if head[:len(sig)] == sig:
+                                found = name
+                                break
+                        audit_results.append({'file': fpath, 'bom': found})
+                    except Exception:
+                        pass
+            result['audit_results'] = audit_results
+
+with open('{{ artifact_dir }}/bom_detection.json', 'w') as f:
+    json.dump(result, f, indent=2)
+print(f'Output: {{ artifact_dir }}/bom_detection.json')
+print(f'BOM detected: {result.get(\"bom_detected\", False)}')
+if result.get('encoding'):
+    print(f'Encoding: {result[\"encoding\"]}')
+"
+  args:
+    executable: python3
+  register: bom_result
+  changed_when: false
+
+- name: Print BOM detection summary
+  ansible.builtin.debug:
+    msg: "{{ bom_result.stdout_lines }}"

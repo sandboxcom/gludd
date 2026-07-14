@@ -1,0 +1,32 @@
+---
+# spectrum_scan role — entry point
+
+- name: Validate frequency range
+  ansible.builtin.assert:
+    that:
+      - spectrum_scan_start_freq_hz | int > 0
+      - spectrum_scan_end_freq_hz | int > spectrum_scan_start_freq_hz | int
+    fail_msg: "start_freq_hz must be > 0 and end_freq_hz must be > start_freq_hz"
+
+- name: Check tool availability
+  ansible.builtin.command: "command -v {{ spectrum_scan_tool }}"
+  register: _tool_check
+  changed_when: false
+  failed_when: false
+
+- name: Skip — tool missing
+  ansible.builtin.debug:
+    msg: "{{ spectrum_scan_tool }} not found — skipping spectrum scan"
+  when: _tool_check.rc != 0
+
+- name: Run wideband sweep
+  ansible.builtin.command: >
+    {{ spectrum_scan_tool_path }}
+    -f {{ spectrum_scan_start_freq_hz }}:{{ spectrum_scan_end_freq_hz }}:{{ spectrum_scan_bin_size_hz }}
+    -i {{ spectrum_scan_integration_time_ms }}
+    -g {{ spectrum_scan_gain }}
+    -d {{ spectrum_scan_device_index }}
+    {{ spectrum_scan_output_dir }}/scan.csv
+  when:
+    - spectrum_scan_enabled | bool
+    - _tool_check.rc == 0

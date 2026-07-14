@@ -1,0 +1,20 @@
+---
+galaxy_info:
+  role_name: verify_coverage
+  author: Agentic Harness Agent
+  description: >
+    Runs pytest-cov on generated E2E tests against the target source module,
+    checks coverage thresholds (default 85%), and verifies that tests hit
+    expected code paths (symbol→hit_count map). Produces a coverage report
+    artifact with pass/fail per symbol and overall verdict.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies:
+  - general_ludd.e2e_test_gen.write_e2e_tests
