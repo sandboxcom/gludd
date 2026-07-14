@@ -1,8 +1,6 @@
 """Structural tests for skills/registry.py — SkillRegistry."""
 from __future__ import annotations
 
-import pytest
-
 from general_ludd.skills.registry import SkillRegistry
 
 

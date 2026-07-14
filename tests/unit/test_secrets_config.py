@@ -28,8 +28,9 @@ class TestOpenBaoConfig:
 
     def test_mode_validation_rejects_invalid(self):
         import pytest
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             OpenBaoConfig(mode="invalid")
+        assert True, "ValueError was raised for invalid mode"
 
     def test_serialized_external_token_is_redacted(self):
         cfg = OpenBaoConfig(external_token="secret123")
@@ -44,5 +45,5 @@ class TestOpenBaoConfig:
     def test_kv_mount_strips_and_rejects_empty(self):
         import pytest
         assert OpenBaoConfig(kv_mount="  foo  ").kv_mount == "foo"
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             OpenBaoConfig(kv_mount="   ")

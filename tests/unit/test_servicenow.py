@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from general_ludd.connectors.servicenow import (
-    ServiceNowSource,
     _LINK_NEXT_RE,
     _STATE_MAP,
+    ServiceNowSource,
     _parse_link_next,
     _state_code_to_label,
 )

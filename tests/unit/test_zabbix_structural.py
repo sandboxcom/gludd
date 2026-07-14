@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from general_ludd.connectors.zabbix import (
+    _SEVERITY,
     ZabbixSource,
-    _validate_base_url,
     _as_float,
     _as_int_ts,
-    _SEVERITY,
+    _validate_base_url,
 )
 
 
@@ -135,7 +135,15 @@ class TestZabbixSource:
             class Resp:
                 status_code = 200
                 def json(self):
-                    return {"result": [{"clock": "1700000000", "value": "42.5", "host": "srv1", "itemid": "123", "name": "cpu_load"}]}
+                    return {
+                        "result": [{
+                            "clock": "1700000000",
+                            "value": "42.5",
+                            "host": "srv1",
+                            "itemid": "123",
+                            "name": "cpu_load",
+                        }],
+                    }
             return Resp()
 
         source = ZabbixSource(

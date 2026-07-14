@@ -102,7 +102,11 @@ class TestZipkinSource:
             def get(self, url, *, headers, timeout):
                 return _ZipkinResponse(
                     200,
-                    b'[[{"id": "1", "traceId": "abc", "name": "GET /api", "timestamp": 1700000000000, "duration": 5000}]]',
+                    (
+                        b'[[{"id": "1", "traceId": "abc", '
+                        b'"name": "GET /api", "timestamp": 1700000000000, '
+                        b'"duration": 5000}]]'
+                    )
                 )
 
         source = ZipkinSource(

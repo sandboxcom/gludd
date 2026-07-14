@@ -127,7 +127,7 @@ class TestEventBus:
     def test_subscribe_unsubscribe_mixed_keys(self):
         bus = EventBus()
         sid1 = bus.subscribe(EventType.MODEL_ADDED, lambda e: None)
-        sid2 = bus.subscribe(EventType.MODEL_REMOVED, lambda e: None)
+        bus.subscribe(EventType.MODEL_REMOVED, lambda e: None)
         bus.unsubscribe(sid1)
         event = Event(type=EventType.MODEL_ADDED, payload={})
         assert bus.publish(event) == 0

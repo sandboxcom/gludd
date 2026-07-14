@@ -119,7 +119,7 @@ class TestRouteMethods:
             if r.path == "/admin/filestore/list":
                 assert "GET" in r.methods
                 return
-        assert False, "list route not registered"
+        raise AssertionError("list route not registered")
 
     def test_read_is_get(self):
         from fastapi import FastAPI
@@ -129,7 +129,7 @@ class TestRouteMethods:
             if r.path == "/admin/filestore/read":
                 assert "GET" in r.methods
                 return
-        assert False, "read route not registered"
+        raise AssertionError("read route not registered")
 
     def test_write_is_post(self):
         from fastapi import FastAPI
@@ -139,7 +139,7 @@ class TestRouteMethods:
             if r.path == "/admin/filestore/write":
                 assert "POST" in r.methods
                 return
-        assert False, "write route not registered"
+        raise AssertionError("write route not registered")
 
     def test_remove_is_delete(self):
         from fastapi import FastAPI
@@ -149,7 +149,7 @@ class TestRouteMethods:
             if r.path == "/admin/filestore/remove":
                 assert "DELETE" in r.methods
                 return
-        assert False, "remove route not registered"
+        raise AssertionError("remove route not registered")
 
     def test_bootstrap_is_post(self):
         from fastapi import FastAPI
@@ -159,7 +159,7 @@ class TestRouteMethods:
             if r.path == "/admin/filestore/bootstrap":
                 assert "POST" in r.methods
                 return
-        assert False, "bootstrap route not registered"
+        raise AssertionError("bootstrap route not registered")
 
     def test_binaries_is_get(self):
         from fastapi import FastAPI
@@ -169,4 +169,4 @@ class TestRouteMethods:
             if r.path == "/admin/filestore/binaries":
                 assert "GET" in r.methods
                 return
-        assert False, "binaries route not registered"
+        raise AssertionError("binaries route not registered")

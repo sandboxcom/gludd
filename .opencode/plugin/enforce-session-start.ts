@@ -293,6 +293,13 @@ const defaultImpl: HotModule = {
     try {
       const tool = String((input as { tool?: string }).tool ?? "")
 
+      // ── DEBUG: log every tool name to diagnose dispatch counter ──
+      try {
+        fs.appendFileSync("/tmp/gludd-tool-debug.log",
+          JSON.stringify({ tool, sessionPrimed, ts: Date.now(), pid: process.pid }) + "\n"
+        )
+      } catch {}
+
       if (sessionPrimed === true) return
 
       const state = loadState()

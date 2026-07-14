@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 
-from general_ludd.ipc.broker import Broker, Handler, InProcessBroker, Message
+from general_ludd.ipc.broker import Broker, InProcessBroker, Message
 
 
 class TestBroker:
@@ -44,7 +44,8 @@ class TestInProcessBroker:
 
     def test_unsubscribe_removes_handler(self):
         b = InProcessBroker()
-        handler = lambda m: None
+        def handler(m):
+            return None
         b.subscribe("test.topic", handler)
         b.unsubscribe("test.topic", handler)
         result = asyncio.run(b.publish("test.topic", {"k": "v"}))
@@ -70,6 +71,7 @@ class TestMessageTypeAlias:
 
 class TestHandlerTypeAlias:
     def test_handler_is_callable(self):
-        h: Handler = lambda m: len(m)
+        def h(m):
+            return len(m)
         assert callable(h)
         assert h({"a": 1, "b": 2}) == 2

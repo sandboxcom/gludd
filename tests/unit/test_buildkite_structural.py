@@ -7,10 +7,9 @@ import json
 import pytest
 
 from general_ludd.connectors.buildkite import (
+    DEFAULT_BASE_URL,
     BuildkiteSource,
     _guard_base_url,
-    _httpx_transport,
-    DEFAULT_BASE_URL,
 )
 
 

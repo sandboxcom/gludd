@@ -2,16 +2,13 @@
 
 from __future__ import annotations
 
-import os
 from unittest.mock import MagicMock, patch
 
-import pytest
-
-from general_ludd.reload.manager import ReloadManager, ReloadResult, ReloadType
+from general_ludd.reload.manager import ReloadManager, ReloadType
 from general_ludd.reload.self_improve import (
+    _HARDCODED_FALLBACK,
     ApplyResult,
     SelfImprovementWorkflow,
-    _HARDCODED_FALLBACK,
     _resolve_test_commands,
 )
 

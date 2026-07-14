@@ -5,9 +5,9 @@ from __future__ import annotations
 import pytest
 
 from general_ludd.connectors.statsd_parse import (
+    _VALID_TYPES,
     StatsdParseError,
     StatsdParseSource,
-    _VALID_TYPES,
 )
 
 

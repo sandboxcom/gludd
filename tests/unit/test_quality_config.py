@@ -1,4 +1,5 @@
-"""Structural tests for quality/config.py — EnforcementGate, MoleculeQualityGate, PythonQualityGate, QualityGateConfig."""
+"""Structural tests for quality/config.py —
+EnforcementGate, MoleculeQualityGate, PythonQualityGate, QualityGateConfig."""
 
 from __future__ import annotations
 

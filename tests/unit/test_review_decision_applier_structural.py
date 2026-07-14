@@ -5,8 +5,6 @@ from __future__ import annotations
 import inspect
 import logging
 
-import pytest
-
 from general_ludd.review.decision_applier import (
     _DECISION_STATUS_MAP,
     _LOW_CONFIDENCE_THRESHOLD,

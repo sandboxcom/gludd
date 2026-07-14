@@ -8,8 +8,8 @@ import pytest
 from fastapi import FastAPI
 
 from general_ludd.routers.messages import (
-    SendMessageRequest,
     _MAX_INMEMORY_MESSAGES,
+    SendMessageRequest,
     _get_session_factory,
     _msg_to_dict,
     register,

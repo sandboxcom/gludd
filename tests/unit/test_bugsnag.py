@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import contextlib
+
 from general_ludd.connectors.bugsnag import BugsnagSource, ConnectorConfigError, _assert_public_base_url
 
 
@@ -14,16 +16,12 @@ class TestBugsnagModule:
         assert issubclass(ConnectorConfigError, Exception)
 
     def test_assert_public_base_url_rejects_loopback(self) -> None:
-        try:
+        with contextlib.suppress(ConnectorConfigError):
             _assert_public_base_url("http://127.0.0.1/api")
-        except ConnectorConfigError:
-            pass
 
     def test_assert_public_base_url_rejects_private(self) -> None:
-        try:
+        with contextlib.suppress(ConnectorConfigError):
             _assert_public_base_url("http://10.0.0.1/api")
-        except ConnectorConfigError:
-            pass
 
     def test_assert_public_base_url_accepts_public(self) -> None:
         _assert_public_base_url("https://api.bugsnag.com")

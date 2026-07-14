@@ -1,4 +1,5 @@
-"""Structural tests for routers/integrity.py — file-integrity scan, approve/reject, selftest, gap-analysis, and log-audit endpoints."""
+"""Structural tests for routers/integrity.py —
+file-integrity scan, approve/reject, selftest, gap-analysis, and log-audit endpoints."""
 
 from __future__ import annotations
 
@@ -116,15 +117,17 @@ class TestScanRoots:
             assert isinstance(root, str)
 
     def test_includes_cwd(self):
-        from fastapi import FastAPI
         import os
+
+        from fastapi import FastAPI
         app = FastAPI()
         roots = _scan_roots(app)
         assert os.getcwd() in roots
 
     def test_includes_tmp(self):
-        from fastapi import FastAPI
         import tempfile
+
+        from fastapi import FastAPI
         app = FastAPI()
         roots = _scan_roots(app)
         assert tempfile.gettempdir() in roots
@@ -145,15 +148,15 @@ class TestConfineScanPaths:
         assert len(params) == 2
 
     def test_rejects_escaping_path(self):
-        from fastapi import FastAPI
-        from fastapi import HTTPException
+        from fastapi import FastAPI, HTTPException
         app = FastAPI()
         with __import__("pytest").raises(HTTPException):
             _confine_scan_paths(app, ["/etc/passwd"])
 
     def test_accepts_cwd_path(self):
-        from fastapi import FastAPI
         import os
+
+        from fastapi import FastAPI
         app = FastAPI()
         result = _confine_scan_paths(app, [os.getcwd()])
         assert isinstance(result, list)

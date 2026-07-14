@@ -191,6 +191,11 @@ class TestSerializationRoundtrip:
 
 
 class TestEpisodicMemoryRecorder:
+    class MockRow:
+        def __init__(self, key: str, value: str) -> None:
+            self.key = key
+            self.value = value
+
     class MockRepo:
         def __init__(self) -> None:
             self.store: dict[str, object] = {}
@@ -205,30 +210,30 @@ class TestEpisodicMemoryRecorder:
             })
             return self.store.get(f"{agent_id}:{namespace}:{project_id}:{key}")
 
-        async def set(self, agent_id: str, key: str, value: str, namespace: str = "", project_id: str | None = None) -> None:
+        async def set(
+            self, agent_id: str, key: str, value: str,
+            namespace: str = "", project_id: str | None = None,
+        ) -> None:
             self.set_calls.append({
                 "agent_id": agent_id, "key": key, "value": value,
                 "namespace": namespace, "project_id": project_id,
             })
             self.store[f"{agent_id}:{namespace}:{project_id}:{key}"] = value
 
-        async def list_by_namespace(self, agent_id: str, namespace: str = "", project_id: str | None = None, limit: int = 100) -> list[object]:
+        async def list_by_namespace(
+            self, agent_id: str, namespace: str = "",
+            project_id: str | None = None, limit: int = 100,
+        ) -> list[object]:
             self.list_calls.append({
                 "agent_id": agent_id, "namespace": namespace,
                 "project_id": project_id, "limit": limit,
             })
-            # Return mock rows matching the stored namespace prefix
             prefix = f"{agent_id}:{namespace}:{project_id}:"
             results = []
             for k, v in self.store.items():
                 if k.startswith(prefix):
-                    results.append(MockRow(k, str(v)))
+                    results.append(TestEpisodicMemoryRecorder.MockRow(k, str(v)))
             return results[:limit]
-
-    class MockRow:
-        def __init__(self, key: str, value: str) -> None:
-            self.key = key
-            self.value = value
 
     @pytest.fixture
     def repo(self) -> MockRepo:
@@ -317,7 +322,9 @@ class TestEpisodicMemoryRecorder:
         assert len(results) == 1
 
     @pytest.mark.asyncio
-    async def test_list_by_outcome_delegates_to_list_episodes(self, recorder: EpisodicMemoryRecorder, repo: MockRepo) -> None:
+    async def test_list_by_outcome_delegates_to_list_episodes(
+        self, recorder: EpisodicMemoryRecorder, repo: MockRepo,
+    ) -> None:
         ep = Episode(agent_id="agent-1", task_type="task", outcome="success")
         import json
         repo.store["agent-1:episodic:proj-a:a"] = json.dumps(_episode_to_dict(ep), default=str)
@@ -334,7 +341,9 @@ class TestEpisodicMemoryRecorder:
         assert results == []
 
     @pytest.mark.asyncio
-    async def test_record_completion_creates_and_stores_episode(self, recorder: EpisodicMemoryRecorder, repo: MockRepo) -> None:
+    async def test_record_completion_creates_and_stores_episode(
+        self, recorder: EpisodicMemoryRecorder, repo: MockRepo,
+    ) -> None:
         eid = await recorder.record_completion(
             agent_id="agent-1",
             task_type="code_review",
