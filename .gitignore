@@ -70,6 +70,9 @@ zai.key
 /tmp/
 web_retriever/
 
+# ── OpenCode backup directory (debug artifact after crash recovery) ─────────
+.opencode.orig/
+
 # ── Claude Code harness: transient / machine-local items ─────────────────────
 # Committed (safe to track): .claude/hooks/  .claude/settings.json  .claude/workflows/
 # Ignored (transient or machine-local):
