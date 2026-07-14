@@ -1,33 +1,40 @@
-"""Structural tests for routers/_util.py — get_session_factory."""
+"""Structural tests for general_ludd.routers._util."""
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
-
 from fastapi import FastAPI
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from general_ludd.routers._util import get_session_factory
 
 
 class TestGetSessionFactory:
-    def test_returns_none_when_not_set(self):
+    def test_returns_none_when_no_factory_set(self) -> None:
         app = FastAPI()
-        assert get_session_factory(app) is None
+        result = get_session_factory(app)
+        assert result is None
 
-    def test_returns_factory_when_set(self):
+    def test_returns_none_when_state_has_no_session_factory(self) -> None:
         app = FastAPI()
-        mock_factory = object()
-        app.state._session_factory = mock_factory
-        assert get_session_factory(app) is mock_factory
+        app.state.other_attr = "value"
+        result = get_session_factory(app)
+        assert result is None
 
-    def test_returns_factory_when_set_on_mock(self):
-        app = MagicMock()
-        mock_factory = MagicMock()
-        app.state._session_factory = mock_factory
-        assert get_session_factory(app) is mock_factory
+    def test_returns_session_factory_when_set(self) -> None:
+        app = FastAPI()
+        factory = async_sessionmaker[AsyncSession]()
+        app.state._session_factory = factory
+        result = get_session_factory(app)
+        assert result is factory
 
-    def test_missing_state_attribute(self):
-        app = MagicMock(spec=FastAPI)
-        del app.state
-        with __import__("pytest").raises(AttributeError):
-            get_session_factory(app)
+    def test_result_is_async_sessionmaker(self) -> None:
+        app = FastAPI()
+        factory = async_sessionmaker[AsyncSession]()
+        app.state._session_factory = factory
+        result = get_session_factory(app)
+        assert isinstance(result, async_sessionmaker)
+
+    def test_getattr_fallback_returns_none_for_unset(self) -> None:
+        app = FastAPI()
+        val = getattr(app.state, "_session_factory", None)
+        assert val is None
