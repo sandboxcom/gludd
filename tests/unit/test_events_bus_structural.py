@@ -53,7 +53,7 @@ class TestUnsubscribe:
     def test_does_not_affect_other_subscribers(self):
         bus = EventBus()
         id1 = bus.subscribe("test.event", lambda e: None)
-        id2 = bus.subscribe("test.event", lambda e: None)
+        bus.subscribe("test.event", lambda e: None)
         bus.unsubscribe(id1)
         assert len(bus._subscribers["test.event"]) == 1
 
@@ -97,7 +97,9 @@ class TestPublish:
         try:
             bus.publish(_make_event("test.event"))
         except ZeroDivisionError:
-            assert False, "publish() should not propagate subscriber exceptions"
+            raise AssertionError(
+                "publish() should not propagate subscriber exceptions"
+            ) from None
 
     def test_history_captured_when_enabled(self):
         bus = EventBus(history_size=3)

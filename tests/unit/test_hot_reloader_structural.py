@@ -5,8 +5,6 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-import pytest
-
 from general_ludd.reload.hot_reloader import (
     HotReloader,
     ReloadBusyError,
@@ -135,4 +133,6 @@ class TestHotReloaderInvalidateSourceCache:
             try:
                 HotReloader._invalidate_source_cache(nonexistent)
             except Exception:
-                assert False, "should not raise for nonexistent path"
+                raise AssertionError(
+                    "should not raise for nonexistent path"
+                ) from None

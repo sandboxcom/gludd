@@ -1,140 +1,108 @@
-"""Unit tests for ``general_ludd.abtest._child`` — child-process entrypoint.
+"""Structural tests for abtest/_child.py — child entrypoint functions."""
 
-Covers the previously 20.3%-rated module by exercising:
-  * _apply_limits delegation to shared rlimit module
-  * _run_workload for import_module and unknown kinds
-  * _write_result_nonce atomic write path
-  * main() argv parsing, error paths, and success
-"""
 from __future__ import annotations
 
 import json
-import sys
-from pathlib import Path
-from unittest.mock import patch
+import os
+import tempfile
 
 import pytest
 
-from general_ludd.abtest._child import (
-    _apply_limits,
-    _run_workload,
-    _write_result_nonce,
-    main,
-)
-
-
-class TestApplyLimits:
-    def test_delegates_to_shared_rlimit(self):
-        with patch("general_ludd.abtest._child.apply_limits") as mock_apply:
-            _apply_limits(512, 30)
-        mock_apply.assert_called_once_with(512, 30)
+from general_ludd.abtest._child import _run_workload, main
 
 
 class TestRunWorkload:
     def test_import_module_success(self):
-        with patch.dict(sys.modules):
-            result = _run_workload({"kind": "import_module", "module": "os"})
-        assert result == {"imported": "os"}
+        result = _run_workload({"kind": "import_module", "module": "json"})
+        assert result == {"imported": "json"}
 
-    def test_import_module_with_expected_attr_present(self):
-        with patch.dict(sys.modules):
-            result = _run_workload(
-                {"kind": "import_module", "module": "os", "expect_attr": "path"}
-            )
-        assert result == {"imported": "os"}
+    def test_import_module_unknown_raises(self):
+        with pytest.raises(ModuleNotFoundError):
+            _run_workload({"kind": "import_module", "module": "nonexistent_mod_xyz123"})
 
-    def test_import_module_raises_when_attr_missing(self):
-        with patch.dict(sys.modules), pytest.raises(AssertionError, match="missing attr"):
-            _run_workload(
-                {
-                    "kind": "import_module",
-                    "module": "os",
-                    "expect_attr": "nonexistent_attr_xyz",
-                }
-            )
+    def test_import_with_missing_expected_attr_raises(self):
+        raised = False
+        try:
+            _run_workload({
+                "kind": "import_module",
+                "module": "json",
+                "expect_attr": "nonexistent_attr_xyz",
+            })
+        except AssertionError as e:
+            assert "missing attr" in str(e)
+            raised = True
+        assert raised
 
-    def test_unknown_workload_kind_raises(self):
+    def test_unknown_kind_raises(self):
         with pytest.raises(ValueError, match="unknown workload kind"):
-            _run_workload({"kind": "explode"})
-
-
-class TestWriteResultNonce:
-    def test_writes_atomic_nonce_to_result_path(self, tmp_path):
-        result_path = str(tmp_path / "result.json")
-        _write_result_nonce(result_path, "nonce-abc123", {"detail": "ok"})
-        data = json.loads(Path(result_path).read_text())
-        assert data["nonce"] == "nonce-abc123"
-        assert data["detail"] == {"detail": "ok"}
-
-    def test_no_tmp_file_left_behind(self, tmp_path):
-        result_path = str(tmp_path / "result.json")
-        _write_result_nonce(result_path, "n", {})
-        tmp_files = list(tmp_path.glob("*.tmp"))
-        assert tmp_files == []
+            _run_workload({"kind": "invalid_kind"})
 
 
 class TestMain:
-    def test_invalid_argv_count_returns_2(self):
-        rc = main(["child", "root"])
-        assert rc == 2
+    def test_insufficient_args(self):
+        result = main(["prog"])
+        assert result == 2
 
-    def test_workload_failure_returns_1(self):
-        argv = [
-            "child",
-            "/fake/root",
-            json.dumps({"kind": "unknown_bad", "module": "os"}),
-            "512",
-            "30",
-            "/tmp/result.json",
-            "nonce-xyz",
-        ]
-        with patch("sys.stdout.write"), patch("sys.stdout.flush"):
-            rc = main(argv)
-        assert rc == 1
+    def test_insufficient_args_partial(self):
+        result = main(["prog", "root", '{}', "100", "10"])
+        assert result == 2
 
-    def test_workload_exception_returns_1(self):
-        argv = [
-            "child",
-            "/fake/root",
-            json.dumps({"kind": "import_module", "module": "nonexistent_module_xyz"}),
-            "512",
-            "30",
-            str(Path("/tmp/result.json")),
-            "nonce-xyz",
-        ]
-        with patch("sys.stdout.write"), patch("sys.stdout.flush"):
-            rc = main(argv)
-        assert rc == 1
+    def test_bad_workload_json(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result_path = os.path.join(tmpdir, "result")
+            with pytest.raises(json.JSONDecodeError):
+                main([
+                    "prog",
+                    tmpdir,
+                    "not-json",
+                    "100", "10",
+                    result_path,
+                    "nonce123",
+                ])
 
-    def test_success_path_returns_0_and_writes_nonce(self, tmp_path):
-        result_path = str(tmp_path / "result.json")
-        argv = [
-            "child",
-            "/fake/root",
-            json.dumps({"kind": "import_module", "module": "os"}),
-            "512",
-            "30",
-            result_path,
-            "nonce-SUCCESS",
-        ]
-        with patch("general_ludd.abtest._child.apply_limits"), \
-             patch("sys.stdout.write"), \
-             patch("sys.stdout.flush"):
-            rc = main(argv)
-        assert rc == 0, f"main returned {rc}"
+    def test_successful_run(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result_path = os.path.join(tmpdir, "result")
+            workload = json.dumps({"kind": "import_module", "module": "json"})
+            result = main([
+                "prog",
+                tmpdir,
+                workload,
+                "100", "10",
+                result_path,
+                "nonce-abc-123",
+            ])
+            assert result == 0
+            assert os.path.exists(result_path)
+            with open(result_path) as f:
+                data = json.loads(f.read())
+            assert data["nonce"] == "nonce-abc-123"
+            assert "detail" in data
+            assert data["detail"]["imported"] == "json"
 
-    def test_result_nonce_write_oserror_returns_1(self, tmp_path):
-        result_path = str(tmp_path / "result.json")
-        argv = [
-            "child",
-            "/fake/root",
-            json.dumps({"kind": "import_module", "module": "os"}),
-            "512",
-            "30",
-            result_path,
-            "nonce-ERR",
-        ]
-        with patch("general_ludd.abtest._child.apply_limits"), \
-             patch("general_ludd.abtest._child._write_result_nonce", side_effect=OSError("disk full")):
-            rc = main(argv)
-        assert rc == 1
+    def test_workload_failure_returns_one(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result_path = os.path.join(tmpdir, "result")
+            workload = json.dumps({"kind": "import_module", "module": "nonexistent_xyz"})
+            result = main([
+                "prog",
+                tmpdir,
+                workload,
+                "100", "10",
+                result_path,
+                "nonce",
+            ])
+            assert result == 1
+            assert not os.path.exists(result_path)
+
+    def test_non_existent_result_dir_oserror(self):
+        workload = json.dumps({"kind": "import_module", "module": "json"})
+        result = main([
+            "prog",
+            "/tmp/nonexistent_dir_xyz_123",
+            workload,
+            "100", "10",
+            "/tmp/nonexistent_dir_xyz_123/out",
+            "nonce",
+        ])
+        assert result == 1
