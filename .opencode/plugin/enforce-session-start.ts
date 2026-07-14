@@ -31,15 +31,13 @@ import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
 // --- Config -----------------------------------------------------------------
 
 // Minimum parallel dispatches before inline mutations are allowed in a fresh
-// session. Aligned to 3 (matching enforce-multitask.ts MIN_DISPATCHES) to
-// reflect the COST-EFFICIENCY DIRECTIVE ("max 10, prefer fewer"). Override via
-// GLUDD_SESSION_START_MIN_DISPATCHES.
+// session. Hardcoded to 10 per user mandate — exactly 10 subagents per wave.
+// Override via GLUDD_SESSION_START_MIN_DISPATCHES.
 const MIN_DISPATCHES = parseInt(
-  process.env.GLUDD_SESSION_START_MIN_DISPATCHES || "3",
+  process.env.GLUDD_SESSION_START_MIN_DISPATCHES || "10",
   10,
 )
-const FLOOR = parseInt(process.env.CLAUDE_AGENT_FLOOR || "10", 10)
-const EFFECTIVE_MIN = Math.min(MIN_DISPATCHES, FLOOR)
+const EFFECTIVE_MIN = 10
 
 // Hard-deny mode (mirrors GLUDD_FLOOR_ENFORCE / GLUDD_NO_WAIT_ENFORCE).
 // Default is ON (hard deny on premature mutations). Set
