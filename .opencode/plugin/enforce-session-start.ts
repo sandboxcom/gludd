@@ -95,27 +95,31 @@ const TASK_FILES = ["TASKS.md", "BUGS.md", "config/ratchet.yml", "SESSION.md"]
 
 // --- System prompt banner ---------------------------------------------------
 
-const SESSION_START_DIRECTIVE = [
-  "================ SESSION START PROTOCOL ================",
-  "The FIRST actions of this session, in strict order:",
-  "  STEP 1 — LOCATE work: in ONE tool-call message, read TASKS.md,",
-  "           BUGS.md, config/ratchet.yml, SESSION.md. Never serial.",
-  `  STEP 2 — FAN OUT: dispatch >= ${EFFECTIVE_MIN} parallel task/agent`,
-  "           subagents on disjoint work BEFORE any inline mutation, status",
-  "           report, or terminal response. Reads are allowed; serial work",
-  "           is not.",
-  "DO NOT WRITE any prose between session start and the first dispatch wave.",
-  "Do not answer the user's prompt first and dispatch second — dispatch first.",
-  "No prose, no summaries, no status reports, no planning before the wave.",
-  `⏱  TIME GATE: dispatch within ${DISPATCH_NOW_SECS}s — warning emitted.`,
-  `   After ${HARD_DENY_SECS}s with 0 dispatches: non-dispatch mutations DENIED.`,
-  "   Both gates reset on first successful dispatch.",
-  "Why: a session that boots and then grinds inline (0 subagents live) looks",
-  "hung to the user. The fix is structural — locate work, then fan out.",
-  "Enforced by .opencode/plugin/enforce-session-start.ts (hard-deny by",
-  "default). Set GLUDD_SESSION_START_ENFORCE=0 for advisory mode.",
-  "========================================================",
-].join("\n")
+function buildSessionDirective(): string {
+  const nowSecs = parseInt(process.env.GLUDD_SESSION_START_DISPATCH_NOW_SECS || "60", 10)
+  const denySecs = parseInt(process.env.GLUDD_SESSION_START_HARD_DENY_SECS || "120", 10)
+  return [
+    "================ SESSION START PROTOCOL ================",
+    "The FIRST actions of this session, in strict order:",
+    "  STEP 1 — LOCATE work: in ONE tool-call message, read TASKS.md,",
+    "           BUGS.md, config/ratchet.yml, SESSION.md. Never serial.",
+    `  STEP 2 — FAN OUT: dispatch >= ${EFFECTIVE_MIN} parallel task/agent`,
+    "           subagents on disjoint work BEFORE any inline mutation, status",
+    "           report, or terminal response. Reads are allowed; serial work",
+    "           is not.",
+    "DO NOT WRITE any prose between session start and the first dispatch wave.",
+    "Do not answer the user's prompt first and dispatch second — dispatch first.",
+    "No prose, no summaries, no status reports, no planning before the wave.",
+    `⏱  TIME GATE: dispatch within ${nowSecs}s — warning emitted.`,
+    `   After ${denySecs}s with 0 dispatches: non-dispatch mutations DENIED.`,
+    "   Both gates reset on first successful dispatch.",
+    "Why: a session that boots and then grinds inline (0 subagents live) looks",
+    "hung to the user. The fix is structural — locate work, then fan out.",
+    "Enforced by .opencode/plugin/enforce-session-start.ts (hard-deny by",
+    "default). Set GLUDD_SESSION_START_ENFORCE=0 for advisory mode.",
+    "========================================================",
+  ].join("\n")
+}
 
 // --- State helpers ----------------------------------------------------------
 
@@ -284,7 +288,7 @@ const defaultImpl: HotModule = {
               "",
             ].join("\n")
           : ""
-        const directive = tasksNagText + SESSION_START_DIRECTIVE
+        const directive = tasksNagText + buildSessionDirective()
         return directive + "\n\n" + output
       }
       return output

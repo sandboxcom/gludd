@@ -1711,7 +1711,7 @@ const mod = await import('{PLUGIN_DIR}/enforce-verified-claims.ts')
 const plugin = mod.default()
 let result
 try {{
-  result = await plugin['tool.execute.before']({{toolName: 'bash', toolInput: {{command: 'make git-commit MSG=all done and fixed', MSG: 'all done and fixed'}}}})
+  result = await plugin['tool.execute.before']({{tool: 'bash', args: {{command: 'make git-commit MSG="all done and fixed"', MSG: 'all done and fixed'}}}})
   console.log(JSON.stringify(result ?? {{allowed: true}}))
 }} catch (e) {{
   console.log(JSON.stringify({{permissionDecision: 'deny', message: String(e)}}))
@@ -1726,7 +1726,7 @@ def test_verified_claims_commit_verified_msg_allowed():
     code = f"""\
 const mod = await import('{PLUGIN_DIR}/enforce-verified-claims.ts')
 const plugin = mod.default()
-const result = await plugin['tool.execute.before']({{toolName: 'bash', toolInput: {{command: 'make ship-commit MSG=fix: done abc12345', MSG: 'fix: done abc12345'}}}})
+const result = await plugin['tool.execute.before']({{tool: 'bash', args: {{command: 'make ship-commit MSG="fix: done abc12345"', MSG: 'fix: done abc12345'}}}})
 console.log(JSON.stringify({{allowed: result === undefined || result === null}}))
 """
     result = _run_ts(code)
@@ -1738,7 +1738,7 @@ def test_verified_claims_subagent_skip():
     code = f"""\
 const mod = await import('{PLUGIN_DIR}/enforce-verified-claims.ts')
 const plugin = mod.default()
-const result = await plugin['tool.execute.before']({{toolName: 'bash', toolInput: {{command: 'make git-commit MSG=done'}}}})
+const result = await plugin['tool.execute.before']({{tool: 'bash', args: {{command: 'make git-commit MSG=done'}}}})
 console.log(JSON.stringify({{allowed: result === undefined || result === null}}))
 """
     result = _run_ts(code, env_override={"OPENCODE_SUBAGENT": "1"})
@@ -1817,7 +1817,7 @@ def test_no_wait_sleep_blocked():
     code = f"""\
 const mod = await import('{PLUGIN_DIR}/enforce-no-wait.ts')
 const plugin = await mod.default({{}})
-const result = await plugin['tool.execute.before']({{tool: 'bash', command: 'sleep 60&& make gate-status-check'}}, undefined)
+const result = await plugin['tool.execute.before']({{tool: 'bash', args: {{command: 'sleep 60&& make gate-status-check'}}}}, undefined)
 console.log(JSON.stringify(result ?? null))
 """
     result = _run_ts(code)
@@ -1831,7 +1831,7 @@ def test_no_wait_gate_tail_blocked():
     code = f"""\
 const mod = await import('{PLUGIN_DIR}/enforce-no-wait.ts')
 const plugin = await mod.default({{}})
-const result = await plugin['tool.execute.before']({{tool: 'bash', command: 'make gate-tail'}}, undefined)
+const result = await plugin['tool.execute.before']({{tool: 'bash', args: {{command: 'make gate-tail'}}}}, undefined)
 console.log(JSON.stringify(result ?? null))
 """
     result = _run_ts(code)
@@ -1844,7 +1844,7 @@ def test_no_wait_subagent_bypass():
     code = f"""\
 const mod = await import('{PLUGIN_DIR}/enforce-no-wait.ts')
 const plugin = await mod.default({{}})
-const result = await plugin['tool.execute.before']({{tool: 'bash', command: 'sleep 60&& make gate-status-check'}}, undefined)
+const result = await plugin['tool.execute.before']({{tool: 'bash', args: {{command: 'sleep 60&& make gate-status-check'}}}}, undefined)
 console.log(JSON.stringify(result ?? null))
 """
     result = _run_ts(code, env_override={"OPENCODE_SUBAGENT": "1"})
@@ -1856,7 +1856,7 @@ def test_no_wait_env_disabled():
     code = f"""\
 const mod = await import('{PLUGIN_DIR}/enforce-no-wait.ts')
 const plugin = await mod.default({{}})
-const result = await plugin['tool.execute.before']({{tool: 'bash', command: 'make gate-tail'}}, undefined)
+const result = await plugin['tool.execute.before']({{tool: 'bash', args: {{command: 'make gate-tail'}}}}, undefined)
 console.log(JSON.stringify(result ?? null))
 """
     result = _run_ts(code, env_override={"GLUDD_NO_WAIT_ENFORCE": "0"})
@@ -1873,7 +1873,7 @@ def test_deletion_under_threshold_allowed():
     code = f"""\
 const mod = await import('{PLUGIN_DIR}/enforce-deletion-gate.ts')
 const plugin = await mod.default({{}})
-const result = await plugin['tool.execute.before']({{tool: 'edit', args: {{file_path: '/tmp/nonexistent.txt', old_string: 'one line', new_string: ''}}}}, undefined)
+const result = await plugin['tool.execute.before']({{tool: 'edit', args: {{filePath: '/tmp/nonexistent.txt', oldString: 'one line', newString: ''}}}}, undefined)
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
     result = _run_ts(code)
@@ -1885,7 +1885,7 @@ def test_deletion_over_threshold_blocked():
     code = f"""\
 const mod = await import('{PLUGIN_DIR}/enforce-deletion-gate.ts')
 const plugin = await mod.default({{}})
-const result = await plugin['tool.execute.before']({{tool: 'edit', args: {{file_path: '/tmp/nonexistent2.txt', old_string: '1\\n2\\n3\\n4\\n5\\n6\\n7\\n8\\n9\\n10', new_string: ''}}}}, undefined)
+const result = await plugin['tool.execute.before']({{tool: 'edit', args: {{filePath: '/tmp/nonexistent2.txt', oldString: '1\\n2\\n3\\n4\\n5\\n6\\n7\\n8\\n9\\n10', newString: ''}}}}, undefined)
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
     result = _run_ts(code)
@@ -1899,7 +1899,7 @@ def test_deletion_subagent_guard():
     code = f"""\
 const mod = await import('{PLUGIN_DIR}/enforce-deletion-gate.ts')
 const plugin = await mod.default({{}})
-const result = await plugin['tool.execute.before']({{tool: 'edit', args: {{file_path: '/tmp/nonexistent3.txt', old_string: '1\\n2\\n3\\n4\\n5\\n6\\n7\\n8\\n9\\n10', new_string: ''}}}}, undefined)
+const result = await plugin['tool.execute.before']({{tool: 'edit', args: {{filePath: '/tmp/nonexistent3.txt', oldString: '1\\n2\\n3\\n4\\n5\\n6\\n7\\n8\\n9\\n10', newString: ''}}}}, undefined)
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
     result = _run_ts(code, env_override={"OPENCODE_SUBAGENT": "1"})
@@ -1911,7 +1911,7 @@ def test_deletion_env_disabled():
     code = f"""\
 const mod = await import('{PLUGIN_DIR}/enforce-deletion-gate.ts')
 const plugin = await mod.default({{}})
-const result = await plugin['tool.execute.before']({{tool: 'edit', args: {{file_path: '/tmp/nonexistent4.txt', old_string: '1\\n2\\n3\\n4\\n5\\n6\\n7\\n8\\n9\\n10', new_string: ''}}}}, undefined)
+const result = await plugin['tool.execute.before']({{tool: 'edit', args: {{filePath: '/tmp/nonexistent4.txt', oldString: '1\\n2\\n3\\n4\\n5\\n6\\n7\\n8\\n9\\n10', newString: ''}}}}, undefined)
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
     result = _run_ts(code, env_override={"GLUDD_DELETION_GATE_THRESHOLD": "0"})

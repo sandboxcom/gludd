@@ -66,12 +66,13 @@ const defaultImpl: HotModule = {
       if (isSubagent()) return
       if (process.env.GLUDD_VERIFIED_CLAIMS_ENFORCE === "0") return
       const ctx = input as Record<string, unknown> | undefined
-      const toolName = ctx?.toolName
-      if (toolName !== "bash" && toolName !== "Bash") return
-      const toolInput = (ctx?.toolInput ?? {}) as Record<string, unknown>
-      const cmd = String(toolInput?.command ?? "")
+      const tool = ctx?.tool
+      if (tool !== "bash" && tool !== "Bash") return
+      const args = (ctx?.args ?? {}) as Record<string, unknown>
+      const cmd = String(args?.command ?? "")
       if (!cmd.startsWith("make ") || !/\b(git-commit|commit-no-verify|repo-commit|ship-commit|test-and-commit)\b/.test(cmd)) return
-      const msg = String(toolInput?.MSG ?? "")
+      const msgMatch = cmd.match(/MSG=(?:"([^"]*)"|'([^']*)'|(\S+))/)
+      const msg = msgMatch ? (msgMatch[1] ?? msgMatch[2] ?? msgMatch[3] ?? "") : ""
       if (msg && shouldBlock(msg) && !EVIDENCE_PATTERNS.some((p) => p.test(msg))) {
         throw Object.assign(new Error(BLOCK_MESSAGE), { permissionDecision: "deny" })
       }

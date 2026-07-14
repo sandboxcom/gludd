@@ -104,15 +104,15 @@ const defaultImpl: HotModule = {
 
     if (input.tool === "edit") {
       if (!input.args) return;
-      const args = input.args as { file_path: string; old_string: string; new_string: string };
-      filePath = args.file_path;
-      const oldLines = countLines(args.old_string);
-      const newLines = countLines(args.new_string);
+      const args = input.args as { filePath: string; oldString: string; newString: string };
+      filePath = args.filePath;
+      const oldLines = countLines(args.oldString);
+      const newLines = countLines(args.newString);
       linesRemoved = Math.max(0, oldLines - newLines);
     } else if (input.tool === "write") {
       if (!input.args) return;
-      const args = input.args as { file_path: string; content: string };
-      filePath = args.file_path;
+      const args = input.args as { filePath: string; content: string };
+      filePath = args.filePath;
       const existingLines = await readExistingFileLines(filePath);
       const newLines = countLines(args.content);
       linesRemoved = Math.max(0, existingLines - newLines);

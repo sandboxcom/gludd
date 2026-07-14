@@ -25,7 +25,7 @@ import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
 // ============================================================================
 // CONFIG (mirrors the claude env var names so the same knobs work in opencode)
 // ============================================================================
-const FLOOR = parseInt(process.env.CLAUDE_AGENT_FLOOR || "7", 10)
+const FLOOR = parseInt(process.env.CLAUDE_AGENT_FLOOR || "10", 10)
 const TARGET = parseInt(process.env.CLAUDE_AGENT_TARGET || "6", 10)
 
 const MODEL_UTIL_STATE = process.env.GLUDD_MODEL_UTIL_STATE || "/tmp/gludd-model-util.json"

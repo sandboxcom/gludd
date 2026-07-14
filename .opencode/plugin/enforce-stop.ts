@@ -4,7 +4,7 @@ import { execSync, spawn } from "node:child_process"
 import { isSubagent, isDisengaged as isWatchdogDisengaged, reportAlive, writeHeartbeat, isDispatchTool, isReadTool, updateSharedStreak } from "../lib/shared.ts"
 import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
 
-const FLOOR = parseInt(process.env.CLAUDE_AGENT_FLOOR || "7", 10)
+const FLOOR = parseInt(process.env.CLAUDE_AGENT_FLOOR || "10", 10)
 
 const BLOCK_REASON_FILE = process.env.GLUDD_BLOCK_REASON_FILE || "/tmp/gludd-block-reason.json"
 const BLOCK_COUNTER_FILE = process.env.GLUDD_BLOCK_COUNTER_FILE || "/tmp/gludd-block-counter.json"
@@ -370,7 +370,7 @@ const defaultImpl: HotModule = {
           const repoMode: "commit" | "push" | undefined =
             COMMIT_TARGET_RE.test(command) ? "commit" :
             PUSH_TARGET_RE.test(command) ? "push" : undefined
-          const repoPending = repoHasPendingWork(es, repoMode)
+          const repoPending = repoHasPendingWork(execSync, repoMode)
           const disengaged = isWatchdogDisengaged()
           if (!disengaged && (taskMd || ratchetCount > 0 || bugsOpen || gateRed || ciBad || repoPending)) {
             try {

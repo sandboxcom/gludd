@@ -199,7 +199,7 @@ const defaultImpl: HotModule = {
           }
         }
       }
-      if (BLOCK && firstBreachedId) {
+      if (BLOCK && firstBreachedId && !isDispatchTool(tool)) {
         const elapsedSec = (firstBreachedElapsed / 1000).toFixed(0)
         const limitSec = (TASK_TIMEOUT_MS / 1000).toFixed(0)
         return {
