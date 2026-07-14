@@ -89,6 +89,19 @@ COMMANDS
         [QUERY]             Search query
         --limit N           Max results (default: 20)
         --daemon-url URL    Daemon URL
+      searx-search        Search models via SearXNG
+        [QUERY]             Search query
+        --source SRC        Source: huggingface, github, web (default: huggingface)
+        --searx-url URL     SearXNG instance URL
+      deploy              Deploy a model found via SearXNG
+        NAME                Model name to find and deploy
+        --provider P        Cloud provider (default: aws)
+        --engine E          Engine: vllm or llamacpp (default: vllm)
+        --workload-type W   Workload type (default: realtime_api)
+        --searx-url URL     SearXNG instance URL
+        --region REGION     Cloud region
+        --gpu-count N       Number of GPUs (default: 1)
+        --max-cost N        Max cost in USD (default: 10.0)
       downloaded          List downloaded models
         --daemon-url URL    Daemon URL
       discover            Discover free models from providers
@@ -370,6 +383,29 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     models_search.add_argument("--limit", type=int, default=20)
     models_search.add_argument("--daemon-url", default="http://localhost:8000")
     models_search.set_defaults(func=_cmd_models_search)
+
+    models_searx_search = models_sub.add_parser("searx-search", help="Search models via SearXNG")
+    models_searx_search.add_argument("query", nargs="?", default="", help="Search query")
+    models_searx_search.add_argument("--source", default="huggingface",
+                                     choices=["huggingface", "github", "web"],
+                                     help="Search source (default: huggingface)")
+    models_searx_search.add_argument("--searx-url", default=None, help="SearXNG instance URL")
+    models_searx_search.set_defaults(func=_cmd_models_searx_search)
+
+    models_deploy = models_sub.add_parser("deploy", help="Deploy a model found via SearXNG")
+    models_deploy.add_argument("name", help="Model name to find and deploy")
+    models_deploy.add_argument("--provider", default="aws", help="Cloud provider (aws, gcp, azure)")
+    models_deploy.add_argument("--engine", default="vllm", choices=["vllm", "llamacpp"],
+                               help="Inference engine")
+    models_deploy.add_argument("--workload-type", default="realtime_api",
+                               choices=["batch_inference", "realtime_api", "fine_tuning",
+                                        "speculative_decoding", "embedding_generation"],
+                               help="Workload pattern")
+    models_deploy.add_argument("--searx-url", default=None, help="SearXNG instance URL")
+    models_deploy.add_argument("--region", default=None, help="Cloud region")
+    models_deploy.add_argument("--gpu-count", type=int, default=1, help="Number of GPUs")
+    models_deploy.add_argument("--max-cost", type=float, default=10.0, help="Max cost in USD")
+    models_deploy.set_defaults(func=_cmd_models_deploy)
 
     models_downloaded = models_sub.add_parser("downloaded", help="List downloaded models")
     models_downloaded.add_argument("--daemon-url", default="http://localhost:8000")
@@ -1869,6 +1905,51 @@ def _cmd_models_search(args: argparse.Namespace) -> None:
         if r.get("downloads") is not None:
             print(f"    Downloads: {r['downloads']:,}")
         print()
+
+
+def _cmd_models_searx_search(args: argparse.Namespace) -> None:
+    """Search for models via SearXNG meta-search engine."""
+    from general_ludd.infra.model_search import SearXModelSearch
+
+    searcher = SearXModelSearch(base_url=args.searx_url)
+    results = searcher.search_models(args.query, source=args.source)
+    if not results:
+        print("No models found via SearXNG.")
+        return
+    print(f"Found {len(results)} model(s) for query: {args.query!r}")
+    for r in results:
+        print(f"\n  {r.name}")
+        if r.params_count:
+            print(f"    Params: {r.params_count}B")
+        if r.license:
+            print(f"    License: {r.license}")
+        if r.quantizations_available:
+            print(f"    Quants: {', '.join(r.quantizations_available)}")
+        print(f"    URL: {r.source_url}")
+
+
+def _cmd_models_deploy(args: argparse.Namespace) -> None:
+    """Deploy a model found via SearXNG search."""
+    import json
+
+    from general_ludd.infra.model_deploy import deploy_from_search
+
+    try:
+        result = deploy_from_search(
+            args.name,
+            provider=args.provider,
+            engine=args.engine,
+            workload_type=args.workload_type,
+            searx_url=args.searx_url,
+            region=args.region,
+            gpu_count=args.gpu_count,
+            max_cost=args.max_cost,
+        )
+    except ValueError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    print(json.dumps(result, indent=2, default=str))
 
 
 def _cmd_models_downloaded(args: argparse.Namespace) -> None:

@@ -36,12 +36,14 @@ from typing import TypedDict
 __all__ = [
     "CLOUD_INSTANCE_TABLE",
     "GPU_TABLE",
+    "WORKLOAD_PROFILES",
     "HardwareProfile",
     "ModelDeploymentProfile",
     "ModelProfile",
     "WorkloadType",
     "hardware_profile_for",
     "kv_cache_bytes",
+    "profile_from_search",
     "recommend_config",
 ]
 
@@ -761,3 +763,40 @@ def _recommend_llamacpp(
         "n_threads": 0,  # 0 => let llama.cpp pick
     }
     return config
+
+
+# ---------------------------------------------------------------------------
+# SearX-backed dynamic model profile lookup
+# ---------------------------------------------------------------------------
+
+
+def profile_from_search(query: str, searx_url: str | None = None) -> ModelDeploymentProfile | None:
+    """Build a :class:`ModelDeploymentProfile` for any model via SearXNG search.
+
+    Searches HuggingFace for the model and extracts quantization info to
+    construct a deployment profile. Falls back to ``None`` when the search
+    engine is unreachable or no results are found.
+    """
+    from general_ludd.infra.model_search import ModelIndex, SearXModelSearch
+
+    searcher = SearXModelSearch(base_url=searx_url)
+    index = ModelIndex()
+
+    cached = index.search(query)
+    if cached:
+        result = cached[0]
+    else:
+        results = searcher.search_models(query, source="huggingface")
+        if not results:
+            return None
+        result = results[0]
+        index.put(result)
+
+    quant = None
+    quants_lower = [q.lower() for q in result.quantizations_available]
+    if "fp8" in quants_lower:
+        quant = "fp8"
+    elif "q4_k_m" in quants_lower:
+        quant = "q4_k_m"
+
+    return ModelDeploymentProfile(quantization=quant)

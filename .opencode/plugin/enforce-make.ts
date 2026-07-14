@@ -858,12 +858,6 @@ const defaultImpl: HotModule = {
         }
       },
 
-      // --- Session idle — reset per-turn state ----------------------------------
-      "session.idle": async () => {
-        _pendingCommitReminder = false
-        _pendingPreflightGate = ""
-      },
-
       "text.complete": async (_input, output) => {
         if (isSubagent()) return output
         if (typeof output !== "string") return output
