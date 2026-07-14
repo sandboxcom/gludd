@@ -99,7 +99,35 @@ passes repo content as both base and ours → theirs always wins cleanly →
 `result.conflict` can never be True → the "REFUSING clobber" branch is dead →
 concurrent repo edits are silently overwritten (the exact data-loss the
 function exists to prevent). `test_pipeline_daemon_adapters.py:58` blesses the
-bug in a comment. **Fix:** pass the true merge base (the worktree's fork point).
+bug in a comment.
+
+**Fix:** `safe_merge(base_text, repo_text, wt_text)`, where `base_text` is the
+worktree's **fork point** content, read via a new `git show <base_sha>:<relpath>`
+helper. Deep-audit findings that size the work:
+- **No fork-point value exists anywhere in the repo to reuse.** A repo-wide
+  search for `base_sha`/`base_commit`/`fork_point`/`parent_sha` finds one
+  unrelated SWE-bench dataset field. `WorktreeInfo.commit`
+  (`git_automation/types.py`) is the worktree's *current HEAD at scan time*
+  (from `git worktree list --porcelain`), **not** a recorded base — it cannot
+  be reused. `CompletedUnit.base_sha` is genuinely net-new plumbing.
+- **The dispatch types are too thin to carry it.** `AgentTask`
+  (`agents/types.py:42-53`) and `AgentTaskResult` (`dispatcher.py:33-40`) carry
+  **neither a worktree path nor any SHA**. The S5 producer cannot populate an
+  existing carrier — this needs `worktree_path` + `base_sha` on
+  `AgentTaskResult` (or an out-of-band hold between `create_worktree()` and
+  `report_completed()`). *Same shape as S8's missing `messages` field: the
+  dispatch types consistently cannot carry state across the dispatch boundary.*
+- **Production worktree creation never goes through Python.** Neither
+  `GitAutomation.create_worktree()` nor `build_worktree_add_argv()` has a single
+  caller in `src/` (all callers are tests) — the real path is the Makefile
+  `agent-worktree` target shelling `git worktree add` directly
+  (`test_agent_worktree_targets.py:63-66`), which records no base SHA. So the
+  producer cannot "just call the existing worktree function"; the Python
+  worktree API is dead code, and whichever path the producer adopts is the one
+  that must be taught to record `base_sha`.
+
+This confirms the fix order **S4 → S3 → producer**, but S4's field addition must
+be designed with the `AgentTaskResult` gap in view so the two land coherently.
 
 ### S5. Pipeline lanes have no production input
 Deep-audit CONFIRMED: `report_completed` has exactly one hit in `src/` — its own
