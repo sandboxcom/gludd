@@ -378,9 +378,17 @@ notify-test:
 	@echo "=== Testing notification dispatcher ==="
 	$(UV) run python -c "from general_ludd.notifications import NotificationDispatcher; d = NotificationDispatcher({'enabled': True, 'backends': {'stdout': {}}, 'min_priority': 'high'}); print(d.test())"
 
+# Unique per-invocation basetemp (like test-iso) so a nested run of this target
+# — spawned by runner.background_test_runner / MakeRunner.run_specific and by
+# tests/e2e/test_make_e2e.py DURING an outer pytest run — never shares pytest's
+# default `pytest-of-<user>` numbered-tmp root with the outer run. Two pytest
+# processes under that shared root race on pytest's keep-last-N GC (rename to
+# garbage-<uuid> + rm_rf), which deletes the outer run's live popen-gwN worker
+# dirs and yields FileNotFoundError. Isolating basetemp here removes this target
+# as a source of that pollution at its root.
 test-specific:
 	@if [ -z "$(TESTFILE)" ]; then echo "Usage: make test-specific TESTFILE='tests/unit/test_foo.py::TestClass::test_method'"; exit 1; fi
-	@$(UV) run python -m pytest $(TESTFILE) $(_XD) -v $(PYTEST_ARGS)
+	@BT="/tmp/gludd-testspecific-$${ID:-$$$$}"; rm -rf "$$BT"; $(UV) run python -m pytest $(TESTFILE) $(_XD) -v $(PYTEST_ARGS) --basetemp="$$BT"; RC=$$?; rm -rf "$$BT"; exit $$RC
 
 repro-caplog-secrets:
 	$(UV) run python -m pytest tests/unit/test_secrets_log_sanitization.py::test_resolve_exc_message_sanitized -n 2 --dist loadgroup -v -s

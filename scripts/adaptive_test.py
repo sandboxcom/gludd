@@ -44,6 +44,8 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import tempfile
+import uuid
 from collections.abc import Mapping, Sequence
 
 DEFAULT_PER_WORKER_GB = 1.5
@@ -210,6 +212,45 @@ def _stream_run(cmd: Sequence[str]) -> tuple[int, str]:
     return proc.returncode, "".join(chunks)
 
 
+def has_basetemp(args: Sequence[str]) -> bool:
+    """True if the caller already pinned pytest's ``--basetemp`` (either form)."""
+    return any(a == "--basetemp" or a.startswith("--basetemp=") for a in args)
+
+
+def unique_basetemp() -> str:
+    """A process-unique pytest ``--basetemp`` path under the system temp root.
+
+    Returns a path (NOT created here — pytest creates and, if it exists, wipes
+    the basetemp at startup) that no other pytest process can share, keyed on
+    PID + a random uuid.
+
+    WHY THIS EXISTS — the CI shared-tmp-root race that produced ~86
+    ``FileNotFoundError: /tmp/pytest-of-<user>/pytest-0/popen-gwN`` errors:
+
+    With no ``--basetemp``, every pytest process (this shard's outer run AND any
+    NESTED pytest a test spawns as a subprocess — e.g. ``MakeRunner.spawn`` ->
+    ``make test-specific`` -> ``python -m pytest`` via
+    ``runner.background_test_runner``) computes the SAME default numbered-tmp
+    root ``<gettempdir()>/pytest-of-<user>`` and inherits the same ``TMPDIR``.
+    pytest's ``tmp_path_factory`` keeps only the last N (default 3)
+    ``pytest-<N>`` roots and garbage-collects older ones at startup (rename to
+    ``garbage-<uuid>`` then ``rm_rf``). A nested pytest starting mid-run creates
+    new ``pytest-<N>`` dirs and, once the keep-window is exceeded, DELETES the
+    outer run's ``pytest-0`` — the very directory this shard's live xdist
+    workers hold ``popen-gwN`` under — yielding ``FileNotFoundError`` for every
+    subsequent ``tmp_path`` request. A serial run cannot reproduce it because it
+    needs a SECOND concurrent pytest process under the shared root.
+
+    Pinning a unique ``--basetemp`` moves this run's worker dirs OUT of the
+    shared ``pytest-of-<user>`` root, so no sibling pytest's numbered-dir GC can
+    ever reach them — the race is structurally impossible regardless of which
+    test spawns a nested pytest. This is the same isolation ``scripts/run_gate.sh``
+    already applies to the local gate (unique ``mktemp -d`` basetemp).
+    """
+    root = tempfile.gettempdir()
+    return os.path.join(root, f"gludd-adaptive-basetemp-{os.getpid()}-{uuid.uuid4().hex}")
+
+
 def build_pytest_cmd(pytest_args: Sequence[str], nproc: int) -> list[str]:
     """``python -m pytest <args> -n <nproc> --maxprocesses <nproc> --dist loadgroup``.
 
@@ -235,9 +276,19 @@ def run(
     runner=_stream_run,
 ) -> int:
     """Run pytest at the adaptive worker count, halving + retrying on OOM exits."""
+    # Isolate this run's tmp tree from every other pytest process on the box.
+    # Without a pinned basetemp the shard's outer run shares pytest's default
+    # ``pytest-of-<user>`` numbered-tmp root with any nested pytest a test
+    # spawns, whose startup GC can delete this run's live ``popen-gwN`` worker
+    # dirs mid-flight (see ``unique_basetemp`` for the full mechanism). Computed
+    # ONCE and reused across OOM-halving retries: each retry wipes+recreates the
+    # same basetemp, and it stays unique to THIS process.
+    args = list(pytest_args)
+    if not has_basetemp(args):
+        args.append(f"--basetemp={unique_basetemp()}")
     nproc = decide_nproc(env)
     while True:
-        cmd = build_pytest_cmd(pytest_args, nproc)
+        cmd = build_pytest_cmd(args, nproc)
         print(
             f"[adaptive-test] running with -n {nproc} "
             f"(cmd: {' '.join(cmd[2:])})",
