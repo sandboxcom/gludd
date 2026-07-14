@@ -1571,6 +1571,10 @@ gha-usage:
 	@echo "Billing (requires admin):"
 	@gh api /orgs/sandboxcom/settings/billing/actions --jq '{total_minutes_used: .total_minutes_used, total_paid_minutes_used: .total_paid_minutes_used, included_minutes: .included_minutes}' 2>/dev/null || echo "  Billing not accessible (requires admin)"
 
+# List all GitHub releases for sandboxcom/gludd.
+release-list:
+	@gh release list -R sandboxcom/gludd --limit 20
+
 # Confirm a published GitHub Release + list its downloadable assets.
 release-view:
 	@[ -n "$(TAG)" ] || { echo "Usage: make release-view TAG=v0.1.0-alpha.1"; exit 1; }
@@ -1639,6 +1643,12 @@ release-cut:
 		sleep 60; \
 	done; \
 	echo "WARNING: release artifact not found after 10 minutes"; exit 1
+
+# Delete a GitHub Release (does NOT delete the git tag).
+# Usage: make release-delete TAG=v0.1.0-alpha.1
+release-delete:
+	@[ -n "$(TAG)" ] || { echo "Usage: make release-delete TAG=v0.1.0-alpha.1"; exit 1; }
+	@gh release delete "$(TAG)" -R sandboxcom/gludd --yes
 
 # Manual fallback: build artifacts and publish a GitHub Release via gh.
 # Usage: make release-create TAG=v0.1.0-alpha.1

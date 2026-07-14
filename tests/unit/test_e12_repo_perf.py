@@ -293,29 +293,29 @@ class TestPromptProfileFullScanDocumented:
         )
 
 
-class TestAlembicMigration032:
-    """E12: migration 032 adds both composite indexes."""
+class TestAlembicMigration034:
+    """E12: migration 034 adds both composite indexes (renumbered from 032 due to duplicate revision)."""
 
     def test_migration_file_exists(self):
         from pathlib import Path
         migration = Path(
-            "alembic/versions/032_add_e12_repo_perf_indexes.py"
+            "alembic/versions/034_add_e12_repo_perf_indexes.py"
         )
-        assert migration.is_file(), f"Migration 032 not found at {migration}"
+        assert migration.is_file(), f"Migration 034 not found at {migration}"
 
     def test_migration_creates_both_indexes(self):
         from pathlib import Path
         migration = Path(
-            "alembic/versions/032_add_e12_repo_perf_indexes.py"
+            "alembic/versions/034_add_e12_repo_perf_indexes.py"
         )
         content = migration.read_text()
         assert "ix_task_returns_status_project_created" in content
         assert "ix_todos_status_updated_at" in content
 
-    def test_migration_revises_031(self):
+    def test_migration_revises_033(self):
         from pathlib import Path
         migration = Path(
-            "alembic/versions/032_add_e12_repo_perf_indexes.py"
+            "alembic/versions/034_add_e12_repo_perf_indexes.py"
         )
         content = migration.read_text()
-        assert 'down_revision: str | None = "031"' in content
+        assert 'down_revision: str | None = "033"' in content
