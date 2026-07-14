@@ -31,6 +31,11 @@ def cmd_search(args: argparse.Namespace) -> int:
     if args.json:
         json.dump([r.to_dict() for r in results], sys.stdout, indent=2)
         sys.stdout.write("\n")
+    elif not results:
+        # Make "zero hits" explicit rather than silent, so an empty result is
+        # distinguishable from a command that produced no output because it
+        # died. JSON mode stays pure JSON (an empty list) for machine callers.
+        print("No matches")
     else:
         for r in results:
             print(f"{r.hash[:8]}  {r.date[:10]}  {r.author:<20}  {r.message[:80]}")

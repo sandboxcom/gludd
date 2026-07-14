@@ -265,13 +265,21 @@ class TestGitHistoryIndexer:
         indexer = GitHistoryIndexer(repo_path=git_dir, db_path=db_path)
         indexer.index()
 
-        newest = indexer.search(limit=1)[0]
-        assert newest.message == "newest commit"
-        assert newest.author == "Zoe"
-        assert newest.hash != "__COMMIT__"
-        assert len(newest.hash) == 40
-        assert newest.date.startswith("20")
-        assert newest.matched_paths == ["new.py"]
+        # Assert NO record is corrupted, rather than indexing by sort order:
+        # both commits can land in the same second, so `ORDER BY date DESC`
+        # ties and limit=1 is nondeterministic. Pre-fix, exactly one record
+        # (the newest block) came back mangled, so this is the stronger check.
+        results = indexer.search()
+        assert len(results) == 2
+        for r in results:
+            assert r.hash != "__COMMIT__"
+            assert len(r.hash) == 40
+            assert r.author == "Zoe"
+            assert r.date.startswith("20")
+        assert {r.message for r in results} == {"older commit", "newest commit"}
+        by_message = {r.message: r for r in results}
+        assert by_message["newest commit"].matched_paths == ["new.py"]
+        assert by_message["older commit"].matched_paths == ["old.py"]
 
     def test_reindex_is_idempotent(self, tmp_path: Path) -> None:
         db_path = tmp_path / "index.db"
