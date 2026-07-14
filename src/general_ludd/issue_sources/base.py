@@ -37,6 +37,7 @@ DESIGN INVARIANTS
 
 from __future__ import annotations
 
+import abc
 import enum
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -560,8 +561,8 @@ def _is_internal_host(host: str) -> bool:
     return host_is_blocked(host)
 
 
-class IssueSource:
-    """Concrete base for adapter-style issue sources (file or REST).
+class IssueSource(abc.ABC):
+    """Abstract base for adapter-style issue sources (file or REST).
 
     Subclasses (markdown checklist, CSV/Excel, REST trackers) set a ``SOURCE``
     class attribute, override :meth:`fetch` and :meth:`write_back`, and call
@@ -609,10 +610,10 @@ class IssueSource:
         """Registered name of this source (defaults to ``SOURCE``)."""
         return str(self.config.get("name") or self.SOURCE)
 
+    @abc.abstractmethod
     def fetch(self, spec: dict[str, Any] | None = None) -> list[IssueRecord]:
         """Return the source's issues as :class:`IssueRecord` payloads."""
-        raise NotImplementedError
 
+    @abc.abstractmethod
     def write_back(self, external_id: str, transition: Transition) -> bool:
         """Apply ``transition`` to ``external_id``; return True on success."""
-        raise NotImplementedError

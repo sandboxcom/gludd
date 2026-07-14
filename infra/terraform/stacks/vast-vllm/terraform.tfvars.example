@@ -1,0 +1,21 @@
+# Example tfvars for a Vast.ai + vLLM stack.
+# Real values never live here -- placeholders only. At apply time the
+# TerraformGenerator composer writes a real terraform.tfvars into a tempdir
+# from ComputeConfig + SecretsManager (see TERRAFORM_INFRA_STRUCTURE.md sec.8).
+#
+# Copy to terraform.tfvars and fill in, OR pass via -var-file at apply time.
+
+# vllm-server module inputs (Vast.ai instance deployment)
+image           = "vllm/vllm-openai:latest"
+model           = "meta-llama/Meta-Llama-3-8B-Instruct"
+gpus            = 1
+extra_args      = ""
+region          = "us"
+instance_type   = "a100_80"
+max_cost_usd    = 10
+timeout_minutes = 60
+
+# Stack-only inputs (referenced by the stack's provider data sources, not by
+# the module). Documented here so a full deployment is one -var-file away.
+# vast_api_token is NOT included -- it comes from OpenBao / SecretsManager at
+# apply time, never tfvars.

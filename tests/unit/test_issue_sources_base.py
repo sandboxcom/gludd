@@ -18,6 +18,7 @@ import pytest
 
 from general_ludd.issue_sources.base import (
     IssueRegistry,
+    IssueSource,
     IssueSyncEngine,
     NormalizedIssue,
     SyncReport,
@@ -395,3 +396,13 @@ class TestSyncReport:
         r = SyncReport()
         assert (r.created, r.updated, r.skipped) == (0, 0, 0)
         assert r.errors == []
+
+
+# --------------------------------------------------------------------------- #
+# IssueSource — abstract base                                                  #
+# --------------------------------------------------------------------------- #
+class TestIssueSourceAbstract:
+    def test_cannot_instantiate_abstract(self) -> None:
+        with pytest.raises(TypeError, match="abstract"):
+            IssueSource({"name": "test"}, require_base_url=False)  # type: ignore[abstract]
+        assert True  # reached — ABC prevents direct instantiation

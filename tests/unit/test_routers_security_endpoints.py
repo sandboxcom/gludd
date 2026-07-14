@@ -656,7 +656,7 @@ class TestEscalationApprove:
         esc_id = create.json()["id"]
 
         resp = client.post(
-            f"/admin/perm/escalations/{esc_id}/approve", json={"reason": "ok"}
+            f"/admin/perm/escalations/{esc_id}/approve", json={"reason": "ok", "human_reviewer": "alice"}
         )
         assert resp.status_code == 403
         assert resp.json()["error"] == "permission_denied"

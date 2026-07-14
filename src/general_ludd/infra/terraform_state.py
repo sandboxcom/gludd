@@ -30,7 +30,7 @@ class _HealthChecking(Protocol):
 class StateBackendConfig:
     """A selected state backend.
 
-    Two kinds are supported:
+    Three kinds are supported:
 
     * ``local``     — ``.tfstate`` lives at ``path`` inside the per-deployment
                       tempdir (the default ephemeral behaviour).
@@ -38,10 +38,19 @@ class StateBackendConfig:
                       ``path`` (e.g. ``secret/data/gludd/tfstate/<dep-id>``).
                       The rendered backend block uses the Terraform ``http``
                       backend pointed at the OpenBao KV endpoint.
+    * ``http``      — state is read/written through the gludd API at
+                      ``path`` (e.g. ``{api_url}/api/terraform/state/{dep_id}``).
+                      The rendered backend block uses the Terraform ``http``
+                      backend with ``address``, ``lock_address``, and
+                      ``unlock_address`` all set to the same URL.
     """
 
     kind: str
     path: str
+    lock_address: str = ""
+    unlock_address: str = ""
+    username: str = ""
+    password: str = ""
 
 
 class StateBackendSelector:
@@ -55,10 +64,10 @@ class StateBackendSelector:
     ) -> None:
         self._openbao_client = openbao_client
         self._secrets_manager = secrets_manager
-        cfg = config or {}
+        self._config = config or {}
         # Deployments whose MAX_COST exceeds this threshold use remote state
         # (when OpenBao is reachable); the rest stay local.
-        self.cost_threshold_usd: float = float(cfg.get("cost_threshold_usd", 50.0))
+        self.cost_threshold_usd: float = float(self._config.get("cost_threshold_usd", 50.0))
 
     def select(
         self,
@@ -72,6 +81,20 @@ class StateBackendSelector:
         block ephemeral clusters on a dev box with no OpenBao running, which is
         worse than the local-state risk the rule is meant to mitigate.
         """
+        api_url = self._config.get("api_url", "")
+        if api_url:
+            dep_id = deployment_id or uuid.uuid4().hex[:12]
+            state_url = f"{api_url.rstrip('/')}/api/terraform/state/{dep_id}"
+            username = self._config.get("username", "")
+            password = self._config.get("password", "")
+            return StateBackendConfig(
+                kind="http",
+                path=state_url,
+                lock_address=state_url,
+                unlock_address=state_url,
+                username=username,
+                password=password,
+            )
         max_cost = float(getattr(compute_config, "max_cost_usd", 0.0))
         if max_cost > self.cost_threshold_usd and self._openbao_reachable():
             dep_id = deployment_id or uuid.uuid4().hex[:12]
@@ -108,6 +131,24 @@ def render_backend_block(config: StateBackendConfig) -> str:
             'terraform {\n'
             '  backend "http" {\n'
             f'    address = "{config.path}"\n'
+            '  }\n'
+            '}\n'
+        )
+    if config.kind == "http":
+        username_line = ""
+        password_line = ""
+        if config.username:
+            username_line = f'    username = "{config.username}"\n'
+        if config.password:
+            password_line = f'    password = "{config.password}"\n'
+        return (
+            'terraform {\n'
+            '  backend "http" {\n'
+            f'    address = "{config.path}"\n'
+            f'    lock_address = "{config.lock_address}"\n'
+            f'    unlock_address = "{config.unlock_address}"\n'
+            f'{username_line}'
+            f'{password_line}'
             '  }\n'
             '}\n'
         )

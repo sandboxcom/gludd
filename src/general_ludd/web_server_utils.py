@@ -349,21 +349,16 @@ def validate_certificate(cert_path: str) -> dict[str, Any]:
 
 
 def generate_dhparam(bits: int = 2048) -> None:
-    try:
-        from cryptography.hazmat.primitives import serialization
-        from cryptography.hazmat.primitives.asymmetric import dh
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import dh
 
-        parameters = dh.generate_parameters(generator=2, key_size=bits)
-        pem = parameters.parameter_bytes(
-            encoding=serialization.Encoding.PEM,
-            format=serialization.ParameterFormat.PKCS3,
-        )
-        with open("dhparam.pem", "wb") as fh:
-            fh.write(pem)
-    except ImportError as err:
-        raise NotImplementedError(
-            "dhparam generation requires the cryptography library"
-        ) from err
+    parameters = dh.generate_parameters(generator=2, key_size=bits)
+    pem = parameters.parameter_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.ParameterFormat.PKCS3,
+    )
+    with open("dhparam.pem", "wb") as fh:
+        fh.write(pem)
 
 
 # ---------------------------------------------------------------------------

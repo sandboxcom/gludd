@@ -14,6 +14,7 @@ from general_ludd.web_server_utils import (
     audit_hardening,
     audit_nginx_config,
     generate_csp,
+    generate_dhparam,
     generate_haproxy_config,
     generate_logrotate_config,
     generate_nginx_upstream,
@@ -408,3 +409,17 @@ class TestRemediateFinding:
 
     def test_missing_remediation_returns_empty(self):
         assert remediate_finding({}) == ""
+
+
+# ---------------------------------------------------------------------------
+# generate_dhparam — dependency surface
+# ---------------------------------------------------------------------------
+class TestGenerateDhparam:
+    def test_generates_pem_file(self, tmp_path, monkeypatch) -> None:
+        monkeypatch.chdir(tmp_path)
+        generate_dhparam(bits=2048)
+        pem_file = tmp_path / "dhparam.pem"
+        assert pem_file.is_file()
+        content = pem_file.read_bytes()
+        assert content.startswith(b"-----BEGIN DH PARAMETERS-----")
+        assert len(content) > 100

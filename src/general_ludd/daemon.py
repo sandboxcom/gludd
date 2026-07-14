@@ -3176,6 +3176,8 @@ def create_daemon_app(
 
     from general_ludd.routers import stream as _stream_router
     _stream_router.register(app, daemon_state)
+    from general_ludd.routers import terraform_state as _terraform_state_router
+    _terraform_state_router.register(app, daemon_state)
 
     from general_ludd.routers.observe import wire_observability
 

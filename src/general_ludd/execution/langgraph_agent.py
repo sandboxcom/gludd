@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 from general_ludd.budget_guard_check import budget_pre_check
 from general_ludd.mcp.registry import MCPToolRegistry
 from general_ludd.mcp.transport import MCPTransportError
+from general_ludd.sandbox.enforcer import SandboxEnforcer, SandboxNotAvailableError
 from general_ludd.security.capability_lattice import check_dispatch
 
 if TYPE_CHECKING:
@@ -51,6 +52,7 @@ class LangGraphAgentLoop:
         budget_guard: Any = None,
         adversarial_detector: Any = None,
         max_total_tokens: int | None = None,
+        sandbox_enforcer: SandboxEnforcer | None = None,
     ) -> None:
         self._gateway = model_gateway
         self._chat_model = chat_model
@@ -63,6 +65,7 @@ class LangGraphAgentLoop:
         self._budget_guard = budget_guard
         self._adversarial_detector = adversarial_detector
         self._max_total_tokens = max_total_tokens or MAX_TOTAL_TOKENS_DEFAULT
+        self._sandbox_enforcer = sandbox_enforcer
         if mcp_registry is None and mcp_client is not None:
             self._mcp_registry = getattr(mcp_client, "_registry", None)
 
@@ -262,6 +265,7 @@ class LangGraphAgentLoop:
             mcp_client = self._mcp_client
             timeout = self._per_tool_timeout
             auditor = self._auditor
+            sandbox_enforcer = self._sandbox_enforcer
 
             async def _execute(
                 _name: str = tool_name,
@@ -269,8 +273,29 @@ class LangGraphAgentLoop:
                 _client: Any = mcp_client,
                 _tmo: float = timeout,
                 _auditor: Any = auditor,
+                _sandbox: Any = sandbox_enforcer,
                 **kwargs: Any,
             ) -> str:
+                if _sandbox is not None:
+                    try:
+                        _sandbox.verify_ready()
+                    except SandboxNotAvailableError as exc:
+                        return (
+                            f"Tool error: sandbox not available — "
+                            f"refusing to execute {_name!r}: {exc}"
+                        )
+                    for _key, _val in kwargs.items():
+                        if isinstance(_val, str) and _key in (
+                            "path", "file", "file_path", "workdir", "output",
+                            "dir", "directory", "cwd", "out_path",
+                        ):
+                            try:
+                                _sandbox.confine_path(_val)
+                            except Exception as exc:
+                                return (
+                                    f"Tool error: path {_val!r} escapes sandbox "
+                                    f"for tool {_name!r}: {exc}"
+                                )
                 if _auditor is not None:
                     verdict = _auditor.audit(
                         _name, kwargs,
