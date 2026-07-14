@@ -80,7 +80,8 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         install-bats test-install check-subagent-guards verify-plugin-manifest \
         check-task-ledger \
         test-service-discovery service-discover service-catalog \
-        subagent-init subagent-cleanup
+        subagent-init subagent-cleanup \
+        git-bisect git-bisect-reset
 
 help:
 	@echo "Usage: make [target]"
@@ -147,6 +148,8 @@ help:
 	@echo "  git-branch MSG='...'  Create branch"
 	@echo "  git-checkout MSG='...' Switch branch"
 	@echo "  git-merge MSG='...'   Merge branch with --no-ff"
+	@echo "  git-bisect GOOD=<sha> BAD=<sha> TEST='...'  Automated binary-search regression finder"
+	@echo "  git-bisect-reset     Clean up stale bisect state"
 	@echo "  feature-start MSG='...' Create and switch to feature branch"
 	@echo "  feature-done MSG='...' Test, merge to master with --no-ff"
 	@echo "  agent-worktree BRANCH=<name>  Isolated git worktree for a subagent (no shared-tree races)"
@@ -2508,6 +2511,19 @@ git-checkout:
 git-merge:
 	@if [ -z "$(MSG)" ]; then echo "Usage: make git-merge MSG='branch-name'"; exit 1; fi
 	@git merge --no-ff "$(MSG)"
+
+# Automated git bisect for regression finding.
+# Usage: make git-bisect GOOD=<sha> BAD=<sha> TEST='make test TESTFILE=tests/unit/test_foo.py' [TIMEOUT=60]
+# AGENTS.md constraint: TEST must be fast (<60s ideal; >300s warns loudly).
+# The script handles bisect start → run → report → cleanup.
+git-bisect:
+	@[ -n "$(GOOD)" ] && [ -n "$(BAD)" ] && [ -n "$(TEST)" ] || \
+		{ echo "Usage: make git-bisect GOOD=<good-sha> BAD=<bad-sha> TEST='<test-command>' [TIMEOUT=60]"; exit 1; }
+	@$(PYTHON) scripts/git_bisect.py --good "$(GOOD)" --bad "$(BAD)" --test "$(TEST)" $(if $(TIMEOUT),--timeout $(TIMEOUT))
+
+# Clean up stale git bisect state. Safe to run at any time (no-op if not bisecting).
+git-bisect-reset:
+	@git bisect reset 2>/dev/null; echo "Bisect state reset."
 
 submodule-init:
 	@if [ ! -f .gitmodules ]; then echo "No .gitmodules file"; exit 1; fi
