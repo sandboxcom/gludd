@@ -5,7 +5,14 @@ dispatch wave must be project enhancements, not just bug fixes.
 
 This test extracts the plugin's exported keyword lists and classification logic
 from the TypeScript source and exercises each against the spec cases.  Includes
-behavioral wave-simulation tests for ratio thresholds and the new hard-deny mode.
+behavioral wave-simulation tests for ratio thresholds and block/soft modes.
+
+Refactored to match plugin source (2026-07-14):
+  - Self-contained — ONLY tool.execute.before hook, NO text.complete hook
+  - GLUDD_ENHANCEMENT_RATIO_BLOCK env var (was GLUDD_ENHANCEMENT_RATIO_HARD_DENY)
+  - No early_warned field, no "Re-split" guidance, no "modified" variable
+  - Deny message: "ENHANCEMENT RATIO VIOLATION: N% fixes (N/NN) ..."
+  - Soft mode: console.warn only
 """
 from __future__ import annotations
 
@@ -50,14 +57,6 @@ def _check_ratio(fix_count: int, total: int) -> tuple[bool, float, float]:
     return fix_ratio > 0.5, fix_ratio, enhancement_ratio
 
 
-def _text_in_tc_block(src: str, text: str) -> bool:
-    """Check if text appears inside the text.complete hook body."""
-    tc_match = re.search(r'"text\.complete":\s*async\s*\(output\).*?\}\s*,?\s*\}', src, re.DOTALL)
-    if not tc_match:
-        return False
-    return text in tc_match.group(0)
-
-
 # ── Test suite ──────────────────────────────────────────────────────────────
 
 class TestPluginStructure:
@@ -77,9 +76,11 @@ class TestPluginStructure:
         src = _plugin_source()
         assert "tool.execute.before" in src, "tool.execute.before hook missing"
 
-    def test_text_complete_hook_registered(self):
+    def test_no_text_complete_hook(self):
+        """Refactored: self-contained plugin has NO text.complete hook key."""
         src = _plugin_source()
-        assert "text.complete" in src, "text.complete hook missing"
+        assert '"text.complete":' not in src, \
+            "text.complete hook key present — plugin is self-contained, only tool.execute.before"
 
     def test_fail_open_present(self):
         src = _plugin_source()
@@ -88,6 +89,10 @@ class TestPluginStructure:
     def test_env_var_disable_present(self):
         src = _plugin_source()
         assert "GLUDD_ENHANCEMENT_RATIO_ENFORCE" in src, "Env-var disable switch missing"
+
+    def test_block_env_var_present(self):
+        src = _plugin_source()
+        assert "GLUDD_ENHANCEMENT_RATIO_BLOCK" in src, "BLOCK env var (soft/hard switch) missing"
 
     def test_subagent_skip_present(self):
         src = _plugin_source()
@@ -189,9 +194,13 @@ class TestStateFilePersistence:
         assert "session_enhancements" in src, "State shape missing 'session_enhancements'"
         assert "session_fixes" in src, "State shape missing 'session_fixes'"
 
-    def test_state_file_has_early_warned_field(self):
+    def test_state_file_has_session_counters(self):
         src = _plugin_source()
-        assert "early_warned" in src, "State shape missing 'early_warned' field"
+        assert "session_enhancements" in src, "State shape missing 'session_enhancements'"
+        assert "session_fixes" in src, "State shape missing 'session_fixes'"
+        assert "session_unknown" in src, "State shape missing 'session_unknown'"
+        assert "lastPid" in src, "State shape missing 'lastPid'"
+        assert "lastTs" in src, "State shape missing 'lastTs'"
 
     def test_classify_returns_enhancement_or_fix(self):
         src = _plugin_source()
@@ -202,8 +211,10 @@ class TestStateFilePersistence:
 class TestWaveThresholds:
     def test_minimum_wave_size_is_two(self):
         src = _plugin_source()
-        assert "s.wave.length < 2" in src or "wave.length < 2" in src or "length >= 2" in src or "length > 1" in src, \
-            "Wave threshold check for >=2 dispatches not found"
+        assert (
+            "s.wave.length >= 2" in src or "wave.length >= 2" in src
+            or "length >= 2" in src or "length > 1" in src
+        ), "Wave threshold check for >=2 dispatches not found"
 
     def test_fix_ratio_threshold_at_50_percent(self):
         src = _plugin_source()
@@ -219,12 +230,8 @@ class TestWaveThresholds:
 
     def test_wave_resets_after_check(self):
         src = _plugin_source()
-        wave_reset = src.count("s.wave = []") + src.count("s.wave=[]")
+        wave_reset = src.count("s.wave = []") + src.count("s.wave=[]") + src.count("s.wave = []")
         assert wave_reset >= 1, "Wave does not reset after ratio check"
-
-    def test_early_warned_resets_after_wave(self):
-        src = _plugin_source()
-        assert "s.early_warned = false" in src, "early_warned flag not reset after wave check"
 
 
 class TestExtractPrompt:
@@ -248,75 +255,34 @@ class TestSubagentSkip:
         assert len(hook_blocks) >= 1, "tool.execute.before hook not found"
         assert "OPENCODE_SUBAGENT" in src, "OPENCODE_SUBAGENT check not found for skip"
 
-    def test_skip_in_text_complete(self):
+
+class TestBlockMode:
+    """Tests for GLUDD_ENHANCEMENT_RATIO_BLOCK=1 hard-block mode."""
+
+    def test_block_env_var_defined(self):
         src = _plugin_source()
-        assert _text_in_tc_block(src, "OPENCODE_SUBAGENT"), "OPENCODE_SUBAGENT check not in text.complete"
+        assert "GLUDD_ENHANCEMENT_RATIO_BLOCK" in src, "BLOCK env var not defined in source"
 
-
-class TestHardDenyMode:
-    """Tests for GLUDD_ENHANCEMENT_RATIO_HARD_DENY=1 blocking mode."""
-
-    def test_hard_deny_env_var_defined(self):
+    def test_block_default_on(self):
+        """BLOCK defaults to enabled: !== '0'."""
         src = _plugin_source()
-        assert "GLUDD_ENHANCEMENT_RATIO_HARD_DENY" in src, "HARD_DENY env var not defined in source"
+        assert "BLOCK" in src, "BLOCK variable not present"
+        match = re.search(r'BLOCK\s*=\s*\([^)]+\)\s*!==\s*"0"', src)
+        assert match, "BLOCK should default on (strict !== '0' check)"
 
-    def test_hard_deny_default_off(self):
+    def test_block_returns_permission_deny_on_violation(self):
         src = _plugin_source()
-        match = re.search(r'HARD_DENY\s*=\s*.+===\s*"1"', src)
-        assert match, "HARD_DENY should default off (strict === '1' check)"
-
-    def test_hard_deny_modifies_output_on_violation(self):
-        """In HARD_DENY mode, violation text is appended to output."""
-        src = _plugin_source()
-        assert "modified" in src, "modified variable not present (needed for output injection)"
-        assert "output + modified" in src or "output +" in src, "text.complete does not append modified to output"
-
-    def test_hard_deny_injects_re_split_guidance(self):
-        src = _plugin_source()
-        assert "Re-split" in src, "No re-split guidance in hard-deny violation message"
+        assert 'permissionDecision: "deny"' in src, "permissionDecision deny not in source"
 
     def test_console_warn_still_present_for_soft_mode(self):
         src = _plugin_source()
-        assert "console.warn" in src, "console.warn must remain for non-hard-deny mode"
+        assert "console.warn" in src, "console.warn must remain for soft mode (BLOCK=0)"
 
-    def test_text_complete_returns_output_on_no_wave(self):
-        """text.complete must return output when wave is below threshold."""
+    def test_deny_message_format(self):
         src = _plugin_source()
-        assert "return output" in src, "text.complete does not return output"
-
-
-class TestEarlyDirective:
-    """Tests for the early directive when wave has >=2 fixes but 0 enhancements."""
-
-    def test_early_warned_flag_in_state(self):
-        src = _plugin_source()
-        assert "early_warned" in src, "early_warned flag missing from state"
-
-    def test_early_check_condition_in_text_complete(self):
-        """Verify the early-check condition: fixCount >= 2 && enhancementCount === 0."""
-        src = _plugin_source()
-        assert "fixCount >= 2" in src or "fix_count >= 2" in src, "fixCount >= 2 check missing"
-        assert (
-            "enhancementCount === 0" in src or "enhancement_count === 0" in src
-        ), "enhancementCount === 0 check missing"
-
-    def test_early_warned_guards_against_repeat(self):
-        """early_warned flag prevents repeated early directives in the same wave."""
-        src = _plugin_source()
-        assert "!s.early_warned" in src or "!s.earlyWarned" in src, "Guard against repeat early directive missing"
-
-    def test_early_directive_message_exists(self):
-        src = _plugin_source()
-        assert "EARLY ENHANCEMENT RATIO WARNING" in src, "Early directive message text missing"
-        assert "all dispatches in this wave are fixes" in src, "Early directive details missing"
-
-    def test_early_directive_injects_in_hard_deny(self):
-        """In hard-deny, early directive modifies output text."""
-        src = _plugin_source()
-        tc_body = re.search(r'"text\.complete":.*', src, re.DOTALL)
-        assert tc_body, "text.complete block not found"
-        body = tc_body.group(0)
-        assert "HARD_DENY" in body, "HARD_DENY check not in text.complete early block"
+        assert "ENHANCEMENT RATIO VIOLATION" in src, "Deny message header missing"
+        assert "Must be ≤50%" in src, "Deny message threshold instruction missing"
+        assert "Replace fix dispatches with enhancement work" in src, "Deny message guidance missing"
 
 
 class TestWaveRatioSimulations:
@@ -452,41 +418,36 @@ class TestWaveRatioSimulations:
         assert fix_count == 2
         assert not violation, f"2/5 fixes ({fix_ratio:.0%}) should NOT trigger violation"
 
-    def test_early_wave_2_fixes_0_enhancements_triggers_early(self, keywords):
-        """2 fixes + 0 enhancements should trigger the early directive."""
+    def test_two_fixes_no_enhancements_violates_ratio(self, keywords):
+        """2 fixes + 0 enhancements: fixRatio = 1.0 > 0.5 -> violation."""
         prompts = [
             "Fix bug in auth module",
             "Repair broken connection pool",
         ]
         results = self._classify_prompts(prompts, keywords)
         fix_count = results.count("fix")
-        enhancement_count = results.count("enhancement")
-        early_trigger = fix_count >= 2 and enhancement_count == 0
-        assert early_trigger, (
-            f"2 fixes, 0 enhancements should trigger early directive "
-            f"(fix={fix_count}, enh={enhancement_count})"
+        total = len(results)
+        violation, fix_ratio, _ = _check_ratio(fix_count, total)
+        assert violation, (
+            f"2 fixes / 0 enhancements ({fix_ratio:.0%}) should trigger violation via ratio check"
         )
 
-    def test_early_wave_1_fix_0_enhancements_no_trigger(self, keywords):
-        """1 fix + 0 enhancements: below threshold, no early trigger."""
+    def test_one_fix_zero_enhancements_below_wave_threshold(self, keywords):
+        """1 fix + 0 enhancements: wave < 2, no ratio check triggered."""
         prompts = ["Fix bug in auth module"]
         results = self._classify_prompts(prompts, keywords)
-        fix_count = results.count("fix")
-        enhancement_count = results.count("enhancement")
-        early_trigger = fix_count >= 2 and enhancement_count == 0
-        assert not early_trigger, "1 fix should NOT trigger early directive"
+        assert len(results) < 2, "Single entry wave should not trigger ratio check"
 
-    def test_early_wave_1_fix_1_enhancement_no_trigger(self, keywords):
-        """1 fix + 1 enhancement: enhancement exists, no early trigger."""
+    def test_one_fix_one_enhancement_no_violation(self, keywords):
+        """1 fix + 1 enhancement: fixRatio = 0.5, NOT > 0.5 -> no violation."""
         prompts = [
             "Fix bug in auth module",
             "Write tests for daemon",
         ]
         results = self._classify_prompts(prompts, keywords)
         fix_count = results.count("fix")
-        enhancement_count = results.count("enhancement")
-        early_trigger = fix_count >= 2 and enhancement_count == 0
-        assert not early_trigger, "1f+1e should NOT trigger early directive"
+        violation, fix_ratio, _ = _check_ratio(fix_count, len(results))
+        assert not violation, f"1f+1e ({fix_ratio:.0%}) should NOT trigger violation (≤50%)"
 
     def test_subagent_prompts_are_classifiable(self, keywords):
         """Realistic subagent-style prompts all get a classification."""

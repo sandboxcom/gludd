@@ -56,5 +56,8 @@ def downgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("last_used_at", sa.DateTime(timezone=True), nullable=True),
     )
+    op.create_index("ix_memory_records_scope", "memory_records", ["scope"])
+    op.create_index("ix_memory_records_scope_key", "memory_records", ["scope_key"])
+    op.create_index("ix_memory_records_kind", "memory_records", ["kind"])
     op.create_index("ix_memory_scope", "memory_records", ["scope", "scope_key"])
     op.create_index("ix_memory_scope_kind", "memory_records", ["scope", "scope_key", "kind"])

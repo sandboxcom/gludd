@@ -494,7 +494,7 @@ class TestEventLoop:
         result_mock = MagicMock()
         result_mock.scalars().all.return_value = [decision_row]
         mocks["session"].execute.return_value = result_mock
-        mocks["todo_repo"].get_by_id.return_value = todo_model
+        mocks["todo_repo"].get_by_ids = AsyncMock(return_value={"TODO-001": todo_model})
         mocks["todo_repo"].transition = AsyncMock(return_value=todo_model)
         await loop._phase_reconcile_completed_decisions()
         mocks["todo_repo"].transition.assert_called_once_with(
@@ -516,7 +516,7 @@ class TestEventLoop:
         result_mock = MagicMock()
         result_mock.scalars().all.return_value = [decision_row]
         mocks["session"].execute.return_value = result_mock
-        mocks["todo_repo"].get_by_id.return_value = todo_model
+        mocks["todo_repo"].get_by_ids = AsyncMock(return_value={"TODO-001": todo_model})
         mocks["todo_repo"].transition = AsyncMock(return_value=todo_model)
         await loop._phase_reconcile_completed_decisions()
         mocks["todo_repo"].transition.assert_called_once_with(
@@ -892,7 +892,7 @@ class TestLedgerBounds:
         todo_model.status = TodoStatus.REVIEWING_RETURN.value
         todo_model.version = 1
         todo_model.project_id = None
-        mocks["todo_repo"].get_by_id.return_value = todo_model
+        mocks["todo_repo"].get_by_ids = AsyncMock(return_value={"TODO-PRUNE-1": todo_model})
         mocks["todo_repo"].transition = AsyncMock(return_value=MagicMock())
 
         await loop._phase_reconcile_completed_decisions()
