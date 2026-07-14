@@ -187,7 +187,7 @@ class TestBugsMDOpenWorkDetection:
         # FAIL: The correct behavior is to check the incident body (the lines
         # between this heading and the next heading) for resolution markers,
         # not just the heading line itself.
-        assert False, (
+        raise AssertionError(
             "BUG: BUGS.md incident resolution detection only checks heading text. "
             "If a resolved incident lists its status on a sub-line instead of the "
             "heading, it is falsely counted as open. The filter should scan the "
@@ -214,7 +214,7 @@ class TestRunningGateIsPending:
         src = _src(FLOOR_PATH)
 
         # Find the gate status check block
-        match = re.search(
+        re.search(
             r"\.gate-status.*?=>.*?(?:\n\s+)", src, re.DOTALL
         )
         # More precise: find the gatePath check
@@ -259,7 +259,8 @@ class TestGitIndexMtimeFalsePositive:
         src = _src(FLOOR_PATH)
 
         match = re.search(
-            r"const idxMtime\s*=\s*fs\.statSync\(index\)\.mtimeMs\s*\n\s*const refMtime\s*=\s*fs\.statSync\(headRef\)\.mtimeMs",
+            r"const idxMtime\s*=\s*fs\.statSync\(index\)\.mtimeMs\s*\n"
+            r"\s*const refMtime\s*=\s*fs\.statSync\(headRef\)\.mtimeMs",
             src,
             re.DOTALL,
         )
@@ -273,7 +274,7 @@ class TestGitIndexMtimeFalsePositive:
         assert threshold_match, "Mtime threshold (2000) not found"
 
         # FAIL: mtime-based comparison is unreliable; git status refreshes index
-        assert False, (
+        raise AssertionError(
             "BUG: git index mtime comparison in openWorkExists produces false "
             "positives. Running 'git status' refreshes the index, changing its "
             "mtime, while refs/heads/master mtime only changes on commits. After "
