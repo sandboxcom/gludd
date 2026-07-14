@@ -13,6 +13,9 @@ htmlcov/
 dist/gludd
 dist/general-ludd-agent-*
 dist/build/
+dist/deb-root/
+dist/gludd_*.deb
+dist/gludd_*.deb.sha256
 dist/sbom-test.json
 dist/*.json
 build/

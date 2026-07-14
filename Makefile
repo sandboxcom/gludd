@@ -44,7 +44,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         collection-roles collection-modules molecule-scenarios \
         move-ansible-roles \
         container-build container-run container-push \
-        file-executable build-executable dist dist-clean bundle-binaries bundle-ripgrep \
+         file-executable build-executable deb-package deb-install-deps rpm-package macos-dmg windows-installer release-artifacts dist dist-clean bundle-binaries bundle-ripgrep \
         sast sbom pip-audit security security-backlog-gate \
         audit-messages qa validate collect-check gate gate-refresh gate-lite smoke install-hooks \
         status-snapshot audit-evidence deps-audit dogfood-features ruff-audit \
@@ -64,6 +64,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         rearm-enforcement enforcement-status \
         hot-reload-plugins hot-reload-status hot-reload-clean \
         verify-release-artifact verify-release-completeness git-tag-rm release-cut release-recut release-create release-delete \
+        release-upload-assets git-restore-from \
         verify-feature-claims audit-coverage gate-audit coverage-json \
         tf-cache-setup tf-init tf-validate tf-cache-warm tf-versions-check tf-clean \
         deck deck-serve deck-preview deck-data deck-honesty \
@@ -185,7 +186,8 @@ help:
 	@echo "  --- Release ---"
 	@echo "  release-list          List all GitHub releases"
 	@echo "  release-view TAG=..   Show a published GitHub Release + its assets"
-	@echo "  release-create TAG=.. Build artifacts and publish a GitHub Release"
+	@echo "  release-create TAG=.. CI-green-gated DRAFT release (single binary; complete via CI)"
+	@echo "  release-upload-assets TAG=.. FILES='..'  Add assets to an existing release (repair path)"
 	@echo "  release-cut TAG=.. MSG=.. The single release command (6 fail-closed steps)"
 	@echo "  release-recut TAG=..  Re-trigger CI release job for an existing tag"
 	@echo "  release-delete TAG=.. Delete GitHub Release + local + remote git tags"
@@ -198,6 +200,8 @@ help:
 	@echo "  container-build       Build container image"
 	@echo "  container-run         Run container locally"
 	@echo "  container-push        Push container image"
+	@echo "  deb-package           Build .deb package from dist/gludd binary"
+	@echo "  deb-install-deps      apt-get install dependencies from debian/control"
 	@echo ""
 	@echo "  --- Ansible ---"
 	@echo "  ansible-syntax        Validate playbook syntax"
@@ -1633,17 +1637,19 @@ git-tag-rm:
 release-recut:
 	@[ -n "$(TAG)" ] || { echo "Usage: make release-recut TAG=v0.1.0-alpha.1"; exit 1; }
 	@git tag -l "$(TAG)" | grep -q "$(TAG)" || { echo "ERROR: local tag $(TAG) not found"; exit 1; }
+	@$(MAKE) -s require-ci-green SHA=$$(git rev-parse "$(TAG)^{commit}")
 	@echo "Re-cutting release tag $(TAG)..."
 	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push sandboxcom :refs/tags/$(TAG) 2>/dev/null || true
 	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push sandboxcom "$(TAG)"
 	@echo "Tag re-pushed. Polling for artifact publication ($(VERIFY_POLLS) polls)..."
 	@i=0; while [ $$i -lt $(VERIFY_POLLS) ]; do \
 		if $(MAKE) -s verify-release-artifact TAG=$(TAG) 2>/dev/null; then \
-			echo "Artifact verified after $$i polls."; exit 0; \
+			echo "Artifact present after $$i polls; checking completeness..."; \
+			$(MAKE) -s verify-release-completeness TAG=$(TAG); exit $$?; \
 		fi; \
 		sleep 10; i=$$((i+1)); \
 	done; \
-	echo "Poll exhausted after $(VERIFY_POLLS) attempts."; exit 1
+	echo "Poll exhausted after $(VERIFY_POLLS) attempts (treat as STILL BUILDING, not success)."; exit 1
 
 # The single release command. 6 steps, fail-closed at every gate:
 #   0. require-ci-green        — abort if CI is not GREEN for HEAD (or SHA=...)
@@ -1663,12 +1669,13 @@ release-cut:
 	@echo "Polling for release artifact (up to 10 attempts, ~10 min)..."
 	@for i in 1 2 3 4 5 6 7 8 9 10; do \
 		if $(MAKE) -s verify-release-artifact TAG=$(TAG) 2>/dev/null; then \
-			echo "Release artifact verified on attempt $$i/10."; exit 0; \
+			echo "Release artifact present on attempt $$i/10; checking completeness..."; \
+			$(MAKE) -s verify-release-completeness TAG=$(TAG); exit $$?; \
 		fi; \
 		echo "Waiting for release artifact (attempt $$i/10)..."; \
 		sleep 60; \
 	done; \
-	echo "WARNING: release artifact not found after 10 minutes"; exit 1
+	echo "WARNING: release artifact not found after 10 minutes — a cold tag-triggered full-matrix build can take 30-60 min; poll again with make verify-release-completeness TAG=$(TAG) (poll timeout means STILL BUILDING, not failure)"; exit 1
 
 # Delete a GitHub Release and its associated git tags (local + remote).
 # Usage: make release-delete TAG=v0.1.0-alpha.1
@@ -1678,13 +1685,39 @@ release-delete:
 	@git tag -d "$(TAG)" 2>/dev/null || echo "(tag not found locally)"
 	@git push sandboxcom :refs/tags/"$(TAG)" 2>/dev/null || echo "(tag not found on remote)"
 
-# Manual fallback: build artifacts and publish a GitHub Release via gh.
+# Manual fallback: build the single local binary and publish a DRAFT GitHub
+# Release. This path cannot produce the full artifact matrix (only CI can), so
+# it is CI-green-gated and draft-only: v0.1.0-beta.1 shipped public with 1/12
+# assets on a RED SHA through the old ungated version of this target. Finish a
+# draft by uploading the remaining assets (release-upload-assets) and passing
+# verify-release-completeness, then publish via gh release edit --draft=false.
 # Usage: make release-create TAG=v0.1.0-alpha.1
 release-create:
 	@[ -n "$(TAG)" ] || { echo "Usage: make release-create TAG=v0.1.0-alpha.1"; exit 1; }
+	@$(MAKE) -s require-ci-green
 	@$(MAKE) -s build-executable
-	@gh release create "$(TAG)" -R sandboxcom/gludd dist/gludd --title "$(TAG)" --notes "Release $(TAG)" 2>&1 || echo "release-create-failed"
-	@$(MAKE) -s verify-release-artifact TAG=$(TAG)
+	@echo "NOTE: INCOMPLETE RELEASE — publishing as DRAFT (single binary only)."
+	@PRE=""; echo "$(TAG)" | grep -q -- "-" && PRE="--prerelease"; \
+	gh release create "$(TAG)" -R sandboxcom/gludd dist/gludd --title "$(TAG)" --notes "Release $(TAG) (manual single-binary draft — complete via CI artifacts before publishing)" --draft $$PRE
+	@echo "Draft created. Next: make release-upload-assets TAG=$(TAG) FILES='...' then make verify-release-completeness TAG=$(TAG) before un-drafting."
+
+# Upload additional assets to an EXISTING GitHub Release — the repair path for
+# an incomplete release (no other target can add assets after publish).
+# --clobber replaces same-name assets so re-runs are idempotent.
+# Usage: make release-upload-assets TAG=v0.1.0-beta.1 FILES='dist/a.tar.gz dist/b.deb'
+release-upload-assets:
+	@[ -n "$(TAG)" ] || { echo "Usage: make release-upload-assets TAG=v0.1.0-beta.1 FILES='<paths>'"; exit 1; }
+	@[ -n "$(FILES)" ] || { echo "Usage: make release-upload-assets TAG=v0.1.0-beta.1 FILES='<paths>'"; exit 1; }
+	@gh release upload "$(TAG)" -R sandboxcom/gludd $(FILES) --clobber
+	@$(MAKE) -s release-view TAG=$(TAG)
+
+# Mark an existing release as a prerelease (repair path: -alpha/-beta/-rc tags
+# must carry the prerelease flag; verify-release-completeness enforces this).
+# Usage: make release-set-prerelease TAG=v0.1.0-beta.1
+release-set-prerelease:
+	@[ -n "$(TAG)" ] || { echo "Usage: make release-set-prerelease TAG=v0.1.0-beta.1"; exit 1; }
+	@gh release edit "$(TAG)" -R sandboxcom/gludd --prerelease
+	@$(MAKE) -s release-view TAG=$(TAG)
 
 ci-faillog:
 	@if [ -z "$(RUN)" ]; then echo "Usage: make ci-faillog RUN=<id>"; exit 1; fi
@@ -2894,7 +2927,90 @@ dist: build-executable bundle-binaries sbom
 	@echo "Checksum: dist/$(TARBALL_NAME).tar.gz.sha256"
 
 dist-clean:
-	@rm -rf dist/general-ludd-agent-* dist/hottentot-agent-* dist/gludd dist/hottentot build
+	@rm -rf dist/general-ludd-agent-* dist/hottentot-agent-* dist/gludd dist/hottentot dist/deb-root dist/gludd_*.deb dist/gludd_*.deb.sha256 build
+
+deb-package:
+	@echo "=== Building .deb package ==="
+	@which dpkg-deb >/dev/null 2>&1 || (echo "ERROR: dpkg-deb not found. This target requires a Debian-based system."; exit 1)
+	@mkdir -p dist/deb-root/DEBIAN dist/deb-root/usr/bin
+	@cp dist/gludd dist/deb-root/usr/bin/gludd
+	@chmod 755 dist/deb-root/usr/bin/gludd
+	@sed "s/VERSION_PLACEHOLDER/$(VERSION)/" dist/debian/control > dist/deb-root/DEBIAN/control
+	@dpkg-deb --build dist/deb-root "dist/gludd_$(VERSION)_amd64.deb"
+	@sha256sum "dist/gludd_$(VERSION)_amd64.deb" > "dist/gludd_$(VERSION)_amd64.deb.sha256"
+	@echo "=== .deb built: dist/gludd_$(VERSION)_amd64.deb ==="
+
+deb-install-deps:
+	@echo "=== Installing .deb package dependencies ==="
+	@grep '^Depends:' dist/debian/control | sed 's/^Depends: //' | tr ',' '\n' | sed 's/^ *//;s/ .*//' | xargs -r sudo apt-get install -y
+
+rpm-package:
+	@echo "=== Building .rpm package ==="
+	@which rpmbuild >/dev/null 2>&1 || (echo "ERROR: rpmbuild not found. Install rpm-build package."; exit 1)
+	@mkdir -p dist/rpm /tmp/gludd-rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
+	@cp dist/gludd /tmp/gludd-rpmbuild/SOURCES/gludd
+	@sed "s/VERSION_PLACEHOLDER/$(VERSION)/g" dist/rpm/gludd.spec > /tmp/gludd-rpmbuild/SPECS/gludd.spec
+	@rpmbuild -bb --define "_topdir /tmp/gludd-rpmbuild" /tmp/gludd-rpmbuild/SPECS/gludd.spec
+	@RPM_FILE=$$(ls /tmp/gludd-rpmbuild/RPMS/x86_64/gludd-*.rpm 2>/dev/null | head -1); \
+	if [ -z "$$RPM_FILE" ]; then echo "ERROR: rpmbuild produced no .rpm"; exit 1; fi; \
+	cp "$$RPM_FILE" "dist/gludd-$(VERSION)-1.x86_64.rpm"; \
+	sha256sum "dist/gludd-$(VERSION)-1.x86_64.rpm" > "dist/gludd-$(VERSION)-1.x86_64.rpm.sha256"; \
+	rm -rf /tmp/gludd-rpmbuild
+	@echo "=== .rpm built: dist/gludd-$(VERSION)-1.x86_64.rpm ==="
+
+# --- macOS .dmg packaging ---
+# Builds a read-only compressed .dmg from the PyInstaller binary.
+# Only runs on macOS (requires hdiutil).
+DMG_NAME := gludd-$(VERSION)-macos-arm64.dmg
+DMG_VOLUME := gludd-install
+macos-dmg: build-executable
+	@if [ "$$(uname -s)" != "Darwin" ]; then echo "macos-dmg requires macOS (hdiutil)"; exit 1; fi
+	@echo "Building $(DMG_NAME)..."
+	@rm -f dist/$(DMG_NAME)
+	@mkdir -p dist/dmg-staging
+	@cp dist/gludd dist/dmg-staging/gludd
+	@cp -r config dist/dmg-staging/config
+	@cp -r templates dist/dmg-staging/templates
+	@cp -r playbooks dist/dmg-staging/playbooks
+	@cp dist/install.sh dist/dmg-staging/install.sh 2>/dev/null || true
+	@hdiutil create -fs HFS+ -volname $(DMG_VOLUME) -srcfolder dist/dmg-staging -format UDZO dist/$(DMG_NAME)
+	@rm -rf dist/dmg-staging
+	@shasum -a 256 dist/$(DMG_NAME) > dist/$(DMG_NAME).sha256
+	@echo "Created dist/$(DMG_NAME)"
+	@echo "Checksum: dist/$(DMG_NAME).sha256"
+
+# --- Windows NSIS installer ---
+# Creates a Windows installer .exe from the PyInstaller binary.
+# Requires makensis (NSIS). Install: brew install makensis or apt install nsis.
+NSI_SCRIPT := dist/windows/gludd.nsi
+WINDOWS_INSTALLER := gludd-$(VERSION)-setup-x86_64.exe
+windows-installer:
+	@if ! command -v makensis >/dev/null 2>&1; then echo "windows-installer requires makensis (NSIS). Install: brew install makensis or apt install nsis"; exit 1; fi
+	@echo "Building $(WINDOWS_INSTALLER)..."
+	@mkdir -p dist/windows
+	@$(UV) run python -c "import shutil; shutil.copy('dist/gludd', 'dist/windows/gludd.exe')" 2>/dev/null || true
+	@makensis -DVERSION=$(VERSION) -DBUILDDIR=dist $(NSI_SCRIPT)
+	@shasum -a 256 dist/$(WINDOWS_INSTALLER) > dist/$(WINDOWS_INSTALLER).sha256
+	@echo "Created dist/$(WINDOWS_INSTALLER)"
+	@echo "Checksum: dist/$(WINDOWS_INSTALLER).sha256"
+
+# --- Build all release platform packages locally for testing ---
+# Calls all packaging targets. Each is skipped if the host lacks the tool.
+release-artifacts: build-executable
+	@echo "=== Building all platform packages for testing ==="
+	@echo "  Platform: $$(uname -s)-$$(uname -m)"
+	@echo ""
+	@# macOS .dmg
+	@if [ "$$(uname -s)" = "Darwin" ]; then $(MAKE) -s macos-dmg; else echo "[skip] macOS .dmg (requires macOS)"; fi
+	@# Windows NSIS installer
+	@if command -v makensis >/dev/null 2>&1; then $(MAKE) -s windows-installer; else echo "[skip] Windows installer (makensis not found)"; fi
+	@# Linux .deb
+	@if command -v dpkg-deb >/dev/null 2>&1; then $(MAKE) -s deb-package; else echo "[skip] .deb (dpkg-deb not found)"; fi
+	@# Linux .rpm
+	@if command -v rpmbuild >/dev/null 2>&1; then $(MAKE) -s rpm-package; else echo "[skip] .rpm (rpmbuild not found)"; fi
+	@echo ""
+	@echo "=== release-artifacts complete ==="
+	@ls -la dist/*.dmg dist/*.deb dist/*.rpm dist/*-setup*.exe 2>/dev/null || echo "(some artifacts skipped — this is normal)"
 
 bundle-binaries: bundle-ripgrep
 	@echo "Bundling OpenBao and OpenTofu binaries into dist/binaries..."
@@ -2912,10 +3028,10 @@ RG_VERSION ?= 14.1.1
 RG_PLATFORM ?= x86_64-unknown-linux-musl
 RG_ARCHIVE := ripgrep-$(RG_VERSION)-$(RG_PLATFORM).tar.gz
 RG_URL := https://github.com/BurntSushi/ripgrep/releases/download/$(RG_VERSION)/$(RG_ARCHIVE)
-# TODO: fill in the real sha256 of $(RG_ARCHIVE) for $(RG_VERSION)/$(RG_PLATFORM).
-# Obtain it from the release page / `shasum -a 256 $(RG_ARCHIVE)`. Until set to a
-# real value, bundle-ripgrep fails closed (the placeholder will never verify).
-RG_SHA256 ?= 0000000000000000000000000000000000000000000000000000000000000000
+# Official digest from the ripgrep release asset $(RG_ARCHIVE).sha256
+# (github.com/BurntSushi/ripgrep/releases/tag/$(RG_VERSION)). Update alongside
+# RG_VERSION/RG_PLATFORM; a mismatch fails closed and nothing is bundled.
+RG_SHA256 ?= 4cf9f2741e6c465ffdb7c26f38056a59e2a2544b51f7cc128ef28337eeae4d8e
 bundle-ripgrep:
 	@echo "Bundling ripgrep $(RG_VERSION) ($(RG_PLATFORM)) into dist/binaries/rg..."
 	@mkdir -p dist/binaries
@@ -2932,6 +3048,14 @@ bundle-ripgrep:
 		chmod +x dist/binaries/rg && \
 		echo "  bundled -> dist/binaries/rg" || \
 		{ echo "WARNING: ripgrep bundle failed (network unavailable or sha unset?); search degrades to in-process"; rm -f dist/binaries/rg; }
+
+# Restore specific files from a historical ref into the working tree (files
+# deleted from HEAD can only come back from history; used to recover dist/
+# tarball inputs like install.sh). REF=<sha|ref> FILES='<path> [path ...]'.
+git-restore-from:
+	@if [ -z "$(REF)" ] || [ -z "$(FILES)" ]; then echo "Usage: make git-restore-from REF=<sha> FILES='<paths>'"; exit 1; fi
+	@git checkout $(REF) -- $(FILES)
+	@echo "Restored from $(REF): $(FILES)"
 
 container-build:
 	@if [ -z "$(CONTAINER_RUNTIME)" ]; then echo "ERROR: podman or docker not found"; exit 1; fi

@@ -476,12 +476,22 @@ jobs:
           cd dist/release
           tar czf "../gludd-${VERSION}-linux-x86_64.tar.gz" .
           sha256sum "../gludd-${VERSION}-linux-x86_64.tar.gz" > "../gludd-${VERSION}-linux-x86_64.tar.gz.sha256"
+      - name: Build .deb package
+        run: make deb-package
+      - name: Build RPM package
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq rpm
+          make rpm-package
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
         with:
           name: gludd-linux-x86_64
           path: |
             dist/gludd-${{ env.VERSION }}-linux-x86_64.tar.gz
             dist/gludd-${{ env.VERSION }}-linux-x86_64.tar.gz.sha256
+            dist/gludd_${{ env.VERSION }}_amd64.deb
+            dist/gludd_${{ env.VERSION }}_amd64.deb.sha256
+            dist/gludd-${{ env.VERSION }}-1.x86_64.rpm
+            dist/gludd-${{ env.VERSION }}-1.x86_64.rpm.sha256
 
   macos:
     needs: [version, gate, test-shard]
@@ -511,12 +521,24 @@ jobs:
           cd dist/release
           tar czf "../gludd-${VERSION}-macos-arm64.tar.gz" .
           shasum -a 256 "../gludd-${VERSION}-macos-arm64.tar.gz" > "../gludd-${VERSION}-macos-arm64.tar.gz.sha256"
+      - name: Package .dmg
+        run: |
+          mkdir -p dist/dmg-staging
+          cp dist/gludd dist/dmg-staging/gludd
+          cp -r config dist/dmg-staging/config
+          cp -r templates dist/dmg-staging/templates
+          cp -r playbooks dist/dmg-staging/playbooks
+          hdiutil create -fs HFS+ -volname gludd-install -srcfolder dist/dmg-staging -format UDZO "dist/gludd-${VERSION}-macos-arm64.dmg"
+          rm -rf dist/dmg-staging
+          shasum -a 256 "dist/gludd-${VERSION}-macos-arm64.dmg" > "dist/gludd-${VERSION}-macos-arm64.dmg.sha256"
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
         with:
           name: gludd-macos-arm64
           path: |
             dist/gludd-${{ env.VERSION }}-macos-arm64.tar.gz
             dist/gludd-${{ env.VERSION }}-macos-arm64.tar.gz.sha256
+            dist/gludd-${{ env.VERSION }}-macos-arm64.dmg
+            dist/gludd-${{ env.VERSION }}-macos-arm64.dmg.sha256
 
   windows:
     needs: [version, gate, test-shard]
@@ -557,12 +579,22 @@ jobs:
           Copy-Item -r playbooks dist/release/playbooks
           Compress-Archive -Path dist/release/* -DestinationPath "dist/gludd-$env:VERSION-windows-x86_64.zip"
           certutil -hashfile "dist/gludd-$env:VERSION-windows-x86_64.zip" SHA256 > "dist/gludd-$env:VERSION-windows-x86_64.zip.sha256"
+      - name: Build NSIS installer
+        shell: pwsh
+        run: |
+          choco install nsis -y --no-progress
+          mkdir -p dist/windows
+          Copy-Item dist/gludd.exe dist/windows/gludd.exe
+          makensis -DVERSION="$env:VERSION" -DBUILDDIR="dist" dist/windows/gludd.nsi
+          certutil -hashfile "dist/gludd-$env:VERSION-setup-x86_64.exe" SHA256 > "dist/gludd-$env:VERSION-setup-x86_64.exe.sha256"
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
         with:
           name: gludd-windows-x86_64
           path: |
             dist/gludd-${{ env.VERSION }}-windows-x86_64.zip
             dist/gludd-${{ env.VERSION }}-windows-x86_64.zip.sha256
+            dist/gludd-${{ env.VERSION }}-setup-x86_64.exe
+            dist/gludd-${{ env.VERSION }}-setup-x86_64.exe.sha256
 
   termux:
     needs: [version, gate, test-shard]
@@ -771,21 +803,20 @@ jobs:
           prerelease: ${{ contains(github.ref_name, '-') }}
           files: release-assets/*
           generate_release_notes: true
-      - name: Verify release has assets
-        # Fail loudly if the release has fewer than 4 assets (platform tarballs
-        # + SBOM + licenses) — catches the "tag exists but no artifacts" failure
-        # mode that shipped alpha.2 and alpha.3 as false releases.
+      - name: Verify release completeness (blocking)
+        # Single source of truth for "the release actually shipped": the same
+        # scripts/verify_release_completeness.py used locally checks every
+        # artifact category (4 platform binaries, .deb/.rpm/.dmg/.exe,
+        # checksums, SBOM, licenses), the >=12 asset floor, the prerelease
+        # flag vs tag shape, version-stamped names, and zero-size assets.
+        # Replaces the old inline `assets | length >= 6` check, whose threshold
+        # had drifted from the verifier's and which counted names only —
+        # 6 .sha256 files and no binaries would have passed. v0.1.0-beta.1
+        # shipped with 1 asset because no completeness check ran in CI at all.
         # GH_TOKEN is REQUIRED: a bare `run:` gh call is unauthenticated and
-        # aborts with exit 4 (gh auth error) BEFORE counting — which false-RED'd
-        # the v0.1.0-alpha.5 release even though 12 assets published fine.
+        # aborts before checking (the false-RED that hit v0.1.0-alpha.5).
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          ASSET_COUNT=$(gh release view ${{ github.ref_name }} --json assets --jq '.assets | length')
-          echo "Release ${{ github.ref_name }} has $ASSET_COUNT assets"
-          if [ "$ASSET_COUNT" -lt 4 ]; then
-            echo "ERROR: Release has only $ASSET_COUNT assets (expected >= 4)"
-            gh release view ${{ github.ref_name }} --json assets --jq '.assets[].name'
-            exit 1
-          fi
-          echo "OK: release has $ASSET_COUNT assets"
+          uv run python scripts/verify_release_completeness.py \
+            ${{ github.ref_name }} ${{ github.repository }}

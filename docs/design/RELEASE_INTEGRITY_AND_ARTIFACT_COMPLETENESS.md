@@ -1,0 +1,138 @@
+# Release Integrity & Artifact Completeness — spec + incident record
+
+Status: ACTIVE (2026-07-14) — audit complete; several requirements implemented
+in the working tree this session (marked ✅/🔧 below), remainder specced for
+the next release.
+Owner: release engineering
+Motivating incident: v0.1.0-beta.1 (published 2026-07-14T18:40:54Z).
+
+## 1. Problem statement (verified evidence)
+
+The v0.1.0-beta.1 GitHub release shipped **incomplete and against a RED
+pipeline**, despite the repo having both a `require-ci-green` gate and a
+release-completeness verifier:
+
+- `make verify-release-completeness TAG=v0.1.0-beta.1` →
+  `COMPLETENESS CHECK: FAIL — 13 check(s) failed.` The release carries **1
+  asset** (`gludd`, 54,882,160 bytes) of a required **≥ 12**.
+- The tag resolves to commit `260923839e58a022d4c95ccbeba96ca600403d11`;
+  `make ci-verdict SHA=26092383…` → `CI RED` (run 29351112456,
+  conclusion=failure). No "Build and Release" run in recent history is green.
+- The release was marked `prerelease=False` despite the `-beta` tag
+  (🔧 FIXED live 2026-07-14: `make release-set-prerelease TAG=v0.1.0-beta.1`
+  → `prerelease=True`, output pasted in session log).
+- Local `dist/` contained build **inputs** but not outputs; the tarball inputs
+  `dist/install.sh`, `dist/README.md`, `dist/general-ludd.service` had been
+  deleted from the tree entirely (🔧 RESTORED from history via new
+  `git-restore-from` target; `make dist` now completes, exit 0).
+
+Audit-confirmed root causes (verifier/CI wiring review, file:line verified):
+
+1. **The verifier ran nowhere.** Neither `verify_release_completeness.py` nor
+   `make verify-release-completeness` appeared anywhere in the 824-line
+   `.github/workflows/build.yml`; `release-cut`/`release-recut` polled only
+   `verify-release-artifact` (non-draft + ≥1 asset).
+2. **`release-create` was fully ungated**: no CI gate, single binary, swallowed
+   `gh release create` failures via `|| echo "release-create-failed"`, no
+   `--prerelease`. This is the path beta.1 shipped through.
+3. **Threshold drift**: CI's inline check demanded ≥6 assets (names uncounted —
+   six `.sha256` files would pass) while the verifier demanded ≥12.
+4. **`release-recut` had no `require-ci-green` at all** despite re-pushing tags.
+5. **Non-blocking artifact jobs**: `windows` (build.yml:551) and `termux` (:605)
+   are `continue-on-error: true`, so a release could publish without their
+   artifacts and still pass the old inline check.
+6. `bundle-ripgrep` sha pin was an all-zeros placeholder → ripgrep never
+   bundled (fail-closed) since introduction.
+7. Verifier `_resolve_repo` used `rstrip(".git")` (char-set strip, latent
+   mangling bug) and never checked `isPrerelease`, version-match, or sizes.
+
+## 2. Requirements and status
+
+**R-1 — No ungated publish path.** ✅ IMPLEMENTED (this session):
+`release-create` now runs `require-ci-green`, publishes **draft-only** with
+`--prerelease` auto-set for hyphen tags, and no longer swallows errors;
+`release-recut` now runs `require-ci-green SHA=$(git rev-parse TAG^{commit})`;
+both `release-cut` and `release-recut` now finish by running
+`verify-release-completeness` (exit code propagated) instead of stopping at
+the ≥1-asset check. REMAINING (next release): a test harness for these targets
+(dry-run mode or script extraction) so gate regressions are caught by CI.
+
+**R-2 — CI builds the full artifact matrix on tag push.** PARTIAL: the
+uncommitted build.yml adds .deb/.rpm/.dmg/.exe jobs with upload paths that
+match the Makefile outputs and verifier categories. REMAINING: decide policy
+for `continue-on-error` on `windows`/`termux` — either make them blocking for
+tag builds, or accept that the completeness verifier fails the release job
+loudly when their artifacts are missing (current behavior after R-3).
+
+**R-3 — Completeness verification is a blocking CI job.** ✅ IMPLEMENTED
+(this session): the release job's inline `assets|length >= 6` step is replaced
+by `uv run python scripts/verify_release_completeness.py <tag> <repo>`
+(GH_TOKEN provided). REMAINING (next release): mark the release **draft**
+before verification and un-draft only on PASS, so an incomplete release is
+never publicly visible even transiently.
+
+**R-4 — Asset repair path.** ✅ IMPLEMENTED: `make release-upload-assets
+TAG=… FILES=…` (idempotent via `--clobber`) + `make release-set-prerelease
+TAG=…`. Provenance rule: only CI-built artifacts from the tagged SHA may be
+uploaded to a tagged release — never locally-built binaries from a different
+tree (this is why beta.1 was NOT back-filled from the local dist this session).
+
+**R-5 — Checksums, SBOM, licenses as first-class dist outputs.** PARTIAL:
+`make dist` emits per-tarball `.sha256`, `dist/sbom.json`, and packs
+LICENSE/THIRD_PARTY_LICENSES into the tarball; CI aggregates `SHA256SUMS`.
+REMAINING: `make dist` should also emit a top-level `SHA256SUMS` covering all
+artifacts so local and CI layouts match the verifier identically.
+
+**R-6 — Prerelease flag correctness.** ✅ IMPLEMENTED: verifier now fails when
+`isPrerelease` mismatches the tag shape (`-alpha|-beta|-rc`); `release-create`
+sets `--prerelease` for hyphen tags; CI already did
+(`prerelease: contains(ref_name, '-')`). beta.1's flag corrected live.
+
+**R-7 — Verifier hardening.** PARTIAL (this session): added prerelease-flag
+check, version-stamped-asset check, zero-size-asset check; fixed
+`removesuffix(".git")`; queries `isPrerelease`. Tests now exercise the real
+`check_completeness()` via mocked gh JSON: 34 passed
+(`make test-iso TESTFILE=tests/unit/test_verify_release_completeness.py`).
+REMAINING (next release):
+  - download + validate checksum-file digests against actual assets;
+  - per-category uniqueness (one asset must not satisfy two categories, e.g.
+    a `.deb` name also matching "linux-x86_64 binary");
+  - container-image (GHCR) parity check with the workflow's `container` job;
+  - signature/provenance verification once artifacts are signed.
+
+**R-8 — Local packaging targets must be version-correct (NEW, from audit).**
+`deb-package`/`rpm-package`/`DMG_NAME`/`WINDOWS_INSTALLER` interpolate
+`$(VERSION)` which only CI sets — a bare local run yields `gludd__amd64.deb`
+with an empty `Version:`. Default `VERSION` from `pyproject.toml` in the
+Makefile. Also: `macos-dmg` hardcodes `-macos-arm64` regardless of host arch;
+`rpm-package` uses a fixed shared `/tmp/gludd-rpmbuild` (concurrent-build
+collision). Effort: S.
+
+**R-9 — Bundled-binary pins stay real (NEW).** 🔧 ripgrep sha fixed this
+session (official `4cf9f274…4d8e`, verified: `shasum -c` OK, bundled).
+REMAINING: osquery macOS asset name 404s
+(`osquery-5.10.2.macos_arm64.tar.gz` does not exist upstream — fix in flight);
+add a CI check that every pinned URL+sha in
+`scripts/download_bundled_binaries.py` and the Makefile actually resolves
+(HEAD request) so dead pins are caught before release week.
+
+## 3. Acceptance criteria (next release)
+
+- `make verify-release-completeness TAG=<next-tag>` prints literal
+  `COMPLETENESS CHECK: PASS` against the published release.
+- CI run for the tag SHA is green before the release is visible non-draft.
+- A deliberate `release-create` on a RED SHA aborts at `require-ci-green`.
+- Beta tags show `Pre-release` on GitHub.
+- `make dist` from a clean checkout completes with every input present in-tree.
+
+## 4. v0.1.0-beta.1 disposition
+
+The published beta.1 (1 asset, RED tagged SHA) cannot be honestly completed:
+the missing 11 artifacts must come from a green CI build of the exact tagged
+SHA, and that SHA is RED. Back-filling with locally-built dev-tree binaries
+would misrepresent provenance. Disposition options (operator decision,
+outward-facing): (a) leave beta.1 as a marked prerelease with a
+release-notes caveat and cut **v0.1.0-beta.2** from the next green SHA through
+the now-gated pipeline (RECOMMENDED); (b) `make release-recut TAG=v0.1.0-beta.1`
+only if its exact SHA is first made green. Pipeline fixes in this tree make
+either path fail-closed.

@@ -40,6 +40,18 @@ EXPECTED_CATEGORIES: dict[str, Callable[[set[str]], bool]] = {
         or re.search(r"win(dows)?.*(x86[._-]?64|amd64)", n, re.IGNORECASE)
         for n in a
     ),
+    ".deb (amd64)": lambda a: any(
+        re.search(r"\.deb$", n, re.IGNORECASE) for n in a
+    ),
+    ".rpm (x86_64)": lambda a: any(
+        re.search(r"\.rpm$", n, re.IGNORECASE) for n in a
+    ),
+    ".dmg (macOS)": lambda a: any(
+        re.search(r"\.dmg$", n, re.IGNORECASE) for n in a
+    ),
+    ".exe installer (Windows)": lambda a: any(
+        re.search(r"installer.*\.exe$|setup.*\.exe$|gludd.*install.*\.exe$", n, re.IGNORECASE) for n in a
+    ),
     "checksums": lambda a: any(
         re.search(r"(checksums?|SHA256SUMS|sha256)|\.sha256(\.txt)?", n, re.IGNORECASE)
         for n in a
@@ -55,7 +67,19 @@ EXPECTED_CATEGORIES: dict[str, Callable[[set[str]], bool]] = {
     ),
 }
 
-MIN_ASSETS = 8  # 4 platform builds + 1 checksum + 1 SBOM + 2 docs
+MIN_ASSETS = 12  # 4 platform tarballs + .deb + .rpm + .dmg + .exe installer + checksums + SBOM + 2 docs
+
+PRERELEASE_RE = re.compile(r"-(alpha|beta|rc)", re.IGNORECASE)
+
+
+def expected_prerelease(tag: str) -> bool:
+    """A -alpha/-beta/-rc tag must be published with the prerelease flag set."""
+    return bool(PRERELEASE_RE.search(tag))
+
+
+def version_from_tag(tag: str) -> str:
+    """'v0.1.0-beta.1' -> '0.1.0-beta.1' (artifact filenames embed this)."""
+    return tag[1:] if tag.startswith("v") else tag
 
 
 def _run(cmd: list[str]) -> tuple[int, str, str]:
@@ -78,7 +102,7 @@ def _resolve_repo() -> str:
     """Return 'owner/repo' from the sandboxcom remote, or the fallback."""
     rc, out, _ = _run(["git", "remote", "get-url", "sandboxcom"])
     if rc == 0 and out:
-        url = out.rstrip(".git")
+        url = out.removesuffix(".git")
         if "github.com:" in url:
             return url.split("github.com:")[-1]
         if "github.com/" in url:
@@ -97,7 +121,7 @@ def check_completeness(tag: str, repo: str) -> int:
     rc, out, err = _run([
         "gh", "release", "view", tag,
         "-R", repo,
-        "--json", "tagName,isDraft,assets,url,publishedAt",
+        "--json", "tagName,isDraft,isPrerelease,assets,url,publishedAt",
     ])
 
     if rc != 0:
@@ -114,13 +138,16 @@ def check_completeness(tag: str, repo: str) -> int:
         return 1
 
     is_draft = d.get("isDraft", True)
+    is_prerelease = bool(d.get("isPrerelease", False))
     assets = d.get("assets", [])
     asset_names = {a.get("name", "") for a in assets}
+    resolved_tag = d.get("tagName", tag)
 
-    print(f"  tag          : {d.get('tagName', tag)}")
+    print(f"  tag          : {resolved_tag}")
     print(f"  url          : {d.get('url', '(unknown)')}")
     print(f"  published_at : {d.get('publishedAt', '(unknown)')}")
     print(f"  isDraft      : {is_draft}")
+    print(f"  isPrerelease : {is_prerelease}")
     print(f"  total assets : {len(assets)}")
     print()
 
@@ -132,6 +159,7 @@ def check_completeness(tag: str, repo: str) -> int:
         print("COMPLETENESS CHECK: FAIL — zero assets on this release.")
         return 1
 
+    total = len(EXPECTED_CATEGORIES)
     missing = 0
     for label, check_fn in EXPECTED_CATEGORIES.items():
         if check_fn(asset_names):
@@ -141,6 +169,7 @@ def check_completeness(tag: str, repo: str) -> int:
             missing += 1
 
     print()
+    total += 1
     if len(assets) < MIN_ASSETS:
         print(
             f"  FAIL  minimum asset count: expected >= {MIN_ASSETS}, "
@@ -150,6 +179,38 @@ def check_completeness(tag: str, repo: str) -> int:
     else:
         print(f"  PASS  minimum asset count: {len(assets)} >= {MIN_ASSETS}")
 
+    total += 1
+    want_prerelease = expected_prerelease(resolved_tag)
+    if is_prerelease != want_prerelease:
+        print(
+            f"  FAIL  prerelease flag: tag '{resolved_tag}' requires "
+            f"isPrerelease={want_prerelease}, release has {is_prerelease}"
+        )
+        missing += 1
+    else:
+        print(f"  PASS  prerelease flag matches tag ({is_prerelease})")
+
+    total += 1
+    version = version_from_tag(resolved_tag)
+    if any(version in n for n in asset_names):
+        print(f"  PASS  version-stamped asset present ({version})")
+    else:
+        print(
+            f"  FAIL  no asset name contains the tag version '{version}' "
+            "— artifacts may be from a different build"
+        )
+        missing += 1
+
+    total += 1
+    empty_assets = sorted(
+        a.get("name", "(unnamed)") for a in assets if a.get("size") == 0
+    )
+    if empty_assets:
+        print(f"  FAIL  zero-size assets: {', '.join(empty_assets)}")
+        missing += 1
+    else:
+        print("  PASS  no zero-size assets")
+
     print()
     print("Asset names found:")
     for a in sorted(asset_names):
@@ -157,7 +218,7 @@ def check_completeness(tag: str, repo: str) -> int:
 
     print()
     if missing == 0:
-        print(f"COMPLETENESS CHECK: PASS — all {len(EXPECTED_CATEGORIES) + 1} checks passed.")
+        print(f"COMPLETENESS CHECK: PASS — all {total} checks passed.")
         return 0
     else:
         print(f"COMPLETENESS CHECK: FAIL — {missing} check(s) failed.")
