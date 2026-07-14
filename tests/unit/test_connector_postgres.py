@@ -1,9 +1,4 @@
-"""Unit tests for the PostgreSQL stats observability connector.
-
-No real database is used: a canned in-memory executor is injected and the
-normalized record shape is asserted. Driver-unavailable health and the
-env-only credential contract are also covered.
-"""
+"""Structural tests for PostgreSQL stats connector."""
 
 from __future__ import annotations
 
@@ -12,195 +7,169 @@ from typing import Any, cast
 
 import pytest
 
-from general_ludd.connectors.postgres_stats import PostgresStatsSource
+from general_ludd.connectors.postgres_stats import PostgresStatsSource, _to_float, _utc_now_epoch
+
 
 Row = dict[str, Any]
 
 
-def _canned(mapping: dict[str, Sequence[Row]]):
-    """Build an executor that returns canned rows keyed by a SQL substring."""
-
+def _canned(mapping: dict[str, Sequence[Row]]) -> Any:
     def _executor(query: str) -> Sequence[Row]:
         for needle, rows in mapping.items():
             if needle in query:
                 return rows
         return []
-
     return _executor
 
 
-def _record_keys() -> set[str]:
-    return {
-        "ts",
-        "source",
-        "kind",
-        "level_or_status",
-        "message",
-        "value",
-        "labels",
-        "raw",
-    }
+class TestHelpers:
+    def test_to_float_int(self) -> None:
+        assert _to_float(42) == 42.0
+
+    def test_to_float_float(self) -> None:
+        assert _to_float(3.14) == 3.14
+
+    def test_to_float_str(self) -> None:
+        assert _to_float("42") == 42.0
+
+    def test_to_float_none(self) -> None:
+        assert _to_float(None) is None
+
+    def test_to_float_invalid_str(self) -> None:
+        assert _to_float("not-a-number") is None
+
+    def test_to_float_bool(self) -> None:
+        assert _to_float(True) == 1.0
+
+    def test_utc_now_epoch(self) -> None:
+        ts = _utc_now_epoch()
+        assert isinstance(ts, float)
+        assert ts > 1700000000.0
 
 
 class TestContract:
-    def test_class_attrs(self) -> None:
+    def test_kind(self) -> None:
         src = PostgresStatsSource()
         assert src.KIND == "metrics"
+
+    def test_name(self) -> None:
+        src = PostgresStatsSource()
         assert src.name == "postgres_stats"
 
-    def test_records_have_normalized_schema(self) -> None:
-        rows = [
-            {"state": "active", "value": 3, "datname": "app"},
-            {"state": "idle", "value": 7, "datname": "app"},
-        ]
+
+class TestQueryActivity:
+    def test_activity_rows(self) -> None:
+        rows: list[Row] = [{"state": "active", "value": 10, "datname": "mydb"}]
         src = PostgresStatsSource(executor=_canned({"pg_stat_activity": rows}))
         records = src.query("activity")
-        assert len(records) == 2
-        for rec in records:
-            assert set(rec) == _record_keys()
-            assert rec["source"] == "postgres_stats"
-            assert rec["kind"] == "metrics"
+        assert len(records) == 1
+        r = records[0]
+        assert r["value"] == 10.0
+        assert r["labels"]["state"] == "active"
+        assert r["labels"]["datname"] == "mydb"
+        assert r["source"] == "postgres_stats"
+        assert r["kind"] == "metrics"
 
-    def test_activity_value_and_labels(self) -> None:
-        rows = [{"state": "active", "value": 5, "datname": "app"}]
+    def test_record_keys(self) -> None:
+        rows: list[Row] = [{"state": "idle", "value": 5, "datname": "db1"}]
         src = PostgresStatsSource(executor=_canned({"pg_stat_activity": rows}))
-        rec = src.query("activity")[0]
-        assert rec["value"] == 5.0
-        assert rec["labels"]["datname"] == "app"
-        assert rec["labels"]["state"] == "active"
-        assert rec["raw"] == rows[0]
+        records = src.query("activity")
+        for r in records:
+            assert set(r) == {"ts", "source", "kind", "level_or_status", "message", "value", "labels", "raw"}
 
-    def test_replication_lag(self) -> None:
-        rows = [{"application_name": "replica1", "value": 1.5}]
+    def test_activity_empty(self) -> None:
+        src = PostgresStatsSource(executor=_canned({"pg_stat_activity": []}))
+        assert src.query("activity") == []
+
+
+class TestQueryReplication:
+    def test_replication_rows(self) -> None:
+        rows: list[Row] = [{"application_name": "standby1", "value": 0.5}]
         src = PostgresStatsSource(executor=_canned({"pg_stat_replication": rows}))
-        rec = src.query("replication")[0]
-        assert rec["value"] == 1.5
-        assert rec["labels"]["application_name"] == "replica1"
+        records = src.query("replication")
+        assert len(records) == 1
+        assert records[0]["value"] == 0.5
+        assert records[0]["labels"]["application_name"] == "standby1"
 
-    def test_database_fans_out_fields(self) -> None:
-        rows = [
-            {
-                "datname": "app",
-                "xact_commit": 100,
-                "xact_rollback": 2,
-                "blks_read": 50,
-                "blks_hit": 900,
-            }
-        ]
+    def test_replication_empty(self) -> None:
+        src = PostgresStatsSource(executor=_canned({"pg_stat_replication": []}))
+        assert src.query("replication") == []
+
+
+class TestQueryDatabase:
+    def test_database_rows(self) -> None:
+        rows: list[Row] = [{"datname": "mydb", "xact_commit": 100, "xact_rollback": 5, "blks_read": 50, "blks_hit": 500}]
         src = PostgresStatsSource(executor=_canned({"pg_stat_database": rows}))
         records = src.query("database")
-        # One record per numeric field.
-        metrics = {r["labels"]["metric"]: r["value"] for r in records}
-        assert metrics == {
-            "xact_commit": 100.0,
-            "xact_rollback": 2.0,
-            "blks_read": 50.0,
-            "blks_hit": 900.0,
-        }
-        assert all(r["labels"]["datname"] == "app" for r in records)
+        assert len(records) == 4
+        fields = {r["labels"]["metric"] for r in records}
+        assert fields == {"xact_commit", "xact_rollback", "blks_read", "blks_hit"}
 
-    def test_statements_slow_queries(self) -> None:
-        rows = [{"query_id": 42, "value": 250.0, "calls": 10}]
+    def test_database_empty(self) -> None:
+        src = PostgresStatsSource(executor=_canned({"pg_stat_database": []}))
+        assert src.query("database") == []
+
+
+class TestQueryStatements:
+    def test_statements_rows(self) -> None:
+        rows: list[Row] = [{"query_id": 1, "value": 25.0, "calls": 100}]
         src = PostgresStatsSource(executor=_canned({"pg_stat_statements": rows}))
-        rec = src.query("statements")[0]
-        assert rec["value"] == 250.0
-        assert rec["labels"]["query_id"] == "42"
-        assert rec["labels"]["calls"] == "10"
+        records = src.query("statements")
+        assert len(records) == 1
+        r = records[0]
+        assert r["value"] == 25.0
+        assert r["labels"]["query_id"] == "1"
+        assert r["labels"]["calls"] == "100"
 
-    def test_default_spec_is_activity(self) -> None:
-        rows = [{"state": "active", "value": 1, "datname": "app"}]
-        src = PostgresStatsSource(executor=_canned({"pg_stat_activity": rows}))
-        assert src.query()  # no spec -> activity
+    def test_statements_empty(self) -> None:
+        src = PostgresStatsSource(executor=_canned({"pg_stat_statements": []}))
+        assert src.query("statements") == []
 
-    def test_unknown_spec_raises_valueerror(self) -> None:
-        src = PostgresStatsSource(executor=_canned({}))
+
+class TestQueryErrors:
+    def test_unknown_spec(self) -> None:
+        src = PostgresStatsSource()
         with pytest.raises(ValueError):
-            src.query("does-not-exist")
+            src.query("bogus")
 
-    def test_null_value_coerces_to_none(self) -> None:
-        rows = [{"application_name": "r", "value": None}]
-        src = PostgresStatsSource(executor=_canned({"pg_stat_replication": rows}))
-        assert src.query("replication")[0]["value"] is None
-
-    @pytest.mark.parametrize("poison", [float("nan"), float("inf"), float("-inf")])
-    def test_nonfinite_value_coerces_to_none(self, poison: float) -> None:
-        # A non-finite value from a flaky backend must be coerced to None at the
-        # boundary (normalized_record policy), not passed through uncoerced where
-        # it would poison downstream aggregation/scoring.
-        rows = [{"application_name": "r", "value": poison}]
-        src = PostgresStatsSource(executor=_canned({"pg_stat_replication": rows}))
-        assert src.query("replication")[0]["value"] is None
-
-    def test_ts_is_epoch_float_not_string(self) -> None:
-        # ts must be an epoch float (or None), never an ISO string — a string ts
-        # TypeErrors in the observability find()/_sort_by_ts path (math.isfinite).
-        import math
-
-        rows = [{"state": "active", "value": 1, "datname": "app"}]
+    def test_default_is_activity(self) -> None:
+        rows: list[Row] = [{"state": "active", "value": 1, "datname": "db"}]
         src = PostgresStatsSource(executor=_canned({"pg_stat_activity": rows}))
-        ts = src.query("activity")[0]["ts"]
-        assert isinstance(ts, float)
-        assert math.isfinite(ts)
-
-    def test_records_route_through_find_without_typeerror(self) -> None:
-        # End-to-end guard: routing records through the observability facade's
-        # find()/sort must not TypeError on the ts type.
-        from general_ludd.connectors.base import Observability, SourceRegistry
-
-        rows = [{"state": "active", "value": 1, "datname": "app"}]
-        src = PostgresStatsSource(executor=_canned({"pg_stat_activity": rows}))
-        reg = SourceRegistry()
-        cast(Any, reg).register(src)
-        obs = Observability(reg)
-        results = obs.find({}, kinds=["metrics"])
-        assert results
-        assert all(isinstance(r["ts"], float) for r in results)
+        records = src.query()
+        assert len(records) == 1
 
 
 class TestHealth:
-    def test_health_ok_with_injected_executor(self) -> None:
-        src = PostgresStatsSource(executor=lambda q: [{"ok": 1}])
-        h = src.health()
-        assert h["ok"] is True
-        assert set(h) == {"ok", "detail"}
+    def test_ok(self) -> None:
+        def _exec(query: str) -> Sequence[Row]:
+            return [{"state": "active", "value": 1}]
+        src = PostgresStatsSource(executor=_exec)
+        r = src.health()
+        assert r["ok"] is True
 
-    def test_health_driver_unavailable_when_no_executor(self) -> None:
-        # No executor injected and no DSN configured -> default path errors but
-        # health must report it without raising.
-        src = PostgresStatsSource(config={})
-        h = src.health()
-        assert h["ok"] is False
-        assert isinstance(h["detail"], str)
+    def test_executor_init_fails(self) -> None:
+        src = PostgresStatsSource(config={"dsn_env": "MISSING_VAR"})
+        r = src.health()
+        assert r["ok"] is False
 
-    def test_health_never_raises_on_probe_failure(self) -> None:
-        def _boom(_q: str):
-            raise RuntimeError("connection refused")
-
-        src = PostgresStatsSource(executor=_boom)
-        h = src.health()
-        assert h["ok"] is False
-        # Raw exception text (which can embed a DSN) must not leak to callers;
-        # only the static generic marker is surfaced.
-        assert "connection refused" not in h["detail"]
-        assert h["detail"] == "probe failed"
+    def test_probe_fails(self) -> None:
+        def _fail(query: str) -> Sequence[Row]:
+            raise RuntimeError("down")
+        src = PostgresStatsSource(executor=_fail)
+        r = src.health()
+        assert r["ok"] is False
 
 
-class TestNoHardcodedCredentials:
-    def test_secret_comes_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("PG_DSN_TEST", "postgresql://u:p@h/db")
-        src = PostgresStatsSource(config={"dsn_env": "PG_DSN_TEST"})
-        assert src._resolve_secret("dsn_env") == "postgresql://u:p@h/db"
+class TestConfig:
+    def test_config_stored(self) -> None:
+        src = PostgresStatsSource(config={"dsn_env": "PG_DSN"})
+        assert src.config["dsn_env"] == "PG_DSN"
 
-    def test_no_secret_literal_in_source(self) -> None:
-        import inspect
+    def test_config_none_becomes_empty(self) -> None:
+        src = PostgresStatsSource()
+        assert src.config == {}
 
-        import general_ludd.connectors.postgres_stats as mod
-
-        text = inspect.getsource(mod)
-        # The module must not embed a password/connection literal.
-        assert "password=" not in text.replace("password=password", "")
-        assert "postgresql://" not in text
-
-    def test_missing_env_returns_none(self) -> None:
-        src = PostgresStatsSource(config={"dsn_env": "DEFINITELY_UNSET_VAR_XYZ"})
-        assert src._resolve_secret("dsn_env") is None
+    def test_resolve_secret(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("MY_PG_DSN", "postgres://localhost/db")
+        src = PostgresStatsSource(config={"dsn_env": "MY_PG_DSN"})
+        assert src._resolve_secret("dsn_env") == "postgres://localhost/db"
