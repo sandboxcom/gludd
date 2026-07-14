@@ -1,6 +1,7 @@
 """Infrastructure — compute, deployment, Slurm, local inference, terraform."""
 
 __all__ = (
+    "WORKLOAD_PROFILES",
     "CloudProvider",
     "ComputeConfig",
     "ComputeEndpoint",
@@ -16,6 +17,8 @@ __all__ = (
     "LocalInferenceManager",
     "LocalServer",
     "LocalServerConfig",
+    "ModelDeploymentProfile",
+    "ModelProfile",
     "ProviderInfo",
     "ProviderRegistry",
     "SecretsResolver",
@@ -28,6 +31,7 @@ __all__ = (
     "TaskRouting",
     "TerraformGenerator",
     "UtilizationTracker",
+    "WorkloadType",
 )
 
 from general_ludd.infra.compute import (
@@ -43,6 +47,12 @@ from general_ludd.infra.cost_tracker import (
     InfraCostTracker,
 )
 from general_ludd.infra.deployment import DeploymentManager, SecretsResolver
+from general_ludd.infra.deployment_optimizer import (
+    WORKLOAD_PROFILES,
+    ModelDeploymentProfile,
+    ModelProfile,
+    WorkloadType,
+)
 from general_ludd.infra.gpu_metrics import GPUMetrics, GPUMetricsCollector
 from general_ludd.infra.local_inference import (
     LocalInferenceManager,

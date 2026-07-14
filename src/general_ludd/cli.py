@@ -566,6 +566,10 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     compute_launch.add_argument("--max-cost", type=float, default=10.0, help="Max cost in USD")
     compute_launch.add_argument("--no-spot", action="store_true", help="Disable spot instances")
     compute_launch.add_argument("--engine", default="vllm", help="Inference engine (vllm or llamacpp)")
+    compute_launch.add_argument("--workload-type", default="",
+                               choices=["batch_inference", "realtime_api", "fine_tuning",
+                                        "speculative_decoding", "embedding_generation"],
+                               help="Workload pattern to optimize deployment for")
     compute_launch.add_argument("--daemon-url", default="http://localhost:8000")
     compute_launch.set_defaults(func=_cmd_compute_launch)
 
@@ -2228,6 +2232,7 @@ def _cmd_compute_launch(args: argparse.Namespace) -> None:
         "max_cost_usd": args.max_cost,
         "spot": not args.no_spot,
         "engine": args.engine,
+        "workload_type": args.workload_type,
     }
     if args.region:
         payload["region"] = args.region

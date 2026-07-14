@@ -29,6 +29,10 @@ from __future__ import annotations
 
 import enum
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from general_ludd.permissions.infra_access import InfraAccessPolicy
 
 # ---------------------------------------------------------------------------
 # ToolAction — the vocabulary of tool verbs
@@ -242,9 +246,29 @@ class PermissionEvaluator:
     3. CapabilityLattice — role must hold the action.
        Skipped when a wildcard (``"*"``) allow rule matched in step 2.
     4. Default-deny.
+
+    Infrastructure deploy/destroy permissions are evaluated through
+    :meth:`may_deploy` / :meth:`may_destroy` which delegate to an
+    :class:`~general_ludd.permissions.infra_access.InfraAccessPolicy`.
     """
 
     lattice: CapabilityLattice
+    infra_policy: InfraAccessPolicy | None = None
+
+    def _get_infra_policy(self) -> InfraAccessPolicy:
+        if self.infra_policy is not None:
+            return self.infra_policy
+        from general_ludd.permissions.infra_access import load_infra_access_policy
+
+        return load_infra_access_policy()
+
+    def may_deploy(self, role: str) -> bool:
+        """Check whether ``role`` may deploy infrastructure."""
+        return self._get_infra_policy().can_deploy(role)
+
+    def may_destroy(self, role: str) -> bool:
+        """Check whether ``role`` may destroy infrastructure."""
+        return self._get_infra_policy().can_destroy(role)
 
     def may_use(
         self,
