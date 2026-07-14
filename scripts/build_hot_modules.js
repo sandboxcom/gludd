@@ -27,7 +27,7 @@ function tsToJs(content) {
     .replace(/import type \{ Plugin \} from "@opencode-ai\/plugin"/g, "// @opencode-ai/plugin (stripped)")
     .replace(/import \* as (\w+) from "node:(\w+)"/g, 'var $1 = require("node:$2");')
     .replace(/import \* as (\w+) from "(\w+)"/g, 'var $1 = require("$2");')
-    .replace(/import \{ ([^}]+) \} from "[^"]+"/g, '// import { $1 } (stripped)')
+    .replace(/import\s*\{\s*([^}]+)\}\s*from\s*"[^"]+"/g, '// import { $1 } (stripped)')
     .replace(/export type \w+\s*=\s*[^;]+;/g, "")
     .replace(/export interface \w+\s*\{[^}]*\}/g, "")
     .replace(/export const /g, "var ")
@@ -192,7 +192,30 @@ function buildPlugin(name) {
   out += `      JSON.stringify({ plugin: pluginName, ts: Date.now(), pid: process.pid }), "utf8");\n`;
   out += `  } catch (e) {}\n`;
   out += `}\n`;
-  out += `var execSync = (function() { var c = require("node:child_process"); return c.execSync; })();\n`;
+  out += `var _childProcess = require("node:child_process");\n`;
+  out += `var execSync = _childProcess.execSync;\n`;
+  out += `var _spawn = _childProcess.spawn;\n`;
+  out += `function spawn(cmd, args, opts) { return _spawn(cmd, args, opts); }\n`;
+  out += `var DISPATCH_TOOLS = ["task", "agent", "workflow"];\n`;
+  out += `var READ_TOOLS = ["read", "grep", "glob"];\n`;
+  out += `function isDispatchTool(tool) { return DISPATCH_TOOLS.includes(tool); }\n`;
+  out += `function isReadTool(tool) { return READ_TOOLS.includes(tool); }\n`;
+  out += `function isDisengaged() {\n`;
+  out += `  try {\n`;
+  out += `    if (!_fs.existsSync("/tmp/gludd-disengage-enforcement")) return false;\n`;
+  out += `    var d = JSON.parse(_fs.readFileSync("/tmp/gludd-disengage-enforcement", "utf8"));\n`;
+  out += `    return typeof d.disengage_until === "number" && d.disengage_until > Date.now();\n`;
+  out += `  } catch (e) { return false; }\n`;
+  out += `}\n`;
+  out += `function readJsonFile(filePath, defaultVal) {\n`;
+  out += `  try {\n`;
+  out += `    if (_fs.existsSync(filePath)) return JSON.parse(_fs.readFileSync(filePath, "utf8"));\n`;
+  out += `  } catch (e) {}\n`;
+  out += `  return defaultVal;\n`;
+  out += `}\n`;
+  out += `function writeJsonFile(filePath, data) {\n`;
+  out += `  try { _fs.writeFileSync(filePath, JSON.stringify(data), "utf8"); } catch (e) {}\n`;
+  out += `}\n`;
   out += `// === end shared stubs ===\n\n`;
 
   // Include everything from the js output EXCEPT the export default block.
