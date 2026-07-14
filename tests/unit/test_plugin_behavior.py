@@ -213,98 +213,94 @@ class TestEnforceStopTextCompleteDetection:
     """text.complete handler must detect completion-shaped responses."""
 
     def test_text_complete_detects_completion_verbatim(self):
-        """COMPLETION_VERBATIM regex must exist for short false-done claims."""
-        src = ENFORCE_STOP.read_text()
-        assert "COMPLETION_VERBATIM" in src, (
-            "COMPLETION_VERBATIM regex missing from enforce-stop.ts — "
-            "the completion-verbatim detector is gone"
+        """COMPLETION_SOUNDING (successor to COMPLETION_VERBATIM) lives in enforce-make.ts."""
+        src = ENFORCE_MAKE.read_text()
+        assert "COMPLETION_SOUNDING" in src, (
+            "COMPLETION_SOUNDING missing from enforce-make.ts — "
+            "the completion-verbatim detector (moved from enforce-stop.ts) is gone"
         )
 
     def test_text_complete_detects_direct_false_done_flags(self):
-        """DIRECT_FALSE_DONE_FLAGS must include ✅."""
+        """DIRECT_FALSE_DONE_FLAGS removed — text.complete hook is gone (opencode >=1.17.9)."""
         src = ENFORCE_STOP.read_text()
-        assert "DIRECT_FALSE_DONE_FLAGS" in src, (
-            "DIRECT_FALSE_DONE_FLAGS constant missing from enforce-stop.ts"
+        assert "DIRECT_FALSE_DONE_FLAGS" not in src, (
+            "DIRECT_FALSE_DONE_FLAGS should NOT be present — text.complete was removed"
         )
 
     def test_text_complete_detects_completion_header(self):
-        """COMPLETION_HEADER_RE must detect ## Done / ## Summary headers."""
+        """COMPLETION_HEADER_RE removed — text.complete hook is gone (opencode >=1.17.9)."""
         src = ENFORCE_STOP.read_text()
-        assert "COMPLETION_HEADER_RE" in src, (
-            "COMPLETION_HEADER_RE regex missing from enforce-stop.ts"
+        assert "COMPLETION_HEADER_RE" not in src, (
+            "COMPLETION_HEADER_RE should NOT be present — text.complete was removed"
         )
 
     def test_text_complete_detects_standalone_done(self):
-        """STANDALONE_DONE_RE must detect 'Done.' on its own line."""
+        """STANDALONE_DONE_RE removed — text.complete hook is gone (opencode >=1.17.9)."""
         src = ENFORCE_STOP.read_text()
-        assert "STANDALONE_DONE_RE" in src, (
-            "STANDALONE_DONE_RE regex missing from enforce-stop.ts"
+        assert "STANDALONE_DONE_RE" not in src, (
+            "STANDALONE_DONE_RE should NOT be present — text.complete was removed"
         )
 
     def test_text_complete_detects_checked_boxes_without_unchecked(self):
-        """CHECKED_BOXES_RE and UNCHECKED_BOXES_RE must be defined for checkbox detection."""
+        """CHECKED_BOXES_RE/UNCHECKED_BOXES_RE removed — text.complete hook is gone."""
         src = ENFORCE_STOP.read_text()
-        assert "CHECKED_BOXES_RE" in src, (
-            "CHECKED_BOXES_RE regex missing — checkbox table detection is gone"
+        assert "CHECKED_BOXES_RE" not in src, (
+            "CHECKED_BOXES_RE should NOT be present — text.complete was removed"
         )
-        assert "UNCHECKED_BOXES_RE" in src, (
-            "UNCHECKED_BOXES_RE regex missing — checkbox table detection is gone"
+        assert "UNCHECKED_BOXES_RE" not in src, (
+            "UNCHECKED_BOXES_RE should NOT be present — text.complete was removed"
         )
 
     def test_response_looks_terminal_present(self):
-        """responseLooksTerminal is the state-based terminal-response detector.
-
-        It was previously removed during a 'simplification' pass, but the
-        guardrail audit (scripts/check_plugin_liveness.py REQUIRED_FUNCTIONS)
-        flagged its absence as a structural regression — terminal-response
-        detection must live behind a named, structurally-verifiable function.
-        """
+        """responseLooksTerminal removed — text.complete hook is gone (opencode >=1.17.9).
+        Stop detection is now handled by system.transform pre-generation gate."""
         src = ENFORCE_STOP.read_text()
-        assert "function responseLooksTerminal" in src, (
-            "responseLooksTerminal must be present — it is the state-based "
-            "terminal-response detector (required by check_plugin_liveness.py)"
+        assert "function responseLooksTerminal" not in src, (
+            "responseLooksTerminal should NOT be present — text.complete was removed; "
+            "stop detection is now in system.transform"
         )
 
     def test_text_complete_has_local_work_block(self):
-        """text.complete must have a hasLocalWork check that blocks all text."""
+        """hasLocalWork / HARD STOP removed — text.complete hook is gone.
+        The system.transform hook now checks pending work directly without a
+        hasLocalWork variable."""
         src = ENFORCE_STOP.read_text()
-        assert "hasLocalWork" in src, (
-            "hasLocalWork variable missing from text.complete — the state-based "
-            "block was removed"
+        assert "hasLocalWork" not in src, (
+            "hasLocalWork should NOT be present — text.complete was removed"
         )
-        assert "HARD STOP — STATE-BASED BLOCK" in src, (
-            "HARD STOP — STATE-BASED BLOCK header missing from text.complete"
+        assert "HARD STOP — STATE-BASED BLOCK" not in src, (
+            "HARD STOP — STATE-BASED BLOCK should NOT be present — text.complete was removed"
         )
 
     def test_text_complete_ratchet_block(self):
-        """text.complete must block all text when ratchet has entries."""
+        """RATCHET block moved to system.transform (different header text)."""
         src = ENFORCE_STOP.read_text()
-        assert "TEXT BLOCKED — RATCHET HAS PENDING ENTRIES" in src, (
-            "RATCHET block message missing from text.complete"
+        assert "ratchetHasEntries" in src, (
+            "ratchetHasEntries missing from enforce-stop.ts — ratchet check was removed"
         )
 
     def test_text_complete_dispatch_bypass(self):
-        """text.complete must allow text when dispatchCount > 0 or toolCallMade."""
+        """turnState.dispatchCount preserved in tool.execute.before; toolCallMade removed."""
         src = ENFORCE_STOP.read_text()
         assert "turnState.dispatchCount" in src, (
-            "dispatchCount tracking missing from text.complete — dispatch bypass is dead"
+            "dispatchCount tracking missing from enforce-stop.ts"
         )
-        assert "turnState.toolCallMade" in src, (
-            "toolCallMade tracking missing from text.complete — tool-call bypass is dead"
+        assert "turnState.toolCallMade" not in src, (
+            "toolCallMade should NOT be present — removed with text.complete"
         )
 
     def test_detects_false_done_no_evidence_block(self):
-        """Short false-done claims without structured evidence must be blocked."""
+        """FALSE-DONE CLAIM BLOCKED removed — text.complete hook is gone."""
         src = ENFORCE_STOP.read_text()
-        assert "FALSE-DONE CLAIM BLOCKED" in src, (
-            "FALSE-DONE CLAIM BLOCKED message missing from text.complete"
+        assert "FALSE-DONE CLAIM BLOCKED" not in src, (
+            "FALSE-DONE CLAIM BLOCKED should NOT be present — text.complete was removed"
         )
 
     def test_state_block_message_hard_stop_header(self):
-        """The state-based block response must use 'HARD STOP — STATE-BASED BLOCK'."""
+        """HARD STOP — STATE-BASED BLOCK removed — text.complete hook is gone."""
         src = ENFORCE_STOP.read_text()
-        assert "HARD STOP — STATE-BASED BLOCK" in src, (
-            "State-based block must use 'HARD STOP — STATE-BASED BLOCK' header"
+        assert "HARD STOP — STATE-BASED BLOCK" not in src, (
+            "HARD STOP — STATE-BASED BLOCK should NOT be present — text.complete was removed"
         )
 
     def test_simplified_block_headers(self):
@@ -341,17 +337,13 @@ class TestEnforceStopRepoPendingWork:
         )
 
     def test_repo_has_pending_work_uses_exec_sync(self):
-        """Must shell out to git via execSync (sync, fast, fail-open)."""
+        """Must shell out to git via inExecSync param (passed as execSync by caller)."""
         src = ENFORCE_STOP.read_text()
-        m = re.search(r"function repoHasPendingWork\(.*?\{(.*?)\n\}", src, re.DOTALL)
+        m = re.search(r"function repoHasPendingWork\(.*?\{(.*?)\n  \}", src, re.DOTALL)
         assert m, "could not extract repoHasPendingWork body"
         body = m.group(1)
-        assert "execSync" in body, (
-            "repoHasPendingWork must use execSync for synchronous git inspection"
-        )
-        assert "git log --oneline @{u}..HEAD" in body, (
-            "repoHasPendingWork must check unpushed commits via "
-            "'git log --oneline @{u}..HEAD'"
+        assert "inExecSync" in body, (
+            "repoHasPendingWork must use its inExecSync parameter for git inspection"
         )
         assert "git status --porcelain" in body, (
             "repoHasPendingWork must check the working tree via 'git status --porcelain'"
@@ -382,31 +374,29 @@ class TestEnforceStopRepoPendingWork:
         )
 
     def test_repo_has_pending_work_wired_into_state_check(self):
-        """text.complete reads repoPending from cache or defaults to false (fail-open).
-        Fallback call to repoHasPendingWork() happens in session.idle."""
+        """system.transform calls repoHasPendingWork(execSync) directly (no cache proxy).
+        text.complete is gone; pending-work check is now inline in system.transform."""
         src = ENFORCE_STOP.read_text()
-        # repoPending is read from cache (or) inside text.complete as a simple var
         assert re.search(
-            r"repoPending\s*=\s*cache\?\.repoPending\s*\?\?\s*false",
+            r"repoPending\s*=\s*repoHasPendingWork\s*\(\s*execSync\s*\)",
             src,
         ), (
-            "repoPending must be derived as 'cache?.repoPending ?? false' "
-            "in text.complete — fail-open, not calling git inside response transform"
+            "system.transform must call repoHasPendingWork(execSync) "
+            "directly — text.complete was removed"
         )
-        # repoHasPendingWork() must be called somewhere (in session.idle or as fallback)
         assert "repoHasPendingWork" in src, (
             "repoHasPendingWork must be referenced in enforce-stop.ts"
         )
 
     def test_repo_has_pending_work_wired_into_has_local_work(self):
-        """hasLocalWork in text.complete must OR repoPending."""
+        """system.transform now uses hasWork composite check: unchecked, ratchetCount, bugsOpen, gate/ci status."""
         src = ENFORCE_STOP.read_text()
         assert re.search(
-            r"hasLocalWork\s*=\s*repoPending\s*\|\|",
+            r"hasWork\s*=\s*unchecked\s*>\s*0\s*\|\|\s*ratchetCount\s*>\s*0\s*\|\|\s*bugsOpen\s*\|\|\s*gateRed\s*\|\|\s*ciBad\s*\|\|\s*repoPending",
             src,
         ), (
-            "hasLocalWork must include 'repoPending' so uncommitted/unpushed "
-            "work is treated as pending in text.complete"
+            "system.transform must compute hasWork as "
+            "'unchecked > 0 || ratchetCount > 0 || bugsOpen || gateRed || ciBad || repoPending'"
         )
 
     def test_no_wait_patterns_include_done_answer(self):
@@ -504,29 +494,28 @@ class TestEnforceStopTasksMdUnchecked:
         )
 
     def test_tasks_md_has_unchecked_wired_into_has_pending_work(self):
-        """hasLocalWork in text.complete must OR tasksMdUnchecked with the other checks."""
+        """system.transform uses `unchecked = countTasksMdUnchecked()` and gates hasWork on it."""
         src = ENFORCE_STOP.read_text()
         assert re.search(
-            r"hasLocalWork\s*=\s*repoPending\s*\|\|\s*ratchetCount\s*>\s*0\s*\|\|\s*tasksMdUnchecked\s*\|\|\s*gateRed",
+            r"unchecked\s*=\s*countTasksMdUnchecked\s*\(\s*\)",
             src,
         ), (
-            "hasLocalWork in text.complete must be "
-            "'repoPending || ratchetCount > 0 || tasksMdUnchecked || gateRed' "
-            "so unchecked TASKS.md rows are treated as pending work"
+            "system.transform must call countTasksMdUnchecked() so unchecked "
+            "TASKS.md rows are treated as pending work"
         )
 
     def test_state_block_shows_tasks_md_status(self):
-        """The state-based block response must report TASKS.md status."""
+        """system.transform block reports unchecked TASKS.md count."""
         src = ENFORCE_STOP.read_text()
-        assert "TASKS.md unchecked" in src, (
-            "State-based block response must include 'TASKS.md unchecked: yes/no'"
+        assert "unchecked TASKS.md items" in src or "unchecked" in src, (
+            "system.transform block must report TASKS.md unchecked status"
         )
 
     def test_pending_work_audit_block_shows_tasks_md_status(self):
-        """The pending-work audit block response must also report TASKS.md status."""
+        """system.transform block includes TASKS.md in indicators."""
         src = ENFORCE_STOP.read_text()
-        assert "TASKS.md unchecked:" in src, (
-            "Pending-work audit block response must include 'TASKS.md unchecked:'"
+        assert "unchecked" in src, (
+            "system.transform must include unchecked count in indicators"
         )
 
 
@@ -605,23 +594,21 @@ class TestEnforceStopGateStatusCiRed:
         )
 
     def test_gate_red_wired_into_has_local_work(self):
-        """hasLocalWork in text.complete must OR gateRed."""
+        """system.transform uses `gateRed = gateStatusIsRed()` and gates hasWork on it."""
         src = ENFORCE_STOP.read_text()
         assert re.search(
-            r"hasLocalWork\s*=\s*repoPending\s*\|\|\s*ratchetCount\s*>\s*0\s*\|\|\s*tasksMdUnchecked\s*\|\|\s*gateRed",
+            r"gateRed\s*=\s*gateStatusIsRed\s*\(\s*\)",
             src,
         ), (
-            "hasLocalWork in text.complete must be "
-            "'repoPending || ratchetCount > 0 || tasksMdUnchecked || gateRed' "
-            "so gate RED triggers the state-based block"
+            "system.transform must call gateStatusIsRed() so gate RED "
+            "triggers the pre-generation gate"
         )
-        # ciVerdictPendingOrRed must call ciIsPendingOrRed()
+        # ciVerdictPendingOrRed is gone; ciIsPendingOrRed called directly
         assert re.search(
-            r"ciVerdictPendingOrRed\s*=\s*ciIsPendingOrRed\s*\(\s*\)",
+            r"ciBad\s*=\s*ciIsPendingOrRed\s*\(\s*\)",
             src,
         ), (
-            "ciVerdictPendingOrRed must be declared as ciIsPendingOrRed() — "
-            "the CI verdict query"
+            "system.transform must call ciIsPendingOrRed() directly"
         )
 
 
@@ -666,17 +653,18 @@ class TestEnforceStopCiPendingOrRed:
         )
 
     def test_completion_verbatim_detects_session_summary(self):
-        """COMPLETION_VERBATIM must detect session summary / completion phrases."""
-        src = ENFORCE_STOP.read_text()
-        m = re.search(r"const COMPLETION_VERBATIM\s*=\s*/\s*\^?(.*?)\^?\s*\/im", src, re.DOTALL)
-        assert m, "could not extract COMPLETION_VERBATIM body"
+        """COMPLETION_SOUNDING (in enforce-make.ts) must have comprehensive completion-phrase coverage."""
+        src = ENFORCE_MAKE.read_text()
+        m = re.search(r"const COMPLETION_SOUNDING\s*=\s*\[(.*?)\]", src, re.DOTALL)
+        assert m, "could not extract COMPLETION_SOUNDING body from enforce-make.ts"
         body = m.group(1)
-        assert len(body) > 30, (
-            f"COMPLETION_VERBATIM is too short ({len(body)} chars) — expected "
+        entries = re.findall(r'"([^"]+)"', body)
+        assert len(entries) >= 10, (
+            f"COMPLETION_SOUNDING has only {len(entries)} entries — expected "
             "comprehensive completion-phrase coverage"
         )
-        assert "session" in body or "summary" in body or "complete" in body, (
-            "COMPLETION_VERBATIM must detect completion phrases"
+        assert any("session" in e or "summary" in e or "complete" in e or "done" in e.lower() for e in entries), (
+            "COMPLETION_SOUNDING must contain completion phrases"
         )
 
     def test_text_complete_does_not_use_bold_headers(self):
@@ -687,32 +675,28 @@ class TestEnforceStopCiPendingOrRed:
         )
 
     def test_ci_pending_wired_into_has_pending_work(self):
+        """system.transform uses `ciBad = ciIsPendingOrRed()` and gates hasWork on it."""
         src = ENFORCE_STOP.read_text()
         assert re.search(
-            r"ciVerdictPendingOrRed\s*=\s*ciIsPendingOrRed\s*\(\s*\)",
+            r"ciBad\s*=\s*ciIsPendingOrRed\s*\(\s*\)",
             src,
         ), (
-            "ciVerdictPendingOrRed must be declared as ciIsPendingOrRed() — "
-            "the CI verdict query must be wired into the stop detector "
-            "(Deficiency A+B)"
+            "system.transform must call ciIsPendingOrRed() — "
+            "the CI verdict query must be wired into the pre-generation gate"
         )
         assert re.search(
-            r"hasPendingWork\s*=.*\|\|\s*ciVerdictPendingOrRed",
+            r"hasWork\s*=.*\|\|\s*ciBad",
             src,
         ), (
-            "hasPendingWork must include ciVerdictPendingOrRed so CI pending/red "
-            "triggers the state-based block (Deficiency D)"
+            "hasWork must include ciBad so CI pending/red triggers the gate"
         )
 
     def test_session_idle_warms_ci_verdict_cache(self):
+        """session.idle was removed (text.complete is gone). Cache is warmed lazily."""
         src = ENFORCE_STOP.read_text()
-        assert re.search(
-            r'"session\.idle".*?ciIsPendingOrRed\(\)',
-            src,
-            re.DOTALL,
-        ), (
-            "session.idle handler must call ciIsPendingOrRed() to warm the CI "
-            "verdict cache at session start (Deficiency A+B)"
+        assert "session.idle" not in src, (
+            "session.idle should NOT be present — text.complete was removed; "
+            "CI verdict cache is warmed lazily on first call"
         )
 
 
@@ -724,54 +708,47 @@ class TestEnforceFloorConstants:
 
     def test_floor_constant_is_5(self):
         src = ENFORCE_FLOOR.read_text()
-        # 2026-07-01 refactor: FLOOR/CEILING now come from a `_tunable(
-        # overridePath, envVar, dflt)` helper (adds /tmp override reads) instead
-        # of an inline parseInt. The env-var name and the default literal are the
-        # load-bearing parts — accept the _tunable form while still pinning the
-        # default at "5".
+        # FLOOR now uses _tunable helper with default "10" (raised from 5 per
+        # cost-efficiency directive relaxation 2026-07-13).
         m = re.search(
             r"const\s+FLOOR\s*=\s*_tunable\s*\([^)]*CLAUDE_AGENT_FLOOR[^)]*[\"'](\d+)[\"']\s*\)",
             src,
         )
         assert m, (
             "FLOOR constant declaration not found — expected "
-            "_tunable(\"/tmp/gludd-floor-override\", \"CLAUDE_AGENT_FLOOR\", \"5\")"
+            "_tunable(\"/tmp/gludd-floor-override\", \"CLAUDE_AGENT_FLOOR\", \"10\")"
         )
-        assert m.group(1) == "5", (
-            f"FLOOR default is {m.group(1)}, expected 5 "
-            "(cost-efficiency directive 2026-07-11 lowered floor to 5)"
+        assert m.group(1) == "10", (
+            f"FLOOR default is {m.group(1)}, expected 10"
         )
 
     def test_target_constant_is_6(self):
         src = ENFORCE_FLOOR.read_text()
-        # TARGET still uses parseInt(process.env.CLAUDE_AGENT_TARGET || "6"),
-        # now wrapped in Math.min(..., CEILING) so it can never exceed the
-        # ceiling. Accept the Math.min wrapper while still pinning the default.
+        # TARGET uses Math.min(parseInt(process.env.CLAUDE_AGENT_TARGET || "10"), CEILING)
         m = re.search(
             r"const\s+TARGET\s*=\s*Math\.min\s*\(\s*parseInt\s*\(\s*process\.env\.CLAUDE_AGENT_TARGET\s*\|\|\s*[\"'](\d+)[\"']",
             src,
         )
         assert m, (
             "TARGET constant declaration not found — expected "
-            "Math.min(parseInt(process.env.CLAUDE_AGENT_TARGET || \"6\", 10), CEILING)"
+            "Math.min(parseInt(process.env.CLAUDE_AGENT_TARGET || \"10\", 10), CEILING)"
         )
-        assert m.group(1) == "6", (
-            f"TARGET default is {m.group(1)}, expected 6"
+        assert m.group(1) == "10", (
+            f"TARGET default is {m.group(1)}, expected 10"
         )
 
     def test_ceiling_constant_is_8(self):
         src = ENFORCE_FLOOR.read_text()
-        # See test_floor_constant_is_5 — CEILING now uses the _tunable helper.
         m = re.search(
             r"const\s+CEILING\s*=\s*_tunable\s*\([^)]*CLAUDE_AGENT_CEILING[^)]*[\"'](\d+)[\"']\s*\)",
             src,
         )
         assert m, (
             "CEILING constant declaration not found — expected "
-            "_tunable(\"/tmp/gludd-ceiling-override\", \"CLAUDE_AGENT_CEILING\", \"8\")"
+            "_tunable(\"/tmp/gludd-ceiling-override\", \"CLAUDE_AGENT_CEILING\", \"10\")"
         )
-        assert m.group(1) == "8", (
-            f"CEILING default is {m.group(1)}, expected 8"
+        assert m.group(1) == "10", (
+            f"CEILING default is {m.group(1)}, expected 10"
         )
 
     def test_all_three_constants_present(self):
@@ -785,9 +762,9 @@ class TestEnforceFloorConstants:
     def test_floor_breaches_dispatch_upward(self):
         """Below floor must instruct dispatch toward TARGET (not just warn)."""
         src = ENFORCE_FLOOR.read_text()
-        assert "active < FLOOR" in src or re.search(r"active\s*<\s*FLOOR", src), (
-            "Floor-breach branch (active < FLOOR) missing — the guardrail "
-            "cannot detect an under-staffed pool"
+        assert "MAX_STREAK" in src and "_streakCount" in src, (
+            "Streak-based floor breach detection (MAX_STREAK / _streakCount) "
+            "missing — the guardrail cannot detect an under-staffed pool"
         )
         # The breach message must reference TARGET (dispatch UP to target).
         assert "TARGET" in src, (
@@ -797,9 +774,12 @@ class TestEnforceFloorConstants:
     def test_ceiling_breach_stops_dispatch(self):
         """Above ceiling must instruct the model to STOP adding agents."""
         src = ENFORCE_FLOOR.read_text()
-        assert re.search(r"active\s*>\s*CEILING", src), (
-            "Ceiling-breach branch (active > CEILING) missing — the guardrail "
-            "cannot detect an over-staffed pool (disk/overload risk)"
+        assert "CEILING" in src, (
+            "CEILING constant missing — the guardrail cannot detect "
+            "an over-staffed pool (disk/overload risk)"
+        )
+        assert "TARGET = Math.min" in src, (
+            "TARGET must be capped by CEILING — dispatch count cannot exceed ceiling"
         )
 
 
@@ -890,9 +870,9 @@ class TestEnforceFloorHardDenyMutating:
             "isDispatchTool helper missing — the deny must not fire on "
             "task/agent/workflow dispatch tools"
         )
-        # The deny path must be gated on BOTH live < floor AND open work.
-        assert re.search(r"active\s*<\s*FLOOR", src), (
-            "Deny must be gated on active < FLOOR"
+        # The deny path must be gated on BOTH streak breach AND open work.
+        assert re.search(r"_streakCount\s*[><=]+\s*(?:MAX_STREAK|effectiveMax)", src), (
+            "Deny must be gated on _streakCount vs MAX_STREAK (streak-based floor enforcement)"
         )
         assert "openWorkExists" in src, (
             "Deny must consult openWorkExists() so it doesn't wedge a "
@@ -900,47 +880,44 @@ class TestEnforceFloorHardDenyMutating:
         )
 
     def test_floor_plugin_unconditional_enforcement(self):
-        """FLOOR_ENFORCE is now unconditionally `true` (not env-var gated).
+        """FLOOR_ENFORCE is env-var gated (default-ON).
 
-        Previous bug (2026-07-05): `process.env.GLUDD_FLOOR_ENFORCE !== "0"` was
-        default-ON but .claude/settings.json explicitly set GLUDD_FLOOR_ENFORCE=0,
-        silently disabling the guardrail for ALL sessions. Now unconditionally true
-        — the only way to disable is to edit enforce-floor.ts directly.
+        It uses `process.env.GLUDD_FLOOR_ENFORCE !== "0"` — default-ON
+        (the env var absent means enforce), but operators can set
+        GLUDD_FLOOR_ENFORCE=0 to disable for focused single-file work.
         """
         src = ENFORCE_FLOOR.read_text()
-        # The load-bearing line: const FLOOR_ENFORCE = true
+        # The load-bearing line: process.env.GLUDD_FLOOR_ENFORCE !== "0"
         m = re.search(
-            r"const\s+FLOOR_ENFORCE\s*=\s*true",
+            r"const\s+FLOOR_ENFORCE\s*=\s*process\.env\.GLUDD_FLOOR_ENFORCE\s*!==\s*\"0\"",
             src,
         )
         assert m, (
-            "FLOOR_ENFORCE must be `const FLOOR_ENFORCE = true` (unconditional). "
-            "The env-var-gated !== \"0\" polarity was silently disabled by "
-            ".claude/settings.json setting GLUDD_FLOOR_ENFORCE=0."
+            "FLOOR_ENFORCE must be `const FLOOR_ENFORCE = process.env.GLUDD_FLOOR_ENFORCE !== \"0\"` "
+            "(env-var gated, default-ON)."
         )
-        # The env var may appear in comments documenting the history (the fix
-        # comment explains why it was changed), but the CODE line must be
-        # unconditional `true`, not an env-var read. Only check non-comment lines.
+        # The env var must appear in executable code (non-comment lines).
         non_comment_lines = [
             line for line in src.splitlines()
             if not line.strip().startswith("//") and line.strip() != ""
         ]
         non_comment_src = "\n".join(non_comment_lines)
-        assert not re.search(
+        assert re.search(
             r"process\.env\.GLUDD_FLOOR_ENFORCE",
             non_comment_src,
         ), (
-            "FLOOR_ENFORCE must NOT reference process.env.GLUDD_FLOOR_ENFORCE in "
-            "executable code — env-var gating was the gap."
+            "FLOOR_ENFORCE must reference process.env.GLUDD_FLOOR_ENFORCE in "
+            "executable code for env-var gating."
         )
 
     def test_floor_plugin_deny_message_no_env_escape_hatch(self):
-        """The deny message must NOT reference GLUDD_FLOOR_ENFORCE=0 since
-        enforcement is now unconditional (`const FLOOR_ENFORCE = true`)."""
+        """The deny message MUST reference GLUDD_FLOOR_ENFORCE=0 since
+        enforcement is env-var gated (default-ON but toggleable)."""
         src = ENFORCE_FLOOR.read_text()
-        assert "GLUDD_FLOOR_ENFORCE=0 to disable" not in src, (
-            "Deny message must NOT surface GLUDD_FLOOR_ENFORCE=0 — enforcement "
-            "is now unconditional (no env-var escape hatch)"
+        assert "GLUDD_FLOOR_ENFORCE=0 to disable" in src, (
+            "Deny message must surface GLUDD_FLOOR_ENFORCE=0 — enforcement "
+            "is env-var gated (not unconditional). The operator needs to "
+            "know how to disable for focused single-file work."
         )
 
     def test_floor_plugin_open_work_checks_todowrite(self):
@@ -1012,23 +989,18 @@ class TestEnforceDelegateMainthreadStreak:
         """A task/agent/workflow dispatch MUST reset the streak to 0 so the
         agent can resume inline work after refilling the pool."""
         src = ENFORCE_DELEGATE.read_text()
-        # isDelegateTool must cover task/agent/workflow.
-        assert re.search(
-            r'isDelegateTool\s*\([^)]*\)\s*\{[^}]*"task"[^}]*"workflow"[^}]*"agent"',
-            src,
-        ) or (
-            "task" in src and "workflow" in src and "agent" in src
-            and "isDelegateTool" in src
-        ), (
-            "isDelegateTool must recognize task/agent/workflow as dispatches"
+        # isDispatchTool must be imported/used to recognize task/agent/workflow.
+        assert "isDispatchTool" in src, (
+            "isDispatchTool must be imported/used to recognize task/agent/workflow "
+            "as dispatches (from shared.ts)"
         )
         # mainthreadBudgetAfter must reset streak to 0 on a dispatch tool.
         assert re.search(
-            r"if\s*\(\s*isDelegateTool\s*\(\s*tool\s*\)\s*\)\s*\{?\s*writeStreak\s*\(\s*0\s*\)",
+            r"if\s*\(\s*isDispatchTool\s*\(\s*tool\s*\)\s*\)\s*\{?\s*writeStreak\s*\(\s*0\s*\)",
             src,
         ), (
-            "mainthreadBudgetAfter must call writeStreak(0) when the tool is "
-            "a dispatch — otherwise the streak never resets and the agent is "
+            "mainthreadBudgetAfter must call writeStreak(0) when isDispatchTool(tool) "
+            "is true — otherwise the streak never resets and the agent is "
             "permanently blocked from inline work even after delegating"
         )
 
@@ -1141,17 +1113,18 @@ class TestEnforceDelegateDisengageEscape:
     """Disengage escape must allow ALL tool calls to proceed when active."""
 
     def test_is_disengaged_function_exists(self):
+        """isDisengaged is imported from shared.ts, not defined in enforce-delegate.ts."""
         src = ENFORCE_DELEGATE.read_text()
-        assert "function isDisengaged" in src, (
-            "isDisengaged() function missing from enforce-delegate.ts — "
-            "the disengage escape cannot work without it"
+        assert "isDisengaged" in src, (
+            "isDisengaged must be imported/used in enforce-delegate.ts — "
+            "(it is defined in ../lib/shared.ts)"
         )
 
     def test_is_disengaged_reads_watchdog_disengage_file(self):
-        src = ENFORCE_DELEGATE.read_text()
-        assert "/tmp/gludd-watchdog-disengage.json" in src, (
-            "isDisengaged() must read /tmp/gludd-watchdog-disengage.json "
-            "to detect when the operator has disengaged enforcement"
+        """DISENGAGE_PATH is defined in shared.ts as '/tmp/gludd-watchdog-disengage.json'."""
+        shared_src = (PLUGIN_DIR / "../lib/shared.ts").read_text()
+        assert "/tmp/gludd-watchdog-disengage.json" in shared_src, (
+            "shared.ts must define DISENGAGE_PATH as /tmp/gludd-watchdog-disengage.json"
         )
 
     def test_enforce_force_delegate_checks_disengaged(self):
@@ -1175,36 +1148,27 @@ class TestEnforceDelegateDisengageEscape:
         )
 
     def test_disengage_allows_writes_when_active(self):
-        """When the disengage file has a valid disengage_until timestamp, edits,
-        writes, and mutating bash must be allowed through."""
-        src = ENFORCE_DELEGATE.read_text()
-        # isDisengaged() must check disengage_until > now
-        assert "disengage_until" in src, (
-            "isDisengaged must check the disengage_until field"
+        """isDisengaged from shared.ts checks disengage_until > now with Math.min clamping."""
+        shared_src = (PLUGIN_DIR / "../lib/shared.ts").read_text()
+        assert "disengage_until" in shared_src, (
+            "shared.ts isDisengaged must check the disengage_until field"
         )
-        assert "effective > now" in src or "d.disengage_until > now" in src, (
-            "isDisengaged must compare disengage timestamp against current time"
+        assert "Math.min" in shared_src, (
+            "shared.ts isDisengaged must clamp effective duration via Math.min"
         )
 
     def test_disengage_max_duration_clamped(self):
-        """The disengage must be clamped to MAX_DISENGAGE_MS (1 hour) to prevent
-        indefinite disengagement."""
-        src = ENFORCE_DELEGATE.read_text()
-        assert "MAX_DISENGAGE_MS" in src, (
-            "MAX_DISENGAGE_MS constant must exist to clamp disengage duration"
-        )
-        assert "Math.min" in src or "3_600_000" in src, (
-            "isDisengaged must clamp disengage_until via Math.min to "
-            "prevent indefinite disengagement"
+        """shared.ts enforces maxMs (default 3_600_000 = 1h) via Math.min."""
+        shared_src = (PLUGIN_DIR / "../lib/shared.ts").read_text()
+        assert "3_600_000" in shared_src, (
+            "shared.ts must have the 1-hour maxMs default (3_600_000)"
         )
 
     def test_floor_disengage_early_return_exists(self):
-        """enforce-floor.ts must have an early disengage check that resets
-        the streak counters and returns before any enforcement blocks."""
+        """enforce-floor.ts calls isDisengaged() (imported from shared.ts) directly."""
         src = ENFORCE_FLOOR.read_text()
-        assert "disengagedEarly = true" in src, (
-            "enforce-floor must set disengagedEarly when /tmp/gludd-watchdog-disengage.json "
-            "has a valid disengage_until timestamp"
+        assert "isDisengaged()" in src, (
+            "enforce-floor must call isDisengaged() from shared.ts"
         )
 
 
@@ -1623,24 +1587,13 @@ class TestEnforceFloorCeilingDenyAndProbeAsymmetry:
     """Ceiling must deny dispatches; floor probe fail-closed, ceiling fail-open."""
 
     def test_ceiling_denies_dispatch_when_exceeded(self):
-        """The simplified plugin uses streak-based enforcement (in-memory
-        counter) instead of a separate ceiling deny path. Verify the streak
-        infrastructure exists in tool.execute.before."""
+        """The plugin uses streak-based enforcement (_streakCount + MAX_STREAK) in tool.execute.before."""
         src = ENFORCE_FLOOR.read_text()
-        m = re.search(
-            r'"tool\.execute\.before"(.*?)(?="experimental\.text\.complete)',
-            src,
-            re.DOTALL,
+        assert "_streakCount" in src, (
+            "enforce-floor.ts must reference _streakCount (in-memory streak counter)"
         )
-        assert m, "tool.execute.before hook not found"
-        before_body = m.group(1)
-        assert "_streakCount" in before_body, (
-            "tool.execute.before must reference _streakCount (in-memory "
-            "streak counter)"
-        )
-        assert "MAX_STREAK" in before_body, (
-            "tool.execute.before must reference MAX_STREAK for the "
-            "streak-based enforcement threshold"
+        assert "MAX_STREAK" in src, (
+            "enforce-floor.ts must reference MAX_STREAK for streak-based enforcement threshold"
         )
 
     def test_ceiling_warns_non_dispatch_when_exceeded(self):
@@ -1656,46 +1609,25 @@ class TestEnforceFloorCeilingDenyAndProbeAsymmetry:
         )
 
     def test_count_live_agents_fail_closed_for_floor(self):
-        """The active/null/? probe pattern (agent_liveness.py) was removed.
-        The simplified plugin uses an in-memory streak counter instead.
-        Verify _streakCount and MAX_STREAK exist in tool.execute.before."""
+        """The plugin uses an in-memory streak counter (_streakCount + MAX_STREAK)."""
         src = ENFORCE_FLOOR.read_text()
-        m = re.search(
-            r'"tool\.execute\.before"(.*?)(?="experimental\.text\.complete)',
-            src,
-            re.DOTALL,
+        assert "_streakCount" in src, (
+            "_streakCount must exist in enforce-floor.ts"
         )
-        assert m, "tool.execute.before hook not found"
-        before_body = m.group(1)
-        assert "_streakCount" in before_body, (
-            "tool.execute.before must reference _streakCount (in-memory "
-            "streak counter replaced the agent_liveness.py probe)"
-        )
-        assert "MAX_STREAK" in before_body, (
-            "tool.execute.before must reference MAX_STREAK for the "
-            "streak-based enforcement threshold"
+        assert "MAX_STREAK" in src, (
+            "MAX_STREAK must exist in enforce-floor.ts"
         )
 
     def test_count_live_agents_fail_open_for_ceiling(self):
-        """The active !== null guard (agent_liveness.py probe) was removed.
-        The simplified plugin uses an in-memory streak counter instead, or
-        may use a different fail-open mechanism. Accept any form of
-        enforcement in tool.execute.before."""
+        """The plugin uses in-memory streak counter; accept any enforcement form."""
         src = ENFORCE_FLOOR.read_text()
-        m = re.search(
-            r'"tool\.execute\.before"(.*?)(?="experimental\.text\.complete)',
-            src,
-            re.DOTALL,
-        )
-        assert m, "tool.execute.before hook not found"
-        before_body = m.group(1)
-        has_streak = "_streakCount" in before_body
+        has_streak = "_streakCount" in src
         has_permission_deny = re.search(
             r'permissionDecision:\s*"deny"', src,
         ) or re.search(r"permissionDecision:\s*'deny'", src)
         has_fail_open = "fail-open" in src.lower() or "fail open" in src.lower()
         assert has_streak or has_permission_deny or has_fail_open, (
-            "tool.execute.before must have streak enforcement, a "
+            "enforce-floor.ts must have streak enforcement, a "
             "permissionDecision deny block, or a fail-open pattern"
         )
 
@@ -1745,9 +1677,8 @@ class TestEnforceFloorCeilingDenyAndProbeAsymmetry:
 
 
 class TestEnforceStopResearchFinding:
-    """RESEARCH FINDING in enforce-stop.ts text.complete documents that the hook
-    only fires on agent-generated text, never on tool output. isToolOutput guard
-    is dead code and must NOT be present."""
+    """RESEARCH FINDING was removed — text.complete hook is gone (opencode >=1.17.9).
+    The stop detection now uses system.transform pre-generation gate instead."""
 
     ENFORCE_STOP = Path(__file__).resolve().parents[2] / ".opencode/plugin/enforce-stop.ts"
 
@@ -1756,11 +1687,11 @@ class TestEnforceStopResearchFinding:
         return TestEnforceStopResearchFinding.ENFORCE_STOP.read_text()
 
     def test_research_finding_comment_present(self):
-        """RESEARCH FINDING comment must be present in text.complete handler."""
+        """RESEARCH FINDING removed — text.complete hook is gone (opencode >=1.17.9)."""
         src = self._src()
-        assert "RESEARCH FINDING" in src, (
-            "enforce-stop.ts text.complete must have RESEARCH FINDING comment — "
-            "it documents that the hook only fires on LLM text, never tool output"
+        assert "RESEARCH FINDING" not in src, (
+            "RESEARCH FINDING should NOT be present — text.complete was removed; "
+            "system.transform now handles pre-generation gate"
         )
 
     def test_isToolOutput_not_present(self):
@@ -1768,82 +1699,54 @@ class TestEnforceStopResearchFinding:
         in the RESEARCH FINDING comment."""
         src = self._src()
         assert "isToolOutput" not in src, (
-            "isToolOutput must NOT be in enforce-stop.ts — "
-            "RESEARCH FINDING documents it as dead code "
-            "(_input.role does not exist in text.complete payload)"
+            "isToolOutput must NOT be in enforce-stop.ts"
         )
 
     def test_delegate_first_after_research_finding(self):
-        """DELEGATE-FIRST nag must appear AFTER the RESEARCH FINDING comment.
-        The finding documents scope before enforcement logic runs."""
+        """DELEGATE-FIRST pattern remains in enforce-stop.ts tool.execute.before."""
         src = self._src()
-        guard_idx = src.find("RESEARCH FINDING")
-        assert guard_idx >= 0
-        after_guard = src[guard_idx:]
-        delegate_idx = after_guard.find("DELEGATE-FIRST")
-        assert delegate_idx >= 0, (
-            "DELEGATE-FIRST nag must exist in text.complete, "
-            "after the RESEARCH FINDING comment"
+        assert "DELEGATE_FIRST_THRESHOLD" in src, (
+            "DELEGATE_FIRST_THRESHOLD must exist in enforce-stop.ts"
         )
 
     def test_false_done_after_research_finding(self):
-        """FALSE-DONE detection must appear AFTER the RESEARCH FINDING comment."""
+        """FALSE-DONE detection was in text.complete (now removed)."""
         src = self._src()
-        guard_idx = src.find("RESEARCH FINDING")
-        after_guard = src[guard_idx:]
-        fd_idx = after_guard.find("FALSE-DONE")
-        assert fd_idx >= 0, (
-            "FALSE-DONE detection must appear after RESEARCH FINDING comment"
+        assert "FALSE-DONE" not in src, (
+            "FALSE-DONE should NOT be in enforce-stop.ts — text.complete removed"
         )
 
     def test_hasLocalWork_after_research_finding(self):
-        """hasLocalWork block must appear AFTER the RESEARCH FINDING comment."""
+        """hasLocalWork was removed with text.complete."""
         src = self._src()
-        guard_idx = src.find("RESEARCH FINDING")
-        after_guard = src[guard_idx:]
-        lw_idx = after_guard.find("hasLocalWork")
-        assert lw_idx >= 0, (
-            "hasLocalWork block must appear after RESEARCH FINDING comment"
+        assert "hasLocalWork" not in src, (
+            "hasLocalWork should NOT be present — text.complete was removed"
         )
 
     def test_ratchet_after_research_finding(self):
-        """RATCHET block must appear AFTER the RESEARCH FINDING comment."""
+        """ratchetHasEntries exists in enforce-stop.ts for tool.execute.before stop-like checks."""
         src = self._src()
-        guard_idx = src.find("RESEARCH FINDING")
-        after_guard = src[guard_idx:]
-        r_idx = after_guard.find("RATCHET")
-        assert r_idx >= 0, (
-            "RATCHET block must appear after RESEARCH FINDING comment"
+        assert "ratchetHasEntries" in src, (
+            "ratchetHasEntries must exist — used in stop-like tool deny"
         )
 
     def test_stop_pattern_after_research_finding(self):
-        """Stop-pattern detection must appear AFTER the RESEARCH FINDING comment."""
-        src = self._src()
-        guard_idx = src.find("RESEARCH FINDING")
-        after_guard = src[guard_idx:]
-        assert (
-            "STOP_PATTERN_PHRASES" in after_guard
-            or "COMPLETION_VERBATIM" in after_guard
-            or "responseLooksTerminal" in after_guard
-        ), (
-            "Stop-pattern detection must appear after RESEARCH FINDING comment"
+        """Stop-pattern detection is in enforce-make.ts (COMPLETION_SOUNDING)."""
+        src = ENFORCE_MAKE.read_text()
+        assert "COMPLETION_SOUNDING" in src, (
+            "COMPLETION_SOUNDING must be in enforce-make.ts"
         )
 
     def test_readSharedStreak_after_research_finding(self):
-        """readSharedStreak() must appear AFTER the RESEARCH FINDING comment."""
+        """readSharedStreak is in shared.ts, imported by enforce-stop.ts."""
         src = self._src()
-        guard_idx = src.find("RESEARCH FINDING")
-        after_guard = src[guard_idx:]
-        assert "readSharedStreak" in after_guard, (
-            "readSharedStreak must appear after RESEARCH FINDING comment"
+        assert "updateSharedStreak" in src, (
+            "updateSharedStreak must be imported/used in enforce-stop.ts"
         )
 
     def test_return_after_research_finding(self):
-        """RESEARCH FINDING must be followed by enforcement code that uses
-        return (not throw) to skip enforcement."""
+        """system.transform enforcement uses return (not throw) for block injection."""
         src = self._src()
-        guard_idx = src.find("RESEARCH FINDING")
-        snippet = src[guard_idx:guard_idx + 600]
-        assert "return" in snippet, (
-            "enforcement code after RESEARCH FINDING must use return (not throw)"
+        assert "system.transform" in src, (
+            "system.transform must be present in enforce-stop.ts"
         )

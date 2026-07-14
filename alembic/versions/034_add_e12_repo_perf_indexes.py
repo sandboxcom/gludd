@@ -14,16 +14,16 @@ all ACTIVE rows. A composite makes the reaper query index-only.
 The matching model-layer declarations are in models.py so fresh SQLite
 DBs get these indexes without running Alembic.
 
-Revision ID: 032
-Revises: 031
+Revision ID: 034
+Revises: 033
 """
 
 from collections.abc import Sequence
 
 from alembic import op
 
-revision: str = "032"
-down_revision: str | None = "031"
+revision: str = "034"
+down_revision: str | None = "033"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

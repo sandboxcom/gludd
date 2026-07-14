@@ -65,6 +65,9 @@ class MockDispatcher:
     async def get_active_tasks_for_project(self, project_id):
         return [t for t in self._tasks if t.project_id == project_id]
 
+    async def quiesce_project(self, project_id):
+        return []
+
 
 class MockTask:
     def __init__(self, task_id, agent_name, project_id, description="", prompt="",
@@ -232,6 +235,9 @@ class StubDispatcher:
         )
 
     async def get_active_tasks_for_project(self, project_id):
+        return []
+
+    async def quiesce_project(self, project_id):
         return []
 
 

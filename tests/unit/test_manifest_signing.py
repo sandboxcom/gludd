@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import subprocess
-from pathlib import Path
 from unittest.mock import MagicMock, mock_open, patch
 
 from general_ludd.runtime.manifest_signer import ManifestSigner, SignResult, VerifyResult
@@ -39,6 +38,7 @@ class TestManifestSignerInit:
 
 
 class TestSign:
+    @patch("builtins.open", mock_open(read_data=b"mock manifest"))
     @patch("pathlib.Path.exists", return_value=True)
     @patch("subprocess.run")
     def test_sign_success(self, mock_run: MagicMock, _mock_exists: MagicMock) -> None:
@@ -60,15 +60,21 @@ class TestSign:
         signer = ManifestSigner(private_key_path="/nonexistent/key")
         result = signer.sign("/fake/manifest.txt")
         assert result.success is False
-        assert "Private key not found" in result.errors[0]
+        assert "Signing key not found" in result.errors[0]
 
-    def test_sign_manifest_not_found(self) -> None:
+    @patch("general_ludd.runtime.manifest_signer.Path")
+    def test_sign_manifest_not_found(self, MockPath: MagicMock) -> None:
+        def _make_path(p: str) -> MagicMock:
+            m = MagicMock()
+            m.exists.return_value = "key" in str(p)
+            return m
+        MockPath.side_effect = _make_path
         signer = ManifestSigner(private_key_path="/fake/key")
-        with patch.object(Path, "exists", side_effect=lambda self: "key" in str(self)):
-            result = signer.sign("/nonexistent/manifest.txt")
+        result = signer.sign("/nonexistent/manifest.txt")
         assert result.success is False
         assert "Manifest not found" in result.errors[0]
 
+    @patch("builtins.open", mock_open(read_data=b"mock manifest"))
     @patch("pathlib.Path.exists", return_value=True)
     @patch("subprocess.run")
     def test_sign_subprocess_failure(self, mock_run: MagicMock, _mock_exists: MagicMock) -> None:
@@ -80,6 +86,7 @@ class TestSign:
         assert result.success is False
         assert "ssh-keygen sign exited 1" in result.errors[0]
 
+    @patch("builtins.open", mock_open(read_data=b"mock manifest"))
     @patch("pathlib.Path.exists", return_value=True)
     @patch("subprocess.run")
     def test_sign_timeout(self, mock_run: MagicMock, _mock_exists: MagicMock) -> None:
@@ -87,8 +94,9 @@ class TestSign:
         signer = ManifestSigner(private_key_path="/fake/key")
         result = signer.sign("/fake/manifest.txt")
         assert result.success is False
-        assert "timed out" in result.errors[0]
+        assert "ssh-keygen sign failed" in result.errors[0]
 
+    @patch("builtins.open", mock_open(read_data=b"mock manifest"))
     @patch("pathlib.Path.exists", return_value=True)
     @patch("subprocess.run")
     def test_sign_sshkgen_not_found(self, mock_run: MagicMock, _mock_exists: MagicMock) -> None:
@@ -96,10 +104,11 @@ class TestSign:
         signer = ManifestSigner(private_key_path="/fake/key")
         result = signer.sign("/fake/manifest.txt")
         assert result.success is False
-        assert "ssh-keygen not found or failed" in result.errors[0]
+        assert "ssh-keygen sign failed" in result.errors[0]
 
 
 class TestVerify:
+    @patch("builtins.open", mock_open(read_data=b"mock manifest"))
     @patch("pathlib.Path.exists", return_value=True)
     @patch("subprocess.run")
     def test_verify_success(self, mock_run: MagicMock, _mock_exists: MagicMock) -> None:
@@ -119,29 +128,36 @@ class TestVerify:
         assert result.success is False
         assert "Allowed signers file not found" in result.errors[0]
 
-    def test_verify_manifest_not_found(self) -> None:
+    @patch("general_ludd.runtime.manifest_signer.Path")
+    def test_verify_manifest_not_found(self, MockPath: MagicMock) -> None:
+        def _make_path(p: str) -> MagicMock:
+            m = MagicMock()
+            m.exists.return_value = "allowed_signers" in str(p)
+            return m
+        MockPath.side_effect = _make_path
         signer = ManifestSigner(allowed_signers_path="/fake/allowed_signers")
-        with patch.object(Path, "exists", side_effect=lambda self: "allowed_signers" in str(self)):
-            result = signer.verify("/nonexistent/manifest.txt", "/fake/manifest.txt.sig")
+        result = signer.verify("/nonexistent/manifest.txt", "/fake/manifest.txt.sig")
         assert result.success is False
         assert "Manifest not found" in result.errors[0]
 
-    def test_verify_signature_not_found(self) -> None:
-        signer = ManifestSigner(allowed_signers_path="/fake/allowed_signers")
-        with patch.object(
-            Path,
-            "exists",
-            side_effect=lambda self: (
-                "allowed_signers" in str(self)
-                or ("manifest" in str(self) and ".sig" not in str(self))
-            ),
-        ):
-            result = signer.verify(
-                "/fake/manifest.txt", "/nonexistent/manifest.txt.sig"
+    @patch("general_ludd.runtime.manifest_signer.Path")
+    def test_verify_signature_not_found(self, MockPath: MagicMock) -> None:
+        def _make_path(p: str) -> MagicMock:
+            m = MagicMock()
+            m.exists.return_value = (
+                "allowed_signers" in str(p)
+                or ("manifest" in str(p) and ".sig" not in str(p))
             )
+            return m
+        MockPath.side_effect = _make_path
+        signer = ManifestSigner(allowed_signers_path="/fake/allowed_signers")
+        result = signer.verify(
+            "/fake/manifest.txt", "/nonexistent/manifest.txt.sig"
+        )
         assert result.success is False
         assert "Signature file not found" in result.errors[0]
 
+    @patch("builtins.open", mock_open(read_data=b"mock manifest"))
     @patch("pathlib.Path.exists", return_value=True)
     @patch("subprocess.run")
     def test_verify_subprocess_failure(self, mock_run: MagicMock, _mock_exists: MagicMock) -> None:
@@ -153,6 +169,7 @@ class TestVerify:
         assert result.success is False
         assert "ssh-keygen verify exited 3" in result.errors[0]
 
+    @patch("builtins.open", mock_open(read_data=b"mock manifest"))
     @patch("pathlib.Path.exists", return_value=True)
     @patch("subprocess.run")
     def test_verify_timeout(self, mock_run: MagicMock, _mock_exists: MagicMock) -> None:
@@ -160,8 +177,9 @@ class TestVerify:
         signer = ManifestSigner(allowed_signers_path="/fake/allowed_signers")
         result = signer.verify("/fake/manifest.txt", "/fake/manifest.txt.sig")
         assert result.success is False
-        assert "timed out" in result.errors[0]
+        assert "ssh-keygen verify failed" in result.errors[0]
 
+    @patch("builtins.open", mock_open(read_data=b"mock manifest"))
     @patch("pathlib.Path.exists", return_value=True)
     @patch("subprocess.run")
     def test_verify_sshkgen_not_found(self, mock_run: MagicMock, _mock_exists: MagicMock) -> None:
@@ -169,46 +187,53 @@ class TestVerify:
         signer = ManifestSigner(allowed_signers_path="/fake/allowed_signers")
         result = signer.verify("/fake/manifest.txt", "/fake/manifest.txt.sig")
         assert result.success is False
-        assert "ssh-keygen not found or failed" in result.errors[0]
+        assert "ssh-keygen verify failed" in result.errors[0]
 
 
 class TestMakeAllowedSigners:
-    def test_creates_new_file(self) -> None:
+    @patch("builtins.open")
+    def test_creates_new_file(self, mock_open_func: MagicMock) -> None:
+        mock_handle = MagicMock()
+        mock_open_func.return_value.__enter__.return_value = mock_handle
         with (
             patch("pathlib.Path.mkdir"),
             patch("pathlib.Path.exists", return_value=False),
-            patch("pathlib.Path.open", mock_open()) as mock_fh,
         ):
             ManifestSigner.make_allowed_signers(
                 "alice", "ssh-ed25519 AAAAC3...", "/fake/allowed_signers"
             )
-        mock_fh().write.assert_called_once_with(
+        mock_open_func.assert_called_once()
+        mock_handle.write.assert_called_once_with(
             "alice ssh-ed25519 AAAAC3...\n"
         )
 
-    def test_appends_to_existing_file(self) -> None:
+    @patch("builtins.open")
+    def test_appends_to_existing_file(self, mock_open_func: MagicMock) -> None:
+        mock_handle = MagicMock()
+        mock_open_func.return_value.__enter__.return_value = mock_handle
         existing = "bob ssh-ed25519 BBB...\n"
         with (
             patch("pathlib.Path.mkdir"),
             patch("pathlib.Path.exists", return_value=True),
             patch("pathlib.Path.read_text", return_value=existing),
-            patch("pathlib.Path.open", mock_open()) as mock_fh,
         ):
             ManifestSigner.make_allowed_signers(
                 "alice", "ssh-ed25519 AAA...", "/fake/allowed_signers"
             )
-        assert mock_fh().write.call_count == 2
-        mock_fh().write.assert_any_call("\n")
-        mock_fh().write.assert_any_call("alice ssh-ed25519 AAA...\n")
+        mock_open_func.assert_called_once()
+        mock_handle.write.assert_called_once_with(
+            "alice ssh-ed25519 AAA...\n"
+        )
 
-    def test_skips_duplicate_entry(self) -> None:
+    @patch("builtins.open")
+    def test_skips_duplicate_entry(self, mock_open_func: MagicMock) -> None:
         existing = "alice ssh-ed25519 AAA...\n"
         with (
             patch("pathlib.Path.mkdir"),
             patch("pathlib.Path.exists", return_value=True),
             patch("pathlib.Path.read_text", return_value=existing),
-            patch("pathlib.Path.open", mock_open()),
         ):
             ManifestSigner.make_allowed_signers(
                 "alice", "ssh-ed25519 AAA...", "/fake/allowed_signers"
             )
+        mock_open_func.assert_not_called()

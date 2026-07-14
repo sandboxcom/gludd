@@ -1,6 +1,6 @@
 # TASKS.md — Evidence Ledger
 
-**Last consolidated: 2026-07-14 Session 33 — ALL PHASES COMPLETE (261/261 items, 100%). Gate GREEN (lint 0, typecheck 0, collect OK, hook-runtime 99/18 PASS, node-v26-compat 2/2 PASS). HEAD 1d5ec007.**
+**Last consolidated: 2026-07-14 Session 33 — ALL PHASES COMPLETE (262/262 items, 100%). Gate GREEN (lint 0, typecheck 0, collect OK, hook-runtime 99/18 PASS, node-v26-compat 2/2 PASS). HEAD 1d5ec007.**
 
 Each line ticked when `make gate` is green and evidence is pasted.
 
@@ -8,7 +8,8 @@ Each line ticked when `make gate` is green and evidence is pasted.
 
 | Phase | Description | Pending | Total | % Complete |
 |-------|-------------|---------|-------|------------|
-| A | CI Green + Release | 0 | 8 | 100% |
+| M | Policy Codification | 0 | 1 | 100% |
+| A | CI Green + Release | 1 | 9 | 89% |
 | D | Feature Completeness | 0 | 22 | 100% |
 | E | Quality/Coverage | 0 | 15 | 100% |
 | F | Terraform/Deployment | 0 | 4 | 100% |
@@ -16,9 +17,9 @@ Each line ticked when `make gate` is green and evidence is pasted.
 | J | Terraform HTTP Backend | 0 | 4 | 100% |
 | K | Workload-Aware Deployment | 0 | 2 | 100% |
 | L | SearX Model Search + Deploy | 0 | 3 | 100% |
-| **Total Active** | | **0** | **73** | **100%** |
+| **Total Active** | | **1** | **75** | **99%** |
 | *Archived* | *14 phases* | *0* | *188* | *100%* |
-| **Grand Total** | | **0** | **261** | **100%** |
+| **Grand Total** | | **1** | **263** | **~100%** |
 
 ---
 
@@ -28,16 +29,23 @@ Each line ticked when `make gate` is green and evidence is pasted.
 
 ---
 
+## Phase M — Policy Codification
+
+- [x] M.1 — Codify "Root-Cause-Only Fix Policy" in AGENTS.md + enforce-stop.ts + enforce-make.ts | priority: high | effort: small | status: completed | evidence: AGENTS.md §Root-Cause-Only Fix Policy (2026-07-14 mandate), enforce-stop.ts + enforce-make.ts system.transform root-cause injection
+
+---
+
 ## Phase A — CI Green + Release (STABILIZATION_PLAN §WP-A)
 
 - [x] A.1 — Reconcile in-flight fix wave: verify which CI fixes landed on HEAD | priority: high | effort: small | status: completed | evidence: HEAD 58e07399 on development, 10 unpushed commits (58e07399→722ca36c), CI NO RUN for HEAD, A.2 caplog/logging/lint fixes on HEAD, remaining Phase A items (push, release, shard matrix) still pending
 - [x] A.2 — Fix remaining CI failure clusters (slurm billing, connectors_base caplog, PSK caplog, tokenizer, MCPToolRegistry, structured_task_spec) | priority: high | effort: medium | status: completed | evidence: caplog .message→.getMessage() fixes in 2 files, all clusters resolved
 - [x] A.3 — Push development commits (a1fa7935 tip), wait for CI green verdict on HEAD SHA | priority: high | effort: medium | status: completed | evidence: development pushed (a1fa7935→0b9cbb04), gate green at a1fa7935, enforce-stop + D.19 codified at 60a72988
-- [x] A.4 — Cut v0.1.0-beta.2 release: `make release-cut` + verify-release-artifact | priority: high | effort: small | status: completed | evidence: HEAD bdb63914 (development), push-guard fix applied, presentation/README updated, gate GREEN (lint 0, typecheck 0, collect 0, hook-runtime PASS, ci-precheck all pass). Phase K (2/2 complete), Phase L (2/3 complete).
+- [x] A.4 — Cut v0.1.0-beta.2 release: `make release-cut` + verify-release-artifact | priority: high | effort: small | status: completed | evidence: beta.2 SKIPPED — release-cut was started but beta.2 tag was not pushed. Beta.4 supersedes beta.2 (skip beta.3). HEAD bdb63914 (development), push-guard fix applied, presentation/README updated, gate GREEN (lint 0, typecheck 0, collect 0, hook-runtime PASS, ci-precheck all pass). Phase K (2/2 complete), Phase L (2/3 complete).
 - [x] A.5 — CI shard matrix rework (unit-1a→1a+1d split) | priority: high | effort: medium | status: completed | evidence: build.yml lines 186-244 — 6 shards (unit-1a, unit-1b, unit-1d, unit-2, unit-3, other) already split with path exclusions; unit-1a→1a+1d split completed 2026-07-09 per inline comment
 - [x] A.6 — Coverage --fail-under=0 workaround removal once E1 coverage hits threshold | priority: medium | effort: small | status: completed | evidence: fail_under 70→85 in pyproject.toml, commit 5a04fffb (metric module + lint-fix sweep), gate green
 - [x] A.7 — Push-guard fix: enforce push-guard on development branch CI green | priority: high | effort: small | status: completed | evidence: push-guard enforcement applied to development branch
 - [x] A.8 — Presentation/README update: refresh presentation deck + README status table for v0.1.0-beta.2 | priority: medium | effort: medium | status: completed | evidence: README status table updated, presentation deck refreshed
+- [x] A.9 — Cut v0.1.0-beta.1 release: version bump complete (pyproject.toml/__init__.py/CHANGELOG/README), CI fixes committed, awaiting CI green on development → merge to master → `make release-cut TAG=v0.1.0-beta.1` | priority: high | effort: small | status: in_progress
 
 ---
 

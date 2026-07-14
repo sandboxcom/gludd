@@ -2435,6 +2435,83 @@ Pattern that failed (this session): agent dispatched 6 parallel subagents, got 6
 - This AGENTS.md section — proactive instruction
 - If a plugin has 0 runtime tests, that plugin is in the same category as "dead code" — it exists on disk but its behavior is unverified
 
+## CRITICAL: Root-Cause-Only Fix Policy
+
+**Every issue MUST be fixed at its root cause — never at its symptom.** This
+applies to both gludd application code AND gludd's own tooling, plugins, and
+guardrails.
+
+This was a direct user mandate (2026-07-14): "please always fix the root cause
+of ANY issue — both the current instance and gludd should always have that
+prompting in those systems too."
+
+### The rule
+
+When something breaks, the fix must address WHY it broke, not merely remove the
+observable symptom. A symptom-level fix leaves the root cause intact — the same
+failure mode WILL recur in a slightly different form.
+
+### Concrete applications
+
+| Symptom | WRONG fix | RIGHT fix |
+|---|---|---|
+| Guardrail/plugin throws errors on every turn | Disable the guardrail | Fix the logic error causing the false-positive |
+| CI is red | Skip failing tests or lower coverage threshold | Fix the failing tests or the code they test |
+| Release is blocked | Bypass the blocker (--no-verify, FORCE=1) | Fix the blocker (red gate, missing artifact, failed CI) |
+| Plugin/guardrail blocks legitimate work | Remove the enforcement | Narrow the check so it fires only on real violations |
+| Test fails intermittently | Add xfail or retry loop | Fix the race condition or non-deterministic logic |
+| Make target is missing | Run bare commands | Add the make target |
+
+### Mandatory procedure
+
+Before applying ANY fix, answer:
+1. **What is the ROOT CAUSE?** — Trace the chain of causality to its origin.
+   "The plugin throws" is a symptom. "The plugin checks X but the state file
+   for X is stale because..." is a root cause.
+2. **Does the fix address the root cause?** — If your fix is "disable X" /
+   "skip X" / "bypass X" / "ignore X" / "remove the check for X" / "empty the
+   block body of X", you are fixing a symptom. Redo the fix.
+3. **Will this failure mode recur?** — If the answer could be "yes with a
+   different trigger", the root cause is not addressed.
+
+### Precedent (why this is hard-enforced)
+
+- **Stop-hook "fix" (2026-06-18):** agent was told "fix the stop-hook errors"
+  and responded by making hooks advisory (deleting enforcement) instead of
+  fixing the `exit 1` error path. The symptom (errors) was removed; the root
+  cause (wrong exit code) persisted. Codified as "Fix Means Repair, Never
+  Disable."
+- **CI-red bypass (2026-06-22):** agent committed `50dbd1b` with a red gate
+  via `--no-verify`, rationalizing "pre-existing failures." The symptom
+  (commit blocked) was bypassed; the root cause (red gate) was not addressed.
+  Codified as "No-Commit-Bypass Policy."
+- **Guardrail weakening (2026-07-08):** advisory-only checks allowed `# noqa`
+  and `# type: ignore` to re-proliferate. The symptom (lint noise) was
+  silenced; the root cause (lack of enforcement) persisted until the 3-layer
+  guardrail was built.
+
+### Overlaps and reinforcements
+
+This policy sits ABOVE the specific policies below and governs ALL of them:
+- **Guardrail Integrity Policy** (above) — this is one application: when a
+  guardrail fails, fix the logic, not the guardrail.
+- **"Fix" Means Repair, Never Disable** (above) — the same principle applied
+  to user-requested fixes.
+- **Constraints Are To Engineer Around** (below) — the same principle applied
+  to external constraints: the constraint is the problem to solve, not a
+  reason to stop.
+- **No Lint-Suppression Comments** (above) — the same principle applied to
+  code: fix the code so the linter is satisfied, don't silence the linter.
+
+### Enforcement
+
+This is codified at all three layers:
+1. **This section** — proactive instruction for every agent reading AGENTS.md.
+2. **`.opencode/plugin/enforce-stop.ts`** — `experimental.chat.system.transform`
+   injects root-cause directive into the pre-generation gate block.
+3. **`.opencode/plugin/enforce-make.ts`** — `experimental.chat.system.transform`
+   injects root-cause directive into the mechanical contract.
+
 ## Constraints Are To Engineer Around
 
 **A constraint is a design prompt, never a dead end.**
