@@ -2257,7 +2257,7 @@ The goal is a **continuous, pipelined** stream of subagent batches — not a saw
 
 Every assistant response containing tool calls MUST satisfy ONE of:
 - **(a) Zero task/agent/workflow dispatches** — pure read/edit/bash, no subagent fan-out. Valid for: serial mutations to hot files (daemon.py, loop.py), git operations, single-file edits during a hot-file conflict. **At most 2 consecutive zero-dispatch responses.** The 3rd zero-dispatch response in a row MUST include a dispatch (task/agent/workflow) OR explicitly justify why dispatch is impossible (quota exhausted, rate-limited, waiting for blocker). A 4th consecutive zero-dispatch response is a hard policy violation regardless of justification. Enforced mechanically by `enforce-multitask.ts` (zero-streak counter: denies at streak ≥ 2 when unchecked work exists) and `enforce-delegate.ts` (MAINTHREAD_THRESHOLD default 2; the 3rd consecutive non-dispatch call is hard-denied).
-- **(b) Two or more parallel task/agent/workflow dispatches in ONE message** — the dispatch wave pattern (see COST-EFFICIENCY DIRECTIVE: max 7 concurrent subagents). This is the steady-state.
+- **(b) Two or more parallel task/agent/workflow dispatches in ONE message** — the dispatch wave pattern (see COST-EFFICIENCY DIRECTIVE: max 10 concurrent subagents). This is the steady-state.
 
 A response with exactly 1 task dispatch is a **policy violation** when ≥2 known work items remain. The agent MUST either batch wider to 2 OR justify why only 1 dispatch is possible.
 
