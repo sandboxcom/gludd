@@ -16,8 +16,6 @@ import os
 from typing import Any
 from unittest.mock import MagicMock
 
-import pytest
-
 from general_ludd.infra.terraform_http_backend import (
     generate_http_backend_block,
     write_http_backend_file,
@@ -40,9 +38,9 @@ class TestGenerateHttpBackendBlock:
     def test_address_lock_unlock_all_same_url(self) -> None:
         block = generate_http_backend_block("prod", "https://gludd.example.com")
         lines = block.splitlines()
-        addr_line = [l for l in lines if "address" in l][0]
-        lock_line = [l for l in lines if "lock_address" in l][0]
-        unlock_line = [l for l in lines if "unlock_address" in l][0]
+        addr_line = next(l for l in lines if "address" in l)
+        lock_line = next(l for l in lines if "lock_address" in l)
+        unlock_line = next(l for l in lines if "unlock_address" in l)
         addr_val = addr_line.split('"')[1]
         lock_val = lock_line.split('"')[1]
         unlock_val = unlock_line.split('"')[1]

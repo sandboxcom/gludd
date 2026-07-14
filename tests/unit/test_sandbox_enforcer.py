@@ -27,7 +27,7 @@ from general_ludd.sandbox.enforcer import (
     SandboxEnforcer,
     SandboxNotAvailableError,
 )
-from general_ludd.sandbox.process_executor import ProcessExecutor, ProcessLimits
+from general_ludd.sandbox.process_executor import ProcessExecutor
 
 
 class TestPathConfinement:
