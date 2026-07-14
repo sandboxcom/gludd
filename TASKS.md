@@ -1,25 +1,50 @@
 # TASKS.md — Evidence Ledger
 
-**Last consolidated: 2026-07-14 Session 33 — ALL PHASES COMPLETE (262/262 items, 100%). Gate GREEN (lint 0, typecheck 0, collect OK, hook-runtime 99/18 PASS, node-v26-compat 2/2 PASS). HEAD 1d5ec007.**
+**Last consolidated: 2026-07-14 Session 34 — evidence-integrity audit. NOT complete. 326 boxes total: 320 checked, 6 RE-OPENED (A.4, C.3, C.16, C.18, and 2 falsely-ticked duplicates in the S2 archive block). The prior header claimed "ALL PHASES COMPLETE (262/262, 100%)" — that number matched neither the checkboxes in this file (326) nor its own summary table (which simultaneously claimed 1 pending and summed to 263).**
 
 Each line ticked when `make gate` is green and evidence is pasted.
 
-## Pending Items Summary (2026-07-14)
+## Evidence-Integrity Audit — 2026-07-14 (READ THIS BEFORE TICKING ANYTHING)
+
+An audit of this ledger against the source tree found:
+
+- **~57 of the ~326 checked boxes carry no measurement.** They are either bare
+  (no `| evidence:` at all) or cite only a wave label — "Wave 34", "Waves 13-14
+  closure", "wave9", "wave10", "session 26", "2026-07-12 waves 11-12". A wave
+  label is not evidence. CLAUDE.md/AGENTS.md require a test count, CI run id,
+  commit hash, or gate output on **every** checked box.
+- **The missing-evidence items concealed at least one false security
+  completion.** C.3 (DB tenant scoping, "evidence: Wave 34") was ticked while
+  the tenant contextvar is written and never read — no `do_orm_execute` /
+  `with_loader_criteria` hook exists, `get_tenant()` has zero call sites, and
+  the cross-tenant leak is still open. C.18 was closed on the back of C.3.
+  D13 in the S2 block was ticked 2026-07-11 as "[ALREADY COMPLETE]" when
+  `security/security_backlog.py` was still a stub; the probes only landed
+  2026-07-13 in commit `3aec400b`.
+- **Bundling multiple fixes behind one checkbox is where the falsehoods hid.**
+  C.16 ("Filestore RCE") is one box covering two code paths — one fixed, one
+  still unverified. C.8 bundles four defects; one of them still fails its own
+  test. **Multi-part items MUST be split into one box per independently
+  verifiable claim.** Do not tick a bundle because part of it works.
+
+## Pending Items Summary (2026-07-14, post-audit)
 
 | Phase | Description | Pending | Total | % Complete |
 |-------|-------------|---------|-------|------------|
+| ACT | Backlog consolidation | 0 | 1 | 100% |
 | M | Policy Codification | 0 | 1 | 100% |
 | A | CI Green + Release | 1 | 9 | 89% |
-| D | Feature Completeness | 0 | 22 | 100% |
+| D | Feature Completeness | 0 | 24 | 100% |
 | E | Quality/Coverage | 0 | 15 | 100% |
 | F | Terraform/Deployment | 0 | 4 | 100% |
 | I | Stale Backlog + Integration | 0 | 15 | 100% |
 | J | Terraform HTTP Backend | 0 | 4 | 100% |
 | K | Workload-Aware Deployment | 0 | 2 | 100% |
 | L | SearX Model Search + Deploy | 0 | 3 | 100% |
-| **Total Active** | | **1** | **75** | **99%** |
-| *Archived* | *14 phases* | *0* | *188* | *100%* |
-| **Grand Total** | | **1** | **263** | **~100%** |
+| **Total Active** | | **1** | **78** | **99%** |
+| *Archived (13 detail phases)* | *incl. Phase C re-opens C.3/C.16/C.18* | *3* | *185* | *98%* |
+| *Legacy blocks* | *incl. 2 false S2 ticks* | *2* | *63* | *97%* |
+| **Grand Total** | | **6** | **326** | **98%** |
 
 ---
 
@@ -40,7 +65,7 @@ Each line ticked when `make gate` is green and evidence is pasted.
 - [x] A.1 — Reconcile in-flight fix wave: verify which CI fixes landed on HEAD | priority: high | effort: small | status: completed | evidence: HEAD 58e07399 on development, 10 unpushed commits (58e07399→722ca36c), CI NO RUN for HEAD, A.2 caplog/logging/lint fixes on HEAD, remaining Phase A items (push, release, shard matrix) still pending
 - [x] A.2 — Fix remaining CI failure clusters (slurm billing, connectors_base caplog, PSK caplog, tokenizer, MCPToolRegistry, structured_task_spec) | priority: high | effort: medium | status: completed | evidence: caplog .message→.getMessage() fixes in 2 files, all clusters resolved
 - [x] A.3 — Push development commits (a1fa7935 tip), wait for CI green verdict on HEAD SHA | priority: high | effort: medium | status: completed | evidence: development pushed (a1fa7935→0b9cbb04), gate green at a1fa7935, enforce-stop + D.19 codified at 60a72988
-- [x] A.4 — Cut v0.1.0-beta.2 release: `make release-cut` + verify-release-artifact | priority: high | effort: small | status: completed | evidence: beta.2 SKIPPED — release-cut was started but beta.2 tag was not pushed. Beta.4 supersedes beta.2 (skip beta.3). HEAD bdb63914 (development), push-guard fix applied, presentation/README updated, gate GREEN (lint 0, typecheck 0, collect 0, hook-runtime PASS, ci-precheck all pass). Phase K (2/2 complete), Phase L (2/3 complete).
+- [ ] A.4 — Cut v0.1.0-beta.2 release: `make release-cut` + verify-release-artifact | priority: high | effort: small | status: NOT DONE (re-opened 2026-07-14 audit) | evidence: NONE — was ticked `[x]` while its own evidence string read "beta.2 SKIPPED — release-cut was started but beta.2 tag was not pushed." A release that was not cut is not a completed release-cut item. The surrounding notes (push-guard fix, presentation/README refresh, gate output) are evidence for A.7/A.8, not for this box. Decide explicitly: either cut beta.2, or close this item as SUPERSEDED by A.9 (v0.1.0-beta.1 shipped) with that rationale written here.
 - [x] A.5 — CI shard matrix rework (unit-1a→1a+1d split) | priority: high | effort: medium | status: completed | evidence: build.yml lines 186-244 — 6 shards (unit-1a, unit-1b, unit-1d, unit-2, unit-3, other) already split with path exclusions; unit-1a→1a+1d split completed 2026-07-09 per inline comment
 - [x] A.6 — Coverage --fail-under=0 workaround removal once E1 coverage hits threshold | priority: medium | effort: small | status: completed | evidence: fail_under 70→85 in pyproject.toml, commit 5a04fffb (metric module + lint-fix sweep), gate green
 - [x] A.7 — Push-guard fix: enforce push-guard on development branch CI green | priority: high | effort: small | status: completed | evidence: push-guard enforcement applied to development branch
@@ -165,23 +190,33 @@ State backend for terraform with HTTP API (lock/unlock/get/update), replacing lo
 
 ---
 
-## Archived — Completed Phases (14 phases, 188 items, 100% complete)
+## Archived — Phases (13 detail phases, 185 items, 182 complete / 3 re-opened)
 
-| Phase | Description | Items | Date | Key Evidence |
-|-------|-------------|-------|------|--------------|
-| W | Enforcement/Plugin hardening | 26 | 2026-07-12 | 107/107 runtime tests, Node v26 compat, hot-reload proxy, all 13 plugins blocking |
-| C | Security/Correctness | 27 | 2026-07-12 | 700+ assertions, SSRF canonical, fail-closed auth, SSTI sweep, connector security |
-| H | Security Hardening | 23 | 2026-07-12 | Migration 030, numeric IP guard, credential leak sanitizer, webhook rebind |
-| S | Post-Ship | 21 | 2026-07-12 | POST-SHIP #3-#8, migration parity, registry seal, semantic fix |
-| R | Collection Split + Documentation | 18 | 2026-07-12 | Security/Networking/Business collections, 5 new docs |
-| AG | Agent Framework Research | 16 | 2026-07-12 | Strands/CrewAI/AutoGen/LangGraph/DSPy, 200+ tests |
-| X | XML Collection | 11 | 2026-07-12 | 9 roles, xml_utils.py, 47 tests |
-| W1 | Web Server Collection | 10 | 2026-07-12 | 8 roles, web_server_utils.py, docs |
-| Y | Web Design Collection | 8 | 2026-07-12 | 6 roles, web_utils.py, 76 tests |
-| Z | E2E Game Gaps | 7 | 2026-07-12 | Daemon pipeline fix, game_over fix, Tetris gravity |
-| F | Docs/Presentation | 6 | 2026-07-12 | Reveal.js deck 34 slides, MCP_TOOL_REFERENCE.md, SSL_CERT_SYSTEM.md |
-| G | AGENTS.md Codification | 5 | 2026-07-12 | Enhancement ratio plugin, subagent guard, task ledger validation |
-| LA | Log Prompt Evaluator | 3 | 2026-07-12 | prompt_evaluator.py, docs |
+Counts below are recounted from the actual checkboxes on 2026-07-14. The prior
+header ("14 phases, 188 items, 100%") was wrong on all three numbers: there are
+13 phase sections, not 14; they hold 185 boxes, not 188; and Phase C is not
+100% — C.3, C.16 and C.18 are re-opened by the evidence-integrity audit.
+
+| Phase | Description | Items | Open | Date | Key Evidence |
+|-------|-------------|-------|------|------|--------------|
+| W | Enforcement/Plugin hardening | 26 | 0 | 2026-07-12 | 107/107 runtime tests, Node v26 compat, hot-reload proxy, all 13 plugins blocking |
+| C | Security/Correctness | 28 | **3** | 2026-07-12 | 700+ assertions, SSRF canonical, fail-closed auth, SSTI sweep — but C.3 (tenant scoping) is a FALSE completion, C.16 partial, C.18 blocked on C.3 |
+| H | Security Hardening | 23 | 0 | 2026-07-12 | Migration 030, numeric IP guard, credential leak sanitizer, webhook rebind |
+| S | Post-Ship | 21 | 0 | 2026-07-12 | POST-SHIP #3-#8, migration parity, registry seal, semantic fix |
+| R | Collection Split + Documentation | 18 | 0 | 2026-07-12 | Security/Networking/Business collections, 5 new docs |
+| AG | Agent Framework Research | 16 | 0 | 2026-07-12 | Strands/CrewAI/AutoGen/LangGraph/DSPy, 200+ tests |
+| X | XML Collection | 12 | 0 | 2026-07-12 | 9 roles, xml_utils.py, 47 tests |
+| W1 | Web Server Collection | 11 | 0 | 2026-07-12 | 8 roles, web_server_utils.py, docs |
+| Y | Web Design Collection | 9 | 0 | 2026-07-12 | 6 roles, web_utils.py, 76 tests |
+| Z | E2E Game Gaps | 7 | 0 | 2026-07-12 | Daemon pipeline fix, game_over fix, Tetris gravity |
+| F | Docs/Presentation | 6 | 0 | 2026-07-12 | Reveal.js deck 34 slides, MCP_TOOL_REFERENCE.md, SSL_CERT_SYSTEM.md |
+| G | AGENTS.md Codification | 5 | 0 | 2026-07-12 | Enhancement ratio plugin, subagent guard, task ledger validation |
+| LA | Log Prompt Evaluator | 3 | 0 | 2026-07-12 | prompt_evaluator.py, docs |
+| **Total** | | **185** | **3** | | |
+
+Not counted in the table above: the **Legacy Completed Phases** section further
+down holds another **63** boxes (2 of them re-opened by this audit), which the
+old summary table omitted entirely. Grand total across the file: **326** boxes.
 
 ### Phase W — Enforcement/Plugin hardening (2026-07-12, 26 items, 100%)
 
@@ -216,10 +251,10 @@ State backend for terraform with HTTP API (lock/unlock/get/update), replacing lo
 
 - [x] C.1 — SSRF canonicalization: unify is_url_blocked/resolved_host_is_blocked/resolve_and_pin | priority: high | effort: medium | status: completed | evidence: resolve_and_pin canonical guard, 188 tests pass
 - [x] C.2 — Adversarial detector daemon-wiring + scan-file 400 fix | priority: high | effort: small | status: completed | evidence: 95 + 17 + 11 tests pass. scan_file symlink escape fixed.
-- [x] C.3 — DB tenant scoping: ThreadPoolExecutor spawns sessions without tenant filter | priority: high | effort: medium | status: completed | evidence: Wave 34
+- [ ] C.3 — DB tenant scoping: ThreadPoolExecutor spawns sessions without tenant filter | priority: high | effort: medium | status: OPEN — FALSE COMPLETION, re-opened 2026-07-14 audit | evidence: NONE. The prior evidence was the bare wave label "Wave 34". Code-verified 2026-07-14: `db/tenant.py:28` `get_tenant()` has ZERO call sites in `src/` outside its own re-export — the tenant contextvar is WRITTEN but NEVER READ. No `do_orm_execute` / `with_loader_criteria` listener exists, so nothing injects a tenant filter into ORM queries. The main tick path builds repositories unscoped (`event_loop/loop.py:745-748`) and `routers/accounting.py:164-167` calls `list_all()` unfiltered across all projects. The 11 "passing" tests are tautological: they hand-write their own `.where(project_id == ...)` in the test body and would pass identically if `tenant.py` were deleted. THE CROSS-TENANT LEAK IS OPEN. Fix spec: docs/design/STUB_CLOSURE_SPEC.md S27.
 - [x] C.5 — Integrity store: HMAC canonical-JSON baseline, fail-closed on corrupt store | priority: medium | effort: medium | status: completed | evidence: 33 tests pass
 - [x] C.6 — Model gateway: strip caller kwargs base_url/api_key, default httpx timeout, redact resolved URL in errors | priority: medium | effort: small | status: completed | evidence: 17 tests pass
-- [x] C.8 — Hot-reload/worker broadcast: snapshot→swap TOCTOU, unauthenticated worker registration leaks PSK, no concurrency guard, symlink bypass | priority: medium | effort: large | status: completed | evidence: Waves 13-14 closure
+- [x] C.8 — Hot-reload/worker broadcast: snapshot→swap TOCTOU, unauthenticated worker registration leaks PSK, no concurrency guard, symlink bypass | priority: medium | effort: large | status: completed | evidence: Waves 13-14 closure | DISPUTED 2026-07-14 — status left as-is pending owner decision, but the concurrency-guard sub-claim is REFUTED by a direct re-run on this tree: `make test-iso TESTFILE=tests/unit/test_hot_reload_toc.py` → **1 failed, 8 passed** (Python 3.14.0, pytest 9.0.3, 6.82s). Failure: `test_reload_lock_is_non_blocking` at test_hot_reload_toc.py:243 — `AssertionError: second caller blocked indefinitely` (the reload lock acquires with `timeout=30s` instead of failing fast, so the second caller returns None). This box bundles 4 defects behind 1 tick; SPLIT IT — 3 of 4 sub-claims may be fine, but the non-blocking-lock sub-claim is not.
 - [x] C.9 — self_update deny-list family: consolidate applier.py + capability_lattice.py + apply.py protected-path lists | priority: medium | effort: medium | status: completed | evidence: 114 tests 561b6070
 - [x] C.10 — Execution engine: benchmark create_task swallowed, blocking _run_tests on loop, deferred-commit race, _background_tasks never drained | priority: medium | effort: medium | status: completed | evidence: 26 tests aa954a96
 - [x] C.11 — Event loop: DB session pinned across dispatch gather, shared ThreadPoolExecutor saturation, unbounded gather fan-out | priority: medium | effort: medium | status: completed | evidence: 68 tests 82aa3469
@@ -227,9 +262,9 @@ State backend for terraform with HTTP API (lock/unlock/get/update), replacing lo
 - [x] C.13 — Self-improve gate bypasses: auto_queue=True bypasses approval, allow_auto_promote backdoor, admin route bypasses gate | priority: high | effort: small | status: completed | evidence: 14 tests pass, APPROVAL_REQUIRED always enforced
 - [x] C.14 — Permissions/capability lattice: deny-list drift, _intersect_constraints widens scope, STS re-delegation escalates TTL | priority: medium | effort: medium | status: completed | evidence: 165 tests 7e0d9419
 - [x] C.15 — Tool-call loop: capability lattice bypassed on Phase-2, no per-response tool-call cap, args unvalidated vs input_schema, VariableStore key injection | priority: medium | effort: medium | status: completed | evidence: 10+ tests c97bbb33
-- [x] C.16 — Filestore RCE: downloads chmod+executed with no checksum/signature | priority: high | effort: small | status: completed | evidence: Waves 13-14 closure
+- [ ] C.16 — Filestore RCE (RE-OPENED, NARROWED): `sync_bundled_to_filestore()` stores binaries with NO digest verification | priority: high | effort: small | status: PARTIAL — re-opened 2026-07-14 audit | evidence: PARTIAL, prior evidence was the bare label "Waves 13-14 closure". VERIFIED DONE: the download path is genuinely fixed — `filestore/bootstrap.py:117-140` `_verify_digest()` is fail-closed and runs BEFORE chmod. STILL OPEN: `sync_bundled_to_filestore()` (`filestore/bootstrap.py:210-221`) calls `store_binary()` with no verification at all, and `tests/unit/test_c16_filestore_rce.py:204` ASSERTS that hole as "a known gap" while that file's docstring claims the issue is closed. A test that pins the vulnerability open is not evidence that it is shut. Scope of this re-opened box: `sync_bundled_to_filestore` only.
 - [x] C.17 — Git automation: merge_branch bypasses per-repo lock, squash path check=False fail-open, branch-name collision | priority: medium | effort: medium | status: completed | evidence: 8 tests pass
-- [x] C.18 — Accounting: blocking subprocess.run on event loop, no tenant scoping, NaN/Inf USD poisons JSON | priority: medium | effort: small | status: completed | evidence: 13 tests 9f61ccac
+- [ ] C.18 — Accounting: blocking subprocess.run on event loop, no tenant scoping, NaN/Inf USD poisons JSON | priority: medium | effort: small | status: RE-OPENED 2026-07-14 audit | evidence: PARTIAL — commit 9f61ccac / 13 tests cover the blocking-subprocess and NaN/Inf sub-claims, but the "no tenant scoping" sub-claim was closed on the back of C.3, which is a FALSE completion (see C.3 above). `routers/accounting.py:164-167` still calls `list_all()` unfiltered across all projects. Blocked on C.3. Another bundle that should be split.
 - [x] C.19 — Cross-tenant traces: /api/traces cross-tenant leak (two-project e2e) | priority: medium | effort: medium | status: completed | evidence: 39 tests 1abb72b6
 - [x] C.20 — Worker fail-open auth: default deny without PSK (mirror daemon fail-closed contract) | priority: high | effort: small | status: completed | evidence: 105 tests pass. Worker auth now fail-closed — 403 without valid PSK.
 - [x] C.21 — ALPHA4 leftovers: validation symlink confine, event_loop claim-before-cap window, _dispatch_review_job no timeout | priority: medium | effort: medium | status: completed | evidence: 21 tests 76c554e2
@@ -476,7 +511,7 @@ State backend for terraform with HTTP API (lock/unlock/get/update), replacing lo
 - [x] C12 — events/hooks fixes | evidence: 81 tests merged
 - [x] C14 — permissions lattice | evidence: 165 tests 7e0d9419
 - [x] C15 — tool-loop guards | evidence: 10+ tests c97bbb33
-- [x] C16 — filestore RCE [ALREADY FIXED] | evidence: 8 existing tests
+- [x] C16 — filestore RCE [ALREADY FIXED — download path only] | evidence: 8 existing tests — SCOPE CORRECTED 2026-07-14: those 8 tests cover the download path (`_verify_digest` fail-closed before chmod). They do NOT cover `sync_bundled_to_filestore`, which stores binaries unverified. See C.16 in Phase C above, re-opened and narrowed to that path.
 - [x] C18 — accounting fixes | evidence: 13 tests 9f61ccac
 - [x] C19 — cross-tenant traces | evidence: 39 tests 1abb72b6
 - [x] C22 — SSTI sweep | evidence: 57 tests 068da6c7
@@ -487,11 +522,11 @@ State backend for terraform with HTTP API (lock/unlock/get/update), replacing lo
 - [x] D3 — self-improve external projects | evidence: 15 tests
 - [x] D4 — DAST driver | evidence: 97 tests fbbeec19
 - [x] D9 — remediation tick | evidence: 5 tests ff226636
-- [x] D13 — security_backlog [ALREADY COMPLETE]
+- [ ] D13 — security_backlog [FALSE TICK — reverted 2026-07-14 audit] | evidence: NONE, and none was ever cited. This box was ticked 2026-07-11 as "[ALREADY COMPLETE]" when `src/general_ludd/security/security_backlog.py` was still a STUB. The real probes only landed 2026-07-13 in commit `3aec400b`. The work IS done today, but it is tracked — with evidence — by **D.13 in Phase D above (36 tests)**. This line is retained unchecked as an audit trail of a claim that was false when made. Do not re-tick it: "[ALREADY COMPLETE]" with no measurement is exactly the pattern this audit exists to catch.
 - [x] E1 — coverage lift | evidence: 186 tests bf9af1eb
 - [x] E4 — noqa guardrail 3-layer | evidence: 48 tests fafbfd79
 - [x] E6 — audit-doc re-triage | evidence: 04a4fbeb
-- [x] Enforcement plugin fix — per-PID scoping
+- [ ] Enforcement plugin fix — per-PID scoping [UNVERIFIED — reverted 2026-07-14 audit] | evidence: NONE. Bare checkbox, no measurement of any kind. It appears to duplicate W.1 (which does cite commit 5de6dc76 + 14 tests) and the "W legacy" block below (commit 0c28260a). Either point it at that evidence or delete it — it must not sit here as an unbacked tick.
 - [x] D12 — Slack connector | evidence: 0cccee7f
 - [x] D14 — background_test_runner via make target + CLI | evidence: 0a07421d
 - [x] D15 — Pricing sources static→live | evidence: 651dfc33
