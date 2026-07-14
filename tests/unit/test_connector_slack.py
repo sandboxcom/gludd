@@ -6,6 +6,7 @@ from typing import Any
 
 import pytest
 
+from general_ludd.connectors._errors import SSRFError
 from general_ludd.connectors.slack import (
     SlackSource,
     _assert_safe_url,
@@ -77,11 +78,11 @@ class TestSSRF:
         assert r == "https://slack.com/api"
 
     def test_safe_url_loopback_raises(self) -> None:
-        with pytest.raises(Exception):
+        with pytest.raises(SSRFError):
             _assert_safe_url("http://localhost/")
 
     def test_safe_url_metadata_raises(self) -> None:
-        with pytest.raises(Exception):
+        with pytest.raises(SSRFError):
             _assert_safe_url("http://169.254.169.254/")
 
 

@@ -7,9 +7,9 @@ from typing import Any
 import pytest
 
 from general_ludd.connectors.pagerduty import (
+    HttpTransport,
     PagerDutySource,
     _validate_base_url,
-    HttpTransport,
 )
 
 

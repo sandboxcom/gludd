@@ -164,7 +164,14 @@ class TestQuery:
 
     def test_limit(self) -> None:
         runs = {"workflow_runs": [
-            {"id": i, "name": f"run-{i}", "head_branch": "main", "status": "completed", "conclusion": "success"} for i in range(5)
+            {
+                "id": i,
+                "name": f"run-{i}",
+                "head_branch": "main",
+                "status": "completed",
+                "conclusion": "success",
+            }
+            for i in range(5)
         ]}
         http = _fake_http(200, runs)
         src = GitHubActionsSource({"repo": "owner/name"}, http_get=http)

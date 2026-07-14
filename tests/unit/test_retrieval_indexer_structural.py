@@ -3,9 +3,6 @@
 from __future__ import annotations
 
 import tempfile
-from pathlib import Path
-
-import pytest
 
 from general_ludd.retrieval.indexer import (
     DEFAULT_CACHE_DIR,

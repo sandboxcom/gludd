@@ -1,7 +1,7 @@
 import type { Plugin } from "@opencode-ai/plugin"
 import * as fs from "node:fs"
 import * as path from "node:path"
-import { isSubagent, reportAlive } from "../lib/shared.ts"
+import { isSubagent, reportAlive, isDispatchTool, isReadTool } from "../lib/shared.ts"
 import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
 
 // enforce-session-start.ts — guarantees the FIRST actions of every session are:
@@ -31,15 +31,15 @@ import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
 // --- Config -----------------------------------------------------------------
 
 // Minimum parallel dispatches before inline mutations are allowed in a fresh
-// session. Hard-coded to 10 (the AGENTS.md floor) so the dispatch wave is
-// guaranteed to be a full-width fan-out. Override via
+// session. Aligned to 3 (matching enforce-multitask.ts MIN_DISPATCHES) to
+// reflect the COST-EFFICIENCY DIRECTIVE ("max 10, prefer fewer"). Override via
 // GLUDD_SESSION_START_MIN_DISPATCHES.
 const MIN_DISPATCHES = parseInt(
-  process.env.GLUDD_SESSION_START_MIN_DISPATCHES || "10",
+  process.env.GLUDD_SESSION_START_MIN_DISPATCHES || "3",
   10,
 )
 const FLOOR = parseInt(process.env.CLAUDE_AGENT_FLOOR || "10", 10)
-const EFFECTIVE_MIN = Math.max(MIN_DISPATCHES, Math.min(FLOOR, 10))
+const EFFECTIVE_MIN = Math.min(MIN_DISPATCHES, FLOOR)
 
 // Hard-deny mode (mirrors GLUDD_FLOOR_ENFORCE / GLUDD_NO_WAIT_ENFORCE).
 // Default is ON (hard deny on premature mutations). Set
@@ -189,16 +189,6 @@ function updatePrimedLatch(state: SessionState): boolean {
   }
   if (sessionPrimed === null) sessionPrimed = false
   return false
-}
-
-// --- Tool classification ----------------------------------------------------
-
-function isDispatchTool(tool: string): boolean {
-  return tool === "task" || tool === "agent" || tool === "workflow"
-}
-
-function isReadTool(tool: string): boolean {
-  return tool === "read" || tool === "glob" || tool === "grep"
 }
 
 const READ_ONLY_MAKE_TARGETS: ReadonlySet<string> = new Set([

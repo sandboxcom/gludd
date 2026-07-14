@@ -21,7 +21,14 @@ class RecordingTransport:
         headers: dict[str, str] | None = None,
         timeout: float | None = None,
     ) -> tuple[int, Any]:
-        self.calls.append({"method": method, "url": url, "params": params or {}, "json": json, "headers": headers or {}, "timeout": timeout})
+        self.calls.append({
+            "method": method,
+            "url": url,
+            "params": params or {},
+            "json": json,
+            "headers": headers or {},
+            "timeout": timeout,
+        })
         if not self._responses:
             raise AssertionError("too many calls")
         return self._responses.pop(0)

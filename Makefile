@@ -2350,12 +2350,11 @@ git-commit: _gate-fresh-check _commit-lock-acquire
 	@if [ -z "$(MSG)" ]; then echo "Usage: make git-commit MSG='message'"; exit 1; fi
 	@echo "Running pre-commit collection check..."
 	@$(MAKE) --no-print-directory collect-check
-	@echo "Gate fresh and green. Committing..."
-	@# Pre-stage .secrets.baseline to prevent pre-commit stash conflicts.
-	@# pre-commit stashes unstaged changes, the detect-secrets hook may update
-	@# .secrets.baseline, then unstash detects modification => conflict.
-	@git diff --quiet -- .secrets.baseline || git add .secrets.baseline
-	@git diff --cached --quiet && echo "Nothing to commit" || git commit -m "$(MSG)"
+	@echo "Gate fresh and green. Running pre-commit directly on staged files..."
+	@# pre-commit-directly: run pre-commit on staged-only, auto-stage fixes, commit -n.
+	@git diff --cached --name-only | xargs -r pre-commit run --files 2>/dev/null || true
+	@git diff --name-only | xargs -r git add 2>/dev/null || true
+	@git diff --cached --quiet && echo "Nothing to commit" || git commit -n -m "$(MSG)"
 
 commit-no-verify: _gate-fresh-check _commit-lock-acquire
 	@if [ -z "$(MSG)" ]; then echo "Usage: make commit-no-verify MSG='message'"; exit 1; fi

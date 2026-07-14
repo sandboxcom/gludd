@@ -2,31 +2,23 @@
 
 from __future__ import annotations
 
-import json
-import math
-from pathlib import Path
-from tempfile import TemporaryDirectory
 from unittest import mock
 
 import pytest
 
 from general_ludd.projects.manager import (
+    _VALID_LOCATION_KINDS,
+    _VALID_RELATION_TYPES,
     ProjectAllocationError,
     ProjectManager,
     ProjectWeight,
+    _detect_self_project,
     _infer_location_kind,
     _normalize_repo_url,
     _resolve_self_repo_url,
-    _detect_self_project,
-    _VALID_RELATION_TYPES,
-    _VALID_LOCATION_KINDS,
     normalize_relationship_config,
     parse_relationships,
     seed_from_config,
-    materialize_project_workspace,
-    persist_project,
-    rebuild_manager_from_db,
-    persist_relationships_from_config,
 )
 
 
@@ -243,14 +235,14 @@ class TestSelectProject:
     def test_select_project_weighted_first(self, _mock_random):
         mgr = ProjectManager()
         a = mgr.add_project(name="a", weight=70.0)
-        b = mgr.add_project(name="b", weight=30.0)
+        mgr.add_project(name="b", weight=30.0)
         selected = mgr.select_project()
         assert selected is a
 
     @mock.patch("random.random", return_value=0.99)
     def test_select_project_weighted_last(self, _mock_random):
         mgr = ProjectManager()
-        a = mgr.add_project(name="a", weight=70.0)
+        mgr.add_project(name="a", weight=70.0)
         b = mgr.add_project(name="b", weight=30.0)
         selected = mgr.select_project()
         assert selected is b

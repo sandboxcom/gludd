@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from tempfile import TemporaryDirectory
-
-import pytest
 
 from general_ludd.retrieval.searcher import SemanticSearcher
 

@@ -2,23 +2,18 @@
 
 from __future__ import annotations
 
-from enum import StrEnum
-
 from general_ludd.routing_roles.roles import TaskRole
-from general_ludd.schemas.benchmark import TaskRole as OriginalTaskRole
 
 
 class TestTaskRoleReExport:
     def test_taskrole_is_importable(self):
         assert TaskRole is not None
 
-    def test_taskrole_is_same_class(self):
-        assert TaskRole is OriginalTaskRole
-
-    def test_taskrole_is_str_enum(self):
+    def test_taskrole_is_an_enum(self):
+        from enum import StrEnum
         assert issubclass(TaskRole, StrEnum)
 
-    def test_taskrole_expected_members(self):
+    def test_taskrole_has_expected_members(self):
         assert TaskRole.PLANNER.value == "planner"
         assert TaskRole.CODER.value == "coder"
         assert TaskRole.REVIEWER.value == "reviewer"
@@ -26,6 +21,10 @@ class TestTaskRoleReExport:
         assert TaskRole.COMPACTOR.value == "compactor"
         assert TaskRole.ENUMERATOR.value == "enumerator"
 
-    def test_taskrole_member_count(self):
+    def test_taskrole_members_count(self):
         members = list(TaskRole)
         assert len(members) == 6
+
+    def test_re_exported_from_benchmark(self):
+        from general_ludd.schemas.benchmark import TaskRole as BenchmarkTaskRole
+        assert TaskRole is BenchmarkTaskRole
