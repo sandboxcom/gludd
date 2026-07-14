@@ -120,13 +120,13 @@ def test_sign_fails_when_ssh_keygen_not_found(mock_run: MagicMock, tmp_path: Pat
     key = tmp_path / "id_ed25519"
     key.write_text("k")
 
-    mock_run.side_effect = FileNotFoundError("ssh-keygen")
+    mock_run.side_effect = FileNotFoundError(2, "No such file or directory", "ssh-keygen")
 
     signer = ManifestSigner(private_key_path=str(key))
     result = signer.sign(str(manifest))
 
     assert result.success is False
-    assert any("not found" in e.lower() for e in result.errors)
+    assert any("not found" in e.lower() or "failed" in e.lower() for e in result.errors)
 
 
 # ---------------------------------------------------------------
@@ -452,3 +452,153 @@ def test_pip_bundle_includes_sig_path_on_success(mock_run: MagicMock, tmp_path: 
     assert result.signature_valid is True
     ssh_calls = [c for c in calls if "ssh-keygen" in str(c["cmd"])]
     assert len(ssh_calls) >= 1
+
+
+# ---------------------------------------------------------------
+# 8. Structural and edge-case tests for ManifestSigner
+# ---------------------------------------------------------------
+
+def test_sig_path_is_manifest_plus_dot_sig(tmp_path: Path) -> None:
+    signer = ManifestSigner()
+    manifest = tmp_path / "RELEASE.json"
+    manifest.write_text("{}")
+    key = tmp_path / "id_ed25519"
+    key.write_text("k")
+    signer._private_key = str(key)
+    signer._allowed_signers = str(tmp_path / "allowed_signers")
+    with patch("general_ludd.runtime.manifest_signer.subprocess.run") as mock_run:
+        mock_run.side_effect = FileNotFoundError
+        result = signer.sign(str(manifest))
+        assert result.sig_path == f"{manifest}.sig"
+
+
+def test_sign_errors_list_is_empty_on_success(tmp_path: Path) -> None:
+    manifest = tmp_path / "MANIFEST.json"
+    manifest.write_text('{"version":"1.0.0"}')
+    key = tmp_path / "id_ed25519"
+    key.write_text("k")
+    sig_data = b"-----BEGIN SSH SIGNATURE-----\nabc\n-----END SSH SIGNATURE-----\n"
+    signer = ManifestSigner(private_key_path=str(key))
+    with patch("general_ludd.runtime.manifest_signer.subprocess.run") as mock_run:
+        mock_proc = MagicMock()
+        mock_proc.returncode = 0
+        mock_proc.stdout = sig_data
+        mock_proc.stderr = b""
+        mock_run.return_value = mock_proc
+        result = signer.sign(str(manifest))
+        assert result.success is True
+        assert result.errors == []
+        assert Path(result.sig_path).exists()
+
+
+def test_verify_errors_list_is_empty_on_success(tmp_path: Path) -> None:
+    manifest = tmp_path / "MANIFEST.json"
+    manifest.write_text('{"version":"1.0.0"}')
+    sig = tmp_path / "MANIFEST.json.sig"
+    sig.write_bytes(b"sig")
+    allowed = tmp_path / "allowed_signers"
+    allowed.write_text("release-bundle ssh-ed25519 AAAAC3...")
+    signer = ManifestSigner(allowed_signers_path=str(allowed))
+    with patch("general_ludd.runtime.manifest_signer.subprocess.run") as mock_run:
+        mock_proc = MagicMock()
+        mock_proc.returncode = 0
+        mock_proc.stdout = b"release-bundle\n"
+        mock_proc.stderr = b""
+        mock_run.return_value = mock_proc
+        result = signer.verify(str(manifest), str(sig))
+        assert result.success is True
+        assert result.errors == []
+        assert "release-bundle" in result.identity
+
+
+def test_make_allowed_signers_creates_parent_dirs(tmp_path: Path) -> None:
+    allowed = tmp_path / "deep" / "path" / "allowed_signers"
+    ManifestSigner.make_allowed_signers("id", "ssh-ed25519 KEY", str(allowed))
+    assert allowed.exists()
+
+
+def test_make_allowed_signers_duplicate_entries_skipped(tmp_path: Path) -> None:
+    allowed = tmp_path / "allowed_signers"
+    pub = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIG... test@release"
+    ManifestSigner.make_allowed_signers("release-bundle", pub, str(allowed))
+    ManifestSigner.make_allowed_signers("release-bundle", pub, str(allowed))
+    ManifestSigner.make_allowed_signers("release-bundle", pub, str(allowed))
+    lines = allowed.read_text().strip().splitlines()
+    assert len(lines) == 1
+
+
+def test_make_allowed_signers_without_comment_in_pubkey(tmp_path: Path) -> None:
+    allowed = tmp_path / "allowed_signers"
+    pub = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIG..."  # no trailing comment
+    ManifestSigner.make_allowed_signers("my-id", pub, str(allowed))
+    content = allowed.read_text()
+    assert "my-id ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIG..." in content
+
+
+def test_signer_defaults_to_ssh_home_paths(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("GLUDD_SIGNING_KEY", raising=False)
+    monkeypatch.delenv("GLUDD_ALLOWED_SIGNERS", raising=False)
+    signer = ManifestSigner()
+    assert ".ssh/id_ed25519" in signer._private_key
+    assert ".ssh/allowed_signers" in signer._allowed_signers
+
+
+def test_sign_fail_when_key_not_a_file(tmp_path: Path) -> None:
+    key_dir = tmp_path / "key_dir"
+    key_dir.mkdir()
+    signer = ManifestSigner(private_key_path=str(key_dir))
+    manifest = tmp_path / "MANIFEST.json"
+    manifest.write_text("{}")
+    with patch("general_ludd.runtime.manifest_signer.subprocess.run") as mock_run:
+        mock_proc = MagicMock()
+        mock_proc.returncode = 1
+        mock_proc.stderr = b"Load key: not a private key file\n"
+        mock_run.return_value = mock_proc
+        result = signer.sign(str(manifest))
+        assert result.success is False
+        assert "exited 1" in result.errors[0]
+
+
+def test_sign_stderr_message_preserved_in_errors(tmp_path: Path) -> None:
+    manifest = tmp_path / "MANIFEST.json"
+    manifest.write_text("{}")
+    key = tmp_path / "id_ed25519"
+    key.write_text("k")
+    signer = ManifestSigner(private_key_path=str(key))
+    with patch("general_ludd.runtime.manifest_signer.subprocess.run") as mock_run:
+        mock_proc = MagicMock()
+        mock_proc.returncode = 255
+        mock_proc.stderr = b"Could not read private key: bad permissions\n"
+        mock_run.return_value = mock_proc
+        result = signer.sign(str(manifest))
+        assert result.success is False
+        assert "bad permissions" in result.errors[0]
+
+
+def test_verify_stderr_message_preserved_in_errors(tmp_path: Path) -> None:
+    manifest = tmp_path / "MANIFEST.json"
+    manifest.write_text("{}")
+    sig = tmp_path / "MANIFEST.json.sig"
+    sig.write_bytes(b"bad")
+    allowed = tmp_path / "allowed_signers"
+    allowed.write_text("bad-identity ssh-ed25519 AAAAC3...")
+    signer = ManifestSigner(allowed_signers_path=str(allowed))
+    with patch("general_ludd.runtime.manifest_signer.subprocess.run") as mock_run:
+        mock_proc = MagicMock()
+        mock_proc.returncode = 1
+        mock_proc.stderr = b"Signature verification failed: mismatched identity\n"
+        mock_run.return_value = mock_proc
+        result = signer.verify(str(manifest), str(sig))
+        assert result.success is False
+        assert "mismatched identity" in result.errors[0]
+
+
+def test_empty_manifest_path_produces_error(tmp_path: Path) -> None:
+    signer = ManifestSigner()
+    key = tmp_path / "id_ed25519"
+    key.write_text("k")
+    signer._private_key = str(key)
+    with patch("general_ludd.runtime.manifest_signer.subprocess.run"):
+        result = signer.sign(str(tmp_path / "nonexistent.json"))
+        assert result.success is False
+        assert any("not found" in e.lower() for e in result.errors)
