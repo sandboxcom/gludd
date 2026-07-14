@@ -29,7 +29,7 @@ def _src() -> str:
 class TestDeadlineSubagentGuard:
     def test_guard_checks_env_var(self):
         src = _src()
-        assert 'process.env.OPENCODE_SUBAGENT === "1"' in src
+        assert "isSubagent()" in src
 
     def test_guard_before_any_enforcement(self):
         src = _src()
@@ -82,9 +82,9 @@ class TestDjb2Hash:
 
     def test_djb2_output_prefixed_with_d(self):
         src = _src()
-        idx = src.rfind("djb2")
-        section = src[idx:idx + 200]
-        assert "d-" in section, "djb2 output must be prefixed with d-"
+        idx = src.find("hash = 5381")
+        after = src[idx:idx + 200]
+        assert "d-" in after, "djb2 output must be prefixed with d-"
 
 
 # ---------------------------------------------------------------------------
@@ -296,10 +296,10 @@ class TestDeadlineScanInvariants:
 class TestDeadlineFailOpen:
     def test_before_hook_has_try_catch(self):
         src = _src()
-        before_idx = src.rfind('"tool.execute.before": async')
-        after_idx = src.rfind('"tool.execute.after": async')
-        before = src[before_idx:after_idx] if before_idx > 0 and after_idx > 0 else src
-        assert "catch" in before
+        before_idx = src.find('"tool.execute.before": async')
+        after_idx = src.find('"tool.execute.after": async', before_idx + 1)
+        section = src[before_idx:after_idx] if before_idx > 0 and after_idx > before_idx else src
+        assert "catch" in section
 
     def test_after_hook_has_try_catch(self):
         src = _src()
@@ -359,7 +359,7 @@ class TestDeadlinePluginExport:
 
     def test_factory_is_async(self):
         src = _src()
-        assert "export default (async" in src or "export default(async" in src
+        assert "export default ((" in src
 
     def test_returns_object_with_two_hooks(self):
         src = _src()

@@ -33,6 +33,7 @@ function tsToJs(content) {
     .replace(/export const /g, "var ")
     .replace(/export function /g, "function ")
     .replace(/export \{ [^}]+\};?\s*/g, "")
+    .replace(/"[\w.]+"\s*:\s*;\s*/g, "")
     .replace(/satisfies Plugin/g, "")
     .replace(/as const/g, "")
     .replace(/:\s*Record<[^>]+>/g, "")
@@ -63,12 +64,17 @@ function tsToJs(content) {
     .replace(/let (\w+): ([^=]+)=/g, "var $1 =")
     .replace(/function (\w+)\(([^)]*)\): ([^{]+)\{/g, "function $1($2) {")
     .replace(/;\s*\w+(?:\[\])?\s*:\s*(string|number|boolean|any|void|never|unknown|object)(\[\])?\s*;/g, ";")
-    .replace(/,\s*\w+(?:\[\])?\s*:\s*(string|number|boolean|any|void|never|unknown|object)(\[\])?\s*,/g, ",")
+    .replace(/,\s*(\w+(?:\[\])?)\s*:\s*(string|number|boolean|any|void|never|unknown|object)(\[\])?\s*,/g, ",$1,")
     .replace(/:\s+(string|number|boolean|any|void|never|unknown|object)(\[\])?\s*;/g, ";")
     .replace(/:\s+(string|number|boolean|any|void|never|unknown|object)(\[\])?\s*,/g, ",")
     .replace(/:\s+(string|number|boolean|any|void|never|unknown|object)(\[\])?\s*\)/g, ")")
     .replace(/: (string|number|boolean|any|void|never)\b/g, "")
-    .replace(/(\w+):\s+\w+(?=\s*[,)])/g, "$1")
+    .replace(/\s+\|\s*\w+(\[\])?\b/g, "")
+    .replace(/(?<!&)&(?!&)\s*\{[^}]*\}\s*/g, "")
+    .replace(/(?<!&)&(?!&)\s*\w+(<[^>]*>)?(\[\])?\s*/g, "")
+    .replace(/:\s*\{[^}]*\}\s*/g, " ")
+    .replace(/\bas\s+[A-Z]\w*(\[\])?\b/g, "")
+    .replace(/(\w+):\s+\w+(\[\])?(?=\s*[,)])/g, "$1")
     .replace(/(\w+):\s*\{[^{}]*\}(?:\s*[&|]\s*(?:\w+(?:<[^>]*>)?))*(?=\s*[,)])/g, "$1")
     .replace(/catch \{/g, "catch (e) {")
     .replace(/catch\s*\n\s*\{/g, "catch (e) {")
@@ -121,6 +127,7 @@ function extractDefaultImplMethods(content) {
 
     let body = bodySlice.substring(braceIdx, nextPos);
     body = body.replace(/,\s*$/, "").trimEnd();
+    body = body.replace(/\n\s*"[^"]*"\s*:\s*$/, "").trimEnd();
     methods[name] = body;
   }
 

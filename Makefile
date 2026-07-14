@@ -3014,6 +3014,9 @@ security-backlog-gate:
 
 security: sast sbom pip-audit security-backlog-gate
 
+ci-precheck:
+	@$(UV) run python scripts/ci_precheck.py
+
 qa: lint typecheck test healthcheck
 	@echo "QA gate passed."
 

@@ -20,6 +20,7 @@ from pathlib import Path
 DEADLINE_PATH = Path(__file__).resolve().parents[2] / ".opencode/plugin/enforce-deadline.ts"
 NO_WAIT_PATH = Path(__file__).resolve().parents[2] / ".opencode/plugin/enforce-no-wait.ts"
 DELEGATE_PATH = Path(__file__).resolve().parents[2] / ".opencode/plugin/enforce-delegate.ts"
+SHARED_PATH = Path(__file__).resolve().parents[2] / ".opencode/lib/shared.ts"
 
 
 def _src(path: Path) -> str:
@@ -108,7 +109,7 @@ class TestExtractTaskId:
 
     def test_djb2_hash_fallback(self):
         src = _src(DEADLINE_PATH)
-        assert "djb2" in src
+        assert "hash = 5381" in src
         assert "subagent_type" in src
         assert "description" in src
         assert 'd-' in src
@@ -148,7 +149,7 @@ class TestDeadlineDispatchRecording:
 class TestDeadlineChecking:
     def test_scans_on_every_tool(self):
         src = _src(DEADLINE_PATH)
-        assert "On EVERY tool" in src
+        assert "(ANY tool)" in src
 
 
     def test_compares_elapsed_to_timeout(self):
@@ -442,7 +443,7 @@ class TestNoWaitDispatchTools:
 class TestNoWaitHookStructure:
     def test_tool_execute_before_hook(self):
         src = _src(NO_WAIT_PATH)
-        assert "api.tool.execute.before" in src
+        assert '"tool.execute.before"' in src
 
     def test_fail_open_catch(self):
         src = _src(NO_WAIT_PATH)
@@ -628,11 +629,11 @@ class TestIsDisengaged:
         assert "isDisengaged" in src
 
     def test_checks_disengage_file(self):
-        src = _src(DELEGATE_PATH)
+        src = _src(SHARED_PATH)
         assert "gludd-watchdog-disengage.json" in src
 
     def test_checks_disengage_until_time(self):
-        src = _src(DELEGATE_PATH)
+        src = _src(SHARED_PATH)
         assert "disengage_until" in src
 
 
