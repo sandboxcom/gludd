@@ -17,6 +17,7 @@ See ``docs/design/MODEL_SERVING_DEPLOYMENT.md`` for the design rationale
 
 from __future__ import annotations
 
+import abc
 import json
 import logging
 import re
@@ -155,7 +156,7 @@ def _validate_module_loads(value: list[str]) -> list[str]:
     return out
 
 
-class _BaseSlurmDeployment:
+class _BaseSlurmDeployment(abc.ABC):
     """Shared render/submit/poll logic for vLLM and llama.cpp deployments."""
 
     engine: str = ""
@@ -169,8 +170,8 @@ class _BaseSlurmDeployment:
         self._template_path = template_path if template_path is not None else self._default_template()
 
     @classmethod
-    def _default_template(cls) -> Path:
-        raise NotImplementedError
+    @abc.abstractmethod
+    def _default_template(cls) -> Path: ...
 
     # ------------------------------------------------------------------
     # Template rendering

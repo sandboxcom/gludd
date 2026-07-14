@@ -1,0 +1,30 @@
+# Example tfvars for a Kubernetes + vLLM stack.
+# Real values never live here -- placeholders only. At apply time the
+# TerraformGenerator composer writes a real terraform.tfvars into a tempdir
+# from ComputeConfig + SecretsManager (see TERRAFORM_INFRA_STRUCTURE.md sec.8).
+#
+# Copy to terraform.tfvars and fill in, OR pass via -var-file at apply time.
+
+# vllm-server module inputs (Kubernetes Deployment)
+kubeconfig_path    = "~/.kube/config"
+kubeconfig_context = ""
+image              = "vllm/vllm-openai:latest"
+model              = "meta-llama/Meta-Llama-3-8B-Instruct"
+namespace          = "default"
+replicas           = 1
+gpu_count          = 1
+cpu_request        = "4"
+memory_request     = "8Gi"
+cpu_limit          = "8"
+memory_limit       = "16Gi"
+gpu_vendor         = "nvidia.com/gpu"
+model_pvc_name     = ""
+model_mount_path   = "/models"
+extra_args         = ""
+service_type       = "ClusterIP"
+service_port       = 8000
+
+# Stack-only inputs (referenced by the stack's provider data sources, not by
+# the module). Documented here so a full deployment is one -var-file away.
+# kubeconfig credentials are sourced from the environment per SecretsManager;
+# do NOT commit real kubeconfigs here.

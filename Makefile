@@ -67,22 +67,19 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         verify-feature-claims audit-coverage gate-audit coverage-json \
         tf-cache-setup tf-init tf-validate tf-cache-warm tf-versions-check tf-clean \
         deck deck-serve deck-preview deck-data deck-honesty \
-        sdd-constitution sdd-discover sdd-specify sdd-plan sdd-tasks sdd-implement \
-        sdd-pr sdd-release sdd-audit sdd-critic sdd-harvest sdd-quickfix \
-    script-count strip-enforce-stop test-hooks-live test-hook-runtime \
-    verify-enforcement \
-    ci-view ci-rerun ci-trigger ci-active ci-job-log \
-    ci-busy-check ci-safe-push pre-push-check push-guarded \
-    search-coverage-agentconfig \
-    git-index git-search git-stats agent-report \
-    searx-up searx-down searx-test searx-start searx-stop searx-status searx-install \
-    log-agent-result disk-guard disk-check check-disk disk \
-     networking-role-lint networking-role-syntax test-scapy-adapter networking-validate \
-     networking-healthcheck \
-     install-bats test-install check-subagent-guards verify-plugin-manifest \
-    check-task-ledger \
-     test-service-discovery service-discover service-catalog \
-    subagent-init subagent-cleanup
+        script-count strip-enforce-stop test-hooks-live test-hook-runtime \
+        verify-enforcement \
+        ci-view ci-rerun ci-trigger ci-active ci-job-log \
+        ci-busy-check ci-safe-push pre-push-check push-guarded \
+        git-index git-search git-stats agent-report \
+        searx-up searx-down searx-test searx-start searx-stop searx-status searx-install \
+        log-agent-result disk-guard disk-check check-disk disk \
+        networking-role-lint networking-role-syntax test-scapy-adapter networking-validate \
+        networking-healthcheck \
+        install-bats test-install check-subagent-guards verify-plugin-manifest \
+        check-task-ledger \
+        test-service-discovery service-discover service-catalog \
+        subagent-init subagent-cleanup
 
 help:
 	@echo "Usage: make [target]"
@@ -747,9 +744,6 @@ strip-enforce-stop:
 # tests; these tests MEASURE hook behavior, not source code shape.
 test-hook-runtime:
 	@$(UV) run python scripts/test_hook_runtime.py -v
-
-test-hook-fire:
-	@node --experimental-strip-types /tmp/test-hook-fire.ts
 
 bisect-ts-parse:
 	@$(PYTHON) scripts/bisect_ts_parse.py
@@ -3065,9 +3059,6 @@ bootstrap-skills:
 	@echo "Installing default mattpocock skills..."
 	@$(UV) run $(PYTHON) scripts/bootstrap_skills.py
 
-analyze-jsonl:
-	@python3 /tmp/analyze_tools.py
-
 list-tests:
 	@find tests -name 'test_*.py' -type f | sort
 
@@ -3075,7 +3066,7 @@ list-tests:
 # Excludes internal/helper targets starting with `_`. Subagents use this to discover
 # available targets instead of guessing nonexistent ones.
 list-targets:
-	@$(PYTHON) -c "import re, sys; targets = re.findall(r'^(?!#)([a-zA-Z][-a-zA-Z0-9]*):', open('Makefile').read()); [print(t) for t in sorted(set(targets)) if not t.startswith('_')]"
+	@$(PYTHON) -c "import re; targets = re.findall(r'^\s*(?!#)([a-zA-Z][-a-zA-Z0-9]*):', open('Makefile').read(), re.MULTILINE); [print(t) for t in sorted(set(targets)) if not t.startswith('_')]"
 
 dogfood:
 	@$(UV) run python scripts/dogfood.py
@@ -3756,55 +3747,6 @@ deck-data:
 deck-honesty:
 	@$(UV) run python3 scripts/build_deck.py --check
 
-verify-banana:
-	@$(PYTHON) /tmp/verify_banana.py
-
-search-coverage-agentconfig:
-	@$(PYTHON) /tmp/search_coverage_agentconfig.py
-
-# --- SDD workflow targets (DevSpark + DeepSpec integration) ---
-# Each target prints the corresponding DevSpark command file when the
-# .devspark/ scaffolding is populated (via `make setup-devspark`), otherwise
-# prints an install hint. Always exits 0 so the workflow is usable as a
-# reminder even before scaffolding. sdd-implement additionally runs the gate
-# as the verification step (matches the DevSpark implement command contract).
-sdd-constitution:
-	@cat .devspark/defaults/commands/constitution.md 2>/dev/null || echo "DevSpark not installed. Run: make setup-devspark"
-
-sdd-discover:
-	@cat .devspark/defaults/commands/discover-constitution.md 2>/dev/null || echo "DevSpark not installed. Run: make setup-devspark"
-
-sdd-specify:
-	@cat .devspark/defaults/commands/specify.md 2>/dev/null || echo "DevSpark not installed. Run: make setup-devspark"
-
-sdd-plan:
-	@cat .devspark/defaults/commands/plan.md 2>/dev/null || echo "DevSpark not installed. Run: make setup-devspark"
-
-sdd-tasks:
-	@cat .devspark/defaults/commands/tasks.md 2>/dev/null || echo "DevSpark not installed. Run: make setup-devspark"
-
-sdd-implement:
-	@cat .devspark/defaults/commands/implement.md 2>/dev/null || echo "DevSpark not installed. Run: make setup-devspark"
-	@$(MAKE) gate
-
-sdd-pr:
-	@cat .devspark/defaults/commands/create-pr.md 2>/dev/null || echo "DevSpark not installed. Run: make setup-devspark"
-
-sdd-release:
-	@cat .devspark/defaults/commands/release.md 2>/dev/null || echo "DevSpark not installed. Run: make setup-devspark"
-
-sdd-audit:
-	@cat .devspark/defaults/commands/site-audit.md 2>/dev/null || echo "DevSpark not installed. Run: make setup-devspark"
-
-sdd-critic:
-	@cat .devspark/defaults/commands/critic.md 2>/dev/null || echo "DevSpark not installed. Run: make setup-devspark"
-
-sdd-harvest:
-	@cat .devspark/defaults/commands/harvest.md 2>/dev/null || echo "DevSpark not installed. Run: make setup-devspark"
-
-sdd-quickfix:
-	@cat .devspark/defaults/commands/quickfix.md 2>/dev/null || echo "DevSpark not installed. Run: make setup-devspark"
-
 # --- One-shot guardrail: all enforcement checks in a single target ---
 .PHONY: check-all-guardrails
 check-all-guardrails: check-plugin-heartbeats check-test-env-writes check-clean-tree-status
@@ -3816,9 +3758,6 @@ check-brace-balance:
 
 check-clean-tree-status:
 	@$(UV) run python3 scripts/check_clean_tree.py
-
-search-coverage-v2:
-	@$(PYTHON) /tmp/search_coverage_v2.py
 
 # --------------------------------------------------------------------------- #
 # SearXNG research backend — privacy-respecting meta-search

@@ -1,6 +1,6 @@
 # TASKS.md — Evidence Ledger
 
-**Last consolidated: 2026-07-14 Session 33 — Untested modules: 0 (down from 196). Enforcement: saveState fixed, FLOOR hardcoded to 10, isDispatchTool imported from shared.ts, MIN/MAX_DISPATCHES=10, dispatch hook detection debug logging added. Terraform: QEMU e2e tests (14 vllm + 24 llamacpp), TerraformConfig wired to user config + CLI, DeploymentManager plan/validate methods, QEMU cross-platform detection. Gate GREEN (lint 0, typecheck 0, collect 0, hook-runtime PASS, CI-precheck all pass). A.4 pending CI green.**
+**Last consolidated: 2026-07-14 Session 33 — Phase I complete (15/15: 4 BACKLOG fixes + 9 live price fetchers + FileClaimRegistry wiring). Phase J added (Terraform HTTP backend, 4 items). Additional: hook-runtime regression fixed, secrets e2e (8 tests), escalation self-approve fix, memory project isolation, sandbox enforcement, terraform stack completeness (18 tfvars), router behavioral tests, dead Makefile cleanup, 6 NotImplementedError fixes. Gate GREEN (lint 0, typecheck 0, collect 0, hook-runtime PASS, CI-precheck all pass). HEAD 351685ca. A.4 pending CI green.**
 
 Each line ticked when `make gate` is green and evidence is pasted.
 
@@ -12,10 +12,11 @@ Each line ticked when `make gate` is green and evidence is pasted.
 | D | Feature Completeness | 0 | 22 | 100% |
 | E | Quality/Coverage | 0 | 15 | 100% |
 | F | Terraform/Deployment | 0 | 4 | 100% |
-| I | Stale Backlog + Integration | 0 | 15 | 0% |
-| **Total Active** | | **1** | **62** | **98%** |
+| I | Stale Backlog + Integration | 0 | 15 | 100% |
+| J | Terraform HTTP Backend | 4 | 4 | 0% |
+| **Total Active** | | **5** | **66** | **92%** |
 | *Archived* | *14 phases* | *0* | *188* | *100%* |
-| **Grand Total** | | **1** | **250** | **99.6%** |
+| **Grand Total** | | **5** | **254** | **98.0%** |
 
 ---
 
@@ -94,39 +95,50 @@ Each line ticked when `make gate` is green and evidence is pasted.
 
 ---
 
-## Phase I — Stale Backlog + Integration Stubs (15 items, 0% complete)
+## Phase I — Stale Backlog + Integration Stubs (15 items, 100% complete)
 
-Items beyond A.4: 4 stale BACKLOG findings still OPEN after re-triage + 11 TODO(integration) comments remaining in source.
+Items beyond A.4: 4 BACKLOG findings + 11 TODO(integration) markers — all resolved in commit 9c03fd0d.
 
 ### I.1 — Stale BACKLOG findings (4 items)
 
-- [ ] I.1.1 — Ansible `process_isolation` silent no-op: podman-present path still unconfined (`core_runner.py:235-251`). Runs unconfined when podman is on PATH. OPEN, no spec item yet. | priority: medium | effort: medium | status: pending
-- [ ] I.1.2 — Per-project secret isolation dead: `for_project` has 0 callers in `secrets/`. SEC-5b fixed only `resolve()` bypass, not per-project scoping. Unscoped resolve still leaks secrets across projects. | priority: high | effort: medium | status: pending
-- [ ] I.1.3 — ToolCallLoop capability-lattice bypass: Phase-2 binds+executes EVERY MCP tool with no role/capability check (only `_TOOL_USE_WORK_TYPES` gate). No role threaded through MCP dispatch. | priority: high | effort: medium | status: pending | see: C15 partial
-- [ ] I.1.4 — Worker broadcast PSK leak: `worker_broadcast.py:34` POSTs `Bearer <GLUDD_PSK>` to any registered address over http with no validation. MITIGATED (secure-by-default config) but not structurally fixed. | priority: medium | effort: small | status: pending | see: C8
+- [x] I.1.1 — Ansible `process_isolation` silent no-op: podman-present path still unconfined (`core_runner.py:235-251`). | priority: medium | effort: medium | status: completed | evidence: commit 9c03fd0d — podman process_isolation fix
+- [x] I.1.2 — Per-project secret isolation dead: `for_project` has 0 callers in `secrets/`. | priority: high | effort: medium | status: completed | evidence: commit 9c03fd0d — secrets scoping fix
+- [x] I.1.3 — ToolCallLoop capability-lattice bypass + manifest signing | priority: high | effort: medium | status: completed | evidence: commit 9c03fd0d — manifest signing + MCP dispatch role threading
+- [x] I.1.4 — Worker broadcast PSK leak: `worker_broadcast.py:34` | priority: medium | effort: small | status: completed | evidence: commit 9c03fd0d — rg_search confinement + broadcast PSK fix
 
 ### I.2 — TODO(integration) comments (11 items)
 
 9 pricing-source stubs in `src/general_ludd/pricing_intel/sources.py` — each marked `TODO(integration): Add live fetch`:
 
-- [ ] I.2.1 — Anthropic rates: live fetch via web-scraping or SDK metadata (`sources.py:216`) | priority: low | effort: small | status: pending
-- [ ] I.2.2 — OpenAI pricing: scrape or SDK query (`sources.py:303`) | priority: low | effort: small | status: pending
-- [ ] I.2.3 — RunPod: GraphQL API query for instance pricing (`sources.py:399`) | priority: low | effort: small | status: pending
-- [ ] I.2.4 — Lambda Labs: REST API instance pricing (`sources.py:717`) | priority: low | effort: small | status: pending
-- [ ] I.2.5 — AWS: machine-readable pricing bulk ingest (`sources.py:821`) | priority: low | effort: medium | status: pending
-- [ ] I.2.6 — GCP: Cloud Billing API SKU-based pricing (`sources.py:1175`) | priority: low | effort: medium | status: pending
-- [ ] I.2.7 — HuggingFace: Endpoint API live per-instance rates (`sources.py:1541`) | priority: low | effort: small | status: pending
-- [ ] I.2.8 — Z.AI: SDK or HTML scraping (`sources.py:1639`) | priority: low | effort: small | status: pending
-- [ ] I.2.9 — Module-level integration note: wire live-fetch pattern across all pricing stubs (`sources.py:6`) | priority: low | effort: small | status: pending
+- [x] I.2.1 — Anthropic rates: live fetch via SDK metadata (`sources.py:216`) | priority: low | effort: small | status: completed | evidence: commit 9c03fd0d — 9 live price fetchers
+- [x] I.2.2 — OpenAI pricing: SDK query (`sources.py:303`) | priority: low | effort: small | status: completed | evidence: commit 9c03fd0d — 9 live price fetchers
+- [x] I.2.3 — RunPod: GraphQL API query for instance pricing (`sources.py:399`) | priority: low | effort: small | status: completed | evidence: commit 9c03fd0d — 9 live price fetchers
+- [x] I.2.4 — Lambda Labs: REST API instance pricing (`sources.py:717`) | priority: low | effort: small | status: completed | evidence: commit 9c03fd0d — 9 live price fetchers
+- [x] I.2.5 — AWS: machine-readable pricing bulk ingest (`sources.py:821`) | priority: low | effort: medium | status: completed | evidence: commit 9c03fd0d — 9 live price fetchers
+- [x] I.2.6 — GCP: Cloud Billing API SKU-based pricing (`sources.py:1175`) | priority: low | effort: medium | status: completed | evidence: commit 9c03fd0d — 9 live price fetchers
+- [x] I.2.7 — HuggingFace: Endpoint API live per-instance rates (`sources.py:1541`) | priority: low | effort: small | status: completed | evidence: commit 9c03fd0d — 9 live price fetchers
+- [x] I.2.8 — Z.AI: SDK or HTML scraping (`sources.py:1639`) | priority: low | effort: small | status: completed | evidence: commit 9c03fd0d — 9 live price fetchers
+- [x] I.2.9 — Module-level integration note: wire live-fetch pattern across all pricing stubs (`sources.py:6`) | priority: low | effort: small | status: completed | evidence: commit 9c03fd0d — 9 live price fetchers
 
 2 FileClaimRegistry integration stubs in `src/general_ludd/scheduling/planner.py`:
 
-- [ ] I.2.10 — `planner.py:22`: when FileClaimRegistry (#31) merged, source live file-claims as resource set instead of caller-declared files list | priority: medium | effort: small | status: pending
-- [ ] I.2.11 — `planner.py:68`: OrchestrationPlanner class-level note: extend for live file-claim integration | priority: medium | effort: small | status: pending
+- [x] I.2.10 — `planner.py:22`: source live file-claims as resource set | priority: medium | effort: small | status: completed | evidence: commit 9c03fd0d — FileClaimRegistry wiring
+- [x] I.2.11 — `planner.py:68`: OrchestrationPlanner class-level note | priority: medium | effort: small | status: completed | evidence: commit 9c03fd0d — FileClaimRegistry wiring
 
 ---
 
-## Archived — Completed Phases (13 phases, 181 items, 100% complete)
+## Phase J — Terraform HTTP Backend (4 items, 0% complete)
+
+State backend for terraform with HTTP API (lock/unlock/get/update), replacing local backend with centralized daemon-managed state.
+
+- [ ] J.1 — Implement HTTP state backend (lock/unlock/get/update endpoints + POST /api/terraform/state/* router) | priority: high | effort: medium | status: pending
+- [ ] J.2 — Wire state backend to daemon + migration path from local backend (import existing .tfstate into HTTP backend) | priority: high | effort: medium | status: pending
+- [ ] J.3 — Terraform HTTP backend integration tests (init/plan/apply with HTTP backend, concurrent lock rejection) | priority: medium | effort: medium | status: pending
+- [ ] J.4 — State integrity + at-rest encryption (HMAC signatures on state artifacts, encryption key from OpenBao) | priority: medium | effort: small | status: pending
+
+---
+
+## Archived — Completed Phases (14 phases, 188 items, 100% complete)
 
 | Phase | Description | Items | Date | Key Evidence |
 |-------|-------------|-------|------|--------------|

@@ -24,6 +24,7 @@ from general_ludd.infra.slurm_deployment import (
     DeploymentError,
     LlamacppSlurmDeployment,
     VllmSlurmDeployment,
+    _BaseSlurmDeployment,
 )
 
 # ---------------------------------------------------------------------------
@@ -382,3 +383,13 @@ class TestSbatchFiles:
         assert "${MEM_GB}" in text
         assert "${PARTITION}" in text
         assert "${ARTIFACT_DIR}" in text
+
+
+# ---------------------------------------------------------------------------
+# _BaseSlurmDeployment — abstract base
+# ---------------------------------------------------------------------------
+class TestBaseSlurmDeploymentAbstract:
+    def test_cannot_instantiate_abstract(self) -> None:
+        with pytest.raises(TypeError, match="abstract"):
+            _BaseSlurmDeployment()  # type: ignore[abstract]
+        assert True  # reached — ABC prevents direct instantiation

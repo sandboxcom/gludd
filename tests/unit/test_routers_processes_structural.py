@@ -5,9 +5,11 @@ from __future__ import annotations
 import inspect
 import logging
 import typing
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 from general_ludd.routers.processes import (
     SignalProcessRequest,
@@ -20,18 +22,6 @@ from general_ludd.routers.processes import (
 )
 
 # ---------------------------------------------------------------------------
-# Module import
-# ---------------------------------------------------------------------------
-
-
-class TestModuleImport:
-    def test_module_can_be_imported(self):
-        import general_ludd.routers.processes
-
-        assert general_ludd.routers.processes is not None
-
-
-# ---------------------------------------------------------------------------
 # SignalProcessRequest (Pydantic BaseModel)
 # ---------------------------------------------------------------------------
 
@@ -39,7 +29,6 @@ class TestModuleImport:
 class TestSignalProcessRequest:
     def test_is_pydantic_base_model(self):
         from pydantic import BaseModel
-
         assert issubclass(SignalProcessRequest, BaseModel)
 
     def test_default_signal_is_sigterm(self):
@@ -67,7 +56,6 @@ class TestSignalProcessRequest:
 class TestProcessIOCCounters:
     def test_is_protocol(self):
         from typing import Protocol
-
         assert issubclass(_ProcessIOCCounters, Protocol)
 
     def test_declares_read_bytes(self):
@@ -95,7 +83,6 @@ class TestProcessIOCCounters:
 class TestProcessWithIOC:
     def test_is_protocol(self):
         from typing import Protocol
-
         assert issubclass(_ProcessWithIOC, Protocol)
 
     def test_declares_io_counters(self):
@@ -116,19 +103,10 @@ class TestReadProcLocks:
         sig = inspect.signature(_read_proc_locks)
         assert "pid" in sig.parameters
 
-    def test_pid_arg_is_int(self):
-        sig = inspect.signature(_read_proc_locks)
-        param = sig.parameters["pid"]
-        assert param.annotation is int or param.annotation == "int"
-
-    def test_returns_nothing_on_bad_pid(self):
+    def test_returns_empty_on_bad_pid(self):
         result = _read_proc_locks(-1)
         assert isinstance(result, list)
         assert result == []
-
-    def test_return_type_annotation(self):
-        sig = inspect.signature(_read_proc_locks)
-        assert sig.return_annotation is not inspect.Parameter.empty
 
 
 # ---------------------------------------------------------------------------
@@ -144,14 +122,8 @@ class TestCollectStats:
         sig = inspect.signature(_collect_stats)
         assert "pid" in sig.parameters
 
-    def test_pid_arg_is_int(self):
-        sig = inspect.signature(_collect_stats)
-        param = sig.parameters["pid"]
-        assert param.annotation is int or param.annotation == "int"
-
     def test_returns_dict_on_nonexistent_pid(self):
         import psutil
-
         try:
             result = _collect_stats(99999)
         except psutil.NoSuchProcess:
@@ -175,20 +147,25 @@ class TestModuleAttributes:
 
 
 # ---------------------------------------------------------------------------
-# register (router wiring)
+# register (router wiring) + TestClient behavioral tests
 # ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def app() -> FastAPI:
+    _app = FastAPI()
+    register(_app, {})
+    return _app
+
+
+@pytest.fixture
+def client(app: FastAPI) -> TestClient:
+    return TestClient(app)
 
 
 class TestRegister:
     def test_is_callable(self):
         assert callable(register)
-
-    def test_accepts_two_args(self):
-        sig = inspect.signature(register)
-        params = list(sig.parameters.keys())
-        assert len(params) == 2
-        assert "app" in params
-        assert "_daemon_state" in params
 
     def test_register_does_not_raise(self):
         app = FastAPI()
@@ -199,89 +176,194 @@ class TestRegister:
             raise AssertionError(f"register raised: {exc}") from exc
 
 
-# ---------------------------------------------------------------------------
-# Registered routes
-# ---------------------------------------------------------------------------
+class TestListProcesses:
+    def test_returns_200_with_mocked_registry(self, client: TestClient):
+        mock_reg = MagicMock()
+        mock_reg.list.return_value = []
+        with patch(
+            "general_ludd.routers.processes.default_registry",
+            return_value=mock_reg,
+        ):
+            resp = client.get("/admin/processes")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "processes" in data
+        assert "count" in data
+        assert data["count"] == 0
+
+    def test_includes_alive_flag(self, client: TestClient):
+        mock_rec = MagicMock()
+        mock_rec.pid = 42
+        mock_rec.to_dict.return_value = {"pid": 42, "origin": "unit"}
+        mock_reg = MagicMock()
+        mock_reg.list.return_value = [mock_rec]
+        mock_reg.is_alive.return_value = True
+        with patch(
+            "general_ludd.routers.processes.default_registry",
+            return_value=mock_reg,
+        ):
+            resp = client.get("/admin/processes")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["count"] == 1
+        proc = data["processes"][0]
+        assert proc["pid"] == 42
+        assert proc["alive"] is True
 
 
-class TestRegisterRoutes:
-    @classmethod
-    def setup_class(cls):
-        cls.app = FastAPI()
-        cls.daemon_state: dict[str, object] = {}
-        register(cls.app, cls.daemon_state)
-        cls.routes = {r.path for r in cls.app.routes}
+class TestSignalProcess:
+    def test_successful_signal_returns_200(self, client: TestClient):
+        import signal as _signal
+        mock_reg = MagicMock()
+        mock_reg.resolve_signal.return_value = _signal.SIGTERM
+        with patch(
+            "general_ludd.routers.processes.default_registry",
+            return_value=mock_reg,
+        ):
+            resp = client.post(
+                "/admin/processes/42/signal",
+                json={"signal": "SIGTERM", "group": False},
+            )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["ok"] is True
+        assert data["pid"] == 42
+        assert data["signal"] == "SIGTERM"
+        assert data["group"] is False
 
-    def test_registers_list_processes_route(self):
-        assert "/admin/processes" in self.routes
+    def test_signal_with_group_true_passes_group_to_registry(self, client: TestClient):
+        import signal as _signal
+        mock_reg = MagicMock()
+        mock_reg.resolve_signal.return_value = _signal.SIGTERM
+        with patch(
+            "general_ludd.routers.processes.default_registry",
+            return_value=mock_reg,
+        ):
+            resp = client.post(
+                "/admin/processes/42/signal",
+                json={"signal": "SIGTERM", "group": True},
+            )
+        assert resp.status_code == 200
+        mock_reg.signal.assert_called_once_with(42, _signal.SIGTERM, group=True)
 
-    def test_registers_signal_process_route(self):
-        assert "/admin/processes/{pid}/signal" in self.routes
+    def test_unmanaged_pid_returns_404(self, client: TestClient):
+        from general_ludd.process.registry import ProcessRegistryError
+        mock_reg = MagicMock()
+        mock_reg.resolve_signal.return_value = 15
+        mock_reg.signal.side_effect = ProcessRegistryError(
+            "pid 42 is not a gludd-managed process"
+        )
+        with patch(
+            "general_ludd.routers.processes.default_registry",
+            return_value=mock_reg,
+        ):
+            resp = client.post(
+                "/admin/processes/42/signal",
+                json={"signal": "SIGTERM", "group": False},
+            )
+        assert resp.status_code == 404
 
-    def test_registers_process_stats_route(self):
-        assert "/admin/processes/{pid}/stats" in self.routes
+    def test_identity_check_failed_returns_409(self, client: TestClient):
+        from general_ludd.process.registry import ProcessRegistryError
+        mock_reg = MagicMock()
+        mock_reg.resolve_signal.return_value = 15
+        mock_reg.signal.side_effect = ProcessRegistryError(
+            "identity check failed for pid 42"
+        )
+        with patch(
+            "general_ludd.routers.processes.default_registry",
+            return_value=mock_reg,
+        ):
+            resp = client.post(
+                "/admin/processes/42/signal",
+                json={"signal": "SIGTERM", "group": False},
+            )
+        assert resp.status_code == 409
 
-    def test_route_count_at_least_three(self):
-        assert len(self.routes) >= 3
+    def test_not_in_allow_list_returns_400(self, client: TestClient):
+        from general_ludd.process.registry import ProcessRegistryError
+        mock_reg = MagicMock()
+        mock_reg.resolve_signal.return_value = 15
+        mock_reg.signal.side_effect = ProcessRegistryError(
+            "signal SIGKILL not in allow-list"
+        )
+        with patch(
+            "general_ludd.routers.processes.default_registry",
+            return_value=mock_reg,
+        ):
+            resp = client.post(
+                "/admin/processes/42/signal",
+                json={"signal": "SIGKILL", "group": False},
+            )
+        assert resp.status_code == 400
+
+    def test_unexpected_error_returns_500(self, client: TestClient):
+        mock_reg = MagicMock()
+        mock_reg.resolve_signal.return_value = 15
+        mock_reg.signal.side_effect = RuntimeError("unexpected")
+        with patch(
+            "general_ludd.routers.processes.default_registry",
+            return_value=mock_reg,
+        ):
+            resp = client.post(
+                "/admin/processes/42/signal",
+                json={"signal": "SIGTERM", "group": False},
+            )
+        assert resp.status_code == 500
+        assert "internal error" in resp.json()["detail"]
 
 
-# ---------------------------------------------------------------------------
-# register function signature details
-# ---------------------------------------------------------------------------
+class TestProcessStats:
+    def test_unmanaged_pid_returns_404(self, client: TestClient):
+        mock_reg = MagicMock()
+        mock_reg.get.return_value = None
+        with patch(
+            "general_ludd.routers.processes.default_registry",
+            return_value=mock_reg,
+        ):
+            resp = client.get("/admin/processes/999/stats")
+        assert resp.status_code == 404
+        assert "not a live" in resp.json()["detail"]
 
+    def test_dead_process_returns_404(self, client: TestClient):
+        mock_reg = MagicMock()
+        mock_reg.get.return_value = MagicMock()
+        mock_reg.is_alive.return_value = False
+        with patch(
+            "general_ludd.routers.processes.default_registry",
+            return_value=mock_reg,
+        ):
+            resp = client.get("/admin/processes/42/stats")
+        assert resp.status_code == 404
 
-class TestRegisterSignature:
-    def test_app_param_type_is_fastapi(self):
-        sig = inspect.signature(register)
-        app_param = sig.parameters["app"]
-        assert app_param.annotation in (FastAPI, "FastAPI")
+    def test_access_denied_returns_403(self, client: TestClient):
+        import psutil
+        mock_reg = MagicMock()
+        mock_reg.get.return_value = MagicMock()
+        mock_reg.is_alive.return_value = True
+        with patch(
+            "general_ludd.routers.processes.default_registry",
+            return_value=mock_reg,
+        ), patch(
+            "general_ludd.routers.processes.asyncio.to_thread",
+            side_effect=psutil.AccessDenied("access denied"),
+        ):
+            resp = client.get("/admin/processes/42/stats")
+        assert resp.status_code == 403
+        assert "permission denied" in resp.json()["detail"]
 
-    def test_daemon_state_param_type_is_dict(self):
-        sig = inspect.signature(register)
-        ds_param = sig.parameters["_daemon_state"]
-        assert ds_param.annotation in (dict[str, object], "dict[str, object]")
-
-    def test_returns_none(self):
-        sig = inspect.signature(register)
-        assert sig.return_annotation in (None, "None")
-
-
-# ---------------------------------------------------------------------------
-# Route methods and handlers
-# ---------------------------------------------------------------------------
-
-
-class TestRouteHandlers:
-    @classmethod
-    def setup_class(cls):
-        cls.app = FastAPI()
-        cls.daemon_state: dict[str, object] = {}
-        register(cls.app, cls.daemon_state)
-
-    def _get_route(self, path: str):
-        for r in self.app.routes:
-            if r.path == path:
-                return r
-        return None
-
-    def test_list_processes_is_get(self):
-        route = self._get_route("/admin/processes")
-        assert route is not None
-        assert "GET" in route.methods
-
-    def test_signal_process_is_post(self):
-        route = self._get_route("/admin/processes/{pid}/signal")
-        assert route is not None
-        assert "POST" in route.methods
-
-    def test_process_stats_is_get(self):
-        route = self._get_route("/admin/processes/{pid}/stats")
-        assert route is not None
-        assert "GET" in route.methods
-
-    def test_route_handler_functions_are_async(self):
-        for r in self.app.routes:
-            if r.path.startswith("/admin/processes"):
-                assert inspect.iscoroutinefunction(
-                    r.endpoint
-                ), f"{r.path} handler is not async"
+    def test_no_such_process_returns_404(self, client: TestClient):
+        import psutil
+        mock_reg = MagicMock()
+        mock_reg.get.return_value = MagicMock()
+        mock_reg.is_alive.return_value = True
+        with patch(
+            "general_ludd.routers.processes.default_registry",
+            return_value=mock_reg,
+        ), patch(
+            "general_ludd.routers.processes.asyncio.to_thread",
+            side_effect=psutil.NoSuchProcess(42),
+        ):
+            resp = client.get("/admin/processes/42/stats")
+        assert resp.status_code == 404
+        assert "no longer available" in resp.json()["detail"]

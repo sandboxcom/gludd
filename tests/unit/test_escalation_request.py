@@ -262,7 +262,7 @@ def test_escalation_approval_creates_sts_within_human_bounds() -> None:
     # Approve it.
     approve_resp = client.post(
         f"/admin/perm/escalations/{esc_id}/approve",
-        json={"reason": "ok"},
+        json={"reason": "ok", "human_reviewer": "admin-reviewer"},
     )
     assert approve_resp.status_code == 200, approve_resp.text
     a_body = approve_resp.json()
@@ -295,7 +295,7 @@ def test_escalation_denial_requires_reason() -> None:
     # With reason → 200.
     deny_resp = client.post(
         f"/admin/perm/escalations/{esc_id}/deny",
-        json={"reason": "viewer cannot write"},
+        json={"reason": "viewer cannot write", "human_reviewer": "admin-reviewer"},
     )
     assert deny_resp.status_code == 200
     assert deny_resp.json()["status"] == "denied"

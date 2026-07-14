@@ -24,6 +24,7 @@ class MemoryCreateRequest(BaseModel):
     key: str = Field(min_length=1, max_length=256)
     value: str = Field(default="")
     namespace: str = Field(default="default", max_length=128)
+    project_id: str | None = Field(default=None, max_length=256)
     ttl_seconds: int | None = Field(default=None, ge=0)
 
 
@@ -33,6 +34,7 @@ class MemoryRecordResponse(BaseModel):
     key: str
     value: str
     namespace: str
+    project_id: str | None = None
     ttl_seconds: int | None
     created_at: str
     updated_at: str
@@ -45,6 +47,7 @@ class MemoryRecordResponse(BaseModel):
             key=row.key,
             value=row.value,
             namespace=row.namespace,
+            project_id=row.project_id,
             ttl_seconds=row.ttl_seconds,
             created_at=row.created_at.isoformat() if row.created_at else "",
             updated_at=row.updated_at.isoformat() if row.updated_at else "",
@@ -68,6 +71,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             key=req.key,
             value=req.value,
             namespace=req.namespace,
+            project_id=req.project_id,
             ttl_seconds=req.ttl_seconds,
         )
         return MemoryRecordResponse.from_model(row)
@@ -76,9 +80,10 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
     async def api_memory_list(
         agent_id: str,
         namespace: str = Query(default="default", max_length=128),
+        project_id: str | None = Query(default=None, max_length=256),
     ) -> list[MemoryRecordResponse]:
         repo = _get_memory_repo(app)
-        rows = await repo.list_by_namespace(agent_id, namespace=namespace)
+        rows = await repo.list_by_namespace(agent_id, namespace=namespace, project_id=project_id)
         return [MemoryRecordResponse.from_model(r) for r in rows]
 
     @app.delete("/api/memory/{agent_id}/{key}", status_code=204)
@@ -86,9 +91,10 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         agent_id: str,
         key: str,
         namespace: str = Query(default="default", max_length=128),
+        project_id: str | None = Query(default=None, max_length=256),
     ) -> None:
         repo = _get_memory_repo(app)
-        deleted = await repo.delete(agent_id, key, namespace=namespace)
+        deleted = await repo.delete(agent_id, key, namespace=namespace, project_id=project_id)
         if not deleted:
             raise HTTPException(status_code=404, detail="Memory record not found")
         return None

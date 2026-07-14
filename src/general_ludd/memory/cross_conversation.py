@@ -76,19 +76,23 @@ class CrossConversationStore:
         value: dict[str, Any],
         namespace: str | tuple[str, ...] = ("default",),
         ttl: float | None = None,
+        project_id: str | None = None,
     ) -> None:
         ns = self._normalise_namespace(namespace)
         sk = self._store_key(ns, key)
         ts = _now()
 
+        entry_value = dict(value)
+
         if self._store is not None:
             try:
-                self._store.put(ns, key, value)
+                self._store.put(ns, key, entry_value)
             except NotImplementedError:
                 self._ephemeral[sk] = {
                     "key": key,
-                    "value": value,
+                    "value": entry_value,
                     "namespace": ns,
+                    "project_id": project_id,
                     "created_at": ts,
                     "updated_at": ts,
                 }
@@ -96,13 +100,15 @@ class CrossConversationStore:
         if sk not in self._ephemeral:
             self._ephemeral[sk] = {
                 "key": key,
-                "value": value,
+                "value": entry_value,
                 "namespace": ns,
+                "project_id": project_id,
                 "created_at": ts,
                 "updated_at": ts,
             }
         self._ephemeral[sk]["updated_at"] = ts
-        self._ephemeral[sk]["value"] = value
+        self._ephemeral[sk]["value"] = entry_value
+        self._ephemeral[sk]["project_id"] = project_id
 
         if ttl is not None:
             self._ttl_registry[sk] = ts + ttl
@@ -115,6 +121,7 @@ class CrossConversationStore:
         self,
         key: str,
         namespace: str | tuple[str, ...] = ("default",),
+        project_id: str | None = None,
     ) -> dict[str, Any] | None:
         ns = self._normalise_namespace(namespace)
         sk = self._store_key(ns, key)
@@ -126,17 +133,18 @@ class CrossConversationStore:
         if self._store is not None:
             item = self._store.get(ns, key)
             if item is not None:
-                return {
+                return self._filter_by_project({
                     "key": item.key,
                     "value": item.value,
                     "namespace": list(item.namespace),
+                    "project_id": None,
                     "created_at": item.created_at,
                     "updated_at": item.updated_at,
-                }
+                }, project_id)
 
         entry = self._ephemeral.get(sk)
         if entry is not None:
-            return dict(entry)
+            return self._filter_by_project(dict(entry), project_id)
         return None
 
     # ------------------------------------------------------------------ search
@@ -147,6 +155,7 @@ class CrossConversationStore:
         query: str | None = None,
         filter: dict[str, Any] | None = None,
         limit: int = 10,
+        project_id: str | None = None,
     ) -> list[dict[str, Any]]:
         nsp = self._normalise_namespace(namespace_prefix)
 
@@ -158,14 +167,18 @@ class CrossConversationStore:
                     sk = self._store_key(item.namespace, item.key)
                     if self._is_expired(sk):
                         continue
-                    results.append({
+                    entry = {
                         "key": item.key,
                         "value": item.value,
                         "namespace": list(item.namespace),
+                        "project_id": None,
                         "created_at": item.created_at,
                         "updated_at": item.updated_at,
                         "score": getattr(item, "score", None),
-                    })
+                    }
+                    filtered = self._filter_by_project(entry, project_id)
+                    if filtered is not None:
+                        results.append(filtered)
                 return results[:limit]
 
         matches: list[dict[str, Any]] = []
@@ -190,14 +203,18 @@ class CrossConversationStore:
                 if not match:
                     continue
 
-            matches.append({
+            entry_copy = {
                 "key": entry["key"],
                 "value": entry["value"],
                 "namespace": list(stored_ns),
+                "project_id": entry.get("project_id"),
                 "created_at": entry["created_at"],
                 "updated_at": entry["updated_at"],
                 "score": None,
-            })
+            }
+            filtered = self._filter_by_project(entry_copy, project_id)
+            if filtered is not None:
+                matches.append(filtered)
 
         return matches[:limit]
 
@@ -207,10 +224,20 @@ class CrossConversationStore:
         self,
         key: str,
         namespace: str | tuple[str, ...] = ("default",),
+        project_id: str | None = None,
     ) -> bool:
         ns = self._normalise_namespace(namespace)
         sk = self._store_key(ns, key)
-        existed = sk in self._ephemeral or (self._store is not None and self._store.get(ns, key) is not None)
+
+        entry = self._ephemeral.get(sk)
+        if project_id is not None and entry is not None:
+            entry_pid = entry.get("project_id")
+            if entry_pid is not None and entry_pid != project_id:
+                return False
+
+        existed = sk in self._ephemeral or (
+            self._store is not None and self._store.get(ns, key) is not None
+        )
 
         if self._store is not None:
             self._store.delete(ns, key)
@@ -241,6 +268,17 @@ class CrossConversationStore:
         return self._store is not None or bool(self._ephemeral) is not None
 
     # ------------------------------------------------------------ private impl
+
+    @staticmethod
+    def _filter_by_project(
+        entry: dict[str, Any], project_id: str | None,
+    ) -> dict[str, Any] | None:
+        if project_id is None:
+            return entry
+        entry_pid = entry.get("project_id")
+        if entry_pid is None:
+            return entry
+        return entry if entry_pid == project_id else None
 
     def _is_expired(self, stored_key: str) -> bool:
         deadline = self._ttl_registry.get(stored_key)

@@ -30,6 +30,7 @@ class ConversationMeta:
 
     conversation_id: str
     agent_id: str = ""
+    project_id: str | None = None
     started_at: float = field(default_factory=time.time)
     ended_at: float | None = None
     status: str = "active"  # active, completed, abandoned
@@ -42,6 +43,7 @@ class ConversationMeta:
         return {
             "conversation_id": self.conversation_id,
             "agent_id": self.agent_id,
+            "project_id": self.project_id,
             "started_at": self.started_at,
             "ended_at": self.ended_at,
             "status": self.status,
@@ -54,9 +56,11 @@ class ConversationMeta:
     @staticmethod
     def from_dict(data: dict[str, Any]) -> ConversationMeta:
         ended_at_raw = data.get("ended_at")
+        pid = data.get("project_id")
         return ConversationMeta(
             conversation_id=str(data.get("conversation_id", "")),
             agent_id=str(data.get("agent_id", "")),
+            project_id=str(pid) if pid is not None else None,
             started_at=float(data.get("started_at", 0)),
             ended_at=float(ended_at_raw) if ended_at_raw is not None else None,
             status=str(data.get("status", "active")),
@@ -74,6 +78,7 @@ class WorkingMemoryItem:
     conversation_id: str
     key: str
     value: Any
+    project_id: str | None = None
     created_at: float = field(default_factory=time.time)
     updated_at: float = field(default_factory=time.time)
 
@@ -82,16 +87,19 @@ class WorkingMemoryItem:
             "conversation_id": self.conversation_id,
             "key": self.key,
             "value": self.value,
+            "project_id": self.project_id,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
         }
 
     @staticmethod
     def from_dict(data: dict[str, Any]) -> WorkingMemoryItem:
+        pid = data.get("project_id")
         return WorkingMemoryItem(
             conversation_id=str(data.get("conversation_id", "")),
             key=str(data.get("key", "")),
             value=data.get("value"),
+            project_id=str(pid) if pid is not None else None,
             created_at=float(data.get("created_at", 0)),
             updated_at=float(data.get("updated_at", 0)),
         )
@@ -104,6 +112,7 @@ class ConversationContext:
     meta: ConversationMeta
     working_memory: dict[str, Any] = field(default_factory=dict)
     summary: str = ""
+    project_id: str | None = None
 
 
 class CrossConversationMemory:
@@ -123,16 +132,19 @@ class CrossConversationMemory:
         conversation_id: str,
         agent_id: str = "default",
         tags: list[str] | None = None,
+        project_id: str | None = None,
     ) -> ConversationMeta:
         meta = ConversationMeta(
             conversation_id=conversation_id,
             agent_id=agent_id,
+            project_id=project_id,
             tags=tags or [],
         )
         self._store.put(
             key=conversation_id,
             value=meta.to_dict(),
             namespace=NAMESPACE_CONVERSATIONS,
+            project_id=project_id,
         )
         return meta
 
@@ -151,13 +163,15 @@ class CrossConversationMemory:
         meta.outcome = outcome
         if summary:
             meta.summary = summary
+        pid = meta.project_id
         self._store.put(
             key=conversation_id,
             value=meta.to_dict(),
             namespace=NAMESPACE_CONVERSATIONS,
+            project_id=pid,
         )
         if summary:
-            self._save_summary(conversation_id, summary, meta.agent_id, meta.tags)
+            self._save_summary(conversation_id, summary, meta.agent_id, meta.tags, project_id=pid)
         return meta
 
     def get_conversation(self, conversation_id: str) -> ConversationMeta | None:
@@ -171,10 +185,12 @@ class CrossConversationMemory:
         agent_id: str | None = None,
         status: str | None = None,
         limit: int = 50,
+        project_id: str | None = None,
     ) -> list[ConversationMeta]:
         results = self._store.search(
             namespace_prefix=NAMESPACE_CONVERSATIONS,
             limit=limit,
+            project_id=project_id,
         )
         metas = []
         for r in results:
@@ -200,19 +216,22 @@ class CrossConversationMemory:
             return None
         meta = ConversationMeta.from_dict(meta_raw["value"])
         working = self.get_all_working_memory(conversation_id)
-        summary_raw = self._store.get(conversation_id, namespace=NAMESPACE_SUMMARIES)
+        pid = meta.project_id
+        summary_raw = self._store.get(conversation_id, namespace=NAMESPACE_SUMMARIES, project_id=pid)
         summary = summary_raw["value"].get("text", "") if summary_raw else ""
-        return ConversationContext(meta=meta, working_memory=working, summary=summary)
+        return ConversationContext(meta=meta, working_memory=working, summary=summary, project_id=pid)
 
     def import_context(
         self,
         conversation_id: str,
         similar_terms: str = "",
         limit: int = 5,
+        project_id: str | None = None,
     ) -> list[dict[str, Any]]:
         all_results = self._store.search(
             namespace_prefix=NAMESPACE_CONVERSATIONS,
             limit=100,
+            project_id=project_id,
         )
         contexts = []
         for r in all_results:
@@ -221,7 +240,7 @@ class CrossConversationMemory:
                 continue
             working = self.get_all_working_memory(meta.conversation_id)
             summary_raw = self._store.get(
-                meta.conversation_id, namespace=NAMESPACE_SUMMARIES
+                meta.conversation_id, namespace=NAMESPACE_SUMMARIES, project_id=project_id,
             )
             summary_text = summary_raw["value"].get("text", "") if summary_raw else meta.summary
             score = self._relevance_score(meta, working, summary_text, similar_terms)
@@ -247,6 +266,7 @@ class CrossConversationMemory:
         key: str,
         value: Any,
         ttl: float | None = None,
+        project_id: str | None = None,
     ) -> WorkingMemoryItem:
         item_key = f"{conversation_id}:{key}"
         existing = self._store.get(item_key, namespace=NAMESPACE_WORKING)
@@ -255,6 +275,7 @@ class CrossConversationMemory:
             conversation_id=conversation_id,
             key=key,
             value=value,
+            project_id=project_id,
             created_at=now,
             updated_at=now,
         )
@@ -265,6 +286,7 @@ class CrossConversationMemory:
             value=item.to_dict(),
             namespace=NAMESPACE_WORKING,
             ttl=ttl,
+            project_id=project_id,
         )
         return item
 
@@ -309,6 +331,7 @@ class CrossConversationMemory:
         text: str,
         agent_id: str,
         tags: list[str],
+        project_id: str | None = None,
     ) -> None:
         self._store.put(
             key=conversation_id,
@@ -319,6 +342,7 @@ class CrossConversationMemory:
                 "saved_at": time.time(),
             },
             namespace=NAMESPACE_SUMMARIES,
+            project_id=project_id,
         )
 
     def get_summary(self, conversation_id: str) -> str | None:
@@ -327,10 +351,13 @@ class CrossConversationMemory:
             return None
         return cast(str, raw["value"].get("text"))
 
-    def search_summaries(self, query: str, limit: int = 10) -> list[dict[str, Any]]:
+    def search_summaries(
+        self, query: str, limit: int = 10, project_id: str | None = None,
+    ) -> list[dict[str, Any]]:
         results = self._store.search(
             namespace_prefix=NAMESPACE_SUMMARIES,
             limit=limit * 2,
+            project_id=project_id,
         )
         filtered = []
         query_lower = query.lower()

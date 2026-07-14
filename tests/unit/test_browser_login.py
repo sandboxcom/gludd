@@ -199,12 +199,10 @@ class TestFindFreePort:
 
 
 class TestCredentialStore:
-    def test_base_store_raises_not_implemented(self) -> None:
-        store = CredentialStore()
-        with pytest.raises(NotImplementedError):
-            store.store("test", "token")
-        with pytest.raises(NotImplementedError):
-            store.retrieve("test")
+    def test_base_store_is_abstract(self) -> None:
+        with pytest.raises(TypeError, match="abstract"):
+            CredentialStore()  # type: ignore[abstract]
+        assert True  # reached — ABC prevents direct instantiation
 
 
 class TestEnvCredentialStore:

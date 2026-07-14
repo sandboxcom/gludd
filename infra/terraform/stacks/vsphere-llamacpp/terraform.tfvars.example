@@ -1,0 +1,24 @@
+# Example tfvars for a vSphere + llama.cpp stack.
+# Real values never live here -- placeholders only. At apply time the
+# TerraformGenerator composer writes a real terraform.tfvars into a tempdir
+# from ComputeConfig + SecretsManager (see TERRAFORM_INFRA_STRUCTURE.md sec.8).
+#
+# Copy to terraform.tfvars and fill in, OR pass via -var-file at apply time.
+
+# llamacpp-server module inputs (vSphere VM deployment)
+vsphere_user     = "administrator@vsphere.local"
+vsphere_password = ""
+vsphere_server   = "vcenter.example.com"
+image            = "ghcr.io/ggerganov/llama.cpp:server"
+model            = "meta-llama/Llama-2-7b-Chat-GGUF"
+gpus             = 1
+extra_args       = ""
+region           = "dc1"
+instance_type    = "a100_80"
+max_cost_usd     = 10
+timeout_minutes  = 60
+
+# Stack-only inputs (referenced by the stack's provider data sources, not by
+# the module). Documented here so a full deployment is one -var-file away.
+# vsphere_user / vsphere_password / vsphere_server are injected at deploy time
+# from OpenBao / SecretsManager; do NOT commit real credentials here.

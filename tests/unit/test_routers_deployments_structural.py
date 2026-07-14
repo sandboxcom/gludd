@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock
+
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
 from general_ludd.infra.fix_approval import FixApprovalError
 from general_ludd.routers.deployments import (
     DeploymentHealthListResponse,
@@ -15,7 +20,12 @@ from general_ludd.routers.deployments import (
     SuggestFixRequest,
     _dict_to_finding,
     _get_health_checker,
+    register,
 )
+
+# ---------------------------------------------------------------------------
+# Model tests
+# ---------------------------------------------------------------------------
 
 
 class TestDeploymentHealthResponse:
@@ -143,10 +153,47 @@ class TestDictToFinding:
         assert finding.severity == "warn"
         assert finding.evidence == {}
 
+    def test_missing_severity_defaults_to_warn(self):
+        finding = _dict_to_finding({"rule_id": "X"})
+        assert finding.severity == "warn"
+
+    def test_none_evidence_becomes_empty_dict(self):
+        finding = _dict_to_finding({"evidence": None})
+        assert finding.evidence == {}
+
+    def test_non_dict_evidence_becomes_empty_dict(self):
+        finding = _dict_to_finding({"evidence": ["not", "a", "dict"]})
+        assert finding.evidence == {}
+
+    def test_missing_keys_yield_empty_strings(self):
+        finding = _dict_to_finding({})
+        assert finding.rule_id == ""
+        assert finding.message == ""
+        assert finding.remediation == ""
+
+
+# ---------------------------------------------------------------------------
+# Behavioral: TestClient with mocked health checker
+# ---------------------------------------------------------------------------
+
+
+def _build_client(
+    health_checker: object | None = None,
+    fix_manager: object | None = None,
+) -> TestClient:
+    app = FastAPI()
+    if health_checker is not None:
+        router_mock = MagicMock()
+        router_mock.health_checker = health_checker
+        app.state._deployment_health_router = router_mock
+    if fix_manager is not None:
+        app.state._fix_approval_manager = fix_manager
+    register(app, {})
+    return TestClient(app)
+
 
 class TestGetHealthChecker:
     def test_returns_none_without_router(self):
-        from fastapi import FastAPI
         app = FastAPI()
         result = _get_health_checker(app)
         assert result is None
@@ -157,3 +204,139 @@ class TestFixApprovalError:
         err = FixApprovalError("test error")
         assert isinstance(err, Exception)
         assert str(err) == "test error"
+
+
+class TestHealthEndpoint:
+    def test_returns_503_when_checker_not_wired(self):
+        client = _build_client()
+        resp = client.get("/admin/deployments/health")
+        assert resp.status_code == 503
+        assert "not wired" in resp.json()["detail"]
+
+    def test_returns_200_with_empty_statuses(self):
+        mock_checker = MagicMock()
+        mock_checker.all_statuses.return_value = {}
+        client = _build_client(health_checker=mock_checker)
+        resp = client.get("/admin/deployments/health")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["deployments"] == []
+        assert data["total"] == 0
+
+    def test_returns_statuses_when_present(self):
+        from general_ludd.models.deployment_health import DeploymentStatus
+        status = DeploymentStatus(
+            deployment_id="d1",
+            healthy=True,
+            consecutive_failures=0,
+            last_error=None,
+            last_check=100.0,
+        )
+        mock_checker = MagicMock()
+        mock_checker.all_statuses.return_value = {"d1": status}
+        client = _build_client(health_checker=mock_checker)
+        resp = client.get("/admin/deployments/health")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total"] == 1
+        assert data["deployments"][0]["deployment_id"] == "d1"
+        assert data["deployments"][0]["healthy"] is True
+
+
+class TestRemediateEndpoint:
+    def test_returns_503_when_checker_not_wired(self):
+        client = _build_client()
+        resp = client.post("/admin/deployments/d1/remediate")
+        assert resp.status_code == 503
+
+    def test_force_remediate_returns_status_dict(self):
+        from general_ludd.models.deployment_health import DeploymentStatus
+        status = DeploymentStatus(
+            deployment_id="d1", healthy=True, consecutive_failures=0,
+            last_error=None, last_check=200.0,
+        )
+        mock_checker = MagicMock()
+        mock_checker.force_remediate.return_value = True
+        mock_checker.get_status.return_value = status
+        client = _build_client(health_checker=mock_checker)
+        resp = client.post("/admin/deployments/d1/remediate")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["deployment_id"] == "d1"
+        assert data["healthy"] is True
+
+
+class TestIncidentsEndpoint:
+    def test_returns_503_when_checker_not_wired(self):
+        client = _build_client()
+        resp = client.get("/admin/deployments/incidents")
+        assert resp.status_code == 503
+
+    def test_returns_200_with_empty_incidents(self):
+        mock_checker = MagicMock()
+        mock_checker.get_incidents.return_value = []
+        client = _build_client(health_checker=mock_checker)
+        resp = client.get("/admin/deployments/incidents")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["incidents"] == []
+        assert data["total"] == 0
+
+    def test_respects_limit_query_param(self):
+        mock_checker = MagicMock()
+        mock_checker.get_incidents.return_value = []
+        client = _build_client(health_checker=mock_checker)
+        client.get("/admin/deployments/incidents?limit=50")
+        mock_checker.get_incidents.assert_called_with(limit=50)
+
+
+class TestMisconfigCheckEndpoint:
+    def test_valid_deployment_returns_findings(self):
+        client = _build_client()
+        resp = client.post(
+            "/admin/deployments/misconfig-check",
+            json={"deployment": {"engine": "vllm", "gpu_memory_utilization": 0.99}},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "findings" in data
+        assert "remediations" in data
+        assert "has_critical" in data
+
+    def test_malformed_deployment_list_is_critical_200(self):
+        client = _build_client()
+        resp = client.post(
+            "/admin/deployments/misconfig-check",
+            json={"deployment": []},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["has_critical"] is True
+
+
+class TestSuggestFixEndpoint:
+    def test_returns_fix_id_and_patch(self):
+        client = _build_client()
+        resp = client.post(
+            "/admin/deployments/suggest-fix",
+            json={"deployment": {"engine": "vllm"}},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "fix_id" in data
+        assert "patch" in data
+        assert data["source"] == "deterministic"
+
+
+class TestFixApproveEndpoint:
+    def test_returns_409_for_unknown_fix_id(self):
+        client = _build_client()
+        resp = client.post("/admin/deployments/fixes/nonexistent/approve")
+        assert resp.status_code == 409
+
+
+class TestFixRejectEndpoint:
+    def test_returns_409_for_unknown_fix_id(self):
+        client = _build_client()
+        resp = client.post("/admin/deployments/fixes/nonexistent/reject")
+        assert resp.status_code == 409

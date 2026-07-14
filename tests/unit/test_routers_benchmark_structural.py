@@ -5,6 +5,9 @@ from __future__ import annotations
 import inspect
 from typing import get_type_hints
 
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
 from general_ludd.routers.benchmark import register
 
 # — Route paths expected to be registered —
@@ -15,7 +18,6 @@ _EXPECTED_ROUTES = [
     "/admin/benchmark/record",
     "/admin/prompt-profiles",
 ]
-
 
 # — Handler parameter signatures —
 _HANDLER_PARAMS = {
@@ -59,8 +61,6 @@ class TestRegisterSignature:
 class TestRouteRegistration:
     @classmethod
     def _build_app(cls) -> object:
-        from fastapi import FastAPI
-
         app = FastAPI()
         daemon_state: dict[str, object] = {}
         register(app, daemon_state)
@@ -116,8 +116,6 @@ class TestRouteRegistration:
 class TestHandlerSignatures:
     @classmethod
     def _get_handlers(cls) -> dict[str, object]:
-        from fastapi import FastAPI
-
         app = FastAPI()
         daemon_state: dict[str, object] = {}
         register(app, daemon_state)
@@ -153,3 +151,89 @@ class TestHandlerSignatures:
             assert ret == dict[str, object], (
                 f"Handler {name} returns {ret}, expected dict[str, object]"
             )
+
+
+# ---------------------------------------------------------------------------
+# Behavioral: TestClient — all endpoints degrade gracefully without DB
+# ---------------------------------------------------------------------------
+
+
+def _build_client() -> TestClient:
+    app = FastAPI()
+    register(app, {})
+    return TestClient(app)
+
+
+class TestScoresEndpointNoDb:
+    def test_returns_empty_scores_when_no_session_factory(self):
+        client = _build_client()
+        resp = client.get("/admin/benchmark/scores")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data == {"scores": []}
+
+    def test_accepts_task_type_query_param(self):
+        client = _build_client()
+        resp = client.get("/admin/benchmark/scores?task_type=feature")
+        assert resp.status_code == 200
+        assert resp.json() == {"scores": []}
+
+
+class TestRecentEndpointNoDb:
+    def test_returns_empty_results_when_no_session_factory(self):
+        client = _build_client()
+        resp = client.get("/admin/benchmark/recent")
+        assert resp.status_code == 200
+        assert resp.json() == {"results": []}
+
+    def test_accepts_limit_query_param(self):
+        client = _build_client()
+        resp = client.get("/admin/benchmark/recent?limit=10")
+        assert resp.status_code == 200
+
+
+class TestLeaderboardEndpointNoDb:
+    def test_returns_empty_leaderboard_when_no_session_factory(self):
+        client = _build_client()
+        resp = client.get("/admin/benchmark/leaderboard")
+        assert resp.status_code == 200
+        assert resp.json() == {"leaderboard": []}
+
+    def test_accepts_task_type_query_param(self):
+        client = _build_client()
+        resp = client.get("/admin/benchmark/leaderboard?task_type=bug_fix")
+        assert resp.status_code == 200
+
+
+class TestRecordEndpointNoDb:
+    def test_returns_503_when_no_session_factory(self):
+        client = _build_client()
+        resp = client.post("/admin/benchmark/record", json={"model_profile_id": "m1"})
+        assert resp.status_code == 503
+        assert "No database session" in resp.json()["detail"]
+
+    def test_returns_503_even_with_full_payload(self):
+        client = _build_client()
+        resp = client.post(
+            "/admin/benchmark/record",
+            json={
+                "model_profile_id": "m1",
+                "task_type": "feature",
+                "success": True,
+                "prompt_profile_id": "p1",
+                "scores": {"completion": 0.5, "code_quality": 0.6},
+                "time_seconds": 10.0,
+                "input_tokens": 100,
+                "output_tokens": 200,
+                "cost_usd": 0.001,
+            },
+        )
+        assert resp.status_code == 503
+
+
+class TestPromptProfilesEndpointNoDb:
+    def test_returns_empty_profiles_when_no_session_factory(self):
+        client = _build_client()
+        resp = client.get("/admin/prompt-profiles")
+        assert resp.status_code == 200
+        assert resp.json() == {"profiles": []}
