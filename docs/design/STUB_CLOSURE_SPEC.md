@@ -18,24 +18,72 @@ test that populates the real value (not the default) end-to-end.
 ## CRITICAL — silently breaks a shipped feature today
 
 ### S1. Subagent dispatch degrades to a no-op executor without warning
-`agents/dispatcher.py:46-47`, `daemon.py:1358, 2007, 2116-2122`.
-`AgentDispatcher` defaults to `_noop_executor` (returns `""`). The real
-gateway executor is wired only when `model_profiles` load succeeds; if
-`config/model_profiles/` is empty/missing or all profiles fail to parse,
-`load_model_profiles` returns `[]`, `model_gateway` stays `None`, and every
-dispatched subagent returns `status="completed", output=""` — reported as
-success, no warning. **Fix:** fail-closed (refuse dispatch) or emit a loud
-WARNING + degraded-health signal when the executor is the no-op; test the
-fallback (currently zero test hits).
+Deep-audit CONFIRMED on the exact path: `daemon.py:2007` → `2019` (**no `else:`
+branch**) → `2118` passes `executor=None` → `dispatcher.py:65` → `_noop_executor`
+→ `status="completed", output=""`, with **not one WARNING or ERROR line
+anywhere on that path**. Trigger conditions: `config/model_profiles/` missing,
+empty, or all-unparseable → `load_model_profiles` (daemon.py:598-616) returns
+`[]` → `model_gateway` stays `None`. Note the repo's own `config/` is **not on
+the discovery path** (`$GLUDD_CONFIG_DIR` → `~/.config/general-ludd` →
+`/etc/general-ludd`), so running the daemon from the repo without
+`GLUDD_CONFIG_DIR` set is itself a triggering condition.
 
-### S2. HTTP-worker review path returns a canned ack; returns stranded forever
-`worker/app.py:537-539`. `/jobs/return-review` fabricates a
-`{"status":"ack"}` and discards the job; the event loop persists a decision
-only `if data.get("decision")` (loop.py:1410-1411), which the ack never
-carries, and no reaper re-claims `claimed_for_review` returns
-(loop.py:1160-1164). Three sibling endpoints were already converted to honest
-501s (fix H3); this one was missed. **Fix:** convert to a real dispatch or an
-honest 501 + re-claim reaper. Test `test_worker.py:197-205` enshrines the ack.
+Three findings make this worse than "add a warning":
+- **No consumer in `src/` reads `AgentTaskResult.status`.** Even when the
+  dispatcher *does* fail correctly, the signal has no receiver — every guard
+  rejection (dispatcher.py:247/261/278/294) returns rather than raises. Logging
+  alone cannot reach a caller that never looks → **fail-closed, not log-loud.**
+- **A models-less daemon reports `/healthz: healthy` and `/readyz: ready`
+  (HTTP 200, unauthenticated)** while incapable of a single model call.
+- **The hot-reload escape hatch doesn't work**: `routers/reload.py:193-214`
+  `POST /admin/config/reload` republishes `startup_config["model_profiles"]`
+  but **never rebuilds `ModelGateway`** — a gateway that booted `None` stays
+  `None`, so an operator who fixes the YAML cannot recover without a restart.
+
+**Fix:** `_unconfigured_executor` raising `ExecutorNotConfiguredError` at
+`dispatcher.py:43-65`; `else:` branch setting a `_model_unconfigured` flag at
+`daemon.py:2019`; `/readyz` must report NOT ready when that flag is set; reload
+must rebuild the gateway or explicitly report "restart required". Blast radius
+is narrow: `dispatch_many` has **zero real call sites** (the hibernation.py:544
+hit is a docstring) — all live traffic is `dispatch_one`. **Rewrite the
+bug-enshrining test `test_dispatcher_falls_back_to_noop`.**
+
+### S2. Review dispatch strands task returns forever (3 code paths, not 1)
+Deep-audit CONFIRMED and **broader than first stated** — a 501 alone does NOT
+fix it.
+
+- `worker/app.py:537-539`: `/jobs/return-review` fabricates `{"status":"ack"}`
+  and runs nothing.
+- `db/repository.py:736`: `claim_unreviewed` selects `status == "created"`
+  only. Once a row flips to `claimed_for_review` (repository.py:751/768)
+  **nothing ever re-claims it**. `TaskReturnStatus.REVIEWED` is never assigned
+  anywhere in `src/` — only in test fixtures. Second casualty: self-improve's
+  `_collect_training_data_from_returns` (loop.py:4222-4300) queries
+  `status == "reviewed"` and so **always gets zero rows**.
+- **The trap:** `loop.py:1189-1200` (HTTP branch) never inspects
+  `resp.status_code` — it passes *any* response to `_persist_review_response`,
+  which only cares whether `decision` is present. A 501 body has no `decision`
+  either, so converting the worker to 501 leaves the claim stranded exactly as
+  today, while tests (which assert only the worker's status code) go green.
+- **Third instance, previously unflagged:** the in-process runner branch
+  (`loop.py:1140-1188`) *discards the playbook return value entirely* — only
+  the `except TimeoutError` branch releases the claim.
+- **And the playbook itself is a stub:** `playbooks/return_review.yml`
+  hardcodes `decision: "complete"` with no model-gateway call. So "wire the
+  worker to actually run it" would **rubber-stamp every return as complete** —
+  strictly worse than discarding. 501 is the correct choice.
+
+**Fix (3 files):** (1) `worker/app.py:537-539` → honest 501 matching the
+sibling handlers at 541-586; (2) `loop.py:1189-1223` → check
+`resp.status_code >= 400` and take the existing timeout path (release claim to
+`created`, flush, todo → BLOCKED); factor the release-claim logic (already
+duplicated 3×) into `_release_review_claim(tr, reason)`; (3) `loop.py:1140-1188`
+→ capture the runner result and release the claim when no real decision comes
+back. **Tests that enshrine the bug and must be inverted:**
+`test_worker.py:197-205`, `tests/e2e/test_obj03_worker.py:67-78`, and
+`test_event_loop.py:143-168` — whose comment literally reads *"Happy path must
+not touch/release the claim"*. Add
+`test_dispatch_review_job_http_501_releases_claim`.
 
 ### S3. Pipeline (#77) gate is hardcoded `return True`
 `daemon.py:763-767`. The production `gate_fn` unconditionally returns True;
@@ -54,10 +102,29 @@ function exists to prevent). `test_pipeline_daemon_adapters.py:58` blesses the
 bug in a comment. **Fix:** pass the true merge base (the worktree's fork point).
 
 ### S5. Pipeline lanes have no production input
-`daemon.py:2128-2137`. `controller.submit()`/`report_completed()` are never
-called outside tests — with `pipeline.enabled: true` the lanes start and idle
-forever. **Fix:** either feed CompletedUnits from the completion path or keep
-the flag off; S3-S5 are one cluster — do not ship the feed while S3/S4 stand.
+Deep-audit CONFIRMED: `report_completed` has exactly one hit in `src/` — its own
+definition (`pipeline/controller.py:101`); **`CompletedUnit(` is constructed
+ZERO times in `src/`** (all 33 constructions are in tests). `daemon.py` only
+ever calls `.start()`/`.stop()` (2128-2136, 2293-2301). Root cause of the
+emptiness: **nothing in the pipeline dispatch path creates a worktree** —
+`make_dispatch_fn` routes to `_gateway_executor`, which returns a model-response
+*string*, not a worktree to merge.
+
+**This is the only reason S3/S4 have not already destroyed data.** The lanes
+idle forever, so the fake-green gate and the unreachable clobber-protection are
+armed but never fired.
+
+**Decision: keep `pipeline.enabled` default-OFF and mark the feature
+EXPERIMENTAL in docs.** Fix order is **S4 → S3 → then** build the missing
+worktree-creating producer and feed. Do not wire the feed first.
+
+**Tests that pin the broken shapes** (must change when `CompletedUnit` gains
+`base_sha` and `merged_awaiting_gate` carries units instead of bare ids):
+`test_pipeline_state.py:56,60`; `test_pipeline_state_structural.py:63,69,143,148,153`;
+`test_pipeline_controller.py:93,98,99,174,175`; and
+`tests/integration/test_pipeline_controller_e2e.py` (14 `report_completed`
+sites) — note this "e2e" test drives a flow **no production code performs**, so
+it validates nothing about the real daemon path.
 
 ### S6. Resume path resets recursion depth to 0 (guard bypass)
 `routers/pause.py:152-160`, `agents/dispatcher.py:523-532`,

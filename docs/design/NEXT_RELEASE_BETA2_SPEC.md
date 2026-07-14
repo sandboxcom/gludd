@@ -61,10 +61,38 @@ Already implemented in the working tree this session, needs commit + green CI:
 Highest leverage first; each is "plumbing exists, production never populates/
 consumes it" — the recurring failure shape this release must break:
 
-1. **P-3 retrieval indexer**: `CodebaseIndexer.index_files()` has zero src/
-   callers → the index is empty in prod → retrieval is a silent no-op. Wire
-   an index trigger (startup + incremental mtime) — the single biggest
-   quality lever. (M)
+1. **P-3 retrieval indexer** (deep-audit CONFIRMED; design ready):
+   `CodebaseIndexer.index_files()` has zero src/ callers —
+   `app.state._codebase_indexer` is set at daemon.py:1126 and **never read
+   again**. The consumer side is fully wired (daemon.py:1387-1394 →
+   engine.py:508/664 → `_inject_retrieval_context` engine.py:127-164), so
+   `SemanticSearcher.search` always returns `[]` and the prompt is returned
+   unmodified — a silent no-op through the whole chain. Single biggest quality
+   lever. Design:
+   - **Cold-start bulk index** after daemon.py:1125 via `asyncio.create_task` +
+     `asyncio.to_thread(indexer.index_files, …)` (indexing does sync
+     `read_text()` + regex tokenization per file — must never run on the loop).
+     Discover files with `git ls-files --cached --others --exclude-standard`
+     (there is no gitignore parser in `src/` — reuse git's own logic).
+   - **Incremental refresh** as a new `_phase_refresh_codebase_index` EventLoop
+     phase near loop.py:1052, throttled (`retrieval.reindex_interval_s`,
+     default 300s). Note the phase list is asserted by
+     test_event_loop.py:60-76 — that test must be updated.
+   - **Manifest** `{relpath: mtime_ns}` under a reserved `"__manifest__"` key in
+     the same diskcache.
+   - **BLOCKER — purge does not exist**: `CodebaseIndexer` (retrieval/indexer.py:35-126)
+     has **no delete/purge method at all**. Two correctness holes: deleted files'
+     chunks stay retrievable forever, and a file that shrinks orphans its old
+     trailing chunk keys (`path:3`, `path:4`, …) because `index_files` only
+     overwrites keys it re-emits. Must add `remove_file(path)` (diskcache prefix
+     iteration) called for deletions **and before re-indexing any changed file**.
+   - Also flagged (separate scope): `ExecutionEngine.workspace_path`/`searcher`
+     are single global instances (daemon.py:1387-1394) — not per-project.
+   - **Proof test**: the existing test_codebase_indexer_wiring.py:94-102 only
+     asserts the *constructor line exists in source*; it does not prove indexing
+     runs. Add an e2e that goes through the real startup path and asserts the
+     system prompt actually contains `"Relevant Codebase Context:"` with no
+     manual `index_files()` call in the test. (M)
 2. **ApprovalGate**: whole class returns PENDING forever (approval/gate.py:31-33);
    G7 HITL has no decision mechanism. Wire to human-todos resolve. (M)
 3. **Pause/resume conversation history**: snapshot.messages always `[]`
