@@ -46,7 +46,11 @@ HOOK_ALIAS: dict[str, str] = {
 
 PLUGIN_FILE_RE = re.compile(r"\.opencode/(?:plugin|plugins)/[\w-]+\.ts")
 
+# Non-plugin helper modules. They live in .opencode/lib/ since the E.5 refactor;
+# the legacy .opencode/plugin/ paths stay listed so older trees still resolve.
 UTILITY_FILES = {
+    ".opencode/lib/hot_reload.ts",
+    ".opencode/lib/shared.ts",
     ".opencode/plugin/hot_reload.ts",
     ".opencode/plugin/shared.ts",
 }

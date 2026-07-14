@@ -33,7 +33,11 @@ const FLOOR_ENFORCE = process.env.GLUDD_FLOOR_ENFORCE !== "0"
 const STREAK_PLUGIN_NAME = "enforce-floor"
 
 // ── Time-based message boundary detection ──────────────────────────────────
-const MESSAGE_BOUNDARY_MS = 5000
+// Inter-call gap that marks a new agent message. Env-tunable so e2e tests can
+// drive the real boundary logic without 5s sleeps; production default unchanged.
+const MESSAGE_BOUNDARY_MS = parseInt(
+  process.env.GLUDD_MESSAGE_BOUNDARY_MS || "5000", 10,
+)
 const POST_DISPATCH_GRACE_MS = 15000
 const RESULT_PHASE_READ_LIMIT = 3
 

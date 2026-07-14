@@ -16,6 +16,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_PATH = ROOT / ".opencode" / "plugin" / "enforce-multitask.ts"
 
+# opencode >=1.17.9 removed the `text.complete` hook, so enforce-multitask.ts
+# detects agent-message boundaries from the idle gap between tool.execute.before
+# calls (GLUDD_MSG_GAP_MS, default 5000ms in production). Tests shrink the gap so
+# they can cross REAL message boundaries without 5s sleeps.
+_GAP_MS = 500
+_GAP_ENV = {"GLUDD_MSG_GAP_MS": str(_GAP_MS)}
+_GAP_SLEEP_JS = f"await new Promise(res => setTimeout(res, {_GAP_MS * 2}))"
+
 _ts_counter = 0
 
 
@@ -108,17 +116,22 @@ def test_env_disable_skips_enforcement(tmp_path):
     ws.mkdir()
     _make_working_workspace(ws)
 
+    # Three zero-dispatch messages would normally trip the zero-dispatch streak.
     code = f"""\
 const mod = await import('{PLUGIN_PATH}')
 const plugin = await mod.default({{}})
-// Send text.complete with 0 dispatches three times to build zeroStreak
-await plugin['experimental.text.complete'](undefined, {{text: 'msg1'}})
-await plugin['experimental.text.complete'](undefined, {{text: 'msg2'}})
-await plugin['experimental.text.complete'](undefined, {{text: 'msg3'}})
+await plugin['tool.execute.before']({{tool: 'read'}}, undefined)
+{_GAP_SLEEP_JS}
+await plugin['tool.execute.before']({{tool: 'read'}}, undefined)
+{_GAP_SLEEP_JS}
 const r = await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
 console.log(JSON.stringify(r ?? {{allowed: true}}))
 """
-    result = _run_plugin(code, env_override={"GLUDD_MULTITASK_FLOOR_ENFORCE": "0"}, cwd=str(ws))
+    result = _run_plugin(
+        code,
+        env_override={"GLUDD_MULTITASK_FLOOR_ENFORCE": "0", **_GAP_ENV},
+        cwd=str(ws),
+    )
     r = _last_json(result)
     assert r is None or r.get("permissionDecision") != "deny", f"Env disable should allow, got: {r}"
 
@@ -158,7 +171,7 @@ console.log(JSON.stringify(r ?? {{allowed: true}}))
 
 
 def test_single_dispatch_then_non_dispatch_blocked(tmp_path):
-    """1 dispatch → text.complete → non-dispatch tool: DENIED (prevMessageDispatches=1 < 5)."""
+    """1 dispatch → message boundary → non-dispatch tool: DENIED (prev=1 < MIN_DISPATCHES)."""
     ws = tmp_path / "single"
     ws.mkdir()
     _make_working_workspace(ws)
@@ -167,18 +180,18 @@ def test_single_dispatch_then_non_dispatch_blocked(tmp_path):
 const mod = await import('{PLUGIN_PATH}')
 const plugin = await mod.default({{}})
 await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
-await plugin['experimental.text.complete'](undefined, {{text: 'ok'}})
+{_GAP_SLEEP_JS}
 const r = await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
 console.log(JSON.stringify(r ?? {{allowed: true}}))
 """
-    result = _run_plugin(code, cwd=str(ws))
+    result = _run_plugin(code, cwd=str(ws), env_override=_GAP_ENV)
     r = _last_json(result)
     assert r is not None and r.get("permissionDecision") == "deny", f"Single dispatch should block, got: {r}"
     assert "dispatch(es) in prior message" in r.get("message", "")
 
 
 def test_single_dispatch_then_bash_blocked(tmp_path):
-    """1 dispatch → text.complete → bash: DENIED."""
+    """1 dispatch → message boundary → bash: DENIED."""
     ws = tmp_path / "single-bash"
     ws.mkdir()
     _make_working_workspace(ws)
@@ -187,61 +200,100 @@ def test_single_dispatch_then_bash_blocked(tmp_path):
 const mod = await import('{PLUGIN_PATH}')
 const plugin = await mod.default({{}})
 await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
-await plugin['experimental.text.complete'](undefined, {{text: 'ok'}})
+{_GAP_SLEEP_JS}
 const r = await plugin['tool.execute.before']({{tool: 'bash'}}, undefined)
 console.log(JSON.stringify(r ?? {{allowed: true}}))
 """
-    result = _run_plugin(code, cwd=str(ws))
+    result = _run_plugin(code, cwd=str(ws), env_override=_GAP_ENV)
     r = _last_json(result)
     assert r is not None and r.get("permissionDecision") == "deny", f"Bash should be blocked, got: {r}"
+
+
+def test_full_dispatch_wave_unblocks_non_dispatch(tmp_path):
+    """A thin prior wave is forgiven once this message dispatches a full wave."""
+    ws = tmp_path / "wave-unblock"
+    ws.mkdir()
+    _make_working_workspace(ws)
+
+    dispatches = "\n".join(
+        "await plugin['tool.execute.before']({tool: 'task'}, undefined)"
+        for _ in range(10)
+    )
+    code = f"""\
+const mod = await import('{PLUGIN_PATH}')
+const plugin = await mod.default({{}})
+await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
+{_GAP_SLEEP_JS}
+{dispatches}
+const r = await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
+console.log(JSON.stringify(r ?? {{allowed: true}}))
+"""
+    result = _run_plugin(code, cwd=str(ws), env_override=_GAP_ENV)
+    r = _last_json(result)
+    assert r is None or r.get("permissionDecision") != "deny", (
+        f"Full wave in this message should unblock non-dispatch tools, got: {r}"
+    )
 
 
 # ─── Zero-streak text blocked ───────────────────────────────────────────────
 
 
-def test_zero_dispatch_streak_blocks_text(tmp_path):
-    """After 3 text.completes with 0 dispatches, text is blocked (zeroStreak >= 2)."""
+def test_zero_dispatch_streak_blocks_tool_call(tmp_path):
+    """After MAX_ZERO_STREAK zero-dispatch messages, the next tool call is denied."""
     ws = tmp_path / "zero-streak"
     ws.mkdir()
     _make_working_workspace(ws)
 
+    # Three messages, each with 0 dispatches → zeroStreak reaches MAX_ZERO_STREAK (2).
     code = f"""\
 const mod = await import('{PLUGIN_PATH}')
 const plugin = await mod.default({{}})
-await plugin['experimental.text.complete'](undefined, {{text: 'msg1'}})
-await plugin['experimental.text.complete'](undefined, {{text: 'msg2'}})
-const r = await plugin['experimental.text.complete'](undefined, {{text: 'msg3'}})
-console.log(JSON.stringify(r ?? {{unchanged: true}}))
+await plugin['tool.execute.before']({{tool: 'read'}}, undefined)
+{_GAP_SLEEP_JS}
+await plugin['tool.execute.before']({{tool: 'read'}}, undefined)
+{_GAP_SLEEP_JS}
+const r = await plugin['tool.execute.before']({{tool: 'read'}}, undefined)
+console.log(JSON.stringify(r ?? {{allowed: true}}))
 """
-    result = _run_plugin(code, cwd=str(ws))
+    result = _run_plugin(code, cwd=str(ws), env_override=_GAP_ENV)
     r = _last_json(result)
-    assert r is not None and "MUST DISPATCH" in r.get("text", ""), f"Text should be blocked, got: {r}"
+    assert r is not None and r.get("permissionDecision") == "deny", (
+        f"Zero-dispatch streak should block, got: {r}"
+    )
+    assert "ZERO-DISPATCH STREAK" in r.get("message", "")
 
 
 # ─── Dispatch resets streak ─────────────────────────────────────────────────
 
 
 def test_dispatch_resets_zero_streak(tmp_path):
-    """A dispatch between text.completes resets zeroStreak to 0."""
+    """A full dispatch wave resets zeroStreak, so the next message is not blocked."""
     ws = tmp_path / "reset"
     ws.mkdir()
     _make_working_workspace(ws)
 
+    # Same shape as the zero-streak test, except message 3 dispatches a full wave.
+    dispatches = "\n".join(
+        "await plugin['tool.execute.before']({tool: 'task'}, undefined)"
+        for _ in range(10)
+    )
     code = f"""\
 const mod = await import('{PLUGIN_PATH}')
 const plugin = await mod.default({{}})
-await plugin['experimental.text.complete'](undefined, {{text: 'msg1'}})
-await plugin['experimental.text.complete'](undefined, {{text: 'msg2'}})
-await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
-await plugin['experimental.text.complete'](undefined, {{text: 'msg3'}})
-const r = await plugin['experimental.text.complete'](undefined, {{text: 'msg4'}})
-console.log(JSON.stringify(r ?? {{unchanged: true}}))
+await plugin['tool.execute.before']({{tool: 'read'}}, undefined)
+{_GAP_SLEEP_JS}
+await plugin['tool.execute.before']({{tool: 'read'}}, undefined)
+{_GAP_SLEEP_JS}
+{dispatches}
+{_GAP_SLEEP_JS}
+const r = await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
+console.log(JSON.stringify(r ?? {{allowed: true}}))
 """
-    result = _run_plugin(code, cwd=str(ws))
+    result = _run_plugin(code, cwd=str(ws), env_override=_GAP_ENV)
     r = _last_json(result)
-    # After dispatch, zeroStreak resets → subsequent text.completes start from 0
-    # msg3 after dispatch: zeroStreak=0, msg4: zeroStreak=1 (not yet blocked)
-    assert r is None or "MUST DISPATCH" not in r.get("text", ""), f"Dispatch should reset streak, got: {r}"
+    assert r is None or r.get("permissionDecision") != "deny", (
+        f"Full dispatch wave should reset zero streak, got: {r}"
+    )
 
 
 # ─── Read tools allowed in fresh state with pending work ────────────────────
@@ -317,11 +369,11 @@ def test_block_message_includes_disable_instruction(tmp_path):
 const mod = await import('{PLUGIN_PATH}')
 const plugin = await mod.default({{}})
 await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
-await plugin['experimental.text.complete'](undefined, {{text: 'ok'}})
+{_GAP_SLEEP_JS}
 const r = await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
 console.log(JSON.stringify(r ?? {{}}))
 """
-    result = _run_plugin(code, cwd=str(ws))
+    result = _run_plugin(code, cwd=str(ws), env_override=_GAP_ENV)
     r = _last_json(result)
     msg = r.get("message", "")
     assert "GLUDD_MULTITASK_FLOOR_ENFORCE=0" in msg

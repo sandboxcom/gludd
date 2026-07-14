@@ -71,8 +71,14 @@ def verify(opencode: Path, backup: Path) -> tuple[bool, list[str]]:
     for f in sorted(extra):
         msgs.append(f"  NOTE: extra file in backup (may be stale): {f}")
 
-    live_shared = opencode / "plugin" / "shared.ts"
-    backup_shared = backup / "plugin" / "shared.ts"
+    # shared.ts moved from plugin/ to lib/ (E.5 refactor). The live tree uses the
+    # new layout; .opencode.orig/ backups may still be flat. Resolve either.
+    def _shared_in(base: Path) -> Path:
+        lib_path = base / "lib" / "shared.ts"
+        return lib_path if lib_path.is_file() else base / "plugin" / "shared.ts"
+
+    live_shared = _shared_in(opencode)
+    backup_shared = _shared_in(backup)
     if live_shared.is_file() and backup_shared.is_file():
         live_exports = _extract_exports(live_shared)
         backup_exports = _extract_exports(backup_shared)

@@ -34,7 +34,9 @@ export const MIN_DISPATCHES_PER_WAVE = parseInt(process.env.GLUDD_MIN_DISPATCHES
 export const MAX_DISPATCHES = parseInt(process.env.GLUDD_MULTITASK_MAX_DISPATCHES || "10", 10)
 export const MAX_ZERO_STREAK = 2
 export const WAVE_HISTORY_SIZE = 10
-const MSG_GAP_MS = 5000
+// Inter-call gap that marks a new agent message. Env-tunable so e2e tests can
+// drive the real boundary logic without 5s sleeps; production default unchanged.
+const MSG_GAP_MS = parseInt(process.env.GLUDD_MSG_GAP_MS || "5000", 10)
 
 export const MULTITASK_STATE_FILE = "/tmp/gludd-multitask-state.json"
 
@@ -160,11 +162,19 @@ const defaultImpl: HotModule = {
       const disengaged = isDisengaged()
 
       if (!disengaged) {
-        // FLOOR BREACH: previous message had >0 but <MIN_DISPATCHES, and streak is live
+        // FLOOR BREACH: previous message had >0 but <MIN_DISPATCHES dispatches and
+        // this message has not dispatched yet.
+        //
+        // NOTE: the third clause used to be `zeroStreak > 0`, which made this
+        // branch UNREACHABLE — the same boundary that sets prevMessageDispatches
+        // to a non-zero count also resets zeroStreak to 0, so `prev > 0` and
+        // `zeroStreak > 0` can never hold simultaneously. Gate on "no dispatch yet
+        // in the current message" instead, which is the intended escape hatch:
+        // dispatch a full wave and non-dispatch tools unblock.
         if (
           _state.prevMessageDispatches > 0 &&
           _state.prevMessageDispatches < MIN_DISPATCHES &&
-          _state.zeroStreak > 0
+          _state.thisMessageDispatches === 0
         ) {
           return {
             permissionDecision: "deny" as const,

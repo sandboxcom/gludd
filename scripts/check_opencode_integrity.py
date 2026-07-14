@@ -145,10 +145,24 @@ def check_default_exports(root: Path) -> list[str]:
 
 # ── Check 4: shared.ts exports match what plugins import ─────────────────
 
+def _find_shared(root: Path) -> Path | None:
+    """Locate shared.ts.
+
+    It moved from .opencode/plugin/ to .opencode/lib/ in the E.5 refactor. Check
+    the current location first, then the legacy one, so this check keeps running
+    instead of silently no-opping when the file moves.
+    """
+    for rel in (("lib", "shared.ts"), ("plugin", "shared.ts")):
+        candidate = root / ".opencode" / rel[0] / rel[1]
+        if candidate.is_file():
+            return candidate
+    return None
+
+
 def check_shared_alignment(root: Path) -> list[str]:
     errors: list[str] = []
-    shared = root / ".opencode" / "plugin" / "shared.ts"
-    if not shared.is_file():
+    shared = _find_shared(root)
+    if shared is None:
         return []  # can't check without shared.ts
 
     shared_content = shared.read_text(encoding="utf-8")

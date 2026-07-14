@@ -59,9 +59,11 @@ class TestPluginRegistration:
             if p.startswith("./"):
                 p = p[2:]
             registered.add(p)
+        # Shared helpers live in .opencode/lib/ (E.5 refactor); they are not
+        # plugins and are never registered in opencode.json.
         utilities = {
-            ".opencode/plugin/hot_reload.ts",
-            ".opencode/plugin/shared.ts",
+            ".opencode/lib/hot_reload.ts",
+            ".opencode/lib/shared.ts",
         }
         plugin_dir = ROOT / ".opencode" / "plugin"
         if plugin_dir.is_dir():
@@ -99,7 +101,10 @@ class TestSubagentGuards:
     def test_all_enforcement_plugins_guard_import_or_inline(self):
         plugin_dir = ROOT / ".opencode" / "plugin"
         enforcement_plugins = [f for f in plugin_dir.glob("enforce-*.ts")]
-        guard_imported = re.compile(r'import\s+\{[^}]*isSubagent[^}]*\}\s+from\s+"./shared\.ts"')
+        # shared.ts moved from .opencode/plugin/ to .opencode/lib/ (E.5 refactor),
+        # so plugins import it as "../lib/shared.ts". Accept any path ending in
+        # shared.ts so the guard check does not silently stop matching on a move.
+        guard_imported = re.compile(r'import\s+\{[^}]*isSubagent[^}]*\}\s+from\s+"[^"]*shared\.ts"')
         guard_called = re.compile(r'\bisSubagent\(\)')
         guard_inline = re.compile(r'process\.env\.OPENCODE_SUBAGENT\s*===?\s*"1"')
         _is_subagent_defined = re.compile(r'function\s+_isSubagent\s*\(\s*\)')

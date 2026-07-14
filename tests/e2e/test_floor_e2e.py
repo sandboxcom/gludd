@@ -17,6 +17,16 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_PATH = ROOT / ".opencode" / "plugin" / "enforce-floor.ts"
 
+# opencode >=1.17.9 removed the `text.complete` hook, so enforce-floor.ts detects
+# agent-message boundaries from the idle gap between tool.execute.before calls
+# (GLUDD_MESSAGE_BOUNDARY_MS, default 5000ms in production). Tests shrink the gap
+# so they can cross a REAL boundary without a 5s sleep.
+_BOUNDARY_MS = 500
+_BOUNDARY_ENV = {"GLUDD_MESSAGE_BOUNDARY_MS": str(_BOUNDARY_MS)}
+_BOUNDARY_SLEEP_JS = (
+    f"await new Promise(res => setTimeout(res, {_BOUNDARY_MS * 2}))"
+)
+
 _ts_counter = 0
 
 
@@ -305,7 +315,7 @@ console.log(JSON.stringify(r ?? {{allowed: true}}))
 
 
 def test_message_shape_blocks_after_thin_dispatch_wave(tmp_path):
-    """After 1-4 dispatches, next non-dispatch tool call is blocked."""
+    """After a 1-dispatch wave, next non-dispatch tool call is blocked."""
     ws = tmp_path / "msg-shape"
     ws.mkdir()
     _make_working_workspace(ws)
@@ -313,15 +323,15 @@ def test_message_shape_blocks_after_thin_dispatch_wave(tmp_path):
     code = f"""\
 const mod = await import('{PLUGIN_PATH}')
 const plugin = await mod.default({{}})
-// Dispatch 1 task → _thisMessageDispatchCount = 1
+// Message 1: dispatch exactly 1 task → _thisMessageDispatchCount = 1
 await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
-// Simulate end of message via text.complete → _prevMessageDispatchCount = 1
-await plugin['experimental.text.complete'](undefined, {{text: 'ok'}})
-// Non-dispatch call should be blocked (prev dispatch count 1, in [1,5))
+// Message boundary: idle longer than GLUDD_MESSAGE_BOUNDARY_MS
+{_BOUNDARY_SLEEP_JS}
+// Message 2: boundary rolls _prevMessageDispatchCount to 1 → non-dispatch denied
 const r = await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
 console.log(JSON.stringify(r ?? {{allowed: true}}))
 """
-    result = _run_plugin(code, cwd=str(ws))
+    result = _run_plugin(code, cwd=str(ws), env_override=_BOUNDARY_ENV)
     r = _last_json(result)
     assert r is not None and r.get("permissionDecision") == "deny", (
         f"Message-shape violation should block, got: {r}"
@@ -330,7 +340,7 @@ console.log(JSON.stringify(r ?? {{allowed: true}}))
 
 
 def test_message_shape_allows_after_5plus_dispatch_wave(tmp_path):
-    """After 5+ dispatches (non-thin wave), next non-dispatch is allowed."""
+    """After a 5-dispatch wave (non-thin), next non-dispatch is allowed."""
     ws = tmp_path / "msg-ok"
     ws.mkdir()
     _make_working_workspace(ws)
@@ -343,11 +353,11 @@ await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
 await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
 await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
 await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
-await plugin['experimental.text.complete'](undefined, {{text: 'ok'}})
+{_BOUNDARY_SLEEP_JS}
 const r = await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
 console.log(JSON.stringify(r ?? {{allowed: true}}))
 """
-    result = _run_plugin(code, cwd=str(ws))
+    result = _run_plugin(code, cwd=str(ws), env_override=_BOUNDARY_ENV)
     r = _last_json(result)
     assert r is None or r.get("permissionDecision") != "deny", (
         f"5+ dispatch wave should allow next non-dispatch, got: {r}"
