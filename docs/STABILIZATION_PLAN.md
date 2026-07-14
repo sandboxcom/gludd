@@ -8,10 +8,7 @@
 > (derived from `make gate`) and `TASKS.md` (evidence ledger). If this plan
 > disagrees with `make gate` output, the gate is correct.
 >
-> **Goal**: take gludd from its current state (beta.2 version-bumped but
-> unshipped, CI red with a small failure tail) to a **stable, shipped,
-> useful** state: green CI, beta.2 released, beta.3 architecture landed,
-> security residuals closed, and the system able to work external projects.
+> **Goal**: take gludd from its current state (beta.4 in code, **no beta release ever shipped** — alpha.5 was the last shipped release, 2026-07-02) to a **stable, shipped, useful** state: green CI, beta.1 released, security residuals closed, and the system able to work external projects.
 
 ---
 
@@ -35,7 +32,7 @@ gludd ("General Ludd") is an autonomous software-development agent system:
 - **Enforcement plugins** (`.opencode/plugin/*.ts`) and shell hooks guard the
   orchestrating agent itself (gate freshness, push-rate, anti-false-done).
 
-Current version: `0.1.0-beta.3` (bumped in code, **tag not cut**).
+Current version: `0.1.0-beta.4` (bumped in code, **tag not cut**).
 DB decision of record (W3.5): **SQLite only, single worker** — being replaced
 in beta.3 by a broker/writer-process architecture (see Phase B).
 
@@ -102,7 +99,7 @@ and updates `SESSION.md` (Last Updated, Current Work, Next Steps).
 |---|---|---|
 | HEAD | `ed28ee48` (master) | `make git-log` 2026-07-09 |
 | CI | CI gate PASSED (3.11+3.12 green); test shards pending | SESSION.md 2026-07-09 |
-| beta.2 | Version bumped everywhere; **tag NOT cut, artifact NOT verified** | SESSION.md Known Gaps #1 |
+| beta.2 | **No beta release ever shipped.** Code versions up to `0.1.0-beta.4` exist; alpha.5 was the last shipped release (12 assets, 2026-07-02). | Release history |
 | beta.3 | Phase B (B3.1.1–B3.1.5) COMPLETE | TASKS.md beta.3 section |
 | cast(Any) burn-down | **COMPLETE** — 0 sites in src/, ratchet xfail removed (commit `1d89ce8e`). TASKS.md line ~867 still shows Tier 4 unticked — stale; tick it when touching TASKS.md | git log |
 | SSRF consolidation (#40) | Tranches 3+4 landed (26 connectors on `is_url_blocked`, `_ssrf_guard.py` deleted) | TASKS.md Phase S2026-07-03 |
@@ -134,7 +131,7 @@ unblocked, unclaimed work package — except where a WP is marked `[parallel-ok]
 
 ---
 
-### PHASE A — CI green + ship v0.1.0-beta.2  ⛔ blocks everything
+### PHASE A — CI green + ship v0.1.0-beta.1  ⛔ blocks everything
 
 #### WP-A1: Reconcile the in-flight fix wave
 A previous session dispatched fixes for the 13 CI failures that may or may
@@ -173,9 +170,9 @@ into SESSION.md.
 
 #### WP-A4: Cut the release
 Only after WP-A3 acceptance:
-1. `make release-cut TAG='v0.1.0-beta.2' MSG='Release v0.1.0-beta.2'`
+1. `make release-cut TAG='v0.1.0-beta.1' MSG='Release v0.1.0-beta.1'`
    (aborts itself if CI is not green — that is correct behavior, not a bug).
-2. `make verify-release-artifact TAG='v0.1.0-beta.2'` must PASS.
+2. `make verify-release-artifact TAG='v0.1.0-beta.1'` must PASS.
 3. Update SESSION.md + TASKS.md (tick the ship row with run id + tag URL).
 **Acceptance**: release exists with artifacts; verify target PASS output pasted.
 

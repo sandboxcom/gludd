@@ -15,7 +15,7 @@ All examples are derived directly from the live config schema. Referenced files:
 | Agent definitions | `config/agents/default_agents.yml` |
 | Process isolation | `config/ansible/isolation.yml` |
 | Hot-reload | `src/general_ludd/reload/hot_reloader.py` (`HotReloader`) |
-| Python version | `pyproject.toml` (`version = "0.1.0-beta.3"`) |
+| Python version | `pyproject.toml` (`version = "0.1.0-beta.1"`) |
 
 ---
 
@@ -418,13 +418,13 @@ This project uses two co-existing version schemes:
 
 | Artifact | File | Format | Example |
 |----------|------|--------|---------|
-| Python package | `pyproject.toml` `version` | PEP 440, no leading `v` | `0.1.0-beta.3` |
+| Python package | `pyproject.toml` `version` | PEP 440, no leading `v` | `0.1.0-beta.1` |
 | Ansible collection | `galaxy.yml` `version:` (if/when added) | Semver | `0.1.0` |
 
 From `pyproject.toml`:
 
 ```toml
-version = "0.1.0-beta.3"
+version = "0.1.0-beta.1"
 ```
 
 No leading `v`.
