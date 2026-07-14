@@ -587,14 +587,18 @@ def _streak_state_file(p: str = "/tmp/gludd-mainthread-streak.json"):
 
 def test_delegate_streak_zero_allowed():
     """mainthreadBudgetBefore returns null when streak=0."""
-    _clean_state_files(_streak_state_file())
+    _clean_state_files(_streak_state_file(), "/tmp/gludd-hot-delegate.js",
+                       "/tmp/gludd-watchdog-disengage.json")
     code = f"""\
 const mod = await import('{PLUGIN_DIR}/enforce-delegate.ts')
 const plugin = await mod.default({{}})
 const result = await plugin['tool.execute.before']({{tool: 'edit'}}, {{args: {{}}}})
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
-    result = _run_ts(code)
+    result = _run_ts(code, env_override={
+        "GLUDD_MAINTHREAD_STREAK_ENFORCE": "1",
+        "CLAUDE_AGENT_TARGET": "6",
+    })
     assert result is None or result.get("allowed") == True
 
 
@@ -602,7 +606,8 @@ def test_delegate_streak_at_threshold_denied():
     """mainthreadBudgetBefore denies when streak >= THRESHOLD and open work exists."""
     sf = _streak_state_file()
     tasks_path = f"/tmp/gludd-test-tasks-delegate-{os.getpid()}.md"
-    _clean_state_files(sf, tasks_path, "/tmp/gludd-watchdog-disengage.json")
+    _clean_state_files(sf, tasks_path, "/tmp/gludd-watchdog-disengage.json",
+                       "/tmp/gludd-hot-delegate.js", "/tmp/gludd-force-dispatch.json")
     # Write streak state at threshold
     with open(sf, "w") as f:
         json.dump({"count": 2, "ts": int(time.time() * 1000)}, f)
@@ -624,9 +629,11 @@ try {{
     result = _run_ts(code, env_override={
         "GLUDD_LIVE_AGENTS_COUNT": "0",
         "GLUDD_TASKS_MD": tasks_path,
+        "GLUDD_MAINTHREAD_STREAK_ENFORCE": "1",
+        "CLAUDE_AGENT_TARGET": "6",
     })
     assert result.get("permissionDecision") == "deny", f"Expected deny, got: {result}"
-    _clean_state_files(sf, tasks_path)
+    _clean_state_files(sf, tasks_path, "/tmp/gludd-force-dispatch.json")
 
 
 def test_delegate_read_tool_not_counted():
