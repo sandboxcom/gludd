@@ -1,20 +1,19 @@
 """Structural tests for project_runner/runner.py — target project check runner."""
 
-import re
 import tempfile
 from pathlib import Path
 
+from general_ludd.project_runner.profile import ProjectProfile, ProjectProfileError
 from general_ludd.project_runner.runner import (
+    _BASE_ENV_KEYS,
+    _DEFAULT_TIMEOUT_S,
+    _SECRET_NAME_RE,
+    _TAIL_CHARS,
     CheckResult,
     ProjectCommandRunner,
     _BoundedReader,
     _build_env,
-    _SECRET_NAME_RE,
-    _TAIL_CHARS,
-    _BASE_ENV_KEYS,
-    _DEFAULT_TIMEOUT_S,
 )
-from general_ludd.project_runner.profile import ProjectProfile, ProjectProfileError
 
 
 class TestCheckResult:
@@ -134,7 +133,7 @@ class TestProjectCommandRunner:
         profile = ProjectProfile()
         try:
             ProjectCommandRunner(workspace="/nonexistent/path/12345", profile=profile)
-            assert False, "should have raised"
+            raise AssertionError("should have raised")
         except ProjectProfileError:
             pass
 

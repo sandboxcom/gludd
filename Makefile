@@ -3985,3 +3985,7 @@ restore-opencode:
 	@echo "Clearing corrupted opencode cache ..."
 	@rm -rf ~/.cache/opencode && echo "  ~/.cache/opencode cleared"
 	@echo ".opencode/ restored. Restart opencode for changes to take effect."
+
+# ── untested-module discovery ────────────────────────────────────────────────
+find-untested:
+	$(PYTHON) scripts/find_untested_modules.py

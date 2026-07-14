@@ -1,6 +1,6 @@
 # TASKS.md — Evidence Ledger
 
-**Last consolidated: 2026-07-13 Session 31 — 1 OPEN item (A.4 release cut). 231 items (230 completed, 1 pending = 99.6%). 9 enforcement plugin bugs fixed (FLOOR alignment, input shapes, camelCase fields, dispatch-block). Runtime invocation tests added (test_enforcement_runtime_invoke.py). Gate green: lint 0, typecheck 0, collect 0, hook-runtime PASS. ~70+ test files written (connectors/sandbox/cli/agents/lifecycle/modules). Untested modules: ~125 (down from 196). A.4 release pending CI green.**
+**Last consolidated: 2026-07-13 Session 31 — 1 OPEN item (A.4 release cut). 231 items (230 completed, 1 pending = 99.6%). Enforcement: MIN_DISPATCHES hardcoded to 10 across all plugins, MAX_DISPATCHES=10 ceiling added (blocks >10 per wave), isDispatchTool imported from shared.ts (fixes dispatch counting). 9 enforcement bugs fixed. Untested modules: 112 (down from 196). A.4 release pending CI green.**
 
 Each line ticked when `make gate` is green and evidence is pasted.
 
