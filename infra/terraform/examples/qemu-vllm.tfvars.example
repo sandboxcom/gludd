@@ -1,0 +1,21 @@
+# qemu-vllm stack tfvars example (Terraform Phase 2)
+# Copy to qemu-vllm.tfvars and fill in real values.
+# Auth (ssh_public_key) is the only required credential.
+# libvirt_uri defaults to qemu:///system if the daemon runs locally.
+
+name            = "gludd-vllm"
+vcpus           = 8
+memory_mb       = 65536
+disk_size_gb    = 200
+
+storage_pool    = "default"
+network_name    = "default"
+host_port       = 8000
+
+ssh_public_key  = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI..."
+
+engine          = "vllm"
+model           = "meta-llama/Llama-3.1-70B"
+container_image = "vllm/vllm-openai:latest"
+gpus            = 1
+extra_args      = "--tensor-parallel-size 4 --max-model-len 8192"

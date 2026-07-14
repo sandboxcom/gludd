@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import shlex
 import textwrap
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -132,18 +133,45 @@ def _user_data_script(config: ComputeConfig) -> str:
     return script
 
 
+def _override_apply(terraform_config: object | None) -> Callable[[str, object], object]:
+    """Return a callable that resolves a field value with TerraformConfig override.
+
+    If terraform_config is set and has a non-default/non-empty value for the
+    given field, that value wins. Otherwise the compute default is returned.
+    """
+    def _resolve(key: str, compute_default: object) -> object:
+        if terraform_config is None:
+            return compute_default
+        tcv = getattr(terraform_config, key, None)
+        if tcv is None:
+            return compute_default
+        if isinstance(tcv, bool) and tcv is True:
+            return tcv  # booleans: True is a valid override vs default True
+        if isinstance(tcv, str) and tcv == "":
+            return compute_default
+        if isinstance(tcv, (int, float)) and tcv == 0:
+            # 0 is a valid override for gpu_count=1 etc. — allow it.
+            pass
+        return tcv
+    return _resolve
+
+
 class TerraformGenerator:
     def __init__(
         self,
         state_backend_selector: StateBackendSelector | None = None,
         deployment_optimization_config: DeploymentOptimizationConfig | None = None,
+        terraform_config: object | None = None,
     ) -> None:
-        # Optional state-backend selector (design doc §10 #2). When attached,
+        # Optional state-backend selector (design doc \u00a710 #2). When attached,
         # every generated main.tf is prepended with the appropriate
         # ``terraform { backend "..." {} }`` block. ``None`` preserves the
         # legacy local-state default (no backend block emitted).
         self._state_backend_selector = state_backend_selector
         self._deployment_optimization_config = deployment_optimization_config
+        # User-configurable TerraformConfig (from general_ludd.config.user_config).
+        # Fields set here act as overrides for ComputeConfig defaults in build_tfvars.
+        self._terraform_config = terraform_config
 
     def generate(self, config: ComputeConfig) -> str:
         body = self._generate_body(config)
@@ -190,22 +218,30 @@ class TerraformGenerator:
         All string values are passed through :func:`escape_tfvar_value` so the
         output is always a syntactically valid HCL tfvars file regardless of
         the characters in the config fields. Numeric values are emitted bare.
+
+        User-configurable TerraformConfig overrides are applied on top of
+        ComputeConfig defaults: a non-empty/non-default field in TerraformConfig
+        wins over the corresponding ComputeConfig field.
         """
-        image = _container_image(config)
+        _apply_override = _override_apply(self._terraform_config)
+        _ci = _container_image(config)
+
         lines: list[str] = [
             f"provider       = {escape_tfvar_value(config.provider.value)}",
             f"engine         = {escape_tfvar_value(config.engine.value)}",
             f"gpu_type       = {escape_tfvar_value(config.gpu_type.value)}",
-            f"gpu_count      = {config.gpu_count}",
-            f"model_name     = {escape_tfvar_value(config.model_name)}",
-            f"container_image = {escape_tfvar_value(image)}",
-            f"disk_size_gb   = {config.disk_size_gb}",
-            f"max_cost_usd   = {escape_tfvar_value(str(config.max_cost_usd))}",
-            f"timeout_minutes = {escape_tfvar_value(str(config.timeout_minutes))}",
-            f"allowed_cidr   = {escape_tfvar_value(config.allowed_cidr)}",
+            f"gpu_count      = {_apply_override('gpu_count', config.gpu_count)}",
+            f"model_name     = {escape_tfvar_value(str(_apply_override('model_name', config.model_name)))}",
+            f"container_image = {escape_tfvar_value(str(_apply_override('container_image', _ci)))}",
+            f"disk_size_gb   = {_apply_override('disk_size_gb', config.disk_size_gb)}",
+            f"max_cost_usd   = {escape_tfvar_value(str(_apply_override('max_cost_usd', config.max_cost_usd)))}",
+            f"timeout_minutes = {escape_tfvar_value(str(_apply_override('timeout_minutes', config.timeout_minutes)))}",
+            f"allowed_cidr   = {escape_tfvar_value(str(_apply_override('allowed_cidr', config.allowed_cidr)))}",
+            f"extra_args      = {escape_tfvar_value(str(_apply_override('extra_args', '')))}",
+            f"instance_type   = {escape_tfvar_value(str(_apply_override('instance_type', '')))}",
         ]
-        if config.region is not None:
-            lines.append(f"region         = {escape_tfvar_value(config.region)}")
+        region_val = _apply_override('region', config.region or "us-east-1")
+        lines.append(f"region         = {escape_tfvar_value(str(region_val))}")
         if self._deployment_optimization_config is not None:
             d = self._deployment_optimization_config
             engine = config.engine.value
@@ -224,6 +260,24 @@ class TerraformGenerator:
                     lines.append(f"{tfvar_name} = {escape_tfvar_value(value)}")
                 else:
                     lines.append(f"{tfvar_name} = {value}")
+        # User-configurable overrides from TerraformConfig for inference feature flags.
+        if self._terraform_config is not None:
+            gdb = _apply_override(
+                'guided_decoding_backend',
+                getattr(config, 'guided_decoding_backend', 'outlines'),
+            )
+            lines.append(f"guided_decoding_backend    = {escape_tfvar_value(str(gdb))}")
+            eso = _apply_override(
+                'enable_structured_outputs',
+                getattr(config, 'enable_structured_outputs', True),
+            )
+            lines.append(f"enable_structured_outputs  = {str(eso).lower()}")
+            grammar = _apply_override(
+                'grammar_file',
+                getattr(config, 'grammar_file', None) or "",
+            )
+            if grammar:
+                lines.append(f"grammar_file               = {escape_tfvar_value(str(grammar))}")
         return "\n".join(lines) + "\n"
 
     def _generate_aws(self, config: ComputeConfig) -> str:

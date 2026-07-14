@@ -145,6 +145,32 @@ class _YamlSettingsSource(PydanticBaseSettingsSource):
         return {k: v for k, v in self._data.items()}
 
 
+class TerraformConfig(BaseModel):
+    """User-configurable terraform variable defaults for GPU compute stacks.
+
+    Mirrors the variables defined in infra/terraform/modules/vllm-server/variables.tf
+    and infra/terraform/modules/llamacpp-server/variables.tf. Values set here
+    override ComputeConfig defaults when the TerraformGenerator builds tfvars.
+    """
+
+    container_image: str = ""
+    model_name: str = ""
+    gpu_count: int = 1
+    extra_args: str = ""
+    region: str = "us-east-1"
+    instance_type: str = ""
+    max_cost_usd: float = 10.0
+    timeout_minutes: float = 60.0
+    disk_size_gb: int = 100
+    allowed_cidr: str = "127.0.0.1/32"
+    guided_decoding_backend: str = "outlines"
+    enable_structured_outputs: bool = True
+    grammar_file: str = ""
+    provider: str = "aws"
+    gpu_type: str = "t4"
+    engine: str = "vllm"
+
+
 class HumanInTheLoopConfig(BaseModel):
     enabled: bool = False
     confidence_threshold: float = 0.7
@@ -256,6 +282,7 @@ class UserConfig(BaseSettings):
     use_langchain_retry: bool = False
     use_hub: bool = False
     checkpointing: dict[str, Any] = {"enabled": False}
+    terraform: TerraformConfig = TerraformConfig()
     human_in_the_loop: HumanInTheLoopConfig = HumanInTheLoopConfig()
     compute_idle_check_interval_ticks: int = 60
     compute_idle_teardown_threshold_ticks: int = 3
