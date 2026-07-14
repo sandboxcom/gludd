@@ -52,6 +52,7 @@ BUILTIN_PASSES: tuple[NamedPass, ...] = (
     NamedPass(name="test-integration", phase="test", priority=50, required=False),
     NamedPass(name="bundle-binaries", phase="build", priority=60, required=False),
     NamedPass(name="verify-release-artifact", phase="build", priority=70, required=False),
+    NamedPass(name="verify-release-completeness", phase="build", priority=80, required=False),
 )
 
 

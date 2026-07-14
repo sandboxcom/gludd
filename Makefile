@@ -63,7 +63,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         check-plugin-liveness check-plugin-health write-plugin-manifest restart-opencode disengage-enforcement reload-enforcement \
         rearm-enforcement enforcement-status \
         hot-reload-plugins hot-reload-status hot-reload-clean \
-        verify-release-artifact git-tag-rm release-cut release-recut release-create release-delete \
+        verify-release-artifact verify-release-completeness git-tag-rm release-cut release-recut release-create release-delete \
         verify-feature-claims audit-coverage gate-audit coverage-json \
         tf-cache-setup tf-init tf-validate tf-cache-warm tf-versions-check tf-clean \
         deck deck-serve deck-preview deck-data deck-honesty \
@@ -189,7 +189,8 @@ help:
 	@echo "  release-cut TAG=.. MSG=.. The single release command (6 fail-closed steps)"
 	@echo "  release-recut TAG=..  Re-trigger CI release job for an existing tag"
 	@echo "  release-delete TAG=.. Delete GitHub Release + local + remote git tags"
-	@echo "  verify-release-artifact TAG=.. Confirm a release has published assets (exit 0 = shipped)"
+	@echo "  verify-release-artifact       TAG=..  Confirm a release has published assets (exit 0 = shipped)"
+	@echo "  verify-release-completeness   TAG=..  Verify ALL expected artifacts present (8+ categories)"
 	@echo ""
 	@echo "  --- Build + Deploy ---"
 	@echo "  dist                  Build distribution tarball"
@@ -1604,6 +1605,12 @@ release-view:
 verify-release-artifact:
 	@[ -n "$(TAG)" ] || { echo "Usage: make verify-release-artifact TAG=v0.1.0-alpha.1"; exit 1; }
 	@$(PYTHON) scripts/verify_release_artifact.py "$(TAG)"
+
+# Verify a release has ALL expected artifacts (platform binaries, checksums, SBOM, metadata).
+# Exit 0 only when every expected artifact category is present. Extends verify-release-artifact.
+verify-release-completeness:
+	@[ -n "$(TAG)" ] || { echo "Usage: make verify-release-completeness TAG=v0.1.0-alpha.1"; exit 1; }
+	@$(PYTHON) scripts/verify_release_completeness.py "$(TAG)"
 
 # CI-green precondition for release-cut. Exit 0 only when the latest CI run for
 # the given SHA (default: HEAD) is completed + success. Fail-closed: any

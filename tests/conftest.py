@@ -162,6 +162,7 @@ def _allow_no_auth_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 _LEAKY_ENV_VARS: frozenset[str] = frozenset({
+    "AWS_ACCESS_KEY_ID",
     "GLUDD_PSK",
     "GLUDD_REQUIRE_AUTH",
     "GLUDD_ALLOW_NO_AUTH",

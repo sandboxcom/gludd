@@ -2762,8 +2762,11 @@ def create_daemon_app(
             client_host = getattr(request.client, "host", None) if request.client else None
             if client_host is not None:
                 import ipaddress as _ipaddress
-                client_ip = _ipaddress.ip_address(client_host)
-                allowed = any(
+                try:
+                    client_ip = _ipaddress.ip_address(client_host)
+                except ValueError:
+                    client_ip = None
+                allowed = client_ip is not None and any(
                     client_ip in _ipaddress.ip_network(cidr, strict=False)
                     for cidr in cidrs
                 )

@@ -100,7 +100,7 @@ class TestWorkerAuthParity:
                 "/jobs/execute",
                 json={"job_id": "J1", "playbook": "nope.yml", "queue": "core"},
             )
-            assert resp.status_code == 503, resp.text
+            assert resp.status_code == 403, resp.text
             # /healthz stays public even in fail-closed mode.
             hz = await client.get("/healthz")
             assert hz.status_code == 200
