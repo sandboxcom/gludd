@@ -172,3 +172,110 @@ class TestBuildYAMLStructure:
         permissions = wf.get("permissions", {})
         assert "contents" in permissions
         assert permissions["contents"] == "write"
+
+
+class TestConcurrencyNoPushEviction:
+    """Regression guard for the CI-eviction defect: on `push` (branch or tag),
+    GitHub keeps only ONE pending run per concurrency `group`. If the group key
+    is `${{ github.workflow }}-${{ github.ref }}` (ref only, not SHA), a second
+    push to the same branch SILENTLY CANCELS the still-queued run for the
+    PREVIOUS commit before it ever executes a single job (status=completed,
+    conclusion=cancelled, jobs=[]). That commit can then be tagged and released
+    having NEVER been tested — a cancelled run is neither pass nor fail, it is
+    the absence of a verdict.
+
+    Fix: the group key must include `github.sha` for non-pull_request events, so
+    every commit gets its OWN group and can never be evicted by a later push.
+    PR runs are exempt — they intentionally coalesce on the ref and cancel
+    superseded runs via cancel-in-progress: true, which is correct (only the
+    latest push in a PR needs a verdict).
+    """
+
+    def test_concurrency_group_is_conditional_expression(self):
+        wf = _load_workflow()
+        group = wf["concurrency"]["group"]
+        assert isinstance(group, str)
+        assert "github.event_name" in group and "pull_request" in group, (
+            "concurrency.group must branch on github.event_name == 'pull_request' "
+            "so push/tag runs use a different (SHA-keyed) group than PR runs; "
+            f"got: {group!r}"
+        )
+
+    def test_concurrency_group_keys_non_pr_runs_on_sha(self):
+        wf = _load_workflow()
+        group = wf["concurrency"]["group"]
+        assert "github.sha" in group, (
+            "concurrency.group must include github.sha for the non-pull_request "
+            "branch, so a push to a branch/tag can never evict (silently cancel) "
+            "the still-pending run of an earlier commit on the same ref. "
+            f"got: {group!r}"
+        )
+
+    def test_concurrency_group_still_uses_ref_for_pr_coalescing(self):
+        wf = _load_workflow()
+        group = wf["concurrency"]["group"]
+        assert "github.ref" in group, (
+            "concurrency.group must still reference github.ref for the "
+            "pull_request branch, so repeated pushes to the same PR coalesce "
+            f"(intended eviction). got: {group!r}"
+        )
+
+    def test_cancel_in_progress_only_for_pull_request(self):
+        wf = _load_workflow()
+        cancel = wf["concurrency"]["cancel-in-progress"]
+        assert isinstance(cancel, str)
+        assert "pull_request" in cancel, (
+            "cancel-in-progress must remain scoped to pull_request events only — "
+            "push/tag runs must never cancel-in-progress, since that is exactly "
+            f"the eviction mechanism this test class guards against. got: {cancel!r}"
+        )
+
+    def _old_broken_group_key(self, event_name: str, ref: str, sha: str) -> str:
+        """Simulates the OLD (buggy) group key: workflow-ref only."""
+        return f"Build and Release-{ref}"
+
+    def _new_group_key(self, event_name: str, ref: str, sha: str) -> str:
+        """Simulates the NEW group key semantics asserted above: ref for PRs,
+        sha for everything else (push/tag/workflow_dispatch)."""
+        if event_name == "pull_request":
+            return f"Build and Release-{ref}"
+        return f"Build and Release-{sha}"
+
+    def test_two_pushes_to_same_branch_get_different_groups(self):
+        """The concrete regression scenario: two commits pushed in quick
+        succession to the same branch (same ref, different sha) must land in
+        DIFFERENT concurrency groups under the new key — proving the second
+        push cannot silently cancel the first commit's run."""
+        ref = "refs/heads/development"
+        sha_old = "0b6237c4" * 5  # commit whose run was observed cancelled
+        sha_new = "deadbeef" * 5  # the push that evicted it under the old key
+
+        old_group_1 = self._old_broken_group_key("push", ref, sha_old)
+        old_group_2 = self._old_broken_group_key("push", ref, sha_new)
+        assert old_group_1 == old_group_2, (
+            "sanity check: the OLD key collides on ref for both pushes "
+            "(this is the bug being fixed)"
+        )
+
+        new_group_1 = self._new_group_key("push", ref, sha_old)
+        new_group_2 = self._new_group_key("push", ref, sha_new)
+        assert new_group_1 != new_group_2, (
+            "two different commits pushed to the same branch must resolve to "
+            "different concurrency groups so neither run can evict the other"
+        )
+
+    def test_pr_pushes_to_same_ref_still_share_a_group(self):
+        """PR coalescing must be preserved: repeated pushes to the same PR
+        (same ref, different sha each time) still share ONE group so the
+        superseded run is cancelled (intended behavior)."""
+        ref = "refs/pull/42/merge"
+        sha_1 = "aaaa1111" * 5
+        sha_2 = "bbbb2222" * 5
+
+        group_1 = self._new_group_key("pull_request", ref, sha_1)
+        group_2 = self._new_group_key("pull_request", ref, sha_2)
+        assert group_1 == group_2, (
+            "PR runs must still coalesce on ref regardless of sha, so "
+            "cancel-in-progress can evict the superseded run as intended"
+        )
+

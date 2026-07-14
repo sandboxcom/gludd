@@ -44,7 +44,19 @@ on:
         default: ""
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  # PR runs coalesce on the PR ref and cancel superseded runs (cancel-in-progress:
+  # true) — that eviction is intentional, since only the latest push in a PR needs
+  # a verdict. Push/tag runs (and workflow_dispatch) key on github.sha instead of
+  # github.ref: every commit gets its OWN concurrency group, so a later push to the
+  # same branch can NEVER evict/cancel the still-queued or in-progress run for an
+  # earlier commit. Without this, GitHub's "one pending run per group" behavior
+  # silently cancels the older commit's run the instant a new one is pushed to the
+  # same ref, leaving that commit with a `cancelled`/zero-jobs run — which is the
+  # ABSENCE of a CI verdict, not a pass or fail. A commit can only be tagged and
+  # released via `make release-cut`, which is fail-closed on `require-ci-green`
+  # (scripts/require_ci_green.py treats cancelled/missing runs as CI RED), so this
+  # keys the group to guarantee every commit actually GETS a real run to check.
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
@@ -447,6 +459,41 @@ jobs:
           make molecule-test-shard SHARD=${{ matrix.shard }}/4
         env:
           GLUDD_PSK: ""
+      - name: Tail molecule logs (quick triage)
+        # `molecule-test-shard` (Makefile) writes one log per scenario to
+        # /tmp/gludd-molecule-<scenario>.log and NEVER surfaces it in CI output
+        # — historically the only way to see why a scenario failed was to
+        # reproduce locally. `if: always()` makes this run whether the previous
+        # step passed or failed (the job also sets continue-on-error: true, but
+        # that only affects the job's conclusion — without if: always() here,
+        # a failed "Run molecule shard" step would skip every step after it,
+        # including this one and the artifact upload below). Tail (not cat) so
+        # a runaway scenario log can't flood the Actions log UI.
+        if: always()
+        run: |
+          shopt -s nullglob
+          logs=(/tmp/gludd-molecule-*.log)
+          if [ ${#logs[@]} -eq 0 ]; then
+            echo "No molecule scenario logs found under /tmp/gludd-molecule-*.log"
+          else
+            for f in "${logs[@]}"; do
+              echo "::group::$(basename "$f") (last 100 lines)"
+              tail -n 100 "$f"
+              echo "::endgroup::"
+            done
+          fi
+      - name: Upload molecule logs (shard ${{ matrix.shard }}/4)
+        # Primary fix for the observability gap: the full per-scenario logs
+        # (not just the tail above) are uploaded so a failure can be diagnosed
+        # from CI without reproducing locally. if: always() is required for the
+        # same reason as the tail step above — a failed shard must still upload.
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
+        with:
+          name: molecule-logs-shard-${{ matrix.shard }}
+          path: /tmp/gludd-molecule-*.log
+          if-no-files-found: warn
+          retention-days: 7
 
   linux:
     needs: [version, gate, test-shard]
