@@ -88,6 +88,57 @@ Pre-existing commits on this branch (carried from master: `f1318f09`, `1b6f18e6`
 
 ---
 
+## SESSION 30 — 2026-07-13 (IN PROGRESS)
+
+### HEAD + Branch State
+
+- **HEAD: `81080b48`** on `master` branch
+- **Working tree: DIRTY** — ~30 new test files + TASKS.md/audit script modifications staged
+- **10 commits** on master (26292054..81080b48)
+
+### Key Deliverables (commits `26292054` → `81080b48`)
+
+| Category | Items | Commit(s) |
+|----------|-------|-----------|
+| **Enforcement bug fixes (9 bugs)** | saveState EXDEV (direct write fix), FLOOR=10 alignment across all plugins, input.args/invoke.args shapes, dispatch tool detection (camelCase), dispatch-block narrow guard, dynamic directive fix | `f64d94f2`, `3c6ec4d6`, `41bcc62b`, `81080b48` |
+| **MIN/MAX_DISPATCHES=10** | Hardcoded 10-subagent-per-wave enforcement across all plugins; AGENTS.md alignment | `3c6ec4d6` |
+| **Audit false-positives** | `audit_untested_code.py` false-positive fixes for structural test classification | staged |
+| **README status table** | Refreshed to current v0.1.0-beta.2 status | `81080b48` |
+| **~100+ test files** | 130 (wave 1) + 224 + 139 + 280 + 8 structural + 470 + 185 = 1,436+ TDD tests across ~100 files; all modules now structurally covered | `26292054`, `6ea6f5cc`, `9569b10d`, `e96b85ec`, `2ee1ba1f`, `391aaca6`, `81080b48` |
+
+### Commits This Session (10 on master)
+
+| Hash | Message |
+|------|---------|
+| `81080b48` | fix: dispatch state save use direct write (fixes EXDEV on macOS), README status table refresh, 185+ TDD tests |
+| `391aaca6` | enhancement: 470 TDD tests for ssl/seccomp/collections/budget/controllers/rules/quality/scheduling/agents/secrets/renderers modules |
+| `2ee1ba1f` | enhancement: structural tests for 8 more untested modules (abtest/_child, benchmark/langgraph_bench, issue_sources/{jira,gitlab}, security/sandboxes/{bubblewrap,selinux,jail}, ssl_agent/agent_flow) |
+| `e96b85ec` | enhancement: 280 TDD tests for benchmark/gunicorn/spot/connectors/sandboxes/retrieval modules |
+| `3c6ec4d6` | fix: hardcode 10-subagent-per-wave enforcement, dispatch tool detection fix, AGENTS.md alignment |
+| `41bcc62b` | fix: dispatch tool detection, all lint errors, commit pipeline stash fix, gate green |
+| `9569b10d` | enhancement: 139 TDD tests for projects/gpu/sandboxes/retrieval/scheduling/routing/models modules |
+| `6ea6f5cc` | enhancement: 224 TDD tests for pagerduty/slack/github_actions/docker_engine/redis/postgres/sentry/datadog modules |
+| `f64d94f2` | fix: 9 enforcement plugin bugs (execSync, FLOOR=10 alignment, input.args shapes, camelCase fields, dispatch-block fix, dynamic directive) + 11 behavioral tests |
+| `26292054` | enhancement: 130 TDD tests + enforcement bug detection tests + behavioral fixes |
+
+### Known Gaps
+
+1. **CI PENDING** — master branch pushed, CI run not yet complete
+2. **A.4 release** — v0.1.0-beta.2 not yet cut
+3. **~30 uncommitted test files** — staged but not committed
+
+### Next Steps
+
+1. [ ] Commit staged test files
+2. [ ] `make gate` green
+3. [ ] Push + CI green
+4. [ ] A.4 release cut
+
+### Last Updated
+- **2026-07-13 — Session 30 (IN PROGRESS).** On `master` branch, HEAD `81080b48`. 10 commits this session (26292054..81080b48). Enforcement bugs fixed: saveState EXDEV, FLOOR=10 alignment, input shapes, dispatch counting, camelCase. MIN/MAX_DISPATCHES=10 hardcoded. 1,436+ TDD tests across ~100 files. Audit false-positives fixed. README status table refreshed. Working tree DIRTY (~30 new test files). CI pending.
+
+---
+
 ## SESSION 28 — 2026-07-13
 
 ### HEAD + Branch State

@@ -78,9 +78,10 @@ class TestFeatureToDict:
         assert "feat" in sig.parameters
 
     def test_returns_dict(self):
-        from general_ludd.db.models import FeatureModel, FeatureStatus
         import datetime
-        now = datetime.datetime.now(datetime.timezone.utc)
+
+        from general_ludd.db.models import FeatureModel, FeatureStatus
+        now = datetime.datetime.now(datetime.UTC)
         feat = FeatureModel(
             id="FEAT-001",
             project_id="proj-1",
@@ -112,9 +113,10 @@ class TestFeatureToDict:
         assert isinstance(result["last_verify_detail"], dict)
 
     def test_empty_json_fields_default_correctly(self):
-        from general_ludd.db.models import FeatureModel, FeatureStatus
         import datetime
-        now = datetime.datetime.now(datetime.timezone.utc)
+
+        from general_ludd.db.models import FeatureModel, FeatureStatus
+        now = datetime.datetime.now(datetime.UTC)
         feat = FeatureModel(
             id="FEAT-002",
             project_id="proj-2",
@@ -136,10 +138,11 @@ class TestFeatureToDict:
         assert result["last_verify_detail"] == {}
 
     def test_verified_at_converts_to_string(self):
-        from general_ludd.db.models import FeatureModel, FeatureStatus
         import datetime
-        now = datetime.datetime.now(datetime.timezone.utc)
-        verified = datetime.datetime(2026, 7, 1, 12, 0, 0, tzinfo=datetime.timezone.utc)
+
+        from general_ludd.db.models import FeatureModel, FeatureStatus
+        now = datetime.datetime.now(datetime.UTC)
+        verified = datetime.datetime(2026, 7, 1, 12, 0, 0, tzinfo=datetime.UTC)
         feat = FeatureModel(
             id="FEAT-003",
             project_id="proj-3",
@@ -160,9 +163,10 @@ class TestFeatureToDict:
         assert result["verified_at"] == str(verified)
 
     def test_requested_at_converts_to_string(self):
-        from general_ludd.db.models import FeatureModel, FeatureStatus
         import datetime
-        now = datetime.datetime.now(datetime.timezone.utc)
+
+        from general_ludd.db.models import FeatureModel, FeatureStatus
+        now = datetime.datetime.now(datetime.UTC)
         feat = FeatureModel(
             id="FEAT-004",
             project_id="proj-4",
@@ -182,9 +186,10 @@ class TestFeatureToDict:
         assert isinstance(result["requested_at"], str)
 
     def test_unparseable_json_returns_raw_string(self):
-        from general_ludd.db.models import FeatureModel, FeatureStatus
         import datetime
-        now = datetime.datetime.now(datetime.timezone.utc)
+
+        from general_ludd.db.models import FeatureModel, FeatureStatus
+        now = datetime.datetime.now(datetime.UTC)
         feat = FeatureModel(
             id="FEAT-005",
             project_id="proj-5",

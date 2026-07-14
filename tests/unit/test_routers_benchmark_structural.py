@@ -7,7 +7,6 @@ from typing import get_type_hints
 
 from general_ludd.routers.benchmark import register
 
-
 # — Route paths expected to be registered —
 _EXPECTED_ROUTES = [
     "/admin/benchmark/scores",
@@ -79,7 +78,7 @@ class TestRouteRegistration:
             if r.path == "/admin/benchmark/scores":
                 assert "GET" in r.methods
                 return
-        assert False, "Route /admin/benchmark/scores not found"
+        raise AssertionError("Route /admin/benchmark/scores not found")
 
     def test_recent_route_is_http_get(self):
         app = self._build_app()
@@ -87,7 +86,7 @@ class TestRouteRegistration:
             if r.path == "/admin/benchmark/recent":
                 assert "GET" in r.methods
                 return
-        assert False, "Route /admin/benchmark/recent not found"
+        raise AssertionError("Route /admin/benchmark/recent not found")
 
     def test_leaderboard_route_is_http_get(self):
         app = self._build_app()
@@ -95,7 +94,7 @@ class TestRouteRegistration:
             if r.path == "/admin/benchmark/leaderboard":
                 assert "GET" in r.methods
                 return
-        assert False, "Route /admin/benchmark/leaderboard not found"
+        raise AssertionError("Route /admin/benchmark/leaderboard not found")
 
     def test_record_route_is_http_post(self):
         app = self._build_app()
@@ -103,7 +102,7 @@ class TestRouteRegistration:
             if r.path == "/admin/benchmark/record":
                 assert "POST" in r.methods
                 return
-        assert False, "Route /admin/benchmark/record not found"
+        raise AssertionError("Route /admin/benchmark/record not found")
 
     def test_prompt_profiles_route_is_http_get(self):
         app = self._build_app()
@@ -111,7 +110,7 @@ class TestRouteRegistration:
             if r.path == "/admin/prompt-profiles":
                 assert "GET" in r.methods
                 return
-        assert False, "Route /admin/prompt-profiles not found"
+        raise AssertionError("Route /admin/prompt-profiles not found")
 
 
 class TestHandlerSignatures:

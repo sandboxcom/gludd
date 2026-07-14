@@ -8,6 +8,10 @@ import pytest
 
 from general_ludd.planning.artifact import PlanArtifact
 from general_ludd.planning.debt_evaluator import (
+    _FEATURE_SIGNALS,
+    _FOLD_IN_RATIONALE,
+    _RESILIENCE_WORDS,
+    _SYSTEM_PROMPT,
     DebtEffort,
     DebtEvaluator,
     DebtFinding,
@@ -15,10 +19,6 @@ from general_ludd.planning.debt_evaluator import (
     DebtKind,
     DebtRecommendation,
     EvaluateFn,
-    _FEATURE_SIGNALS,
-    _FOLD_IN_RATIONALE,
-    _RESILIENCE_WORDS,
-    _SYSTEM_PROMPT,
     _basename,
     _build_user_prompt,
     _is_impl_py,

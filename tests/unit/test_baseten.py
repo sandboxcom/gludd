@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from general_ludd.connectors.baseten import (
-    KIND,
-    BasetenClient,
     _DEFAULT_API_KEY_ENV,
     _DEFAULT_BASE_URL,
     _DEFAULT_MANAGEMENT_URL,
+    KIND,
+    BasetenClient,
 )
 
 

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from general_ludd.connectors.tempo import TempoSource, _TempoResponse, SSRFError
+from general_ludd.connectors.tempo import SSRFError, TempoSource, _TempoResponse
 
 
 class TestTempoResponse:

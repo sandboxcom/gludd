@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from general_ludd.connectors.jenkins import (
     JenkinsSource,
-    Record,
 )
 
 

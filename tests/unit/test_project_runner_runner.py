@@ -75,14 +75,10 @@ class TestBuildEnv:
         assert isinstance(env, dict)
         assert "PATH" in env
 
-    def test_passthrough_forwarded(self):
-        import os
-        os.environ["TEST_PASSTHROUGH_FOO"] = "bar"
-        try:
-            env = _build_env(["TEST_PASSTHROUGH_FOO"])
-            assert env["TEST_PASSTHROUGH_FOO"] == "bar"
-        finally:
-            del os.environ["TEST_PASSTHROUGH_FOO"]
+    def test_passthrough_forwarded(self, monkeypatch):
+        monkeypatch.setenv("TEST_PASSTHROUGH_FOO", "bar")
+        env = _build_env(["TEST_PASSTHROUGH_FOO"])
+        assert env["TEST_PASSTHROUGH_FOO"] == "bar"
 
     def test_secret_names_refused(self):
         # KEY/TOKEN/SECRET pattern names should be refused

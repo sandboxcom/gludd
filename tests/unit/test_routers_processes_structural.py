@@ -12,13 +12,12 @@ from fastapi import FastAPI
 from general_ludd.routers.processes import (
     SignalProcessRequest,
     _collect_stats,
-    _read_proc_locks,
     _ProcessIOCCounters,
     _ProcessWithIOC,
+    _read_proc_locks,
     logger,
     register,
 )
-
 
 # ---------------------------------------------------------------------------
 # Module import
@@ -101,7 +100,7 @@ class TestProcessWithIOC:
 
     def test_declares_io_counters(self):
         assert hasattr(_ProcessWithIOC, "io_counters")
-        assert callable(getattr(_ProcessWithIOC, "io_counters"))
+        assert callable(_ProcessWithIOC.io_counters)
 
 
 # ---------------------------------------------------------------------------
@@ -120,7 +119,7 @@ class TestReadProcLocks:
     def test_pid_arg_is_int(self):
         sig = inspect.signature(_read_proc_locks)
         param = sig.parameters["pid"]
-        assert param.annotation == int or param.annotation == "int"
+        assert param.annotation is int or param.annotation == "int"
 
     def test_returns_nothing_on_bad_pid(self):
         result = _read_proc_locks(-1)
@@ -148,7 +147,7 @@ class TestCollectStats:
     def test_pid_arg_is_int(self):
         sig = inspect.signature(_collect_stats)
         param = sig.parameters["pid"]
-        assert param.annotation == int or param.annotation == "int"
+        assert param.annotation is int or param.annotation == "int"
 
     def test_returns_dict_on_nonexistent_pid(self):
         import psutil

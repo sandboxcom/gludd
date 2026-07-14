@@ -180,8 +180,14 @@ class TestResearchIndexTopicOps:
     def test_find_stale_topics_sorted_by_freshness(self, index):
         very_old = datetime.now(UTC) - timedelta(days=60)
         kinda_old = datetime.now(UTC) - timedelta(days=14)
-        index.upsert_topic(ResearchTopic(query="very old", last_researched_at=very_old.isoformat(), freshness_ttl_days=30))
-        index.upsert_topic(ResearchTopic(query="kinda old", last_researched_at=kinda_old.isoformat(), freshness_ttl_days=30))
+        index.upsert_topic(ResearchTopic(
+            query="very old", last_researched_at=very_old.isoformat(),
+            freshness_ttl_days=30,
+        ))
+        index.upsert_topic(ResearchTopic(
+            query="kinda old", last_researched_at=kinda_old.isoformat(),
+            freshness_ttl_days=30,
+        ))
         stale = index.find_stale_topics(stale_threshold_days=10)
         assert len(stale) >= 2
         # very old (60d past, freshness 0.0) sorts before kinda old (14d past, freshness > 0.0)
@@ -293,8 +299,14 @@ class TestResearchIndexReindex:
 
     def test_get_reindex_queue_min_confidence(self, index):
         old = datetime.now(UTC) - timedelta(days=30)
-        t1 = ResearchTopic(query="low", last_researched_at=old.isoformat(), freshness_ttl_days=7, overall_confidence=0.3)
-        t2 = ResearchTopic(query="high", last_researched_at=old.isoformat(), freshness_ttl_days=7, overall_confidence=0.9)
+        t1 = ResearchTopic(
+            query="low", last_researched_at=old.isoformat(),
+            freshness_ttl_days=7, overall_confidence=0.3,
+        )
+        t2 = ResearchTopic(
+            query="high", last_researched_at=old.isoformat(),
+            freshness_ttl_days=7, overall_confidence=0.9,
+        )
         index.upsert_topic(t1)
         index.upsert_topic(t2)
         queue = index.get_reindex_queue(min_confidence=0.5)
@@ -310,7 +322,12 @@ class TestResearchIndexIngest:
                 "finding_id": "f1",
                 "confidence": 0.9,
                 "citations": [
-                    {"url": "https://docs.python.org", "domain": "docs.python.org", "title": "Python Docs", "snippet": "..."},
+                    {
+                        "url": "https://docs.python.org",
+                        "domain": "docs.python.org",
+                        "title": "Python Docs",
+                        "snippet": "...",
+                    },
                 ],
             }
         ]

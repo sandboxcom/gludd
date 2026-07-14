@@ -51,7 +51,7 @@ class TestEndpointPaths:
         app = FastAPI()
         register(app, {})
 
-        methods_lower = {m.lower() for m in app.routes[0].methods} if app.routes else set()
+        {m.lower() for m in app.routes[0].methods} if app.routes else set()
         found = any(
             r.path == path and method.lower() in {m.lower() for m in r.methods}
             for r in app.routes

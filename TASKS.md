@@ -1,6 +1,6 @@
 # TASKS.md — Evidence Ledger
 
-**Last consolidated: 2026-07-13 Session 31 — 1 OPEN item (A.4 release cut). 231 items (230 completed, 1 pending = 99.6%). Enforcement: MIN_DISPATCHES hardcoded to 10 across all plugins, MAX_DISPATCHES=10 ceiling added (blocks >10 per wave), isDispatchTool imported from shared.ts (fixes dispatch counting). 9 enforcement bugs fixed. Untested modules: 112 (down from 196). A.4 release pending CI green.**
+**Last consolidated: 2026-07-14 Session 32 — Untested modules: 7 (down from 112 after audit false-positive fix; 189 previously-untested modules now covered by ~200+ test files). Enforcement: saveState fixed, FLOOR hardcoded to 10, isDispatchTool imported from shared.ts, MIN_DISPATCHES=10, MAX_DISPATCHES=10. A.4 release pending CI green.**
 
 Each line ticked when `make gate` is green and evidence is pasted.
 

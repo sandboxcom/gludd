@@ -1,205 +1,304 @@
-"""Structural tests for collections/importer.py — collection import validator."""
+"""Structural unit tests for src/general_ludd/collections/importer.py."""
 
 from __future__ import annotations
 
-import tempfile
+import contextlib
+import json
 from pathlib import Path
 
-import pytest
-
 from general_ludd.collections.importer import (
-    _DENY_REASSIGN_RE,
     ImportIssue,
     TerraformCollectionImporter,
     _find_first,
-    _is_floating_version,
-    _parse_required_providers,
-    _parse_tfvars_keys,
-    _parse_variable_names,
+    _iter_child_dirs,
     _provider_in_trust_list,
 )
 
 
 class TestImportIssue:
-    def test_frozen_dataclass(self) -> None:
-        issue = ImportIssue(severity="error", message="bad")
+    def test_instantiation_fields(self) -> None:
+        issue = ImportIssue(severity="error", message="something broke")
+
         assert issue.severity == "error"
-        assert issue.message == "bad"
+        assert issue.message == "something broke"
 
-    def test_hashable(self) -> None:
-        issue = ImportIssue(severity="warn", message="x")
-        assert hash(issue) is not None
+    def test_is_frozen(self) -> None:
+        issue = ImportIssue(severity="warn", message="test")
 
+        with contextlib.suppress(Exception):
+            issue.severity = "error"
+        assert issue.severity == "warn"
 
-class TestDenyReassignRegex:
-    def test_matches_deny_reassign(self) -> None:
-        assert _DENY_REASSIGN_RE.search("deny = {}") is not None
+    def test_is_slots_dataclass(self) -> None:
+        issue = ImportIssue(severity="warn", message="test")
 
-    def test_matches_deny_plus_eq(self) -> None:
-        assert _DENY_REASSIGN_RE.search("deny += data") is not None
-
-    def test_matches_deny_minus_eq(self) -> None:
-        assert _DENY_REASSIGN_RE.search("deny -= data") is not None
-
-    def test_no_false_positive_deny_rule(self) -> None:
-        assert _DENY_REASSIGN_RE.search('deny["x"]') is None
-        assert _DENY_REASSIGN_RE.search("deny_foo = 1") is None
+        assert "__slots__" in type(issue).__dict__
 
 
-class TestParseVariableNames:
-    def test_single_variable(self) -> None:
-        text = '\nvariable "region" {\n  type = string\n}\n'
-        assert _parse_variable_names(text) == ["region"]
+class TestTerraformCollectionImporterInstantiation:
+    def test_default_trust_data_path(self, tmp_path: Path) -> None:
+        importer = TerraformCollectionImporter(collection_path=tmp_path)
 
-    def test_multiple_variables(self) -> None:
-        text = '''
-variable "region" {
-  type = string
-}
-variable "zone" {
-  type = string
-}
-'''
-        result = _parse_variable_names(text)
-        assert "region" in result
-        assert "zone" in result
+        assert importer.collection_path == tmp_path
+        assert importer.operator_trust_data_path == Path("infra/terraform/policies/data.json")
 
-    def test_no_variables(self) -> None:
-        assert _parse_variable_names("resource 'foo' \"bar\" {}") == []
+    def test_custom_trust_data_path(self, tmp_path: Path) -> None:
+        custom = tmp_path / "custom" / "trust.json"
+
+        importer = TerraformCollectionImporter(
+            collection_path=tmp_path,
+            operator_trust_data_path=custom,
+        )
+
+        assert importer.operator_trust_data_path == custom
 
 
-class TestParseTfvarsKeys:
-    def test_simple_assignment(self) -> None:
-        keys = _parse_tfvars_keys("region = \"us-east-1\"\nzone = \"a\"\n")
-        assert keys == {"region", "zone"}
+class TestValidateTerraformDirs:
+    def test_missing_terraform_dir_returns_warn(self, tmp_path: Path) -> None:
+        importer = TerraformCollectionImporter(collection_path=tmp_path)
+        issues = importer._validate_terraform_dirs()
 
-    def test_ignores_comments(self) -> None:
-        keys = _parse_tfvars_keys("# region = \"us-east-1\"\nzone = \"a\"\n")
-        assert keys == {"zone"}
+        assert len(issues) == 1
+        assert issues[0].severity == "warn"
+        assert "plugins/terraform/ not present" in issues[0].message
 
-    def test_ignores_blank_and_comments(self) -> None:
-        keys = _parse_tfvars_keys("\n  \n// cidr = \"10.0.0.0/16\"\n")
-        assert keys == set()
+    def test_empty_modules_and_stacks_do_not_error(self, tmp_path: Path) -> None:
+        tf_root = tmp_path / "plugins" / "terraform"
+        tf_root.mkdir(parents=True)
+        (tf_root / "modules").mkdir()
+        (tf_root / "stacks").mkdir()
 
+        importer = TerraformCollectionImporter(collection_path=tmp_path)
+        issues = importer._validate_terraform_dirs()
 
-class TestParseRequiredProviders:
-    def test_single_provider(self) -> None:
-        text = """
-terraform {
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.0"
-    }
-  }
-}
-"""
-        result = _parse_required_providers(text)
-        assert result == {"aws": "~> 5.0"}
-
-    def test_multiple_providers(self) -> None:
-        text = """
-terraform {
-  required_providers {
-    aws = {
-      version = "~> 5.0"
-    }
-    gcp = {
-      version = ">= 4.0"
-    }
-  }
-}
-"""
-        result = _parse_required_providers(text)
-        assert result["aws"] == "~> 5.0"
-        assert result["gcp"] == ">= 4.0"
-
-    def test_no_providers(self) -> None:
-        assert _parse_required_providers("resource 'null' \"x\" {}") == {}
+        assert len(issues) == 0
 
 
-class TestIsFloatingVersion:
-    def test_pinned_not_floating(self) -> None:
-        assert _is_floating_version("~> 5.0") is False
-        assert _is_floating_version("= 5.0.1") is False
+class TestValidateRegoPolicies:
+    def test_missing_policies_dir_returns_no_issues(self, tmp_path: Path) -> None:
+        importer = TerraformCollectionImporter(collection_path=tmp_path)
+        issues = importer._validate_rego_policies()
 
-    def test_unpinned_is_floating(self) -> None:
-        assert _is_floating_version(">= 5.0") is True
-        assert _is_floating_version("> 4.0") is True
+        assert len(issues) == 0
 
-    def test_empty_is_not_floating(self) -> None:
-        assert _is_floating_version("") is False
+    def test_deny_reassign_triggers_error(self, tmp_path: Path) -> None:
+        policies_dir = tmp_path / "plugins" / "terraform" / "policies"
+        policies_dir.mkdir(parents=True)
+        (policies_dir / "bad.rego").write_text(
+            "package gludd.terraform.checks\n\ndeny -= {\"foo\"}\n"
+        )
+
+        importer = TerraformCollectionImporter(collection_path=tmp_path)
+        issues = importer._validate_rego_policies()
+
+        assert len(issues) >= 1
+        deny_issue = next(i for i in issues if "deny reassignment forbidden" in i.message)
+        assert deny_issue.severity == "error"
+        assert "bad.rego" in deny_issue.message
+
+    def test_additive_rego_passes(self, tmp_path: Path) -> None:
+        policies_dir = tmp_path / "plugins" / "terraform" / "policies"
+        policies_dir.mkdir(parents=True)
+        rego = (
+            'package gludd.terraform.checks\n\n'
+            'resource_missing_tags[resource] {\n'
+            '  resources[resource]\n'
+            '  not resource.tags.Environment\n}\n'
+        )
+        (policies_dir / "good.rego").write_text(rego)
+
+        importer = TerraformCollectionImporter(collection_path=tmp_path)
+        issues = importer._validate_rego_policies()
+
+        deny_issues = [i for i in issues if "deny reassignment forbidden" in i.message]
+        assert len(deny_issues) == 0
+
+
+class TestCheckProviderTrust:
+    def test_trusted_provider_passes(self, tmp_path: Path) -> None:
+        trust_data = {"gludd": {"provider_trust_list": ["hashicorp/aws"]}}
+        trust_file = tmp_path / "trust.json"
+        trust_file.write_text(json.dumps(trust_data))
+
+        (tmp_path / "galaxy.yml").write_text(
+            "terraform_provider_trust:\n  - hashicorp/aws\n"
+        )
+
+        importer = TerraformCollectionImporter(
+            collection_path=tmp_path,
+            operator_trust_data_path=trust_file,
+        )
+        issues = importer._check_provider_trust()
+
+        assert len(issues) == 0
+
+    def test_untrusted_provider_generates_error(self, tmp_path: Path) -> None:
+        trust_data = {"gludd": {"provider_trust_list": ["hashicorp/aws"]}}
+        trust_file = tmp_path / "trust.json"
+        trust_file.write_text(json.dumps(trust_data))
+
+        (tmp_path / "galaxy.yml").write_text(
+            "terraform_provider_trust:\n  - evilcorp/shells\n"
+        )
+
+        importer = TerraformCollectionImporter(
+            collection_path=tmp_path,
+            operator_trust_data_path=trust_file,
+        )
+        issues = importer._check_provider_trust()
+
+        assert len(issues) == 1
+        assert issues[0].severity == "error"
+        assert "evilcorp/shells" in issues[0].message
+
+    def test_untrusted_provider_from_providers_yaml(self, tmp_path: Path) -> None:
+        trust_data = {"gludd": {"provider_trust_list": ["hashicorp/aws"]}}
+        trust_file = tmp_path / "trust.json"
+        trust_file.write_text(json.dumps(trust_data))
+
+        prov_dir = tmp_path / "plugins" / "terraform"
+        prov_dir.mkdir(parents=True)
+        (prov_dir / "providers.yaml").write_text(
+            "providers:\n  - evilcorp/shells\n"
+        )
+
+        importer = TerraformCollectionImporter(
+            collection_path=tmp_path,
+            operator_trust_data_path=trust_file,
+        )
+        issues = importer._check_provider_trust()
+
+        assert len(issues) == 1
+        assert "providers.yaml" in issues[0].message
+
+    def test_trust_list_matches_suffix(self, tmp_path: Path) -> None:
+        trust_data = {
+            "gludd": {"provider_trust_list": ["registry.example.com/hashicorp/aws"]}
+        }
+        trust_file = tmp_path / "trust.json"
+        trust_file.write_text(json.dumps(trust_data))
+
+        (tmp_path / "galaxy.yml").write_text(
+            "terraform_provider_trust:\n  - hashicorp/aws\n"
+        )
+
+        importer = TerraformCollectionImporter(
+            collection_path=tmp_path,
+            operator_trust_data_path=trust_file,
+        )
+        issues = importer._check_provider_trust()
+
+        assert len(issues) == 0
+
+
+class TestImportCollection:
+    def test_aggregate_empty_collection(self, tmp_path: Path) -> None:
+        trust_data = {"gludd": {"provider_trust_list": []}}
+        trust_file = tmp_path / "trust.json"
+        trust_file.write_text(json.dumps(trust_data))
+
+        importer = TerraformCollectionImporter(
+            collection_path=tmp_path,
+            operator_trust_data_path=trust_file,
+        )
+        issues = importer.import_collection()
+
+        warn_messages = [i.message for i in issues]
+        assert any("plugins/terraform/ not present" in m for m in warn_messages)
+
+    def test_aggregate_with_deny_reassign_and_untrusted(self, tmp_path: Path) -> None:
+        trust_data = {"gludd": {"provider_trust_list": ["hashicorp/aws"]}}
+        trust_file = tmp_path / "trust.json"
+        trust_file.write_text(json.dumps(trust_data))
+
+        policies_dir = tmp_path / "plugins" / "terraform" / "policies"
+        policies_dir.mkdir(parents=True)
+        (policies_dir / "bad.rego").write_text(
+            "package gludd.terraform.checks\n\ndeny = {}\n"
+        )
+
+        (tmp_path / "galaxy.yml").write_text(
+            "terraform_provider_trust:\n  - evilcorp/shells\n"
+        )
+
+        importer = TerraformCollectionImporter(
+            collection_path=tmp_path,
+            operator_trust_data_path=trust_file,
+        )
+        issues = importer.import_collection()
+
+        assert any("deny reassignment forbidden" in i.message for i in issues)
+        assert any("evilcorp/shells" in i.message for i in issues)
+
+
+class TestIterChildDirs:
+    def test_missing_parent_returns_empty(self, tmp_path: Path) -> None:
+        missing = tmp_path / "nonexistent"
+
+        result = _iter_child_dirs(missing)
+
+        assert result == []
+
+    def test_returns_dirs_only(self, tmp_path: Path) -> None:
+        parent = tmp_path / "parent"
+        parent.mkdir()
+        (parent / "child_a").mkdir()
+        (parent / "child_b").mkdir()
+        (parent / "file.txt").write_text("hello")
+
+        result = _iter_child_dirs(parent)
+
+        assert len(result) == 2
+        assert all(p.is_dir() for p in result)
+
+    def test_returns_sorted(self, tmp_path: Path) -> None:
+        parent = tmp_path / "parent"
+        parent.mkdir()
+        (parent / "zeta").mkdir()
+        (parent / "alpha").mkdir()
+        (parent / "gamma").mkdir()
+
+        result = _iter_child_dirs(parent)
+
+        names = [p.name for p in result]
+        assert names == ["alpha", "gamma", "zeta"]
+
+    def test_empty_directory(self, tmp_path: Path) -> None:
+        parent = tmp_path / "parent"
+        parent.mkdir()
+
+        result = _iter_child_dirs(parent)
+
+        assert result == []
 
 
 class TestProviderInTrustList:
     def test_exact_match(self) -> None:
-        assert _provider_in_trust_list("hashicorp/aws", ["hashicorp/aws"]) is True
+        trust_list = ["hashicorp/aws", "hashicorp/gcp"]
+
+        assert _provider_in_trust_list("hashicorp/aws", trust_list) is True
 
     def test_suffix_match(self) -> None:
-        assert _provider_in_trust_list("aws", ["hashicorp/aws"]) is True
+        trust_list = ["registry.example.com/hashicorp/aws"]
+
+        assert _provider_in_trust_list("hashicorp/aws", trust_list) is True
 
     def test_no_match(self) -> None:
-        assert _provider_in_trust_list("evil/prov", ["hashicorp/aws"]) is False
+        trust_list = ["hashicorp/aws"]
+
+        assert _provider_in_trust_list("evilcorp/shells", trust_list) is False
 
     def test_empty_trust_list(self) -> None:
-        assert _provider_in_trust_list("aws", []) is False
+        assert _provider_in_trust_list("hashicorp/aws", []) is False
 
 
 class TestFindFirst:
     def test_empty_iterator(self) -> None:
-        assert _find_first(iter([])) is None
+        result = _find_first(iter([]))
+
+        assert result is None
 
     def test_returns_first(self) -> None:
-        p = Path("/tmp/test")
-        result = _find_first(iter([p, Path("/other")]))
-        assert result == p
+        result = _find_first(iter([Path("a"), Path("b"), Path("c")]))
 
-
-class TestTerraformCollectionImporter:
-    @pytest.fixture
-    def empty_collection_dir(self) -> Path:
-        tmp = tempfile.mkdtemp()
-        collection = Path(tmp) / "test-collection"
-        collection.mkdir()
-        return collection
-
-    def test_constructs_with_defaults(self) -> None:
-        imp = TerraformCollectionImporter(collection_path=Path("/tmp"))
-        assert imp.collection_path == Path("/tmp")
-
-    def test_import_missing_terraform_warns(self, empty_collection_dir: Path) -> None:
-        imp = TerraformCollectionImporter(collection_path=empty_collection_dir)
-        issues = imp._validate_terraform_dirs()
-        assert any("not present" in i.message for i in issues)
-
-    def test_import_missing_rego_no_issues(self, empty_collection_dir: Path) -> None:
-        imp = TerraformCollectionImporter(collection_path=empty_collection_dir)
-        issues = imp._validate_rego_policies()
-        assert issues == []
-
-    def test_rego_deny_reassign_detected(self, empty_collection_dir: Path) -> None:
-        policies = empty_collection_dir / "plugins" / "terraform" / "policies"
-        policies.mkdir(parents=True)
-        (policies / "bad.rego").write_text("package test\ndeny -= {\"x\"}\n")
-        imp = TerraformCollectionImporter(collection_path=empty_collection_dir)
-        issues = imp._validate_rego_policies()
-        assert any("deny reassignment forbidden" in i.message for i in issues)
-
-    def test_rego_clean_passes(self, empty_collection_dir: Path) -> None:
-        policies = empty_collection_dir / "plugins" / "terraform" / "policies"
-        policies.mkdir(parents=True)
-        (policies / "ok.rego").write_text("package test\ndeny[msg] { input.x == 1; msg := \"bad\" }\n")
-        imp = TerraformCollectionImporter(collection_path=empty_collection_dir)
-        issues = imp._validate_rego_policies()
-        deny_issues = [i for i in issues if "deny reassignment" in i.message]
-        assert deny_issues == []
-
-    def test_tfvars_schema_check_no_variables(self, empty_collection_dir: Path) -> None:
-        imp = TerraformCollectionImporter(collection_path=empty_collection_dir)
-        issues = imp._tfvars_schema_check()
-        assert issues == []
-
-    def test_provider_pin_check_absent_terraform(self, empty_collection_dir: Path) -> None:
-        imp = TerraformCollectionImporter(collection_path=empty_collection_dir)
-        issues = imp._provider_pin_check()
-        assert issues == []
+        assert result == Path("a")

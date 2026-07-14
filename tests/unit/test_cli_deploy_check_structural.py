@@ -14,7 +14,6 @@ import pytest
 
 import general_ludd.cli_deploy_check as m
 
-
 # ── Module import & attribute existence ──────────────────────────────────────
 
 class TestModuleImport:

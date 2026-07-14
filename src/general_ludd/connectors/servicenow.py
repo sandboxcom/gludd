@@ -63,6 +63,17 @@ _STATE_MAP: dict[str, str] = {
 }
 
 
+def _state_code_to_label(code: str) -> str:
+    return _STATE_MAP.get(code, "unknown")
+
+
+def _parse_link_next(link_header: str | None) -> str | None:
+    if not link_header:
+        return None
+    match = _LINK_NEXT_RE.search(link_header)
+    return match.group(1) if match else None
+
+
 def _default_transport(
     method: str,
     url: str,
@@ -238,8 +249,7 @@ class ServiceNowSource:
             return None
         if not link:
             return None
-        match = _LINK_NEXT_RE.search(str(link))
-        return match.group(1) if match else None
+        return _parse_link_next(str(link))
 
     @staticmethod
     def _split_url_params(url: str) -> tuple[str, dict[str, str]]:

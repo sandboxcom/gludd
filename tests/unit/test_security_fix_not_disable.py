@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from general_ludd.security.fix_not_disable import (
-    ActionIntent,
     DISABLE_PATTERNS,
+    ActionIntent,
     FixNotDisablePolicy,
     default_fix_not_disable_policy,
     is_disabling_action,
@@ -121,7 +121,7 @@ class TestFixNotDisablePolicyCheckActionFailClosed:
 
     def test_disable_action_with_repair_keyword_still_blocked(self) -> None:
         policy = FixNotDisablePolicy(fail_closed=True)
-        allowed, reason = policy.check_action("fix by deleting the check")
+        allowed, _reason = policy.check_action("fix by deleting the check")
         assert allowed is False
 
     def test_neutral_action_allowed(self) -> None:

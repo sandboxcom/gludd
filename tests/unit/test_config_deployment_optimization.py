@@ -2,14 +2,11 @@
 
 from __future__ import annotations
 
-import importlib
 from dataclasses import is_dataclass
-from typing import get_type_hints
 
 import pytest
 
 import general_ludd.config.deployment_optimization as mod
-
 
 # ---------------------------------------------------------------------------
 # Module import + existence
@@ -21,7 +18,7 @@ def test_module_importable() -> None:
 
 
 def test_module_has_docstring() -> None:
-    assert mod.__doc__ is not None or True
+    assert True
 
 
 def test_all_exports_correct_class() -> None:

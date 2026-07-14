@@ -158,7 +158,11 @@ class TestJsonlLogSource:
     def test_query_filters_by_time_range(self, tmp_path: Path):
         root = str(tmp_path)
         file = tmp_path / "log.jsonl"
-        file.write_text('{"ts": "2024-01-01", "message": "old"}\n{"ts": "2024-06-01", "message": "mid"}\n{"ts": "2024-12-01", "message": "new"}\n')
+        file.write_text(
+            '{"ts": "2024-01-01", "message": "old"}\n'
+            '{"ts": "2024-06-01", "message": "mid"}\n'
+            '{"ts": "2024-12-01", "message": "new"}\n'
+        )
         src = JsonlLogSource({"root": root, "path": str(file)})
         records = src.query({"start": "2024-03-01", "end": "2024-09-01"})
         assert len(records) == 1

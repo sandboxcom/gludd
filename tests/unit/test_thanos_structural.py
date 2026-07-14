@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from general_ludd.connectors.thanos import (
     ThanosSource,
-    _default_http_get,
-    _validate_base_url,
     _fmt_labels,
+    _validate_base_url,
 )
 
 

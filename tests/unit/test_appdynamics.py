@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from general_ludd.connectors.appdynamics import (
+    DEFAULT_TIMEOUT,
     KIND_METRICS,
     KIND_TRACES,
     VALID_KINDS,
     AppDynamicsSource,
-    DEFAULT_TIMEOUT,
 )
 
 

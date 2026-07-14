@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from general_ludd.connectors.prom_scrape import (
     PromScrapeSource,
-    _HttpxTransport,
     _guard_base_url,
+    _HttpxTransport,
     _parse_labels,
     _parse_value_ts,
     _split_metric_line,
@@ -32,14 +32,14 @@ class TestSplitMetricLine:
     def test_simple_no_labels(self):
         result = _split_metric_line("http_requests_total 42")
         assert result is not None
-        name, labels, rest = result
+        name, labels, _rest = result
         assert name == "http_requests_total"
         assert labels == {}
 
     def test_with_labels(self):
         result = _split_metric_line('http_requests_total{method="GET"} 42')
         assert result is not None
-        name, labels, rest = result
+        name, labels, _rest = result
         assert name == "http_requests_total"
         assert labels == {"method": "GET"}
 

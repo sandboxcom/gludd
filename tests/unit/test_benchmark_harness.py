@@ -47,11 +47,17 @@ class TestBenchmarkResult:
 
 class TestBenchmarkSummary:
     def test_resolution_rate_normal(self):
-        s = BenchmarkSummary(benchmark="b", agent_name="a", total_tasks=10, resolved_count=3, mean_score=0.5, total_duration_ms=1000)
+        s = BenchmarkSummary(
+            benchmark="b", agent_name="a", total_tasks=10,
+            resolved_count=3, mean_score=0.5, total_duration_ms=1000,
+        )
         assert s.resolution_rate() == 0.3
 
     def test_resolution_rate_zero_tasks(self):
-        s = BenchmarkSummary(benchmark="b", agent_name="a", total_tasks=0, resolved_count=0, mean_score=0.0, total_duration_ms=0)
+        s = BenchmarkSummary(
+            benchmark="b", agent_name="a", total_tasks=0,
+            resolved_count=0, mean_score=0.0, total_duration_ms=0,
+        )
         assert s.resolution_rate() == 0.0
 
 
@@ -116,9 +122,21 @@ class TestBenchmarkSuite:
     def test_report_with_results(self):
         suite = BenchmarkSuite(agent_name="agent1")
         suite.results = [
-            BenchmarkResult(benchmark="b1", task_id="t1", score=1.0, agent_name="agent1", duration_ms=10, attempts=1, resolved=True),
-            BenchmarkResult(benchmark="b1", task_id="t2", score=0.0, agent_name="agent1", duration_ms=20, attempts=1, resolved=False),
-            BenchmarkResult(benchmark="b2", task_id="t3", score=1.0, agent_name="agent1", duration_ms=30, attempts=1, resolved=True),
+            BenchmarkResult(
+                benchmark="b1", task_id="t1", score=1.0,
+                agent_name="agent1", duration_ms=10,
+                attempts=1, resolved=True,
+            ),
+            BenchmarkResult(
+                benchmark="b1", task_id="t2", score=0.0,
+                agent_name="agent1", duration_ms=20,
+                attempts=1, resolved=False,
+            ),
+            BenchmarkResult(
+                benchmark="b2", task_id="t3", score=1.0,
+                agent_name="agent1", duration_ms=30,
+                attempts=1, resolved=True,
+            ),
         ]
         report = suite.report()
         assert report["benchmarks"]["b1"]["total_tasks"] == 2
@@ -129,7 +147,11 @@ class TestBenchmarkSuite:
     def test_report_writes_file(self, tmp_path: Path):
         suite = BenchmarkSuite(agent_name="agent1")
         suite.results = [
-            BenchmarkResult(benchmark="b1", task_id="t1", score=1.0, agent_name="agent1", duration_ms=10, attempts=1, resolved=True),
+            BenchmarkResult(
+                benchmark="b1", task_id="t1", score=1.0,
+                agent_name="agent1", duration_ms=10,
+                attempts=1, resolved=True,
+            ),
         ]
         out = tmp_path / "report.json"
         suite.report(output_path=out)

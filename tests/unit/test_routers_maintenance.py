@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import re
+from typing import ClassVar
 
 import pytest
 from fastapi import FastAPI
 
 from general_ludd.routers.maintenance import register
-
 
 CONSTANTS = {
     "MAX_SEEN_KEYS": 256,
@@ -48,10 +48,10 @@ class TestConstants:
         from general_ludd.routers.maintenance import _MAX_SEEN_KEYS
 
         assert isinstance(_MAX_SEEN_KEYS, int)
-        assert _MAX_SEEN_KEYS == CONSTANTS["MAX_SEEN_KEYS"]
+        assert CONSTANTS["MAX_SEEN_KEYS"] == _MAX_SEEN_KEYS
 
     def test_regex_are_compiled(self):
-        from general_ludd.routers.maintenance import _SAFE_SLUG, _SAFE_LABEL
+        from general_ludd.routers.maintenance import _SAFE_LABEL, _SAFE_SLUG
 
         assert isinstance(_SAFE_SLUG, re.Pattern)
         assert isinstance(_SAFE_LABEL, re.Pattern)
@@ -64,7 +64,7 @@ class TestConstants:
 
 
 class TestRouteRegistration:
-    EXPECTED_PATHS: set[str] = {
+    EXPECTED_PATHS: ClassVar[set[str]] = {
         "/admin/code-intel/hot-files",
         "/admin/deps/outdated",
         "/admin/issues/poll",
@@ -75,7 +75,7 @@ class TestRouteRegistration:
         app = FastAPI()
         register(app, {})
         registered = {r.path for r in app.routes}
-        assert self.EXPECTED_PATHS <= registered
+        assert registered >= self.EXPECTED_PATHS
 
     def test_code_intel_hot_files_is_get(self):
         app = FastAPI()

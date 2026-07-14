@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from general_ludd.observability.dashboard_data import DashboardDataProvider
 
 

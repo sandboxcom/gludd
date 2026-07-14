@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from general_ludd.connectors.signoz import SigNozSource, _DEFAULT_TIMEOUT
+from general_ludd.connectors.signoz import _DEFAULT_TIMEOUT, SigNozSource
 
 
 class TestSigNozModule:

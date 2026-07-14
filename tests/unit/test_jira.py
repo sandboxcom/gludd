@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from general_ludd.issue_sources.jira import JiraIssueSource, _DEFAULT_TIMEOUT
+from general_ludd.issue_sources.jira import _DEFAULT_TIMEOUT, JiraIssueSource
 
 
 class TestJiraModule:
