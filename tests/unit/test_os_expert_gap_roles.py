@@ -3,6 +3,7 @@
 Covers:
   - linux_security: files/linux_security_audit.py (SELinux/AppArmor/firewall/auditd/PAM/kernel/ports)
   - windows_security: files/windows_security_audit.py (Defender/firewall/auditpol/secedit/hotfix)
+  - windows_diagnose: files/windows_gather.py (WMI/EventLog/registry/services)
 """
 
 from __future__ import annotations
@@ -590,3 +591,177 @@ def test_windows_security_assess_findings_insecure(windows_security_audit):
     findings = windows_security_audit.assess_findings(data)
     high_critical = [f for f in findings if f.get("severity") in ("high", "critical")]
     assert len(high_critical) > 0
+
+
+# ── windows_gather.py (windows_diagnose role backend) ─────────────────────
+
+@pytest.fixture(scope="module")
+def windows_gather():
+    return _load_module("windows_diagnose/files/windows_gather.py", "windows_gather")
+
+
+def test_windows_gather_has_functions(windows_gather):
+    for fn in (
+        "parse_wmi_os",
+        "parse_wmi_computersystem",
+        "parse_wmi_processor",
+        "parse_eventlog",
+        "parse_reg_query",
+        "parse_sc_query",
+        "parse_get_service",
+        "gather",
+    ):
+        assert hasattr(windows_gather, fn), f"windows_gather missing {fn}"
+
+
+def test_windows_parse_wmi_os(windows_gather):
+    sample = json.dumps({
+        "Caption": "Microsoft Windows Server 2022",
+        "Version": "10.0.20348",
+        "BuildNumber": "20348",
+        "InstallDate": "2025-01-15T08:00:00Z",
+    })
+    result = windows_gather.parse_wmi_os(sample)
+    assert result["caption"] == "Microsoft Windows Server 2022"
+    assert result["version"] == "10.0.20348"
+    assert result["build_number"] == "20348"
+
+
+def test_windows_parse_wmi_os_empty(windows_gather):
+    result = windows_gather.parse_wmi_os("")
+    assert result["caption"] == ""
+    assert result["version"] == ""
+
+
+def test_windows_parse_wmi_computersystem(windows_gather):
+    sample = json.dumps({
+        "Manufacturer": "Dell Inc.",
+        "Model": "PowerEdge R750",
+        "TotalPhysicalMemory": 34359738368,
+        "NumberOfProcessors": 2,
+        "NumberOfLogicalProcessors": 64,
+        "Domain": "corp.example.com",
+        "DNSHostName": "SRV-WEB-01",
+    })
+    result = windows_gather.parse_wmi_computersystem(sample)
+    assert result["manufacturer"] == "Dell Inc."
+    assert result["model"] == "PowerEdge R750"
+    assert result["total_physical_memory"] == 34359738368
+    assert result["number_of_logical_processors"] == 64
+    assert result["domain"] == "corp.example.com"
+    assert result["dns_host_name"] == "SRV-WEB-01"
+
+
+def test_windows_parse_wmi_computersystem_empty(windows_gather):
+    result = windows_gather.parse_wmi_computersystem("")
+    assert result["manufacturer"] == ""
+
+
+def test_windows_parse_wmi_processor(windows_gather):
+    sample = json.dumps([
+        {
+            "Name": "Intel(R) Xeon(R) Gold 6338 CPU @ 2.00GHz",
+            "Manufacturer": "GenuineIntel",
+            "MaxClockSpeed": 2000,
+            "NumberOfCores": 32,
+            "NumberOfLogicalProcessors": 64,
+            "Architecture": 9,
+            "AddressWidth": 64,
+        },
+    ])
+    result = windows_gather.parse_wmi_processor(sample)
+    assert len(result) == 1
+    assert result[0]["name"] == "Intel(R) Xeon(R) Gold 6338 CPU @ 2.00GHz"
+    assert result[0]["number_of_cores"] == 32
+    assert result[0]["architecture"] == 9
+    assert result[0]["address_width"] == 64
+
+
+def test_windows_parse_wmi_processor_empty(windows_gather):
+    assert windows_gather.parse_wmi_processor("") == []
+
+
+def test_windows_parse_eventlog(windows_gather):
+    sample = json.dumps([
+        {
+            "Id": 6009,
+            "LevelDisplayName": "Information",
+            "ProviderName": "Microsoft-Windows-Eventlog",
+            "TimeCreated": "2026-07-15T08:00:00.0000000Z",
+            "Message": "Microsoft (R) Windows (R) Server operating system",
+        },
+        {
+            "Id": 41,
+            "LevelDisplayName": "Critical",
+            "ProviderName": "Microsoft-Windows-Kernel-Power",
+            "TimeCreated": "2026-07-15T07:59:00.0000000Z",
+            "Message": "The system has rebooted without cleanly shutting down first",
+        },
+    ])
+    result = windows_gather.parse_eventlog(sample, source="system")
+    assert len(result) == 2
+    assert result[0]["id"] == 6009
+    assert result[0]["source"] == "system"
+    assert result[1]["level_display_name"] == "Critical"
+    assert result[1]["provider_name"] == "Microsoft-Windows-Kernel-Power"
+
+
+def test_windows_parse_eventlog_empty(windows_gather):
+    assert windows_gather.parse_eventlog("[]") == []
+
+
+def test_windows_parse_reg_query(windows_gather):
+    sample = (
+        "HKEY_LOCAL_MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\n\n"
+        "    DisplayName    REG_SZ    Microsoft Visual C++ 2015-2022 Redistributable (x64)\n"
+        "    DisplayVersion    REG_SZ    14.38.33130\n"
+        "    Publisher    REG_SZ    Microsoft Corporation\n"
+    )
+    result = windows_gather.parse_reg_query(sample, key="uninstall")
+    assert len(result) == 3
+    assert result[0]["value_name"] == "DisplayName"
+    assert result[0]["type"] == "REG_SZ"
+    assert "Visual C++" in result[0]["data"]
+
+
+def test_windows_parse_reg_query_empty(windows_gather):
+    assert windows_gather.parse_reg_query("") == []
+
+
+def test_windows_parse_sc_query(windows_gather):
+    sample = (
+        "SERVICE_NAME: WinRM\n"
+        "DISPLAY_NAME: Windows Remote Management (WS-Management)\n"
+        "        TYPE               : 20  WIN32_SHARE_PROCESS\n"
+        "        STATE              : 4  RUNNING\n"
+        "        WIN32_EXIT_CODE    : 0  (0x0)\n"
+        "\n"
+        "SERVICE_NAME: BITS\n"
+        "DISPLAY_NAME: Background Intelligent Transfer Service\n"
+        "        STATE              : 1  STOPPED\n"
+    )
+    result = windows_gather.parse_sc_query(sample)
+    assert len(result) == 2
+    assert result[0]["service_name"] == "WinRM"
+    assert "Remote Management" in result[0]["display_name"]
+    assert result[1]["service_name"] == "BITS"
+
+
+def test_windows_parse_sc_query_empty(windows_gather):
+    assert windows_gather.parse_sc_query("") == []
+
+
+def test_windows_parse_get_service(windows_gather):
+    sample = json.dumps([
+        {"Name": "WinRM", "DisplayName": "Windows Remote Management", "Status": "Running", "StartType": "Automatic"},
+        {"Name": "BITS", "DisplayName": "Background Intelligent Transfer Service", "Status": "Stopped", "StartType": "Manual"},
+    ])
+    result = windows_gather.parse_get_service(sample)
+    assert len(result) == 2
+    assert result[0]["name"] == "WinRM"
+    assert result[0]["status"] == "Running"
+    assert result[1]["start_type"] == "Manual"
+
+
+def test_windows_parse_get_service_empty(windows_gather):
+    assert windows_gather.parse_get_service("[]") == []
