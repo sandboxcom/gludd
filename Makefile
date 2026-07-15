@@ -377,9 +377,6 @@ test:
 		$(UV) run python -m pytest tests/ --cov=general_ludd --cov-report=term-missing --cov-report=xml $(_XD) -v; \
 	fi
 
-test-binary-re:
-	@$(UV) run python -m pytest tests/unit/test_binary_re_deobfuscate.py tests/unit/test_binary_re_fuzz_target.py tests/unit/test_binary_re_fuzzing_strategies.py tests/unit/test_binary_versions.py tests/unit/test_binary_paths.py -v --tb=short
-
 test-unit:
 	@if [ -n "$(TESTFILE)" ]; then \
 		$(UV) run python -m pytest $(TESTFILE) $(_XD) -v; \
@@ -2898,6 +2895,10 @@ check-task-ledger:
 check-duplicate-targets:
 	@$(UV) run python scripts/check_duplicate_targets.py
 
+# --- Proactive bug scanner: find issues before the user does ---
+proactive-scan:
+	@$(UV) run python scripts/proactive_bug_scan.py
+
 # --- Dispatch dedup: cross-reference /tmp/gludd-dispatched-tasks.json against TASKS.md completed items ---
 check-dispatch-dedup:
 	@$(UV) run python scripts/check_dispatch_dedup.py
@@ -4121,7 +4122,7 @@ test-binary-re:
 	@$(UV) run python -m pytest collections/ansible_collections/general_ludd/binary_re/tests/ -v
 
 test-binary-unit:
-	@$(UV) run python -m pytest tests/unit/test_binary_re_deobfuscate.py tests/unit/test_binary_re_fuzz_target.py tests/unit/test_binary_versions.py tests/unit/test_binary_paths.py -v --tb=short
+	@$(UV) run python -m pytest tests/unit/test_binary_re_deobfuscate.py tests/unit/test_binary_re_fuzz_target.py tests/unit/test_binary_re_fuzzing_strategies.py tests/unit/test_binary_versions.py tests/unit/test_binary_paths.py -v --tb=short
 
 # radio collection: 10 roles + 5 knowledge modules (antenna_types, frequency_allocations, modulation_schemes, propagation_models, radio_exam_data)
 test-radio:
