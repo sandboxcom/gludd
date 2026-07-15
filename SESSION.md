@@ -35,38 +35,47 @@ Code versions `0.1.0-beta.2` through `0.1.0-beta.4` exist in `pyproject.toml`/`_
 
 ---
 
-## SESSION 37 — 2026-07-15 (FINAL)
+## SESSION 37 — 2026-07-15 (FINAL — WAVES 1-7)
 
-- **HEAD: `1c262d43`** on `development` branch (10 unpushed: `f12b81f0..1c262d43`)
+- **HEAD: `8d32ff5a`** on `development` branch
 - **Version: 0.1.0-beta.5** (pyproject.toml bumped at `773f9275`)
-- **Push status: NOT PUSHED** — local `1c262d43`, remote tip `8e290afd70ea` (DIVERGED)
-- **CI: RED** — run `29444224186` conclusion=failure on prior remote HEAD; no run yet for `1c262d43`
-- **Gate: FAILED** — lint 8 errors, typecheck 6 errors (collect OK, smoke PASS)
+- **Push status: VERIFIED** — `development@8d32ff5a0d971ac389799cbf741ad1494cf82d43` confirmed matching remote
+- **CI: PENDING** — run `29446675455` in_progress on development HEAD
+- **Gate: PASSED** — lint 0, typecheck 0 (766 source files), collect OK (40,549/40,550 tests, 1 deselected)
 - **Working tree: CLEAN**
 
-### Completed (waves 1-4, commits `f12b81f0..1c262d43`)
+### Completed (waves 1-7, commits `f12b81f0..8d32ff5a` — 15 commits)
 
 | Item | Description | Tests / Evidence | Commit(s) |
 |------|-------------|-------------------|-----------|
-| **enforce-floor.ts PID staleness fix** | Root cause: 8 `process.cwd()` calls in `enforce-floor.ts` returned the plugin worker's CWD, not the project root — so `openWorkExists()` and `_buildDispatchCommands()` could not locate `TASKS.md` / `ratchet.yml` / `.gate-status` / `.git`. Fix: replaced all 8 with `getProjectRoot()` from `shared.ts` (lines 93, 119, 120, 131, 136, 154, 165, 177). | `check-node-v26-compat` 2/2 PASS, `test-hook-runtime` 113 passed | `f12b81f0` |
-| **enforce-make.ts reload fix** | `reload-enforcement` was missing `multitask-state` from its state-file reset list — multitask enforcement stayed stale after a reload. Fix added the file. | reload test xdist fix | `acdc1285` |
-| **NF.2 P3+P4+P5** | P4 real executor (23 tests); P5 Firecracker REST API (31 tests). Unikernel sandbox end-to-end. | 23 + 31 tests | `773f9275`, `1c262d43` |
-| **NF.3 all roles** | Frida reverse-engineaning role fleshed out with backend + tests. | 31 tests | `acdc1285` |
-| **NF.4 9/10 roles** | 3 radio roles (propagation_model, regulation_lookup, exam_quiz) with standalone Python CLIs. | 55 tests | `18a8295a` |
-| **NF.5 complete** | `verify_coverage` E2E validation; P4 50 tests (session 36) + verify_coverage 18 tests here. | 18 tests | `773f9275` |
-| **NF.6 all roles** | 3 android roles (android_diagnose, android_security, ios_diagnose) + 3 backends (ios_security, linux_diagnose, macos_diagnose) + 5 roles (linux_automation, windows_automation, macos_automation, macos_security, kernel_analyze). | 25 + 130 tests | `2465d8ca`, `e06014d3`, `4b736311` |
-| **NF.7 P5** | STS reaper integration + daemon wiring. | 11 + 12 tests | `acdc1285`, `1c262d43` |
-| **NF.9 Phase C+D+E** | Phase D language expert (74 tests); Phase E CLI (33 tests). | 74 + 33 tests | `773f9275`, `1c262d43` |
+| **enforce-floor.ts PID staleness fix** | Root cause: 8 `process.cwd()` calls returned the plugin worker's CWD, not the project root — `openWorkExists()` and `_buildDispatchCommands()` could not locate task-tracking files. Fix: replaced all 8 with `getProjectRoot()` from `shared.ts`. | `check-node-v26-compat` 2/2 PASS, `test-hook-runtime` 113 passed | `f12b81f0` |
+| **enforce-make.ts reload fix** | `reload-enforcement` was missing `multitask-state` from state-file reset list. Fix added. | reload test xdist fix | `acdc1285` |
+| **Makefile duplicate test-binary-re** | Removed duplicate `test-binary-re` target causing Makefile parse warnings. | — | `aa7e3abd` |
+| **Proactive bug scanner** | Created + operational: automated pattern scanner for common bug classes (missing imports, dead code, type gaps). | integrated into gate | `773f9275`, `aa7e3abd` |
+| **NF.1 Chat CLI** | COMPLETED (session 36). P5 history (38 tests). | 38 tests | session 36 |
+| **NF.2 Unikernel sandbox** | COMPLETED. P4 real executor (23 tests); P5 Firecracker REST API (31 tests); E2E sandbox pipeline. | 23 + 31 tests | `773f9275`, `1c262d43` |
+| **NF.3 Binary RE** | COMPLETED (8/8 roles). Frida role + tests (31); binary_re test coverage, cyberchef obfuscation, prompt_injection. | 31 + additional tests | `acdc1285`, `aa7e3abd` |
+| **NF.4 Radio engineer** | 9/10 COMPLETED (sdr_spectrum nearly done). Propagation_model, regulation_lookup, exam_quiz with standalone Python CLIs; SDR spectrum task wire tests. | 55 + additional tests | `18a8295a`, `8d32ff5a` |
+| **NF.5 E2E test gen** | COMPLETED. verify_coverage E2E validation; P4 50 tests (session 36) + verify_coverage 18 tests. | 18 tests | `773f9275` |
+| **NF.6 OS expert** | COMPLETED (12/12 roles). All 11 roles + linux_security + windows_security backends (48 tests). | 25 + 130 + 48 tests | `2465d8ca`, `e06014d3`, `4b736311`, `8d32ff5a` |
+| **NF.7 STS tokens** | COMPLETED. P5 reaper integration + daemon wiring (11+12 tests); P6 e2e token lifecycle fix (fail-closed get_token, denial-propagation). | 11 + 12 + e2e tests | `acdc1285`, `1c262d43`, `2e9420a5` |
+| **NF.8 Multitasking enforcement** | COMPLETED (session 36). text.complete thin-wave block. | — | session 36 |
+| **NF.9 Language expert** | COMPLETED (Phases A-F). Phase D (74 tests); Phase E CLI (33 tests); Phase F molecule + VM integration tests + 8 role task YAML fixes. | 74 + 33 + molecule tests | `773f9275`, `1c262d43`, `aa7e3abd`, `8d32ff5a` |
 | **AgentTokenModel duplicate index fix** | Removed duplicate DB index on `agent_tokens`. | schema fix | `1c262d43` |
-| **beta.2 version bump** | `pyproject.toml` + `__init__.py` bumped to `0.1.0-beta.5` for the upcoming cut. | version stamp | `773f9275` |
+| **beta.2 version bump + TASKS evidence** | `pyproject.toml` + `__init__.py` bumped to `0.1.0-beta.5`; TASKS.md final evidence for all items. | version stamp + docs | `773f9275`, `d1c13851` |
 
-### Commits on development (`f12b81f0..1c262d43`)
+### Commits on development (`f12b81f0..8d32ff5a` — 15 commits)
 
 | Hash | Message |
 |------|---------|
+| `8d32ff5a` | feat: NF.9 Phase F role task YAML fixes 8 roles, NF.6 linux_security windows_security backends 48 tests, NF.4 sdr spectrum task wire tests, language Phase D mixed paypal fix |
+| `2e9420a5` | NF.7 P6: fix e2e token lifecycle — StsAuditLog agent attribution on use/expiry, fail-closed get_token, denial-propagation test specs |
+| `d1c13851` | docs: update TASKS.md final evidence NF.3 8-of-8 NF.6 12-of-12 NF.9 phases A-F done NF.2 P5 done 9-of-10 NF items completed |
+| `aa7e3abd` | feat: NF.3 binary_re test coverage cyberchef obfuscation prompt_injection, NF.9 Phase F molecule, VM integration tests, cli_language typecheck fix |
+| `d572e276` | docs: SESSION-37 final state, HEAD 1c262d43, NF.1-NF.9 completed, enforce-floor PID staleness fix, gate FAILED, next typecheck fix push beta.2 cut |
 | `1c262d43` | feat: NF.2 P5 Firecracker REST API 31 tests, NF.6 OS expert 5 roles 130 tests, NF.9 Phase E CLI 33 tests, STS reaper integration 11 tests, AgentTokenModel duplicate index fix |
 | `4b736311` | NF.6: implement linux_automation, windows_automation, macos_automation, macos_security, kernel_analyze OS Expert roles |
-| `b97017b8` | docs-update-TASKS-evidence-NF2-NF5-NF7-completed-NF3-NF4-NF6-NF9-updated |
+| `b97017b8` | docs: update TASKS evidence NF2 NF5 NF7 completed, NF3 NF4 NF6 NF9 updated |
 | `773f9275` | fix: gvisor_backend typecheck fix isinstance Popen narrowing, NF.2 P4 real executor 23 tests, NF.9 Phase D 74 tests, NF.5 verify_coverage 18 tests, proactive scan fixes, beta.2 version bump |
 | `e06014d3` | NF.6 os_expert: implement ios_security backend + linux_diagnose + macos_diagnose Python backends |
 | `acdc1285` | fix: enforcement reload-enforcement missing multitask-state, NF.3 frida 31 tests, STS daemon wiring 12 tests, reload test xdist fix |
@@ -75,27 +84,26 @@ Code versions `0.1.0-beta.2` through `0.1.0-beta.4` exist in `pyproject.toml`/`_
 | `3b58a656` | test: (empty placeholder commit) |
 | `f12b81f0` | fix enforce-floor: replace 8 remaining process.cwd calls with getProjectRoot from shared.ts — completes PID staleness fix so openWorkExists and _buildDispatchCommands find TASKS.md/ratchet.yml/.gate-status/.git regardless of plugin worker cwd. Lines 93, 119, 120, 131, 136, 154, 165, 177. Verified check-node-v26-compat 2/2 PASS, test-hook-runtime 113 passed. |
 
-### NF status at `1c262d43`
+### NF status at `8d32ff5a`
 
 | Feature | Status | Latest milestone |
 |---------|--------|-----------------|
-| NF.1 Chat CLI | COMPLETED (session 36) | P5 history (38 tests) |
+| NF.1 Chat CLI | **COMPLETED** (session 36) | P5 history (38 tests) |
 | NF.2 Unikernel sandbox | **COMPLETED** | P5 Firecracker REST API (31 tests, `1c262d43`) |
-| NF.3 Binary RE | **COMPLETED** | Frida role + tests (`acdc1285`) |
-| NF.4 Radio engineer | **COMPLETED** (9/10 roles) | 3 roles + 55 tests (`18a8295a`) |
+| NF.3 Binary RE | **COMPLETED** (8/8 roles) | Frida role + cyberchef/prompt_injection tests (`aa7e3abd`) |
+| NF.4 Radio engineer | **9/10 roles** (sdr_spectrum nearly done) | 3 role CLIs + 55 tests (`18a8295a`), sdr task wire tests (`8d32ff5a`) |
 | NF.5 E2E test gen | **COMPLETED** | verify_coverage 18 tests (`773f9275`) |
-| NF.6 OS expert | **COMPLETED** (all roles) | 9 roles across 3 commits (25+130 tests) |
-| NF.7 STS tokens | **COMPLETED** | P5 reaper integration 11 tests (`1c262d43`) |
-| NF.8 Multitasking enforcement | COMPLETED (session 36) | text.complete thin-wave block |
-| NF.9 Language expert | **COMPLETED** | Phase E CLI 33 tests (`1c262d43`) |
+| NF.6 OS expert | **COMPLETED** (12/12 roles) | All roles + linux_security/windows_security backends (`8d32ff5a`) |
+| NF.7 STS tokens | **COMPLETED** | P5 reaper (`1c262d43`) + P6 e2e token lifecycle fix (`2e9420a5`) |
+| NF.8 Multitasking enforcement | **COMPLETED** (session 36) | text.complete thin-wave block |
+| NF.9 Language expert | **COMPLETED** (Phases A-F) | Phase F molecule + VM integration + 8 role YAML fixes (`aa7e3abd`, `8d32ff5a`) |
 
 ### Next
 
-1. Fix typecheck (6 errors) + lint (8 errors) — gate is currently FAILED
-2. Push development, wait for CI green on HEAD `1c262d43`
-3. Cut beta.2 via `make release-cut TAG=v0.1.0-beta.5 MSG='...'`
+1. Wait for CI green on run `29446675455` (development@8d32ff5a)
+2. Cut beta.2 via `make release-cut TAG=v0.1.0-beta.5 MSG='beta.2 release: 9/10 NF features + enforcement fixes + 40,549 tests'`
 
-- **Last Updated: 2026-07-15 — Session 37 (FINAL).** HEAD `1c262d43` on `development`. 10 unpushed commits. Tree CLEAN. Gate FAILED (lint 8, typecheck 6). CI RED (stale run on prior remote tip). NF.1-NF.9 all COMPLETED. Enforcement PID staleness root-caused and fixed. Next: typecheck/lint fix → push → CI green → beta.2 cut.
+- **Last Updated: 2026-07-15 — Session 37 (FINAL, WAVES 1-7).** HEAD `8d32ff5a` on `development`. 15 commits. Push VERIFIED. Tree CLEAN. Gate PASSED (lint 0, typecheck 0, collect OK 40,549/40,550 tests). CI PENDING (run 29446675455). 9/10 NF features completed (NF.4 sdr_spectrum nearly done). Enforcement PID staleness root-caused and fixed. Proactive bug scanner operational. Makefile duplicate target removed. Next: CI green → beta.2 release cut.
 
 ---
 

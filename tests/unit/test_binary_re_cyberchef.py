@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-_COLLECTION_ROOT = Path(__file__).resolve().parents[3] / "collections/ansible_collections/general_ludd/binary_re"
+_COLLECTION_ROOT = Path(__file__).resolve().parents[2] / "collections/ansible_collections/general_ludd/binary_re"
 _CYBERCHEF_FILE = _COLLECTION_ROOT / "roles" / "cyberchef_transform" / "files"
 
 if str(_CYBERCHEF_FILE) not in sys.path:

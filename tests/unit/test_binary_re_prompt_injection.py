@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-_COLLECTION_ROOT = Path(__file__).resolve().parents[3] / "collections/ansible_collections/general_ludd/binary_re"
+_COLLECTION_ROOT = Path(__file__).resolve().parents[2] / "collections/ansible_collections/general_ludd/binary_re"
 _PLUGIN_ROOT = _COLLECTION_ROOT / "plugins"
 
 if str(_PLUGIN_ROOT / "module_utils") not in sys.path:

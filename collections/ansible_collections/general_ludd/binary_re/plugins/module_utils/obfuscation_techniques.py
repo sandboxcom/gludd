@@ -411,20 +411,12 @@ def _compute_entropy(data: bytes) -> float:
     for b in data:
         counts[b] += 1
     n = len(data)
+    import math
     entropy = 0.0
     for c in counts:
         if c > 0:
             p = c / n
-            entropy -= p * (p.bit_length() - 1)
-    try:
-        import math
-        entropy = 0.0
-        for c in counts:
-            if c > 0:
-                p = c / n
-                entropy -= p * math.log2(p)
-    except Exception:
-        pass
+            entropy -= p * math.log2(p)
     return entropy
 
 
