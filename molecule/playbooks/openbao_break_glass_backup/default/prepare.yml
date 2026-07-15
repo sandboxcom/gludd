@@ -2,7 +2,7 @@
 - name: Prepare - mock OpenBao + throwaway GPG key for openbao_break_glass_backup
   hosts: localhost
   connection: local
-  gather_facts: true
+  gather_facts: false
   vars:
     project_dir: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
     mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8794', true) }}"

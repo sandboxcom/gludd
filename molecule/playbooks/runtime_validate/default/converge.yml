@@ -2,7 +2,7 @@
 - name: Converge - validate runtime components (worker, gunicorn, ansible runner)
   hosts: localhost
   connection: local
-  gather_facts: true
+  gather_facts: false
   vars:
     project_src: "{{ lookup('env', 'PWD') }}/src"
     venv_python: "{{ lookup('env', 'VIRTUAL_ENV') | default('/usr', true) }}/bin/python3"

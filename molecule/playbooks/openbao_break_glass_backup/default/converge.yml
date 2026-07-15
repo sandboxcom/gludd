@@ -2,7 +2,7 @@
 - name: Converge - run openbao_break_glass_backup role
   hosts: localhost
   connection: local
-  gather_facts: true
+  gather_facts: false
   vars:
     mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8794', true) }}"
     backup_dir: "/tmp/gludd-openbao-backup-{{ mock_port }}"

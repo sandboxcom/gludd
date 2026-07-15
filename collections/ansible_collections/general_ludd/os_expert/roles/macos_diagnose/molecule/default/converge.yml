@@ -1,7 +1,7 @@
 ---
 - name: Converge
   hosts: localhost
-  gather_facts: true
+  gather_facts: false
   tasks:
     - name: "Include macos_diagnose"
       ansible.builtin.include_role:

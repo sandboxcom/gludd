@@ -4,7 +4,7 @@
 - name: Converge - validate_pipeline
   hosts: localhost
   connection: local
-  gather_facts: true
+  gather_facts: false
   vars:
     mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8866', true) }}"
   tasks:
@@ -21,7 +21,7 @@
 - name: Converge - check_stage_entry (intake, stage 0)
   hosts: localhost
   connection: local
-  gather_facts: true
+  gather_facts: false
   vars:
     mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8866', true) }}"
   tasks:
@@ -40,7 +40,7 @@
 - name: Converge - check_stage_exit (intake, seeded fixtures)
   hosts: localhost
   connection: local
-  gather_facts: true
+  gather_facts: false
   vars:
     mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8866', true) }}"
   tasks:
@@ -61,7 +61,7 @@
 - name: Converge - audit_token_chain
   hosts: localhost
   connection: local
-  gather_facts: true
+  gather_facts: false
   vars:
     mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8866', true) }}"
   tasks:
@@ -79,7 +79,7 @@
 - name: Converge - list_stages
   hosts: localhost
   connection: local
-  gather_facts: true
+  gather_facts: false
   vars:
     mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8866', true) }}"
   tasks:

@@ -6,7 +6,7 @@
 - name: Converge - run ai_parallel_dispatch role against the mock daemon
   hosts: localhost
   connection: local
-  gather_facts: true
+  gather_facts: false
   vars:
     mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8851', true) }}"
   tasks:

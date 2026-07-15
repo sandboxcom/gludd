@@ -2,7 +2,7 @@
 - name: Converge - run process_audit role
   hosts: localhost
   connection: local
-  gather_facts: true
+  gather_facts: false
   vars:
     mock_port: "8846"
   tasks:
