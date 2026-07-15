@@ -1,0 +1,464 @@
+---
+# linux_security role — audit Linux security subsystems: SELinux/AppArmor,
+# iptables/nftables, auditd, PAM, kernel hardening, open ports.
+
+- name: Create artifact directory
+  when: ansible_os_family in ['RedHat', 'Debian', 'Suse', 'Archlinux']
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Create artifact subdirectories
+  when: ansible_os_family in ['RedHat', 'Debian', 'Suse', 'Archlinux']
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}/{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - selinux
+    - apparmor
+    - firewall
+    - auditd
+    - pam
+    - kernel
+    - ports
+
+# ------------------------------------------------------------------ #
+#  SELinux audit
+# ------------------------------------------------------------------ #
+- name: Audit SELinux
+  when:
+    - ansible_os_family in ['RedHat', 'Debian', 'Suse', 'Archlinux']
+    - audit_selinux | bool
+  block:
+    - name: Run getenforce
+      ansible.builtin.command: getenforce
+      register: _selinux_getenforce
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Run sestatus
+      ansible.builtin.command: sestatus
+      register: _selinux_sestatus
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Run semanage boolean -l
+      ansible.builtin.command: semanage boolean -l
+      register: _selinux_booleans
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write SELinux state to artifact_dir
+      ansible.builtin.copy:
+        content: |
+          === getenforce ===
+          {{ _selinux_getenforce.stdout | default('(not installed)') }}
+
+          === sestatus ===
+          {{ _selinux_sestatus.stdout | default('(not installed)') }}
+
+          === semanage boolean -l ===
+          {{ _selinux_booleans.stdout | default('(not installed)') }}
+        dest: "{{ artifact_dir }}/selinux/state.txt"
+        mode: "0644"
+
+# ------------------------------------------------------------------ #
+#  AppArmor audit
+# ------------------------------------------------------------------ #
+- name: Audit AppArmor
+  when:
+    - ansible_os_family in ['RedHat', 'Debian', 'Suse', 'Archlinux']
+    - audit_apparmor | bool
+  block:
+    - name: Run aa-status
+      ansible.builtin.command: aa-status
+      register: _apparmor_status
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Read /sys/kernel/security/apparmor/profiles
+      ansible.builtin.slurp:
+        path: /sys/kernel/security/apparmor/profiles
+      register: _apparmor_profiles
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write AppArmor state to artifact_dir
+      ansible.builtin.copy:
+        content: |
+          === aa-status ===
+          {{ _apparmor_status.stdout | default('(not installed)') }}
+
+          === /sys/kernel/security/apparmor/profiles ===
+          {{ _apparmor_profiles.content | default('') | b64decode | default('(not readable)') }}
+        dest: "{{ artifact_dir }}/apparmor/state.txt"
+        mode: "0644"
+
+# ------------------------------------------------------------------ #
+#  Firewall audit (iptables + nftables)
+# ------------------------------------------------------------------ #
+- name: Audit firewall rules
+  when:
+    - ansible_os_family in ['RedHat', 'Debian', 'Suse', 'Archlinux']
+    - audit_firewall | bool
+  block:
+    - name: Run iptables -L -n -v
+      ansible.builtin.command: iptables -L -n -v
+      register: _iptables_filter
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Run iptables -t nat -L -n -v
+      ansible.builtin.command: iptables -t nat -L -n -v
+      register: _iptables_nat
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Run iptables -t mangle -L -n -v
+      ansible.builtin.command: iptables -t mangle -L -n -v
+      register: _iptables_mangle
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Run ip6tables -L -n -v
+      ansible.builtin.command: ip6tables -L -n -v
+      register: _ip6tables
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Run nft list ruleset
+      ansible.builtin.command: nft list ruleset
+      register: _nftables_ruleset
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write firewall audit to artifact_dir
+      ansible.builtin.copy:
+        content: |
+          === iptables -L -n -v ===
+          {{ _iptables_filter.stdout | default('(not installed)') }}
+
+          === iptables -t nat -L -n -v ===
+          {{ _iptables_nat.stdout | default('(not installed)') }}
+
+          === iptables -t mangle -L -n -v ===
+          {{ _iptables_mangle.stdout | default('(not installed)') }}
+
+          === ip6tables -L -n -v ===
+          {{ _ip6tables.stdout | default('(not installed)') }}
+
+          === nft list ruleset ===
+          {{ _nftables_ruleset.stdout | default('(not installed)') }}
+        dest: "{{ artifact_dir }}/firewall/rules.txt"
+        mode: "0644"
+
+- name: Audit firewalld zones (if present)
+  when:
+    - ansible_os_family in ['RedHat', 'Debian', 'Suse', 'Archlinux']
+    - audit_firewall | bool
+  block:
+    - name: Run firewall-cmd --list-all-zones
+      ansible.builtin.command: firewall-cmd --list-all-zones
+      register: _firewalld_zones
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write firewalld zones to artifact_dir
+      ansible.builtin.copy:
+        content: "{{ _firewalld_zones.stdout | default('(firewalld not installed)') }}"
+        dest: "{{ artifact_dir }}/firewall/firewalld_zones.txt"
+        mode: "0644"
+      when: _firewalld_zones is success and _firewalld_zones.stdout | default('', true) | length > 0
+
+# ------------------------------------------------------------------ #
+#  auditd audit
+# ------------------------------------------------------------------ #
+- name: Audit auditd
+  when:
+    - ansible_os_family in ['RedHat', 'Debian', 'Suse', 'Archlinux']
+    - audit_auditd | bool
+  block:
+    - name: Run auditctl -l
+      ansible.builtin.command: auditctl -l
+      become: true
+      register: _auditctl_rules
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Run auditctl -s
+      ansible.builtin.command: auditctl -s
+      become: true
+      register: _auditctl_status
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Read /etc/audit/auditd.conf
+      ansible.builtin.slurp:
+        path: /etc/audit/auditd.conf
+      register: _auditd_conf
+      ignore_errors: true
+      failed_when: false
+
+    - name: Find /etc/audit/rules.d/
+      ansible.builtin.shell: |
+        if [ -d /etc/audit/rules.d ]; then
+          echo "=== /etc/audit/rules.d/ listing ==="
+          ls -la /etc/audit/rules.d/
+          echo ""
+          for f in /etc/audit/rules.d/*.rules; do
+            [ -f "$f" ] || continue
+            echo "=== $(basename "$f") ==="
+            cat "$f"
+            echo ""
+          done
+        else
+          echo "(no /etc/audit/rules.d)"
+        fi
+      register: _auditd_rules_d
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write auditd state to artifact_dir
+      ansible.builtin.copy:
+        content: |
+          === auditctl -l ===
+          {{ _auditctl_rules.stdout | default('(error)') }}
+
+          === auditctl -s ===
+          {{ _auditctl_status.stdout | default('(error)') }}
+
+          === /etc/audit/auditd.conf ===
+          {{ _auditd_conf.content | default('') | b64decode | default('(not readable)') }}
+
+          === /etc/audit/rules.d/ ===
+          {{ _auditd_rules_d.stdout | default('(error)') }}
+        dest: "{{ artifact_dir }}/auditd/state.txt"
+        mode: "0644"
+
+# ------------------------------------------------------------------ #
+#  PAM audit
+# ------------------------------------------------------------------ #
+- name: Audit PAM configuration
+  when:
+    - ansible_os_family in ['RedHat', 'Debian', 'Suse', 'Archlinux']
+    - audit_pam | bool
+  block:
+    - name: Read /etc/pam.conf
+      ansible.builtin.slurp:
+        path: /etc/pam.conf
+      register: _pam_conf
+      ignore_errors: true
+      failed_when: false
+
+    - name: List /etc/pam.d/
+      ansible.builtin.shell: |
+        echo "=== /etc/pam.d/ listing ==="
+        ls -la /etc/pam.d/ 2>/dev/null || echo "(no /etc/pam.d)"
+        echo ""
+        for f in /etc/pam.d/common-auth /etc/pam.d/common-account /etc/pam.d/common-password /etc/pam.d/common-session /etc/pam.d/common-session-noninteractive /etc/pam.d/system-auth /etc/pam.d/password-auth /etc/pam.d/sshd /etc/pam.d/sudo /etc/pam.d/login; do
+          if [ -f "$f" ]; then
+            echo "=== $f ==="
+            cat "$f"
+            echo ""
+          fi
+        done
+      register: _pam_d_list
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Check password quality config
+      ansible.builtin.shell: |
+        echo "=== /etc/security/pwquality.conf ==="
+        cat /etc/security/pwquality.conf 2>/dev/null || echo "(not found)"
+        echo ""
+        echo "=== /etc/login.defs [password-relevant] ==="
+        grep -E '^PASS_|^ENCRYPT_METHOD|^SHA_CRYPT|^LOGIN_RETRIES|^LOGIN_TIMEOUT' /etc/login.defs 2>/dev/null || echo "(not found or no matches)"
+        echo ""
+        echo "=== faillock config ==="
+        grep -r 'pam_faillock' /etc/pam.d/ 2>/dev/null || echo "(faillock not configured)"
+        echo ""
+        if [ -f /etc/security/faillock.conf ]; then
+          echo "=== /etc/security/faillock.conf ==="
+          cat /etc/security/faillock.conf
+        fi
+      register: _pam_password_policy
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write PAM audit to artifact_dir
+      ansible.builtin.copy:
+        content: |
+          === /etc/pam.conf ===
+          {{ _pam_conf.content | default('') | b64decode | default('(not found)') }}
+
+          === /etc/pam.d/ ===
+          {{ _pam_d_list.stdout | default('(error)') }}
+
+          === Password policy ===
+          {{ _pam_password_policy.stdout | default('(error)') }}
+        dest: "{{ artifact_dir }}/pam/state.txt"
+        mode: "0644"
+
+# ------------------------------------------------------------------ #
+#  Kernel hardening audit
+# ------------------------------------------------------------------ #
+- name: Audit kernel hardening
+  when:
+    - ansible_os_family in ['RedHat', 'Debian', 'Suse', 'Archlinux']
+    - audit_kernel_hardening | bool
+  block:
+    - name: Run sysctl kernel.* security.* net.* vm.*
+      ansible.builtin.shell: |
+        echo "=== sysctl kernel ==="
+        sysctl -a 2>/dev/null | grep -E '^kernel\.' || echo "(none)"
+        echo ""
+        echo "=== sysctl net.core net.ipv4 net.ipv6 ==="
+        sysctl -a 2>/dev/null | grep -E '^(net\.core|net\.ipv4|net\.ipv6)\.' || echo "(none)"
+        echo ""
+        echo "=== sysctl vm ==="
+        sysctl -a 2>/dev/null | grep -E '^vm\.' || echo "(none)"
+        echo ""
+        echo "=== sysctl fs ==="
+        sysctl -a 2>/dev/null | grep -E '^fs\.' || echo "(none)"
+      register: _sysctl_kernel
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Read kernel cmdline
+      ansible.builtin.slurp:
+        path: /proc/cmdline
+      register: _cmdline
+      ignore_errors: true
+      failed_when: false
+
+    - name: Check ASLR
+      ansible.builtin.command: cat /proc/sys/kernel/randomize_va_space
+      register: _aslr
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Check kernel.modules_disabled
+      ansible.builtin.command: cat /proc/sys/kernel/modules_disabled
+      register: _modules_disabled
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Check kptr_restrict / dmesg_restrict / ptrace_scope
+      ansible.builtin.shell: |
+        echo "kptr_restrict: $(cat /proc/sys/kernel/kptr_restrict 2>/dev/null || echo 'N/A')"
+        echo "dmesg_restrict: $(cat /proc/sys/kernel/dmesg_restrict 2>/dev/null || echo 'N/A')"
+        echo "yama/ptrace_scope: $(cat /proc/sys/kernel/yama/ptrace_scope 2>/dev/null || echo 'N/A')"
+        echo "perf_event_paranoid: $(cat /proc/sys/kernel/perf_event_paranoid 2>/dev/null || echo 'N/A')"
+        echo "unprivileged_bpf_disabled: $(cat /proc/sys/kernel/unprivileged_bpf_disabled 2>/dev/null || echo 'N/A')"
+        echo "unprivileged_userns_clone: $(cat /proc/sys/kernel/unprivileged_userns_clone 2>/dev/null || echo 'N/A')"
+      register: _kernel_params
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Check available LSMs
+      ansible.builtin.command: cat /sys/kernel/security/lsm
+      register: _lsm
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write kernel hardening audit to artifact_dir
+      ansible.builtin.copy:
+        content: |
+          === Kernel cmdline ===
+          {{ _cmdline.content | default('') | b64decode | default('(not readable)') }}
+
+          === ASLR (randomize_va_space: 2=full) ===
+          {{ _aslr.stdout | default('(error)') }}
+
+          === modules_disabled ===
+          {{ _modules_disabled.stdout | default('(error)') }}
+
+          === Critical kernel params ===
+          {{ _kernel_params.stdout | default('(error)') }}
+
+          === Active LSMs ===
+          {{ _lsm.stdout | default('(error)') }}
+
+          === sysctl kernel.* security.* net.* vm.* fs.* ===
+          {{ _sysctl_kernel.stdout | default('(error)') }}
+        dest: "{{ artifact_dir }}/kernel/hardening.txt"
+        mode: "0644"
+
+# ------------------------------------------------------------------ #
+#  Open ports audit
+# ------------------------------------------------------------------ #
+- name: Audit open ports
+  when:
+    - ansible_os_family in ['RedHat', 'Debian', 'Suse', 'Archlinux']
+    - audit_open_ports | bool
+  block:
+    - name: Run ss -tlnp
+      ansible.builtin.command: ss -tlnp
+      become: true
+      register: _ss_tlnp
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Run ss -ulnp
+      ansible.builtin.command: ss -ulnp
+      become: true
+      register: _ss_ulnp
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Run ss -tlnp (numeric hosts)
+      ansible.builtin.command: ss -tlnp
+      register: _ss_tlnp_no_root
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Check for listening processes on privileged ports
+      ansible.builtin.shell: |
+        echo "=== Listening TCP (ss -tlnp) ==="
+        ss -tlnp 2>/dev/null || echo "(ss not available)"
+        echo ""
+        echo "=== Listening UDP (ss -ulnp) ==="
+        ss -ulnp 2>/dev/null || echo "(ss not available)"
+      register: _ss_listening
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write open ports audit to artifact_dir
+      ansible.builtin.copy:
+        content: |
+          === ss -tlnp (root) ===
+          {{ _ss_tlnp.stdout | default('(error)') }}
+
+          === ss -ulnp (root) ===
+          {{ _ss_ulnp.stdout | default('(error)') }}
+
+          === ss -tlnp (unprivileged) ===
+          {{ _ss_tlnp_no_root.stdout | default('(error)') }}
+        dest: "{{ artifact_dir }}/ports/listening.txt"
+        mode: "0644"

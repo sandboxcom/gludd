@@ -231,7 +231,7 @@ function isTaskFileRead(tool: string, input: unknown): boolean {
   try {
     const inp = input as Record<string, unknown> | null
     const args = inp?.args as Record<string, unknown> | null | undefined
-    const filePath = (args?.filePath as string) ?? ""
+    const filePath = (args?.filePath as string) ?? (inp?.filePath as string) ?? ""
     if (filePath && TASK_FILES.some(f => filePath.toLowerCase().includes(f.toLowerCase()))) return true
     const blob = JSON.stringify(input ?? {}).toLowerCase()
     return TASK_FILES.some(f => blob.includes(f.toLowerCase()))

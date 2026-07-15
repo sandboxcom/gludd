@@ -1192,6 +1192,146 @@ console.log(JSON.stringify(result ?? {{allowed: true}}))
     assert result is None or result.get("allowed") == True or result.get("permissionDecision") != "deny"
 
 
+def test_multitask_under_floor_hard_block():
+    """Non-dispatch tool call with 0 dispatches and pending work → denied (UNDER-FLOOR HARD BLOCK).
+
+    With MIN_DISPATCHES=2, a non-dispatch call when thisMessageDispatches=0
+    and pending work exists must return permissionDecision: 'deny' with
+    'UNDER-FLOOR HARD BLOCK' in the message. This is the immediate block
+    that fires BEFORE the consecutive-non-dispatch counter.
+    """
+    state_file = f"/tmp/gludd-multitask-test-uf-{os.getpid()}.json"
+    _clean_state_files(state_file,
+                       "/tmp/gludd-watchdog-disengage.json",
+                       "/tmp/gludd-force-dispatch.json")
+    code = f"""\
+const mod = await import('{PLUGIN_DIR}/enforce-multitask.ts')
+const plugin = await mod.default({{}})
+const result = await plugin['tool.execute.before']({{tool: 'edit'}}, undefined)
+console.log(JSON.stringify(result ?? null))
+"""
+    result = _run_ts(code, env_override={
+        "GLUDD_MULTITASK_STATE_FILE": state_file,
+        "GLUDD_MIN_DISPATCHES": "2",
+        "GLUDD_MULTITASK_FLOOR_ENFORCE": "1",
+    })
+    assert result is not None, f"Expected deny object, got None: {result}"
+    assert result.get("permissionDecision") == "deny", f"Expected deny, got: {result}"
+    assert "UNDER-FLOOR HARD BLOCK" in result.get("message", ""), f"Missing UNDER-FLOOR HARD BLOCK: {result}"
+    _clean_state_files(state_file)
+
+
+def test_multitask_dispatch_ceiling_blocked():
+    """Dispatch call beyond MAX_DISPATCHES → denied (DISPATCH CEILING BREACH).
+
+    With MAX_DISPATCHES=3, the 4th dispatch in the same message must return
+    permissionDecision: 'deny' with 'DISPATCH CEILING BREACH' in the message.
+    """
+    state_file = f"/tmp/gludd-multitask-test-ceil-{os.getpid()}.json"
+    _clean_state_files(state_file,
+                       "/tmp/gludd-watchdog-disengage.json",
+                       "/tmp/gludd-force-dispatch.json")
+    code = f"""\
+const mod = await import('{PLUGIN_DIR}/enforce-multitask.ts')
+const plugin = await mod.default({{}})
+// 3 dispatches — allowed (at ceiling)
+const r1 = await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
+const r2 = await plugin['tool.execute.before']({{tool: 'agent'}}, undefined)
+const r3 = await plugin['tool.execute.before']({{tool: 'workflow'}}, undefined)
+// 4th dispatch — denied (above ceiling)
+const r4 = await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
+console.log(JSON.stringify({{
+    r3_ok: r3 === undefined || r3 === null,
+    r4_denied: r4 !== null && r4?.permissionDecision === 'deny',
+    r4_hasCeiling: typeof r4?.message === 'string' && r4.message.includes('DISPATCH CEILING BREACH'),
+}}))
+"""
+    result = _run_ts(code, env_override={
+        "GLUDD_MULTITASK_STATE_FILE": state_file,
+        "GLUDD_MULTITASK_MAX_DISPATCHES": "3",
+        "GLUDD_MULTITASK_FLOOR_ENFORCE": "1",
+    })
+    assert result["r3_ok"] == True, f"3rd dispatch should be allowed (at ceiling), got: {result}"
+    assert result["r4_denied"] == True, f"4th dispatch should be denied (above ceiling), got: {result}"
+    assert result["r4_hasCeiling"] == True, f"Deny message missing DISPATCH CEILING BREACH: {result}"
+    _clean_state_files(state_file)
+
+
+def test_multitask_consecutive_non_dispatch_blocked():
+    """CONSECUTIVE_NON_DISPATCH_THRESHOLD consecutive non-dispatch calls → denied.
+
+    With THRESHOLD=3 and pending work, after 3 non-dispatch calls within 30s,
+    the 3rd call must return permissionDecision: 'deny' with a message
+    containing 'consecutive non-dispatch tool calls'.
+    Must first satisfy MIN_DISPATCHES (set to 2) so the under-floor check
+    doesn't fire first.
+    """
+    state_file = f"/tmp/gludd-multitask-test-cons-{os.getpid()}.json"
+    _clean_state_files(state_file,
+                       "/tmp/gludd-watchdog-disengage.json",
+                       "/tmp/gludd-force-dispatch.json")
+    code = f"""\
+const mod = await import('{PLUGIN_DIR}/enforce-multitask.ts')
+const plugin = await mod.default({{}})
+// Satisfy floor: 2 dispatches
+await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
+await plugin['tool.execute.before']({{tool: 'agent'}}, undefined)
+// 3 consecutive non-dispatch calls — 3rd should be denied
+const r1 = await plugin['tool.execute.before']({{tool: 'read'}}, undefined)
+const r2 = await plugin['tool.execute.before']({{tool: 'grep'}}, undefined)
+const r3 = await plugin['tool.execute.before']({{tool: 'edit'}}, undefined)
+console.log(JSON.stringify({{
+    r1_ok: r1 === undefined || r1 === null,
+    r2_ok: r2 === undefined || r2 === null,
+    r3_denied: r3 !== null && r3?.permissionDecision === 'deny',
+    r3_hasConsecutive: typeof r3?.message === 'string' && r3.message.includes('consecutive non-dispatch'),
+}}))
+"""
+    result = _run_ts(code, env_override={
+        "GLUDD_MULTITASK_STATE_FILE": state_file,
+        "GLUDD_MIN_DISPATCHES": "2",
+        "GLUDD_CONSECUTIVE_NON_DISPATCH_THRESHOLD": "3",
+        "GLUDD_CONSECUTIVE_NON_DISPATCH_WINDOW_MS": "60000",
+        "GLUDD_MULTITASK_FLOOR_ENFORCE": "1",
+    })
+    assert result["r1_ok"] == True, f"1st non-dispatch should be allowed, got: {result}"
+    assert result["r2_ok"] == True, f"2nd non-dispatch should be allowed, got: {result}"
+    assert result["r3_denied"] == True, f"3rd non-dispatch should be denied (at threshold), got: {result}"
+    assert result["r3_hasConsecutive"] == True, f"Deny message missing 'consecutive non-dispatch': {result}"
+    _clean_state_files(state_file)
+
+
+def test_multitask_corrupt_state_fail_open():
+    """Corrupt MULTITASK_STATE_FILE → hook fails open (does not crash, returns structured result).
+
+    Fail-open means: no throw, no crash, no node exit code 1. The hook
+    recovers with a fresh state and continues enforcing — it does NOT
+    blindly allow. A deny with a readable message is valid fail-open
+    behavior (the plugin loaded and operated, it didn't die).
+    """
+    state_file = f"/tmp/gludd-multitask-test-corr-{os.getpid()}.json"
+    _clean_state_files(state_file,
+                       "/tmp/gludd-watchdog-disengage.json",
+                       "/tmp/gludd-force-dispatch.json")
+    with open(state_file, "w") as f:
+        f.write("not valid json {{{[[[")
+    code = f"""\
+const mod = await import('{PLUGIN_DIR}/enforce-multitask.ts')
+const plugin = await mod.default({{}})
+const result = await plugin['tool.execute.before']({{tool: 'edit'}}, undefined)
+console.log(JSON.stringify(result ?? {{allowed: true}}))
+"""
+    result = _run_ts(code, env_override={
+        "GLUDD_MULTITASK_STATE_FILE": state_file,
+        "GLUDD_MULTITASK_FLOOR_ENFORCE": "1",
+    })
+    # Fail-open means: no crash, structured result returned. The plugin may
+    # deny (with a clean fresh state) — that is ok, it loaded and operated.
+    assert result is not None, "Corrupt state must not crash: expected a result object"
+    assert isinstance(result, dict), f"Expected dict result, got type: {type(result)}"
+    _clean_state_files(state_file)
+
+
 # ---------------------------------------------------------------------------
 # enforce-stop.ts  —  text.complete block for pending work + stop patterns
 # ---------------------------------------------------------------------------
@@ -1868,6 +2008,34 @@ console.log(JSON.stringify(result ?? null))
 """
     result = _run_ts(code, env_override={"GLUDD_NO_WAIT_ENFORCE": "0"})
     assert result is None or result.get("allowed") == True or result.get("permissionDecision") != "deny"
+
+
+def test_no_wait_corrupt_input_fail_open():
+    """Null/undefined input → hook fails open (does not crash, returns allowed).
+
+    enforce-no-wait uses pattern-matching on input args; when input or args
+    are malformed/nullish, the try-catch body must catch the error and return
+    undefined (allow) rather than throwing.
+    """
+    code = f"""\
+const mod = await import('{PLUGIN_DIR}/enforce-no-wait.ts')
+const plugin = await mod.default({{}})
+// Call with no tool field (undefined)
+const r1 = await plugin['tool.execute.before']({{}}, undefined)
+// Call with null args
+const r2 = await plugin['tool.execute.before']({{tool: 'bash', args: null}}, undefined)
+// Call with undefined input entirely (falsy)
+const r3 = await plugin['tool.execute.before'](null, undefined)
+console.log(JSON.stringify({{
+    r1_ok: r1 === undefined || r1 === null,
+    r2_ok: r2 === undefined || r2 === null,
+    r3_ok: r3 === undefined || r3 === null,
+}}))
+"""
+    result = _run_ts(code)
+    assert result["r1_ok"] == True, f"Undefined tool should fail-open (allowed), got: {result}"
+    assert result["r2_ok"] == True, f"Null args should fail-open (allowed), got: {result}"
+    assert result["r3_ok"] == True, f"Null input should fail-open (allowed), got: {result}"
 
 
 # ---------------------------------------------------------------------------

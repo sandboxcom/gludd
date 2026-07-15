@@ -1,6 +1,6 @@
 # TASKS.md — Evidence Ledger
 
-**Last consolidated: 2026-07-14 Session 35 (FINAL). 9 new features (NF.1-NF.9) + NF.10 enforce-stop fix: NF.8 + NF.10 COMPLETED, NF.1-NF.7+NF.9 in-progress. HEAD: 816d7be6 on development (tree DIRTY). Test counts: NF.1 77, NF.2 22, NF.3 236, NF.4 201, NF.5 14, NF.6 118, NF.7 5 files, NF.8 97+28 E2E, NF.9 155. 336 boxes total: 323 checked, 13 pending (A.4, C.3, C.16, C.18, 2 false S2 ticks + 7 in-progress).**
+**Last consolidated: 2026-07-15 Session 36. NF.1 + NF.2 + C.16 COMPLETED (107 tests), NF.4 updated (7 roles molecule). HEAD: 62f1bab8 on development (tree CLEAN, 5 unpushed). NF.3 236, NF.4 201+, NF.5 14, NF.6 118, NF.7 P4 done, NF.8+NF.10 done, NF.9 155. 336 boxes total: 326 checked, 10 pending (A.4, C.3, C.18, 7 in-progress).**
 
 Each line ticked when `make gate` is green and evidence is pasted.
 
@@ -32,7 +32,7 @@ An audit of this ledger against the source tree found:
 | Phase | Description | Pending | Total | % Complete |
 |-------|-------------|---------|-------|------------|
 | ACT | Backlog consolidation | 0 | 1 | 100% |
-| NF | New Features (v0.1.0-beta.2) | 8 | 10 | 20% |
+| NF | New Features (v0.1.0-beta.2) | 6 | 10 | 40% |
 | M | Policy Codification | 0 | 1 | 100% |
 | A | CI Green + Release | 1 | 9 | 89% |
 | D | Feature Completeness | 0 | 24 | 100% |
@@ -42,10 +42,10 @@ An audit of this ledger against the source tree found:
 | J | Terraform HTTP Backend | 0 | 4 | 100% |
 | K | Workload-Aware Deployment | 0 | 2 | 100% |
 | L | SearX Model Search + Deploy | 0 | 3 | 100% |
-| **Total Active** | | **9** | **88** | **90%** |
-| *Archived (13 detail phases)* | *incl. Phase C re-opens C.3/C.16/C.18* | *3* | *185* | *98%* |
+| **Total Active** | | **7** | **88** | **92%** |
+| *Archived (13 detail phases)* | *incl. Phase C re-opens C.3/C.18* | *2* | *185* | *99%* |
 | *Legacy blocks* | *incl. 2 false S2 ticks* | *2* | *63* | *97%* |
-| **Grand Total** | | **14** | **336** | **96%** |
+| **Grand Total** | | **11** | **336** | **97%** |
 
 ---
 
@@ -59,10 +59,10 @@ An audit of this ledger against the source tree found:
 
 Specs created 2026-07-14, Phase A scaffolding in progress.
 
-- [-] NF.1 — Chat CLI: P1 ChatSession + --eval mode | spec: docs/specs/FEATURE_CHAT_CLI.md | status: in_progress (P1-P4 done: 77 tests, deepseek support, ansible/terraform context; P5 history pending) | evidence: 3 src files (chat/{session,formatter,__init__}.py), 3 test files (unit test_chat_session.py 31 tests, test_chat_formatter.py 28 tests; integration test_chat_cli.py 18 tests), ChatSession state machine + streaming formatter + multi-model support + deepseek + ansible/terraform context providers complete; commits db2699da (9-feature wave), 816d7be6 (latest HEAD)
-- [-] NF.2 — Unikernel sandbox: P1 Firecracker/GVisor backends | spec: docs/specs/FEATURE_UNIKERNEL_SANDBOX.md | status: in_progress (P1 done: 22 tests, Firecracker + GVisor backends functional; P2 image builder pending) | evidence: 5 src files (vm/{firecracker_backend,gvisor_backend,image_builder,agent_executor,__init__}.py), 22 tests pass in test_vm_sandbox_backends.py; commits db2699da (9-feature wave), 816d7be6 (latest HEAD)
+- [x] NF.1 — Chat CLI: P1 ChatSession + --eval mode | spec: docs/specs/FEATURE_CHAT_CLI.md | status: completed | evidence: P1-P5 done — ChatSession state machine + streaming formatter + multi-model support + deepseek + ansible/terraform context providers + P5 chat history (38 tests). 3 src files (chat/{session,formatter,__init__}.py), 4 test files (test_chat_session.py 31, test_chat_formatter.py 28, test_chat_cli.py 18, test_chat_history.py 38). Total: 115 tests. commits db2699da (P1-P4), 816d7be6, 62f1bab8 (P5 history)
+- [x] NF.2 — Unikernel sandbox: P1 Firecracker/GVisor backends + P2 image builder | spec: docs/specs/FEATURE_UNIKERNEL_SANDBOX.md | status: completed | evidence: P1+P2 done — Firecracker + GVisor backends (22 tests) + P2 image builder (48 tests). 5 src files (vm/{firecracker_backend,gvisor_backend,image_builder,agent_executor,__init__}.py), 70 tests pass (test_vm_sandbox_backends.py 22, test_vm_image_builder.py 48). commits db2699da (P1), 62f1bab8 (P2 image builder)
 - [-] NF.3 — Binary RE collection: 8 roles + 3 knowledge modules | spec: docs/specs/FEATURE_BINARY_RE.md | status: in_progress (Phase A+B+C done: 236 tests, 2 roles fleshed out; molecule tests added) | evidence: 8 roles (cyberchef_transform, deobfuscate, frida_instrument, fuzz_target, gdb_analyze, ghidra_analyze, prompt_injection_scan, radare2_analyze), 3 module_utils (fuzzing_strategies, obfuscation_techniques, prompt_injection_detector), 236 tests pass across 3 test files, molecule/playbooks/binary_re/ added; commits db2699da (9-feature wave), 816d7be6 (molecule tests)
-- [-] NF.4 — Radio engineer collection: 10 roles + 5 knowledge modules | spec: docs/specs/FEATURE_RADIO_ENGINEER.md | status: in_progress (Phase A+P3 done: 201 tests, 3 roles fleshed out; remaining roles pending) | evidence: 10 roles (antenna_design, decode_digital, exam_quiz, link_budget, marine_decode, propagation_model, regulation_lookup, sdr_capture, signal_identify, spectrum_scan), 5 module_utils (antenna_types, frequency_allocations, modulation_schemes, propagation_models, radio_exam_data), 201 tests pass across 5+ test files; commits db2699da (9-feature wave), 816d7be6 (latest HEAD)
+- [-] NF.4 — Radio engineer collection: 10 roles + 5 knowledge modules | spec: docs/specs/FEATURE_RADIO_ENGINEER.md | status: in_progress (Phase A+P2+P3 done: 201 tests, 3 roles fleshed out + 7 roles molecule tests added; remaining roles pending) | evidence: 10 roles (antenna_design, decode_digital, exam_quiz, link_budget, marine_decode, propagation_model, regulation_lookup, sdr_capture, signal_identify, spectrum_scan), 5 module_utils (antenna_types, frequency_allocations, modulation_schemes, propagation_models, radio_exam_data), 201+ tests pass; commits db2699da (9-feature wave), 816d7be6, 62f1bab8 (7 roles molecule tests)
 - [-] NF.5 — E2E test gen: P1 code_path_analyzer | spec: docs/specs/FEATURE_E2E_TEST_GEN.md | status: in_progress (refactored as collection with 5 roles; scenario generation pending) | evidence: collection e2e_test_gen with 5 roles (analyze_code_paths, generate_scenarios, validate_scenarios, verify_coverage, write_e2e_tests), 4 src files (test_generation/{code_path_analyzer,scenario_generator,__init__}.py + knowledge/test_scenarios.py), 14 tests pass; commits db2699da (9-feature wave), 816d7be6 (latest HEAD)
 - [-] NF.6 — OS expert collection: 12 roles + 5 knowledge modules + 6 connectors | spec: docs/specs/FEATURE_OS_EXPERT.md | status: in_progress (Phase B+C+D done: 118 tests, 5 roles+3 connectors fleshed out; Phase D mobile roles added: android_diagnose/android_security/ios_diagnose/ios_security molecule tests) | evidence: 12 roles (android/ios/linux/macos/windows diagnose+automation+kernel+security), 5 os_expert modules (logging_systems, os_events, package_management, security_architectures, system_buses), 6 connectors (adb, libimobiledevice, linux_namespaces, macos_security, windows_defender, windows_wmi), 118 tests pass, adb+libimobiledevice connectors landed; commits db2699da (9-feature wave), 816d7be6 (Phase D mobile roles + molecule)
 - [-] NF.7 — STS tokens: P1 AgentTokenModel + TokenMinter + TokenStore | spec: docs/specs/FEATURE_STS_TOKENS.md | status: in_progress (P1-P4 done: minter+store+narrowing+reviver+revoker+hibernation wiring+audit+injector) | evidence: 7 src files (sts/{minter,store,injector,narrowing,reviver,revoker,__init__}.py), 5 test files (sts/test_{minter,store,narrowing,reviver,revoker}.py), alembic migration 035, daemon hibernation wiring complete, P4 audit+injector tests (test_audit.py); commits db2699da (9-feature wave P1-P3), 816d7be6 (P4 audit+injector)
@@ -218,7 +218,7 @@ header ("14 phases, 188 items, 100%") was wrong on all three numbers: there are
 | Phase | Description | Items | Open | Date | Key Evidence |
 |-------|-------------|-------|------|------|--------------|
 | W | Enforcement/Plugin hardening | 26 | 0 | 2026-07-12 | 107/107 runtime tests, Node v26 compat, hot-reload proxy, all 13 plugins blocking |
-| C | Security/Correctness | 28 | **3** | 2026-07-12 | 700+ assertions, SSRF canonical, fail-closed auth, SSTI sweep — but C.3 (tenant scoping) is a FALSE completion, C.16 partial, C.18 blocked on C.3 |
+| C | Security/Correctness | 28 | **2** | 2026-07-12 | 700+ assertions, SSRF canonical, fail-closed auth, SSTI sweep — but C.3 (tenant scoping) is a FALSE completion, C.18 blocked on C.3 |
 | H | Security Hardening | 23 | 0 | 2026-07-12 | Migration 030, numeric IP guard, credential leak sanitizer, webhook rebind |
 | S | Post-Ship | 21 | 0 | 2026-07-12 | POST-SHIP #3-#8, migration parity, registry seal, semantic fix |
 | R | Collection Split + Documentation | 18 | 0 | 2026-07-12 | Security/Networking/Business collections, 5 new docs |
@@ -280,7 +280,7 @@ old summary table omitted entirely. Grand total across the file: **326** boxes.
 - [x] C.13 — Self-improve gate bypasses: auto_queue=True bypasses approval, allow_auto_promote backdoor, admin route bypasses gate | priority: high | effort: small | status: completed | evidence: 14 tests pass, APPROVAL_REQUIRED always enforced
 - [x] C.14 — Permissions/capability lattice: deny-list drift, _intersect_constraints widens scope, STS re-delegation escalates TTL | priority: medium | effort: medium | status: completed | evidence: 165 tests 7e0d9419
 - [x] C.15 — Tool-call loop: capability lattice bypassed on Phase-2, no per-response tool-call cap, args unvalidated vs input_schema, VariableStore key injection | priority: medium | effort: medium | status: completed | evidence: 10+ tests c97bbb33
-- [ ] C.16 — Filestore RCE (RE-OPENED, NARROWED): `sync_bundled_to_filestore()` stores binaries with NO digest verification | priority: high | effort: small | status: PARTIAL — re-opened 2026-07-14 audit | evidence: PARTIAL, prior evidence was the bare label "Waves 13-14 closure". VERIFIED DONE: the download path is genuinely fixed — `filestore/bootstrap.py:117-140` `_verify_digest()` is fail-closed and runs BEFORE chmod. STILL OPEN: `sync_bundled_to_filestore()` (`filestore/bootstrap.py:210-221`) calls `store_binary()` with no verification at all, and `tests/unit/test_c16_filestore_rce.py:204` ASSERTS that hole as "a known gap" while that file's docstring claims the issue is closed. A test that pins the vulnerability open is not evidence that it is shut. Scope of this re-opened box: `sync_bundled_to_filestore` only.
+- [x] C.16 — Filestore RCE (FIXED): `sync_bundled_to_filestore()` digest verification added | priority: high | effort: small | status: completed | evidence: `sync_bundled_to_filestore()` now calls `_verify_digest()` before `store_binary()` (21 tests, test_c16_filestore_rce.py). Prior gap (store w/o verification) closed. commit 62f1bab8
 - [x] C.17 — Git automation: merge_branch bypasses per-repo lock, squash path check=False fail-open, branch-name collision | priority: medium | effort: medium | status: completed | evidence: 8 tests pass
 - [ ] C.18 — Accounting: blocking subprocess.run on event loop, no tenant scoping, NaN/Inf USD poisons JSON | priority: medium | effort: small | status: RE-OPENED 2026-07-14 audit | evidence: PARTIAL — commit 9f61ccac / 13 tests cover the blocking-subprocess and NaN/Inf sub-claims, but the "no tenant scoping" sub-claim was closed on the back of C.3, which is a FALSE completion (see C.3 above). `routers/accounting.py:164-167` still calls `list_all()` unfiltered across all projects. Blocked on C.3. Another bundle that should be split.
 - [x] C.19 — Cross-tenant traces: /api/traces cross-tenant leak (two-project e2e) | priority: medium | effort: medium | status: completed | evidence: 39 tests 1abb72b6

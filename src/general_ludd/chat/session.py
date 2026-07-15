@@ -613,13 +613,10 @@ def export_session(
                     messages.append(json.loads(line))
                 except json.JSONDecodeError:
                     raise
-    except json.JSONDecodeError:
-        raise ValueError(f"Corrupt session file: {session_file}")
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Corrupt session file: {session_file}") from exc
 
-    if format == "md":
-        result = _export_to_markdown(messages)
-    else:
-        result = _export_to_json(messages)
+    result = _export_to_markdown(messages) if format == "md" else _export_to_json(messages)
 
     if output_file is not None:
         if isinstance(output_file, str):

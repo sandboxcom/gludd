@@ -1,0 +1,28 @@
+---
+# macos_automation role defaults
+
+daemon_url: "http://localhost:8000"
+psk: ""
+
+artifact_dir: "/tmp/gludd-macos-automation"
+
+audit_launchd: true
+audit_homebrew: true
+audit_defaults: true
+audit_softwareupdate: true
+audit_profiles: true
+
+manage_launchd: false
+manage_homebrew: false
+manage_defaults: false
+manage_softwareupdate: false
+manage_profiles: false
+
+profiles_renew: false
+swupdate_install_recommended: false
+swupdate_auto_check: true
+swupdate_auto_download: true
+homebrew_upgrade_all: false
+homebrew_cleanup: false
+
+enable_git_push: false

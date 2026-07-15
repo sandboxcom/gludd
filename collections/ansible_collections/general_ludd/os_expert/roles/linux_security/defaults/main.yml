@@ -1,0 +1,17 @@
+---
+# linux_security role defaults
+
+daemon_url: "http://localhost:8000"
+psk: ""
+
+artifact_dir: "/tmp/gludd-linux-security"
+
+audit_selinux: true
+audit_apparmor: true
+audit_firewall: true
+audit_auditd: true
+audit_pam: true
+audit_kernel_hardening: true
+audit_open_ports: true
+
+enable_git_push: false

@@ -1,0 +1,480 @@
+---
+# macos_automation role — audit and manage macOS automation systems:
+# launchd, Homebrew, defaults, softwareupdate, and configuration profiles.
+# All audit tasks are read-only and run unconditionally.
+# Mutating operations are gated behind explicit manage_* boolean flags.
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+  when: ansible_os_family == 'Darwin'
+
+- name: Create artifact subdirectories
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}/{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - launchd
+    - homebrew
+    - defaults
+    - softwareupdate
+    - profiles
+  when: ansible_os_family == 'Darwin'
+
+# ------------------------------------------------------------------ #
+#  launchd audit
+# ------------------------------------------------------------------ #
+- name: Audit launchd
+  when:
+    - ansible_os_family == 'Darwin'
+    - audit_launchd | bool
+  block:
+    - name: Run launchctl list
+      ansible.builtin.command: launchctl list
+      register: _launchctl_list
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Run launchctl print system
+      ansible.builtin.command: launchctl print system
+      register: _launchctl_print_system
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Run launchctl print user/$(id -u)
+      ansible.builtin.shell: launchctl print "user/$(id -u)"
+      register: _launchctl_print_user
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Find non-Apple launch daemons
+      ansible.builtin.shell: |
+        echo "=== /Library/LaunchDaemons/ (non-Apple) ==="
+        ls -la /Library/LaunchDaemons/ 2>/dev/null | grep -v com.apple || echo "(none)"
+        echo ""
+        echo "=== /Library/LaunchAgents/ (non-Apple) ==="
+        ls -la /Library/LaunchAgents/ 2>/dev/null | grep -v com.apple || echo "(none)"
+        echo ""
+        echo "=== ~/Library/LaunchAgents/ (non-Apple) ==="
+        ls -la ~/Library/LaunchAgents/ 2>/dev/null | grep -v com.apple || echo "(none)"
+      register: _launchd_non_apple
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write launchd audit to artifact_dir
+      ansible.builtin.copy:
+        content: |
+          === launchctl list ===
+          {{ _launchctl_list.stdout | default('(error)') }}
+
+          === launchctl print system ===
+          {{ _launchctl_print_system.stdout | default('(error)') }}
+
+          === launchctl print user ===
+          {{ _launchctl_print_user.stdout | default('(error)') }}
+
+          === Non-Apple launch daemons/agents ===
+          {{ _launchd_non_apple.stdout | default('(error)') }}
+        dest: "{{ artifact_dir }}/launchd/state.txt"
+        mode: "0644"
+
+# ------------------------------------------------------------------ #
+#  Manage launchd jobs
+# ------------------------------------------------------------------ #
+- name: Manage launchd jobs
+  when:
+    - ansible_os_family == 'Darwin'
+    - manage_launchd | bool
+  block:
+    - name: Load launchd plists
+      ansible.builtin.command: launchctl load "{{ item.path }}"
+      loop: "{{ launchd_load_plists | default([]) }}"
+      when: launchd_load_plists | default([]) | length > 0
+      ignore_errors: true
+
+    - name: Unload launchd plists
+      ansible.builtin.command: launchctl unload "{{ item.path }}"
+      loop: "{{ launchd_unload_plists | default([]) }}"
+      when: launchd_unload_plists | default([]) | length > 0
+      ignore_errors: true
+
+    - name: Enable launchd bootstrap entries
+      ansible.builtin.command: launchctl enable "{{ item }}"
+      loop: "{{ launchd_enable_services | default([]) }}"
+      when: launchd_enable_services | default([]) | length > 0
+      ignore_errors: true
+
+    - name: Disable launchd bootstrap entries
+      ansible.builtin.command: launchctl disable "{{ item }}"
+      loop: "{{ launchd_disable_services | default([]) }}"
+      when: launchd_disable_services | default([]) | length > 0
+      ignore_errors: true
+
+    - name: Kickstart launchd services
+      ansible.builtin.command: launchctl kickstart -k "{{ item }}"
+      loop: "{{ launchd_kickstart_services | default([]) }}"
+      when: launchd_kickstart_services | default([]) | length > 0
+      ignore_errors: true
+
+# ------------------------------------------------------------------ #
+#  Homebrew audit
+# ------------------------------------------------------------------ #
+- name: Audit Homebrew
+  when:
+    - ansible_os_family == 'Darwin'
+    - audit_homebrew | bool
+  block:
+    - name: Run brew --version
+      ansible.builtin.command: brew --version
+      register: _brew_version
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Run brew list --versions
+      ansible.builtin.command: brew list --versions
+      register: _brew_list
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Run brew outdated
+      ansible.builtin.command: brew outdated
+      register: _brew_outdated
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Run brew tap (list taps)
+      ansible.builtin.command: brew tap
+      register: _brew_taps
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Run brew doctor
+      ansible.builtin.command: brew doctor
+      register: _brew_doctor
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Run brew list --casks
+      ansible.builtin.command: brew list --casks
+      register: _brew_casks
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write Homebrew audit to artifact_dir
+      ansible.builtin.copy:
+        content: |
+          === brew --version ===
+          {{ _brew_version.stdout | default('(not installed)') }}
+
+          === brew list --versions ===
+          {{ _brew_list.stdout | default('(not installed)') }}
+
+          === brew outdated ===
+          {{ _brew_outdated.stdout | default('(none)') }}
+
+          === brew tap ===
+          {{ _brew_taps.stdout | default('(none)') }}
+
+          === brew doctor ===
+          {{ _brew_doctor.stdout | default('(error)') }}
+
+          === brew list --casks ===
+          {{ _brew_casks.stdout | default('(none)') }}
+        dest: "{{ artifact_dir }}/homebrew/state.txt"
+        mode: "0644"
+
+# ------------------------------------------------------------------ #
+#  Manage Homebrew
+# ------------------------------------------------------------------ #
+- name: Manage Homebrew
+  when:
+    - ansible_os_family == 'Darwin'
+    - manage_homebrew | bool
+  block:
+    - name: Install Homebrew formulae
+      community.general.homebrew:
+        name: "{{ item }}"
+        state: present
+      loop: "{{ homebrew_formulae | default([]) }}"
+      when: homebrew_formulae | default([]) | length > 0
+      ignore_errors: true
+
+    - name: Install Homebrew casks
+      community.general.homebrew_cask:
+        name: "{{ item }}"
+        state: present
+      loop: "{{ homebrew_casks | default([]) }}"
+      when: homebrew_casks | default([]) | length > 0
+      ignore_errors: true
+
+    - name: Uninstall Homebrew formulae
+      community.general.homebrew:
+        name: "{{ item }}"
+        state: absent
+      loop: "{{ homebrew_uninstall | default([]) }}"
+      when: homebrew_uninstall | default([]) | length > 0
+      ignore_errors: true
+
+    - name: Run brew upgrade
+      ansible.builtin.command: brew upgrade
+      when: homebrew_upgrade_all | default(false) | bool
+      ignore_errors: true
+
+    - name: Run brew cleanup
+      ansible.builtin.command: brew cleanup
+      when: homebrew_cleanup | default(false) | bool
+      ignore_errors: true
+
+# ------------------------------------------------------------------ #
+#  defaults audit (macOS user/system preferences)
+# ------------------------------------------------------------------ #
+- name: Audit defaults (system preferences plist)
+  when:
+    - ansible_os_family == 'Darwin'
+    - audit_defaults | bool
+  block:
+    - name: Read NSGlobalDomain defaults
+      ansible.builtin.command: defaults read NSGlobalDomain
+      register: _defaults_global
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Read com.apple.dock defaults
+      ansible.builtin.command: defaults read com.apple.dock
+      register: _defaults_dock
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Read com.apple.finder defaults
+      ansible.builtin.command: defaults read com.apple.finder
+      register: _defaults_finder
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Read com.apple.screensaver defaults
+      ansible.builtin.command: defaults read com.apple.screensaver
+      register: _defaults_screensaver
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Read /Library/Preferences/com.apple.security preferences
+      ansible.builtin.command: defaults read /Library/Preferences/com.apple.security
+      become: true
+      register: _defaults_apple_security
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write defaults audit to artifact_dir
+      ansible.builtin.copy:
+        content: |
+          === NSGlobalDomain ===
+          {{ _defaults_global.stdout | default('(error)') }}
+
+          === com.apple.dock ===
+          {{ _defaults_dock.stdout | default('(error)') }}
+
+          === com.apple.finder ===
+          {{ _defaults_finder.stdout | default('(error)') }}
+
+          === com.apple.screensaver ===
+          {{ _defaults_screensaver.stdout | default('(error)') }}
+
+          === /Library/Preferences/com.apple.security ===
+          {{ _defaults_apple_security.stdout | default('(error)') }}
+        dest: "{{ artifact_dir }}/defaults/preferences.txt"
+        mode: "0644"
+
+# ------------------------------------------------------------------ #
+#  Manage defaults (write)
+# ------------------------------------------------------------------ #
+- name: Manage defaults (write macOS preferences)
+  when:
+    - ansible_os_family == 'Darwin'
+    - manage_defaults | bool
+  block:
+    - name: Write defaults (host-level)
+      ansible.builtin.command: defaults write {{ item.domain }} {{ item.key }} {{ item.type | default('') }} {{ item.value }}
+      loop: "{{ defaults_write | default([]) }}"
+      when: defaults_write | default([]) | length > 0
+      ignore_errors: true
+      become: "{{ item.become | default(false) | bool }}"
+
+    - name: Delete defaults keys
+      ansible.builtin.command: defaults delete {{ item.domain }} {{ item.key }}
+      loop: "{{ defaults_delete | default([]) }}"
+      when: defaults_delete | default([]) | length > 0
+      ignore_errors: true
+      become: "{{ item.become | default(false) | bool }}"
+
+# ------------------------------------------------------------------ #
+#  softwareupdate audit
+# ------------------------------------------------------------------ #
+- name: Audit softwareupdate
+  when:
+    - ansible_os_family == 'Darwin'
+    - audit_softwareupdate | bool
+  block:
+    - name: Run softwareupdate --history
+      ansible.builtin.command: softwareupdate --history
+      register: _swupdate_history
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Run softwareupdate --list
+      ansible.builtin.command: softwareupdate --list
+      register: _swupdate_list
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Read softwareupdate schedule plist
+      ansible.builtin.command: >-
+        defaults read /Library/Preferences/com.apple.SoftwareUpdate.plist
+      become: true
+      register: _swupdate_plist
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write softwareupdate audit to artifact_dir
+      ansible.builtin.copy:
+        content: |
+          === softwareupdate --history ===
+          {{ _swupdate_history.stdout | default('(error)') }}
+
+          === softwareupdate --list ===
+          {{ _swupdate_list.stdout | default('(error)') }}
+
+          === com.apple.SoftwareUpdate plist ===
+          {{ _swupdate_plist.stdout | default('(error)') }}
+        dest: "{{ artifact_dir }}/softwareupdate/state.txt"
+        mode: "0644"
+
+# ------------------------------------------------------------------ #
+#  Manage softwareupdate
+# ------------------------------------------------------------------ #
+- name: Manage softwareupdate
+  when:
+    - ansible_os_family == 'Darwin'
+    - manage_softwareupdate | bool
+  block:
+    - name: Install recommended updates
+      ansible.builtin.command: softwareupdate --install --recommended
+      when: swupdate_install_recommended | default(false) | bool
+      ignore_errors: true
+      become: true
+
+    - name: Install specific updates
+      ansible.builtin.command: softwareupdate --install "{{ item }}"
+      loop: "{{ swupdate_install_labels | default([]) }}"
+      when: swupdate_install_labels | default([]) | length > 0
+      ignore_errors: true
+      become: true
+
+    - name: Set automatic check enabled
+      ansible.builtin.command: softwareupdate --schedule on
+      when: swupdate_auto_check | default(true) | bool
+      ignore_errors: true
+      become: true
+
+    - name: Set automatic download enabled
+      ansible.builtin.command: >-
+        defaults write /Library/Preferences/com.apple.SoftwareUpdate.plist
+        AutomaticDownload -bool "{{ 'TRUE' if swupdate_auto_download | default(true) else 'FALSE' }}"
+      ignore_errors: true
+      become: true
+
+# ------------------------------------------------------------------ #
+#  Configuration Profiles audit
+# ------------------------------------------------------------------ #
+- name: Audit configuration profiles
+  when:
+    - ansible_os_family == 'Darwin'
+    - audit_profiles | bool
+  block:
+    - name: Run profiles list
+      ansible.builtin.command: profiles list
+      register: _profiles_list
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Run profiles status -type enrollment
+      ansible.builtin.command: profiles status -type enrollment
+      register: _profiles_enrollment
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Run profiles show -type configuration
+      ansible.builtin.command: profiles show -type configuration
+      register: _profiles_config
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Run profiles renew -type enrollment
+      ansible.builtin.command: profiles renew -type enrollment
+      register: _profiles_renew
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+      when: profiles_renew | default(false) | bool
+
+    - name: Write profiles audit to artifact_dir
+      ansible.builtin.copy:
+        content: |
+          === profiles list ===
+          {{ _profiles_list.stdout | default('(error)') }}
+
+          === profiles status -type enrollment ===
+          {{ _profiles_enrollment.stdout | default('(error)') }}
+
+          === profiles show -type configuration ===
+          {{ _profiles_config.stdout | default('(error)') }}
+
+          === profiles renew -type enrollment ===
+          {{ _profiles_renew.stdout | default('(not run)') }}
+        dest: "{{ artifact_dir }}/profiles/state.txt"
+        mode: "0644"
+
+# ------------------------------------------------------------------ #
+#  Manage configuration profiles
+# ------------------------------------------------------------------ #
+- name: Manage configuration profiles
+  when:
+    - ansible_os_family == 'Darwin'
+    - manage_profiles | bool
+  block:
+    - name: Install configuration profile
+      ansible.builtin.command: profiles install -path "{{ item }}"
+      loop: "{{ profiles_install | default([]) }}"
+      when: profiles_install | default([]) | length > 0
+      ignore_errors: true
+      become: true
+
+    - name: Remove configuration profile by identifier
+      ansible.builtin.command: profiles remove -identifier "{{ item }}"
+      loop: "{{ profiles_remove | default([]) }}"
+      when: profiles_remove | default([]) | length > 0
+      ignore_errors: true
+      become: true

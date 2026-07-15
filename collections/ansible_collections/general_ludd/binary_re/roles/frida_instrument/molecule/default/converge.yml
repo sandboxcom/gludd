@@ -1,0 +1,53 @@
+---
+- name: Converge
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Create mock frida binary
+      ansible.builtin.file:
+        path: /tmp/gludd-frida-mock/bin
+        state: directory
+        mode: "0755"
+
+    - name: Seed mock frida script
+      ansible.builtin.copy:
+        content: |
+          #!/bin/sh
+          echo "16.0.0"
+        dest: /tmp/gludd-frida-mock/bin/frida
+        mode: "0755"
+
+    - name: Run frida_instrument role (all modes off)
+      ansible.builtin.include_role:
+        name: general_ludd.binary_re.frida_instrument
+      vars:
+        frida_tools_path: "/tmp/gludd-frida-mock/bin"
+        output_dir: "/tmp/gludd-frida-mock"
+
+    - name: Assert artifact written
+      ansible.builtin.stat:
+        path: /tmp/gludd-frida-mock/frida_instrument.json
+      register: _stat
+
+    - name: Verify artifact exists
+      ansible.builtin.assert:
+        that: _stat.stat.exists
+        fail_msg: "frida_instrument.json not written"
+
+    - name: Parse artifact
+      ansible.builtin.slurp:
+        src: /tmp/gludd-frida-mock/frida_instrument.json
+      register: _json
+
+    - name: Assert artifact content
+      ansible.builtin.assert:
+        that:
+          - (_json.content | b64decode | from_json).role == "frida_instrument"
+          - (_json.content | b64decode | from_json).status == "completed"
+        fail_msg: "Artifact content mismatch"
+
+    - name: Cleanup
+      ansible.builtin.file:
+        path: /tmp/gludd-frida-mock
+        state: absent

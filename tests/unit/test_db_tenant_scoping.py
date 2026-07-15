@@ -7,6 +7,9 @@ enforce project-level data isolation.
 
 import asyncio
 import contextvars
+import os
+import shutil
+import tempfile
 
 import pytest
 import pytest_asyncio
@@ -19,8 +22,10 @@ from general_ludd.db.tenant import get_tenant, reset_tenant, set_tenant
 
 @pytest_asyncio.fixture
 async def async_engine():
+    _tmpdir = tempfile.mkdtemp()
+    _db_path = os.path.join(_tmpdir, "test.db")
     engine: AsyncEngine = create_async_engine(
-        "sqlite+aiosqlite://", echo=False
+        f"sqlite+aiosqlite:///{_db_path}", echo=False
     )
 
     @event.listens_for(engine.sync_engine, "connect")
@@ -30,11 +35,20 @@ async def async_engine():
         cursor.close()
 
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(
+            lambda c: Base.metadata.create_all(
+                c, tables=[ProjectModel.__table__, TodoModel.__table__]
+            )
+        )
     yield engine
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
+        await conn.run_sync(
+            lambda c: Base.metadata.drop_all(
+                c, tables=[ProjectModel.__table__, TodoModel.__table__]
+            )
+        )
     await engine.dispose()
+    shutil.rmtree(_tmpdir, ignore_errors=True)
 
 
 @pytest_asyncio.fixture
@@ -145,10 +159,8 @@ class TestTenantScopingWithDB:
 
             from sqlalchemy import func, select
 
-            factory_obj = session_factory
-
             async def _inner():
-                async with factory_obj() as sess:
+                async with session_factory() as sess:
                     stmt = (
                         select(func.count())
                         .select_from(TodoModel)

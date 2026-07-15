@@ -118,12 +118,10 @@ class TestTaskFileReadInputShape:
         checks_top_path = "inp?.filePath" in body or "input?.filePath" in body
 
         assert checks_args_path, "isTaskFileRead should check args?.filePath"
-        # FAIL: currently only checks nested, not top-level
         assert checks_top_path, (
-            "BUG: isTaskFileRead does NOT check filePath at the top level of input. "
-            "If opencode passes filePath as a top-level property (not nested under args), "
-            "task-file reads are missed. The isReadOnlyMakeTarget function correctly "
-            "checks BOTH input.args?.command AND input?.command."
+            "isTaskFileRead should check filePath at the top level of input (inp?.filePath). "
+            "Matches the defensive pattern in isReadOnlyMakeTarget which checks BOTH "
+            "input.args?.command AND input?.command."
         )
 
     def test_stringify_fallback_is_brittle(self):

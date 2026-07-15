@@ -33,6 +33,24 @@ Code versions `0.1.0-beta.2` through `0.1.0-beta.4` exist in `pyproject.toml`/`_
 
 ---
 
+---
+
+## SESSION 36 — 2026-07-15
+
+- **HEAD: `62f1bab8`** on `development` branch (5 unpushed: 031ac222..62f1bab8)
+- **Version: 0.1.0-beta.4** (pyproject.toml)
+- **Push status: NOT PUSHED** — tree CLEAN, 5 commits ahead of remote `8e290afd70ea`
+- **CI: PENDING** — run 29394401049 on remote `8e290afd70ea` (in_progress)
+- **Completed this session:**
+  - NF.1 Chat CLI: P5 chat history complete (38 tests, 115 total) | commit 62f1bab8
+  - NF.2 Unikernel sandbox: P2 image builder complete (48 tests, 70 total) | commit 62f1bab8
+  - C.16 Filestore RCE: `sync_bundled_to_filestore()` digest verification fixed (21 tests) | commit 62f1bab8
+  - NF.4 Radio engineer: 7 roles molecule tests added | commit 62f1bab8
+  - enforce-stop.ts + enforce-multitask.ts fixes (under-floor hard block, comprehensive work detection) | commits 373cb611, 5d84dd3b
+- **Gate: lint 0, typecheck 0, collect OK** — collection OK at 62f1bab8
+- **Next:** push development, wait for CI green on HEAD, then cut beta.2
+- **Last Updated: 2026-07-15 — Session 36.** HEAD `62f1bab8` on `development`. Tree CLEAN. 5 commits unpushed. CI PENDING. 3 deliverables completed (NF.1 P5, NF.2 P2, C.16), NF.4 updated.
+
 ## SESSION 35 — 2026-07-14 (FINAL)
 
 - **HEAD: `816d7be6`** on `development` branch (12 commits: a2e831e1..816d7be6)

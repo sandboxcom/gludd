@@ -1,0 +1,51 @@
+---
+- name: Converge
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Create mock Ghidra support dir
+      ansible.builtin.file:
+        path: /tmp/gludd-ghidra-mock/support
+        state: directory
+        mode: "0755"
+
+    - name: Seed mock analyzeHeadless
+      ansible.builtin.copy:
+        content: ""
+        dest: /tmp/gludd-ghidra-mock/support/analyzeHeadless
+        mode: "0755"
+
+    - name: Run ghidra_analyze role (all modes off, mock path)
+      ansible.builtin.include_role:
+        name: general_ludd.binary_re.ghidra_analyze
+      vars:
+        ghidra_path: "/tmp/gludd-ghidra-mock"
+        output_dir: "/tmp/gludd-ghidra-mock"
+
+    - name: Assert artifact written
+      ansible.builtin.stat:
+        path: /tmp/gludd-ghidra-mock/ghidra_analyze.json
+      register: _stat
+
+    - name: Verify artifact exists
+      ansible.builtin.assert:
+        that: _stat.stat.exists
+        fail_msg: "ghidra_analyze.json not written"
+
+    - name: Parse artifact
+      ansible.builtin.slurp:
+        src: /tmp/gludd-ghidra-mock/ghidra_analyze.json
+      register: _json
+
+    - name: Assert artifact content
+      ansible.builtin.assert:
+        that:
+          - (_json.content | b64decode | from_json).role == "ghidra_analyze"
+          - (_json.content | b64decode | from_json).status == "completed"
+        fail_msg: "Artifact content mismatch"
+
+    - name: Cleanup
+      ansible.builtin.file:
+        path: /tmp/gludd-ghidra-mock
+        state: absent
