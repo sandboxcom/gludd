@@ -517,6 +517,7 @@ jobs:
         run: |
           mkdir -p dist/release
           cp dist/gludd dist/release/gludd
+          cp dist/install.sh dist/release/install.sh && chmod +x dist/release/install.sh
           cp -r config dist/release/config
           cp -r templates dist/release/templates
           cp -r playbooks dist/release/playbooks
@@ -563,6 +564,7 @@ jobs:
         run: |
           mkdir -p dist/release
           cp dist/gludd dist/release/gludd
+          cp dist/install.sh dist/release/install.sh && chmod +x dist/release/install.sh
           cp -r config dist/release/config
           cp -r templates dist/release/templates
           cp -r playbooks dist/release/playbooks

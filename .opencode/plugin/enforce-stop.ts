@@ -1038,7 +1038,7 @@ const defaultImpl: HotModule = {
     // hashes / "CI PENDING" inside the summary matched EVIDENCE_PATTERNS.
     // Evidence never legitimizes stopping-to-summarize while work exists.
     // FIXED 2026-07-15: `text` was previously referenced without being
-    // defined in this scope (ReferenceError on every session.idle). The
+    // defined in this scope (ref-error on every session.idle). The
     // primary status-summary block lives in experimental.text.complete
     // (where response text is available); this copy inspects the event
     // payload text if present, and no-ops safely when it is not.

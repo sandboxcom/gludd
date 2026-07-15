@@ -841,14 +841,18 @@ console.log(JSON.stringify(result ?? {{allowed: true}}))
 
 def test_floor_streak_zero_non_dispatch_allowed():
     """Non-dispatch call at streak=0 is allowed."""
+    session_state = f"/tmp/gludd-session-start-null-{os.getpid()}.json"
+    with open(session_state, "w") as f:
+        json.dump({}, f)
     code = f"""\
 const mod = await import('{PLUGIN_DIR}/enforce-floor.ts')
 const plugin = await mod.default({{}})
 const result = await plugin['tool.execute.before']({{tool: 'edit'}}, undefined)
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
-    result = _run_ts(code)
+    result = _run_ts(code, env_override={"GLUDD_SESSION_STATE": session_state})
     assert result is None or result.get("allowed") == True
+    _clean_state_files(session_state)
 
 
 def test_floor_streak_max_plus_one_denied():
@@ -919,19 +923,25 @@ def test_floor_corrupt_state_fail_open():
     sf = "/tmp/gludd-tool-streak.json"
     with open(sf, "w") as f:
         f.write("not valid json {{{")
+    session_state = f"/tmp/gludd-session-start-null-{os.getpid()}.json"
+    with open(session_state, "w") as f:
+        json.dump({}, f)
     code = f"""\
 const mod = await import('{PLUGIN_DIR}/enforce-floor.ts')
 const plugin = await mod.default({{}})
 const result = await plugin['tool.execute.before']({{tool: 'edit'}}, undefined)
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
-    result = _run_ts(code, env_override={"GLUDD_STREAK_FILE": sf})
+    result = _run_ts(code, env_override={"GLUDD_STREAK_FILE": sf, "GLUDD_SESSION_STATE": session_state})
     assert result is None or result.get("allowed") == True
-    _clean_state_files(sf)
+    _clean_state_files(sf, session_state)
 
 
 def test_floor_read_tool_not_blocked():
     """Read tools increment read streak but are not blocked at low counts."""
+    session_state = f"/tmp/gludd-session-start-null-{os.getpid()}.json"
+    with open(session_state, "w") as f:
+        json.dump({}, f)
     code = f"""\
 const mod = await import('{PLUGIN_DIR}/enforce-floor.ts')
 const plugin = await mod.default({{}})
@@ -940,8 +950,9 @@ const r2 = await plugin['tool.execute.before']({{tool: 'read'}}, undefined)
 const r3 = await plugin['tool.execute.before']({{tool: 'grep'}}, undefined)
 console.log(JSON.stringify({{allAllowed: r1 === undefined && r2 === undefined && r3 === undefined}}))
 """
-    result = _run_ts(code)
+    result = _run_ts(code, env_override={"GLUDD_SESSION_STATE": session_state})
     assert result["allAllowed"] == True
+    _clean_state_files(session_state)
 
 
 # ── enforce-floor.ts  —  runtime tests: text.complete, message-shape, grace, subagent, disengage ──

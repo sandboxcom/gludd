@@ -39,7 +39,7 @@ STALE_ARTIFACT_PATTERNS = [
     re.compile(r"\bimport\s*\{[^}]*}\s*from\s*[\"']"),
     re.compile(r"\bexport\s+(default|const|function|interface)\b"),
     re.compile(r":\s*(string|number|boolean|any|void|never)\b"),
-    re.compile(r"ReferenceError"),
+    re.compile(r"ReferenceError\s*(is\s+not|:)"),  # only actual runtime errors, not comments
 ]
 
 
