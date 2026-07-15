@@ -68,3 +68,40 @@ class TokenStore:
                 result = await session.execute(stmt)
                 row: AgentTokenModel | None = result.scalar_one_or_none()
                 return row
+
+    async def list_expired(self, now: datetime) -> list[AgentTokenModel]:
+        """Return all live (non-revoked) tokens whose ``expires_at < now``.
+
+        Used by :class:`~general_ludd.sts.reaper.TokenReaper.reap_expired`
+        to sweep TTL-elapsed tokens. A token counts as expired iff:
+          - ``expires_at IS NOT NULL``
+          - ``expires_at < now``
+          - ``revoked_at IS NULL`` (already-revoked tokens are not reaped)
+        """
+        from general_ludd.db.models import AgentTokenModel as A
+
+        async with self._session_factory() as session:
+            stmt = (
+                select(A)
+                .where(A.expires_at.is_not(None))
+                .where(A.expires_at < now)
+                .where(A.revoked_at.is_(None))
+            )
+            result = await session.execute(stmt)
+            rows: list[AgentTokenModel] = list(result.scalars().all())
+            return rows
+
+    async def list_children(self, parent_agent_id: str) -> list[AgentTokenModel]:
+        """Return all tokens whose ``parent_agent_id`` matches *parent_agent_id*.
+
+        Includes both live and already-revoked rows; the caller
+        (:class:`~general_ludd.sts.reaper.TokenReaper.cascade_revoke`)
+        filters by ``revoked_at`` and recurses into live children only.
+        """
+        from general_ludd.db.models import AgentTokenModel as A
+
+        async with self._session_factory() as session:
+            stmt = select(A).where(A.parent_agent_id == parent_agent_id)
+            result = await session.execute(stmt)
+            rows: list[AgentTokenModel] = list(result.scalars().all())
+            return rows

@@ -591,3 +591,243 @@ CLDR_MEASUREMENT_SYSTEMS: dict[str, str] = {
     "IL": "metric", "SA": "metric", "IN": "metric", "BR": "metric",
     "AU": "metric", "CA": "metric", "MX": "metric",
 }
+
+
+# ── Phase C: L10n functional helpers ────────────────────────────────────────
+
+
+class ParsedTag(TypedDict):
+    """BCP 47 language tag components (RFC 5646)."""
+
+    language: str
+    script: str
+    territory: str
+    codeset: str
+    canonical: str
+
+
+def parse_bcp47(tag: str) -> ParsedTag:
+    """Parse a BCP 47 language tag per RFC 5646.
+
+    Accepts common variant spellings: 'en-US', 'en_US', 'en_US.UTF-8',
+    'zh-Hans-CN'. Returns a dict with language/script/territory/codeset
+    fields plus a canonical 'language-territory' form.
+    """
+    if not tag:
+        return {"language": "", "script": "", "territory": "",
+                "codeset": "", "canonical": ""}
+
+    cleaned = tag.strip()
+    if "@" in cleaned:
+        cleaned = cleaned.split("@", 1)[0]
+
+    codeset = ""
+    if "." in cleaned:
+        cleaned, codeset = cleaned.split(".", 1)
+        codeset = codeset.strip()
+
+    cleaned = cleaned.replace("_", "-")
+    parts = [p for p in cleaned.split("-") if p]
+
+    language = parts[0] if parts else ""
+    script = ""
+    territory = ""
+
+    if len(parts) >= 2:
+        second = parts[1]
+        if len(second) == 4 and second[0].isupper():
+            script = second
+        elif (len(second) == 2 and second.isupper()) or (len(second) == 3 and second.isdigit()):
+            territory = second
+
+    if len(parts) >= 3 and not territory:
+        third = parts[2]
+        if (len(third) == 2 and third.isupper()) or (len(third) == 3 and third.isdigit()):
+            territory = third
+
+    canonical_parts = [language]
+    if script:
+        canonical_parts.append(script)
+    if territory:
+        canonical_parts.append(territory)
+    canonical = "-".join(canonical_parts)
+
+    return {"language": language, "script": script, "territory": territory,
+            "codeset": codeset, "canonical": canonical}
+
+
+def get_locale_data(tag: str) -> LocaleData | None:
+    """Look up CLDR locale data by tag with fallback.
+
+    - Exact match on canonical 'xx-YY' form.
+    - Underscore variants normalized to hyphen.
+    - Language-only fallback: 'en-GB' falls back to first 'en-*' entry.
+    """
+    if not tag:
+        return None
+
+    parsed = parse_bcp47(tag)
+    canonical = parsed["canonical"]
+
+    if canonical in LOCALE_FORMATS:
+        return LOCALE_FORMATS[canonical]
+
+    normalized = tag.replace("_", "-")
+    if normalized in LOCALE_FORMATS:
+        return LOCALE_FORMATS[normalized]
+
+    language = parsed["language"]
+    if language:
+        for key, value in LOCALE_FORMATS.items():
+            if key.startswith(language + "-"):
+                return value
+
+    return None
+
+
+def negotiate_locale(
+    accept_language: str,
+    available: list[str],
+    default: str | None = None,
+) -> str | None:
+    """RFC 4647 Lookup locale negotiation.
+
+    Parses an HTTP Accept-Language header, sorts by q-value, and returns
+    the best match from `available`. Falls back to language-prefix match
+    (e.g. 'en-GB' -> 'en-US'). Returns `default` (or None) if no match.
+    """
+    if not accept_language or not available:
+        return default
+
+    ranges: list[tuple[str, float]] = []
+    for raw in accept_language.split(","):
+        raw = raw.strip()
+        if not raw:
+            continue
+        if ";" in raw:
+            tag, params = raw.split(";", 1)
+            tag = tag.strip()
+            q = 1.0
+            for param in params.split(";"):
+                param = param.strip()
+                if param.startswith("q="):
+                    try:
+                        q = float(param[2:])
+                    except ValueError:
+                        q = 0.0
+        else:
+            tag = raw
+            q = 1.0
+        if q <= 0.0:
+            continue
+        ranges.append((tag, q))
+
+    ranges.sort(key=lambda r: r[1], reverse=True)
+
+    available_normalized = {a.replace("_", "-"): a for a in available}
+    available_languages: dict[str, str] = {}
+    for canon, orig in available_normalized.items():
+        lang = canon.split("-")[0]
+        available_languages.setdefault(lang, orig)
+
+    for tag, _q in ranges:
+        if tag == "*":
+            return available[0]
+
+        normalized = tag.replace("_", "-")
+        if normalized in available_normalized:
+            return available_normalized[normalized]
+
+        lang = normalized.split("-")[0]
+        if lang in available_languages:
+            return available_languages[lang]
+
+    return default
+
+
+_PLURAL_GRAMMARS: dict[str, dict[str, str]] = {
+    "en": {"one": "i == 1", "other": "i != 1"},
+    "de": {"one": "i == 1", "other": "i != 1"},
+    "fr": {"one": "i in 0..1", "other": "i not in 0..1"},
+    "es": {"one": "i == 1", "other": "i != 1"},
+    "ru": {
+        "one": "v == 0 and i % 10 == 1 and i % 100 != 11",
+        "few": "v == 0 and i % 10 in 2..4 and i % 100 not in 12..14",
+        "many": ("v == 0 and i % 10 == 0 or "
+                 "v == 0 and i % 10 in 5..9 or "
+                 "v == 0 and i % 100 in 11..14"),
+        "other": "",
+    },
+    "ar": {
+        "zero": "n == 0",
+        "one": "n == 1",
+        "two": "n == 2",
+        "few": "n % 100 in 3..10",
+        "many": "n % 100 in 11..99",
+        "other": "",
+    },
+    "ja": {"other": ""},
+    "zh": {"other": ""},
+    "ko": {"other": ""},
+}
+
+
+def evaluate_plural(locale: str, n: float) -> PluralCategory:
+    """Evaluate the CLDR plural category for a count `n` in a given locale.
+
+    Implements cardinal plural rules for the locale's language. Returns
+    one of: zero, one, two, few, many, other. Unknown locales default
+    to 'other'.
+    """
+    parsed = parse_bcp47(locale)
+    language = parsed["language"]
+
+    rules = _PLURAL_GRAMMARS.get(language)
+    if not rules:
+        return "other"
+
+    i = int(n)
+    v = 0 if float(n).is_integer() else 1
+    int_n = int(n)
+    mod_10 = i % 10 if i else 0
+    mod_100 = i % 100 if i else 0
+
+    def _check(expr: str) -> bool:
+        if not expr:
+            return False
+        if "i % 10 == 1 and i % 100 != 11" in expr:
+            return v == 0 and mod_10 == 1 and mod_100 != 11
+        if "i % 10 in 2..4 and i % 100 not in 12..14" in expr:
+            return v == 0 and 2 <= mod_10 <= 4 and not (12 <= mod_100 <= 14)
+        if "i % 10 == 0" in expr and "i % 10 in 5..9" in expr:
+            return (v == 0 and mod_10 == 0) or (
+                v == 0 and 5 <= mod_10 <= 9
+            ) or (v == 0 and 11 <= mod_100 <= 14)
+        if "i % 100 in 11..14" in expr:
+            return v == 0 and 11 <= mod_100 <= 14
+        if expr == "i == 1":
+            return i == 1
+        if expr == "i != 1":
+            return i != 1
+        if expr == "i in 0..1":
+            return i in (0, 1)
+        if expr == "i not in 0..1":
+            return i not in (0, 1)
+        if expr == "n == 0":
+            return int_n == 0
+        if expr == "n == 1":
+            return int_n == 1
+        if expr == "n == 2":
+            return int_n == 2
+        if expr == "n % 100 in 3..10":
+            return 3 <= int_n % 100 <= 10
+        if expr == "n % 100 in 11..99":
+            return 11 <= int_n % 100 <= 99
+        return False
+
+    for category in ("zero", "one", "two", "few", "many"):
+        expr = rules.get(category, "")
+        if expr and _check(expr):
+            return category
+
+    return "other"

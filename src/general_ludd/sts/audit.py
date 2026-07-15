@@ -135,6 +135,25 @@ class StsAuditPipeline:
         )
         await self._append_event(token_id, event)
 
+    async def record_expire(
+        self,
+        token_id: str,
+        agent_id: str,
+        parent_agent_id: str,
+    ) -> None:
+        """Record an 'expire' event — TTL elapsed before explicit revoke.
+
+        Distinct from ``record_revoke`` per spec §4 lifecycle diagram:
+        ``expire(TTL) | revoke(completion/death)``. Both end a token, but
+        expire is reaper-driven while revoke is caller-driven.
+        """
+        event = self._event_dict(
+            action="expire",
+            agent_id=agent_id,
+            parent_agent_id=parent_agent_id,
+        )
+        await self._append_event(token_id, event)
+
     def _scope_hash(self, actions: list[str] | None) -> str:
         if actions is None:
             return ""
