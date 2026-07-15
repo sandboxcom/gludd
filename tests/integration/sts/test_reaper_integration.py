@@ -272,7 +272,7 @@ class TestCascadeRevoke:
     async def test_revoker_cascade_hook_fires_on_parent_revoke(
         self, session_factory, reaper_pipeline
     ):
-        reaper, _store, revoker, _audit, _secrets = reaper_pipeline
+        _reaper, _store, revoker, _audit, _secrets = reaper_pipeline
         parent = _token_row("tok-p", "agent-p", parent_agent_id="human-1")
         child = _token_row("tok-c", "agent-c", parent_agent_id="agent-p")
         await _seed_rows(session_factory, parent, child)

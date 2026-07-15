@@ -17,7 +17,7 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 
 def _cmd_language_detect_encoding(args: argparse.Namespace) -> None:
@@ -630,14 +630,15 @@ def _cmd_language_font_analyze(args: argparse.Namespace) -> None:
 
     from general_ludd.language.font_data import (
         SYSTEM_FONT_STACKS,
+        ErrorResult,
         get_font_metrics,
         identify_font_format,
         list_font_tables,
     )
 
     if getattr(args, "system_stacks", False):
-        result: dict[str, object] = {"stacks": SYSTEM_FONT_STACKS}
-        print(json.dumps(result, indent=2, ensure_ascii=False))
+        stacks_result: dict[str, object] = {"stacks": SYSTEM_FONT_STACKS}
+        print(json.dumps(stacks_result, indent=2, ensure_ascii=False))
         return
 
     font_path = args.file
@@ -646,7 +647,7 @@ def _cmd_language_font_analyze(args: argparse.Namespace) -> None:
         sys.exit(1)
 
     file_size = os.path.getsize(font_path)
-    result: dict[str, object] = {
+    result = {
         "file": font_path,
         "file_size": file_size,
     }
@@ -666,11 +667,11 @@ def _cmd_language_font_analyze(args: argparse.Namespace) -> None:
 
     if getattr(args, "metrics", False):
         try:
-            m = get_font_metrics(font_path)
-            if "error" in m:
-                result["metrics_error"] = m["error"]
+            metrics = get_font_metrics(font_path)
+            if "error" in metrics:
+                result["metrics_error"] = cast("ErrorResult", metrics)["error"]
             else:
-                result["metrics"] = m
+                result["metrics"] = metrics
         except (OSError, struct.error):
             result["metrics_error"] = "failed to read font header"
 
@@ -691,37 +692,37 @@ def _cmd_language_analyze_text(args: argparse.Namespace) -> None:
     text = args.text or ""
     findings: list[dict[str, object]] = []
 
-    for finding in detect_confusables(text):
+    for confusable in detect_confusables(text):
         findings.append({
             "type": "confusable",
             "severity": "medium",
-            "character": finding["character"],
-            "codepoint": finding["codepoint"],
-            "position": finding["position"],
-            "skeleton": finding["skeleton"],
-            "name": finding["name"],
+            "character": confusable["character"],
+            "codepoint": confusable["codepoint"],
+            "position": confusable["position"],
+            "skeleton": confusable["skeleton"],
+            "name": confusable["name"],
         })
 
-    for finding in detect_invisible_chars(text):
-        sev = "high" if finding["category"] == "bidi-control" else "medium"
+    for invisible in detect_invisible_chars(text):
+        sev = "high" if invisible["category"] == "bidi-control" else "medium"
         findings.append({
             "type": "invisible",
             "severity": sev,
-            "character": finding["character"],
-            "codepoint": finding["codepoint"],
-            "position": finding["position"],
-            "name": finding["name"],
-            "category": finding["category"],
+            "character": invisible["character"],
+            "codepoint": invisible["codepoint"],
+            "position": invisible["position"],
+            "name": invisible["name"],
+            "category": invisible["category"],
         })
 
-    for finding in detect_bidi_overrides(text):
+    for bidi in detect_bidi_overrides(text):
         findings.append({
             "type": "bidi-override",
             "severity": "critical",
-            "character": finding["character"],
-            "codepoint": finding["codepoint"],
-            "position": finding["position"],
-            "name": finding["name"],
+            "character": bidi["character"],
+            "codepoint": bidi["codepoint"],
+            "position": bidi["position"],
+            "name": bidi["name"],
         })
 
     mixed = detect_mixed_script(text)
