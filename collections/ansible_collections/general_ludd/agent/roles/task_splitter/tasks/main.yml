@@ -35,7 +35,7 @@
       reasoning: "{{ 'Task exceeds complexity threshold' if _split_triggered | bool else 'Task is simple enough for single-agent execution' }}"
       cost_benefit_ratio: "{{ 3.5 if _split_triggered | bool else 1.0 }}"
       subtasks: "{{ _subtasks | default([]) }}"
-      generated_at: "{{ ansible_facts.date_time.iso8601 }}"
+      generated_at: "{{ now(utc=True).isoformat() }}"
       role_version: "1.0.0"
 
 - name: Write artifact to disk
