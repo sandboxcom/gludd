@@ -1,6 +1,8 @@
 ---
 # macos_diagnose role — gather macOS diagnostic data from unified log,
 # spdisaster_report, launchctl, nvram, and pmset.
+# Uses the python gatherer backend in files/macos_gather.py for
+# structured JSON output, with raw shell fallbacks.
 
 - name: Create artifact directory
   ansible.builtin.file:
@@ -8,6 +10,37 @@
     state: directory
     mode: "0755"
   when: ansible_os_family == 'Darwin'
+
+- name: Gather structured diagnostics via python backend
+  when:
+    - ansible_os_family == 'Darwin'
+    - gather_unified_log | bool or gather_launchctl | bool or gather_nvram | bool or gather_pmset | bool
+  block:
+    - name: Copy macos_gather.py to target
+      ansible.builtin.copy:
+        src: macos_gather.py
+        dest: "{{ artifact_dir }}/macos_gather.py"
+        mode: "0755"
+
+    - name: Run gatherer — collect unified log, launchctl, nvram, pmset as JSON
+      ansible.builtin.command: >
+        python3 {{ artifact_dir }}/macos_gather.py
+        --output {{ artifact_dir }}/diagnostics.json
+        --log-window {{ log_window | default('5m') }}
+      register: _gather_result
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write gather stdout/stderr to artifact_dir
+      ansible.builtin.copy:
+        content: |
+          stdout: {{ _gather_result.stdout | default('') }}
+          stderr: {{ _gather_result.stderr | default('') }}
+          rc: {{ _gather_result.rc | default('') }}
+        dest: "{{ artifact_dir }}/gather_output.txt"
+        mode: "0644"
+      when: _gather_result is defined
 
 - name: Gather unified log (last 5 min, ndjson)
   when:

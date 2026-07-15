@@ -1,6 +1,8 @@
 ---
 # linux_diagnose role — gather Linux diagnostic data from /proc/*,
 # journalctl, sysfs, dmesg, lsmod, and sysctl.
+# Uses the python gatherer backend in files/linux_gather.py for
+# structured JSON output, with raw shell fallbacks.
 
 - name: Create artifact directory
   when: ansible_os_family in ['RedHat', 'Debian', 'Suse', 'Archlinux']
@@ -18,6 +20,37 @@
   loop:
     - proc
     - sysfs
+
+- name: Gather structured diagnostics via python backend
+  when:
+    - ansible_os_family in ['RedHat', 'Debian', 'Suse', 'Archlinux']
+    - gather_proc | bool or gather_dmesg | bool or gather_lsmod | bool or gather_sysctl | bool
+  block:
+    - name: Copy linux_gather.py to target
+      ansible.builtin.copy:
+        src: linux_gather.py
+        dest: "{{ artifact_dir }}/linux_gather.py"
+        mode: "0755"
+
+    - name: Run gatherer — collect proc, dmesg, lsmod, sysctl as JSON
+      ansible.builtin.command: >
+        python3 {{ artifact_dir }}/linux_gather.py
+        --output {{ artifact_dir }}/diagnostics.json
+        --dmesg-lines {{ dmesg_lines | default(500) }}
+      register: _gather_result
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write gather stdout/stderr to artifact_dir
+      ansible.builtin.copy:
+        content: |
+          stdout: {{ _gather_result.stdout | default('') }}
+          stderr: {{ _gather_result.stderr | default('') }}
+          rc: {{ _gather_result.rc | default('') }}
+        dest: "{{ artifact_dir }}/gather_output.txt"
+        mode: "0644"
+      when: _gather_result is defined
 
 - name: Gather /proc files
   when:
