@@ -61,6 +61,7 @@ interface MultitaskState {
   waveHistory: number[]
   consecutiveNonDispatch: number
   consecutiveNonDispatchStartTs: number
+  sawNonDispatchSinceDispatch: boolean
 }
 
 function freshState(): MultitaskState {
@@ -75,6 +76,7 @@ function freshState(): MultitaskState {
     waveHistory: [],
     consecutiveNonDispatch: 0,
     consecutiveNonDispatchStartTs: 0,
+    sawNonDispatchSinceDispatch: false,
   }
 }
 
@@ -96,6 +98,20 @@ function hasPendingWork(): boolean {
   } catch {
     return false
   }
+}
+
+function handleMessageBoundary(s: MultitaskState): void {
+  s.prevMessageDispatches = s.thisMessageDispatches
+  if (s.thisMessageDispatches === 0) {
+    s.zeroStreak++
+  } else {
+    s.zeroStreak = 0
+  }
+  s.waveHistory.push(s.prevMessageDispatches)
+  if (s.waveHistory.length > WAVE_HISTORY_SIZE) {
+    s.waveHistory = s.waveHistory.slice(-WAVE_HISTORY_SIZE)
+  }
+  s.thisMessageDispatches = 0
 }
 
 function spawnGateRefresh(): void {
@@ -124,6 +140,7 @@ let _state: MultitaskState = (() => {
   s.lastToolCallTs = 0
   s.consecutiveNonDispatch = 0
   s.consecutiveNonDispatchStartTs = 0
+  s.sawNonDispatchSinceDispatch = false
   writeState(s)
   return s
 })()
@@ -154,22 +171,31 @@ const defaultImpl: HotModule = {
       // trivially auditable for the escape hatch.
       const disengaged = isDisengaged()
 
-      // --- Message boundary detection: 5s gap between tool calls ---
+      // --- Message boundary detection: multi-signal ---
+      // Signal 1: time gap > MSG_GAP_MS since last tool call
+      let boundaryDetected = false
       if (_state.lastToolCallTs > 0 && (now - _state.lastToolCallTs) > MSG_GAP_MS) {
-        _state.prevMessageDispatches = _state.thisMessageDispatches
-        if (_state.thisMessageDispatches === 0) {
-          _state.zeroStreak++
-        } else {
-          _state.zeroStreak = 0
-        }
-        _state.waveHistory.push(_state.prevMessageDispatches)
-        if (_state.waveHistory.length > WAVE_HISTORY_SIZE) {
-          _state.waveHistory = _state.waveHistory.slice(-WAVE_HISTORY_SIZE)
-        }
-        _state.thisMessageDispatches = 0
+        boundaryDetected = true
+      }
+      // Signal 2: first dispatch after any non-dispatch tool call (pattern change)
+      if (!boundaryDetected && isDispatchTool(tool) && _state.sawNonDispatchSinceDispatch) {
+        boundaryDetected = true
+      }
+      // Signal 3: high-water-mark safety — counter inflated beyond sane bounds
+      if (!boundaryDetected && _state.thisMessageDispatches > MAX_DISPATCHES * 3) {
+        boundaryDetected = true
+      }
+      if (boundaryDetected) {
+        handleMessageBoundary(_state)
+        _state.sawNonDispatchSinceDispatch = false
       }
 
       _state.lastToolCallTs = now
+
+      // --- Non-dispatch tools: mark that we've seen non-dispatch activity ---
+      if (!isDispatchTool(tool)) {
+        _state.sawNonDispatchSinceDispatch = true
+      }
 
       // --- Dispatch tools: count and allow (with ceiling) ---
       if (isDispatchTool(tool)) {
@@ -244,6 +270,26 @@ const defaultImpl: HotModule = {
             "Run 'make disengage-enforcement' to bypass.",
           ].join("\n"),
         }
+      }
+
+      // === SANITY CHECK: verify dispatch count before blocking ===
+      // If the counter exceeds sane bounds after boundary detection,
+      // the count is unreliable — log a warning and force-reset.
+      if (
+        !disengaged &&
+        hasPendingWork() &&
+        _state.thisMessageDispatches > 0 &&
+        _state.thisMessageDispatches > MAX_DISPATCHES * 2
+      ) {
+        console.warn(
+          "MULTITASK SANITY: thisMessageDispatches=" + String(_state.thisMessageDispatches) +
+          " exceeds MAX_DISPATCHES*2=" + String(MAX_DISPATCHES * 2) +
+          " — count is unreliable. Force-resetting to 1."
+        )
+        _state.thisMessageDispatches = 1
+        _state.sawNonDispatchSinceDispatch = false
+        writeState(_state)
+        return
       }
 
       // === UNDER-FLOOR HARD BLOCK ===

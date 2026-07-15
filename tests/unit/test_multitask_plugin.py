@@ -849,3 +849,107 @@ class TestTenAgentFloorHardEnforcement:
         after = src[idx:idx + 2000]
         blocked = 'lt === "edit" || lt === "write" || lt === "bash"'
         assert blocked in after, "UNDER-FLOOR must block edit/write/bash"
+
+
+class TestMessageBoundaryDetection:
+    """2026-07-15: Message boundary detection uses multiple signals to prevent
+    thisMessageDispatches from inflating across messages. The new signals are:
+    1. Pattern change: first dispatch after any non-dispatch call
+    2. High-water-mark safety: counter > MAX_DISPATCHES * 3
+    3. Existing time-gap heuristic retained."""
+
+    def test_saw_non_dispatch_field_in_interface(self):
+        src = _plugin_source()
+        assert "sawNonDispatchSinceDispatch: boolean" in src, (
+            "MultitaskState interface must include sawNonDispatchSinceDispatch field"
+        )
+
+    def test_saw_non_dispatch_in_fresh_state(self):
+        src = _plugin_source()
+        assert re.search(r"sawNonDispatchSinceDispatch:\s*false", src), (
+            "freshState() must initialize sawNonDispatchSinceDispatch to false"
+        )
+
+    def test_saw_non_dispatch_in_iife(self):
+        src = _plugin_source()
+        assert "s.sawNonDispatchSinceDispatch = false" in src, (
+            "IIFE must initialize sawNonDispatchSinceDispatch to false"
+        )
+
+    def test_handle_message_boundary_function_exists(self):
+        src = _plugin_source()
+        assert "function handleMessageBoundary" in src, (
+            "handleMessageBoundary function must exist for extracted boundary logic"
+        )
+
+    def test_pattern_boundary_signal_present(self):
+        src = _plugin_source()
+        assert "sawNonDispatchSinceDispatch" in src, (
+            "Pattern-based boundary detection must reference sawNonDispatchSinceDispatch"
+        )
+        assert "isDispatchTool(tool) && _state.sawNonDispatchSinceDispatch" in src, (
+            "Pattern signal must detect first dispatch after non-dispatch call"
+        )
+
+    def test_non_dispatch_sets_flag(self):
+        src = _plugin_source()
+        assert "_state.sawNonDispatchSinceDispatch = true" in src, (
+            "Non-dispatch tool calls must set sawNonDispatchSinceDispatch to true"
+        )
+
+    def test_boundary_resets_flag(self):
+        src = _plugin_source()
+        assert "sawNonDispatchSinceDispatch = false" in src, (
+            "Boundary detection must reset sawNonDispatchSinceDispatch to false"
+        )
+
+    def test_high_water_mark_safety_exists(self):
+        src = _plugin_source()
+        assert "MAX_DISPATCHES * 3" in src, (
+            "High-water-mark safety must reference MAX_DISPATCHES * 3"
+        )
+
+    def test_sanity_check_before_under_floor_block(self):
+        src = _plugin_source()
+        idx = src.find("=== SANITY CHECK")
+        assert idx > 0, "SANITY CHECK comment must exist before UNDER-FLOOR"
+        under_idx = src.find("=== UNDER-FLOOR HARD BLOCK ===")
+        assert under_idx > 0, "UNDER-FLOOR HARD BLOCK comment must exist"
+        assert idx < under_idx, (
+            "SANITY CHECK must appear BEFORE UNDER-FLOOR HARD BLOCK"
+        )
+
+    def test_sanity_check_verifies_count_exceeds_twice_max(self):
+        src = _plugin_source()
+        assert "MAX_DISPATCHES * 2" in src, (
+            "Sanity check must verify count against MAX_DISPATCHES * 2"
+        )
+        assert "count is unreliable" in src, (
+            "Sanity check must warn when count is unreliable"
+        )
+
+    def test_multi_signal_comment_present(self):
+        src = _plugin_source()
+        assert "Message boundary detection: multi-signal" in src, (
+            "Multi-signal boundary detection comment must be present"
+        )
+
+    def test_time_gap_signal_retained(self):
+        src = _plugin_source()
+        m = re.search(
+            r"Signal 1.*MSG_GAP_MS",
+            src,
+        )
+        assert m, "Time-gap signal (Signal 1) must be retained"
+
+    def test_pattern_signal_is_signal_2(self):
+        src = _plugin_source()
+        assert "Signal 2" in src, (
+            "Pattern-based signal must be labeled Signal 2"
+        )
+
+    def test_high_water_mark_is_signal_3(self):
+        src = _plugin_source()
+        assert "Signal 3" in src, (
+            "High-water-mark signal must be labeled Signal 3"
+        )
