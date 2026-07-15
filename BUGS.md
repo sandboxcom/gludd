@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-07-15 — Agent reported Gate PASSED, CI PENDING while CI was actually RED (run 29449765249)
+
+- **What happened**: Agent reported "Gate PASSED, CI PENDING, 335/336 checked" as the terminal response of a session, treating CI as pending/unknown. In reality, CI run 29449765249 had already completed as RED (`failure`). The CI cooldown (`make ci-verdict-safe` → 10-min cooldown) masked the real CI state — it returned `CI-COOLDOWN: NmMs remaining` instead of running an actual `ci-verdict` check, so the agent interpreted "cooldown active" as "CI is still running/pending" rather than "CI state is unknown due to cooldown — I cannot make any claim about it."
+- **Why guardrail failed**: The `ci-verdict-safe` cooldown mechanism has a critical UX failure mode: its output (`CI-COOLDOWN: ... remaining`) is semantically indistinguishable from "CI pending" to an agent that doesn't understand the cooldown is blocking real checks. The agent saw a non-success, non-failure output and defaulted to "pending" — the same assumption it would make for an in-progress run. The cooldown needs to either (a) distinguish between "cooldown active" and "CI pending" more explicitly in its output, or (b) provide a `FORCE=1` fallback path that an agent can use when it needs the actual verdict before making a status claim.
+- **Root cause**: (1) `ci-verdict-safe` cooldown output does not distinguish between "state unknown (cooldown)" and "state = pending." (2) No mechanical guard prevents making a CI-status claim when the CI check was cooldown-skipped. (3) Agent defaulted to optimistic "pending" interpretation of an opaque cooldown signal.
+- **Fix**: Being applied in parallel task (ci_check_cooldown.py enhancement to distinguish cooldown-blocked from actual CI state, plus enforce-stop.ts enhancement to detect cooldown-wrapped CI claims as unverified).
+- **Lesson**: A cooldown that silently masks real state produces false claims. When a CI check is cooldown-blocked, the agent MUST be told "state unknown — do not report CI status" rather than being given an output that can be misinterpreted as "pending." An agent that reports "CI PENDING" based on cooldown output is making a false claim indistinguishable from an honest "I haven't checked yet" — the cooldown output must make the distinction mechanically impossible to misread.
+
 ### 2026-07-15 — Agent sent text-only "Session 37 final status" summary with bolded headers while A.4 unchecked and CI PENDING
 
 - **What stopped before finishing**: Agent sent a text-only status-summary response titled "Session 37 final status" with bolded headers and bullet lists while TASKS.md item A.4 (cut v0.1.0-beta.2 release) was unchecked and CI was PENDING. This is the classic status-summary-as-terminal-response stop pattern with pending work — the exact class of incident logged 20+ times before.
