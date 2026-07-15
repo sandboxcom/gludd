@@ -529,7 +529,8 @@ jobs:
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq rpm
           make rpm-package
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
+      - if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
         with:
           name: gludd-linux-x86_64
           path: |
@@ -578,7 +579,8 @@ jobs:
           hdiutil create -fs HFS+ -volname gludd-install -srcfolder dist/dmg-staging -format UDZO "dist/gludd-${VERSION}-macos-arm64.dmg"
           rm -rf dist/dmg-staging
           shasum -a 256 "dist/gludd-${VERSION}-macos-arm64.dmg" > "dist/gludd-${VERSION}-macos-arm64.dmg.sha256"
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
+      - if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
         with:
           name: gludd-macos-arm64
           path: |
