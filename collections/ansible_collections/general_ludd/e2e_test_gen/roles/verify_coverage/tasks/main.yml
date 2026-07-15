@@ -33,6 +33,13 @@
 
 # ── Run coverage verification via Python script ────────────────────────
 
+- name: Assemble optional cross-reference CLI args
+  ansible.builtin.set_fact:
+    _vc_scenarios_arg: >-
+      {{ '--scenarios-file "' ~ scenarios_file ~ '"' if scenarios_file | default('') | length > 0 else '' }}
+    _vc_symbols_arg: >-
+      {{ '--symbols-file "' ~ symbols_file ~ '"' if symbols_file | default('') | length > 0 else '' }}
+
 - name: Run verify_coverage script
   ansible.builtin.command:
     cmd: >-
@@ -43,6 +50,8 @@
       --threshold "{{ coverage_threshold }}"
       --timeout "{{ pytest_timeout }}"
       --test-file-prefix "{{ test_file_prefix | default('test_e2e_generated_') }}"
+      {{ _vc_scenarios_arg }}
+      {{ _vc_symbols_arg }}
   register: _vc_result
   changed_when: false
   ignore_errors: true
