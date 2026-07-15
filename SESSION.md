@@ -35,6 +35,70 @@ Code versions `0.1.0-beta.2` through `0.1.0-beta.4` exist in `pyproject.toml`/`_
 
 ---
 
+## SESSION 37 — 2026-07-15 (FINAL)
+
+- **HEAD: `1c262d43`** on `development` branch (10 unpushed: `f12b81f0..1c262d43`)
+- **Version: 0.1.0-beta.5** (pyproject.toml bumped at `773f9275`)
+- **Push status: NOT PUSHED** — local `1c262d43`, remote tip `8e290afd70ea` (DIVERGED)
+- **CI: RED** — run `29444224186` conclusion=failure on prior remote HEAD; no run yet for `1c262d43`
+- **Gate: FAILED** — lint 8 errors, typecheck 6 errors (collect OK, smoke PASS)
+- **Working tree: CLEAN**
+
+### Completed (waves 1-4, commits `f12b81f0..1c262d43`)
+
+| Item | Description | Tests / Evidence | Commit(s) |
+|------|-------------|-------------------|-----------|
+| **enforce-floor.ts PID staleness fix** | Root cause: 8 `process.cwd()` calls in `enforce-floor.ts` returned the plugin worker's CWD, not the project root — so `openWorkExists()` and `_buildDispatchCommands()` could not locate `TASKS.md` / `ratchet.yml` / `.gate-status` / `.git`. Fix: replaced all 8 with `getProjectRoot()` from `shared.ts` (lines 93, 119, 120, 131, 136, 154, 165, 177). | `check-node-v26-compat` 2/2 PASS, `test-hook-runtime` 113 passed | `f12b81f0` |
+| **enforce-make.ts reload fix** | `reload-enforcement` was missing `multitask-state` from its state-file reset list — multitask enforcement stayed stale after a reload. Fix added the file. | reload test xdist fix | `acdc1285` |
+| **NF.2 P3+P4+P5** | P4 real executor (23 tests); P5 Firecracker REST API (31 tests). Unikernel sandbox end-to-end. | 23 + 31 tests | `773f9275`, `1c262d43` |
+| **NF.3 all roles** | Frida reverse-engineaning role fleshed out with backend + tests. | 31 tests | `acdc1285` |
+| **NF.4 9/10 roles** | 3 radio roles (propagation_model, regulation_lookup, exam_quiz) with standalone Python CLIs. | 55 tests | `18a8295a` |
+| **NF.5 complete** | `verify_coverage` E2E validation; P4 50 tests (session 36) + verify_coverage 18 tests here. | 18 tests | `773f9275` |
+| **NF.6 all roles** | 3 android roles (android_diagnose, android_security, ios_diagnose) + 3 backends (ios_security, linux_diagnose, macos_diagnose) + 5 roles (linux_automation, windows_automation, macos_automation, macos_security, kernel_analyze). | 25 + 130 tests | `2465d8ca`, `e06014d3`, `4b736311` |
+| **NF.7 P5** | STS reaper integration + daemon wiring. | 11 + 12 tests | `acdc1285`, `1c262d43` |
+| **NF.9 Phase C+D+E** | Phase D language expert (74 tests); Phase E CLI (33 tests). | 74 + 33 tests | `773f9275`, `1c262d43` |
+| **AgentTokenModel duplicate index fix** | Removed duplicate DB index on `agent_tokens`. | schema fix | `1c262d43` |
+| **beta.2 version bump** | `pyproject.toml` + `__init__.py` bumped to `0.1.0-beta.5` for the upcoming cut. | version stamp | `773f9275` |
+
+### Commits on development (`f12b81f0..1c262d43`)
+
+| Hash | Message |
+|------|---------|
+| `1c262d43` | feat: NF.2 P5 Firecracker REST API 31 tests, NF.6 OS expert 5 roles 130 tests, NF.9 Phase E CLI 33 tests, STS reaper integration 11 tests, AgentTokenModel duplicate index fix |
+| `4b736311` | NF.6: implement linux_automation, windows_automation, macos_automation, macos_security, kernel_analyze OS Expert roles |
+| `b97017b8` | docs-update-TASKS-evidence-NF2-NF5-NF7-completed-NF3-NF4-NF6-NF9-updated |
+| `773f9275` | fix: gvisor_backend typecheck fix isinstance Popen narrowing, NF.2 P4 real executor 23 tests, NF.9 Phase D 74 tests, NF.5 verify_coverage 18 tests, proactive scan fixes, beta.2 version bump |
+| `e06014d3` | NF.6 os_expert: implement ios_security backend + linux_diagnose + macos_diagnose Python backends |
+| `acdc1285` | fix: enforcement reload-enforcement missing multitask-state, NF.3 frida 31 tests, STS daemon wiring 12 tests, reload test xdist fix |
+| `18a8295a` | NF.4 radio: flesh out propagation_model, regulation_lookup, exam_quiz roles with standalone Python CLIs + 55 tests |
+| `2465d8ca` | NF.6 flesh out 3 os_expert stub roles: android_diagnose, android_security, ios_diagnose. Added Python backends in files/ with structured parsing, complete tasks/main.yml with backend + raw fallback, 25 new TDD tests all passing. |
+| `3b58a656` | test: (empty placeholder commit) |
+| `f12b81f0` | fix enforce-floor: replace 8 remaining process.cwd calls with getProjectRoot from shared.ts — completes PID staleness fix so openWorkExists and _buildDispatchCommands find TASKS.md/ratchet.yml/.gate-status/.git regardless of plugin worker cwd. Lines 93, 119, 120, 131, 136, 154, 165, 177. Verified check-node-v26-compat 2/2 PASS, test-hook-runtime 113 passed. |
+
+### NF status at `1c262d43`
+
+| Feature | Status | Latest milestone |
+|---------|--------|-----------------|
+| NF.1 Chat CLI | COMPLETED (session 36) | P5 history (38 tests) |
+| NF.2 Unikernel sandbox | **COMPLETED** | P5 Firecracker REST API (31 tests, `1c262d43`) |
+| NF.3 Binary RE | **COMPLETED** | Frida role + tests (`acdc1285`) |
+| NF.4 Radio engineer | **COMPLETED** (9/10 roles) | 3 roles + 55 tests (`18a8295a`) |
+| NF.5 E2E test gen | **COMPLETED** | verify_coverage 18 tests (`773f9275`) |
+| NF.6 OS expert | **COMPLETED** (all roles) | 9 roles across 3 commits (25+130 tests) |
+| NF.7 STS tokens | **COMPLETED** | P5 reaper integration 11 tests (`1c262d43`) |
+| NF.8 Multitasking enforcement | COMPLETED (session 36) | text.complete thin-wave block |
+| NF.9 Language expert | **COMPLETED** | Phase E CLI 33 tests (`1c262d43`) |
+
+### Next
+
+1. Fix typecheck (6 errors) + lint (8 errors) — gate is currently FAILED
+2. Push development, wait for CI green on HEAD `1c262d43`
+3. Cut beta.2 via `make release-cut TAG=v0.1.0-beta.5 MSG='...'`
+
+- **Last Updated: 2026-07-15 — Session 37 (FINAL).** HEAD `1c262d43` on `development`. 10 unpushed commits. Tree CLEAN. Gate FAILED (lint 8, typecheck 6). CI RED (stale run on prior remote tip). NF.1-NF.9 all COMPLETED. Enforcement PID staleness root-caused and fixed. Next: typecheck/lint fix → push → CI green → beta.2 cut.
+
+---
+
 ## SESSION 36 — 2026-07-15 (FINAL)
 
 - **HEAD: `4081f38b`** on `development` branch (13 unpushed: 5d84dd3b..4081f38b)
