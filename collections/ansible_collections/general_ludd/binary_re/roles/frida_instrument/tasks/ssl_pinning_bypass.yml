@@ -1,0 +1,38 @@
+---
+- name: Run Frida SSL pinning bypass
+  ansible.builtin.command:
+    cmd: >-
+      {{ ansible_python_interpreter | default('/usr/bin/env python3') }}
+      {{ script_path }}
+      --target {{ target_binary }}
+      --mode ssl_pinning_bypass
+      --process {{ process_spec | default(target_binary) }}
+      --output {{ output_dir }}/ssl_pinning_bypass.json
+  register: _sslp_result
+  changed_when: false
+  failed_when: _sslp_result.rc not in [0]
+
+- name: Read SSL pinning bypass artifact
+  ansible.builtin.slurp:
+    src: "{{ output_dir }}/ssl_pinning_bypass.json"
+  register: _sslp_raw
+
+- name: Parse SSL pinning bypass artifact
+  ansible.builtin.set_fact:
+    ssl_pinning_bypass_artifact: >-
+      {{ _sslp_raw.content | b64decode | from_json
+         if (_sslp is defined and _sslp_raw.content is defined) else {} }}
+
+- name: Write Frida SSL bypass script to disk
+  ansible.builtin.copy:
+    content: "{{ ssl_pinning_bypass_artifact.get('script', '') }}"
+    dest: "{{ ssl_pinning_bypass_artifact.get('script_path', '/tmp/gludd-frida-ssl-bypass.js') }}"
+    mode: "0644"
+  when: ssl_pinning_bypass_artifact.get('script', '') | length > 0
+
+- name: Report SSL pinning bypass summary
+  ansible.builtin.debug:
+    msg: >-
+      SSL pinning bypass ready:
+      hooks={{ ssl_pinning_bypass_artifact.get('hooks', []) | length }},
+      script_path={{ ssl_pinning_bypass_artifact.get('script_path', 'unknown') }}

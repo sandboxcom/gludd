@@ -13,4 +13,11 @@ gather_pm_list: true
 
 adb_serial: ""
 
+# Python backend settings
+logcat_lines: 200
+dumpsys_services:
+  - meminfo
+  - activity
+  - package
+
 enable_git_push: false

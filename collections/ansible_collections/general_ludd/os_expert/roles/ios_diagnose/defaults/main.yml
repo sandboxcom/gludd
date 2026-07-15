@@ -13,4 +13,7 @@ gather_oslog: true
 
 device_udid: ""
 
+# Python backend settings
+syslog_lines: 100
+
 enable_git_push: false

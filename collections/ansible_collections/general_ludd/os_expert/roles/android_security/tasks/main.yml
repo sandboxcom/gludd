@@ -1,7 +1,173 @@
 ---
-# android_security role — audit Android security subsystems: sepolicy,
-# package permissions, keystore, dm-verity.
+# android_security role — audit Android security subsystems:
+# SELinux/SEPolicy, package permissions, keystore, dm-verity.
+# Uses the python auditor backend in files/android_security_audit.py.
 
-- name: Audit Android security posture
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Check ADB availability
+  ansible.builtin.command: which adb
+  register: _adb_check
+  changed_when: false
+  ignore_errors: true
+  failed_when: false
+
+- name: Run full security audit via python backend
+  when: _adb_check is success
+  block:
+    - name: Copy android_security_audit.py to target
+      ansible.builtin.copy:
+        src: android_security_audit.py
+        dest: "{{ artifact_dir }}/android_security_audit.py"
+        mode: "0755"
+
+    - name: Run auditor — collect sepolicy, permissions, keystore, verity
+      ansible.builtin.command: >
+        python3 {{ artifact_dir }}/android_security_audit.py
+        --output {{ artifact_dir }}/security_audit.json
+        {{ '--serial ' ~ adb_serial if adb_serial else '' }}
+      register: _audit_result
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write audit stdout/stderr to artifact_dir
+      ansible.builtin.copy:
+        content: |
+          stdout: {{ _audit_result.stdout | default('') }}
+          stderr: {{ _audit_result.stderr | default('') }}
+          rc: {{ _audit_result.rc | default('') }}
+        dest: "{{ artifact_dir }}/audit_output.txt"
+        mode: "0644"
+      when: _audit_result is defined
+
+# ── Fallback raw commands (used when python backend unavailable) ──
+
+- name: Audit SELinux (fallback)
+  when:
+    - _adb_check is success
+    - _audit_result is not success
+    - audit_sepolicy | bool
+  block:
+    - name: Run getenforce
+      ansible.builtin.command: >
+        adb {{ '-s ' ~ adb_serial if adb_serial else '' }} shell getenforce
+      register: _getenforce
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Run sestatus-equivalent (selinux booleans)
+      ansible.builtin.command: >
+        adb {{ '-s ' ~ adb_serial if adb_serial else '' }} shell ls /sys/fs/selinux/booleans/
+      register: _selinux_booleans
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write SELinux audit to artifact_dir
+      ansible.builtin.copy:
+        content: |
+          === getenforce ===
+          {{ _getenforce.stdout | default('(error)') }}
+
+          === selinux booleans ===
+          {{ _selinux_booleans.stdout | default('(none)') }}
+        dest: "{{ artifact_dir }}/selinux.txt"
+        mode: "0644"
+
+- name: Audit package permissions (fallback)
+  when:
+    - _adb_check is success
+    - _audit_result is not success
+    - audit_permissions | bool
+  block:
+    - name: Run dumpsys package
+      ansible.builtin.command: >
+        adb {{ '-s ' ~ adb_serial if adb_serial else '' }} shell dumpsys package
+      register: _dumpsys_package
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write dumpsys package to artifact_dir
+      ansible.builtin.copy:
+        content: "{{ _dumpsys_package.stdout | default('(error)') }}"
+        dest: "{{ artifact_dir }}/package_permissions.txt"
+        mode: "0644"
+
+    - name: Run pm list permissions
+      ansible.builtin.command: >
+        adb {{ '-s ' ~ adb_serial if adb_serial else '' }} shell pm list permissions -f
+      register: _pm_permissions
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write pm list permissions to artifact_dir
+      ansible.builtin.copy:
+        content: "{{ _pm_permissions.stdout | default('(error)') }}"
+        dest: "{{ artifact_dir }}/permissions_list.txt"
+        mode: "0644"
+
+- name: Audit keystore (fallback)
+  when:
+    - _adb_check is success
+    - _audit_result is not success
+    - audit_keystore | bool
+  block:
+    - name: Run dumpsys keystore
+      ansible.builtin.command: >
+        adb {{ '-s ' ~ adb_serial if adb_serial else '' }} shell dumpsys keystore
+      register: _dumpsys_keystore
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write keystore audit to artifact_dir
+      ansible.builtin.copy:
+        content: "{{ _dumpsys_keystore.stdout | default('(error)') }}"
+        dest: "{{ artifact_dir }}/keystore.txt"
+        mode: "0644"
+
+- name: Audit dm-verity (fallback)
+  when:
+    - _adb_check is success
+    - _audit_result is not success
+    - audit_dm_verity | bool
+  block:
+    - name: Get verity mode property
+      ansible.builtin.command: >
+        adb {{ '-s ' ~ adb_serial if adb_serial else '' }} shell getprop ro.boot.veritymode
+      register: _verity_mode
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Get partition verified property
+      ansible.builtin.command: >
+        adb {{ '-s ' ~ adb_serial if adb_serial else '' }} shell getprop partition.system.verified
+      register: _verity_partition
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write dm-verity audit to artifact_dir
+      ansible.builtin.copy:
+        content: |
+          === verity mode ===
+          {{ _verity_mode.stdout | default('(unknown)') }}
+
+          === partition verified ===
+          {{ _verity_partition.stdout | default('(unknown)') }}
+        dest: "{{ artifact_dir }}/dm_verity.txt"
+        mode: "0644"
+
+- name: ADB not available warning
+  when: _adb_check is not success
   ansible.builtin.debug:
-    msg: "android_security: auditing sepolicy-inject, pm permission, keystore, dm-verity"
+    msg: "WARNING: adb not found on target host. Android security audit skipped."

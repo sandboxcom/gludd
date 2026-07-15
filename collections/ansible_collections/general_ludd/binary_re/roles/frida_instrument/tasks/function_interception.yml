@@ -1,0 +1,39 @@
+---
+- name: Run Frida function interception
+  ansible.builtin.command:
+    cmd: >-
+      {{ ansible_python_interpreter | default('/usr/bin/env python3') }}
+      {{ script_path }}
+      --target {{ target_binary }}
+      --mode function_interception
+      --process {{ process_spec | default(target_binary) }}
+      --targets {{ frida_intercept_targets }}
+      --output {{ output_dir }}/function_interception.json
+  register: _fi_result
+  changed_when: false
+  failed_when: _fi_result.rc not in [0]
+
+- name: Read function interception artifact
+  ansible.builtin.slurp:
+    src: "{{ output_dir }}/function_interception.json"
+  register: _fi_raw
+
+- name: Parse function interception artifact
+  ansible.builtin.set_fact:
+    function_interception_artifact: >-
+      {{ _fi_raw.content | b64decode | from_json
+         if (_fi_raw is defined and _fi_raw.content is defined) else {} }}
+
+- name: Write Frida hook script to disk
+  ansible.builtin.copy:
+    content: "{{ function_interception_artifact.get('script', '') }}"
+    dest: "{{ function_interception_artifact.get('script_path', '/tmp/gludd-frida-intercept.js') }}"
+    mode: "0644"
+  when: function_interception_artifact.get('script', '') | length > 0
+
+- name: Report function interception summary
+  ansible.builtin.debug:
+    msg: >-
+      Function interception ready:
+      targets={{ function_interception_artifact.get('target_symbols', []) | length }},
+      script_path={{ function_interception_artifact.get('script_path', 'unknown') }}

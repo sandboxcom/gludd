@@ -1,7 +1,138 @@
 ---
 # android_diagnose role — gather Android diagnostic data via ADB:
-# logcat, dumpsys, getprop, pm list.
+# logcat, dumpsys, getprop, pm list. Uses the python gatherer backend
+# in files/android_gather.py for structured JSON output.
 
-- name: Gather Android diagnostics
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Check ADB availability
+  ansible.builtin.command: which adb
+  register: _adb_check
+  changed_when: false
+  ignore_errors: true
+  failed_when: false
+
+- name: Gather Android diagnostics via python backend
+  when:
+    - _adb_check is success
+    - gather_logcat | bool or gather_dumpsys | bool or gather_getprop | bool or gather_pm_list | bool
+  block:
+    - name: Copy android_gather.py to target
+      ansible.builtin.copy:
+        src: android_gather.py
+        dest: "{{ artifact_dir }}/android_gather.py"
+        mode: "0755"
+
+    - name: Run gatherer — collect logcat, dumpsys, getprop, pm list
+      ansible.builtin.command: >
+        python3 {{ artifact_dir }}/android_gather.py
+        --output {{ artifact_dir }}/diagnostics.json
+        --logcat-lines {{ logcat_lines | default(200) }}
+        {{ '--serial ' ~ adb_serial if adb_serial else '' }}
+      register: _gather_result
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write gather stdout/stderr to artifact_dir
+      ansible.builtin.copy:
+        content: |
+          stdout: {{ _gather_result.stdout | default('') }}
+          stderr: {{ _gather_result.stderr | default('') }}
+          rc: {{ _gather_result.rc | default('') }}
+        dest: "{{ artifact_dir }}/gather_output.txt"
+        mode: "0644"
+      when: _gather_result is defined
+
+- name: Raw logcat (fallback if python backend unavailable)
+  when:
+    - _adb_check is success
+    - _gather_result is not success
+    - gather_logcat | bool
+  block:
+    - name: Run adb logcat -d (last 200 lines)
+      ansible.builtin.command: >
+        adb {{ '-s ' ~ adb_serial if adb_serial else '' }} logcat -d -t 200 -v threadtime
+      register: _logcat_raw
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write raw logcat to artifact_dir
+      ansible.builtin.copy:
+        content: "{{ _logcat_raw.stdout | default('(no output)') }}"
+        dest: "{{ artifact_dir }}/logcat.txt"
+        mode: "0644"
+
+- name: Raw getprop (fallback)
+  when:
+    - _adb_check is success
+    - _gather_result is not success
+    - gather_getprop | bool
+  block:
+    - name: Run adb shell getprop
+      ansible.builtin.command: >
+        adb {{ '-s ' ~ adb_serial if adb_serial else '' }} shell getprop
+      register: _getprop_raw
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write raw getprop to artifact_dir
+      ansible.builtin.copy:
+        content: "{{ _getprop_raw.stdout | default('(no output)') }}"
+        dest: "{{ artifact_dir }}/getprop.txt"
+        mode: "0644"
+
+- name: Raw dumpsys (fallback)
+  when:
+    - _adb_check is success
+    - _gather_result is not success
+    - gather_dumpsys | bool
+  block:
+    - name: Run adb shell dumpsys (key services)
+      ansible.builtin.shell: >
+        for svc in meminfo activity package; do
+          echo "=== dumpsys $svc ===";
+          adb {{ '-s ' ~ adb_serial if adb_serial else '' }} shell dumpsys $svc 2>&1 || echo "(error)";
+          echo "";
+        done
+      register: _dumpsys_raw
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write raw dumpsys to artifact_dir
+      ansible.builtin.copy:
+        content: "{{ _dumpsys_raw.stdout | default('(no output)') }}"
+        dest: "{{ artifact_dir }}/dumpsys.txt"
+        mode: "0644"
+
+- name: Raw pm list (fallback)
+  when:
+    - _adb_check is success
+    - _gather_result is not success
+    - gather_pm_list | bool
+  block:
+    - name: Run adb shell pm list packages -3
+      ansible.builtin.command: >
+        adb {{ '-s ' ~ adb_serial if adb_serial else '' }} shell pm list packages -3
+      register: _pm_list_raw
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write raw pm list to artifact_dir
+      ansible.builtin.copy:
+        content: "{{ _pm_list_raw.stdout | default('(no output)') }}"
+        dest: "{{ artifact_dir }}/pm_list.txt"
+        mode: "0644"
+
+- name: ADB not available warning
+  when: _adb_check is not success
   ansible.builtin.debug:
-    msg: "android_diagnose: gathering logcat, dumpsys, getprop, pm list"
+    msg: "WARNING: adb not found on target host. Android diagnostics skipped."
