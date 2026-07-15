@@ -71,19 +71,42 @@ def test_firecracker_available_checks_kvm_and_binary():
         assert FirecrackerBackend.available() is False
 
 
-def test_firecracker_apply_stub(sample_spec, sample_target):
+def test_firecracker_apply_with_mocked_spawn(sample_spec, sample_target):
+    """P5: when firecracker is available, apply() spawns the binary + REST boots.
+
+    The P1 stub returned ``extra={'stub': True}``. P5 replaces that with a
+    real ``subprocess.Popen`` call against ``firecracker --api-sock=<path>``
+    followed by the REST configuration sequence — so the test must mock Popen
+    and the REST helpers to verify the wiring without requiring firecracker
+    to be installed on the host.
+    """
     from general_ludd.security.sandboxes.vm.firecracker_backend import (
         FirecrackerBackend,
     )
 
-    with mock.patch.object(
-        FirecrackerBackend, "available", return_value=True,
-    ):
+    fake_popen = mock.MagicMock(spec=subprocess.Popen)
+    fake_popen.pid = 13579
+    fake_popen.poll.return_value = None
+
+    with mock.patch.object(FirecrackerBackend, "available", return_value=True), \
+         mock.patch("subprocess.Popen", return_value=fake_popen), \
+         mock.patch(
+             "general_ludd.security.sandboxes.vm.firecracker_backend._wait_for_socket",
+             return_value=True,
+         ), \
+         mock.patch(
+             "general_ludd.security.sandboxes.vm.firecracker_backend._firecracker_put",
+             return_value={},
+         ):
         handle = FirecrackerBackend.apply(sample_spec, sample_target)
     assert isinstance(handle, SandboxHandle)
     assert handle.backend == "firecracker"
     assert handle.applied is True
-    assert handle.extra.get("stub") is True
+    assert handle.extra.get("pid") == 13579
+    assert "sandbox_id" in handle.extra
+    assert "api_sock" in handle.extra
+    assert "vsock_uds" in handle.extra
+    assert handle.extra.get("stub") is not True
 
 
 def test_firecracker_apply_fails_open(sample_spec, sample_target):
@@ -113,7 +136,14 @@ def test_firecracker_verify_when_not_applied(sample_spec):
     assert any(f.severity == "fail" for f in findings)
 
 
-def test_firecracker_verify_stub_warning(sample_spec):
+def test_firecracker_verify_reports_fail_for_legacy_stub_handle(sample_spec):
+    """P5: a legacy handle with no popen is flagged fail (process tracking lost).
+
+    The P1 stub returned a ``warn`` finding for stub handles. P5 promotes
+    this to ``fail`` because a handle without popen state means the sandbox
+    process is unobservable — the verify step cannot confirm liveness or
+    issue a graceful CtrlAltDel on release.
+    """
     from general_ludd.security.sandboxes.vm.firecracker_backend import (
         FirecrackerBackend,
     )
@@ -123,7 +153,7 @@ def test_firecracker_verify_stub_warning(sample_spec):
         extra={"stub": True},
     )
     findings = FirecrackerBackend.verify(sample_spec, handle)
-    assert any(f.severity == "warn" for f in findings)
+    assert any(f.severity == "fail" for f in findings)
 
 
 def test_firecracker_release_noop_on_stub():

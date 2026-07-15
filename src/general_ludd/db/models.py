@@ -869,10 +869,10 @@ class AgentTokenModel(Base):
     )
     hydration_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
-    __table_args__ = (
-        Index("ix_agent_tokens_agent_id", "agent_id"),
-        Index("ix_agent_tokens_parent_agent_id", "parent_agent_id"),
-    )
+    # NOTE: ``index=True`` on ``agent_id`` and ``parent_agent_id`` above already
+    # creates the ``ix_agent_tokens_*`` indexes. We do NOT duplicate them in a
+    # ``__table_args__`` tuple — doing so emits two ``CREATE INDEX`` statements
+    # with the same name, which fails on SQLite/PostgreSQL at create_all time.
 
 
 class PermissionEscalationRequestModel(Base):

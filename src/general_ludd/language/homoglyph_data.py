@@ -12,7 +12,7 @@ Covers:
 from __future__ import annotations
 
 import unicodedata
-from typing import Literal, TypedDict
+from typing import Literal, TypedDict, cast
 
 
 class ConfusableFinding(TypedDict):
@@ -608,7 +608,7 @@ def _script_of(ch: str) -> str:
     """
     if hasattr(unicodedata, "script"):
         try:
-            return unicodedata.script(ch)
+            return cast(str, unicodedata.script(ch))
         except (ValueError, TypeError):
             pass
 

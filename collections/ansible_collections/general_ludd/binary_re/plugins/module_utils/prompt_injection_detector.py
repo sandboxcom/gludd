@@ -200,15 +200,19 @@ class ScanReport:
     encoding_layers_detected: int = 0
     ast_findings: list[str] = field(default_factory=list)
     scan_duration_ms: float = 0.0
+    source_path: str = ""
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        d = {
             "findings": [f.to_dict() for f in self.findings],
             "overall_severity": self.overall_severity.value,
             "encoding_layers_detected": self.encoding_layers_detected,
             "ast_findings": self.ast_findings,
             "finding_count": len(self.findings),
         }
+        if self.source_path:
+            d["source_path"] = self.source_path
+        return d
 
 
 def scan_ascii(data: str) -> list[dict[str, object]]:

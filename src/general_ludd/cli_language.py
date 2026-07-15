@@ -16,6 +16,7 @@ import contextlib
 import json
 import os
 import sys
+from pathlib import Path
 from typing import Any
 
 
@@ -441,10 +442,323 @@ def _cmd_language_phonetic_transcribe(args: argparse.Namespace) -> None:
     print(json.dumps(phonetic_result, indent=2, ensure_ascii=False))
 
 
+def _cmd_language_unicode_analyze(args: argparse.Namespace) -> None:
+    import unicodedata
+
+    from general_ludd.language.unicode_data import (
+        UNICODE_BLOCK_NAMES,
+        is_high_surrogate,
+        is_low_surrogate,
+        is_surrogate,
+        plane_of,
+    )
+
+    raw = args.input
+    string_mode = getattr(args, "string", False)
+
+    if string_mode:
+        chars_out: list[dict[str, object]] = []
+        for ch in raw:
+            cp_val = ord(ch)
+            name = unicodedata.name(ch, "")
+            chars_out.append({
+                "character": ch,
+                "codepoint": cp_val,
+                "codepoint_hex": f"U+{cp_val:04X}",
+                "name": name,
+                "category": unicodedata.category(ch),
+                "plane": plane_of(cp_val),
+                "is_surrogate": is_surrogate(cp_val),
+            })
+        result_str: dict[str, object] = {
+            "input": raw,
+            "length": len(raw),
+            "characters": chars_out,
+        }
+        print(json.dumps(result_str, indent=2, ensure_ascii=False))
+        return
+
+    cleaned = raw.strip()
+    if cleaned.upper().startswith("U+"):
+        cp = int(cleaned[2:], 16)
+    elif cleaned.lower().startswith("0x"):
+        cp = int(cleaned, 16)
+    else:
+        try:
+            cp = int(cleaned)
+        except ValueError:
+            cp = ord(cleaned[0]) if cleaned else 0
+
+    ch = chr(cp) if cp <= 0x10FFFF else ""
+    name = unicodedata.name(ch, "") if ch else ""
+
+    block_name = "Unknown"
+    for (start, end), bname in UNICODE_BLOCK_NAMES.items():
+        if start <= cp <= end:
+            block_name = bname
+            break
+
+    utf8_bytes = b""
+    utf16_bytes = b""
+    utf32_bytes = b""
+    if ch and not is_surrogate(cp):
+        with contextlib.suppress(UnicodeEncodeError):
+            utf8_bytes = ch.encode("utf-8")
+        with contextlib.suppress(UnicodeEncodeError):
+            utf16_bytes = ch.encode("utf-16-le")
+        with contextlib.suppress(UnicodeEncodeError):
+            utf32_bytes = ch.encode("utf-32-le")
+
+    result = {
+        "input": raw,
+        "codepoint": cp,
+        "codepoint_hex": f"U+{cp:04X}",
+        "character": ch,
+        "name": name,
+        "category": unicodedata.category(ch) if ch else "",
+        "plane": plane_of(cp),
+        "block": block_name,
+        "is_surrogate": is_surrogate(cp),
+        "is_high_surrogate": is_high_surrogate(cp),
+        "is_low_surrogate": is_low_surrogate(cp),
+        "utf8_hex": " ".join(f"{b:02X}" for b in utf8_bytes),
+        "utf16_hex": " ".join(f"{b:02X}" for b in utf16_bytes),
+        "utf32_hex": " ".join(f"{b:02X}" for b in utf32_bytes),
+    }
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+
+
+def _cmd_language_locale_format(args: argparse.Namespace) -> None:
+    from general_ludd.language.locale_data import (
+        evaluate_plural,
+        format_currency,
+        format_number,
+        get_locale_data,
+        negotiate_locale,
+        parse_bcp47,
+    )
+
+    locale = args.locale
+    result: dict[str, object] = {"locale": locale}
+
+    number_val = getattr(args, "number", None)
+    if number_val is not None:
+        result["formatted"] = format_number(float(number_val), locale)
+        result["type"] = "number"
+
+    currency_args = getattr(args, "currency", None)
+    if currency_args:
+        amount = float(currency_args[0])
+        code = currency_args[1] if len(currency_args) > 1 else "USD"
+        result["formatted"] = format_currency(amount, code, locale)
+        result["type"] = "currency"
+        result["currency_code"] = code
+
+    plural_val = getattr(args, "plural", None)
+    if plural_val is not None:
+        result["plural_category"] = evaluate_plural(locale, float(plural_val))
+
+    available = getattr(args, "available", None)
+    accept = getattr(args, "negotiate", None)
+    if accept:
+        avail_list = available.split(",") if available else [locale]
+        result["negotiated"] = negotiate_locale(accept, avail_list, locale)
+
+    if getattr(args, "info", False):
+        data = get_locale_data(locale)
+        if data:
+            result["language_name"] = data["language_name"]
+            result["script"] = data["script"]
+            result["territory"] = data["territory"]
+            result["is_rtl"] = data["is_rtl"]
+            result["parsed"] = parse_bcp47(locale)
+        else:
+            result["error"] = "locale not found"
+
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+
+
+def _cmd_language_i18n_extract(args: argparse.Namespace) -> None:
+    from general_ludd.language.i18n_data import (
+        extract_icu_placeholders,
+        parse_po,
+        pseudolocalize,
+    )
+
+    pseudo_text = getattr(args, "pseudolocalize", None)
+    if pseudo_text is not None:
+        method = getattr(args, "method", "accent") or "accent"
+        result: dict[str, object] = {
+            "input": pseudo_text,
+            "method": method,
+            "output": pseudolocalize(pseudo_text, method),
+        }
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+        return
+
+    icu_msg = getattr(args, "extract_icu", None)
+    if icu_msg is not None:
+        placeholders = extract_icu_placeholders(icu_msg)
+        result = {
+            "input": icu_msg,
+            "placeholders": placeholders,
+            "count": len(placeholders),
+        }
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+        return
+
+    po_file = getattr(args, "parse_po", None)
+    if po_file:
+        try:
+            content = Path(po_file).read_text(encoding="utf-8")
+            entries = parse_po(content)
+            result = {
+                "file": po_file,
+                "entry_count": len(entries),
+                "entries": entries,
+            }
+        except OSError as exc:
+            result = {"file": po_file, "error": str(exc)}
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+        return
+
+    print(json.dumps({"error": "no action specified"}, indent=2))
+
+
+def _cmd_language_font_analyze(args: argparse.Namespace) -> None:
+    import struct
+
+    from general_ludd.language.font_data import (
+        SYSTEM_FONT_STACKS,
+        get_font_metrics,
+        identify_font_format,
+        list_font_tables,
+    )
+
+    if getattr(args, "system_stacks", False):
+        result: dict[str, object] = {"stacks": SYSTEM_FONT_STACKS}
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+        return
+
+    font_path = args.file
+    if not font_path or not os.path.isfile(font_path):
+        print(f"Error: font file not found: {font_path}", file=sys.stderr)
+        sys.exit(1)
+
+    file_size = os.path.getsize(font_path)
+    result: dict[str, object] = {
+        "file": font_path,
+        "file_size": file_size,
+    }
+
+    with open(font_path, "rb") as f:
+        header = f.read(64)
+    result["format"] = identify_font_format(header)
+
+    if getattr(args, "tables", False):
+        try:
+            result["tables"] = [
+                {"tag": t["tag"], "offset": t["offset"], "length": t["length"]}
+                for t in list_font_tables(font_path)
+            ]
+        except (OSError, struct.error):
+            result["tables"] = []
+
+    if getattr(args, "metrics", False):
+        try:
+            m = get_font_metrics(font_path)
+            if "error" in m:
+                result["metrics_error"] = m["error"]
+            else:
+                result["metrics"] = m
+        except (OSError, struct.error):
+            result["metrics_error"] = "failed to read font header"
+
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+
+
+def _cmd_language_analyze_text(args: argparse.Namespace) -> None:
+    import unicodedata
+
+    from general_ludd.language.homoglyph_data import (
+        detect_bidi_overrides,
+        detect_confusables,
+        detect_invisible_chars,
+        detect_mixed_script,
+        generate_skeleton,
+    )
+
+    text = args.text or ""
+    findings: list[dict[str, object]] = []
+
+    for finding in detect_confusables(text):
+        findings.append({
+            "type": "confusable",
+            "severity": "medium",
+            "character": finding["character"],
+            "codepoint": finding["codepoint"],
+            "position": finding["position"],
+            "skeleton": finding["skeleton"],
+            "name": finding["name"],
+        })
+
+    for finding in detect_invisible_chars(text):
+        sev = "high" if finding["category"] == "bidi-control" else "medium"
+        findings.append({
+            "type": "invisible",
+            "severity": sev,
+            "character": finding["character"],
+            "codepoint": finding["codepoint"],
+            "position": finding["position"],
+            "name": finding["name"],
+            "category": finding["category"],
+        })
+
+    for finding in detect_bidi_overrides(text):
+        findings.append({
+            "type": "bidi-override",
+            "severity": "critical",
+            "character": finding["character"],
+            "codepoint": finding["codepoint"],
+            "position": finding["position"],
+            "name": finding["name"],
+        })
+
+    mixed = detect_mixed_script(text)
+    skeleton = generate_skeleton(text)
+
+    sev_counts: dict[str, int] = {}
+    for f in findings:
+        sev = str(f.get("severity", "low"))
+        sev_counts[sev] = sev_counts.get(sev, 0) + 1
+
+    result: dict[str, object] = {
+        "input_length": len(text),
+        "length": len(text),
+        "grapheme_count": len(text),
+        "total_findings": len(findings),
+        "findings": findings,
+        "severity_counts": sev_counts,
+        "safe": len(findings) == 0,
+        "mixed_script": {
+            "is_mixed": mixed["is_mixed"],
+            "scripts": mixed["scripts"],
+            "counts": mixed["counts"],
+        },
+        "skeleton": skeleton,
+        "is_nfc": unicodedata.is_normalized("NFC", text),
+        "is_nfd": unicodedata.is_normalized("NFD", text),
+        "is_nfkc": unicodedata.is_normalized("NFKC", text),
+        "is_nfkd": unicodedata.is_normalized("NFKD", text),
+    }
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+
+
 def add_language_subparser(subparsers: Any) -> argparse.ArgumentParser:
     language_parser: argparse.ArgumentParser = subparsers.add_parser(
         "language",
-        help="Language Expert operations (encoding, homoglyphs, BOM, phonetics)",
+        help="Language Expert operations (encoding, homoglyphs, BOM, phonetics, "
+             "unicode, locale, i18n, fonts, text analysis)",
     )
     language_parser.set_defaults(func=None)
     lang_sub = language_parser.add_subparsers(dest="language_command")
@@ -478,5 +792,57 @@ def add_language_subparser(subparsers: Any) -> argparse.ArgumentParser:
                            choices=["arpabet", "ipa", "soundex", "metaphone", "double_metaphone"],
                            help="Transcription method (default: arpabet)")
     phonetic.set_defaults(func=_cmd_language_phonetic_transcribe)
+
+    unicode_an = lang_sub.add_parser("unicode-analyze",
+                                      help="Analyze Unicode properties of a codepoint or string")
+    unicode_an.add_argument("input", help="Codepoint (U+XXXX, 0xXXXX, decimal) or string with --string")
+    unicode_an.add_argument("--string", action="store_true", default=False,
+                             help="Treat input as a string to analyze character-by-character")
+    unicode_an.set_defaults(func=_cmd_language_unicode_analyze)
+
+    locale_fmt = lang_sub.add_parser("locale-format",
+                                      help="Format numbers/currency per locale, evaluate plurals, negotiate")
+    locale_fmt.add_argument("locale", help="BCP 47 locale tag (e.g. en-US, de-DE)")
+    locale_fmt.add_argument("--number", default=None, help="Number to format")
+    locale_fmt.add_argument("--currency", nargs="+", default=None,
+                             help="Currency: AMOUNT CODE (e.g. 99.50 USD)")
+    locale_fmt.add_argument("--plural", default=None, help="Count to evaluate plural category")
+    locale_fmt.add_argument("--negotiate", default=None,
+                             help="Accept-Language header to negotiate")
+    locale_fmt.add_argument("--available", default=None,
+                             help="Comma-separated available locales for negotiation")
+    locale_fmt.add_argument("--info", action="store_true", default=False,
+                             help="Show locale metadata")
+    locale_fmt.set_defaults(func=_cmd_language_locale_format)
+
+    i18n_ext = lang_sub.add_parser("i18n-extract",
+                                    help="Pseudolocalization, ICU extraction, .po parsing")
+    i18n_ext.add_argument("--pseudolocalize", default=None,
+                           help="Text to pseudolocalize")
+    i18n_ext.add_argument("--method", default="accent",
+                           choices=["accent", "bracket"],
+                           help="Pseudolocalization method (default: accent)")
+    i18n_ext.add_argument("--extract-icu", default=None,
+                           help="ICU message to extract placeholders from")
+    i18n_ext.add_argument("--parse-po", default=None,
+                           help=".po file to parse")
+    i18n_ext.set_defaults(func=_cmd_language_i18n_extract)
+
+    font_an = lang_sub.add_parser("font-analyze",
+                                   help="Analyze font files: format, tables, metrics, system stacks")
+    font_an.add_argument("file", nargs="?", default=None,
+                          help="Font file to analyze")
+    font_an.add_argument("--tables", action="store_true", default=False,
+                          help="List OpenType/TrueType tables")
+    font_an.add_argument("--metrics", action="store_true", default=False,
+                          help="Extract font metrics")
+    font_an.add_argument("--system-stacks", action="store_true", default=False,
+                          help="Print system font stacks per OS")
+    font_an.set_defaults(func=_cmd_language_font_analyze)
+
+    analyze_txt = lang_sub.add_parser("analyze-text",
+                                       help="Comprehensive text health: homoglyphs, invisibles, bidi, mixed-script")
+    analyze_txt.add_argument("text", help="Text to analyze")
+    analyze_txt.set_defaults(func=_cmd_language_analyze_text)
 
     return language_parser

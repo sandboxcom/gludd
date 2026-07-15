@@ -831,3 +831,110 @@ def evaluate_plural(locale: str, n: float) -> PluralCategory:
             return category
 
     return "other"
+
+
+def _apply_grouping(int_part: str, grouping_separator: str,
+                    grouping_pattern: list[int]) -> str:
+    """Apply digit grouping per a CLDR-style grouping pattern."""
+    if not grouping_pattern or not int_part:
+        return int_part
+    result: list[str] = []
+    remaining = int_part
+    pattern_idx = 0
+    chunk_size = grouping_pattern[0] if grouping_pattern else 3
+    while remaining:
+        if pattern_idx < len(grouping_pattern):
+            chunk_size = grouping_pattern[pattern_idx]
+            pattern_idx += 1
+        chunk = remaining[-chunk_size:] if chunk_size else remaining
+        result.append(chunk)
+        remaining = remaining[:-chunk_size] if chunk_size else ""
+    return grouping_separator.join(reversed(result))
+
+
+def format_number(value: float, locale: str) -> str:
+    """Format a numeric value per the locale's number conventions.
+
+    Applies the locale's decimal separator, grouping separator, and
+    grouping pattern (e.g. 3-digit groups for en-US). Falls back to
+    plain ASCII formatting when the locale is unknown.
+    """
+    data = get_locale_data(locale)
+    if data is None:
+        return f"{value}"
+
+    nf = data["number_format"]
+    dec_sep = nf["decimal_separator"]
+    grp_sep = nf["grouping_separator"]
+    grp_pattern = nf["grouping_pattern"]
+
+    neg = value < 0
+    abs_value = abs(value)
+
+    str_repr = repr(abs_value)
+    if "." in str_repr:
+        int_str_raw, frac_digits = str_repr.split(".", 1)
+    else:
+        int_str_raw, frac_digits = str_repr, ""
+    int_part = int(int_str_raw)
+
+    int_str = _apply_grouping(str(int_part), grp_sep, grp_pattern)
+
+    frac_str = ""
+    if frac_digits:
+        stripped = frac_digits.rstrip("0")
+        if stripped:
+            frac_str = dec_sep + stripped
+
+    result = int_str + frac_str
+    if neg:
+        result = nf.get("minus_sign", "-") + result
+    return result
+
+
+def format_currency(amount: float, currency_code: str, locale: str) -> str:
+    """Format a monetary amount with the currency symbol per locale.
+
+    Looks up the currency in COMMON_CURRENCIES; falls back to the raw
+    code if unknown. Applies the locale's number formatting for the
+    amount and the currency's placement rule.
+    """
+    data = get_locale_data(locale)
+    nf = data["number_format"] if data else {
+        "decimal_separator": ".",
+        "grouping_separator": ",",
+        "grouping_pattern": [3],
+        "percent_sign": "%",
+        "minus_sign": "-",
+        "infinity": "inf",
+        "nan": "NaN",
+    }
+
+    currency = COMMON_CURRENCIES.get(currency_code)
+    symbol = currency["symbol"] if currency else currency_code
+    placement = currency["placement"] if currency else "before"
+    decimal_digits = currency["decimal_digits"] if currency else 2
+
+    rounded = round(abs(amount), decimal_digits)
+    int_part = int(rounded)
+    frac_value = rounded - int_part
+
+    int_str = _apply_grouping(
+        str(int_part), nf["grouping_separator"], nf["grouping_pattern"]
+    )
+    dec_sep = nf["decimal_separator"]
+    frac_str = dec_sep + f"{frac_value:.{decimal_digits}f}".split(".", 1)[1] if decimal_digits > 0 else ""
+
+    amount_str = int_str + frac_str
+    if amount < 0:
+        amount_str = nf.get("minus_sign", "-") + amount_str
+
+    if placement == "before":
+        return f"{symbol}{amount_str}"
+    if placement == "after":
+        return f"{amount_str}{symbol}"
+    if placement == "before-no-space":
+        return f"{symbol}{amount_str}"
+    if placement == "after-no-space":
+        return f"{amount_str}{symbol}"
+    return f"{symbol}{amount_str}"
