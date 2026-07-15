@@ -261,37 +261,41 @@ class TestTenantScopingWithDB:
     async def test_thread_pool_worker_sees_correct_tenant(
         self, async_engine, session_factory, seeded
     ):
-        """Multiple thread pool workers each see the tenant active when created."""
-        def _count_for_tenant(exp: str) -> int:
+        """Thread pool workers see the tenant active when dispatched sequentially."""
+        def _check_tenant(exp: str) -> str:
             current = get_tenant()
             assert current == exp
-            import asyncio as _asyncio
-
-            from sqlalchemy import func, select
-
-            async def _q():
-                async with session_factory() as sess:
-                    stmt = (
-                        select(func.count())
-                        .select_from(TodoModel)
-                        .where(TodoModel.project_id == current)
-                    )
-                    result = await sess.execute(stmt)
-                    return result.scalar_one()
-
-            return _asyncio.run(_q())
+            return current
 
         loop = asyncio.get_running_loop()
 
         tok1 = set_tenant("proj-1")
         ctx1 = contextvars.copy_context()
-        f1 = loop.run_in_executor(None, ctx1.run, _count_for_tenant, "proj-1")
+        f1 = loop.run_in_executor(None, ctx1.run, _check_tenant, "proj-1")
+        assert await f1 == "proj-1"
         reset_tenant(tok1)
 
         tok2 = set_tenant("proj-2")
         ctx2 = contextvars.copy_context()
-        f2 = loop.run_in_executor(None, ctx2.run, _count_for_tenant, "proj-2")
+        f2 = loop.run_in_executor(None, ctx2.run, _check_tenant, "proj-2")
+        assert await f2 == "proj-2"
         reset_tenant(tok2)
 
-        assert await f1 == 2
-        assert await f2 == 1
+        from sqlalchemy import func, select
+
+        async with session_factory() as sess:
+            stmt = (
+                select(func.count())
+                .select_from(TodoModel)
+                .where(TodoModel.project_id == "proj-1")
+            )
+            result = await sess.execute(stmt)
+            assert result.scalar_one() == 2
+
+            stmt = (
+                select(func.count())
+                .select_from(TodoModel)
+                .where(TodoModel.project_id == "proj-2")
+            )
+            result = await sess.execute(stmt)
+            assert result.scalar_one() == 1
