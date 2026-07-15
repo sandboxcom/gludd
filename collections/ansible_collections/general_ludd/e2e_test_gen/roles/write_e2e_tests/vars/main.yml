@@ -1,3 +1,4 @@
 ---
 # write_e2e_tests role vars — internal, not for override
 generated_tests_manifest: "generated_tests.json"
+write_tests_script: "{{ role_path }}/files/write_e2e_tests.py"

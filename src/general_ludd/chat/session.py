@@ -9,12 +9,13 @@ P4: ansible/terraform context injection from --project-dir.
 from __future__ import annotations
 
 import asyncio
+import datetime
 import json
 import logging
 import os
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import httpx
 
@@ -39,6 +40,10 @@ DEFAULT_MODEL = "gpt-4o"
 
 MAX_INPUT_LENGTH = 32_000
 MAX_CODE_BLOCK_LENGTH = 32_000
+
+DEFAULT_SAVE_INTERVAL = 5
+DEFAULT_HISTORY_DIR = Path.home() / ".gludd" / "chat_history"
+SESSION_INDEX_FILE = "index.json"
 
 
 def _read_file_safe(path: Path, max_bytes: int = 8192) -> str | None:
@@ -113,19 +118,39 @@ class ChatSession:
         api_base_url: str | None = None,
         api_key: str | None = None,
         project_dir: str | None = None,
+        history_file: str | None = None,
+        save_interval: int = DEFAULT_SAVE_INTERVAL,
+        resume: bool = False,
     ) -> None:
         self._model_arg = model
         base_prompt = system_prompt or DEFAULT_SYSTEM_PROMPT
         self._system_prompt = _build_context_system_prompt(project_dir, base_prompt)
         self.eval_mode = eval_mode
-        self.history: list[dict[str, str]] = [
-            {"role": "system", "content": self._system_prompt}
-        ]
         self._provider, self._model_id = self._resolve_model(model)
         self._formatter = MessageFormatter()
         self._api_base_override = api_base_url
         self._api_key_override = api_key
         self._project_dir = project_dir
+        self._save_interval = save_interval
+        self._turn_count = 0
+        self._history_dir = DEFAULT_HISTORY_DIR
+        self._history_file_path: Path | None = None
+
+        if resume:
+            self._history_file_path = self._find_latest_session()
+            if self._history_file_path is not None:
+                self.history = self._load_history(self._history_file_path)
+            else:
+                self.history = [
+                    {"role": "system", "content": self._system_prompt}
+                ]
+        elif history_file is not None:
+            self._history_file_path = Path(history_file).expanduser()
+            self.history = self._load_history(self._history_file_path)
+        else:
+            self.history = [
+                {"role": "system", "content": self._system_prompt}
+            ]
 
     def _resolve_api_config(self) -> tuple[str, str]:
         base_override = self._api_base_override
@@ -211,6 +236,7 @@ class ChatSession:
             content = "[The model returned an empty response.]"
 
         self.history.append({"role": "assistant", "content": content})
+        self._maybe_auto_save()
         return self._formatter.highlight(content)
 
     async def stream_response(self, prompt: str) -> str:
@@ -271,6 +297,7 @@ class ChatSession:
             full_response = "[The model returned an empty response.]"
 
         self.history.append({"role": "assistant", "content": full_response})
+        self._maybe_auto_save()
         sys.stdout.write("\n")
         formatted = self._formatter.highlight(full_response)
         if formatted != full_response:
@@ -316,11 +343,13 @@ class ChatSession:
                 consecutive_ctrl_c += 1
                 if consecutive_ctrl_c >= 2:
                     print("\nGoodbye.")
+                    self.save_history()
                     break
                 print("\n(Cancelled — Ctrl-D to exit, press Ctrl-C twice to quit)")
                 continue
             except EOFError:
                 print("\nGoodbye.")
+                self.save_history()
                 break
 
             user_input = user_input.strip()
@@ -329,6 +358,7 @@ class ChatSession:
 
             if user_input.lower() in ("exit", "quit", "/quit", "/exit"):
                 print("Goodbye.")
+                self.save_history()
                 break
 
             if len(user_input) > MAX_INPUT_LENGTH:
@@ -367,3 +397,129 @@ class ChatSession:
         if "/chat/completions" in base_url:
             return base_url
         return f"{base_url.rstrip('/')}/chat/completions"
+
+    def _ensure_history_dir(self) -> None:
+        self._history_dir.mkdir(parents=True, exist_ok=True)
+
+    def _find_latest_session(self) -> Path | None:
+        self._ensure_history_dir()
+        index = self._read_session_index()
+        entries: list[dict[str, Any]] = cast("list[dict[str, Any]]", index.get("sessions", []))
+        if not entries:
+            return None
+        latest = entries[-1]
+        return Path(cast(str, latest["file"]))
+
+    def _read_session_index(self) -> dict[str, object]:
+        index_path = self._history_dir / SESSION_INDEX_FILE
+        if index_path.exists():
+            try:
+                return cast("dict[str, object]", json.loads(index_path.read_text(encoding="utf-8")))
+            except (json.JSONDecodeError, OSError):
+                pass
+        return {"sessions": []}
+
+    def _write_session_index(self, index: dict[str, object]) -> None:
+        self._ensure_history_dir()
+        index_path = self._history_dir / SESSION_INDEX_FILE
+        index_path.write_text(json.dumps(index, indent=2), encoding="utf-8")
+
+    def _make_session_filename(self) -> Path:
+        self._ensure_history_dir()
+        timestamp = datetime.datetime.now(datetime.UTC).strftime("%Y%m%d_%H%M%S")
+        return self._history_dir / f"session_{timestamp}.jsonl"
+
+    def _load_history(self, file_path: Path) -> list[dict[str, str]]:
+        messages: list[dict[str, str]] = []
+        try:
+            with file_path.open(encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    record = json.loads(line)
+                    messages.append({
+                        "role": record["role"],
+                        "content": record["content"],
+                    })
+        except (json.JSONDecodeError, OSError) as exc:
+            logger.warning("Failed to load history from %s: %s", file_path, exc)
+            return [
+                {"role": "system", "content": self._system_prompt}
+            ]
+        if not messages:
+            return [
+                {"role": "system", "content": self._system_prompt}
+            ]
+        return messages
+
+    def save_history(self) -> None:
+        self._ensure_history_dir()
+        if self._history_file_path is None:
+            self._history_file_path = self._make_session_filename()
+        write_messages = self._messages_for_save()
+        self._history_file_path.write_text(
+            "\n".join(json.dumps(m) for m in write_messages) + "\n",
+            encoding="utf-8",
+        )
+        self._update_index(self._history_file_path, write_messages)
+
+    def _messages_for_save(self) -> list[dict[str, object]]:
+        messages: list[dict[str, object]] = []
+        for msg in self.history:
+            messages.append({
+                "role": msg["role"],
+                "content": msg["content"],
+                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
+            })
+        # timestamp the messages to match actual turn times
+        # first message has timestamp, rest follow
+        base_ts = datetime.datetime.now(datetime.UTC)
+        for i, msg_dict in enumerate(messages):
+            msg_dict["timestamp"] = (base_ts - datetime.timedelta(seconds=len(messages) - i)).isoformat()
+        return messages
+
+    def _update_index(
+        self,
+        file_path: Path,
+        messages: list[dict[str, object]],
+    ) -> None:
+        index = self._read_session_index()
+        sessions = cast("list[dict[str, object]]", index.get("sessions", []))
+        first_user = ""
+        for msg in messages:
+            if msg["role"] == "user":
+                first_user = cast(str, msg["content"])[:80]
+                break
+        entry: dict[str, object] = {
+            "file": str(file_path),
+            "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
+            "model": f"{self._provider}/{self._model_id}",
+            "message_count": len(messages),
+            "preview": first_user,
+        }
+        existing = [s for s in sessions if s.get("file") == str(file_path)]
+        if existing:
+            existing[0].update(entry)
+        else:
+            sessions.append(entry)
+        index["sessions"] = sessions
+        self._write_session_index(index)
+
+    @staticmethod
+    def list_sessions(history_dir: Path | None = None) -> list[dict[str, object]]:
+        if history_dir is None:
+            history_dir = DEFAULT_HISTORY_DIR
+        index_path = history_dir / SESSION_INDEX_FILE
+        if not index_path.exists():
+            return []
+        try:
+            index = json.loads(index_path.read_text(encoding="utf-8"))
+            return cast("list[dict[str, object]]", index.get("sessions", []))
+        except (json.JSONDecodeError, OSError):
+            return []
+
+    def _maybe_auto_save(self) -> None:
+        self._turn_count += 1
+        if self._turn_count % self._save_interval == 0:
+            self.save_history()

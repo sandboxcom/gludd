@@ -1,24 +1,52 @@
 ---
-# decode_digital role — entry point
+# decode_digital role — DMR, P25, NXDN, D-STAR, APRS, FT8, RTTY decoding
 
-- name: Validate mode
+- name: Validate parameters
   ansible.builtin.assert:
     that:
-      - decode_digital_mode in ["auto", "dmr", "p25", "nxdn", "dstar", "aprs", "ft8", "wsjt"]
-    fail_msg: "decode_digital_mode must be one of: auto, dmr, p25, nxdn, dstar, aprs, ft8, wsjt"
+      - decode_digital_mode in ["auto", "dmr", "p25", "nxdn", "dstar", "aprs", "ft8", "rtty"]
+      - decode_digital_sample_rate | int > 0
+    fail_msg: "decode_digital_mode must be auto/dmr/p25/nxdn/dstar/aprs/ft8/rtty; sample_rate must be > 0"
 
-- name: Check tool availability
-  ansible.builtin.debug:
-    msg: "Available decoders: {{ decode_digital_tools | dict2items | selectattr('value', 'ne', '') | map(attribute='key') | list }}"
-
-- name: Skip — no tools found
-  ansible.builtin.debug:
-    msg: "No digital decoder tools found — skipping decode"
-  when:
-    - decode_digital_tools.values() | select('ne', '') | list | length == 0
-
-- name: Dispatch decode mode
-  ansible.builtin.include_tasks: "{{ decode_digital_mode }}.yml"
+- name: Decode digital signal
+  ansible.builtin.command: >
+    {{ ansible_python_interpreter }}
+    {{ role_path }}/files/decode_digital.py
+    --mode {{ decode_digital_mode }}
+    {{ ('--input-file ' + decode_digital_input_file) if decode_digital_input_file else '' }}
+    --sample-rate {{ decode_digital_sample_rate }}
+    --center-freq {{ decode_digital_center_freq_hz | default(144000000) }}
+    --output-dir {{ decode_digital_output_dir }}
+  register: _decode_result
+  changed_when: false
   when:
     - decode_digital_enabled | bool
-    - decode_digital_tools.values() | select('ne', '') | list | length > 0
+
+- name: Parse decode result
+  ansible.builtin.set_fact:
+    decode_digital_result: "{{ _decode_result.stdout | from_json }}"
+  when:
+    - decode_digital_enabled | bool
+    - _decode_result.stdout is defined
+    - _decode_result.stdout | length > 0
+
+- name: Write JSON output
+  ansible.builtin.copy:
+    content: "{{ decode_digital_result | to_nice_json }}"
+    dest: "{{ decode_digital_output_dir }}/decode_digital.json"
+    mode: "0644"
+  when:
+    - decode_digital_enabled | bool
+    - decode_digital_result is defined
+
+- name: Register decode digital verdict
+  ansible.builtin.set_fact:
+    decode_digital_verdict:
+      role: decode_digital
+      mode: "{{ decode_digital_mode }}"
+      protocol: "{{ decode_digital_result.mode if decode_digital_result is defined else 'unknown' }}"
+      sync_found: "{{ decode_digital_result.sync_found if decode_digital_result is defined and decode_digital_result.sync_found is defined else false }}"
+      ber_estimate: "{{ decode_digital_result.ber_estimate if decode_digital_result is defined and decode_digital_result.ber_estimate is defined else 1.0 }}"
+      payload_length: "{{ decode_digital_result.payload_bytes | length if decode_digital_result is defined and decode_digital_result.payload_bytes else 0 }}"
+      output_dir: "{{ decode_digital_output_dir }}"
+  when: decode_digital_enabled | bool

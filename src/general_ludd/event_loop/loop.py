@@ -334,6 +334,7 @@ class EventLoop:
         deployment_health_router: Any | None = None,
         memory_repo: Any = None,
         sandbox_executor: Any | None = None,
+        sandbox_config: Any | None = None,
         run_recorder: Any | None = None,
         prompt_variant_selector: Any | None = None,
         checkpointer: TickCheckpointer | None = None,
@@ -473,6 +474,7 @@ class EventLoop:
         self._deployment_health_router: Any = deployment_health_router
         self._memory_repo: Any = memory_repo
         self._sandbox_executor = sandbox_executor
+        self._sandbox_config = sandbox_config
         # Task #48: plan-time technical-debt evaluator (config-gated at the
         # dispatch seam; default OFF). Wired to the model gateway when present;
         # a None gateway leaves the evaluator on its deterministic structural

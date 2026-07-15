@@ -65,57 +65,21 @@
     dest: "{{ artifact_dir }}/_symbols_input.json"
     mode: "0644"
 
-- name: Run ScenarioGenerator via Python
+- name: Run generate_scenarios script
   ansible.builtin.command:
     cmd: >-
-      python3 -c "
-      import json
-      from general_ludd.agents.test_generation.code_path_analyzer import ModuleSymbols, Symbol, ClassSymbol
-      from general_ludd.agents.test_generation.scenario_generator import ScenarioGenerator
-
-      with open('{{ artifact_dir }}/_symbols_input.json') as f:
-          raw = json.load(f)
-
-      functions = [Symbol(**f) for f in raw.get('functions', [])]
-      classes = []
-      for c in raw.get('classes', []):
-          methods = [Symbol(**m) for m in c.pop('methods', [])]
-          classes.append(ClassSymbol(**c, methods=methods))
-      mod_syms = ModuleSymbols(name=raw['name'], functions=functions, classes=classes)
-
-      gen = ScenarioGenerator()
-      scenarios = gen.generate(mod_syms)
-      output = [{'name': s.name, 'description': s.description, 'steps': [{'action': st.action, 'target': st.target, 'expected_result': st.expected_result, 'assertions': st.assertions} for st in s.steps], 'coverage_targets': s.coverage_targets} for s in scenarios]
-      print(json.dumps(output, indent=2))
-      "
-  register: _gs_python_result
+      python3 "{{ generate_script }}"
+      --symbols-file "{{ artifact_dir }}/_symbols_input.json"
+      --output "{{ artifact_dir }}/{{ scenarios_artifact_name }}"
+  register: _gs_script_result
   changed_when: false
 
-- name: Parse generated scenarios
+- name: Parse generated scenarios output
   ansible.builtin.set_fact:
-    _gs_scenarios: "{{ _gs_python_result.stdout | from_json }}"
+    _gs_output: "{{ (lookup('file', artifact_dir + '/' + scenarios_artifact_name) | from_json) }}"
+    _gs_scenarios: "{{ (lookup('file', artifact_dir + '/' + scenarios_artifact_name) | from_json).get('scenarios', []) }}"
 
-- name: Add metadata to scenarios
-  ansible.builtin.set_fact:
-    _gs_output: >-
-      {{
-        {
-          'module': _gs_module_symbols.get('module', _gs_module_symbols.get('name', 'unknown')),
-          'path': _gs_module_symbols.get('path', ''),
-          'scenarios': _gs_scenarios,
-          'scenario_count': _gs_scenarios | length,
-          'coverage_targets': _gs_scenarios | map(attribute='coverage_targets') | list | flatten | unique,
-          'status': 'completed'
-        }
-      }}
-
-# ── Write artifact ──────────────────────────────────────────────────────
-
-- name: Write scenarios JSON artifact
-  ansible.builtin.copy:
-    content: "{{ _gs_output | to_nice_json }}"
-    dest: "{{ artifact_dir }}/{{ scenarios_artifact_name }}"
-    mode: "0644"
+# ── Report completion ──────────────────────────────────────────────────
 
 - name: Report completion
   ansible.builtin.debug:

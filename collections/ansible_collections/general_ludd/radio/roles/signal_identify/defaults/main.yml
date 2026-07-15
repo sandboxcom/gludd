@@ -6,4 +6,7 @@ signal_identify_sample_rate: 2048000
 signal_identify_center_freq_hz: 100000000
 signal_identify_method: fft
 signal_identify_threshold_db: 10.0
+signal_identify_bandwidth_hz: null
+signal_identify_symbol_rate_baud: null
+signal_identify_spectrum_shape: null
 signal_identify_output_dir: /tmp/gludd-signal-identify

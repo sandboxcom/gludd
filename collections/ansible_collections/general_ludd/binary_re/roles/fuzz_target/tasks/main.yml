@@ -35,6 +35,6 @@
 
 - name: Write fuzz target artifact
   ansible.builtin.copy:
-    content: "{{ {'role': 'fuzz_target', 'fuzzer': fuzzer, 'status': 'completed', 'corpus_dir': corpus_dir, 'generated_at': ansible_date_time.iso8601} | to_nice_json }}"
+    content: "{{ {'role': 'fuzz_target', 'fuzzer': fuzzer, 'status': 'completed', 'verdict': 'pass', 'corpus_dir': corpus_dir, 'generated_at': ansible_date_time.iso8601} | to_nice_json }}"
     dest: "{{ output_dir }}/fuzz_target.json"
     mode: "0644"

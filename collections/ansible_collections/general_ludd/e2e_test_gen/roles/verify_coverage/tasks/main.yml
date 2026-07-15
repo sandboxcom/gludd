@@ -31,144 +31,34 @@
     not (_vc_testdir_stat.stat.exists | default(false))
     or not (_vc_src_stat.stat.exists | default(false))
 
-# ── Load expected coverage targets from generation summary ──────────────
+# ── Run coverage verification via Python script ────────────────────────
 
-- name: Load test generation summary for coverage targets
-  ansible.builtin.slurp:
-    src: >-
-      {{ test_generation_summary if test_generation_summary | length > 0
-         else artifact_dir + '/test_generation_summary.json' }}
-  register: _vc_summary_raw
-  ignore_errors: true
-
-- name: Extract coverage targets from summary
-  ansible.builtin.set_fact:
-    _vc_coverage_targets: >-
-      {%- if _vc_summary_raw.content | default('') | length > 0 -%}
-      {%- set summary = _vc_summary_raw.content | b64decode | from_json -%}
-      {%- set targets = [] -%}
-      {%- for tf in summary.get('test_files', []) -%}
-        {%- set _ = targets.append(tf.get('scenario', 'unknown')) -%}
-      {%- endfor -%}
-      {{ targets }}
-      {%- else -%}
-      []
-      {%- endif -%}
-
-# ── Run pytest-cov on generated tests ───────────────────────────────────
-
-- name: Compute coverage source path
-  ansible.builtin.set_fact:
-    _vc_cov_source: "{{ source_module | dirname if '/' in source_module else '.' }}"
-
-- name: Find generated test files for pytest glob
-  ansible.builtin.find:
-    paths: "{{ test_output_dir }}"
-    patterns: "{{ test_file_prefix | default('test_e2e_generated_') }}*.py"
-  register: _vc_test_files
-
-- name: Build test file argument list
-  ansible.builtin.set_fact:
-    _vc_test_file_args: "{{ _vc_test_files.files | map(attribute='path') | join(' ') }}"
-
-- name: Run pytest with coverage on generated tests
+- name: Run verify_coverage script
   ansible.builtin.command:
     cmd: >-
-      python3 -m pytest
-      {{ _vc_test_file_args }}
-      --cov={{ source_module }}
-      --cov-report=json:{{ artifact_dir }}/.coverage_raw.json
-      --cov-report=term
-      --cov-fail-under={{ coverage_threshold }}
-      --timeout={{ pytest_timeout }}
-      -v
-      --tb=short
-  register: _vc_pytest_result
+      python3 "{{ verify_coverage_script }}"
+      --test-dir "{{ test_output_dir }}"
+      --source-module "{{ source_module }}"
+      --output "{{ artifact_dir }}/{{ coverage_artifact_name }}"
+      --threshold "{{ coverage_threshold }}"
+      --timeout "{{ pytest_timeout }}"
+      --test-file-prefix "{{ test_file_prefix | default('test_e2e_generated_') }}"
+  register: _vc_result
   changed_when: false
   ignore_errors: true
 
-# ── Parse coverage results ──────────────────────────────────────────────
-
-- name: Check if coverage JSON was generated
-  ansible.builtin.stat:
-    path: "{{ artifact_dir }}/.coverage_raw.json"
-  register: _vc_cov_json_stat
-
-- name: Load coverage JSON data
-  ansible.builtin.slurp:
-    src: "{{ artifact_dir }}/.coverage_raw.json"
-  register: _vc_cov_raw
-  when: _vc_cov_json_stat.stat.exists | default(false)
-
-- name: Parse coverage totals
+- name: Parse coverage output
   ansible.builtin.set_fact:
-    _vc_cov_data: >-
-      {{ (_vc_cov_raw.content | b64decode | from_json) if (_vc_cov_json_stat.stat.exists | default(false)) else {} }}
-  when: _vc_cov_json_stat.stat.exists | default(false)
-
-- name: Extract coverage percentage
-  ansible.builtin.set_fact:
-    _vc_coverage_pct: >-
-      {%- if _vc_cov_data.get('totals') -%}
-      {{ _vc_cov_data.totals.get('percent_covered', 0.0) | float | round(1) }}
-      {%- else -%}
-      0.0
-      {%- endif -%}
-    _vc_pytest_passed: >-
-      {{ _vc_pytest_result.rc | default(1) == 0 }}
-
-- name: Determine verdict
-  ansible.builtin.set_fact:
-    _vc_verdict: >-
-      {{ 'pass' if (_vc_pytest_passed | bool) else 'fail' }}
-    _vc_verdict_reason: >-
-      {%- if not (_vc_pytest_passed | bool) -%}
-      pytest failed with rc={{ _vc_pytest_result.rc | default(1) }}. Coverage {{ _vc_coverage_pct | float }}% vs threshold {{ coverage_threshold }}%.
-      {%- else -%}
-      All tests pass. Coverage {{ _vc_coverage_pct | float }}% meets threshold {{ coverage_threshold }}%.
-      {%- endif -%}
-
-- name: Assemble coverage report
-  ansible.builtin.set_fact:
-    _vc_output: >-
-      {{
-        {
-          'module': source_module,
-          'test_output_dir': test_output_dir,
-          'coverage_percent': _vc_coverage_pct | float,
-          'threshold': coverage_threshold | int,
-          'verdict': _vc_verdict,
-          'verdict_reason': _vc_verdict_reason,
-          'pytest_exit_code': _vc_pytest_result.rc | default(1),
-          'coverage_targets': _vc_coverage_targets,
-          'pytest_output_tail': (_vc_pytest_result.stdout | default(''))[-2000:],
-          'pytest_output_full': _vc_pytest_result.stdout | default(''),
-          'status': 'completed'
-        }
-      }}
-
-# ── Write artifacts ─────────────────────────────────────────────────────
-
-- name: Write coverage report JSON artifact
-  ansible.builtin.copy:
-    content: "{{ _vc_output | to_nice_json }}"
-    dest: "{{ artifact_dir }}/{{ coverage_artifact_name }}"
-    mode: "0644"
-
-- name: Write raw pytest output log
-  ansible.builtin.copy:
-    content: "{{ _vc_pytest_result.stdout | default('') }}"
-    dest: "{{ artifact_dir }}/pytest_output.log"
-    mode: "0644"
+    _vc_output: "{{ (lookup('file', artifact_dir + '/' + coverage_artifact_name) | from_json) }}"
 
 - name: Report coverage results
   ansible.builtin.debug:
     msg: >-
-      Coverage verification: verdict={{ _vc_verdict | upper }}
-      coverage={{ _vc_coverage_pct }}% (threshold={{ coverage_threshold }}%)
-      module={{ source_module }}
+      Coverage verification: verdict={{ _vc_output.verdict | upper }}
+      coverage={{ _vc_output.coverage_percent }}% (threshold={{ _vc_output.threshold }}%)
+      module={{ _vc_output.module }}
 
 - name: Fail if coverage below threshold
   ansible.builtin.fail:
-    msg: "Coverage {{ _vc_coverage_pct }}% is below threshold {{ coverage_threshold }}%"
-  when: not (_vc_pytest_passed | bool)
+    msg: "Coverage {{ _vc_output.coverage_percent }}% is below threshold {{ _vc_output.threshold }}%"
+  when: _vc_output.verdict == 'fail'

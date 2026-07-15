@@ -1,3 +1,4 @@
 ---
 # generate_scenarios role vars — internal, not for override
 scenarios_artifact_name: "scenarios.json"
+generate_script: "{{ role_path }}/files/generate_scenarios.py"

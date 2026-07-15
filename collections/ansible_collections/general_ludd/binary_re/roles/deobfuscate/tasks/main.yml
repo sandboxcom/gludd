@@ -23,6 +23,6 @@
 
 - name: Write deobfuscation artifact
   ansible.builtin.copy:
-    content: "{{ {'role': 'deobfuscate', 'status': 'completed', 'generated_at': ansible_date_time.iso8601} | to_nice_json }}"
+    content: "{{ {'role': 'deobfuscate', 'status': 'completed', 'verdict': 'pass', 'generated_at': ansible_date_time.iso8601} | to_nice_json }}"
     dest: "{{ output_dir }}/deobfuscate.json"
     mode: "0644"

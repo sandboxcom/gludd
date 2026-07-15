@@ -18,6 +18,7 @@ if TYPE_CHECKING:
         ToolAction,
     )
     from general_ludd.secrets.manager import AppRoleCreds, SecretsManager
+    from general_ludd.sts.audit import StsAuditPipeline
 
 logger = logging.getLogger(__name__)
 
@@ -29,11 +30,17 @@ class TokenMinter:
     to create the AppRole + secret_id pair. Capability narrowing applies
     the parent's lattice intersection to the child's requested scope.
 
-    Audit events are logged for every mint operation.
+    Audit events are logged for every mint operation via an optional
+    :class:`~general_ludd.sts.audit.StsAuditPipeline`.
     """
 
-    def __init__(self, secrets_manager: SecretsManager) -> None:
+    def __init__(
+        self,
+        secrets_manager: SecretsManager,
+        audit_pipeline: StsAuditPipeline | None = None,
+    ) -> None:
         self._secrets_manager = secrets_manager
+        self._audit_pipeline = audit_pipeline
 
     async def mint(
         self,
@@ -102,6 +109,15 @@ class TokenMinter:
             creds.role_id,
             sorted(narrowed) if narrowed is not None else None,
         )
+
+        if self._audit_pipeline is not None:
+            await self._audit_pipeline.record_mint(
+                token_id=f"tok-{agent_id}",
+                issuer_agent_id=parent_agent_id,
+                subject_agent_id=agent_id,
+                scope_actions=sorted(narrowed) if narrowed is not None else None,
+            )
+
         return creds
 
     def render_policy(self, actions: Iterable[object], role_name: str) -> str:

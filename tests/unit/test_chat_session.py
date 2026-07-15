@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import tempfile
 from pathlib import Path
@@ -315,3 +316,212 @@ class TestContextInjection:
             content = session.history[0]["content"]
             assert "Ansible Inventory" in content
             assert "[truncated]" in content
+
+
+class TestHistoryPersistence:
+    def test_history_save_and_load(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            hist_path = Path(tmpdir) / "test_session.jsonl"
+            session = ChatSession(
+                api_base_url="https://test.api/v1",
+                api_key="sk-test",
+                history_file=str(hist_path),
+            )
+            session.history.append({"role": "user", "content": "hello"})
+            session.history.append({"role": "assistant", "content": "hi there"})
+            session.save_history()
+
+            assert hist_path.exists()
+            lines = hist_path.read_text(encoding="utf-8").strip().split("\n")
+            assert len(lines) >= 3
+            parsed = [json.loads(line) for line in lines]
+            roles = [r["role"] for r in parsed]
+            assert "system" in roles
+            assert "user" in roles
+            assert "assistant" in roles
+
+            session2 = ChatSession(
+                api_base_url="https://test.api/v1",
+                api_key="sk-test",
+                history_file=str(hist_path),
+            )
+            assert len(session2.history) >= 3
+
+    def test_history_file_format(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            hist_path = Path(tmpdir) / "test_format.jsonl"
+            session = ChatSession(
+                api_base_url="https://test.api/v1",
+                api_key="sk-test",
+                history_file=str(hist_path),
+            )
+            session.history.append({"role": "user", "content": "test message"})
+            session.history.append({"role": "assistant", "content": "response"})
+            session.save_history()
+
+            with hist_path.open(encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    record = json.loads(line)
+                    assert "role" in record
+                    assert "content" in record
+                    assert "timestamp" in record
+                    assert record["role"] in ("system", "user", "assistant")
+
+    def test_auto_save_interval(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            hist_path = Path(tmpdir) / "auto_save.jsonl"
+            session = ChatSession(
+                api_base_url="https://test.api/v1",
+                api_key="sk-test",
+                history_file=str(hist_path),
+                save_interval=2,
+            )
+            session.history.append({"role": "user", "content": "turn 1"})
+            session.history.append({"role": "assistant", "content": "resp 1"})
+            session._maybe_auto_save()
+
+            assert not hist_path.exists()
+
+            session.history.append({"role": "user", "content": "turn 2"})
+            session.history.append({"role": "assistant", "content": "resp 2"})
+            session._maybe_auto_save()
+
+            assert hist_path.exists()
+
+    def test_list_sessions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            from general_ludd.chat.session import ChatSession as CS
+
+            hist_dir = Path(tmpdir)
+            index_path = hist_dir / "index.json"
+            index_data = {
+                "sessions": [
+                    {
+                        "file": str(hist_dir / "session_20260101_120000.jsonl"),
+                        "timestamp": "2026-01-01T12:00:00+00:00",
+                        "model": "openai/gpt-4o",
+                        "message_count": 6,
+                        "preview": "hello world",
+                    },
+                    {
+                        "file": str(hist_dir / "session_20260102_130000.jsonl"),
+                        "timestamp": "2026-01-02T13:00:00+00:00",
+                        "model": "deepseek/deepseek-chat",
+                        "message_count": 10,
+                        "preview": "write a function",
+                    },
+                ]
+            }
+            hist_dir.mkdir(parents=True, exist_ok=True)
+            index_path.write_text(json.dumps(index_data), encoding="utf-8")
+
+            sessions = CS.list_sessions(history_dir=hist_dir)
+            assert len(sessions) == 2
+            assert sessions[0]["model"] == "openai/gpt-4o"
+            assert sessions[1]["message_count"] == 10
+            assert sessions[0]["preview"] == "hello world"
+
+    def test_list_sessions_empty(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            from general_ludd.chat.session import ChatSession as CS
+
+            hist_dir = Path(tmpdir)
+            sessions = CS.list_sessions(history_dir=hist_dir)
+            assert sessions == []
+
+    def test_resume_last_session(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            from general_ludd.chat.session import ChatSession as CS
+
+            hist_file = Path(tmpdir) / "session_resume.jsonl"
+            messages = "\n".join([
+                json.dumps({"role": "system", "content": "custom prompt"}),
+                json.dumps({"role": "user", "content": "previous question"}),
+                json.dumps({"role": "assistant", "content": "previous answer"}),
+            ])
+            hist_file.write_text(messages + "\n", encoding="utf-8")
+
+            index_path = Path(tmpdir) / "index.json"
+            index_data = {
+                "sessions": [
+                    {
+                        "file": str(hist_file),
+                        "timestamp": "2026-01-01T12:00:00+00:00",
+                        "model": "openai/gpt-4o",
+                        "message_count": 3,
+                        "preview": "previous question",
+                    }
+                ]
+            }
+            index_path.write_text(json.dumps(index_data), encoding="utf-8")
+
+            with patch("general_ludd.chat.session.DEFAULT_HISTORY_DIR", Path(tmpdir)):
+                session = CS(
+                    api_base_url="https://test.api/v1",
+                    api_key="sk-test",
+                    resume=True,
+                )
+                assert len(session.history) == 3
+                assert session.history[0]["content"] == "custom prompt"
+                assert session.history[1]["role"] == "user"
+                assert session.history[1]["content"] == "previous question"
+
+    def test_resume_no_sessions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            from general_ludd.chat.session import ChatSession as CS
+
+            with patch("general_ludd.chat.session.DEFAULT_HISTORY_DIR", Path(tmpdir)):
+                session = CS(
+                    api_base_url="https://test.api/v1",
+                    api_key="sk-test",
+                    resume=True,
+                )
+                assert len(session.history) == 1
+                assert session.history[0]["role"] == "system"
+
+    def test_save_on_exit_keyword(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            hist_path = Path(tmpdir) / "save_exit.jsonl"
+            session = ChatSession(
+                api_base_url="https://test.api/v1",
+                api_key="sk-test",
+                history_file=str(hist_path),
+            )
+            session.history.append({"role": "user", "content": "hello"})
+            session.history.append({"role": "assistant", "content": "hi"})
+            session.save_history()
+
+            assert hist_path.exists()
+            content = hist_path.read_text(encoding="utf-8")
+            records = [json.loads(line) for line in content.strip().split("\n")]
+            roles = [r["role"] for r in records]
+            assert "user" in roles
+            assert "assistant" in roles
+
+    def test_session_metadata_in_index(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            hist_path = Path(tmpdir) / "metadata_test.jsonl"
+            session = ChatSession(
+                model="deepseek/deepseek-chat",
+                api_base_url="https://test.api/v1",
+                api_key="sk-test",
+                history_file=str(hist_path),
+            )
+            session._history_dir = Path(tmpdir)
+            session.history.append({"role": "user", "content": "test prompt"})
+            session.history.append({"role": "assistant", "content": "test response"})
+            session.save_history()
+
+            from general_ludd.chat.session import ChatSession as CS
+
+            sessions = CS.list_sessions(history_dir=Path(tmpdir))
+            assert len(sessions) >= 1
+            entry = sessions[0]
+            assert "model" in entry
+            assert "message_count" in entry
+            assert "preview" in entry
+            assert "timestamp" in entry
+            assert "file" in entry

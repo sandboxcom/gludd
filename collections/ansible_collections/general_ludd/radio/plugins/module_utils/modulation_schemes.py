@@ -397,7 +397,7 @@ def classify_signal(
         if frequency_mhz is not None:
             if frequency_mhz < 30 and "hf" in s.get("typical_use", "").lower():
                 score += 1
-            elif frequency_mhz >= 30 and "vhf" in s.get("typical_use", "").lower() or "uhf" in s.get("typical_use", "").lower():
+            elif frequency_mhz >= 30 and ("vhf" in s.get("typical_use", "").lower() or "uhf" in s.get("typical_use", "").lower()):
                 score += 1
 
         if score > 0:

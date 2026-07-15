@@ -1,0 +1,168 @@
+---
+- name: Converge binary_re roles
+  hosts: localhost
+  gather_facts: true
+  tasks:
+    - name: Create mock frida dir
+      ansible.builtin.file:
+        path: /tmp/gludd-mock-frida
+        state: directory
+        mode: "0755"
+
+    - name: Create mock frida script
+      ansible.builtin.copy:
+        content: "#!/bin/sh\necho 'mock-frida 1.0'\n"
+        dest: /tmp/gludd-mock-frida/frida
+        mode: "0755"
+
+    - name: Create mock ghidra support dir
+      ansible.builtin.file:
+        path: /tmp/gludd-mock-ghidra/support
+        state: directory
+        mode: "0755"
+
+    - name: Create mock analyzeHeadless
+      ansible.builtin.copy:
+        content: "#!/bin/sh\necho 'mock-ghidra'\n"
+        dest: /tmp/gludd-mock-ghidra/support/analyzeHeadless
+        mode: "0755"
+
+    - name: Create mock r2 dir
+      ansible.builtin.file:
+        path: /tmp/gludd-mock-r2
+        state: directory
+        mode: "0755"
+
+    - name: Create mock r2 script
+      ansible.builtin.copy:
+        content: "#!/bin/sh\necho 'mock-r2 1.0'\n"
+        dest: /tmp/gludd-mock-r2/r2
+        mode: "0755"
+
+    - name: Create mock gdb dir
+      ansible.builtin.file:
+        path: /tmp/gludd-mock-gdb
+        state: directory
+        mode: "0755"
+
+    - name: Create mock gdb script
+      ansible.builtin.copy:
+        content: "#!/bin/sh\necho 'mock-gdb 1.0'\n"
+        dest: /tmp/gludd-mock-gdb/gdb
+        mode: "0755"
+
+    - name: Create mock fuzz dir
+      ansible.builtin.file:
+        path: /tmp/gludd-mock-fuzz
+        state: directory
+        mode: "0755"
+
+    - name: Create mock afl-fuzz script
+      ansible.builtin.copy:
+        content: "#!/bin/sh\necho 'mock-afl-fuzz 1.0'\n"
+        dest: /tmp/gludd-mock-fuzz/afl-fuzz
+        mode: "0755"
+
+    - name: Include prompt_injection_scan role
+      ansible.builtin.include_role:
+        name: general_ludd.binary_re.prompt_injection_scan
+      vars:
+        input_text: "test injection scan for molecule"
+        output_dir: "/tmp/gludd-molecule-prompt-injection-scan"
+        output_format: "json"
+        severity_threshold: "info"
+
+    - name: Include cyberchef_transform role
+      ansible.builtin.include_role:
+        name: general_ludd.binary_re.cyberchef_transform
+      vars:
+        input_data: "SGVsbG8gV29ybGQ="
+        recipe: "base64_decode"
+        output_dir: "/tmp/gludd-molecule-cyberchef-transform"
+
+    - name: Include gdb_analyze role
+      ansible.builtin.include_role:
+        name: general_ludd.binary_re.gdb_analyze
+      vars:
+        gdb_path: "/bin/ls"
+        output_dir: "/tmp/gludd-molecule-gdb-analyze"
+
+    - name: Include radare2_analyze role
+      ansible.builtin.include_role:
+        name: general_ludd.binary_re.radare2_analyze
+      vars:
+        r2_path: "/bin/ls"
+        output_dir: "/tmp/gludd-molecule-radare2-analyze"
+
+    - name: Include frida_instrument role
+      ansible.builtin.include_role:
+        name: general_ludd.binary_re.frida_instrument
+      vars:
+        frida_tools_path: "/tmp/gludd-mock-frida"
+        output_dir: "/tmp/gludd-molecule-frida-instrument"
+
+    - name: Include ghidra_analyze role
+      ansible.builtin.include_role:
+        name: general_ludd.binary_re.ghidra_analyze
+      vars:
+        ghidra_path: "/tmp/gludd-mock-ghidra"
+        output_dir: "/tmp/gludd-molecule-ghidra-analyze"
+
+    - name: Include fuzz_target role
+      ansible.builtin.include_role:
+        name: general_ludd.binary_re.fuzz_target
+      vars:
+        fuzzer_path: "/bin/ls"
+        output_dir: "/tmp/gludd-molecule-fuzz-target"
+
+    - name: Include deobfuscate role
+      ansible.builtin.include_role:
+        name: general_ludd.binary_re.deobfuscate
+      vars:
+        output_dir: "/tmp/gludd-molecule-deobfuscate"
+
+- name: Check-mode validation of binary_re stub roles
+  hosts: localhost
+  gather_facts: false
+  check_mode: true
+  tasks:
+    - name: Include gdb_analyze in check_mode
+      ansible.builtin.include_role:
+        name: general_ludd.binary_re.gdb_analyze
+      vars:
+        gdb_path: "/bin/ls"
+        output_dir: "/tmp/gludd-molecule-gdb-analyze-check"
+
+    - name: Include radare2_analyze in check_mode
+      ansible.builtin.include_role:
+        name: general_ludd.binary_re.radare2_analyze
+      vars:
+        r2_path: "/bin/ls"
+        output_dir: "/tmp/gludd-molecule-radare2-analyze-check"
+
+    - name: Include frida_instrument in check_mode
+      ansible.builtin.include_role:
+        name: general_ludd.binary_re.frida_instrument
+      vars:
+        frida_tools_path: "/tmp/gludd-mock-frida"
+        output_dir: "/tmp/gludd-molecule-frida-instrument-check"
+
+    - name: Include ghidra_analyze in check_mode
+      ansible.builtin.include_role:
+        name: general_ludd.binary_re.ghidra_analyze
+      vars:
+        ghidra_path: "/tmp/gludd-mock-ghidra"
+        output_dir: "/tmp/gludd-molecule-ghidra-analyze-check"
+
+    - name: Include fuzz_target in check_mode
+      ansible.builtin.include_role:
+        name: general_ludd.binary_re.fuzz_target
+      vars:
+        fuzzer_path: "/bin/ls"
+        output_dir: "/tmp/gludd-molecule-fuzz-target-check"
+
+    - name: Include deobfuscate in check_mode
+      ansible.builtin.include_role:
+        name: general_ludd.binary_re.deobfuscate
+      vars:
+        output_dir: "/tmp/gludd-molecule-deobfuscate-check"

@@ -35,27 +35,36 @@ Code versions `0.1.0-beta.2` through `0.1.0-beta.4` exist in `pyproject.toml`/`_
 
 ## SESSION 35 — 2026-07-14 (FINAL)
 
-- **HEAD: `6d45df65`** on `development` branch (10 commits: a2e831e1..6d45df65)
+- **HEAD: `816d7be6`** on `development` branch (12 commits: a2e831e1..816d7be6)
 - **Version: 0.1.0-beta.4** (pyproject.toml)
-- **CI: RED** — run 29367618767, molecule failures (pre-existing regression, molecule scenario paths fix in a2e831e1)
+- **Push status: NOT PUSHED** — tree DIRTY (~50+ files staged/unstaged: language roles, os_expert molecule, binary_re molecule, adb/libimobiledevice connectors, STS P4 audit, enforce-stop tests)
+- **CI: RED** — no run found for HEAD `816d7be6` (branch not pushed)
 - **Beta.1: INCOMPLETE** — 1/12 assets (verify-release-completeness FAILED). Release pipeline exists but artifact matrix incomplete.
-- **Enforcement: hardened 10-agent floor** — enforce-multitask.ts \+ enforce-delegate.ts node-v26-compat, dispatch detection fixed
 - **Gate: lint 0, typecheck 0, collect OK** — 38,705 tests collected, node-v26-compat 2/2 PASS
-- **9 new features (NF.1-NF.9) — final state:**
-  - NF.1 Chat CLI: in-progress (P1-P4 done: 77 tests, deepseek support, ansible/terraform context; P5 history pending)
-  - NF.2 Unikernel sandbox: in-progress (P1 done: 22 tests, Firecracker + GVisor functional)
-  - NF.3 Binary RE: in-progress (Phase A+B+C done: 236 tests, 2 roles fleshed out)
-  - NF.4 Radio engineer: in-progress (Phase A+P3 done: 201 tests, 3 roles fleshed out)
-  - NF.5 E2E test gen: in-progress (refactored as collection, 5 roles, 14 tests)
-  - NF.6 OS expert: in-progress (Phase B+C done: 118 tests, 5 roles+3 connectors fleshed out)
-  - NF.7 STS tokens: in-progress (P1-P3 done: minter+store+narrowing+reviver+revoker+hibernation wiring)
-  - NF.8 Multitasking enforcement: **COMPLETED** (enforce-multitask.ts+enforce-delegate.ts hardened, 97+28 E2E tests, commit 6d45df65)
-  - NF.9 Language expert: in-progress (Phase A+B done: 155 tests, 8 roles+5 modules)
+- **9 new features (NF.1-NF.9) + 1 enforcement fix (NF.10) — final state:**
+  - NF.1 Chat CLI: in-progress (P1-P4 done: 77 tests, deepseek support, ansible/terraform context; P5 history pending) | commits db2699da, 816d7be6
+  - NF.2 Unikernel sandbox: in-progress (P1 done: 22 tests, Firecracker + GVisor functional; P2 image builder pending) | commits db2699da, 816d7be6
+  - NF.3 Binary RE: in-progress (Phase A+B+C done: 236 tests, 2 roles fleshed out; molecule tests added) | commits db2699da, 816d7be6
+  - NF.4 Radio engineer: in-progress (Phase A+P3 done: 201 tests, 3 roles fleshed out) | commits db2699da, 816d7be6
+  - NF.5 E2E test gen: in-progress (refactored as collection, 5 roles, 14 tests) | commits db2699da, 816d7be6
+  - NF.6 OS expert: in-progress (Phase B+C+D done: 118 tests, 5 roles+3 connectors, Phase D mobile roles+molecule added) | commits db2699da, 816d7be6
+  - NF.7 STS tokens: in-progress (P1-P4 done: minter+store+narrowing+reviver+revoker+hibernation+audit+injector) | commits db2699da, 816d7be6
+  - NF.8 Multitasking enforcement: **COMPLETED** (enforce-multitask.ts+enforce-delegate.ts hardened, 97+28 E2E tests, hardened in 9-feature wave) | commits 6d45df65, db2699da, 816d7be6
+  - NF.9 Language expert: in-progress (Phase A+B done: 155 tests, 8 roles+5 modules; molecule+integration tests added) | commits db2699da, 816d7be6
+  - NF.10 enforce-stop false-completion fix: **COMPLETED** (comprehensive work-detection checks CI+release+gate; molecule non-blocking in CI; false-completion incident in BUGS.md) | commit 816d7be6
 - **10 new collections/roles created** across binary_re, radio, os_expert, language, e2e_test_gen
 - **8 turnkey specs** in docs/specs/ (CHAT_CLI, UNIKERNEL_SANDBOX, BINARY_RE, RADIO_ENGINEER, E2E_TEST_GEN, OS_EXPERT, STS_TOKENS, LANGUAGE_EXPERT) + 7 pre-existing specs
-- **Working tree: DIRTY** — ~200+ files staged/unstaged (all new features, plugin fixes, makefile updates)
-- **Next:** commit changes, push to development, wait for CI green, then cut beta.2
-- **Last Updated: 2026-07-14 — Session 35 (FINAL).** HEAD `6d45df65` on `development`. Tree DIRTY. CI RED (run 29367618767, molecule regression). Beta.1 incomplete. 9 new features (1 completed, 8 in-progress). Gate: lint 0, typecheck 0, collect OK, 38,705 tests. node-v26-compat 2/2 PASS.
+- **Enforcement fixes applied (commits db2699da + 816d7be6):**
+  - CI build.yml 12-asset release matrix fix
+  - C.3 tenant scoping fix
+  - 35+ fixes across tests/lint/typecheck/E2E
+  - Molecule path references fix (hardcoded→env-driven)
+  - Molecule non-blocking in CI
+  - enforce-stop.ts work-detection extension (CI + release + gate checks)
+  - STS P4 audit+injector wiring
+- **Working tree: DIRTY** — ~50+ files staged/unstaged (language roles+integration tests, os_expert molecule, binary_re molecule, STS audit tests, adb/libimobiledevice connectors, enforce-stop tests, fix_block_scalar script, Makefile)
+- **Next:** git-add + commit dirty tree, push to development, wait for CI green, then cut beta.2
+- **Last Updated: 2026-07-14 — Session 35 (FINAL).** HEAD `816d7be6` on `development`. Tree DIRTY (~50+ files). NOT PUSHED. CI RED (no run). Beta.1 incomplete. 10 features (2 completed: NF.8 + NF.10, 8 in-progress). Gate: lint 0, typecheck 0, collect OK, 38,705 tests. node-v26-compat 2/2 PASS.
 
 ---
 

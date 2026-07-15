@@ -1,0 +1,234 @@
+---
+- name: Verify binary_re roles
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Stat prompt_injection_scan artifact
+      ansible.builtin.stat:
+        path: /tmp/gludd-molecule-prompt-injection-scan/prompt_injection_scan.json
+      register: _pi_art
+
+    - name: Assert prompt_injection_scan artifact exists
+      ansible.builtin.assert:
+        that:
+          - _pi_art.stat.exists
+          - _pi_art.stat.size > 0
+        fail_msg: "prompt_injection_scan artifact missing or empty"
+
+    - name: Load prompt_injection_scan artifact
+      ansible.builtin.slurp:
+        src: /tmp/gludd-molecule-prompt-injection-scan/prompt_injection_scan.json
+      register: _pi_raw
+
+    - name: Assert prompt_injection_scan artifact content
+      ansible.builtin.assert:
+        that:
+          - "'scan' in (_pi_raw.content | b64decode | from_json)"
+        fail_msg: "prompt_injection_scan artifact missing scan key"
+
+    - name: Stat cyberchef_transform artifact
+      ansible.builtin.stat:
+        path: /tmp/gludd-molecule-cyberchef-transform/cyberchef_transform.json
+      register: _cc_art
+
+    - name: Assert cyberchef_transform artifact exists
+      ansible.builtin.assert:
+        that:
+          - _cc_art.stat.exists
+          - _cc_art.stat.size > 0
+        fail_msg: "cyberchef_transform artifact missing or empty"
+
+    - name: Load cyberchef_transform artifact
+      ansible.builtin.slurp:
+        src: /tmp/gludd-molecule-cyberchef-transform/cyberchef_transform.json
+      register: _cc_raw
+
+    - name: Assert cyberchef_transform artifact content
+      ansible.builtin.assert:
+        that:
+          - (_cc_raw.content | b64decode | from_json).recipe == 'base64_decode'
+          - (_cc_raw.content | b64decode | from_json).backend == 'local'
+        fail_msg: "cyberchef_transform artifact missing expected keys"
+
+    - name: Stat gdb_analyze artifact
+      ansible.builtin.stat:
+        path: /tmp/gludd-molecule-gdb-analyze/gdb_analyze.json
+      register: _gdb_art
+
+    - name: Assert gdb_analyze artifact exists
+      ansible.builtin.assert:
+        that:
+          - _gdb_art.stat.exists
+        fail_msg: "gdb_analyze artifact missing"
+
+    - name: Assert gdb_analyze artifact role identity
+      ansible.builtin.slurp:
+        src: /tmp/gludd-molecule-gdb-analyze/gdb_analyze.json
+      register: _gdb_raw
+      when: _gdb_art.stat.exists
+
+    - name: Assert gdb_analyze artifact JSON structure
+      ansible.builtin.assert:
+        that:
+          - (_gdb_raw.content | b64decode | from_json).role == 'gdb_analyze'
+          - (_gdb_raw.content | b64decode | from_json).status == 'completed'
+          - (_gdb_raw.content | b64decode | from_json).verdict == 'pass'
+        fail_msg: "gdb_analyze artifact has wrong structure"
+      when: _gdb_art.stat.exists
+
+    - name: Stat radare2_analyze artifact
+      ansible.builtin.stat:
+        path: /tmp/gludd-molecule-radare2-analyze/radare2_analyze.json
+      register: _r2_art
+
+    - name: Assert radare2_analyze artifact exists
+      ansible.builtin.assert:
+        that:
+          - _r2_art.stat.exists
+        fail_msg: "radare2_analyze artifact missing"
+
+    - name: Assert radare2_analyze artifact role identity
+      ansible.builtin.slurp:
+        src: /tmp/gludd-molecule-radare2-analyze/radare2_analyze.json
+      register: _r2_raw
+      when: _r2_art.stat.exists
+
+    - name: Assert radare2_analyze artifact JSON structure
+      ansible.builtin.assert:
+        that:
+          - (_r2_raw.content | b64decode | from_json).role == 'radare2_analyze'
+          - (_r2_raw.content | b64decode | from_json).status == 'completed'
+          - (_r2_raw.content | b64decode | from_json).verdict == 'pass'
+        fail_msg: "radare2_analyze artifact has wrong structure"
+      when: _r2_art.stat.exists
+
+    - name: Stat frida_instrument artifact
+      ansible.builtin.stat:
+        path: /tmp/gludd-molecule-frida-instrument/frida_instrument.json
+      register: _fi_art
+
+    - name: Assert frida_instrument artifact exists
+      ansible.builtin.assert:
+        that:
+          - _fi_art.stat.exists
+        fail_msg: "frida_instrument artifact missing"
+
+    - name: Assert frida_instrument artifact role identity
+      ansible.builtin.slurp:
+        src: /tmp/gludd-molecule-frida-instrument/frida_instrument.json
+      register: _fi_raw
+      when: _fi_art.stat.exists
+
+    - name: Assert frida_instrument artifact JSON structure
+      ansible.builtin.assert:
+        that:
+          - (_fi_raw.content | b64decode | from_json).role == 'frida_instrument'
+          - (_fi_raw.content | b64decode | from_json).status == 'completed'
+          - (_fi_raw.content | b64decode | from_json).verdict == 'pass'
+        fail_msg: "frida_instrument artifact has wrong structure"
+      when: _fi_art.stat.exists
+
+    - name: Stat ghidra_analyze artifact
+      ansible.builtin.stat:
+        path: /tmp/gludd-molecule-ghidra-analyze/ghidra_analyze.json
+      register: _gh_art
+
+    - name: Assert ghidra_analyze artifact exists
+      ansible.builtin.assert:
+        that:
+          - _gh_art.stat.exists
+        fail_msg: "ghidra_analyze artifact missing"
+
+    - name: Assert ghidra_analyze artifact role identity
+      ansible.builtin.slurp:
+        src: /tmp/gludd-molecule-ghidra-analyze/ghidra_analyze.json
+      register: _gh_raw
+      when: _gh_art.stat.exists
+
+    - name: Assert ghidra_analyze artifact JSON structure
+      ansible.builtin.assert:
+        that:
+          - (_gh_raw.content | b64decode | from_json).role == 'ghidra_analyze'
+          - (_gh_raw.content | b64decode | from_json).status == 'completed'
+          - (_gh_raw.content | b64decode | from_json).verdict == 'pass'
+        fail_msg: "ghidra_analyze artifact has wrong structure"
+      when: _gh_art.stat.exists
+
+    - name: Stat fuzz_target artifact
+      ansible.builtin.stat:
+        path: /tmp/gludd-molecule-fuzz-target/fuzz_target.json
+      register: _fuzz_art
+
+    - name: Assert fuzz_target artifact exists
+      ansible.builtin.assert:
+        that:
+          - _fuzz_art.stat.exists
+        fail_msg: "fuzz_target artifact missing"
+
+    - name: Assert fuzz_target artifact role identity
+      ansible.builtin.slurp:
+        src: /tmp/gludd-molecule-fuzz-target/fuzz_target.json
+      register: _fuzz_raw
+      when: _fuzz_art.stat.exists
+
+    - name: Assert fuzz_target artifact JSON structure
+      ansible.builtin.assert:
+        that:
+          - (_fuzz_raw.content | b64decode | from_json).role == 'fuzz_target'
+          - (_fuzz_raw.content | b64decode | from_json).status == 'completed'
+          - (_fuzz_raw.content | b64decode | from_json).verdict == 'pass'
+        fail_msg: "fuzz_target artifact has wrong structure"
+      when: _fuzz_art.stat.exists
+
+    - name: Stat deobfuscate artifact
+      ansible.builtin.stat:
+        path: /tmp/gludd-molecule-deobfuscate/deobfuscate.json
+      register: _deob_art
+
+    - name: Assert deobfuscate artifact exists
+      ansible.builtin.assert:
+        that:
+          - _deob_art.stat.exists
+        fail_msg: "deobfuscate artifact missing"
+
+    - name: Assert deobfuscate artifact role identity
+      ansible.builtin.slurp:
+        src: /tmp/gludd-molecule-deobfuscate/deobfuscate.json
+      register: _deob_raw
+      when: _deob_art.stat.exists
+
+    - name: Assert deobfuscate artifact JSON structure
+      ansible.builtin.assert:
+        that:
+          - (_deob_raw.content | b64decode | from_json).role == 'deobfuscate'
+          - (_deob_raw.content | b64decode | from_json).status == 'completed'
+          - (_deob_raw.content | b64decode | from_json).verdict == 'pass'
+        fail_msg: "deobfuscate artifact has wrong structure"
+      when: _deob_art.stat.exists
+
+    # Cleanup
+    - name: Remove temp output dirs
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /tmp/gludd-molecule-prompt-injection-scan
+        - /tmp/gludd-molecule-cyberchef-transform
+        - /tmp/gludd-molecule-gdb-analyze
+        - /tmp/gludd-molecule-radare2-analyze
+        - /tmp/gludd-molecule-frida-instrument
+        - /tmp/gludd-molecule-ghidra-analyze
+        - /tmp/gludd-molecule-fuzz-target
+        - /tmp/gludd-molecule-deobfuscate
+        - /tmp/gludd-molecule-gdb-analyze-check
+        - /tmp/gludd-molecule-radare2-analyze-check
+        - /tmp/gludd-molecule-frida-instrument-check
+        - /tmp/gludd-molecule-ghidra-analyze-check
+        - /tmp/gludd-molecule-fuzz-target-check
+        - /tmp/gludd-molecule-deobfuscate-check
+        - /tmp/gludd-mock-frida
+        - /tmp/gludd-mock-ghidra
+        - /tmp/gludd-mock-r2
+        - /tmp/gludd-mock-gdb
+        - /tmp/gludd-mock-fuzz
+      ignore_errors: true

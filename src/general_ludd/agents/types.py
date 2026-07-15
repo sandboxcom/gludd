@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from general_ludd.agents.behavior import AgentBehavior
+    from general_ludd.sandbox.enforcer import SandboxConfig
 
 
 class AgentType(Enum):
@@ -51,3 +52,5 @@ class AgentTask:
     depth: int = 0  # D11: subagent nesting depth for max-depth guard
     tools: list[dict[str, object]] | None = None
     estimated_effort: str = "medium"  # small, medium, large — for task splitter gating
+    env: dict[str, str] = field(default_factory=dict)
+    sandbox_config: SandboxConfig | None = None

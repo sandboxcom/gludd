@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from general_ludd.secrets.manager import AppRoleCreds, SecretsManager
+    from general_ludd.sts.audit import StsAuditPipeline
     from general_ludd.sts.store import TokenStore
 
 logger = logging.getLogger(__name__)
@@ -27,15 +28,20 @@ class TokenReviver:
     Reads the stored ``AgentTokenModel``, rotates the AppRole secret_id
     (keeping the same role_name → same permissions), and returns fresh
     ``AppRoleCreds`` for injection into the rehydrated agent.
+
+    Audit events are recorded via an optional
+    :class:`~general_ludd.sts.audit.StsAuditPipeline`.
     """
 
     def __init__(
         self,
         secrets_manager: SecretsManager,
         token_store: TokenStore,
+        audit_pipeline: StsAuditPipeline | None = None,
     ) -> None:
         self._secrets_manager = secrets_manager
         self._token_store = token_store
+        self._audit_pipeline = audit_pipeline
 
     async def revive(self, agent_id: str) -> AppRoleCreds:
         """Mint a fresh secret_id for *agent_id*'s existing AppRole.
@@ -75,6 +81,13 @@ class TokenReviver:
             ) from exc
 
         await self._token_store.increment_hydration(agent_id)
+
+        if self._audit_pipeline is not None:
+            await self._audit_pipeline.record_revive(
+                token_id=record.token_id,
+                agent_id=agent_id,
+                parent_agent_id=record.parent_agent_id,
+            )
 
         logger.info(
             "STS audit — revive: agent=%s role=%s role_id=%s",

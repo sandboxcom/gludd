@@ -666,6 +666,12 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     chat_parser.add_argument("--system-prompt", default=None, help="Override system prompt")
     chat_parser.add_argument("--history", default=None, metavar="FILE",
                              help="JSON-lines conversation history file")
+    chat_parser.add_argument("--resume", action="store_true",
+                             help="Resume the most recent chat session")
+    chat_parser.add_argument("--list-sessions", action="store_true",
+                             help="List saved chat sessions and exit")
+    chat_parser.add_argument("--save-interval", type=int, default=5,
+                             help="Auto-save history every N turns (default: 5)")
     chat_parser.add_argument("--api-base", default=os.environ.get("OPENAI_BASE_URL"),
                              help="Override API base URL (env: OPENAI_BASE_URL)")
     chat_parser.add_argument("--api-key", default=os.environ.get("OPENAI_API_KEY"),
@@ -2400,6 +2406,30 @@ def _cmd_chat(args: argparse.Namespace) -> None:
 
     from general_ludd.chat import ChatSession
 
+    if getattr(args, "list_sessions", False):
+        sessions = ChatSession.list_sessions()
+        if not sessions:
+            print("No saved chat sessions.")
+            return
+        print(f"Saved sessions ({len(sessions)}):")
+        for s in sessions:
+            ts = s.get("timestamp", "?")
+            model = s.get("model", "?")
+            count = s.get("message_count", 0)
+            preview = str(s.get("preview", ""))
+            file_path = s.get("file", "?")
+            print(f"  {ts}  model={model}  messages={count}")
+            print(f"    file: {file_path}")
+            if preview:
+                preview_str = preview[:72] + ("..." if len(preview) > 72 else "")
+                print(f"    preview: {preview_str}")
+            print()
+        return
+
+    history_file = getattr(args, "history", None)
+    resume = getattr(args, "resume", False)
+    save_interval = getattr(args, "save_interval", 5)
+
     session = ChatSession(
         model=args.model,
         system_prompt=args.system_prompt,
@@ -2407,6 +2437,9 @@ def _cmd_chat(args: argparse.Namespace) -> None:
         api_base_url=args.api_base,
         api_key=args.api_key,
         project_dir=getattr(args, "project_dir", None),
+        history_file=history_file,
+        save_interval=save_interval,
+        resume=resume,
     )
 
     if args.eval:

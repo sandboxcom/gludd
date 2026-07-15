@@ -33,101 +33,21 @@
     _vs_scenarios_list: >-
       {{ (_vs_scenarios_raw.content | b64decode | from_json).get('scenarios', []) }}
 
-# ── Build research queries per scenario ─────────────────────────────────
+# ── Validate scenarios via Python script ───────────────────────────────
 
-- name: Build research queries
+- name: Run validate_scenarios script
+  ansible.builtin.command:
+    cmd: >-
+      python3 "{{ validate_script }}"
+      --scenarios-file "{{ scenarios_artifact if scenarios_artifact | length > 0 else artifact_dir + '/scenarios.json' }}"
+      --output "{{ artifact_dir }}/{{ validated_artifact_name }}"
+      --confidence-threshold "{{ confidence_threshold }}"
+  register: _vs_script_result
+  changed_when: false
+
+- name: Parse validated output
   ansible.builtin.set_fact:
-    _vs_queries: >-
-      {%- set queries = [] -%}
-      {%- for s in _vs_scenarios_list -%}
-        {%- set desc = s.description | default(s.name) -%}
-        {%- set targets = s.get('coverage_targets', []) | join(' ') -%}
-        {%- set q = 'how is "' + s.name + '" tested in production e2e test patterns site:github.com OR site:stackoverflow.com ' + targets -%}
-        {%- set _ = queries.append(q) -%}
-      {%- endfor -%}
-      {{ queries }}
-
-# ── Research via daemon ResearcherAgent API ─────────────────────────────
-
-- name: Submit research queries to daemon
-  ansible.builtin.uri:
-    url: "{{ daemon_url }}/admin/research"
-    method: POST
-    body_format: json
-    body:
-      query: "{{ item }}"
-      categories: "{{ research_categories }}"
-      time_range: "{{ research_time_range }}"
-      max_results: "{{ max_search_results }}"
-    headers:
-      Content-Type: application/json
-      X-PSK: "{{ psk }}"
-    status_code: [200, 404, 503]
-  register: _vs_research_results
-  loop: "{{ _vs_queries }}"
-  ignore_errors: true
-
-# ── Score scenarios from research ───────────────────────────────────────
-
-- name: Compute scenario scores from research confidence
-  ansible.builtin.set_fact:
-    _vs_scored: >-
-      {%- set scored = [] -%}
-      {%- for s in _vs_scenarios_list -%}
-        {%- set idx = loop.index0 -%}
-        {%- set resp = _vs_research_results.results[idx] | default({}) -%}
-        {%- set report = (resp.json | default({})) if (resp.status | default(500)) == 200 else {} -%}
-        {%- set confidence = report.get('confidence_overall', 0.0) | float -%}
-        {%- set findings = report.get('findings', []) | default([]) -%}
-        {%- set urls = [] -%}
-        {%- for f in findings -%}
-          {%- for c in f.get('citations', []) -%}
-            {%- if c.get('url') -%}
-              {%- set _ = urls.append(c.get('url')) -%}
-            {%- endif -%}
-          {%- endfor -%}
-        {%- endfor -%}
-        {%- set _ = scored.append(dict(s, confidence=confidence, source_urls=urls[:5])) -%}
-      {%- endfor -%}
-      {{ scored }}
-
-- name: Split into valid and discarded
-  ansible.builtin.set_fact:
-    _vs_valid: >-
-      {{ _vs_scored | selectattr('confidence', 'ge', confidence_threshold | float) | list }}
-    _vs_discarded: >-
-      {%- set disc = [] -%}
-      {%- for s in _vs_scored -%}
-        {%- if (s.confidence | float) < (confidence_threshold | float) -%}
-          {%- set _ = disc.append({'name': s.name, 'confidence': s.confidence, 'reason': 'confidence below threshold (' + (confidence_threshold | string) + ')'}) -%}
-        {%- endif -%}
-      {%- endfor -%}
-      {{ disc }}
-
-- name: Assemble validated output
-  ansible.builtin.set_fact:
-    _vs_output: >-
-      {{
-        {
-          'module': _vs_scenarios_data.get('module', 'unknown'),
-          'path': _vs_scenarios_data.get('path', ''),
-          'valid': _vs_valid,
-          'discarded': _vs_discarded,
-          'valid_count': _vs_valid | length,
-          'discarded_count': _vs_discarded | length,
-          'research_queries': _vs_queries,
-          'confidence_threshold': confidence_threshold | float,
-          'status': 'completed'
-        }
-      }}
-
-# ── Write artifact ──────────────────────────────────────────────────────
-
-- name: Write validated scenarios JSON artifact
-  ansible.builtin.copy:
-    content: "{{ _vs_output | to_nice_json }}"
-    dest: "{{ artifact_dir }}/{{ validated_artifact_name }}"
-    mode: "0644"
+    _vs_output: "{{ (lookup('file', artifact_dir + '/' + validated_artifact_name) | from_json) }}"
 
 - name: Report completion
   ansible.builtin.debug:

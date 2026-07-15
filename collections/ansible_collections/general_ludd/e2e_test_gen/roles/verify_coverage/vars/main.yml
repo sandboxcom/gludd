@@ -1,3 +1,4 @@
 ---
 # verify_coverage role vars — internal, not for override
 coverage_artifact_name: "coverage_report.json"
+verify_coverage_script: "{{ role_path }}/files/verify_coverage.py"

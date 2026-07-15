@@ -1,0 +1,10 @@
+---
+- name: Converge
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: "Include ios_security"
+      ansible.builtin.include_role:
+        name: "ios_security"
+      vars:
+        enable_git_push: false

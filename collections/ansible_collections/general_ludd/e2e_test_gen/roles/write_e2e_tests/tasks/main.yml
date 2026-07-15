@@ -33,68 +33,18 @@
     _wt_data: "{{ _wt_scenarios_raw.content | b64decode | from_json }}"
     _wt_valid: "{{ (_wt_scenarios_raw.content | b64decode | from_json).get('valid', []) }}"
 
-- name: Write scenario data JSON for Python test generation
-  ansible.builtin.copy:
-    content: "{{ _wt_data | to_json }}"
-    dest: "{{ artifact_dir }}/_wt_input.json"
-    mode: "0644"
+# ── Generate test files via Python script ───────────────────────────────
 
-# ── Generate test files via Python ──────────────────────────────────────
-
-- name: Generate pytest test files from scenarios
-  ansible.builtin.shell:
-    executable: python3
+- name: Run write_e2e_tests script
+  ansible.builtin.command:
     cmd: >-
-      python3 -c "
-      import json, os, textwrap
-
-      with open('{{ artifact_dir }}/_wt_input.json') as f:
-          data = json.load(f)
-
-      valid = data.get('valid', [])
-      output_dir = '{{ output_dir }}'
-      os.makedirs(output_dir, exist_ok=True)
-
-      test_client = '{{ test_client_fixture }}'
-      cli_runner = '{{ cli_runner_fixture }}'
-      tmp_path = '{{ tmp_path_fixture }}'
-
-      manifest = {'test_files': [], 'scenario_count': len(valid)}
-
-      for scenario in valid:
-          name = scenario['name']
-          filename = f\"{{ '{{ test_file_prefix }}' }}{name}.py\"
-          filepath = os.path.join(output_dir, filename)
-          steps = scenario.get('steps', [])
-          coverage_targets = scenario.get('coverage_targets', [])
-
-          lines = []
-          lines.append('import pytest')
-          lines.append('')
-          lines.append('')
-          def _emit_step_test(step, idx):
-              action = step.get('action', 'Invoke').lower().replace(' ', '_')
-              target = step.get('target', 'unknown').replace('/', '_').replace('<', '').replace('>', '').strip('_')
-              func_name = f\"test_{name}_{action}_{target}_{idx}\"
-              expected = step.get('expected_result', '')
-              assertions = step.get('assertions', [])
-              lines.append(f'def {func_name}():')
-              lines.append(f'    \"\"\"{expected}\"\"\"')
-              for a in assertions:
-                  lines.append(f'    # {a}')
-              lines.append('    pass  # TODO: implement fixture-driven test')
-              lines.append('')
-          for idx, step in enumerate(steps):
-              _emit_step_test(step, idx)
-          content = '\\\\n'.join(lines)
-          with open(filepath, 'w') as fh:
-              fh.write(content)
-          manifest['test_files'].append({'file': filepath, 'scenario': name, 'step_count': len(steps)})
-
-      with open(os.path.join('{{ artifact_dir }}', '{{ generated_tests_manifest }}'), 'w') as fh:
-          json.dump(manifest, fh, indent=2)
-      print(json.dumps(manifest, indent=2))
-      "
+      python3 "{{ write_tests_script }}"
+      --scenarios-file >-
+        {{ validated_scenarios_artifact if validated_scenarios_artifact | length > 0
+           else artifact_dir + '/validated_scenarios.json' }}
+      --output-dir "{{ output_dir }}"
+      --manifest "{{ artifact_dir }}/{{ generated_tests_manifest }}"
+      --test-file-prefix "{{ test_file_prefix }}"
   register: _wt_result
   changed_when: true
 

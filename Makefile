@@ -67,6 +67,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         hot-reload-plugins hot-reload-status hot-reload-clean \
         verify-release-artifact verify-release-completeness git-tag-rm release-cut release-recut release-create release-delete \
         release-upload-assets git-restore-from \
+        build-sandbox-image verify-sandbox-image clean-sandbox-images \
         verify-feature-claims audit-coverage gate-audit coverage-json \
         tf-cache-setup tf-init tf-validate tf-cache-warm tf-versions-check tf-clean \
         deck deck-serve deck-preview deck-data deck-honesty \
@@ -205,6 +206,9 @@ help:
 	@echo "  container-push        Push container image"
 	@echo "  deb-package           Build .deb package from dist/gludd binary"
 	@echo "  deb-install-deps      apt-get install dependencies from debian/control"
+	@echo "  build-sandbox-image       Build Firecracker rootfs image (Alpine + gludd deps)"
+	@echo "  verify-sandbox-image      Integrity check on cached sandbox rootfs"
+	@echo "  clean-sandbox-images      Remove cached sandbox images"
 	@echo ""
 	@echo "  --- Ansible ---"
 	@echo "  ansible-syntax        Validate playbook syntax"
@@ -3090,6 +3094,26 @@ container-run:
 container-push:
 	@if [ -z "$(CONTAINER_RUNTIME)" ]; then echo "ERROR: podman or docker not found"; exit 1; fi
 	@$(CONTAINER_RUNTIME) push $(CONTAINER_IMAGE)
+
+# --- VM sandbox image targets (FEATURE_UNIKERNEL_SANDBOX P3) ---
+
+SANDBOX_CACHE ?= $(HOME)/.cache/gludd/sandbox
+SANDBOX_IMAGE ?= $(SANDBOX_CACHE)/rootfs.ext4
+
+build-sandbox-image:
+	@mkdir -p "$(SANDBOX_CACHE)"
+	@echo "=== Build sandbox rootfs image (P3 stub) ==="
+	@$(UV) run python -c "from general_ludd.security.sandboxes.vm.image_builder import build_rootfs; build_rootfs('$(SANDBOX_IMAGE)')"
+	@echo "Sandbox image stub written to $(SANDBOX_IMAGE)"
+
+verify-sandbox-image:
+	@echo "=== Verify sandbox rootfs image ($(SANDBOX_IMAGE)) ==="
+	@$(UV) run python -c "from general_ludd.security.sandboxes.vm.image_builder import verify_image; ok = verify_image('$(SANDBOX_IMAGE)'); print('PASS' if ok else 'FAIL (image missing or corrupted)'); exit(0 if ok else 1)"
+
+clean-sandbox-images:
+	@echo "=== Clean cached sandbox images ==="
+	@rm -rf "$(SANDBOX_CACHE)"
+	@echo "Removed $(SANDBOX_CACHE)"
 
 # Reproduce CI's Linux "Gate" step locally — no GitHub login needed. Runs the
 # EXACT CI command (make lint typecheck test-count test smoke) inside a Linux

@@ -22,6 +22,9 @@ logger = logging.getLogger(__name__)
 @dataclass
 class SandboxConfig:
     jail_dir: str = ""
+    backend: str = "auto"
+    image_path: str = ""
+    vsock_port: int = 0
     allow_network: bool = False
     allowed_hosts: list[str] = field(default_factory=list)
     memory_mb: int = 512

@@ -78,6 +78,7 @@ class AgentDispatcher:
         self._rate_limiter_timestamps: list[float] = []
         self._task_dispatch_counts: dict[str, int] = {}
         self._spiral_lock = asyncio.Lock()
+        self._sts_injector: object | None = None
         model_call_limit = (
             orchestration_guard.max_concurrent_model_calls
             if orchestration_guard is not None
@@ -112,6 +113,14 @@ class AgentDispatcher:
         if self._run_recorder is not None:
             with contextlib.suppress(Exception):
                 self._run_recorder.record(run_id, event)
+
+    def set_sts_injector(self, injector: object) -> None:
+        """Register a :class:`~general_ludd.sts.injector.SubagentTokenInjector`.
+
+        When set, ``dispatch_one`` calls ``injector.enrich(task)`` before
+        invoking the executor so the subagent receives STS token env vars.
+        """
+        self._sts_injector = injector
 
     # ------------------------------------------------------------------
     # D11 orchestration guards
@@ -348,6 +357,10 @@ class AgentDispatcher:
                 self._active_count += 1
                 self._active_tasks[task.task_id] = task
             try:
+                if self._sts_injector is not None:
+                    sts_enrich = getattr(self._sts_injector, "enrich", None)
+                    if sts_enrich is not None:
+                        await sts_enrich(task)
                 if self._run_recorder is not None:
                     with contextlib.suppress(Exception):
                         self._run_recorder.record(task.task_id, {

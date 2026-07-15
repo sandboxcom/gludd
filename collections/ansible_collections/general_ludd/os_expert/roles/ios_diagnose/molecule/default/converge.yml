@@ -1,0 +1,10 @@
+---
+- name: Converge
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: "Include ios_diagnose"
+      ansible.builtin.include_role:
+        name: "ios_diagnose"
+      vars:
+        enable_git_push: false

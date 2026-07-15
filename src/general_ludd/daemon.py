@@ -89,6 +89,7 @@ from general_ludd.remediation.blocker_detector import RemediationConfig
 from general_ludd.replay.recorder import RunRecorder
 from general_ludd.retrieval.searcher import SemanticSearcher
 from general_ludd.review.estimation_tracker import EstimationTracker
+from general_ludd.sandbox.enforcer import SandboxConfig
 from general_ludd.sandbox_exec.executor import SandboxExecutor
 from general_ludd.scoring.pareto import ParetoRouter
 from general_ludd.scoring.router import AdaptiveRouter
@@ -1738,6 +1739,8 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.info("LocalAgentMemory initialised (cache: %s)", local_memory.cache_dir)
 
         sandbox_executor = SandboxExecutor(timeout=30)
+        sandbox_config = SandboxConfig(backend="auto")
+        app.state._sandbox_config = sandbox_config
 
         _cfg_dir = getattr(app.state, "_config_dir", None)
         replay_dir = os.path.join(_cfg_dir, "replay") if _cfg_dir else ".gludd/replay"
@@ -1919,6 +1922,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             pause_controller=getattr(app.state, "_pause_controller", None),
             memory_repo=memory_repo,
             sandbox_executor=sandbox_executor,
+            sandbox_config=sandbox_config,
             run_recorder=run_recorder,
             checkpointer=app.state.checkpointer,
             utilization_tracker=getattr(app.state, "_utilization_tracker", None),
@@ -2056,56 +2060,76 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             async def _gateway_executor(task: AgentTask) -> str:
                 profile_id = "default"
                 budget_manager = getattr(app.state, "_budget_manager", None)
-                if budget_manager is not None:
-                    daily = budget_manager.check_daily_budget_reserved(
-                        task.task_id, _projected_cost_usd
-                    )
-                    if not daily.get("allowed", True):
-                        logger.warning(
-                            "Gateway executor deferred for %s: daily budget exhausted",
-                            task.task_id,
-                        )
-                        return "deferred:budget_exhausted"
-                    per_todo = budget_manager.check_todo_budget(
-                        task.task_id, _projected_cost_usd
-                    )
-                    if not per_todo.get("allowed", True):
-                        logger.warning(
-                            "Gateway executor deferred for %s: per-todo budget exhausted",
-                            task.task_id,
-                        )
-                        # Release the daily reservation made above so a deferred
-                        # call does not leak held budget.
-                        budget_manager.release_reservation(task.task_id)
-                        return "deferred:budget_exhausted"
-                if task.agent_name == "research":
-                    from general_ludd.agents.researcher import ResearcherAgent
-                    searx = getattr(app.state, "_searx_client", None)
-                    agent = ResearcherAgent(searx_client=searx)
-                    report = await agent.research(query=task.prompt)
-                    return report.model_dump_json()
+
+                _saved_env: dict[str, str] = {}
+                _sts_env = getattr(task, "env", None)
+                if _sts_env:
+                    _sts_role = _sts_env.get("GLUDD_STS_ROLE_ID")
+                    _sts_secret = _sts_env.get("GLUDD_STS_SECRET_ID")
+                    if _sts_role:
+                        _saved_env["GLUDD_STS_ROLE_ID"] = os.environ.pop("GLUDD_STS_ROLE_ID", "")
+                        os.environ["GLUDD_STS_ROLE_ID"] = _sts_role
+                    if _sts_secret:
+                        _saved_env["GLUDD_STS_SECRET_ID"] = os.environ.pop("GLUDD_STS_SECRET_ID", "")
+                        os.environ["GLUDD_STS_SECRET_ID"] = _sts_secret
+
                 try:
-                    call_kwargs: dict[str, Any] = {}
-                    if getattr(task, "tools", None):
-                        call_kwargs["tools"] = task.tools
-                    result = await model_gateway.call_model_with_retry(
-                        profile_id,
-                        [{"role": "user", "content": task.prompt}],
-                        **call_kwargs,
-                    )
                     if budget_manager is not None:
-                        budget_manager.record_spend(
-                            task.task_id,
-                            float(getattr(result, "cost_estimate", 0.0) or 0.0),
+                        daily = budget_manager.check_daily_budget_reserved(
+                            task.task_id, _projected_cost_usd
                         )
-                    return result.content
-                except Exception as exc:
-                    logger.warning("Gateway executor failed for %s: %s", task.task_id, exc)
-                    # The call never produced a cost, so release both reservations
-                    # instead of leaking the held projected budget.
-                    if budget_manager is not None:
-                        budget_manager.release_reservation(task.task_id)
-                    return f"Error: {exc}"
+                        if not daily.get("allowed", True):
+                            logger.warning(
+                                "Gateway executor deferred for %s: daily budget exhausted",
+                                task.task_id,
+                            )
+                            return "deferred:budget_exhausted"
+                        per_todo = budget_manager.check_todo_budget(
+                            task.task_id, _projected_cost_usd
+                        )
+                        if not per_todo.get("allowed", True):
+                            logger.warning(
+                                "Gateway executor deferred for %s: per-todo budget exhausted",
+                                task.task_id,
+                            )
+                            # Release the daily reservation made above so a deferred
+                            # call does not leak held budget.
+                            budget_manager.release_reservation(task.task_id)
+                            return "deferred:budget_exhausted"
+                    if task.agent_name == "research":
+                        from general_ludd.agents.researcher import ResearcherAgent
+                        searx = getattr(app.state, "_searx_client", None)
+                        agent = ResearcherAgent(searx_client=searx)
+                        report = await agent.research(query=task.prompt)
+                        return report.model_dump_json()
+                    try:
+                        call_kwargs: dict[str, Any] = {}
+                        if getattr(task, "tools", None):
+                            call_kwargs["tools"] = task.tools
+                        result = await model_gateway.call_model_with_retry(
+                            profile_id,
+                            [{"role": "user", "content": task.prompt}],
+                            **call_kwargs,
+                        )
+                        if budget_manager is not None:
+                            budget_manager.record_spend(
+                                task.task_id,
+                                float(getattr(result, "cost_estimate", 0.0) or 0.0),
+                            )
+                        return result.content
+                    except Exception as exc:
+                        logger.warning("Gateway executor failed for %s: %s", task.task_id, exc)
+                        # The call never produced a cost, so release both reservations
+                        # instead of leaking the held projected budget.
+                        if budget_manager is not None:
+                            budget_manager.release_reservation(task.task_id)
+                        return f"Error: {exc}"
+                finally:
+                    for k, v in _saved_env.items():
+                        if v:
+                            os.environ[k] = v
+                        else:
+                            os.environ.pop(k, None)
 
             dispatcher_executor = make_spend_guarded_executor(
                 executor=_gateway_executor,

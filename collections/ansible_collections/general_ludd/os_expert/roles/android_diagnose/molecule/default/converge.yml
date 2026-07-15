@@ -1,0 +1,10 @@
+---
+- name: Converge
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: "Include android_diagnose"
+      ansible.builtin.include_role:
+        name: "android_diagnose"
+      vars:
+        enable_git_push: false

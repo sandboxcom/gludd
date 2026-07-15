@@ -6,7 +6,7 @@ provisioner:
   name: ansible
   env:
     ANSIBLE_COLLECTIONS_PATH: "${MOLECULE_PROJECT_DIRECTORY}/collections"
-    GLUDD_PROJECT_ROOT: "${MOLECULE_PROJECT_DIRECTORY}"
+    MOLECULE_PROJECT_DIRECTORY: "${MOLECULE_PROJECT_DIRECTORY}"
     GLUDD_MOCK_PORT: "8846"
   playbooks:
     prepare: default/prepare.yml
