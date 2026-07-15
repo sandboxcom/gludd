@@ -25,14 +25,16 @@ from general_ludd.sts.injector import SubagentTokenInjector
 class TestSubagentTokenInjectorEnvInjection:
     """P4: SubagentTokenInjector must inject STS tokens into subagent env."""
 
-    def test_injector_env_vars_contains_role_id(self) -> None:
+    @pytest.mark.asyncio
+    async def test_injector_env_vars_contains_role_id(self) -> None:
         """env_vars() must include GLUDD_STS_ROLE_ID from the minter."""
-        mock_minter = MagicMock()
+        mock_minter = AsyncMock()
+        mock_minter.mint.return_value = MagicMock(role_id="role-1", secret_id="sec-1")
         mock_store = MagicMock()
         mock_dispatcher = MagicMock()
         injector = SubagentTokenInjector(mock_minter, mock_store, mock_dispatcher)
 
-        env = injector.env_vars(agent_id="agent-1", parent_agent_id="parent-1")
+        env = await injector.env_vars(agent_id="agent-1", parent_agent_id="parent-1")
 
         assert "GLUDD_STS_ROLE_ID" in env, (
             "P4 gap: SubagentTokenInjector.env_vars() must emit GLUDD_STS_ROLE_ID "
@@ -41,14 +43,16 @@ class TestSubagentTokenInjectorEnvInjection:
         assert isinstance(env["GLUDD_STS_ROLE_ID"], str)
         assert len(env["GLUDD_STS_ROLE_ID"]) > 0
 
-    def test_injector_env_vars_contains_secret_id(self) -> None:
+    @pytest.mark.asyncio
+    async def test_injector_env_vars_contains_secret_id(self) -> None:
         """env_vars() must include GLUDD_STS_SECRET_ID."""
-        mock_minter = MagicMock()
+        mock_minter = AsyncMock()
+        mock_minter.mint.return_value = MagicMock(role_id="role-2", secret_id="sec-2")
         mock_store = MagicMock()
         mock_dispatcher = MagicMock()
         injector = SubagentTokenInjector(mock_minter, mock_store, mock_dispatcher)
 
-        env = injector.env_vars(agent_id="agent-2", parent_agent_id="parent-1")
+        env = await injector.env_vars(agent_id="agent-2", parent_agent_id="parent-1")
 
         assert "GLUDD_STS_SECRET_ID" in env, (
             "P4 gap: SubagentTokenInjector.env_vars() must emit GLUDD_STS_SECRET_ID "
@@ -57,28 +61,32 @@ class TestSubagentTokenInjectorEnvInjection:
         assert isinstance(env["GLUDD_STS_SECRET_ID"], str)
         assert len(env["GLUDD_STS_SECRET_ID"]) > 0
 
-    def test_injector_env_vars_contains_token_id(self) -> None:
+    @pytest.mark.asyncio
+    async def test_injector_env_vars_contains_token_id(self) -> None:
         """env_vars() must include GLUDD_STS_TOKEN_ID for audit traceability."""
-        mock_minter = MagicMock()
+        mock_minter = AsyncMock()
+        mock_minter.mint.return_value = MagicMock(role_id="role-3", secret_id="sec-3")
         mock_store = MagicMock()
         mock_dispatcher = MagicMock()
         injector = SubagentTokenInjector(mock_minter, mock_store, mock_dispatcher)
 
-        env = injector.env_vars(agent_id="agent-3", parent_agent_id="parent-1")
+        env = await injector.env_vars(agent_id="agent-3", parent_agent_id="parent-1")
 
         assert "GLUDD_STS_TOKEN_ID" in env, (
             "P4 gap: SubagentTokenInjector must emit GLUDD_STS_TOKEN_ID "
             "so every subagent action is attributable to a specific minted token"
         )
 
-    def test_env_vars_never_contain_psk(self) -> None:
+    @pytest.mark.asyncio
+    async def test_env_vars_never_contain_psk(self) -> None:
         """env_vars() must NEVER inject GLUDD_PSK into the subagent env."""
-        mock_minter = MagicMock()
+        mock_minter = AsyncMock()
+        mock_minter.mint.return_value = MagicMock(role_id="role-4", secret_id="sec-4")
         mock_store = MagicMock()
         mock_dispatcher = MagicMock()
         injector = SubagentTokenInjector(mock_minter, mock_store, mock_dispatcher)
 
-        env = injector.env_vars(agent_id="agent-4", parent_agent_id="parent-1")
+        env = await injector.env_vars(agent_id="agent-4", parent_agent_id="parent-1")
 
         assert "GLUDD_PSK" not in env, (
             "P4 gap: SubagentTokenInjector must NOT leak the admin PSK. "
@@ -90,13 +98,14 @@ class TestSubagentTokenInjectorEnvInjection:
             "should leak to the subagent (see stream dispatch env leak)"
         )
 
-    def test_injector_noops_when_minter_unavailable(self) -> None:
+    @pytest.mark.asyncio
+    async def test_injector_noops_when_minter_unavailable(self) -> None:
         """env_vars() returns empty dict when minter is None (fail-safe no-op)."""
         mock_store = MagicMock()
         mock_dispatcher = MagicMock()
         injector = SubagentTokenInjector(None, mock_store, mock_dispatcher)  # type: ignore[arg-type]
 
-        env = injector.env_vars(agent_id="agent-1", parent_agent_id="parent-1")
+        env = await injector.env_vars(agent_id="agent-1", parent_agent_id="parent-1")
 
         assert env == {}, (
             "P4 gap: when minter is unavailable, env_vars() must return empty dict "
