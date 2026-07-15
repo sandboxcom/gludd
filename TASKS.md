@@ -213,12 +213,12 @@ State backend for terraform with HTTP API (lock/unlock/get/update), replacing lo
 Counts below are recounted from the actual checkboxes on 2026-07-14. The prior
 header ("14 phases, 188 items, 100%") was wrong on all three numbers: there are
 13 phase sections, not 14; they hold 185 boxes, not 188; and Phase C is not
-100% — C.3, C.16 and C.18 are re-opened by the evidence-integrity audit.
+100% — C.3, C.16, and C.18 are now all verified and closed (last: C.18 tenant scoping, 2026-07-15).
 
 | Phase | Description | Items | Open | Date | Key Evidence |
 |-------|-------------|-------|------|------|--------------|
 | W | Enforcement/Plugin hardening | 26 | 0 | 2026-07-12 | 107/107 runtime tests, Node v26 compat, hot-reload proxy, all 13 plugins blocking |
-| C | Security/Correctness | 28 | **1** | 2026-07-12 | 700+ assertions, SSRF canonical, fail-closed auth, SSTI sweep — C.3 (tenant scoping) fixed (a0ced18d), C.18 remains open |
+| C | Security/Correctness | 28 | **0** | 2026-07-12 | 700+ assertions, SSRF canonical, fail-closed auth, SSTI sweep — C.3 (tenant scoping) fixed (a0ced18d), C.18 closed (tenant scoping verified, 15 tests) |
 | H | Security Hardening | 23 | 0 | 2026-07-12 | Migration 030, numeric IP guard, credential leak sanitizer, webhook rebind |
 | S | Post-Ship | 21 | 0 | 2026-07-12 | POST-SHIP #3-#8, migration parity, registry seal, semantic fix |
 | R | Collection Split + Documentation | 18 | 0 | 2026-07-12 | Security/Networking/Business collections, 5 new docs |
@@ -265,7 +265,7 @@ old summary table omitted entirely. Grand total across the file: **326** boxes.
 - [x] W.25 — watchdog.ts 5 runtime tests | priority: medium | effort: small | status: completed | evidence: 5 runtime tests pass, session 26
 - [x] W.26 — Fix enforce-stop.ts Node v26 compat | priority: high | effort: small | status: completed | evidence: commits c732b4cc + b53ab7fb. 107/107 runtime tests pass. New test: tests/unit/test_opencode_node_v26_compat.py
 
-### Phase C — Security/Correctness (2026-07-12, 28 items, 96% — C.18 open)
+### Phase C — Security/Correctness (2026-07-12, 28 items, 100% — ALL COMPLETE)
 
 - [x] C.1 — SSRF canonicalization: unify is_url_blocked/resolved_host_is_blocked/resolve_and_pin | priority: high | effort: medium | status: completed | evidence: resolve_and_pin canonical guard, 188 tests pass
 - [x] C.2 — Adversarial detector daemon-wiring + scan-file 400 fix | priority: high | effort: small | status: completed | evidence: 95 + 17 + 11 tests pass. scan_file symlink escape fixed.
@@ -282,7 +282,7 @@ old summary table omitted entirely. Grand total across the file: **326** boxes.
 - [x] C.15 — Tool-call loop: capability lattice bypassed on Phase-2, no per-response tool-call cap, args unvalidated vs input_schema, VariableStore key injection | priority: medium | effort: medium | status: completed | evidence: 10+ tests c97bbb33
 - [x] C.16 — Filestore RCE (FIXED): `sync_bundled_to_filestore()` digest verification added | priority: high | effort: small | status: completed | evidence: `sync_bundled_to_filestore()` now calls `_verify_digest()` before `store_binary()` (21 tests, test_c16_filestore_rce.py). Prior gap (store w/o verification) closed. commit 62f1bab8
 - [x] C.17 — Git automation: merge_branch bypasses per-repo lock, squash path check=False fail-open, branch-name collision | priority: medium | effort: medium | status: completed | evidence: 8 tests pass
-- [ ] C.18 — Accounting: blocking subprocess.run on event loop, no tenant scoping, NaN/Inf USD poisons JSON | priority: medium | effort: small | status: RE-OPENED 2026-07-14 audit | evidence: PARTIAL — commit 9f61ccac / 13 tests cover the blocking-subprocess and NaN/Inf sub-claims, but the "no tenant scoping" sub-claim needs verification now that C.3 tenant scoping is fixed (commit a0ced18d). `routers/accounting.py:164-167` needs re-audit with tenant filter active. Another bundle that should be split. | DEFERRED for E2E-test commit — not related to behavioral enforcement tests or CI molecule fixes.
+- [x] C.18 — Accounting: blocking subprocess.run on event loop, no tenant scoping, NaN/Inf USD poisons JSON | priority: medium | effort: small | status: completed | evidence: all 3 sub-claims verified. (1) blocking subprocess: offloaded via asyncio.to_thread (9f61ccac, 13 tests). (2) tenant scoping: C.3 fix (a0ced18d) do_orm_execute listener auto-filters ORM queries; api_accounting_project uses scoped_to(project_id) before _build_accountant; C.3 tests 8/8 pass; C.18 tests 15/15 pass including 2 new tenant-scoping verification tests. (3) NaN/Inf JSON: sanitized in ledger.py account_for(). All 3 claims independently verified.
 - [x] C.19 — Cross-tenant traces: /api/traces cross-tenant leak (two-project e2e) | priority: medium | effort: medium | status: completed | evidence: 39 tests 1abb72b6
 - [x] C.20 — Worker fail-open auth: default deny without PSK (mirror daemon fail-closed contract) | priority: high | effort: small | status: completed | evidence: 105 tests pass. Worker auth now fail-closed — 403 without valid PSK.
 - [x] C.21 — ALPHA4 leftovers: validation symlink confine, event_loop claim-before-cap window, _dispatch_review_job no timeout | priority: medium | effort: medium | status: completed | evidence: 21 tests 76c554e2

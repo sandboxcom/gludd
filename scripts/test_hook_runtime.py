@@ -1885,6 +1885,67 @@ console.log(JSON.stringify({{
     assert result["noMatch2"] == False, f"Should NOT match 'I will proceed'"
 
 
+def test_stop_status_summary_blocked_despite_evidence():
+    """Status summary with commit hashes + 'CI PENDING' (= structured evidence)
+    is STILL blanked while pending work exists — evidence never legitimizes
+    stopping-to-summarize. Regression pin for the 2026-07-15 bypass."""
+    _clean_state_files("/tmp/gludd-block-counter.json", "/tmp/gludd-persist-stop-block.json")
+    summary = (
+        "Here's the session 37 final status:\\n\\n"
+        "**Completed this session**\\n"
+        "- NF.2 P6 done (52 tests, 8d32ff5a)\\n"
+        "- NF.3 all roles fleshed (aa7e3abd)\\n\\n"
+        "**Remaining**\\n"
+        "| Item | Status |\\n"
+        "| --- | --- |\\n"
+        "| A.4 beta.2 release | CI PENDING |\\n"
+        "| NF.4 | in progress |\\n"
+    )
+    code = f"""\
+const mod = await import('{PLUGIN_DIR}/enforce-stop.ts')
+const plugin = await mod.default({{}})
+const output = {{text: "{summary}"}}
+const result = await plugin['experimental.text.complete'](undefined, output)
+const finalText = result?.text ?? output.text
+console.log(JSON.stringify({{
+    blocked: finalText !== output.text,
+    hasStatusSummaryBlock: finalText.includes('STATUS-SUMMARY RESPONSE BLOCKED'),
+}}))
+"""
+    result = _run_ts(code)
+    assert result is not None, "Expected JSON output"
+    assert result["blocked"] == True, f"Status summary with evidence must be blocked, got: {result}"
+    assert result["hasStatusSummaryBlock"] == True, f"Expected STATUS-SUMMARY RESPONSE BLOCKED, got: {result}"
+
+
+def test_stop_status_summary_export_matches():
+    """STATUS_SUMMARY_RE + looksLikeStatusSummary are exported and detect the pattern."""
+    code = f"""\
+const mod = await import('{PLUGIN_DIR}/enforce-stop.ts')
+const structural = "**What changed**\\n- [x] item one\\n- [x] item two\\n**Remaining**\\n| A | B |\\n| - | - |\\n"
+console.log(JSON.stringify({{
+    hasRe: typeof mod.STATUS_SUMMARY_RE !== 'undefined',
+    hasFn: typeof mod.looksLikeStatusSummary === 'function',
+    match1: mod.STATUS_SUMMARY_RE.test("Here's the session 37 final status"),
+    match2: mod.STATUS_SUMMARY_RE.test("Session 12 wrap-up"),
+    match3: mod.STATUS_SUMMARY_RE.test("Final status report:"),
+    structural: mod.looksLikeStatusSummary(structural),
+    noMatch1: mod.looksLikeStatusSummary("Reading the config file now."),
+    noMatch2: mod.STATUS_SUMMARY_RE.test("The function returns early."),
+}}))
+"""
+    result = _run_ts(code)
+    assert result is not None
+    assert result["hasRe"] == True
+    assert result["hasFn"] == True
+    assert result["match1"] == True, "Should match 'Here's the session 37 final status'"
+    assert result["match2"] == True, "Should match 'Session 12 wrap-up'"
+    assert result["match3"] == True, "Should match 'Final status report:'"
+    assert result["structural"] == True, "Should structurally match bolded headers + table/bullets"
+    assert result["noMatch1"] == False, "Should NOT match plain working text"
+    assert result["noMatch2"] == False, "Should NOT match plain sentence"
+
+
 # ---------------------------------------------------------------------------
 # enforce-clean-tree.ts  —  dispatch-time dirty tree enforcement
 # ---------------------------------------------------------------------------
