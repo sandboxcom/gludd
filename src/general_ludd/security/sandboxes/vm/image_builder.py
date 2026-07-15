@@ -122,7 +122,7 @@ def _verify_ext4_magic(image_path: Path) -> bool:
 
 def _create_oci_bundle(
     output_dir: Path, rootfs_files: dict[str, bytes]
-) -> tuple[Path, ...]:
+) -> tuple[str, ...]:
     output_dir.mkdir(parents=True, exist_ok=True)
     rootfs_dir = output_dir / "rootfs"
     rootfs_dir.mkdir(exist_ok=True)

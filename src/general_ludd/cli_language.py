@@ -123,7 +123,7 @@ def _cmd_language_scan_homoglyphs(args: argparse.Namespace) -> None:
         print(json.dumps(result, indent=2, ensure_ascii=False))
         return
 
-    result: dict[str, object] = {"input_length": len(text)}
+    result = {"input_length": len(text)}
     min_sev_str: str = getattr(args, "min_severity", "low") or "low"
     SEVERITY_RANK: dict[str, int] = {"low": 0, "medium": 1, "high": 2, "critical": 3}
     min_sev = SEVERITY_RANK.get(min_sev_str, 0)
@@ -405,13 +405,13 @@ def _cmd_language_phonetic_transcribe(args: argparse.Namespace) -> None:
             i += 1
         return code[:4]
 
-    result: dict[str, object] = {
+    phonetic_result: dict[str, object] = {
         "input_text": text,
         "method": method,
         "word_count": len(words),
         "words": [],
     }
-    words_out: list[dict[str, object]] = result["words"]  # type: ignore[assignment]
+    words_out: list[dict[str, object]] = phonetic_result["words"]  # type: ignore[assignment]
 
     for word in words:
         entry: dict[str, object] = {"word": word}
@@ -438,11 +438,11 @@ def _cmd_language_phonetic_transcribe(args: argparse.Namespace) -> None:
 
         words_out.append(entry)
 
-    print(json.dumps(result, indent=2, ensure_ascii=False))
+    print(json.dumps(phonetic_result, indent=2, ensure_ascii=False))
 
 
 def add_language_subparser(subparsers: Any) -> argparse.ArgumentParser:
-    language_parser = subparsers.add_parser(
+    language_parser: argparse.ArgumentParser = subparsers.add_parser(
         "language",
         help="Language Expert operations (encoding, homoglyphs, BOM, phonetics)",
     )

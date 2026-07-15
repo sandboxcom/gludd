@@ -43,6 +43,7 @@ If you are reading this and NOT dispatching subagents, you are violating the con
 12. **Bash = `make <target>` only.** Subagents MUST know that the bash tool can ONLY run `make <target>` commands — no `cd`, `python`, `pip`, `git`, or any other bare command. If a subagent needs a command that lacks a make target, it must either create the target or request one. This constraint must be in every subagent prompt that includes bash.
 13. **Subagents need grep/glob/read tool context.** When dispatching subagents that use grep, explicitly state: `path` = directory to search in, `include` = file pattern (e.g. `*.py`), `pattern` = regex. Subagent confusion about tool parameter names is a dispatch bug — the dispatcher didn't explain the tools.
 14. **Never re-dispatch completed work.** Before dispatching a subagent, check: has this exact task (file + objective) already been completed or dispatched in this session? Subagents repeating their parent's already-completed work is a cost bug. Gludd must have a deduplication check: hash the task spec, store in a set, reject duplicates.
+15. **Subagent slots are precious.** A slot filled with a status-check task is a slot stolen from real work. See "Subagent Task Design — Fix, Don't Check" below for the codified rule.
 
 ### Override precedence
 
@@ -85,6 +86,48 @@ The `enforce-enhancement-ratio.ts` plugin mechanically enforces the ratio rule:
 3. **Before merging development→master:** verify `make gate` green on development, CI green, then `make release-promote`.
 4. **`make batch-push` pushes the CURRENT branch.** Verify which branch you're on with `make verify-state` before pushing.
 5. **Enforced by:** `.opencode/plugin/enforce-clean-tree.ts` and this section. A push to master that adds commits beyond what development has is a policy violation.
+
+## CRITICAL: Subagent Task Design — Fix, Don't Check
+
+**Every subagent MUST produce a concrete fix or deliverable — never just a status report, audit finding, or problem list.** A subagent that reads files, reports problems, and returns without fixing them is a slot wasted. The 10-agent floor means nothing if half the slots are running read-only status checks.
+
+### The six rules
+
+1. **Every subagent MUST produce a concrete fix/deliverable.** A code change committed on a branch, a test file written, a config applied, a PR merged, a make target created — something that persists after the subagent returns. A bullet-point list of findings is NOT a deliverable. "I read 3 files and found 4 issues" is a FAILED subagent task.
+
+2. **"Check CI" subagents are FORBIDDEN.** The task must be "find AND fix the CI failure." A subagent that runs `make ci-verdict`, reports "CI is red, here are the failures," and returns has produced zero value — it consumed a slot to report information one read-only tool call could have returned. The correct subagent task: "Read the CI failure log, identify the root cause, fix the code, commit the fix on a branch, and return the commit hash."
+
+3. **"Audit lint/typecheck" subagents are FORBIDDEN.** The task must be "fix all lint and typecheck errors." Running `make lint` or `make typecheck` inside a subagent and returning the error list is a wasted slot — the orchestrator can run those in <1 second on the main thread. The correct subagent task: "Run `make lint` and `make typecheck`, fix every error found, run them again to confirm green, and return the commit hash."
+
+4. **"Check dirty tree" / "git status" subagents are FORBIDDEN.** `git status` is a read-only tool call that takes <0.1 seconds. Dispatching a subagent to run it burns a floor slot on an operation the orchestrator can do inline. Use the bash tool directly — never dispatch this.
+
+5. **Every subagent prompt MUST end with: "Do NOT just report problems. Fix them."** This is a mechanical prompt suffix — if the subagent receives a task that could be interpreted as "survey and report," this directive forces it to produce a fix instead. A subagent prompt without this suffix is a dispatch bug.
+
+6. **Status-check subagents are a FALSE FLOOR.** They count toward the 10-agent floor in the enforcement plugins but produce zero value. A wave of 10 subagents where 5 are "check CI," "audit lint," "scan for dead code," "survey test coverage," and "list uncommitted files" is functionally a wave of 5 — the floor is 5, not 10. The orchestrator MUST NOT pad a wave with status-check subagents to satisfy the floor plugin. If only 5 real tasks exist, dispatch 5 AND 5 research/refactor subagents that produce actual deliverables — never 5 check-only placeholders.
+
+### Forbidden subagent task descriptions (dispatch prompt keywords — any match is a dispatch bug)
+
+| Forbidden prompt phrase | Why forbidden | Correct alternative |
+|---|---|---|
+| "check CI status" / "check if CI is green" | Read-only poll; produces no fix | "Find AND fix the CI failure" |
+| "audit lint" / "run lint and report" | Read-only; produces no fix | "Fix all lint errors" |
+| "check for type errors" / "audit typecheck" | Read-only; produces no fix | "Fix all typecheck errors" |
+| "check dirty tree" / "check git status" | <0.1s read-only; never needs a subagent | Run `make git-status` inline |
+| "scan for dead code" / "find unused imports" | Read-only audit; produces no fix | "Remove all dead code found by vulture" |
+| "survey test coverage" / "list uncovered files" | Read-only; produces no fix | "Write missing tests to bring coverage above 85%" |
+| "review and report" / "read and summarize" | Read-only; produces no fix | "Read, identify the issue, AND fix it" |
+| "check for secrets" / "audit for vulnerabilities" | Read-only; produces no fix | "Fix all detected secrets violations" |
+| "poll until" / "wait for" / "watch for" | Holds slot doing nothing | Use a background watcher or check at natural breaks |
+
+### Research subagent exception
+
+Read-only research subagents (e.g., "what does this library do?") that are explicitly dispatched to answer a question ARE valid when the prompt specifies the specific question and a concrete deliverable (a decision recommendation, a comparison table, an architecture proposal). The distinction: a research subagent ANSWERS a question the orchestrator does not know the answer to; a status-check subagent REPORTS information the orchestrator could obtain with one tool call. "Should we use library X or library Y for Z?" is research. "What is the current lint output?" is status-check — never dispatch it.
+
+### Enforcement
+
+- **Prompt** — this section (proactive instruction for every agent and subagent reading AGENTS.md).
+- **Plugin (future)** — a matcher on task/agent/workflow dispatch prompts that checks for forbidden phrases and DENIES the dispatch.
+- **Test** — `tests/unit/test_subagent_fix_not_check.py` (structural pin on this section's existence and the forbidden phrases table).
 
 ## CRITICAL: Single-Source Feature Development
 
@@ -174,6 +217,43 @@ Node v26 `--experimental-strip-types` compatibility verified: 0 `require()` call
 
 **Note:** Enforcement plugin changes take effect on opencode restart. During a session where plugin source was edited, behavioral enforcement may lag until restart.
 
+### 2026-07-15: enforce-stop.ts Disengage Bypass Fix
+
+**Bug:** `make disengage-enforcement` was bypassing ALL `text.complete` enforcement
+in `enforce-stop.ts`, including the fundamental `hasRealPendingWork()` text-only block.
+The disengage signal (written to `/tmp/gludd-watchdog-disengage`) caused the plugin to
+skip the check that blocks text-only responses when unchecked TASKS.md items, ratchet
+entries, red gate, or unreleased tags exist. Agents could respond with text-only
+summaries while work remained — the exact failure mode the plugin was built to prevent.
+
+**Fix (2026-07-15):**
+- Disengage now only skips **heuristic checks**: `COMPLETION_SMELL` patterns,
+  `COMPLETION_WORDS` detection, and `QA_RESPONSE_PATTERNS` matching.
+- The fundamental `hasRealPendingWork()` text-only block is **NEVER bypassed** by
+  disengage. Any text-only response while pending work exists is always blanked,
+  regardless of disengage state.
+
+**Additional fix — evidence regex narrowed:**
+- `enforce-verified-claims.ts` regex for commit-hash evidence narrowed from
+  `\b[0-9a-f]{7,40}\b` to `\b[0-9a-f]*[a-f][0-9a-f]{6,39}\b`. The old regex
+  matched pure-digit 7+-character strings (CI run numbers, timestamps, build IDs),
+  causing false-positive "evidence present" matches. The new regex requires at
+  least one hex letter (`[a-f]`), ensuring only actual git commit hashes match.
+
+### 2026-07-15: enforce-session-start.ts isTaskFileRead Input Shape Fix
+
+**Bug:** `isTaskFileRead()` received an input object where the `path` field was
+not at the top level but nested inside a `tool_input` object. The function
+extracted `tool_call.path` directly, which was `undefined`, so no file read was
+ever recognized as a task-tracking file read. This caused the session-start
+protocol to block all initial tool calls — including reads of TASKS.md/BUGS.md/
+ratchet.yml/SESSION.md — defeating the protocol's own escape hatch.
+
+**Fix:** `isTaskFileRead()` now checks both `tool_call.path` and
+`tool_call.tool_input?.path` (the nested form), so file reads are correctly
+identified regardless of input shape. The session-start protocol now allows the
+initial parallel reads to proceed before enforcing the dispatch wave requirement.
+
 ### Subagent Enforcement Isolation
 
 Enforcement plugins MUST NOT interfere with subagent tool calls or output. Subagents operate in a delegated context — the orchestrator manages enforcement, not the subagent.
@@ -203,7 +283,7 @@ OpenCode loads plugins at startup only — there is no hot-reload API. To change
 - `make reload-enforcement` — resets all enforcement state files to pick up env var changes
 - All enforcement plugins re-read shared state files on each hook invocation (not cached at init)
 - State files in `/tmp/gludd-*`: floor-override, tool-streak, watchdog-disengage, enhancement-ratio, task-deadlines, session-start
-- To temporarily disable all enforcement: `make disengage-enforcement` (writes disengage signal)
+- To temporarily disable all enforcement: `make disengage-enforcement` (writes disengage signal). **As of 2026-07-15, disengage only skips heuristic checks (COMPLETION_SMELL, COMPLETION_WORDS, QA patterns) in `enforce-stop.ts` — it NEVER skips the fundamental `hasRealPendingWork()` text-only block.** The prior behavior (disengage bypassing ALL enforcement) allowed agents to send text-only responses while work remained, defeating the core stop-prevention mechanism.
 - To set floor override: `echo 10 > /tmp/gludd-floor-override`
 
 The state-file pattern is the canonical mechanism for runtime enforcement tuning. Plugin source changes still require an opencode restart.

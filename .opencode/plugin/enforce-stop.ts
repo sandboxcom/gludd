@@ -726,8 +726,9 @@ const defaultImpl: HotModule = {
       }
     }
 
-    // ── REAL PENDING WORK BLOCK (ALL text-only responses, NO exemptions) ─────
-    if (workState.hasPendingWork) {
+    // ── REAL PENDING WORK BLOCK (text-only responses without evidence) ──────
+    // DO NOT fire when: (a) text has structured evidence, or (b) no real pending work.
+    if (workState.hasPendingWork && !hasStructuredEvidence(text)) {
       const sessionBlockCount = incrementSessionBlockCounter()
       const escalationNote = sessionBlockCount > ESCALATION_THRESHOLD
         ? `\n🚨 ESCALATION: ${sessionBlockCount} stop attempts blocked this session. COMPLIANCE REQUIRED.`

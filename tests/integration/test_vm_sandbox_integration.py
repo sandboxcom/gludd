@@ -474,3 +474,262 @@ class TestSandboxTargetVariants:
         with patch.object(FirecrackerBackend, "available", return_value=True):
             handle = FirecrackerBackend.apply(_make_spec(), target)
             assert handle.applied is True
+
+
+# ---------------------------------------------------------------------------
+# P3: Daemon Wiring — Config Model
+# ---------------------------------------------------------------------------
+
+
+class TestVmSandboxConfigModel:
+    def test_defaults(self):
+        from general_ludd.config.user_config import VmSandboxConfig
+
+        cfg = VmSandboxConfig()
+        assert cfg.enabled is False
+        assert cfg.image_type == "firecracker"
+        assert cfg.vcpu_count == 1
+        assert cfg.mem_mib == 512
+        assert cfg.auto_build is False
+
+    def test_enabled_firecracker_config(self):
+        from general_ludd.config.user_config import VmSandboxConfig
+
+        cfg = VmSandboxConfig(
+            enabled=True,
+            image_type="firecracker",
+            default_image="/cache/rootfs.ext4",
+            kernel_path="/boot/vmlinux",
+            vsock_port=1234,
+            vcpu_count=2,
+            mem_mib=1024,
+            auto_build=True,
+        )
+        assert cfg.enabled is True
+        assert cfg.image_type == "firecracker"
+        assert cfg.default_image == "/cache/rootfs.ext4"
+        assert cfg.kernel_path == "/boot/vmlinux"
+        assert cfg.vsock_port == 1234
+
+    def test_enabled_gvisor_config(self):
+        from general_ludd.config.user_config import VmSandboxConfig
+
+        cfg = VmSandboxConfig(
+            enabled=True,
+            image_type="gvisor",
+            mem_mib=2048,
+        )
+        assert cfg.enabled is True
+        assert cfg.image_type == "gvisor"
+
+    def test_json_roundtrip(self):
+        from general_ludd.config.user_config import VmSandboxConfig
+
+        cfg = VmSandboxConfig(
+            enabled=True,
+            image_type="firecracker",
+            vcpu_count=4,
+            mem_mib=4096,
+        )
+        data = dict(cfg)
+        assert data["enabled"] is True
+        assert data["image_type"] == "firecracker"
+
+
+# ---------------------------------------------------------------------------
+# P3: Daemon Wiring — SandboxConfig with VM settings
+# ---------------------------------------------------------------------------
+
+
+class TestSandboxConfigVmWiring:
+    def test_sandbox_config_with_vm_firecracker(self):
+        from general_ludd.sandbox.enforcer import SandboxConfig
+
+        cfg = SandboxConfig(
+            backend="firecracker",
+            image_path="/cache/rootfs.ext4",
+            vsock_port=5678,
+            memory_mb=1024,
+        )
+        assert cfg.backend == "firecracker"
+        assert cfg.image_path == "/cache/rootfs.ext4"
+        assert cfg.vsock_port == 5678
+        assert cfg.memory_mb == 1024
+
+    def test_sandbox_config_with_vm_gvisor(self):
+        from general_ludd.sandbox.enforcer import SandboxConfig
+
+        cfg = SandboxConfig(
+            backend="gvisor",
+            image_path="/cache/gvisor-bundle",
+            memory_mb=2048,
+        )
+        assert cfg.backend == "gvisor"
+        assert cfg.image_path == "/cache/gvisor-bundle"
+
+    def test_sandbox_config_auto_fallback(self):
+        from general_ludd.sandbox.enforcer import SandboxConfig
+
+        cfg = SandboxConfig(backend="auto")
+        assert cfg.backend == "auto"
+        assert cfg.image_path == ""
+        assert cfg.vsock_port == 0
+
+    def test_vm_config_to_sandbox_config_bridge(self):
+        from general_ludd.config.user_config import VmSandboxConfig
+        from general_ludd.sandbox.enforcer import SandboxConfig
+
+        vm_cfg = VmSandboxConfig(
+            enabled=True,
+            image_type="firecracker",
+            default_image="/images/sandbox.ext4",
+            vsock_port=9999,
+            mem_mib=512,
+        )
+        sandbox_cfg = SandboxConfig(
+            backend=vm_cfg.image_type if vm_cfg.enabled else "auto",
+            image_path=vm_cfg.default_image,
+            vsock_port=vm_cfg.vsock_port,
+            memory_mb=vm_cfg.mem_mib,
+        )
+        assert sandbox_cfg.backend == "firecracker"
+        assert sandbox_cfg.image_path == "/images/sandbox.ext4"
+        assert sandbox_cfg.vsock_port == 9999
+        assert sandbox_cfg.memory_mb == 512
+
+    def test_vm_config_disabled_auto_backend(self):
+        from general_ludd.config.user_config import VmSandboxConfig
+        from general_ludd.sandbox.enforcer import SandboxConfig
+
+        vm_cfg = VmSandboxConfig(enabled=False, image_type="gvisor")
+        sandbox_cfg = SandboxConfig(
+            backend=vm_cfg.image_type if vm_cfg.enabled else "auto",
+            image_path=vm_cfg.default_image,
+            vsock_port=vm_cfg.vsock_port,
+            memory_mb=vm_cfg.mem_mib,
+        )
+        assert sandbox_cfg.backend == "auto"
+
+
+# ---------------------------------------------------------------------------
+# P3: Daemon Wiring — UserConfig vm_sandbox field
+# ---------------------------------------------------------------------------
+
+
+class TestUserConfigVmSandboxField:
+    def test_user_config_has_vm_sandbox_default(self):
+        from general_ludd.config.user_config import UserConfig
+
+        uc = UserConfig()
+        assert hasattr(uc, "vm_sandbox")
+        vm = uc.vm_sandbox
+        assert vm.enabled is False
+
+    def test_user_config_vm_sandbox_override(self):
+        from general_ludd.config.user_config import UserConfig, VmSandboxConfig
+
+        uc = UserConfig(
+            vm_sandbox=VmSandboxConfig(
+                enabled=True,
+                image_type="firecracker",
+                vcpu_count=2,
+            ),
+        )
+        assert uc.vm_sandbox.enabled is True
+        assert uc.vm_sandbox.image_type == "firecracker"
+        assert uc.vm_sandbox.vcpu_count == 2
+
+
+# ---------------------------------------------------------------------------
+# P3: Daemon Wiring — Startup config with vm_sandbox
+# ---------------------------------------------------------------------------
+
+
+class TestDaemonVmSandboxStartup:
+    def test_load_startup_config_includes_vm_sandbox_default(self):
+        from general_ludd.config.user_config import UserConfig
+        from general_ludd.daemon import load_startup_config
+
+        cfg = load_startup_config(config_dir=None)
+        uc = cfg.get("user_config")
+        assert uc is not None
+        assert isinstance(uc, UserConfig)
+        vm = getattr(uc, "vm_sandbox", None)
+        assert vm is not None
+        assert vm.enabled is False
+
+    def test_vm_sandbox_disabled_by_default(self):
+        from general_ludd.config.user_config import UserConfig
+
+        uc = UserConfig()
+        assert uc.vm_sandbox.enabled is False
+        assert uc.vm_sandbox.auto_build is False
+
+
+# ---------------------------------------------------------------------------
+# P3: Image Builder Compatibility
+# ---------------------------------------------------------------------------
+
+
+class TestImageBuilderTypeCompat:
+    def test_firecracker_build_returns_valid_image(self, tmp_path: Path):
+        from general_ludd.security.sandboxes.vm.image_builder import (
+            ImageManifest,
+            build_firecracker_image,
+        )
+
+        manifest = ImageManifest(
+            name="test-fc",
+            packages=("python3",),
+            architecture="x86_64",
+        )
+        result = build_firecracker_image(manifest)
+        assert result.image_type == "firecracker"
+        assert result.size_bytes > 0
+        assert len(result.manifest_hash) == 64
+
+        ext4 = result.path / "rootfs.ext4"
+        assert ext4.exists()
+
+    def test_gvisor_build_returns_valid_bundle(self, tmp_path: Path):
+        from general_ludd.security.sandboxes.vm.image_builder import (
+            ImageManifest,
+            build_gvisor_image,
+        )
+
+        manifest = ImageManifest(
+            name="test-gv",
+            packages=("python3",),
+            architecture="x86_64",
+        )
+        result = build_gvisor_image(manifest)
+        assert result.image_type == "gvisor"
+        assert result.size_bytes > 0
+        assert len(result.manifest_hash) == 64
+
+        config = result.path / "config.json"
+        assert config.exists()
+
+    def test_build_rootfs_firecracker_to_custom_path(self, tmp_path: Path):
+        from general_ludd.security.sandboxes.vm.image_builder import build_rootfs
+
+        dest = tmp_path / "custom.ext4"
+        result = build_rootfs(str(dest), "firecracker")
+        assert result.image_type == "firecracker"
+        assert dest.is_dir() or (tmp_path / result.files[0]).exists()
+
+    def test_build_rootfs_gvisor_to_custom_path(self, tmp_path: Path):
+        from general_ludd.security.sandboxes.vm.image_builder import build_rootfs
+
+        dest = tmp_path / "custom-bundle"
+        result = build_rootfs(str(dest), "gvisor")
+        assert result.image_type == "gvisor"
+
+    def test_build_rootfs_unknown_type_raises(self):
+        from general_ludd.security.sandboxes.vm.image_builder import build_rootfs
+
+        try:
+            build_rootfs("/tmp/bad.ext4", "unsupported")
+            raise AssertionError("should have raised")
+        except ValueError as e:
+            assert "unsupported" in str(e)

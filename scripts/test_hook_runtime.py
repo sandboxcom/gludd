@@ -1332,6 +1332,153 @@ console.log(JSON.stringify(result ?? {{allowed: true}}))
     _clean_state_files(state_file)
 
 
+# ============================================================================
+# FAILING TESTS — prove grinding-inline is not blocked correctly
+# ============================================================================
+
+
+def test_multitask_grind_inline_no_prior_dispatch():
+    """Agent grinds inline without dispatching: consecutive counter reachable.
+
+    With MIN_DISPATCHES=10 and THRESHOLD=3, makes 4 consecutive non-dispatch
+    calls without dispatching first. The consecutive-non-dispatch counter is
+    incremented BEFORE the under-floor check, so the under-floor deny message
+    includes the current consecutive count.
+
+    Call 1 (read): consecutive=1, under-floor fires (0 < 10). Message includes
+      both "UNDER-FLOOR HARD BLOCK" and "consecutive non-dispatch calls: 1".
+    Call 2 (grep): consecutive=2, under-floor still fires.
+    Call 3 (edit): consecutive=3 >= THRESHOLD → CONSECUTIVE GRINDING block fires.
+    Call 4 (bash): consecutive=4 >= THRESHOLD → CONSECUTIVE GRINDING again.
+    """
+    state_file = f"/tmp/gludd-multitask-grind-{os.getpid()}.json"
+    _clean_state_files(state_file,
+                       "/tmp/gludd-watchdog-disengage.json",
+                       "/tmp/gludd-force-dispatch.json")
+    code = f"""\
+const mod = await import('{PLUGIN_DIR}/enforce-multitask.ts')
+const plugin = await mod.default({{}})
+// NO dispatches — simulate agent grinding inline immediately
+const r1 = await plugin['tool.execute.before']({{tool: 'read'}}, undefined)
+const r2 = await plugin['tool.execute.before']({{tool: 'grep'}}, undefined)
+const r3 = await plugin['tool.execute.before']({{tool: 'edit'}}, undefined)
+const r4 = await plugin['tool.execute.before']({{tool: 'bash'}}, undefined)
+console.log(JSON.stringify({{
+    r1_denied: r1 !== null && r1?.permissionDecision === 'deny',
+    r1_hasConsecutive: typeof r1?.message === 'string' && r1.message.includes('consecutive non-dispatch'),
+    r1_hasUnderFloor: typeof r1?.message === 'string' && r1.message.includes('UNDER-FLOOR HARD BLOCK'),
+    r1_hasGrinding: typeof r1?.message === 'string' && r1.message.includes('CONSECUTIVE GRINDING'),
+    r2_denied: r2 !== null && r2?.permissionDecision === 'deny',
+    r3_denied: r3 !== null && r3?.permissionDecision === 'deny',
+    r3_hasGrinding: typeof r3?.message === 'string' && r3.message.includes('CONSECUTIVE GRINDING'),
+    r4_denied: r4 !== null && r4?.permissionDecision === 'deny',
+    r4_hasGrinding: typeof r4?.message === 'string' && r4.message.includes('CONSECUTIVE GRINDING'),
+}}))
+"""
+    result = _run_ts(code, env_override={
+        "GLUDD_MULTITASK_STATE_FILE": state_file,
+        "GLUDD_MIN_DISPATCHES": "10",
+        "GLUDD_CONSECUTIVE_NON_DISPATCH_THRESHOLD": "3",
+        "GLUDD_CONSECUTIVE_NON_DISPATCH_WINDOW_MS": "60000",
+        "GLUDD_MULTITASK_FLOOR_ENFORCE": "1",
+    })
+    # Call 1: under-floor blocks, but message NOW includes consecutive count
+    assert result["r1_denied"] == True, (
+        f"Call 1 must be denied (under-floor). Got: {result}"
+    )
+    assert result["r1_hasUnderFloor"] == True, (
+        f"Call 1 message must contain UNDER-FLOOR HARD BLOCK. Got: {result}"
+    )
+    assert result["r1_hasConsecutive"] == True, (
+        f"Call 1 message must include consecutive non-dispatch count. Got: {result}"
+    )
+    assert result["r1_hasGrinding"] == False, (
+        f"Call 1 (counter=1 < threshold=3) must NOT fire CONSECUTIVE GRINDING. Got: {result}"
+    )
+    # Call 2: still under-floor (0 dispatches)
+    assert result["r2_denied"] == True, f"Call 2 must be denied. Got: {result}"
+    # Call 3: consecutive counter at threshold → CONSECUTIVE GRINDING fires
+    assert result["r3_denied"] == True, f"Call 3 must be denied. Got: {result}"
+    assert result["r3_hasGrinding"] == True, (
+        f"Call 3 (counter=3 >= threshold=3) must fire CONSECUTIVE GRINDING. Got: {result}"
+    )
+    # Call 4: still grinding
+    assert result["r4_denied"] == True, f"Call 4 must be denied. Got: {result}"
+    assert result["r4_hasGrinding"] == True, f"Call 4 must be grinding-denied. Got: {result}"
+    _clean_state_files(state_file)
+
+
+def test_multitask_text_only_response_next_tool_blocked():
+    """After floor is satisfied (15 dispatches), consecutive counter blocks grinding.
+
+    With MIN_DISPATCHES=10 and THRESHOLD=3, dispatches 15 agents to satisfy
+    the floor, then makes 4 non-dispatch calls. Since the floor IS satisfied
+    (15 >= 10), the under-floor block does NOT fire. Instead, the consecutive
+    counter catches the grinding pattern:
+
+    Call 1 (read): consecutive=1 (< 3), no under-floor → ALLOWED
+    Call 2 (grep): consecutive=2 (< 3), no under-floor → ALLOWED
+    Call 3 (edit): consecutive=3 >= THRESHOLD → CONSECUTIVE GRINDING
+    Call 4 (write): consecutive=4 >= THRESHOLD → CONSECUTIVE GRINDING
+    """
+    state_file = f"/tmp/gludd-multitask-text-only-{os.getpid()}.json"
+    _clean_state_files(state_file,
+                       "/tmp/gludd-watchdog-disengage.json",
+                       "/tmp/gludd-force-dispatch.json")
+    code = f"""\
+const mod = await import('{PLUGIN_DIR}/enforce-multitask.ts')
+const plugin = await mod.default({{}})
+// Satisfy the floor: 15 dispatches so thisMessageDispatches >= MIN_DISPATCHES
+for (let i = 0; i < 15; i++) {{
+    await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
+}}
+// Now make non-dispatch calls — grinding after floor satisfied
+const r1 = await plugin['tool.execute.before']({{tool: 'read'}}, undefined)
+const r2 = await plugin['tool.execute.before']({{tool: 'grep'}}, undefined)
+const r3 = await plugin['tool.execute.before']({{tool: 'edit'}}, undefined)
+const r4 = await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
+console.log(JSON.stringify({{
+    r1_denied: r1 !== null && r1?.permissionDecision === 'deny',
+    r1_allowed: r1 === undefined || r1 === null,
+    r2_denied: r2 !== null && r2?.permissionDecision === 'deny',
+    r2_allowed: r2 === undefined || r2 === null,
+    r3_denied: r3 !== null && r3?.permissionDecision === 'deny',
+    r3_hasGrinding: typeof r3?.message === 'string' && r3.message.includes('CONSECUTIVE GRINDING'),
+    r4_denied: r4 !== null && r4?.permissionDecision === 'deny',
+    r4_hasGrinding: typeof r4?.message === 'string' && r4.message.includes('CONSECUTIVE GRINDING'),
+    r4_msg: r4?.message || '',
+}}))
+"""
+    result = _run_ts(code, env_override={
+        "GLUDD_MULTITASK_STATE_FILE": state_file,
+        "GLUDD_MIN_DISPATCHES": "10",
+        "GLUDD_MULTITASK_MAX_DISPATCHES": "20",
+        "GLUDD_CONSECUTIVE_NON_DISPATCH_THRESHOLD": "3",
+        "GLUDD_CONSECUTIVE_NON_DISPATCH_WINDOW_MS": "60000",
+        "GLUDD_MULTITASK_FLOOR_ENFORCE": "1",
+    })
+    # Calls 1-2 are allowed: floor satisfied (15 >= 10), counter below threshold
+    assert result["r1_allowed"] == True, (
+        f"Call 1 (read) must be ALLOWED: floor satisfied, counter=1 < 3. Got: {result}"
+    )
+    assert result["r2_allowed"] == True, (
+        f"Call 2 (grep) must be ALLOWED: floor satisfied, counter=2 < 3. Got: {result}"
+    )
+    # Call 3: consecutive counter at threshold → CONSECUTIVE GRINDING fires
+    assert result["r3_denied"] == True, (
+        f"Call 3 must be denied by CONSECUTIVE GRINDING. Got: {result}"
+    )
+    assert result["r3_hasGrinding"] == True, (
+        f"Call 3 message must contain CONSECUTIVE GRINDING. Got: {result}"
+    )
+    # Call 4: still grinding
+    assert result["r4_denied"] == True, f"Call 4 must be denied. Got: {result}"
+    assert result["r4_hasGrinding"] == True, (
+        f"Call 4 message must contain CONSECUTIVE GRINDING. Got: {result}"
+    )
+    _clean_state_files(state_file)
+
+
 # ---------------------------------------------------------------------------
 # enforce-stop.ts  —  text.complete block for pending work + stop patterns
 # ---------------------------------------------------------------------------

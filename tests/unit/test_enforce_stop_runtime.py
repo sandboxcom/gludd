@@ -247,10 +247,11 @@ def test_stop_text_complete_qa_response_pattern_blocked(hook_plugin_env: HookEnv
 
 
 def test_stop_text_complete_disengage_allows_through(hook_plugin_env: HookEnv):
-    """When block counter has disengageUntil in the future, isDisengaged()
-    returns true and text.complete returns without COMPLETION_SMELL heuristics.
-    The hasRealPendingWork block still fires if work exists, so we seed a
-    clean CI cache + empty TASKS.md."""
+    """Disengage skips heuristic checks (COMPLETION_SMELL) but does NOT
+    prevent the hasRealPendingWork text-only block when work exists.
+    Here we seed NO pending work, so the block does not fire and the
+    text passes through. This is CORRECT: disengage is a heuristic bypass,
+    not a get-out-of-work-free card."""
     # hasRealPendingWork() reads /tmp/gludd-watchdog-ci.json directly.
     ci_path = Path("/tmp/gludd-watchdog-ci.json")
     _old_ci = ci_path.read_bytes() if ci_path.exists() else None
@@ -281,7 +282,7 @@ def test_stop_text_complete_disengage_allows_through(hook_plugin_env: HookEnv):
         # since we seeded no pending work.
         pb = _read_persist_block(hook_plugin_env)
         assert pb is None or pb.get("blocked") is not True, (
-            f"Disengage must prevent block; got persist_block={pb}"
+            f"Disengaged + no work: block must not fire. Got persist_block={pb}"
         )
     finally:
         if _old_ci is not None:
@@ -556,9 +557,9 @@ def test_disengage_does_NOT_bypass_text_only_with_pending_work(
 def test_disengage_still_allows_completion_smell_when_no_work(
     hook_plugin_env: HookEnv,
 ):
-    """Regression guard: disengage still allows completion-adjacent text through
-    when there is NO real pending work. Only the fundamental hasPendingWork
-    block should pierce the disengage.
+    """Disengage + no pending work: completion-adjacent text passes through.
+    The hasRealPendingWork block checks !hasStructuredEvidence(text) before
+    firing, so when no work exists, completion-adjacent text is never blocked.
     """
     import time as _time
 

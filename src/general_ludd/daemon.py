@@ -33,7 +33,7 @@ from general_ludd.config.project_dir import (
     validate_project_overlay,
 )
 from general_ludd.config.task_loader import discover_task_definitions
-from general_ludd.config.user_config import UserConfig
+from general_ludd.config.user_config import UserConfig, VmSandboxConfig
 from general_ludd.controllers.budget import RunBudgetGuard
 from general_ludd.db.repository import (
     AuditEventRepository,
@@ -1738,9 +1738,57 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state._local_memory = local_memory
         logger.info("LocalAgentMemory initialised (cache: %s)", local_memory.cache_dir)
 
+        # P3: VM sandbox config — load from UserConfig, override SandboxConfig,
+        # and optionally pre-build the default image at startup.
+        vm_sandbox_cfg = VmSandboxConfig()
+        if uc is not None:
+            _vm_raw = getattr(uc, "vm_sandbox", None)
+            if _vm_raw is not None:
+                vm_sandbox_cfg = _vm_raw
+
         sandbox_executor = SandboxExecutor(timeout=30)
-        sandbox_config = SandboxConfig(backend="auto")
+        sandbox_config = SandboxConfig(
+            backend=vm_sandbox_cfg.image_type if vm_sandbox_cfg.enabled else "auto",
+            image_path=vm_sandbox_cfg.default_image,
+            vsock_port=vm_sandbox_cfg.vsock_port,
+            memory_mb=vm_sandbox_cfg.mem_mib,
+        )
         app.state._sandbox_config = sandbox_config
+        app.state._vm_sandbox_config = vm_sandbox_cfg
+
+        if vm_sandbox_cfg.enabled and vm_sandbox_cfg.auto_build:
+            try:
+                from general_ludd.security.sandboxes.vm.image_builder import (
+                    ImageManifest,
+                    build_rootfs,
+                )
+
+                _img_path = vm_sandbox_cfg.default_image or str(
+                    Path.home() / ".cache" / "gludd" / "sandbox" / "default.ext4"
+                )
+                _manifest = ImageManifest(
+                    name="gludd-sandbox-default",
+                    packages=("python3", "ansible", "git"),
+                    architecture="x86_64",
+                )
+                _built = await asyncio.to_thread(
+                    build_rootfs,
+                    _img_path,
+                    vm_sandbox_cfg.image_type,
+                    _manifest,
+                )
+                logger.info(
+                    "VM sandbox default image built: %s (%d bytes, type=%s, hash=%s)",
+                    _built.path,
+                    _built.size_bytes,
+                    _built.image_type,
+                    _built.manifest_hash[:12],
+                )
+            except Exception:
+                logger.warning(
+                    "VM sandbox auto_build failed — continuing without pre-built image",
+                    exc_info=True,
+                )
 
         _cfg_dir = getattr(app.state, "_config_dir", None)
         replay_dir = os.path.join(_cfg_dir, "replay") if _cfg_dir else ".gludd/replay"

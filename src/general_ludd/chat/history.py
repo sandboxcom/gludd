@@ -120,7 +120,7 @@ class ChatHistory:
                 "total_messages": 0,
                 "unique_models": [],
             }
-        total_messages = sum(int(cast(object, s.get("message_count", 0))) for s in sessions)
+        total_messages = sum(cast(int, s.get("message_count", 0)) for s in sessions)
         models: set[str] = set()
         for s in sessions:
             m = str(s.get("model", "unknown"))

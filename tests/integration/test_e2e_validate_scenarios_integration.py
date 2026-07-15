@@ -147,7 +147,7 @@ class TestThresholdEdgeCases:
         scenarios_file.write_text(scenarios)
         subprocess.run(
             ["python3", str(_VALIDATE_SCRIPT), "--scenarios-file", str(scenarios_file),
-             "--output", str(output_file), "--mock"],
+             "--output", str(output_file), "--mock", "--confidence-threshold", "0.41"],
             capture_output=True, text=True, timeout=30, check=True,
         )
         data = json.loads(output_file.read_text())
@@ -288,11 +288,13 @@ class TestErrorHandling:
         assert result.returncode != 0
 
     def test_daemon_unreachable_graceful_fallback(self, scenarios_file: Path, output_file: Path):
-        scenarios = _make_scenarios_json([{"name": "crud_lifecycle", "description": "test", "coverage_targets": []}])
+        scenarios = _make_scenarios_json(
+            [{"name": "crud_lifecycle", "description": "create read update delete api test", "coverage_targets": []}],
+        )
         scenarios_file.write_text(scenarios)
         result = subprocess.run(
             ["python3", str(_VALIDATE_SCRIPT), "--scenarios-file", str(scenarios_file),
-             "--output", str(output_file), "--mock", "--daemon-url", "http://127.0.0.1:19999"],
+             "--output", str(output_file), "--daemon-url", "http://127.0.0.1:19999"],
             capture_output=True, text=True, timeout=30,
         )
         assert result.returncode == 0

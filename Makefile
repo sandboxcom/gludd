@@ -68,6 +68,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         verify-release-artifact verify-release-completeness git-tag-rm release-cut release-recut release-create release-delete \
         release-upload-assets git-restore-from \
         build-sandbox-image verify-sandbox-image clean-sandbox-images \
+        vm-image-build vm-image-list vm-image-clean \
         verify-feature-claims audit-coverage gate-audit coverage-json \
         tf-cache-setup tf-init tf-validate tf-cache-warm tf-versions-check tf-clean \
         deck deck-serve deck-preview deck-data deck-honesty \
@@ -207,6 +208,9 @@ help:
 	@echo "  deb-package           Build .deb package from dist/gludd binary"
 	@echo "  deb-install-deps      apt-get install dependencies from debian/control"
 	@echo "  build-sandbox-image       Build Firecracker rootfs image (Alpine + gludd deps)"
+	@echo "  vm-image-build            Build VM sandbox images (Firecracker + gVisor)"
+	@echo "  vm-image-list             List cached VM sandbox images"
+	@echo "  vm-image-clean            Remove all cached VM sandbox images"
 	@echo "  verify-sandbox-image      Integrity check on cached sandbox rootfs"
 	@echo "  clean-sandbox-images      Remove cached sandbox images"
 	@echo ""
@@ -3110,6 +3114,26 @@ build-sandbox-image:
 	@echo "=== Build sandbox rootfs image (P3 stub) ==="
 	@$(UV) run python -c "from general_ludd.security.sandboxes.vm.image_builder import build_rootfs; build_rootfs('$(SANDBOX_IMAGE)')"
 	@echo "Sandbox image stub written to $(SANDBOX_IMAGE)"
+
+vm-image-build: VM_TYPE ?= all
+vm-image-build:
+	@mkdir -p "$(SANDBOX_CACHE)"
+	@echo "=== Build VM sandbox images (type=$(VM_TYPE)) ==="
+	@if [ "$(VM_TYPE)" = "all" ] || [ "$(VM_TYPE)" = "firecracker" ]; then \
+		$(UV) run python -c "from general_ludd.security.sandboxes.vm.image_builder import ImageManifest, build_rootfs; m = ImageManifest(name='gludd-sandbox-firecracker', packages=('python3','ansible','git'), architecture='x86_64'); r = build_rootfs('$(SANDBOX_CACHE)/firecracker-rootfs.ext4', 'firecracker', m); print(f'Firecracker: {r.path} ({r.size_bytes} bytes, hash={r.manifest_hash[:12]})')"; \
+	fi
+	@if [ "$(VM_TYPE)" = "all" ] || [ "$(VM_TYPE)" = "gvisor" ]; then \
+		$(UV) run python -c "from general_ludd.security.sandboxes.vm.image_builder import ImageManifest, build_rootfs; m = ImageManifest(name='gludd-sandbox-gvisor', packages=('python3','ansible','git'), architecture='x86_64'); r = build_rootfs('$(SANDBOX_CACHE)/gvisor-bundle', 'gvisor', m); print(f'gVisor: {r.path} ({r.size_bytes} bytes, hash={r.manifest_hash[:12]})')"; \
+	fi
+	@echo "VM images built under $(SANDBOX_CACHE)"
+
+vm-image-list:
+	@echo "=== Cached VM sandbox images ==="
+	@$(UV) run python -c "from general_ludd.security.sandboxes.vm.image_builder import list_cached_images; entries = list_cached_images(); [print(f'{e[\"hash\"][:12]}  {e[\"type\"]:14s}  {e[\"name\"]}  {e[\"size_bytes\"]} bytes') for e in entries]"
+
+vm-image-clean:
+	@echo "=== Clean VM sandbox image cache ==="
+	@$(UV) run python -c "from general_ludd.security.sandboxes.vm.image_builder import cleanup_cache; n = cleanup_cache(max_age_seconds=0); print(f'Removed {n} cached image(s)')"
 
 verify-sandbox-image:
 	@echo "=== Verify sandbox rootfs image ($(SANDBOX_IMAGE)) ==="

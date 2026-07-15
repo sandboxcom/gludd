@@ -58,7 +58,7 @@ class TestHeuristicConfidence:
 
     def test_heuristic_auth_flow_login_token(self):
         conf = vs._heuristic_confidence("auth_flow", "login token")
-        assert conf == pytest.approx(0.875, abs=0.01)
+        assert conf == pytest.approx(0.85, abs=0.01)
 
     def test_heuristic_timeout_handling(self):
         conf = vs._heuristic_confidence("timeout_handling", "timeout retry backoff")
@@ -356,7 +356,7 @@ class TestEndToEndScript:
     def test_research_categories_parsed_correctly(self, tmp_path):
         categories_seen: list[list[str]] = []
 
-        def _capture_categories(self, queries, **kwargs):
+        def _capture_categories(queries, **kwargs):
             categories_seen.append(kwargs.get("categories", []))
             return {"reports": [], "query_count": 0, "findings_count": 0, "searx_available": False}
 

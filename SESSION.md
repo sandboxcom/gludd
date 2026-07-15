@@ -37,21 +37,57 @@ Code versions `0.1.0-beta.2` through `0.1.0-beta.4` exist in `pyproject.toml`/`_
 
 ## SESSION 36 — 2026-07-15
 
-- **HEAD: `a0ced18d`** on `development` branch (7 unpushed: 031ac222..a0ced18d)
+- **HEAD: `3c04ceb5`** on `development` branch (9 unpushed: 031ac222..3c04ceb5)
 - **Version: 0.1.0-beta.4** (pyproject.toml)
-- **Push status: NOT PUSHED** — tree CLEAN, 7 commits ahead of remote `8e290afd70ea`
-- **CI: PENDING** — run 29394401049 on remote `8e290afd70ea` (in_progress)
-- **Completed this session:**
-  - NF.1 Chat CLI: P5 chat history complete (38 tests, 115 total) | commit 62f1bab8
-  - NF.2 Unikernel sandbox: P2 image builder complete (48 tests, 70 total) | commit 62f1bab8
-  - C.16 Filestore RCE: `sync_bundled_to_filestore()` digest verification fixed (21 tests) | commit 62f1bab8
-  - NF.4 Radio engineer: 7 roles molecule tests added | commit 62f1bab8
-  - enforce-stop.ts + enforce-multitask.ts fixes (under-floor hard block, comprehensive work detection) | commits 373cb611, 5d84dd3b
-  - enforce-session-start plugin fix (isTaskFileRead input shape) | commit 1e20f907
-  - C.3 DB tenant scoping: tenant contextvar properly read via `do_orm_execute` / `with_loader_criteria`; 11/11 tests pass | commit a0ced18d
-- **Gate: lint 0, typecheck 0, collect OK** — collection OK at a0ced18d
-- **Next:** push development, wait for CI green on HEAD, then cut beta.2
-- **Last Updated: 2026-07-15 — Session 36.** HEAD `a0ced18d` on `development`. Tree CLEAN. 7 commits unpushed. CI PENDING. 5 deliverables completed (NF.1 P5, NF.2 P2, C.16, C.3, enforce-session-start fix).
+- **Push status: NOT PUSHED** — tree DIRTY (8 files), 9 commits ahead of remote `8e290afd70ea`
+- **CI: PENDING** — run 29396277994 on remote `8e290afd70ea` (in_progress)
+- **Gate: lint 0, typecheck 0, collect OK** — collection OK
+
+### Completed (since session start)
+
+| Item | Description | Tests | Commit |
+|------|-------------|-------|--------|
+| NF.1 Chat CLI | P5 chat history complete | 38 tests (115 total) | 62f1bab8 |
+| NF.2 Unikernel sandbox | P2 image builder complete | 48 tests (70 total) | 62f1bab8 |
+| C.3 DB tenant scoping | tenant contextvar via `do_orm_execute` / `with_loader_criteria` | 11/11 pass | a0ced18d |
+| C.16 Filestore RCE | `sync_bundled_to_filestore()` digest verification | 21 tests | 62f1bab8 |
+| C.18 Accounting tenant scoping | tenant-scoped accounting queries | 70 tests | 5fa60836 |
+| **enforce-stop.ts** disengage bypass fix | isDisengaged no longer skips `hasRealPendingWork()` text-only block; evidence regex narrowed (hex-letter requirement) | 13/13 runtime tests | 3c04ceb5 |
+| **enforce-session-start.ts** isTaskFileRead fix | input shape fix: checks both `tool_call.path` and `tool_call.tool_input?.path` | — | 1e20f907 |
+| **enforce-multitask.ts** under-floor hard block | block fires within same wave, not at message boundary; consecutive-non-dispatch counter fix | E2E tests | 373cb611, 5d84dd3b |
+
+### NF.1–NF.9 status at `3c04ceb5`
+
+| Feature | Status | Latest milestone |
+|---------|--------|-----------------|
+| NF.1 Chat CLI | **COMPLETED** | P5 history (38 tests, commit 62f1bab8) |
+| NF.2 Unikernel sandbox | in-progress | P2 builder done (48 tests), P3 daemon wiring (commit 031ac222) |
+| NF.3 Binary RE | in-progress | 8 roles molecule (commit 1e20f907), 6 molecule tests (commit 031ac222) |
+| NF.4 Radio engineer | in-progress | P2 signal_identify/decode roles (258 tests, commit 031ac222), 3 role scripts (commit 5fa60836) |
+| NF.5 E2E test gen | in-progress | P2-P4 role scripts+39 tests (commit 031ac222), P4 50 tests (commit 1e20f907) |
+| NF.6 OS expert | in-progress | Phase D mobile roles (commit 816d7be6), knowledge module tests (commit 031ac222), roles+connector (commit 1e20f907) |
+| NF.7 STS tokens | in-progress | P4 env_vars+wire_to_daemon (commit 031ac222), injector wiring 72 tests (commit 1e20f907) |
+| NF.8 Multitasking enforcement | **COMPLETED** | hardened in 9-feature wave (commits 6d45df65, db2699da, 816d7be6) |
+| NF.9 Language expert | in-progress | CLI 28 tests (commit 1e20f907), molecule+integration (commit 816d7be6) |
+
+### Dirty tree (8 files)
+
+```
+ M .opencode/plugin/enforce-verified-claims.ts
+ M AGENTS.md
+ M Makefile
+ M scripts/test_hook_runtime.py
+ M src/general_ludd/config/user_config.py
+ M src/general_ludd/daemon.py
+ M tests/integration/test_vm_sandbox_integration.py
+?? tests/unit/test_radio_antenna_design.py
+```
+
+### Next
+- Commit dirty tree (8 files)
+- Push development, wait for CI green on HEAD `3c04ceb5`, then cut beta.2
+
+- **Last Updated: 2026-07-15 — Session 36.** HEAD `3c04ceb5` on `development`. Tree DIRTY (8 files). 9 commits unpushed. CI PENDING (run 29396277994). 8 deliverables completed (NF.1, NF.2 P2, C.3, C.16, C.18, enforce-stop disengage fix, enforce-session-start isTaskFileRead fix, enforce-multitask under-floor block).
 
 ## SESSION 35 — 2026-07-14 (FINAL)
 

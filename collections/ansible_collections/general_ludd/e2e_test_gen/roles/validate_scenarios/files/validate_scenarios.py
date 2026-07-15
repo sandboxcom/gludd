@@ -174,7 +174,7 @@ def main() -> None:
     parser.add_argument("--scenarios-file", required=True, help="Path to scenarios.json")
     parser.add_argument("--output", required=True, help="Path for validated_scenarios.json")
     parser.add_argument("--confidence-threshold", type=float, default=0.4, help="Minimum confidence to keep a scenario")
-    parser.add_argument("--mock", action="store_true", default=True, help="Use heuristic scoring (default: on)")
+    parser.add_argument("--mock", action="store_true", default=False, help="Use heuristic scoring (mock mode)")
     parser.add_argument("--daemon-url", default="http://localhost:8000", help="Daemon URL for live research")
     parser.add_argument("--psk", default="", help="Pre-shared key for daemon auth")
     parser.add_argument("--research-categories", default="general,it", help="Comma-separated research categories")
