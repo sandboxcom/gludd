@@ -199,7 +199,10 @@ class VMSandboxManager:
 
         instance.state = VMLifecycleState.EXECUTING
         start = time.monotonic()
-        result = AgentExecutor.receive_and_execute(target, command=command)
+        try:
+            result = AgentExecutor.receive_and_execute(target, command=command)
+        finally:
+            instance.state = VMLifecycleState.RUNNING
         elapsed_ms = (time.monotonic() - start) * 1000.0
         instance.metrics.dispatch_count += 1
         instance.metrics.total_dispatch_ms += elapsed_ms

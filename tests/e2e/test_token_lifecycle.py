@@ -565,7 +565,7 @@ class TestDenialUnionPropagation:
                 capabilities=[
                     Capability(
                         resource="file:tmp",
-                        actions=["read", "write", "delete"],
+                        actions=["read", "write"],
                         constraints={"path_prefix": "/tmp/gludd/sub/"},
                     ),
                 ],
@@ -638,7 +638,7 @@ class TestDenialUnionPropagation:
                 capabilities=[
                     Capability(
                         resource="secret:openbao",
-                        actions=["read", "write", "delete"],
+                        actions=["read", "write"],
                         constraints={"openbao_paths": ["secret/data/gludd/*"]},
                     ),
                 ],
@@ -655,7 +655,7 @@ class TestDenialUnionPropagation:
                 capabilities=[
                     Capability(
                         resource="secret:openbao",
-                        actions=["read", "write", "delete"],
+                        actions=["read", "write"],
                         constraints={"openbao_paths": ["secret/data/gludd/*"]},
                     ),
                 ],

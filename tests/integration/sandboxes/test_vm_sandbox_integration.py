@@ -126,6 +126,10 @@ def _mock_firecracker_apply(
             "started_at": time.time(),
         },
     )
+    avail_patcher = mock.patch.object(
+        FirecrackerBackend, "available", return_value=True,
+    )
+    avail_patcher.start()
     patcher = mock.patch.object(
         FirecrackerBackend, "apply", return_value=handle,
     )
@@ -161,6 +165,10 @@ def _mock_gvisor_apply(
             "started_at": time.time(),
         },
     )
+    avail_patcher = mock.patch.object(
+        GvisorBackend, "available", return_value=True,
+    )
+    avail_patcher.start()
     patcher = mock.patch.object(GvisorBackend, "apply", return_value=handle)
     patcher.start()
     return fake_popen
@@ -253,7 +261,7 @@ class TestFirecrackerFullLifecycle:
             inst = mgr.boot("firecracker", sample_spec, sample_target)
             assert inst.state is VMLifecycleState.RUNNING
 
-            cmd = AgentCommand(command=["/bin/true"])
+            cmd = AgentCommand(command=["/usr/bin/true"])
             mgr.dispatch(inst.instance_id, sample_target, command=cmd)
 
             assert inst.state is VMLifecycleState.RUNNING
@@ -1026,7 +1034,7 @@ class TestStressRapidCycles:
             _mock_gvisor_apply(pid=8100 + i)
             try:
                 inst = mgr.boot("gvisor", sample_spec, sample_target)
-                cmd = AgentCommand(command=["/bin/true"])
+                cmd = AgentCommand(command=["/usr/bin/true"])
                 mgr.dispatch(inst.instance_id, sample_target, command=cmd)
                 mgr.release(inst.instance_id)
             finally:

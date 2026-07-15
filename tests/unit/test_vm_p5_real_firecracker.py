@@ -260,22 +260,13 @@ def test_firecracker_put_raises_on_non_2xx(tmp_path):
     server.bind(sock_path)
     server.listen(1)
     body = b'{"fault_message":"bad config"}'
-
-    def serve_once() -> None:
-        try:
-            conn, _ = server.accept()
-        except OSError:
-            return
-        try:
-            conn.recv(4096)
-            conn.sendall(
-                b"HTTP/1.1 400 Bad Request\r\n"
-                b"Content-Length: " + str(len(body)).encode() + b"\r\n\r\n" + body,
-            )
-        finally:
-            conn.close()
-
-    t = threading.Thread(target=serve_once, daemon=True)
+    response = (
+        b"HTTP/1.1 400 Bad Request\r\n"
+        b"Content-Length: " + str(len(body)).encode() + b"\r\n\r\n" + body
+    )
+    t = threading.Thread(
+        target=_serve_http_response, args=(server, response), daemon=True,
+    )
     t.start()
     try:
         with pytest.raises(RuntimeError, match="400"):

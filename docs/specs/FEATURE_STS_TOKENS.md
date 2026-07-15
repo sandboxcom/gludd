@@ -1,6 +1,6 @@
 # Feature: STS Tokens for Subagents
 
-**Status: DRAFT** | **Created: 2026-07-14** | **Target: v0.1.0-beta.2**
+**Status: IMPLEMENTED (P1–P5 complete)** | **Created: 2026-07-14** | **Target: v0.1.0-beta.2**
 
 ## 1. Overview
 

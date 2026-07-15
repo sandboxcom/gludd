@@ -9,6 +9,13 @@ state machine (PENDING → BOOTING → RUNNING → EXECUTING → STOPPED/FAILED)
 total_dispatch_ms) for the observability layer. 23 unit tests in
 ``tests/unit/test_vm_lifecycle.py``. Pre-built CI images + real runsc wiring
 remain.
+**P6 progress (2026-07-15):** Full-lifecycle integration tests landed —
+``tests/integration/sandboxes/test_vm_sandbox_integration.py`` (52 tests):
+boot→dispatch→verify→release for both backends, error recovery, multi-instance
+isolation, observability aggregation, real AgentExecutor subprocess dispatch,
+real AF_UNIX Firecracker REST round-trips, and rapid-cycle stress. Fixed a
+lifecycle bug the suite caught: ``VMSandboxManager.dispatch`` left instances
+stuck in EXECUTING — now restores RUNNING in a try/finally.
 
 ## 1. Overview
 

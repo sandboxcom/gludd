@@ -161,9 +161,22 @@ def test_manager_dispatch_transitions_to_executing(sample_spec, sample_target):
     ):
         inst = mgr.boot("firecracker", sample_spec, sample_target)
 
-    result = mgr.dispatch(inst.instance_id, sample_target)
+    observed_states: list[VMLifecycleState] = []
+    original = mgr.instances[inst.instance_id]
+
+    def _spy_execute(target, command=None):
+        observed_states.append(original.state)
+        return {"exit_code": 0, "stub": True}
+
+    with mock.patch(
+        "general_ludd.security.sandboxes.vm.agent_executor.AgentExecutor.receive_and_execute",
+        side_effect=_spy_execute,
+    ):
+        result = mgr.dispatch(inst.instance_id, sample_target)
+
     assert result["status"] == "executed"
-    assert inst.state is VMLifecycleState.EXECUTING
+    assert observed_states == [VMLifecycleState.EXECUTING]
+    assert inst.state is VMLifecycleState.RUNNING
     assert inst.metrics.dispatch_count == 1
     assert inst.metrics.total_dispatch_ms >= 0.0
 
