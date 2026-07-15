@@ -44,7 +44,8 @@ def _make_pe_with_section(section_name: bytes, section_data: bytes) -> bytes:
     optional_header_offset = 0x80 + 4 + 20
     struct.pack_into("<H", header, optional_header_offset, 0x10b)
     section_offset_base = optional_header_offset + 96
-    header[section_offset_base:section_offset_base + 8] = section_name
+    name_field = section_name[:8].ljust(8, b"\x00")
+    header[section_offset_base:section_offset_base + 8] = name_field
     struct.pack_into("<I", header, section_offset_base + 8, 0x1000)
     struct.pack_into("<I", header, section_offset_base + 16, len(section_data))
     struct.pack_into("<I", header, section_offset_base + 20, 0x200)
@@ -189,10 +190,8 @@ class TestReadElfSections:
 
 class TestDetectPeTechniques:
     def test_high_entropy_section_flagged_as_packing(self):
-        import random
-        random.seed(7)
-        high_entropy_data = bytes(random.randint(0, 255) for _ in range(2048))
-        data = _make_pe_with_section(b".packed", high_entropy_data)
+        high_entropy_data = bytes(i % 256 for i in range(2048))
+        data = _make_pe_with_section(b".packed\x00", high_entropy_data)
         sections = _read_pe_sections(data)
         results = _detect_pe_techniques(data, sections)
         techniques = {r.technique for r in results}
