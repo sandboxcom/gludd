@@ -583,13 +583,10 @@ await plugin['tool.execute.before']({{tool: 'task', args: {{prompt: 'fix bug A'}
 # ---------------------------------------------------------------------------
 
 
-def _streak_state_file(p: str = "/tmp/gludd-mainthread-streak.json"):
-    return p
-
-
 def test_delegate_streak_zero_allowed():
     """mainthreadBudgetBefore returns null when streak=0."""
-    _clean_state_files(_streak_state_file(), "/tmp/gludd-hot-delegate.js",
+    sf = f"/tmp/gludd-mainthread-streak-test-{os.getpid()}.json"
+    _clean_state_files(sf, "/tmp/gludd-hot-delegate.js",
                        "/tmp/gludd-watchdog-disengage.json")
     code = f"""\
 const mod = await import('{PLUGIN_DIR}/enforce-delegate.ts')
@@ -599,9 +596,11 @@ console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
     result = _run_ts(code, env_override={
         "GLUDD_MAINTHREAD_STREAK_ENFORCE": "1",
+        "GLUDD_MAINTHREAD_STREAK_FILE": sf,
         "CLAUDE_AGENT_TARGET": "6",
     })
     assert result is None or result.get("allowed") == True
+    _clean_state_files(sf)
 
 
 def test_delegate_streak_at_threshold_denied():
@@ -644,7 +643,7 @@ try {{
 
 def test_delegate_read_tool_not_counted():
     """Read/grep/glob tools should be allowed regardless of streak."""
-    sf = _streak_state_file()
+    sf = f"/tmp/gludd-mainthread-streak-test-{os.getpid()}.json"
     _clean_state_files(sf)
     with open(sf, "w") as f:
         json.dump({"streak": 5, "lastDispatchTs": int(time.time() * 1000) - 120000, "ts": int(time.time() * 1000)}, f)
@@ -654,14 +653,16 @@ const plugin = await mod.default({{}})
 const result = await plugin['tool.execute.before']({{tool: 'read'}}, {{}})
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
-    result = _run_ts(code)
+    result = _run_ts(code, env_override={
+        "GLUDD_MAINTHREAD_STREAK_FILE": sf,
+    })
     assert result is None or result.get("allowed") == True
     _clean_state_files(sf)
 
 
 def test_delegate_env_disable():
     """GLUDD_MAINTHREAD_STREAK_ENFORCE=0 disables mainthread streak."""
-    sf = _streak_state_file()
+    sf = f"/tmp/gludd-mainthread-streak-test-{os.getpid()}.json"
     _clean_state_files(sf)
     with open(sf, "w") as f:
         json.dump({"streak": 5, "lastDispatchTs": int(time.time() * 1000), "ts": int(time.time() * 1000)}, f)
@@ -671,7 +672,8 @@ const plugin = await mod.default({{}})
 const result = await plugin['tool.execute.before']({{tool: 'edit'}}, {{}})
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
-    result = _run_ts(code, env_override={"GLUDD_MAINTHREAD_STREAK_ENFORCE": "0"})
+    result = _run_ts(code, env_override={"GLUDD_MAINTHREAD_STREAK_ENFORCE": "0",
+                                          "GLUDD_MAINTHREAD_STREAK_FILE": sf})
     assert result is None or result.get("allowed") == True
     _clean_state_files(sf)
 
