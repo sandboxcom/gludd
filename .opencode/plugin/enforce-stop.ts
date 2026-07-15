@@ -65,6 +65,35 @@ const QA_RESPONSE_PATTERNS = /(?:completed in this session|done since the (?:cra
 
 export const PERMISSION_SEEKING_RE = /(?:want me to\s+(?:proceed|continue|dispatch|write|fix|move|start|do|run|create|add|update|implement|handle|begin|work|go ahead)|should i\s+(?:proceed|continue|fix|dispatch|start|move|go ahead)|shall i\s+(?:proceed|continue|fix|start)|^proceed\?$)/im
 
+// ── STATUS-SUMMARY detection (2026-07-15) ───────────────────────────────────
+// ROOT CAUSE: a status summary containing commit hashes or "CI: PENDING"
+// matches EVIDENCE_PATTERNS, so every text.complete check gated on
+// !hasStructuredEvidence() was bypassed. Evidence proves a claim true;
+// it does NOT make stopping-to-summarize acceptable. These patterns are
+// blocked REGARDLESS of evidence when pending work exists.
+export const STATUS_SUMMARY_RE = new RegExp(
+  [
+    "here.{0,4}s the (?:session\\s+\\d+\\s+)?(?:final\\s+)?status",
+    "session\\s+\\d+\\s+(?:final\\s+)?(?:status|summary|wrap[- ]?up|recap)",
+    "final (?:status|summary|state)(?:\\s+(?:report|summary))?\\b",
+    "^\\s*#{1,4}\\s+.{0,40}(?:status|summary|recap)\\s*$",
+    "status (?:report|summary|update)\\s*:",
+  ].join("|"),
+  "im",
+)
+
+export function looksLikeStatusSummary(text: string): boolean {
+  if (STATUS_SUMMARY_RE.test(text)) return true
+  // Structural detection: bolded section headers + status tables / bullets.
+  const boldHeaders = (text.match(/^\s*\*\*[^*\n]{2,80}\*\*:?\s*$/gm) || []).length
+  const inlineBoldLeads = (text.match(/^\s*\*\*[^*\n]{2,80}\*\*:?\s+\S/gm) || []).length
+  const tableRows = (text.match(/^\s*\|.*\|\s*$/gm) || []).length
+  const statusBullets = (text.match(/^\s*[-*]\s+(?:\[[ xX]\]|✅|❌|⏳|\*\*)/gm) || []).length
+  if ((boldHeaders + inlineBoldLeads) >= 2 && (tableRows >= 2 || statusBullets >= 3)) return true
+  if (tableRows >= 4 && COMPLETION_SMELL_RE.test(text)) return true
+  return false
+}
+
 const EVIDENCE_PATTERNS = [
   /\b[0-9a-f]*[a-f][0-9a-f]{6,39}\b/,
   /VERIFIED\s+\w+@/,
@@ -338,7 +367,10 @@ function hasRealPendingWork(): WorkState {
       const ciData = JSON.parse(fs.readFileSync(ciCachePath, "utf8"))
       const lastCheck = ciData.last_ci_check || 0
       const lastStatus = ciData.last_ci_status || ""
-      if (now - lastCheck < 120_000 && lastStatus) {
+      // 2026-07-15: window widened 120s → 10min. CI runs take 30-40 min;
+      // a PENDING verdict polled minutes ago is still PENDING. The old 120s
+      // window made CI-pending invisible between watchdog polls.
+      if (now - lastCheck < 600_000 && lastStatus) {
         ciVerdictPendingOrRed = lastStatus !== "SUCCESS"
       }
     }
@@ -530,7 +562,7 @@ function ciIsPendingOrRed(): boolean {
       const ciData = JSON.parse(fs.readFileSync(ciCachePath, "utf8"))
       const lastCheck = ciData.last_ci_check || 0
       const lastStatus = ciData.last_ci_status || ""
-      if (Date.now() - lastCheck < 120_000 && lastStatus) {
+      if (Date.now() - lastCheck < 600_000 && lastStatus) {
         return lastStatus !== "SUCCESS"
       }
     }
@@ -962,7 +994,41 @@ const defaultImpl: HotModule = {
     const evType = ev?.type || ""
 
     if (evType === "session.idle") {
-      const workState = hasRealPendingWork()
+    const workState = hasRealPendingWork()
+
+    // ── STATUS-SUMMARY BLOCK (2026-07-15) ───────────────────────────────────
+    // Fires REGARDLESS of structured evidence and REGARDLESS of disengage.
+    // A status summary ("Here's the session N final status" + bolded headers
+    // + status tables) previously bypassed all checks below because commit
+    // hashes / "CI PENDING" inside the summary matched EVIDENCE_PATTERNS.
+    // Evidence never legitimizes stopping-to-summarize while work exists.
+    // Fires for ANY response text — tool calls attached or not — because a
+    // status-summary is a stop signal in either shape.
+    if ((workState.hasPendingWork || workState.hasLocalWork) && looksLikeStatusSummary(text)) {
+      recordBlock("status-summary-while-work-exists")
+      logBlankedResponse("status-summary-while-work-exists", text)
+      writePersistBlock(true, "status-summary-while-work-exists")
+
+      return {
+        text: [
+          "⛔⛔⛔ STATUS-SUMMARY RESPONSE BLOCKED ⛔⛔⛔",
+          "",
+          "Status summaries ('final status', bolded headers, status tables)",
+          "are FORBIDDEN while pending work exists — evidence inside the",
+          "summary does NOT make it acceptable. Stopping to summarize IS the",
+          "stop pattern.",
+          "",
+          `PENDING WORK: ${workState.tasksMdUncheckedCount} unchecked TASKS.md items, ` +
+          `${workState.ratchetEntries} ratchet entries, ` +
+          `gate ${workState.gateStatusRed ? "RED" : workState.gateStatusMissing ? "MISSING" : "OK"}, ` +
+          `CI ${workState.ciVerdictPendingOrRed ? "RED/PENDING" : "N/A"}, ` +
+          `release ${workState.releaseIncomplete ? "INCOMPLETE" : "N/A"}.`,
+          "",
+          "DISPATCH A TOOL CALL NOW. Do not summarize.",
+        ].join("\n"),
+      }
+    }
+
       if (workState.hasPendingWork || workState.hasLocalWork) {
         const sessionBlockCount = getSessionBlockCount()
         const escalation = sessionBlockCount > ESCALATION_THRESHOLD
