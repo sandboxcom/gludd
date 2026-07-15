@@ -678,35 +678,52 @@ const defaultImpl: HotModule = {
 
     // ── COMPLETION WORDS WITHOUT EVIDENCE ──────────────────────────────────
     if (responseLooksTerminal(text) && !hasStructuredEvidence(text)) {
-      if (trimmed.length < 500) {
-        recordBlock("completion-without-evidence")
-        logFalseDoneBlock("completion-without-evidence", text)
-        writePersistBlock(true, "completion-without-evidence")
+      recordBlock("completion-without-evidence")
+      logFalseDoneBlock("completion-without-evidence", text)
+      writePersistBlock(true, "completion-without-evidence")
 
-        return {
-          text: [
-            "⛔ BLOCKED: completion claim without verification evidence.",
-            "",
-            "Words like 'committed', 'done', 'pushed', 'passed', 'green' etc.",
-            "require machine-produced evidence in the SAME response:",
-            "- commit hash (7+ hex chars),",
-            "- test pass counts ('42 passed'),",
-            "- CI verdict (CI GREEN),",
-            "- gate status (=== GATE: PASSED ===),",
-            "- VERIFIED <branch>@<sha>.",
-            "",
-            "If work exists, DISPATCH A TOOL CALL instead of sending a summary.",
-          ].join("\n"),
-        }
+      return {
+        text: [
+          "⛔ BLOCKED: completion claim without verification evidence.",
+          "",
+          "Words like 'committed', 'done', 'pushed', 'passed', 'green' etc.",
+          "require machine-produced evidence in the SAME response:",
+          "- commit hash (7+ hex chars),",
+          "- test pass counts ('42 passed'),",
+          "- CI verdict (CI GREEN),",
+          "- gate status (=== GATE: PASSED ===),",
+          "- VERIFIED <branch>@<sha>.",
+          "",
+          "If work exists, DISPATCH A TOOL CALL instead of sending a summary.",
+        ].join("\n"),
       }
     }
 
-    // ── REAL PENDING WORK BLOCK (covers text-only summaries without completion words) ─
-    if (workState.hasPendingWork) {
-      if (trimmed.length < 60 && !responseLooksTerminal(text)) {
-        return output
-      }
+    // ── COMPLETION SMELL: any completion-adjacent substring without evidence ─
+    if (COMPLETION_SMELL_RE.test(text) && !hasStructuredEvidence(text)) {
+      recordBlock("completion-smell")
+      logFalseDoneBlock("completion-smell", text)
+      writePersistBlock(true, "completion-smell")
 
+      return {
+        text: [
+          "⛔ BLOCKED: completion-adjacent language without evidence.",
+          "",
+          "Your text contains completion-adjacent words (complete, done, finished,",
+          "ready, landed, shipped, pushed, committed, fixed, passed, working,",
+          "green, RED, resolved, deployed, verified, continuing, alpha, beta, etc.)",
+          "but NO machine-produced verification evidence.",
+          "",
+          "When hasRealPendingWork() is true, ANY completion-adjacent language",
+          "in a text-only response is a HARD BLOCK — regardless of text length.",
+          "",
+          "DISPATCH A TOOL CALL. Do not send completion-adjacent text without evidence.",
+        ].join("\n"),
+      }
+    }
+
+    // ── REAL PENDING WORK BLOCK (ALL text-only responses, NO exemptions) ─────
+    if (workState.hasPendingWork) {
       const sessionBlockCount = incrementSessionBlockCounter()
       const escalationNote = sessionBlockCount > ESCALATION_THRESHOLD
         ? `\n🚨 ESCALATION: ${sessionBlockCount} stop attempts blocked this session. COMPLIANCE REQUIRED.`
@@ -732,6 +749,7 @@ const defaultImpl: HotModule = {
           "You may NOT send a text-only response while work exists.",
           "The ONLY valid action is to DISPATCH SUBAGENTS via the Task tool,",
           "or read/edit files to fix the pending work.",
+          "NO short-text exemption. NO length exemption. NO content exemption.",
           escalationNote,
         ].join("\n"),
       }
@@ -911,7 +929,6 @@ const defaultImpl: HotModule = {
     }
 
     if (evType === "session.deleted") {
-      cachedWorkState = null
       return
     }
   },

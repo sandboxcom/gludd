@@ -15,8 +15,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import sys
 from pathlib import Path
+from typing import Any
+
+logger = logging.getLogger(__name__)
 
 PATTERN_VALIDATION: dict[str, dict[str, float]] = {
     "crud_lifecycle": {
@@ -68,6 +72,101 @@ def _heuristic_confidence(scenario_name: str, scenario_desc: str) -> float:
     return round(sum(scores) / len(scores), 2)
 
 
+def _extract_confidence_from_report(report: dict[str, Any]) -> float:
+    """Extract a confidence score (0.0-1.0) from a ResearchReport dict.
+
+    Uses the report's ``confidence_overall`` when findings are present,
+    otherwise returns 0.0 so the caller falls back to heuristic scoring.
+    """
+    findings = report.get("findings", [])
+    if not findings:
+        return 0.0
+    overall = report.get("confidence_overall", 0.0)
+    if isinstance(overall, (int, float)) and overall > 0.0:
+        return min(1.0, max(0.0, float(overall)))
+    return 0.0
+
+
+def _source_urls_from_report(report: dict[str, Any]) -> list[str]:
+    """Collect source URLs from a ResearchReport's findings' citations."""
+    urls: list[str] = []
+    for finding in report.get("findings", []):
+        for citation in finding.get("citations", []):
+            url = citation.get("url", "")
+            if url and url not in urls:
+                urls.append(url)
+    return urls
+
+
+class DaemonResearchClient:
+    """HTTP client for the daemon POST /api/research/validate endpoint."""
+
+    def __init__(
+        self,
+        daemon_url: str = "http://localhost:8000",
+        psk: str = "",
+        timeout: float = 30.0,
+    ) -> None:
+        self._base = daemon_url.rstrip("/")
+        self._psk = psk
+        self._timeout = timeout
+
+    def _headers(self) -> dict[str, str]:
+        h: dict[str, str] = {"Content-Type": "application/json"}
+        if self._psk:
+            h["X-PSK"] = self._psk
+        return h
+
+    def validate_queries(
+        self,
+        queries: list[str],
+        *,
+        categories: list[str] | None = None,
+        time_range: str = "year",
+        max_results: int = 10,
+    ) -> dict[str, Any]:
+        """POST /api/research/validate and return the JSON response body.
+
+        On any error (network, timeout, non-200) returns an empty result dict
+        so callers always get a valid dict to introspect.
+        """
+        import urllib.error
+        import urllib.request
+
+        selected_categories = categories or ["general", "it"]
+        payload = json.dumps({
+            "queries": queries,
+            "categories": selected_categories,
+            "time_range": time_range,
+            "max_results": max_results,
+        }).encode("utf-8")
+
+        url = f"{self._base}/api/research/validate"
+        req = urllib.request.Request(
+            url,
+            data=payload,
+            headers=self._headers(),
+            method="POST",
+        )
+
+        try:
+            with urllib.request.urlopen(req, timeout=self._timeout) as resp:
+                if resp.status != 200:
+                    logger.warning(
+                        "daemon returned %d, falling back to heuristic",
+                        resp.status,
+                    )
+                    return {"reports": [], "query_count": 0, "findings_count": 0, "searx_available": False}
+                body = resp.read().decode("utf-8")
+                return json.loads(body)
+        except urllib.error.URLError as e:
+            logger.warning("daemon unreachable (%s), falling back to heuristic", e)
+            return {"reports": [], "query_count": 0, "findings_count": 0, "searx_available": False}
+        except Exception:
+            logger.exception("unexpected error calling daemon")
+            return {"reports": [], "query_count": 0, "findings_count": 0, "searx_available": False}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Validate E2E test scenarios against real-world usage patterns"
@@ -88,9 +187,9 @@ def main() -> None:
         data = json.load(f)
 
     scenarios = data.get("scenarios", [])
-    valid = []
-    discarded = []
-    queries = []
+    valid: list[dict[str, Any]] = []
+    discarded: list[dict[str, Any]] = []
+    queries: list[str] = []
 
     for scenario in scenarios:
         name = scenario.get("name", "unknown")
@@ -100,11 +199,39 @@ def main() -> None:
         q = f'how is "{name}" tested in production e2e test patterns {targets}'
         queries.append(q)
 
+    if not args.mock:
+        categories = [c.strip() for c in args.research_categories.split(",") if c.strip()]
+        client = DaemonResearchClient(
+            daemon_url=args.daemon_url,
+            psk=args.psk,
+        )
+        result = client.validate_queries(
+            queries,
+            categories=categories,
+            time_range=args.research_time_range,
+            max_results=args.max_results,
+        )
+        reports = result.get("reports", [])
+    else:
+        reports = []
+
+    for idx, scenario in enumerate(scenarios):
+        name = scenario.get("name", "unknown")
+        desc = scenario.get("description", "")
+
         conf = _heuristic_confidence(name, desc)
+        source_urls: list[str] = []
+
+        if not args.mock and idx < len(reports):
+            report = reports[idx]
+            research_conf = _extract_confidence_from_report(report)
+            if research_conf > 0.0:
+                conf = research_conf
+            source_urls = _source_urls_from_report(report)
 
         entry = dict(scenario)
         entry["confidence"] = conf
-        entry["source_urls"] = []
+        entry["source_urls"] = source_urls
 
         if conf >= args.confidence_threshold:
             valid.append(entry)

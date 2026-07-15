@@ -1,0 +1,70 @@
+---
+- name: Converge
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Seed fake scan CSV
+      ansible.builtin.copy:
+        content: |
+          24.0,-95.5,-110.2
+          50.0,-90.3,-110.3
+          144.0,-80.7,-109.8
+          162.0,-85.2,-110.0
+          440.0,-92.1,-109.5
+          850.0,-99.8,-110.1
+          1700.0,-105.0,-110.4
+        dest: /tmp/gludd-spectrum-scan/scan.csv
+        mode: "0644"
+
+    - name: Run spectrum_scan role
+      ansible.builtin.include_role:
+        name: general_ludd.radio.spectrum_scan
+      vars:
+        spectrum_scan_enabled: true
+        spectrum_scan_start_freq_hz: 24000000
+        spectrum_scan_end_freq_hz: 1700000000
+        spectrum_scan_bin_size_hz: 100000
+        spectrum_scan_integration_time_ms: 100
+        spectrum_scan_gain: auto
+        spectrum_scan_device_index: 0
+        spectrum_scan_tool: cat
+        spectrum_scan_tool_path: cat
+
+    - name: Assert verdict structure
+      ansible.builtin.assert:
+        that:
+          - spectrum_scan_verdict.role == "spectrum_scan"
+          - spectrum_scan_verdict.bandwidth_mhz == "1676.0"
+          - spectrum_scan_verdict.num_bins | int == 16760
+          - spectrum_scan_verdict.total_sweep_time_s == "1676.0"
+        fail_msg: "Verdict structure incorrect: {{ spectrum_scan_verdict }}"
+
+    - name: Assert JSON output written
+      ansible.builtin.stat:
+        path: /tmp/gludd-spectrum-scan/spectrum_scan.json
+      register: _stat_json
+
+    - name: Verify JSON file exists
+      ansible.builtin.assert:
+        that: _stat_json.stat.exists
+        fail_msg: "spectrum_scan.json not written"
+
+    - name: Parse JSON output
+      ansible.builtin.slurp:
+        src: /tmp/gludd-spectrum-scan/spectrum_scan.json
+      register: _json_raw
+
+    - name: Assert JSON content
+      ansible.builtin.assert:
+        that:
+          - (_json_raw.content | b64decode | from_json).start_freq_hz == 24000000
+          - (_json_raw.content | b64decode | from_json).end_freq_hz == 1700000000
+          - (_json_raw.content | b64decode | from_json).bandwidth_mhz == 1676.0
+          - (_json_raw.content | b64decode | from_json).num_bins == 16760
+        fail_msg: "JSON content mismatch"
+
+    - name: Cleanup
+      ansible.builtin.file:
+        path: /tmp/gludd-spectrum-scan
+        state: absent

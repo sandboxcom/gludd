@@ -886,6 +886,11 @@ clean-tmp:
 	@$(UV) run python3 scripts/clean_tmp.py
 	@echo "clean-tmp done"
 
+clean-pycache-test-chat-history:
+	@find /Users/shawnwilson/gludd -name "__pycache__" -path "*test_chat_history*" -exec rm -rf {} + 2>/dev/null || true
+	@find /Users/shawnwilson/gludd -name "*.pyc" -path "*test_chat_history*" -delete 2>/dev/null || true
+	@echo "test_chat_history cache cleared"
+
 # Disk guard — checks disk usage % and cleans caches (pip, uv, pytest, mypy,
 # ruff, __pycache__, tmp) when above GLUDD_DISK_THRESHOLD (default 95%).
 # Delegate to scripts/disk-guard.sh for the full cleanup logic.

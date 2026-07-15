@@ -1,0 +1,50 @@
+---
+- name: Converge
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Run exam_quiz role
+      ansible.builtin.include_role:
+        name: general_ludd.radio.exam_quiz
+      vars:
+        exam_quiz_enabled: true
+        exam_quiz_exam: fcc_tech
+        exam_quiz_count: 5
+        exam_quiz_format: json
+
+    - name: Assert verdict structure
+      ansible.builtin.assert:
+        that:
+          - exam_quiz_verdict.role == "exam_quiz"
+          - exam_quiz_verdict.exam == "fcc_tech"
+          - exam_quiz_verdict.questions_loaded == "5"
+        fail_msg: "Verdict structure incorrect: {{ exam_quiz_verdict }}"
+
+    - name: Assert JSON output
+      ansible.builtin.stat:
+        path: /tmp/gludd-exam-quiz/exam_quiz.json
+      register: _stat_json
+
+    - name: Verify JSON file exists
+      ansible.builtin.assert:
+        that: _stat_json.stat.exists
+        fail_msg: "exam_quiz.json not written"
+
+    - name: Parse JSON and assert questions
+      ansible.builtin.slurp:
+        src: /tmp/gludd-exam-quiz/exam_quiz.json
+      register: _json_raw
+
+    - name: Assert question count
+      ansible.builtin.assert:
+        that:
+          - (_json_raw.content | b64decode | from_json).num_questions == 5
+          - (_json_raw.content | b64decode | from_json).exam == "fcc_tech"
+          - (_json_raw.content | b64decode | from_json).questions | length == 5
+        fail_msg: "JSON content mismatch"
+
+    - name: Cleanup
+      ansible.builtin.file:
+        path: /tmp/gludd-exam-quiz
+        state: absent

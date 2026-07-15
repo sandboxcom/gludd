@@ -1,0 +1,33 @@
+---
+- name: Triage crash findings
+  ansible.builtin.command:
+    cmd: >-
+      {{ ansible_python_interpreter | default('/usr/bin/env python3') }}
+      {{ role_path }}/files/fuzz_target.py
+      --mode crash_triage
+      --crash-dir {{ crash_dir | default(output_dir + '/crashes') }}
+      --output {{ output_dir }}/crash_triage.json
+      {% if crash_retention_days | default(0) > 0 %}--retention-days {{ crash_retention_days }}{% endif %}
+  register: _crash_triage_result
+  changed_when: false
+  failed_when: _crash_triage_result.rc not in [0]
+
+- name: Read crash triage artifact
+  ansible.builtin.slurp:
+    src: "{{ output_dir }}/crash_triage.json"
+  register: _crash_triage_artifact_raw
+
+- name: Parse crash triage artifact
+  ansible.builtin.set_fact:
+    crash_triage_artifact: >-
+      {{ _crash_triage_artifact_raw.content | b64decode | from_json
+         if (_crash_triage_artifact_raw is defined and _crash_triage_artifact_raw.content is defined)
+         else {} }}
+
+- name: Report crash triage summary
+  ansible.builtin.debug:
+    msg: >-
+      Crash triage complete:
+      total={{ crash_triage_artifact.get('total_crashes', 0) }},
+      unique={{ crash_triage_artifact.get('unique_crashes', 0) }},
+      exploitable={{ crash_triage_artifact.get('exploitable', 0) }}

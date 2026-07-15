@@ -1,0 +1,37 @@
+---
+- name: Run coverage-guided fuzzing
+  ansible.builtin.command:
+    cmd: >-
+      {{ ansible_python_interpreter | default('/usr/bin/env python3') }}
+      {{ role_path }}/files/fuzz_target.py
+      --mode coverage_guided
+      --fuzzer {{ fuzzer }}
+      --fuzzer-path {{ fuzzer_path }}
+      --target {{ target_binary }}
+      --corpus {{ corpus_dir }}
+      --output {{ output_dir }}
+      --timeout {{ fuzz_timeout_seconds | default(300) }}
+      {% if fuzz_dict | length > 0 %}--dict {{ fuzz_dict }}{% endif %}
+  register: _coverage_result
+  changed_when: false
+  failed_when: _coverage_result.rc not in [0]
+
+- name: Read coverage-guided fuzzing artifact
+  ansible.builtin.slurp:
+    src: "{{ output_dir }}/coverage_guided.json"
+  register: _coverage_artifact_raw
+
+- name: Parse coverage-guided artifact
+  ansible.builtin.set_fact:
+    coverage_guided_artifact: >-
+      {{ _coverage_artifact_raw.content | b64decode | from_json
+         if (_coverage_artifact_raw is defined and _coverage_artifact_raw.content is defined)
+         else {} }}
+
+- name: Report coverage-guided summary
+  ansible.builtin.debug:
+    msg: >-
+      Coverage-guided fuzzing complete:
+      fuzzer={{ coverage_guided_artifact.get('fuzzer', 'unknown') }},
+      executions={{ coverage_guided_artifact.get('executions', 0) }},
+      crashes={{ coverage_guided_artifact.get('crashes', 0) }}

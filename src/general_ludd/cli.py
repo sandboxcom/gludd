@@ -1058,6 +1058,12 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     make_parser.add_argument("--stream", action="store_true", help="Stream phase markers")
     make_parser.set_defaults(func=_cmd_make)
 
+    # `gludd language` — language expert toolkit (encoding, homoglyphs, BOM, phonetics).
+    from general_ludd.cli_language import add_language_subparser
+
+    add_language_subparser(sub)
+    language_parser = sub.choices["language"]
+
     # `gludd account` — account backup, deletion, and cloud retention policy.
     from general_ludd.cli_account import add_account_subparser
 
@@ -1146,6 +1152,7 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
         "core-changes": core_changes_parser,
         "make": make_parser,
         "payment": payment_parser,
+        "language": language_parser,
         "account": account_parser,
         "audit-plugins": audit_plugins_parser,
         "collection": collection_parser,

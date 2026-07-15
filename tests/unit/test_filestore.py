@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import tempfile
 from pathlib import Path
 
@@ -310,16 +311,27 @@ class TestBinaryBootstrapper:
         from general_ludd.filestore.bootstrap import BinaryBootstrapper
         from general_ludd.filestore.store import FileStore
 
+        bao_data = b"fake-bao"
+        tofu_data = b"fake-tofu"
+        pins = {
+            "openbao": hashlib.sha256(bao_data).hexdigest(),
+            "opentofu": hashlib.sha256(tofu_data).hexdigest(),
+        }
+
         with tempfile.TemporaryDirectory() as tmp:
             bundled = Path(tmp) / "bundled"
             bundled.mkdir()
-            (bundled / "openbao").write_bytes(b"fake-bao")
-            (bundled / "opentofu").write_bytes(b"fake-tofu")
+            (bundled / "openbao").write_bytes(bao_data)
+            (bundled / "opentofu").write_bytes(tofu_data)
 
             store_dir = Path(tmp) / "store"
             store_dir.mkdir()
             store = FileStore(root_path=str(store_dir))
-            boot = BinaryBootstrapper(store=store, bundled_binaries_dir=str(bundled))
+            boot = BinaryBootstrapper(
+                store=store,
+                bundled_binaries_dir=str(bundled),
+                known_sha256=pins,
+            )
             synced = boot.sync_bundled_to_filestore()
             assert "openbao" in synced
             assert "opentofu" in synced

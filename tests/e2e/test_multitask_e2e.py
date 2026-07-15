@@ -616,7 +616,103 @@ console.log(JSON.stringify(r ?? {{allowed: true}}))
     assert "ZERO-DISPATCH STREAK" in r.get("message", "")
 
 
-# ─── New tests: 10-agent floor enforcement ──────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+# FAILURE 1: Main-thread grinding bypasses enforcement
+# ─── 20 rapid non-dispatch calls with pending work ────────────────────────────
+
+
+def test_rapid_grinding_20_calls_with_pending_work_should_be_blocked(tmp_path):
+    """BUG: 20 non-dispatch calls rapidly (<500ms) with pending work.
+    In a real session the agent made 20+ calls without dispatching.
+    The time-based message boundary never fires, so zeroStreak stays 0.
+    The CONSECUTIVE_NON_DISPATCH counter (threshold=5) SHOULD block after
+    5 non-read mutating calls, but reads/greps/globs don't count.
+    Proves: reads slip through; writes after 5 should be blocked."""
+    ws = tmp_path / "grind-20"
+    ws.mkdir()
+    _make_working_workspace(ws)
+
+    # 20 calls: 15 reads that bypass enforcement + 5 writes that trigger it
+    code = f"""\
+const mod = await import('{PLUGIN_PATH}')
+const plugin = await mod.default({{}})
+await plugin['tool.execute.before']({{tool: 'read'}}, undefined)
+await plugin['tool.execute.before']({{tool: 'read'}}, undefined)
+await plugin['tool.execute.before']({{tool: 'read'}}, undefined)
+await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
+await plugin['tool.execute.before']({{tool: 'read'}}, undefined)
+await plugin['tool.execute.before']({{tool: 'read'}}, undefined)
+await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
+await plugin['tool.execute.before']({{tool: 'read'}}, undefined)
+await plugin['tool.execute.before']({{tool: 'read'}}, undefined)
+await plugin['tool.execute.before']({{tool: 'read'}}, undefined)
+await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
+await plugin['tool.execute.before']({{tool: 'read'}}, undefined)
+await plugin['tool.execute.before']({{tool: 'read'}}, undefined)
+await plugin['tool.execute.before']({{tool: 'read'}}, undefined)
+await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
+await plugin['tool.execute.before']({{tool: 'read'}}, undefined)
+await plugin['tool.execute.before']({{tool: 'read'}}, undefined)
+await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
+await plugin['tool.execute.before']({{tool: 'read'}}, undefined)
+const r = await plugin['tool.execute.before']({{tool: 'read'}}, undefined)
+console.log(JSON.stringify(r ?? {{allowed: true}}))
+"""
+    result = _run_plugin(code, cwd=str(ws), env_override=_GAP_ENV)
+    r = _last_json(result)
+    assert r is not None and r.get("permissionDecision") == "deny", (
+        f"BUG: 20 rapid non-dispatch calls (15 reads + 5 writes) with pending work. "
+        f"At least the 5th write (and subsequent reads) should be blocked by "
+        f"CONSECUTIVE NON-DISPATCH STREAK or UNDER-FLOOR HARD BLOCK. "
+        f"Got: {r}"
+    )
+    block_msg = r.get("message", "")
+    assert ("CONSECUTIVE NON-DISPATCH STREAK" in block_msg
+            or "UNDER-FLOOR HARD BLOCK" in block_msg), (
+        f"Expected enforcement block, got message: {block_msg}"
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# FAILURE 2: Less-than-10 dispatches doesn't block non-dispatch tools
+# ─── 8 dispatches then write with pending work ────────────────────────────────
+
+
+def test_eight_dispatches_then_write_should_be_blocked(tmp_path):
+    """BUG: Dispatch 8 tasks (< floor of 10), then write with pending work.
+    In the real session, the agent dispatched 7-8 subagents and then used
+    edit/write/bash freely. The UNDER-FLOOR HARD BLOCK should have prevented
+    this but message boundary detection made it unreliable.
+    Test: 8 dispatches, message boundary (sleep > MSG_GAP_MS), then write."""
+    ws = tmp_path / "eight-dispatch"
+    ws.mkdir()
+    _make_working_workspace(ws)
+
+    dispatches = "\n".join(
+        "await plugin['tool.execute.before']({tool: 'task'}, undefined)"
+        for _ in range(8)
+    )
+    code = f"""\
+const mod = await import('{PLUGIN_PATH}')
+const plugin = await mod.default({{}})
+{dispatches}
+{_GAP_SLEEP_JS}
+const r = await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
+console.log(JSON.stringify(r ?? {{allowed: true}}))
+"""
+    result = _run_plugin(code, cwd=str(ws), env_override=_GAP_ENV)
+    r = _last_json(result)
+    assert r is not None and r.get("permissionDecision") == "deny", (
+        f"BUG: 8 dispatches then write with pending work SHOULD be blocked. "
+        f"8 < floor=10. Got: {r}"
+    )
+    assert "UNDER-FLOOR HARD BLOCK" in r.get("message", ""), (
+        f"Expected UNDER-FLOOR HARD BLOCK, got: {r.get('message', '')}"
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# New tests: 10-agent floor enforcement ──────────────────────────────────
 
 
 def test_exactly_ten_dispatches_allows_non_dispatch(tmp_path):

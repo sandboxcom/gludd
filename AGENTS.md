@@ -342,6 +342,8 @@ A task may be called complete ONLY when:
 
 NOTE: `make test-failures` previously masked collection ERRORs by grepping only `^FAILED`. If any gate target output disagrees with `make test`, the FULL `make test` output is the truth, and fixing the gate target is your first task.
 
+**`enforce-stop.ts` text.complete hook NOW blocks ANY text-only response when `hasRealPendingWork()` returns true — regardless of todowrite state.** An empty todowrite is NOT evidence that work is complete. Pending work is defined as: unchecked TASKS.md items, non-empty `config/ratchet.yml`, red gate status, unreleased tags without artifacts, or CI-not-green on the current branch. A text-only response while any of these hold is silently blanked by the plugin.
+
 ## CRITICAL: "Done" Claims Require Observable Verification Evidence
 
 A feature, fix, commit, push, or release is "done" ONLY when the SAME message pastes
@@ -617,6 +619,7 @@ in code — they must be tracked, root-caused, and fixed before moving on.
 
 **This is enforced by:**
 - This AGENTS.md section — proactive instruction to audit on session start
+- `.opencode/plugin/enforce-stop.ts` — `text.complete` hook checks CI verdict (via `make ci-verdict BRANCH=<b>` → `conclusion: success` + headSha == branch tip), release completeness (`make verify-release-completeness TAG=<t>` → PASS), gate status (`.gate-status` PASS), AND TASKS.md (unchecked items) — NOT just todowrite. An empty todowrite with a red gate, CI-not-green, or unreleased tags is still a premature stop.
 - `.opencode/plugin/enforce-make.ts` — `session.idle` hook detects stop patterns (note: `chat.response.transform` surface was replaced by `session.idle` + `text.complete` per Q3.12)
 - `BUGS.md` — persistent bug tracking for process failures
 
@@ -2158,6 +2161,8 @@ Codified floor: 10. This is NOT advisory.
 REQUIRED: ≥10 parallel task/agent/workflow dispatches in ONE message.
 ```
 
+**UNDER-FLOOR HARD BLOCK (2026-07-15):** The block now fires IMMEDIATELY when fewer than 10 dispatches have been made in the current message — it does NOT wait for a message boundary. Every non-dispatch tool call (including read/glob/grep) is blocked until >=10 dispatches have been made in the session. Previously the block fired on the NEXT message after a thin wave; now it fires within the same wave, closing the "dispatch 1, then grind reads" bypass. When pending work exists, the ONLY valid next action is a >=10-dispatch wave.
+
 ### Subagent quality requirements
 
 **Every dispatched subagent MUST produce a deliverable.** Subagent slots are
@@ -2245,6 +2250,27 @@ The `scripts/agent_liveness.py` probe (Python-side live counting) informs the sh
 **This is NOT optional.** Running with fewer than 10 subagents is a bug. The user will interrupt and ask why the floor isn't maintained. The enforce-floor.ts plugin will inject floor-breach directives if the streak-based heuristic detects the collapse.
 
 **See also:** the *Steady-state dispatch (the 10-agent floor)* subsection under Pipeline Orchestration Model below for the concrete behavioral rules (fast result processing, no long foreground ops, next-wave-ready, uniform-duration tasks, research as filler) that make maintaining this floor possible in practice.
+
+## CRITICAL: Anti-Grinding Enforcement
+
+**The `enforce-floor.ts` plugin maintains a consecutive non-dispatch counter that blocks ALL non-dispatch tools (including read/grep/glob) after 5 calls within a 30-second sliding window.** This closes the "rapid-grinding bypass" where the agent could make 20+ inline calls in under 5 seconds without ever dispatching a subagent — functionally violating the 10-agent floor while technically satisfying message-shape rules.
+
+### How it works
+
+1. **Every non-dispatch tool call** (read, glob, grep, edit, write, bash) increments a consecutive-non-dispatch counter.
+2. **The counter is time-bounded** — it resets if no non-dispatch calls occur within a 30-second window.
+3. **At counter = 5**, ALL non-dispatch tool calls are blocked with a `GRINDING BLOCKED` message.
+4. **The ONLY way to unblock:** dispatch subagents (task/agent/workflow), which resets the counter to 0.
+
+### Rationale
+
+The prior enforcement relied on message-shape rules (≥2 dispatches per message) and streak-based blocking (after 2 zero-dispatch messages). Both were bypassable: the agent could send response after response with 1 dispatch + N reads, or send rapid-fire read-only messages with zero dispatches, each resetting the message-level counters but never actually dispatching meaningful work. The per-call counter with a time window makes this structurally impossible.
+
+### Enforcement
+
+- **Plugin:** `.opencode/plugin/enforce-floor.ts` — `tool.execute.before` hook, consecutive-non-dispatch counter, 5-call / 30s threshold, blocks all non-dispatch tools at threshold.
+- **Prompt:** this section.
+- **Disable:** `GLUDD_FLOOR_ENFORCE=0` disables the floor plugin entirely (including this check).
 
 ## Pipeline Orchestration Model
 

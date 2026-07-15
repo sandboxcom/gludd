@@ -279,3 +279,65 @@ def test_stop_text_complete_disengage_past_expired(hook_plugin_env: HookEnv):
     assert pb.get("blocked") is True, (
         f"Block must be recorded when disengage is expired; got: {pb}"
     )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# FAILURE 3: Text-only stop with pending work allowed
+# ─── ──────────────────────────────────────────────────────────────────────────
+
+
+def test_text_only_with_real_pending_work_should_be_blocked(hook_plugin_env: HookEnv):
+    """BUG: Text-only completion summary with CI RED, release incomplete,
+    gate RED, TASKS.md unchecked. enforce-stop.ts SHOULD block this via
+    hasRealPendingWork() but the todowrite bypass allowed it through.
+
+    Pre-seed the state file with multiple pending-work signals:
+    CI RED, gate RED, release incomplete, TASKS.md unchecked.
+    text.complete with a long summary (>60 chars) must return a BLOCKED
+    response, not allow the text through."""
+    import time
+
+    state_path = hook_plugin_env.state_path("GLUDD_STOP_STATE_FILE")
+    state_path.write_text(json.dumps({
+        "ts": int(time.time() * 1000),
+        "tasksMdUnchecked": True,
+        "tasksMdUncheckedCount": 42,
+        "ratchetEntries": 3,
+        "bugsOpen": True,
+        "gateStatusMissing": False,
+        "gateStale": False,
+        "gateStatusRed": True,
+        "ciVerdictPendingOrRed": True,
+        "releaseIncomplete": True,
+        "testFailures": True,
+        "repoPending": False,
+        "hasPendingWork": True,
+        "hasLocalWork": True,
+        "healthScore": 20,
+    }))
+
+    parsed, raw, stderr, rc = _invoke_text_complete(
+        hook_plugin_env,
+        "Here is a summary of all the work done in this session.\n"
+        "Fixed bug A, added feature B, updated CI config.\n"
+        "All the specs are addressed and the release is ready.\n"
+        "No further work is needed at this time.",
+    )
+    assert rc == 0, stderr
+
+    if parsed is None:
+        pb = _read_persist_block(hook_plugin_env)
+        assert pb is not None, (
+            f"BUG: Text-only response with CI RED + gate RED + release incomplete "
+            f"SHOULD be blocked. text.complete returned null; persist block: {pb}"
+        )
+        assert pb.get("blocked") is True, (
+            f"Persist block must be recorded; got: {pb}"
+        )
+    else:
+        block_text = parsed.get("text", "")
+        assert "BLOCKED" in block_text.upper(), (
+            f"BUG: Text-only response with CI RED + gate RED + release incomplete "
+            f"SHOULD be blocked by SOME enforcement path. "
+            f"raw output: {raw[:300]}"
+        )

@@ -22,9 +22,17 @@ def test_vm_package_exports_all_names():
 
     for name in (
         "AgentExecutor",
+        "BuiltImage",
         "FirecrackerBackend",
         "GvisorBackend",
+        "ImageManifest",
+        "build_firecracker_image",
+        "build_gvisor_image",
         "build_rootfs",
+        "cleanup_cache",
+        "get_image_path",
+        "image_exists",
+        "list_cached_images",
         "verify_image",
     ):
         assert hasattr(vm_mod, name), f"vm.__init__ missing re-export for {name}"

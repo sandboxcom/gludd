@@ -157,6 +157,7 @@ const defaultImpl: HotModule = {
       // --- Dispatch tools: count and allow (with ceiling) ---
       if (isDispatchTool(tool)) {
         if (_state.thisMessageDispatches >= MAX_DISPATCHES) {
+          writeState(_state)
           return {
             permissionDecision: "deny" as const,
               message: [
@@ -197,64 +198,54 @@ const defaultImpl: HotModule = {
         }
       }
 
-      // --- Consecutive non-dispatch detection (rapid-grinding bypass) ---
-      // If the agent makes many non-dispatch calls rapidly without
-      // dispatching, block. This catches the case where the 5s message-
-      // boundary gap never fires because calls arrive <5s apart.
-      {
-        const disengaged = isDisengaged()
-        if (!disengaged && !isReadTool(tool)) {
-          if (_state.consecutiveNonDispatchStartTs === 0) {
-            _state.consecutiveNonDispatchStartTs = now
-          }
-          if ((now - _state.consecutiveNonDispatchStartTs) < CONSECUTIVE_NON_DISPATCH_WINDOW_MS) {
-            _state.consecutiveNonDispatch++
-            if (
-              _state.consecutiveNonDispatch >= CONSECUTIVE_NON_DISPATCH_THRESHOLD &&
-              hasPendingWork()
-            ) {
-              writeState(_state)
-              return {
-                permissionDecision: "deny" as const,
-                message: [
-                  "CONSECUTIVE NON-DISPATCH STREAK: " + String(_state.consecutiveNonDispatch) + " consecutive non-dispatch tool calls with pending work.",
-                  "Floor is 10. DISPATCH 10 AGENTS OR YOU ARE BLOCKED.",
-                  "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
-                  "Run 'make disengage-enforcement' to bypass.",
-                ].join("\n"),
-              }
-            }
-          } else {
-            _state.consecutiveNonDispatch = 0
-            _state.consecutiveNonDispatchStartTs = 0
-          }
+      // --- Consecutive non-dispatch counter (ALL tools: read/glob/grep/bash/edit/write) ---
+      // Counts every non-dispatch tool call. After THRESHOLD calls within the
+      // time window, blocks ALL non-dispatch tools until a dispatch resets.
+      // This catches main-thread grinding regardless of message boundaries.
+      if (!isDisengaged()) {
+        if (_state.consecutiveNonDispatchStartTs === 0) {
+          _state.consecutiveNonDispatchStartTs = now
         }
-      }
-
-      // --- Non-dispatch tools: enforcement checks ---
-      const disengaged = isDisengaged()
-
-      if (!disengaged) {
-        // === UNDER-FLOOR HARD BLOCK ===
-        // ANY non-dispatch mutating tool is BLOCKED when this message has fewer
-        // than MIN_DISPATCHES dispatches and pending work exists. This fires
-        // REGARDLESS of zeroStreak or prevMessageDispatches. The agent MUST
-        // dispatch >=10 agents before doing anything mutating.
-        // No grace. No exception. No thisMessageDispatches===0 gate.
-        const lt = tool.toLowerCase()
-        if (hasPendingWork() && _state.thisMessageDispatches < MIN_DISPATCHES) {
-          if (lt === "edit" || lt === "write" || lt === "bash") {
+        if ((now - _state.consecutiveNonDispatchStartTs) < CONSECUTIVE_NON_DISPATCH_WINDOW_MS) {
+          _state.consecutiveNonDispatch++
+          if (
+            _state.consecutiveNonDispatch >= CONSECUTIVE_NON_DISPATCH_THRESHOLD &&
+            hasPendingWork()
+          ) {
             writeState(_state)
             return {
               permissionDecision: "deny" as const,
               message: [
-                "UNDER-FLOOR HARD BLOCK: only " + String(_state.thisMessageDispatches) + " dispatch(es) in this message.",
-                "Floor is 10. DISPATCH 10 AGENTS OR YOU ARE BLOCKED.",
-                "You MUST dispatch \u226510 task/agent/workflow dispatches BEFORE any edits, writes, or bash.",
+                "You've made " + String(_state.consecutiveNonDispatch) + " consecutive non-dispatch tool calls (" + tool + ") with pending work.",
+                "DISPATCH 10 SUBAGENTS NOW.",
+                "All non-dispatch tools (read/glob/grep/bash/edit/write) are blocked until dispatch resets this counter.",
                 "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
                 "Run 'make disengage-enforcement' to bypass.",
               ].join("\n"),
             }
+          }
+        } else {
+          _state.consecutiveNonDispatch = 0
+          _state.consecutiveNonDispatchStartTs = 0
+        }
+
+        // === UNDER-FLOOR HARD BLOCK (SECONDARY — primary fires at top) ===
+        // Backstop: blocks ALL non-dispatch tools when under floor. No narrow
+        // edit/write/bash gate — all non-dispatch tools are blocked. The primary
+        // check fires before the consecutive-non-dispatch block; this secondary
+        // is a last-chance catch. The ONLY way to unblock: dispatch so
+        // thisMessageDispatches >= MIN_DISPATCHES.
+        if (hasPendingWork() && _state.thisMessageDispatches < MIN_DISPATCHES) {
+          writeState(_state)
+          return {
+            permissionDecision: "deny" as const,
+            message: [
+              "UNDER-FLOOR HARD BLOCK: ONLY " + String(_state.thisMessageDispatches) + " DISPATCHES.",
+              "FLOOR IS " + String(MIN_DISPATCHES) + ". DISPATCH " + String(MIN_DISPATCHES) + " SUBAGENTS NOW OR YOU ARE BLOCKED.",
+              "You have " + String(_state.thisMessageDispatches) + "; need " + String(MIN_DISPATCHES) + ". No tool allowed until floor reached.",
+              "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
+              "Run 'make disengage-enforcement' to bypass.",
+            ].join("\n"),
           }
         }
 

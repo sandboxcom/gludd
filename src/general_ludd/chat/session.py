@@ -140,6 +140,11 @@ class ChatSession:
             self._history_file_path = self._find_latest_session()
             if self._history_file_path is not None:
                 self.history = self._load_history(self._history_file_path)
+                if not self.history or self.history[0].get("role") != "system":
+                    self.history.insert(0, {
+                        "role": "system",
+                        "content": self._system_prompt,
+                    })
             else:
                 self.history = [
                     {"role": "system", "content": self._system_prompt}
@@ -147,10 +152,19 @@ class ChatSession:
         elif history_file is not None:
             self._history_file_path = Path(history_file).expanduser()
             self.history = self._load_history(self._history_file_path)
+            if not self.history or self.history[0].get("role") != "system":
+                self.history.insert(0, {
+                    "role": "system",
+                    "content": self._system_prompt,
+                })
         else:
             self.history = [
                 {"role": "system", "content": self._system_prompt}
             ]
+
+    @property
+    def history_path(self) -> Path:
+        return self._history_file_path or DEFAULT_HISTORY_DIR
 
     def _resolve_api_config(self) -> tuple[str, str]:
         base_override = self._api_base_override
@@ -437,12 +451,15 @@ class ChatSession:
                     line = line.strip()
                     if not line:
                         continue
-                    record = json.loads(line)
-                    messages.append({
-                        "role": record["role"],
-                        "content": record["content"],
-                    })
-        except (json.JSONDecodeError, OSError) as exc:
+                    try:
+                        record = json.loads(line)
+                        messages.append({
+                            "role": record["role"],
+                            "content": record["content"],
+                        })
+                    except json.JSONDecodeError:
+                        continue
+        except OSError as exc:
             logger.warning("Failed to load history from %s: %s", file_path, exc)
             return [
                 {"role": "system", "content": self._system_prompt}
@@ -453,10 +470,60 @@ class ChatSession:
             ]
         return messages
 
+    def load_history(self) -> None:
+        if self._history_file_path is not None:
+            self.history = self._load_history(self._history_file_path)
+            if not self.history or self.history[0].get("role") != "system":
+                self.history.insert(0, {
+                    "role": "system",
+                    "content": self._system_prompt,
+                })
+        else:
+            self.history = [
+                {"role": "system", "content": self._system_prompt}
+            ]
+
+    def clear_history(self) -> None:
+        if self._history_file_path is not None:
+            self._history_file_path.unlink(missing_ok=True)
+        self.history = [
+            {"role": "system", "content": self._system_prompt}
+        ]
+
+    @classmethod
+    def resume(
+        cls,
+        *,
+        history_file: str | None = None,
+        system_prompt: str | None = None,
+        resume: bool = False,
+        **kwargs: Any,
+    ) -> ChatSession | None:
+        if resume:
+            dummy = cls(**kwargs)
+            latest = dummy._find_latest_session()
+            if latest is None:
+                return None
+            history_file = str(latest)
+        elif history_file:
+            file_path = Path(history_file).expanduser()
+            if not file_path.exists():
+                return None
+        session = cls(system_prompt=system_prompt, **kwargs)
+        if history_file:
+            session._history_file_path = Path(history_file).expanduser()
+        session.load_history()
+        if system_prompt and session.history:
+            session.history[0]["content"] = system_prompt
+        return session
+
     def save_history(self) -> None:
+        if len(self.history) == 1 and self.history[0].get("role") == "system":
+            return
         self._ensure_history_dir()
         if self._history_file_path is None:
             self._history_file_path = self._make_session_filename()
+        self._history_file_path.parent.mkdir(parents=True, exist_ok=True)
         write_messages = self._messages_for_save()
         self._history_file_path.write_text(
             "\n".join(json.dumps(m) for m in write_messages) + "\n",
@@ -470,10 +537,7 @@ class ChatSession:
             messages.append({
                 "role": msg["role"],
                 "content": msg["content"],
-                "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             })
-        # timestamp the messages to match actual turn times
-        # first message has timestamp, rest follow
         base_ts = datetime.datetime.now(datetime.UTC)
         for i, msg_dict in enumerate(messages):
             msg_dict["timestamp"] = (base_ts - datetime.timedelta(seconds=len(messages) - i)).isoformat()
@@ -523,3 +587,62 @@ class ChatSession:
         self._turn_count += 1
         if self._turn_count % self._save_interval == 0:
             self.save_history()
+
+
+def export_session(
+    session_file: Path,
+    format: str | None = "md",
+    output_file: Path | None = None,
+) -> str | Path:
+    if format is None or format == "":
+        format = "md"
+    if format not in ("md", "json"):
+        raise ValueError(f"Unsupported export format: {format!r}. Use 'md' or 'json'.")
+    if not isinstance(session_file, Path):
+        session_file = Path(session_file)
+    if not session_file.exists():
+        raise FileNotFoundError(f"Session file not found: {session_file}")
+    try:
+        messages: list[dict[str, object]] = []
+        with session_file.open("r", encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    messages.append(json.loads(line))
+                except json.JSONDecodeError:
+                    raise
+    except json.JSONDecodeError:
+        raise ValueError(f"Corrupt session file: {session_file}")
+
+    if format == "md":
+        result = _export_to_markdown(messages)
+    else:
+        result = _export_to_json(messages)
+
+    if output_file is not None:
+        if isinstance(output_file, str):
+            output_file = Path(output_file)
+        output_file.write_text(result, encoding="utf-8")
+        return output_file
+    return result
+
+
+def _export_to_markdown(messages: list[dict[str, object]]) -> str:
+    lines: list[str] = []
+    lines.append("# Chat Session Export\n")
+    for msg in messages:
+        role = str(msg.get("role", "unknown")).capitalize()
+        content = str(msg.get("content", ""))
+        ts = str(msg.get("timestamp", ""))
+        lines.append(f"## {role}")
+        if ts:
+            lines.append(f"*{ts}*\n")
+        lines.append(content)
+        lines.append("")
+    return "\n".join(lines)
+
+
+def _export_to_json(messages: list[dict[str, object]]) -> str:
+    return json.dumps({"messages": messages}, indent=2)

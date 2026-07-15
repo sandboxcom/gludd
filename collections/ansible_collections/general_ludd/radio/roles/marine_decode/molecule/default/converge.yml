@@ -1,0 +1,33 @@
+---
+- name: Converge
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Run marine_decode role
+      ansible.builtin.include_role:
+        name: general_ludd.radio.marine_decode
+      vars:
+        marine_decode_enabled: true
+        marine_decode_mode: auto
+        marine_decode_sample_rate: 2048000
+        marine_decode_center_freq_hz: 162000000
+        marine_decode_input_file: ""
+
+    - name: Assert verdict structure
+      ansible.builtin.assert:
+        that:
+          - marine_decode_verdict.role == "marine_decode"
+          - marine_decode_verdict.mode == "auto"
+        fail_msg: "Verdict structure incorrect: {{ marine_decode_verdict }}"
+
+    - name: Assert JSON output
+      ansible.builtin.stat:
+        path: /tmp/gludd-marine-decode/marine_decode.json
+      register: _stat_json
+      failed_when: false
+
+    - name: Cleanup
+      ansible.builtin.file:
+        path: /tmp/gludd-marine-decode
+        state: absent

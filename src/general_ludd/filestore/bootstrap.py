@@ -214,6 +214,8 @@ class BinaryBootstrapper:
             if bundled and not self._store.exists(f"binaries/{name}"):
                 try:
                     data = Path(bundled).read_bytes()
+                    if not self._verify_digest(name, data):
+                        continue
                     self.store_binary(name, data)
                     synced.append(name)
                 except Exception as exc:

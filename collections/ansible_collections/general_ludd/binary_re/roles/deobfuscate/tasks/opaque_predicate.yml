@@ -1,0 +1,32 @@
+---
+- name: Detect opaque predicates
+  ansible.builtin.command:
+    cmd: >-
+      {{ ansible_python_interpreter | default('/usr/bin/env python3') }}
+      {{ role_path }}/files/deobfuscate.py
+      --mode opaque_predicates
+      --binary {{ binary_path }}
+      --output {{ output_dir }}/opaque_predicates.json
+  register: _opaque_result
+  changed_when: false
+  failed_when: _opaque_result.rc not in [0]
+
+- name: Read opaque predicate artifact
+  ansible.builtin.slurp:
+    src: "{{ output_dir }}/opaque_predicates.json"
+  register: _opaque_artifact_raw
+
+- name: Parse opaque predicate artifact
+  ansible.builtin.set_fact:
+    opaque_predicate_artifact: >-
+      {{ _opaque_artifact_raw.content | b64decode | from_json
+         if (_opaque_artifact_raw is defined and _opaque_artifact_raw.content is defined)
+         else {} }}
+
+- name: Report opaque predicate summary
+  ansible.builtin.debug:
+    msg: >-
+      Opaque predicate detection complete:
+      detected={{ opaque_predicate_artifact.get('detected', false) }},
+      confidence={{ opaque_predicate_artifact.get('confidence', 'none') }},
+      patterns_found={{ opaque_predicate_artifact.get('patterns', []) | length }}

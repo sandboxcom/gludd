@@ -3065,6 +3065,7 @@ def create_daemon_app(
         remediation,
         render,
         replays,
+        research,
         review,
         schedule,
         security,
@@ -3125,6 +3126,7 @@ def create_daemon_app(
     maintenance.register(app, daemon_state)
     make.register(app, daemon_state)
     remediation.register(app, daemon_state)
+    research.register(app, daemon_state)
     review.register(app, daemon_state)
     ornith.register(app, daemon_state)
     # Playbook web renderer (Phase 1): /api/renderers (PSK) + /render/<name> (public).

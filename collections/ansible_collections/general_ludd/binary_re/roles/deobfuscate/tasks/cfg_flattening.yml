@@ -1,0 +1,32 @@
+---
+- name: Detect control-flow flattening
+  ansible.builtin.command:
+    cmd: >-
+      {{ ansible_python_interpreter | default('/usr/bin/env python3') }}
+      {{ role_path }}/files/deobfuscate.py
+      --mode cfg_flattening
+      --binary {{ binary_path }}
+      --output {{ output_dir }}/cfg_flattening.json
+  register: _cfg_result
+  changed_when: false
+  failed_when: _cfg_result.rc not in [0]
+
+- name: Read CFG flattening artifact
+  ansible.builtin.slurp:
+    src: "{{ output_dir }}/cfg_flattening.json"
+  register: _cfg_artifact_raw
+
+- name: Parse CFG flattening artifact
+  ansible.builtin.set_fact:
+    cfg_flattening_artifact: >-
+      {{ _cfg_artifact_raw.content | b64decode | from_json
+         if (_cfg_artifact_raw is defined and _cfg_artifact_raw.content is defined)
+         else {} }}
+
+- name: Report CFG flattening summary
+  ansible.builtin.debug:
+    msg: >-
+      CFG flattening detection complete:
+      flattened={{ cfg_flattening_artifact.get('flattened', false) }},
+      confidence={{ cfg_flattening_artifact.get('confidence', 'none') }},
+      markers_found={{ cfg_flattening_artifact.get('markers', []) | length }}
