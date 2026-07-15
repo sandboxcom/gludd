@@ -460,6 +460,9 @@ check-opencode-ready:
 check-opencode-integrity:
 	@$(UV) run python3 scripts/check_opencode_integrity.py
 
+gate-fast: lint typecheck collect-check
+	@echo "=== GATE-FAST: PASS ==="
+
 gate: check-opencode-integrity validate-task-ledger check-dispatch-dedup check-subagent-guards verify-plugin-manifest check-skills-frontmatter check-coverage-gaps check-plugin-syntax check-plugin-runtime check-plugin-imports check-duplicate-targets
 	@rm -f .gate-failed
 	@echo "=== GATE $(shell date -u +%Y-%m-%dT%H:%M:%SZ) ===" > .gate-status

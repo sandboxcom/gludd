@@ -219,14 +219,38 @@ const defaultImpl: HotModule = {
         }
       }
 
+      // === ZERO-DISPATCH STREAK (FIRES BEFORE UNDER-FLOOR) ===
+      // unconditional block after MAX_ZERO_STREAK consecutive zero-dispatch
+      // messages. zeroStreak increments at each message boundary when the
+      // prior message had 0 dispatches. At streak >=2, block regardless of
+      // hasPendingWork (catches reading-only-forever without dispatching).
+      // This MUST precede the UNDER-FLOOR check — when thisMessageDispatches=0
+      // AND zeroStreak >= MAX_ZERO_STREAK, zero-streak has higher priority than
+      // the generic under-floor block. See E2E test_zero_dispatch_streak_blocks_fourth_message.
+      if (
+        !isDisengaged() &&
+        _state.thisMessageDispatches === 0 &&
+        _state.zeroStreak >= MAX_ZERO_STREAK
+      ) {
+        writeState(_state)
+        return {
+          permissionDecision: "deny" as const,
+          message: [
+            "ZERO-DISPATCH STREAK: " + String(MAX_ZERO_STREAK) + " consecutive responses with 0 subagent dispatches.",
+            "Floor is 10. This block is UNCONDITIONAL. DISPATCH 10 AGENTS NOW.",
+            "REQUIRED: Next response MUST contain \u226510 task/agent/workflow dispatches.",
+            "No pending-work gate. No tool-type bypass. Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
+            "Run 'make disengage-enforcement' to bypass.",
+          ].join("\n"),
+        }
+      }
+
       // === UNDER-FLOOR HARD BLOCK ===
       // FIRES when fewer than MIN_DISPATCHES have been dispatched in this message
-      // AND the consecutive grinding block above has NOT already fired. The
-      // consecutive-non-dispatch counter is STILL tracked (incremented above) so
-      // the deny message includes the current consecutive count.
+      // AND neither the consecutive grinding block nor the zero-streak block above
+      // has fired. Catches "dispatched some but not enough."
       // The ONLY way to unblock: dispatch so thisMessageDispatches >= MIN_DISPATCHES.
       if (
-        !grindingDenied &&
         hasPendingWork() &&
         _state.thisMessageDispatches < MIN_DISPATCHES
       ) {
@@ -241,27 +265,6 @@ const defaultImpl: HotModule = {
             "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
             "Run 'make disengage-enforcement' to bypass.",
           ].join("\n"),
-        }
-      }
-
-      if (!isDisengaged()) {
-        // === ZERO-DISPATCH STREAK ===
-        // unconditional block after MAX_ZERO_STREAK consecutive zero-dispatch
-        // messages. zeroStreak increments at each message boundary when the
-        // prior message had 0 dispatches. At streak >=2, block regardless of
-        // hasPendingWork (catches reading-only-forever without dispatching).
-        if (_state.thisMessageDispatches === 0 && _state.zeroStreak >= MAX_ZERO_STREAK) {
-          writeState(_state)
-          return {
-            permissionDecision: "deny" as const,
-            message: [
-              "ZERO-DISPATCH STREAK: " + String(MAX_ZERO_STREAK) + " consecutive responses with 0 subagent dispatches.",
-              "Floor is 10. This block is UNCONDITIONAL. DISPATCH 10 AGENTS NOW.",
-              "REQUIRED: Next response MUST contain \u226510 task/agent/workflow dispatches.",
-              "No pending-work gate. No tool-type bypass. Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
-              "Run 'make disengage-enforcement' to bypass.",
-            ].join("\n"),
-          }
         }
       }
 
