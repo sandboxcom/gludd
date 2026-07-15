@@ -49,6 +49,12 @@ def _run_ts(ts_code: str, env_override: dict | None = None, timeout: int = 15):
     try:
         env = os.environ.copy()
         env["OPENCODE_SUBAGENT"] = ""  # ensure we're NOT treated as subagent
+        # Hermetic disengage path: the live watchdog (check_plugin_hashes.py)
+        # can rewrite /tmp/gludd-watchdog-disengage.json mid-test, flipping
+        # isDisengaged() to true and turning expected denies into allows.
+        # Point plugins at a per-process nonexistent path unless a test
+        # explicitly overrides it.
+        env["GLUDD_DISENGAGE_PATH"] = f"/tmp/gludd-disengage-hermetic-{os.getpid()}.json"
         if env_override:
             env.update(env_override)
         proc = subprocess.run(
