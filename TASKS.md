@@ -1,6 +1,6 @@
 # TASKS.md — Evidence Ledger
 
-**Last consolidated: 2026-07-15 A.4 blocker update. C.18 verified FIXED (15 tests). NF.4 COMPLETED (10/10 roles, 315+ tests). Enforce-stop stop-summary-with-tool-calls gap RESOLVED (commits 0c816e34, d1e0a953, 513887ef). CI 12-asset release matrix fix applied (e84b2147). CI cooldown fix applied (9b8d7824): cooldown-masking-RED incident (BUGS.md #13), CI-COOLDOWN-is-not-PENDING codified, molecule failed_when Jinja2 fixes, enforce-stop CI cooldown UNKNOWN handling. HEAD: 9b8d7824 on development (9 commits since a0f75b3e). A.4 BLOCKED on CI PENDING (run 29451816311) — release-cut awaits CI green. 336 boxes: 335 checked, 1 pending (A.4).**
+**Last consolidated: 2026-07-15 final session update. A.4 blocker current: CI last-known PENDING (run 29451816311). C.18 verified FIXED (15 tests). NF.4 COMPLETED (10/10 roles, 315+ tests). Enforce-stop stop-summary-with-tool-calls gap RESOLVED (commits 0c816e34, d1e0a953, 513887ef). CI 12-asset release matrix fix applied (e84b2147). CI cooldown fix applied (9b8d7824): cooldown-masking-RED incident (BUGS.md 2026-07-15 #1), CI-COOLDOWN-is-not-PENDING codified, molecule failed_when Jinja2 fixes, molecule prepare.yml scaffolding (6 scenarios), enforce-stop CI cooldown UNKNOWN handling. A.4 BLOCKED on CI PENDING — release-cut awaits CI green. 336 boxes: 335 checked, 1 pending (A.4).**
 
 Each line ticked when `make gate` is green and evidence is pasted.
 
