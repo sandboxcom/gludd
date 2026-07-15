@@ -175,6 +175,28 @@ const defaultImpl: HotModule = {
         return
       }
 
+      // === UNDER-FLOOR HARD BLOCK ===
+      // FIRES IMMEDIATELY: when fewer than MIN_DISPATCHES have been dispatched
+      // in this message. No message-boundary wait. No tool-type exception.
+      // ALL non-dispatch tools are BLOCKED — reads, edits, writes, bash, everything.
+      // The ONLY way to unblock: dispatch so thisMessageDispatches >= MIN_DISPATCHES.
+      if (
+        hasPendingWork() &&
+        _state.thisMessageDispatches < MIN_DISPATCHES
+      ) {
+        writeState(_state)
+        return {
+          permissionDecision: "deny" as const,
+          message: [
+            "UNDER-FLOOR HARD BLOCK: ONLY " + String(_state.thisMessageDispatches) + " DISPATCHES.",
+            "FLOOR IS " + String(MIN_DISPATCHES) + ". DISPATCH " + String(MIN_DISPATCHES) + " SUBAGENTS NOW OR YOU ARE BLOCKED.",
+            "You have " + String(_state.thisMessageDispatches) + "; need " + String(MIN_DISPATCHES) + ". No tool allowed until floor reached.",
+            "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
+            "Run 'make disengage-enforcement' to bypass.",
+          ].join("\n"),
+        }
+      }
+
       // --- Consecutive non-dispatch detection (rapid-grinding bypass) ---
       // If the agent makes many non-dispatch calls rapidly without
       // dispatching, block. This catches the case where the 5s message-

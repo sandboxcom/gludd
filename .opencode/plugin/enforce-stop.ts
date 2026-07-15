@@ -1,23 +1,31 @@
 /**
  * enforce-stop.ts — COMPREHENSIVE stop-pattern and completion-claim enforcement.
  *
+ * VULNERABILITY FIXED (2026-07-15): text.complete bypass via short-text
+ * exemption and WORK_STATE_CACHE eliminated.
+ *
  * VULNERABILITY FIXED (2026-07-14): todowrite bypass eliminated.
  * The old plugin checked todowrite state but not actual project state.
  * An agent marking all todos as "completed" in todowrite could bypass
  * all stop detection even when CI was RED, beta.1 had only 1/12 assets,
  * and 300+ spec items remained unimplemented.
  *
- * FIX: hasRealPendingWork() checks 10+ filesystem sources directly
- * (TASKS.md, ratchet.yml, BUGS.md, .gate-status, CI verdict, release
- * completeness, test failures, repo dirty state). The todowrite state
- * is NEVER consulted for the stop block — only the filesystem.
+ * FIX: hasRealPendingWork() reads TASKS.md UNCONDITIONALLY on every
+ * invocation (NO caching). The todowrite state is NEVER consulted.
+ * The text.complete hook blocks ALL text-only responses (0 tool calls)
+ * when hasRealPendingWork() returns true — regardless of text length,
+ * regardless of text content. Short-text exemption REMOVED.
+ * COMPLETION_SMELL check blocks any completion-adjacent language
+ * (substring "complete", "done", "finished", "ready", etc.) when
+ * hasRealPendingWork() is true — fires even for short text.
  *
  * WHAT IS BLOCKED:
- *   1. Text-only responses when hasRealPendingWork() returns true
+ *   1. ALL text-only responses when hasRealPendingWork() returns true
  *   2. Completion-word claims (committed, done, landed, etc.) without evidence
  *   3. QA-response-summary patterns ("completed in this session", etc.)
- *   4. Stop-like make targets (commit, push, release) with pending work
- *   5. Main-thread grinding (too many consecutive non-dispatch calls)
+ *   4. COMPLETION_SMELL: any completion-adjacent substring with pending work
+ *   5. Stop-like make targets (commit, push, release) with pending work
+ *   6. Main-thread grinding (too many consecutive non-dispatch calls)
  *
  * Hot-reload capable. Subagent context skips enforcement.
  * GLUDD_STOP_ENFORCE=0 disables ALL enforcement.
@@ -68,6 +76,8 @@ const EVIDENCE_PATTERNS = [
   /conclusion:\s*(?:success|failure)/,
   /headSha.*matched/,
 ]
+
+const COMPLETION_SMELL_RE = /\b(?:complete|done|finished|ready|landed|shipped|pushed|committed|fixed|passed|passing|working|green|resolved|deployed|verified|wrapped|all done|all set|all good|all tasks|continuing|no more|nothing more|RED|beta|alpha)\b/i
 
 const DELEGATE_FIRST_THRESHOLD = 8
 const GRINDING_HARD_DENY_THRESHOLD = 12
@@ -254,45 +264,10 @@ interface WorkState {
   ts: number
 }
 
-let cachedWorkState: WorkState | null = null
-const WORK_STATE_CACHE_MS = 10_000
-
 function hasRealPendingWork(): WorkState {
   const now = Date.now()
 
-  if (cachedWorkState && (now - cachedWorkState.ts) < WORK_STATE_CACHE_MS) {
-    return cachedWorkState
-  }
-
-  // Check the state file cache first (test fixtures pre-seed this)
-  try {
-    if (fs.existsSync(STATE_FILE)) {
-      const raw = JSON.parse(fs.readFileSync(STATE_FILE, "utf8"))
-      if (raw && typeof raw.ts === "number" && (now - raw.ts) < WORK_STATE_CACHE_MS) {
-        const cached: WorkState = {
-          tasksMdUnchecked: !!raw.tasksMdUnchecked,
-          tasksMdUncheckedCount: typeof raw.tasksMdUncheckedCount === "number" ? raw.tasksMdUncheckedCount : (raw.tasksMdUnchecked ? 1 : 0),
-          ratchetEntries: typeof raw.ratchetEntries === "number" ? raw.ratchetEntries : 0,
-          bugsOpen: !!raw.bugsOpen,
-          gateStatusMissing: !!raw.gateStatusMissing,
-          gateStale: !!raw.gateStale,
-          gateStatusRed: !!raw.gateStatusRed,
-          ciVerdictPendingOrRed: !!raw.ciVerdictPendingOrRed,
-          releaseIncomplete: !!raw.releaseIncomplete,
-          testFailures: !!raw.testFailures,
-          repoPending: !!raw.repoPending,
-          hasPendingWork: !!raw.hasPendingWork,
-          hasLocalWork: !!raw.hasLocalWork,
-          healthScore: typeof raw.healthScore === "number" ? raw.healthScore : 100,
-          ts: raw.ts,
-        }
-        cachedWorkState = cached
-        return cached
-      }
-    }
-  } catch {}
-
-  // Cache miss — read from filesystem
+  // UNCONDITIONAL filesystem read — NO caching. Read TASKS.md every time.
   const cwd = process.cwd()
   let tasksMdUnchecked = false
   let tasksMdUncheckedCount = 0
@@ -416,7 +391,6 @@ function hasRealPendingWork(): WorkState {
     fs.writeFileSync(STATE_FILE, JSON.stringify(state), "utf8")
   } catch {}
 
-  cachedWorkState = state
   return state
 }
 
