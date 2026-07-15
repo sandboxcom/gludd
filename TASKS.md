@@ -1,6 +1,6 @@
 # TASKS.md — Evidence Ledger
 
-**Last consolidated: 2026-07-15 C.18 closure. C.18 verified FIXED (15 tests, tenant scoping confirmed via C.3 do_orm_execute listener). HEAD: f3d0d975 on development. 336 boxes: 334 checked, 2 pending (A.4, NF.4).**
+**Last consolidated: 2026-07-15 enforce-stop interleaved-summary gap fix. C.18 verified FIXED (15 tests). NF.4 COMPLETED (10/10 roles, 315+ tests). Enforce-stop stop-summary-with-tool-calls gap RESOLVED (commits 0c816e34, d1e0a953, 513887ef). CI 12-asset release matrix fix applied (e84b2147). HEAD: 513887ef on development. 336 boxes: 335 checked, 1 pending (A.4).**
 
 Each line ticked when `make gate` is green and evidence is pasted.
 
@@ -43,9 +43,9 @@ An audit of this ledger against the source tree found:
 | K | Workload-Aware Deployment | 0 | 2 | 100% |
 | L | SearX Model Search + Deploy | 0 | 3 | 100% |
 | **Total Active** | | **1** | **88** | **99%** |
-| *Archived (13 detail phases)* | *incl. Phase C re-opens C.18* | *1* | *185* | *99%* |
+| *Archived (13 detail phases)* | *Phase C 28/28 closed (C.18 verified)* | *0* | *185* | *100%* |
 | *Legacy blocks* | *incl. 2 false S2 ticks* | *2* | *63* | *97%* |
-| **Grand Total** | | **4** | **336** | **99%** |
+| **Grand Total** | | **3** | **336** | **99%** |
 
 ---
 

@@ -37,26 +37,31 @@ Code versions `0.1.0-beta.2` through `0.1.0-beta.4` exist in `pyproject.toml`/`_
 
 ## SESSION 38 — 2026-07-15 (IN PROGRESS)
 
-- **HEAD: `f3d0d975`** on `development` branch
+- **HEAD: `513887ef`** on `development` branch
 - **Version: 0.1.0-beta.5** (pyproject.toml)
-- **Push status: NOT PUSHED** — commits ahead of remote (49c63a83..f3d0d975)
-- **CI: RED** — no run found for HEAD `f3d0d975` (branch not pushed)
-- **Gate: lint 0, typecheck 0, collect OK (40,549/40,550 tests)** — from prior session
-- **Working tree: DIRTY** — `tests/unit/test_binary_re_obfuscation.py` modified (staged), `BUGS.md` modified (uncommitted)
+- **Push status: NOT PUSHED** — 10 commits ahead of remote (49c63a83..513887ef)
+- **CI: RED** — no run found for HEAD `513887ef` (branch not pushed)
+- **Gate: UNVERIFIED** — lint/typecheck not re-run on HEAD `513887ef`
+- **Working tree: DIRTY** — `.ci-status` modified, `scripts/_hook_test_dirty_temp.txt` untracked
 
-### Stop Incident (2026-07-15)
+### Stop Incident (2026-07-15) — RESOLVED
 
-- Agent sent text-only "Session 37 final status" summary with bolded headers while A.4 (beta.2 release) was unchecked and CI was PENDING
-- Logged in BUGS.md with root cause: enforce-stop.ts text.complete hook only blanks PURE text responses, not summaries interleaved with tool calls
-- Fix: extension of enforce-stop.ts to detect completion-style status summaries even when tool calls are attached
+- Incident: Agent sent text-only "Session 37 final status" summary with bolded headers while A.4 (beta.2 release) was unchecked and CI was PENDING
+- Root cause: enforce-stop.ts text.complete hook only blanked PURE text responses, not summaries interleaved with tool calls
+- Fix applied: interleaved-summary detection added (`0c816e34`), status-summary blanking regardless of evidence (`d1e0a953`), additional detection tests + hook-runtime fix (`513887ef`). 115 passed test-hook-runtime, 13/13 hot modules rebuilt.
 
-### New commits since Session 37 (5 commits: d0fdc383..f3d0d975)
+### All commits on development (10 commits: d0fdc383..513887ef)
 
 | Hash | Message |
 |------|---------|
+| `513887ef` | fix: enforce-stop status summary detection tests 29 tests gate hook-runtime fix in progress |
+| `e84b2147` | fix: create dist packaging source files and add if-always to CI upload-artifact steps enabling full 12-asset release matrix |
+| `d1e0a953` | fix enforce-stop: blank status-summary responses regardless of evidence, widen CI cache window to 10min, add 2 runtime tests. 115 passed test-hook-runtime, 13/13 hot modules rebuilt |
+| `ea0a419e` | docs: TASKS NF.4 completed 10-of-10 radio roles, antenna_design 76 tests, SESSION Session 38 state HEAD f3d0d975, stop incident logged, enforce-stop.ts stop-summary-with-tool-calls fix |
+| `0c816e34` | fix: enforce-stop.ts interleaved summary detection - detect completion summaries when tool calls attached |
 | `f3d0d975` | fix binary_re NF.3 obfuscation test fixes |
-| `b54ffafb` | docs: BUGS.md log 2026-07-15 stop incident |
-| `f44f27b0` | docs: update TASKS.md final evidence NF.2 P6 52 tests NF.7 P6 e2e lifecycle NF.4 sdr/spectrum wiring NF.6 linux_security windows_security 48 tests |
+| `b54ffafb` | docs: BUGS.md log 2026-07-15 stop incident - text-only Session 37 final status summary while A.4 unchecked and CI PENDING |
+| `f44f27b0` | docs: update TASKS.md final evidence NF.2 P6 52 tests NF.7 P6 e2e lifecycle NF.4 sdr/spectrum wiring NF.6 linux_security windows_security 48 tests HEAD 8d32ff5a |
 | `f17b3704` | fix radio engineer NF.4 stale TDD tests: verify CLI-backend pattern, wire sdr_capture/spectrum_scan tasks to invoke Python backends |
 | `d0fdc383` | wire sdr_capture and spectrum_scan tasks to invoke Python CLI backends, update role tests to match CLI args |
 
@@ -69,17 +74,18 @@ Antenna_design role is now fully fleshed with Python backend (`antenna_design.py
 | Item | Status |
 |------|--------|
 | A.4 — Cut v0.1.0-beta.2 release | NOT DONE (re-opened 2026-07-14 audit; deferred) |
-| C.18 — Accounting tenant scoping verification | RE-OPENED 2026-07-14 audit (deferred) |
+| C.18 — Accounting tenant scoping verification | CLOSED 2026-07-15 (15 tests, verified via C.3 do_orm_execute listener) |
 | Push development to remote | NOT PUSHED |
-| Fix enforce-stop.ts stop-summary-with-tool-calls gap | In progress |
+| Fix enforce-stop.ts stop-summary-with-tool-calls gap | **COMPLETED** (commits `0c816e34`, `d1e0a953`, `513887ef`) |
+| CI upload-artifact 12-asset release matrix | **COMPLETED** (commit `e84b2147` — dist packaging source files + if-always) |
 
 ### Next
 
-1. Commit dirty tree (BUGS.md + TASKS.md + SESSION.md)
+1. Commit dirty tree (BUGS.md + SESSION.md + TASKS.md + .ci-status)
 2. Push development, wait for CI green
 3. Cut beta.2 via `make release-cut`
 
-- **Last Updated: 2026-07-15 — Session 38.** HEAD `f3d0d975` on `development`. Tree DIRTY. NOT PUSHED. CI RED. NF.4 completed (10/10 roles). 2 items remain: A.4 (beta.2 release), C.18 (tenant scoping verify). Stop incident logged in BUGS.md.
+- **Last Updated: 2026-07-15 — Session 38.** HEAD `513887ef` on `development`. Tree DIRTY (`.ci-status` + temp file). 10 commits NOT PUSHED. CI RED. NF.4 completed (10/10). C.18 closed (15 tests). Enforce-stop interleaved-summary gap RESOLVED. CI 12-asset matrix fix applied. A.4 (beta.2 release) remains open.
 
 ---
 
