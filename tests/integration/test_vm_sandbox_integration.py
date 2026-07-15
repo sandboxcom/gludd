@@ -28,12 +28,10 @@ from general_ludd.security.sandboxes.vm.image_builder import (
 
 def _make_spec(agent_type: str = "sonnet", caps: list[Capability] | None = None) -> PermissionSpec:
     if caps is None:
-        caps = [Capability.FILE_READ]
+        caps = [Capability(resource="file:", actions=["read"])]
     return PermissionSpec(
         agent_type=agent_type,
-        capabilities=tuple(caps),
-        allowed_models=["sonnet"],
-        max_ttl_seconds=3600,
+        capabilities=caps,
     )
 
 
@@ -85,21 +83,23 @@ class TestImageBuilder:
     def test_cache_dir_exists(self):
         assert Path.home() / ".cache" / "gludd" / "sandbox" == CACHE_DIR
 
-    def test_build_rootfs_returns_path(self):
+    def test_build_rootfs_returns_built_image(self):
         result = build_rootfs("/tmp/test_rootfs.ext4")
-        assert isinstance(result, Path)
-        assert str(result) == "/tmp/test_rootfs.ext4"
+        assert isinstance(result.path, Path)
+        assert str(result.path) == "/tmp/test_rootfs.ext4"
 
     def test_build_rootfs_with_path_object(self):
         result = build_rootfs(Path("/tmp/test_rootfs.ext4"))
-        assert isinstance(result, Path)
+        assert isinstance(result.path, Path)
 
     def test_verify_image_nonexistent(self):
         assert verify_image("/nonexistent/image_12345.ext4") is False
 
     def test_verify_image_exists_true(self, tmp_path: Path):
         img = tmp_path / "test_rootfs.ext4"
-        img.write_bytes(b"\x00" * 1024)
+        data = bytearray(2048)
+        data[1024 + 0x38:1024 + 0x3A] = b"\x53\xef"
+        img.write_bytes(bytes(data))
         assert verify_image(str(img)) is True
 
 
@@ -303,6 +303,7 @@ class TestAutoDetectionChain:
         with (
             patch.object(FirecrackerBackend, "available", return_value=True),
             patch.object(GvisorBackend, "available", return_value=True),
+            patch("sys.platform", "linux"),
         ):
             from general_ludd.security.sandboxes.detect import auto
             backend = auto()
@@ -313,6 +314,7 @@ class TestAutoDetectionChain:
         with (
             patch.object(FirecrackerBackend, "available", return_value=False),
             patch.object(GvisorBackend, "available", return_value=True),
+            patch("sys.platform", "linux"),
         ):
             from general_ludd.security.sandboxes.detect import auto
             backend = auto()
@@ -424,7 +426,11 @@ class TestPermissionSpecSandboxIntegration:
             assert "haiku" in handle.token
 
     def test_spec_with_multiple_capabilities(self):
-        caps = [Capability.FILE_READ, Capability.FILE_WRITE, Capability.NETWORK_OUT]
+        caps = [
+            Capability(resource="file:", actions=["read"]),
+            Capability(resource="file:", actions=["write"]),
+            Capability(resource="net:egress:any", actions=["connect"]),
+        ]
         with patch.object(FirecrackerBackend, "available", return_value=True):
             spec = _make_spec(caps=caps)
             handle = FirecrackerBackend.apply(spec, _make_target())
@@ -436,14 +442,11 @@ class TestPermissionSpecSandboxIntegration:
             handle = FirecrackerBackend.apply(spec, _make_target())
             assert handle.applied is True
 
-    def test_spec_allowed_models_preserved(self):
+    def test_spec_roundtrip_preserved(self):
         spec = _make_spec()
         spec_dict = PermissionSpec(
             agent_type=spec.agent_type,
             capabilities=spec.capabilities,
-            allowed_models=spec.allowed_models,
-            max_ttl_seconds=spec.max_ttl_seconds,
-            id=spec.id,
         )
         with patch.object(FirecrackerBackend, "available", return_value=True):
             handle = FirecrackerBackend.apply(spec_dict, _make_target())

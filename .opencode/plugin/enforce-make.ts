@@ -138,21 +138,25 @@ function isGateAlreadyRunning(): boolean {
   try {
     const BASETEMP = process.env.GLUDD_GATE_BASETEMP || "/tmp/gludd-gate-basetemp"
     const STALE_SECS = parseInt(process.env.GLUDD_GATE_STALE_SECS || "600", 10)
-    // Signal A: basetemp exists + fresh mtime.
-    try {
-      const st = fs.statSync(BASETEMP)
-      const ageSec = (Date.now() - st.mtimeMs) / 1000
-      if (ageSec < STALE_SECS) return true
-    } catch {}
-    // Signal B: pgrep -f pytest. Exit 0 = match found.
     if (process.env.GLUDD_GATE_PYTEST_RUNNING === "1") return true
     if (process.env.GLUDD_GATE_PYTEST_RUNNING === "0") return false
+    // Signal A (definitive): pgrep -f pytest. Exit 0 = match found.
     try {
       execSync("pgrep -f pytest", { stdio: ["pipe", "pipe", "pipe"] })
-      return true  // pgrep exited 0 — a pytest process is running
-    } catch {
-      return false  // pgrep exited non-zero — no match
+      return true
+    } catch (e: unknown) {
+      const err = e as NodeJS.ErrnoException
+      if (err.code === "ENOENT") {
+        // pgrep unavailable — fall back to basetemp freshness heuristic
+        try {
+          const st = fs.statSync(BASETEMP)
+          const ageSec = (Date.now() - st.mtimeMs) / 1000
+          if (ageSec < STALE_SECS) return true
+        } catch {}
+      }
+      // Non-zero exit: pgrep found nothing — no pytest running
     }
+    return false
   } catch {
     return false
   }
@@ -393,8 +397,8 @@ const defaultImpl: HotModule = {
             if (isGateAlreadyRunning()) {
               throw new Error([
                 "GATE CONCURRENCY VIOLATION: a pytest / gate run appears to already",
-                "be in progress (basetemp /tmp/gludd-gate-basetemp is fresh OR pgrep",
-                "found a pytest process). Launching a second concurrent pytest",
+                "be in progress (pgrep found a pytest process). Launching a second",
+                "concurrent pytest",
                 "triggers keep-last-3 basetemp rotation, which deletes the first",
                 "gate's worker dirs mid-flight and produces hundreds of spurious",
                 "FileNotFoundError errors (the 2026-06-15 208-error incident).",

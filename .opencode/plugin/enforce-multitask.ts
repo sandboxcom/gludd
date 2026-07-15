@@ -311,9 +311,9 @@ export default (({ }) => {
     // Block: current message had < MIN_DISPATCHES but >0 dispatches
     // AND pending work exists. thisMessageDispatches is the live count
     // for the message that just completed (all tool calls have fired).
-    if (s.thisMessageDispatches > 0 && s.thisMessageDispatches < MIN_DISPATCHES) {
-      const dispatched = s.thisMessageDispatches
-      writeState(s)
+    if (_state.thisMessageDispatches > 0 && _state.thisMessageDispatches < MIN_DISPATCHES) {
+      const dispatched = _state.thisMessageDispatches
+      writeState(_state)
       return {
         text: [
           "⛔⛔⛔ THIN WAVE BLOCKED ⛔⛔⛔",

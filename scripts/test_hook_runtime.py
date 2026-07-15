@@ -1120,6 +1120,67 @@ console.log(JSON.stringify({{
 # ---------------------------------------------------------------------------
 
 
+def test_multitask_text_complete_blocks_thin_wave():
+    """text.complete MUST blank text when thisMessageDispatches in (1, MIN_DISPATCHES).
+
+    BUG: enforce-multitask.ts:314 references `s.thisMessageDispatches` but `s`
+    is never declared in the text.complete hook's scope. The module-level
+    state variable is `_state`. This test fails because the ReferenceError
+    prevents the thin-wave block from ever being reached.
+    """
+    state_file = "/tmp/gludd-multitask-state.json"
+    _clean_state_files(state_file,
+                       "/tmp/gludd-watchdog-disengage.json",
+                       "/tmp/gludd-force-dispatch.json")
+    code = f"""\
+const mod = await import('{PLUGIN_DIR}/enforce-multitask.ts')
+const plugin = await mod.default({{}})
+// Build thisMessageDispatches = 3 via dispatch calls
+await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
+await plugin['tool.execute.before']({{tool: 'agent'}}, undefined)
+await plugin['tool.execute.before']({{tool: 'workflow'}}, undefined)
+// Call text.complete — should detect 3 < MIN_DISPATCHES=10 and blank text
+let output
+let error = null
+try {{
+  output = await plugin['text.complete'](undefined, {{text: 'Dispatching 3 subagents to fix bugs.'}})
+}} catch (e) {{
+  error = e.message
+}}
+console.log(JSON.stringify({{
+  threw: error !== null,
+  errorSnippet: error ? error.slice(0, 200) : null,
+  outputType: output === undefined ? 'undefined' : typeof output,
+  textWasBlocked: output !== null && output !== undefined && typeof output === 'object' && output.text && output.text.includes('BLOCKED'),
+  resultText: output && typeof output === 'object' ? (output.text || '')?.slice(0, 200) : String(output || '').slice(0, 120),
+}}))
+"""
+    result = _run_ts(code, env_override={
+        "GLUDD_MIN_DISPATCHES": "10",
+        "GLUDD_MULTITASK_FLOOR_ENFORCE": "1",
+    })
+
+    # BUG: s is undefined in text.complete scope -> ReferenceError
+    if result.get("threw") == True:
+        err = result.get("errorSnippet", "")
+        assert "s is not defined" in err or "ReferenceError" in err, (
+            f"Expected ReferenceError for 's is not defined', got: {result}"
+        )
+        pytest.fail(
+            "CONFIRMED BUG: enforce-multitask.ts text.complete hook line 314 "
+            "references 's.thisMessageDispatches' but 's' is never declared in "
+            "the hook scope. Should reference '_state.thisMessageDispatches'. "
+            "The thin-wave block is unreachable until the variable is fixed."
+        )
+
+    # If we get here, the hook ran without throwing (e.g. hasPendingWork false)
+    assert result["textWasBlocked"] == True, (
+        f"Expected THIN WAVE BLOCKED but text passed through unmodified. "
+        f"Hook ran without error but did not detect the thin wave. Result: {result}"
+    )
+    _clean_state_files(state_file)
+
+
 def test_multitask_enough_dispatches():
     """Dispatch tools are always allowed regardless of state."""
     code = f"""\

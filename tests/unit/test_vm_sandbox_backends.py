@@ -212,7 +212,7 @@ def test_image_builder_build_rootfs_stub(tmp_path):
     from general_ludd.security.sandboxes.vm.image_builder import build_rootfs
 
     result = build_rootfs(tmp_path / "rootfs.ext4")
-    assert result == tmp_path / "rootfs.ext4"
+    assert result.path == tmp_path / "rootfs.ext4"
 
 
 def test_image_builder_verify_image_missing():
@@ -225,7 +225,9 @@ def test_image_builder_verify_image_exists(tmp_path):
     from general_ludd.security.sandboxes.vm.image_builder import verify_image
 
     img = tmp_path / "rootfs.ext4"
-    img.write_text("stub")
+    data = bytearray(2048)
+    data[1024 + 0x38:1024 + 0x3A] = b"\x53\xef"
+    img.write_bytes(bytes(data))
     assert verify_image(img) is True
 
 

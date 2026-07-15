@@ -111,7 +111,7 @@ def test_memory_measurement_estimation(tmp_path):
     result = build_rootfs(rootfs_path)
     build_time = time.perf_counter() - start
 
-    assert result == rootfs_path
+    assert result.path == rootfs_path
     assert build_time < 1.0, (
         f"build_rootfs stub took {build_time*1000:.2f}ms — "
         f"P1 stub should be <1s"
@@ -171,7 +171,7 @@ def test_image_builder_build_time_mocked_io(tmp_path: Path) -> None:
         f"Throughput {calls_per_second:.0f} calls/s — "
         f"expected >250 calls/s for P1 stub with mocked I/O ({per_call_us:.0f} µs/call)"
     )
-    assert result == rootfs_path
+    assert result.path == rootfs_path
 
 
 # ── d. agent-executor throughput ──────────────────────────────────────────
