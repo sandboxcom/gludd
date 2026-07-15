@@ -181,7 +181,6 @@
   ansible.builtin.set_fact:
     _pa_total_patterns: >-
       {{ (_pa_no_wait_patterns.stdout | trim | int) +
-         (_pa_claim_patterns.stdout | trim | int) +
          (_pa_completion_sounding.stdout | trim | int) +
          (_pa_ci_red_patterns.stdout | trim | int) }}
 

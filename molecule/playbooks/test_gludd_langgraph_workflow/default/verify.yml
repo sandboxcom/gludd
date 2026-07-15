@@ -20,11 +20,11 @@
       ansible.builtin.assert:
         that:
           - res.content is defined
-          - res.content == "def solution(): return 42"
-          - res.model == "glm-4.6"
+          - (res.content | string) == 'def solution(): return 42'
+          - res.model == 'glm-4.6'
           - (res.quality_score | float) == 0.82
           - (res.retries | int) == 1
-          - res.warnings == []
+          - (res.warnings | length) == 0
         fail_msg: "gludd_langgraph_workflow result unexpected: {{ res }}"
         success_msg: "gludd_langgraph_workflow: got content + quality_score from mock POST /admin/models/workflow"
 

@@ -162,11 +162,14 @@
             'checks': _sg_entry_checks,
             'block_reasons': _sg_block_reasons,
             'token_chain': {
-              'previous_stage': (_sg_pipeline_stages[_sg_stage_number | int - 1].stage | default('none')),
-              'previous_token_present': _sg_prev_token_stat.stat.exists | default(false) if (_sg_stage_number | int) > 0 else null
+              'previous_stage': (_sg_pipeline_stages[(_sg_stage_number | int) - 1].stage | default('none'))
+                 if ((_sg_stage_number | int) > 0) else 'none',
+              'previous_token_present': _sg_prev_token_stat.get('stat', {}).get('exists', false)
+                 if ((_sg_stage_number | int) > 0) else false
             },
             'system_context': {
-              'backlog_size': live_facts.ansible_facts.gludd.todos.backlog_size | default(0) | int
+              'backlog_size': (live_facts.get('ansible_facts', {}).get('gludd', {}).get('todos', {}).get('backlog_size', 0) | int)
+                 if live_facts is not failed else 0
             }
           } | to_nice_json }}
         dest: "{{ artifact_dir }}/sdlc_entry_{{ stage }}.json"

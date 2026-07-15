@@ -278,6 +278,7 @@ def main() -> None:
         return
 
     # Check mode — describe the change, do NOT deliver the signal.
+    # changed=False for idempotency: check mode reports intent, not state change.
     if module.check_mode:
         target = f"process group of {pid}" if group else str(pid)
         module.exit_json(
@@ -287,7 +288,7 @@ def main() -> None:
                     "signal": signal_name,
                     "note": f"would send {signal_name} to {target}",
                 },
-                changed=True,
+                changed=False,
             )
         )
         return

@@ -35,51 +35,67 @@ Code versions `0.1.0-beta.2` through `0.1.0-beta.4` exist in `pyproject.toml`/`_
 
 ---
 
-## SESSION 36 — 2026-07-15
+## SESSION 36 — 2026-07-15 (FINAL)
 
-- **HEAD: `5ddd552a`** on `development` branch (11 unpushed: 031ac222..5ddd552a)
+- **HEAD: `4081f38b`** on `development` branch (13 unpushed: 5d84dd3b..4081f38b)
 - **Version: 0.1.0-beta.4** (pyproject.toml)
-- **Push status: NOT PUSHED** — tree DIRTY, commits ahead of remote `8e290afd70ea`
+- **Push status: NOT PUSHED** — commits ahead of remote `8e290afd70ea`
 - **CI: PENDING** — run on remote `8e290afd70ea`
 - **Gate: lint 0, typecheck 0, collect OK**
 
-### Completed (since session start)
+### Completed (across all 10 commits)
 
-| Item | Description | Tests | Commit |
-|------|-------------|-------|--------|
+| Item | Description | Tests | Commit(s) |
+|------|-------------|-------|-----------|
 | NF.1 Chat CLI | P5 chat history complete | 38 tests (115 total) | 62f1bab8 |
-| NF.2 Unikernel sandbox | P2 image builder complete, VM sandbox fixes | 48 tests (70 total) | 62f1bab8, 5ddd552a |
+| NF.2 Unikernel sandbox | P2 image builder complete, VM sandbox test API fixes (86/86) | 48+86 tests | 62f1bab8, b62e5eb7, 5ddd552a |
 | C.3 DB tenant scoping | tenant contextvar via `do_orm_execute` / `with_loader_criteria` | 11/11 pass | a0ced18d |
 | C.16 Filestore RCE | `sync_bundled_to_filestore()` digest verification | 21 tests | 62f1bab8 |
 | C.18 Accounting tenant scoping | tenant-scoped accounting queries | 70 tests | 5fa60836 |
 | **enforce-stop.ts** disengage bypass fix | isDisengaged no longer skips `hasRealPendingWork()` text-only block; evidence regex narrowed (hex-letter requirement); 6 checks hardened | 13/13 runtime tests | 3c04ceb5, d1503d9e, 5ddd552a |
 | **enforce-session-start.ts** isTaskFileRead fix | input shape fix: checks both `tool_call.path` and `tool_call.tool_input?.path` | — | 1e20f907 |
-| **enforce-multitask.ts** under-floor block + text.complete thin-wave block | block fires within same wave; consecutive-non-dispatch counter reachable (106/18); text.complete thin-wave block added | E2E tests | 373cb611, 5d84dd3b, d1503d9e, 5ddd552a |
-| **AGENTS.md** subagent fix-dont-check policy | codified fix-not-check rule with forbidden phrases table | — | d1503d9e |
-| NF.4 Radio engineer | SDR+spectrum tests (85), radio tests (161 total) | 161 tests | d1503d9e, 5ddd552a |
-| NF.5 E2E test gen | validate_scenarios tests (48) | 48 tests | d1503d9e |
-| NF.6 OS expert | connectors confirmed (187 tests) | 187 tests | d1503d9e |
-| **CI molecule fixes** | molecule tests fixed in CI | — | 5ddd552a |
+| **enforce-multitask.ts** under-floor block + text.complete thin-wave block + s→_state bug fix | block fires within same wave; consecutive-non-dispatch counter reachable (107/18); text.complete thin-wave block; state-file naming fix | E2E tests | 5d84dd3b, d1503d9e, 5ddd552a, b62e5eb7 |
+| **AGENTS.md** subagent fix-dont-check policy | codified fix-not-check rule with forbidden phrases table (6 rules, 9 entries, 3-layer enforcement) | — | d1503d9e |
+| NF.4 Radio engineer | SDR+spectrum tests (85), radio tests (161 total), 3 role scripts | 161 tests | 5fa60836, d1503d9e, 5ddd552a |
+| NF.5 E2E test gen | validate_scenarios tests (48), P4 50 tests | 98 tests total | 1e20f907, d1503d9e |
+| NF.6 OS expert | connectors confirmed (187 tests), roles+connectors | 187 tests | 1e20f907, d1503d9e |
+| NF.7 STS tokens | injector wiring (72 tests) | 72 tests | 1e20f907 |
+| NF.9 Language expert | CLI (28 tests) | 28 tests | 1e20f907 |
+| **CI molecule fixes** | CI molecule YAML: gather_facts, failed_when strings, bom_detect script→shell, 8 files | — | 5ddd552a, b62e5eb7, 4081f38b |
 
-### NF.1–NF.9 status at `5ddd552a`
+### Commits on development (`5d84dd3b..4081f38b`)
+
+| Hash | Message |
+|------|---------|
+| `4081f38b` | fix: CI molecule YAML fixes — gather_facts, failed_when strings, bom_detect script→shell, 8 files |
+| `b62e5eb7` | fix: enforce-multitask s→_state bug (107/18), NF.2 VM sandbox test API fixes (86/86), CI molecule YAML fixes |
+| `5ddd552a` | fix: enforce-stop disengage bypass (13/13), enforce-multitask text.complete thin-wave block, evidence regex narrowed, NF.4 radio tests (161 total), CI molecule fixes, lint 0 typecheck 0 |
+| `d1503d9e` | fix: enforce-stop disengage bypass (6 checks hardened, 13/13 tests), enforce-multitask consecutive-non-dispatch reachable (106/18), evidence regex narrowed, lint 0 typecheck 0, NF.5 validate_scenarios (48 tests), NF.4 sdr+spectrum tests (85), NF.6 connectors confirmed (187), AGENTS.md subagent fix-dont-check policy |
+| `3c04ceb5` | fix: enforce-stop.ts disengage bypass — isDisengaged no longer skips hasRealPendingWork text-only block (13/13 runtime tests pass) |
+| `5fa60836` | fix: C.18 accounting tenant scoping (70 tests), NF.4 radio 3 role scripts, TASKS/SESSION update C.3 closed |
+| `a0ced18d` | fix: C.3 DB tenant scoping — fix thread pool test aiosqlite event-loop binding, 11/11 pass |
+| `1e20f907` | feat: enforce-session-start plugin fix (isTaskFileRead input shape), NF.7 STS injector wiring (72 tests), NF.9 language CLI (28 tests), NF.3 binary_re molecule (8 roles), NF.5 E2E test gen P4 (50 tests), NF.6 OS expert roles+connector, plugin self-tests (5 new), SESSION+TASKS update |
+| `62f1bab8` | feat: NF.1 chat history P5 (38 tests), NF.2 unikernel P2 image builder (48 tests), C.16 filestore RCE sync fix (21 tests), NF.4 radio 7 roles molecule, collection OK, lint 0, enforce-stop+multitask fixes, export_session impl |
+| `5d84dd3b` | fix: enforce-stop.ts fix, enforce-multitask.ts fix, ci-status update, new STS audit pipeline test |
+
+### NF.1–NF.9 status at `4081f38b`
 
 | Feature | Status | Latest milestone |
 |---------|--------|-----------------|
 | NF.1 Chat CLI | **COMPLETED** | P5 history (38 tests, commit 62f1bab8) |
-| NF.2 Unikernel sandbox | in-progress | P2 builder done (48 tests), VM sandbox fixes (5ddd552a) |
+| NF.2 Unikernel sandbox | in-progress | P2 builder done (48 tests), VM sandbox API fixes 86/86 (b62e5eb7) |
 | NF.3 Binary RE | in-progress | 8 roles molecule (commit 1e20f907), 6 molecule tests |
 | NF.4 Radio engineer | in-progress | 161 tests total, SDR+spectrum tests (d1503d9e), 3 role scripts |
-| NF.5 E2E test gen | in-progress | validate_scenarios 48 tests (d1503d9e), P4 50 tests |
-| NF.6 OS expert | in-progress | 187 tests, connectors confirmed (d1503d9e) |
-| NF.7 STS tokens | in-progress | P4 env_vars+wire_to_daemon, injector wiring 72 tests |
-| NF.8 Multitasking enforcement | **COMPLETED** | text.complete thin-wave block added (5ddd552a) |
-| NF.9 Language expert | in-progress | CLI 28 tests, molecule+integration |
+| NF.5 E2E test gen | in-progress | validate_scenarios 48 tests (d1503d9e), P4 50 tests (1e20f907) |
+| NF.6 OS expert | in-progress | 187 tests, connectors confirmed (d1503d9e), roles+connectors (1e20f907) |
+| NF.7 STS tokens | in-progress | injector wiring 72 tests (1e20f907) |
+| NF.8 Multitasking enforcement | **COMPLETED** | text.complete thin-wave block added (5ddd552a), s→_state fix (b62e5eb7) |
+| NF.9 Language expert | in-progress | CLI 28 tests (1e20f907), molecule+integration |
 
 ### Next
-- Commit dirty tree
-- Push development, wait for CI green on HEAD `5ddd552a`, then cut beta.2
+- Push development, wait for CI green on HEAD `4081f38b`, then cut beta.2
 
-- **Last Updated: 2026-07-15 — Session 36.** HEAD `5ddd552a` on `development`. Tree DIRTY. 11 commits unpushed. CI PENDING. 13 deliverables completed (NF.1, NF.2 P2+VM fixes, C.3, C.16, C.18, enforce-stop disengage+hardening, enforce-session-start fix, enforce-multitask under-floor+thin-wave block, AGENTS.md subagent policy, NF.4 radio 161 tests, NF.5 validate_scenarios 48 tests, NF.6 connectors 187, CI molecule fixes).
+- **Last Updated: 2026-07-15 — Session 36 (FINAL).** HEAD `4081f38b` on `development`. 13 commits unpushed (5d84dd3b..4081f38b, 10 total). CI PENDING. 15 deliverables across 10 commits: NF.1 completed, NF.2 P2+VM fixes 86/86, C.3/C.16/C.18 tenant+RCE+accounting fixes, enforce-stop disengage+hardening (13/13 runtime), enforce-session-start isTaskFileRead fix, enforce-multitask under-floor+thin-wave+s→_state fix (107/18), AGENTS.md subagent fix-dont-check policy, NF.4 radio 161 tests, NF.5 E2E 98 tests, NF.6 OS expert 187 tests, NF.7 STS 72 tests, NF.9 language 28 tests, CI molecule YAML fixes (8 files).
 
 ## SESSION 35 — 2026-07-14 (FINAL)
 

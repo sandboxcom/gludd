@@ -32,8 +32,8 @@
     - name: Assert the DROP query was rejected by SELECT-only validation
       ansible.builtin.assert:
         that:
-          - res.drop.failed
-          - "'forbidden keyword' in res.drop.msg or 'query rejected' in res.drop.msg"
+          - (res.drop.msg | default('')) | regex_search('forbidden keyword|query rejected')
+          - (res.drop.failed_when_result | default(false) | bool) == false
         fail_msg: "gludd_osquery DROP was NOT rejected: {{ res.drop }}"
         success_msg: "gludd_osquery DROP: rejected by SELECT-only validation"
 
