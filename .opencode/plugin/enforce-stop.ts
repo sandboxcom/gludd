@@ -64,7 +64,7 @@ const SHORT_COMPLETION_PHRASES = /\b(?:all done\.?|done\.|finished\.|complete\.|
 const QA_RESPONSE_PATTERNS = /(?:completed in this session|done since the (?:crash|last session)|everything (?:committed|landed|pushed|shipped|is complete)|here.{0,30}(?:what was|.?s what) (?:done|completed|changed)|summary of what was (?:done|completed)|what.{0,10}(?:changed|done|completed|left|remains|is next|\?s left))/i
 
 const EVIDENCE_PATTERNS = [
-  /\b[0-9a-f]{7,40}\b/,
+  /\b[0-9a-f]*[a-f][0-9a-f]{6,39}\b/,
   /VERIFIED\s+\w+@/,
   /CI\s+(?:GREEN|RED|PENDING)/,
   /\d+\s+passed/,
@@ -629,12 +629,16 @@ const defaultImpl: HotModule = {
     const trimmed = text.trim()
 
     // Disengage check — if disengaged, allow through (false-positive cascade escape)
-    if (isDisengaged()) return output
+    // *** NARROWED 2026-07-15: disengage ONLY bypasses heuristic checks below,
+    // NOT the fundamental hasRealPendingWork text-only block (line 726).
+    // Previously isDisengaged() at line 632 returned early before ANY checks,
+    // allowing text-only responses through while CI was RED and work existed.
+    const disengaged = isDisengaged()
 
     const workState = hasRealPendingWork()
 
     // ── SHORT FALSE-DONE PATH: short text with completion verbatim ──────────
-    if (trimmed.length < 60 && responseLooksTerminal(text) && !hasStructuredEvidence(text)) {
+    if (!disengaged && trimmed.length < 60 && responseLooksTerminal(text) && !hasStructuredEvidence(text)) {
       recordBlock("short-false-done")
       logFalseDoneBlock("short-false-done", text)
       writePersistBlock(true, "short-false-done")
@@ -655,7 +659,7 @@ const defaultImpl: HotModule = {
     }
 
     // ── QA RESPONSE PATTERNS: "completed in this session", etc ─────────────
-    if (QA_RESPONSE_PATTERNS.test(text)) {
+    if (!disengaged && QA_RESPONSE_PATTERNS.test(text)) {
       if (workState.hasLocalWork || workState.ciVerdictPendingOrRed) {
         recordBlock("qa-response-summary-stop")
         logFalseDoneBlock("qa-response-summary-stop", text)
@@ -677,7 +681,7 @@ const defaultImpl: HotModule = {
     }
 
     // ── COMPLETION WORDS WITHOUT EVIDENCE ──────────────────────────────────
-    if (responseLooksTerminal(text) && !hasStructuredEvidence(text)) {
+    if (!disengaged && responseLooksTerminal(text) && !hasStructuredEvidence(text)) {
       recordBlock("completion-without-evidence")
       logFalseDoneBlock("completion-without-evidence", text)
       writePersistBlock(true, "completion-without-evidence")
@@ -700,7 +704,7 @@ const defaultImpl: HotModule = {
     }
 
     // ── COMPLETION SMELL: any completion-adjacent substring without evidence ─
-    if (COMPLETION_SMELL_RE.test(text) && !hasStructuredEvidence(text)) {
+    if (!disengaged && COMPLETION_SMELL_RE.test(text) && !hasStructuredEvidence(text)) {
       recordBlock("completion-smell")
       logFalseDoneBlock("completion-smell", text)
       writePersistBlock(true, "completion-smell")
