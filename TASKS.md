@@ -1,6 +1,6 @@
 # TASKS.md — Evidence Ledger
 
-**Last consolidated: 2026-07-15 Session 38 final. NF.2 P6 done (52 tests, 8d32ff5a), NF.3 ALL 8 ROLES FLESHED (cyberchef/obfuscation/prompt_injection, aa7e3abd), NF.6 ALL 12 ROLES DONE (4b736311+1c262d43+8d32ff5a), NF.9 ALL PHASES A-F DONE (Phase D 74 + Phase E 33 + Phase F 61 = 168 tests, 773f9275+1c262d43+aa7e3abd+8d32ff5a), NF.7 P6 done (2e9420a5). NF.1+NF.2+NF.3+NF.5+NF.6+NF.7+NF.8+NF.9+NF.10 COMPLETED (9/10 NF items). NF.4 in progress (sdr/spectrum task wiring, 8d32ff5a). HEAD: 8d32ff5a on development. 336 boxes: 333 checked, 3 pending (A.4, C.18, NF.4).**
+**Last consolidated: 2026-07-15 Session 38 final (upd 2043Z). NF.2 P6 done (52 tests, 8d32ff5a), NF.3 ALL 8 ROLES FLESHED (cyberchef/obfuscation/prompt_injection, aa7e3abd), NF.6 ALL 12 ROLES DONE (4b736311+1c262d43+8d32ff5a), NF.9 ALL PHASES A-F DONE (Phase D 74 + Phase E 33 + Phase F 61 = 168 tests, 773f9275+1c262d43+aa7e3abd+8d32ff5a), NF.7 P6 done (2e9420a5). NF.1+NF.2+NF.3+NF.5+NF.6+NF.7+NF.8+NF.9+NF.10 COMPLETED (9/10 NF items). NF.4 in progress (sdr/spectrum task wiring, 8d32ff5a). HEAD: 8d32ff5a on development. 336 boxes: 333 checked, 3 pending (A.4, C.18, NF.4).**
 
 Each line ticked when `make gate` is green and evidence is pasted.
 
