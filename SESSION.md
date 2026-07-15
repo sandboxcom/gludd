@@ -35,6 +35,42 @@ Code versions `0.1.0-beta.2` through `0.1.0-beta.5` exist in `pyproject.toml`/`_
 
 ---
 
+## SESSION 42 — 2026-07-15
+
+- **HEAD: `0ad6e5d5`** on `development` branch
+- **Version: 0.1.0-beta.5** (pyproject.toml)
+- **Push status: NOT VERIFIED** — verify-remote not run this session
+- **CI: NOT CHECKED** — no ci-verdict run this session
+- **Gate: NOT RUN** — full gate not re-run on HEAD
+- **Working tree: near-clean** — only `.ci-status` modified (docs update in flight)
+
+### Completed this session (6 commits: `631dd626..0ad6e5d5`)
+
+| Category | Description | Commit(s) |
+|----------|-------------|-----------|
+| **Enforcement fixes** | enforce-stop disengage bypass fix, enforce-verified-claims evidence regex, enforce-session-start isTaskFileRead input shape, watchdog observability | `10c64ee5` |
+| **Enforcement fixes** | enforce-stop UNDER-FLOOR dispatch detection from multitask state — closes BUGS.md #14 gap (inline reads/edits proceeding with 0 dispatches + pending work) | `77ba3714` |
+| **Enforcement fixes** | workspace-restricted path permissions for read/write/edit/glob/grep tools | `631dd626` |
+| **CI proactive fixes** | remove bare `#noqa` from test comment triggering ruff, unused var in test_agent_watchdog | `d32dc629` |
+| **Molecule YAML fixes** | role_task_splitter gather_facts/ansible_facts, stream_audio device_kind binary, stream_video failed_when Jinja2 | `b191c3e4` |
+| **Molecule YAML fixes** | task_splitter role: `now` filter instead of ansible_facts, gather_facts false converge | `0ad6e5d5` |
+
+### Remaining open items
+
+| Item | Status |
+|------|--------|
+| A.4 — Cut v0.1.0-beta.2 release | BLOCKED on CI (awaiting verdict on tip `0ad6e5d5`) |
+| Push development to remote + verify | NOT VERIFIED |
+
+### Next
+
+1. Push development, wait for CI green on tip `0ad6e5d5`
+2. Cut beta.2 via `make release-cut`
+
+- **Last Updated: 2026-07-15 — Session 42.** HEAD `0ad6e5d5` on `development`. Enforcement fixes (under-floor detection, disengage bypass, workspace path perms), CI proactive fixes, molecule YAML fixes landed. A.4 (beta.2 release) blocked on CI.
+
+---
+
 ## SESSION 41 — 2026-07-15
 
 - **HEAD: `5f6f892d`** on `development` branch
