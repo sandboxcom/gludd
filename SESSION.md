@@ -35,6 +35,52 @@ Code versions `0.1.0-beta.2` through `0.1.0-beta.4` exist in `pyproject.toml`/`_
 
 ---
 
+## SESSION 39 — 2026-07-15 (FINAL)
+
+- **HEAD: `9b8d7824`** on `development` branch
+- **Version: 0.1.0-beta.5** (pyproject.toml)
+- **Push status: NOT PUSHED** — unpushed commits on development
+- **CI: PENDING** — run `29451816311` in_progress on development HEAD `9b8d78243dc1`
+- **Gate: UNVERIFIED** — not re-run on HEAD
+- **Working tree: DIRTY** — `.ci-status` modified (CI state tracking)
+
+### CI Cooldown Fix (9 commits: `258c5c28..9b8d7824`)
+
+| Hash | Message |
+|------|---------|
+| `9b8d7824` | fix: CI cooldown last-known-verdict, enforce-stop CI-cooldown UNKNOWN, coverage gaps async test fix, molecule failed_when Jinja2 |
+| `6ba3d887` | docs: codify CI-COOLDOWN-is-not-PENDING masking rule in AGENTS.md cooldown section |
+| `11b799c7` | fix: convert bare-Python-style failed_when to Jinja2 templating in 5 molecule playbooks |
+| `1bade2af` | log BUGS.md incident: CI cooldown masked actual RED state, run 29449765249, agent reported CI PENDING based on cooldown-blocked output |
+| `9cf60533` | fix: CI red root causes — hot-reload-fresh ReferenceError false positive, 20 molecule YAML gather_facts+failed_when, dist packaging, hook-runtime hermetic fixtures |
+| `484e091e` | fix: add install.sh to CI tarballs/dmg/release staging, guard missing dist files in make dist |
+| `391f67cc` | fix: isolate floor plugin tests from live session-start state file |
+| `cb91b13c` | Session 38 close follow-up: SESSION.md update and test_hook_runtime.py changes |
+| `57fdf56b` | fix: hermetic delegate streak test via per-PID paths, plus FORCE_DISPATCH_PATH env var |
+
+### Key fix: CI cooldown masking incident
+
+- **Incident (BUGS.md #13):** `ci-verdict-safe` returned exit 3 (cooldown active) while CI was actually RED (run 29449765249). Agent reported CI as PENDING based on cooldown-blocked output — the cooldown masked the real state.
+- **Root cause:** `ci-verdict-safe` refused to run when cooldown was active, returning exit 3 with "CI-COOLDOWN: NmMs remaining." It said nothing about actual CI state, but agents treated it as the status.
+- **Fix (9b8d7824):** `ci-verdict-safe` now records `last_known_verdict` in the state file when it DOES run (not blocked). When cooldown is active, it prints the last-known verdict alongside the cooldown message (`CI-COOLDOWN: 9m23s remaining (last known: CI PENDING run 29451816311)`). `enforce-stop.ts` now treats CI-cooldown-blocked as UNKNOWN (not PENDING), preventing false-completion stops.
+- **AGENTS.md codified (6ba3d887):** "CI-COOLDOWN ≠ PENDING (cooldown masking)" rule with behavioral contract.
+
+### Remaining open items
+
+| Item | Status |
+|------|--------|
+| A.4 — Cut v0.1.0-beta.2 release | BLOCKED on CI PENDING (run 29451816311, HEAD 9b8d7824) |
+| Push development to remote | NOT PUSHED |
+
+### Next
+
+1. Wait for CI green on run 29451816311
+2. Cut beta.2 via `make release-cut`
+
+- **Last Updated: 2026-07-15 — Session 39 (FINAL).** HEAD `9b8d7824` on `development`. CI PENDING (run 29451816311). CI cooldown masking fix applied (9b8d7824). A.4 open.
+
+---
+
 ## SESSION 38 — 2026-07-15 (FINAL)
 
 - **HEAD: `a0f75b3e`** on `development` branch
