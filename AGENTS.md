@@ -2638,6 +2638,8 @@ The CI-poll anti-pattern above is now blocked by a **machine-enforced cooldown**
 
 **Pinned by:** `tests/unit/test_ci_check_cooldown.py` (7 tests covering cooldown refusal, post-cooldown allowance, FORCE bypass, deploy timestamp recording, COOLDOWN-ACTIVE status output, state round-trip, and check_count increment).
 
+**CI-COOLDOWN ≠ PENDING (cooldown masking).** When `ci-verdict-safe` returns exit 3, CI state is UNKNOWN, not PENDING. The cooldown message (`CI-COOLDOWN: NmMs remaining`) means the check was REFUSED — it says nothing about the actual CI run, which may already be GREEN or RED. Never report CI as PENDING based on a cooldown block. Use `FORCE=1` to check actual state if the cooldown is >5 min old.
+
 **Plugin layer (dispatch-time block):** `.opencode/plugin/enforce-no-wait.ts` exports a `CI_POLL_DISPATCH_PATTERNS` list and a matcher that DENIES Task/agent/workflow dispatches whose prompt contains anti-pattern phrases ("poll CI until terminal", "wait for CI green", "loop on make ci-verdict", "every 60 seconds ... up to N iterations", "until conclusion success"). This blocks the dispatch intent at the source, complementing the runtime cooldown on the `make` side. Fail-open on any error.
 
 ## CRITICAL: Long-Running Operations MUST Be Backgrounded
