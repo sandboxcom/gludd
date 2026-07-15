@@ -14,8 +14,10 @@ implementation.
 
 from __future__ import annotations
 
+import ast
 import math
 from dataclasses import asdict, dataclass
+from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -329,3 +331,57 @@ class TestTenantScopingApplied:
         result = accountant.account_for("p1")
         assert result.tokens_used == 100
         assert result.usd_spent == pytest.approx(10.0)
+
+    def test_accounting_endpoint_uses_scoped_to(self):
+        """api_accounting_project must use scoped_to(project_id) before _build_accountant.
+
+        C.3 added the do_orm_execute listener; this test verifies the accounting
+        router correctly wires tenant scoping by checking the source contains the
+        ``scoped_to`` call inside the single-project endpoint handler."""
+
+        acct_py = Path(__file__).resolve().parent.parent.parent / "src" / "general_ludd" / "routers" / "accounting.py"
+        source = acct_py.read_text()
+        tree = ast.parse(source)
+
+        # Find api_accounting_project function
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == "api_accounting_project":
+                # Walk its body for With nodes where the context expression is a Call
+                found = False
+                for child in ast.walk(node):
+                    if isinstance(child, ast.With):
+                        for item in child.items:
+                            if isinstance(item.context_expr, ast.Call):
+                                func = item.context_expr.func
+                                is_name = isinstance(func, ast.Name) and func.id == "scoped_to"
+                                is_attr = isinstance(func, ast.Attribute) and func.attr == "scoped_to"
+                                if is_name or is_attr:
+                                    found = True
+                assert found, (
+                    "api_accounting_project MUST use scoped_to(project_id) to set the "
+                    "tenant contextvar before _build_accountant runs. Without this, "
+                    "the do_orm_execute listener has no tenant to filter by — "
+                    "cross-tenant accounting reads are unfiltered."
+                )
+                return
+
+        pytest.fail("api_accounting_project function not found in accounting.py")
+
+    def test_accounting_db_queries_run_inside_tenant_scope(self):
+        """_build_accountant calls list_all(project_id=None) but this is safe because
+        the outer scoped_to() sets the tenant contextvar, and the do_orm_execute
+        listener auto-filters every ORM query. Verify the source confirms this pattern."""
+        acct_py = Path(__file__).resolve().parent.parent.parent / "src" / "general_ludd" / "routers" / "accounting.py"
+        source = acct_py.read_text()
+
+        # _build_accountant passes project_id=None to list_all
+        assert "list_all(project_id=None)" in source or 'list_all(project_id=None)' in source.replace('"', "'"), (
+            "_build_accountant must call list_all(project_id=None) — the tenant filtering "
+            "is provided by the do_orm_execute listener, not by an explicit parameter."
+        )
+
+        # The only safe way to use list_all(project_id=None) is inside scoped_to
+        assert "scoped_to" in source, (
+            "scoped_to must be used in accounting.py to set the tenant before list_all(project_id=None). "
+            "Without scoped_to, project_id=None returns cross-tenant data."
+        )

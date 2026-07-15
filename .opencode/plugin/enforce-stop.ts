@@ -24,8 +24,12 @@
  *   2. Completion-word claims (committed, done, landed, etc.) without evidence
  *   3. QA-response-summary patterns ("completed in this session", etc.)
  *   4. COMPLETION_SMELL: any completion-adjacent substring with pending work
- *   5. Stop-like make targets (commit, push, release) with pending work
- *   6. Main-thread grinding (too many consecutive non-dispatch calls)
+ *   5. STATUS SUMMARIES ("Here's the session N final status", bolded headers
+ *      + status tables) with pending work — REGARDLESS of evidence, REGARDLESS
+ *      of attached tool calls, NOT bypassed by disengage (added 2026-07-15
+ *      after a summary containing commit hashes bypassed the evidence gate)
+ *   6. Stop-like make targets (commit, push, release) with pending work
+ *   7. Main-thread grinding (too many consecutive non-dispatch calls)
  *
  * Hot-reload capable. Subagent context skips enforcement.
  * GLUDD_STOP_ENFORCE=0 disables ALL enforcement.
@@ -688,6 +692,37 @@ const defaultImpl: HotModule = {
     const disengaged = isDisengaged()
 
     const workState = hasRealPendingWork()
+
+    // ── STATUS-SUMMARY BLOCK (2026-07-15) ───────────────────────────────────
+    // Fires REGARDLESS of structured evidence and REGARDLESS of disengage.
+    // A status summary ("Here's the session N final status" + bolded headers
+    // + status tables) previously bypassed all checks below because commit
+    // hashes / "CI PENDING" inside the summary matched EVIDENCE_PATTERNS.
+    // Evidence never legitimizes stopping-to-summarize while work exists.
+    if ((workState.hasPendingWork || workState.hasLocalWork) && looksLikeStatusSummary(text)) {
+      recordBlock("status-summary-while-work-exists")
+      logBlankedResponse("status-summary-while-work-exists", text)
+      writePersistBlock(true, "status-summary-while-work-exists")
+
+      return {
+        text: [
+          "⛔⛔⛔ STATUS-SUMMARY RESPONSE BLOCKED ⛔⛔⛔",
+          "",
+          "Status summaries ('final status', bolded headers, status tables)",
+          "are FORBIDDEN while pending work exists — evidence inside the",
+          "summary does NOT make it acceptable. Stopping to summarize IS the",
+          "stop pattern.",
+          "",
+          `PENDING WORK: ${workState.tasksMdUncheckedCount} unchecked TASKS.md items, ` +
+          `${workState.ratchetEntries} ratchet entries, ` +
+          `gate ${workState.gateStatusRed ? "RED" : workState.gateStatusMissing ? "MISSING" : "OK"}, ` +
+          `CI ${workState.ciVerdictPendingOrRed ? "RED/PENDING" : "N/A"}, ` +
+          `release ${workState.releaseIncomplete ? "INCOMPLETE" : "N/A"}.`,
+          "",
+          "DISPATCH A TOOL CALL NOW. Do not summarize.",
+        ].join("\n"),
+      }
+    }
 
     // ── SHORT FALSE-DONE PATH: short text with completion verbatim ──────────
     if (!disengaged && trimmed.length < 60 && responseLooksTerminal(text) && !hasStructuredEvidence(text)) {
