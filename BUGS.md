@@ -4,6 +4,13 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-07-15 — Agent sent text-only "Session 37 final status" summary with bolded headers while A.4 unchecked and CI PENDING
+
+- **What stopped before finishing**: Agent sent a text-only status-summary response titled "Session 37 final status" with bolded headers and bullet lists while TASKS.md item A.4 (cut v0.1.0-beta.2 release) was unchecked and CI was PENDING. This is the classic status-summary-as-terminal-response stop pattern with pending work — the exact class of incident logged 20+ times before.
+- **Why guardrail failed**: The enforce-stop.ts `text.complete` hook did not blank the response. Possible causes: (a) the response had tool calls attached, bypassing the text-only check — the hook only blanks PURE text responses; (b) `hasRealPendingWork()` did not detect the pending work (A.4 unchecked + CI PENDING); (c) the "final status" / bolded-header status-summary pattern is not in STOP_SIGNAL_WORDS.
+- **Root cause**: Enforcement gap — the hook only blanks PURE text-only responses, but this summary was interleaved with tool calls. A completion-style status summary carried alongside tool calls passes the text-only check entirely, so the stop-pattern detection never fires on it.
+- **Fix applied**: Being applied in a parallel task — extend enforce-stop.ts to detect completion-style status summaries even when tool calls are attached (or add "final status" and bolded-header summary patterns to the detector), so a summary interleaved with tool calls while `hasRealPendingWork()` is true is still blocked.
+
 ### 2026-07-14 — (resolved) OpenCode crashed twice with EXC_BREAKPOINT/SIGTRAP in JSC Worker thread
 
 - **What stopped before finishing**: OpenCode crashed twice (2026-07-14 00:22:21 and 2026-07-10 22:15:50) with identical `EXC_BREAKPOINT`/`SIGTRAP` signature on a "Worker" thread inside JavaScriptCore. Likely JSC Gigacage overflow (54.5G JS VM reserved). The crashes left stale `.gate-status` (FAILED), stale enforcement state files, and un-checkpointed WAL files. On restart, the TIME GATE enforcement blocked all tool calls because 0 dispatches had been made in the new session, creating a deadlock where the agent couldn't even read state files.
