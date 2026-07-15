@@ -1,7 +1,8 @@
 ---
-# propagation_model role — RF path loss via ITM, Hata, free-space, two-ray, rain
+# propagation_model role -- RF path loss via free-space, Hata, two-ray, ITM, rain
+# Invokes the standalone files/propagation_model.py CLI backend.
 
-- name: Validate model type
+- name: Validate propagation parameters
   ansible.builtin.assert:
     that:
       - propagation_model_type in ["free_space", "hata_urban", "hata_suburban", "hata_rural", "two_ray", "itm", "rain"]
@@ -9,68 +10,45 @@
       - propagation_model_distance_m | float > 0
       - propagation_model_tx_height_m | float > 0
       - propagation_model_rx_height_m | float > 0
-    fail_msg: "type must be free_space / hata_urban / hata_suburban / hata_rural / two_ray / itm / rain; freq_hz, distance_m, tx_height_m, rx_height_m must be > 0"
+    fail_msg: >
+      type must be one of free_space / hata_urban / hata_suburban / hata_rural / two_ray / itm / rain;
+      freq_hz, distance_m, tx_height_m, rx_height_m must be > 0
   when: propagation_model_enabled | bool
-
-- name: Compute path loss
-  ansible.builtin.command: >
-    {{ ansible_python_interpreter }}
-    -c '
-    import json, sys
-    from propagation_models import predict_path_loss
-
-    model = "{{ propagation_model_type }}"
-    distance_km = {{ propagation_model_distance_m }} / 1000.0
-    frequency_mhz = {{ propagation_model_freq_hz }} / 1_000_000.0
-    tx_height_m = float({{ propagation_model_tx_height_m }})
-    rx_height_m = float({{ propagation_model_rx_height_m }})
-
-    kwargs = {}
-    {%- if propagation_model_type == "itm" %}
-    kwargs.update({
-        "terrain_irregularity_m": float({{ propagation_model_terrain_irregularity_m | default(30.0) }}),
-        "climate": int({{ propagation_model_climate_code | default(5) }}),
-        "refractivity": float({{ propagation_model_refractivity | default(301.0) }}),
-        "permittivity": float({{ propagation_model_permittivity | default(15.0) }}),
-        "conductivity": float({{ propagation_model_conductivity | default(0.005) }}),
-        "polarization": "{{ propagation_model_polarization | default("horizontal") }}",
-        "reliability": float({{ propagation_model_reliability | default(0.50) }}),
-        "confidence": float({{ propagation_model_confidence | default(0.50) }}),
-    })
-    {%- elif propagation_model_type == "rain" %}
-    kwargs.update({
-        "rain_rate_mmh": float({{ propagation_model_rain_rate_mmh | default(5.0) }}),
-        "polarization": "{{ propagation_model_polarization | default("horizontal") }}",
-    })
-    {%- endif %}
-
-    result = predict_path_loss(
-        model=model,
-        distance_km=distance_km,
-        frequency_mhz=frequency_mhz,
-        tx_height_m=tx_height_m,
-        rx_height_m=rx_height_m,
-        **kwargs,
-    )
-    print(json.dumps(result))
-    '
-  register: _propagation_result
-  changed_when: false
-  when: propagation_model_enabled | bool
-
-- name: Parse propagation result
-  ansible.builtin.set_fact:
-    propagation_model_result: "{{ _propagation_result.stdout | from_json }}"
-  when:
-    - propagation_model_enabled | bool
-    - _propagation_result.stdout is defined
-    - _propagation_result.stdout | length > 0
 
 - name: Ensure output directory exists
   ansible.builtin.file:
     path: "{{ propagation_model_output_dir }}"
     state: directory
     mode: "0755"
+  when: propagation_model_enabled | bool
+
+- name: Compute path loss via propagation_model.py
+  ansible.builtin.command: >
+    {{ ansible_python_interpreter }} {{ role_path }}/files/propagation_model.py
+    --model {{ propagation_model_type }}
+    --freq-hz {{ propagation_model_freq_hz }}
+    --distance-m {{ propagation_model_distance_m }}
+    --tx-height {{ propagation_model_tx_height_m }}
+    --rx-height {{ propagation_model_rx_height_m }}
+    --output-dir {{ propagation_model_output_dir }}
+    {% if propagation_model_type == "itm" %}
+    --terrain-irregularity {{ propagation_model_terrain_irregularity_m | default(30.0) }}
+    --climate {{ propagation_model_climate_code | default(5) }}
+    --refractivity {{ propagation_model_refractivity | default(301.0) }}
+    --permittivity {{ propagation_model_permittivity | default(15.0) }}
+    --conductivity {{ propagation_model_conductivity | default(0.005) }}
+    --polarization {{ propagation_model_polarization | default("horizontal") }}
+    {% elif propagation_model_type == "rain" %}
+    --rain-rate {{ propagation_model_rain_rate_mmh | default(5.0) }}
+    --polarization {{ propagation_model_polarization | default("horizontal") }}
+    {% endif %}
+  register: _propagation_result
+  changed_when: false
+  when: propagation_model_enabled | bool
+
+- name: Parse propagation result
+  ansible.builtin.set_fact:
+    propagation_model_result: "{{ (_propagation_result.stdout | from_json) if _propagation_result.stdout is defined and _propagation_result.stdout | length > 0 else {} }}"
   when: propagation_model_enabled | bool
 
 - name: Write JSON output
@@ -81,19 +59,20 @@
   when:
     - propagation_model_enabled | bool
     - propagation_model_result is defined
+    - propagation_model_result | length > 0
 
 - name: Register propagation model verdict
   ansible.builtin.set_fact:
     propagation_model_verdict:
       role: propagation_model
       model: "{{ propagation_model_type }}"
+      freq_hz: "{{ propagation_model_freq_hz | int }}"
       freq_mhz: "{{ (propagation_model_freq_hz | int / 1_000_000.0) | round(3) }}"
+      distance_m: "{{ propagation_model_distance_m | float }}"
       distance_km: "{{ (propagation_model_distance_m | float / 1000.0) | round(4) }}"
       tx_height_m: "{{ propagation_model_tx_height_m | float }}"
       rx_height_m: "{{ propagation_model_rx_height_m | float }}"
-      path_loss_db: "{{ propagation_model_result.loss_db if propagation_model_result is defined and propagation_model_result.loss_db is defined else none }}"
-      model_name: "{{ propagation_model_result.model if propagation_model_result is defined else 'unknown' }}"
+      loss_db: "{{ propagation_model_result.loss_db | default(omit) }}"
+      model_name: "{{ propagation_model_result.model_name | default('unknown') }}"
       output_dir: "{{ propagation_model_output_dir }}"
-      itm_modes: "{{ propagation_model_result.modes if propagation_model_result is defined and propagation_model_result.modes is defined else omit }}"
-      itm_terrain: "{{ propagation_model_result.terrain if propagation_model_result is defined and propagation_model_result.terrain is defined else omit }}"
   when: propagation_model_enabled | bool

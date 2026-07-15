@@ -7,6 +7,7 @@ to destroy the AppRole and all associated tokens.
 from __future__ import annotations
 
 import logging
+from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -15,6 +16,8 @@ if TYPE_CHECKING:
     from general_ludd.sts.store import TokenStore
 
 logger = logging.getLogger(__name__)
+
+CascadeHook = Callable[[str], Awaitable[None]]
 
 
 class TokenRevoker:
@@ -25,6 +28,12 @@ class TokenRevoker:
 
     Audit events are recorded via an optional
     :class:`~general_ludd.sts.audit.StsAuditPipeline`.
+
+    An optional post-revoke ``cascade_hook`` (typically
+    :meth:`~general_ludd.sts.reaper.TokenReaper.cascade_revoke`) is invoked
+    after a successful revoke so the entire delegation subtree rooted at
+    the revoked agent is torn down — enforcing the capability
+    non-escalation rule (spec §2).
     """
 
     def __init__(
@@ -36,6 +45,18 @@ class TokenRevoker:
         self._secrets_manager = secrets_manager
         self._token_store = token_store
         self._audit_pipeline = audit_pipeline
+        self._cascade_hook: CascadeHook | None = None
+
+    def set_cascade_hook(self, hook: CascadeHook | None) -> None:
+        """Late-bind the post-revoke cascade hook.
+
+        Bound AFTER construction (rather than via ``__init__``) to break the
+        construction cycle: the :class:`TokenReaper` owns the ``TokenRevoker``
+        (via its constructor), and the revoker calls back into the reaper's
+        ``cascade_revoke``. Late binding lets the daemon construct the revoker
+        first, then the reaper, then wire the hook.
+        """
+        self._cascade_hook = hook
 
     async def revoke(self, agent_id: str) -> None:
         """Destroy the OpenBao AppRole for *agent_id* and mark the token revoked.
@@ -76,6 +97,17 @@ class TokenRevoker:
             record.role_id,
             record.token_id,
         )
+
+        if self._cascade_hook is not None:
+            try:
+                await self._cascade_hook(agent_id)
+            except Exception as exc:
+                logger.warning(
+                    "STS revoke: cascade hook failed for agent=%s: %s: %s",
+                    agent_id,
+                    type(exc).__name__,
+                    exc,
+                )
 
     def _destroy_approle(self, role_name: str, agent_id: str) -> None:
         client = self._secrets_manager._client

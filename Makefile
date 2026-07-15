@@ -3893,6 +3893,8 @@ reload-enforcement:
 	@echo "  /tmp/gludd-session-start.json      → removed (window reset)"
 	@rm -f /tmp/gludd-task-deadlines.json /tmp/gludd-task-stale.json
 	@echo "  /tmp/gludd-task-deadlines.json     → removed"
+	@rm -f /tmp/gludd-multitask-state.json
+	@echo "  /tmp/gludd-multitask-state.json    → removed (PID staleness guard)"
 	@echo "=== RELOAD COMPLETE — plugins will re-read state on next hook call ==="
 
 # --- Re-arm enforcement — remove disengage signal so plugins resume blocking ---
@@ -3914,6 +3916,7 @@ enforcement-status:
 	@echo -n "  enhancement-ratio:       "; [ -f /tmp/gludd-enhancement-ratio.json ] && echo "active (wave tracked)" || echo "(none — wave cleared)"
 	@echo -n "  session-start:           "; [ -f /tmp/gludd-session-start.json ] && echo "active" || echo "(none — window reset)"
 	@echo -n "  task-deadlines:          "; [ -f /tmp/gludd-task-deadlines.json ] && echo "active" || echo "(none)"
+	@echo -n "  multitask-state:         "; [ -f /tmp/gludd-multitask-state.json ] && $(UV) run python3 -c 'import json; d=json.load(open("/tmp/gludd-multitask-state.json")); print(f"pid={d.get(\"pid\")} zeroStreak={d.get(\"zeroStreak\",0)}")' || echo "(none)"
 	@echo "=== ENFORCEMENT STATUS COMPLETE ==="
 
 # Static coverage audit: match source → test imports (no pytest run).

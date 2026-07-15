@@ -1,151 +1,59 @@
 ---
-# exam_quiz role — structured ham/marine exam Q&A with grading
+# exam_quiz role -- ham/marine exam Q&A loading and grading
+# Invokes the standalone files/exam_quiz.py CLI backend.
 
-- name: Validate exam selection
+- name: Validate exam_quiz parameters
   ansible.builtin.assert:
     that:
       - exam_quiz_exam in ["fcc_tech", "fcc_general", "fcc_extra", "roc_m", "gmdss"]
       - exam_quiz_count | int > 0
       - exam_quiz_count | int <= 100
     fail_msg: >
-      exam_quiz_exam must be fcc_tech / fcc_general / fcc_extra / roc_m / gmdss;
-      exam_quiz_count must be > 0 and <= 100
+      exam must be fcc_tech / fcc_general / fcc_extra / roc_m / gmdss;
+      count must be > 0 and <= 100
+  when: exam_quiz_enabled | bool
 
-- name: Load exam questions
+- name: Ensure output directory exists
+  ansible.builtin.file:
+    path: "{{ exam_quiz_output_dir }}"
+    state: directory
+    mode: "0755"
+  when: exam_quiz_enabled | bool
+
+- name: Run exam_quiz.py with answers (when provided)
   ansible.builtin.command: >
-    {{ ansible_python_interpreter }}
-    -c '
-    import json, sys
-    sys.path.insert(0, "{{ role_path }}/../../plugins/module_utils")
-    from radio_exam_data import get_questions, exam_list
-    exam = "{{ exam_quiz_exam }}"
-    count = {{ exam_quiz_count }}
-    questions = get_questions(exam, count)
-    data = {
-        "exam": exam,
-        "exam_display": exam.replace("_", " ").title(),
-        "num_questions": len(questions),
-        "total_available": len([q for q in __import__("radio_exam_data").EXAM_QUESTIONS if q["exam"] == exam]),
-        "questions": [{"id": q["id"], "text": q["text"], "choices": q["choices"]} for q in questions],
-    }
-    print(json.dumps(data))
-    '
-  register: _exam_loaded
+    {{ ansible_python_interpreter }} {{ role_path }}/files/exam_quiz.py
+    --exam {{ exam_quiz_exam }}
+    --count {{ exam_quiz_count }}
+    --seed {{ exam_quiz_seed | default(42) }}
+    --output-dir {{ exam_quiz_output_dir }}
+    --format {{ exam_quiz_format | default("json") }}
+    {% if exam_quiz_user_answers | default([]) | length > 0 %}
+    --answers '{{ exam_quiz_user_answers | to_json }}'
+    {% endif %}
+  register: _exam_result
   changed_when: false
   when: exam_quiz_enabled | bool
 
-- name: Grade exam answers
-  ansible.builtin.command: >
-    {{ ansible_python_interpreter }}
-    -c '
-    import json, sys
-    sys.path.insert(0, "{{ role_path }}/../../plugins/module_utils")
-    from radio_exam_data import grade_exam
-    exam_data = json.loads(r"""{{ _exam_loaded.stdout }}""")
-    user_answers = {{ exam_quiz_user_answers | default([]) | to_json }}
-    answer_tuples = [(a["id"], a["chosen_index"]) for a in user_answers]
-    graded = grade_exam(answer_tuples)
-    combined = {
-        "exam": exam_data["exam"],
-        "exam_display": exam_data["exam_display"],
-        "num_questions": exam_data["num_questions"],
-        "total_available": exam_data["total_available"],
-        "questions": exam_data["questions"],
-        "grade": graded,
-    }
-    print(json.dumps(combined, indent=2))
-    '
-  register: _exam_graded
-  changed_when: false
-  when:
-    - exam_quiz_enabled | bool
-    - exam_quiz_user_answers | default([]) | length > 0
-
-- name: Set no-answers result
+- name: Parse exam_quiz result
   ansible.builtin.set_fact:
-    _exam_graded:
-      stdout: "{{ _exam_loaded.stdout }}"
+    exam_quiz_result: "{{ (_exam_result.stdout | from_json) if _exam_result.stdout is defined and _exam_result.stdout | length > 0 else {} }}"
   when:
     - exam_quiz_enabled | bool
-    - exam_quiz_user_answers | default([]) | length == 0
+    - exam_quiz_format | default("json") == "json"
 
-- name: Parse result
-  ansible.builtin.set_fact:
-    exam_quiz_result: "{{ _exam_graded.stdout | from_json }}"
-  when: exam_quiz_enabled | bool
-
-- name: Write JSON output
-  ansible.builtin.copy:
-    content: "{{ exam_quiz_result | to_nice_json }}"
-    dest: "{{ exam_quiz_output_dir }}/exam_quiz.json"
-    mode: "0644"
-  when:
-    - exam_quiz_enabled | bool
-    - exam_quiz_format == "json"
-
-- name: Write text output
-  ansible.builtin.copy:
-    content: |
-      {{ exam_quiz_result.exam_display }} Exam Results
-      {{ "=" * (exam_quiz_result.exam_display | length + 12) }}
-      {% if exam_quiz_result.grade is defined %}
-      Score: {{ exam_quiz_result.grade.correct }}/{{ exam_quiz_result.grade.total }} ({{ exam_quiz_result.grade.percentage }}%)
-      Result: {{ "PASS" if exam_quiz_result.grade.passed else "FAIL" }}
-
-      {% for r in exam_quiz_result.grade.results %}
-      Q{{ loop.index }}: {{ r.text }}
-        Your answer: {{ r.chosen_text }}
-        Correct answer: {{ r.correct_text }}  [{{ "CORRECT" if r.is_correct else "WRONG" }}]
-        Explanation: {{ r.explanation }}
-      {% endfor %}
-      {% else %}
-      Questions loaded: {{ exam_quiz_result.num_questions }}
-      No answers submitted for grading.
-      {% endif %}
-    dest: "{{ exam_quiz_output_dir }}/exam_quiz.txt"
-    mode: "0644"
-  when:
-    - exam_quiz_enabled | bool
-    - exam_quiz_format == "text"
-
-- name: Write markdown output
-  ansible.builtin.copy:
-    content: |
-      # {{ exam_quiz_result.exam_display }} Exam Results
-
-      {% if exam_quiz_result.grade is defined %}
-      **Score:** {{ exam_quiz_result.grade.correct }}/{{ exam_quiz_result.grade.total }} ({{ exam_quiz_result.grade.percentage }}%)
-      **Result:** {{ "PASS" if exam_quiz_result.grade.passed else "FAIL" }}
-
-      ## Questions
-      {% for r in exam_quiz_result.grade.results %}
-      ### Q{{ loop.index }}: {{ r.text }}
-      - **Your answer:** {{ r.chosen_text }} {{ "`CORRECT`" if r.is_correct else "`WRONG`" }}
-      - **Correct answer:** {{ r.correct_text }}
-      - **Explanation:** {{ r.explanation }}
-      {% endfor %}
-      {% else %}
-      **Questions loaded:** {{ exam_quiz_result.num_questions }}
-
-      No answers submitted for grading.
-      {% endif %}
-    dest: "{{ exam_quiz_output_dir }}/exam_quiz.md"
-    mode: "0644"
-  when:
-    - exam_quiz_enabled | bool
-    - exam_quiz_format == "md"
-
-- name: Register exam quiz verdict
+- name: Register exam_quiz verdict
   ansible.builtin.set_fact:
     exam_quiz_verdict:
       role: exam_quiz
-      exam: "{{ exam_quiz_result.exam }}"
-      exam_display: "{{ exam_quiz_result.exam_display }}"
-      questions_loaded: "{{ exam_quiz_result.num_questions }}"
+      exam: "{{ exam_quiz_exam }}"
+      exam_display: "{{ exam_quiz_exam | replace('_', ' ') | title }}"
+      questions_loaded: "{{ exam_quiz_result.count_returned | default(0) }}"
+      total_available: "{{ exam_quiz_result.total_available | default(0) }}"
       score: "{{ exam_quiz_result.grade.correct if exam_quiz_result.grade is defined else 'N/A' }}"
       total: "{{ exam_quiz_result.grade.total if exam_quiz_result.grade is defined else 'N/A' }}"
       percentage: "{{ exam_quiz_result.grade.percentage if exam_quiz_result.grade is defined else 'N/A' }}"
       passed: "{{ exam_quiz_result.grade.passed if exam_quiz_result.grade is defined else 'N/A' }}"
       output_dir: "{{ exam_quiz_output_dir }}"
-      output_format: "{{ exam_quiz_format }}"
+      output_format: "{{ exam_quiz_format | default('json') }}"
   when: exam_quiz_enabled | bool

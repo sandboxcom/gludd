@@ -1225,6 +1225,22 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
         app.state._secrets_resolver = secrets_resolver
 
+        # P5: construct the STS reaper pipeline (TokenStore + TokenRevoker +
+        # TokenReaper + StsAuditPipeline) and publish on daemon_state so
+        # EventLoop._phase_reap_expired_sts_tokens can sweep expired tokens
+        # every sts_reap_interval_ticks. The cascade hook is wired so that
+        # revoking a parent token tears down its delegation subtree.
+        try:
+            _sts_reaper = _build_sts_reaper(
+                session_factory=session_factory,
+                secrets_resolver=secrets_resolver,
+            )
+            daemon_state["_sts_reaper"] = _sts_reaper
+            app.state._sts_reaper = _sts_reaper
+            logger.info("STS TokenReaper wired into daemon tick")
+        except Exception:
+            logger.warning("STS TokenReaper construction failed; reaping disabled", exc_info=True)
+
         model_profiles = startup_config.get("model_profiles", [])
 
         # Auto-config: for every provider whose credential env var is set
@@ -1947,6 +1963,10 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 # 60 seconds at the default 1 s tick interval.  <=0 disables.
                 "spend_persist_interval_ticks": getattr(uc, "spend_persist_interval_ticks", 60)
                 if uc else 60,
+                # STS token reaper: sweep TTL-expired tokens every N ticks.
+                # Default 60 (~60s at the 1s tick interval). <=0 disables.
+                "sts_reap_interval_ticks": getattr(uc, "sts_reap_interval_ticks", 60)
+                if uc else 60,
             },
             adaptive_router=ext["adaptive_router"],
             daemon_state=daemon_state,
@@ -2437,9 +2457,42 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             _searx_srv.stop()
 
 
+def _build_sts_reaper(session_factory: Any, secrets_resolver: Any) -> Any:
+    """Construct the full STS reaper pipeline and wire the cascade hook.
+
+    Composes ``TokenStore`` + ``TokenRevoker`` + ``TokenReaper`` +
+    ``StsAuditPipeline``. The revoker's post-revoke cascade hook is bound to
+    ``reaper.cascade_revoke`` via ``revoker.set_cascade_hook`` (late binding
+    breaks the construction cycle: the reaper owns the revoker, and the
+    revoker calls back into the reaper on revoke).
+
+    Returns the :class:`TokenReaper` instance. The caller (daemon lifespan)
+    publishes it on ``daemon_state["_sts_reaper"]`` so
+    ``EventLoop._phase_reap_expired_sts_tokens`` can invoke it each tick.
+    """
+    from general_ludd.sts.audit import StsAuditPipeline
+    from general_ludd.sts.reaper import TokenReaper
+    from general_ludd.sts.revoker import TokenRevoker
+    from general_ludd.sts.store import TokenStore
+
+    audit_pipeline = StsAuditPipeline(session_factory=session_factory)
+    store = TokenStore(session_factory=session_factory)
+    revoker = TokenRevoker(
+        secrets_manager=secrets_resolver,
+        token_store=store,
+        audit_pipeline=audit_pipeline,
+    )
+    reaper = TokenReaper(
+        store=store,
+        revoker=revoker,
+        audit_pipeline=audit_pipeline,
+    )
+    revoker.set_cascade_hook(reaper.cascade_revoke)
+    return reaper
+
+
 def _build_sts_audit_logger(session_factory: Any) -> Any:
     """Build a callable that records STS token usage events to sts_audit rows."""
-
     async def _log_sts_usage(token_id: str, event: str, agent_id: str) -> None:
         import json as _json
 
