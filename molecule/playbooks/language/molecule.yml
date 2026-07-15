@@ -7,6 +7,7 @@ provisioner:
   env:
     ANSIBLE_COLLECTIONS_PATH: "${MOLECULE_PROJECT_DIRECTORY}/collections"
   playbooks:
+    prepare: default/prepare.yml
     converge: default/converge.yml
     verify: default/verify.yml
 verifier:

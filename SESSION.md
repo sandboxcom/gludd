@@ -28,10 +28,42 @@
 | Tag | Date | Assets | Status |
 |-----|------|--------|--------|
 | `v0.1.0-beta.1` | 2026-07-14 | 1/12 | published but **INCOMPLETE** — only 1 of 12 required assets (verify-release-completeness FAILED) |
+| | | | **Release URL:** https://github.com/sandboxcom/gludd/releases/tag/v0.1.0-beta.1 |
+| | | | **Asset URL:** https://github.com/sandboxcom/gludd/releases/download/v0.1.0-beta.1/gludd |
 
-Code versions `0.1.0-beta.2` through `0.1.0-beta.4` exist in `pyproject.toml`/`__init__.py` — version bumps without a corresponding release cut.
+Code versions `0.1.0-beta.2` through `0.1.0-beta.5` exist in `pyproject.toml`/`__init__.py` — version bumps without a corresponding release cut.
 
 ---
+
+## SESSION 40 — 2026-07-15
+
+- **HEAD: `44ea26a6`** on `development` branch
+- **Version: 0.1.0-beta.5** (pyproject.toml)
+- **Push status: NOT PUSHED** — commits ahead of remote on development
+- **CI: PENDING** — run `29451969106` in_progress on development HEAD `44ea26a63d7b`
+- **Gate: Lint 0** (verified at 2026-07-15T21:31:10Z); full gate not re-run on HEAD
+- **Working tree: DIRTY** — 7 modified molecule.yml files + 6 new molecule prepare.yml files
+
+### Commits since Session 39 (1 commit)
+
+| Hash | Message |
+|------|---------|
+| `44ea26a6` | docs: resolve CI cooldown masking incident in BUGS.md |
+
+### Remaining open items
+
+| Item | Status |
+|------|--------|
+| A.4 — Cut v0.1.0-beta.2 release | BLOCKED on CI PENDING (run 29451969106) |
+| Push development to remote | NOT PUSHED |
+| Commit dirty molecule files | NOT STAGED |
+
+### Next
+
+1. Wait for CI green on run 29451969106
+2. Push development, cut beta.2 via `make release-cut`
+
+- **Last Updated: 2026-07-15 — Session 40.** HEAD `44ea26a6` on `development`. CI PENDING (run 29451969106). Gate lint 0. Tree DIRTY (molecule files). A.4 (beta.2 release) blocked on CI.
 
 ---
 

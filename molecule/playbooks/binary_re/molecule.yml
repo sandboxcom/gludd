@@ -17,6 +17,7 @@ provisioner:
           localhost:
             ansible_connection: local
   playbooks:
+    prepare: default/prepare.yml
     converge: default/converge.yml
     verify: default/verify.yml
 verifier:
