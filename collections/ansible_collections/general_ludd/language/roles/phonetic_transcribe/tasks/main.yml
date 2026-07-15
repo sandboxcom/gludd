@@ -1,124 +1,14 @@
 ---
-# phonetic_transcribe role — text-to-phoneme conversion:
-# IPA transcription, ARPABET encoding, Soundex/Metaphone/Double Metaphone
-# hashing, CMU Pronouncing Dictionary lookup.
-
 - name: Ensure artifact directory exists
   ansible.builtin.file:
     path: "{{ artifact_dir }}"
     state: directory
     mode: "0755"
 
-- name: Transcribe text to phonemes via knowledge module
-  ansible.builtin.shell:
-    cmd: |
-      python3 -c "
-import json, sys, os, re
-sys.path.insert(0, os.path.expanduser('{{ playbook_dir | default('.') }}/../../../../src'))
-from general_ludd.language.phonetic_data import (
-    IPA_VOWELS, IPA_CONSONANTS, ARPABET_TO_IPA, IPA_TO_ARPABET,
-    ARPABET_STRESS, SOUNDEX_MAPPING, SOUNDEX_VOWELS, SOUNDEX_IGNORE,
-    CMU_DICT_SUBSET, METAPHONE_EXCEPTIONS, DOUBLE_METAPHONE
-)
-
-text = '{{ input_text }}'
-method = '{{ method }}'
-result = {'input_text': text, 'method': method, 'words': []}
-words = re.findall(r'[A-Za-z]+', text.upper())
-
-for word in words:
-    entry = {'word': word}
-
-    if {{ cmu_dict_lookup | lower }} and word in CMU_DICT_SUBSET:
-        entry['cmu_transcription'] = CMU_DICT_SUBSET[word]
-
-    if method == 'arpabet':
-        if word in CMU_DICT_SUBSET:
-            entry['transcription'] = CMU_DICT_SUBSET[word][0]
-        else:
-            sounds = []
-            for ch in word:
-                for phoneme in IPA_CONSONANTS + IPA_VOWELS:
-                    if phoneme['arpabet'] not in sounds and ch.lower() == phoneme['ipa']:
-                        sounds.append(phoneme['arpabet'])
-            entry['transcription'] = ' '.join(sounds) if sounds else word
-        stress = []
-        for s in entry['transcription'].split():
-            if any(c.isdigit() for c in s):
-                digit = ''.join(c for c in s if c.isdigit())
-                stress.append({'phoneme': s, 'stress': ARPABET_STRESS.get(digit, 'unknown')})
-        entry['stress_pattern'] = stress
-
-    elif method == 'ipa':
-        if word in CMU_DICT_SUBSET:
-            arpa = CMU_DICT_SUBSET[word][0].split()
-            ipa_phonemes = [ARPABET_TO_IPA.get(p.rstrip('012'), p) for p in arpa]
-            entry['transcription'] = ''.join(ipa_phonemes)
-        else:
-            entry['transcription'] = word.lower()
-
-    elif method == 'soundex':
-        w = word.lower()
-        code = w[0].upper()
-        prev = ''
-        for ch in w[1:]:
-            if ch in SOUNDEX_IGNORE:
-                continue
-            if ch in SOUNDEX_VOWELS:
-                prev = ''
-                continue
-            digit = SOUNDEX_MAPPING.get(ch, '')
-            if digit and digit != prev:
-                code += digit
-                prev = digit
-        entry['soundex_code'] = (code + '000')[:4]
-        entry['transcription'] = entry['soundex_code']
-
-    elif method in ('metaphone', 'double_metaphone'):
-        w = word.lower()
-        w = METAPHONE_EXCEPTIONS.get(w[:2], w[:2]) + w[2:] if w[:2] in METAPHONE_EXCEPTIONS else w
-        primary = ''
-        i = 0
-        while i < len(w) and len(primary) < 4:
-            ch = w[i]
-            if i == 0 and ch in 'aeiou':
-                primary += ch
-                i += 1
-                continue
-            pair = w[i:i+2] if i + 1 < len(w) else ''
-            if pair in DOUBLE_METAPHONE:
-                primary += DOUBLE_METAPHONE[pair][0]
-                i += len(pair) if len(pair) > 1 else 1
-            elif ch in 'aeiou':
-                i += 1
-            else:
-                primary += ch
-                i += 1
-        if method == 'double_metaphone':
-            alternate = primary[:3] + ('K' if primary[-1:] == 'X' else primary[-1:]) if len(primary) > 1 else primary
-            entry['metaphone_codes'] = {'primary': primary[:4], 'alternate': alternate[:4]}
-        else:
-            entry['metaphone_code'] = primary[:4]
-        entry['transcription'] = entry.get('metaphone_code', entry['input_text'])
-
-    result['words'].append(entry)
-
-if {{ cmu_dict_lookup | lower }} and len(words) > 1:
-    homophones = {}
-    for w in words:
-        if w in CMU_DICT_SUBSET:
-            key = CMU_DICT_SUBSET[w][0]
-            homophones.setdefault(key, []).append(w)
-    result['homophones'] = {k: v for k, v in homophones.items() if len(v) > 1}
-
-with open('{{ artifact_dir }}/phonetic_transcription.json', 'w') as f:
-    json.dump(result, f, indent=2, ensure_ascii=False)
-print(f'Output: {{ artifact_dir }}/phonetic_transcription.json')
-print(f'Words transcribed: {len(words)}')
-print(f'Method: {method}')
-"
-  args:
-    executable: python3
+- name: Run phonetic_transcribe standalone script
+  ansible.builtin.script:
+    cmd: "files/phonetic_transcribe.py --input '{{ input_text }}' --method '{{ method }}' --output '{{ artifact_dir }}/phonetic_transcription.json' {% if cmu_dict_lookup | default(true) %}--cmu-dict-lookup{% endif %}"
+    executable: "{{ ansible_python_interpreter | default('python3') }}"
   register: phonetic_result
   changed_when: false
 

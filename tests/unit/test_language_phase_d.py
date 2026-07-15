@@ -580,7 +580,7 @@ class TestGenerateSkeleton:
         from src.general_ludd.language.homoglyph_data import (
             generate_skeleton,
         )
-        assert generate_skeleton("paypa\u0430l") == "paypal"
+        assert generate_skeleton("payp\u0430l") == "paypal"
 
     def test_empty_string(self) -> None:
         from src.general_ludd.language.homoglyph_data import (

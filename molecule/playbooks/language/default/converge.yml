@@ -134,6 +134,14 @@
           print(f"POT file: {result.get('pot_path', '')}")
         mode: "0755"
 
+    - name: Invoke i18n_extract
+      ansible.builtin.include_role:
+        name: general_ludd.language.i18n_extract
+      vars:
+        source_dir: "/tmp/gludd-molecule-language/i18n-source"
+        output_dir: "/tmp/gludd-molecule-language/i18n-output"
+        artifact_dir: "/tmp/gludd-molecule-language/i18n-extract"
+
     - name: Run i18n extract script
       ansible.builtin.command:
         cmd: python3 /tmp/gludd-molecule-language/i18n-script.py

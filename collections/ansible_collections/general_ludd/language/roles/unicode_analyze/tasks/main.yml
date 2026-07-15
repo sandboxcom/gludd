@@ -1,105 +1,17 @@
 ---
-# unicode_analyze role — analyze Unicode properties of text:
-# script, block, plane, category, normalization form, grapheme clusters.
-
 - name: Ensure artifact directory exists
   ansible.builtin.file:
     path: "{{ artifact_dir }}"
     state: directory
     mode: "0755"
 
-- name: Analyze Unicode properties via knowledge module
-  ansible.builtin.shell:
-    cmd: |
-      python3 -c "
-import json, sys, os
-sys.path.insert(0, os.path.expanduser('{{ playbook_dir | default('.') }}/../../../../src'))
-from general_ludd.language.unicode_data import (
-    plane_of, UNICODE_CATEGORY_NAMES, UNICODE_BLOCK_NAMES,
-    UTF8_HEADER_BYTES, UNICODE_VERSION_HISTORY, is_surrogate,
-    surrogates_to_codepoint, is_high_surrogate, is_low_surrogate
-)
-import unicodedata
-
-text = '''{{ input_text }}'''
-if not text:
-    input_file = '{{ input_file }}'
-    if input_file:
-        with open(input_file, 'r', encoding='utf-8') as f:
-            text = f.read()
-
-result = {'input_length': len(text), 'input_byte_length': len(text.encode('utf-8'))}
-
-if {{ include_codepoints | lower }}:
-    codepoints = []
-    for i, ch in enumerate(text):
-        cp = ord(ch)
-        cat = unicodedata.category(ch)
-        block = ''
-        for (lo, hi), name in UNICODE_BLOCK_NAMES.items():
-            if lo <= cp <= hi:
-                block = name
-                break
-        try:
-            script = unicodedata.script_name(ch)
-        except (ValueError, AttributeError):
-            script = 'Unknown'
-        codepoints.append({
-            'index': i, 'char': ch, 'codepoint': f'U+{cp:04X}',
-            'category': cat, 'category_name': UNICODE_CATEGORY_NAMES.get(cat, ''),
-            'block': block, 'plane': plane_of(cp), 'script': script,
-            'name': unicodedata.name(ch, '')
-        })
-    result['codepoints'] = codepoints
-
-if {{ include_normalization | lower }}:
-    result['normalization'] = {
-        'NFC': unicodedata.normalize('NFC', text),
-        'NFD': unicodedata.normalize('NFD', text),
-        'NFKC': unicodedata.normalize('NFKC', text),
-        'NFKD': unicodedata.normalize('NFKD', text),
-    }
-
-if {{ include_grapheme_clusters | lower }}:
-    import regex
-    clusters = regex.findall(r'\\X', text)
-    result['grapheme_clusters'] = [{'index': i, 'text': c} for i, c in enumerate(clusters)]
-
-if {{ include_surrogates | lower }}:
-    surrogates = []
-    text_cps = [ord(ch) for ch in text]
-    i = 0
-    while i < len(text_cps):
-        if is_high_surrogate(text_cps[i]) and i + 1 < len(text_cps) and is_low_surrogate(text_cps[i + 1]):
-            decoded = surrogates_to_codepoint(text_cps[i], text_cps[i + 1])
-            surrogates.append({'index': i, 'high': f'U+{text_cps[i]:04X}', 'low': f'U+{text_cps[i + 1]:04X}', 'decoded': f'U+{decoded:04X}'})
-            i += 2
-        else:
-            i += 1
-    result['surrogates'] = surrogates
-
-if {{ include_utf_encodings | lower }}:
-    result['utf_encodings'] = {
-        'UTF-8': text.encode('utf-8').hex(' '),
-        'UTF-16-LE': text.encode('utf-16-le').hex(' '),
-        'UTF-16-BE': text.encode('utf-16-be').hex(' '),
-        'UTF-32-LE': text.encode('utf-32-le').hex(' '),
-        'UTF-32-BE': text.encode('utf-32-be').hex(' '),
-    }
-
-if {{ include_version_info | lower }}:
-    result['unicode_versions'] = UNICODE_VERSION_HISTORY
-
-with open('{{ artifact_dir }}/unicode_analysis.json', 'w') as f:
-    json.dump(result, f, indent=2, ensure_ascii=False)
-print(f'Output: {{ artifact_dir }}/unicode_analysis.json')
-print(f'Characters: {len(text)}, Bytes (UTF-8): {len(text.encode(\"utf-8\"))}')
-"
-  args:
-    executable: python3
+- name: Run unicode_analyze standalone script
+  ansible.builtin.script:
+    cmd: "files/unicode_analyze.py --input '{{ input_text }}' --output '{{ artifact_dir }}/unicode_analysis.json' {% if not include_codepoints | default(true) %}--no-codepoints{% endif %} {% if not include_normalization | default(true) %}--no-normalization{% endif %} {% if not include_grapheme_clusters | default(true) %}--no-grapheme{% endif %} {% if not include_surrogates | default(true) %}--no-surrogates{% endif %} {% if not include_utf_encodings | default(true) %}--no-utf-encodings{% endif %}"
+    executable: "{{ ansible_python_interpreter | default('python3') }}"
   register: unicode_result
   changed_when: false
 
-- name: Print Unicode analysis summary
+- name: Print unicode analysis summary
   ansible.builtin.debug:
     msg: "{{ unicode_result.stdout_lines }}"

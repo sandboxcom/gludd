@@ -1,118 +1,17 @@
 ---
-# locale_format role — format dates/numbers/currency per locale using CLDR:
-# BCP 47 locale parsing, CLDR date patterns, number grouping, currency
-# symbols/placement, RTL-aware formatting.
-
 - name: Ensure artifact directory exists
   ansible.builtin.file:
     path: "{{ artifact_dir }}"
     state: directory
     mode: "0755"
 
-- name: Format per locale via knowledge module
-  ansible.builtin.shell:
-    cmd: |
-      python3 -c "
-import json, sys, os
-sys.path.insert(0, os.path.expanduser('{{ playbook_dir | default('.') }}/../../../../src'))
-from general_ludd.language.locale_data import (
-    LOCALE_FORMATS, COMMON_CURRENCIES, ISO_639_1_TO_NAME,
-    RTL_LANGUAGES, RTL_SCRIPTS, CLDR_FIRST_DAY_OF_WEEK,
-    CLDR_MEASUREMENT_SYSTEMS
-)
-import datetime
-
-locale = '{{ locale }}'
-value = '{{ value }}'
-value_type = '{{ value_type }}'
-date_length = '{{ date_length }}'
-currency_code = '{{ currency_code }}'
-
-result = {'locale': locale}
-
-lang_tag = locale.split('-')
-language_code = lang_tag[0] if lang_tag else ''
-territory = lang_tag[1] if len(lang_tag) > 1 else ''
-
-result['language_name'] = ISO_639_1_TO_NAME.get(language_code, 'Unknown')
-result['script'] = ''
-result['territory'] = territory
-result['is_rtl'] = language_code in RTL_LANGUAGES
-
-locale_data = LOCALE_FORMATS.get(locale)
-locale_data_alt = LOCALE_FORMATS.get(locale.replace('-', '_'))
-
-if locale_data or locale_data_alt:
-    ld = locale_data or locale_data_alt
-    result['number_format'] = ld['number_format']
-    result['date_format'] = ld['date_format']
-    result['currency_format'] = ld['currency_format']
-    result['plural_rules'] = {k: v for k, v in ld['plural_rules'].items() if v}
-
-    if value_type == 'date':
-        try:
-            dt = datetime.date.fromisoformat(value)
-            pattern = ld['date_format'].get(date_length, ld['date_format']['medium'])
-            months = ['January','February','March','April','May','June',
-                      'July','August','September','October','November','December']
-            weekdays = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']
-            formatted = pattern.replace('EEEE', weekdays[dt.weekday()])
-            formatted = formatted.replace('MMMM', months[dt.month - 1])
-            formatted = formatted.replace('MMM', months[dt.month - 1][:3])
-            formatted = formatted.replace('yyyy', f'{dt.year:04d}')
-            formatted = formatted.replace('y', str(dt.year))
-            formatted = formatted.replace('dd', f'{dt.day:02d}')
-            formatted = formatted.replace('d', str(dt.day))
-            formatted = formatted.replace('MM', f'{dt.month:02d}')
-            formatted = formatted.replace('M', str(dt.month))
-            result['formatted_value'] = formatted
-        except ValueError:
-            result['formatted_value'] = value
-            result['format_error'] = 'Could not parse date value'
-
-    elif value_type == 'number':
-        try:
-            num = float(value)
-            nf = ld['number_format']
-            result['formatted_value'] = f'{num:,.2f}'.replace(',', 'X').replace('.', nf['decimal_separator']).replace('X', nf['grouping_separator'])
-        except ValueError:
-            result['formatted_value'] = value
-
-    elif value_type == 'currency':
-        cf = ld['currency_format']
-        if currency_code in COMMON_CURRENCIES:
-            cf = COMMON_CURRENCIES[currency_code]
-        try:
-            amount = float(value)
-            dec = cf['decimal_digits']
-            formatted_amount = f'{amount:,.{dec}f}'.replace(',', 'X').replace('.', cf['decimal_separator']).replace('X', cf['grouping_separator'])
-            if cf['placement'] == 'before':
-                result['formatted_value'] = f'{cf[\"symbol\"]}{formatted_amount}'
-            else:
-                result['formatted_value'] = f'{formatted_amount} {cf[\"symbol\"]}'
-        except ValueError:
-            result['formatted_value'] = value
-
-    result['format_rules'] = ld['date_format'].get(date_length, '') if value_type == 'date' else ''
-else:
-    result['formatted_value'] = value
-    result['warning'] = f'No CLDR data for locale {locale}; using raw value'
-
-result['first_day_of_week'] = CLDR_FIRST_DAY_OF_WEEK.get(territory, 1)
-result['measurement_system'] = CLDR_MEASUREMENT_SYSTEMS.get(territory, 'metric')
-
-with open('{{ artifact_dir }}/locale_format.json', 'w') as f:
-    json.dump(result, f, indent=2, ensure_ascii=False)
-print(f'Output: {{ artifact_dir }}/locale_format.json')
-print(f'Locale: {locale} ({result.get(\"language_name\", \"\")})')
-print(f'Formatted: {result.get(\"formatted_value\", value)}')
-print(f'RTL: {result.get(\"is_rtl\", False)}')
-"
-  args:
-    executable: python3
+- name: Run locale_format standalone script
+  ansible.builtin.script:
+    cmd: "files/locale_format.py --locale '{{ locale }}' --value '{{ value }}' --value-type '{{ value_type }}' --output '{{ artifact_dir }}/locale_format.json'"
+    executable: "{{ ansible_python_interpreter | default('python3') }}"
   register: locale_result
   changed_when: false
 
-- name: Print locale formatting summary
+- name: Print locale format summary
   ansible.builtin.debug:
     msg: "{{ locale_result.stdout_lines }}"

@@ -51,6 +51,22 @@ def test_sdr_capture_tasks_has_tool_check():
     assert "sdr_capture_tool" in content
 
 
+def test_sdr_capture_tasks_calls_python_backend():
+    tasks = _COLLECTION_ROOT / "roles" / "sdr_capture" / "tasks" / "main.yml"
+    content = tasks.read_text()
+    assert "sdr_capture.py" in content
+    assert "capture_iq" in content
+    assert "--sample-rate" in content
+    assert "--duration" in content
+
+
+def test_sdr_capture_tasks_surfaces_iq_stats():
+    tasks = _COLLECTION_ROOT / "roles" / "sdr_capture" / "tasks" / "main.yml"
+    content = tasks.read_text()
+    assert "iq_stats" in content
+    assert "avg_power_db" in content
+
+
 def test_sdr_capture_defaults_file_exists():
     defaults = _COLLECTION_ROOT / "roles" / "sdr_capture" / "defaults" / "main.yml"
     assert defaults.exists()
