@@ -290,6 +290,7 @@ interface WorkState {
   gateStale: boolean
   gateStatusRed: boolean
   ciVerdictPendingOrRed: boolean
+  ciVerdictUnknown: boolean
   releaseIncomplete: boolean
   testFailures: boolean
   repoPending: boolean
@@ -298,6 +299,28 @@ interface WorkState {
   hasLocalWork: boolean
   healthScore: number
   ts: number
+}
+
+// ── CI-COOLDOWN detection (2026-07-15) ──────────────────────────────────────
+// When `make ci-verdict-safe` returns exit 3, the CI check was REFUSED by the
+// cooldown — CI state is UNKNOWN, not PENDING. AGENTS.md "CI-COOLDOWN ≠
+// PENDING (cooldown masking)": never report CI as PENDING based on a cooldown
+// block. The pending-work check still acts CONSERVATIVELY (unknown CI counts
+// as pending work), but the state is labeled UNKNOWN, never PENDING/RED.
+const CI_COOLDOWN_RE = /CI-COOLDOWN|COOLDOWN-ACTIVE/i
+
+function ciCooldownMasked(ciData: { last_ci_status?: string; last_output?: string }): boolean {
+  const status = typeof ciData.last_ci_status === "string" ? ciData.last_ci_status : ""
+  const lastOutput = typeof ciData.last_output === "string" ? ciData.last_output : ""
+  if (CI_COOLDOWN_RE.test(status) || CI_COOLDOWN_RE.test(lastOutput)) return true
+  try {
+    const ciStatusPath = path.join(process.cwd(), ".ci-status")
+    if (fs.existsSync(ciStatusPath)) {
+      const content = fs.readFileSync(ciStatusPath, "utf8")
+      if (CI_COOLDOWN_RE.test(content)) return true
+    }
+  } catch {}
+  return false
 }
 
 function hasRealPendingWork(): WorkState {
@@ -365,6 +388,7 @@ function hasRealPendingWork(): WorkState {
   } catch {}
 
   let ciVerdictPendingOrRed = false
+  let ciVerdictUnknown = false
   try {
     const ciCachePath = "/tmp/gludd-watchdog-ci.json"
     if (fs.existsSync(ciCachePath)) {
@@ -375,7 +399,14 @@ function hasRealPendingWork(): WorkState {
       // a PENDING verdict polled minutes ago is still PENDING. The old 120s
       // window made CI-pending invisible between watchdog polls.
       if (now - lastCheck < 600_000 && lastStatus) {
-        ciVerdictPendingOrRed = lastStatus !== "SUCCESS"
+        if (ciCooldownMasked(ciData)) {
+          // ci-verdict-safe exit 3: check REFUSED. CI state is UNKNOWN — the
+          // real run may already be GREEN or RED. Never claim PENDING/RED
+          // from a cooldown; conservatively treat unknown as pending work.
+          ciVerdictUnknown = true
+        } else {
+          ciVerdictPendingOrRed = lastStatus !== "SUCCESS"
+        }
       }
     }
   } catch {}
@@ -424,11 +455,12 @@ function hasRealPendingWork(): WorkState {
   } catch {}
 
   const hasLocalWork = tasksMdUnchecked || ratchetEntries > 0 || bugsOpen || gateStatusRed
-  const hasPendingWork = hasLocalWork || ciVerdictPendingOrRed || releaseIncomplete || testFailures || repoPending || multitaskingBacklogOpen
+  const hasPendingWork = hasLocalWork || ciVerdictPendingOrRed || ciVerdictUnknown || releaseIncomplete || testFailures || repoPending || multitaskingBacklogOpen
   let healthScore = 100
   if (gateStatusRed) healthScore -= 30
   if (gateStale) healthScore -= 10
   if (ciVerdictPendingOrRed) healthScore -= 20
+  if (ciVerdictUnknown) healthScore -= 10
   if (tasksMdUnchecked) healthScore -= 10
   if (bugsOpen) healthScore -= 10
   if (repoPending) healthScore -= 5
@@ -438,7 +470,7 @@ function hasRealPendingWork(): WorkState {
   const state: WorkState = {
     tasksMdUnchecked, tasksMdUncheckedCount, ratchetEntries, bugsOpen,
     gateStatusMissing, gateStale, gateStatusRed,
-    ciVerdictPendingOrRed, releaseIncomplete, testFailures, repoPending,
+    ciVerdictPendingOrRed, ciVerdictUnknown, releaseIncomplete, testFailures, repoPending,
     multitaskingBacklogOpen,
     hasPendingWork, hasLocalWork, healthScore, ts: now,
   }
@@ -567,8 +599,23 @@ function ciIsPendingOrRed(): boolean {
       const lastCheck = ciData.last_ci_check || 0
       const lastStatus = ciData.last_ci_status || ""
       if (Date.now() - lastCheck < 600_000 && lastStatus) {
+        // CI-COOLDOWN ≠ PENDING: a cooldown-refused check means CI state is
+        // UNKNOWN, not pending/red. ciIsUnknown() covers the conservative path.
+        if (ciCooldownMasked(ciData)) return false
         return lastStatus !== "SUCCESS"
       }
+    }
+  } catch {}
+  return false
+}
+
+function ciIsUnknown(): boolean {
+  try {
+    const ciCachePath = "/tmp/gludd-watchdog-ci.json"
+    if (fs.existsSync(ciCachePath)) {
+      const ciData = JSON.parse(fs.readFileSync(ciCachePath, "utf8"))
+      const lastCheck = ciData.last_ci_check || 0
+      if (Date.now() - lastCheck < 600_000 && ciCooldownMasked(ciData)) return true
     }
   } catch {}
   return false
@@ -622,6 +669,7 @@ const defaultImpl: HotModule = {
         if (workState.gateStale) indicators.push("gate stale")
         if (workState.gateStatusMissing) indicators.push("gate missing")
         if (workState.ciVerdictPendingOrRed) indicators.push("CI pending/red")
+        if (workState.ciVerdictUnknown) indicators.push("CI UNKNOWN (cooldown-masked — NOT pending; FORCE=1 for actual state)")
         if (workState.releaseIncomplete) indicators.push("release incomplete")
         if (workState.testFailures) indicators.push("test failures")
         if (workState.repoPending) indicators.push("repo dirty")
@@ -716,7 +764,7 @@ const defaultImpl: HotModule = {
           `PENDING WORK: ${workState.tasksMdUncheckedCount} unchecked TASKS.md items, ` +
           `${workState.ratchetEntries} ratchet entries, ` +
           `gate ${workState.gateStatusRed ? "RED" : workState.gateStatusMissing ? "MISSING" : "OK"}, ` +
-          `CI ${workState.ciVerdictPendingOrRed ? "RED/PENDING" : "N/A"}, ` +
+          `CI ${workState.ciVerdictPendingOrRed ? "RED/PENDING" : workState.ciVerdictUnknown ? "UNKNOWN (cooldown)" : "N/A"}, ` +
           `release ${workState.releaseIncomplete ? "INCOMPLETE" : "N/A"}.`,
           "",
           "DISPATCH A TOOL CALL NOW. Do not summarize.",
@@ -736,7 +784,7 @@ const defaultImpl: HotModule = {
           "",
           `PENDING WORK: ${workState.tasksMdUncheckedCount} unchecked tasks, ` +
           `${workState.ratchetEntries} ratchet entries, ` +
-          `CI ${workState.ciVerdictPendingOrRed ? "RED/PENDING" : "N/A"}, ` +
+          `CI ${workState.ciVerdictPendingOrRed ? "RED/PENDING" : workState.ciVerdictUnknown ? "UNKNOWN (cooldown)" : "N/A"}, ` +
           `gate ${workState.gateStatusRed ? "RED" : workState.gateStatusMissing ? "MISSING" : "OK"}.`,
           "",
           "You MUST dispatch a tool call. Do not claim work is done.",
@@ -784,7 +832,7 @@ const defaultImpl: HotModule = {
             `Real work still exists: ${workState.tasksMdUncheckedCount} unchecked tasks, ` +
             `${workState.ratchetEntries} ratchet entries, ` +
             `gate ${workState.gateStatusRed ? "RED" : workState.gateStatusMissing ? "MISSING" : "OK"}, ` +
-            `CI ${workState.ciVerdictPendingOrRed ? "RED/PENDING" : "N/A"}.`,
+            `CI ${workState.ciVerdictPendingOrRed ? "RED/PENDING" : workState.ciVerdictUnknown ? "UNKNOWN (cooldown)" : "N/A"}.`,
             "",
             "DISPATCH A TOOL CALL NOW. Do not send a text-only summary.",
           ].join("\n"),
@@ -858,7 +906,7 @@ const defaultImpl: HotModule = {
           `${workState.ratchetEntries} ratchet entries, ` +
           `BUGS.md open: ${workState.bugsOpen ? "YES" : "no"}, ` +
           `gate: ${workState.gateStatusRed ? "RED" : workState.gateStatusMissing ? "MISSING" : workState.gateStale ? "STALE" : "OK"}, ` +
-          `CI: ${workState.ciVerdictPendingOrRed ? "RED/PENDING" : "N/A"}, ` +
+          `CI: ${workState.ciVerdictPendingOrRed ? "RED/PENDING" : workState.ciVerdictUnknown ? "UNKNOWN (cooldown)" : "N/A"}, ` +
           `release: ${workState.releaseIncomplete ? "INCOMPLETE" : "N/A"}, ` +
           `repo: ${workState.repoPending ? "DIRTY" : "clean"}.`,
           `Health: ${workState.healthScore}/100.`,
@@ -930,12 +978,13 @@ const defaultImpl: HotModule = {
         const bugsOpen = bugsMdHasOpenIncidents()
         const gateRed = gateStatusIsRed()
         const ciBad = ciIsPendingOrRed()
+        const ciUnknown = ciIsUnknown()
         const repoMode: "commit" | "push" | undefined =
           COMMIT_TARGET_RE.test(command) ? "commit" :
           PUSH_TARGET_RE.test(command) ? "push" : undefined
         const repoPending = repoHasPendingWork(execSync, repoMode)
         const disengaged = isWatchdogDisengaged()
-        if (!disengaged && (taskMd || ratchetCount > 0 || bugsOpen || gateRed || ciBad || repoPending)) {
+        if (!disengaged && (taskMd || ratchetCount > 0 || bugsOpen || gateRed || ciBad || ciUnknown || repoPending)) {
           try {
             const cPath = process.env.GLUDD_STOP_TOOL_COUNTS_FILE || "/tmp/gludd-stop-tool-counts.json"
             let data: Record<string, any> = { allowed: 0, blocked: 0 }
@@ -954,6 +1003,7 @@ const defaultImpl: HotModule = {
             }
           }
           if (ciBad) extraReasons.push("CI pending/red")
+          if (ciUnknown) extraReasons.push("CI UNKNOWN (cooldown-masked — use FORCE=1 to check actual state)")
           if (repoPending) extraReasons.push("repo dirty")
           throw new Error(stopLikeDenyMessage(taskMd, ratchetCount, extraReasons))
         }
@@ -1060,7 +1110,7 @@ const defaultImpl: HotModule = {
           `PENDING WORK: ${workState.tasksMdUncheckedCount} unchecked TASKS.md items, ` +
           `${workState.ratchetEntries} ratchet entries, ` +
           `gate ${workState.gateStatusRed ? "RED" : workState.gateStatusMissing ? "MISSING" : "OK"}, ` +
-          `CI ${workState.ciVerdictPendingOrRed ? "RED/PENDING" : "N/A"}, ` +
+          `CI ${workState.ciVerdictPendingOrRed ? "RED/PENDING" : workState.ciVerdictUnknown ? "UNKNOWN (cooldown)" : "N/A"}, ` +
           `release ${workState.releaseIncomplete ? "INCOMPLETE" : "N/A"}.`,
           "",
           "DISPATCH A TOOL CALL NOW. Do not summarize.",
@@ -1077,7 +1127,7 @@ const defaultImpl: HotModule = {
           `⛔ SESSION IDLE WHILE WORK EXISTS${escalation}. ` +
           `${workState.tasksMdUncheckedCount} unchecked tasks, ` +
           `gate ${workState.gateStatusRed ? "RED" : workState.gateStatusMissing ? "MISSING" : "OK"}, ` +
-          `CI ${workState.ciVerdictPendingOrRed ? "RED/PENDING" : "N/A"}.`
+          `CI ${workState.ciVerdictPendingOrRed ? "RED/PENDING" : workState.ciVerdictUnknown ? "UNKNOWN (cooldown)" : "N/A"}.`
         )
       }
       return

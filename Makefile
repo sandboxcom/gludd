@@ -1563,10 +1563,15 @@ ci-verdict:
 # the agent thinks CI might have finished — the answer is: do real work for
 # 10 more minutes, THEN check. CI runs on its own schedule.
 #
-# Exit codes: 0=GREEN, 1=RED/no-run, 2=PENDING, 3=COOLDOWN-ACTIVE (refused).
+# Exit codes: 0=GREEN, 1=RED/no-run (or last verdict was failure during cooldown),
+# 2=PENDING, 3=COOLDOWN-ACTIVE (refused, last verdict was success/pending/unknown).
 # Override: FORCE=1 (release-cut ONLY; never use for routine checks).
 ci-verdict-safe:
-	@$(PYTHON) scripts/ci_check_cooldown.py check $(CI_CHECK_COOLDOWN_SEC) && $(MAKE) --no-print-directory ci-verdict || exit $$?
+	@$(PYTHON) scripts/ci_check_cooldown.py check $(CI_CHECK_COOLDOWN_SEC) || exit $$?; \
+	$(MAKE) --no-print-directory ci-verdict; RC=$$?; \
+	if [ $$RC -eq 0 ]; then V="success"; elif [ $$RC -eq 2 ]; then V="pending"; else V="failure"; fi; \
+	$(PYTHON) scripts/ci_check_cooldown.py record-verdict $$V; \
+	exit $$RC
 
 # ci-diagnose: fetch CI failure annotations and group by root cause.
 # Prints a compact diagnosis: run id, conclusion, top-5 failure clusters.

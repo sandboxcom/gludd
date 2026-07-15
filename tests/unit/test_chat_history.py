@@ -15,6 +15,7 @@ import os
 from pathlib import Path
 
 from general_ludd.chat import ChatSession
+from general_ludd.chat.history import ChatHistory
 from general_ludd.chat.session import DEFAULT_HISTORY_DIR
 
 
@@ -235,3 +236,110 @@ class TestChatSessionLoadFromFile:
             f"history must be reset to system prompt only; got {len(session.history)}"
         )
         assert session.history[0]["role"] == "system"
+
+
+class TestChatHistoryIndex:
+    """ChatHistory read-only index wrapper (general_ludd.chat.history)."""
+
+    def _write_index(self, history_dir: Path, sessions: list[dict]) -> None:
+        history_dir.mkdir(parents=True, exist_ok=True)
+        (history_dir / "index.json").write_text(
+            json.dumps({"sessions": sessions}), encoding="utf-8"
+        )
+
+    def test_missing_index_yields_empty_listing(self, tmp_path: Path) -> None:
+        history = ChatHistory(history_dir=tmp_path / "nonexistent")
+
+        assert history.list_sessions() == []
+        assert history.stats()["total_sessions"] == 0
+
+    def test_list_sessions_sorted_and_filtered(self, tmp_path: Path) -> None:
+        self._write_index(tmp_path, [
+            {"file": "a.jsonl", "timestamp": "2026-01-01", "model": "sonnet",
+             "message_count": 2},
+            {"file": "b.jsonl", "timestamp": "2026-02-01", "model": "opus",
+             "message_count": 4},
+        ])
+        history = ChatHistory(history_dir=tmp_path)
+
+        sessions = history.list_sessions()
+        assert sessions[0]["file"] == "b.jsonl", "newest first"
+
+        filtered = history.list_sessions(model_filter="opus")
+        assert len(filtered) == 1
+        assert filtered[0]["model"] == "opus"
+
+    def test_get_session_and_messages(self, tmp_path: Path) -> None:
+        msg_file = tmp_path / "s1.jsonl"
+        msg_file.write_text(
+            json.dumps({"role": "user", "content": "hello there"}) + "\n",
+            encoding="utf-8",
+        )
+        self._write_index(tmp_path, [
+            {"file": str(msg_file), "timestamp": "2026-01-01",
+             "model": "sonnet", "message_count": 1, "preview": "hello"},
+        ])
+        history = ChatHistory(history_dir=tmp_path)
+
+        found = history.get_session(str(msg_file))
+        assert found is not None
+        assert found["model"] == "sonnet"
+
+        messages = history.get_messages(str(msg_file))
+        assert len(messages) == 1
+        assert messages[0]["content"] == "hello there"
+
+        assert history.get_session("missing.jsonl") is None
+        assert history.get_messages("/tmp/does_not_exist.jsonl") == []
+
+    def test_search_matches_preview_and_content(self, tmp_path: Path) -> None:
+        msg_file = tmp_path / "s1.jsonl"
+        msg_file.write_text(
+            json.dumps({"role": "user", "content": "deep needle text"}) + "\n",
+            encoding="utf-8",
+        )
+        self._write_index(tmp_path, [
+            {"file": str(msg_file), "timestamp": "2026-01-01",
+             "model": "sonnet", "message_count": 1, "preview": "surface hit"},
+        ])
+        history = ChatHistory(history_dir=tmp_path)
+
+        by_preview = history.search("surface")
+        assert len(by_preview) == 1
+        assert by_preview[0]["match_source"] == "preview"
+
+        by_content = history.search("needle")
+        assert len(by_content) == 1
+        assert by_content[0]["match_source"] == "content"
+
+        assert history.search("nomatchanywhere") == []
+
+    def test_delete_session_removes_file_and_index_entry(
+        self, tmp_path: Path
+    ) -> None:
+        msg_file = tmp_path / "s1.jsonl"
+        msg_file.write_text("{}\n", encoding="utf-8")
+        self._write_index(tmp_path, [
+            {"file": str(msg_file), "timestamp": "2026-01-01",
+             "model": "sonnet", "message_count": 0},
+        ])
+        history = ChatHistory(history_dir=tmp_path)
+
+        assert history.delete_session(str(msg_file)) is True
+        assert not msg_file.exists()
+        assert history.list_sessions() == []
+
+    def test_stats_aggregates_counts_and_models(self, tmp_path: Path) -> None:
+        self._write_index(tmp_path, [
+            {"file": "a.jsonl", "timestamp": "1", "model": "sonnet",
+             "message_count": 3},
+            {"file": "b.jsonl", "timestamp": "2", "model": "opus",
+             "message_count": 5},
+        ])
+        history = ChatHistory(history_dir=tmp_path)
+
+        stats = history.stats()
+
+        assert stats["total_sessions"] == 2
+        assert stats["total_messages"] == 8
+        assert stats["unique_models"] == ["opus", "sonnet"]

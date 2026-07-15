@@ -124,3 +124,119 @@ def test_check_count_increments(
     ci_check_cooldown.cmd_check(cooldown=600, force=True)
     after_second = json.loads(isolated_state.read_text())
     assert after_second["check_count"] == 2
+
+
+def test_blocked_check_reports_last_verdict(
+    isolated_state: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(ci_check_cooldown, "get_head_sha", lambda: "deadbeef")
+    _write_state(
+        isolated_state,
+        last_check_epoch=time.time(),
+        last_verdict="success",
+        last_verdict_epoch=time.time() - 30,
+        check_count=3,
+    )
+    rc = ci_check_cooldown.cmd_check(cooldown=600, force=False)
+    stderr = capsys.readouterr().err
+    assert "CI-COOLDOWN" in stderr
+    assert "SUCCESS" in stderr
+    assert rc == 3
+
+
+def test_blocked_check_with_red_verdict_returns_1(
+    isolated_state: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(ci_check_cooldown, "get_head_sha", lambda: "deadbeef")
+    _write_state(
+        isolated_state,
+        last_check_epoch=time.time(),
+        last_verdict="failure",
+        last_verdict_epoch=time.time() - 45,
+        check_count=2,
+    )
+    rc = ci_check_cooldown.cmd_check(cooldown=600, force=False)
+    stderr = capsys.readouterr().err
+    assert "CI-COOLDOWN" in stderr
+    assert "FAILURE" in stderr
+    assert rc == 1
+
+
+def test_blocked_check_no_prior_verdict_returns_3(
+    isolated_state: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(ci_check_cooldown, "get_head_sha", lambda: "deadbeef")
+    _write_state(isolated_state, last_check_epoch=time.time(), check_count=1)
+    rc = ci_check_cooldown.cmd_check(cooldown=600, force=False)
+    stderr = capsys.readouterr().err
+    assert "CI-COOLDOWN" in stderr
+    assert "no prior check" in stderr or "unknown" in stderr.lower()
+    assert rc == 3
+
+
+def test_record_verdict_stores_and_can_be_read(
+    isolated_state: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    rc = ci_check_cooldown.cmd_record_verdict("success")
+    assert rc == 0
+    state = json.loads(isolated_state.read_text())
+    assert state["last_verdict"] == "success"
+    assert state["last_verdict_epoch"] > 0
+    rc = ci_check_cooldown.cmd_record_verdict("FAILURE")
+    assert rc == 0
+    state = json.loads(isolated_state.read_text())
+    assert state["last_verdict"] == "failure"
+    rc = ci_check_cooldown.cmd_record_verdict("pending")
+    assert rc == 0
+    state = json.loads(isolated_state.read_text())
+    assert state["last_verdict"] == "pending"
+
+
+def test_status_shows_last_verdict(
+    isolated_state: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _write_state(
+        isolated_state,
+        last_check_epoch=time.time() - 660,
+        last_verdict="success",
+        last_verdict_epoch=time.time() - 120,
+        check_count=5,
+    )
+    rc = ci_check_cooldown.cmd_status(cooldown=600)
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "SUCCESS" in out
+    assert "last verdict" in out.lower()
+
+
+def test_blocked_check_with_cancelled_returns_1(
+    isolated_state: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(ci_check_cooldown, "get_head_sha", lambda: "deadbeef")
+    _write_state(
+        isolated_state,
+        last_check_epoch=time.time(),
+        last_verdict="cancelled",
+        last_verdict_epoch=time.time() - 60,
+        check_count=1,
+    )
+    rc = ci_check_cooldown.cmd_check(cooldown=600, force=False)
+    assert rc == 1
+
+
+def test_blocked_check_with_pending_returns_3(
+    isolated_state: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(ci_check_cooldown, "get_head_sha", lambda: "deadbeef")
+    _write_state(
+        isolated_state,
+        last_check_epoch=time.time(),
+        last_verdict="pending",
+        last_verdict_epoch=time.time() - 90,
+        check_count=4,
+    )
+    rc = ci_check_cooldown.cmd_check(cooldown=600, force=False)
+    stderr = capsys.readouterr().err
+    assert "CI-COOLDOWN" in stderr
+    assert "PENDING" in stderr
+    assert rc == 3
