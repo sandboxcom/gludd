@@ -1,6 +1,14 @@
 # Feature: Unikernel/NanoVM Sandboxed Agent Execution
 
 **Status: DRAFT** | **Created: 2026-07-14** | **Target: v0.1.0-beta.2**
+**P3 progress (2026-07-15):** VM lifecycle manager wired into the daemon-dispatch
+surface. ``src/general_ludd/security/sandboxes/vm/lifecycle.py`` adds
+``VMSandboxManager`` (boot/dispatch/verify/release/list/observe), ``VMInstance``
+state machine (PENDING → BOOTING → RUNNING → EXECUTING → STOPPED/FAILED), and
+``VMMetrics`` (boot_ms, dispatch_count, peak_rss_kb, last_verify_findings,
+total_dispatch_ms) for the observability layer. 23 unit tests in
+``tests/unit/test_vm_lifecycle.py``. Pre-built CI images + real runsc wiring
+remain.
 
 ## 1. Overview
 

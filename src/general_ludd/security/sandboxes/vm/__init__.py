@@ -24,6 +24,12 @@ from general_ludd.security.sandboxes.vm.image_builder import (
     list_cached_images,
     verify_image,
 )
+from general_ludd.security.sandboxes.vm.lifecycle import (
+    VMInstance,
+    VMLifecycleState,
+    VMMetrics,
+    VMSandboxManager,
+)
 
 __all__ = [
     "AgentExecutor",
@@ -31,6 +37,10 @@ __all__ = [
     "FirecrackerBackend",
     "GvisorBackend",
     "ImageManifest",
+    "VMInstance",
+    "VMLifecycleState",
+    "VMMetrics",
+    "VMSandboxManager",
     "build_firecracker_image",
     "build_gvisor_image",
     "build_rootfs",
