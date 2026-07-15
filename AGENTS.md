@@ -353,6 +353,8 @@ The ONLY valid exceptions to step 2: (a) the user's first message is a direct fa
 
 A Q&A-style first response ("Sure! Let me look into that.") with no tool calls is a **policy violation** whenever a task backlog exists. Prose-first session starts are forbidden.
 
+**STATUS_SUMMARY_RE detection (2026-07-15):** `enforce-stop.ts` `text.complete` hook now applies `STATUS_SUMMARY_RE` + `looksLikeStatusSummary()` structural detection during the session-start window. A status-summary response before the first dispatch wave is blanked — even if it carries evidence tokens. The only valid response after the backlog reads is a dispatch wave; any summary text is a protocol violation.
+
 ## CRITICAL: Bash Tool Unavailability — 4-Step Diagnosis (MAX 4 TURNS)
 
 **When `make` commands fail or the bash tool is unavailable, execute this 4-step diagnosis. Do NOT spend 10+ turns analyzing. The diagnosis is mechanical, not analytical.**
@@ -516,6 +518,8 @@ The sections below are the full policy. The 7-rule contract above is the priorit
 4. If you catch yourself writing a completion summary, status report, or "done" message — STOP. Replace it with a tool call.
 
 **This is a HARD block. Text-only responses while work remains are a policy violation.**
+
+**STATUS_SUMMARY_RE enforcement (2026-07-15):** `enforce-stop.ts` now detects status summaries by structural pattern (bolded section headers + status tables/bullets) AND by explicit phrase matching (`"here's the status"`, `"final status"`, `"session N summary"`, `"status report:"`). When detected AND pending work exists, the response is blanked **regardless of embedded evidence** (commit hashes, test counts, CI verdicts). Evidence proves a claim true — it does NOT make stopping-to-summarize acceptable. A response with bolded headers, a status table, and a commit hash is STILL a premature stop.
 
 ## CRITICAL: Session-Start Orchestration Contract
 

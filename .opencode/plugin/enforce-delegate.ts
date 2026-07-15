@@ -464,7 +464,7 @@ function enforceForceDelegate(
 // agent sees EXACTLY what to dispatch on instead of a generic "delegate" nudge.
 // ============================================================================
 
-const FORCE_DISPATCH_FILE = "/tmp/gludd-force-dispatch.json"
+const FORCE_DISPATCH_FILE = process.env.GLUDD_FORCE_DISPATCH_PATH || "/tmp/gludd-force-dispatch.json"
 
 interface DispatchItem {
   index: number

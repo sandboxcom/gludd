@@ -606,10 +606,12 @@ console.log(JSON.stringify(result ?? {{allowed: true}}))
 
 def test_delegate_streak_at_threshold_denied():
     """mainthreadBudgetBefore denies when streak >= THRESHOLD and open work exists."""
-    sf = _streak_state_file()
+    sf = f"/tmp/gludd-mainthread-streak-test-{os.getpid()}.json"
+    fd = f"/tmp/gludd-force-dispatch-test-{os.getpid()}.json"
     tasks_path = f"/tmp/gludd-test-tasks-delegate-{os.getpid()}.md"
-    _clean_state_files(sf, tasks_path, "/tmp/gludd-watchdog-disengage.json",
-                       "/tmp/gludd-hot-delegate.js", "/tmp/gludd-force-dispatch.json")
+    _clean_state_files(sf, fd, tasks_path,
+                       "/tmp/gludd-watchdog-disengage.json",
+                       "/tmp/gludd-hot-delegate.js")
     # Write streak state at threshold
     with open(sf, "w") as f:
         json.dump({"count": 2, "ts": int(time.time() * 1000)}, f)
@@ -632,10 +634,12 @@ try {{
         "GLUDD_LIVE_AGENTS_COUNT": "0",
         "GLUDD_TASKS_MD": tasks_path,
         "GLUDD_MAINTHREAD_STREAK_ENFORCE": "1",
+        "GLUDD_MAINTHREAD_STREAK_FILE": sf,
+        "GLUDD_FORCE_DISPATCH_PATH": fd,
         "CLAUDE_AGENT_TARGET": "6",
     })
     assert result.get("permissionDecision") == "deny", f"Expected deny, got: {result}"
-    _clean_state_files(sf, tasks_path, "/tmp/gludd-force-dispatch.json")
+    _clean_state_files(sf, fd, tasks_path)
 
 
 def test_delegate_read_tool_not_counted():

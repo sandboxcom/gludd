@@ -484,7 +484,8 @@ gate: check-opencode-integrity validate-task-ledger check-dispatch-dedup check-s
 	@$(MAKE) --no-print-directory check-test-env-writes > /dev/null 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed)
 	@echo "=== GATE PHASE: hook-runtime ==="
 	@printf "hook-runtime " >> .gate-status
-	@$(MAKE) --no-print-directory test-hook-runtime > /dev/null 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed)
+	@mkdir -p .gate-logs
+	@$(MAKE) --no-print-directory test-hook-runtime > .gate-logs/hook-runtime.log 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed && tail -30 .gate-logs/hook-runtime.log)
 	@echo "=== GATE PHASE: verify-enforcement ==="
 	@printf "verify-enforcement " >> .gate-status
 	@$(MAKE) --no-print-directory verify-enforcement > /dev/null 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed)
@@ -2415,7 +2416,8 @@ gate-refresh:
 	$(MAKE) --no-print-directory check-test-env-writes > /dev/null 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed); \
 	echo "=== GATE PHASE: hook-runtime ==="; \
 	printf "hook-runtime " >> .gate-status; \
-	$(MAKE) --no-print-directory test-hook-runtime > /dev/null 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed); \
+	mkdir -p .gate-logs; \
+	$(MAKE) --no-print-directory test-hook-runtime > .gate-logs/hook-runtime.log 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed && tail -30 .gate-logs/hook-runtime.log); \
 	echo "=== GATE PHASE: typecheck ==="; \
 	printf "typecheck " >> .gate-status; \
 	TC_ERRS=$$($(UV) run mypy -p general_ludd 2>&1 | grep -c 'error:'); \

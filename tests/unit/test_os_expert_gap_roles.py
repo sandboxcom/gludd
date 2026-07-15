@@ -754,7 +754,12 @@ def test_windows_parse_sc_query_empty(windows_gather):
 def test_windows_parse_get_service(windows_gather):
     sample = json.dumps([
         {"Name": "WinRM", "DisplayName": "Windows Remote Management", "Status": "Running", "StartType": "Automatic"},
-        {"Name": "BITS", "DisplayName": "Background Intelligent Transfer Service", "Status": "Stopped", "StartType": "Manual"},
+        {
+            "Name": "BITS",
+            "DisplayName": "Background Intelligent Transfer Service",
+            "Status": "Stopped",
+            "StartType": "Manual",
+        },
     ])
     result = windows_gather.parse_get_service(sample)
     assert len(result) == 2
