@@ -291,6 +291,47 @@ export default (({ }) => {
       const impl = loadHotModule("multitask", defaultImpl)
       const fn = impl["tool.execute.before"]
       return fn ? await fn(input) : undefined
-    },
+  },
+  "text.complete": async (_input: unknown, output: unknown) => {
+    if (isSubagent()) return output
+    if (!FLOOR_ENFORCE) return undefined
+    const text = typeof output === "string" ? output
+      : (output as any)?.text ? String((output as any).text) : ""
+    if (!text || text.trim().length === 0) return output
+    if (isDisengaged()) return output
+    if (!hasPendingWork()) return output
+
+    // In a tool-call message (has dispatches), text is usually a brief intro.
+    // The text.complete hook fires for EACH text fragment, including tool
+    // response text. We want to block only the orchestrator's text (the
+    // "prelude" text between waves), not subagent result text.
+    const isToolOutput = (output as any)?.isToolOutput === true
+    if (isToolOutput) return output
+
+    // Block: current message had < MIN_DISPATCHES but >0 dispatches
+    // AND pending work exists. thisMessageDispatches is the live count
+    // for the message that just completed (all tool calls have fired).
+    if (s.thisMessageDispatches > 0 && s.thisMessageDispatches < MIN_DISPATCHES) {
+      const dispatched = s.thisMessageDispatches
+      writeState(s)
+      return {
+        text: [
+          "⛔⛔⛔ THIN WAVE BLOCKED ⛔⛔⛔",
+          "",
+          "This message had only " + String(dispatched) + " dispatch(es).",
+          "The 10-agent floor REQUIRES " + String(MIN_DISPATCHES) + " per wave.",
+          "When pending work exists, your ONLY valid action is a " +
+            String(MIN_DISPATCHES) + "-dispatch wave.",
+          "",
+          "Your text has been blanked. Re-send with >= " +
+            String(MIN_DISPATCHES) + " task/agent/workflow dispatches.",
+          "",
+          "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
+        ].join("\n"),
+      }
+    }
+
+    return output
+  },
   }
 }) satisfies Plugin

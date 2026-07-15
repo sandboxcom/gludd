@@ -372,7 +372,7 @@ class TestCaptureIQ:
             freq_hz=100_000_000,
             sample_rate=1_000_000,
             duration_sec=0.1,
-            format="nonexistent_fmt",
+            fmt="nonexistent_fmt",
         )
         assert result["format_bytes"] == 2
 
@@ -611,24 +611,26 @@ class TestSynthesizeSweep:
         freqs = [b["freq_hz"] for b in bins]
         assert freqs == sorted(freqs)
 
-    def test_fm_band_has_signals(self, monkeypatch):
+    def test_fm_band_has_signals(self, monkeypatch, tmp_path):
         monkeypatch.setenv("SPECTRUM_SCAN_TOOL_PATH", "")
         monkeypatch.setattr(shutil, "which", lambda _: None)
         result = ss.sweep_spectrum(
             start_freq_hz=88_000_000,
             end_freq_hz=108_000_000,
             bin_size_hz=100_000,
+            output_dir=str(tmp_path / "synth_fm"),
         )
         assert result["signals_detected"] > 0
         assert len(result["peaks"]) > 0
 
-    def test_adsb_band_has_signals(self, monkeypatch):
+    def test_adsb_band_has_signals(self, monkeypatch, tmp_path):
         monkeypatch.setenv("SPECTRUM_SCAN_TOOL_PATH", "")
         monkeypatch.setattr(shutil, "which", lambda _: None)
         result = ss.sweep_spectrum(
             start_freq_hz=1_088_000_000,
             end_freq_hz=1_092_000_000,
             bin_size_hz=500_000,
+            output_dir=str(tmp_path / "synth_adsb"),
         )
         assert result["signals_detected"] > 0
 
@@ -938,7 +940,7 @@ class TestCaptureIQWithTempFile:
             freq_hz=100_000_000,
             sample_rate=8,
             duration_sec=0.5,
-            format="int8",
+            fmt="int8",
             output_dir=out_dir,
             tool="rtl_sdr",
         )

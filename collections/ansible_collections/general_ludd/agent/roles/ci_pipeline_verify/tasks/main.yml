@@ -29,7 +29,7 @@
     chdir: "{{ repo_path | default('.') }}"
   when: ci_push | bool
   register: _push_result
-  failed_when: _push_result.rc != 0
+  failed_when: "{{ _push_result.rc != 0 }}"
   changed_when: true
 
 - name: Poll CI status endpoint (uri path)

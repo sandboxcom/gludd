@@ -14,7 +14,7 @@
     cmd: |
       python3 -c "
 import json, sys, os
-sys.path.insert(0, os.path.expanduser('{{ playbook_dir | default('.') }}/../../../../src'))
+sys.path.insert(0, os.path.expanduser('{{ playbook_dir | default(".") }}/../../../../src'))
 from general_ludd.language.charset_map import (
     BOM_SIGNATURES, BOM_BY_SEQUENCE, BOM_SIZE,
     BOM_REQUIRED_BY_RFC, BOM_OPTIONAL_BY_RFC
