@@ -34,7 +34,7 @@
       ansible.builtin.stat:
         path: "{{ artifact_dir }}/video-analysis.md"
       register: report_stat
-      failed_when: "{{ not report_stat.stat.exists }}"
+      failed_when: not report_stat.stat.exists
 
     - name: Assert stream-dispatch endpoint is registered on mock daemon
       ansible.builtin.uri:

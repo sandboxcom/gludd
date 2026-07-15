@@ -48,4 +48,4 @@
       ansible.builtin.stat:
         path: "{{ mock_video }}"
       register: device_stat
-      failed_when: "{{ not device_stat.stat.exists }}"
+      failed_when: not device_stat.stat.exists

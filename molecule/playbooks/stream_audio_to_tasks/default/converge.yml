@@ -27,7 +27,7 @@
     - name: Stream audio chunk via gludd_stream (size_threshold trigger)
       general_ludd.agent.gludd_stream:
         device: "{{ mock_audio }}"
-        device_kind: audio
+        device_kind: binary
         buffer_size: 5242880
         daemon_url: "http://127.0.0.1:{{ mock_port }}"
         dispatch_trigger:

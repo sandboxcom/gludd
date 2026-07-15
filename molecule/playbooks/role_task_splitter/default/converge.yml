@@ -2,7 +2,7 @@
 - name: Converge - run task_splitter role with a complex multi-file task
   hosts: localhost
   connection: local
-  gather_facts: false
+  gather_facts: true
   tasks:
     - name: Invoke task_splitter with a complex task
       ansible.builtin.include_role:

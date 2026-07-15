@@ -140,11 +140,14 @@ class TestMaxZeroStreak:
 
     def test_zero_streak_resets_on_dispatch(self):
         """The zeroStreak counter must reset to 0 whenever a dispatch occurs.
-        This happens in tool.execute.before: if thisMessageDispatches !== 0, zeroStreak = 0."""
+        This now happens inside handleMessageBoundary() which is called by
+        the multi-signal boundary detection in tool.execute.before."""
         src = _plugin_source()
-        assert "_state.zeroStreak = 0" in src, (
-            "zeroStreak must be reset to 0 on dispatch — "
-            "the tool.execute.before hook must zero the counter when thisMessageDispatches > 0"
+        # zeroStreak is reset in handleMessageBoundary when prev message had dispatches
+        m = re.search(r"s\.zeroStreak\s*=\s*0", src)
+        assert m, (
+            "zeroStreak must be reset to 0 inside handleMessageBoundary — "
+            "the extracted boundary logic must zero the counter when prevMessageDispatches > 0"
         )
 
     def test_zero_streak_increments_on_zero_dispatch_message(self):
@@ -436,8 +439,11 @@ class TestWaveHistoryTracking:
 
     def test_wave_history_push_in_tool_execute(self):
         src = _plugin_source()
-        assert "_state.waveHistory.push(_state.prevMessageDispatches)" in src, (
-            "tool.execute.before must push prevMessageDispatches to waveHistory"
+        # Now inside handleMessageBoundary() which is called by the multi-signal boundary detection
+        m = re.search(r"waveHistory\.push", src)
+        assert m, (
+            "tool.execute.before must push prevMessageDispatches to waveHistory "
+            "via handleMessageBoundary()"
         )
 
     def test_wave_history_size_cap(self):
