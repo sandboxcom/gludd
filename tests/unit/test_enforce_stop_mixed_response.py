@@ -38,10 +38,51 @@ ROOT = Path(__file__).parent.parent.parent
 PLUGIN = ROOT / ".opencode" / "plugin" / "enforce-stop.ts"
 PERSIST_BLOCK_ENV = "GLUDD_PERSIST_STOP_BLOCK_FILE"
 
+# hasRealPendingWork() reads live filesystem state — the cwd TASKS.md and the
+# hardcoded /tmp/gludd-watchdog-ci.json CI cache — NOT the pre-seeded
+# GLUDD_STOP_STATE_FILE. Runtime tests must therefore seed BOTH the CI cache
+# (with the desired verdict) and, for pending-work scenarios, a real TASKS.md
+# in the harness cwd. The CI cache is shared with any live session on this
+# machine, so it is snapshot/restored around every test (autouse fixture).
+CI_CACHE_PATH = Path("/tmp/gludd-watchdog-ci.json")
+
+# The CI cache is a SHARED /tmp file — serialize every test touching it onto
+# one xdist worker so concurrent SUCCESS/failure seeds can't race.
+pytestmark = pytest.mark.xdist_group("gludd-watchdog-ci-cache")
+
 
 @pytest.fixture
 def hook_plugin_env(tmp_path: Path):
     yield from hook_plugin_env_impl(tmp_path)
+
+
+@pytest.fixture(autouse=True)
+def _ci_cache_guard():
+    """Snapshot /tmp/gludd-watchdog-ci.json before each test and restore the
+    exact original bytes (or absence) after, so tests never leave net-visible
+    contamination in a live opencode session's CI cache."""
+    old = CI_CACHE_PATH.read_bytes() if CI_CACHE_PATH.exists() else None
+    try:
+        yield
+    finally:
+        try:
+            if old is None:
+                CI_CACHE_PATH.unlink(missing_ok=True)
+            else:
+                CI_CACHE_PATH.write_bytes(old)
+        except OSError:
+            pass  # best-effort restore — never fail test teardown
+
+
+def _seed_ci_cache(status: str) -> None:
+    """Write a fresh CI verdict into the live CI cache hasRealPendingWork()
+    reads. status="SUCCESS" → CI clean; anything else → ciVerdictPendingOrRed."""
+    CI_CACHE_PATH.write_text(json.dumps({
+        "last_ci_check": int(_time.time() * 1000),
+        "last_ci_status": status,
+        "run_id": "000000",
+        "head_sha": "000000000",
+    }))
 
 
 # ── Source extraction helpers ─────────────────────────────────────────────────
@@ -147,6 +188,14 @@ def _seed_pending_work(env: HookEnv, **overrides) -> None:
     state.update(overrides)
     state_path = env.state_path("GLUDD_STOP_STATE_FILE")
     state_path.write_text(json.dumps(state))
+    # hasRealPendingWork() reads LIVE files, not the state file above:
+    # a real TASKS.md in the harness cwd → hasLocalWork (race-free per-test
+    # tmp dir), plus a fresh non-SUCCESS CI cache → ciVerdictPendingOrRed.
+    (env.cwd / "TASKS.md").write_text(
+        "- [ ] Pending item A\n- [ ] Pending item B\n- [ ] Pending item C\n"
+        "- [ ] Pending item D\n- [ ] Pending item E\n"
+    )
+    _seed_ci_cache("failure")
 
 
 def _seed_clean_state(env: HookEnv) -> None:
@@ -168,6 +217,9 @@ def _seed_clean_state(env: HookEnv) -> None:
         "hasLocalWork": False,
         "healthScore": 100,
     }))
+    # hasRealPendingWork() reads the LIVE CI cache — seed a fresh SUCCESS
+    # verdict so live CI state from the host session can't leak in.
+    _seed_ci_cache("SUCCESS")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -451,62 +503,41 @@ class TestRuntimeStatusSummaryBlanked:
     def test_final_status_without_pending_work_passes(
         self, hook_plugin_env: HookEnv,
     ):
-        """Status-summary text with NO pending work → allowed through."""
+        """Status-summary text with NO pending work → allowed through.
+
+        NOTE: the text must carry REAL structured evidence — the 2026-07-15
+        evidence-regex narrowing means digit-only run numbers ("run 1234567")
+        no longer count as commit hashes, and "CI green" (lowercase) does not
+        match /CI (GREEN|RED|PENDING)/. Without valid evidence the
+        completion-without-evidence block fires regardless of work state.
+        """
         _seed_clean_state(hook_plugin_env)
-        ci_path = Path("/tmp/gludd-watchdog-ci.json")
-        _old_ci = ci_path.read_bytes() if ci_path.exists() else None
-        ci_path.write_text(json.dumps({
-            "last_ci_check": int(_time.time() * 1000),
-            "last_ci_status": "SUCCESS",
-            "run_id": "000000",
-            "head_sha": "000000000",
-        }))
-        try:
-            _parsed, _raw, stderr, rc = _invoke_text_complete(
-                hook_plugin_env,
-                "Here's the final status — all items complete, "
-                "CI green (run 1234567), gate passed. Done.",
-            )
-            assert rc == 0, stderr
-            pb = _read_persist_block(hook_plugin_env)
-            assert pb is None or pb.get("blocked") is not True, (
-                f"No pending work → must not block. persist_block={pb}"
-            )
-        finally:
-            if _old_ci is not None:
-                ci_path.write_bytes(_old_ci)
-            elif ci_path.exists():
-                ci_path.unlink()
+        _parsed, _raw, stderr, rc = _invoke_text_complete(
+            hook_plugin_env,
+            "Here's the final status — all items complete, "
+            "CI GREEN (commit abc1234f), 42 passed, gate passed. Done.",
+        )
+        assert rc == 0, stderr
+        pb = _read_persist_block(hook_plugin_env)
+        assert pb is None or pb.get("blocked") is not True, (
+            f"No pending work → must not block. persist_block={pb}"
+        )
 
     def test_text_without_status_patterns_passes(
         self, hook_plugin_env: HookEnv,
     ):
         """Text without status-summary patterns and no pending work → passes."""
         _seed_clean_state(hook_plugin_env)
-        ci_path = Path("/tmp/gludd-watchdog-ci.json")
-        _old_ci = ci_path.read_bytes() if ci_path.exists() else None
-        ci_path.write_text(json.dumps({
-            "last_ci_check": int(_time.time() * 1000),
-            "last_ci_status": "SUCCESS",
-            "run_id": "000000",
-            "head_sha": "000000000",
-        }))
-        try:
-            _parsed, _raw, stderr, rc = _invoke_text_complete(
-                hook_plugin_env,
-                "commit abc12345 — 42 tests passed. All checks passed. "
-                "CI GREEN. === GATE: PASSED ===. Collection OK. Done.",
-            )
-            assert rc == 0, stderr
-            pb = _read_persist_block(hook_plugin_env)
-            assert pb is None or pb.get("blocked") is not True, (
-                f"Text with evidence + no work → should pass. persist_block={pb}"
-            )
-        finally:
-            if _old_ci is not None:
-                ci_path.write_bytes(_old_ci)
-            elif ci_path.exists():
-                ci_path.unlink()
+        _parsed, _raw, stderr, rc = _invoke_text_complete(
+            hook_plugin_env,
+            "commit abc12345 — 42 tests passed. All checks passed. "
+            "CI GREEN. === GATE: PASSED ===. Collection OK. Done.",
+        )
+        assert rc == 0, stderr
+        pb = _read_persist_block(hook_plugin_env)
+        assert pb is None or pb.get("blocked") is not True, (
+            f"Text with evidence + no work → should pass. persist_block={pb}"
+        )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -582,6 +613,22 @@ class TestPersistBlockCarryForward:
     """When text.complete blanks text, the persist block denies subsequent
     non-dispatch tools until a dispatch clears it."""
 
+    @staticmethod
+    def _invoke_tool_before(env: HookEnv, tool: str):
+        """Invoke tool.execute.before with the SAME persist-block file the
+        text.complete harness used — without this override the plugin reads
+        (and clears) the default /tmp/gludd-persist-stop-block.json instead
+        of the per-test file, so the clear never lands where the test looks."""
+        return env.invoke(
+            "enforce-stop.ts",
+            "tool.execute.before",
+            input={"tool": tool},
+            output={},
+            env_overrides={
+                PERSIST_BLOCK_ENV: str(env.cwd / "persist-stop-block.json"),
+            },
+        )
+
     def test_persist_block_denies_next_non_dispatch_tool(
         self, hook_plugin_env: HookEnv,
     ):
@@ -598,12 +645,7 @@ class TestPersistBlockCarryForward:
         assert pb.get("blocked") is True
 
         # Step 2: tool.execute.before denies a write call
-        result = hook_plugin_env.invoke(
-            "enforce-stop.ts",
-            "tool.execute.before",
-            input={"tool": "write"},
-            output={},
-        )
+        result = self._invoke_tool_before(hook_plugin_env, "write")
         out = result.stdout.strip()
         if out:
             import contextlib
@@ -630,12 +672,7 @@ class TestPersistBlockCarryForward:
         assert pb.get("blocked") is True
 
         # Step 2: dispatch a task clears persist block
-        result = hook_plugin_env.invoke(
-            "enforce-stop.ts",
-            "tool.execute.before",
-            input={"tool": "task"},
-            output={},
-        )
+        result = self._invoke_tool_before(hook_plugin_env, "task")
         pb_after = _read_persist_block(hook_plugin_env)
         assert pb_after is None or pb_after.get("blocked") is not True, (
             f"Dispatch must clear persist block. pb_after={pb_after}"

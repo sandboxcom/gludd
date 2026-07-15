@@ -26,6 +26,11 @@ from tests.unit._hook_fixtures import (
 
 ROOT = Path(__file__).parent.parent.parent
 
+# Several tests seed the SHARED /tmp/gludd-watchdog-ci.json CI cache that
+# hasRealPendingWork() reads — serialize onto one xdist worker (same group as
+# test_enforce_stop_mixed_response.py) so concurrent seeds can't race.
+pytestmark = pytest.mark.xdist_group("gludd-watchdog-ci-cache")
+
 # Hardcoded files touched by enforce-stop.ts that the fixture does NOT redirect.
 # We pass env_overrides for these so writes go into the fixture's isolated tmp dir.
 PERSIST_BLOCK_ENV = "GLUDD_PERSIST_STOP_BLOCK_FILE"
