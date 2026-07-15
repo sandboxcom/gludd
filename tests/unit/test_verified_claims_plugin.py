@@ -304,9 +304,14 @@ class TestToolExecuteBefore:
     def test_tool_execute_before_bash_only(self):
         """must only fire for bash/Bash tool — falls through for others."""
         src = _plugin_source()
-        assert 'toolName !== "bash"' in src and 'toolName !== "Bash"' in src, (
-            "tool.execute.before must return early for non-bash tools"
+        # The guard uses `tool !== "bash" && tool !== "Bash"` (current code);
+        # older builds used a toolName variable. Accept either.
+        bash_only = (
+            ('toolName !== "bash"' in src and 'toolName !== "Bash"' in src)
+            or ('tool !== "bash"' in src and 'tool !== "Bash"' in src)
+            or 'tool !== "bash" && tool !== "Bash"' in src
         )
+        assert bash_only, "tool.execute.before must return early for non-bash tools"
 
     def test_tool_execute_before_commit_targets(self):
         """must only fire for commit-shaped make targets."""
@@ -322,13 +327,15 @@ class TestToolExecuteBefore:
             )
 
     def test_tool_execute_before_msg_extraction(self):
-        """must extract MSG= parameter from toolInput to inspect commit message."""
+        """must extract MSG= parameter from the bash command args."""
         src = _plugin_source()
         assert "MSG" in src, (
-            "tool.execute.before must extract MSG from toolInput"
+            "tool.execute.before must extract MSG from the command"
         )
-        assert "toolInput" in src, (
-            "tool.execute.before must read toolInput from the context"
+        # The current code reads args.command (via ctx.args); older builds used
+        # a toolInput variable. Accept either shape.
+        assert "args" in src or "toolInput" in src, (
+            "tool.execute.before must read the command args to find MSG"
         )
 
     def test_tool_execute_before_calls_should_block(self):

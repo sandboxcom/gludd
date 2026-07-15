@@ -39,6 +39,10 @@ function formatBashBlockedMessage(attemptedCommand: string, reason?: string): st
 
 let _pendingCommitReminder = false
 let _pendingPreflightGate = ""
+// Set when a bash command is blocked for violating the make-only policy. The
+// experimental.text.complete hook consumes (and clears) it to re-inject the
+// bash-policy nudge into the assistant's context so the next turn corrects.
+let _bashPolicyNudge = false
 
 // --- Non-behavioral edit detection ------------------------------------------
 // Returns true when an edit only touches comments (# ...) and/or docstring
@@ -365,10 +369,11 @@ const defaultImpl: HotModule = {
           const trimmed = command.replace(/^\S*\$\s*/, "").trim()
 
           if (MAKE_ENFORCE) {
-            const cmdMatch = trimmed.match(/^(make\s+\S+)/)
-            const cmdPortion = cmdMatch ? cmdMatch[1] : trimmed
-            if (cmdPortion && SHELL_META_CHARS.test(cmdPortion)) {
-              const matched = cmdPortion.match(SHELL_META_CHARS)
+            // Scan the FULL command for shell metacharacters first — pipes,
+            // chaining, subshells, etc. anywhere in the line are forbidden.
+            if (SHELL_META_CHARS.test(trimmed)) {
+              _bashPolicyNudge = true
+              const matched = trimmed.match(SHELL_META_CHARS)
               throw new Error(
                 formatBashBlockedMessage(
                   trimmed,
@@ -381,6 +386,7 @@ const defaultImpl: HotModule = {
             }
 
             if (!trimmed.startsWith("make ") && trimmed !== "make") {
+              _bashPolicyNudge = true
               throw new Error(formatBashBlockedMessage(trimmed, "Command does not start with 'make'"))
             }
           }
@@ -862,23 +868,6 @@ const defaultImpl: HotModule = {
         }
       },
 
-      "text.complete": async (_input, output) => {
-        if (isSubagent()) return output
-        if (typeof output !== "string") return output
-        const hasRed = (() => {
-          try {
-            const p = path.join(process.cwd(), ".gate-status")
-            if (fs.existsSync(p)) {
-              const c = fs.readFileSync(p, "utf8")
-              return /FAIL/.test(c)
-            }
-          } catch {}
-          return false
-        })()
-        if (hasRed) return "[GATE RED] Fix failures before committing.\n\n" + output
-        return output
-      },
-
       "experimental.chat.system.transform": async (_input, output) => {
         // process.env.OPENCODE_SUBAGENT guard
         if (isSubagent()) return output
@@ -972,6 +961,42 @@ const defaultImpl: HotModule = {
         return output // FORBIDDEN stop patterns enforced by this contract + response.transform hook
       },
 
+      "experimental.text.complete": async (_input, output) => {
+        if (isSubagent()) return output
+        if (typeof output !== "string") return output
+        // Gate-red guard: if .gate-status is FAIL, prepend a hard warning so
+        // the agent cannot claim done while the gate is broken.
+        const hasRed = (() => {
+          try {
+            const p = path.join(process.cwd(), ".gate-status")
+            if (fs.existsSync(p)) {
+              const c = fs.readFileSync(p, "utf8")
+              return /FAIL/.test(c)
+            }
+          } catch {}
+          return false
+        })()
+        if (hasRed) {
+          return "[GATE RED] Fix failures before committing.\n\n" + output
+        }
+        // Bash-policy nudge: if a bash command was blocked this turn for
+        // violating the make-only policy, re-inject the rule so the next
+        // turn corrects. Consumed and cleared here (and reset in session.idle).
+        if (_bashPolicyNudge) {
+          _bashPolicyNudge = false
+          return BASH_POLICY_HEADER + BASH_POLICY_RULE + BASH_POLICY_FIX + BASH_POLICY_REF + "\n\n" + output
+        }
+        return output
+      },
+
+      "session.idle": async () => {
+        // Per-turn reset: clear transient flags so they don't bleed across
+        // turns. Required so a blocked bash in one turn does not nag forever.
+        _bashPolicyNudge = false
+        _pendingCommitReminder = false
+        _pendingPreflightGate = ""
+      },
+
 
     }
 
@@ -1002,11 +1027,17 @@ export default (({ }) => {
       return fn ? await fn(_input, output) : output
     },
 
-    "text.complete": async (_input, output) => {
+    "experimental.text.complete": async (_input, output) => {
       if (isSubagent()) return output
       const impl = loadHotModule("enforce-make", defaultImpl)
-      const fn = impl["text.complete"]
+      const fn = impl["experimental.text.complete"] || impl["text.complete"]
       return fn ? await fn(_input, output) : output
+    },
+
+    "session.idle": async () => {
+      const impl = loadHotModule("enforce-make", defaultImpl)
+      const fn = impl["session.idle"]
+      if (fn) { try { await fn() } catch { /* fail-open */ } }
     },
 
   }

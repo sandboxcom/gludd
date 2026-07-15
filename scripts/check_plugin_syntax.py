@@ -18,9 +18,19 @@ def check_ts_file(path: Path) -> bool:
         return False
     return True
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    args = argv if argv is not None else sys.argv[1:]
+    # Optional positional arg: an explicit plugin directory to scan instead of
+    # the default .opencode/plugin + .opencode/plugins. Used by the test suite
+    # to validate syntax in an isolated temp dir without polluting the real
+    # plugin directory (which would race with the concurrent parse-all test).
+    dirs: list[Path]
+    if args:
+        dirs = [Path(args[0]).resolve()]
+    else:
+        dirs = [PLUGIN_DIR, PLUGINS_DIR]
     errors = 0
-    for d in (PLUGIN_DIR, PLUGINS_DIR):
+    for d in dirs:
         if d.exists():
             for f in sorted(d.glob("*.ts")):
                 if not check_ts_file(f):

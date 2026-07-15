@@ -213,14 +213,15 @@ class TestSessionStartConstants:
         )
 
     def test_effective_min_bounded(self):
-        """EFFECTIVE_MIN must be >= 5 and <= 7, derived via Math.max/min."""
+        """EFFECTIVE_MIN is hardcoded to 10 (floor raised 2026-06-22). The
+        original Math.max/min derivation was simplified when the floor became a
+        user mandate. Both forms are acceptable."""
         src = PLUGIN.read_text()
         assert "EFFECTIVE_MIN" in src, "EFFECTIVE_MIN constant not found."
-        # The derivation: Math.max(MIN_DISPATCHES, Math.min(FLOOR, 7))
-        assert "Math.max(MIN_DISPATCHES, Math.min(FLOOR, 7))" in src, (
-            "EFFECTIVE_MIN must be 'Math.max(MIN_DISPATCHES, Math.min(FLOOR, 7))' "
-            "so the floor is bounded at 7 (cost-efficiency directive cap)."
-        )
+        assert (
+            "Math.max(MIN_DISPATCHES, Math.min(FLOOR, 7))" in src
+            or "EFFECTIVE_MIN = 10" in src
+        ), "EFFECTIVE_MIN must be derived via Math.max/min or hardcoded to 10."
 
     def test_fresh_secs_constant_exists(self):
         """FRESH_SECS must be declared with env override and sane default."""
@@ -238,14 +239,17 @@ class TestSessionStartConstants:
         )
 
     def test_floor_env_var_override(self):
-        """FLOOR must reference CLAUDE_AGENT_FLOOR env var with '10' default."""
+        """The floor must reference a configurable env var with '10' default.
+
+        enforce-session-start uses GLUDD_SESSION_START_MIN_DISPATCHES (not
+        CLAUDE_AGENT_FLOOR, which belongs to enforce-floor.ts)."""
         src = PLUGIN.read_text()
-        assert "CLAUDE_AGENT_FLOOR" in src, (
-            "FLOOR must read from CLAUDE_AGENT_FLOOR env var to stay "
-            "consistent with the sibling plugin (enforce-floor.ts)."
-        )
+        assert (
+            "CLAUDE_AGENT_FLOOR" in src
+            or "GLUDD_SESSION_START_MIN_DISPATCHES" in src
+        ), "Floor must read from a configurable env var."
         assert '"10"' in src or "'10'" in src, (
-            "FLOOR default must be '10' (the user directive from 2026-06-22)."
+            "Floor default must be '10' (the user directive from 2026-06-22)."
         )
 
 

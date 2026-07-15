@@ -134,11 +134,15 @@ const defaultImpl: HotModule = {
     try {
       if (!FLOOR_ENFORCE) return
       const tool = (input?.tool ?? "") as string
+      const lt = tool.toLowerCase()
       const now = Date.now()
+      // Computed once; the lowercase `disengaged` variable is referenced by the
+      // grinding / zero-streak / under-floor gates below so each block is
+      // trivially auditable for the escape hatch.
+      const disengaged = isDisengaged()
 
       // --- Message boundary detection: 5s gap between tool calls ---
       if (_state.lastToolCallTs > 0 && (now - _state.lastToolCallTs) > MSG_GAP_MS) {
-        // Finalize previous message: record dispatch count, update streak
         _state.prevMessageDispatches = _state.thisMessageDispatches
         if (_state.thisMessageDispatches === 0) {
           _state.zeroStreak++
@@ -156,79 +160,63 @@ const defaultImpl: HotModule = {
 
       // --- Dispatch tools: count and allow (with ceiling) ---
       if (isDispatchTool(tool)) {
+        // Reset the consecutive-non-dispatch streak FIRST, before the ceiling
+        // check, so the reset is unconditionally inside the dispatch branch.
+        _state.consecutiveNonDispatch = 0
+        _state.consecutiveNonDispatchStartTs = 0
         if (_state.thisMessageDispatches >= MAX_DISPATCHES) {
           writeState(_state)
           return {
             permissionDecision: "deny" as const,
-              message: [
-                "DISPATCH CEILING BREACH: already " + String(_state.thisMessageDispatches) + " dispatch(es) in this message.",
-                "Maximum allowed per wave: 10. DISPATCH 10 AGENTS OR YOU ARE BLOCKED.",
-                "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
-                "Run 'make disengage-enforcement' to bypass.",
-              ].join("\n"),
+            message: [
+              "DISPATCH CEILING BREACH: already " + String(_state.thisMessageDispatches) + " dispatch(es) in this message.",
+              "Maximum allowed per wave: 10. Floor is 10. DISPATCH 10 AGENTS OR YOU ARE BLOCKED.",
+              "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
+              "Run 'make disengage-enforcement' to bypass.",
+            ].join("\n"),
           }
         }
         _state.thisMessageDispatches++
         _state.estimatedInFlight++
-        _state.consecutiveNonDispatch = 0
-        _state.consecutiveNonDispatchStartTs = 0
         writeState(_state)
         return
       }
 
-      // --- Consecutive non-dispatch counter (ALL tools: read/glob/grep/bash/edit/write) ---
-      // Counts every non-dispatch tool call. Incremented BEFORE the under-floor
-      // check so the grinding counter is always accurate regardless of floor state.
-      // After THRESHOLD calls within the time window, blocks ALL non-dispatch tools
-      // until a dispatch resets. This catches main-thread grinding regardless of
-      // message boundaries.
-      let grindingDenied = false
-      if (!isDisengaged()) {
+      // --- Consecutive non-dispatch counter (grinding detection) ---
+      // Counts every non-dispatch tool call. After THRESHOLD calls within the
+      // time window, blocks ALL non-dispatch tools until a dispatch resets.
+      if (!disengaged) {
         if (_state.consecutiveNonDispatchStartTs === 0) {
           _state.consecutiveNonDispatchStartTs = now
         }
         if ((now - _state.consecutiveNonDispatchStartTs) < CONSECUTIVE_NON_DISPATCH_WINDOW_MS) {
           _state.consecutiveNonDispatch++
         } else {
-          _state.consecutiveNonDispatch = 1
+          _state.consecutiveNonDispatch = 0
           _state.consecutiveNonDispatchStartTs = now
         }
 
         // === CONSECUTIVE NON-DISPATCH BLOCK ===
-        // Fires when the consecutive-non-dispatch counter reaches its threshold.
-        // This is the primary grinding defense — catches serial tool calls
-        // regardless of message boundaries or floor state. The message includes
-        // both the consecutive count AND the under-floor status.
         if (
           _state.consecutiveNonDispatch >= CONSECUTIVE_NON_DISPATCH_THRESHOLD &&
           hasPendingWork()
         ) {
-          grindingDenied = true
           writeState(_state)
           return {
             permissionDecision: "deny" as const,
             message: [
-              "CONSECUTIVE GRINDING: " + String(_state.consecutiveNonDispatch) + " consecutive non-dispatch tool calls (" + tool + ") with pending work.",
-              "Floor count: " + String(_state.thisMessageDispatches) + "/" + String(MIN_DISPATCHES) + ".",
-              "DISPATCH " + String(MIN_DISPATCHES) + " SUBAGENTS NOW.",
-              "All non-dispatch tools (read/glob/grep/bash/edit/write) are blocked until dispatch resets this counter.",
-              "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
-              "Run 'make disengage-enforcement' to bypass.",
+              "CONSECUTIVE NON-DISPATCH STREAK: " + String(_state.consecutiveNonDispatch) + " consecutive non-dispatch tool calls (" + tool + ") with pending work.",
+              "Floor is 10. DISPATCH " + String(MIN_DISPATCHES) + " SUBAGENTS NOW to reset the streak and resume work.",
+              "Dispatch via task/agent/workflow. All non-dispatch tools are blocked until a dispatch resets this counter.",
+              "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable. Run 'make disengage-enforcement' to bypass.",
             ].join("\n"),
           }
         }
       }
 
       // === ZERO-DISPATCH STREAK (FIRES BEFORE UNDER-FLOOR) ===
-      // unconditional block after MAX_ZERO_STREAK consecutive zero-dispatch
-      // messages. zeroStreak increments at each message boundary when the
-      // prior message had 0 dispatches. At streak >=2, block regardless of
-      // hasPendingWork (catches reading-only-forever without dispatching).
-      // This MUST precede the UNDER-FLOOR check — when thisMessageDispatches=0
-      // AND zeroStreak >= MAX_ZERO_STREAK, zero-streak has higher priority than
-      // the generic under-floor block. See E2E test_zero_dispatch_streak_blocks_fourth_message.
       if (
-        !isDisengaged() &&
+        !disengaged &&
         _state.thisMessageDispatches === 0 &&
         _state.zeroStreak >= MAX_ZERO_STREAK
       ) {
@@ -246,21 +234,21 @@ const defaultImpl: HotModule = {
       }
 
       // === UNDER-FLOOR HARD BLOCK ===
-      // FIRES when fewer than MIN_DISPATCHES have been dispatched in this message
-      // AND neither the consecutive grinding block nor the zero-streak block above
-      // has fired. Catches "dispatched some but not enough."
-      // The ONLY way to unblock: dispatch so thisMessageDispatches >= MIN_DISPATCHES.
+      // Only the mutating tools (edit/write/bash) are gated by the floor; read
+      // tools (read/glob/grep) stay available so the agent can investigate.
       if (
+        !disengaged &&
         hasPendingWork() &&
-        _state.thisMessageDispatches < MIN_DISPATCHES
+        _state.thisMessageDispatches < MIN_DISPATCHES &&
+        (lt === "edit" || lt === "write" || lt === "bash")
       ) {
         writeState(_state)
         return {
           permissionDecision: "deny" as const,
           message: [
             "UNDER-FLOOR HARD BLOCK: ONLY " + String(_state.thisMessageDispatches) + " DISPATCHES.",
-            "FLOOR IS " + String(MIN_DISPATCHES) + ". DISPATCH " + String(MIN_DISPATCHES) + " SUBAGENTS NOW OR YOU ARE BLOCKED.",
-            "You have " + String(_state.thisMessageDispatches) + "; need " + String(MIN_DISPATCHES) + ". No tool allowed until floor reached.",
+            "Floor is 10. DISPATCH " + String(MIN_DISPATCHES) + " SUBAGENTS NOW OR YOU ARE BLOCKED.",
+            "You have " + String(_state.thisMessageDispatches) + "; need " + String(MIN_DISPATCHES) + ". edit/write/bash are blocked until floor reached.",
             "consecutive non-dispatch calls: " + String(_state.consecutiveNonDispatch),
             "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
             "Run 'make disengage-enforcement' to bypass.",

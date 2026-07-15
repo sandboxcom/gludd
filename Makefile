@@ -377,6 +377,9 @@ test:
 		$(UV) run python -m pytest tests/ --cov=general_ludd --cov-report=term-missing --cov-report=xml $(_XD) -v; \
 	fi
 
+test-binary-re:
+	@$(UV) run python -m pytest tests/unit/test_binary_re_deobfuscate.py tests/unit/test_binary_re_fuzz_target.py tests/unit/test_binary_re_fuzzing_strategies.py tests/unit/test_binary_versions.py tests/unit/test_binary_paths.py -v --tb=short
+
 test-unit:
 	@if [ -n "$(TESTFILE)" ]; then \
 		$(UV) run python -m pytest $(TESTFILE) $(_XD) -v; \
@@ -886,6 +889,30 @@ molecule-test-shard:
 # Usage: make log-agent-result AGENT_ID=agent-foo RESULT_SUMMARY="fixed X"
 log-agent-result:
 	@$(UV) run python3 scripts/log_agent_result.py
+
+# --- Crash recovery: cleanup after OpenCode/JSC crash ---
+# Run after a SIGTRAP/EXC_BREAKPOINT crash leaves stale state files and
+# orphaned processes. Resets enforcement state to fresh, kills orphaned
+# mock_daemon processes, and removes stale checkpoint state.
+# Safe to run at any time — only cleans things from dead processes.
+crash-recovery:
+	@echo "=== CRASH RECOVERY ==="
+	@$(MAKE) --no-print-directory kill-stale
+	@echo "  Cleaning stale enforcement state files..."
+	@rm -f /tmp/gludd-session-start.json
+	@rm -f /tmp/gludd-tool-streak.json
+	@rm -f /tmp/gludd-mainthread-streak.json
+	@rm -f /tmp/gludd-enhancement-ratio.json
+	@rm -f /tmp/gludd-task-deadlines.json /tmp/gludd-task-stale.json
+	@rm -f /tmp/gludd-watchdog-disengage.json
+	@rm -f /tmp/gludd-plugin-heartbeat-*.json
+	@rm -f /tmp/gludd-plugin-alive.json
+	@rm -f /tmp/gludd-commit-lock-*.json
+	@rm -f /tmp/gludd-session-debug.log
+	@rm -f /tmp/gludd-plugin-loaded.log
+	@rm -f /tmp/gludd-subagent-*.json
+	@echo "  Stale state files cleaned."
+	@echo "=== CRASH RECOVERY COMPLETE ==="
 
 clean-tmp:
 	@rm -rf /tmp/gludd-iso-* /tmp/gludd-gate-basetemp /tmp/gludd-winfix*-gate.log /tmp/gludd-test-gate.txt /tmp/pytest-of-* 2>/dev/null || true
@@ -4092,6 +4119,9 @@ test-scapy-adapter:
 # binary_re collection: 8 roles + 3 knowledge modules (fuzzing_strategies, obfuscation_techniques, prompt_injection_detector)
 test-binary-re:
 	@$(UV) run python -m pytest collections/ansible_collections/general_ludd/binary_re/tests/ -v
+
+test-binary-unit:
+	@$(UV) run python -m pytest tests/unit/test_binary_re_deobfuscate.py tests/unit/test_binary_re_fuzz_target.py tests/unit/test_binary_versions.py tests/unit/test_binary_paths.py -v --tb=short
 
 # radio collection: 10 roles + 5 knowledge modules (antenna_types, frequency_allocations, modulation_schemes, propagation_models, radio_exam_data)
 test-radio:

@@ -16,7 +16,7 @@
     mode: "0755"
 
 - name: Extract translatable strings via knowledge module
-  ansible.builtin.script:
+  ansible.builtin.shell:
     cmd: |
       python3 -c "
 import json, sys, os, re, glob as glob_mod

@@ -558,7 +558,7 @@ function readStreak(): MainthreadStreakState {
       ts: 0,
     }
   } catch {
-    return { count: 0, ts: 0, consecutiveMutatingNonDispatch: 0, consecutiveMutatingNonDispatchStartTs: 0 }
+    return { count: 0, ts: 0 }
   }
 }
 

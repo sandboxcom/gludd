@@ -1,5 +1,6 @@
 ---
 # bom_detect role defaults — REPORT-ONLY
+name: bom_detect
 
 # Input
 input_file: ""              # Path to file to analyze

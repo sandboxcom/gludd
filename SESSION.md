@@ -95,7 +95,7 @@ Code versions `0.1.0-beta.2` through `0.1.0-beta.4` exist in `pyproject.toml`/`_
 ### Next
 - Push development, wait for CI green on HEAD `4081f38b`, then cut beta.2
 
-- **Last Updated: 2026-07-15 — Session 36 (FINAL).** HEAD `4081f38b` on `development`. 13 commits unpushed (5d84dd3b..4081f38b, 10 total). CI PENDING. 15 deliverables across 10 commits: NF.1 completed, NF.2 P2+VM fixes 86/86, C.3/C.16/C.18 tenant+RCE+accounting fixes, enforce-stop disengage+hardening (13/13 runtime), enforce-session-start isTaskFileRead fix, enforce-multitask under-floor+thin-wave+s→_state fix (107/18), AGENTS.md subagent fix-dont-check policy, NF.4 radio 161 tests, NF.5 E2E 98 tests, NF.6 OS expert 187 tests, NF.7 STS 72 tests, NF.9 language 28 tests, CI molecule YAML fixes (8 files).
+- **Last Updated: 2026-07-15 — Session 37 (reload verification).** Write/edit confirmed working after opencode reload. HEAD `13f880b1` on `development`. Committing dirty tree from session 36, then dispatching 10-wide wave for: guardrail runtime verification, CI push+green check, beta.2 release prep, NF feature advancement.
 
 ## SESSION 35 — 2026-07-14 (FINAL)
 

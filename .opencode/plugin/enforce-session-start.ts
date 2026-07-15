@@ -111,6 +111,8 @@ function buildSessionDirective(): string {
     `⏱  TIME GATE: dispatch within ${nowSecs}s — warning emitted.`,
     `   After ${denySecs}s with 0 dispatches: non-dispatch mutations DENIED.`,
     "   Both gates reset on first successful dispatch.",
+    "If the session state is stale (prior session crashed): run",
+    "   `make crash-recovery` to reset enforcement state files and unblock.",
     "Why: a session that boots and then grinds inline (0 subagents live) looks",
     "hung to the user. The fix is structural — locate work, then fan out.",
     "Enforced by .opencode/plugin/enforce-session-start.ts (hard-deny by",
@@ -126,6 +128,7 @@ interface SessionState {
   readsDone: boolean
   dispatches: number
   timeGateReset: boolean
+  pid: number
 }
 
 function loadState(): SessionState {
@@ -136,16 +139,41 @@ function loadState(): SessionState {
         readsDone: false,
         dispatches: EFFECTIVE_MIN,
         timeGateReset: false,
+        pid: process.pid,
       }
       fs.writeFileSync(STATE_FILE, JSON.stringify(initial))
       return initial
     }
     const raw = JSON.parse(fs.readFileSync(STATE_FILE, "utf8"))
+    // Crash-recovery: if state file was written by a different process
+    // (prior session crashed), reset to fresh state. Also reset if the
+    // state file is older than STALE_MS (300s) — a long-idle stale file
+    // should not gate a fresh session.
+    const storedPid = Number(raw.pid) || 0
+    const STALE_MS = 300_000
+    const stateAge = Date.now() - (Number(raw.started_at) || Date.now())
+    // Only treat as a cross-process crash when a REAL nonzero PID was recorded
+    // that differs from ours. A missing/zero pid field (e.g. a test fixture or
+    // a hand-written state file) must NOT trigger the crash-recovery reset,
+    // which clobbers dispatches back to EFFECTIVE_MIN and defeats the gate.
+    const pidMismatch = storedPid !== 0 && storedPid !== process.pid
+    if (pidMismatch || stateAge > STALE_MS) {
+      const fresh: SessionState = {
+        started_at: Date.now(),
+        readsDone: false,
+        dispatches: EFFECTIVE_MIN,
+        timeGateReset: false,
+        pid: process.pid,
+      }
+      fs.writeFileSync(STATE_FILE, JSON.stringify(fresh))
+      return fresh
+    }
     return {
       started_at: Number(raw.started_at) || Date.now(),
       readsDone: Boolean(raw.readsDone),
       dispatches: Number(raw.dispatches) || 0,
       timeGateReset: Boolean(raw.timeGateReset),
+      pid: storedPid || process.pid,
     }
   } catch {
     // Corrupt state file → fail-open: return a primed state so
@@ -154,11 +182,25 @@ function loadState(): SessionState {
     return {
       started_at: Date.now(), readsDone: true,
       dispatches: EFFECTIVE_MIN, timeGateReset: true,
+      pid: process.pid,
     }
   }
 }
 
+function _logSaveStateError(e: unknown): void {
+  try {
+    fs.appendFileSync(
+      "/tmp/gludd-session-start-errors.log",
+      `${new Date().toISOString()} saveState failed: ` +
+      `${String(e instanceof Error ? e.message : e)}\n`,
+      "utf8",
+    )
+  } catch { /* double-fail: give up */ }
+}
+
 function saveState(state: SessionState): void {
+  // Always stamp with current PID for crash-recovery detection.
+  state.pid = process.pid
   // Atomic rename within the same directory avoids EXDEV errors (macOS
   // /tmp -> /private/tmp symlink) AND prevents partial-read races when
   // multiple parallel Node.js processes compete for the state file.
@@ -169,15 +211,7 @@ function saveState(state: SessionState): void {
     fs.writeFileSync(tmpPath, JSON.stringify(state), "utf8")
     fs.renameSync(tmpPath, STATE_FILE)
   } catch (e) {
-    // fail open, but log so silent write failures are observable
-    try {
-      fs.appendFileSync(
-        "/tmp/gludd-session-start-errors.log",
-        `${new Date().toISOString()} saveState failed: ` +
-        `${String(e instanceof Error ? e.message : e)}\n`,
-        "utf8",
-      )
-    } catch { /* double-fail: give up */ }
+    _logSaveStateError(e)
   }
 }
 
@@ -212,6 +246,7 @@ const READ_ONLY_MAKE_TARGETS: ReadonlySet<string> = new Set([
   "version", "help",
   "verify-plugin-manifest", "test-hook-runtime",
   "check-disk",
+  "crash-recovery",
   "development-status",
   "repo-status", "repo-diff", "repo-log", "repo-staged",
 ])
@@ -226,14 +261,26 @@ function isReadOnlyMakeTarget(tool: string, input: unknown): boolean {
   return READ_ONLY_MAKE_TARGETS.has(m[1])
 }
 
-function isTaskFileRead(tool: string, input: unknown): boolean {
+function isTaskFileRead(tool: string, input: unknown, output?: unknown): boolean {
   if (!isReadTool(tool)) return false
   try {
     const inp = input as Record<string, unknown> | null
-    const args = inp?.args as Record<string, unknown> | null | undefined
-    const filePath = (args?.filePath as string) ?? (inp?.filePath as string) ?? ""
+    const out = output as Record<string, unknown> | null
+    const inputArgs = inp?.args as Record<string, unknown> | null | undefined
+    const outputArgs = out?.args as Record<string, unknown> | null | undefined
+    const toolInput = inp?.tool_input as Record<string, unknown> | null | undefined
+    // Canonical shape (confirmed in enforce-no-suppressions.ts:83-84):
+    // opencode puts tool args in param 2 (output), not param 1 (input).
+    const filePath =
+      (outputArgs?.filePath as string) ??
+      (outputArgs?.path as string) ??
+      (inputArgs?.filePath as string) ??
+      (inputArgs?.path as string) ??
+      (inp?.filePath as string) ??
+      (toolInput?.filePath as string) ??
+      ""
     if (filePath && TASK_FILES.some(f => filePath.toLowerCase().includes(f.toLowerCase()))) return true
-    const blob = JSON.stringify(input ?? {}).toLowerCase()
+    const blob = JSON.stringify({input: input ?? {}, output: output ?? {}}).toLowerCase()
     return TASK_FILES.some(f => blob.includes(f.toLowerCase()))
   } catch {
     return false
@@ -325,7 +372,7 @@ const defaultImpl: HotModule = {
         return
       }
 
-      if (isTaskFileRead(tool, input)) {
+      if (isTaskFileRead(tool, input, _output)) {
         if (!state.readsDone) {
           state.readsDone = true
           saveState(state)

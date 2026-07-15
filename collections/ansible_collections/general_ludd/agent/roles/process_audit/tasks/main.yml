@@ -30,7 +30,7 @@
 - name: Count lint errors from output
   ansible.builtin.set_fact:
     _pa_lint_errors: >-
-      {{ _pa_lint_out.stdout_lines | select('search', 'Found [[:digit:]]+ error') | map('regex_replace', '.*Found ([[:digit:]]+) error.*', '\1') | map('int') | first | default(0) }}
+      {{ _pa_lint_out.stdout_lines | select('search', 'Found [0-9]+ error') | map('regex_replace', '.*Found ([0-9]+) error.*', '\1') | map('int') | first | default(0) }}
 
 # ── Step 3: Run the process overhead test ────────────────────────────────
 

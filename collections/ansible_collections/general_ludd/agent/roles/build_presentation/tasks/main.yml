@@ -85,7 +85,7 @@
     chdir: "{{ repo_path }}"
   register: _bp_honesty
   changed_when: false
-  failed_when: "{{ _bp_honesty.rc != 0 }}"
+  failed_when: _bp_honesty.rc != 0
   when:
     - honesty_check_enabled | bool
     - not ansible_check_mode

@@ -63,6 +63,8 @@ const SHORT_COMPLETION_PHRASES = /\b(?:all done\.?|done\.|finished\.|complete\.|
 
 const QA_RESPONSE_PATTERNS = /(?:completed in this session|done since the (?:crash|last session)|everything (?:committed|landed|pushed|shipped|is complete)|here.{0,30}(?:what was|.?s what) (?:done|completed|changed)|summary of what was (?:done|completed)|what.{0,10}(?:changed|done|completed|left|remains|is next|\?s left))/i
 
+export const PERMISSION_SEEKING_RE = /(?:want me to\s+(?:proceed|continue|dispatch|write|fix|move|start|do|run|create|add|update|implement|handle|begin|work|go ahead)|should i\s+(?:proceed|continue|fix|dispatch|start|move|go ahead)|shall i\s+(?:proceed|continue|fix|start)|^proceed\?$)/im
+
 const EVIDENCE_PATTERNS = [
   /\b[0-9a-f]*[a-f][0-9a-f]{6,39}\b/,
   /VERIFIED\s+\w+@/,
@@ -258,6 +260,7 @@ interface WorkState {
   releaseIncomplete: boolean
   testFailures: boolean
   repoPending: boolean
+  multitaskingBacklogOpen: boolean
   hasPendingWork: boolean
   hasLocalWork: boolean
   healthScore: number
@@ -369,8 +372,23 @@ function hasRealPendingWork(): WorkState {
     repoPending = status.trim().split("\n").filter(l => l.trim().length > 0).length > 0
   } catch {}
 
+  // Multitasking backlog: scripts/multitasking_backlog.json tracks open
+  // orchestration work items. Any item not marked "done" counts as pending
+  // work so the stop-pattern gate cannot fire while backlog items remain.
+  let multitaskingBacklogOpen = false
+  try {
+    const backlogPath = path.join(cwd, "scripts", "multitasking_backlog.json")
+    if (fs.existsSync(backlogPath)) {
+      const backlog = JSON.parse(fs.readFileSync(backlogPath, "utf8"))
+      const items: any[] = Array.isArray(backlog?.items) ? backlog.items : []
+      multitaskingBacklogOpen = items.some(
+        (it: any) => it && typeof it.status === "string" && it.status.toLowerCase() !== "done"
+      )
+    }
+  } catch {}
+
   const hasLocalWork = tasksMdUnchecked || ratchetEntries > 0 || bugsOpen || gateStatusRed
-  const hasPendingWork = hasLocalWork || ciVerdictPendingOrRed || releaseIncomplete || testFailures || repoPending
+  const hasPendingWork = hasLocalWork || ciVerdictPendingOrRed || releaseIncomplete || testFailures || repoPending || multitaskingBacklogOpen
   let healthScore = 100
   if (gateStatusRed) healthScore -= 30
   if (gateStale) healthScore -= 10
@@ -378,12 +396,14 @@ function hasRealPendingWork(): WorkState {
   if (tasksMdUnchecked) healthScore -= 10
   if (bugsOpen) healthScore -= 10
   if (repoPending) healthScore -= 5
+  if (multitaskingBacklogOpen) healthScore -= 5
   if (healthScore < 0) healthScore = 0
 
   const state: WorkState = {
     tasksMdUnchecked, tasksMdUncheckedCount, ratchetEntries, bugsOpen,
     gateStatusMissing, gateStale, gateStatusRed,
     ciVerdictPendingOrRed, releaseIncomplete, testFailures, repoPending,
+    multitaskingBacklogOpen,
     hasPendingWork, hasLocalWork, healthScore, ts: now,
   }
 
@@ -654,6 +674,31 @@ const defaultImpl: HotModule = {
           "",
           "You MUST dispatch a tool call. Do not claim work is done.",
           "Run: Task tool to dispatch subagents for the pending work.",
+        ].join("\n"),
+      }
+    }
+
+    // ── PERMISSION SEEKING: "want me to proceed?", "should I fix?" ────────
+    // ALWAYS blocked — asking permission to do work is never acceptable.
+    // The agent must decide, state the assumption, and act. See AGENTS.md
+    // "Never Block on Questions — Default to Action."
+    if (PERMISSION_SEEKING_RE.test(text)) {
+      recordBlock("permission-seeking-stop")
+      logFalseDoneBlock("permission-seeking-stop", text)
+      writePersistBlock(true, "permission-seeking-stop")
+
+      return {
+        text: [
+          "⛔ PERMISSION-SEEKING BLOCKED.",
+          "",
+          "NEVER ask 'want me to proceed?', 'should I fix?', 'want me to dispatch?',",
+          "or any variation of requesting permission to do work.",
+          "The answer is always YES — DO IT.",
+          "",
+          "Decide the most reasonable action, state the assumption in one line,",
+          "and PROCEED with a tool call. The user will redirect if wrong.",
+          "",
+          "See AGENTS.md: 'Never Block on Questions — Default to Action.'",
         ].join("\n"),
       }
     }

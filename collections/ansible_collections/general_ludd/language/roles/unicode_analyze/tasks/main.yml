@@ -9,7 +9,7 @@
     mode: "0755"
 
 - name: Analyze Unicode properties via knowledge module
-  ansible.builtin.script:
+  ansible.builtin.shell:
     cmd: |
       python3 -c "
 import json, sys, os
