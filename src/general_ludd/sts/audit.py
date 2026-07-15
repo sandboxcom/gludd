@@ -30,12 +30,14 @@ class StsAuditPipeline:
 
     def __init__(self, session_factory: async_sessionmaker[Any]) -> None:
         self._session_factory = session_factory
+        self._pending_events: list[dict[str, object]] = []
+        self._pending_events: list[dict[str, Any]] = []
 
     def wire_to_daemon(self, daemon_state: dict[str, object]) -> None:
         daemon_state["_sts_audit_pipeline"] = self
 
     async def flush_on_tick(self) -> int:
-        if not hasattr(self, "_pending_events") or not self._pending_events:
+        if not self._pending_events:
             return 0
         count = len(self._pending_events)
         from general_ludd.db.models import StsAuditModel
@@ -46,10 +48,7 @@ class StsAuditPipeline:
                 result = await session.execute(
                     select(StsAuditModel).where(StsAuditModel.token_id == token_id)
                 )
-                row_raw = result.scalar_one_or_none()
-                row: StsAuditModel | None = (
-                    await row_raw if asyncio.iscoroutine(row_raw) else row_raw
-                )
+                row = result.scalar_one_or_none()
                 if row is not None:
                     row.use_count = (row.use_count or 0) + 1
                     row.last_used_at = time.time()
@@ -59,9 +58,7 @@ class StsAuditPipeline:
                         events_list = []
                     events_list.append(event)
                     row.events = _json.dumps(events_list)
-                    add_result = session.add(row)
-                    if asyncio.iscoroutine(add_result):
-                        await add_result
+                    session.add(row)
             await session.commit()
         self._pending_events = []
         return count

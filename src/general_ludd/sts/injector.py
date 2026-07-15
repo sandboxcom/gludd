@@ -72,10 +72,10 @@ class SubagentTokenInjector:
             record.token_id,
         )
 
-    def env_vars(self, agent_id: str, parent_agent_id: str) -> dict[str, str]:
+    async def env_vars(self, agent_id: str, parent_agent_id: str) -> dict[str, str]:
         if self._minter is None:
             return {}
-        creds = self._minter.mint(
+        creds = await self._minter.mint(
             agent_id=agent_id,
             parent_agent_id=parent_agent_id,
         )

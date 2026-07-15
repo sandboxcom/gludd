@@ -6,8 +6,9 @@ ideviceinfo, idevicesyslog, idevicediagnostics.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -88,9 +89,12 @@ class IDeviceConnector:
                     process_name = parts[4]
                     if "[" in process_name:
                         process_name = process_name.split("[")[0]
+                    message = parts[5]
+                    if ": " in message and message.startswith("<"):
+                        message = message.split(": ", 1)[1]
                     entries.append({
                         "process": process_name,
-                        "message": parts[5],
+                        "message": message,
                     })
             return entries
         except Exception:

@@ -40,7 +40,6 @@ from general_ludd.sts.narrowing import CapabilityNarrowing, OpenBaoPolicyRendere
 from general_ludd.sts.reviver import TokenRevivalError, TokenReviver
 from general_ludd.sts.revoker import TokenRevoker
 
-
 # ------------------------------------------------------------------
 # Helpers
 # ------------------------------------------------------------------

@@ -6,8 +6,10 @@ dumpsys, getprop, and package management queries.
 
 from __future__ import annotations
 
+import contextlib
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -57,7 +59,7 @@ class AdbConnector:
             if dev.exit_code != 0:
                 return {"ok": False, "detail": "adb devices failed"}
             lines = dev.stdout.strip().split("\n")[1:]
-            devices = [l for l in lines if l.strip() and "\t" in l]
+            devices = [entry for entry in lines if entry.strip() and "\t" in entry]
             if not devices:
                 return {"ok": False, "detail": "no device connected"}
             return {"ok": True, "detail": f"{len(devices)} device(s) connected"}
@@ -125,16 +127,17 @@ class AdbConnector:
                     continue
                 parts = stripped.split(None, 6)
                 if len(parts) >= 7:
-                    try:
+                    tag = parts[5]
+                    if tag.endswith(":"):
+                        tag = tag[:-1]
+                    with contextlib.suppress(ValueError, IndexError):
                         entries.append({
                             "pid": int(parts[2]),
                             "tid": int(parts[3]),
                             "level": parts[4],
-                            "tag": parts[5],
+                            "tag": tag,
                             "message": parts[6] if len(parts) > 6 else "",
                         })
-                    except (ValueError, IndexError):
-                        pass
             return entries
         except Exception:
             return []
