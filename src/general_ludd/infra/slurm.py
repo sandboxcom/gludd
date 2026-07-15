@@ -780,7 +780,7 @@ class SlurmJobMonitor:
         poll_interval: float = 30.0,
     ) -> None:
         self._adapter = adapter
-        self._job_id = job_id
+        self._job_id = _require_job_id(job_id)
         self._config = config
         self._activity_checker = activity_checker
         self._poll_interval = poll_interval
