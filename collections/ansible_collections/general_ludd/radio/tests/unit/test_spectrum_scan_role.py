@@ -42,28 +42,34 @@ def test_spectrum_scan_tasks_has_verdict():
     assert "bandwidth_mhz" in content
 
 
-def test_spectrum_scan_tasks_has_tool_check():
+def test_spectrum_scan_tasks_has_tool_config():
     tasks = _COLLECTION_ROOT / "roles" / "spectrum_scan" / "tasks" / "main.yml"
     content = tasks.read_text()
-    assert "_tool_check" in content
-    assert "spectrum_scan_tool" in content
+    assert "--tool" in content
+    assert "--tool-path" in content
+    assert "--start-freq" in content
+    assert "spectrum_scan_tool_path" in content
 
 
 def test_spectrum_scan_tasks_calls_python_backend():
     tasks = _COLLECTION_ROOT / "roles" / "spectrum_scan" / "tasks" / "main.yml"
     content = tasks.read_text()
     assert "spectrum_scan.py" in content
-    assert "sweep_spectrum" in content
     assert "--start-freq" in content
     assert "--end-freq" in content
     assert "--bin-size" in content
+    assert "--integration-time" in content
+    assert "--integration-time" in content
+    assert "--gain" in content
+    assert "--output-dir" in content
+    assert "--tool" in content
 
 
 def test_spectrum_scan_tasks_surfaces_band_occupancy():
     tasks = _COLLECTION_ROOT / "roles" / "spectrum_scan" / "tasks" / "main.yml"
     content = tasks.read_text()
     assert "band_occupancy" in content
-    assert "noise_floor" in content
+    assert "noise_floor_dbm" in content
 
 
 def test_spectrum_scan_defaults_file_exists():

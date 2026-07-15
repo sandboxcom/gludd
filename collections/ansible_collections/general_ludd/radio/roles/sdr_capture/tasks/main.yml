@@ -1,5 +1,6 @@
 ---
 # sdr_capture role — capture IQ samples, compute statistics, write JSON verdict
+# Invokes the standalone files/sdr_capture.py CLI backend.
 
 - name: Validate required parameters
   ansible.builtin.assert:
@@ -11,88 +12,38 @@
     fail_msg: >
       sdr_capture_freq_hz and sdr_capture_sample_rate must be positive integers;
       sdr_capture_duration_sec must be > 0; sdr_capture_format must be int8/int16/float32
+  when: sdr_capture_enabled | bool
 
-- name: Check tool availability
-  ansible.builtin.command: "command -v {{ sdr_capture_tool }}"
-  register: _tool_check
-  changed_when: false
-  failed_when: false
-
-- name: Skip — tool missing
-  ansible.builtin.debug:
-    msg: "{{ sdr_capture_tool }} not found — skipping SDR capture"
-  when: _tool_check.rc != 0
-
-- name: Create output directory
+- name: Ensure output directory exists
   ansible.builtin.file:
     path: "{{ sdr_capture_output_dir }}"
     state: directory
     mode: "0755"
-  when:
-    - sdr_capture_enabled | bool
-    - _tool_check.rc == 0
+  when: sdr_capture_enabled | bool
 
-- name: Capture IQ samples
+- name: Run sdr_capture.py CLI backend
   ansible.builtin.command: >
-    {{ sdr_capture_tool_path }}
-    -f {{ sdr_capture_freq_hz }}
-    -s {{ sdr_capture_sample_rate }}
-    -g {{ sdr_capture_gain }}
-    -n {{ (sdr_capture_duration_sec | float * sdr_capture_sample_rate | int) | int }}
-    {{ sdr_capture_output_file }}
-  register: _capture_result
+    {{ ansible_python_interpreter }} {{ role_path }}/files/sdr_capture.py
+    --freq {{ sdr_capture_freq_hz }}
+    --sample-rate {{ sdr_capture_sample_rate }}
+    --duration {{ sdr_capture_duration_sec }}
+    --gain {{ sdr_capture_gain }}
+    --device {{ sdr_capture_device_index }}
+    --format {{ sdr_capture_format }}
+    --output-dir {{ sdr_capture_output_dir }}
+    --tool {{ sdr_capture_tool }}
+    {% if sdr_capture_tool_path | default('') | length > 0 %}
+    --tool-path {{ sdr_capture_tool_path }}
+    {% endif %}
+  register: _sdr_result
   changed_when: false
+  when: sdr_capture_enabled | bool
+
+- name: Parse sdr_capture result
+  ansible.builtin.set_fact:
+    sdr_capture_result: "{{ (_sdr_result.stdout | from_json) if _sdr_result.stdout is defined and _sdr_result.stdout | length > 0 else {} }}"
   when:
     - sdr_capture_enabled | bool
-    - _tool_check.rc == 0
-
-- name: Compute IQ statistics
-  ansible.builtin.set_fact:
-    _sdr_iq_stats:
-      sample_count: "{{ (sdr_capture_duration_sec | float * sdr_capture_sample_rate | int) }}"
-      duration_sec: "{{ sdr_capture_duration_sec | float }}"
-      sample_rate: "{{ sdr_capture_sample_rate | int }}"
-      center_freq_hz: "{{ sdr_capture_freq_hz | int }}"
-      format: "{{ sdr_capture_format }}"
-      format_bytes: "{{ {'int8': 1, 'int16': 2, 'float32': 4}[sdr_capture_format] }}"
-      file_size_estimate_bytes: "{{ (sdr_capture_duration_sec | float * sdr_capture_sample_rate | int) * {'int8': 1, 'int16': 2, 'float32': 4}[sdr_capture_format] }}"
-      device_index: "{{ sdr_capture_device_index }}"
-      gain_setting: "{{ sdr_capture_gain }}"
-      tool: "{{ sdr_capture_tool }}"
-      output_file: "{{ sdr_capture_output_file }}"
-  when:
-    - sdr_capture_enabled | bool
-    - _tool_check.rc == 0
-
-- name: Parse capture result
-  ansible.builtin.set_fact:
-    sdr_capture_result:
-      rc: "{{ _capture_result.rc | default(-1) }}"
-      stderr: "{{ _capture_result.stderr | default('') }}"
-      iq_stats: "{{ _sdr_iq_stats | default({}) }}"
-  when:
-    - sdr_capture_enabled | bool
-    - _tool_check.rc == 0
-
-- name: Parse skip result
-  ansible.builtin.set_fact:
-    sdr_capture_result:
-      rc: -1
-      stderr: ""
-      iq_stats:
-        sample_count: 0
-        duration_sec: 0
-        sample_rate: 0
-        center_freq_hz: 0
-        format: "{{ sdr_capture_format }}"
-        format_bytes: 0
-        file_size_estimate_bytes: 0
-        device_index: "{{ sdr_capture_device_index }}"
-        gain_setting: "{{ sdr_capture_gain }}"
-        tool: "{{ sdr_capture_tool }}"
-        output_file: "{{ sdr_capture_output_file }}"
-  when:
-    - not (sdr_capture_enabled | bool) or _tool_check.rc != 0
 
 - name: Write JSON output
   ansible.builtin.copy:
@@ -100,19 +51,24 @@
     dest: "{{ sdr_capture_output_dir }}/sdr_capture.json"
     mode: "0644"
   when:
-    - sdr_capture_output_dir is defined
+    - sdr_capture_enabled | bool
+    - sdr_capture_result is defined
+    - sdr_capture_result | length > 0
 
 - name: Register sdr_capture verdict
   ansible.builtin.set_fact:
     sdr_capture_verdict:
       role: sdr_capture
       success: "{{ sdr_capture_result.rc == 0 }}"
-      sample_count: "{{ sdr_capture_result.iq_stats.sample_count | default(0) }}"
-      duration_sec: "{{ sdr_capture_result.iq_stats.duration_sec | default(0) }}"
-      sample_rate: "{{ sdr_capture_result.iq_stats.sample_rate | default(0) }}"
-      center_freq_hz: "{{ sdr_capture_result.iq_stats.center_freq_hz | default(0) }}"
-      format: "{{ sdr_capture_result.iq_stats.format | default(sdr_capture_format) }}"
-      file_size_estimate_bytes: "{{ sdr_capture_result.iq_stats.file_size_estimate_bytes | default(0) }}"
-      output_file: "{{ sdr_capture_result.iq_stats.output_file | default('') }}"
-      tool: "{{ sdr_capture_result.iq_stats.tool | default(sdr_capture_tool) }}"
+      freq_hz: "{{ sdr_capture_result.freq_hz | default(0) }}"
+      sample_count: "{{ sdr_capture_result.sample_count | default(0) }}"
+      duration_sec: "{{ sdr_capture_result.duration_sec | default(0) }}"
+      sample_rate: "{{ sdr_capture_result.sample_rate | default(0) }}"
+      format: "{{ sdr_capture_result.format | default(sdr_capture_format) }}"
+      iq_stats: "{{ sdr_capture_result.iq_stats | default({}) }}"
+      avg_power_db: "{{ sdr_capture_result.iq_stats.avg_power_db | default('N/A') }}"
+      peak_power_db: "{{ sdr_capture_result.iq_stats.peak_power_db | default('N/A') }}"
+      output_file: "{{ sdr_capture_result.output_file | default('') }}"
+      tool: "{{ sdr_capture_result.tool | default(sdr_capture_tool) }}"
       output_dir: "{{ sdr_capture_output_dir }}"
+  when: sdr_capture_enabled | bool

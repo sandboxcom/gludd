@@ -30,22 +30,24 @@ def test_exam_quiz_tasks_has_validate_step():
 def test_exam_quiz_tasks_has_load_step():
     tasks = _COLLECTION_ROOT / "roles" / "exam_quiz" / "tasks" / "main.yml"
     content = tasks.read_text()
-    assert "get_questions" in content
+    assert "files/exam_quiz.py" in content
+    assert "--exam" in content
+    assert "--count" in content
 
 
 def test_exam_quiz_tasks_has_grade_step():
     tasks = _COLLECTION_ROOT / "roles" / "exam_quiz" / "tasks" / "main.yml"
     content = tasks.read_text()
-    assert "grade_exam" in content
+    assert "--answers" in content
     assert "exam_quiz_user_answers" in content
 
 
 def test_exam_quiz_tasks_has_format_outputs():
     tasks = _COLLECTION_ROOT / "roles" / "exam_quiz" / "tasks" / "main.yml"
     content = tasks.read_text()
-    assert 'exam_quiz_format == "json"' in content
-    assert 'exam_quiz_format == "text"' in content
-    assert 'exam_quiz_format == "md"' in content
+    assert "--format" in content
+    assert "exam_quiz_format" in content
+    assert "from_json" in content
 
 
 def test_exam_quiz_tasks_has_verdict():

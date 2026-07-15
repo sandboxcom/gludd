@@ -37,22 +37,24 @@ def test_regulation_lookup_tasks_has_validate_step():
 def test_regulation_lookup_tasks_has_lookup_step():
     tasks = _COLLECTION_ROOT / "roles" / "regulation_lookup" / "tasks" / "main.yml"
     content = tasks.read_text()
-    assert "lookup_frequency" in content
-    assert "get_band_plan" in content
-    assert "allocations_for" in content
+    assert "files/regulation_lookup.py" in content
+    assert "--freq-mhz" in content
+    assert "--band" in content
+    assert "from_json" in content
 
 
 def test_regulation_lookup_tasks_has_privilege_query():
     tasks = _COLLECTION_ROOT / "roles" / "regulation_lookup" / "tasks" / "main.yml"
     content = tasks.read_text()
-    assert "bands_by_privilege" in content
-    assert "license_class" in content
+    assert "--license-class" in content
+    assert "regulation_lookup_license_class" in content
 
 
 def test_regulation_lookup_tasks_has_service_filter():
     tasks = _COLLECTION_ROOT / "roles" / "regulation_lookup" / "tasks" / "main.yml"
     content = tasks.read_text()
-    assert "regulation_lookup_service" in content
+    assert "--marine-channel" in content
+    assert "regulation_lookup_marine_channel" in content
 
 
 def test_regulation_lookup_tasks_has_verdict():

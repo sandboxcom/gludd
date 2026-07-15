@@ -44,20 +44,26 @@ def test_sdr_capture_tasks_has_verdict():
     assert "output_dir" in content
 
 
-def test_sdr_capture_tasks_has_tool_check():
+def test_sdr_capture_tasks_has_tool_config():
     tasks = _COLLECTION_ROOT / "roles" / "sdr_capture" / "tasks" / "main.yml"
     content = tasks.read_text()
-    assert "_tool_check" in content
-    assert "sdr_capture_tool" in content
+    assert "--tool" in content
+    assert "--tool-path" in content
+    assert "--freq" in content
+    assert "sdr_capture_tool_path" in content
 
 
 def test_sdr_capture_tasks_calls_python_backend():
     tasks = _COLLECTION_ROOT / "roles" / "sdr_capture" / "tasks" / "main.yml"
     content = tasks.read_text()
     assert "sdr_capture.py" in content
-    assert "capture_iq" in content
+    assert "--freq" in content
     assert "--sample-rate" in content
     assert "--duration" in content
+    assert "--gain" in content
+    assert "--format" in content
+    assert "--output-dir" in content
+    assert "--tool" in content
 
 
 def test_sdr_capture_tasks_surfaces_iq_stats():
@@ -65,6 +71,7 @@ def test_sdr_capture_tasks_surfaces_iq_stats():
     content = tasks.read_text()
     assert "iq_stats" in content
     assert "avg_power_db" in content
+    assert "peak_power_db" in content
 
 
 def test_sdr_capture_defaults_file_exists():
