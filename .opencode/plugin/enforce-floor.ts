@@ -90,7 +90,7 @@ function openWorkExists(options?: { isCommitTool?: boolean }): boolean {
       }
     } catch {}
     try {
-      const gatePath = path.join(process.cwd(), ".gate-status")
+      const gatePath = path.join(getProjectRoot(), ".gate-status")
       if (fs.existsSync(gatePath)) {
         const content = fs.readFileSync(gatePath, "utf8")
         for (const line of content.split("\n")) {
@@ -116,8 +116,9 @@ function openWorkExists(options?: { isCommitTool?: boolean }): boolean {
     try {
       if (options?.isCommitTool) {}
       else {
-        const index = path.join(process.cwd(), ".git", "index")
-        const headRef = path.join(process.cwd(), ".git", "refs", "heads", "master")
+        const root = getProjectRoot()
+        const index = path.join(root, ".git", "index")
+        const headRef = path.join(root, ".git", "refs", "heads", "master")
         if (fs.existsSync(index) && fs.existsSync(headRef)) {
           const idxMtime = fs.statSync(index).mtimeMs
           const refMtime = fs.statSync(headRef).mtimeMs
@@ -128,12 +129,12 @@ function openWorkExists(options?: { isCommitTool?: boolean }): boolean {
     try {
       if (options?.isCommitTool) {
         const unstaged = execSync("git diff --name-only", {
-          cwd: process.cwd(), encoding: "utf8", timeout: 3000, stdio: ["pipe", "pipe", "pipe"],
+          cwd: getProjectRoot(), encoding: "utf8", timeout: 3000, stdio: ["pipe", "pipe", "pipe"],
         })
         if (unstaged.trim().length > 0) return true
       } else {
         const status = execSync("git status --porcelain", {
-          cwd: process.cwd(), encoding: "utf8", timeout: 3000, stdio: ["pipe", "pipe", "pipe"],
+          cwd: getProjectRoot(), encoding: "utf8", timeout: 3000, stdio: ["pipe", "pipe", "pipe"],
         })
         if (status.trim().length > 0) return true
       }
@@ -151,7 +152,7 @@ function _buildDispatchCommands(): DispatchCommand[] {
   const commands: DispatchCommand[] = []
   let idx = 1
   try {
-    const tasksMd = process.env.GLUDD_TASKS_MD || path.join(process.cwd(), "TASKS.md")
+    const tasksMd = process.env.GLUDD_TASKS_MD || path.join(getProjectRoot(), "TASKS.md")
     if (fs.existsSync(tasksMd)) {
       for (const line of fs.readFileSync(tasksMd, "utf8").split("\n")) {
         if (/^\s*[-*]\s+\[\s*\]/.test(line)) {
@@ -162,7 +163,7 @@ function _buildDispatchCommands(): DispatchCommand[] {
     }
   } catch {}
   try {
-    const ratchet = path.join(process.cwd(), "config", "ratchet.yml")
+    const ratchet = path.join(getProjectRoot(), "config", "ratchet.yml")
     if (fs.existsSync(ratchet)) {
       const count = fs.readFileSync(ratchet, "utf8")
         .split("\n")
@@ -174,7 +175,7 @@ function _buildDispatchCommands(): DispatchCommand[] {
     }
   } catch {}
   try {
-    const gs = path.join(process.cwd(), ".gate-status")
+    const gs = path.join(getProjectRoot(), ".gate-status")
     if (fs.existsSync(gs)) {
       const content = fs.readFileSync(gs, "utf8")
       if (/FAIL/.test(content)) {
