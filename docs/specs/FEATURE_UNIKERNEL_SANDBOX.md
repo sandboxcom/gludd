@@ -1,6 +1,6 @@
 # Feature: Unikernel/NanoVM Sandboxed Agent Execution
 
-**Status: DRAFT** | **Created: 2026-07-14** | **Target: v0.1.0-beta.2**
+**Status: IMPLEMENTED** (P1-P6 complete, 227+ tests, 2026-07-15) | **Created: 2026-07-14** | **Target: v0.1.0-beta.2**
 **P3 progress (2026-07-15):** VM lifecycle manager wired into the daemon-dispatch
 surface. ``src/general_ludd/security/sandboxes/vm/lifecycle.py`` adds
 ``VMSandboxManager`` (boot/dispatch/verify/release/list/observe), ``VMInstance``
@@ -63,6 +63,9 @@ present), then existing chain.
 | P1 | Prototype Firecracker rootfs + boot/kill cycle. Benchmark vs Landlock. | 2-3 weeks |
 | P2 | FirecrackerBackend apply/verify/release. agent_executor.py. image_builder.py. Auto-detect chain. | 2-3 weeks |
 | P3 | Pre-built images in CI. Wire into daemon dispatch. Observability. GvisorBackend. | 1-2 weeks |
+| P4 | VM lifecycle manager (`VMSandboxManager`, `VMInstance` state machine, `VMMetrics`). | done |
+| P5 | Error recovery, multi-instance isolation, observability aggregation. | done |
+| P6 | Full-lifecycle integration tests (`tests/integration/sandboxes/test_vm_sandbox_integration.py`, 52 tests) + lifecycle bug fix (EXECUTING→RUNNING restore in try/finally). | done |
 
 ## 5. Files
 
