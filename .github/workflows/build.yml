@@ -528,7 +528,7 @@ jobs:
         run: make deb-package
       - name: Build RPM package
         run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq rpm
+          sudo apt-get update -qq && sudo apt-get install -y -qq rpm-build
           make rpm-package
       - if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
@@ -575,6 +575,7 @@ jobs:
         run: |
           mkdir -p dist/dmg-staging
           cp dist/gludd dist/dmg-staging/gludd
+          cp dist/install.sh dist/dmg-staging/install.sh && chmod +x dist/dmg-staging/install.sh
           cp -r config dist/dmg-staging/config
           cp -r templates dist/dmg-staging/templates
           cp -r playbooks dist/dmg-staging/playbooks
@@ -673,6 +674,7 @@ jobs:
         run: |
           mkdir -p dist/release
           cp dist/gludd dist/release/gludd
+          cp dist/install.sh dist/release/install.sh && chmod +x dist/release/install.sh
           cp -r config dist/release/config
           cp -r templates dist/release/templates
           cp -r playbooks dist/release/playbooks
@@ -828,6 +830,7 @@ jobs:
           mkdir -p release-assets
           cp -v artifacts/* release-assets/
           cp -v dist/sbom.json release-assets/sbom.json
+          cp -v dist/install.sh release-assets/install.sh
           cp -v LICENSE release-assets/LICENSE
           cp -v THIRD_PARTY_LICENSES.md release-assets/THIRD_PARTY_LICENSES.md
           echo "--- staged release assets ---"

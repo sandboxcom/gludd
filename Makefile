@@ -790,6 +790,9 @@ bisect-ts-parse:
 # Node v26 --experimental-strip-types compatibility: loads every .ts plugin
 # file and asserts exit code 0. Catches patterns like try-inside-catch
 # without semicolon separator that Node v26's TS parser rejects.
+check-molecule-yaml:
+	@$(UV) run python scripts/check_molecule_yaml.py
+
 check-node-v26-compat:
 	@$(UV) run python -m pytest tests/unit/test_opencode_node_v26_compat.py $(_XD) -v
 
@@ -2969,8 +2972,8 @@ dist: build-executable bundle-binaries sbom
 	@mkdir -p $(TARBALL_DIR)
 	@cp dist/gludd $(TARBALL_DIR)/gludd
 	@cp dist/install.sh $(TARBALL_DIR)/install.sh
-	@cp dist/general-ludd.service $(TARBALL_DIR)/general-ludd.service
-	@cp dist/README.md $(TARBALL_DIR)/README.md
+	@if [ -f dist/general-ludd.service ]; then cp dist/general-ludd.service $(TARBALL_DIR)/general-ludd.service; fi
+	@if [ -f dist/README.md ]; then cp dist/README.md $(TARBALL_DIR)/README.md; fi
 	@cp -r config $(TARBALL_DIR)/config
 	@cp -r templates $(TARBALL_DIR)/templates
 	@cp -r dist/binaries $(TARBALL_DIR)/binaries 2>/dev/null || true
