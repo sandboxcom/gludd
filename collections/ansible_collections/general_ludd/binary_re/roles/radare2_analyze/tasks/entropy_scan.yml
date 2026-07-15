@@ -1,0 +1,29 @@
+---
+- name: Run radare2 entropy scan
+  ansible.builtin.command:
+    cmd: >-
+      {{ ansible_python_interpreter | default('/usr/bin/env python3') }}
+      {{ script_path }}
+      --target {{ target_binary }}
+      --mode entropy_scan
+      --output {{ output_dir }}/entropy_scan.json
+  register: _ent_result
+  changed_when: false
+  failed_when: _ent_result.rc not in [0]
+
+- name: Read entropy scan artifact
+  ansible.builtin.slurp:
+    src: "{{ output_dir }}/entropy_scan.json"
+  register: _ent_raw
+
+- name: Parse entropy scan artifact
+  ansible.builtin.set_fact:
+    entropy_scan_artifact: >-
+      {{ _ent_raw.content | b64decode | from_json
+         if (_ent_raw is defined and _ent_raw.content is defined) else {} }}
+
+- name: Report entropy scan summary
+  ansible.builtin.debug:
+    msg: >-
+      Entropy scan complete:
+      commands={{ entropy_scan_artifact.get('commands', []) | length }}

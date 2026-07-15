@@ -1,1 +1,2 @@
 ---
+script_path: "{{ role_path }}/files/gdb_analyze.py"

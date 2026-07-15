@@ -1,0 +1,30 @@
+---
+- name: Run radare2 CFG analysis
+  ansible.builtin.command:
+    cmd: >-
+      {{ ansible_python_interpreter | default('/usr/bin/env python3') }}
+      {{ script_path }}
+      --target {{ target_binary }}
+      --mode cfg_analysis
+      --output {{ output_dir }}/cfg_analysis.json
+  register: _cfg_result
+  changed_when: false
+  failed_when: _cfg_result.rc not in [0]
+
+- name: Read CFG analysis artifact
+  ansible.builtin.slurp:
+    src: "{{ output_dir }}/cfg_analysis.json"
+  register: _cfg_raw
+
+- name: Parse CFG analysis artifact
+  ansible.builtin.set_fact:
+    cfg_analysis_artifact: >-
+      {{ _cfg_raw.content | b64decode | from_json
+         if (_cfg_raw is defined and _cfg_raw.content is defined) else {} }}
+
+- name: Report CFG analysis summary
+  ansible.builtin.debug:
+    msg: >-
+      CFG analysis complete:
+      dot_file={{ cfg_analysis_artifact.get('dot_file', 'unknown') }},
+      commands={{ cfg_analysis_artifact.get('commands', []) | length }}

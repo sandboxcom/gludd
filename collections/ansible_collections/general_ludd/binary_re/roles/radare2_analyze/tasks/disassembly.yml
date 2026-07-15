@@ -1,0 +1,30 @@
+---
+- name: Run radare2 disassembly
+  ansible.builtin.command:
+    cmd: >-
+      {{ ansible_python_interpreter | default('/usr/bin/env python3') }}
+      {{ script_path }}
+      --target {{ target_binary }}
+      --mode disassembly
+      --output {{ output_dir }}/disassembly.json
+  register: _dis_result
+  changed_when: false
+  failed_when: _dis_result.rc not in [0]
+
+- name: Read disassembly artifact
+  ansible.builtin.slurp:
+    src: "{{ output_dir }}/disassembly.json"
+  register: _dis_raw
+
+- name: Parse disassembly artifact
+  ansible.builtin.set_fact:
+    disassembly_artifact: >-
+      {{ _dis_raw.content | b64decode | from_json
+         if (_dis_raw is defined and _dis_raw.content is defined) else {} }}
+
+- name: Report disassembly summary
+  ansible.builtin.debug:
+    msg: >-
+      Disassembly complete:
+      target={{ disassembly_artifact.get('target', 'unknown') }},
+      commands={{ disassembly_artifact.get('commands', []) | length }}

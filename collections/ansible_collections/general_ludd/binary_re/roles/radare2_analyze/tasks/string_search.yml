@@ -1,0 +1,31 @@
+---
+- name: Run radare2 string search
+  ansible.builtin.command:
+    cmd: >-
+      {{ ansible_python_interpreter | default('/usr/bin/env python3') }}
+      {{ script_path }}
+      --target {{ target_binary }}
+      --mode string_search
+      {% if string_regex | length > 0 %}--string-regex {{ string_regex }}{% endif %}
+      --output {{ output_dir }}/string_search.json
+  register: _str_result
+  changed_when: false
+  failed_when: _str_result.rc not in [0]
+
+- name: Read string search artifact
+  ansible.builtin.slurp:
+    src: "{{ output_dir }}/string_search.json"
+  register: _str_raw
+
+- name: Parse string search artifact
+  ansible.builtin.set_fact:
+    string_search_artifact: >-
+      {{ _str_raw.content | b64decode | from_json
+         if (_str_raw is defined and _str_raw.content is defined) else {} }}
+
+- name: Report string search summary
+  ansible.builtin.debug:
+    msg: >-
+      String search complete:
+      regex={{ string_search_artifact.get('regex', 'password') }},
+      commands={{ string_search_artifact.get('commands', []) | length }}

@@ -1,0 +1,31 @@
+---
+- name: Run Ghidra headless analysis
+  ansible.builtin.command:
+    cmd: >-
+      {{ ansible_python_interpreter | default('/usr/bin/env python3') }}
+      {{ script_path }}
+      --target {{ target_binary }}
+      --mode headless_analysis
+      --ghidra-path {{ ghidra_path }}
+      --project-dir {{ project_dir }}
+      --output {{ output_dir }}/headless_analysis.json
+  register: _gh_result
+  changed_when: false
+  failed_when: _gh_result.rc not in [0]
+
+- name: Read headless analysis artifact
+  ansible.builtin.slurp:
+    src: "{{ output_dir }}/headless_analysis.json"
+  register: _gh_raw
+
+- name: Parse headless analysis artifact
+  ansible.builtin.set_fact:
+    headless_analysis_artifact: >-
+      {{ _gh_raw.content | b64decode | from_json
+         if (_gh_raw is defined and _gh_raw.content is defined) else {} }}
+
+- name: Report headless analysis summary
+  ansible.builtin.debug:
+    msg: >-
+      Headless analysis invocation ready:
+      project_dir={{ headless_analysis_artifact.get('project_dir', 'unknown') }}

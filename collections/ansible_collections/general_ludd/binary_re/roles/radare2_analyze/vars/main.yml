@@ -1,1 +1,2 @@
 ---
+script_path: "{{ role_path }}/files/radare2_analyze.py"
