@@ -45,6 +45,11 @@ _check_force_dispatch = aw._check_force_dispatch
 _is_force_dispatch_active = aw._is_force_dispatch_active
 FORCE_DISPATCH_FILE = aw.FORCE_DISPATCH_FILE
 FORCE_DISPATCH_MAX_AGE = aw.FORCE_DISPATCH_MAX_AGE
+_check_under_floor_dispatch = aw._check_under_floor_dispatch
+_read_multitask_state = aw._read_multitask_state
+MULTITASK_STATE_FILE = aw.MULTITASK_STATE_FILE
+PURE_IDLE_DIRECTIVE = aw.PURE_IDLE_DIRECTIVE
+pending_work_exists = aw._pending_work_exists
 # ── script exists ─────────────────────────────────────────────────────────────
 
 

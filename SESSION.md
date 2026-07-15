@@ -35,6 +35,49 @@ Code versions `0.1.0-beta.2` through `0.1.0-beta.5` exist in `pyproject.toml`/`_
 
 ---
 
+## SESSION 41 — 2026-07-15
+
+- **HEAD: `5f6f892d`** on `development` branch
+- **Version: 0.1.0-beta.5** (pyproject.toml)
+- **Push status: NOT PUSHED** — commits ahead of remote on development
+- **CI: NOT CHECKED** — no ci-verdict run this session
+- **Gate: NOT RUN** — lint/typecheck not re-run on HEAD
+- **Working tree: DIRTY** — 4 modified files (.ci-status, .opencode/plugin/enforce-stop.ts, scripts/agent_watchdog.py, tests/unit/test_slurm_watcher.py) + 1 untracked
+
+### Enforcement gap: under-floor dispatch not blocked
+
+- **Observed:** `enforce-multitask.ts` and `enforce-floor.ts` did NOT block inline read/edit operations when 0 dispatches had been made and pending work (A.4) existed. Agent performed sequential reads without dispatch wave — the enforcement plugins should have denied these per the UNDER-FLOOR HARD BLOCK (2026-07-15) codified rule.
+- **Status:** Gap documented in BUGS.md incident #14. Root cause TBD.
+- **Impact:** The 10-agent floor mandate can be bypassed by sessions that never dispatch — inline reads/edits proceed without denial.
+
+### Commits since Session 40 (4 commits from `44ea26a6` to `5f6f892d`)
+
+| Hash | Message |
+|------|---------|
+| `5f6f892d` | fix: SlurmJobMonitor _require_job_id validation at init |
+| `ae88585b` | fix: remove unused asyncio import |
+| `db851725` | fix: (unspecified) |
+| `ad101c2c` | fix: update _QUANT_BYTES_PER_PARAM count assertion |
+| `f681e029` | chore: update .ci-status and TASKS.md |
+
+### Remaining open items
+
+| Item | Status |
+|------|--------|
+| A.4 — Cut v0.1.0-beta.2 release | BLOCKED on CI |
+| Push development to remote | NOT PUSHED |
+| Commit dirty tree files | NOT STAGED |
+
+### Next
+
+1. Commit dirty tree updates (TASKS.md, SESSION.md, BUGS.md)
+2. Push development, wait for CI green
+3. Cut beta.2 via `make release-cut`
+
+- **Last Updated: 2026-07-15 — Session 41.** HEAD `5f6f892d` on `development`. Tree DIRTY. Enforcement under-floor dispatch gap documented. A.4 (beta.2 release) blocked on CI.
+
+---
+
 ## SESSION 40 — 2026-07-15
 
 - **HEAD: `44ea26a6`** on `development` branch
