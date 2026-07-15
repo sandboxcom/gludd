@@ -27,6 +27,7 @@ import {
   isDisengaged,
   readJsonFile,
   writeJsonFile,
+  getProjectRoot,
 } from "../lib/shared.ts"
 
 const FLOOR_ENFORCE = process.env.GLUDD_MULTITASK_FLOOR_ENFORCE !== "0"
@@ -50,6 +51,7 @@ export const CONSECUTIVE_NON_DISPATCH_WINDOW_MS = parseInt(
 export const MULTITASK_STATE_FILE = "/tmp/gludd-multitask-state.json"
 
 interface MultitaskState {
+  pid: number
   thisMessageDispatches: number
   prevMessageDispatches: number
   zeroStreak: number
@@ -63,6 +65,7 @@ interface MultitaskState {
 
 function freshState(): MultitaskState {
   return {
+    pid: process.pid,
     thisMessageDispatches: 0,
     prevMessageDispatches: 0,
     zeroStreak: 0,
@@ -86,7 +89,7 @@ function writeState(s: MultitaskState): void {
 
 function hasPendingWork(): boolean {
   try {
-    const tasksPath = path.join(process.cwd(), "TASKS.md")
+    const tasksPath = path.join(getProjectRoot(), "TASKS.md")
     if (!fs.existsSync(tasksPath)) return false
     const content = fs.readFileSync(tasksPath, "utf8")
     return /^\s*[-*]\s*\[\s*\]/m.test(content)
@@ -97,12 +100,13 @@ function hasPendingWork(): boolean {
 
 function spawnGateRefresh(): void {
   try {
-    const gatePath = path.join(process.cwd(), ".gate-status")
+    const root = getProjectRoot()
+    const gatePath = path.join(root, ".gate-status")
     if (!fs.existsSync(gatePath)) return
     const stat = fs.statSync(gatePath)
     if ((Date.now() - stat.mtimeMs) <= 300_000) return
     const child = spawn("make", ["gate-refresh"], {
-      cwd: process.cwd(),
+      cwd: root,
       detached: true,
       stdio: "ignore",
     })
@@ -112,6 +116,7 @@ function spawnGateRefresh(): void {
 
 let _state: MultitaskState = (() => {
   const s = readState()
+  s.pid = process.pid
   s.zeroStreak = 0
   s.thisMessageDispatches = 0
   s.prevMessageDispatches = 0
@@ -131,6 +136,14 @@ const defaultImpl: HotModule = {
     // process.env.OPENCODE_SUBAGENT guard
     if (isSubagent()) return
     reportAlive("enforce-multitask")
+
+    // PID-based staleness detection: if the in-memory state was initialized by
+    // a different process (prior session / crashed plugin), reset it. This
+    // prevents stale thisMessageDispatches from bypassing the under-floor block.
+    if (_state.pid !== process.pid) {
+      _state = freshState()
+    }
+
     try {
       if (!FLOOR_ENFORCE) return
       const tool = (input?.tool ?? "") as string

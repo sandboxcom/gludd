@@ -1,4 +1,5 @@
 import * as fs from "node:fs"
+import * as path from "node:path"
 
 // ── Shared helpers for enforcement plugins ────────────────────────────────
 // Extracted from 14 enforce-*.ts plugins (2026-07-13, E.5 refactor).
@@ -184,4 +185,41 @@ export function writeHeartbeat(pluginName: string): void {
       plugin: pluginName, ts: Date.now(), pid: process.pid
     })
   } catch { /* fail-open */ }
+}
+
+// ── Project root detection ────────────────────────────────────────────────
+// Robustly finds the project root regardless of process.cwd(). Plugin worker
+// processes may have a different cwd than the main opencode process, causing
+// hasPendingWork()/openWorkExists() to fail finding TASKS.md/ratchet.yml.
+// Resolution order: GLUDD_PROJECT_ROOT env → walk up from cwd → cwd fallback.
+
+let _cachedRoot: string | null = null
+
+export function getProjectRoot(): string {
+  if (_cachedRoot !== null) return _cachedRoot
+  try {
+    const envRoot = process.env.GLUDD_PROJECT_ROOT
+    if (envRoot && fs.existsSync(path.join(envRoot, "TASKS.md"))) {
+      _cachedRoot = envRoot
+      return _cachedRoot
+    }
+  } catch { /* ignore */ }
+  try {
+    let dir = process.cwd()
+    for (let i = 0; i < 15; i++) {
+      if (fs.existsSync(path.join(dir, "TASKS.md"))) {
+        _cachedRoot = dir
+        return _cachedRoot
+      }
+      if (fs.existsSync(path.join(dir, "opencode.json")) && fs.existsSync(path.join(dir, "Makefile"))) {
+        _cachedRoot = dir
+        return _cachedRoot
+      }
+      const parent = path.dirname(dir)
+      if (parent === dir) break
+      dir = parent
+    }
+  } catch { /* ignore */ }
+  _cachedRoot = process.cwd()
+  return _cachedRoot
 }

@@ -23,6 +23,9 @@ from collections import Counter
 from pathlib import Path
 
 TARGET_PATTERN = re.compile(r"^([a-zA-Z_][a-zA-Z0-9_.-]*):")
+TARGET_VAR_ASSIGN_PATTERN = re.compile(
+    r"^[a-zA-Z_][a-zA-Z0-9_.-]*:\s*[A-Za-z_][A-Za-z0-9_.-]*\s*(\?=|:=|\+=|=)"
+)
 
 
 def extract_targets(makefile_path: Path) -> Counter[str]:
@@ -30,6 +33,8 @@ def extract_targets(makefile_path: Path) -> Counter[str]:
     for line in makefile_path.read_text(encoding="utf-8").splitlines():
         stripped = line.lstrip()
         if stripped.startswith("#") or stripped.startswith("."):
+            continue
+        if TARGET_VAR_ASSIGN_PATTERN.match(stripped):
             continue
         m = TARGET_PATTERN.match(stripped)
         if m:

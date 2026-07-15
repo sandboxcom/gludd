@@ -3,7 +3,7 @@ import * as fs from "node:fs"
 import * as path from "node:path"
 import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
 import { execSync } from "node:child_process"
-import { isSubagent, isDisengaged, reportAlive, readJsonFile, writeJsonFile, isDispatchTool, isReadTool, ALIVE_PATH, DISENGAGE_PATH, updateSharedStreak, writeHeartbeat } from "../lib/shared.ts"
+import { isSubagent, isDisengaged, reportAlive, readJsonFile, writeJsonFile, isDispatchTool, isReadTool, ALIVE_PATH, DISENGAGE_PATH, updateSharedStreak, writeHeartbeat, getProjectRoot } from "../lib/shared.ts"
 
 // Floor+ceiling enforcement guardrail. FAIL-OPEN: any error -> do nothing.
 //
@@ -48,15 +48,16 @@ function isCommitBashCommand(cmd: string): boolean {
 }
 
 function openWorkExists(options?: { isCommitTool?: boolean }): boolean {
+  const root = getProjectRoot()
   try {
-    const ratchet = path.join(process.cwd(), "config", "ratchet.yml")
+    const ratchet = path.join(root, "config", "ratchet.yml")
     if (fs.existsSync(ratchet)) {
       const entries = fs.readFileSync(ratchet, "utf8")
         .split("\n")
         .filter(l => l.trim() && !l.trim().startsWith("#") && l.includes(":"))
       if (entries.length > 0) return true
     }
-    const backlog = path.join(process.cwd(), "scripts", "multitasking_backlog.json")
+    const backlog = path.join(root, "scripts", "multitasking_backlog.json")
     if (fs.existsSync(backlog)) return true
     const todoState = process.env.GLUDD_TODOWRITE_STATE || "/tmp/gludd-todowrite-state.json"
     try {
@@ -69,7 +70,7 @@ function openWorkExists(options?: { isCommitTool?: boolean }): boolean {
         }
       }
     } catch {}
-    const tasksMd = process.env.GLUDD_TASKS_MD || path.join(process.cwd(), "TASKS.md")
+    const tasksMd = process.env.GLUDD_TASKS_MD || path.join(root, "TASKS.md")
     try {
       if (fs.existsSync(tasksMd)) {
         const unchecked = fs.readFileSync(tasksMd, "utf8")
@@ -78,7 +79,7 @@ function openWorkExists(options?: { isCommitTool?: boolean }): boolean {
         if (unchecked.length > 0) return true
       }
     } catch {}
-    const bugsMd = process.env.GLUDD_BUGS_MD || path.join(process.cwd(), "BUGS.md")
+    const bugsMd = process.env.GLUDD_BUGS_MD || path.join(root, "BUGS.md")
     try {
       if (fs.existsSync(bugsMd)) {
         const openIncidents = fs.readFileSync(bugsMd, "utf8")
@@ -201,6 +202,26 @@ let _prevMessageDispatchCount = 0
 let _sessionDispatchCount = 0
 let _lastCallTs = 0
 
+// PID-based staleness detection: tracks which process initialized the module-
+// level state. If a different process (prior session / crashed plugin) owns
+// the state, all counters are reset on the next hook call.
+let _floorInitPid = process.pid
+
+function _resetFloorState(): void {
+  _streakCount = 0
+  _readStreak = 0
+  _lastDispatchTs = Date.now()
+  _dispatchCount = 0
+  _dispatchPeak = 0
+  _consecutiveReadsInResultPhase = 0
+  _thisMessageDispatchCount = 0
+  _thisMessageTotalCalls = 0
+  _prevMessageDispatchCount = 0
+  _sessionDispatchCount = 0
+  _lastCallTs = 0
+  _floorInitPid = process.pid
+}
+
 const SESSION_START_WINDOW_MS = 90_000
 const SESSION_START_TIME_BLOCK_MS = 60_000
 const SESSION_START_READ_WARN = 3
@@ -273,6 +294,10 @@ const defaultImpl: HotModule = {
     if (isSubagent()) return
     reportAlive("enforce-floor")
     writeHeartbeat("enforce-floor")
+
+    if (_floorInitPid !== process.pid) {
+      _resetFloorState()
+    }
 
     try {
       if (!FLOOR_ENFORCE) return
