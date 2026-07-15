@@ -11,6 +11,36 @@
     mode: "0755"
   when: ansible_os_family == 'Darwin'
 
+- name: Run structured audit via python backend
+  when:
+    - ansible_os_family == 'Darwin'
+    - run_backend | default(true) | bool
+  block:
+    - name: Copy macos_automation_audit.py to target
+      ansible.builtin.copy:
+        src: macos_automation_audit.py
+        dest: "{{ artifact_dir }}/macos_automation_audit.py"
+        mode: "0755"
+
+    - name: Run audit — collect launchd, homebrew, defaults, softwareupdate, profiles as JSON
+      ansible.builtin.command: >
+        python3 {{ artifact_dir }}/macos_automation_audit.py
+        --output {{ artifact_dir }}/automation_audit.json
+      register: _backend_result
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write backend stdout/stderr to artifact_dir
+      ansible.builtin.copy:
+        content: |
+          stdout: {{ _backend_result.stdout | default('') }}
+          stderr: {{ _backend_result.stderr | default('') }}
+          rc: {{ _backend_result.rc | default('') }}
+        dest: "{{ artifact_dir }}/backend_output.txt"
+        mode: "0644"
+      when: _backend_result is defined
+
 - name: Create artifact subdirectories
   ansible.builtin.file:
     path: "{{ artifact_dir }}/{{ item }}"

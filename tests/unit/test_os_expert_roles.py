@@ -12,11 +12,17 @@ Covers:
   - ios_security: files/ios_security_audit.py (AMFI/trustcache/sandbox/codesign)
   - linux_diagnose: files/linux_gather.py (proc/meminfo/cpuinfo/lsmod/df/dmesg/sysctl)
   - macos_diagnose: files/macos_gather.py (unified log/launchctl/pmset/nvram/profiler)
+  - linux_automation: files/linux_automation_audit.py (systemd/cron/logrotate/unattended)
+  - windows_automation: files/windows_automation_audit.py (psremoting/dsc/schtasks/software)
+  - macos_automation: files/macos_automation_audit.py (launchd/homebrew/defaults/swupdate/profiles)
+  - macos_security: files/macos_security_audit.py (csrutil/spctl/xprotect/tccutil/plist)
+  - linux_kernel: files/linux_kernel_audit.py (lsmod/modinfo/cgroups/namespaces/ebpf)
 """
 
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
 
 import pytest
@@ -651,3 +657,716 @@ def test_macos_parse_nvram(macos_gather):
 
 def test_macos_parse_nvram_empty(macos_gather):
     assert macos_gather.parse_nvram("") == {}
+
+
+# ── linux_automation_audit.py (linux_automation role backend) ─────────────
+
+@pytest.fixture(scope="module")
+def linux_automation_audit():
+    return _load_module(
+        "linux_automation/files/linux_automation_audit.py",
+        "linux_automation_audit",
+    )
+
+
+def test_linux_automation_has_audit_functions(linux_automation_audit):
+    for fn in (
+        "parse_systemctl_list_timers",
+        "parse_crontab",
+        "parse_logrotate_config",
+        "parse_unattended_config",
+        "audit",
+    ):
+        assert hasattr(linux_automation_audit, fn), (
+            f"linux_automation_audit missing {fn}"
+        )
+
+
+def test_linux_automation_parse_systemctl_list_timers(linux_automation_audit):
+    sample = (
+        "NEXT     LEFT  LAST     PASSED  UNIT             ACTIVATES\n"
+        "Wed 1min Wed   Wed      3min    apt-daily.timer  apt-daily.service\n"
+        "Thu 13h  Wed   Wed      10h     logrotate.timer  logrotate.service\n"
+        "\n"
+        "2 timers listed.\n"
+    )
+    result = linux_automation_audit.parse_systemctl_list_timers(sample)
+    assert len(result) == 2
+    assert result[0]["unit"] == "apt-daily.timer"
+    assert result[1]["activates"] == "logrotate.service"
+
+
+def test_linux_automation_parse_systemctl_list_timers_empty(linux_automation_audit):
+    assert linux_automation_audit.parse_systemctl_list_timers("") == []
+
+
+def test_linux_automation_parse_crontab(linux_automation_audit):
+    sample = (
+        "# /etc/crontab\n"
+        "SHELL=/bin/bash\n"
+        "PATH=/usr/local/sbin:/usr/local/bin\n"
+        "*/5 * * * * root /usr/lib/sysstat/sa1 1 1\n"
+        "0 6 * * * root test -x /usr/sbin/anacron || run-parts --report /etc/cron.daily\n"
+    )
+    result = linux_automation_audit.parse_crontab(sample)
+    assert len(result) == 2
+    assert result[0]["minute"] == "*/5"
+    assert result[0]["command"] == "root /usr/lib/sysstat/sa1 1 1"
+    assert result[1]["hour"] == "6"
+
+
+def test_linux_automation_parse_crontab_empty(linux_automation_audit):
+    assert linux_automation_audit.parse_crontab("") == []
+
+
+def test_linux_automation_parse_crontab_skips_comments(linux_automation_audit):
+    sample = "# this is a comment\n# another\n"
+    assert linux_automation_audit.parse_crontab(sample) == []
+
+
+def test_linux_automation_parse_logrotate_config(linux_automation_audit):
+    sample = (
+        "/var/log/syslog {\n"
+        "    rotate 7\n"
+        "    daily\n"
+        "    missingok\n"
+        "    notifempty\n"
+        "    compress\n"
+        "}\n"
+        "\n"
+        "/var/log/nginx/*.log {\n"
+        "    weekly\n"
+        "    rotate 4\n"
+        "}\n"
+    )
+    result = linux_automation_audit.parse_logrotate_config(sample)
+    assert len(result) == 2
+    assert "/var/log/syslog" in result[0]["paths"]
+    assert result[0]["directives"]["rotate"] == "7"
+    assert result[1]["directives"]["weekly"] == "true"
+
+
+def test_linux_automation_parse_logrotate_config_empty(linux_automation_audit):
+    assert linux_automation_audit.parse_logrotate_config("") == []
+
+
+def test_linux_automation_parse_unattended_config_apt(linux_automation_audit):
+    sample = (
+        'APT::Periodic::Update-Package-Lists "1";\n'
+        'APT::Periodic::Unattended-Upgrade "1";\n'
+        'APT::Periodic::AutocleanInterval "7";\n'
+    )
+    result = linux_automation_audit.parse_unattended_config(sample)
+    assert result["format"] == "apt"
+    assert result["settings"]["APT::Periodic::Update-Package-Lists"] == "1"
+    assert result["settings"]["APT::Periodic::Unattended-Upgrade"] == "1"
+
+
+def test_linux_automation_parse_unattended_config_ini(linux_automation_audit):
+    sample = (
+        "[commands]\n"
+        "upgrade_type = default\n"
+        "apply_updates = yes\n"
+    )
+    result = linux_automation_audit.parse_unattended_config(sample)
+    assert result["format"] == "ini"
+    assert "commands.upgrade_type" in result["settings"]
+
+
+def test_linux_automation_parse_unattended_config_empty(linux_automation_audit):
+    result = linux_automation_audit.parse_unattended_config("")
+    assert result["format"] == "unknown"
+    assert result["settings"] == {}
+
+
+# ── windows_automation_audit.py (windows_automation role backend) ─────────
+
+@pytest.fixture(scope="module")
+def windows_automation_audit():
+    return _load_module(
+        "windows_automation/files/windows_automation_audit.py",
+        "windows_automation_audit",
+    )
+
+
+def test_windows_automation_has_audit_functions(windows_automation_audit):
+    for fn in (
+        "parse_wsman_test",
+        "parse_winrm_service",
+        "parse_dsc_status",
+        "parse_dsc_test",
+        "parse_scheduled_tasks",
+        "parse_schtasks_raw",
+        "parse_installed_software",
+        "parse_unattend_detection",
+        "audit",
+    ):
+        assert hasattr(windows_automation_audit, fn), (
+            f"windows_automation_audit missing {fn}"
+        )
+
+
+def test_windows_parse_wsman_test(windows_automation_audit):
+    sample = json.dumps({
+        "ProductVersion": "2.0",
+        "ConfigVersion": "2.0",
+        "ProductVendor": "Microsoft Corporation",
+    })
+    result = windows_automation_audit.parse_wsman_test(sample)
+    assert result["product_version"] == "2.0"
+    assert result["config_version"] == "2.0"
+
+
+def test_windows_parse_wsman_test_empty(windows_automation_audit):
+    result = windows_automation_audit.parse_wsman_test("")
+    assert result["product_version"] == ""
+
+
+def test_windows_parse_winrm_service(windows_automation_audit):
+    sample = json.dumps([{
+        "Name": "WinRM",
+        "Status": "Running",
+        "StartType": "Automatic",
+    }])
+    result = windows_automation_audit.parse_winrm_service(sample)
+    assert result["name"] == "WinRM"
+    assert result["status"] == "Running"
+
+
+def test_windows_parse_winrm_service_empty(windows_automation_audit):
+    result = windows_automation_audit.parse_winrm_service("")
+    assert result["name"] == ""
+
+
+def test_windows_parse_dsc_status(windows_automation_audit):
+    sample = json.dumps([{
+        "Status": "Success",
+        "StartDate": "2026-07-15T10:00:00",
+        "Type": "Consistency",
+        "Mode": "ApplyAndAutocorrect",
+        "ResourcesInDesiredState": [{"r1": True}],
+        "ResourcesNotInDesiredState": [],
+    }])
+    result = windows_automation_audit.parse_dsc_status(sample)
+    assert len(result) == 1
+    assert result[0]["status"] == "Success"
+    assert result[0]["number_of_resources"] == 1
+
+
+def test_windows_parse_dsc_status_empty(windows_automation_audit):
+    assert windows_automation_audit.parse_dsc_status("") == []
+
+
+def test_windows_parse_dsc_test(windows_automation_audit):
+    sample = json.dumps({"InDesiredState": True})
+    result = windows_automation_audit.parse_dsc_test(sample)
+    assert result["in_desired_state"] is True
+
+
+def test_windows_parse_dsc_test_false(windows_automation_audit):
+    sample = json.dumps({"InDesiredState": False})
+    result = windows_automation_audit.parse_dsc_test(sample)
+    assert result["in_desired_state"] is False
+
+
+def test_windows_parse_scheduled_tasks(windows_automation_audit):
+    sample = json.dumps([
+        {"TaskName": "GoogleUpdateTaskMachineCore", "State": "Ready", "TaskPath": "\\"},
+        {"TaskName": "OneDriveStandaloneUpdateTask", "State": "Disabled", "TaskPath": "\\"},
+    ])
+    result = windows_automation_audit.parse_scheduled_tasks(sample)
+    assert len(result) == 2
+    assert result[0]["task_name"] == "GoogleUpdateTaskMachineCore"
+    assert result[1]["state"] == "Disabled"
+
+
+def test_windows_parse_scheduled_tasks_empty(windows_automation_audit):
+    assert windows_automation_audit.parse_scheduled_tasks("") == []
+
+
+def test_windows_parse_schtasks_raw(windows_automation_audit):
+    sample = (
+        "\n"
+        "HostName:                                      DESKTOP-ABC123\n"
+        "TaskName:                                      \\GoogleUpdateTaskMachineCore\n"
+        "Next Run Time:                                 7/15/2026 12:00:00 PM\n"
+        "Status:                                        Ready\n"
+        "\n"
+        "HostName:                                      DESKTOP-ABC123\n"
+        "TaskName:                                      \\BackupTask\n"
+        "Status:                                        Disabled\n"
+    )
+    result = windows_automation_audit.parse_schtasks_raw(sample)
+    assert len(result) == 2
+    assert result[0]["task_name"] == "\\GoogleUpdateTaskMachineCore"
+    assert result[1]["task_name"] == "\\BackupTask"
+
+
+def test_windows_parse_schtasks_raw_empty(windows_automation_audit):
+    assert windows_automation_audit.parse_schtasks_raw("") == []
+
+
+def test_windows_parse_installed_software(windows_automation_audit):
+    sample = json.dumps([
+        {"DisplayName": "Google Chrome", "DisplayVersion": "126.0", "Publisher": "Google"},
+        {"DisplayName": "7-Zip 23.01", "DisplayVersion": "23.01", "Publisher": "Igor Pavlov"},
+        {"DisplayName": "", "DisplayVersion": "1.0"},
+    ])
+    result = windows_automation_audit.parse_installed_software(sample)
+    assert len(result) == 2
+    assert result[0]["name"] == "Google Chrome"
+    assert result[1]["version"] == "23.01"
+
+
+def test_windows_parse_installed_software_empty(windows_automation_audit):
+    assert windows_automation_audit.parse_installed_software("") == []
+
+
+def test_windows_parse_unattend_detection(windows_automation_audit):
+    sample = json.dumps([
+        {"Path": "C:\\Windows\\System32\\sysprep\\unattend.xml", "Exists": True},
+        {"Path": "C:\\Windows\\Panther\\unattend.xml", "Exists": False},
+    ])
+    result = windows_automation_audit.parse_unattend_detection(sample)
+    assert len(result) == 2
+    assert result[0]["exists"] is True
+    assert result[1]["exists"] is False
+
+
+# ── macos_automation_audit.py (macos_automation role backend) ─────────────
+
+@pytest.fixture(scope="module")
+def macos_automation_audit():
+    return _load_module(
+        "macos_automation/files/macos_automation_audit.py",
+        "macos_automation_audit",
+    )
+
+
+def test_macos_automation_has_audit_functions(macos_automation_audit):
+    for fn in (
+        "parse_launchctl_list",
+        "parse_brew_list",
+        "parse_brew_outdated",
+        "parse_brew_taps",
+        "parse_brew_casks",
+        "parse_defaults",
+        "parse_softwareupdate_list",
+        "parse_softwareupdate_history",
+        "parse_profiles_list",
+        "parse_profiles_status",
+        "audit",
+    ):
+        assert hasattr(macos_automation_audit, fn), (
+            f"macos_automation_audit missing {fn}"
+        )
+
+
+def test_macos_automation_parse_launchctl_list(macos_automation_audit):
+    sample = (
+        "PID\tStatus\tLabel\n"
+        "123\t0\tcom.apple.launchd\n"
+        "456\t-2\tcom.example.app\n"
+        "-\t0\tcom.apple.Dock.agent\n"
+    )
+    result = macos_automation_audit.parse_launchctl_list(sample)
+    assert len(result) == 3
+    assert result[0]["pid"] == 123
+    assert result[0]["running"] is True
+    assert result[2]["pid"] == 0
+    assert result[2]["running"] is False
+
+
+def test_macos_automation_parse_launchctl_list_empty(macos_automation_audit):
+    assert macos_automation_audit.parse_launchctl_list("") == []
+
+
+def test_macos_automation_parse_brew_list(macos_automation_audit):
+    sample = (
+        "python@3.11 3.11.9\n"
+        "node 22.3.0\n"
+        "git 2.45.2\n"
+    )
+    result = macos_automation_audit.parse_brew_list(sample)
+    assert len(result) == 3
+    assert result[0]["name"] == "python@3.11"
+    assert result[0]["version"] == "3.11.9"
+    assert result[1]["version"] == "22.3.0"
+
+
+def test_macos_automation_parse_brew_list_empty(macos_automation_audit):
+    assert macos_automation_audit.parse_brew_list("") == []
+
+
+def test_macos_automation_parse_brew_outdated(macos_automation_audit):
+    sample = "python\nnode\ngit\n"
+    result = macos_automation_audit.parse_brew_outdated(sample)
+    assert len(result) == 3
+    assert result[0]["name"] == "python"
+
+
+def test_macos_automation_parse_brew_taps(macos_automation_audit):
+    sample = "homebrew/core\nhomebrew/cask\nhashicorp/tap\n"
+    result = macos_automation_audit.parse_brew_taps(sample)
+    assert result == ["homebrew/core", "homebrew/cask", "hashicorp/tap"]
+
+
+def test_macos_automation_parse_brew_casks(macos_automation_audit):
+    sample = "google-chrome\nvisual-studio-code\n"
+    result = macos_automation_audit.parse_brew_casks(sample)
+    assert result == ["google-chrome", "visual-studio-code"]
+
+
+def test_macos_automation_parse_defaults(macos_automation_audit):
+    sample = (
+        "{\n"
+        '    AppleInterfaceStyle = Dark;\n'
+        '    AppleMetricUnits = 1;\n'
+        '    AppleMeasurementUnits = "Centimeters";\n'
+        "}\n"
+    )
+    result = macos_automation_audit.parse_defaults(sample)
+    assert result["keys"]["AppleInterfaceStyle"] == "Dark"
+    assert result["keys"]["AppleMeasurementUnits"] == "Centimeters"
+
+
+def test_macos_automation_parse_defaults_empty(macos_automation_audit):
+    result = macos_automation_audit.parse_defaults("")
+    assert result["keys"] == {}
+
+
+def test_macos_automation_parse_softwareupdate_list(macos_automation_audit):
+    sample = (
+        "Software Update Tool\n"
+        "\n"
+        "Finding available software\n"
+        "* Label: macOS Sonoma 14.5 Update-12345\n"
+        "    Title: macOS Sonoma 14.5 Update, Version: 14.5, Size: 1234567890\n"
+    )
+    result = macos_automation_audit.parse_softwareupdate_list(sample)
+    assert len(result) == 1
+    assert result[0]["label"] == "macOS Sonoma 14.5 Update-12345"
+
+
+def test_macos_automation_parse_softwareupdate_history(macos_automation_audit):
+    sample = (
+        "Display Name                                        Version    Date       \n"
+        "-----------------------------------------------------------\n"
+        "macOS Sonoma 14.4.1                                 14.4.1     2026-03-15\n"
+        "Safari                                              17.4       2026-03-10\n"
+    )
+    result = macos_automation_audit.parse_softwareupdate_history(sample)
+    assert len(result) >= 1
+
+
+def test_macos_automation_parse_profiles_status(macos_automation_audit):
+    sample = (
+        "Enrollment via DEP: Yes\n"
+        "Device Enrollment: Enrolled\n"
+    )
+    result = macos_automation_audit.parse_profiles_status(sample)
+    assert "Enrolled" in result["enrollment_status"]
+
+
+# ── macos_security_audit.py (macos_security role backend) ─────────────────
+
+@pytest.fixture(scope="module")
+def macos_security_audit():
+    return _load_module(
+        "macos_security/files/macos_security_audit.py",
+        "macos_security_audit",
+    )
+
+
+def test_macos_security_has_audit_functions(macos_security_audit):
+    for fn in (
+        "parse_csrutil_status",
+        "parse_spctl_status",
+        "parse_xprotect",
+        "parse_tccutil",
+        "parse_plist_policy",
+        "audit",
+    ):
+        assert hasattr(macos_security_audit, fn), (
+            f"macos_security_audit missing {fn}"
+        )
+
+
+def test_macos_security_parse_csrutil_enabled(macos_security_audit):
+    sample = (
+        "System Integrity Protection status: enabled.\n"
+        "\n"
+        "Configuration: Apple Internal, Developer Tools\n"
+    )
+    result = macos_security_audit.parse_csrutil_status(sample)
+    assert result["sip_enabled"] is True
+    assert "Apple Internal" in result["config"]
+    assert "Developer Tools" in result["config"]
+
+
+def test_macos_security_parse_csrutil_disabled(macos_security_audit):
+    sample = "System Integrity Protection status: disabled.\n"
+    result = macos_security_audit.parse_csrutil_status(sample)
+    assert result["sip_enabled"] is False
+
+
+def test_macos_security_parse_csrutil_empty(macos_security_audit):
+    result = macos_security_audit.parse_csrutil_status("")
+    assert result["sip_enabled"] is False
+    assert result["config"] == []
+
+
+def test_macos_security_parse_spctl_enabled(macos_security_audit):
+    sample = "assessments enabled\n"
+    result = macos_security_audit.parse_spctl_status(sample)
+    assert result["assessments_enabled"] is True
+    assert result["gatekeeper_active"] is True
+
+
+def test_macos_security_parse_spctl_disabled(macos_security_audit):
+    sample = "assessments disabled\n"
+    result = macos_security_audit.parse_spctl_status(sample)
+    assert result["assessments_enabled"] is False
+
+
+def test_macos_security_parse_xprotect(macos_security_audit):
+    sample = (
+        "{\n"
+        "    version = 5253;\n"
+        "    extension = XProtect;\n"
+        "}\n"
+    )
+    result = macos_security_audit.parse_xprotect(sample)
+    assert result["version"] == "5253"
+
+
+def test_macos_security_parse_xprotect_empty(macos_security_audit):
+    result = macos_security_audit.parse_xprotect("")
+    assert result["version"] == ""
+
+
+def test_macos_security_parse_tccutil(macos_security_audit):
+    sample = (
+        "=== tccutil list Camera ===\n"
+        "com.apple.Safari\n"
+        "com.apple.FaceTime\n"
+        "\n"
+        "=== tccutil list Accessibility ===\n"
+        "com.example.app\n"
+    )
+    result = macos_security_audit.parse_tccutil(sample)
+    assert "Camera" in result
+    assert len(result["Camera"]) == 2
+    assert result["Camera"][0]["client"] == "com.apple.Safari"
+    assert "Accessibility" in result
+    assert result["Accessibility"][0]["client"] == "com.example.app"
+
+
+def test_macos_security_parse_tccutil_empty(macos_security_audit):
+    result = macos_security_audit.parse_tccutil("")
+    assert result == {}
+
+
+def test_macos_security_parse_plist_policy(macos_security_audit):
+    sample = (
+        "=== com.example.mdm.plist ===\n"
+        '    "AllowCamera" => 1\n'
+        '    "DisableCloudSync" => 0\n'
+        "=== com.example.security.plist ===\n"
+        '    "FirewallEnabled" => 1\n'
+    )
+    result = macos_security_audit.parse_plist_policy(sample)
+    assert "com.example.mdm.plist" in result["profiles"]
+    assert "com.example.security.plist" in result["profiles"]
+
+
+def test_macos_security_parse_plist_policy_empty(macos_security_audit):
+    result = macos_security_audit.parse_plist_policy("")
+    assert result["profiles"] == {}
+
+
+# ── linux_kernel_audit.py (linux_kernel role backend) ─────────────────────
+
+@pytest.fixture(scope="module")
+def linux_kernel_audit():
+    return _load_module(
+        "linux_kernel/files/linux_kernel_audit.py",
+        "linux_kernel_audit",
+    )
+
+
+def test_linux_kernel_has_audit_functions(linux_kernel_audit):
+    for fn in (
+        "parse_lsmod",
+        "parse_modinfo",
+        "parse_proc_cgroups",
+        "parse_proc_pid_cgroup",
+        "parse_lsns",
+        "parse_proc_ns_listing",
+        "parse_bpftool_prog",
+        "parse_findmnt_cgroup",
+        "parse_sysctl",
+        "audit",
+    ):
+        assert hasattr(linux_kernel_audit, fn), (
+            f"linux_kernel_audit missing {fn}"
+        )
+
+
+def test_linux_kernel_parse_lsmod(linux_kernel_audit):
+    sample = (
+        "Module                  Size  Used by\n"
+        "nvidia              35293184  42\n"
+        "snd_hda_intel         53248  3 snd_hda_codec,snd_hda_core\n"
+        "xfs                  1634304  1\n"
+    )
+    result = linux_kernel_audit.parse_lsmod(sample)
+    assert len(result) == 3
+    assert result[0]["module"] == "nvidia"
+    assert result[0]["size"] == 35293184
+    assert result[1]["used_by"] == ["snd_hda_codec", "snd_hda_core"]
+
+
+def test_linux_kernel_parse_lsmod_empty(linux_kernel_audit):
+    assert linux_kernel_audit.parse_lsmod("") == []
+
+
+def test_linux_kernel_parse_modinfo(linux_kernel_audit):
+    sample = (
+        "filename:       /lib/modules/6.5.0/kernel/drivers/gpu/nvidia.ko\n"
+        "version:        550.54.14\n"
+        "license:        NVIDIA\n"
+        "description:    nvidia\n"
+        "depends:        drm,drm_kms_helper\n"
+        "retpoline:      Y\n"
+        "name:           nvidia\n"
+    )
+    result = linux_kernel_audit.parse_modinfo(sample)
+    assert result["filename"] == "/lib/modules/6.5.0/kernel/drivers/gpu/nvidia.ko"
+    assert result["version"] == "550.54.14"
+    assert result["license"] == "NVIDIA"
+    assert "drm" in result["depends"]
+    assert "retpoline" in result["properties"]
+
+
+def test_linux_kernel_parse_modinfo_empty(linux_kernel_audit):
+    result = linux_kernel_audit.parse_modinfo("")
+    assert result["filename"] == ""
+    assert result["depends"] == []
+
+
+def test_linux_kernel_parse_proc_cgroups(linux_kernel_audit):
+    sample = (
+        "#subsys_name\thierarchy\tnum_cgroups\tenabled\n"
+        "cpuset\t0\t1\t1\n"
+        "cpu\t0\t1\t1\n"
+        "cpuacct\t0\t1\t1\n"
+        "memory\t0\t1\t1\n"
+    )
+    result = linux_kernel_audit.parse_proc_cgroups(sample)
+    assert len(result) == 4
+    assert result[0]["subsystem"] == "cpuset"
+    assert result[3]["subsystem"] == "memory"
+
+
+def test_linux_kernel_parse_proc_cgroups_empty(linux_kernel_audit):
+    assert linux_kernel_audit.parse_proc_cgroups("") == []
+
+
+def test_linux_kernel_parse_proc_pid_cgroup(linux_kernel_audit):
+    sample = (
+        "0::/init.scope\n"
+        "1:memory:/user.slice\n"
+        "0::/system.slice/sshd.service\n"
+    )
+    result = linux_kernel_audit.parse_proc_pid_cgroup(sample)
+    assert len(result) == 3
+    assert result[0]["hierarchy_id"] == "0"
+    assert result[0]["controllers"] == ""
+    assert result[1]["controllers"] == "memory"
+
+
+def test_linux_kernel_parse_lsns(linux_kernel_audit):
+    sample = json.dumps({
+        "namespaces": [
+            {
+                "type": "pid", "nstype": "pid", "path": "/proc/1/ns/pid",
+                "nprocs": 5, "pid": 1, "command": "systemd", "uid": 0,
+            },
+            {
+                "type": "net", "nstype": "net", "path": "/proc/1/ns/net",
+                "nprocs": 1, "pid": 1, "command": "systemd", "uid": 0,
+            },
+        ]
+    })
+    result = linux_kernel_audit.parse_lsns(sample)
+    assert len(result) == 2
+    assert result[0]["ns_type"] == "pid"
+    assert result[0]["nprocs"] == 5
+    assert result[1]["ns_type"] == "net"
+
+
+def test_linux_kernel_parse_lsns_empty(linux_kernel_audit):
+    assert linux_kernel_audit.parse_lsns("") == []
+
+
+def test_linux_kernel_parse_proc_ns_listing(linux_kernel_audit):
+    sample = (
+        "total 0\n"
+        "dr-x--x--x 2 root root 0 Jul 15 10:00 .\n"
+        "dr-xr-xr-x 9 root root 0 Jul 15 10:00 ..\n"
+        "lrwxrwxrwx 1 root root 0 Jul 15 10:00 net -> net:[4026532000]\n"
+        "lrwxrwxrwx 1 root root 0 Jul 15 10:00 pid -> pid:[4026532001]\n"
+        "lrwxrwxrwx 1 root root 0 Jul 15 10:00 mnt -> mnt:[4026532002]\n"
+    )
+    result = linux_kernel_audit.parse_proc_ns_listing(sample)
+    assert len(result) == 3
+    assert result[0]["type"] == "net"
+    assert "net:[4026532000]" in result[0]["inode"]
+
+
+def test_linux_kernel_parse_bpftool_prog(linux_kernel_audit):
+    sample = (
+        "13: cgroup_sock  tag a1b2c3d4e5f6a1b2  gpl\n"
+        "    loaded_at 2026-07-15T10:00:00-0000  uid 0\n"
+        "    xlated 152B  jited 104B  mem 4096B\n"
+        "    btf_id 42  pids systemd(1)\n"
+        "\n"
+        "27: kprobe        tag f1e2d3c4b5a6f7e8  gpl\n"
+        "    loaded_at 2026-07-15T09:00:00-0000  uid 0\n"
+        "    xlated 256B  jited 200B  mem 4096B\n"
+    )
+    result = linux_kernel_audit.parse_bpftool_prog(sample)
+    assert len(result) == 2
+    assert result[0]["id"] == 13
+    assert result[0]["type"] == "cgroup_sock"
+    assert result[0]["license"] == "GPL"
+    assert result[0]["bytes_xlated"] == 152
+    assert result[1]["type"] == "kprobe"
+
+
+def test_linux_kernel_parse_bpftool_prog_empty(linux_kernel_audit):
+    assert linux_kernel_audit.parse_bpftool_prog("") == []
+
+
+def test_linux_kernel_parse_findmnt_cgroup(linux_kernel_audit):
+    sample = (
+        "TARGET          SOURCE                     FSTYPE  OPTIONS\n"
+        "/sys/fs/cgroup  cgroup                     cgroup  rw,nosuid,nodev\n"
+        "/sys/fs/cgroup  cgroup2                    cgroup2 rw,nosuid,nodev\n"
+    )
+    result = linux_kernel_audit.parse_findmnt_cgroup(sample)
+    assert len(result) == 2
+    assert result[0]["target"] == "/sys/fs/cgroup"
+    assert "cgroup" in result[0]["fstype"]
+
+
+def test_linux_kernel_parse_sysctl(linux_kernel_audit):
+    sample = (
+        "kernel.osrelease = 6.5.0-14-generic\n"
+        "net.ipv4.ip_forward = 1\n"
+        "vm.swappiness = 60\n"
+    )
+    result = linux_kernel_audit.parse_sysctl(sample)
+    assert result["kernel.osrelease"] == "6.5.0-14-generic"
+    assert result["net.ipv4.ip_forward"] == "1"

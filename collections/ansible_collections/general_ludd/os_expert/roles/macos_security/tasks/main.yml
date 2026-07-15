@@ -9,6 +9,36 @@
     mode: "0755"
   when: ansible_os_family == 'Darwin'
 
+- name: Run structured audit via python backend
+  when:
+    - ansible_os_family == 'Darwin'
+    - run_backend | default(true) | bool
+  block:
+    - name: Copy macos_security_audit.py to target
+      ansible.builtin.copy:
+        src: macos_security_audit.py
+        dest: "{{ artifact_dir }}/macos_security_audit.py"
+        mode: "0755"
+
+    - name: Run audit — collect csrutil, spctl, xprotect, tccutil, plist as JSON
+      ansible.builtin.command: >
+        python3 {{ artifact_dir }}/macos_security_audit.py
+        --output {{ artifact_dir }}/security_audit.json
+      register: _backend_result
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write backend stdout/stderr to artifact_dir
+      ansible.builtin.copy:
+        content: |
+          stdout: {{ _backend_result.stdout | default('') }}
+          stderr: {{ _backend_result.stderr | default('') }}
+          rc: {{ _backend_result.rc | default('') }}
+        dest: "{{ artifact_dir }}/backend_output.txt"
+        mode: "0644"
+      when: _backend_result is defined
+
 - name: Audit csrutil (System Integrity Protection)
   when:
     - ansible_os_family == 'Darwin'

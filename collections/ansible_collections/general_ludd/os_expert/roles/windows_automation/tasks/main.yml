@@ -323,3 +323,47 @@
   ansible.builtin.copy:
     content: "{{ _software_32bit.output | default([]) | join('\n') }}"
     dest: "{{ artifact_dir }}/software/installed_32bit.json"
+
+# ============================================================================
+# Structured audit via python backend (runs on control node, parses JSON)
+# ============================================================================
+
+- name: Run structured audit via python backend (localhost)
+  when:
+    - ansible_os_family == 'Windows'
+    - run_backend | default(true) | bool
+  delegate_to: localhost
+  run_once: true
+  block:
+    - name: Copy windows_automation_audit.py to control node
+      ansible.builtin.copy:
+        src: windows_automation_audit.py
+        dest: "{{ artifact_dir }}/windows_automation_audit.py"
+        mode: "0755"
+
+    - name: Run audit parser — aggregate collected JSON into structured output
+      ansible.builtin.shell: >
+        python3 {{ artifact_dir }}/windows_automation_audit.py
+        --output {{ artifact_dir }}/automation_audit.json
+        {% if _psremoting_wsman_test is defined %}--wsman "{{ _psremoting_wsman_test.output | default([]) | join('') }}"{% endif %}
+        {% if _psremoting_winrm_service is defined %}--winrm "{{ _psremoting_winrm_service.output | default([]) | join('') }}"{% endif %}
+        {% if _dsc_config_status is defined %}--dsc-status "{{ _dsc_config_status.output | default([]) | join('') }}"{% endif %}
+        {% if _dsc_test is defined %}--dsc-test "{{ _dsc_test.output | default([]) | join('') }}"{% endif %}
+        {% if _schtasks_list is defined %}--schtasks-json "{{ _schtasks_list.output | default([]) | join('') }}"{% endif %}
+        {% if _software_64bit is defined %}--software-64 "{{ _software_64bit.output | default([]) | join('') }}"{% endif %}
+        {% if _software_32bit is defined %}--software-32 "{{ _software_32bit.output | default([]) | join('') }}"{% endif %}
+        {% if _unattended_unattend is defined %}--unattend "{{ _unattended_unattend.output | default([]) | join('') }}"{% endif %}
+      register: _backend_result
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write backend stdout/stderr to artifact_dir
+      ansible.builtin.copy:
+        content: |
+          stdout: {{ _backend_result.stdout | default('') }}
+          stderr: {{ _backend_result.stderr | default('') }}
+          rc: {{ _backend_result.rc | default('') }}
+        dest: "{{ artifact_dir }}/backend_output.txt"
+        mode: "0644"
+      when: _backend_result is defined

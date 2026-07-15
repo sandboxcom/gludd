@@ -10,6 +10,36 @@
     state: directory
     mode: "0755"
 
+- name: Run structured audit via python backend
+  when:
+    - ansible_os_family in ['RedHat', 'Debian', 'Suse', 'Archlinux']
+    - run_backend | default(true) | bool
+  block:
+    - name: Copy linux_kernel_audit.py to target
+      ansible.builtin.copy:
+        src: linux_kernel_audit.py
+        dest: "{{ artifact_dir }}/linux_kernel_audit.py"
+        mode: "0755"
+
+    - name: Run audit — collect modules, sysctl, cgroups, namespaces, ebpf as JSON
+      ansible.builtin.command: >
+        python3 {{ artifact_dir }}/linux_kernel_audit.py
+        --output {{ artifact_dir }}/kernel_audit.json
+      register: _backend_result
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write backend stdout/stderr to artifact_dir
+      ansible.builtin.copy:
+        content: |
+          stdout: {{ _backend_result.stdout | default('') }}
+          stderr: {{ _backend_result.stderr | default('') }}
+          rc: {{ _backend_result.rc | default('') }}
+        dest: "{{ artifact_dir }}/backend_output.txt"
+        mode: "0644"
+      when: _backend_result is defined
+
 - name: Gather kernel modules info (read-only audit)
   when: ansible_os_family in ['RedHat', 'Debian', 'Suse', 'Archlinux']
   block:

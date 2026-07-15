@@ -1,0 +1,14 @@
+---
+galaxy_info:
+  role_name: macos_automation
+  author: Agentic Harness Agent
+  description: >
+    Automate macOS system administration: launchd job management,
+    Homebrew package installation, defaults (system preferences) writing,
+    softwareupdate scheduling, and configuration profile deployment.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: macOS
+      versions: [all]
+dependencies: []
