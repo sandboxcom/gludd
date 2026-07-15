@@ -1,6 +1,6 @@
 # TASKS.md — Evidence Ledger
 
-**Last consolidated: 2026-07-15 final session update. A.4 blocker current: CI PENDING (run 29452736605, HEAD f681e029f4a2, in_progress, check #36). C.18 verified FIXED (15 tests). NF.4 COMPLETED (10/10 roles, 315+ tests). Enforce-stop stop-summary-with-tool-calls gap RESOLVED (commits 0c816e34, d1e0a953, 513887ef). CI 12-asset release matrix fix applied (e84b2147). CI cooldown fix applied (9b8d7824): cooldown-masking-RED incident (BUGS.md 2026-07-15 #1), CI-COOLDOWN-is-not-PENDING codified, molecule failed_when Jinja2 fixes, molecule prepare.yml scaffolding (6 scenarios), enforce-stop CI cooldown UNKNOWN handling. A.4 BLOCKED on CI PENDING — release-cut awaits CI green on development tip f681e029. 336 boxes: 335 checked, 1 pending (A.4).**
+**Last consolidated: 2026-07-15 Session 41 update. HEAD 5f6f892d on development. A.4 still BLOCKED on CI. Tree DIRTY (4 files: .ci-status, enforce-stop.ts, agent_watchdog.py, test_slurm_watcher.py). enforce-multitask under-floor dispatch gap: inline reads/edits not blocked when 0 dispatches made and pending work exists (BUGS.md 2026-07-15 #14). A.4 BLOCKED on CI PENDING — release-cut awaits CI green on development tip 5f6f892d. 336 boxes: 335 checked, 1 pending (A.4).**
 
 Each line ticked when `make gate` is green and evidence is pasted.
 

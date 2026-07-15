@@ -5,6 +5,29 @@
       "*": "deny",
       "make *": "allow"
     },
+    "read": {
+      "*": "deny",
+      "/Users/shawnwilson/gludd/**": "allow",
+      "/tmp/gludd-*": "allow"
+    },
+    "write": {
+      "*": "deny",
+      "/Users/shawnwilson/gludd/**": "allow",
+      "/tmp/gludd-*": "allow"
+    },
+    "edit": {
+      "*": "deny",
+      "/Users/shawnwilson/gludd/**": "allow",
+      "/tmp/gludd-*": "allow"
+    },
+    "glob": {
+      "*": "deny",
+      "/Users/shawnwilson/gludd/**": "allow"
+    },
+    "grep": {
+      "*": "deny",
+      "/Users/shawnwilson/gludd/**": "allow"
+    },
     "doom_loop": "deny"
   },
   "plugin": [

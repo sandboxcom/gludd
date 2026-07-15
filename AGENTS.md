@@ -301,6 +301,26 @@ The state-file pattern is the canonical mechanism for runtime enforcement tuning
 9. **No unseen events — an unobservable operation is a broken operation.** Any operation that runs longer than a few seconds (a gate, a test suite, a build, a poll loop, a backgrounded task, a daemon background job) MUST surface continuous progress: stream its output (`tee`), emit a per-phase marker, or print a periodic heartbeat. Never redirect a long-running operation solely to `/dev/null` or a buffered file with no live signal. If an event happens and no one can see it, it did not happen. Enforced by `tests/unit/test_observability_guardrails.py`; mirrored for agent behavior in [[gludd-observability-invariant]] memory.
 10. **Bash unavailable ⇒ adapt in ≤2 turns.** If `make` commands fail or bash is missing from your tool list, execute the 3-step diagnosis (check tool list, read SESSION.md for known issue, read opencode.json for permissions) IN ONE PARALLEL MESSAGE. Then adapt: use read/edit/write/grep/glob tools directly. Never spend 10+ turns diagnosing a tool-unavailable error — it is either a provider/model limitation (unfixable mid-session) or a permission-ordering bug (one-line fix). SESSION.md line ~9 documents known bash-unavailable sessions. BUGS.md tracks bash-diagnosis-relapse incidents.
     - **When you detect you're grinding inline** (main-thread streak accumulating, floor plugin blocking your edits, enforcement errors on every edit) → run `make disengage-enforcement` before any other action. This writes the emergency disengage signal that all enforcement hooks respect. Then fix the offending plugin code, run `make write-plugin-manifest`, and restart opencode.
+11. **No external file access.** Read/Write/Edit/Glob/Grep MUST stay inside `/Users/shawnwilson/gludd/` or `/tmp/gludd-*`. Any tool call targeting a path outside the workspace prompts the user and blocks work. See "CRITICAL: No External File Access."
+
+## CRITICAL: No External File Access
+
+**Read/Write/Edit/Glob/Grep MUST NOT access paths outside `/Users/shawnwilson/gludd/` or `/tmp/gludd-*`.** External file access prompts the user for permission and blocks work — a blocked tool call stalls the session exactly like a premature stop.
+
+### Rules
+
+1. **Allowed path prefixes (exhaustive):** `/Users/shawnwilson/gludd/` (the workspace) and `/tmp/gludd-*` (session state files). Everything else is out of bounds.
+2. **Applies to ALL file tools:** Read, Write, Edit, Glob (`path` parameter), Grep (`path` parameter). A glob/grep with an external `path` is the same violation as an external read.
+3. **Applies to subagents.** Every dispatched subagent inherits this restriction; subagent prompts that reference external paths are a dispatch bug.
+4. **No exceptions for "just reading."** Reading `~/.config/...`, `/etc/...`, another repo, or any home-directory file outside the workspace prompts the user and blocks work. If external content is genuinely needed, request a make target or ask the user — do not attempt the access.
+5. **If a task appears to require an external path**, the correct responses are: (a) find the equivalent data inside the workspace, (b) add a make target that surfaces it, or (c) report the specific path needed in ≤2 lines and continue other work. Never fire the external tool call and let it block.
+
+### Enforcement
+
+- **Prompt** — this section + Mechanical Contract rule 11 (proactive instruction).
+- **Permission layer** — external paths trigger a user prompt (hard gate at the harness level).
+- **Plugin (future)** — a `tool.execute.before` matcher on read/write/edit/glob/grep paths may deny out-of-workspace targets mechanically.
+
 ## ⛔ PRE-GENERATION CONTRACT (READ BEFORE GENERATING ANY TEXT)
 
 **This section is mechanically injected by the enforce-stop.ts plugin at generation time. It is ALSO present here as a permanent part of the system prompt.**

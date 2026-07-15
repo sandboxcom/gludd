@@ -6,8 +6,6 @@ numeric-first job IDs (defence against flag injection into argv)."""
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
-
 import pytest
 
 from general_ludd.infra.slurm import SlurmAdapter, SlurmJobConfig, SlurmJobMonitor

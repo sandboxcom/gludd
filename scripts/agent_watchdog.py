@@ -136,6 +136,7 @@ def scan_tasks_dir(
 # -- Streak-reset watchdog ----------------------------------------------------
 
 STREAK_FILE = "/tmp/gludd-mainthread-streak.json"
+MULTITASK_STATE_FILE = "/tmp/gludd-multitask-state.json"
 WATCHDOG_ACTIVITY_FILE = "/tmp/gludd-watchdog-last-activity.json"
 TODOWRITE_STATE = os.environ.get("GLUDD_TODOWRITE_STATE", "/tmp/gludd-todowrite-state.json")
 RESET_LOG = "/tmp/gludd-auto-reset.log"
@@ -2352,6 +2353,59 @@ def _check_force_dispatch() -> bool:
         return False
 
 
+def _read_multitask_state() -> dict:
+    try:
+        p = Path(MULTITASK_STATE_FILE)
+        if not p.exists():
+            return {}
+        return json.loads(p.read_text())
+    except Exception:
+        return {}
+
+
+def _check_under_floor_dispatch() -> None:
+    state = _read_multitask_state()
+    if not state:
+        return
+
+    dispatch_count = int(state.get("thisMessageDispatches", 0))
+    zero_streak = int(state.get("zeroStreak", 0))
+    estimated_in_flight = int(state.get("estimatedInFlight", 0))
+
+    if dispatch_count >= 10:
+        if zero_streak > 0:
+            _log(f"DISPATCH OK: {dispatch_count} dispatches this wave, {estimated_in_flight} estimated in flight — floor satisfied")
+        return
+
+    if not _pending_work_exists():
+        return
+
+    pipeline_dry = estimated_in_flight <= 2
+
+    if dispatch_count > 0 and dispatch_count < 10:
+        _log(
+            f"UNDER-FLOOR DETECTED: only {dispatch_count} dispatches this wave "
+            f"(floor=10, zero_streak={zero_streak}, in_flight={estimated_in_flight})"
+        )
+        directive = (
+            f"[{_now()}] UNDER-FLOOR DETECTED: only {dispatch_count} dispatch(es) in current wave.\n"
+            f"Floor is 10. pending work exists. Dispatch {10 - dispatch_count} more subagents NOW.\n"
+            f"zero_streak={zero_streak}, estimated_in_flight={estimated_in_flight}\n"
+        )
+        Path(PURE_IDLE_DIRECTIVE).write_text(directive)
+    elif pipeline_dry and zero_streak > 0:
+        _log(
+            f"UNDER-FLOOR DETECTED: pipeline dry — zero dispatch streak={zero_streak}, "
+            f"only {estimated_in_flight} estimated in flight (floor=10)"
+        )
+        directive = (
+            f"[{_now()}] UNDER-FLOOR DETECTED: zero dispatch streak={zero_streak}.\n"
+            f"Estimated in flight: {estimated_in_flight}. Floor is 10. pending work exists.\n"
+            f"DISPATCH A FULL WAVE OF 10 SUBAGENTS NOW.\n"
+        )
+        Path(PURE_IDLE_DIRECTIVE).write_text(directive)
+
+
 def check_and_reset() -> dict:
     global _POLL_CYCLE_COUNT
     result = {
@@ -2720,6 +2774,9 @@ def check_and_reset() -> dict:
         _write_disengage_signal(minutes=10, reason="ci_loop")
     if ci_true_stall:
         _log(f"CI TRUE STALL: pending >{CI_TRUE_STALL_MINUTES}min with no pushes for {CI_TRUE_STALL_NO_PUSH_MINUTES}min. CI may be broken.")
+
+    # ── Under-floor dispatch detection ────────────────────────────────────
+    _check_under_floor_dispatch()
 
     # ── Item 13: Write unified orchestrator state ────────────────────────
     agent_active = mtime_age is not None and mtime_age < PURE_IDLE_SECS

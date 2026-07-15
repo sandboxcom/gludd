@@ -295,6 +295,7 @@ interface WorkState {
   testFailures: boolean
   repoPending: boolean
   multitaskingBacklogOpen: boolean
+  underFloor: boolean
   hasPendingWork: boolean
   hasLocalWork: boolean
   healthScore: number
@@ -454,8 +455,24 @@ function hasRealPendingWork(): WorkState {
     }
   } catch {}
 
+  let underFloor = false
+  try {
+    const multitaskStatePath = "/tmp/gludd-multitask-state.json"
+    if (fs.existsSync(multitaskStatePath)) {
+      const ms = JSON.parse(fs.readFileSync(multitaskStatePath, "utf8"))
+      const minDispatches = parseInt(
+        process.env.GLUDD_MIN_DISPATCHES ||
+        process.env.GLUDD_MULTITASK_MIN_DISPATCHES ||
+        "10",
+        10,
+      )
+      underFloor = typeof ms.thisMessageDispatches === "number" &&
+        ms.thisMessageDispatches < minDispatches
+    }
+  } catch {}
+
   const hasLocalWork = tasksMdUnchecked || ratchetEntries > 0 || bugsOpen || gateStatusRed
-  const hasPendingWork = hasLocalWork || ciVerdictPendingOrRed || ciVerdictUnknown || releaseIncomplete || testFailures || repoPending || multitaskingBacklogOpen
+  const hasPendingWork = hasLocalWork || ciVerdictPendingOrRed || ciVerdictUnknown || releaseIncomplete || testFailures || repoPending || multitaskingBacklogOpen || underFloor
   let healthScore = 100
   if (gateStatusRed) healthScore -= 30
   if (gateStale) healthScore -= 10
@@ -465,13 +482,14 @@ function hasRealPendingWork(): WorkState {
   if (bugsOpen) healthScore -= 10
   if (repoPending) healthScore -= 5
   if (multitaskingBacklogOpen) healthScore -= 5
+  if (underFloor) healthScore -= 5
   if (healthScore < 0) healthScore = 0
 
   const state: WorkState = {
     tasksMdUnchecked, tasksMdUncheckedCount, ratchetEntries, bugsOpen,
     gateStatusMissing, gateStale, gateStatusRed,
     ciVerdictPendingOrRed, ciVerdictUnknown, releaseIncomplete, testFailures, repoPending,
-    multitaskingBacklogOpen,
+    multitaskingBacklogOpen, underFloor,
     hasPendingWork, hasLocalWork, healthScore, ts: now,
   }
 
@@ -673,6 +691,7 @@ const defaultImpl: HotModule = {
         if (workState.releaseIncomplete) indicators.push("release incomplete")
         if (workState.testFailures) indicators.push("test failures")
         if (workState.repoPending) indicators.push("repo dirty")
+        if (workState.underFloor) indicators.push("UNDER-FLOOR dispatch")
         const sessionBlockCount = getSessionBlockCount()
         const escalation = sessionBlockCount > ESCALATION_THRESHOLD
           ? `\n🚨 ESCALATION ACTIVE: ${sessionBlockCount} stop attempts blocked this session. DO NOT attempt to stop.\n`
