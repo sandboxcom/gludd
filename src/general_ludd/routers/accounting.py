@@ -250,7 +250,10 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
     @app.get("/api/accounting/{project_id}")
     async def api_accounting_project(project_id: str) -> dict[str, object]:
         """Return an accounting snapshot for a single project."""
-        accountant = await _build_accountant(app)
+        from general_ludd.db.repository import scoped_to
+
+        with scoped_to(project_id):
+            accountant = await _build_accountant(app)
         try:
             # account_for() invokes the loc_provider, which runs a blocking
             # `git diff --numstat` subprocess. Offload to a worker thread.

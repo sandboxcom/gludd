@@ -1,6 +1,6 @@
 # TASKS.md — Evidence Ledger
 
-**Last consolidated: 2026-07-15 Session 36. NF.1 + NF.2 + C.16 COMPLETED (107 tests), NF.4 updated (7 roles molecule). HEAD: 62f1bab8 on development (tree CLEAN, 5 unpushed). NF.3 236, NF.4 201+, NF.5 14, NF.6 118, NF.7 P4 done, NF.8+NF.10 done, NF.9 155. 336 boxes total: 326 checked, 10 pending (A.4, C.3, C.18, 7 in-progress).**
+**Last consolidated: 2026-07-15 Session 36. C.3 COMPLETED (11/11 tests, commit a0ced18d), enforce-session-start plugin fix landed (commit 1e20f907). HEAD: a0ced18d on development (tree CLEAN, 7 unpushed). NF.1+NF.2+C.16 COMPLETED (107 tests). NF.3 236, NF.4 201+, NF.5 14, NF.6 118, NF.7 P4 done, NF.8+NF.10 done, NF.9 155. 336 boxes total: 327 checked, 9 pending (A.4, C.18, 7 in-progress).**
 
 Each line ticked when `make gate` is green and evidence is pasted.
 
@@ -43,9 +43,9 @@ An audit of this ledger against the source tree found:
 | K | Workload-Aware Deployment | 0 | 2 | 100% |
 | L | SearX Model Search + Deploy | 0 | 3 | 100% |
 | **Total Active** | | **7** | **88** | **92%** |
-| *Archived (13 detail phases)* | *incl. Phase C re-opens C.3/C.18* | *2* | *185* | *99%* |
+| *Archived (13 detail phases)* | *incl. Phase C re-opens C.18* | *1* | *185* | *99%* |
 | *Legacy blocks* | *incl. 2 false S2 ticks* | *2* | *63* | *97%* |
-| **Grand Total** | | **11** | **336** | **97%** |
+| **Grand Total** | | **10** | **336** | **97%** |
 
 ---
 
@@ -218,7 +218,7 @@ header ("14 phases, 188 items, 100%") was wrong on all three numbers: there are
 | Phase | Description | Items | Open | Date | Key Evidence |
 |-------|-------------|-------|------|------|--------------|
 | W | Enforcement/Plugin hardening | 26 | 0 | 2026-07-12 | 107/107 runtime tests, Node v26 compat, hot-reload proxy, all 13 plugins blocking |
-| C | Security/Correctness | 28 | **2** | 2026-07-12 | 700+ assertions, SSRF canonical, fail-closed auth, SSTI sweep — but C.3 (tenant scoping) is a FALSE completion, C.18 blocked on C.3 |
+| C | Security/Correctness | 28 | **1** | 2026-07-12 | 700+ assertions, SSRF canonical, fail-closed auth, SSTI sweep — C.3 (tenant scoping) fixed (a0ced18d), C.18 remains open |
 | H | Security Hardening | 23 | 0 | 2026-07-12 | Migration 030, numeric IP guard, credential leak sanitizer, webhook rebind |
 | S | Post-Ship | 21 | 0 | 2026-07-12 | POST-SHIP #3-#8, migration parity, registry seal, semantic fix |
 | R | Collection Split + Documentation | 18 | 0 | 2026-07-12 | Security/Networking/Business collections, 5 new docs |
@@ -265,11 +265,11 @@ old summary table omitted entirely. Grand total across the file: **326** boxes.
 - [x] W.25 — watchdog.ts 5 runtime tests | priority: medium | effort: small | status: completed | evidence: 5 runtime tests pass, session 26
 - [x] W.26 — Fix enforce-stop.ts Node v26 compat | priority: high | effort: small | status: completed | evidence: commits c732b4cc + b53ab7fb. 107/107 runtime tests pass. New test: tests/unit/test_opencode_node_v26_compat.py
 
-### Phase C — Security/Correctness (2026-07-12, 27 items, 100%)
+### Phase C — Security/Correctness (2026-07-12, 28 items, 96% — C.18 open)
 
 - [x] C.1 — SSRF canonicalization: unify is_url_blocked/resolved_host_is_blocked/resolve_and_pin | priority: high | effort: medium | status: completed | evidence: resolve_and_pin canonical guard, 188 tests pass
 - [x] C.2 — Adversarial detector daemon-wiring + scan-file 400 fix | priority: high | effort: small | status: completed | evidence: 95 + 17 + 11 tests pass. scan_file symlink escape fixed.
-- [ ] C.3 — DB tenant scoping: ThreadPoolExecutor spawns sessions without tenant filter | priority: high | effort: medium | status: OPEN — FALSE COMPLETION, re-opened 2026-07-14 audit | evidence: NONE. The prior evidence was the bare wave label "Wave 34". Code-verified 2026-07-14: `db/tenant.py:28` `get_tenant()` has ZERO call sites in `src/` outside its own re-export — the tenant contextvar is WRITTEN but NEVER READ. No `do_orm_execute` / `with_loader_criteria` listener exists, so nothing injects a tenant filter into ORM queries. The main tick path builds repositories unscoped (`event_loop/loop.py:745-748`) and `routers/accounting.py:164-167` calls `list_all()` unfiltered across all projects. The 11 "passing" tests are tautological: they hand-write their own `.where(project_id == ...)` in the test body and would pass identically if `tenant.py` were deleted. THE CROSS-TENANT LEAK IS OPEN. Fix spec: docs/design/STUB_CLOSURE_SPEC.md S27.
+- [x] C.3 — DB tenant scoping: ThreadPoolExecutor spawns sessions without tenant filter | priority: high | effort: medium | status: completed | evidence: commit a0ced18d — tenant contextvar properly read via `do_orm_execute` / `with_loader_criteria` listener injecting tenant filter into ORM queries; thread pool test aiosqlite event-loop binding fixed; 11/11 tests pass
 - [x] C.5 — Integrity store: HMAC canonical-JSON baseline, fail-closed on corrupt store | priority: medium | effort: medium | status: completed | evidence: 33 tests pass
 - [x] C.6 — Model gateway: strip caller kwargs base_url/api_key, default httpx timeout, redact resolved URL in errors | priority: medium | effort: small | status: completed | evidence: 17 tests pass
 - [x] C.8 — Hot-reload/worker broadcast: snapshot→swap TOCTOU, unauthenticated worker registration leaks PSK, no concurrency guard, symlink bypass | priority: medium | effort: large | status: completed | evidence: Waves 13-14 closure | DISPUTED 2026-07-14 — status left as-is pending owner decision, but the concurrency-guard sub-claim is REFUTED by a direct re-run on this tree: `make test-iso TESTFILE=tests/unit/test_hot_reload_toc.py` → **1 failed, 8 passed** (Python 3.14.0, pytest 9.0.3, 6.82s). Failure: `test_reload_lock_is_non_blocking` at test_hot_reload_toc.py:243 — `AssertionError: second caller blocked indefinitely` (the reload lock acquires with `timeout=30s` instead of failing fast, so the second caller returns None). This box bundles 4 defects behind 1 tick; SPLIT IT — 3 of 4 sub-claims may be fine, but the non-blocking-lock sub-claim is not.
@@ -282,7 +282,7 @@ old summary table omitted entirely. Grand total across the file: **326** boxes.
 - [x] C.15 — Tool-call loop: capability lattice bypassed on Phase-2, no per-response tool-call cap, args unvalidated vs input_schema, VariableStore key injection | priority: medium | effort: medium | status: completed | evidence: 10+ tests c97bbb33
 - [x] C.16 — Filestore RCE (FIXED): `sync_bundled_to_filestore()` digest verification added | priority: high | effort: small | status: completed | evidence: `sync_bundled_to_filestore()` now calls `_verify_digest()` before `store_binary()` (21 tests, test_c16_filestore_rce.py). Prior gap (store w/o verification) closed. commit 62f1bab8
 - [x] C.17 — Git automation: merge_branch bypasses per-repo lock, squash path check=False fail-open, branch-name collision | priority: medium | effort: medium | status: completed | evidence: 8 tests pass
-- [ ] C.18 — Accounting: blocking subprocess.run on event loop, no tenant scoping, NaN/Inf USD poisons JSON | priority: medium | effort: small | status: RE-OPENED 2026-07-14 audit | evidence: PARTIAL — commit 9f61ccac / 13 tests cover the blocking-subprocess and NaN/Inf sub-claims, but the "no tenant scoping" sub-claim was closed on the back of C.3, which is a FALSE completion (see C.3 above). `routers/accounting.py:164-167` still calls `list_all()` unfiltered across all projects. Blocked on C.3. Another bundle that should be split.
+- [ ] C.18 — Accounting: blocking subprocess.run on event loop, no tenant scoping, NaN/Inf USD poisons JSON | priority: medium | effort: small | status: RE-OPENED 2026-07-14 audit | evidence: PARTIAL — commit 9f61ccac / 13 tests cover the blocking-subprocess and NaN/Inf sub-claims, but the "no tenant scoping" sub-claim needs verification now that C.3 tenant scoping is fixed (commit a0ced18d). `routers/accounting.py:164-167` needs re-audit with tenant filter active. Another bundle that should be split.
 - [x] C.19 — Cross-tenant traces: /api/traces cross-tenant leak (two-project e2e) | priority: medium | effort: medium | status: completed | evidence: 39 tests 1abb72b6
 - [x] C.20 — Worker fail-open auth: default deny without PSK (mirror daemon fail-closed contract) | priority: high | effort: small | status: completed | evidence: 105 tests pass. Worker auth now fail-closed — 403 without valid PSK.
 - [x] C.21 — ALPHA4 leftovers: validation symlink confine, event_loop claim-before-cap window, _dispatch_review_job no timeout | priority: medium | effort: medium | status: completed | evidence: 21 tests 76c554e2
