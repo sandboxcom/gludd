@@ -10,7 +10,7 @@
 - name: Converge - run build_presentation role
   hosts: localhost
   connection: local
-  gather_facts: false
+  gather_facts: true
   vars:
     mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8783', true) }}"
   tasks:

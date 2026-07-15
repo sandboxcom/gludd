@@ -10,7 +10,7 @@
     mode: "0755"
 
 - name: Detect and handle BOMs via knowledge module
-  ansible.builtin.script:
+  ansible.builtin.shell:
     cmd: |
       python3 -c "
 import json, sys, os
@@ -96,7 +96,6 @@ print(f'BOM detected: {result.get(\"bom_detected\", False)}')
 if result.get('encoding'):
     print(f'Encoding: {result[\"encoding\"]}')
 "
-  args:
     executable: python3
   register: bom_result
   changed_when: false

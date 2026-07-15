@@ -5,7 +5,7 @@
 - name: Converge - run ci_pipeline_verify role
   hosts: localhost
   connection: local
-  gather_facts: false
+  gather_facts: true
   vars:
     mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8808', true) }}"
   tasks:

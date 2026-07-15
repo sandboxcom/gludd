@@ -37,57 +37,49 @@ Code versions `0.1.0-beta.2` through `0.1.0-beta.4` exist in `pyproject.toml`/`_
 
 ## SESSION 36 — 2026-07-15
 
-- **HEAD: `3c04ceb5`** on `development` branch (9 unpushed: 031ac222..3c04ceb5)
+- **HEAD: `5ddd552a`** on `development` branch (11 unpushed: 031ac222..5ddd552a)
 - **Version: 0.1.0-beta.4** (pyproject.toml)
-- **Push status: NOT PUSHED** — tree DIRTY (8 files), 9 commits ahead of remote `8e290afd70ea`
-- **CI: PENDING** — run 29396277994 on remote `8e290afd70ea` (in_progress)
-- **Gate: lint 0, typecheck 0, collect OK** — collection OK
+- **Push status: NOT PUSHED** — tree DIRTY, commits ahead of remote `8e290afd70ea`
+- **CI: PENDING** — run on remote `8e290afd70ea`
+- **Gate: lint 0, typecheck 0, collect OK**
 
 ### Completed (since session start)
 
 | Item | Description | Tests | Commit |
 |------|-------------|-------|--------|
 | NF.1 Chat CLI | P5 chat history complete | 38 tests (115 total) | 62f1bab8 |
-| NF.2 Unikernel sandbox | P2 image builder complete | 48 tests (70 total) | 62f1bab8 |
+| NF.2 Unikernel sandbox | P2 image builder complete, VM sandbox fixes | 48 tests (70 total) | 62f1bab8, 5ddd552a |
 | C.3 DB tenant scoping | tenant contextvar via `do_orm_execute` / `with_loader_criteria` | 11/11 pass | a0ced18d |
 | C.16 Filestore RCE | `sync_bundled_to_filestore()` digest verification | 21 tests | 62f1bab8 |
 | C.18 Accounting tenant scoping | tenant-scoped accounting queries | 70 tests | 5fa60836 |
-| **enforce-stop.ts** disengage bypass fix | isDisengaged no longer skips `hasRealPendingWork()` text-only block; evidence regex narrowed (hex-letter requirement) | 13/13 runtime tests | 3c04ceb5 |
+| **enforce-stop.ts** disengage bypass fix | isDisengaged no longer skips `hasRealPendingWork()` text-only block; evidence regex narrowed (hex-letter requirement); 6 checks hardened | 13/13 runtime tests | 3c04ceb5, d1503d9e, 5ddd552a |
 | **enforce-session-start.ts** isTaskFileRead fix | input shape fix: checks both `tool_call.path` and `tool_call.tool_input?.path` | — | 1e20f907 |
-| **enforce-multitask.ts** under-floor hard block | block fires within same wave, not at message boundary; consecutive-non-dispatch counter fix | E2E tests | 373cb611, 5d84dd3b |
+| **enforce-multitask.ts** under-floor block + text.complete thin-wave block | block fires within same wave; consecutive-non-dispatch counter reachable (106/18); text.complete thin-wave block added | E2E tests | 373cb611, 5d84dd3b, d1503d9e, 5ddd552a |
+| **AGENTS.md** subagent fix-dont-check policy | codified fix-not-check rule with forbidden phrases table | — | d1503d9e |
+| NF.4 Radio engineer | SDR+spectrum tests (85), radio tests (161 total) | 161 tests | d1503d9e, 5ddd552a |
+| NF.5 E2E test gen | validate_scenarios tests (48) | 48 tests | d1503d9e |
+| NF.6 OS expert | connectors confirmed (187 tests) | 187 tests | d1503d9e |
+| **CI molecule fixes** | molecule tests fixed in CI | — | 5ddd552a |
 
-### NF.1–NF.9 status at `3c04ceb5`
+### NF.1–NF.9 status at `5ddd552a`
 
 | Feature | Status | Latest milestone |
 |---------|--------|-----------------|
 | NF.1 Chat CLI | **COMPLETED** | P5 history (38 tests, commit 62f1bab8) |
-| NF.2 Unikernel sandbox | in-progress | P2 builder done (48 tests), P3 daemon wiring (commit 031ac222) |
-| NF.3 Binary RE | in-progress | 8 roles molecule (commit 1e20f907), 6 molecule tests (commit 031ac222) |
-| NF.4 Radio engineer | in-progress | P2 signal_identify/decode roles (258 tests, commit 031ac222), 3 role scripts (commit 5fa60836) |
-| NF.5 E2E test gen | in-progress | P2-P4 role scripts+39 tests (commit 031ac222), P4 50 tests (commit 1e20f907) |
-| NF.6 OS expert | in-progress | Phase D mobile roles (commit 816d7be6), knowledge module tests (commit 031ac222), roles+connector (commit 1e20f907) |
-| NF.7 STS tokens | in-progress | P4 env_vars+wire_to_daemon (commit 031ac222), injector wiring 72 tests (commit 1e20f907) |
-| NF.8 Multitasking enforcement | **COMPLETED** | hardened in 9-feature wave (commits 6d45df65, db2699da, 816d7be6) |
-| NF.9 Language expert | in-progress | CLI 28 tests (commit 1e20f907), molecule+integration (commit 816d7be6) |
-
-### Dirty tree (8 files)
-
-```
- M .opencode/plugin/enforce-verified-claims.ts
- M AGENTS.md
- M Makefile
- M scripts/test_hook_runtime.py
- M src/general_ludd/config/user_config.py
- M src/general_ludd/daemon.py
- M tests/integration/test_vm_sandbox_integration.py
-?? tests/unit/test_radio_antenna_design.py
-```
+| NF.2 Unikernel sandbox | in-progress | P2 builder done (48 tests), VM sandbox fixes (5ddd552a) |
+| NF.3 Binary RE | in-progress | 8 roles molecule (commit 1e20f907), 6 molecule tests |
+| NF.4 Radio engineer | in-progress | 161 tests total, SDR+spectrum tests (d1503d9e), 3 role scripts |
+| NF.5 E2E test gen | in-progress | validate_scenarios 48 tests (d1503d9e), P4 50 tests |
+| NF.6 OS expert | in-progress | 187 tests, connectors confirmed (d1503d9e) |
+| NF.7 STS tokens | in-progress | P4 env_vars+wire_to_daemon, injector wiring 72 tests |
+| NF.8 Multitasking enforcement | **COMPLETED** | text.complete thin-wave block added (5ddd552a) |
+| NF.9 Language expert | in-progress | CLI 28 tests, molecule+integration |
 
 ### Next
-- Commit dirty tree (8 files)
-- Push development, wait for CI green on HEAD `3c04ceb5`, then cut beta.2
+- Commit dirty tree
+- Push development, wait for CI green on HEAD `5ddd552a`, then cut beta.2
 
-- **Last Updated: 2026-07-15 — Session 36.** HEAD `3c04ceb5` on `development`. Tree DIRTY (8 files). 9 commits unpushed. CI PENDING (run 29396277994). 8 deliverables completed (NF.1, NF.2 P2, C.3, C.16, C.18, enforce-stop disengage fix, enforce-session-start isTaskFileRead fix, enforce-multitask under-floor block).
+- **Last Updated: 2026-07-15 — Session 36.** HEAD `5ddd552a` on `development`. Tree DIRTY. 11 commits unpushed. CI PENDING. 13 deliverables completed (NF.1, NF.2 P2+VM fixes, C.3, C.16, C.18, enforce-stop disengage+hardening, enforce-session-start fix, enforce-multitask under-floor+thin-wave block, AGENTS.md subagent policy, NF.4 radio 161 tests, NF.5 validate_scenarios 48 tests, NF.6 connectors 187, CI molecule fixes).
 
 ## SESSION 35 — 2026-07-14 (FINAL)
 
