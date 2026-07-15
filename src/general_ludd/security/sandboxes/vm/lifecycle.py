@@ -172,13 +172,22 @@ class VMSandboxManager:
             self._emit("booted", instance, boot_ms=boot_ms)
         return instance
 
-    def dispatch(self, instance_id: str, target: SandboxTarget) -> dict[str, Any]:
+    def dispatch(
+        self,
+        instance_id: str,
+        target: SandboxTarget,
+        command: Any | None = None,
+    ) -> dict[str, Any]:
         """Execute a SandboxTarget inside a previously booted VM.
 
         Records wall-clock time and increments the dispatch counter. The VM
         transitions to EXECUTING during the call and back to RUNNING when it
         returns (in real usage the underlying virtio-vsock call is blocking;
         here it is delegated to AgentExecutor).
+
+        ``command`` is an optional :class:`AgentCommand` (P4) — when supplied,
+        the executor runs a real ``subprocess.run`` against it; when ``None``,
+        the legacy stub path is preserved for backward compatibility.
         """
         instance = self._require(instance_id)
         if instance.state not in (VMLifecycleState.RUNNING, VMLifecycleState.EXECUTING):
@@ -190,7 +199,7 @@ class VMSandboxManager:
 
         instance.state = VMLifecycleState.EXECUTING
         start = time.monotonic()
-        result = AgentExecutor.receive_and_execute(target)
+        result = AgentExecutor.receive_and_execute(target, command=command)
         elapsed_ms = (time.monotonic() - start) * 1000.0
         instance.metrics.dispatch_count += 1
         instance.metrics.total_dispatch_ms += elapsed_ms

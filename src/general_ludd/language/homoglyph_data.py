@@ -11,7 +11,41 @@ Covers:
 
 from __future__ import annotations
 
+import unicodedata
 from typing import Literal, TypedDict
+
+
+class ConfusableFinding(TypedDict):
+    codepoint: int
+    character: str
+    skeleton: str
+    name: str
+    position: int
+
+
+class InvisibleFinding(TypedDict):
+    codepoint: int
+    character: str
+    name: str
+    short_name: str
+    category: InvisibleCategory
+    risk: str
+    cve: str
+    position: int
+
+
+class BidiFinding(TypedDict):
+    codepoint: int
+    character: str
+    name: str
+    cve: str
+    position: int
+
+
+class MixedScriptResult(TypedDict):
+    is_mixed: bool
+    scripts: list[str]
+    counts: dict[str, int]
 
 
 class HomoglyphGroup(TypedDict):
@@ -428,3 +462,204 @@ def _invisible_codepoints() -> set[int]:
 
 
 _INVISIBLE_SET: set[int] = _invisible_codepoints()
+
+
+_BIDI_OVERRIDE_CODEPOINTS: set[int] = {0x202A, 0x202B, 0x202C, 0x202D, 0x202E,
+                                        0x2066, 0x2067, 0x2068, 0x2069}
+
+
+def _build_skeleton_map() -> dict[int, str]:
+    """Map every confusable codepoint to its ASCII skeleton."""
+    mapping: dict[int, str] = {}
+    for group in HOMOGLYPH_GROUPS:
+        for cp, _name in group["characters"]:
+            mapping[cp] = group["skeleton"]
+    return mapping
+
+
+_SKELETON_MAP: dict[int, str] = _build_skeleton_map()
+
+
+def detect_confusables(text: str) -> list[ConfusableFinding]:
+    """Find confusable (homoglyph) characters in text.
+
+    A character is flagged when it has a known skeleton in a HOMOGLYPH_GROUP
+    AND that skeleton differs from the character itself (i.e. the character
+    is NOT the ASCII base form). Pure-ASCII text never triggers findings.
+
+    Returns one finding per confusable character, in order of appearance.
+    """
+    if not text:
+        return []
+
+    findings: list[ConfusableFinding] = []
+    for idx, ch in enumerate(text):
+        cp = ord(ch)
+        skeleton = _SKELETON_MAP.get(cp)
+        if skeleton is None:
+            continue
+        if skeleton == ch:
+            continue
+        name = unicodedata.name(ch, f"U+{cp:04X}")
+        findings.append({
+            "codepoint": cp,
+            "character": ch,
+            "skeleton": skeleton,
+            "name": name,
+            "position": idx,
+        })
+    return findings
+
+
+def detect_invisible_chars(text: str) -> list[InvisibleFinding]:
+    """Find invisible (zero-width, bidi, format) characters in text.
+
+    Returns one finding per invisible character, with its risk and CVE
+    reference (if any).
+    """
+    if not text:
+        return []
+
+    findings: list[InvisibleFinding] = []
+    for idx, ch in enumerate(text):
+        cp = ord(ch)
+        inv_entry = None
+        for inv in INVISIBLE_CHARACTERS:
+            if inv["codepoint"] == cp:
+                inv_entry = inv
+                break
+        if inv_entry is None:
+            continue
+        findings.append({
+            "codepoint": cp,
+            "character": ch,
+            "name": inv_entry["name"],
+            "short_name": inv_entry["short_name"],
+            "category": inv_entry["category"],
+            "risk": inv_entry["risk"],
+            "cve": inv_entry["cve_reference"],
+            "position": idx,
+        })
+    return findings
+
+
+def detect_bidi_overrides(text: str) -> list[BidiFinding]:
+    """Find bidi override / isolate characters (CVE-2021-42574 vectors).
+
+    Covers U+202A..U+202E (embeddings + overrides) and
+    U+2066..U+2069 (isolates). The overrides (U+202D, U+202E) and
+    embeddings (U+202A, U+202B) carry the CVE-2021-42574 reference.
+    """
+    if not text:
+        return []
+
+    findings: list[BidiFinding] = []
+    for idx, ch in enumerate(text):
+        cp = ord(ch)
+        if cp not in _BIDI_OVERRIDE_CODEPOINTS:
+            continue
+        cve = ""
+        if 0x202A <= cp <= 0x202E:
+            cve = "CVE-2021-42574"
+        name = unicodedata.name(ch, f"U+{cp:04X}")
+        findings.append({
+            "codepoint": cp,
+            "character": ch,
+            "name": name,
+            "cve": cve,
+            "position": idx,
+        })
+    return findings
+
+
+def detect_mixed_script(text: str) -> MixedScriptResult:
+    """Detect whether text mixes multiple Unicode scripts.
+
+    Uses unicodedata.script() (Python 3.12+) with fallback to
+    script ranges for older Pythons. Common/Inherited scripts are
+    excluded from the mixed-script determination (punctuation and
+    combining marks do not count as "a different script").
+
+    Returns {'is_mixed': bool, 'scripts': [...], 'counts': {script: n}}.
+    """
+    if not text:
+        return {"is_mixed": False, "scripts": [], "counts": {}}
+
+    counts: dict[str, int] = {}
+    for ch in text:
+        script = _script_of(ch)
+        if script in ("Common", "Inherited", "Unknown"):
+            continue
+        counts[script] = counts.get(script, 0) + 1
+
+    scripts = sorted(counts.keys())
+    return {
+        "is_mixed": len(scripts) > 1,
+        "scripts": scripts,
+        "counts": counts,
+    }
+
+
+def _script_of(ch: str) -> str:
+    """Return the Unicode script name for a character.
+
+    Uses unicodedata.script() on Python 3.12+; falls back to a
+    coarse Latin/Cyrillic/Greek classifier for older runtimes.
+    """
+    if hasattr(unicodedata, "script"):
+        try:
+            return unicodedata.script(ch)
+        except (ValueError, TypeError):
+            pass
+
+    cp = ord(ch)
+    if cp == 0:
+        return "Common"
+    if (0x0041 <= cp <= 0x005A) or (0x0061 <= cp <= 0x007A):
+        return "Latin"
+    if (0x0400 <= cp <= 0x04FF) or (0x0500 <= cp <= 0x052F):
+        return "Cyrillic"
+    if (0x0370 <= cp <= 0x03FF) or (0x1F00 <= cp <= 0x1FFF):
+        return "Greek"
+    if 0x0530 <= cp <= 0x058F:
+        return "Armenian"
+    return "Common"
+
+
+def generate_skeleton(text: str) -> str:
+    """Normalize confusable characters to their ASCII skeleton.
+
+    Each character is replaced by its skeleton if it appears in a
+    HOMOGLYPH_GROUP; otherwise it is preserved. This produces the
+    "visual" form that a human would read, which is what an attacker
+    is spoofing.
+    """
+    if not text:
+        return ""
+
+    out: list[str] = []
+    for ch in text:
+        cp = ord(ch)
+        skeleton = _SKELETON_MAP.get(cp)
+        if skeleton is not None:
+            out.append(skeleton)
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
+def is_suspicious(text: str) -> bool:
+    """Return True if text contains any confusable, invisible, or bidi char.
+
+    This is the fast yes/no check for security-sensitive contexts (domain
+    validation, filename checks, source-code scanning). Use the individual
+    detect_* functions for detailed findings.
+    """
+    if not text:
+        return False
+
+    if detect_confusables(text):
+        return True
+    if detect_invisible_chars(text):
+        return True
+    return bool(detect_bidi_overrides(text))

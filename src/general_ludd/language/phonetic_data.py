@@ -372,3 +372,200 @@ CMU_DICT_SUBSET: dict[str, list[str]] = {
     "SPEECH": ["S P IY1 CH"],
     "SYNTHESIS": ["S IH1 N TH AH0 S AH0 S"],
 }
+
+
+def compute_soundex(word: str) -> str:
+    """Compute the 4-character Soundex code for an English word.
+
+    Standard NARA Soundex algorithm:
+    1. Keep the first letter (uppercase).
+    2. Map remaining letters to digits via SOUNDEX_MAPPING.
+    3. Drop vowels (a/e/i/o/u/y) and h/w entirely.
+    4. Collapse adjacent same-digit codes.
+    5. Pad with zeros to 4 chars; truncate to 4.
+
+    Returns "" for empty input.
+    """
+    if not word:
+        return ""
+
+    cleaned = "".join(c for c in word.upper() if c.isalpha())
+    if not cleaned:
+        return ""
+
+    code = cleaned[0]
+    prev_digit = SOUNDEX_MAPPING.get(code[0].lower(), "")
+
+    for ch in cleaned[1:]:
+        lower = ch.lower()
+        if lower in SOUNDEX_IGNORE:
+            continue
+        if lower in SOUNDEX_VOWELS:
+            prev_digit = ""
+            continue
+        digit = SOUNDEX_MAPPING.get(lower, "")
+        if digit and digit != prev_digit:
+            code += digit
+        prev_digit = digit
+
+    return (code + "000")[:4]
+
+
+def compute_metaphone(word: str) -> str:
+    """Compute the primary Metaphone code.
+
+    Simplified Metaphone (Phil Lawrence, 1990):
+    - Initial silent letters dropped (gn/kn/pn/wr)
+    - Digraphs mapped via DOUBLE_METAPHONE primary
+    - Vowels preserved only at position 0
+    - Stops at 4 characters (canonical length)
+
+    Returns "" for empty input.
+    """
+    if not word:
+        return ""
+
+    w = word.upper()
+    for prefix, replacement in (("GN", "N"), ("KN", "N"),
+                                 ("PN", "N"), ("WR", "R"),
+                                 ("WH", "W"), ("AE", "E"),
+                                 ("PS", "S")):
+        if w.startswith(prefix):
+            w = replacement + w[len(prefix):]
+            break
+
+    out: list[str] = []
+    i = 0
+    while i < len(w) and len(out) < 4:
+        ch = w[i]
+        if not ch.isalpha():
+            i += 1
+            continue
+
+        if ((i == 0 and ch in METAPHONE_VOWELS) or ch.upper() in "AEIOU") and i == 0:
+            out.append(ch)
+            i += 1
+            continue
+
+        pair = w[i:i + 2]
+        triple = w[i:i + 3]
+
+        if triple == "SCH":
+            out.append("SK")
+            i += 3
+            continue
+        if pair in DOUBLE_METAPHONE:
+            primary = DOUBLE_METAPHONE[pair][0]
+            if primary:
+                out.append(primary)
+            i += 2
+            continue
+        if ch == "X":
+            out.append("KS")
+            i += 1
+            continue
+
+        if ch not in "AEIOU":
+            out.append(ch)
+        i += 1
+
+    return "".join(out)[:4]
+
+
+def compute_double_metaphone(
+    word: str,
+) -> tuple[str, str]:
+    """Compute Double Metaphone (primary, alternate) codes.
+
+    Returns ("", "") for empty input.
+    The alternate encodes alternate pronunciations (e.g. Italian vs German).
+    """
+    if not word:
+        return "", ""
+
+    primary = compute_metaphone(word)
+    w = word.upper()
+
+    for prefix, replacement in (("GN", "N"), ("KN", "N"),
+                                 ("PN", "N"), ("WR", "R"),
+                                 ("WH", "W")):
+        if w.startswith(prefix):
+            w = replacement + w[len(prefix):]
+            break
+
+    if w.startswith("AE"):
+        alternate_base = "E" + w[2:]
+    elif w.startswith("SCH"):
+        alternate_base = "X" + w[3:]
+    elif w.startswith("X"):
+        alternate_base = "Z" + w[1:]
+    else:
+        alternate_base = w
+
+    alternate_out: list[str] = []
+    for ch in alternate_base[:4]:
+        if (ch.isalpha() and ch.upper() not in "AEIOU") or (ch.isalpha() and not alternate_out):
+            alternate_out.append(ch)
+
+    alternate = "".join(alternate_out)[:4]
+    return primary, alternate
+
+
+def transcribe_to_arpabet(text: str) -> str:
+    """Transcribe text to ARPABET phonemes using the CMU dictionary subset.
+
+    For words not in the dictionary, falls back to the word itself (uppercase).
+    Multiple words are joined by space; each word is joined by space internally.
+    Returns "" for empty input.
+    """
+    if not text:
+        return ""
+
+    words = [w for w in text.upper().split() if w]
+    if not words:
+        return ""
+
+    out: list[str] = []
+    for word in words:
+        clean = "".join(c for c in word if c.isalpha())
+        if not clean:
+            continue
+        if clean in CMU_DICT_SUBSET:
+            out.append(CMU_DICT_SUBSET[clean][0])
+        else:
+            out.append(clean)
+
+    return " ".join(out)
+
+
+def transcribe_to_ipa(text: str) -> str:
+    """Transcribe text to IPA using the CMU dictionary subset.
+
+    For dictionary words: maps each ARPABET phoneme to its IPA equivalent.
+    For unknown words: falls back to lowercase form.
+    Returns "" for empty input.
+    """
+    if not text:
+        return ""
+
+    words = [w for w in text.upper().split() if w]
+    if not words:
+        return ""
+
+    out: list[str] = []
+    for word in words:
+        clean = "".join(c for c in word if c.isalpha())
+        if not clean:
+            continue
+        if clean in CMU_DICT_SUBSET:
+            arpabet = CMU_DICT_SUBSET[clean][0].split()
+            ipa_phonemes: list[str] = []
+            for phoneme in arpabet:
+                base = phoneme.rstrip("012")
+                ipa = ARPABET_TO_IPA.get(base, phoneme)
+                ipa_phonemes.append(ipa)
+            out.append("".join(ipa_phonemes))
+        else:
+            out.append(clean.lower())
+
+    return " ".join(out)

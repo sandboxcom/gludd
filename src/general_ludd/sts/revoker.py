@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-CascadeHook = Callable[[str], Awaitable[None]]
+CascadeHook = Callable[[str], Awaitable[object]]
 
 
 class TokenRevoker:

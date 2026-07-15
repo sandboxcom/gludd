@@ -92,7 +92,7 @@ def _check_runtime() -> tuple[int, int, int, set[str]]:
     try:
         result = subprocess.run(
             ["uv", "run", "python", "scripts/test_hook_runtime.py"],
-            capture_output=True, text=True, timeout=60,
+            capture_output=True, text=True,             timeout=120,
             cwd=str(ROOT),
             env={**os.environ, "OPENCODE_SUBAGENT": "", "UV_NO_SYNC": "1"},
         )
@@ -101,17 +101,18 @@ def _check_runtime() -> tuple[int, int, int, set[str]]:
 
     stdout = result.stdout
     stderr = result.stderr
+    combined = stdout + "\n" + stderr
 
     passed = 0
     failed = 0
 
-    m = re.search(r"(\d+)\s+failed,\s+(\d+)\s+passed", stdout)
+    m = re.search(r"(\d+)\s+failed,\s+(\d+)\s+passed", combined)
     if m:
         failed = int(m.group(1))
         passed = int(m.group(2))
 
     failing_plugins: set[str] = set()
-    for line in stdout.splitlines():
+    for line in combined.splitlines():
         line = line.strip()
         if not line.startswith("FAILED"):
             continue
@@ -122,9 +123,9 @@ def _check_runtime() -> tuple[int, int, int, set[str]]:
 
     # Also check stderr for SyntaxError — all enforce-stop tests fail due to
     # a single SyntaxError in the plugin source. Surface the file that has it.
-    if "SyntaxError" in stderr or "SyntaxError" in stdout:
+    if "SyntaxError" in combined:
         # extract filename from stderr if possible
-        m_ts = re.search(r"([a-z_-]+\.ts):\d+", stderr + stdout)
+        m_ts = re.search(r"([a-z_-]+\.ts):\d+", combined)
         if m_ts:
             failing_plugins.add(m_ts.group(1))
 

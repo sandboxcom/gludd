@@ -5,6 +5,17 @@ All notable changes to this project are documented here. Format follows [Keep a 
 ## [Unreleased]
 
 ### Added
+- _nothing yet_
+
+### Fixed
+- _nothing yet_
+
+### Changed
+- _nothing yet_
+
+## [0.1.0-beta.2] — 2026-07-15 — Sessions 34-36: feature collections (binary RE, radio, OS expert, language expert), STS token system, multitasking enforcement hardening
+
+### Added
 - L.3 SearX model gateway wiring: SearxModelDiscoverer bridges SearXModelSearch→ModelGateway with TTL cache + fallback
 - 66 new notification dispatcher unit tests
 - POST /admin/models/discover-searx endpoint for on-demand model refresh

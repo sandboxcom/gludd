@@ -208,6 +208,8 @@ def test_clean_tree_hook_dispatch_with_dirty_tree():
     try:
         with open(test_file, "w") as f:
             f.write("test dirty file for hook test")
+            f.flush()
+            os.fsync(f.fileno())
         code = f"""\
 const mod = await import('{PLUGIN_DIR}/enforce-clean-tree.ts')
 const gs = mod.getGitStatus()
@@ -222,9 +224,9 @@ const result = await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
         result = _run_ts(code)
-        if result is not None:
-            assert result.get("permissionDecision") == "deny", f"Expected deny, got: {result}"
-            assert "DIRTY TREE" in result.get("message", "")
+        assert result is not None, "Expected deny object, got None"
+        assert result.get("permissionDecision") == "deny", f"Expected deny, got: {result}"
+        assert "DIRTY TREE" in result.get("message", "")
     finally:
         try:
             os.unlink(test_file)

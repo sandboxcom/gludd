@@ -6,9 +6,12 @@ Truncates large log files, deletes stale state files, keeps active ones.
 
 import glob
 import os
+import shutil
 import sys
+import time
 
 TMP = "/tmp"
+STALE_AGE_SEC = 3600
 
 ACTIVE_KEEP = {
     "gludd-floor-override",
@@ -132,6 +135,29 @@ def main() -> int:
             freed += _size(fp)
             os.remove(fp)
             deleted_count += 1
+
+    # ── Delete stale test artifacts older than STALE_AGE_SEC ───────────────
+    # Catches molecule logs, mock JSON, stream fixtures, etc. that accumulate
+    # from test runs but aren't covered by the specific patterns above.
+    cutoff = time.time() - STALE_AGE_SEC
+    keep_prefixes = tuple(ACTIVE_KEEP)
+    for entry in glob.glob(os.path.join(TMP, "gludd-*")):
+        basename = os.path.basename(entry)
+        if basename in ACTIVE_KEEP:
+            continue
+        if basename.startswith(keep_prefixes):
+            continue
+        try:
+            if os.path.getmtime(entry) < cutoff:
+                if os.path.isfile(entry):
+                    freed += os.path.getsize(entry)
+                    os.remove(entry)
+                    deleted_count += 1
+                elif os.path.isdir(entry):
+                    shutil.rmtree(entry)
+                    deleted_count += 1
+        except OSError:
+            pass
 
     # ── Summary ────────────────────────────────────────────────────────────
     print(f"  truncated: {truncated_count} file(s)")

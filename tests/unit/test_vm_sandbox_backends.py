@@ -1,11 +1,12 @@
-"""Unit tests for VM sandbox backends — Firecracker and gVisor P1 stubs.
+"""Unit tests for VM sandbox backends — Firecracker (P1 stub) and gVisor (P4 real runsc).
 
-Phase P1: import + available() + fail-open + Protocol compliance checks.
-Real boot/kill tests land in P2 when the Firecracker REST API is wired.
+Phase P4: the gVisor backend now spawns a real ``runsc`` subprocess when
+available; the Firecracker backend remains a P1 stub pending REST API wiring.
 """
 
 from __future__ import annotations
 
+import subprocess
 from unittest import mock
 
 import pytest
@@ -155,15 +156,27 @@ def test_gvisor_available_checks_runsc():
         assert GvisorBackend.available() is False
 
 
-def test_gvisor_apply_stub(sample_spec, sample_target):
+def test_gvisor_apply_with_mocked_runsc_spawn(sample_spec, sample_target):
+    """P4: when runsc is available, apply() spawns a real subprocess.
+
+    The P1 stub returned ``extra={'stub': True}``. P4 replaces that with a
+    real ``subprocess.Popen`` call — so the test must mock Popen to verify
+    the wiring without requiring runsc to be installed on the host.
+    """
     from general_ludd.security.sandboxes.vm.gvisor_backend import GvisorBackend
 
-    with mock.patch.object(GvisorBackend, "available", return_value=True):
+    fake_popen = mock.MagicMock(spec=subprocess.Popen)
+    fake_popen.pid = 24680
+    fake_popen.poll.return_value = None
+
+    with mock.patch.object(GvisorBackend, "available", return_value=True), \
+         mock.patch("subprocess.Popen", return_value=fake_popen):
         handle = GvisorBackend.apply(sample_spec, sample_target)
     assert isinstance(handle, SandboxHandle)
     assert handle.backend == "gvisor"
     assert handle.applied is True
-    assert handle.extra.get("stub") is True
+    assert handle.extra.get("pid") == 24680
+    assert "sandbox_id" in handle.extra
 
 
 def test_gvisor_apply_fails_open(sample_spec, sample_target):
@@ -187,7 +200,13 @@ def test_gvisor_verify_when_not_applied(sample_spec):
     assert any(f.severity == "fail" for f in findings)
 
 
-def test_gvisor_verify_stub_warning(sample_spec):
+def test_gvisor_verify_reports_fail_for_legacy_stub_handle(sample_spec):
+    """P4: a legacy handle with no popen is flagged fail (process tracking lost).
+
+    The P1 stub returned a ``warn`` finding for stub handles. P4 promotes
+    this to ``fail`` because a handle without popen state means the sandbox
+    process is unobservable — the verify step cannot confirm liveness.
+    """
     from general_ludd.security.sandboxes.vm.gvisor_backend import GvisorBackend
 
     handle = SandboxHandle(
@@ -195,7 +214,7 @@ def test_gvisor_verify_stub_warning(sample_spec):
         extra={"stub": True},
     )
     findings = GvisorBackend.verify(sample_spec, handle)
-    assert any(f.severity == "warn" for f in findings)
+    assert any(f.severity == "fail" for f in findings)
 
 
 def test_gvisor_release_noop_on_stub():

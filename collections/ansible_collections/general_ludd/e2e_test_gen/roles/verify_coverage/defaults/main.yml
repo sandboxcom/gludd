@@ -11,4 +11,8 @@ psk: ""
 coverage_threshold: 85
 pytest_timeout: 300
 
+# Enhanced coverage verification — cross-reference scenarios + symbols
+scenarios_file: ""       # path to validated_scenarios.json (optional)
+symbols_file: ""         # path to module_symbols.json (optional)
+
 enable_git_push: false

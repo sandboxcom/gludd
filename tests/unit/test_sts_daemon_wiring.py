@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from general_ludd.event_loop.loop import EventLoop, PHASE_ORDER
+from general_ludd.event_loop.loop import PHASE_ORDER, EventLoop
 from general_ludd.sts.reaper import TokenReaper
 from general_ludd.sts.revoker import TokenRevoker
 

@@ -21,6 +21,7 @@ These tests verify the fix via:
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import re
@@ -47,10 +48,8 @@ SHARED_STREAK_FILE = "/tmp/gludd-tool-streak.json"
 
 def _clean(*paths: str) -> None:
     for p in paths:
-        try:
+        with contextlib.suppress(OSError):
             os.unlink(p)
-        except OSError:
-            pass
 
 
 def _write_json(path: str, data: dict) -> None:
@@ -101,10 +100,8 @@ def _run_ts(ts_code: str, env_override: dict | None = None, timeout: int = 15) -
                 continue
         return None
     finally:
-        try:
+        with contextlib.suppress(OSError):
             os.unlink(tmp)
-        except OSError:
-            pass
 
 
 # ===========================================================================
