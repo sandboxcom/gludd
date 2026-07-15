@@ -148,7 +148,11 @@ def test_linux_security_parse_aa_status(linux_security_audit):
 
 
 def test_linux_security_parse_aa_status_empty(linux_security_audit):
-    assert linux_security_audit.parse_aa_status("") == {}
+    result = linux_security_audit.parse_aa_status("")
+    assert result["loaded"] is False
+    assert result["profiles_loaded"] == 0
+    assert result["profiles_enforce"] == 0
+    assert result["profiles_complain"] == 0
 
 
 def test_linux_security_parse_aa_status_not_loaded(linux_security_audit):

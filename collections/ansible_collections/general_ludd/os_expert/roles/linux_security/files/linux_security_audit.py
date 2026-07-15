@@ -213,8 +213,11 @@ def parse_auditctl_rules(raw: str) -> list[dict[str, Any]]:
             key = ""
             parts = line.split()
             for i, p in enumerate(parts):
-                if p.startswith("-S") and len(p) > 2:
-                    syscall = p[2:]
+                if p.startswith("-S"):
+                    if len(p) > 2:
+                        syscall = p[2:]
+                    elif i + 1 < len(parts):
+                        syscall = parts[i + 1]
                 if p == "-k" and i + 1 < len(parts):
                     key = parts[i + 1]
             rules.append({
@@ -304,7 +307,7 @@ def parse_kernel_params(raw: str) -> dict[str, Any]:
         if ":" not in line:
             continue
         key, _, val = line.partition(":")
-        key = key.strip()
+        key = key.strip().rsplit("/", 1)[-1]
         val = val.strip()
         if val.upper() == "N/A" or val == "":
             continue
