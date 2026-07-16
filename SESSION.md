@@ -45,10 +45,13 @@ Code versions `0.1.0-beta.2` through `0.1.0-beta.5` exist in `pyproject.toml`/`_
 - **Working tree: CLEAN**
 - **New commits since Session 46 (6: `18e39ae6..384e481e`)**: NF.5 coverage_diff_report + format_diff_markdown in verify_coverage (`eba1c51d` — 13 TDD tests), NF.7 STS TokenRotator atomic token rotation before expiry (`d3d740bf` — 13 TDD tests), NF.6 compliance report generator for os_expert (`116944b8`), NF.1 chat streaming formatter with code block buffering + fence splitting + `--stream` CLI flag (`8fa405fc` — 25 tests), NF.1 ContextWindow for token tracking + sliding window + summarization trigger (`942c0759`), NF.4 APRS AX.25 decoder for position/weather/status/message telemetry (`384e481e` — 15 TDD tests)
 
-### Commits since Session 46 (4: `18e39ae6..8fa405fc`)
+### Commits since Session 46 (6: `18e39ae6..384e481e`)
 
 | Hash | Message |
 |------|---------|
+| `384e481e` | feat: NF.4 APRS AX.25 decoder position weather status message telemetry 15 TDD tests |
+| `942c0759` | feat chat: add ContextWindow for token tracking, sliding window, summarization trigger NF.1 |
+| `249dc2c7` | docs: update SESSION.md + TASKS.md Session 47 HEAD 8fa405fc 35 commits not pushed |
 | `8fa405fc` | feat: NF.1 chat streaming formatter 25 tests, code block buffering, fence splitting, --stream CLI flag |
 | `116944b8` | feat: NF.6 compliance report generator for os_expert |
 | `d3d740bf` | feat: NF.7 STS TokenRotator — automatic token rotation before expiry. 13 TDD tests |
@@ -58,15 +61,15 @@ Code versions `0.1.0-beta.2` through `0.1.0-beta.5` exist in `pyproject.toml`/`_
 
 | Item | Status |
 |------|--------|
-| A.4 — Cut v0.1.0-beta.2 release | BLOCKED on CI (HEAD `8fa405fc` not pushed; no CI run for HEAD) |
-| Push 35 development commits to remote | NOT PUSHED |
+| A.4 — Cut v0.1.0-beta.2 release | BLOCKED on CI (HEAD `384e481e` not pushed; no CI run for HEAD) |
+| Push 38 development commits to remote | NOT PUSHED |
 
 ### Next
 
-1. Push development commits, wait for CI green on tip `8fa405fc`
+1. Push development commits, wait for CI green on tip `384e481e`
 2. Cut beta.2 via `make release-cut`
 
-- **Last Updated: 2026-07-16 — Session 47.** HEAD `8fa405fc` on `development` (35 commits not pushed). 4 new feature commits since Session 46: NF.5 coverage diff reporting (13 tests, eba1c51d), NF.7 STS TokenRotator (13 tests, d3d740bf), NF.6 compliance report generator (116944b8), NF.1 chat streaming formatter (25 tests, 8fa405fc). Tree CLEAN. CI NO RUN for HEAD. A.4 (beta.2 release) blocked on CI.
+- **Last Updated: 2026-07-16 — Session 47 (FINAL).** HEAD `384e481e` on `development` (38 commits not pushed). 6 new feature commits since Session 46: NF.5 coverage diff reporting (13 tests, eba1c51d), NF.7 STS TokenRotator (13 tests, d3d740bf), NF.6 compliance report generator (116944b8), NF.1 chat streaming formatter (25 tests, 8fa405fc), NF.1 ContextWindow token tracking + sliding window + summarization trigger (942c0759), NF.4 APRS AX.25 decoder position/weather/status/message telemetry (15 tests, 384e481e). Tree CLEAN. CI NO RUN for HEAD. A.4 (beta.2 release) blocked on CI.
 
 ---
 

@@ -1871,6 +1871,7 @@ Run `make help` for the full categorized list (~100 targets). Key targets below.
 - `make clean-tmp` - Clean /tmp/gludd-* files
 
 ### Recovery / Other
+- `make crash-recovery` - Reset enforcement state files (`/tmp/gludd-session-start.json` et al.) after a crashed session leaves stale state (PID mismatch / age-gated)
 - `make backup-opencode` - Snapshot .opencode/ -> .opencode.orig/ (run before long sessions)
 - `make check-opencode-backup` - Warn if .opencode.orig/ is stale (>24h older than .opencode/)
 - `make verify-opencode-backup` - Verify backup is current (file listing + shared.ts export parity)
