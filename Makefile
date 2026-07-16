@@ -1222,6 +1222,9 @@ git-add:
 git-add-all:
 	@git add -A
 
+git-lock-clean:
+	@rm -f $(shell git rev-parse --show-toplevel)/.git/index.lock
+
 # Resolve a conflicted file to HEAD's (--ours) version and stage it — for merges
 # where git badly interleaved two independent additions; we re-apply the incoming
 # side cleanly by hand afterward.

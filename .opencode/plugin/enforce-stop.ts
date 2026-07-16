@@ -113,10 +113,17 @@ export function looksLikeStatusSummary(text: string): boolean {
   return false
 }
 
+// EVIDENCE_PATTERNS: machine-produced verification of COMPLETION.
+// CI-status words (GREEN/RED/PENDING) are REMOVED from this list
+// (2026-07-16, Session 49 incident). A text response stating "CI PENDING"
+// is a status CLAIM, not evidence of completion — but the regex
+// CI\s+(?:GREEN|RED|PENDING) matched it, causing hasStructuredEvidence()
+// to return true and skipping the hasPendingWork text-only block at
+// text.complete.ci-vs-claim-gap. CI verdict evidence is captured by
+// /conclusion:\s*(?:success|failure)/ and /headSha.*matched/ below.
 const EVIDENCE_PATTERNS = [
   /\b[0-9a-f]*[a-f][0-9a-f]{6,39}\b/,
   /VERIFIED\s+\w+@/,
-  /CI\s+(?:GREEN|RED|PENDING)/,
   /\d+\s+passed/,
   /===\s*(?:GATE|GATE-LITE):\s*(?:PASSED|FAILED)/,
   /Collection OK/,

@@ -512,7 +512,7 @@ def add_governance_subparser(
     relations_p = gov_sub.add_parser("relations", help="Diplomatic relations, alliances, and sanctions")
     relations_p.add_argument("country", help="ISO 3166-1 alpha-2 country code (e.g. 'US', 'GB')")
     relations_p.add_argument("--alliance", dest="alliance", help="Search alliances by name (e.g. 'nato', 'eu')")
-    relations_p.add_argument("--sanctions", dest="sanctions", help="Sanctions lookup by target country code (e.g. 'RU', 'IR')")
+    relations_p.add_argument("--sanctions", dest="sanctions", help="Sanctions lookup by target code (e.g. 'RU', 'IR')")
     relations_p.add_argument("--json", action="store_true", dest="json", help="Output as JSON")
     relations_p.set_defaults(func=_cmd_relations)
 

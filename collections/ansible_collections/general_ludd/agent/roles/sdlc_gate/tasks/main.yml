@@ -229,7 +229,12 @@
     # -- Check evidence bundle artifacts --
     - name: "[check_stage_exit] Stat evidence bundle artifacts"
       ansible.builtin.stat:
-        path: "{{ item.path | default(artifact_dir + '/' + item.artifact) }}"
+        path: >-
+          {%- if '{{' in (item.path | default('')) -%}
+          {{ artifact_dir + '/' + item.artifact }}
+          {%- else -%}
+          {{ item.path | default(artifact_dir + '/' + item.artifact) }}
+          {%- endif -%}
       register: _sg_evidence_stats
       loop: "{{ (_sg_evidence_bundles[stage].required | default([])) }}"
       loop_control:
