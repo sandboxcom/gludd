@@ -1,15 +1,15 @@
-"""Verify the 5-subagent cap is enforced across all guardrail layers.
+"""Verify the 10-subagent cap is enforced across all guardrail layers.
 
 The agent cap (max concurrent subagents) must be consistent everywhere.
 A drift in any single layer creates a loophole the other layers cannot close.
-This test pins all five layers to the current cap of 5.
+This test pins all five layers to the current cap of 10.
 
 Layers checked:
-  1. .claude/settings.json            -> env.CLAUDE_AGENT_FLOOR == "5"
-  2. .opencode/plugin/enforce-floor.ts    -> FLOOR constant defaults to 5
-  3. .opencode/plugin/enforce-delegate.ts -> FLOOR constant defaults to 5
-  4. .opencode/plugin/enforce-stop.ts     -> FLOOR constant defaults to 5
-  5. AGENTS.md                            -> documents the 5-subagent cap
+  1. .claude/settings.json            -> env.CLAUDE_AGENT_FLOOR == "10"
+  2. .opencode/plugin/enforce-floor.ts    -> FLOOR constant defaults to 10
+  3. .opencode/plugin/enforce-delegate.ts -> FLOOR constant defaults to 10
+  4. .opencode/plugin/enforce-stop.ts     -> references MIN_DISPATCHES / under-floor
+  5. AGENTS.md                            -> documents the 10-subagent cap
 """
 
 import json
@@ -24,7 +24,7 @@ ENFORCE_DELEGATE = ROOT / ".opencode" / "plugin" / "enforce-delegate.ts"
 ENFORCE_STOP = ROOT / ".opencode" / "plugin" / "enforce-stop.ts"
 AGENTS_MD = ROOT / "AGENTS.md"
 
-EXPECTED_FLOOR = 5
+EXPECTED_FLOOR = 10
 
 
 def _floor_declaration(text: str) -> str:
@@ -56,8 +56,8 @@ class TestEnforceFloorPlugin:
 
     def test_floor_default_is_seven(self):
         line = _floor_declaration(ENFORCE_FLOOR.read_text())
-        assert "7" in line, (
-            f"enforce-floor.ts FLOOR must default to 7; got: {line!r}"
+        assert "10" in line, (
+            f"enforce-floor.ts FLOOR must default to 10; got: {line!r}"
         )
 
 
@@ -67,8 +67,8 @@ class TestEnforceDelegatePlugin:
 
     def test_floor_default_is_seven(self):
         line = _floor_declaration(ENFORCE_DELEGATE.read_text())
-        assert "7" in line, (
-            f"enforce-delegate.ts FLOOR must default to 7; got: {line!r}"
+        assert "10" in line, (
+            f"enforce-delegate.ts FLOOR must default to 10; got: {line!r}"
         )
 
 
@@ -76,10 +76,10 @@ class TestEnforceStopPlugin:
     def test_file_exists(self):
         assert ENFORCE_STOP.exists(), "enforce-stop.ts must exist"
 
-    def test_floor_default_is_seven(self):
-        line = _floor_declaration(ENFORCE_STOP.read_text())
-        assert "7" in line, (
-            f"enforce-stop.ts FLOOR must default to 7; got: {line!r}"
+    def test_references_dispatch_floor(self):
+        text = ENFORCE_STOP.read_text()
+        assert "MIN_DISPATCHES" in text or "UNDER-FLOOR" in text, (
+            "enforce-stop.ts must reference dispatch floor (MIN_DISPATCHES or UNDER-FLOOR)"
         )
 
 
@@ -87,20 +87,22 @@ class TestAgentsMdCap:
     def test_file_exists(self):
         assert AGENTS_MD.exists(), "AGENTS.md must exist"
 
-    def test_documents_five_subagent_cap(self):
+    def test_documents_ten_subagent_cap(self):
         text = AGENTS_MD.read_text()
         patterns = [
-            r"max.*5.*subagent",
-            r"subagent.*cap.*5",
-            r"5.*subagent.*cap",
-            r"CLAUDE_AGENT_FLOOR.{0,40}[=\"]5\b",
-            r"floor.{0,30}[=\"]5\b",
-            r"[=\"]5\b.{0,30}floor",
-            r"Concurrent subagents.*5 max",
-            r"Max 5 subagents",
+            r"max.*10.*subagent",
+            r"subagent.*cap.*10",
+            r"10.*subagent.*cap",
+            r"CLAUDE_AGENT_FLOOR.{0,40}[=\"]10\b",
+            r"floor.{0,30}[=\"]10\b",
+            r"[=\"]10\b.{0,30}floor",
+            r"Concurrent subagents.*10 max",
+            r"Max 10 subagents",
+            r"10.agent.floor",
+            r"10-Agent Dispatch",
         ]
         matched = [p for p in patterns if re.search(p, text, re.IGNORECASE)]
         assert matched, (
-            "AGENTS.md must document the 5-subagent cap "
-            "(no pattern tying '5' to the cap/subagent limit was found)"
+            "AGENTS.md must document the 10-subagent cap "
+            "(no pattern tying '10' to the cap/subagent limit was found)"
         )

@@ -84,7 +84,12 @@ class TestGovernanceSubparser:
         add_governance_subparser(sub)
         for name in ("borders", "body", "tax", "currency", "service", "treaty",
                       "navigate", "list", "elections", "relations", "legal", "finance"):
-            ns = top.parse_args(["governance", name, "dummy"] if name not in ("list",) else ["governance", name])
+            if name == "service":
+                ns = top.parse_args(["governance", name, "healthcare", "US"])
+            elif name not in ("list",):
+                ns = top.parse_args(["governance", name, "dummy"])
+            else:
+                ns = top.parse_args(["governance", name])
             assert ns.governance_command == name
 
     def test_service_requires_two_args(self):
