@@ -449,8 +449,62 @@ def get_marine_channel(channel: int) -> dict[str, Any] | None:
 
 
 def get_itu_region2_bands() -> list[dict[str, Any]]:
-    """Return ITU Region 2 HF band allocations."""
+    """Return ITU Region 2 HF/VHF/UHF band allocations (Americas)."""
     return list(ITU_R2_BANDS)
+
+
+def get_itu_region1_bands() -> list[dict[str, Any]]:
+    """Return ITU Region 1 band allocations (Europe / Africa / Middle East / N Asia).
+
+    Region 1 differs from Region 2 in:
+      - 80m ends at 3.800 MHz (broadcast above)
+      - 40m ends at 7.200 MHz (broadcast above)
+      - 20m ends at 14.250 MHz (broadcast above)
+      - 2m is 144-146 MHz (narrower)
+      - 70cm is 430-440 MHz (narrower)
+      - Includes 4m (70-70.5 MHz), a Region 1-only allocation
+    """
+    return list(ITU_R1_BANDS)
+
+
+def get_itu_region3_bands() -> list[dict[str, Any]]:
+    """Return ITU Region 3 band allocations (Asia-Pacific / Oceania).
+
+    Region 3 shares R1's narrower 40m/20m (broadcast above) but follows
+    Region 2 for VHF/UHF (2m 144-148 MHz, 70cm 420-450 MHz). 80m is
+    unique at 3.500-3.900 MHz (between R1's 3.800 and R2's 4.000).
+    """
+    return list(ITU_R3_BANDS)
+
+
+_ITU_REGION_TABLES: dict[int, list[dict[str, Any]]] = {
+    1: ITU_R1_BANDS,
+    2: ITU_R2_BANDS,
+    3: ITU_R3_BANDS,
+}
+
+
+def get_itu_bands(region: int = 2) -> list[dict[str, Any]]:
+    """Return ITU band allocations for a region.
+
+    Args:
+        region: ITU region number (1, 2, or 3).
+            1 = Europe / Africa / Middle East / Northern Asia
+            2 = Americas (default, backwards-compatible)
+            3 = Asia-Pacific / Oceania
+
+    Returns:
+        A list of band-allocation dicts (each carries a ``region`` tag).
+
+    Raises:
+        ValueError: if region is not 1, 2, or 3.
+    """
+    if region not in _ITU_REGION_TABLES:
+        raise ValueError(
+            f"Invalid ITU region {region!r}; must be 1 (Europe/Africa), "
+            f"2 (Americas), or 3 (Asia-Pacific)."
+        )
+    return list(_ITU_REGION_TABLES[region])
 
 
 def bands_by_privilege(country: str, license_class: str) -> list[dict[str, Any]]:

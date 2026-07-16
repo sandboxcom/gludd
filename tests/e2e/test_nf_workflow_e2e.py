@@ -410,12 +410,16 @@ class TestBinaryReToE2eTestGen:
         as valid Python and references the public functions."""
         # ── phase-1: invoke the radare2 role backend (report-only) ──
         import importlib.util
+        import sys as _sys
 
         assert _RADARE2_BACKEND.exists(), f"radare2 backend not found at {_RADARE2_BACKEND}"
-        spec = importlib.util.spec_from_file_location("radare2_analyze", _RADARE2_BACKEND)
-        assert spec is not None and spec.loader is not None
-        r2mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(r2mod)
+        r2_spec = importlib.util.spec_from_file_location("_e2e_nf_radare2_analyze", _RADARE2_BACKEND)
+        assert r2_spec is not None and r2_spec.loader is not None
+        r2mod = importlib.util.module_from_spec(r2_spec)
+        # Register before exec: some ansible.module_utils patches (loaded
+        # transitively) require the module be present in sys.modules.
+        _sys.modules["_e2e_nf_radare2_analyze"] = r2mod
+        r2_spec.loader.exec_module(r2mod)
 
         artifact = r2mod.gen_disassembly(target="/tmp/gludd/victim.elf", depth=2)
         assert "commands" in artifact

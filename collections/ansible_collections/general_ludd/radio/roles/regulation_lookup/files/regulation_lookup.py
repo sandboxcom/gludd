@@ -31,7 +31,10 @@ from frequency_allocations import (  # type: ignore[import-not-found]
     bands_by_privilege,
     bands_in_range,
     get_band_plan,
+    get_itu_bands,
+    get_itu_region1_bands,
     get_itu_region2_bands,
+    get_itu_region3_bands,
     get_marine_channel,
     lookup_frequency,
 )
@@ -130,8 +133,9 @@ def lookup(
     return verdict
 
 
-def itu_bands() -> list[dict[str, Any]]:
-    return get_itu_region2_bands()
+def itu_bands(region: int = 2) -> list[dict[str, Any]]:
+    """Return ITU amateur band allocations for a region (1, 2, or 3)."""
+    return get_itu_bands(region)
 
 
 def main() -> None:
@@ -141,7 +145,19 @@ def main() -> None:
     parser.add_argument("--band", type=str, default=None, help="Band name (e.g. 20m, 2m, 70cm)")
     parser.add_argument("--license-class", type=str, default=None, help="License class (technician/general/extra)")
     parser.add_argument("--marine-channel", type=int, default=None, help="Marine VHF channel number")
-    parser.add_argument("--list-itu", action="store_true", help="Print ITU Region 2 bands only")
+    parser.add_argument(
+        "--list-itu",
+        action="store_true",
+        help="Print ITU band allocations. Use with --itu-region to pick a region.",
+    )
+    parser.add_argument(
+        "--itu-region",
+        type=int,
+        default=2,
+        choices=(1, 2, 3),
+        help="ITU region for --list-itu: 1 (Europe/Africa/ME/N-Asia), "
+        "2 (Americas, default), 3 (Asia-Pacific/Oceania).",
+    )
     parser.add_argument(
         "--output-dir",
         type=str,
@@ -151,7 +167,7 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.list_itu:
-        print(json.dumps({"itu_region2_bands": itu_bands()}, indent=2))
+        print(json.dumps({f"itu_region{args.itu_region}_bands": itu_bands(args.itu_region)}, indent=2))
         return
 
     if (
