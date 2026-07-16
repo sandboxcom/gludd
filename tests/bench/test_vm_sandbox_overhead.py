@@ -322,3 +322,187 @@ def test_firecracker_and_gvisor_stub_latency_parity(bench_spec, bench_target):
         f"P1 stubs should have comparable overhead (fc={fc_total*1000:.2f}ms "
         f"gv={gv_total*1000:.2f}ms for 100 calls)"
     )
+
+
+# ── f. verify() overhead per call ─────────────────────────────────────────
+# Spec §7 requires the bench to quantify each lifecycle stage distinctly.
+# ``test_dispatch_loop_overhead_100_agents`` rolls apply+verify+release into
+# one loop; these next two tests isolate ``verify`` and ``release`` so a
+# regression in either stage is observable on its own.
+
+def _live_popen_mock(pid: int = 4242) -> mock.MagicMock:
+    """Return a mock popen that looks alive (``poll() -> None``).
+
+    Uses ``spec=subprocess.Popen`` so ``isinstance(popen, subprocess.Popen)``
+    passes — both backends' ``verify``/``release`` gate on that check before
+    touching the popen.
+    """
+    import subprocess
+
+    popen = mock.MagicMock(spec=subprocess.Popen)
+    popen.pid = pid
+    popen.poll.return_value = None
+    return popen
+
+
+def test_verify_overhead(bench_spec, bench_target):
+    """Measure ``verify()`` per-call overhead for both backends (alive handle).
+
+    Constructs handles whose mock popens report ``poll() is None`` (sandbox
+    alive), so ``verify`` runs its full ok/warn finding-construction path
+    rather than the early-exit fail path. Establishes the P1 baseline that
+    the P2 real-process polling paths will be measured against.
+    """
+    from general_ludd.security.sandboxes.vm.firecracker_backend import (
+        FirecrackerBackend,
+    )
+    from general_ludd.security.sandboxes.vm.gvisor_backend import GvisorBackend
+
+    n_calls = 500
+
+    # Firecracker: verify() also checks ``os.path.exists(api_sock)`` after the
+    # popen poll — mock it True so the "alive" finding branch is exercised.
+    fc_handle = SandboxHandle(
+        backend="firecracker",
+        token="gludd-bench-verify-fc",
+        applied=True,
+        extra={
+            "popen": _live_popen_mock(pid=9001),
+            "pid": 9001,
+            "sandbox_id": "gludd-fc-verify-bench",
+            "api_sock": "/tmp/gludd-fc-verify-bench.api.sock",
+            "vsock_uds": "/tmp/gludd-fc-verify-bench.vsock",
+            "started_at": time.time(),
+        },
+    )
+    with mock.patch(
+        "general_ludd.security.sandboxes.vm.firecracker_backend.os.path.exists",
+        return_value=True,
+    ):
+        start = time.perf_counter()
+        for _ in range(n_calls):
+            findings = FirecrackerBackend.verify(bench_spec, fc_handle)
+        fc_elapsed = time.perf_counter() - start
+    assert findings and findings[-1].severity == "ok", (
+        "Firecracker verify() should return an 'ok' finding for a live handle"
+    )
+
+    # gVisor: verify() only polls the popen, no FS check.
+    gv_handle = SandboxHandle(
+        backend="gvisor",
+        token="gludd-bench-verify-gv",
+        applied=True,
+        extra={
+            "popen": _live_popen_mock(pid=9002),
+            "pid": 9002,
+            "sandbox_id": "gludd-sb-verify-bench",
+            "bundle_path": "/tmp/gludd-sb-verify-bench",
+            "started_at": time.time(),
+        },
+    )
+    start = time.perf_counter()
+    for _ in range(n_calls):
+        findings = GvisorBackend.verify(bench_spec, gv_handle)
+    gv_elapsed = time.perf_counter() - start
+    assert findings and findings[-1].severity == "ok", (
+        "gVisor verify() should return an 'ok' finding for a live handle"
+    )
+
+    fc_per_call_us = (fc_elapsed / n_calls) * 1_000_000
+    gv_per_call_us = (gv_elapsed / n_calls) * 1_000_000
+
+    # verify() does a popen.poll() + dict lookups + Finding construction; the
+    # P1 path (no real signal handling / procfs reads) should be well under 1ms.
+    assert fc_per_call_us < 1000.0, (
+        f"Firecracker verify() took {fc_per_call_us:.2f}µs/call — "
+        f"P1 should be <1000µs (1ms) per call"
+    )
+    assert gv_per_call_us < 1000.0, (
+        f"gVisor verify() took {gv_per_call_us:.2f}µs/call — "
+        f"P1 should be <1000µs (1ms) per call"
+    )
+
+
+# ── g. release() cleanup overhead per call ────────────────────────────────
+
+def test_release_cleanup_overhead(bench_spec, bench_target):
+    """Measure ``release()`` per-call cleanup overhead for both backends.
+
+    Each release() consumes its popen (terminate→wait→unlink), so we build a
+    fresh handle per iteration. Mocks the Firecracker REST PUT and FS unlink
+    so the benchmark measures Python-side cleanup logic, not socket/disk I/O.
+    """
+    from general_ludd.security.sandboxes.vm.firecracker_backend import (
+        FirecrackerBackend,
+        _firecracker_put,
+    )
+    from general_ludd.security.sandboxes.vm.gvisor_backend import GvisorBackend
+
+    n_calls = 200
+
+    # Firecracker release path: PUT CtrlAltDel (mocked) → popen.poll() (None)
+    # → popen.terminate() → popen.wait() → os.unlink(api_sock) (mocked).
+    start = time.perf_counter()
+    with mock.patch(
+        "general_ludd.security.sandboxes.vm.firecracker_backend._firecracker_put",
+        return_value={},
+    ), mock.patch(
+        "general_ludd.security.sandboxes.vm.firecracker_backend.os.path.exists",
+        return_value=True,
+    ), mock.patch(
+        "general_ludd.security.sandboxes.vm.firecracker_backend.os.unlink",
+        return_value=None,
+    ):
+        for _ in range(n_calls):
+            handle = SandboxHandle(
+                backend="firecracker",
+                token="gludd-bench-release-fc",
+                applied=True,
+                extra={
+                    "popen": _live_popen_mock(pid=9101),
+                    "pid": 9101,
+                    "sandbox_id": "gludd-fc-release-bench",
+                    "api_sock": "/tmp/gludd-fc-release-bench.api.sock",
+                    "vsock_uds": "/tmp/gludd-fc-release-bench.vsock",
+                    "started_at": time.time(),
+                },
+            )
+            FirecrackerBackend.release(handle)
+    fc_elapsed = time.perf_counter() - start
+
+    # gVisor release path: popen.poll() (None) → popen.terminate() → popen.wait().
+    start = time.perf_counter()
+    for _ in range(n_calls):
+        handle = SandboxHandle(
+            backend="gvisor",
+            token="gludd-bench-release-gv",
+            applied=True,
+            extra={
+                "popen": _live_popen_mock(pid=9102),
+                "pid": 9102,
+                "sandbox_id": "gludd-sb-release-bench",
+                "bundle_path": "/tmp/gludd-sb-release-bench",
+                "started_at": time.time(),
+            },
+        )
+        GvisorBackend.release(handle)
+    gv_elapsed = time.perf_counter() - start
+
+    fc_per_call_us = (fc_elapsed / n_calls) * 1_000_000
+    gv_per_call_us = (gv_elapsed / n_calls) * 1_000_000
+
+    # release() does a terminate+wait on a mock popen — should be <2ms/call.
+    # The bound is loose (mocks still have attribute access cost) but catches
+    # a regression where release accidentally blocks on real I/O at P1.
+    assert fc_per_call_us < 2000.0, (
+        f"Firecracker release() took {fc_per_call_us:.2f}µs/call — "
+        f"P1 cleanup should be <2000µs (2ms) per call"
+    )
+    assert gv_per_call_us < 2000.0, (
+        f"gVisor release() took {gv_per_call_us:.2f}µs/call — "
+        f"P1 cleanup should be <2000µs (2ms) per call"
+    )
+
+    # Sanity: _firecracker_put is the real symbol we mocked — guards against
+    # a future rename silently making the Firecracker mock a no-op.
+    assert callable(_firecracker_put)
