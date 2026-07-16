@@ -933,7 +933,7 @@ class TestFirecrackerRestRoundTrip:
     """Real UNIX socket HTTP round-trips through the Firecracker REST helper."""
 
     def test_put_returns_empty_dict_on_204(self, tmp_path: Path):
-        sock_path = "/tmp/gludd-test-fc-204.sock"
+        sock_path = str(tmp_path / "fc-204.sock")
         response = b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n"
         server, t = _serve_unix_http(sock_path, response)
         try:
@@ -942,9 +942,13 @@ class TestFirecrackerRestRoundTrip:
         finally:
             server.close()
             t.join(timeout=2.0)
+            try:
+                os.unlink(sock_path)
+            except OSError:
+                pass
 
     def test_put_parses_json_body(self, tmp_path: Path):
-        sock_path = "/tmp/gludd-test-fc-json.sock"
+        sock_path = str(tmp_path / "fc-json.sock")
         body = b'{"state":"Running"}'
         response = (
             b"HTTP/1.1 200 OK\r\n"
@@ -958,9 +962,13 @@ class TestFirecrackerRestRoundTrip:
         finally:
             server.close()
             t.join(timeout=2.0)
+            try:
+                os.unlink(sock_path)
+            except OSError:
+                pass
 
     def test_put_raises_on_non_2xx(self, tmp_path: Path):
-        sock_path = "/tmp/gludd-test-fc-err.sock"
+        sock_path = str(tmp_path / "fc-err.sock")
         body = b'{"error":"bad config"}'
         response = (
             b"HTTP/1.1 400 Bad Request\r\n"
@@ -970,9 +978,14 @@ class TestFirecrackerRestRoundTrip:
         try:
             with pytest.raises(RuntimeError, match="HTTP 400"):
                 _firecracker_put(sock_path, "/machine-config", {"bad": True})
+            assert server is not None
         finally:
             server.close()
             t.join(timeout=2.0)
+            try:
+                os.unlink(sock_path)
+            except OSError:
+                pass
 
     def test_wait_for_socket_returns_true_when_connectable(
         self, tmp_path: Path,
