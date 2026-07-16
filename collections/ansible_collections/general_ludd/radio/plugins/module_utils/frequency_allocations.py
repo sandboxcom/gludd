@@ -233,20 +233,71 @@ CA_AMATEUR_BANDS: dict[str, dict[str, Any]] = {
 }
 
 # ── ITU Region 2 (Americas) HF Amateur Allocations ──
+# Source: ITU Radio Regulations Article 5.  Each entry is tagged with its
+# source region so downstream consumers can union / diff allocations across
+# regions.
 ITU_R2_BANDS: list[dict[str, Any]] = [
-    {"band": "2200m", "start_hz": 135_700, "end_hz": 137_800, "notes": "WRC-12; secondary allocation; max EIRP 1W. Shared."},
-    {"band": "630m", "start_hz": 472_000, "end_hz": 479_000, "notes": "WRC-12; secondary allocation; max EIRP 5W. Shared."},
-    {"band": "160m", "start_hz": 1_800_000, "end_hz": 2_000_000, "notes": "Primary allocation in Region 2."},
-    {"band": "80m", "start_hz": 3_500_000, "end_hz": 4_000_000, "notes": "Primary. Region 2: 3.500-3.750 shared; 3.750-4.000 exclusive amateur."},
-    {"band": "60m", "start_hz": 5_351_500, "end_hz": 5_366_500, "notes": "WRC-15 secondary; 15 kHz segment; 15W EIRP max."},
-    {"band": "40m", "start_hz": 7_000_000, "end_hz": 7_300_000, "notes": "Primary allocation in Region 2."},
-    {"band": "30m", "start_hz": 10_100_000, "end_hz": 10_150_000, "notes": "Secondary allocation worldwide. CW/RTTY/Data only."},
-    {"band": "20m", "start_hz": 14_000_000, "end_hz": 14_350_000, "notes": "Primary allocation worldwide."},
-    {"band": "17m", "start_hz": 18_068_000, "end_hz": 18_168_000, "notes": "Primary allocation worldwide."},
-    {"band": "15m", "start_hz": 21_000_000, "end_hz": 21_450_000, "notes": "Primary allocation worldwide."},
-    {"band": "12m", "start_hz": 24_890_000, "end_hz": 24_990_000, "notes": "Primary allocation worldwide."},
-    {"band": "10m", "start_hz": 28_000_000, "end_hz": 29_700_000, "notes": "Primary allocation worldwide."},
-    {"band": "6m", "start_hz": 50_000_000, "end_hz": 54_000_000, "notes": "Primary in Region 2."},
+    {"band": "2200m", "start_hz": 135_700, "end_hz": 137_800, "region": 2, "notes": "WRC-12; secondary allocation; max EIRP 1W. Shared."},
+    {"band": "630m", "start_hz": 472_000, "end_hz": 479_000, "region": 2, "notes": "WRC-12; secondary allocation; max EIRP 5W. Shared."},
+    {"band": "160m", "start_hz": 1_800_000, "end_hz": 2_000_000, "region": 2, "notes": "Primary allocation in Region 2."},
+    {"band": "80m", "start_hz": 3_500_000, "end_hz": 4_000_000, "region": 2, "notes": "Primary. Region 2: 3.500-3.750 shared; 3.750-4.000 exclusive amateur."},
+    {"band": "60m", "start_hz": 5_351_500, "end_hz": 5_366_500, "region": 2, "notes": "WRC-15 secondary; 15 kHz segment; 15W EIRP max."},
+    {"band": "40m", "start_hz": 7_000_000, "end_hz": 7_300_000, "region": 2, "notes": "Primary allocation in Region 2."},
+    {"band": "30m", "start_hz": 10_100_000, "end_hz": 10_150_000, "region": 2, "notes": "Secondary allocation worldwide. CW/RTTY/Data only."},
+    {"band": "20m", "start_hz": 14_000_000, "end_hz": 14_350_000, "region": 2, "notes": "Primary allocation worldwide."},
+    {"band": "17m", "start_hz": 18_068_000, "end_hz": 18_168_000, "region": 2, "notes": "Primary allocation worldwide."},
+    {"band": "15m", "start_hz": 21_000_000, "end_hz": 21_450_000, "region": 2, "notes": "Primary allocation worldwide."},
+    {"band": "12m", "start_hz": 24_890_000, "end_hz": 24_990_000, "region": 2, "notes": "Primary allocation worldwide."},
+    {"band": "10m", "start_hz": 28_000_000, "end_hz": 29_700_000, "region": 2, "notes": "Primary allocation worldwide."},
+    {"band": "6m", "start_hz": 50_000_000, "end_hz": 54_000_000, "region": 2, "notes": "Primary in Region 2."},
+]
+
+# ── ITU Region 1 (Europe / Africa / Middle East / Northern Asia) ──
+# Source: ITU Radio Regulations Article 5.  Region 1 differs from Region 2
+# in several HF bands where broadcast services have primary status above the
+# amateur upper edge (40m, 80m, 20m) and in the VHF/UHF range (2m ends at
+# 146 MHz, 70cm is 430-440 MHz).  The 4m band (70-70.5 MHz) is unique to
+# Region 1.
+ITU_R1_BANDS: list[dict[str, Any]] = [
+    {"band": "2200m", "start_hz": 135_700, "end_hz": 137_800, "region": 1, "notes": "WRC-12; secondary; max EIRP 1W. Same as R2/R3."},
+    {"band": "630m", "start_hz": 472_000, "end_hz": 479_000, "region": 1, "notes": "WRC-12; secondary; max EIRP 5W. Same as R2/R3."},
+    {"band": "160m", "start_hz": 1_810_000, "end_hz": 2_000_000, "region": 1, "notes": "Primary; below 1810 kHz shared with fixed/mobile in many R1 administrations."},
+    {"band": "80m", "start_hz": 3_500_000, "end_hz": 3_800_000, "region": 1, "notes": "Primary. Region 1 ends at 3800 kHz; 3800-4000 kHz is broadcast in R1 (unlike R2 which uses 3500-4000)."},
+    {"band": "60m", "start_hz": 5_258_500, "end_hz": 5_406_500, "region": 1, "notes": "WRC-15 secondary; 60m varies widely across R1 administrations (CEPT 5258.5-5406.5 kHz, UK uses 5.258-5.4065)."},
+    {"band": "40m", "start_hz": 7_000_000, "end_hz": 7_200_000, "region": 1, "notes": "Primary. Region 1 ends at 7200 kHz; 7200-7300 kHz is broadcast in R1 (unlike R2 which uses 7000-7300)."},
+    {"band": "30m", "start_hz": 10_100_000, "end_hz": 10_150_000, "region": 1, "notes": "Secondary allocation worldwide. CW/RTTY/Data only."},
+    {"band": "20m", "start_hz": 14_000_000, "end_hz": 14_250_000, "region": 1, "notes": "Primary. Region 1 ends at 14250 kHz; 14250-14350 kHz is broadcast in R1 (unlike R2 which uses 14000-14350)."},
+    {"band": "17m", "start_hz": 18_068_000, "end_hz": 18_168_000, "region": 1, "notes": "Primary allocation worldwide."},
+    {"band": "15m", "start_hz": 21_000_000, "end_hz": 21_450_000, "region": 1, "notes": "Primary allocation worldwide."},
+    {"band": "12m", "start_hz": 24_890_000, "end_hz": 24_990_000, "region": 1, "notes": "Primary allocation worldwide."},
+    {"band": "10m", "start_hz": 28_000_000, "end_hz": 29_700_000, "region": 1, "notes": "Primary allocation worldwide."},
+    {"band": "4m", "start_hz": 70_000_000, "end_hz": 70_500_000, "region": 1, "notes": "Region 1 ONLY. CEPT/ECC allocation (70-70.5 MHz). Available in UK, Ireland, and several other R1 administrations; not present in R2/R3."},
+    {"band": "6m", "start_hz": 50_000_000, "end_hz": 52_000_000, "region": 1, "notes": "CEPT allocation 50-52 MHz; availability varies by administration (some restrict to 50-51 MHz)."},
+    {"band": "2m", "start_hz": 144_000_000, "end_hz": 146_000_000, "region": 1, "notes": "Primary. Region 1 ends at 146 MHz (unlike R2/R3 which use 144-148 MHz)."},
+    {"band": "70cm", "start_hz": 430_000_000, "end_hz": 440_000_000, "region": 1, "notes": "Primary. Region 1 is 430-440 MHz (unlike R2/R3 which use 420-450 MHz)."},
+]
+
+# ── ITU Region 3 (Asia-Pacific / Oceania) ──
+# Source: ITU Radio Regulations Article 5.  Region 3 shares the narrower
+# 40m and 20m edges with Region 1 (broadcast above) but follows Region 2
+# for VHF/UHF (2m 144-148 MHz, 70cm 420-450 MHz).  80m is unique to R3 at
+# 3500-3900 kHz.
+ITU_R3_BANDS: list[dict[str, Any]] = [
+    {"band": "2200m", "start_hz": 135_700, "end_hz": 137_800, "region": 3, "notes": "WRC-12; secondary; max EIRP 1W. Same as R1/R2."},
+    {"band": "630m", "start_hz": 472_000, "end_hz": 479_000, "region": 3, "notes": "WRC-12; secondary; max EIRP 5W. Same as R1/R2."},
+    {"band": "160m", "start_hz": 1_800_000, "end_hz": 2_000_000, "region": 3, "notes": "Primary; same edge as R2."},
+    {"band": "80m", "start_hz": 3_500_000, "end_hz": 3_900_000, "region": 3, "notes": "Primary. Region 3 ends at 3900 kHz (between R1's 3800 and R2's 4000)."},
+    {"band": "60m", "start_hz": 5_251_500, "end_hz": 5_366_500, "region": 3, "notes": "WRC-15 secondary; varies by administration (Japan, Australia, etc.)."},
+    {"band": "40m", "start_hz": 7_000_000, "end_hz": 7_200_000, "region": 3, "notes": "Primary. Same as R1; 7200-7300 kHz is broadcast (unlike R2 which uses 7000-7300)."},
+    {"band": "30m", "start_hz": 10_100_000, "end_hz": 10_150_000, "region": 3, "notes": "Secondary allocation worldwide. CW/RTTY/Data only."},
+    {"band": "20m", "start_hz": 14_000_000, "end_hz": 14_250_000, "region": 3, "notes": "Primary. Same as R1; 14250-14350 kHz is broadcast (unlike R2 which uses 14000-14350)."},
+    {"band": "17m", "start_hz": 18_068_000, "end_hz": 18_168_000, "region": 3, "notes": "Primary allocation worldwide."},
+    {"band": "15m", "start_hz": 21_000_000, "end_hz": 21_450_000, "region": 3, "notes": "Primary allocation worldwide."},
+    {"band": "12m", "start_hz": 24_890_000, "end_hz": 24_990_000, "region": 3, "notes": "Primary allocation worldwide."},
+    {"band": "10m", "start_hz": 28_000_000, "end_hz": 29_700_000, "region": 3, "notes": "Primary allocation worldwide."},
+    {"band": "6m", "start_hz": 50_000_000, "end_hz": 54_000_000, "region": 3, "notes": "Primary; same as R2."},
+    {"band": "2m", "start_hz": 144_000_000, "end_hz": 148_000_000, "region": 3, "notes": "Primary; same as R2 (unlike R1 which ends at 146 MHz)."},
+    {"band": "70cm", "start_hz": 420_000_000, "end_hz": 450_000_000, "region": 3, "notes": "Primary; same as R2 (unlike R1 which uses 430-440 MHz)."},
 ]
 
 # ── Marine VHF Channel Plan (International) ──
