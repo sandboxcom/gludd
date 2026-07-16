@@ -37,18 +37,23 @@ Code versions `0.1.0-beta.2` through `0.1.0-beta.5` exist in `pyproject.toml`/`_
 
 ## SESSION 46 — 2026-07-16
 
-- **HEAD: `a1a4649f`** on `development` branch (26 commits beyond remote tip `8e290afd70ea`)
+- **HEAD: `57c11755`** on `development` branch (31 commits beyond remote tip `8e290afd70ea`)
 - **Version: 0.1.0-beta.5** (pyproject.toml)
-- **Push status: NOT PUSHED** — 26 local commits on development not on remote (`2f2d66ff..a1a4649f`)
-- **CI: NO RUN** for HEAD `a1a4649f` (not pushed)
+- **Push status: NOT PUSHED** — 31 local commits on development not on remote (`2f2d66ff..57c11755`)
+- **CI: NO RUN** for HEAD `57c11755` (not pushed)
 - **Gate: quality gate pass at `c5a66a27`** (Session 44 baseline; full gate not re-run on HEAD)
-- **Working tree: DIRTY** — `.ci-status` deleted, `.gitignore` modified, 2 new untracked test files (`tests/unit/test_sts_quotas.py`, `tests/unit/test_vm_pool.py`)
-- **New commits since Session 45 (9: `ab954a3b..a1a4649f`)**: NF cross-feature wave (`84f94fc6` — NF.1 chat export 40 tests, NF.2 P7 VM metrics 25 tests, NF.3 pattern DB 38 tests, NF.4 ITU models 20 tests, NF.6 hardening guide 19 tests, NF.7 STS visualizer 16 tests, NF.9 polyglot 24 tests), NF.5 coverage_gap_heatmap + prioritize_scenarios (`8830e549` — 13 tests), VM sandbox REST socket path fix (`23ca815a`), atomic writeJsonFile temp+rename fix (`663ceb03`), VM sandbox integration token propagation + NF lint cleanup (`b6f3c3a5`), test_gludd_make + ai_parallel_dispatch barrier timeout + NF.9 run_role 21 tests (`a2db846b`), tmp state cleanup + ai_parallel_dispatch role refinements (`4b36050a`), ci-status refresh + tmp cleanup (`86852581`, `a1a4649f`)
+- **Working tree: CLEAN** — all feature work committed
+- **New commits since Session 45 (14: `ab954a3b..57c11755`)**: NF cross-feature wave (`84f94fc6` — NF.1 chat export 40 tests, NF.2 P7 VM metrics 25 tests, NF.3 pattern DB 38 tests, NF.4 ITU models 20 tests, NF.6 hardening guide 19 tests, NF.7 STS visualizer 16 tests, NF.9 polyglot 24 tests), NF.5 coverage_gap_heatmap + prioritize_scenarios (`8830e549` — 13 tests), VM sandbox REST socket path fix (`23ca815a`), atomic writeJsonFile temp+rename fix (`663ceb03`), VM sandbox integration token propagation + NF lint cleanup (`b6f3c3a5`), test_gludd_make + ai_parallel_dispatch barrier timeout + NF.9 run_role 21 tests (`a2db846b`), tmp state cleanup + ai_parallel_dispatch role refinements (`4b36050a`), ci-status refresh + tmp cleanup (`86852581`, `a1a4649f`), .ci-status untrack + gitignore (`f7f0e2b3`), NF.7 TokenQuotaEnforcer per-agent project scope token limits (`1307bc8a`), NF.9 Language Expert performance benchmarks 17 tests (`7fde6d3a`), NF.6 CIS Benchmark control id mapping 9 tests 28/28 pass (`bf852b96`), NF.4 ITU Region 1+3 bands 15 tests + NF.6 CIS mapping 9 tests + NF.2 VM pool 28 tests + NF.7 STS quotas 24 tests + NF.9 benchmarks 17 tests + lint cleanup (`57c11755`)
 
-### Commits on development not yet pushed (9: `ab954a3b..a1a4649f`)
+### Commits on development not yet pushed (14: `ab954a3b..57c11755`)
 
 | Hash | Message |
 |------|---------|
+| `57c11755` | feat: NF.4 ITU Region 1+3 bands 15 tests, NF.6 CIS mapping 9 tests, NF.2 VM pool 28 tests, NF.7 STS quotas 24 tests, NF.9 benchmarks 17 tests, lint cleanup, ci-status gitignore |
+| `bf852b96` | NF.6 add CIS Benchmark control id mapping to all 24 hardening recommendations with structured cis_controls field and 9 new TDD tests — 28 of 28 pass |
+| `7fde6d3a` | test: add NF.9 Language Expert performance benchmarks — 17 latency tests covering homoglyph scan, encoding detection, font analysis, polyglot detection |
+| `1307bc8a` | feat sts NF7 TokenQuotaEnforcer for per-agent project scope token limits |
+| `f7f0e2b3` | fix: untrack .ci-status runtime file and add to .gitignore |
 | `a1a4649f` | chore: refresh .ci-status run 29504226588 and clean stale tmp state |
 | `86852581` | chore: refresh ci-status and clean stale tmp state files |
 | `84f94fc6` | feat: NF.2 P7 VM metrics 25 tests, NF.7 STS visualizer 16 tests, NF.9 polyglot 24 tests, NF.3 pattern DB 38 tests, NF.4 ITU models 20 tests, NF.6 hardening guide 19 tests, NF.1 chat export 40 tests, visualizer object setattr fix |
@@ -63,18 +68,17 @@ Code versions `0.1.0-beta.2` through `0.1.0-beta.5` exist in `pyproject.toml`/`_
 
 | Item | Status |
 |------|--------|
-| A.4 — Cut v0.1.0-beta.2 release | BLOCKED on CI (HEAD `a1a4649f` not pushed; no CI run for HEAD) |
-| Push 26 development commits to remote | NOT PUSHED |
-| Commit dirty `.ci-status` + `.gitignore` + 2 new test files | NOT STAGED |
+| A.4 — Cut v0.1.0-beta.2 release | BLOCKED on CI (HEAD `57c11755` not pushed; no CI run for HEAD) |
+| Push 31 development commits to remote | NOT PUSHED |
 | opencode restart to activate enforcement fixes (10c64ee5, 77ba3714, 631dd626) | PENDING (user action) |
 
 ### Next
 
-1. Push development commits, wait for CI green on tip `a1a4649f`
+1. Push development commits, wait for CI green on tip `57c11755`
 2. Restart opencode to activate enforcement plugin fixes
 3. Cut beta.2 via `make release-cut`
 
-- **Last Updated: 2026-07-16 — Session 46.** HEAD `a1a4649f` on `development` (26 commits not pushed). 9 new commits since Session 45: NF cross-feature wave (NF.1 chat export 40 tests, NF.2 P7 VM metrics 25 tests, NF.3 pattern DB 38 tests, NF.4 ITU models 20 tests, NF.5 coverage_gap_heatmap 13 tests, NF.6 hardening guide 19 tests, NF.7 STS visualizer 16 tests, NF.9 polyglot 24 tests + run_role 21 tests), VM sandbox REST/integration fixes, atomic writeJsonFile fix. CI NO RUN for HEAD. A.4 (beta.2 release) blocked on CI.
+- **Last Updated: 2026-07-16 — Session 46.** HEAD `57c11755` on `development` (31 commits not pushed). 14 new commits since Session 45: NF cross-feature wave (NF.1 chat export 40 tests, NF.2 P7 VM metrics 25 tests + VM pool 28 tests, NF.3 pattern DB 38 tests, NF.4 ITU models 20 tests + ITU Region 1+3 bands 15 tests, NF.5 coverage_gap_heatmap 13 tests, NF.6 hardening guide 19 tests + CIS Benchmark mapping 9 tests, NF.7 STS visualizer 16 tests + TokenQuotaEnforcer + STS quotas 24 tests, NF.9 polyglot 24 tests + run_role 21 tests + benchmarks 17 tests), VM sandbox REST/integration fixes, atomic writeJsonFile fix, .ci-status untrack. Tree CLEAN. CI NO RUN for HEAD. A.4 (beta.2 release) blocked on CI.
 
 ---
 

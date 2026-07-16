@@ -410,3 +410,151 @@ class TestReportShape:
             "suggested_scenarios",
         ):
             assert key in gap, f"gap_report missing key: {key}"
+
+
+# ── Coverage diff report ───────────────────────────────────────────────────
+
+def _report(pct: float, missing=None, partial=None, covered_targets=None,
+            uncovered_targets=None) -> dict:
+    """Build a minimal report dict shaped like main()'s output."""
+    missing = missing or []
+    partial = partial or []
+    covered_targets = covered_targets or []
+    uncovered_targets = uncovered_targets or []
+    return {
+        "module": "src/sample.py",
+        "coverage_percent": pct,
+        "threshold": 85,
+        "verdict": "pass" if pct >= 85 else "fail",
+        "gap_report": {
+            "overall_verdict": "meets_threshold" if pct >= 85 else "below_threshold",
+            "coverage_gap_pp": max(0.0, round(85 - pct, 1)),
+            "missing_symbols": list(missing),
+            "partial_symbols": list(partial),
+            "covered_targets": list(covered_targets),
+            "uncovered_targets": list(uncovered_targets),
+            "unresolved_targets": [],
+            "suggested_scenarios": [],
+            "prioritized_scenarios": [],
+        },
+    }
+
+
+class TestCoverageDiffReport:
+    def test_computes_positive_delta_on_improvement(self, mod):
+        before = _report(50.0)
+        after = _report(80.0)
+        diff = mod.coverage_diff_report(before, after)
+        assert diff["before_percent"] == 50.0
+        assert diff["after_percent"] == 80.0
+        assert diff["coverage_delta_pp"] == 30.0
+        assert diff["verdict"] == "improved"
+
+    def test_negative_delta_on_regression(self, mod):
+        before = _report(80.0)
+        after = _report(60.0)
+        diff = mod.coverage_diff_report(before, after)
+        assert diff["coverage_delta_pp"] == -20.0
+        assert diff["verdict"] == "regressed"
+
+    def test_unchanged(self, mod):
+        before = _report(75.0)
+        after = _report(75.0)
+        diff = mod.coverage_diff_report(before, after)
+        assert diff["coverage_delta_pp"] == 0.0
+        assert diff["verdict"] == "unchanged"
+
+    def test_newly_covered_symbols(self, mod):
+        before = _report(40.0, missing=["fn_a", "fn_b"], partial=["fn_c"])
+        after = _report(90.0, missing=[], partial=["fn_c"])
+        diff = mod.coverage_diff_report(before, after)
+        # fn_a and fn_b were missing before, now not missing/partial → covered.
+        assert "fn_a" in diff["newly_covered_symbols"]
+        assert "fn_b" in diff["newly_covered_symbols"]
+        assert "fn_c" not in diff["newly_covered_symbols"]
+
+    def test_newly_covered_targets(self, mod):
+        before = _report(40.0, uncovered_targets=["fn_a", "fn_b"],
+                         covered_targets=["fn_c"])
+        after = _report(90.0, uncovered_targets=["fn_b"],
+                        covered_targets=["fn_a", "fn_c"])
+        diff = mod.coverage_diff_report(before, after)
+        assert "fn_a" in diff["newly_covered_targets"]
+        assert "fn_b" not in diff["newly_covered_targets"]
+
+    def test_remaining_gaps(self, mod):
+        before = _report(40.0, missing=["fn_a"], partial=["fn_b"])
+        after = _report(70.0, missing=["fn_a"], partial=["fn_b", "fn_d"])
+        diff = mod.coverage_diff_report(before, after)
+        assert diff["remaining_missing_symbols"] == ["fn_a"]
+        assert sorted(diff["remaining_partial_symbols"]) == ["fn_b", "fn_d"]
+
+    def test_regressions_symbols_covered_then_lost(self, mod):
+        before = _report(90.0, missing=[], partial=[])
+        after = _report(60.0, missing=["fn_x"], partial=["fn_y"])
+        diff = mod.coverage_diff_report(before, after)
+        # fn_x and fn_y were not in before's missing/partial → regressed.
+        assert sorted(diff["regressions"]) == ["fn_x", "fn_y"]
+
+    def test_empty_inputs(self, mod):
+        before = {"coverage_percent": 0.0, "gap_report": {}}
+        after = {"coverage_percent": 0.0, "gap_report": {}}
+        diff = mod.coverage_diff_report(before, after)
+        assert diff["coverage_delta_pp"] == 0.0
+        assert diff["verdict"] == "unchanged"
+        assert diff["newly_covered_symbols"] == []
+        assert diff["remaining_missing_symbols"] == []
+        assert diff["regressions"] == []
+
+    def test_diff_keys_contract(self, mod):
+        diff = mod.coverage_diff_report(_report(50.0), _report(80.0))
+        for key in (
+            "before_percent",
+            "after_percent",
+            "coverage_delta_pp",
+            "verdict",
+            "newly_covered_symbols",
+            "newly_covered_targets",
+            "remaining_missing_symbols",
+            "remaining_partial_symbols",
+            "regressions",
+        ):
+            assert key in diff, f"diff missing key: {key}"
+
+
+class TestFormatDiffMarkdown:
+    def test_renders_markdown_table(self, mod):
+        diff = mod.coverage_diff_report(_report(50.0), _report(80.0))
+        md = mod.format_diff_markdown(diff)
+        assert md.strip().startswith("## Coverage Diff Report")
+        assert "| Metric | Value |" in md
+        assert "coverage_delta_pp" in md or "Delta (pp)" in md
+        assert "| 30.0 |" in md or "30.0" in md
+
+    def test_includes_verdict_and_remaining_gaps(self, mod):
+        diff = mod.coverage_diff_report(
+            _report(40.0, missing=["fn_a"], partial=["fn_b"]),
+            _report(70.0, missing=["fn_a"], partial=["fn_b"]),
+        )
+        md = mod.format_diff_markdown(diff)
+        assert "improved" in md
+        assert "fn_a" in md  # remaining missing
+        assert "fn_b" in md  # remaining partial
+
+    def test_empty_diff_is_safe(self, mod):
+        diff = mod.coverage_diff_report(
+            {"coverage_percent": 0.0, "gap_report": {}},
+            {"coverage_percent": 0.0, "gap_report": {}},
+        )
+        md = mod.format_diff_markdown(diff)
+        assert isinstance(md, str)
+        assert "Coverage Diff Report" in md
+
+    def test_renders_regressions_section(self, mod):
+        diff = mod.coverage_diff_report(
+            _report(90.0),
+            _report(60.0, missing=["fn_x"]),
+        )
+        md = mod.format_diff_markdown(diff)
+        assert "regressed" in md
+        assert "fn_x" in md

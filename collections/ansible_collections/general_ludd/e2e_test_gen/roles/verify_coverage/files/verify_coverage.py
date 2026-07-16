@@ -409,6 +409,121 @@ _KIND_WEIGHTS = {"missing": 3.0, "partial": 1.0}
 _PER_LINE_WEIGHT = 0.1
 
 
+# ── Coverage diff report (before/after) ──────────────────────────────────────
+
+def _gap_symbol_set(report: dict) -> set[str]:
+    """Union of missing + partial symbols in a coverage report."""
+    gr = report.get("gap_report") or {}
+    return set(gr.get("missing_symbols", [])) | set(gr.get("partial_symbols", []))
+
+
+def coverage_diff_report(before: dict, after: dict) -> dict:
+    """Compute the coverage delta between two coverage reports.
+
+    Each input is the top-level report dict produced by ``main()`` (shape:
+    ``{"coverage_percent": float, "gap_report": {...}}``). The diff reports:
+
+      * ``coverage_delta_pp``  — after minus before, in percentage points
+        (positive = improvement, negative = regression).
+      * ``newly_covered_symbols`` — symbols that were missing or partial in
+        ``before`` and no longer flagged in ``after``.
+      * ``newly_covered_targets`` — scenario coverage_targets that flipped
+        from ``uncovered_targets`` to ``covered_targets``.
+      * ``remaining_missing_symbols`` / ``remaining_partial_symbols`` — gaps
+        still open in ``after``.
+      * ``regressions`` — symbols that were NOT flagged in ``before`` but are
+        missing or partial in ``after`` (coverage lost).
+      * ``verdict`` — ``improved`` (delta > 0), ``regressed`` (delta < 0), or
+        ``unchanged`` (delta == 0).
+
+    Missing fields degrade gracefully: a report with no ``gap_report`` is
+    treated as having zero symbols in every category.
+    """
+    before_pct = round(float(before.get("coverage_percent", 0.0)), 1)
+    after_pct = round(float(after.get("coverage_percent", 0.0)), 1)
+    delta = round(after_pct - before_pct, 1)
+
+    before_gaps = _gap_symbol_set(before)
+    after_gaps = _gap_symbol_set(after)
+
+    after_gr = after.get("gap_report") or {}
+    after_missing = set(after_gr.get("missing_symbols", []))
+    after_partial = set(after_gr.get("partial_symbols", []))
+
+    before_gr = before.get("gap_report") or {}
+    before_uncovered_targets = set(before_gr.get("uncovered_targets", []))
+    after_covered_targets = set(after_gr.get("covered_targets", []))
+
+    newly_covered_symbols = sorted(before_gaps - after_gaps)
+    newly_covered_targets = sorted(before_uncovered_targets & after_covered_targets)
+    regressions = sorted(after_gaps - before_gaps)
+
+    if delta > 0:
+        verdict = "improved"
+    elif delta < 0:
+        verdict = "regressed"
+    else:
+        verdict = "unchanged"
+
+    return {
+        "before_percent": before_pct,
+        "after_percent": after_pct,
+        "coverage_delta_pp": delta,
+        "verdict": verdict,
+        "newly_covered_symbols": newly_covered_symbols,
+        "newly_covered_targets": newly_covered_targets,
+        "remaining_missing_symbols": sorted(after_missing),
+        "remaining_partial_symbols": sorted(after_partial),
+        "regressions": regressions,
+    }
+
+
+def format_diff_markdown(diff: dict) -> str:
+    """Render a coverage diff (from :func:`coverage_diff_report`) as markdown.
+
+    Emits a ``## Coverage Diff Report`` header, a two-column metric table,
+    and bulleted lists for remaining gaps, newly covered symbols, and
+    regressions. Safe on empty diffs (all lists empty).
+    """
+    lines: list[str] = ["## Coverage Diff Report", ""]
+    lines.append("| Metric | Value |")
+    lines.append("|---|---|")
+    lines.append(f"| Before (%) | {diff.get('before_percent', 0.0)} |")
+    lines.append(f"| After (%) | {diff.get('after_percent', 0.0)} |")
+    lines.append(f"| Delta (pp) | {diff.get('coverage_delta_pp', 0.0)} |")
+    lines.append(f"| Verdict | {diff.get('verdict', 'unchanged')} |")
+    lines.append(f"| Newly covered symbols | {len(diff.get('newly_covered_symbols', []))} |")
+    lines.append(f"| Newly covered targets | {len(diff.get('newly_covered_targets', []))} |")
+    lines.append(f"| Regressions | {len(diff.get('regressions', []))} |")
+    lines.append("")
+
+    remaining_missing = diff.get("remaining_missing_symbols", []) or []
+    remaining_partial = diff.get("remaining_partial_symbols", []) or []
+    if remaining_missing or remaining_partial:
+        lines.append("### Remaining gaps")
+        for name in remaining_missing:
+            lines.append(f"- **{name}** — still missing")
+        for name in remaining_partial:
+            lines.append(f"- **{name}** — partial")
+        lines.append("")
+
+    newly_covered = diff.get("newly_covered_symbols", []) or []
+    if newly_covered:
+        lines.append("### Newly covered")
+        for name in newly_covered:
+            lines.append(f"- {name}")
+        lines.append("")
+
+    regressions = diff.get("regressions", []) or []
+    if regressions:
+        lines.append("### Regressions")
+        for name in regressions:
+            lines.append(f"- {name}")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
 def prioritize_scenarios(gaps: list[dict]) -> list[dict]:
     """Rank coverage gaps into prioritized scenario recommendations.
 
