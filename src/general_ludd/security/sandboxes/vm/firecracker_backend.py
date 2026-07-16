@@ -318,7 +318,9 @@ class FirecrackerBackend:
                 backend="firecracker", token=token, applied=False,
                 extra={"reason": "firecracker or /dev/kvm absent"},
             )
-        return _spawn_firecracker(spec, target)
+        handle = _spawn_firecracker(spec, target)
+        handle.token = token
+        return handle
 
     @staticmethod
     def verify(spec: PermissionSpec, handle: SandboxHandle) -> list[Finding]:

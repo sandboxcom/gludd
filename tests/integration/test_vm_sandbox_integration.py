@@ -172,8 +172,8 @@ class TestFirecrackerBackend:
         handle = SandboxHandle(backend="firecracker", token="test", applied=True, extra={"stub": True})
         findings = FirecrackerBackend.verify(_make_spec(), handle)
         assert len(findings) >= 1
-        assert findings[0].severity == "warn"
-        assert "stub" in findings[0].message.lower()
+        assert findings[0].severity == "fail"
+        assert "popen" in findings[0].message.lower() or "stub" in findings[0].message.lower()
 
     def test_release_does_not_raise(self):
         handle = SandboxHandle(backend="firecracker", token="test", extra={"stub": True})
@@ -224,7 +224,7 @@ class TestGvisorBackend:
         handle = SandboxHandle(backend="gvisor", token="test", applied=True, extra={"stub": True})
         findings = GvisorBackend.verify(_make_spec(), handle)
         assert len(findings) >= 1
-        assert findings[0].severity == "warn"
+        assert findings[0].severity == "fail"
 
     def test_release_does_not_raise(self):
         handle = SandboxHandle(backend="gvisor", token="test", extra={"stub": True})

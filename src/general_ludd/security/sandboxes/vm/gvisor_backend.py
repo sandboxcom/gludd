@@ -142,7 +142,9 @@ class GvisorBackend:
                 applied=False,
                 extra={"reason": "runsc binary absent"},
             )
-        return _spawn_runsc(spec, target)
+        handle = _spawn_runsc(spec, target)
+        handle.token = token
+        return handle
 
     @staticmethod
     def verify(spec: PermissionSpec, handle: SandboxHandle) -> list[Finding]:

@@ -45,10 +45,12 @@ Code versions `0.1.0-beta.2` through `0.1.0-beta.5` exist in `pyproject.toml`/`_
 - **Working tree: DIRTY** — `.ci-status`, `collections/.../ai_parallel_dispatch/tasks/dispatch_batch.yml`, `molecule/playbooks/role_ai_parallel_dispatch/default/converge.yml` modified
 - **New commits since Session 44 (14: `90638419..ab954a3b`)**: NF.8+NF.10 spec docs (`b81e0c04`), Session 44 docs (`90638419`), NF.4 molecule scenarios for 3 radio roles (`c3a5dceb`), language e2e target test (`585e276d`), 3 molecule verify.yml fixes (`510b4cd0`, `1e6059f4`, `3ae25f04`), 11 molecule CI failures fix (`2311571c`), batch-push rule codification (`49867cff`), beta.2 release walk-through (`ccf886d8`), Session 45 docs (`5a0d8e32`), NF.7 STS revocation cascade e2e 9 tests (`44401d63`), NF.2 verify/release benchmarks (`fdfa84bb`), dev→master merge plan (`440409c0`), NF.3 binary_re integration 20 tests + NF.5 E2E integration 14 tests + NF.9 collection fix + enforce-stop liveness markers + proactive scan + abtest fixes (`ab954a3b`)
 
-### Commits on development not yet pushed (15: `2f2d66ff..fdfa84bb`)
+### Commits on development not yet pushed (17: `2f2d66ff..ab954a3b`)
 
 | Hash | Message |
 |------|---------|
+| `ab954a3b` | feat: NF.3 binary_re integration 20 tests, NF.5 E2E integration 14 tests, NF.9 language __init__ collection fix, enforce-stop liveness markers, proactive scan fixes, abtest test fixes |
+| `440409c0` | docs: add condensed development→master merge plan with exact commands |
 | `fdfa84bb` | test/bench: add verify/release overhead benchmarks for NF.2 unikernel sandbox |
 | `44401d63` | test NF.7 E2E STS token revocation cascade - 9 tests covering parent child grandchild cascade, audit trail, edge cases |
 | `5a0d8e32` | docs: update TASKS.md + SESSION.md — Session 45 state HEAD 2311571c 10 commits not pushed, CI PENDING run 29481378611, A.4 blocked |
@@ -69,18 +71,19 @@ Code versions `0.1.0-beta.2` through `0.1.0-beta.5` exist in `pyproject.toml`/`_
 
 | Item | Status |
 |------|--------|
-| A.4 — Cut v0.1.0-beta.2 release | BLOCKED on CI (HEAD `fdfa84bb` not pushed, no CI run) |
-| Push 15 development commits to remote | NOT PUSHED |
-| Commit dirty `tests/e2e/test_sts_revocation_cascade.py` | NOT STAGED |
+| A.4 — Cut v0.1.0-beta.2 release | BLOCKED on CI (HEAD `ab954a3b` not pushed; CI run `29500154922` PENDING) |
+| Push 17 development commits to remote | NOT PUSHED |
+| Commit dirty `.ci-status` + 2 ai_parallel_dispatch yml files | NOT STAGED |
 | opencode restart to activate enforcement fixes (10c64ee5, 77ba3714, 631dd626) | PENDING (user action) |
 
 ### Next
 
-1. Push 15 development commits, wait for CI green on tip `fdfa84bb`
-2. Restart opencode to activate enforcement plugin fixes
-3. Cut beta.2 via `make release-cut`
+1. Wait for CI verdict on run `29500154922`
+2. Push remaining development commits, wait for CI green on tip `ab954a3b`
+3. Restart opencode to activate enforcement plugin fixes
+4. Cut beta.2 via `make release-cut`
 
-- **Last Updated: 2026-07-16 — Session 45.** HEAD `fdfa84bb` on `development` (15 commits not pushed). 12 new commits since Session 44: NF.8+NF.10 spec docs, NF.4 molecule scenarios (3 radio roles), molecule verify.yml fixes, 11 CI failures fix, batch-push rule codification, beta.2 release walk-through, NF.7 STS revocation cascade e2e (9 tests), NF.2 verify/release benchmarks. CI NO RUN for HEAD. A.4 (beta.2 release) blocked on CI.
+- **Last Updated: 2026-07-16 — Session 45.** HEAD `ab954a3b` on `development` (17 commits not pushed). 14 new commits since Session 44: NF.8+NF.10 spec docs, NF.4 molecule scenarios (3 radio roles), molecule verify.yml fixes, 11 CI failures fix, batch-push rule codification, beta.2 release walk-through, dev→master merge plan, NF.7 STS revocation cascade e2e (9 tests), NF.2 verify/release benchmarks, NF.3 binary_re integration (20 tests) + NF.5 E2E integration (14 tests) + NF.9 collection fix + enforce-stop liveness markers + proactive scan + abtest fixes. CI PENDING (run 29500154922). A.4 (beta.2 release) blocked on CI.
 
 ---
 

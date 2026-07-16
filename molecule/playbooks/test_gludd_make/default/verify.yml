@@ -52,7 +52,7 @@
           - results.hello.phases is defined
           - results.hello.timed_out == false
           - results.hello.oom_killed == false
-          - results.hello.error is not defined
+          - results.hello.error is none
         fail_msg: "make hello missing structured fields: {{ results.hello }}"
         success_msg: "make hello returned all structured fields"
 
