@@ -55,6 +55,7 @@
       --limit 1 --json databaseId,status,conclusion,headSha
       --jq '.[0]'
   register: _gh_poll
+  changed_when: false
   until:
     - _gh_poll.rc == 0
     - (_gh_poll.stdout | from_json).status == 'completed'

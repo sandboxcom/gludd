@@ -98,6 +98,7 @@
 - name: Check for ARIA landmark roles (banner/navigation/main/contentinfo)
   ansible.builtin.shell:
     cmd: >-
+      set -o pipefail &&
       grep -cE 'role="(banner|navigation|main|contentinfo|complementary|search|form)"' "{{ artifact_dir }}/_audit_input.html" 2>/dev/null || echo 0
   register: _uua_aria_roles_raw
   changed_when: false
@@ -202,6 +203,7 @@
 - name: Check for skip-to-content link (a11y best practice)
   ansible.builtin.shell:
     cmd: >-
+      set -o pipefail &&
       grep -cE 'skip.to.content|skip-navigation|skip-to-main' "{{ artifact_dir }}/_audit_input.html" 2>/dev/null || echo 0
   register: _uua_skip_link_raw
   changed_when: false

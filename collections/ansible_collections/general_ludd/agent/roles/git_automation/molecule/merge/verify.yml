@@ -28,7 +28,7 @@
         success_msg: "merge result: success=true, strategy=ff, SHA returned"
 
     - name: Verify feature branch is merged into main
-      ansible.builtin.shell:
+      ansible.builtin.command:
         cmd: "git branch --merged main"
         chdir: "{{ repo_path }}"
       register: _merged_branches
@@ -42,7 +42,7 @@
         success_msg: "feature branch {{ feature_branch }} is merged into main"
 
     - name: Verify feature.txt exists on main
-      ansible.builtin.shell:
+      ansible.builtin.command:
         cmd: "git show main:feature.txt"
         chdir: "{{ repo_path }}"
       register: _feature_file

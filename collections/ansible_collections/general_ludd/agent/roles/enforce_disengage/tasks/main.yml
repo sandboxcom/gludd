@@ -150,6 +150,7 @@
     cmd: "make git-commit-file FILE={{ commit_msg_file }}"
     chdir: "{{ repo_path }}"
   register: _ed_commit
+  changed_when: true
   when:
     - enable_commit | bool
     - not ansible_check_mode

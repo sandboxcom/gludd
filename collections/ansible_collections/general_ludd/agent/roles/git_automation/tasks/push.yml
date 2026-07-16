@@ -22,6 +22,7 @@
     chdir: "{{ repo_path }}"
   register: _push_result
   failed_when: false
+  changed_when: true
   timeout: "{{ git_push_timeout | default(60) }}"
 
 - name: "Set push result fact"

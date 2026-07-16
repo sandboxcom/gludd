@@ -49,6 +49,7 @@
       ansible.builtin.command:
         cmd: "git checkout -b {{ branch_name | quote }} --"
         chdir: "{{ repo_path }}"
+      changed_when: true
 
     - name: "Set branch create result"
       ansible.builtin.set_fact:
@@ -73,6 +74,7 @@
         chdir: "{{ repo_path }}"
       register: _branch_delete
       failed_when: false
+      changed_when: true
 
     - name: "Set branch delete result"
       ansible.builtin.set_fact:

@@ -14,6 +14,7 @@
     cmd: git rev-parse HEAD
     chdir: "{{ repo_path }}"
   register: _merge_pre_sha
+  changed_when: false
 
 - name: "Checkout target branch"
   ansible.builtin.command:
@@ -21,6 +22,7 @@
     chdir: "{{ repo_path }}"
   register: _merge_checkout
   failed_when: _merge_checkout.rc != 0
+  changed_when: true
 
 - name: "Merge source into target"
   ansible.builtin.command:
@@ -34,6 +36,7 @@
     chdir: "{{ repo_path }}"
   register: _merge_result
   failed_when: false
+  changed_when: true
   timeout: "{{ git_merge_timeout | default(60) }}"
 
 - name: "Handle merge conflict"
@@ -43,12 +46,14 @@
         cmd: git merge --abort
         chdir: "{{ repo_path }}"
       failed_when: false
+      changed_when: true
 
     - name: "Reset to pre-merge HEAD"
       ansible.builtin.command:
         cmd: "git reset --hard {{ _merge_pre_sha.stdout | trim }}"
         chdir: "{{ repo_path }}"
       failed_when: false
+      changed_when: true
 
     - name: "Set merge failure result"
       ansible.builtin.set_fact:
@@ -72,6 +77,7 @@
         chdir: "{{ repo_path }}"
       register: _merge_squash_commit
       failed_when: false
+      changed_when: true
 
     - name: "Rollback squash on commit failure"
       when: _merge_squash_commit.rc | default(0) != 0
@@ -81,6 +87,7 @@
             cmd: "git reset --hard {{ _merge_pre_sha.stdout | trim }}"
             chdir: "{{ repo_path }}"
           failed_when: false
+          changed_when: true
 
         - name: "Set squash failure result"
           ansible.builtin.set_fact:
@@ -95,6 +102,7 @@
     cmd: git rev-parse HEAD
     chdir: "{{ repo_path }}"
   register: _merge_post_sha
+  changed_when: false
   when: _merge_result.rc | default(1) == 0
 
 - name: "Set merge success result"

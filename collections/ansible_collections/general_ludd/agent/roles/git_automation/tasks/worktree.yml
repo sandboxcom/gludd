@@ -51,6 +51,7 @@
         cmd: "git worktree add -b {{ worktree_branch | quote }} -- {{ worktree_path_param | quote }} HEAD"
         chdir: "{{ repo_path }}"
       register: _wt_create
+      changed_when: true
       timeout: "{{ git_worktree_timeout | default(120) }}"
 
     - name: "Set worktree create result"
@@ -78,6 +79,7 @@
         chdir: "{{ repo_path }}"
       register: _wt_remove
       failed_when: false
+      changed_when: true
 
     - name: "Set worktree remove result"
       ansible.builtin.set_fact:
