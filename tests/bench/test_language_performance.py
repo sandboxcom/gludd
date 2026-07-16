@@ -38,6 +38,20 @@ from general_ludd.language.homoglyph_data import (
     generate_skeleton,
     is_suspicious,
 )
+from general_ludd.language.i18n_data import (
+    extract_icu_placeholders,
+    find_untranslated_strings,
+    parse_po,
+    pseudolocalize,
+    serialize_po,
+)
+from general_ludd.language.phonetic_data import (
+    compute_double_metaphone,
+    compute_metaphone,
+    compute_soundex,
+    transcribe_to_arpabet,
+    transcribe_to_ipa,
+)
 from general_ludd.language.polyglot import (
     cross_language_homoglyph_scan,
     detect_languages_in_directory,
@@ -96,6 +110,76 @@ def _typical_mixed_script_text() -> str:
     latin = "The quick brown fox jumps over the lazy dog. " * 16
     cyrillic = "Съешь ещё этих мягких французских булок, да выпей чаю. " * 16
     return (latin + cyrillic)[:TYPICAL_TEXT_LEN]
+
+
+def _typical_i18n_source() -> str:
+    """~4 KB of Python source mixing gettext-wrapped and hardcoded strings.
+
+    Roughly half the user-facing strings are wrapped in ``_()`` (correct) and
+    half are bare literals (the lint target) so ``find_untranslated_strings``
+    has real work without being a pathological all-hardcoded input.
+    """
+    lines: list[str] = [
+        "import logging",
+        "from gettext import gettext as _",
+        "",
+        "log = logging.getLogger(__name__)",
+        "",
+        "def greet(name):",
+        "    message = _('Welcome back to the application dashboard')",
+        "    log.info('Processed request for user session successfully')",
+        "    return message",
+        "",
+        "class Handler:",
+        "    title = 'Manage Account Settings and User Preferences'",
+        "    error = _('An unexpected error occurred during processing')",
+        "    hint = 'Please contact support for further assistance'",
+        "",
+        "    def render(self):",
+        "        return _('Rendering interface components for display')",
+        "",
+    ]
+    text = "\n".join(lines)
+    while len(text) < TYPICAL_TEXT_LEN:
+        text = text + "\n" + text
+    return text[:TYPICAL_TEXT_LEN]
+
+
+def _typical_icu_message() -> str:
+    """A representative ICU MessageFormat string with mixed placeholder forms."""
+    return (
+        "{count, plural, =0 {No items found} "
+        "=1 {Found one item in {location}} "
+        "other {Found # items in {location}}}"
+    ) * 4
+
+
+def _typical_po_content() -> str:
+    """A representative gettext .po file body with ~30 entries."""
+    lines = [
+        'msgid ""',
+        'msgstr ""',
+        '"Content-Type: text/plain; charset=UTF-8\\n"',
+        "",
+    ]
+    for i in range(30):
+        lines.append(f"#: src/module_{i}.py:42")
+        lines.append(f'msgid "String number {i} for translation catalog"')
+        lines.append(f'msgstr "Translated version of string {i}"')
+        lines.append("")
+    return "\n".join(lines)
+
+
+def _typical_phonetic_text() -> str:
+    """~1 KB of English text for phonetic transcription benchmarks.
+
+    Uses words present in the CMU dict subset plus common out-of-vocab words
+    so both the dictionary-hit and fallback paths are exercised.
+    """
+    in_dict = "hello world data unicode language font phonetic encoding"
+    oov = "benchmark latency transcription measurement algorithm"
+    sentence = f"{in_dict} {oov} "
+    return (sentence * 16)[:1024]
 
 
 def _write_minimal_ttf(path: Path, num_tables: int = 9) -> None:
@@ -503,4 +587,326 @@ def test_polyglot_cross_language_homoglyph_scan_latency(tmp_path: Path) -> None:
     assert per_call_ms < LATENCY_TARGET_MS, (
         f"cross_language_homoglyph_scan took {per_call_ms:.3f}ms/call over "
         f"{len(files)} files — target <{LATENCY_TARGET_MS}ms"
+    )
+
+
+# ── e. i18n extraction latency ──────────────────────────────────────────────
+
+
+def test_i18n_find_untranslated_strings_latency() -> None:
+    """``find_untranslated_strings`` lints ~4 KB of mixed gettext/hardcoded source."""
+    source = _typical_i18n_source()
+    iterations = 50
+
+    start = time.perf_counter()
+    for _ in range(iterations):
+        findings = find_untranslated_strings(source)
+    elapsed = time.perf_counter() - start
+
+    per_call_ms = (elapsed / iterations) * 1000
+    assert findings, "fixture should contain at least one hardcoded string"
+    assert per_call_ms < LATENCY_TARGET_MS, (
+        f"find_untranslated_strings took {per_call_ms:.3f}ms/call over "
+        f"{len(source)} chars — target <{LATENCY_TARGET_MS}ms"
+    )
+
+
+def test_i18n_extract_icu_placeholders_latency() -> None:
+    """``extract_icu_placeholders`` over a representative ICU MessageFormat."""
+    message = _typical_icu_message()
+    iterations = 200
+
+    start = time.perf_counter()
+    for _ in range(iterations):
+        placeholders = extract_icu_placeholders(message)
+    elapsed = time.perf_counter() - start
+
+    per_call_ms = (elapsed / iterations) * 1000
+    assert placeholders, "fixture should yield at least one placeholder"
+    assert per_call_ms < LATENCY_TARGET_MS, (
+        f"extract_icu_placeholders took {per_call_ms:.4f}ms/call — "
+        f"target <{LATENCY_TARGET_MS}ms"
+    )
+
+
+def test_i18n_parse_po_latency() -> None:
+    """``parse_po`` parses a ~30-entry gettext catalog."""
+    content = _typical_po_content()
+    iterations = 100
+
+    start = time.perf_counter()
+    for _ in range(iterations):
+        entries = parse_po(content)
+    elapsed = time.perf_counter() - start
+
+    per_call_ms = (elapsed / iterations) * 1000
+    assert len(entries) == 30, f"expected 30 entries, got {len(entries)}"
+    assert per_call_ms < LATENCY_TARGET_MS, (
+        f"parse_po took {per_call_ms:.3f}ms/call over 30 entries — "
+        f"target <{LATENCY_TARGET_MS}ms"
+    )
+
+
+def test_i18n_serialize_po_latency() -> None:
+    """``serialize_po`` round-trips a 30-entry catalog back to text."""
+    content = _typical_po_content()
+    entries = parse_po(content)
+    iterations = 100
+
+    start = time.perf_counter()
+    for _ in range(iterations):
+        text = serialize_po(entries)
+    elapsed = time.perf_counter() - start
+
+    per_call_ms = (elapsed / iterations) * 1000
+    assert "msgid" in text, "serialized output should contain msgid markers"
+    assert per_call_ms < LATENCY_TARGET_MS, (
+        f"serialize_po took {per_call_ms:.3f}ms/call over 30 entries — "
+        f"target <{LATENCY_TARGET_MS}ms"
+    )
+
+
+def test_i18n_pseudolocalize_latency() -> None:
+    """``pseudolocalize`` accent substitution on ~4 KB of UI-like text."""
+    text = (
+        "Welcome to the application dashboard. "
+        "Please review your account settings before continuing. "
+    ) * 64
+    iterations = 100
+
+    start = time.perf_counter()
+    for _ in range(iterations):
+        result = pseudolocalize(text)
+    elapsed = time.perf_counter() - start
+
+    per_call_ms = (elapsed / iterations) * 1000
+    assert result != text, "pseudolocalize should change the text"
+    assert per_call_ms < LATENCY_TARGET_MS, (
+        f"pseudolocalize took {per_call_ms:.3f}ms/call over "
+        f"{len(text)} chars — target <{LATENCY_TARGET_MS}ms"
+    )
+
+
+# ── f. Phonetic transcription latency ──────────────────────────────────────
+
+
+def test_phonetic_transcribe_arpabet_latency() -> None:
+    """``transcribe_to_arpabet`` over ~1 KB of mixed dict/OOV English text."""
+    text = _typical_phonetic_text()
+    iterations = 200
+
+    start = time.perf_counter()
+    for _ in range(iterations):
+        result = transcribe_to_arpabet(text)
+    elapsed = time.perf_counter() - start
+
+    per_call_ms = (elapsed / iterations) * 1000
+    assert result, "transcription should be non-empty"
+    assert per_call_ms < LATENCY_TARGET_MS, (
+        f"transcribe_to_arpabet took {per_call_ms:.4f}ms/call over "
+        f"{len(text)} chars — target <{LATENCY_TARGET_MS}ms"
+    )
+
+
+def test_phonetic_transcribe_ipa_latency() -> None:
+    """``transcribe_to_ipa`` maps ARPABET→IPA via the CMU dict subset."""
+    text = _typical_phonetic_text()
+    iterations = 200
+
+    start = time.perf_counter()
+    for _ in range(iterations):
+        result = transcribe_to_ipa(text)
+    elapsed = time.perf_counter() - start
+
+    per_call_ms = (elapsed / iterations) * 1000
+    assert result, "transcription should be non-empty"
+    assert per_call_ms < LATENCY_TARGET_MS, (
+        f"transcribe_to_ipa took {per_call_ms:.4f}ms/call over "
+        f"{len(text)} chars — target <{LATENCY_TARGET_MS}ms"
+    )
+
+
+def test_phonetic_soundex_latency() -> None:
+    """``compute_soundex`` over a representative word list."""
+    words = [
+        "Robert", "Rupert", "Ashcraft", "Tymczak", "Pfister",
+        "Honeyman", "Davis", "Béliveau", "Smith", "Schmidt",
+    ]
+    iterations = 500
+
+    start = time.perf_counter()
+    for _ in range(iterations):
+        for word in words:
+            compute_soundex(word)
+    elapsed = time.perf_counter() - start
+
+    per_call_ms = (elapsed / (iterations * len(words))) * 1000
+    assert per_call_ms < LATENCY_TARGET_MS, (
+        f"compute_soundex took {per_call_ms:.5f}ms/call — "
+        f"target <{LATENCY_TARGET_MS}ms"
+    )
+
+
+def test_phonetic_metaphone_latency() -> None:
+    """``compute_metaphone`` primary code over a representative word list."""
+    words = [
+        "Smith", "Schmidt", "Johnson", "Thompson", "O'Connor",
+        "Knuth", "Pneumonia", "Gnome", "Write", "Aesthetic",
+    ]
+    iterations = 500
+
+    start = time.perf_counter()
+    for _ in range(iterations):
+        for word in words:
+            compute_metaphone(word)
+    elapsed = time.perf_counter() - start
+
+    per_call_ms = (elapsed / (iterations * len(words))) * 1000
+    assert per_call_ms < LATENCY_TARGET_MS, (
+        f"compute_metaphone took {per_call_ms:.5f}ms/call — "
+        f"target <{LATENCY_TARGET_MS}ms"
+    )
+
+
+def test_phonetic_double_metaphone_latency() -> None:
+    """``compute_double_metaphone`` (primary + alternate) over a word list."""
+    words = [
+        "Cavier", "Smith", "Schmidt", "Xavier", "Cancer",
+        "Richter", "Garcia", "Black", "Smith", "Zhang",
+    ]
+    iterations = 500
+
+    start = time.perf_counter()
+    for _ in range(iterations):
+        for word in words:
+            compute_double_metaphone(word)
+    elapsed = time.perf_counter() - start
+
+    per_call_ms = (elapsed / (iterations * len(words))) * 1000
+    assert per_call_ms < LATENCY_TARGET_MS, (
+        f"compute_double_metaphone took {per_call_ms:.5f}ms/call — "
+        f"target <{LATENCY_TARGET_MS}ms"
+    )
+
+
+# ── g. Expanded BOM detection latency ───────────────────────────────────────
+
+
+def test_bom_detection_all_signatures_latency() -> None:
+    """BOM sniffing across EVERY BOM signature plus common no-BOM inputs.
+
+    Complements ``test_encoding_sniff_bom_latency`` by exercising the full
+    BOM-signature matrix (UTF-7, UTF-8, UTF-16 LE/BE, UTF-32 LE/BE) plus
+    ASCII and partial-prefix edge cases in a single timed loop.
+    """
+    from general_ludd.language.polyglot import _sniff_bom
+
+    matrix = [
+        b"\xef\xbb\xbfpayload",
+        b"\xff\xfepayload",
+        b"\xfe\xffpayload",
+        b"\x00\x00\xff\xfepayload",
+        b"\xff\xfe\x00\x00payload",
+        b"\x2b\x2f\x76payload",
+        b"\x2b\x2f\x38payload",
+        b"\x2b\x2f\x39payload",
+        b"\x2b\x2f\x2bpayload",
+        b"plain ascii no bom whatsoever",
+        b"",
+        b"\xef",  # truncated UTF-8 BOM
+        b"\xff",  # truncated UTF-16 BOM
+    ]
+    iterations = 200
+
+    start = time.perf_counter()
+    for _ in range(iterations):
+        for head in matrix:
+            _sniff_bom(head)
+    elapsed = time.perf_counter() - start
+
+    per_call_ms = (elapsed / (iterations * len(matrix))) * 1000
+    assert per_call_ms < LATENCY_TARGET_MS, (
+        f"_sniff_bom matrix took {per_call_ms:.5f}ms/call over "
+        f"{len(matrix)} variants — target <{LATENCY_TARGET_MS}ms"
+    )
+
+
+def test_bom_detection_real_files_latency(tmp_path: Path) -> None:
+    """BOM detection via ``encoding_conflict_report`` over real BOM-bearing files.
+
+    Writes one file per BOM family then measures the end-to-end report cost,
+    which includes the BOM sniff plus per-file encoding classification.
+    """
+    files = [
+        (tmp_path / "utf8.py", b"\xef\xbb\xbf# coding: utf-8\n"),
+        (tmp_path / "utf16le.py", b"\xff\xfe# coding: utf-16\n"),
+        (tmp_path / "utf16be.py", b"\xfe\xff# coding: utf-16\n"),
+        (tmp_path / "utf32le.py", b"\x00\x00\xff\xfe# coding\n"),
+        (tmp_path / "utf32be.py", b"\xff\xfe\x00\x00# coding\n"),
+        (tmp_path / "plain.py", b"print('no bom')\n"),
+        (tmp_path / "utf7.py", b"\x2b\x2f\x76print\n"),
+    ]
+    for path, payload in files:
+        path.write_bytes(payload)
+
+    iterations = 50
+    start = time.perf_counter()
+    for _ in range(iterations):
+        report = encoding_conflict_report([p for p, _ in files])
+    elapsed = time.perf_counter() - start
+
+    per_call_ms = (elapsed / iterations) * 1000
+    assert len(report["files"]) == len(files)
+    assert per_call_ms < LATENCY_TARGET_MS, (
+        f"encoding_conflict_report (BOM matrix) took {per_call_ms:.3f}ms/call "
+        f"over {len(files)} files — target <{LATENCY_TARGET_MS}ms"
+    )
+
+
+# ── h. Expanded font metrics latency ────────────────────────────────────────
+
+
+def test_font_metrics_full_pipeline_latency(tmp_path: Path) -> None:
+    """Full font-metrics pipeline: format + tables + metrics + axes + kerning.
+
+    Measures the combined cost of running ALL five font-analysis functions on
+    a single TTF in sequence — the realistic "analyze this font" hot path.
+    """
+    font = tmp_path / "full.ttf"
+    _write_minimal_ttf(font, num_tables=9)
+    iterations = 50
+
+    start = time.perf_counter()
+    for _ in range(iterations):
+        identify_font_format(font.read_bytes()[:4])
+        list_font_tables(str(font))
+        get_font_metrics(str(font))
+        has_variable_axes(str(font))
+        has_kerning(str(font))
+    elapsed = time.perf_counter() - start
+
+    per_call_ms = (elapsed / iterations) * 1000
+    assert per_call_ms < LATENCY_TARGET_MS, (
+        f"font full-pipeline took {per_call_ms:.3f}ms/call — "
+        f"target <{LATENCY_TARGET_MS}ms"
+    )
+
+
+def test_font_metrics_many_fonts_latency(tmp_path: Path) -> None:
+    """``get_font_metrics`` across a batch of 25 fonts (typical project scan)."""
+    fonts: list[Path] = []
+    for i in range(TYPICAL_FILE_COUNT):
+        path = tmp_path / f"font_{i}.ttf"
+        _write_minimal_ttf(path, num_tables=9)
+        fonts.append(path)
+
+    start = time.perf_counter()
+    for font in fonts:
+        get_font_metrics(str(font))
+    elapsed = time.perf_counter() - start
+
+    per_font_ms = (elapsed / len(fonts)) * 1000
+    assert per_font_ms < LATENCY_TARGET_MS, (
+        f"get_font_metrics took {per_font_ms:.3f}ms/font over "
+        f"{len(fonts)} fonts — target <{LATENCY_TARGET_MS}ms"
     )

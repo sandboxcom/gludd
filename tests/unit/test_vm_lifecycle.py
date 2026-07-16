@@ -460,3 +460,226 @@ def test_manager_dispatch_on_stopped_instance_rejects(sample_spec, sample_target
 
     with pytest.raises(RuntimeError, match="not running"):
         mgr.dispatch(inst.instance_id, sample_target)
+
+
+# ---------------------------------------------------------------------------
+# snapshot() / restore() — NF.2 VM state save/restore
+# ---------------------------------------------------------------------------
+
+
+def test_snapshot_writes_file_and_returns_metadata(sample_spec, sample_target, tmp_path):
+    from general_ludd.security.sandboxes.vm.lifecycle import VMSandboxManager
+
+    mgr = VMSandboxManager()
+    with mock.patch(
+        "general_ludd.security.sandboxes.vm.firecracker_backend.FirecrackerBackend.available",
+        return_value=True,
+    ), mock.patch(
+        "general_ludd.security.sandboxes.vm.firecracker_backend.FirecrackerBackend.apply",
+        return_value=_make_handle(applied=True),
+    ):
+        inst = mgr.boot("firecracker", sample_spec, sample_target)
+
+    dest = tmp_path / "snap.json"
+    result = mgr.snapshot(inst.instance_id, dest)
+    assert dest.exists()
+    assert result["path"] == str(dest)
+    assert result["size_bytes"] > 0
+    assert len(result["sha256"]) == 64
+    assert result["instance_id"] == inst.instance_id
+    assert result["format_version"] >= 1
+
+
+def test_snapshot_unknown_instance_raises(tmp_path):
+    from general_ludd.security.sandboxes.vm.lifecycle import VMSandboxManager
+
+    mgr = VMSandboxManager()
+    with pytest.raises(KeyError, match="not found"):
+        mgr.snapshot("nope", tmp_path / "snap.json")
+
+
+def test_snapshot_rejects_non_running_instance(sample_spec, sample_target, tmp_path):
+    from general_ludd.security.sandboxes.vm.lifecycle import VMSandboxManager
+
+    mgr = VMSandboxManager()
+    with mock.patch(
+        "general_ludd.security.sandboxes.vm.firecracker_backend.FirecrackerBackend.available",
+        return_value=True,
+    ), mock.patch(
+        "general_ludd.security.sandboxes.vm.firecracker_backend.FirecrackerBackend.apply",
+        return_value=_make_handle(applied=True),
+    ), mock.patch(
+        "general_ludd.security.sandboxes.vm.firecracker_backend.FirecrackerBackend.release",
+    ):
+        inst = mgr.boot("firecracker", sample_spec, sample_target)
+        mgr.release(inst.instance_id)
+
+    with pytest.raises(RuntimeError, match="not running"):
+        mgr.snapshot(inst.instance_id, tmp_path / "snap.json")
+
+
+def test_restore_creates_new_running_instance(sample_spec, sample_target, tmp_path):
+    from general_ludd.security.sandboxes.vm.lifecycle import (
+        VMLifecycleState,
+        VMSandboxManager,
+    )
+
+    mgr = VMSandboxManager()
+    with mock.patch(
+        "general_ludd.security.sandboxes.vm.firecracker_backend.FirecrackerBackend.available",
+        return_value=True,
+    ), mock.patch(
+        "general_ludd.security.sandboxes.vm.firecracker_backend.FirecrackerBackend.apply",
+        return_value=_make_handle(applied=True),
+    ):
+        inst = mgr.boot("firecracker", sample_spec, sample_target)
+
+    dest = tmp_path / "snap.json"
+    mgr.snapshot(inst.instance_id, dest)
+    restored = mgr.restore(dest)
+
+    assert restored.instance_id != inst.instance_id
+    assert restored.state is VMLifecycleState.RUNNING
+    assert restored.backend_name == "firecracker"
+    assert restored.instance_id in mgr.instances
+
+
+def test_restore_missing_file_raises(tmp_path):
+    from general_ludd.security.sandboxes.vm.lifecycle import VMSandboxManager
+
+    mgr = VMSandboxManager()
+    with pytest.raises(FileNotFoundError):
+        mgr.restore(tmp_path / "does-not-exist.json")
+
+
+def test_restore_corrupt_file_raises(tmp_path):
+    from general_ludd.security.sandboxes.vm.lifecycle import VMSandboxManager
+
+    bad = tmp_path / "corrupt.json"
+    bad.write_text("{ not valid json ")
+    mgr = VMSandboxManager()
+    with pytest.raises(ValueError, match="snapshot"):
+        mgr.restore(bad)
+
+
+def test_snapshot_restore_roundtrip_preserves_metrics_and_spec(
+    sample_spec, sample_target, tmp_path,
+):
+    from general_ludd.security.sandboxes.vm.lifecycle import VMSandboxManager
+
+    mgr = VMSandboxManager()
+    with mock.patch(
+        "general_ludd.security.sandboxes.vm.firecracker_backend.FirecrackerBackend.available",
+        return_value=True,
+    ), mock.patch(
+        "general_ludd.security.sandboxes.vm.firecracker_backend.FirecrackerBackend.apply",
+        return_value=_make_handle(applied=True),
+    ), mock.patch(
+        "general_ludd.security.sandboxes.vm.agent_executor.AgentExecutor.receive_and_execute",
+        return_value={"exit_code": 0},
+    ):
+        inst = mgr.boot("firecracker", sample_spec, sample_target)
+        mgr.dispatch(inst.instance_id, sample_target)
+        mgr.dispatch(inst.instance_id, sample_target)
+
+    dest = tmp_path / "snap.json"
+    mgr.snapshot(inst.instance_id, dest)
+    restored = mgr.restore(dest)
+
+    assert restored.metrics.dispatch_count == 2
+    assert restored.spec.agent_type == inst.spec.agent_type
+    assert restored.handle.token == inst.handle.token
+    assert restored.handle.applied is inst.handle.applied
+
+
+def test_snapshot_emits_event(sample_spec, sample_target, tmp_path):
+    from general_ludd.security.sandboxes.vm.lifecycle import VMSandboxManager
+
+    mgr = VMSandboxManager()
+    with mock.patch(
+        "general_ludd.security.sandboxes.vm.firecracker_backend.FirecrackerBackend.available",
+        return_value=True,
+    ), mock.patch(
+        "general_ludd.security.sandboxes.vm.firecracker_backend.FirecrackerBackend.apply",
+        return_value=_make_handle(applied=True),
+    ):
+        inst = mgr.boot("firecracker", sample_spec, sample_target)
+
+    mgr.snapshot(inst.instance_id, tmp_path / "snap.json")
+    event_types = [e["event"] for e in mgr.events]
+    assert "snapshotted" in event_types
+
+
+def test_restore_emits_event(sample_spec, sample_target, tmp_path):
+    from general_ludd.security.sandboxes.vm.lifecycle import VMSandboxManager
+
+    mgr = VMSandboxManager()
+    with mock.patch(
+        "general_ludd.security.sandboxes.vm.firecracker_backend.FirecrackerBackend.available",
+        return_value=True,
+    ), mock.patch(
+        "general_ludd.security.sandboxes.vm.firecracker_backend.FirecrackerBackend.apply",
+        return_value=_make_handle(applied=True),
+    ):
+        inst = mgr.boot("firecracker", sample_spec, sample_target)
+
+    dest = tmp_path / "snap.json"
+    mgr.snapshot(inst.instance_id, dest)
+    mgr.restore(dest)
+    event_types = [e["event"] for e in mgr.events]
+    assert "restored" in event_types
+
+
+def test_snapshot_includes_vm_state_payload(sample_spec, sample_target, tmp_path):
+    """vm_state (memory/registers/disk diff hook) round-trips through snapshot."""
+    import json
+
+    from general_ludd.security.sandboxes.vm.lifecycle import VMSandboxManager
+
+    mgr = VMSandboxManager()
+    with mock.patch(
+        "general_ludd.security.sandboxes.vm.firecracker_backend.FirecrackerBackend.available",
+        return_value=True,
+    ), mock.patch(
+        "general_ludd.security.sandboxes.vm.firecracker_backend.FirecrackerBackend.apply",
+        return_value=_make_handle(applied=True),
+    ):
+        inst = mgr.boot("firecracker", sample_spec, sample_target)
+
+    inst.vm_state = {
+        "memory": b"\x00\x01\x02\x03",
+        "registers": b"\xff\xee\xdd\xcc",
+    }
+    dest = tmp_path / "snap.json"
+    mgr.snapshot(inst.instance_id, dest)
+    payload = json.loads(dest.read_text())
+    assert "vm_state" in payload
+    assert "memory" in payload["vm_state"]
+    assert "registers" in payload["vm_state"]
+
+
+def test_restore_reconstructs_vm_state_bytes(sample_spec, sample_target, tmp_path):
+    import json
+
+    from general_ludd.security.sandboxes.vm.lifecycle import VMSandboxManager
+
+    mgr = VMSandboxManager()
+    with mock.patch(
+        "general_ludd.security.sandboxes.vm.firecracker_backend.FirecrackerBackend.available",
+        return_value=True,
+    ), mock.patch(
+        "general_ludd.security.sandboxes.vm.firecracker_backend.FirecrackerBackend.apply",
+        return_value=_make_handle(applied=True),
+    ):
+        inst = mgr.boot("firecracker", sample_spec, sample_target)
+
+    inst.vm_state = {"memory": b"\xde\xad\xbe\xef", "registers": b"\x01\x02"}
+    dest = tmp_path / "snap.json"
+    mgr.snapshot(inst.instance_id, dest)
+    restored = mgr.restore(dest)
+
+    assert restored.vm_state["memory"] == b"\xde\xad\xbe\xef"
+    assert restored.vm_state["registers"] == b"\x01\x02"
+    # confirm it was actually base64-encoded in the file
+    payload = json.loads(dest.read_text())
+    assert payload["vm_state"]["memory"] != b"\xde\xad\xbe\xef"

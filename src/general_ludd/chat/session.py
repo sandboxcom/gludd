@@ -24,6 +24,7 @@ import httpx
 if TYPE_CHECKING:
     from prompt_toolkit.key_binding.key_processor import KeyPressEvent
 
+from general_ludd.chat.context_window import DEFAULT_MAX_TOKENS, ContextWindow
 from general_ludd.chat.formatter import MessageFormatter, StreamingChatFormatter
 from general_ludd.models.provider_presets import (
     PROVIDER_FLAGSHIP_MODELS,
@@ -123,6 +124,7 @@ class ChatSession:
         history_file: str | None = None,
         save_interval: int = DEFAULT_SAVE_INTERVAL,
         resume: bool = False,
+        max_context: int | None = None,
     ) -> None:
         self._model_arg = model
         base_prompt = system_prompt or DEFAULT_SYSTEM_PROMPT
@@ -137,6 +139,9 @@ class ChatSession:
         self._turn_count = 0
         self._history_dir = DEFAULT_HISTORY_DIR
         self._history_file_path: Path | None = None
+        self._context_window = ContextWindow(
+            max_tokens=max_context if max_context and max_context > 0 else DEFAULT_MAX_TOKENS
+        )
 
         if resume:
             self._history_file_path = self._find_latest_session()
@@ -234,7 +239,7 @@ class ChatSession:
                     },
                     payload={
                         "model": self._model_id,
-                        "messages": self.history,
+                        "messages": self._messages_for_api(),
                     },
                 )
             except httpx.ConnectError:
@@ -252,6 +257,7 @@ class ChatSession:
             content = "[The model returned an empty response.]"
 
         self.history.append({"role": "assistant", "content": content})
+        self._record_turn_tokens(prompt, content)
         self._maybe_auto_save()
         return self._formatter.highlight(content)
 
@@ -275,7 +281,7 @@ class ChatSession:
                 },
                 json={
                     "model": self._model_id,
-                    "messages": self.history,
+                    "messages": self._messages_for_api(),
                     "stream": True,
                 },
             ) as response:
@@ -322,6 +328,7 @@ class ChatSession:
             full_response = "[The model returned an empty response.]"
 
         self.history.append({"role": "assistant", "content": full_response})
+        self._record_turn_tokens(prompt, full_response)
         self._maybe_auto_save()
         sys.stdout.write("\n")
         return full_response
@@ -400,6 +407,23 @@ class ChatSession:
         if len(text) > MAX_INPUT_LENGTH:
             return text[:MAX_INPUT_LENGTH]
         return text
+
+    def _messages_for_api(self) -> list[dict[str, str]]:
+        """Return the message list to send to the API. If the context window
+        signals that summarization is warranted, fold older turns into a
+        summary placeholder; otherwise return history verbatim. The full
+        history is preserved in ``self.history`` for saving/export."""
+        if self._context_window.needs_summarization():
+            compacted = self._context_window.summarize_if_needed(self.history)
+            if compacted is not None:
+                return compacted
+        return self.history
+
+    def _record_turn_tokens(self, user_text: str, assistant_text: str) -> None:
+        """Estimate and record the token cost of a completed turn."""
+        user_tokens = ContextWindow.estimate_tokens(user_text)
+        assistant_tokens = ContextWindow.estimate_tokens(assistant_text)
+        self._context_window.record_turn(user_tokens + assistant_tokens)
 
     @staticmethod
     def _resolve_model(model: str) -> tuple[str, str]:

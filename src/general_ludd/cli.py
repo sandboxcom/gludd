@@ -686,6 +686,8 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
                               help="Write export output to FILE (default: stdout)")
     chat_parser.add_argument("--stream", action="store_true", default=False,
                               help="Stream model response tokens in real-time (--eval mode)")
+    chat_parser.add_argument("--max-context", type=int, default=None, metavar="TOKENS",
+                              help="Maximum context window size in tokens (enables sliding-window trimming)")
     chat_parser.set_defaults(func=_cmd_chat)
 
     help_p = sub.add_parser("help", help="Show full manual")
@@ -2479,6 +2481,7 @@ def _cmd_chat(args: argparse.Namespace) -> None:
         history_file=history_file,
         save_interval=save_interval,
         resume=resume,
+        max_context=getattr(args, "max_context", None),
     )
 
     if args.eval:
