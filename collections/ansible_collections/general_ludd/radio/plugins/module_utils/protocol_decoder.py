@@ -6,6 +6,7 @@ Supports:
     - AIS    (161.975 MHz, marine Automatic Identification System)
     - POCSAG (VHF/UHF paging, Post Office Code Standardization Advisory Group)
     - ACARS  (131.55 MHz, Aircraft Communications Addressing and Reporting System)
+    - APRS   (144.39 MHz, Amateur Radio Position Reporting System over AX.25)
 
 Each decoder accepts ``(data: bytes, sample_rate: int)`` where ``data`` is an
 interleaved int16 IQ buffer (little-endian) and ``sample_rate`` is samples/sec.
@@ -25,6 +26,7 @@ Public API:
     decode_ais(data, sample_rate) -> dict
     decode_pocsag(data, sample_rate) -> dict
     decode_acars(data, sample_rate) -> dict
+    decode_aprs(data, sample_rate) -> dict
 """
 
 from __future__ import annotations
@@ -32,7 +34,7 @@ from __future__ import annotations
 from typing import Any, Callable
 
 
-SUPPORTED_PROTOCOLS: list[str] = ["adsb", "ais", "pocsag", "acars"]
+SUPPORTED_PROTOCOLS: list[str] = ["adsb", "ais", "pocsag", "acars", "aprs"]
 
 PROTOCOL_INFO: dict[str, dict[str, Any]] = {
     "adsb": {
@@ -79,6 +81,17 @@ PROTOCOL_INFO: dict[str, dict[str, Any]] = {
         "message_length_bits": 0,
         "typical_use": "Aircraft air-to-ground short messaging (OOOI events, weather, position, telemetry)",
     },
+    "aprs": {
+        "protocol": "APRS",
+        "full_name": "Automatic Packet Reporting System",
+        "standard": "APRS Protocol Reference 1.0.1 (AX.25 UI frames)",
+        "modulation": "Bell 202 AFSK (1200/2200 Hz tones)",
+        "frequency_hz": 144_390_000,
+        "bandwidth_hz": 12_500,
+        "symbol_rate": 1200,
+        "message_length_bits": 0,
+        "typical_use": "Amateur radio position, weather, status, messaging, telemetry over AX.25",
+    },
 }
 
 
@@ -113,6 +126,13 @@ ACARS_ALPHABET: dict[int, str] = {
     0x15: "<NAK>", 0x17: "<ETB>", 0x7F: "<DEL>",
     0x00: "<NUL>",
 }
+
+
+APRS_FLAG_BYTE = 0x7E
+APRS_FLAG_BITS: list[int] = [0, 1, 1, 1, 1, 1, 1, 0]
+APRS_SYMBOL_RATE = 1200
+APRS_UI_CONTROL = 0x03
+APRS_NO_L3_PID = 0xF0
 
 
 def _bits_to_int(bits: list[int]) -> int:
@@ -487,6 +507,292 @@ def decode_acars(data: bytes, sample_rate: int) -> dict[str, Any]:
     }
 
 
+def decode_aprs(data: bytes, sample_rate: int) -> dict[str, Any]:
+    """Decode an APRS packet (AX.25 UI frame, Bell 202 AFSK 1200 baud).
+
+    Two extraction paths are tried: (1) the on-air path demodulates IQ to bits,
+    NRZI-decodes, and HDLC-unstuffs a frame delimited by 0x7E flags; (2) a raw
+    byte path handles an already-decoded AX.25 byte stream (KISS frames, crafted
+    fixtures) by splitting on 0x7E. Whichever yields a parseable AX.25 UI frame
+    is used. The APRS info field is then decoded by its data-type identifier
+    into position / position-with-timestamp / status / message / weather /
+    telemetry / object / mic-e metadata.
+    """
+    info = PROTOCOL_INFO["aprs"]
+    parsed: dict[str, Any] | None = None
+    frame_source = "none"
+
+    bits = _demod_iq(data, sample_rate, APRS_SYMBOL_RATE)
+    if bits:
+        parsed = _extract_aprs_from_bits(bits)
+        if parsed is not None:
+            frame_source = "iq"
+
+    if parsed is None and data:
+        parsed = _extract_aprs_from_bytes(data)
+        if parsed is not None:
+            frame_source = "bytes"
+
+    if parsed is None:
+        return _empty_result("APRS", info, _aprs_empty_meta())
+
+    src = parsed["src"]
+    dest = parsed["dest"]
+    control = parsed["control"]
+    pid = parsed["pid"]
+    info_text = parsed["info"].decode("ascii", errors="replace")
+    payload = _decode_aprs_payload(info_text)
+    frame_type = "UI" if control == APRS_UI_CONTROL else f"0x{control:02X}"
+
+    return {
+        "mode": "APRS",
+        "standard": info["standard"],
+        "modulation": info["modulation"],
+        "frequency_hz": info["frequency_hz"],
+        "symbol_rate": info["symbol_rate"],
+        "sync_found": True,
+        "frame_source": frame_source,
+        "ber_estimate": 0.0,
+        "payload_bits": len(parsed["info"]) * 8,
+        "protocol_metadata": {
+            "source_callsign": src["callsign"],
+            "source_ssid": src["ssid"],
+            "destination_callsign": dest["callsign"],
+            "destination_ssid": dest["ssid"],
+            "digipeaters": parsed["digis"],
+            "control": control,
+            "pid": pid,
+            "frame_type": frame_type,
+            "info_field": info_text[:256],
+            "aprs_payload": payload,
+            "hdlc_framed": True,
+            "channel": "144.390 MHz (NA)",
+        },
+    }
+
+
+def _aprs_empty_meta() -> dict[str, Any]:
+    return {
+        "source_callsign": None,
+        "source_ssid": None,
+        "destination_callsign": None,
+        "destination_ssid": None,
+        "digipeaters": [],
+        "control": None,
+        "pid": None,
+        "frame_type": None,
+        "info_field": None,
+        "aprs_payload": {"data_type": "unknown", "raw": ""},
+        "hdlc_framed": False,
+        "channel": None,
+    }
+
+
+def _decode_ax25_address(body: bytes, offset: int) -> dict[str, Any]:
+    """Decode a 7-byte AX.25 address: 6 shifted callsign bytes + SSID byte."""
+    if offset + 7 > len(body):
+        return {"callsign": "", "ssid": 0}
+    chars = "".join(chr((body[offset + i] >> 1) & 0x7F) for i in range(6))
+    ssid_byte = body[offset + 6]
+    ssid = (ssid_byte >> 1) & 0x0F
+    return {"callsign": chars.strip(), "ssid": ssid}
+
+
+def _parse_ax25_frame(body: bytes) -> dict[str, Any] | None:
+    """Parse an AX.25 frame body (addresses + control + PID + info [+ FCS]).
+
+    Strips a trailing 2-byte HDLC FCS when the body is long enough. Returns
+    None when too few bytes remain to contain the minimum frame (destination +
+    source addresses + control + PID).
+    """
+    if len(body) >= 18:
+        body = body[:-2]
+    if len(body) < 16:
+        return None
+    addresses: list[dict[str, Any]] = []
+    offset = 0
+    while offset + 7 <= len(body) and len(addresses) < 10:
+        addresses.append(_decode_ax25_address(body, offset))
+        extension = body[offset + 6] & 0x01
+        offset += 7
+        if extension:
+            break
+    if len(addresses) < 2 or offset + 2 > len(body):
+        return None
+    control = body[offset]
+    offset += 1
+    pid = body[offset]
+    offset += 1
+    return {
+        "dest": addresses[0],
+        "src": addresses[1],
+        "digis": [{"callsign": a["callsign"], "ssid": a["ssid"]} for a in addresses[2:]],
+        "control": control,
+        "pid": pid,
+        "info": bytes(body[offset:]),
+    }
+
+
+def _extract_aprs_from_bits(bits: list[int]) -> dict[str, Any] | None:
+    """On-air path: NRZI-decode, locate HDLC flags, unstuff, parse one frame."""
+    if not bits:
+        return None
+    nrzi = _nrzi_decode(bits)
+    start = _correlate(nrzi, APRS_FLAG_BITS, threshold=7)
+    if start < 0:
+        return None
+    seg = nrzi[start + len(APRS_FLAG_BITS):]
+    end = _correlate(seg, APRS_FLAG_BITS, threshold=7)
+    if end < 0:
+        end = min(len(seg), 256 * 8)
+    unstuffed = _hdlc_unstuff(seg[:end])
+    body = _bits_to_bytes(unstuffed)
+    return _parse_ax25_frame(body)
+
+
+def _extract_aprs_from_bytes(data: bytes) -> dict[str, Any] | None:
+    """Raw byte path: split on the 0x7E flag and parse the first valid frame."""
+    if APRS_FLAG_BYTE.to_bytes(1, "big") not in data:
+        return None
+    for candidate in data.split(APRS_FLAG_BYTE.to_bytes(1, "big")):
+        if len(candidate) >= 16:
+            parsed = _parse_ax25_frame(candidate)
+            if parsed is not None:
+                return parsed
+    return None
+
+
+def _decode_aprs_payload(info: str) -> dict[str, Any]:
+    """Decode the APRS info field by its leading data-type identifier."""
+    if not info:
+        return {"data_type": "unknown", "raw": ""}
+    first = info[0]
+    if first in ("!", "="):
+        return _parse_aprs_position(info[1:], with_timestamp=False)
+    if first in ("/", "@"):
+        timestamp = info[1:8]
+        return _parse_aprs_position(info[8:], with_timestamp=True, timestamp=timestamp)
+    if first == ">":
+        return {"data_type": "status", "status_text": info[1:].strip()}
+    if first == ":":
+        addressee = info[1:10].strip()
+        text = info[11:] if len(info) > 11 else ""
+        return {"data_type": "message", "addressee": addressee, "message_text": text.strip()}
+    if first == "_":
+        return _parse_aprs_weather(info[1:])
+    if first == ";":
+        return {"data_type": "object", "name": info[1:10].strip()}
+    if info.startswith("T#"):
+        return _parse_aprs_telemetry(info[2:])
+    if first in ("'", "`"):
+        return {"data_type": "mice", "raw": info}
+    return {"data_type": "other", "raw": info}
+
+
+def _parse_aprs_position(
+    body: str, with_timestamp: bool = False, timestamp: str = ""
+) -> dict[str, Any]:
+    """Parse ``DDMM.mmN<t>DDDMM.mmW<s>comment`` into typed coordinates."""
+    result: dict[str, Any] = {
+        "data_type": "position_with_timestamp" if with_timestamp else "position"
+    }
+    if timestamp:
+        result["timestamp"] = timestamp
+    if len(body) >= 19:
+        lat_str = body[0:8]
+        symbol_table = body[8]
+        lon_str = body[9:18]
+        symbol_code = body[18]
+        result["latitude"] = _ddmm_to_decimal(lat_str, "lat")
+        result["longitude"] = _ddmm_to_decimal(lon_str, "lon")
+        result["symbol_table"] = symbol_table
+        result["symbol_code"] = symbol_code
+        result["raw_position"] = {"latitude": lat_str, "longitude": lon_str}
+        result["comment"] = body[19:]
+    elif len(body) >= 8:
+        result["latitude"] = _ddmm_to_decimal(body[0:8], "lat")
+        result["raw_position"] = {"latitude": body[0:8], "longitude": ""}
+    else:
+        result["raw_position"] = {"latitude": body, "longitude": ""}
+    return result
+
+
+def _ddmm_to_decimal(coord: str, kind: str) -> float | None:
+    """Convert an APRS ``DDMM.mmH`` (lat) or ``DDDMM.mmH`` (lon) string to degrees."""
+    try:
+        if kind == "lat":
+            degrees = int(coord[0:2])
+            minutes = float(coord[2:7])
+            hemi = coord[7]
+        else:
+            degrees = int(coord[0:3])
+            minutes = float(coord[3:8])
+            hemi = coord[8]
+        value = degrees + minutes / 60.0
+        if hemi in ("S", "W"):
+            value = -value
+        return round(value, 6)
+    except (ValueError, IndexError):
+        return None
+
+
+_APRS_WEATHER_FIELDS: dict[str, tuple[str, int, Any]] = {
+    "c": ("wind_dir_deg", 3, int),
+    "s": ("wind_speed_mph", 3, int),
+    "g": ("gust_mph", 3, int),
+    "r": ("rain_1h_in", 3, lambda v: round(v / 100.0, 2)),
+    "p": ("rain_24h_in", 3, lambda v: round(v / 100.0, 2)),
+    "P": ("rain_since_midnight_in", 3, lambda v: round(v / 100.0, 2)),
+    "h": ("humidity_pct", 2, int),
+    "b": ("pressure_mbar", 5, lambda v: round(v / 10.0, 1)),
+}
+
+
+def _parse_aprs_weather(body: str) -> dict[str, Any]:
+    """Tokenize a Peet Bros / positionless weather report (``_...``)."""
+    result: dict[str, Any] = {"data_type": "weather"}
+    i = 0
+    while i < len(body):
+        ch = body[i]
+        if ch == "t":
+            rest = body[i + 1:i + 4]
+            if rest[:1] == "-" and rest[1:3].isdigit():
+                result["temperature_f"] = -int(rest[1:3])
+                i += 4
+                continue
+            if len(rest) == 3 and rest.isdigit():
+                result["temperature_f"] = int(rest)
+                i += 4
+                continue
+        spec = _APRS_WEATHER_FIELDS.get(ch)
+        if spec is not None:
+            name, width, conv = spec
+            token = body[i + 1:i + 1 + width]
+            if len(token) == width and token.isdigit():
+                result[name] = conv(int(token))
+                i += 1 + width
+                continue
+        i += 1
+    return result
+
+
+def _parse_aprs_telemetry(body: str) -> dict[str, Any]:
+    """Parse ``seq,a1,a2,a3,a4,a5,bits`` telemetry values."""
+    result: dict[str, Any] = {"data_type": "telemetry"}
+    parts = body.split(",")
+    try:
+        result["sequence"] = int(parts[0])
+    except (ValueError, IndexError):
+        result["sequence"] = None
+    try:
+        result["analog_values"] = [int(p) for p in parts[1:6]]
+    except (ValueError, IndexError):
+        result["analog_values"] = []
+    if len(parts) > 6:
+        result["digital_bits"] = parts[6]
+    return result
+
+
 def _empty_result(mode: str, info: dict[str, Any], meta: dict[str, Any]) -> dict[str, Any]:
     return {
         "mode": mode,
@@ -513,6 +819,7 @@ DECODERS: dict[str, Callable[[bytes, int], dict[str, Any]]] = {
     "ais": decode_ais,
     "pocsag": decode_pocsag,
     "acars": decode_acars,
+    "aprs": decode_aprs,
 }
 
 
