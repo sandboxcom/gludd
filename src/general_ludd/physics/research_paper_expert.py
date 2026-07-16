@@ -346,7 +346,7 @@ class SearchHit:
 
 @dataclass
 class ReferenceEntry:
-    authors: list[str] = field(default_factory=list)
+    authors: list[str] = dc_field(default_factory=list)
     title: str = ""
     journal: str = ""
     volume: str = ""

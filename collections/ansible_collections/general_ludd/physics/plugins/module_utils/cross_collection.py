@@ -112,6 +112,16 @@ _CROSS_REGISTRY: dict[str, list[dict[str, str]]] = {
         {"collection": "general_ludd.networking", "role": "networking",
          "module": "", "note": "Core networking configuration and analysis"},
     ],
+    "computer_science": [
+        {"collection": "general_ludd.binary_re", "role": "ghidra_analyze",
+         "module": "", "note": "Binary analysis, disassembly, and reverse engineering"},
+        {"collection": "general_ludd.binary_re", "role": "deobfuscate",
+         "module": "obfuscation_techniques.py", "note": "Deobfuscation, CFG analysis, packing detection"},
+        {"collection": "general_ludd.physics", "role": "math_solver",
+         "module": "math_identities.py", "note": "Algorithmic math: complexity analysis, graph theory, optimization"},
+        {"collection": "general_ludd.security", "role": "audit_framework",
+         "module": "", "note": "Security audit frameworks: static analysis, compliance, evidence collection"},
+    ],
 }
 
 

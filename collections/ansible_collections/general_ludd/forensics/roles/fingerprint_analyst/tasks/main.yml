@@ -1,0 +1,85 @@
+---
+# fingerprint_analyst role -- classify and match fingerprint patterns
+#
+# 1. Validate fingerprint_type (latent, patent, plastic)
+# 2. Classify the fingerprint pattern using ridge flow and minutiae
+# 3. Write the result artifact
+
+- name: Validate fingerprint type
+  ansible.builtin.assert:
+    that:
+      - fingerprint_type in ["latent", "patent", "plastic"]
+    fail_msg: "fingerprint_type must be one of latent, patent, plastic. Got: {{ fingerprint_type }}"
+  when: fingerprint_enabled | bool
+
+- name: Validate fingerprint data
+  ansible.builtin.assert:
+    that:
+      - fingerprint_data | length > 0
+    fail_msg: "fingerprint_data must be non-empty"
+  when: fingerprint_enabled | bool
+
+- name: Ensure output directory
+  ansible.builtin.file:
+    path: "{{ fingerprint_output_dir }}"
+    state: directory
+    mode: "0755"
+  when: fingerprint_enabled | bool
+
+- name: Run fingerprint classification
+  block:
+    - name: Classify fingerprint via forensics module_utils
+      ansible.builtin.script:
+        cmd: |
+          import json, sys
+          sys.path.insert(0, "{{ playbook_dir }}/../../..")
+          from ansible_collections.general_ludd.forensics.plugins.module_utils import classify_fingerprint
+
+          data = json.loads('''{{ fingerprint_data | to_json }}''')
+          result = classify_fingerprint(data)
+          print(json.dumps(result))
+        executable: python3
+      register: fingerprint_output
+      failed_when: false
+      changed_when: false
+      when: fingerprint_enabled | bool
+
+    - name: Parse fingerprint result
+      ansible.builtin.set_fact:
+        fingerprint_result_raw: "{{ fingerprint_output.stdout | from_json }}"
+      when:
+        - fingerprint_enabled | bool
+        - fingerprint_output.rc == 0
+
+    - name: Register fingerprint verdict
+      ansible.builtin.set_fact:
+        fingerprint_verdict:
+          fingerprint_type: "{{ fingerprint_type }}"
+          pattern_type: "{{ fingerprint_result_raw.pattern_type }}"
+          subtype: "{{ fingerprint_result_raw.subtype | default('none') }}"
+          confidence: "{{ fingerprint_result_raw.confidence }}"
+          minutiae_count: "{{ fingerprint_result_raw.minutiae_count }}"
+          quality_score: "{{ fingerprint_result_raw.quality_score }}"
+      when: fingerprint_result_raw is defined
+
+    - name: Write fingerprint classification artifact
+      ansible.builtin.copy:
+        content: "{{ fingerprint_verdict | to_nice_json }}"
+        dest: "{{ fingerprint_output_dir }}/fingerprint_verdict.json"
+        mode: "0644"
+      when: fingerprint_verdict is defined
+
+  rescue:
+    - name: Write failure artifact
+      ansible.builtin.copy:
+        content: |
+          {{ {'role': 'fingerprint_analyst', 'status': 'failed',
+              'fingerprint_type': fingerprint_type,
+              'error': fingerprint_output.stderr | default('unknown error')} | to_nice_json }}
+        dest: "{{ fingerprint_output_dir }}/fingerprint_verdict.json"
+        mode: "0644"
+      failed_when: false
+
+    - name: Fail after rescue cleanup
+      ansible.builtin.fail:
+        msg: "fingerprint_analyst failed -- see artifact for details"

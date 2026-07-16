@@ -1,0 +1,18 @@
+---
+galaxy_info:
+  role_name: math_modeler
+  author: Agentic Harness Agent
+  description: >
+    Solve ordinary differential equations, perform linear regression, and
+    compute descriptive statistics. Supports ODE solving (exponential decay,
+    harmonic oscillator), regression analysis, and statistical summaries.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

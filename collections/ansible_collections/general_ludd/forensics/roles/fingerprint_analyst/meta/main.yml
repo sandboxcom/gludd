@@ -1,0 +1,18 @@
+---
+galaxy_info:
+  role_name: fingerprint_analyst
+  author: Agentic Harness Agent
+  description: >
+    Classify and match fingerprint patterns (latent, patent, plastic).
+    Supports arch, loop, and whorl classification with minutiae analysis.
+    Outputs JSON verdict with pattern type, confidence, and minutiae count.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

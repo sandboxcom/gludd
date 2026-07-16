@@ -1,0 +1,25 @@
+---
+namespace: general_ludd
+name: forensics
+version: 0.1.0
+readme: README.md
+description: >
+  Digital and physical forensics capabilities for agents — chain of custody
+  management, fingerprint analysis, DNA profiling, trace evidence examination,
+  photo/video forensics (EXIF, ELA, clone detection, AI-generated detection),
+  and forensic evidence coordination.
+license:
+  - MIT
+authors:
+  - Agentic Harness Agent <agent@harness.local>
+tags:
+  - forensics
+  - chain-of-custody
+  - fingerprints
+  - dna
+  - trace-evidence
+  - photo-forensics
+  - digital-forensics
+  - evidence
+  - investigation
+dependencies: {}

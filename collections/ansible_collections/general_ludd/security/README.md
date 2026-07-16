@@ -31,6 +31,6 @@ injection testing, audit frameworks, and adversarial detection capabilities.
 | Collection | Shared Domain | Cross-Collection Modules |
 |---|---|---|
 | `general_ludd.binary_re` | Reverse engineering, fuzzing, prompt injection scanning | `prompt_injection_detector.py` (regex/AST detection), `fuzzing_strategies.py` (AFL++/libFuzzer harnesses) |
-| `general_ludd.physics` | Applied cryptography math | `math_identities.py` (modular arithmetic, prime testing), `quantum_computer.py` (post-quantum cryptography) |
+| `general_ludd.physics` | Applied cryptography math, computer science foundations | `math_identities.py` (modular arithmetic, prime testing, algorithmic complexity), `quantum_computer.py` (post-quantum cryptography, Shor/Grover) |
 
-Use `get_cross_collection_help("vulnerability")` from `physics.plugins.module_utils.cross_collection` to discover all related roles.
+Use `get_cross_collection_help("vulnerability")` or `get_cross_collection_help("computer_science")` from `physics.plugins.module_utils.cross_collection` to discover all related roles.

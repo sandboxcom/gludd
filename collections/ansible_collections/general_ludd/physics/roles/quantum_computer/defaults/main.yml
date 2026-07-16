@@ -1,0 +1,10 @@
+---
+quantum_enabled: false
+quantum_problem: "infinite_square_well"
+quantum_well_width_nm: 1.0
+quantum_particle: "electron"
+quantum_potential: "square_well"
+quantum_dimensions: 1
+quantum_num_states: 5
+quantum_solver: "numpy"
+quantum_output_dir: /tmp/gludd-quantum

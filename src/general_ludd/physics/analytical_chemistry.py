@@ -100,12 +100,30 @@ class CalibrationStandard(TypedDict):
 # ---------------------------------------------------------------------------
 
 IONIZATION_METHODS: list[dict[str, str]] = [
-    {"name": "EI", "hardness": "hard", "fragments": "extensive", "mass_range": "50-600 Da", "typical_use": "GC-MS of small organics"},
-    {"name": "ESI", "hardness": "soft", "fragments": "minimal", "mass_range": "100-100000+ Da", "typical_use": "LC-MS of biomolecules"},
-    {"name": "MALDI", "hardness": "soft", "fragments": "minimal", "mass_range": "500-300000+ Da", "typical_use": "proteins, polymers, imaging"},
-    {"name": "APCI", "hardness": "soft", "fragments": "minimal", "mass_range": "50-2000 Da", "typical_use": "LC-MS of nonpolar compounds"},
-    {"name": "APPI", "hardness": "soft", "fragments": "minimal", "mass_range": "50-2000 Da", "typical_use": "nonpolar aromatics"},
-    {"name": "CI", "hardness": "medium", "fragments": "moderate", "mass_range": "50-600 Da", "typical_use": "GC-MS molecular ion confirmation"},
+    {
+        "name": "EI", "hardness": "hard", "fragments": "extensive",
+        "mass_range": "50-600 Da", "typical_use": "GC-MS of small organics",
+    },
+    {
+        "name": "ESI", "hardness": "soft", "fragments": "minimal",
+        "mass_range": "100-100000+ Da", "typical_use": "LC-MS of biomolecules",
+    },
+    {
+        "name": "MALDI", "hardness": "soft", "fragments": "minimal",
+        "mass_range": "500-300000+ Da", "typical_use": "proteins, polymers, imaging",
+    },
+    {
+        "name": "APCI", "hardness": "soft", "fragments": "minimal",
+        "mass_range": "50-2000 Da", "typical_use": "LC-MS of nonpolar compounds",
+    },
+    {
+        "name": "APPI", "hardness": "soft", "fragments": "minimal",
+        "mass_range": "50-2000 Da", "typical_use": "nonpolar aromatics",
+    },
+    {
+        "name": "CI", "hardness": "medium", "fragments": "moderate",
+        "mass_range": "50-600 Da", "typical_use": "GC-MS molecular ion confirmation",
+    },
 ]
 
 COMMON_FRAGMENTS: list[FragmentPattern] = [
@@ -120,30 +138,143 @@ COMMON_FRAGMENTS: list[FragmentPattern] = [
 ]
 
 CHROMATOGRAPHY_METHODS: list[ChromatographyMethod] = [
-    {"name": "GC-MS", "technique": "GC", "stationary_phase": "5% phenyl-methylpolysiloxane", "mobile_phase": "He carrier gas", "detector": "MS (EI)", "typical_analytes": ["VOCs", "pesticides", "PAHs"]},
-    {"name": "HPLC-UV", "technique": "HPLC", "stationary_phase": "C18 reversed-phase", "mobile_phase": "water/acetonitrile gradient", "detector": "UV-Vis DAD", "typical_analytes": ["pharmaceuticals", "flavonoids"]},
-    {"name": "UPLC-MS/MS", "technique": "UPLC", "stationary_phase": "C18 sub-2um", "mobile_phase": "water/methanol + 0.1% formic acid", "detector": "triple quadrupole MS", "typical_analytes": ["drug metabolites", "pesticide residues"]},
-    {"name": "IC", "technique": "IC", "stationary_phase": "anion/cation exchange", "mobile_phase": "carbonate/bicarbonate buffer", "detector": "conductivity", "typical_analytes": ["anions", "cations", "organic acids"]},
-    {"name": "SEC-HPLC", "technique": "SEC", "stationary_phase": "porous silica or polymer gel", "mobile_phase": "aqueous buffer or organic solvent", "detector": "RI or UV", "typical_analytes": ["proteins", "polymers"]},
+    {
+        "name": "GC-MS",
+        "technique": "GC",
+        "stationary_phase": "5% phenyl-methylpolysiloxane",
+        "mobile_phase": "He carrier gas",
+        "detector": "MS (EI)",
+        "typical_analytes": ["VOCs", "pesticides", "PAHs"],
+    },
+    {
+        "name": "HPLC-UV",
+        "technique": "HPLC",
+        "stationary_phase": "C18 reversed-phase",
+        "mobile_phase": "water/acetonitrile gradient",
+        "detector": "UV-Vis DAD",
+        "typical_analytes": ["pharmaceuticals", "flavonoids"],
+    },
+    {
+        "name": "UPLC-MS/MS",
+        "technique": "UPLC",
+        "stationary_phase": "C18 sub-2um",
+        "mobile_phase": "water/methanol + 0.1% formic acid",
+        "detector": "triple quadrupole MS",
+        "typical_analytes": ["drug metabolites", "pesticide residues"],
+    },
+    {
+        "name": "IC",
+        "technique": "IC",
+        "stationary_phase": "anion/cation exchange",
+        "mobile_phase": "carbonate/bicarbonate buffer",
+        "detector": "conductivity",
+        "typical_analytes": ["anions", "cations", "organic acids"],
+    },
+    {
+        "name": "SEC-HPLC",
+        "technique": "SEC",
+        "stationary_phase": "porous silica or polymer gel",
+        "mobile_phase": "aqueous buffer or organic solvent",
+        "detector": "RI or UV",
+        "typical_analytes": ["proteins", "polymers"],
+    },
 ]
 
 SPECTROSCOPY_METHODS: list[SpectroscopyMethod] = [
-    {"name": "UV-Vis", "technique": "UV_VIS", "wavelength_range_nm": "190-1100", "detection_limit_ppb": 100.0, "typical_elements": ["organic chromophores", "transition metals"]},
-    {"name": "Fluorescence", "technique": "FLUORESCENCE", "wavelength_range_nm": "200-900", "detection_limit_ppb": 1.0, "typical_elements": ["PAHs", "fluorescent tags", "quantum dots"]},
-    {"name": "AAS (Flame)", "technique": "AAS", "wavelength_range_nm": "190-900", "detection_limit_ppb": 10.0, "typical_elements": ["Na", "K", "Ca", "Mg", "Fe", "Cu", "Zn"]},
-    {"name": "AAS (Graphite Furnace)", "technique": "AAS", "wavelength_range_nm": "190-900", "detection_limit_ppb": 0.1, "typical_elements": ["Pb", "Cd", "As", "Se", "Cr"]},
-    {"name": "ICP-OES", "technique": "ICP_OES", "wavelength_range_nm": "167-850", "detection_limit_ppb": 1.0, "typical_elements": ["multi-element screening", "metals"]},
-    {"name": "ICP-MS", "technique": "ICP_MS", "wavelength_range_nm": "all masses 2-260 amu", "detection_limit_ppb": 0.001, "typical_elements": ["ultra-trace metals", "isotope ratios"]},
-    {"name": "FTIR", "technique": "IR", "wavelength_range_nm": "2500-25000 (4000-400 cm-1)", "detection_limit_ppb": 10000.0, "typical_elements": ["functional groups", "polymers", "organics"]},
-    {"name": "Raman", "technique": "RAMAN", "wavelength_range_nm": "250-1064 (excitation)", "detection_limit_ppb": 10000.0, "typical_elements": ["crystal polymorphs", "carbon materials"]},
+    {
+        "name": "UV-Vis",
+        "technique": "UV_VIS",
+        "wavelength_range_nm": "190-1100",
+        "detection_limit_ppb": 100.0,
+        "typical_elements": ["organic chromophores", "transition metals"],
+    },
+    {
+        "name": "Fluorescence",
+        "technique": "FLUORESCENCE",
+        "wavelength_range_nm": "200-900",
+        "detection_limit_ppb": 1.0,
+        "typical_elements": ["PAHs", "fluorescent tags", "quantum dots"],
+    },
+    {
+        "name": "AAS (Flame)",
+        "technique": "AAS",
+        "wavelength_range_nm": "190-900",
+        "detection_limit_ppb": 10.0,
+        "typical_elements": ["Na", "K", "Ca", "Mg", "Fe", "Cu", "Zn"],
+    },
+    {
+        "name": "AAS (Graphite Furnace)",
+        "technique": "AAS",
+        "wavelength_range_nm": "190-900",
+        "detection_limit_ppb": 0.1,
+        "typical_elements": ["Pb", "Cd", "As", "Se", "Cr"],
+    },
+    {
+        "name": "ICP-OES",
+        "technique": "ICP_OES",
+        "wavelength_range_nm": "167-850",
+        "detection_limit_ppb": 1.0,
+        "typical_elements": ["multi-element screening", "metals"],
+    },
+    {
+        "name": "ICP-MS",
+        "technique": "ICP_MS",
+        "wavelength_range_nm": "all masses 2-260 amu",
+        "detection_limit_ppb": 0.001,
+        "typical_elements": ["ultra-trace metals", "isotope ratios"],
+    },
+    {
+        "name": "FTIR",
+        "technique": "IR",
+        "wavelength_range_nm": "2500-25000 (4000-400 cm-1)",
+        "detection_limit_ppb": 10000.0,
+        "typical_elements": ["functional groups", "polymers", "organics"],
+    },
+    {
+        "name": "Raman",
+        "technique": "RAMAN",
+        "wavelength_range_nm": "250-1064 (excitation)",
+        "detection_limit_ppb": 10000.0,
+        "typical_elements": ["crystal polymorphs", "carbon materials"],
+    },
 ]
 
 CALIBRATION_STANDARDS: list[CalibrationStandard] = [
-    {"name": "NIST SRM 1643f", "certified_value": 1.0, "uncertainty": 0.02, "unit": "ug/L", "matrix": "water (trace elements)"},
-    {"name": "NIST SRM 3100 series", "certified_value": 1000.0, "uncertainty": 5.0, "unit": "mg/L", "matrix": "single-element standards"},
-    {"name": "NIST SRM 1570a", "certified_value": 0.5, "uncertainty": 0.05, "unit": "mg/kg", "matrix": "spinach leaves"},
-    {"name": "NIST SRM 2584", "certified_value": 100.0, "uncertainty": 2.0, "unit": "mg/kg", "matrix": "indoor dust (Pb)"},
-    {"name": "EPA Method 8270 mix", "certified_value": 2000.0, "uncertainty": 20.0, "unit": "ug/mL", "matrix": "semivolatile organics in DCM"},
+    {
+        "name": "NIST SRM 1643f",
+        "certified_value": 1.0,
+        "uncertainty": 0.02,
+        "unit": "ug/L",
+        "matrix": "water (trace elements)",
+    },
+    {
+        "name": "NIST SRM 3100 series",
+        "certified_value": 1000.0,
+        "uncertainty": 5.0,
+        "unit": "mg/L",
+        "matrix": "single-element standards",
+    },
+    {
+        "name": "NIST SRM 1570a",
+        "certified_value": 0.5,
+        "uncertainty": 0.05,
+        "unit": "mg/kg",
+        "matrix": "spinach leaves",
+    },
+    {
+        "name": "NIST SRM 2584",
+        "certified_value": 100.0,
+        "uncertainty": 2.0,
+        "unit": "mg/kg",
+        "matrix": "indoor dust (Pb)",
+    },
+    {
+        "name": "EPA Method 8270 mix",
+        "certified_value": 2000.0,
+        "uncertainty": 20.0,
+        "unit": "ug/mL",
+        "matrix": "semivolatile organics in DCM",
+    },
 ]
 
 RETENTION_INDEX_REFERENCES: list[dict[str, object]] = [

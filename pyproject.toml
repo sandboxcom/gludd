@@ -136,7 +136,7 @@ module = ["scripts", "scripts.*"]
 follow_imports = "skip"
 
 [[tool.mypy.overrides]]
-module = ["ansible.*", "hvac.*", "psycopg.*", "yaml.*", "tree_sitter.*", "tree_sitter_python.*", "huggingface_hub.*", "diskcache.*", "watchdog.*", "croniter.*", "jsonschema", "googleapiclient.*", "google.*", "azure.*", "ansible_runner", "hcl2", "botocore.*", "lxml", "lxml.etree", "lxml.*", "multitasking_backlog_check", "gen_status_table", "classify_agent_error", "ext", "pyVim", "pyVim.*", "pyVmomi", "pyVmomi.*", "scapy", "scapy.*", "xmlsec", "openai", "openai.*"]
+module = ["ansible.*", "ansible_collections.*", "hvac.*", "psycopg.*", "yaml.*", "tree_sitter.*", "tree_sitter_python.*", "huggingface_hub.*", "diskcache.*", "watchdog.*", "croniter.*", "jsonschema", "googleapiclient.*", "google.*", "azure.*", "ansible_runner", "hcl2", "botocore.*", "lxml", "lxml.etree", "lxml.*", "multitasking_backlog_check", "gen_status_table", "classify_agent_error", "ext", "pyVim", "pyVim.*", "pyVmomi", "pyVmomi.*", "scapy", "scapy.*", "xmlsec", "openai", "openai.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

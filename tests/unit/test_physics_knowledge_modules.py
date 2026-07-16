@@ -445,7 +445,11 @@ class TestLiquidDrop:
 
     def test_terms_sum_to_total(self):
         result = liquid_drop_binding_energy(56, 26)
-        computed = result["volume_term"] - result["surface_term"] - result["coulomb_term"] - result["asymmetry_term"] + result["pairing_term"]
+        computed = (
+            result["volume_term"] - result["surface_term"]
+            - result["coulomb_term"] - result["asymmetry_term"]
+            + result["pairing_term"]
+        )
         delta = abs(computed - result["binding_energy_mev"])
         assert delta < 0.01
 

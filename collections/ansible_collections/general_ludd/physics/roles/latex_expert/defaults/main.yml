@@ -1,0 +1,12 @@
+---
+latex_document_class: "article"
+latex_font_size: "11pt"
+latex_title: "Generated Document"
+latex_author: "Agentic Harness"
+latex_packages:
+  - amsmath
+  - amssymb
+  - graphicx
+  - hyperref
+latex_output_format: "pdf"
+latex_output_dir: /tmp/gludd-latex

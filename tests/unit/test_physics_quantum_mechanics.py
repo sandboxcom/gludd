@@ -207,9 +207,9 @@ class TestDiracNotation:
         assert abs(outer[(0, 0)] - 1.0) < 1e-9
 
     def test_expectation_value_identity(self, qm):
-        I = [[1 + 0j, 0 + 0j], [0 + 0j, 1 + 0j]]
+        identity_op = [[1 + 0j, 0 + 0j], [0 + 0j, 1 + 0j]]
         state = [1.0 + 0j, 0.0 + 0j]
-        ev = qm.expectation_value(I, state)
+        ev = qm.expectation_value(identity_op, state)
         assert abs(ev - 1.0) < 1e-9
 
     def test_expectation_value_pauli_z(self, qm):

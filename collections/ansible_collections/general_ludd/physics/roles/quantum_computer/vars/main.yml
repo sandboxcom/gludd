@@ -1,0 +1,20 @@
+---
+quantum_well_options:
+  - infinite_square_well
+  - finite_square_well
+  - harmonic_oscillator
+  - hydrogen_atom
+  - double_well
+quantum_particle_options:
+  - electron
+  - proton
+  - neutron
+quantum_potential_options:
+  - square_well
+  - harmonic
+  - coulomb
+  - kronig_penney
+solver_backends:
+  - numpy
+  - scipy
+  - analytical

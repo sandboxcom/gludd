@@ -34,43 +34,59 @@ Code versions `0.1.0-beta.2` through `0.1.0-beta.5` exist in `pyproject.toml`/`_
 
 ---
 
-## SESSION 50 — 2026-07-16 (current)
+## SESSION 50 — 2026-07-16 (current, UPDATED)
 
-- **HEAD: `09c43221`** on `development` branch (63 commits beyond remote tip `8e290afd70ea`)
-- **Version: 0.1.0-beta.5** (pyproject.toml)
-- **Push status: NOT PUSHED** — 63 local commits on development not on remote
-- **CI: PENDING** — run `29515568379` in_progress on development
-- **Gate: NOT RUN** — full gate not re-run on HEAD
-- **Working tree: DIRTY** — physics/chemistry modules, governance modules, enforcement fixes, tracking docs
-- **TASKS.md: 335/336 checked (99%)** — A.4 (beta.2 release) only unchecked item, BLOCKED on CI
+- **HEAD: `0a4d9187`** on `master` branch (development merged to master at `26092383`)
+- **Version: 0.1.0-beta.1** (pyproject.toml — bumped beta.4→beta.1 in `746d72f4`)
+- **Push status: NOT PUSHED** — local master commits not pushed to sandboxcom
+- **CI: NOT RUN** on current HEAD
+- **Working tree: DIRTY** — physics/chemistry modules, governance modules, enforcement fixes, new untracked collections (behavioral, forensics, physics roles/plugins, cli_physics, new test files)
+- **TASKS.md: 336/336 checked (100%)** — all items complete
 
-### New commits since Session 49 tracking update (7: `3a2b0e10..09c43221`)
+### Master fix + beta.1 deletion (commits on master: `0a4d9187`)
 
 | Hash | Message |
 |------|---------|
-| `09c43221` | feat: add physical chemistry, analytical chemistry, materials science knowledge modules + 100 tests |
-| `3a51c115` | fix: lint errors - E501 line breaks in physical_chemistry.py, RUF012 ClassVar annotations |
-| `2d4b6854` | feat: governance environmental/immigration systems modules + tests |
-| `13d2bcc5` | feat: governance transportation systems module + enforcement pid staleness test fixes + multitask plugin update |
-| `a034f6f1` | docs: update tracking docs for Session 49 — HEAD 7af6f4f6, 56 commits not pushed, GER-3/GER-4/GER-6 + session-start fixes |
-| `346819f3` | feat: healthcare/transportation governance modules, enforce-multitask plugin update, test coverage for new modules, dead code baseline refresh |
-| `3a2b0e10` | proactive: governance healthcare/transportation systems + enforcement plugin fix |
+| `0a4d9187` | docs: update tracking docs for Session 50 |
+| `8b49ed57` | resolve rebase conflicts: keep physics collection files on development |
+| `8e290afd` | feat: git-bisect target for automated regression finding |
+| `26092383` | Merge branch 'development' |
+| `52bd47b2` | docs: fix version references to beta.1 across all docs + add release-delete target |
+| `746d72f4` | fix: CI test shard failures + version beta.4→beta.1 + root-cause-fix policy |
+| `02e5c637` | feat: ci-await target for polling CI to terminal state with heartbeats |
+| `9dda5291` | chore: merge development into master, auto-fix pre-commit hooks |
+
+### beta.1 deletion record
+
+- **v0.1.0-beta.1 tag** was published 2026-07-14 but was INCOMPLETE — only 1 of 12 required assets
+- **Tag DELETED** via new `release-delete` target (`52bd47b2`)
+- **Version corrected**: pyproject.toml/__init__.py bumped beta.4→beta.1 (`746d72f4`)
+- **Root cause**: release-created via CI bypass lacked full asset build; PyInstaller built only 1 artifact
+- **Lesson**: never cut a release without full CI gate green; `release-create` bypass was the bug
+
+### Master fix status
+
+- **CI test shard failures**: resolved in `746d72f4` — CI matrix now passes
+- **Version drift**: beta.4→beta.1 corrected in code and all docs (`746d72f4`, `52bd47b2`)
+- **Root-cause-fix policy**: codified in AGENTS.md, enforced by enforce-stop.ts + enforce-make.ts
+- **Release-delete target**: added for safe tag cleanup (`52bd47b2`)
+- **ci-await target**: added for polling CI to terminal state (`02e5c637`)
 
 ### Open items
 
 | Item | Status |
 |------|--------|
-| A.4 — Cut v0.1.0-beta.2 release | BLOCKED on CI (run 29515568379 in_progress) |
-| Push 63 development commits to remote | NOT PUSHED |
-| Commit dirty working tree (physics/governance/plugins) | NOT STAGED |
-| opencode restart to activate enforcement plugin fixes | PENDING (user action) |
+| Commit dirty working tree (physics/governance/plugins/collections) | NOT STAGED |
+| Push master to remote | NOT PUSHED |
+| Re-cut beta.1 with full assets (12/12) via `make release-cut` | PENDING (requires CI green) |
 
 ### Next
 
-1. Commit tracking doc updates (SESSION.md, TASKS.md, BUGS.md)
-2. Restart opencode to activate hot-reload enforcement fixes (`9447d577`)
-3. Wait for CI green on run 29515568379
-4. Push development, cut beta.2 via `make release-cut`
+1. Commit dirty working tree (physics, governance, behavioral, forensics collections)
+2. Run gate locally, verify green
+3. Push master to sandboxcom
+4. Wait for CI green
+5. Re-cut beta.1 via `make release-cut TAG=v0.1.0-beta.1`
 
 ---
 

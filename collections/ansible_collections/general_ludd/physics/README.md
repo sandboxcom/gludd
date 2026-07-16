@@ -56,7 +56,7 @@ help_data = get_cross_collection_help("forensics")
 ### Registered topic domains
 
 propagation, signal_processing, electromagnetics, cryptography, reverse_engineering,
-vulnerability, fuzzing, spectroscopy, mathematics, chemistry, quantum, governance, forensics, networking
+vulnerability, fuzzing, spectroscopy, mathematics, chemistry, quantum, governance, forensics, networking, computer_science
 
 ## Related Collections
 

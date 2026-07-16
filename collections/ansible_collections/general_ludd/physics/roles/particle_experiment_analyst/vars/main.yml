@@ -1,0 +1,18 @@
+---
+detector_types:
+  - generic_4pi
+  - atlas
+  - cms
+  - alice
+  - lhcb
+beam_particles:
+  - proton
+  - electron
+  - positron
+  - lead_ion
+analysis_channels:
+  - H_to_ZZ_to_4l
+  - H_to_gamma_gamma
+  - W_to_lepton_neutrino
+  - Z_to_dilepton
+  - ttbar_to_leptons

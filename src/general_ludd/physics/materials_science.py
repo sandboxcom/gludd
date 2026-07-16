@@ -1297,7 +1297,7 @@ def recommend_material(requirements: MaterialRequirement) -> list[dict[str, obje
             "melting_point_C": mat["melting_point_C"],
         })
 
-    matches.sort(key=lambda m: float(cast(float, m["tensile_strength_MPa"])), reverse=True)
+    matches.sort(key=lambda m: cast(float, m["tensile_strength_MPa"]), reverse=True)
     return matches
 
 

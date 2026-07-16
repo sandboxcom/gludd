@@ -1,0 +1,8 @@
+---
+particle_beam_energy_GeV: 13.6
+particle_target: "proton"
+particle_beam: "proton"
+particle_detector: "generic_4pi"
+particle_luminosity_inv_fb: 139.0
+particle_analysis_channel: "H_to_ZZ_to_4l"
+particle_output_dir: /tmp/gludd-particle

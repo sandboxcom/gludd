@@ -1,0 +1,13 @@
+---
+review_paper_text: ""
+review_paper_title: ""
+review_depth: "standard"
+review_criteria:
+  - novelty
+  - methodology
+  - results
+  - discussion
+  - clarity
+  - references
+  - reproducibility
+review_output_dir: /tmp/gludd-review

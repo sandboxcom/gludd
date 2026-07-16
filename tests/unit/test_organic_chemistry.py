@@ -49,8 +49,8 @@ class TestModuleExports:
 
 
 class TestFunctionalGroups:
-    _groups = ["alkane", "alkene", "alkyne", "aromatic", "alcohol",
-               "ether", "aldehyde", "ketone", "carboxylic_acid", "amine", "amide"]
+    _groups = ("alkane", "alkene", "alkyne", "aromatic", "alcohol",
+               "ether", "aldehyde", "ketone", "carboxylic_acid", "amine", "amide")
 
     @pytest.mark.parametrize("group", _groups)
     def test_group_defined(self, oc, group):
@@ -97,8 +97,8 @@ class TestFunctionalGroups:
 
 
 class TestReactionMechanisms:
-    _mechanisms = ["SN1", "SN2", "E1", "E2", "electrophilic_addition",
-                   "nucleophilic_addition", "elimination", "pericyclic"]
+    _mechanisms = ("SN1", "SN2", "E1", "E2", "electrophilic_addition",
+                   "nucleophilic_addition", "elimination", "pericyclic")
 
     @pytest.mark.parametrize("mech", _mechanisms)
     def test_mechanism_defined(self, oc, mech):
@@ -139,7 +139,7 @@ class TestReactionMechanisms:
 
 
 class TestNamedReactions:
-    _reactions = ["Diels-Alder", "Grignard", "Wittig", "Friedel-Crafts", "Suzuki Coupling"]
+    _reactions = ("Diels-Alder", "Grignard", "Wittig", "Friedel-Crafts", "Suzuki Coupling")
 
     @pytest.mark.parametrize("name", _reactions)
     def test_named_reaction_defined(self, oc, name):

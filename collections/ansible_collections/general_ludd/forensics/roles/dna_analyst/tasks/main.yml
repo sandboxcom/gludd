@@ -1,0 +1,91 @@
+---
+# dna_analyst role — DNA profile comparison and forensic analysis
+#
+# 1. Validate dna_analysis_type is a supported STR type
+# 2. Ensure the output directory exists
+# 3. Run DNA profile comparison via forensics module_utils
+# 4. Parse the result and register a verdict fact
+# 5. Write the match result as a JSON artifact
+#
+# All tasks are gated on dna_enabled | bool.
+
+- name: Validate dna_analysis_type
+  ansible.builtin.assert:
+    that:
+      - dna_analysis_type in ['str', 'codis', 'mtdna', 'ychromosome']
+    fail_msg: >-
+      dna_analysis_type must be one of: str, codis, mtdna, ychromosome.
+      Got: {{ dna_analysis_type }}
+    success_msg: "DNA analysis type validated: {{ dna_analysis_type }}"
+  when: dna_enabled | bool
+
+- name: Create DNA output directory
+  ansible.builtin.file:
+    path: "{{ dna_output_dir }}"
+    state: directory
+    mode: "0755"
+  when: dna_enabled | bool
+
+- name: Run DNA profile analysis
+  when: dna_enabled | bool
+  block:
+    - name: Compare DNA profiles via forensics module_utils
+      ansible.builtin.script:
+        cmd: |
+          import json, sys
+          sys.path.insert(0, "{{ playbook_dir }}/../../..")
+          from ansible_collections.general_ludd.forensics.plugins.module_utils import match_dna_profile
+
+          sample = {{ dna_sample_profile | to_json }}
+          reference = {{ dna_reference_profile | to_json }}
+
+          result = match_dna_profile(
+              sample=sample,
+              reference=reference,
+              analysis_type="{{ dna_analysis_type }}",
+          )
+          print(json.dumps(result))
+        executable: python3
+      register: dna_analysis_output
+      failed_when: false
+      changed_when: false
+
+    - name: Parse DNA match result
+      ansible.builtin.set_fact:
+        dna_result_raw: "{{ dna_analysis_output.stdout | from_json }}"
+      when:
+        - dna_analysis_output.rc == 0
+        - dna_analysis_output.stdout | length > 0
+
+    - name: Register DNA verdict
+      ansible.builtin.set_fact:
+        dna_verdict:
+          analysis_type: "{{ dna_result_raw.analysis_type | default(dna_analysis_type) }}"
+          match_result: "{{ dna_result_raw.match_result | default('inconclusive') }}"
+          probability: "{{ dna_result_raw.probability | default(0.0) }}"
+          loci_count: "{{ dna_result_raw.loci_count | default(0) }}"
+          sample_id: "{{ dna_result_raw.sample_id | default('unknown') }}"
+          reference_id: "{{ dna_result_raw.reference_id | default('unknown') }}"
+      when: dna_result_raw is defined
+
+    - name: Write DNA analysis JSON artifact
+      ansible.builtin.copy:
+        content: "{{ dna_verdict | to_nice_json }}"
+        dest: "{{ dna_output_dir }}/dna_verdict.json"
+        mode: "0644"
+      when: dna_verdict is defined
+
+  rescue:
+    - name: Write failure result artifact
+      ansible.builtin.copy:
+        content: |
+          {{ {'role': 'dna_analyst', 'status': 'failed',
+              'error': dna_analysis_output.stderr | default('unknown error'),
+              'analysis_type': dna_analysis_type} | to_nice_json }}
+        dest: "{{ dna_output_dir }}/dna_verdict.json"
+        mode: "0644"
+      failed_when: false
+
+    - name: Fail the play after rescue cleanup
+      ansible.builtin.fail:
+        msg: "dna_analyst failed — see artifact for details"

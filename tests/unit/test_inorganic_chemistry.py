@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 from types import ModuleType
+from typing import ClassVar
 
 import pytest
 
@@ -49,8 +50,8 @@ class TestModuleExports:
 
 
 class TestPeriodicTable:
-    _first_20 = ["H", "He", "Li", "Be", "B", "C", "N", "O", "F", "Ne",
-                 "Na", "Mg", "Al", "Si", "P", "S", "Cl", "Ar", "K", "Ca"]
+    _first_20: ClassVar = ["H", "He", "Li", "Be", "B", "C", "N", "O", "F", "Ne",
+                            "Na", "Mg", "Al", "Si", "P", "S", "Cl", "Ar", "K", "Ca"]
 
     @pytest.mark.parametrize("symbol", _first_20)
     def test_first_20_present(self, ic, symbol):
@@ -152,7 +153,7 @@ class TestLigands:
 
 
 class TestCrystalFieldSplitting:
-    _geometries = ["octahedral", "tetrahedral", "square_planar"]
+    _geometries: ClassVar = ["octahedral", "tetrahedral", "square_planar"]
 
     @pytest.mark.parametrize("geo", _geometries)
     def test_geometry_defined(self, ic, geo):
@@ -177,7 +178,7 @@ class TestCrystalFieldSplitting:
 
 
 class TestSolidStateDefects:
-    _defects = ["Schottky", "Frenkel", "F-center", "edge_dislocation", "screw_dislocation"]
+    _defects: ClassVar = ["Schottky", "Frenkel", "F-center", "edge_dislocation", "screw_dislocation"]
 
     @pytest.mark.parametrize("defect", _defects)
     def test_defect_defined(self, ic, defect):

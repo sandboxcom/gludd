@@ -1,0 +1,22 @@
+---
+technique_options:
+  - uv_vis
+  - ir
+  - raman
+  - nmr
+  - mass_spec
+  - fluorescence
+  - xrd
+solvent_options:
+  - water
+  - ethanol
+  - methanol
+  - hexane
+  - acetonitrile
+  - dmso
+  - chloroform
+detector_types:
+  - photodiode
+  - ccd
+  - photomultiplier
+  - photodiode_array

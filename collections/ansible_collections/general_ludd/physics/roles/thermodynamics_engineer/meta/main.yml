@@ -1,0 +1,18 @@
+---
+galaxy_info:
+  role_name: thermodynamics_engineer
+  author: Agentic Harness Agent
+  description: >
+    Compute heat transfer, phase changes, and entropy for configurable substances.
+    Supports water, ethanol, iron, aluminum, copper, air, and more. Computes
+    specific heat capacity, latent heat of fusion/vaporization, and entropy.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

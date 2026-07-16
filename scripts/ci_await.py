@@ -33,15 +33,16 @@ DEFAULT_TIMEOUT = int(os.environ.get("CI_AWAIT_TIMEOUT", "1800"))
 
 def _last_commit_on_branch(branch: str) -> str:
     try:
-        result = subprocess.run(
-            ["git", "rev-parse", f"origin/{branch}"],
-            cwd=PROJECT_ROOT,
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        if result.returncode == 0:
-            return result.stdout.strip()
+        for remote in ("sandboxcom", "origin"):
+            result = subprocess.run(
+                ["git", "rev-parse", f"{remote}/{branch}"],
+                cwd=PROJECT_ROOT,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if result.returncode == 0:
+                return result.stdout.strip()
         result = subprocess.run(
             ["git", "rev-parse", branch],
             cwd=PROJECT_ROOT,
@@ -74,7 +75,7 @@ def _fetch_ci_verdict(branch: str) -> tuple[str, str, str]:
             timeout=15,
         )
         if result.returncode != 0 or not result.stdout.strip():
-            return ("RED", "no run found", "")
+            return ("PENDING", "no run found (waiting for CI to start)", "")
         import json
         run = json.loads(result.stdout)
         conclusion = run.get("conclusion") or ""

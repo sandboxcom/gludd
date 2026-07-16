@@ -1,0 +1,9 @@
+---
+spectroscopy_technique: "uv_vis"
+spectroscopy_wl_min_nm: 200
+spectroscopy_wl_max_nm: 800
+spectroscopy_resolution_nm: 1.0
+spectroscopy_solvent: "water"
+spectroscopy_temperature_C: 25.0
+spectroscopy_peak_threshold: 0.1
+spectroscopy_output_dir: /tmp/gludd-spectroscopy

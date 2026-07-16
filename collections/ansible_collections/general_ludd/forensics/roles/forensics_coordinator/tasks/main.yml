@@ -1,0 +1,133 @@
+---
+# forensics_coordinator role -- orchestrate multi-analyst forensic workflows
+#
+# 1. Validate case_id and analyst types
+# 2. Initialize chain of custody for the case
+# 3. Dispatch each requested analyst role with shared case context
+# 4. Collect verdicts and assemble final report
+
+- name: Validate case_id
+  ansible.builtin.assert:
+    that:
+      - forensics_case_id | length > 0
+    fail_msg: "forensics_case_id must be a non-empty string"
+  when: forensics_enabled | bool
+
+- name: Validate analyst types
+  ansible.builtin.assert:
+    that:
+      - forensics_analyst_types | length > 0
+    fail_msg: "forensics_analyst_types must select at least one analyst"
+  when: forensics_enabled | bool
+
+- name: Ensure output directory
+  ansible.builtin.file:
+    path: "{{ forensics_output_dir }}"
+    state: directory
+    mode: "0755"
+  when: forensics_enabled | bool
+
+- name: Initialize chain of custody
+  ansible.builtin.script:
+    cmd: |
+      import json, sys
+      sys.path.insert(0, "{{ playbook_dir }}/../../..")
+      from ansible_collections.general_ludd.forensics.plugins.module_utils import (
+          chain_of_custody as coc,
+      )
+
+      chain = coc.create_chain_of_custody("{{ forensics_case_id }}")
+      print(json.dumps({
+          "case_id": chain.case_id,
+          "created_at": chain.created_at,
+          "status": "initialized",
+      }))
+    executable: python3
+  register: coc_init_result
+  failed_when: false
+  changed_when: false
+  when: forensics_enabled | bool
+
+- name: Register chain of custody fact
+  ansible.builtin.set_fact:
+    forensics_coc: "{{ coc_init_result.stdout | from_json }}"
+  when:
+    - forensics_enabled | bool
+    - coc_init_result.rc == 0
+
+- name: Run fingerprint analyst
+  ansible.builtin.include_role:
+    name: fingerprint_analyst
+    tasks_from: main.yml
+  vars:
+    fingerprint_enabled: "{{ forensics_pipeline_enabled }}"
+    fingerprint_output_dir: "{{ forensics_output_dir }}/fingerprint"
+  when:
+    - forensics_enabled | bool
+    - "'fingerprint' in forensics_analyst_types"
+
+- name: Run DNA analyst
+  ansible.builtin.include_role:
+    name: dna_analyst
+    tasks_from: main.yml
+  vars:
+    dna_enabled: "{{ forensics_pipeline_enabled }}"
+    dna_output_dir: "{{ forensics_output_dir }}/dna"
+  when:
+    - forensics_enabled | bool
+    - "'dna' in forensics_analyst_types"
+
+- name: Run trace evidence examiner
+  ansible.builtin.include_role:
+    name: trace_evidence_examiner
+    tasks_from: main.yml
+  vars:
+    trace_evidence_enabled: "{{ forensics_pipeline_enabled }}"
+    trace_evidence_output_dir: "{{ forensics_output_dir }}/trace"
+  when:
+    - forensics_enabled | bool
+    - "'trace_evidence' in forensics_analyst_types"
+
+- name: Run photo forensics analyst
+  ansible.builtin.include_role:
+    name: photo_forensics_analyst
+    tasks_from: main.yml
+  vars:
+    photo_forensics_enabled: "{{ forensics_pipeline_enabled }}"
+    photo_forensics_image_path: "{{ forensics_evidence_dir }}/suspect_image.jpg"
+    photo_forensics_output_dir: "{{ forensics_output_dir }}/photo"
+  when:
+    - forensics_enabled | bool
+    - "'photo_forensics' in forensics_analyst_types"
+
+- name: Assemble coordinator report
+  block:
+    - name: Collect verdicts into coordinator report
+      ansible.builtin.set_fact:
+        forensics_report:
+          case_id: "{{ forensics_case_id }}"
+          analyst_types: "{{ forensics_analyst_types }}"
+          chain_of_custody: "{{ forensics_coc | default({}) }}"
+          generated_at: "{{ ansible_date_time.iso8601 }}"
+
+    - name: Write coordinator report artifact
+      ansible.builtin.copy:
+        content: "{{ forensics_report | to_nice_json }}"
+        dest: "{{ forensics_output_dir }}/coordinator_report.json"
+        mode: "0644"
+      when: forensics_report is defined
+
+  rescue:
+    - name: Write failure report
+      ansible.builtin.copy:
+        content: |
+          {{ {'role': 'forensics_coordinator', 'status': 'failed',
+              'case_id': forensics_case_id,
+              'analyst_types': forensics_analyst_types} | to_nice_json }}
+        dest: "{{ forensics_output_dir }}/coordinator_report.json"
+        mode: "0644"
+      failed_when: false
+
+    - name: Fail after rescue cleanup
+      ansible.builtin.fail:
+        msg: "forensics_coordinator pipeline failed -- see artifact"

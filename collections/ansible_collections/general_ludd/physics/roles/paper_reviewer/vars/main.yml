@@ -1,0 +1,23 @@
+---
+review_depths:
+  - quick
+  - standard
+  - deep
+  - meta_review
+criterion_descriptions:
+  novelty: "Is the contribution new and significant?"
+  methodology: "Are the methods sound and well-described?"
+  results: "Are results clearly presented and statistically valid?"
+  discussion: "Is the interpretation supported by the data?"
+  clarity: "Is the writing clear and well-organized?"
+  references: "Are citations appropriate and complete?"
+  reproducibility: "Could another researcher reproduce the work?"
+section_patterns:
+  - Introduction
+  - Methods
+  - Results
+  - Discussion
+  - Conclusion
+  - Abstract
+  - Background
+  - Related Work
