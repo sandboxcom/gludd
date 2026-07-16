@@ -8,6 +8,9 @@
   vars:
     mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8866', true) }}"
   tasks:
+    - name: Gather date_time for artifact generation
+      ansible.builtin.setup:
+        gather_subset: "!all,date_time"
     - name: "[validate_pipeline] Validate full SDLC pipeline configuration"
       ansible.builtin.include_role:
         name: general_ludd.agent.sdlc_gate
@@ -25,6 +28,9 @@
   vars:
     mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8866', true) }}"
   tasks:
+    - name: Gather date_time for artifact generation
+      ansible.builtin.setup:
+        gather_subset: "!all,date_time"
     - name: "[check_stage_entry] Check entry gate for intake stage"
       ansible.builtin.include_role:
         name: general_ludd.agent.sdlc_gate
@@ -44,6 +50,9 @@
   vars:
     mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8866', true) }}"
   tasks:
+    - name: Gather date_time for artifact generation
+      ansible.builtin.setup:
+        gather_subset: "!all,date_time"
     - name: "[check_stage_exit] Check exit gate for intake stage (fixtures seeded)"
       ansible.builtin.include_role:
         name: general_ludd.agent.sdlc_gate
@@ -65,6 +74,9 @@
   vars:
     mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8866', true) }}"
   tasks:
+    - name: Gather date_time for artifact generation
+      ansible.builtin.setup:
+        gather_subset: "!all,date_time"
     - name: "[audit_token_chain] Audit validation token chain"
       ansible.builtin.include_role:
         name: general_ludd.agent.sdlc_gate
@@ -83,6 +95,9 @@
   vars:
     mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8866', true) }}"
   tasks:
+    - name: Gather date_time for artifact generation
+      ansible.builtin.setup:
+        gather_subset: "!all,date_time"
     - name: "[list_stages] List all pipeline stages"
       ansible.builtin.include_role:
         name: general_ludd.agent.sdlc_gate

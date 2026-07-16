@@ -35,6 +35,6 @@
 
 - name: Write Frida instrumentation artifact
   ansible.builtin.copy:
-    content: "{{ {'role': 'frida_instrument', 'status': 'completed', 'verdict': 'pass', 'frida_version': _frida_version.stdout, 'generated_at': ansible_date_time.iso8601} | to_nice_json }}"
+    content: "{{ {'role': 'frida_instrument', 'status': 'completed', 'verdict': 'pass', 'frida_version': _frida_version.stdout, 'generated_at': lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ')} | to_nice_json }}"
     dest: "{{ output_dir }}/frida_instrument.json"
     mode: "0644"

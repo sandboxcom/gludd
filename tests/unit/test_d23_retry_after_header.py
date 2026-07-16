@@ -91,10 +91,12 @@ class TestRetryAfterHeaderHonored:
 
         sleeps: list[float] = []
 
-        def _capture_sleep(seconds: float) -> None:
+        async def _capture_sleep(seconds: float) -> None:
             sleeps.append(seconds)
 
-        with patch("time.sleep", side_effect=_capture_sleep), pytest.raises(
+        # The gateway performs backoff via ``await asyncio.sleep`` (non-blocking
+        # event loop), NOT time.sleep — patch the coroutine it actually awaits.
+        with patch("asyncio.sleep", side_effect=_capture_sleep), pytest.raises(
             httpx.HTTPStatusError
         ):
             asyncio.run(gateway.call_model_with_retry(
@@ -103,7 +105,7 @@ class TestRetryAfterHeaderHonored:
                 base_backoff_seconds=0.0,
             ))
 
-        assert sleeps, "time.sleep was never called by the retry path"
+        assert sleeps, "asyncio.sleep was never called by the retry path"
         # _compute_backoff returns max(retry_after, 1.0) for RATE_LIMITED when
         # retry_after is provided. Every non-zero sleep must be >=
         # retry_after_seconds; if the header is ignored the backoff collapses
@@ -133,10 +135,12 @@ class TestRetryAfterHeaderHonored:
 
         sleeps: list[float] = []
 
-        def _capture_sleep(seconds: float) -> None:
+        async def _capture_sleep(seconds: float) -> None:
             sleeps.append(seconds)
 
-        with patch("time.sleep", side_effect=_capture_sleep), pytest.raises(
+        # The gateway performs backoff via ``await asyncio.sleep`` (non-blocking
+        # event loop), NOT time.sleep — patch the coroutine it actually awaits.
+        with patch("asyncio.sleep", side_effect=_capture_sleep), pytest.raises(
             httpx.HTTPStatusError
         ):
             asyncio.run(cast(Any, gateway).call_model_with_retry(
@@ -145,7 +149,7 @@ class TestRetryAfterHeaderHonored:
                 base_backoff_seconds=0.0,
             ))
 
-        assert sleeps, "time.sleep was never called by the retry path"
+        assert sleeps, "asyncio.sleep was never called by the retry path"
         # Without a header we must NOT invent a 30s wait — backoff should be
         # the small jittered exponential, well under any plausible Retry-After.
         assert max(sleeps) < 5.0, (
