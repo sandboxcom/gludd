@@ -19,8 +19,12 @@ from general_ludd.governance.cli_governance import (
     _cmd_body,
     _cmd_borders,
     _cmd_currency,
+    _cmd_elections,
+    _cmd_finance,
+    _cmd_legal,
     _cmd_list,
     _cmd_navigate,
+    _cmd_relations,
     _cmd_service,
     _cmd_tax,
     _cmd_treaty,
@@ -78,7 +82,8 @@ class TestGovernanceSubparser:
         top = argparse.ArgumentParser(prog="gludd")
         sub = top.add_subparsers(dest="command")
         add_governance_subparser(sub)
-        for name in ("borders", "body", "tax", "currency", "service", "treaty", "navigate", "list"):
+        for name in ("borders", "body", "tax", "currency", "service", "treaty",
+                      "navigate", "list", "elections", "relations", "legal", "finance"):
             ns = top.parse_args(["governance", name, "dummy"] if name not in ("list",) else ["governance", name])
             assert ns.governance_command == name
 
@@ -302,7 +307,9 @@ class TestGovernanceList:
     def test_list_shows_all_domains(self):
         args = argparse.Namespace(json=False)
         output = _run_with_stdout(_cmd_list, args)
-        for domain in ("borders", "governing_bodies", "treaties", "tax_currency", "civic_services"):
+        for domain in ("borders", "governing_bodies", "treaties", "tax_currency",
+                       "civic_services", "elections_voting", "international_relations",
+                       "legal_systems", "public_finance"):
             assert domain in output.lower()
 
     def test_list_json_output(self):
@@ -312,6 +319,138 @@ class TestGovernanceList:
         assert "borders" in data
         assert data["borders"]["count"] >= 5
         assert data["civic_services"]["count"] >= 3
+        assert "elections_voting" in data
+        assert "international_relations" in data
+        assert "legal_systems" in data
+        assert "public_finance" in data
+
+
+# ── elections ──────────────────────────────────────────────────────────────────
+
+
+class TestGovernanceElections:
+    def test_elections_us(self):
+        args = argparse.Namespace(country="US", method=None, json=False)
+        output = _run_with_stdout(_cmd_elections, args)
+        assert "presidential" in output.lower()
+
+    def test_elections_lowercase(self):
+        args = argparse.Namespace(country="gb", method=None, json=False)
+        output = _run_with_stdout(_cmd_elections, args)
+        assert "house of commons" in output.lower()
+
+    def test_elections_method_lookup(self):
+        args = argparse.Namespace(country="US", method="paper_ballot", json=False)
+        output = _run_with_stdout(_cmd_elections, args)
+        assert "paper" in output.lower()
+
+    def test_elections_not_found_exits(self):
+        args = argparse.Namespace(country="ZZ", method=None, json=False)
+        rc = _run_with_stderr_exit(_cmd_elections, args)
+        assert rc == 1
+
+    def test_elections_json_output(self):
+        args = argparse.Namespace(country="US", method=None, json=True)
+        output = _run_with_stdout(_cmd_elections, args)
+        data = json.loads(output)
+        assert data["found"] is True
+        assert data["country"] == "US"
+
+
+# ── relations ──────────────────────────────────────────────────────────────────
+
+
+class TestGovernanceRelations:
+    def test_relations_us(self):
+        args = argparse.Namespace(country="US", alliance=None, sanctions=None, json=False)
+        output = _run_with_stdout(_cmd_relations, args)
+        assert "US" in output
+
+    def test_relations_alliance_search(self):
+        args = argparse.Namespace(country="US", alliance="nato", sanctions=None, json=False)
+        output = _run_with_stdout(_cmd_relations, args)
+        assert "North Atlantic" in output
+
+    def test_relations_sanctions_lookup(self):
+        args = argparse.Namespace(country="US", alliance=None, sanctions="RU", json=False)
+        output = _run_with_stdout(_cmd_relations, args)
+        assert "Russia" in output
+
+    def test_relations_not_found_exits(self):
+        args = argparse.Namespace(country="ZZ", alliance=None, sanctions=None, json=False)
+        rc = _run_with_stderr_exit(_cmd_relations, args)
+        assert rc == 1
+
+    def test_relations_json_output(self):
+        args = argparse.Namespace(country="US", alliance=None, sanctions=None, json=True)
+        output = _run_with_stdout(_cmd_relations, args)
+        data = json.loads(output)
+        assert data["found"] is True
+        assert data["country"] == "US"
+
+
+# ── legal ──────────────────────────────────────────────────────────────────────
+
+
+class TestGovernanceLegal:
+    def test_legal_us(self):
+        args = argparse.Namespace(country="US", charter=None, courts=None, json=False)
+        output = _run_with_stdout(_cmd_legal, args)
+        assert "common_law" in output.lower() or "common law" in output.lower()
+
+    def test_legal_charter_lookup(self):
+        args = argparse.Namespace(country="US", charter="udhr", courts=None, json=False)
+        output = _run_with_stdout(_cmd_legal, args)
+        assert "Universal Declaration" in output
+
+    def test_legal_courts_lookup(self):
+        args = argparse.Namespace(country="US", charter=None, courts="US", json=False)
+        output = _run_with_stdout(_cmd_legal, args)
+        assert "Supreme Court" in output
+
+    def test_legal_not_found_exits(self):
+        args = argparse.Namespace(country="ZZ", charter=None, courts=None, json=False)
+        rc = _run_with_stderr_exit(_cmd_legal, args)
+        assert rc == 1
+
+    def test_legal_json_output(self):
+        args = argparse.Namespace(country="DE", charter=None, courts=None, json=True)
+        output = _run_with_stdout(_cmd_legal, args)
+        data = json.loads(output)
+        assert data["found"] is True
+        assert data["country"] == "DE"
+
+
+# ── finance ────────────────────────────────────────────────────────────────────
+
+
+class TestGovernanceFinance:
+    def test_finance_us(self):
+        args = argparse.Namespace(country="US", debt=None, pensions=None, json=False)
+        output = _run_with_stdout(_cmd_finance, args)
+        assert "USD" in output
+
+    def test_finance_debt_lookup(self):
+        args = argparse.Namespace(country="US", debt="JP", pensions=None, json=False)
+        output = _run_with_stdout(_cmd_finance, args)
+        assert "Japan" in output
+
+    def test_finance_pensions_lookup(self):
+        args = argparse.Namespace(country="US", debt=None, pensions="US", json=False)
+        output = _run_with_stdout(_cmd_finance, args)
+        assert "Social Security" in output
+
+    def test_finance_not_found_exits(self):
+        args = argparse.Namespace(country="ZZ", debt=None, pensions=None, json=False)
+        rc = _run_with_stderr_exit(_cmd_finance, args)
+        assert rc == 1
+
+    def test_finance_json_output(self):
+        args = argparse.Namespace(country="GB", debt=None, pensions=None, json=True)
+        output = _run_with_stdout(_cmd_finance, args)
+        data = json.loads(output)
+        assert data["found"] is True
+        assert data["country"] == "GB"
 
 
 # ── Loader ──────────────────────────────────────────────────────────────────────
@@ -338,3 +477,31 @@ class TestGovernanceLoader:
         first = get_tax_currency()
         second = get_tax_currency()
         assert first is second
+
+    def test_loader_imports_elections_voting(self):
+        from general_ludd.governance.loader import get_elections_voting
+
+        ev = get_elections_voting()
+        assert hasattr(ev, "lookup_elections")
+        assert hasattr(ev, "COUNTRY_ELECTIONS")
+
+    def test_loader_imports_international_relations(self):
+        from general_ludd.governance.loader import get_international_relations
+
+        ir_mod = get_international_relations()
+        assert hasattr(ir_mod, "lookup_diplomatic_relations")
+        assert hasattr(ir_mod, "ALLIANCES")
+
+    def test_loader_imports_legal_systems(self):
+        from general_ludd.governance.loader import get_legal_systems
+
+        ls_mod = get_legal_systems()
+        assert hasattr(ls_mod, "lookup_legal_system")
+        assert hasattr(ls_mod, "COUNTRY_LEGAL_SYSTEMS")
+
+    def test_loader_imports_public_finance(self):
+        from general_ludd.governance.loader import get_public_finance
+
+        pf_mod = get_public_finance()
+        assert hasattr(pf_mod, "lookup_budget")
+        assert hasattr(pf_mod, "COUNTRY_BUDGETS")

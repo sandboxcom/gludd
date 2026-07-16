@@ -303,6 +303,96 @@ def _navigate_query(query: str, *, json_output: bool = False) -> None:
     _print_result({"query": query, "results": results, "count": len(results)}, json_output=json_output)
 
 
+def _cmd_elections(args: argparse.Namespace) -> None:
+    """``gludd governance elections <country>`` — elections and voting info."""
+    ev = get_elections_voting()
+    if args.method:
+        method = ev.get_voting_method(args.method)
+        if method is None:
+            print(f"No voting method data found for '{args.method}'.", file=sys.stderr)
+            sys.exit(1)
+        _print_result({"method": args.method, "found": True, **method}, json_output=args.json)
+        return
+    result = ev.lookup_elections(args.country)
+    if result is None:
+        print(f"No election data found for '{args.country.upper()}'.", file=sys.stderr)
+        sys.exit(1)
+    _print_result(result, json_output=args.json)
+
+
+def _cmd_relations(args: argparse.Namespace) -> None:
+    """``gludd governance relations <country>`` — diplomatic relations and alliances."""
+    ir_mod = get_international_relations()
+    if args.alliance:
+        matches = ir_mod.search_alliance(args.alliance)
+        if not matches:
+            print(f"No alliance found for '{args.alliance}'.", file=sys.stderr)
+            sys.exit(1)
+        _print_result({"query": args.alliance, "found": True, "count": len(matches), "alliances": matches},
+                      json_output=args.json)
+        return
+    if args.sanctions:
+        result = ir_mod.lookup_sanctions(args.sanctions)
+        if result is None:
+            print(f"No sanctions data found for '{args.sanctions}'.", file=sys.stderr)
+            sys.exit(1)
+        _print_result(result, json_output=args.json)
+        return
+    result = ir_mod.lookup_diplomatic_relations(args.country)
+    if result is None:
+        print(f"No diplomatic relations data found for '{args.country.upper()}'.", file=sys.stderr)
+        sys.exit(1)
+    _print_result(result, json_output=args.json)
+
+
+def _cmd_legal(args: argparse.Namespace) -> None:
+    """``gludd governance legal <country>`` — legal systems, courts, and rights."""
+    ls_mod = get_legal_systems()
+    if args.charter:
+        result = ls_mod.lookup_rights_charter(args.charter)
+        if result is None:
+            print(f"No rights charter found for '{args.charter}'.", file=sys.stderr)
+            sys.exit(1)
+        _print_result(result, json_output=args.json)
+        return
+    if args.courts:
+        result = ls_mod.search_court_system(args.courts)
+        if result is None:
+            print(f"No court hierarchy data found for '{args.courts.upper()}'.", file=sys.stderr)
+            sys.exit(1)
+        _print_result(result, json_output=args.json)
+        return
+    result = ls_mod.lookup_legal_system(args.country)
+    if result is None:
+        print(f"No legal system data found for '{args.country.upper()}'.", file=sys.stderr)
+        sys.exit(1)
+    _print_result(result, json_output=args.json)
+
+
+def _cmd_finance(args: argparse.Namespace) -> None:
+    """``gludd governance finance <country>`` — budgets, debt, and pensions."""
+    pf_mod = get_public_finance()
+    if args.pensions:
+        result = pf_mod.lookup_pension_system(args.pensions)
+        if result is None:
+            print(f"No pension data found for '{args.pensions.upper()}'.", file=sys.stderr)
+            sys.exit(1)
+        _print_result({"country": args.pensions.upper(), "found": True, **result}, json_output=args.json)
+        return
+    if args.debt:
+        result = pf_mod.lookup_sovereign_debt(args.debt)
+        if result is None:
+            print(f"No sovereign debt data found for '{args.debt.upper()}'.", file=sys.stderr)
+            sys.exit(1)
+        _print_result(result, json_output=args.json)
+        return
+    result = pf_mod.lookup_budget(args.country)
+    if result is None:
+        print(f"No budget data found for '{args.country.upper()}'.", file=sys.stderr)
+        sys.exit(1)
+    _print_result(result, json_output=args.json)
+
+
 def _cmd_list(args: argparse.Namespace) -> None:
     """``gludd governance list`` — list available data domains and counts."""
     borders = get_borders()
@@ -310,6 +400,10 @@ def _cmd_list(args: argparse.Namespace) -> None:
     ct = get_conflicts_treaties()
     tax_cur = get_tax_currency()
     civic = get_civic_services()
+    elections = get_elections_voting()
+    relations = get_international_relations()
+    legal = get_legal_systems()
+    finance = get_public_finance()
 
     domains = {
         "borders": {
@@ -335,6 +429,22 @@ def _cmd_list(args: argparse.Namespace) -> None:
         "civic_services": {
             "count": len(civic.CIVIC_SERVICES),
             "examples": list(sorted(civic.CIVIC_SERVICES))[:3],
+        },
+        "elections_voting": {
+            "count": len(elections.COUNTRY_ELECTIONS),
+            "examples": sorted(elections.COUNTRY_ELECTIONS)[:3],
+        },
+        "international_relations": {
+            "count": len(relations.ALLIANCES),
+            "examples": sorted(relations.ALLIANCES)[:3],
+        },
+        "legal_systems": {
+            "count": len(legal.COUNTRY_LEGAL_SYSTEMS),
+            "examples": sorted(legal.COUNTRY_LEGAL_SYSTEMS)[:3],
+        },
+        "public_finance": {
+            "count": len(finance.COUNTRY_BUDGETS),
+            "examples": sorted(finance.COUNTRY_BUDGETS)[:3],
         },
     }
     _print_result(domains, json_output=args.json)
@@ -391,6 +501,37 @@ def add_governance_subparser(
     treaty_p.add_argument("--json", action="store_true", dest="json", help="Output as JSON")
     treaty_p.set_defaults(func=_cmd_treaty)
 
+    # elections <country> [--method <name>]
+    elections_p = gov_sub.add_parser("elections", help="Elections and voting info for a country")
+    elections_p.add_argument("country", help="ISO 3166-1 alpha-2 country code (e.g. 'US', 'GB')")
+    elections_p.add_argument("--method", dest="method", help="Voting method lookup (e.g. 'paper_ballot')")
+    elections_p.add_argument("--json", action="store_true", dest="json", help="Output as JSON")
+    elections_p.set_defaults(func=_cmd_elections)
+
+    # relations <country> [--alliance <name>] [--sanctions <target>]
+    relations_p = gov_sub.add_parser("relations", help="Diplomatic relations, alliances, and sanctions")
+    relations_p.add_argument("country", help="ISO 3166-1 alpha-2 country code (e.g. 'US', 'GB')")
+    relations_p.add_argument("--alliance", dest="alliance", help="Search alliances by name (e.g. 'nato', 'eu')")
+    relations_p.add_argument("--sanctions", dest="sanctions", help="Sanctions lookup by target country code (e.g. 'RU', 'IR')")
+    relations_p.add_argument("--json", action="store_true", dest="json", help="Output as JSON")
+    relations_p.set_defaults(func=_cmd_relations)
+
+    # legal <country> [--charter <name>] [--courts <country>]
+    legal_p = gov_sub.add_parser("legal", help="Legal systems, courts, and rights charters")
+    legal_p.add_argument("country", help="ISO 3166-1 alpha-2 country code (e.g. 'US', 'DE')")
+    legal_p.add_argument("--charter", dest="charter", help="Rights charter lookup (e.g. 'udhr', 'echr')")
+    legal_p.add_argument("--courts", dest="courts", help="Court hierarchy lookup by country code")
+    legal_p.add_argument("--json", action="store_true", dest="json", help="Output as JSON")
+    legal_p.set_defaults(func=_cmd_legal)
+
+    # finance <country> [--debt <country>] [--pensions <country>]
+    finance_p = gov_sub.add_parser("finance", help="Government budgets, debt, and pensions")
+    finance_p.add_argument("country", help="ISO 3166-1 alpha-2 country code (e.g. 'US', 'GB')")
+    finance_p.add_argument("--debt", dest="debt", help="Sovereign debt lookup by country code")
+    finance_p.add_argument("--pensions", dest="pensions", help="Public pension system lookup by country code")
+    finance_p.add_argument("--json", action="store_true", dest="json", help="Output as JSON")
+    finance_p.set_defaults(func=_cmd_finance)
+
     # navigate <query>
     nav_p = gov_sub.add_parser("navigate", help="Natural language query routing")
     nav_p.add_argument("query", help="Free-text query (e.g. 'visa for France', 'NATO treaty parties')")
@@ -407,8 +548,12 @@ __all__ = [
     "_cmd_body",
     "_cmd_borders",
     "_cmd_currency",
+    "_cmd_elections",
+    "_cmd_finance",
+    "_cmd_legal",
     "_cmd_list",
     "_cmd_navigate",
+    "_cmd_relations",
     "_cmd_service",
     "_cmd_tax",
     "_cmd_treaty",

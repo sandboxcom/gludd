@@ -63,6 +63,19 @@
         dest: "{{ fixture_dir }}/story_create.json"
         mode: "0644"
 
+    - name: Seed backlog_groom artifact (gate_passed=true)
+      ansible.builtin.copy:
+        content: |
+          {
+            "role": "backlog_groom",
+            "status": "completed",
+            "gate_passed": true,
+            "task_id": "test-task-001",
+            "groomed": true
+          }
+        dest: "{{ fixture_dir }}/backlog_groom.json"
+        mode: "0644"
+
     - name: Seed intake.json evidence artifact
       ansible.builtin.copy:
         content: |
