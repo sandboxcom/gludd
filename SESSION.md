@@ -37,13 +37,22 @@ Code versions `0.1.0-beta.2` through `0.1.0-beta.5` exist in `pyproject.toml`/`_
 
 ## SESSION 44 — 2026-07-16
 
-- **HEAD: `17b27326`** on `master` branch (development `f1a15908..dd4914b7` batch-pushed to master)
+- **HEAD: `fcaf4c4a`** on `development` branch (3 commits beyond last-pushed `17b27326`)
 - **Version: 0.1.0-beta.5** (pyproject.toml)
-- **Push status: NOT VERIFIED** — verify-remote not run this session
-- **CI: NOT CHECKED** — no ci-verdict run this session
+- **Push status: NOT PUSHED** — 3 local commits on development not on remote (`c45621c0`, `2f2d66ff`, `fcaf4c4a`)
+- **CI: NO RUN** for HEAD `fcaf4c4a` (not pushed)
 - **Gate: quality gate pass at `c5a66a27`** — lint 0, typecheck 766 files OK, collect OK, test-hook-runtime 115/133, all 10 enforcement BLOCKING+PASS, proactive-scan clean
-- **Working tree: near-clean** — `.ci-status` modified only
-- **Batch-push: development→master** — 11 development commits (`f1a15908..dd4914b7`) batch-pushed to master. Additional 4 commits on master: `dd4914b7` (molecule CI fixes: ansible_date_time lookup pipe fallback 6 binary roles, VIRTUAL_ENV python3 fallback 10 prepare ymls, retry_after_header asyncio sleep patch), `9dfdd057` (docs: TASKS+SESSION update), `79e63e05` (session state/dist cleanup), `17b27326` (VM test fixes, lint E501, Makefile test-sts/test-vm targets)
+- **Working tree: near-clean** — `docs/specs/FEATURE_CHAT_CLI.md` modified only
+- **Batch-push: development→master** — 11 development commits (`f1a15908..dd4914b7`) batch-pushed to master. Additional 4 commits on master: `dd4914b7` (molecule CI fixes), `9dfdd057` (docs), `79e63e05` (session state), `17b27326` (VM test fixes, lint E501, Makefile targets)
+- **New: enforce-batch-push plugin** (`fcaf4c4a`) — blocks push when CI `in_progress`; 26 structural tests. Logged batch-push COMMIT_THRESHOLD=1 CI cancellation incident in BUGS.md (`c45621c0`).
+
+### Commits on development not yet pushed (3: `17b27326..fcaf4c4a`)
+
+| Hash | Message |
+|------|---------|
+| `fcaf4c4a` | feat: enforce-batch-push plugin blocks push when CI in_progress - 26 structural tests |
+| `2f2d66ff` | docs: update TASKS.md + SESSION.md — batch-push fix, HEAD now 17b27326 on master, 10 commits documented |
+| `c45621c0` | docs: log batch-push COMMIT_THRESHOLD=1 CI cancellation incident in BUGS.md |
 
 ### Commits on master (10: `f1a15908..17b27326`)
 
@@ -64,17 +73,17 @@ Code versions `0.1.0-beta.2` through `0.1.0-beta.5` exist in `pyproject.toml`/`_
 
 | Item | Status |
 |------|--------|
-| A.4 — Cut v0.1.0-beta.2 release | BLOCKED on CI (awaiting verdict on master tip `17b27326`) |
-| verify-remote master | NOT VERIFIED |
+| A.4 — Cut v0.1.0-beta.2 release | BLOCKED on CI (awaiting verdict — HEAD `fcaf4c4a` not pushed, no CI run yet) |
+| Push 3 development commits to remote | NOT PUSHED (`c45621c0`, `2f2d66ff`, `fcaf4c4a`) |
 | opencode restart to activate enforcement fixes (10c64ee5, 77ba3714, 631dd626) | PENDING (user action) |
 
 ### Next
 
-1. Restart opencode to activate enforcement plugin fixes
-2. Verify master remote match, wait for CI green on tip `17b27326`
+1. Push 3 development commits, wait for CI green on tip `fcaf4c4a`
+2. Restart opencode to activate enforcement plugin fixes
 3. Cut beta.2 via `make release-cut`
 
-- **Last Updated: 2026-07-16 — Session 44.** HEAD `17b27326` on `master`. Development batch-pushed to master (11 dev commits + 4 master commits). Quality gate pass at c5a66a27. Molecule CI fixes (20 files). VM test fixes. Dist files cleaned up. A.4 (beta.2 release) blocked on CI.
+- **Last Updated: 2026-07-16 — Session 44.** HEAD `fcaf4c4a` on `development` (3 commits not pushed). enforce-batch-push plugin landed (`fcaf4c4a`). Batch-push COMMIT_THRESHOLD=1 incident logged in BUGS.md (`c45621c0`). Quality gate pass at c5a66a27. A.4 (beta.2 release) blocked on CI.
 
 ---
 

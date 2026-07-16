@@ -1,6 +1,9 @@
 # Feature: `gludd chat` — Interactive Agent Chat REPL
 
-**Status: DRAFT** | **Created: 2026-07-14** | **Target: v0.1.0-beta.2**
+**Status: IMPLEMENTED** | **Created: 2026-07-14** | **Target: v0.1.0-beta.2**
+
+> **Implementation complete 2026-07-16.** Phases P1–P5 all delivered.
+> Verified by 115 passing tests across unit, integration, and E2E suites.
 
 ## 1. Overview
 
