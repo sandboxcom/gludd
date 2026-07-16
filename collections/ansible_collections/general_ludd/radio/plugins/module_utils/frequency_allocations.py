@@ -232,10 +232,11 @@ CA_AMATEUR_BANDS: dict[str, dict[str, Any]] = {
     },
 }
 
-# ── ITU Region 2 (Americas) HF Amateur Allocations ──
+# ── ITU Region 2 (Americas) Amateur Allocations ──
 # Source: ITU Radio Regulations Article 5.  Each entry is tagged with its
 # source region so downstream consumers can union / diff allocations across
-# regions.
+# regions.  Includes VHF/UHF entries so the three region tables are directly
+# comparable band-for-band.
 ITU_R2_BANDS: list[dict[str, Any]] = [
     {"band": "2200m", "start_hz": 135_700, "end_hz": 137_800, "region": 2, "notes": "WRC-12; secondary allocation; max EIRP 1W. Shared."},
     {"band": "630m", "start_hz": 472_000, "end_hz": 479_000, "region": 2, "notes": "WRC-12; secondary allocation; max EIRP 5W. Shared."},
@@ -250,6 +251,11 @@ ITU_R2_BANDS: list[dict[str, Any]] = [
     {"band": "12m", "start_hz": 24_890_000, "end_hz": 24_990_000, "region": 2, "notes": "Primary allocation worldwide."},
     {"band": "10m", "start_hz": 28_000_000, "end_hz": 29_700_000, "region": 2, "notes": "Primary allocation worldwide."},
     {"band": "6m", "start_hz": 50_000_000, "end_hz": 54_000_000, "region": 2, "notes": "Primary in Region 2."},
+    {"band": "2m", "start_hz": 144_000_000, "end_hz": 148_000_000, "region": 2, "notes": "Primary. Region 2 extends to 148 MHz (R1 ends at 146 MHz)."},
+    {"band": "1.25m", "start_hz": 222_000_000, "end_hz": 225_000_000, "region": 2, "notes": "Region 2 ONLY allocation (US/Canada). Not present in R1/R3."},
+    {"band": "70cm", "start_hz": 420_000_000, "end_hz": 450_000_000, "region": 2, "notes": "Primary. Region 2 is 420-450 MHz (R1 uses 430-440 MHz)."},
+    {"band": "33cm", "start_hz": 902_000_000, "end_hz": 928_000_000, "region": 2, "notes": "Region 2 allocation; shared with ISM. Not a standard R1/R3 allocation."},
+    {"band": "23cm", "start_hz": 1_240_000_000, "end_hz": 1_300_000_000, "region": 2, "notes": "Primary; same worldwide."},
 ]
 
 # ── ITU Region 1 (Europe / Africa / Middle East / Northern Asia) ──
