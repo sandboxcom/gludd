@@ -1,0 +1,110 @@
+---
+# Run sdlc_gate through five operations against the mock daemon.
+# Uses the real ai_sdlc.yml config from the project root.
+- name: Converge - validate_pipeline
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8866', true) }}"
+  tasks:
+    - name: Gather date_time for artifact generation
+      ansible.builtin.setup:
+        gather_subset: "!all,date_time"
+    - name: "[validate_pipeline] Validate full SDLC pipeline configuration"
+      ansible.builtin.include_role:
+        name: general_ludd.agent.sdlc_gate
+      vars:
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        psk: ""
+        operation: "validate_pipeline"
+        artifact_dir: "/tmp/gludd-sdlc-gate-{{ mock_port }}-validate"
+        sdlc_config: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/config/ai_sdlc.yml"
+
+- name: Converge - check_stage_entry (intake, stage 0)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8866', true) }}"
+  tasks:
+    - name: Gather date_time for artifact generation
+      ansible.builtin.setup:
+        gather_subset: "!all,date_time"
+    - name: "[check_stage_entry] Check entry gate for intake stage"
+      ansible.builtin.include_role:
+        name: general_ludd.agent.sdlc_gate
+      vars:
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        psk: ""
+        operation: "check_stage_entry"
+        stage: "intake"
+        task_id: "test-task-001"
+        artifact_dir: "/tmp/gludd-sdlc-gate-{{ mock_port }}-entry"
+        sdlc_config: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/config/ai_sdlc.yml"
+
+- name: Converge - check_stage_exit (intake, seeded fixtures)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8866', true) }}"
+  tasks:
+    - name: Gather date_time for artifact generation
+      ansible.builtin.setup:
+        gather_subset: "!all,date_time"
+    - name: "[check_stage_exit] Check exit gate for intake stage (fixtures seeded)"
+      ansible.builtin.include_role:
+        name: general_ludd.agent.sdlc_gate
+      vars:
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        psk: ""
+        operation: "check_stage_exit"
+        stage: "intake"
+        task_id: "test-task-001"
+        artifact_dir: "/tmp/gludd-sdlc-gate-{{ mock_port }}-exit"
+        sdlc_config: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/config/ai_sdlc.yml"
+        fail_closed: false
+        handoff_recipient: ""
+
+- name: Converge - audit_token_chain
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8866', true) }}"
+  tasks:
+    - name: Gather date_time for artifact generation
+      ansible.builtin.setup:
+        gather_subset: "!all,date_time"
+    - name: "[audit_token_chain] Audit validation token chain"
+      ansible.builtin.include_role:
+        name: general_ludd.agent.sdlc_gate
+      vars:
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        psk: ""
+        operation: "audit_token_chain"
+        task_id: "test-task-001"
+        artifact_dir: "/tmp/gludd-sdlc-gate-{{ mock_port }}-audit"
+        sdlc_config: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/config/ai_sdlc.yml"
+
+- name: Converge - list_stages
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8866', true) }}"
+  tasks:
+    - name: Gather date_time for artifact generation
+      ansible.builtin.setup:
+        gather_subset: "!all,date_time"
+    - name: "[list_stages] List all pipeline stages"
+      ansible.builtin.include_role:
+        name: general_ludd.agent.sdlc_gate
+      vars:
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        psk: ""
+        operation: "list_stages"
+        task_id: "test-task-001"
+        artifact_dir: "/tmp/gludd-sdlc-gate-{{ mock_port }}-list"
+        sdlc_config: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/config/ai_sdlc.yml"

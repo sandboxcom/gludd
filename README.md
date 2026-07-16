@@ -88,18 +88,6 @@ when a `v*` tag is pushed (the `release` job in `.github/workflows/build.yml` is
 |---|---|---|
 | Watchdog/stall detection improvements (mt-6-watchdog branch) | ✗ 0% | **PENDING**: Abandoned branch; code rescoped into master. Original branch deleted. Feature reclassified to reflect actual implementation status. |
 
-### New Features (NF.1–NF.10, v0.1.0-beta.2)
-
-| Feature / Task | Verified % | Evidence |
-|---|---|---|
-| NF.2 Unikernel sandbox — P3 VMSandboxManager + P4 real executor + P5 Firecracker REST API + P6 VM integration + P7 VM metrics + VM pool | ✓ file-refs | **PASS** *(file-refs only)*: 280 tests across vm/{firecracker_backend,gvisor_backend,image_builder,agent_executor,sandbox_manager,instance,metrics}.py; commits 1c262d43, 84f94fc6, 57c11755 |
-| NF.3 Binary RE — pattern DB + YARA rule generator + Shannon entropy analyzer | ✓ file-refs | **PASS** *(file-refs only)*: pattern DB (38 tests, 84f94fc6); yara_generator.py + entropy_analyzer.py in binary_re module_utils; 326+ total binary_re tests |
-| NF.4 Radio engineer — ITU Region 1+3 band models + APRS (AX.25 UI) decoder | ✓ file-refs | **PASS** *(file-refs only)*: ITU models (20 tests, 84f94fc6) + ITU Region 1+3 bands (15 tests, 57c11755); decode_aprs() in protocol_decoder.py; 350+ total radio tests |
-| NF.5 E2E test gen — coverage_diff_report + format_diff_markdown | ✓ file-refs | **PASS** *(file-refs only)*: 13 TDD tests in verify_coverage; commit eba1c51d |
-| NF.6 OS expert — compliance report generator + CIS Benchmark control-id mapping | ✓ file-refs | **PASS** *(file-refs only)*: compliance report generator (116944b8); CIS cis_controls field on all 24 hardening recs (9 tests, bf852b96); 246+ total os_expert tests |
-| NF.7 STS tokens — TokenQuotaEnforcer + STS quotas + TokenRotator + visualizer dashboard | ✓ file-refs | **PASS** *(file-refs only)*: quotas.py (24 tests, 57c11755); rotator.py atomic rotation (13 tests, d3d740bf); dashboard.py + visualizer.py (16 tests, 84f94fc6); injector wiring (72 tests) |
-| NF.9 Language expert — polyglot corpus + run_role dispatcher + performance benchmarks | ✓ file-refs | **PASS** *(file-refs only)*: polyglot (24 tests, 84f94fc6); run_role (21 tests, a2db846b); benchmarks 17+17 latency tests (7fde6d3a, 57c11755); 438 total language tests |
-
 <!-- STATUS-TABLE:END -->
 
 ## Backlog

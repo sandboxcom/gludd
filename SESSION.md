@@ -8,36 +8,43 @@
 
 ## SESSION 49 — 2026-07-16
 
-- **HEAD: `2c1b73a4`** on `development` branch (48 commits beyond remote tip `8e290afd70ea`)
+- **HEAD: `c4fa3533`** on `development` branch (50 commits beyond remote tip `8e290afd70ea`)
 - **Version: 0.1.0-beta.5** (pyproject.toml)
-- **Push status: NOT PUSHED** — 48 local commits on development not on remote
+- **Push status: NOT PUSHED** — 50 local commits on development not on remote
 - **CI: PENDING** — run `29515568379` in_progress on development
 - **Gate: NOT RUN** — full gate not re-run on HEAD
-- **Working tree: DIRTY** — `collections/.../sdlc_gate/tasks/main.yml` modified, `governance/plugins/module_utils/` (legal_systems, public_finance) added, `cli_governance.py` modified, `research_effectiveness.json` modified, `test_governance_{legal_systems,public_finance}.py` added
+- **Working tree: DIRTY** — `tests/e2e/test_stop_e2e.py` modified, `tests/e2e/test_enforce_stop_live.py` untracked
 
-### Commits since Session 48 (5: `00271b42..2c1b73a4`)
+### Commits since Session 48 (8: `00271b42..c4fa3533`)
 
 | Hash | Message |
 |------|---------|
+| `c4fa3533` | docs: update TASKS.md and SESSION.md for Session 49 |
+| `40872c4e` | fix: remove CI PENDING from EVIDENCE_PATTERNS + _gate-fresh-check duplicate-epoch fix |
+| `f5c21dba` | governance: elections, international_relations, legal_systems, public_finance modules + CLI updates + tests |
 | `2c1b73a4` | governance: add NF.10 governance demo borders bodies tax civic services |
 | `acb806d4` | docs: update TASKS.md and SESSION.md for Session 49 HEAD 2db2a7c5 |
 | `2db2a7c5` | test: add coverage tests for VM metrics, VM pool, STS rotator, STS visualizer |
 | `d3ffaea2` | fix: rewrite decision_makers module to match TDD test expectations |
 | `d7e28ea3` | governance: add governance module, plugins, module_utils, roles, tests, and demos |
 
+### BUGS.md resolved this session
+
+- **CI PENDING evidence-pattern bypass** (`40872c4e`): Removed `CI\s+(?:GREEN|RED|PENDING)` from EVIDENCE_PATTERNS in enforce-stop.ts — CI-status words are status claims, not machine-produced evidence. This closes the gap where a text-only response mentioning "CI PENDING" bypassed the `hasRealPendingWork()` text-only block.
+
 ### Remaining open items
 
 | Item | Status |
 |------|--------|
 | A.4 — Cut v0.1.0-beta.2 release | BLOCKED on CI (run 29515568379 in_progress) |
-| Push 48 development commits to remote | NOT PUSHED |
+| Push 50 development commits to remote | NOT PUSHED |
 
 ### Next
 
 1. Wait for CI green on run 29515568379
 2. Push development, cut beta.2 via `make release-cut`
 
-- **Last Updated: 2026-07-16 — Session 49.** HEAD `2c1b73a4` on `development` (48 commits not pushed). 5 new commits since Session 48: governance module/plugins/roles/tests/demos (d7e28ea3), decision_makers TDD rewrite (d3ffaea2), VM metrics/pool/STS rotator/visualizer coverage tests (2db2a7c5), TASKS/SESSION docs (acb806d4), NF.10 governance demo borders bodies tax civic services (2c1b73a4). Tree DIRTY (sdlc_gate modified, governance plugins added, cli_governance/research_effectiveness modified, test_governance_* added). CI PENDING (run 29515568379). A.4 (beta.2 release) blocked on CI.
+- **Last Updated: 2026-07-16 — Session 49.** HEAD `c4fa3533` on `development` (50 commits not pushed). 8 new commits since Session 48: governance module/plugins/roles/tests/demos (d7e28ea3), decision_makers TDD rewrite (d3ffaea2), VM coverage tests (2db2a7c5), TASKS/SESSION docs (acb806d4), NF.10 governance demo (2c1b73a4), governance elections/international_relations/legal_systems/public_finance (f5c21dba), EVIDENCE_PATTERNS CI PENDING removal + _gate-fresh-check fix (40872c4e), TASKS/SESSION docs (c4fa3533). Tree DIRTY (test_stop_e2e.py modified, test_enforce_stop_live.py untracked). CI PENDING (run 29515568379). BUGS.md CI PENDING evidence-pattern bypass resolved. A.4 (beta.2 release) blocked on CI.
 
 ---
 
