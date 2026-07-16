@@ -151,6 +151,8 @@ class StreamingChatFormatter:
             self._plain_buffer = ""
             self._in_code = True
             self._code_buffer = after
+            if self._FENCE in self._code_buffer:
+                return before + self._feed_code("")
             return before
 
         trailing = len(self._plain_buffer) - len(self._plain_buffer.rstrip("`"))
