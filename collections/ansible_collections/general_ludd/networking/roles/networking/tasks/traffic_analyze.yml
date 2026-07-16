@@ -10,7 +10,8 @@
       - networking__pcap_path | default('') | length > 0
     fail_msg: "networking__pcap_path is required for traffic_analyze mode"
 
-- block:
+- name: Analyze traffic
+  block:
     - name: Check pcap file existence
       ansible.builtin.stat:
         path: "{{ networking__pcap_path }}"

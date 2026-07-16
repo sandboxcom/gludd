@@ -286,7 +286,7 @@ tools:
         example: 'echo "Q" | openssl s_client -connect example.com:443 -servername example.com 2>/dev/null | openssl x509 -noout -fingerprint -sha256'
       - command: openssl s_client -connect example.com:443 -servername example.com -cipher ECDHE-RSA-AES128-GCM-SHA256
         use_case: Test specific cipher suite negotiation
-        example: 'openssl s_client -connect example.com:443 -cipher 'ECDHE+AESGCM''
+        example: "openssl s_client -connect example.com:443 -cipher 'ECDHE+AESGCM'"
     output_format: Text (certificate PEM, handshake, session info)
     dependencies:
       - openssl

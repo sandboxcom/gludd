@@ -138,13 +138,13 @@
     - name: "3d. Assert rescue marks todo failed"
       ansible.builtin.assert:
         that:
-          - "{{ _main_slurp.content | b64decode is regex_search(\"rescue:.*todo_update_status.*failed\", multiline=true) or _main_slurp.content | b64decode is regex_search(\"status:.*failed\", multiline=true) }}"
+          - "{{ _main_slurp.content | b64decode | regex_search(\"rescue:.*todo_update_status.*failed\", multiline=true) or _main_slurp.content | b64decode | regex_search(\"status:.*failed\", multiline=true) }}"
         fail_msg: "agent_task rescue block must mark todo as failed"
 
     - name: "3e. Assert always block cleans up worktree"
       ansible.builtin.assert:
         that:
-          - "{{ _main_slurp.content | b64decode is regex_search(\"always:.*state: absent\", multiline=true) or _main_slurp.content | b64decode is regex_search(\"always:.*gludd_worktree\", multiline=true) }}"
+          - "{{ _main_slurp.content | b64decode | regex_search(\"always:.*state: absent\", multiline=true) or _main_slurp.content | b64decode | regex_search(\"always:.*gludd_worktree\", multiline=true) }}"
         fail_msg: "agent_task always block must remove worktree (state: absent)"
 
     - name: "3f. Assert required vars validated at start"
@@ -218,7 +218,7 @@
     - name: "6a. Assert no force-push in tasks"
       ansible.builtin.assert:
         that:
-          - "{{ _main_slurp.content | b64decode is not regex_search('force.push', ignorecase=true) }}"
+          - "{{ not (_main_slurp.content | b64decode | regex_search('force.push', ignorecase=true)) }}"
         fail_msg: "agent_task must not contain force-push commands"
 
     - name: "6b. Assert no --no-verify in tasks"

@@ -11,7 +11,8 @@
       - networking__scan_target | default('') | length > 0
     fail_msg: "networking__scan_target is required for network_scan mode"
 
-- block:
+- name: Run network scan
+  block:
     - name: Map scan type to nmap flags
       ansible.builtin.set_fact:
         _ns_scan_flags: >-

@@ -108,11 +108,10 @@
   ansible.builtin.set_fact:
     _lpe_top_waste_patterns: >-
       {{
-        (_lpe_eval.waste_patterns | default([]))
+        ((_lpe_eval.waste_patterns | default([]))
         | sort(attribute='frequency', reverse=true)
         | map(attribute='pattern')
-        | list
-        [:max_recommendations | int]
+        | list)[:max_recommendations | int]
       }}
     _lpe_total_waste_instances: >-
       {{
@@ -136,8 +135,7 @@
   ansible.builtin.set_fact:
     _lpe_top_recs: >-
       {{
-        _lpe_eval.recommendations | default([])
-        [:max_recommendations | int]
+        (_lpe_eval.recommendations | default([]))[:max_recommendations | int]
       }}
 
 # ── Write artifacts ────────────────────────────────────────────────────────────

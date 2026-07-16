@@ -11,7 +11,8 @@
       - networking__diagnostic_scenario | default('') | length > 0
     fail_msg: "networking__diagnostic_scenario is required for tool_recommend mode"
 
-- block:
+- name: Recommend diagnostic tools
+  block:
     - name: Define scenario-to-tools diagnostic registry
       ansible.builtin.set_fact:
         _tr_scenario_registry:
