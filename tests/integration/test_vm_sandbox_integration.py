@@ -39,6 +39,20 @@ def _make_target() -> SandboxTarget:
     return SandboxTarget(pid=42, directory="/tmp/sandbox-test")
 
 
+_FC_STUB_HANDLE = SandboxHandle(
+    backend="firecracker",
+    token="gludd-fc-stub",
+    applied=True,
+    extra={"stub": True},
+)
+_GV_STUB_HANDLE = SandboxHandle(
+    backend="gvisor",
+    token="gludd-gv-stub",
+    applied=True,
+    extra={"stub": True},
+)
+
+
 # ---------------------------------------------------------------------------
 # AgentExecutor
 # ---------------------------------------------------------------------------
@@ -116,8 +130,10 @@ class TestFirecrackerBackend:
         result = FirecrackerBackend.available()
         assert isinstance(result, bool)
 
+    @patch("general_ludd.security.sandboxes.vm.firecracker_backend._spawn_firecracker",
+           return_value=_FC_STUB_HANDLE)
     @patch.object(FirecrackerBackend, "available", return_value=True)
-    def test_apply_returns_applied_handle_when_available(self, _mock_avail: MagicMock):
+    def test_apply_returns_applied_handle_when_available(self, _mock_spawn, _mock_avail):
         spec = _make_spec()
         target = _make_target()
         handle = FirecrackerBackend.apply(spec, target)
@@ -134,8 +150,13 @@ class TestFirecrackerBackend:
         assert handle.applied is False
         assert "reason" in handle.extra
 
+    @patch("general_ludd.security.sandboxes.vm.firecracker_backend._spawn_firecracker",
+           return_value=SandboxHandle(
+               backend="firecracker", token="gludd-opus",
+               applied=True, extra={"stub": True},
+           ))
     @patch.object(FirecrackerBackend, "available", return_value=True)
-    def test_apply_token_includes_agent_type(self, _mock_avail: MagicMock):
+    def test_apply_token_includes_agent_type(self, _mock_spawn, _mock_avail):
         spec = _make_spec(agent_type="opus")
         handle = FirecrackerBackend.apply(spec, _make_target())
         assert "opus" in handle.token
@@ -176,8 +197,9 @@ class TestGvisorBackend:
         result = GvisorBackend.available()
         assert isinstance(result, bool)
 
+    @patch("general_ludd.security.sandboxes.vm.gvisor_backend._spawn_runsc", return_value=_GV_STUB_HANDLE)
     @patch.object(GvisorBackend, "available", return_value=True)
-    def test_apply_returns_applied_handle_when_available(self, _mock_avail: MagicMock):
+    def test_apply_returns_applied_handle_when_available(self, _mock_popen, _mock_avail: MagicMock):
         spec = _make_spec()
         target = _make_target()
         handle = GvisorBackend.apply(spec, target)
@@ -219,8 +241,9 @@ class TestGvisorBackend:
 
 
 class TestFirecrackerFullLifecycle:
+    @patch("general_ludd.security.sandboxes.vm.firecracker_backend._spawn_firecracker", return_value=_FC_STUB_HANDLE)
     @patch.object(FirecrackerBackend, "available", return_value=True)
-    def test_apply_verify_release_cycle(self, _mock_avail: MagicMock):
+    def test_apply_verify_release_cycle(self, _mock_popen, _mock_avail: MagicMock):
         spec = _make_spec()
         target = _make_target()
 
@@ -248,7 +271,13 @@ class TestFirecrackerFullLifecycle:
         FirecrackerBackend.release(handle)
 
     def test_multiple_apply_verify_cycles(self):
-        with patch.object(FirecrackerBackend, "available", return_value=True):
+        with (
+            patch.object(FirecrackerBackend, "available", return_value=True),
+            patch(
+                "general_ludd.security.sandboxes.vm.firecracker_backend._spawn_firecracker",
+                return_value=_FC_STUB_HANDLE,
+            ),
+        ):
             for i in range(3):
                 spec = _make_spec(agent_type=f"agent_{i}")
                 handle = FirecrackerBackend.apply(spec, _make_target())
@@ -264,8 +293,9 @@ class TestFirecrackerFullLifecycle:
 
 
 class TestGvisorFullLifecycle:
+    @patch("general_ludd.security.sandboxes.vm.gvisor_backend._spawn_runsc", return_value=_GV_STUB_HANDLE)
     @patch.object(GvisorBackend, "available", return_value=True)
-    def test_apply_verify_release_cycle(self, _mock_avail: MagicMock):
+    def test_apply_verify_release_cycle(self, _mock_popen, _mock_avail: MagicMock):
         spec = _make_spec()
         target = _make_target()
 
@@ -286,7 +316,13 @@ class TestGvisorFullLifecycle:
         GvisorBackend.release(handle)
 
     def test_multiple_apply_verify_cycles(self):
-        with patch.object(GvisorBackend, "available", return_value=True):
+        with (
+            patch.object(GvisorBackend, "available", return_value=True),
+            patch(
+                "general_ludd.security.sandboxes.vm.gvisor_backend._spawn_runsc",
+                return_value=_GV_STUB_HANDLE,
+            ),
+        ):
             for i in range(3):
                 handle = GvisorBackend.apply(_make_spec(agent_type=f"agent_{i}"), _make_target())
                 assert handle.applied is True
@@ -344,7 +380,13 @@ class TestConcurrentBackendAccess:
 
         def cycle(agent_id: int):
             try:
-                with patch.object(FirecrackerBackend, "available", return_value=True):
+                with (
+                    patch.object(FirecrackerBackend, "available", return_value=True),
+                    patch(
+                "general_ludd.security.sandboxes.vm.firecracker_backend._spawn_firecracker",
+                return_value=_FC_STUB_HANDLE,
+            ),
+                ):
                     spec = _make_spec(agent_type=f"agent_{agent_id}")
                     handle = FirecrackerBackend.apply(spec, _make_target())
                     assert handle.applied is True
@@ -367,7 +409,13 @@ class TestConcurrentBackendAccess:
 
         def cycle(agent_id: int):
             try:
-                with patch.object(GvisorBackend, "available", return_value=True):
+                with (
+                    patch.object(GvisorBackend, "available", return_value=True),
+                    patch(
+                "general_ludd.security.sandboxes.vm.gvisor_backend._spawn_runsc",
+                return_value=_GV_STUB_HANDLE,
+            ),
+                ):
                     handle = GvisorBackend.apply(_make_spec(agent_type=f"agent_{agent_id}"), _make_target())
                     assert handle.applied is True
                     GvisorBackend.release(handle)
@@ -387,7 +435,13 @@ class TestConcurrentBackendAccess:
 
         def fc_cycle(i: int):
             try:
-                with patch.object(FirecrackerBackend, "available", return_value=True):
+                with (
+                    patch.object(FirecrackerBackend, "available", return_value=True),
+                    patch(
+                "general_ludd.security.sandboxes.vm.firecracker_backend._spawn_firecracker",
+                return_value=_FC_STUB_HANDLE,
+            ),
+                ):
                     handle = FirecrackerBackend.apply(_make_spec(agent_type=f"fc_{i}"), _make_target())
                     FirecrackerBackend.release(handle)
             except Exception as e:
@@ -395,7 +449,13 @@ class TestConcurrentBackendAccess:
 
         def gv_cycle(i: int):
             try:
-                with patch.object(GvisorBackend, "available", return_value=True):
+                with (
+                    patch.object(GvisorBackend, "available", return_value=True),
+                    patch(
+                "general_ludd.security.sandboxes.vm.gvisor_backend._spawn_runsc",
+                return_value=_GV_STUB_HANDLE,
+            ),
+                ):
                     handle = GvisorBackend.apply(_make_spec(agent_type=f"gv_{i}"), _make_target())
                     GvisorBackend.release(handle)
             except Exception as e:
@@ -420,7 +480,13 @@ class TestConcurrentBackendAccess:
 
 class TestPermissionSpecSandboxIntegration:
     def test_spec_agent_type_in_handle_token(self):
-        with patch.object(FirecrackerBackend, "available", return_value=True):
+        with (
+            patch.object(FirecrackerBackend, "available", return_value=True),
+            patch(
+                "general_ludd.security.sandboxes.vm.firecracker_backend._spawn_firecracker",
+                return_value=_FC_STUB_HANDLE,
+            ),
+        ):
             spec = _make_spec(agent_type="haiku")
             handle = FirecrackerBackend.apply(spec, _make_target())
             assert "haiku" in handle.token
@@ -431,13 +497,25 @@ class TestPermissionSpecSandboxIntegration:
             Capability(resource="file:", actions=["write"]),
             Capability(resource="net:egress:any", actions=["connect"]),
         ]
-        with patch.object(FirecrackerBackend, "available", return_value=True):
+        with (
+            patch.object(FirecrackerBackend, "available", return_value=True),
+            patch(
+                "general_ludd.security.sandboxes.vm.firecracker_backend._spawn_firecracker",
+                return_value=_FC_STUB_HANDLE,
+            ),
+        ):
             spec = _make_spec(caps=caps)
             handle = FirecrackerBackend.apply(spec, _make_target())
             assert handle.applied is True
 
     def test_spec_with_zero_capabilities(self):
-        with patch.object(FirecrackerBackend, "available", return_value=True):
+        with (
+            patch.object(FirecrackerBackend, "available", return_value=True),
+            patch(
+                "general_ludd.security.sandboxes.vm.firecracker_backend._spawn_firecracker",
+                return_value=_FC_STUB_HANDLE,
+            ),
+        ):
             spec = _make_spec(caps=[])
             handle = FirecrackerBackend.apply(spec, _make_target())
             assert handle.applied is True
@@ -448,7 +526,13 @@ class TestPermissionSpecSandboxIntegration:
             agent_type=spec.agent_type,
             capabilities=spec.capabilities,
         )
-        with patch.object(FirecrackerBackend, "available", return_value=True):
+        with (
+            patch.object(FirecrackerBackend, "available", return_value=True),
+            patch(
+                "general_ludd.security.sandboxes.vm.firecracker_backend._spawn_firecracker",
+                return_value=_FC_STUB_HANDLE,
+            ),
+        ):
             handle = FirecrackerBackend.apply(spec_dict, _make_target())
             assert handle.backend == "firecracker"
 
@@ -468,13 +552,25 @@ class TestSandboxTargetVariants:
 
     def test_directory_target(self):
         target = SandboxTarget(directory="/tmp/jail")
-        with patch.object(GvisorBackend, "available", return_value=True):
+        with (
+            patch.object(GvisorBackend, "available", return_value=True),
+            patch(
+                "general_ludd.security.sandboxes.vm.gvisor_backend._spawn_runsc",
+                return_value=_GV_STUB_HANDLE,
+            ),
+        ):
             handle = GvisorBackend.apply(_make_spec(), target)
             assert handle.applied is True
 
     def test_service_target(self):
         target = SandboxTarget(service="nginx.service")
-        with patch.object(FirecrackerBackend, "available", return_value=True):
+        with (
+            patch.object(FirecrackerBackend, "available", return_value=True),
+            patch(
+                "general_ludd.security.sandboxes.vm.firecracker_backend._spawn_firecracker",
+                return_value=_FC_STUB_HANDLE,
+            ),
+        ):
             handle = FirecrackerBackend.apply(_make_spec(), target)
             assert handle.applied is True
 

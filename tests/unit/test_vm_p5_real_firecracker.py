@@ -173,7 +173,7 @@ def test_unix_http_connection_round_trip_put(tmp_path):
                 if not chunk:
                     break
                 body_buf += chunk
-            received.append(buf)
+            received.append(buf + body_buf)
             conn.sendall(response)
         finally:
             conn.close()

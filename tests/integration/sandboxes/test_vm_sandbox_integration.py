@@ -933,7 +933,7 @@ class TestFirecrackerRestRoundTrip:
     """Real UNIX socket HTTP round-trips through the Firecracker REST helper."""
 
     def test_put_returns_empty_dict_on_204(self, tmp_path: Path):
-        sock_path = str(tmp_path / "fc-rest-204.sock")
+        sock_path = "/tmp/gludd-test-fc-204.sock"
         response = b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n"
         server, t = _serve_unix_http(sock_path, response)
         try:
@@ -944,7 +944,7 @@ class TestFirecrackerRestRoundTrip:
             t.join(timeout=2.0)
 
     def test_put_parses_json_body(self, tmp_path: Path):
-        sock_path = str(tmp_path / "fc-rest-json.sock")
+        sock_path = "/tmp/gludd-test-fc-json.sock"
         body = b'{"state":"Running"}'
         response = (
             b"HTTP/1.1 200 OK\r\n"
@@ -960,7 +960,7 @@ class TestFirecrackerRestRoundTrip:
             t.join(timeout=2.0)
 
     def test_put_raises_on_non_2xx(self, tmp_path: Path):
-        sock_path = str(tmp_path / "fc-rest-err.sock")
+        sock_path = "/tmp/gludd-test-fc-err.sock"
         body = b'{"error":"bad config"}'
         response = (
             b"HTTP/1.1 400 Bad Request\r\n"
