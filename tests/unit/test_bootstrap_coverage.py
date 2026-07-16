@@ -218,7 +218,8 @@ class TestSyncBundledToFilestore:
     def test_syncs_missing(self, bootstrapper, mock_store):
         mock_store.exists.return_value = False
         with patch.object(bootstrapper, "get_bundled_binary_path", return_value="/bundled/openbao"), \
-             patch("general_ludd.filestore.bootstrap.Path.read_bytes", return_value=b"\x00"):
+             patch("general_ludd.filestore.bootstrap.Path.read_bytes", return_value=b"\x00"), \
+             patch.object(bootstrapper, "KNOWN_SHA256", {"openbao": "00" * 32}):
             synced = bootstrapper.sync_bundled_to_filestore()
             assert "openbao" in synced
 

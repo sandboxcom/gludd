@@ -28,6 +28,7 @@ import {
   readJsonFile,
   writeJsonFile,
   getProjectRoot,
+  isStateFileMtimeStale,
 } from "../lib/shared.ts"
 
 const FLOOR_ENFORCE = process.env.GLUDD_MULTITASK_FLOOR_ENFORCE !== "0"
@@ -81,6 +82,9 @@ function freshState(): MultitaskState {
 }
 
 function readState(): MultitaskState {
+  if (isStateFileMtimeStale(MULTITASK_STATE_FILE)) {
+    return freshState()
+  }
   return readJsonFile<MultitaskState>(MULTITASK_STATE_FILE, freshState())
 }
 

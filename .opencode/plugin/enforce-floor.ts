@@ -3,7 +3,7 @@ import * as fs from "node:fs"
 import * as path from "node:path"
 import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
 import { execSync } from "node:child_process"
-import { isSubagent, isDisengaged, reportAlive, readJsonFile, writeJsonFile, isDispatchTool, isReadTool, ALIVE_PATH, DISENGAGE_PATH, updateSharedStreak, writeHeartbeat, getProjectRoot } from "../lib/shared.ts"
+import { isSubagent, isDisengaged, reportAlive, readJsonFile, writeJsonFile, isDispatchTool, isReadTool, ALIVE_PATH, DISENGAGE_PATH, updateSharedStreak, writeHeartbeat, getProjectRoot, getSessionStartMtimeMs } from "../lib/shared.ts"
 
 // Floor+ceiling enforcement guardrail. FAIL-OPEN: any error -> do nothing.
 //
@@ -206,7 +206,14 @@ let _lastCallTs = 0
 // PID-based staleness detection: tracks which process initialized the module-
 // level state. If a different process (prior session / crashed plugin) owns
 // the state, all counters are reset on the next hook call.
+//
+// PID-only detection fails when opencode reuses PIDs across restarts — the
+// PID matches but the state is from a prior session. _floorSessionStartMtime
+// guards against this: the session-start file is refreshed on every session
+// boot, so if its mtime has advanced past the value recorded at init, the
+// state is stale and must be reset.
 let _floorInitPid = process.pid
+let _floorSessionStartMtime = getSessionStartMtimeMs()
 
 function _resetFloorState(): void {
   _streakCount = 0
@@ -221,6 +228,7 @@ function _resetFloorState(): void {
   _sessionDispatchCount = 0
   _lastCallTs = 0
   _floorInitPid = process.pid
+  _floorSessionStartMtime = getSessionStartMtimeMs()
 }
 
 const SESSION_START_WINDOW_MS = 90_000
@@ -296,7 +304,7 @@ const defaultImpl: HotModule = {
     reportAlive("enforce-floor")
     writeHeartbeat("enforce-floor")
 
-    if (_floorInitPid !== process.pid) {
+    if (_floorInitPid !== process.pid || getSessionStartMtimeMs() !== _floorSessionStartMtime) {
       _resetFloorState()
     }
 

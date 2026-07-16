@@ -109,16 +109,17 @@ export function readSharedStreak(): SharedStreakState {
     if (fs.existsSync(SHARED_STREAK_FILE)) {
       const raw = JSON.parse(fs.readFileSync(SHARED_STREAK_FILE, "utf8"))
       const now = Date.now()
+      const fileMtime = fs.statSync(SHARED_STREAK_FILE).mtimeMs
       const lastTs = typeof raw.lastUpdateTs === "number" ? raw.lastUpdateTs : 0
       const STALE_MS = 60_000
-      if (lastTs > 0 && now - lastTs > STALE_MS) {
-        const zeroed = { streak: 0, lastDispatchTs: 0, readStreak: 0, editStreak: 0, lastUpdateTs: now, lastWriter: "stale-reset", pid: process.pid }
-        try { fs.writeFileSync(SHARED_STREAK_FILE, JSON.stringify(zeroed), "utf8") } catch {}
-        return zeroed
-      }
+      const sessionStartMtime = getSessionStartMtimeMs()
+      const mtimeStale = sessionStartMtime > 0 && fileMtime < sessionStartMtime
+      const timeStale = lastTs > 0 && now - lastTs > STALE_MS
       const storedPid = typeof raw.pid === "number" ? raw.pid : 0
-      if (storedPid > 0 && storedPid !== process.pid) {
-        const zeroed = { streak: 0, lastDispatchTs: 0, readStreak: 0, editStreak: 0, lastUpdateTs: now, lastWriter: "pid-reset", pid: process.pid }
+      const pidMismatch = storedPid > 0 && storedPid !== process.pid
+      if (mtimeStale || timeStale || pidMismatch) {
+        const reason = mtimeStale ? "mtime-reset" : timeStale ? "stale-reset" : "pid-reset"
+        const zeroed = { streak: 0, lastDispatchTs: 0, readStreak: 0, editStreak: 0, lastUpdateTs: now, lastWriter: reason, pid: process.pid }
         try { fs.writeFileSync(SHARED_STREAK_FILE, JSON.stringify(zeroed), "utf8") } catch {}
         return zeroed
       }
@@ -194,6 +195,34 @@ export function writeHeartbeat(pluginName: string): void {
 // Resolution order: GLUDD_PROJECT_ROOT env → walk up from cwd → cwd fallback.
 
 let _cachedRoot: string | null = null
+
+// ── Session-start mtime staleness guards ─────────────────────────────────
+// When opencode reuses PIDs across restarts, PID-only detection fails and
+// stale state persists. This complements the PID check with mtime-based
+// detection: if a state file was last modified before the current session
+// started, it is stale and must be discarded.
+
+export const SESSION_START_STATE_FILE = "/tmp/gludd-session-start.json"
+
+export function getSessionStartMtimeMs(): number {
+  try {
+    if (fs.existsSync(SESSION_START_STATE_FILE)) {
+      return fs.statSync(SESSION_START_STATE_FILE).mtimeMs
+    }
+  } catch { /* missing / unreadable */ }
+  return 0
+}
+
+export function isStateFileMtimeStale(stateFilePath: string): boolean {
+  try {
+    const sessionMtime = getSessionStartMtimeMs()
+    if (sessionMtime === 0) return false
+    if (!fs.existsSync(stateFilePath)) return false
+    return fs.statSync(stateFilePath).mtimeMs < sessionMtime
+  } catch {
+    return false
+  }
+}
 
 export function getProjectRoot(): string {
   if (_cachedRoot !== null) return _cachedRoot

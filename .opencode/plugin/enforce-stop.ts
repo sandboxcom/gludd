@@ -1,6 +1,8 @@
 /**
  * enforce-stop.ts — COMPREHENSIVE stop-pattern and completion-claim enforcement.
  *
+ * REQUIRES OPENCODE RESTART TO TAKE EFFECT.
+ *
  * VULNERABILITY FIXED (2026-07-15): text.complete bypass via short-text
  * exemption and WORK_STATE_CACHE eliminated.
  *
@@ -88,6 +90,9 @@ export const STATUS_SUMMARY_RE = new RegExp(
 
 export function looksLikeStatusSummary(text: string): boolean {
   if (STATUS_SUMMARY_RE.test(text)) return true
+  // Long responses with markdown section headers are status reports:
+  // >500 chars + >=1 "##" section header = structured report shape.
+  if (text.length > 500 && /^\s*#{2,4}\s+\S/m.test(text)) return true
   // Structural detection: bolded section headers + status tables / bullets.
   const boldHeaders = (text.match(/^\s*\*\*[^*\n]{2,80}\*\*:?\s*$/gm) || []).length
   const inlineBoldLeads = (text.match(/^\s*\*\*[^*\n]{2,80}\*\*:?\s+\S/gm) || []).length

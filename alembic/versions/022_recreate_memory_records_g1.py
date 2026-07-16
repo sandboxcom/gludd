@@ -42,6 +42,8 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    op.drop_index("ix_memory_agent_id", table_name="memory_records")
+    op.drop_index("ix_memory_namespace", table_name="memory_records")
     op.drop_table("memory_records")
     op.create_table(
         "memory_records",

@@ -217,6 +217,14 @@ Node v26 `--experimental-strip-types` compatibility verified: 0 `require()` call
 
 **Note:** Enforcement plugin changes take effect on opencode restart. During a session where plugin source was edited, behavioral enforcement may lag until restart.
 
+### CRITICAL: Enforcement Plugin Changes Require Restart
+
+**When any enforcement plugin source code is edited, opencode must be restarted for the changes to take effect.** Hot-reload modules are built, but the runtime loads plugins at startup only.
+
+Plugin changes do NOT take effect until opencode is restarted. The hot modules in `/tmp/` are the compiled code, but opencode's plugin loader reads them once at startup. After editing any `.opencode/plugin/*.ts` file, the agent MUST inform the user that a restart is required AND continue working with the existing behavior until then.
+
+After restart, verify enforcement is working by attempting a text-only response — if it goes through, the fix didn't take effect and needs investigation.
+
 ### 2026-07-15: enforce-stop.ts Disengage Bypass Fix
 
 **Bug:** `make disengage-enforcement` was bypassing ALL `text.complete` enforcement
