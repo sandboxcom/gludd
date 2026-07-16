@@ -1255,7 +1255,7 @@ git-commit-file: _commit-lock-acquire
 			echo "ERROR: Gate $$check not PASS. Run 'make gate'."; exit 1; \
 		fi; \
 	done
-	@EPOCH=$$(grep "^epoch " .gate-status | awk '{print $$2}'); \
+	@		EPOCH=$$(grep "^epoch " .gate-status | tail -1 | awk '{print $$2}'); \
 	NOW=$$(date +%s); \
 	AGE=$$((NOW - EPOCH)); \
 	if [ $$AGE -gt 1800 ]; then \
@@ -2468,7 +2468,7 @@ _gate-fresh-check:
 				echo "ERROR: Gate $$check not PASS. Run 'make gate'."; exit 1; \
 			fi; \
 		done; \
-		EPOCH=$$(grep "^epoch " .gate-status | awk '{print $$2}'); \
+		EPOCH=$$(grep "^epoch " .gate-status | tail -1 | awk '{print $$2}'); \
 		NOW=$$(date +%s); \
 		AGE=$$((NOW - EPOCH)); \
 		if [ $$AGE -gt 1800 ]; then \

@@ -953,9 +953,13 @@ const defaultImpl: HotModule = {
       }
     }
 
-    // ── REAL PENDING WORK BLOCK (text-only responses without evidence) ──────
-    // DO NOT fire when: (a) text has structured evidence, or (b) no real pending work.
-    if (workState.hasPendingWork && !hasStructuredEvidence(text)) {
+    // ── REAL PENDING WORK BLOCK (text-only responses) ────────────────────────
+    // 2026-07-16 FIX: removed !hasStructuredEvidence(text) guard. Text containing
+    // "CI PENDING", commit hashes, test counts, etc. previously bypassed this
+    // block — but evidence in text does NOT make stopping-to-send-text acceptable.
+    // The STATUS_SUMMARY_RE block above catches structured summary-format text;
+    // this is the catch-all for any text-only response while pending work exists.
+    if (workState.hasPendingWork) {
       const sessionBlockCount = incrementSessionBlockCounter()
       const escalationNote = sessionBlockCount > ESCALATION_THRESHOLD
         ? `\n🚨 ESCALATION: ${sessionBlockCount} stop attempts blocked this session. COMPLIANCE REQUIRED.`

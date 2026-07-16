@@ -111,7 +111,7 @@ console.log(JSON.stringify({{ output_text: output.text, result_text: result?.tex
     assert result is not None, "Expected result from text.complete hook, got None"
     out_text = result.get("output_text", "")
     res_text = result.get("result_text", "")
-    text = out_text or res_text
+    text = res_text or out_text
     assert "BLOCKED" in text, (
         f"Expected blocked text, got output_text={out_text[:200]!r} result_text={res_text[:200]!r}"
     )
@@ -293,7 +293,7 @@ console.log(JSON.stringify({{ output_text: output.text, result_text: result?.tex
     assert result is not None
     out_text = result.get("output_text", "")
     res_text = result.get("result_text", "")
-    text = out_text or res_text
+    text = res_text or out_text
     assert "BLOCKED" in text, (
         f"Expected blocked text, got output_text={out_text[:200]!r} result_text={res_text[:200]!r}"
     )
