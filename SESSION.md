@@ -37,13 +37,13 @@ Code versions `0.1.0-beta.2` through `0.1.0-beta.5` exist in `pyproject.toml`/`_
 
 ## SESSION 47 — 2026-07-16
 
-- **HEAD: `8fa405fc`** on `development` branch (35 commits beyond remote tip `8e290afd70ea`)
+- **HEAD: `384e481e`** on `development` branch (38 commits beyond remote tip `8e290afd70ea`)
 - **Version: 0.1.0-beta.5** (pyproject.toml)
-- **Push status: NOT PUSHED** — 35 local commits on development not on remote (`2f2d66ff..8fa405fc`)
-- **CI: NO RUN** for HEAD `8fa405fc` (not pushed)
+- **Push status: NOT PUSHED** — 38 local commits on development not on remote (`2f2d66ff..384e481e`)
+- **CI: NO RUN** for HEAD `384e481e` (not pushed)
 - **Gate: quality gate pass at `c5a66a27`** (Session 44 baseline; full gate not re-run on HEAD)
 - **Working tree: CLEAN**
-- **New commits since Session 46 (4: `18e39ae6..8fa405fc`)**: NF.5 coverage_diff_report + format_diff_markdown in verify_coverage (`eba1c51d` — 13 TDD tests), NF.7 STS TokenRotator atomic token rotation before expiry (`d3d740bf` — 13 TDD tests), NF.6 compliance report generator for os_expert (`116944b8`), NF.1 chat streaming formatter with code block buffering + fence splitting + `--stream` CLI flag (`8fa405fc` — 25 tests)
+- **New commits since Session 46 (6: `18e39ae6..384e481e`)**: NF.5 coverage_diff_report + format_diff_markdown in verify_coverage (`eba1c51d` — 13 TDD tests), NF.7 STS TokenRotator atomic token rotation before expiry (`d3d740bf` — 13 TDD tests), NF.6 compliance report generator for os_expert (`116944b8`), NF.1 chat streaming formatter with code block buffering + fence splitting + `--stream` CLI flag (`8fa405fc` — 25 tests), NF.1 ContextWindow for token tracking + sliding window + summarization trigger (`942c0759`), NF.4 APRS AX.25 decoder for position/weather/status/message telemetry (`384e481e` — 15 TDD tests)
 
 ### Commits since Session 46 (4: `18e39ae6..8fa405fc`)
 
