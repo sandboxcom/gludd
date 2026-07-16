@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import os as _os
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -219,7 +220,8 @@ class TestSyncBundledToFilestore:
         mock_store.exists.return_value = False
         with patch.object(bootstrapper, "get_bundled_binary_path", return_value="/bundled/openbao"), \
              patch("general_ludd.filestore.bootstrap.Path.read_bytes", return_value=b"\x00"), \
-             patch.object(bootstrapper, "KNOWN_SHA256", {"openbao": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d"}):
+             patch.object(bootstrapper, "KNOWN_SHA256",
+                          {"openbao": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d"}):
             synced = bootstrapper.sync_bundled_to_filestore()
             assert "openbao" in synced
 
@@ -413,23 +415,28 @@ class TestDownloadAll:
     async def test_downloads_all(self, bootstrapper):
         with patch.object(bootstrapper, "download", new_callable=AsyncMock, return_value=True):
             results = await bootstrapper.download_all()
-            assert "openbao" in results
-            assert "opentofu" in results
+            for name in bootstrapper.KNOWN_VERSIONS:
+                assert name in results, f"{name} missing from download_all results"
             assert all(results.values())
+
+
+def _make_tarball(member_name: str, content: bytes | None = None) -> bytes:
+    """Build a minimal in-memory .tar.gz containing a single member."""
+    import io as _io
+    import tarfile as _tf
+
+    payload = content or b"\x7fELF fake binary"
+    buf = _io.BytesIO()
+    with _tf.open(fileobj=buf, mode="w:gz") as archive:
+        info = _tf.TarInfo(name=member_name)
+        info.size = len(payload)
+        archive.addfile(info, _io.BytesIO(payload))
+    return buf.getvalue()
 
 
 def _make_osquery_tarball(member_name: str = "osquery-5.10.2.linux_x86_64/bin/osqueryi") -> bytes:
     """Build a minimal in-memory .tar.gz containing a single osqueryi member."""
-    import io as _io
-    import tarfile as _tf
-
-    content = b"\x7fELF fake osqueryi binary"
-    buf = _io.BytesIO()
-    with _tf.open(fileobj=buf, mode="w:gz") as archive:
-        info = _tf.TarInfo(name=member_name)
-        info.size = len(content)
-        archive.addfile(info, _io.BytesIO(content))
-    return buf.getvalue()
+    return _make_tarball(member_name, b"\x7fELF fake osqueryi binary")
 
 
 class TestOsqueryExtraction:
@@ -560,3 +567,76 @@ async def test_download_rejects_oversized_response(tmp_path):
     assert result is False, "oversized download must be rejected"
     stored = boot.get_binary_path("osquery")
     assert stored is None or not _os.path.isfile(stored), "nothing stored on rejection"
+
+
+@pytest.mark.asyncio
+async def test_codebase_memory_binary_is_executable_after_download(tmp_path):
+    """After download(), the stored codebase-memory-mcp binary must satisfy
+    os.access(path, os.X_OK), proving the sha256 pin + extract + chmod chain
+    works for this tarball-packaged binary."""
+    import os as _os
+
+    from general_ludd.filestore.bootstrap import BinaryBootstrapper
+    from general_ludd.filestore.store import FileStore
+
+    payload = b"\x7fELF-codebase-memory-mcp-binary"
+    tar_bytes = _make_tarball("codebase-memory-mcp", payload)
+
+    store = FileStore(root_path=str(tmp_path))
+    boot = BinaryBootstrapper(
+        store=store,
+        known_sha256={"codebase-memory-mcp": hashlib.sha256(tar_bytes).hexdigest()},
+    )
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.content = tar_bytes
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(return_value=mock_resp)
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+
+    with patch.object(boot, "get_bundled_binary_path", return_value=None), \
+         patch.object(boot, "get_download_url", return_value="https://example.com/codebase-memory.tar.gz"), \
+         patch("httpx.AsyncClient", return_value=mock_client):
+        result = await boot.download("codebase-memory-mcp")
+
+    assert result is True, "download() must return True on HTTP 200"
+    stored_path = boot.get_binary_path("codebase-memory-mcp")
+    assert stored_path is not None
+    assert _os.path.isfile(stored_path)
+    assert _os.access(stored_path, _os.X_OK), (
+        f"codebase-memory-mcp binary at {stored_path!r} is NOT executable after download"
+    )
+
+
+@pytest.mark.asyncio
+async def test_codebase_memory_download_rejected_without_pin(tmp_path):
+    """download() for codebase-memory-mcp must fail without a sha256 pin."""
+    from general_ludd.filestore.bootstrap import BinaryBootstrapper
+    from general_ludd.filestore.store import FileStore
+
+    payload = b"\x7fELF-codebase-memory-mcp-binary"
+    tar_bytes = _make_tarball("codebase-memory-mcp", payload)
+
+    store = FileStore(root_path=str(tmp_path))
+    boot = BinaryBootstrapper(store=store)
+
+    assert "codebase-memory-mcp" not in boot.KNOWN_SHA256
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.content = tar_bytes
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(return_value=mock_resp)
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+
+    with patch.object(boot, "get_bundled_binary_path", return_value=None), \
+         patch.object(boot, "get_download_url", return_value="https://example.com/codebase-memory.tar.gz"), \
+         patch("httpx.AsyncClient", return_value=mock_client):
+        result = await boot.download("codebase-memory-mcp")
+
+    assert result is False, "download without sha256 pin must be refused"
+    stored = boot.get_binary_path("codebase-memory-mcp")
+    assert stored is None or not _os.path.isfile(stored)

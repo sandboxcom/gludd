@@ -16,10 +16,9 @@ respected.
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING, Any, cast
 from unittest.mock import MagicMock, patch
-
-import asyncio
 
 import httpx
 import pytest

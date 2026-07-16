@@ -2409,8 +2409,8 @@ gate-refresh:
 		echo "ERROR: .gate-status missing — no prior gate to refresh. Run 'make gate' first."; exit 1; \
 	fi; \
 	rm -f .gate-failed; \
-	OLD_TEST=$$(grep "^test " .gate-status 2>/dev/null || echo ""); \
-	OLD_SMOKE=$$(grep "^smoke " .gate-status 2>/dev/null || echo ""); \
+	OLD_TEST=$$(grep -m1 "^test " .gate-status 2>/dev/null || echo ""); \
+	OLD_SMOKE=$$(grep -m1 "^smoke " .gate-status 2>/dev/null || echo ""); \
 	echo "=== GATE-REFRESH $$(date -u +%Y-%m-%dT%H:%M:%SZ) ===" > .gate-status; \
 	echo "=== GATE PHASE: lint ==="; \
 	printf "lint " >> .gate-status; \
