@@ -182,7 +182,9 @@ function buildPlugin(name) {
   out += `  try {\n`;
   out += `    var p = process.env.GLUDD_ALIVE_PATH || "/tmp/gludd-plugin-alive.json";\n`;
   out += `    var a = {}; try { if (_fs.existsSync(p)) a = JSON.parse(_fs.readFileSync(p, "utf8")); } catch (e) {}\n`;
-  out += `    a[pluginName] = { last_seen: Date.now() };\n`;
+  out += `    var now = Date.now();\n`;
+  out += `    var existing = a[pluginName] || {};\n`;
+  out += `    a[pluginName] = { last_seen: now, ts: now, loaded: existing.loaded || now };\n`;
   out += `    _fs.writeFileSync(p, JSON.stringify(a), "utf8");\n`;
   out += `  } catch (e) {}\n`;
   out += `}\n`;

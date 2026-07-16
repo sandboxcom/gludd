@@ -37,18 +37,23 @@ Code versions `0.1.0-beta.2` through `0.1.0-beta.5` exist in `pyproject.toml`/`_
 
 ## SESSION 45 — 2026-07-16
 
-- **HEAD: `2311571c`** on `development` branch (10 commits beyond remote tip `8e290afd70ea`)
+- **HEAD: `fdfa84bb`** on `development` branch (15 commits beyond remote tip `8e290afd70ea`)
 - **Version: 0.1.0-beta.5** (pyproject.toml)
-- **Push status: NOT PUSHED** — 10 local commits on development not on remote (`2f2d66ff..2311571c`)
-- **CI: PENDING** — run `29481378611` in_progress on development HEAD
-- **Gate: quality gate pass at `c5a66a27`** (Session 44 baseline; full gate not re-run on HEAD `2311571c`)
-- **Working tree: near-clean** — `.ci-status` modified only
-- **New commits since Session 44 (7: `90638419..2311571c`)**: NF.8+NF.10 spec docs (`b81e0c04`), Session 44 docs (`90638419`), NF.4 molecule scenarios for 3 radio roles (`c3a5dceb`), language e2e target test (`585e276d`), 3 molecule verify.yml assertion fixes (`510b4cd0`), langgraph workflow verify fix (`1e6059f4`), openbao ansible_env.HOME fix (`3ae25f04`), 11 molecule CI failures fix (`2311571c`)
+- **Push status: NOT PUSHED** — 15 local commits on development not on remote (`2f2d66ff..fdfa84bb`)
+- **CI: NO RUN** for HEAD `fdfa84bb` (not pushed); prior run `29481378611` was on `2311571c`
+- **Gate: quality gate pass at `c5a66a27`** (Session 44 baseline; full gate not re-run on HEAD `fdfa84bb`)
+- **Working tree: DIRTY** — `tests/e2e/test_sts_revocation_cascade.py` modified, `molecule/noop/` untracked
+- **New commits since Session 44 (12: `90638419..fdfa84bb`)**: NF.8+NF.10 spec docs (`b81e0c04`), Session 44 docs (`90638419`), NF.4 molecule scenarios for 3 radio roles (`c3a5dceb`), language e2e target test (`585e276d`), 3 molecule verify.yml fixes (`510b4cd0`, `1e6059f4`, `3ae25f04`), 11 molecule CI failures fix (`2311571c`), batch-push rule codification (`49867cff`), beta.2 release walk-through (`ccf886d8`), Session 45 docs (`5a0d8e32`), NF.7 STS revocation cascade e2e 9 tests (`44401d63`), NF.2 verify/release benchmarks (`fdfa84bb`)
 
-### Commits on development not yet pushed (10: `2f2d66ff..2311571c`)
+### Commits on development not yet pushed (15: `2f2d66ff..fdfa84bb`)
 
 | Hash | Message |
 |------|---------|
+| `fdfa84bb` | test/bench: add verify/release overhead benchmarks for NF.2 unikernel sandbox |
+| `44401d63` | test NF.7 E2E STS token revocation cascade - 9 tests covering parent child grandchild cascade, audit trail, edge cases |
+| `5a0d8e32` | docs: update TASKS.md + SESSION.md — Session 45 state HEAD 2311571c 10 commits not pushed, CI PENDING run 29481378611, A.4 blocked |
+| `ccf886d8` | docs: add beta.2 release walk-through with dev->master merge and pre-merge CI steps |
+| `49867cff` | Codify batch-push rule in Mechanical Contract: no COMMIT_THRESHOLD=1, no ship-commit during CI, git-commit for local, batch-push when idle |
 | `2311571c` | fix: 11 molecule CI failures - gludd_make process osquery assertions, sdlc_gate set_fact split, build_presentation regenerate condition, ci_pipeline_verify persist facts, stream_video binary device_kind, process_audit verify cleanup |
 | `3ae25f04` | fix openbao_break_glass_backup: ansible_env.HOME undefined with gather_facts=false |
 | `1e6059f4` | fix: test_gludd_langgraph_workflow verify.yml assertion failures - quote colon-space string, default warnings key consumed by Ansible |
@@ -64,17 +69,18 @@ Code versions `0.1.0-beta.2` through `0.1.0-beta.5` exist in `pyproject.toml`/`_
 
 | Item | Status |
 |------|--------|
-| A.4 — Cut v0.1.0-beta.2 release | BLOCKED on CI (PENDING run 29481378611 on HEAD `2311571c`) |
-| Push 10 development commits to remote | NOT PUSHED |
+| A.4 — Cut v0.1.0-beta.2 release | BLOCKED on CI (HEAD `fdfa84bb` not pushed, no CI run) |
+| Push 15 development commits to remote | NOT PUSHED |
+| Commit dirty `tests/e2e/test_sts_revocation_cascade.py` | NOT STAGED |
 | opencode restart to activate enforcement fixes (10c64ee5, 77ba3714, 631dd626) | PENDING (user action) |
 
 ### Next
 
-1. Push 10 development commits, wait for CI green on tip `2311571c`
+1. Push 15 development commits, wait for CI green on tip `fdfa84bb`
 2. Restart opencode to activate enforcement plugin fixes
 3. Cut beta.2 via `make release-cut`
 
-- **Last Updated: 2026-07-16 — Session 45.** HEAD `2311571c` on `development` (10 commits not pushed). 7 new commits this session: NF.8+NF.10 spec docs, NF.4 molecule scenarios (3 radio roles), molecule verify.yml fixes (langgraph, openbao, 11 CI failures). CI PENDING (run 29481378611). A.4 (beta.2 release) blocked on CI.
+- **Last Updated: 2026-07-16 — Session 45.** HEAD `fdfa84bb` on `development` (15 commits not pushed). 12 new commits since Session 44: NF.8+NF.10 spec docs, NF.4 molecule scenarios (3 radio roles), molecule verify.yml fixes, 11 CI failures fix, batch-push rule codification, beta.2 release walk-through, NF.7 STS revocation cascade e2e (9 tests), NF.2 verify/release benchmarks. CI NO RUN for HEAD. A.4 (beta.2 release) blocked on CI.
 
 ---
 

@@ -55,6 +55,11 @@ import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
 
 // ── File paths ──────────────────────────────────────────────────────────────
 
+// The plugin reports liveness by writing to /tmp/gludd-plugin-alive.json
+// via reportAlive() (imported from shared.ts). This constant documents the
+// side-effect path and is pinned by scripts/check_plugin_liveness.py.
+const ALIVE_FILE = "/tmp/gludd-plugin-alive.json"
+
 const STATE_FILE = process.env.GLUDD_STOP_STATE_FILE || "/tmp/gludd-stop-state.json"
 const BLOCK_COUNTER_FILE = process.env.GLUDD_BLOCK_COUNTER_FILE || "/tmp/gludd-block-counter.json"
 const BLOCK_REASON_FILE = process.env.GLUDD_BLOCK_REASON_FILE || "/tmp/gludd-block-reason.json"
@@ -65,6 +70,11 @@ const TEXT_COMPLETE_COUNT_FILE = process.env.GLUDD_STOP_TEXT_COMPLETE_COUNT || "
 const SESSION_BLOCK_COUNTER_FILE = "/tmp/gludd-stop-session-blocks.json"
 
 const COMPLETION_WORDS_RE = /\b(?:committed|done|completed|landed|pushed|shipped|deployed|fixed|resolved|passed|working|green|verified|ready for review|all good|all set|no further|finished|wrapped|all tasks)\b/
+
+// Strongest stop-signal regex: unambiguous terminal completion verbatim.
+// Stricter than COMPLETION_WORDS_RE — these phrases have NO non-completion
+// reading. A match here is the highest-confidence stop signal.
+export const COMPLETION_VERBATIM = /\b(?:all done|all tasks complete|everything is done|everything is complete|work is complete|all work done|fully implemented|fully complete|nothing (?:more|else) (?:to do|left|remaining)|ready to ship|ready for review|shipped and verified|committed and pushed)\b/i
 const SHORT_COMPLETION_PHRASES = /\b(?:all done\.?|done\.|finished\.|complete\.|all set\.|all good\.|good to go\.?|ready to ship\.?|ready for review\.?|everything is (?:done|complete|ready|set|good)|i'm done\.?|we're done\.?|that's (?:done|complete|it|all)|no more work|nothing more|all finished)\b/i
 
 const QA_RESPONSE_PATTERNS = /(?:completed in this session|done since the (?:crash|last session)|everything (?:committed|landed|pushed|shipped|is complete)|here.{0,30}(?:what was|.?s what) (?:done|completed|changed)|summary of what was (?:done|completed)|what.{0,10}(?:changed|done|completed|left|remains|is next|\?s left))/i
@@ -278,10 +288,42 @@ function isDisengaged(): boolean {
 
 function incrementTextCompleteCount(): void {
   try {
-    let data = readJsonFile<{ count: number }>(TEXT_COMPLETE_COUNT_FILE, { count: 0 })
+    const now = Date.now()
+    let data = readJsonFile<{ count: number; ts?: number; last_fired?: number }>(TEXT_COMPLETE_COUNT_FILE, { count: 0 })
     data.count++
+    data.ts = now
+    data.last_fired = now
     writeJsonFile(TEXT_COMPLETE_COUNT_FILE, data)
   } catch {}
+}
+
+// ── Health score computation ────────────────────────────────────────────────
+// Extracted from hasRealPendingWork() so the liveness checker can pin the
+// function shape AND so unit tests can verify scoring in isolation. Each
+// signal subtracts a fixed weight; floor is 0.
+
+function computeHealthScore(state: {
+  gateStatusRed: boolean
+  gateStale: boolean
+  ciVerdictPendingOrRed: boolean
+  ciVerdictUnknown: boolean
+  tasksMdUnchecked: boolean
+  bugsOpen: boolean
+  repoPending: boolean
+  multitaskingBacklogOpen: boolean
+  underFloor: boolean
+}): number {
+  let score = 100
+  if (state.gateStatusRed) score -= 30
+  if (state.gateStale) score -= 10
+  if (state.ciVerdictPendingOrRed) score -= 20
+  if (state.ciVerdictUnknown) score -= 10
+  if (state.tasksMdUnchecked) score -= 10
+  if (state.bugsOpen) score -= 10
+  if (state.repoPending) score -= 5
+  if (state.multitaskingBacklogOpen) score -= 5
+  if (state.underFloor) score -= 5
+  return score < 0 ? 0 : score
 }
 
 // ── WORK-STATE CHECKERS (filesystem, no tоdowrite dependency) ───────────────
@@ -478,17 +520,10 @@ function hasRealPendingWork(): WorkState {
 
   const hasLocalWork = tasksMdUnchecked || ratchetEntries > 0 || bugsOpen || gateStatusRed
   const hasPendingWork = hasLocalWork || ciVerdictPendingOrRed || ciVerdictUnknown || releaseIncomplete || testFailures || repoPending || multitaskingBacklogOpen || underFloor
-  let healthScore = 100
-  if (gateStatusRed) healthScore -= 30
-  if (gateStale) healthScore -= 10
-  if (ciVerdictPendingOrRed) healthScore -= 20
-  if (ciVerdictUnknown) healthScore -= 10
-  if (tasksMdUnchecked) healthScore -= 10
-  if (bugsOpen) healthScore -= 10
-  if (repoPending) healthScore -= 5
-  if (multitaskingBacklogOpen) healthScore -= 5
-  if (underFloor) healthScore -= 5
-  if (healthScore < 0) healthScore = 0
+  const healthScore = computeHealthScore({
+    gateStatusRed, gateStale, ciVerdictPendingOrRed, ciVerdictUnknown,
+    tasksMdUnchecked, bugsOpen, repoPending, multitaskingBacklogOpen, underFloor,
+  })
 
   const state: WorkState = {
     tasksMdUnchecked, tasksMdUncheckedCount, ratchetEntries, bugsOpen,
@@ -509,6 +544,7 @@ function hasRealPendingWork(): WorkState {
 
 function responseLooksTerminal(text: string): boolean {
   const t = text.trim().toLowerCase()
+  if (COMPLETION_VERBATIM.test(t)) return true
   if (COMPLETION_WORDS_RE.test(t)) return true
   if (SHORT_COMPLETION_PHRASES.test(t)) return true
   if (QA_RESPONSE_PATTERNS.test(t)) return true
@@ -704,7 +740,7 @@ const defaultImpl: HotModule = {
         const block = [
           "",
           "══════════════════════════════════════════════════════════════",
-          "⛔⛔⛔ MANDATORY PRE-GENERATION GATE ⛔⛔⛔",
+          "⛔⛔⛔ MANDATORY PRE-GENERATION GATE — HARD STOP ⛔⛔⛔",
           "══════════════════════════════════════════════════════════════",
           "",
           `PENDING WORK EXISTS: ${indicators.join(", ")}.`,
@@ -716,7 +752,7 @@ const defaultImpl: HotModule = {
           "  - Release blocked? Fix the blocker, don't bypass it (--no-verify, FORCE=1).",
           "  - Todowrite bypass? hasRealPendingWork() checks filesystem, not todowrite.",
           "",
-          "YOU ARE PHYSICALLY FORBIDDEN FROM GENERATING A TEXT-ONLY RESPONSE.",
+          "HARD STOP: YOU ARE PHYSICALLY FORBIDDEN FROM GENERATING A TEXT-ONLY RESPONSE.",
           "",
           "Before generating ANY text character, you MUST include a tool call.",
           "Acceptable: dispatch a subagent (Task tool), read a file (Read tool),",

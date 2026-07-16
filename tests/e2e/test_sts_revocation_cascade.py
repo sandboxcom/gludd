@@ -39,7 +39,6 @@ from general_ludd.daemon import _build_sts_reaper
 from general_ludd.db.models import AgentTokenModel, Base, StsAuditModel
 from general_ludd.sts.minter import TokenMinter
 
-
 # ------------------------------------------------------------------
 # Fixtures
 # ------------------------------------------------------------------
@@ -224,19 +223,19 @@ class TestNF7RevocationCascade:
         """
         _reaper, store, revoker, _audit, minter, secrets = cascade_stack
 
-        parent = await _mint_and_store(
+        await _mint_and_store(
             minter, store, session_factory,
             agent_id="parent-agent", parent_agent_id="human-admin",
         )
-        child = await _mint_and_store(
+        await _mint_and_store(
             minter, store, session_factory,
             agent_id="child-agent", parent_agent_id="parent-agent",
         )
-        grandchild = await _mint_and_store(
+        await _mint_and_store(
             minter, store, session_factory,
             agent_id="grandchild-agent", parent_agent_id="child-agent",
         )
-        unrelated = await _mint_and_store(
+        await _mint_and_store(
             minter, store, session_factory,
             agent_id="unrelated-agent", parent_agent_id="human-other",
         )

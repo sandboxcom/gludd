@@ -171,8 +171,17 @@ export function updateSharedStreak(tool: string, pluginName: string): SharedStre
 
 export function reportAlive(pluginName: string): void {
   try {
-    const alive = readJsonFile<Record<string, unknown>>(ALIVE_PATH, {})
-    alive[pluginName] = { last_seen: Date.now() }
+    const now = Date.now()
+    const alive = readJsonFile<Record<string, Record<string, unknown>>>(ALIVE_PATH, {})
+    const existing = alive[pluginName] || {}
+    // Write all three timestamp fields so liveness checkers that read any
+    // of last_seen / ts / loaded all see a current value. `loaded` is
+    // stamped once (first load) and preserved across subsequent heartbeats.
+    alive[pluginName] = {
+      last_seen: now,
+      ts: now,
+      loaded: existing.loaded || now,
+    }
     writeJsonFile(ALIVE_PATH, alive)
   } catch { /* fail-open */ }
 }
