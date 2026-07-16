@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from general_ludd.chat.session import export_session
+from general_ludd.chat.session import ChatSession, export_session
 
 
 def _make_session_file(temp_dir: str) -> Path:
@@ -232,3 +232,146 @@ class TestExportToFile:
             content = output_file.read_text(encoding="utf-8")
             assert "old content" not in content
             assert "add two numbers" in content.lower()
+
+
+class TestExportToHtml:
+    def test_basic_html_export(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            session_file = _make_session_file(temp_dir)
+            result = export_session(session_file, format="html")
+            assert isinstance(result, str)
+            assert "<html" in result.lower()
+            assert "def add(a: int, b: int) -> int:" in result
+
+    def test_html_has_doctype_and_structure(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            session_file = _make_session_file(temp_dir)
+            result = export_session(session_file, format="html")
+            assert "<!DOCTYPE html>" in result or "<!doctype html>" in result
+            assert "<head>" in result
+            assert "<body>" in result
+            assert "</html>" in result
+
+    def test_html_escapes_content(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            session_file = Path(temp_dir) / "xss.jsonl"
+            session_file.write_text(
+                json.dumps({
+                    "role": "user",
+                    "content": "<script>alert('xss')</script>",
+                    "timestamp": "2026-07-15T10:00:00",
+                }) + "\n",
+                encoding="utf-8",
+            )
+            result = export_session(session_file, format="html")
+            assert "<script>alert" not in result
+            assert "&lt;script&gt;" in result
+
+    def test_html_preserves_code_blocks_as_pre(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            session_file = _make_session_file(temp_dir)
+            result = export_session(session_file, format="html")
+            assert "<pre>" in result
+            assert "<code>" in result
+            assert "def add(a: int, b: int) -> int:" in result
+
+    def test_html_shows_role_labels(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            session_file = _make_session_file(temp_dir)
+            result = export_session(session_file, format="html")
+            lower = result.lower()
+            assert "user" in lower
+            assert "assistant" in lower
+            assert "system" in lower
+
+    def test_html_writes_to_output_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            session_file = _make_session_file(temp_dir)
+            output_file = Path(temp_dir) / "export.html"
+            result = export_session(
+                session_file, format="html", output_file=output_file
+            )
+            assert isinstance(result, Path)
+            assert output_file.exists()
+            content = output_file.read_text(encoding="utf-8")
+            assert "<html" in content.lower()
+
+
+class TestChatSessionExportMethods:
+    def _make_session(self, tmpdir: str) -> ChatSession:
+        history_file = Path(tmpdir) / "session.jsonl"
+        messages = [
+            {"role": "system", "content": "You are helpful.", "timestamp": "2026-07-15T10:00:00"},
+            {"role": "user", "content": "Hello there.", "timestamp": "2026-07-15T10:00:05"},
+            {"role": "assistant", "content": "Hi! How can I help?", "timestamp": "2026-07-15T10:00:10"},
+        ]
+        history_file.write_text(
+            "\n".join(json.dumps(m) for m in messages) + "\n",
+            encoding="utf-8",
+        )
+        return ChatSession(history_file=str(history_file))
+
+    def test_export_json_returns_string(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            session = self._make_session(tmpdir)
+            result = session.export_json()
+            assert isinstance(result, str)
+            data = json.loads(result)
+            assert "messages" in data
+
+    def test_export_json_writes_to_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            session = self._make_session(tmpdir)
+            out = Path(tmpdir) / "out.json"
+            result = session.export_json(output_file=out)
+            assert result == out
+            assert out.exists()
+            data = json.loads(out.read_text(encoding="utf-8"))
+            assert len(data["messages"]) == 3
+
+    def test_export_markdown_returns_string(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            session = self._make_session(tmpdir)
+            result = session.export_markdown()
+            assert isinstance(result, str)
+            assert "Hello there." in result
+            assert "## " in result
+
+    def test_export_markdown_writes_to_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            session = self._make_session(tmpdir)
+            out = Path(tmpdir) / "out.md"
+            session.export_markdown(output_file=out)
+            assert out.exists()
+            content = out.read_text(encoding="utf-8")
+            assert "Hi! How can I help?" in content
+
+    def test_export_html_returns_string(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            session = self._make_session(tmpdir)
+            result = session.export_html()
+            assert isinstance(result, str)
+            assert "<html" in result.lower()
+            assert "Hello there." in result
+
+    def test_export_html_writes_to_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            session = self._make_session(tmpdir)
+            out = Path(tmpdir) / "out.html"
+            session.export_html(output_file=out)
+            assert out.exists()
+            content = out.read_text(encoding="utf-8")
+            assert "<html" in content.lower()
+            assert "Hi! How can I help?" in content
+
+    def test_export_html_escapes_html_in_messages(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            history_file = Path(tmpdir) / "session.jsonl"
+            history_file.write_text(
+                json.dumps({"role": "user", "content": "<b>bold</b>", "timestamp": "2026-07-15T10:00:00"}) + "\n",
+                encoding="utf-8",
+            )
+            session = ChatSession(history_file=str(history_file))
+            result = session.export_html()
+            assert "<b>bold</b>" not in result
+            assert "&lt;b&gt;bold&lt;/b&gt;" in result

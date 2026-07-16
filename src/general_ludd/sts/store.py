@@ -91,6 +91,21 @@ class TokenStore:
             rows: list[AgentTokenModel] = list(result.scalars().all())
             return rows
 
+    async def list_all(self) -> list[AgentTokenModel]:
+        """Return every token row (live + revoked + expired).
+
+        Used by :class:`~general_ludd.sts.visualizer.TokenTreeRenderer.render_active_tokens`
+        to build a complete forest view. The caller filters by ``revoked_at``
+        and ``expires_at`` as needed.
+        """
+        from general_ludd.db.models import AgentTokenModel as A
+
+        async with self._session_factory() as session:
+            stmt = select(A)
+            result = await session.execute(stmt)
+            rows: list[AgentTokenModel] = list(result.scalars().all())
+            return rows
+
     async def list_children(self, parent_agent_id: str) -> list[AgentTokenModel]:
         """Return all tokens whose ``parent_agent_id`` matches *parent_agent_id*.
 

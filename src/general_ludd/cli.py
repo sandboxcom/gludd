@@ -11,6 +11,7 @@ import re
 import signal
 import sys
 import time
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 import httpx
@@ -678,6 +679,11 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
                               help="Override API key (env: OPENAI_API_KEY)")
     chat_parser.add_argument("--project-dir", default=None, metavar="PATH",
                               help="Project directory for ansible/terraform context injection")
+    chat_parser.add_argument("--export", default=None, metavar="FORMAT",
+                              choices=["md", "json", "html"],
+                              help="Export a saved session to md/json/html and exit")
+    chat_parser.add_argument("--export-output", default=None, metavar="FILE",
+                              help="Write export output to FILE (default: stdout)")
     chat_parser.set_defaults(func=_cmd_chat)
 
     help_p = sub.add_parser("help", help="Show full manual")
@@ -2436,6 +2442,30 @@ def _cmd_chat(args: argparse.Namespace) -> None:
     history_file = getattr(args, "history", None)
     resume = getattr(args, "resume", False)
     save_interval = getattr(args, "save_interval", 5)
+
+    export_format = getattr(args, "export", None)
+    if export_format:
+        from general_ludd.chat.session import export_session
+
+        source_file = history_file
+        if not source_file:
+            dummy = ChatSession(model=args.model)
+            latest = dummy._find_latest_session()
+            if latest is None:
+                print("No saved session to export.", file=sys.stderr)
+                sys.exit(1)
+            source_file = str(latest)
+        out_arg = getattr(args, "export_output", None)
+        result = export_session(
+            Path(source_file),
+            format=export_format,
+            output_file=Path(out_arg) if out_arg else None,
+        )
+        if isinstance(result, Path):
+            print(f"Wrote {export_format} export to {result}")
+        else:
+            print(result)
+        return
 
     session = ChatSession(
         model=args.model,

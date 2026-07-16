@@ -321,6 +321,8 @@ def _build_gap_report(
             ),
         })
 
+    prioritized = prioritize_scenarios(suggestions)
+
     return {
         "overall_verdict": verdict,
         "coverage_gap_pp": gap_pp,
@@ -330,7 +332,126 @@ def _build_gap_report(
         "uncovered_targets": list(cross_reference.get("uncovered", [])),
         "unresolved_targets": list(cross_reference.get("unresolved", [])),
         "suggested_scenarios": suggestions,
+        "prioritized_scenarios": prioritized,
     }
+
+
+# ── Coverage gap heatmap ────────────────────────────────────────────────────
+
+_GAP_GLYPHS = {"covered": "covered", "partial": "partial", "missing": "missing"}
+
+
+def coverage_gap_heatmap(modules: list[dict]) -> list[dict]:
+    """Build a per-module, per-symbol visual representation of coverage gaps.
+
+    Each entry in ``modules`` is expected to have the shape::
+
+        {"name": <module path>,
+         "coverage_pct": <float>,
+         "symbols": [{"name": <str>, "state": "covered|partial|missing",
+                      "missing_lines": [<int>, ...]}]}
+
+    Returns one row per module with ``cells`` mapping each symbol to a glyph
+    state plus a ``missing_count``. Symbols lacking an explicit ``state``
+    default to ``"missing"`` (a symbol with no measured coverage data is
+    treated as uncovered, matching ``_identify_uncovered_symbols`` semantics).
+    """
+    rows: list[dict] = []
+    for mod in modules:
+        cells: list[dict] = []
+        for sym in mod.get("symbols", []):
+            state = sym.get("state") or "missing"
+            glyph = _GAP_GLYPHS.get(state, "missing")
+            missing_lines = sym.get("missing_lines", []) or []
+            cells.append({
+                "symbol": sym.get("name", "<anon>"),
+                "glyph": glyph,
+                "missing_count": len(missing_lines),
+            })
+        rows.append({
+            "module": mod.get("name", "<unknown>"),
+            "coverage_pct": mod.get("coverage_pct", 0.0),
+            "cells": cells,
+        })
+    return rows
+
+
+_GAP_RENDER_CHARS = {"covered": ".", "partial": "~", "missing": "X"}
+
+
+def render_heatmap(heatmap: list[dict]) -> str:
+    """Render a heatmap produced by :func:`coverage_gap_heatmap` as an ASCII grid.
+
+    Each module becomes one row; symbols are columns. The cell character is
+    ``.`` (covered), ``~`` (partial) or ``X`` (missing). A legend is prepended.
+    """
+    if not heatmap:
+        return "(no modules)\n"
+    lines = ["coverage heatmap:  . covered  ~ partial  X missing", ""]
+    for row in heatmap:
+        mod = row.get("module", "<unknown>")
+        pct = row.get("coverage_pct", 0.0)
+        cells = row.get("cells", [])
+        if not cells:
+            lines.append(f"{mod}  ({pct}%):  (no symbols)")
+            continue
+        glyphs = "".join(_GAP_RENDER_CHARS.get(c.get("glyph", "missing"), "X") for c in cells)
+        names = "  ".join(str(c.get("symbol", "")) for c in cells)
+        lines.append(f"{mod}  ({pct}%):")
+        lines.append(f"    {glyphs}")
+        lines.append(f"    {names}")
+    return "\n".join(lines) + "\n"
+
+
+# ── Scenario prioritization ─────────────────────────────────────────────────
+
+_KIND_WEIGHTS = {"missing": 3.0, "partial": 1.0}
+_PER_LINE_WEIGHT = 0.1
+
+
+def prioritize_scenarios(gaps: list[dict]) -> list[dict]:
+    """Rank coverage gaps into prioritized scenario recommendations.
+
+    Each ``gap`` is expected to have ``target``, ``kind`` ("missing" or
+    "partial"), ``missing_lines`` (list[int]) and ``line_range`` ([start, end]).
+    Unknown kinds are treated as ``"partial"``.
+
+    The priority score blends:
+      * kind weight — ``missing`` (3.0) outranks ``partial`` (1.0);
+      * per-missing-line weight (0.1) — larger gaps rank higher;
+      * span weight — a wider ``line_range`` implies more uncovered surface.
+
+    Ties are broken alphabetically by ``target`` so ordering is deterministic.
+    """
+    scored: list[tuple[float, str, dict]] = []
+    for gap in gaps:
+        kind = gap.get("kind") or "partial"
+        kind_weight = _KIND_WEIGHTS.get(kind, _KIND_WEIGHTS["partial"])
+        missing_lines = gap.get("missing_lines", []) or []
+        line_range = gap.get("line_range") or [0, 0]
+        try:
+            span = max(0, int(line_range[1]) - int(line_range[0]) + 1)
+        except (TypeError, ValueError, IndexError):
+            span = 0
+        score = kind_weight + _PER_LINE_WEIGHT * len(missing_lines) + 0.01 * span
+        target = gap.get("target", "<anon>")
+        rationale = (
+            f"Target '{target}' is fully uncovered ({kind}); exercising it "
+            f"would close {len(missing_lines)} missing line(s) over a {span}-line span."
+            if kind == "missing"
+            else f"Target '{target}' is partially covered ({kind}); "
+            f"{len(missing_lines)} branch line(s) need additional assertions."
+        )
+        scored.append((score, target, {
+            "target": target,
+            "kind": kind,
+            "priority_score": round(score, 3),
+            "missing_lines": list(missing_lines),
+            "line_range": list(line_range),
+            "rationale": rationale,
+        }))
+    scored.sort(key=lambda t: (-t[0], t[1]))
+    return [entry for _, _, entry in scored]
 
 
 def _load_symbols(path: Path | None) -> dict:

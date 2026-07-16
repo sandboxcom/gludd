@@ -30,6 +30,11 @@ from general_ludd.security.sandboxes.vm.lifecycle import (
     VMMetrics,
     VMSandboxManager,
 )
+from general_ludd.security.sandboxes.vm.metrics import (
+    VMSandboxHealth,
+    VMSandboxMetricsCollector,
+    VMSandboxMetricsSnapshot,
+)
 
 __all__ = [
     "AgentExecutor",
@@ -40,7 +45,10 @@ __all__ = [
     "VMInstance",
     "VMLifecycleState",
     "VMMetrics",
+    "VMSandboxHealth",
     "VMSandboxManager",
+    "VMSandboxMetricsCollector",
+    "VMSandboxMetricsSnapshot",
     "build_firecracker_image",
     "build_gvisor_image",
     "build_rootfs",
