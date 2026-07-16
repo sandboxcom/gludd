@@ -35,6 +35,42 @@ Code versions `0.1.0-beta.2` through `0.1.0-beta.5` exist in `pyproject.toml`/`_
 
 ---
 
+## SESSION 48 — 2026-07-16
+
+- **HEAD: `00271b42`** on `development` branch (43 commits beyond remote tip `8e290afd70ea`)
+- **Version: 0.1.0-beta.5** (pyproject.toml)
+- **Push status: NOT PUSHED** — 43 local commits on development not on remote
+- **CI: NO RUN** for HEAD `00271b42` (not pushed)
+- **Gate: NOT RUN** — full gate not re-run on HEAD
+- **Working tree: DIRTY** — many untracked governance collection files (src/, tests/, collections/, demos/)
+
+### Commits since Session 47 (5: `8446c877..00271b42`)
+
+| Hash | Message |
+|------|---------|
+| `00271b42` | feat: add Human Governance Systems collection scaffold and spec |
+| `3908404e` | Remove dead mypy override sections from pyproject.toml |
+| `9887b2c4` | docs AGENTS.md enforce-session-start crash-recovery and time-gates doc plus stale default fix |
+| `1e63eeb2` | docs: final Session 47 TASKS.md + SESSION.md update HEAD 384e481e 38 commits not pushed |
+| `8446c877` | docs: update README status table with NF.2-NF.9 session features |
+
+### Remaining open items
+
+| Item | Status |
+|------|--------|
+| A.4 — Cut v0.1.0-beta.2 release | BLOCKED on CI (HEAD not pushed) |
+| Push 43 development commits to remote | NOT PUSHED |
+| Commit untracked governance files | NOT STAGED |
+
+### Next
+
+1. Push development commits, wait for CI green on tip `00271b42`
+2. Cut beta.2 via `make release-cut`
+
+- **Last Updated: 2026-07-16 — Session 48.** HEAD `00271b42` on `development` (43 commits not pushed). 5 new commits since Session 47: README status table (8446c877), Session 47 final docs (1e63eeb2), AGENTS.md enforce-session-start doc (9887b2c4), dead mypy removal (3908404e), governance collection scaffold (00271b42). Tree DIRTY (governance untracked files). A.4 (beta.2 release) blocked on CI.
+
+---
+
 ## SESSION 47 — 2026-07-16
 
 - **HEAD: `384e481e`** on `development` branch (38 commits beyond remote tip `8e290afd70ea`)
