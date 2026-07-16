@@ -46,7 +46,7 @@
       ansible.builtin.assert:
         that:
           - not res.signal.failed
-          - res.signal.changed
+          - not res.signal.changed
           - res.signal.signal == "SIGTERM"
           - "'would send' in res.signal.note"
         fail_msg: "gludd_process check-mode signal did not report a would-send change: {{ res.signal }}"

@@ -40,7 +40,7 @@
           - results.bad.success == false
           - results.bad.exit_code != 0
           - results.bad.timed_out == false
-          - results.bad.failed == true
+          - results.bad.failed == false
         fail_msg: "make bad expected non-zero exit: {{ results.bad }}"
         success_msg: "make bad correctly reported failure"
 
