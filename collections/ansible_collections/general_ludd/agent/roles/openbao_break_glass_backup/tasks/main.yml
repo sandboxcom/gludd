@@ -46,7 +46,7 @@
       %commit
       EOF
   args:
-    creates: "{{ ansible_env.HOME }}/.gnupg/pubring.kbx"
+    creates: "{{ lookup('env', 'HOME') }}/.gnupg/pubring.kbx"
   when: (gpg_key_check.stdout | default('')) == ''
   no_log: true
 
