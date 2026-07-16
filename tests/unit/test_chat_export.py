@@ -241,7 +241,8 @@ class TestExportToHtml:
             result = export_session(session_file, format="html")
             assert isinstance(result, str)
             assert "<html" in result.lower()
-            assert "def add(a: int, b: int) -> int:" in result
+            assert "def add(a: int, b: int)" in result
+            assert "return a + b" in result
 
     def test_html_has_doctype_and_structure(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -272,8 +273,8 @@ class TestExportToHtml:
             session_file = _make_session_file(temp_dir)
             result = export_session(session_file, format="html")
             assert "<pre>" in result
-            assert "<code>" in result
-            assert "def add(a: int, b: int) -> int:" in result
+            assert "<code" in result
+            assert "def add(a: int, b: int)" in result
 
     def test_html_shows_role_labels(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

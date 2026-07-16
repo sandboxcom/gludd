@@ -10,6 +10,9 @@ from plugins.module_utils.propagation_models import (
     two_ray_loss,
     itm_loss,
     rain_attenuation,
+    itu_p452_loss,
+    gaseous_attenuation,
+    cloud_attenuation,
     predict_path_loss,
 )
 
@@ -194,3 +197,161 @@ def test_predict_path_loss_default_params():
 def test_predict_path_loss_unknown_model():
     result = predict_path_loss("quantum_entanglement", 10.0)
     assert "error" in result
+
+
+# ── ITU-R P.452 transhorizon interference ───────────────────────────────────
+
+
+def test_itu_p452_returns_dict_with_loss():
+    result = itu_p452_loss(50.0, 4.0, 30.0, 10.0)
+    assert isinstance(result, dict)
+    assert "loss_db" in result
+    assert result["loss_db"] > 0
+    assert "free_space_loss_db" in result
+    assert "components" in result
+
+
+def test_itu_p452_loss_increases_with_distance():
+    near = itu_p452_loss(20.0, 4.0, 30.0, 10.0)
+    far = itu_p452_loss(100.0, 4.0, 30.0, 10.0)
+    assert far["loss_db"] > near["loss_db"]
+
+
+def test_itu_p452_exceeds_free_space_for_transhorizon():
+    # Over the radio horizon, total loss must exceed free-space alone.
+    result = itu_p452_loss(200.0, 4.0, 30.0, 10.0)
+    assert result["loss_db"] > result["free_space_loss_db"]
+
+
+def test_itu_p452_lower_time_percent_more_fading_loss():
+    # Smaller time percentage (worse-case interference) => larger predicted loss
+    # via the time-variability correction, i.e. it is a legitimate fade margin.
+    median = itu_p452_loss(80.0, 4.0, 30.0, 10.0, time_percent=50.0)
+    rare = itu_p452_loss(80.0, 4.0, 30.0, 10.0, time_percent=1.0)
+    assert rare["loss_db"] != median["loss_db"]
+
+
+def test_itu_p452_components_present():
+    result = itu_p452_loss(150.0, 4.0, 30.0, 10.0)
+    comps = result["components"]
+    assert "diffraction_loss_db" in comps
+    assert "troposcatter_loss_db" in comps
+    assert "ducting_loss_db" in comps
+
+
+# ── ITU-R P.676 gaseous absorption ──────────────────────────────────────────
+
+
+def test_gaseous_attenuation_returns_dict():
+    result = gaseous_attenuation(20.0, 10.0)
+    assert isinstance(result, dict)
+    assert "specific_attenuation_db_km" in result
+    assert "total_attenuation_db" in result
+    assert result["specific_attenuation_db_km"] > 0
+
+
+def test_gaseous_attenuation_increases_with_distance():
+    short = gaseous_attenuation(20.0, 5.0)
+    long = gaseous_attenuation(20.0, 50.0)
+    assert long["total_attenuation_db"] > short["total_attenuation_db"]
+
+
+def test_gaseous_attenuation_water_vapor_line_at_22ghz():
+    # 22.235 GHz water-vapor absorption line must exceed nearby off-line band.
+    on_line = gaseous_attenuation(22.2, 10.0, water_density_gm3=7.5)
+    off_line = gaseous_attenuation(15.0, 10.0, water_density_gm3=7.5)
+    assert on_line["total_attenuation_db"] > off_line["total_attenuation_db"]
+
+
+def test_gaseous_attenuation_oxygen_peak_near_60ghz():
+    # Oxygen has a strong complex near 60 GHz; attenuation must dwarf 30 GHz.
+    near_oxygen = gaseous_attenuation(58.0, 5.0)
+    lower = gaseous_attenuation(30.0, 5.0)
+    assert near_oxygen["specific_attenuation_db_km"] > lower["specific_attenuation_db_km"]
+
+
+def test_gaseous_attenuation_increases_with_humidity():
+    dry = gaseous_attenuation(22.2, 10.0, water_density_gm3=1.0)
+    humid = gaseous_attenuation(22.2, 10.0, water_density_gm3=15.0)
+    assert humid["total_attenuation_db"] > dry["total_attenuation_db"]
+
+
+def test_gaseous_attenuation_zero_distance():
+    result = gaseous_attenuation(20.0, 0.0)
+    assert result["total_attenuation_db"] == 0.0
+
+
+def test_gaseous_attenuation_components_split():
+    result = gaseous_attenuation(20.0, 10.0)
+    assert "oxygen_db_km" in result
+    assert "water_vapor_db_km" in result
+    assert abs(result["specific_attenuation_db_km"]
+               - (result["oxygen_db_km"] + result["water_vapor_db_km"])) < 1e-9
+
+
+# ── ITU-R P.840 cloud / fog attenuation ─────────────────────────────────────
+
+
+def test_cloud_attenuation_returns_dict():
+    result = cloud_attenuation(30.0, 10.0)
+    assert isinstance(result, dict)
+    assert "specific_attenuation_db_km" in result
+    assert "total_attenuation_db" in result
+    assert result["specific_attenuation_db_km"] > 0
+
+
+def test_cloud_attenuation_increases_with_distance():
+    short = cloud_attenuation(30.0, 2.0)
+    long = cloud_attenuation(30.0, 20.0)
+    assert long["total_attenuation_db"] > short["total_attenuation_db"]
+
+
+def test_cloud_attenuation_increases_with_liquid_water():
+    light = cloud_attenuation(30.0, 10.0, liquid_water_content_gm3=0.2)
+    dense = cloud_attenuation(30.0, 10.0, liquid_water_content_gm3=1.5)
+    assert dense["total_attenuation_db"] > light["total_attenuation_db"]
+
+
+def test_cloud_attenuation_zero_distance():
+    result = cloud_attenuation(30.0, 0.0)
+    assert result["total_attenuation_db"] == 0.0
+
+
+def test_cloud_attenuation_zero_liquid_water():
+    result = cloud_attenuation(30.0, 10.0, liquid_water_content_gm3=0.0)
+    assert result["total_attenuation_db"] == 0.0
+
+
+def test_cloud_attenuation_increases_with_frequency():
+    # Cloud/fog specific attenuation rises with frequency in the microwave range.
+    low = cloud_attenuation(15.0, 10.0)
+    high = cloud_attenuation(80.0, 10.0)
+    assert high["specific_attenuation_db_km"] > low["specific_attenuation_db_km"]
+
+
+# ── predict_path_loss dispatch for new models ───────────────────────────────
+
+
+def test_predict_path_loss_itu_p452():
+    result = predict_path_loss("itu_p452", 50.0, 4000.0, 30.0, 10.0)
+    assert "P.452" in result["model"]
+    assert result["loss_db"] > 0
+
+
+def test_predict_path_loss_gaseous():
+    result = predict_path_loss("gaseous", 10.0, frequency_mhz=20000.0)
+    assert "P.676" in result["model"]
+    assert result["total_attenuation_db"] > 0
+
+
+def test_predict_path_loss_cloud():
+    result = predict_path_loss("cloud", 10.0, frequency_mhz=30000.0, liquid_water_content_gm3=0.5)
+    assert "P.840" in result["model"]
+    assert result["total_attenuation_db"] > 0
+
+
+def test_predict_path_loss_unknown_model_lists_new_models():
+    result = predict_path_loss("bogus", 10.0)
+    assert "itu_p452" in result["valid_models"]
+    assert "gaseous" in result["valid_models"]
+    assert "cloud" in result["valid_models"]

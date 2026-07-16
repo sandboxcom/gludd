@@ -22,6 +22,7 @@ end-to-end with real process trees, exit codes, and stdout capture.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import socket
 import subprocess
@@ -942,10 +943,8 @@ class TestFirecrackerRestRoundTrip:
         finally:
             server.close()
             t.join(timeout=2.0)
-            try:
+            with contextlib.suppress(OSError):
                 os.unlink(sock_path)
-            except OSError:
-                pass
 
     def test_put_parses_json_body(self, tmp_path: Path):
         sock_path = str(tmp_path / "fc-json.sock")
@@ -962,10 +961,8 @@ class TestFirecrackerRestRoundTrip:
         finally:
             server.close()
             t.join(timeout=2.0)
-            try:
+            with contextlib.suppress(OSError):
                 os.unlink(sock_path)
-            except OSError:
-                pass
 
     def test_put_raises_on_non_2xx(self, tmp_path: Path):
         sock_path = str(tmp_path / "fc-err.sock")
@@ -982,10 +979,8 @@ class TestFirecrackerRestRoundTrip:
         finally:
             server.close()
             t.join(timeout=2.0)
-            try:
+            with contextlib.suppress(OSError):
                 os.unlink(sock_path)
-            except OSError:
-                pass
 
     def test_wait_for_socket_returns_true_when_connectable(
         self, tmp_path: Path,

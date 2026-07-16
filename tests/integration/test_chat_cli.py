@@ -50,3 +50,16 @@ class TestChatCLI:
         assert any(phrase in output_lower for phrase in (
             "empty response", "could not connect", "timed out", "error"
         )) or result.returncode != 0
+
+    def test_chat_help_shows_export_flag(self) -> None:
+        result = _gludd("chat", "--help")
+        assert result.returncode == 0
+        assert "--export" in result.stdout
+        assert "--export-output" in result.stdout
+
+    def test_chat_export_requires_history(self) -> None:
+        result = _gludd(
+            "chat", "--export", "md",
+            "--history", "/tmp/nonexistent-session-98765.jsonl",
+        )
+        assert result.returncode != 0

@@ -10,9 +10,11 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+import html
 import json
 import logging
 import os
+import re
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
@@ -588,6 +590,39 @@ class ChatSession:
         if self._turn_count % self._save_interval == 0:
             self.save_history()
 
+    def export_markdown(self, output_file: str | Path | None = None) -> str | Path:
+        messages: list[dict[str, object]] = [
+            {"role": m["role"], "content": m["content"]} for m in self.history
+        ]
+        result = _export_to_markdown(messages)
+        if output_file is not None:
+            out = Path(output_file) if isinstance(output_file, str) else output_file
+            out.write_text(result, encoding="utf-8")
+            return out
+        return result
+
+    def export_json(self, output_file: str | Path | None = None) -> str | Path:
+        messages: list[dict[str, object]] = [
+            {"role": m["role"], "content": m["content"]} for m in self.history
+        ]
+        result = _export_to_json(messages)
+        if output_file is not None:
+            out = Path(output_file) if isinstance(output_file, str) else output_file
+            out.write_text(result, encoding="utf-8")
+            return out
+        return result
+
+    def export_html(self, output_file: str | Path | None = None) -> str | Path:
+        messages: list[dict[str, object]] = [
+            {"role": m["role"], "content": m["content"]} for m in self.history
+        ]
+        result = _export_to_html(messages)
+        if output_file is not None:
+            out = Path(output_file) if isinstance(output_file, str) else output_file
+            out.write_text(result, encoding="utf-8")
+            return out
+        return result
+
 
 def export_session(
     session_file: Path,
@@ -596,8 +631,8 @@ def export_session(
 ) -> str | Path:
     if format is None or format == "":
         format = "md"
-    if format not in ("md", "json"):
-        raise ValueError(f"Unsupported export format: {format!r}. Use 'md' or 'json'.")
+    if format not in ("md", "json", "html"):
+        raise ValueError(f"Unsupported export format: {format!r}. Use 'md', 'json', or 'html'.")
     if not isinstance(session_file, Path):
         session_file = Path(session_file)
     if not session_file.exists():
@@ -616,7 +651,12 @@ def export_session(
     except json.JSONDecodeError as exc:
         raise ValueError(f"Corrupt session file: {session_file}") from exc
 
-    result = _export_to_markdown(messages) if format == "md" else _export_to_json(messages)
+    if format == "md":
+        result = _export_to_markdown(messages)
+    elif format == "html":
+        result = _export_to_html(messages)
+    else:
+        result = _export_to_json(messages)
 
     if output_file is not None:
         if isinstance(output_file, str):
@@ -643,3 +683,72 @@ def _export_to_markdown(messages: list[dict[str, object]]) -> str:
 
 def _export_to_json(messages: list[dict[str, object]]) -> str:
     return json.dumps({"messages": messages}, indent=2)
+
+
+_CODE_FENCE_RE = re.compile(r"```(\S*)\n(.*?)```", re.DOTALL)
+
+
+def _export_to_html(messages: list[dict[str, object]]) -> str:
+    body_parts: list[str] = []
+    for msg in messages:
+        role = html.escape(str(msg.get("role", "unknown")))
+        role_label = role.capitalize()
+        content = str(msg.get("content", ""))
+        ts = html.escape(str(msg.get("timestamp", "")))
+        rendered = _render_html_content(content)
+        ts_html = f'<span class="timestamp">{ts}</span>' if ts else ""
+        body_parts.append(
+            f'<div class="message message-{role}">'
+            f'<div class="role">{role_label}</div>'
+            f'{ts_html}'
+            f'<div class="content">{rendered}</div>'
+            f'</div>'
+        )
+    body = "\n".join(body_parts)
+    return (
+        "<!DOCTYPE html>\n"
+        "<html lang=\"en\">\n"
+        "<head>\n"
+        "<meta charset=\"utf-8\">\n"
+        "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
+        "<title>Chat Session Export</title>\n"
+        "<style>\n"
+        "body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; "
+        "max-width: 900px; margin: 2rem auto; padding: 0 1rem; color: #1a1a1a; }\n"
+        ".message { border: 1px solid #e0e0e0; border-radius: 8px; "
+        "padding: 1rem; margin-bottom: 1rem; }\n"
+        ".message-user { background: #f0f7ff; }\n"
+        ".message-assistant { background: #f5f5f5; }\n"
+        ".message-system { background: #fff8e1; font-size: 0.9em; }\n"
+        ".role { font-weight: bold; margin-bottom: 0.5rem; text-transform: capitalize; }\n"
+        ".timestamp { color: #888; font-size: 0.85em; margin-left: 0.5rem; }\n"
+        ".content { white-space: pre-wrap; word-wrap: break-word; }\n"
+        "pre { background: #272822; color: #f8f8f2; padding: 0.75rem; "
+        "border-radius: 4px; overflow-x: auto; }\n"
+        "code { font-family: 'SF Mono', Consolas, monospace; }\n"
+        "</style>\n"
+        "</head>\n"
+        "<body>\n"
+        f"<h1>Chat Session Export</h1>\n"
+        f"{body}\n"
+        "</body>\n"
+        "</html>\n"
+    )
+
+
+def _render_html_content(content: str) -> str:
+    """Render message content as HTML: fenced code blocks become <pre><code>,
+    other text is escaped and inline code preserved."""
+    out: list[str] = []
+    last_end = 0
+    for match in _CODE_FENCE_RE.finditer(content):
+        if match.start() > last_end:
+            out.append(html.escape(content[last_end:match.start()]))
+        lang = html.escape(match.group(1))
+        code = html.escape(match.group(2).strip())
+        lang_attr = f' class="language-{lang}"' if lang else ""
+        out.append(f'<pre><code{lang_attr}>{code}</code></pre>')
+        last_end = match.end()
+    if last_end < len(content):
+        out.append(html.escape(content[last_end:]))
+    return "".join(out)

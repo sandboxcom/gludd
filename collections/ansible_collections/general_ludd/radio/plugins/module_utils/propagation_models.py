@@ -7,6 +7,9 @@ Supported models:
     - Hata-Okumura (urban / suburban / rural)
     - Two-ray ground reflection
     - Rain attenuation (ITU-R P.838)
+    - Transhorizon interference (ITU-R P.452)
+    - Gaseous absorption (ITU-R P.676)
+    - Cloud / fog attenuation (ITU-R P.840)
 
 Functions:
     free_space_loss(distance_m, freq_hz) -> loss_db
@@ -16,6 +19,9 @@ Functions:
     two_ray_loss(distance_m, h_tx_m, h_rx_m) -> loss_db
     itm_loss(distance_km, freq_mhz, h_tx_m, h_rx_m, ...) -> loss_db
     rain_attenuation(freq_ghz, rain_rate_mmh, distance_km, polarization) -> loss_db
+    itu_p452_loss(distance_km, freq_ghz, h_tx_m, h_rx_m, time_percent, ...) -> dict
+    gaseous_attenuation(freq_ghz, distance_km, temperature_c, pressure_hpa, water_density_gm3) -> dict
+    cloud_attenuation(freq_ghz, distance_km, liquid_water_content_gm3, temperature_c) -> dict
     predict_path_loss(model, distance_km, frequency_mhz, ...) -> loss_db
 """
 
@@ -409,6 +415,314 @@ def _rain_coefficients(freq_ghz: float, polarization: str) -> tuple[float, float
     return (10 ** log_k_interp, alpha_interp)
 
 
+def itu_p452_loss(
+    distance_km: float,
+    freq_ghz: float,
+    h_tx_m: float,
+    h_rx_m: float,
+    time_percent: float = 50.0,
+    terrain_irregularity_m: float = 30.0,
+    pressure_hpa: float = 1013.0,
+    temperature_c: float = 15.0,
+    sea_level_refractivity: float = 318.0,
+) -> dict[str, Any]:
+    """
+    ITU-R P.452 transhorizon interference prediction.
+
+    Estimates basic transmission loss not exceeded for the given time
+    percentage by combining three propagation mechanisms:
+      * diffraction (LOS + spherical-Earth beyond-horizon)
+      * tropospheric scatter
+      * ducting / layer-reflection (anomalous propagation)
+
+    For interference analysis the worst case (lowest path loss) of the
+    applicable mechanisms is taken as the predicted loss.
+
+    Parameters:
+        distance_km: Path distance (0.1 to ~2000 km)
+        freq_ghz: Frequency in GHz (0.1 to ~50 GHz)
+        h_tx_m: Transmitter antenna height above ground (m)
+        h_rx_m: Receiver antenna height above ground (m)
+        time_percent: Time percentage for which loss is NOT exceeded
+            (1.0 to 50.0; 50 = median, smaller = rarer anomaly)
+        terrain_irregularity_m: Delta-h terrain roughness (m)
+        pressure_hpa: Atmospheric pressure (hPa)
+        temperature_c: Air temperature (Celsius)
+        sea_level_refractivity: Sea-level refractivity N0 (N-units, ~250-400)
+
+    Returns dict with:
+        loss_db: Predicted basic transmission loss (dB)
+        free_space_loss_db: Free-space reference loss
+        time_percent: Echoed time percentage
+        components: {diffraction_loss_db, troposcatter_loss_db, ducting_loss_db}
+    """
+    fsl = _itm_free_space_loss(distance_km, freq_ghz * 1000.0)
+
+    d_los = _p452_radio_horizon(h_tx_m) + _p452_radio_horizon(h_rx_m)
+
+    diffraction_total = fsl + _p452_diffraction_excess(
+        distance_km, d_los, freq_ghz, terrain_irregularity_m
+    )
+    troposcatter_total = _p452_troposcatter(
+        distance_km, freq_ghz, h_tx_m, h_rx_m, sea_level_refractivity
+    )
+    ducting_total = fsl + _p452_ducting_excess(
+        distance_km, d_los, freq_ghz, time_percent
+    )
+
+    loss_db = min(diffraction_total, troposcatter_total, ducting_total)
+
+    return {
+        "model": "ITU-R P.452 Transhorizon Interference",
+        "distance_km": distance_km,
+        "frequency_ghz": freq_ghz,
+        "time_percent": time_percent,
+        "loss_db": round(loss_db, 2),
+        "free_space_loss_db": round(fsl, 2),
+        "components": {
+            "diffraction_loss_db": round(diffraction_total, 2),
+            "troposcatter_loss_db": round(troposcatter_total, 2),
+            "ducting_loss_db": round(ducting_total, 2),
+        },
+        "terrain": {
+            "irregularity_m": terrain_irregularity_m,
+            "radio_horizon_los_km": round(d_los, 2),
+            "pressure_hpa": pressure_hpa,
+            "temperature_c": temperature_c,
+            "sea_level_refractivity": sea_level_refractivity,
+        },
+    }
+
+
+def _p452_radio_horizon(h_m: float) -> float:
+    """Standard radio-horizon distance (km) for a 4/3-Earth model."""
+    return 4.12 * math.sqrt(max(h_m, 0.0))
+
+
+def _p452_diffraction_excess(
+    distance_km: float, d_los: float, freq_ghz: float, delta_h: float
+) -> float:
+    """Excess loss over free space from diffraction (knife-edge + spherical Earth)."""
+    if distance_km <= d_los or d_los <= 0:
+        v = _p452_knife_edge(distance_km, freq_ghz, delta_h)
+        return _p452_j(v)
+    beyond = distance_km - d_los
+    return (
+        10.0
+        + 20.0 * math.log10(distance_km / d_los)
+        + 0.3 * beyond * math.sqrt(max(freq_ghz, 0.1)) / 10.0
+    )
+
+
+def _p452_knife_edge(distance_km: float, freq_ghz: float, delta_h: float) -> float:
+    """Fresnel-Kirchhoff v parameter for a single knife-edge obstruction."""
+    wavelength_m = 0.3 / max(freq_ghz, 0.1)
+    d1 = max(0.1, distance_km * 0.5)
+    d2 = d1
+    h = delta_h / 2.0
+    denom = math.sqrt(2.0 * wavelength_m * d1 * d2 * 1000.0 / (d1 + d2))
+    return h / denom if denom > 0 else 0.0
+
+
+def _p452_j(v: float) -> float:
+    """Knife-edge diffraction loss J(v) (dB)."""
+    if v <= -0.78:
+        return 0.0
+    if v < 0:
+        return 6.0 * (v + 0.7) ** 2
+    return 6.9 + 20.0 * math.log10(math.sqrt((v - 0.1) ** 2 + 1.0) + v - 0.1)
+
+
+def _p452_troposcatter(
+    distance_km: float,
+    freq_ghz: float,
+    h_tx_m: float,
+    h_rx_m: float,
+    sea_level_refractivity: float,
+) -> float:
+    """Tropospheric-scatter basic transmission loss (ITU-R P.452 formulation)."""
+    r_earth_km = 6371.0
+    theta_rad = distance_km / r_earth_km + (h_tx_m + h_rx_m) / (distance_km * 1000.0)
+    theta_mrad = theta_rad * 1000.0
+    return (
+        190.0
+        + 20.0 * math.log10(max(freq_ghz, 0.1))
+        + 20.0 * math.log10(max(distance_km, 0.1))
+        + 0.573 * theta_mrad
+        - 0.15 * sea_level_refractivity
+    )
+
+
+def _p452_ducting_excess(
+    distance_km: float, d_los: float, freq_ghz: float, time_percent: float
+) -> float:
+    """
+    Ducting / layer-reflection excess loss.
+
+    Anomalous propagation is more prevalent at small time percentages,
+    lowering the predicted transmission loss (stronger interference).
+    """
+    tp = min(max(time_percent, 0.001), 100.0)
+    time_factor = 12.0 * (math.log10(50.0) - math.log10(tp))
+    beyond = max(distance_km - d_los, 0.0)
+    excess = 15.0 + 20.0 * math.log10(max(freq_ghz, 0.1)) - time_factor + 0.1 * beyond
+    return max(0.0, excess)
+
+
+def gaseous_attenuation(
+    freq_ghz: float,
+    distance_km: float,
+    temperature_c: float = 15.0,
+    pressure_hpa: float = 1013.0,
+    water_density_gm3: float = 7.5,
+) -> dict[str, Any]:
+    """
+    ITU-R P.676 gaseous attenuation (Annex 2 approximate method).
+
+    Specific attenuation due to dry air (oxygen) and water vapour, plus the
+    total path attenuation for a terrestrial (horizontal) link.
+
+    Parameters:
+        freq_ghz: Frequency in GHz (1 to ~350 GHz)
+        distance_km: Path length in km
+        temperature_c: Air temperature (Celsius)
+        pressure_hpa: Total air pressure (hPa)
+        water_density_gm3: Water-vapour density (g/m^3)
+
+    Returns dict with:
+        specific_attenuation_db_km: gamma_o + gamma_w (dB/km)
+        oxygen_db_km: Oxygen (dry air) specific attenuation
+        water_vapor_db_km: Water-vapour specific attenuation
+        total_attenuation_db: total path attenuation
+    """
+    r_p = pressure_hpa / 1013.0
+    t_kelvin = temperature_c + 273.15
+    r_t = 288.0 / t_kelvin
+
+    gamma_o = _p676_oxygen_specific(freq_ghz, r_p, r_t)
+    gamma_w = _p676_water_vapor_specific(freq_ghz, r_p, r_t, water_density_gm3)
+    specific = gamma_o + gamma_w
+    total = specific * max(distance_km, 0.0) if distance_km > 0 else 0.0
+
+    return {
+        "model": "ITU-R P.676 Gaseous Attenuation",
+        "frequency_ghz": freq_ghz,
+        "distance_km": distance_km,
+        "temperature_c": temperature_c,
+        "pressure_hpa": pressure_hpa,
+        "water_density_gm3": water_density_gm3,
+        "oxygen_db_km": round(gamma_o, 6),
+        "water_vapor_db_km": round(gamma_w, 6),
+        "specific_attenuation_db_km": round(specific, 6),
+        "total_attenuation_db": round(total, 4),
+    }
+
+
+def _p676_oxygen_specific(freq_ghz: float, r_p: float, r_t: float) -> float:
+    """Specific attenuation due to oxygen / dry air (dB/km) per ITU-R P.676 Annex 2."""
+    f = max(freq_ghz, 0.1)
+    common = f * f * r_p * r_p * (r_t ** 3.5) * 1e-3
+    if f <= 57.0:
+        line57 = 7.5 / ((f - 57.0) ** 2 + 2.44 * r_p * r_p * (1.0 + 1.8 * r_t * r_t))
+        base = 7.27 * r_t / (f * f + 0.351 * r_p * r_p * r_t * r_t)
+        return common * (base + line57)
+    if f < 63.0:
+        peak = 15.0 / ((f - 60.0) ** 2 + 1.0 + 0.3 * r_p * r_p * (1.0 + 1.8 * r_t * r_t))
+        base = 7.27 * r_t / (f * f + 0.351 * r_p * r_p * r_t * r_t)
+        return common * (base + peak)
+    return _p676_oxygen_high_freq(f, r_p, r_t)
+
+
+def _p676_oxygen_high_freq(f: float, r_p: float, r_t: float) -> float:
+    """Oxygen specific attenuation for f >= 63 GHz (continuation of Annex 2)."""
+    common = f * f * r_p * r_p * (r_t ** 3.5) * 1e-3
+    line118 = 0.41 * r_t / ((f - 118.75) ** 2 + 0.36 * r_p * r_p * r_t * r_t)
+    base = 0.001 * r_t
+    return common * (base + line118)
+
+
+def _p676_water_vapor_specific(
+    freq_ghz: float, r_p: float, r_t: float, water_density_gm3: float
+) -> float:
+    """Specific attenuation due to water vapour (dB/km) per ITU-R P.676 Annex 2."""
+    f = max(freq_ghz, 0.1)
+    common = f * f * (r_t ** 2.5) * r_p * water_density_gm3 * 1e-4
+    base = 3.27 * r_t
+    line22 = 1.67 / ((f - 22.2) ** 2 + 8.28 * r_p * r_p)
+    line183 = 7.5 / ((f - 183.3) ** 2 + 9.16 * r_p * r_p * (1.0 + 0.53 * r_t * r_t))
+    line325 = 4.6 / ((f - 325.4) ** 2 + 9.16 * r_p * r_p * (1.0 + 0.53 * r_t * r_t))
+    return common * (base + line22 + line183 + line325)
+
+
+def cloud_attenuation(
+    freq_ghz: float,
+    distance_km: float,
+    liquid_water_content_gm3: float = 0.5,
+    temperature_c: float = 10.0,
+) -> dict[str, Any]:
+    """
+    ITU-R P.840 attenuation due to clouds and fog.
+
+    Uses the Ray double-Debye dielectric model for water to compute the
+    specific attenuation coefficient K_l (dB/km per g/m^3), then multiplies
+    by the liquid-water content and path length.
+
+    Parameters:
+        freq_ghz: Frequency in GHz (up to ~200 GHz)
+        distance_km: Path length through the cloud / fog (km)
+        liquid_water_content_gm3: Liquid water content M (g/m^3)
+        temperature_c: Cloud temperature (Celsius)
+
+    Returns dict with:
+        specific_attenuation_db_km: gamma_c = K_l * M (dB/km)
+        total_attenuation_db: total path attenuation
+        coefficient_db_km_per_gm3: K_l specific attenuation coefficient
+    """
+    k_l = _p840_specific_coefficient(freq_ghz, temperature_c)
+    specific = k_l * max(liquid_water_content_gm3, 0.0)
+    if distance_km > 0 and liquid_water_content_gm3 > 0:
+        total = specific * distance_km
+    else:
+        total = 0.0
+
+    return {
+        "model": "ITU-R P.840 Cloud / Fog Attenuation",
+        "frequency_ghz": freq_ghz,
+        "distance_km": distance_km,
+        "liquid_water_content_gm3": liquid_water_content_gm3,
+        "temperature_c": temperature_c,
+        "coefficient_db_km_per_gm3": round(k_l, 6),
+        "specific_attenuation_db_km": round(specific, 6),
+        "total_attenuation_db": round(total, 4),
+    }
+
+
+def _p840_specific_coefficient(freq_ghz: float, temperature_c: float) -> float:
+    """
+    Cloud specific attenuation coefficient K_l (dB/km per g/m^3).
+
+    K_l = 0.819 * f / (eps'' * (1 + eta^2))
+    where the complex dielectric constant of water follows the
+    Ray (Debye) relaxation model.
+    """
+    f = max(freq_ghz, 0.1)
+    theta = 300.0 / (temperature_c + 273.15) - 1.0
+    eps_0 = 77.66 + 103.3 * theta
+    eps_inf = 3.17
+    f_p = 20.20 - 146.4 * theta + 316.0 * theta * theta
+    f_p = max(f_p, 0.1)
+
+    denom = 1.0 + (f / f_p) ** 2
+    eps_prime = eps_inf + (eps_0 - eps_inf) / denom
+    eps_double_prime = (f / f_p) * (eps_0 - eps_inf) / denom
+
+    if eps_double_prime <= 0:
+        return 0.0
+
+    eta = (eps_prime + 2.0) / eps_double_prime
+    return 0.819 * f / (eps_double_prime * (1.0 + eta * eta))
+
+
 def predict_path_loss(
     model: str,
     distance_km: float,
@@ -422,7 +736,7 @@ def predict_path_loss(
 
     Parameters:
         model: One of "free_space", "hata_urban", "hata_suburban", "hata_rural",
-               "two_ray", "itm", "rain"
+               "two_ray", "itm", "rain", "itu_p452", "gaseous", "cloud"
         distance_km: Path distance in km
         frequency_mhz: Frequency in MHz
         tx_height_m: Transmitter height in meters
@@ -517,9 +831,39 @@ def predict_path_loss(
         polarization = kwargs.get("polarization", "horizontal")
         return rain_attenuation(freq_ghz, rain_rate, distance_km, polarization)
 
+    elif model == "itu_p452":
+        freq_ghz = frequency_mhz / 1000.0
+        time_percent = kwargs.get("time_percent", 50.0)
+        terrain_irregularity = kwargs.get("terrain_irregularity_m", 30.0)
+        return itu_p452_loss(
+            distance_km=distance_km,
+            freq_ghz=freq_ghz,
+            h_tx_m=tx_height_m,
+            h_rx_m=rx_height_m,
+            time_percent=time_percent,
+            terrain_irregularity_m=terrain_irregularity,
+        )
+
+    elif model == "gaseous":
+        freq_ghz = frequency_mhz / 1000.0
+        temperature_c = kwargs.get("temperature_c", 15.0)
+        pressure_hpa = kwargs.get("pressure_hpa", 1013.0)
+        water_density_gm3 = kwargs.get("water_density_gm3", 7.5)
+        return gaseous_attenuation(
+            freq_ghz, distance_km, temperature_c, pressure_hpa, water_density_gm3
+        )
+
+    elif model == "cloud":
+        freq_ghz = frequency_mhz / 1000.0
+        liquid_water_content_gm3 = kwargs.get("liquid_water_content_gm3", 0.5)
+        temperature_c = kwargs.get("temperature_c", 10.0)
+        return cloud_attenuation(
+            freq_ghz, distance_km, liquid_water_content_gm3, temperature_c
+        )
+
     return {"error": f"Unknown model: {model}", "valid_models": [
         "free_space", "hata_urban", "hata_suburban", "hata_rural",
-        "two_ray", "itm", "rain",
+        "two_ray", "itm", "rain", "itu_p452", "gaseous", "cloud",
     ]}
 
 
@@ -531,5 +875,8 @@ __all__ = [
     "two_ray_loss",
     "itm_loss",
     "rain_attenuation",
+    "itu_p452_loss",
+    "gaseous_attenuation",
+    "cloud_attenuation",
     "predict_path_loss",
 ]
