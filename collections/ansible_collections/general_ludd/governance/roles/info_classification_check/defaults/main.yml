@@ -1,0 +1,7 @@
+---
+# info_classification_check defaults — safe-by-default
+info_classification_check_enabled: false
+info_classification_check_scheme: data
+info_classification_check_level: null
+info_classification_check_list_schemes: false
+info_classification_check_output_dir: /tmp/gludd-governance-classification

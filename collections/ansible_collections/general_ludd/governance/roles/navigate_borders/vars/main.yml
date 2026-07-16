@@ -1,0 +1,3 @@
+---
+# Internal variables for navigate_borders
+_borders_module: "{{ role_path }}/../../plugins/module_utils/borders.py"

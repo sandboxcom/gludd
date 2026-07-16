@@ -1,0 +1,60 @@
+---
+# civic_service_finder role — expose the civic_services.py module_util.
+
+- name: Validate civic_service_finder parameters
+  ansible.builtin.assert:
+    that:
+      - civic_service_finder_enabled | bool
+      - (civic_service_finder_list_categories | bool) or
+        (civic_service_finder_list_countries | bool) or
+        (civic_service_finder_country is defined and civic_service_finder_country | length == 2)
+    fail_msg: >
+      civic_service_finder requires a 2-letter ISO country code
+      (civic_service_finder_country) unless listing countries/categories.
+
+- name: Ensure output directory exists
+  ansible.builtin.file:
+    path: "{{ civic_service_finder_output_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Copy civic_services.py module_util to target
+  ansible.builtin.copy:
+    src: "{{ _civic_services_module }}"
+    dest: "{{ civic_service_finder_output_dir }}/civic_services.py"
+    mode: "0755"
+
+- name: Run civic_services module_util
+  ansible.builtin.command: >
+    {{ ansible_python_interpreter | default('python3') }}
+    {{ civic_service_finder_output_dir }}/civic_services.py
+    --country {{ civic_service_finder_country }}
+    {% if civic_service_finder_category is defined and civic_service_finder_category | length > 0 %}--category {{ civic_service_finder_category }}{% endif %}
+    {% if civic_service_finder_list_countries | bool %}--list-countries{% endif %}
+    {% if civic_service_finder_list_categories | bool %}--list-categories{% endif %}
+  register: _civic_result
+  changed_when: false
+  failed_when: false
+
+- name: Parse civic_services result
+  ansible.builtin.set_fact:
+    civic_service_finder_result: "{{ (_civic_result.stdout | from_json) if _civic_result.stdout | default('') | length > 0 else {} }}"
+  when: _civic_result.stdout | default('') | length > 0
+
+- name: Write JSON output
+  ansible.builtin.copy:
+    content: "{{ civic_service_finder_result | to_nice_json }}"
+    dest: "{{ civic_service_finder_output_dir }}/civic_service_finder.json"
+    mode: "0644"
+  when: civic_service_finder_result is defined
+
+- name: Register civic_service_finder verdict
+  ansible.builtin.set_fact:
+    civic_service_finder_verdict:
+      role: civic_service_finder
+      country: "{{ civic_service_finder_country | default('N/A') }}"
+      module_util: civic_services.py
+      found: "{{ civic_service_finder_result.found | default(false) }}"
+      service_count: "{{ civic_service_finder_result.count | default(0) }}"
+      category_filter: "{{ civic_service_finder_category | default('none') }}"
+      output: "{{ civic_service_finder_output_dir }}/civic_service_finder.json"

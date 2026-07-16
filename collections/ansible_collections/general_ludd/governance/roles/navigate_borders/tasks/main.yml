@@ -1,0 +1,59 @@
+---
+# navigate_borders role — expose the borders.py module_util to agents.
+# Copies the module_util to the target and executes it, surfacing the JSON
+# result as the `navigate_borders_result` fact.
+
+- name: Validate navigate_borders parameters
+  ansible.builtin.assert:
+    that:
+      - navigate_borders_enabled | bool
+      - (navigate_borders_list_countries | bool) or (navigate_borders_country is defined and navigate_borders_country | length == 2)
+    fail_msg: >
+      navigate_borders requires a 2-letter ISO country code
+      (navigate_borders_country) unless navigate_borders_list_countries=true.
+
+- name: Ensure output directory exists
+  ansible.builtin.file:
+    path: "{{ navigate_borders_output_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Copy borders.py module_util to target
+  ansible.builtin.copy:
+    src: "{{ _borders_module }}"
+    dest: "{{ navigate_borders_output_dir }}/borders.py"
+    mode: "0755"
+
+- name: Run borders module_util
+  ansible.builtin.command: >
+    {{ ansible_python_interpreter | default('python3') }}
+    {{ navigate_borders_output_dir }}/borders.py
+    {% if navigate_borders_list_countries | bool %}--list-countries{% endif %}
+    {% if not (navigate_borders_list_countries | bool) %}--country {{ navigate_borders_country }}{% endif %}
+  register: _borders_result
+  changed_when: false
+  failed_when: false
+
+- name: Parse borders result
+  ansible.builtin.set_fact:
+    navigate_borders_result: "{{ (_borders_result.stdout | from_json) if _borders_result.stdout | default('') | length > 0 else {} }}"
+  when: _borders_result.stdout | default('') | length > 0
+
+- name: Write JSON output
+  ansible.builtin.copy:
+    content: "{{ navigate_borders_result | to_nice_json }}"
+    dest: "{{ navigate_borders_output_dir }}/navigate_borders.json"
+    mode: "0644"
+  when: navigate_borders_result is defined
+
+- name: Register navigate_borders verdict
+  ansible.builtin.set_fact:
+    navigate_borders_verdict:
+      role: navigate_borders
+      country: "{{ navigate_borders_country | default('N/A') }}"
+      module_util: borders.py
+      found: "{{ navigate_borders_result.found | default(false) }}"
+      land_border_count: "{{ navigate_borders_result.land_border_count | default(0) }}"
+      maritime_border_count: "{{ navigate_borders_result.maritime_border_count | default(0) }}"
+      landlocked: "{{ navigate_borders_result.landlocked | default(false) }}"
+      output: "{{ navigate_borders_output_dir }}/navigate_borders.json"

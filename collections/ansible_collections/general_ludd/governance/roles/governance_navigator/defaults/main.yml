@@ -1,0 +1,23 @@
+---
+# governance_navigator defaults — composite query router.
+#
+# Provide a natural-language query and (optionally) a country code. The
+# navigator matches keywords in the query to one or more governance
+# sub-modules and dispatches the matching sub-roles, aggregating their
+# verdicts into `governance_navigator_routes`.
+governance_navigator_enabled: false
+
+# Free-text query, e.g. "What currency does Germany use and who governs it?"
+governance_navigator_query: ""
+
+# ISO 3166-1 alpha-2 country code. Required when the routed modules are
+# country-specific. Leave null for info_classification (scheme-based).
+governance_navigator_country: null
+
+# Classification scheme to use when the query routes to info_classification.
+governance_navigator_scheme: data
+
+# Override routing: force-enable specific modules regardless of keywords.
+governance_navigator_force_routes: []
+
+governance_navigator_output_dir: /tmp/gludd-governance-navigator

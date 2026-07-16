@@ -884,13 +884,16 @@ class TestRealAgentExecutorDispatch:
 
 
 def _serve_unix_http(
-    sock_path: str, response_bytes: bytes,
-) -> tuple[socket.socket, threading.Thread]:
+    base_dir: Path, sock_name: str, response_bytes: bytes,
+) -> tuple[socket.socket, threading.Thread, str]:
     """Start a real AF_UNIX HTTP server that replies with ``response_bytes``.
 
-    Returns ``(server_socket, thread)``. Caller MUST close the socket and join
-    the thread.
+    Returns ``(server_socket, thread, sock_path)``. Caller MUST close the
+    socket and join the thread, then ``os.unlink(sock_path)``.
     """
+    sock_path = str(base_dir / f"{sock_name}.sock")
+    with contextlib.suppress(OSError):
+        os.unlink(sock_path)
     server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     server.bind(sock_path)
     server.listen(1)
@@ -927,16 +930,15 @@ def _serve_unix_http(
 
     t = threading.Thread(target=serve, daemon=True)
     t.start()
-    return server, t
+    return server, t, sock_path
 
 
 class TestFirecrackerRestRoundTrip:
     """Real UNIX socket HTTP round-trips through the Firecracker REST helper."""
 
     def test_put_returns_empty_dict_on_204(self, tmp_path: Path):
-        sock_path = str(tmp_path / "fc-204.sock")
         response = b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n"
-        server, t = _serve_unix_http(sock_path, response)
+        server, t, sock_path = _serve_unix_http(tmp_path, "fc-204", response)
         try:
             result = _firecracker_put(sock_path, "/machine-config", {"vcpu_count": 1})
             assert result == {}
@@ -947,14 +949,13 @@ class TestFirecrackerRestRoundTrip:
                 os.unlink(sock_path)
 
     def test_put_parses_json_body(self, tmp_path: Path):
-        sock_path = str(tmp_path / "fc-json.sock")
         body = b'{"state":"Running"}'
         response = (
             b"HTTP/1.1 200 OK\r\n"
             b"Content-Type: application/json\r\n"
             b"Content-Length: " + str(len(body)).encode() + b"\r\n\r\n" + body
         )
-        server, t = _serve_unix_http(sock_path, response)
+        server, t, sock_path = _serve_unix_http(tmp_path, "fc-json", response)
         try:
             result = _firecracker_put(sock_path, "/boot-source", {"kernel_image_path": "/k"})
             assert result == {"state": "Running"}
@@ -965,13 +966,12 @@ class TestFirecrackerRestRoundTrip:
                 os.unlink(sock_path)
 
     def test_put_raises_on_non_2xx(self, tmp_path: Path):
-        sock_path = str(tmp_path / "fc-err.sock")
         body = b'{"error":"bad config"}'
         response = (
             b"HTTP/1.1 400 Bad Request\r\n"
             b"Content-Length: " + str(len(body)).encode() + b"\r\n\r\n" + body
         )
-        server, t = _serve_unix_http(sock_path, response)
+        server, t, sock_path = _serve_unix_http(tmp_path, "fc-err", response)
         try:
             with pytest.raises(RuntimeError, match="HTTP 400"):
                 _firecracker_put(sock_path, "/machine-config", {"bad": True})

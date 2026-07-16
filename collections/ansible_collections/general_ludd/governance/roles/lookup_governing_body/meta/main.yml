@@ -1,0 +1,19 @@
+---
+galaxy_info:
+  role_name: lookup_governing_body
+  author: Agentic Harness Agent
+  description: >
+    Expose the governing_bodies.py module_util to agents: national and
+    supranational governing bodies (legislature, judiciary, executive) for a
+    given country.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+  galaxy_tags: [governance, government, legislature, judiciary, executive]
+dependencies: []

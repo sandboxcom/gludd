@@ -1,0 +1,6 @@
+---
+# navigate_borders defaults — safe-by-default
+navigate_borders_enabled: false
+navigate_borders_country: null
+navigate_borders_list_countries: false
+navigate_borders_output_dir: /tmp/gludd-governance-borders

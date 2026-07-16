@@ -1,0 +1,56 @@
+---
+# tax_currency_info role — expose the tax_currency.py module_util.
+
+- name: Validate tax_currency_info parameters
+  ansible.builtin.assert:
+    that:
+      - tax_currency_info_enabled | bool
+      - (tax_currency_info_list_countries | bool) or (tax_currency_info_country is defined and tax_currency_info_country | length == 2)
+    fail_msg: >
+      tax_currency_info requires a 2-letter ISO country code
+      (tax_currency_info_country) unless tax_currency_info_list_countries=true.
+
+- name: Ensure output directory exists
+  ansible.builtin.file:
+    path: "{{ tax_currency_info_output_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Copy tax_currency.py module_util to target
+  ansible.builtin.copy:
+    src: "{{ _tax_currency_module }}"
+    dest: "{{ tax_currency_info_output_dir }}/tax_currency.py"
+    mode: "0755"
+
+- name: Run tax_currency module_util
+  ansible.builtin.command: >
+    {{ ansible_python_interpreter | default('python3') }}
+    {{ tax_currency_info_output_dir }}/tax_currency.py
+    --country {{ tax_currency_info_country }}
+    {% if tax_currency_info_list_countries | bool %}--list-countries{% endif %}
+  register: _tax_result
+  changed_when: false
+  failed_when: false
+
+- name: Parse tax_currency result
+  ansible.builtin.set_fact:
+    tax_currency_info_result: "{{ (_tax_result.stdout | from_json) if _tax_result.stdout | default('') | length > 0 else {} }}"
+  when: _tax_result.stdout | default('') | length > 0
+
+- name: Write JSON output
+  ansible.builtin.copy:
+    content: "{{ tax_currency_info_result | to_nice_json }}"
+    dest: "{{ tax_currency_info_output_dir }}/tax_currency_info.json"
+    mode: "0644"
+  when: tax_currency_info_result is defined
+
+- name: Register tax_currency_info verdict
+  ansible.builtin.set_fact:
+    tax_currency_info_verdict:
+      role: tax_currency_info
+      country: "{{ tax_currency_info_country | default('N/A') }}"
+      module_util: tax_currency.py
+      found: "{{ tax_currency_info_result.found | default(false) }}"
+      currency: "{{ tax_currency_info_result.currency_code | default('N/A') }}"
+      tax_authority: "{{ tax_currency_info_result.tax_authority | default('N/A') }}"
+      output: "{{ tax_currency_info_output_dir }}/tax_currency_info.json"

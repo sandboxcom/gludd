@@ -1,0 +1,57 @@
+---
+# lookup_governing_body role — expose the governing_bodies.py module_util.
+
+- name: Validate lookup_governing_body parameters
+  ansible.builtin.assert:
+    that:
+      - lookup_governing_body_enabled | bool
+      - (lookup_governing_body_list_countries | bool) or (lookup_governing_body_country is defined and lookup_governing_body_country | length == 2)
+    fail_msg: >
+      lookup_governing_body requires a 2-letter ISO country code
+      (lookup_governing_body_country) unless lookup_governing_body_list_countries=true.
+
+- name: Ensure output directory exists
+  ansible.builtin.file:
+    path: "{{ lookup_governing_body_output_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Copy governing_bodies.py module_util to target
+  ansible.builtin.copy:
+    src: "{{ _governing_bodies_module }}"
+    dest: "{{ lookup_governing_body_output_dir }}/governing_bodies.py"
+    mode: "0755"
+
+- name: Run governing_bodies module_util
+  ansible.builtin.command: >
+    {{ ansible_python_interpreter | default('python3') }}
+    {{ lookup_governing_body_output_dir }}/governing_bodies.py
+    --country {{ lookup_governing_body_country }}
+    {% if lookup_governing_body_type is defined and lookup_governing_body_type | length > 0 %}--type {{ lookup_governing_body_type }}{% endif %}
+    {% if lookup_governing_body_list_countries | bool %}--list-countries{% endif %}
+  register: _bodies_result
+  changed_when: false
+  failed_when: false
+
+- name: Parse governing_bodies result
+  ansible.builtin.set_fact:
+    lookup_governing_body_result: "{{ (_bodies_result.stdout | from_json) if _bodies_result.stdout | default('') | length > 0 else {} }}"
+  when: _bodies_result.stdout | default('') | length > 0
+
+- name: Write JSON output
+  ansible.builtin.copy:
+    content: "{{ lookup_governing_body_result | to_nice_json }}"
+    dest: "{{ lookup_governing_body_output_dir }}/lookup_governing_body.json"
+    mode: "0644"
+  when: lookup_governing_body_result is defined
+
+- name: Register lookup_governing_body verdict
+  ansible.builtin.set_fact:
+    lookup_governing_body_verdict:
+      role: lookup_governing_body
+      country: "{{ lookup_governing_body_country | default('N/A') }}"
+      module_util: governing_bodies.py
+      found: "{{ lookup_governing_body_result.found | default(false) }}"
+      body_count: "{{ lookup_governing_body_result.count | default(0) }}"
+      type_filter: "{{ lookup_governing_body_type | default('none') }}"
+      output: "{{ lookup_governing_body_output_dir }}/lookup_governing_body.json"

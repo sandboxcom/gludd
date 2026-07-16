@@ -1,0 +1,18 @@
+---
+galaxy_info:
+  role_name: tax_currency_info
+  author: Agentic Harness Agent
+  description: >
+    Expose the tax_currency.py module_util to agents: ISO 4217 currency,
+    tax authority, VAT/sales-tax rate, and tax-year convention for a country.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+  galaxy_tags: [governance, tax, currency, vat, finance]
+dependencies: []

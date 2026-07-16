@@ -1,0 +1,6 @@
+---
+# tax_currency_info defaults — safe-by-default
+tax_currency_info_enabled: false
+tax_currency_info_country: null
+tax_currency_info_list_countries: false
+tax_currency_info_output_dir: /tmp/gludd-governance-tax
