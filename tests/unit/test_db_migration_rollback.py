@@ -536,6 +536,9 @@ class TestAllMigrationsUpgradeDowngradeParity:
             with patch.object(mod, "op") as mock_op, contextlib.suppress(Exception):
                 mod.upgrade()
             create_count = len(mock_op.create_index.call_args_list)
+            if create_count == 0 and mock_op.batch_alter_table.called:
+                batch_mock = mock_op.batch_alter_table.return_value.__enter__.return_value
+                create_count = len(batch_mock.create_index.call_args_list)
             with patch.object(mod, "op") as mock_op2, \
                  patch.dict(os.environ, {"ALEMBIC_DOWNGRADE_CONFIRMED": "yes"}), \
                  contextlib.suppress(Exception):
