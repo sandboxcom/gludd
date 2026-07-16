@@ -35,6 +35,49 @@ Code versions `0.1.0-beta.2` through `0.1.0-beta.5` exist in `pyproject.toml`/`_
 
 ---
 
+## SESSION 45 — 2026-07-16
+
+- **HEAD: `2311571c`** on `development` branch (10 commits beyond remote tip `8e290afd70ea`)
+- **Version: 0.1.0-beta.5** (pyproject.toml)
+- **Push status: NOT PUSHED** — 10 local commits on development not on remote (`2f2d66ff..2311571c`)
+- **CI: PENDING** — run `29481378611` in_progress on development HEAD
+- **Gate: quality gate pass at `c5a66a27`** (Session 44 baseline; full gate not re-run on HEAD `2311571c`)
+- **Working tree: near-clean** — `.ci-status` modified only
+- **New commits since Session 44 (7: `90638419..2311571c`)**: NF.8+NF.10 spec docs (`b81e0c04`), Session 44 docs (`90638419`), NF.4 molecule scenarios for 3 radio roles (`c3a5dceb`), language e2e target test (`585e276d`), 3 molecule verify.yml assertion fixes (`510b4cd0`), langgraph workflow verify fix (`1e6059f4`), openbao ansible_env.HOME fix (`3ae25f04`), 11 molecule CI failures fix (`2311571c`)
+
+### Commits on development not yet pushed (10: `2f2d66ff..2311571c`)
+
+| Hash | Message |
+|------|---------|
+| `2311571c` | fix: 11 molecule CI failures - gludd_make process osquery assertions, sdlc_gate set_fact split, build_presentation regenerate condition, ci_pipeline_verify persist facts, stream_video binary device_kind, process_audit verify cleanup |
+| `3ae25f04` | fix openbao_break_glass_backup: ansible_env.HOME undefined with gather_facts=false |
+| `1e6059f4` | fix: test_gludd_langgraph_workflow verify.yml assertion failures - quote colon-space string, default warnings key consumed by Ansible |
+| `510b4cd0` | Fix 3 molecule verify.yml assertion failures to match module return shapes |
+| `585e276d` | Add test_language_expert_e2e_target unit test |
+| `c3a5dceb` | feat: NF.4 molecule scenarios for antenna_design, decode_digital, signal_identify — all 10 radio roles now covered |
+| `90638419` | docs: update SESSION.md and TASKS.md for local commits on development |
+| `b81e0c04` | docs: add NF.8 + NF.10 enforcement-fix spec docs replacing spec N/A |
+| `fcaf4c4a` | feat: enforce-batch-push plugin blocks push when CI in_progress - 26 structural tests |
+| `2f2d66ff` | docs: update TASKS.md + SESSION.md — batch-push fix, HEAD now 17b27326 on master |
+
+### Remaining open items
+
+| Item | Status |
+|------|--------|
+| A.4 — Cut v0.1.0-beta.2 release | BLOCKED on CI (PENDING run 29481378611 on HEAD `2311571c`) |
+| Push 10 development commits to remote | NOT PUSHED |
+| opencode restart to activate enforcement fixes (10c64ee5, 77ba3714, 631dd626) | PENDING (user action) |
+
+### Next
+
+1. Push 10 development commits, wait for CI green on tip `2311571c`
+2. Restart opencode to activate enforcement plugin fixes
+3. Cut beta.2 via `make release-cut`
+
+- **Last Updated: 2026-07-16 — Session 45.** HEAD `2311571c` on `development` (10 commits not pushed). 7 new commits this session: NF.8+NF.10 spec docs, NF.4 molecule scenarios (3 radio roles), molecule verify.yml fixes (langgraph, openbao, 11 CI failures). CI PENDING (run 29481378611). A.4 (beta.2 release) blocked on CI.
+
+---
+
 ## SESSION 44 — 2026-07-16
 
 - **HEAD: `fcaf4c4a`** on `development` branch (3 commits beyond last-pushed `17b27326`)
