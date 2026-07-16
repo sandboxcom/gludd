@@ -42,6 +42,7 @@ build/
 .gate-lite-failed
 .gate-background.pid
 .gate-logs/
+.ci-status
 ci-attempt-logs/
 .test-summary
 .secrets.baseline

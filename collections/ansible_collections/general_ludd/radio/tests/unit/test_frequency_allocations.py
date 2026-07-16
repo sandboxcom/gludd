@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from plugins.module_utils.frequency_allocations import (
     ALLOCATIONS,
     allocations_for,
@@ -10,6 +12,11 @@ from plugins.module_utils.frequency_allocations import (
     get_band_plan,
     get_marine_channel,
     get_itu_region2_bands,
+    get_itu_region1_bands,
+    get_itu_region3_bands,
+    get_itu_bands,
+    ITU_R1_BANDS,
+    ITU_R3_BANDS,
     bands_by_privilege,
 )
 

@@ -193,3 +193,76 @@ class TestSerialization:
     def test_markdown_empty_guide(self):
         md = format_markdown(generate_guide([]))
         assert "No hardening actions required" in md
+
+
+# ---- CIS Benchmark mapping ---------------------------------------------------
+
+# Machine-parseable CIS control id format: "CIS-<Benchmark> <section>"
+# e.g. "CIS-RHEL9 1.6.1.1", "CIS-Win11 18.9.1", "CIS-Ubuntu 4.4"
+CIS_ID_RE = re.compile(r"^CIS-\S+ \S+$")
+
+
+class TestCISMapping:
+    def test_every_kb_entry_has_cis_controls(self):
+        """Every hardening recipe must carry >=1 structured CIS control id."""
+        missing = [fid for fid, t in HARDENING_KB.items() if not t.get("cis_controls")]
+        assert not missing, f"KB entries missing cis_controls: {sorted(missing)}"
+
+    def test_cis_controls_are_well_formed(self):
+        """Each cis_controls entry must match the CIS-<Benchmark> <section> shape."""
+        bad: list[str] = []
+        for fid, tmpl in HARDENING_KB.items():
+            for cid in tmpl.get("cis_controls", []):
+                if not CIS_ID_RE.match(cid):
+                    bad.append(f"{fid}: {cid!r}")
+        assert not bad, f"Malformed CIS control ids: {bad}"
+
+    def test_cis_controls_are_unique_per_entry(self):
+        for fid, tmpl in HARDENING_KB.items():
+            cids = tmpl.get("cis_controls", [])
+            assert len(cids) == len(set(cids)), f"{fid}: duplicate cis_controls"
+
+    def test_linux_findings_map_to_rhel_or_ubuntu(self):
+        """LSEC-* entries must reference CIS-RHEL9 or CIS-Ubuntu benchmarks."""
+        for fid, tmpl in HARDENING_KB.items():
+            if not fid.startswith("LSEC-"):
+                continue
+            assert any(
+                c.startswith(("CIS-RHEL", "CIS-Ubuntu"))
+                for c in tmpl["cis_controls"]
+            ), f"{fid}: Linux finding must map to RHEL/Ubuntu CIS benchmark"
+
+    def test_windows_findings_map_to_win11(self):
+        """WSEC-* entries must reference the CIS-Win11 benchmark."""
+        for fid, tmpl in HARDENING_KB.items():
+            if not fid.startswith("WSEC-"):
+                continue
+            assert any(
+                c.startswith("CIS-Win") for c in tmpl["cis_controls"]
+            ), f"{fid}: Windows finding must map to CIS-Win benchmark"
+
+    def test_recommendation_carries_cis_controls(self, linux_findings):
+        guide = generate_guide(linux_findings)
+        for rec in guide.recommendations:
+            assert isinstance(rec.cis_controls, list)
+            assert rec.cis_controls, f"{rec.finding_id}: empty cis_controls"
+            for cid in rec.cis_controls:
+                assert CIS_ID_RE.match(cid), f"{rec.finding_id}: bad CIS id {cid!r}"
+
+    def test_cis_controls_roundtrip_through_to_dict(self, windows_findings):
+        d = generate_guide(windows_findings).to_dict()
+        for rec in d["recommendations"]:
+            assert "cis_controls" in rec
+            assert rec["cis_controls"]
+
+    def test_markdown_renders_cis_section(self, windows_findings):
+        md = format_markdown(generate_guide(windows_findings))
+        assert "CIS Benchmark" in md
+        assert "CIS-Win" in md
+
+    def test_known_specific_mappings(self):
+        """Spot-check canonical mappings to guard against drift."""
+        assert HARDENING_KB["LSEC-SELINUX-001"]["cis_controls"] == ["CIS-RHEL9 1.6.1.1"]
+        assert HARDENING_KB["LSEC-AUDITD-001"]["cis_controls"] == ["CIS-RHEL9 4.1.1.1"]
+        assert HARDENING_KB["WSEC-FW-001"]["cis_controls"] == ["CIS-Win11 9.1.1"]
+        assert HARDENING_KB["WSEC-LOCKOUT-001"]["cis_controls"] == ["CIS-Win11 1.2.1"]
