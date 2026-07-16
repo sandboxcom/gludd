@@ -684,6 +684,8 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
                               help="Export a saved session to md/json/html and exit")
     chat_parser.add_argument("--export-output", default=None, metavar="FILE",
                               help="Write export output to FILE (default: stdout)")
+    chat_parser.add_argument("--stream", action="store_true", default=False,
+                              help="Stream model response tokens in real-time (--eval mode)")
     chat_parser.set_defaults(func=_cmd_chat)
 
     help_p = sub.add_parser("help", help="Show full manual")
@@ -2480,8 +2482,11 @@ def _cmd_chat(args: argparse.Namespace) -> None:
     )
 
     if args.eval:
-        result = asyncio.run(session.run_once(args.eval))
-        print(result)
+        if getattr(args, "stream", False):
+            asyncio.run(session.stream_response(args.eval))
+        else:
+            result = asyncio.run(session.run_once(args.eval))
+            print(result)
     else:
         asyncio.run(session.start_repl())
 

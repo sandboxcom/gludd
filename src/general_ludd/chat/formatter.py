@@ -103,3 +103,81 @@ class MessageFormatter:
             return result
 
         return _FENCE_RE.sub(_replace, text)
+
+
+class StreamingChatFormatter:
+    """Incrementally formats streamed tokens with code-block buffering.
+
+    Plain text passes through immediately for real-time display. Fenced
+    code blocks are buffered until the closing fence arrives, then rendered
+    with syntax highlighting via :class:`MessageFormatter`.
+    """
+
+    _FENCE = "```"
+
+    def __init__(self) -> None:
+        self._plain_buffer: str = ""
+        self._in_code: bool = False
+        self._code_buffer: str = ""
+        self._formatter = MessageFormatter()
+
+    def feed(self, token: str) -> str:
+        """Process a token and return display-ready text.
+
+        Returns ``""`` while buffering inside an unclosed code block.
+        """
+        if self._in_code:
+            return self._feed_code(token)
+        return self._feed_plain(token)
+
+    def flush(self) -> str:
+        """Emit any remaining buffered content when the stream ends."""
+        if self._in_code:
+            result = f"{self._FENCE}{self._code_buffer}"
+            self._in_code = False
+            self._code_buffer = ""
+            return result
+        result = self._plain_buffer
+        self._plain_buffer = ""
+        return result
+
+    def _feed_plain(self, token: str) -> str:
+        self._plain_buffer += token
+
+        idx = self._plain_buffer.find(self._FENCE)
+        if idx != -1:
+            before = self._plain_buffer[:idx]
+            after = self._plain_buffer[idx + len(self._FENCE):]
+            self._plain_buffer = ""
+            self._in_code = True
+            self._code_buffer = after
+            return before
+
+        trailing = len(self._plain_buffer) - len(self._plain_buffer.rstrip("`"))
+        if 0 < trailing < len(self._FENCE):
+            emit = self._plain_buffer[:-trailing]
+            self._plain_buffer = self._plain_buffer[-trailing:]
+            return emit
+
+        emit = self._plain_buffer
+        self._plain_buffer = ""
+        return emit
+
+    def _feed_code(self, token: str) -> str:
+        self._code_buffer += token
+
+        idx = self._code_buffer.find(self._FENCE)
+        if idx == -1:
+            return ""
+
+        code_body = self._code_buffer[:idx]
+        after = self._code_buffer[idx + len(self._FENCE):]
+        self._in_code = False
+        self._code_buffer = ""
+
+        highlighted = self._formatter.highlight(
+            f"{self._FENCE}{code_body}{self._FENCE}"
+        )
+        if after:
+            return highlighted + self._feed_plain(after)
+        return highlighted

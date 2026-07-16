@@ -24,7 +24,7 @@ import httpx
 if TYPE_CHECKING:
     from prompt_toolkit.key_binding.key_processor import KeyPressEvent
 
-from general_ludd.chat.formatter import MessageFormatter
+from general_ludd.chat.formatter import MessageFormatter, StreamingChatFormatter
 from general_ludd.models.provider_presets import (
     PROVIDER_FLAGSHIP_MODELS,
     PROVIDER_PRESETS,
@@ -262,6 +262,9 @@ class ChatSession:
         base_url, api_key = self._resolve_api_config()
         url = self._build_endpoint(base_url)
 
+        stream_fmt = StreamingChatFormatter()
+        full_response = ""
+
         try:
             async with httpx.AsyncClient(timeout=httpx.Timeout(120.0)) as client, client.stream(
                 "POST",
@@ -277,7 +280,6 @@ class ChatSession:
                 },
             ) as response:
                 response.raise_for_status()
-                full_response = ""
                 async for line in response.aiter_lines():
                     if not line or not line.startswith("data: "):
                         continue
@@ -290,8 +292,10 @@ class ChatSession:
                         chunk = delta.get("content", "")
                         if chunk:
                             full_response += chunk
-                            sys.stdout.write(chunk)
-                            sys.stdout.flush()
+                            formatted = stream_fmt.feed(chunk)
+                            if formatted:
+                                sys.stdout.write(formatted)
+                                sys.stdout.flush()
                     except (json.JSONDecodeError, KeyError, IndexError):
                         continue
         except httpx.ConnectError:
@@ -309,15 +313,17 @@ class ChatSession:
             self.history.pop()
             return ""
 
+        remaining = stream_fmt.flush()
+        if remaining:
+            sys.stdout.write(remaining)
+            sys.stdout.flush()
+
         if not full_response.strip():
             full_response = "[The model returned an empty response.]"
 
         self.history.append({"role": "assistant", "content": full_response})
         self._maybe_auto_save()
         sys.stdout.write("\n")
-        formatted = self._formatter.highlight(full_response)
-        if formatted != full_response:
-            sys.stdout.write(formatted)
         return full_response
 
     async def start_repl(self) -> None:
