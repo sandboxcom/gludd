@@ -24,7 +24,11 @@ from general_ludd.governance.loader import (
     get_borders,
     get_civic_services,
     get_conflicts_treaties,
+    get_elections_voting,
     get_governing_bodies,
+    get_international_relations,
+    get_legal_systems,
+    get_public_finance,
     get_tax_currency,
 )
 

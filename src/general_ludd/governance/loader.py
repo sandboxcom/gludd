@@ -95,6 +95,26 @@ def get_civic_services() -> ModuleType:
     return _get_module("civic_services")
 
 
+def get_elections_voting() -> ModuleType:
+    """Return the ``elections_voting`` knowledge module."""
+    return _get_module("elections_voting")
+
+
+def get_international_relations() -> ModuleType:
+    """Return the ``international_relations`` knowledge module."""
+    return _get_module("international_relations")
+
+
+def get_legal_systems() -> ModuleType:
+    """Return the ``legal_systems`` knowledge module."""
+    return _get_module("legal_systems")
+
+
+def get_public_finance() -> ModuleType:
+    """Return the ``public_finance`` knowledge module."""
+    return _get_module("public_finance")
+
+
 def clear_cache() -> None:
     """Clear the module cache (useful for tests)."""
     for name in list(_GOVERNANCE_MODULE_UTILS_CACHE):

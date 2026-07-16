@@ -14,6 +14,7 @@ Run a single feature:
     python demos/nf_features_demo.py entropy
     python demos/nf_features_demo.py aprs
     python demos/nf_features_demo.py corpus
+    python demos/nf_features_demo.py governance
 
 Or run them all:
 
@@ -40,7 +41,11 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # resolve when running this file outside an ansible-runner context.
 _BINARY_RE_ROOT = REPO_ROOT / "collections/ansible_collections/general_ludd/binary_re"
 _RADIO_ROOT = REPO_ROOT / "collections/ansible_collections/general_ludd/radio"
-for _extra in (_BINARY_RE_ROOT, _RADIO_ROOT):
+_GOVERNANCE_MODULE_UTILS = (
+    REPO_ROOT
+    / "collections/ansible_collections/general_ludd/governance/plugins/module_utils"
+)
+for _extra in (_BINARY_RE_ROOT, _RADIO_ROOT, _GOVERNANCE_MODULE_UTILS):
     _str_extra = str(_extra)
     if _str_extra not in sys.path:
         sys.path.insert(0, _str_extra)
@@ -511,6 +516,130 @@ def demo_language_corpus() -> None:
 
 
 # =============================================================================
+# NF.10 — Governance knowledge (borders, bodies, tax, civic services)
+# =============================================================================
+
+def demo_governance() -> None:
+    """Exercise the four governance knowledge domains via direct module imports.
+
+    Uses the ansible collection module_utils directly (borders, governing_bodies,
+    tax_currency, civic_services added to sys.path alongside binary_re/radio).
+    Each lookup hits the production knowledge base; no external API calls are made.
+    """
+    print("[NF.10] Governance knowledge — borders / bodies / tax / civic services")
+    print("-" * 60)
+
+    # ── Border lookup ─────────────────────────────────────────────────
+    from borders import lookup_border, get_crossing_requirements, get_recognition_status
+
+    print("--- Border lookup ---")
+    schengen = lookup_border("Schengen internal border")
+    if not schengen:
+        raise RuntimeError("Schengen internal border not found")
+    print(f"  Schengen internal border: type={schengen['type']!r} "
+          f"recognition={schengen['recognition']!r}")
+
+    crossing = get_crossing_requirements("US", "FR")
+    print(f"  US->FR crossing: visa_required={crossing['visa_required']} "
+          f"visa_type={crossing['visa_type']!r} notes={crossing['notes'][:50]}...")
+
+    kosovo_status = get_recognition_status("Kosovo")
+    print(f"  Kosovo recognition: {kosovo_status!r}")
+    if kosovo_status != "partial":
+        raise RuntimeError(f"expected 'partial' recognition for Kosovo, got {kosovo_status!r}")
+
+    # ── Body lookup ──────────────────────────────────────────────────
+    from governing_bodies import (
+        lookup_body, get_children, get_jurisdiction, get_decision_process,
+        bodies_by_type, relationship,
+    )
+
+    print("\n--- Body lookup ---")
+    un_body = lookup_body("UN")
+    if not un_body:
+        raise RuntimeError("UN body not found")
+    print(f"  UN: type={un_body['type']!r} members={un_body['members']} "
+          f"hq={un_body['headquarters']!r}")
+
+    eu_children = get_children("eu")
+    child_names = [c["name"] for c in eu_children]
+    print(f"  EU direct children ({len(eu_children)}): {child_names}")
+
+    un_jurisdiction = get_jurisdiction("un")
+    print(f"  UN jurisdiction: scope={un_jurisdiction['scope']!r} "
+          f"basis={un_jurisdiction['legal_basis'][:50]}...")
+
+    un_sc_decision = get_decision_process("un_sc")
+    print(f"  UN Security Council: mechanism={un_sc_decision['mechanism']!r}")
+
+    supranational_bodies = bodies_by_type("supranational")
+    print(f"  Supranational bodies: {len(supranational_bodies)} found "
+          f"({[b['name'] for b in supranational_bodies]})")
+
+    rel = relationship("un", "who")
+    print(f"  UN->WHO relationship: {rel!r}")
+    if rel != "parent_child":
+        raise RuntimeError(f"expected 'parent_child' for UN->WHO, got {rel!r}")
+
+    # ── Tax / currency info ───────────────────────────────────────────
+    from tax_currency import get_tax_info, get_currency_info, get_tax_treaty, list_countries
+
+    print("\n--- Tax / currency info ---")
+    us_income = get_tax_info("US", "income_progressive")
+    if not us_income:
+        raise RuntimeError("US income tax info not found")
+    bracket_count = len(us_income.get("brackets", []))
+    print(f"  US income tax: {bracket_count} brackets "
+          f"top_rate={us_income['brackets'][-1]['rate']:.2f} "
+          f"filing={us_income['filing_deadline'][:30]}...")
+
+    gbp_info = get_currency_info("GBP")
+    if not gbp_info:
+        raise RuntimeError("GBP currency info not found")
+    print(f"  GBP: name={gbp_info['name']!r} symbol={gbp_info['symbol']!r}")
+
+    btc_info = get_currency_info("BTC")
+    print(f"  BTC: name={btc_info['name']!r} type={btc_info['type']!r} "
+          f"issuer={btc_info['issuer']!r}")
+
+    treaty = get_tax_treaty("US", "GB")
+    if not treaty:
+        raise RuntimeError("US-GB tax treaty not found")
+    print(f"  US-GB treaty: signed={treaty['signed_year']} "
+          f"status={treaty['status']!r} div_wht={treaty['withholding_dividends']:.2f}")
+
+    all_countries = list_countries()
+    print(f"  Countries covered: {len(all_countries)} ({', '.join(sorted(all_countries)[:6])}...)")
+
+    # ── Civic service finder ──────────────────────────────────────────
+    from civic_services import lookup_service, find_service_office
+
+    print("\n--- Civic service finder ---")
+    passport = lookup_service("passport", "US")
+    if not passport:
+        raise RuntimeError("US passport service not found")
+    print(f"  US passport: issuing_body={passport.issuing_body[:40]}... "
+          f"cost={passport.cost}")
+
+    office = find_service_office("passport", "New York")
+    if not office:
+        raise RuntimeError("NY passport office not found")
+    print(f"  Passport office NYC: {office.office_name!r} "
+          f"hours={office.hours}")
+
+    gb_library = lookup_service("library card", "GB")
+    if not gb_library:
+        raise RuntimeError("GB library card service not found")
+    print(f"  GB library card: issuing_body={gb_library.issuing_body!r} "
+          f"cost={gb_library.cost}")
+
+    unknown_service = lookup_service("fax_machine_license", "US")
+    print(f"  'fax machine license' in US: {'found' if unknown_service else 'not found (expected)'}")
+
+    print("[NF.10] OK")
+
+
+# =============================================================================
 # Entry point
 # =============================================================================
 
@@ -521,6 +650,7 @@ DEMOS: dict[str, tuple[str, Any]] = {
     "entropy": ("NF.3 Binary RE entropy analysis", demo_binary_re_entropy),
     "aprs": ("NF.4 Radio APRS AX.25 decode", demo_radio_aprs),
     "corpus": ("NF.9 Language corpus analysis", demo_language_corpus),
+    "governance": ("NF.10 Governance knowledge", demo_governance),
 }
 
 
