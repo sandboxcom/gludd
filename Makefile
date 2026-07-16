@@ -2922,6 +2922,9 @@ check-dead-code-json:
 check-dead-code-quiet:
 	@$(UV) run python scripts/check_dead_code.py --quiet
 
+dead-code-baseline:
+	@$(UV) run python scripts/check_dead_code.py --update-baseline
+
 # --- Test env-write lint: forbid bare os.environ[...] = in tests/ (use monkeypatch.setenv) ---
 check-test-env-writes:
 	@$(UV) run python scripts/check_test_env_writes.py tests

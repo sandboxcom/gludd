@@ -174,7 +174,7 @@ class TestJsonHelpers:
     def test_write_fail_open(self):
         src = _src()
         idx = src.find("export function writeJsonFile")
-        after = src[idx:idx + 200]
+        after = src[idx:idx + 300]
         assert "catch" in after
 
 

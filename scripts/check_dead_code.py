@@ -30,12 +30,32 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 SRC_DIR = PROJECT_ROOT / "src" / "general_ludd"
 SRC_ROOT = PROJECT_ROOT / "src"
 TESTS_ROOT = PROJECT_ROOT / "tests"
+BASELINE_FILE = PROJECT_ROOT / "config" / "dead_code_baseline.txt"
 
 SKIP_NAMES: frozenset[str] = frozenset(
     {"__init__", "__main__", "main"}
 )
 
 IGNORE_FILES: frozenset[str] = frozenset({"__init__.py"})
+
+
+def _load_baseline(path: Path | None) -> set[str]:
+    """Load baseline allowlist. Each line: 'file:name' (relative path)."""
+    if path is None:
+        return set()
+    if not path.is_file():
+        return set()
+    entries: set[str] = set()
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line and not line.startswith("#"):
+            entries.add(line)
+    return entries
+
+
+def _baseline_key(symbol: Symbol) -> str:
+    """Generate the baseline key for a symbol: 'file:name'."""
+    return f"{symbol.file}:{symbol.name}"
 
 
 @dataclass(frozen=True)
@@ -235,6 +255,18 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Project root directory (default: script parent).",
     )
+    parser.add_argument(
+        "--baseline",
+        type=Path,
+        default=None,
+        help="Baseline allowlist file (default: config/dead_code_baseline.txt). "
+        "Symbols in this file are excluded from the dead-code count.",
+    )
+    parser.add_argument(
+        "--update-baseline",
+        action="store_true",
+        help="Write current dead symbols to the baseline file and exit 0.",
+    )
     return parser
 
 
@@ -242,16 +274,72 @@ def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
 
-    result = run(repo_root=args.repo_root)
+    repo_root = args.repo_root or PROJECT_ROOT
+    result = run(repo_root=repo_root)
+
+    baseline_path = args.baseline or (repo_root / "config" / "dead_code_baseline.txt")
+
+    if args.update_baseline:
+        keys = sorted(_baseline_key(d.symbol) for d in result.dead)
+        header = (
+            "# Dead-code baseline — symbols referenced only in tests or nowhere.\n"
+            "# Regenerate with: make dead-code-baseline\n"
+            "# Format: <relative-file-path>:<symbol-name>\n"
+        )
+        baseline_path.parent.mkdir(parents=True, exist_ok=True)
+        baseline_path.write_text(header + "\n".join(keys) + "\n", encoding="utf-8")
+        print(f"Wrote {len(keys)} entries to {baseline_path}")
+        return 0
+
+    baseline = _load_baseline(baseline_path)
+    new_dead = [d for d in result.dead if _baseline_key(d.symbol) not in baseline]
+    baselined = len(result.dead) - len(new_dead)
 
     if args.json:
-        print(format_json(result))
+        payload = {
+            "files_scanned": result.files_scanned,
+            "symbols_total": len(result.symbols),
+            "dead_count": len(result.dead),
+            "baselined": baselined,
+            "new_dead_count": len(new_dead),
+            "dead": [
+                {
+                    "file": d.symbol.file,
+                    "line": d.symbol.line,
+                    "name": d.symbol.name,
+                    "kind": d.symbol.kind,
+                    "module": d.symbol.module,
+                    "orphan": d.is_orphan,
+                    "test_only": bool(d.referenced_in),
+                    "referenced_in": d.referenced_in,
+                    "in_baseline": _baseline_key(d.symbol) in baseline,
+                }
+                for d in result.dead
+            ],
+        }
+        print(json.dumps(payload, indent=2))
     elif args.quiet:
-        print(f"dead-code: {len(result.dead)} dead symbol(s) across {result.files_scanned} file(s)")
+        if new_dead:
+            print(
+                f"dead-code: {len(new_dead)} NEW dead symbol(s) "
+                f"({baselined} baselined) across {result.files_scanned} file(s)"
+            )
+        else:
+            print(
+                f"dead-code: 0 new dead symbol(s) "
+                f"({baselined} baselined) across {result.files_scanned} file(s)"
+            )
     else:
-        print(format_text(result))
+        if new_dead:
+            print(format_text(ScanResult(symbols=result.symbols, dead=new_dead, files_scanned=result.files_scanned)))
+            print(f"({baselined} additional symbol(s) are in the baseline)")
+        else:
+            print(
+                f"dead-code: 0 new dead symbol(s) "
+                f"({baselined} baselined) across {result.files_scanned} file(s)\n"
+            )
 
-    return 0 if not result.dead else 1
+    return 0 if not new_dead else 1
 
 
 if __name__ == "__main__":

@@ -65,7 +65,9 @@ export function readJsonFile<T>(filePath: string, defaultVal: T): T {
 
 export function writeJsonFile(filePath: string, data: unknown): void {
   try {
-    fs.writeFileSync(filePath, JSON.stringify(data), "utf8")
+    const tmp = `${filePath}.tmp.${process.pid}`
+    fs.writeFileSync(tmp, JSON.stringify(data), "utf8")
+    fs.renameSync(tmp, filePath)
   } catch { /* permission / disk-full → silently skip */ }
 }
 

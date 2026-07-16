@@ -2799,7 +2799,7 @@ WATCHDOG_PATH = str(ROOT / ".opencode" / "plugins" / "watchdog.ts")
 
 def test_watchdog_plugin_loads_report_alive():
     """watchdog plugin loads, calls reportAlive on init (writes alive file), returns {{}}."""
-    alive_path = os.environ.get("GLUDD_ALIVE_PATH", "/tmp/gludd-plugin-alive.json")
+    alive_path = f"/tmp/gludd-test-alive-{os.getpid()}-1.json"
     _clean_state_files(alive_path)
     code = f"""\
 const mod = await import('{WATCHDOG_PATH}')
@@ -2807,7 +2807,7 @@ const plugin = await mod.default({{}})
 const keys = Object.keys(plugin)
 console.log(JSON.stringify({{ ok: true, keys }}))
 """
-    result = _run_ts(code)
+    result = _run_ts(code, env_override={"GLUDD_ALIVE_PATH": alive_path})
     assert result["ok"] == True, f"Watchdog plugin load should not throw, got: {result}"
     assert result["keys"] == [], f"Plugin should return empty object (no hooks), got keys: {result['keys']}"
     # Verify reportAlive was called on module load
@@ -2833,14 +2833,14 @@ console.log(JSON.stringify({{ ok: true, isObject: typeof plugin === 'object' }})
 
 def test_watchdog_plugin_subagent_context():
     """OPENCODE_SUBAGENT=1: watchdog plugin still loads (it's infra, not enforcement)."""
-    alive_path = os.environ.get("GLUDD_ALIVE_PATH", "/tmp/gludd-plugin-alive.json")
+    alive_path = f"/tmp/gludd-test-alive-{os.getpid()}-2.json"
     _clean_state_files(alive_path)
     code = f"""\
 const mod = await import('{WATCHDOG_PATH}')
 const plugin = await mod.default({{}})
 console.log(JSON.stringify({{ ok: true, isObject: typeof plugin === 'object' }}))
 """
-    result = _run_ts(code, env_override={"OPENCODE_SUBAGENT": "1"})
+    result = _run_ts(code, env_override={"OPENCODE_SUBAGENT": "1", "GLUDD_ALIVE_PATH": alive_path})
     assert result["ok"] == True, f"Watchdog should load even in subagent context, got: {result}"
     # Verify alive file was still written (reportAlive runs on module load)
     assert os.path.exists(alive_path), "Watchdog must report alive even as subagent"
@@ -2849,14 +2849,14 @@ console.log(JSON.stringify({{ ok: true, isObject: typeof plugin === 'object' }})
 
 def test_watchdog_plugin_env_disabled():
     """GLUDD_WATCHDOG_ENABLED=0: plugin still loads (reportAlive happens on import)."""
-    alive_path = os.environ.get("GLUDD_ALIVE_PATH", "/tmp/gludd-plugin-alive.json")
+    alive_path = f"/tmp/gludd-test-alive-{os.getpid()}-3.json"
     _clean_state_files(alive_path)
     code = f"""\
 const mod = await import('{WATCHDOG_PATH}')
 const plugin = await mod.default({{}})
 console.log(JSON.stringify({{ ok: true }}))
 """
-    result = _run_ts(code, env_override={"GLUDD_WATCHDOG_ENABLED": "0"})
+    result = _run_ts(code, env_override={"GLUDD_WATCHDOG_ENABLED": "0", "GLUDD_ALIVE_PATH": alive_path})
     assert result["ok"] == True, f"Disabled watchdog should load without error, got: {result}"
     # The plugin itself doesn't check GLUDD_WATCHDOG_ENABLED (the daemon does)
     # reportAlive is called on module load regardless

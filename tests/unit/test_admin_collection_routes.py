@@ -90,7 +90,16 @@ def test_list_versions_unknown_namespace_returns_empty(collections_root: Path) -
     assert data["versions"] == []
 
 
-def test_list_versions_no_collections_dir_returns_404() -> None:
+def test_list_versions_no_collections_dir_returns_404(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Isolate from the real <repo>/collections bundled dir: point the
+    # bundled tier at a nonexistent path so no collections base resolves
+    # and the route takes its 404 branch.
+    monkeypatch.setattr(
+        "general_ludd.ansible.paths._bundled_collections_root",
+        lambda: tmp_path / "absent-bundled",
+    )
     app = FastAPI()
     register(app, {})
     client = TestClient(app)
