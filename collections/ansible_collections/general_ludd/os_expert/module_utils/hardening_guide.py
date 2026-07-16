@@ -46,6 +46,7 @@ class HardeningRecommendation:
     commands: list[str]
     verification: str
     references: list[str] = field(default_factory=list)
+    cis_controls: list[str] = field(default_factory=list)
     reboot_required: bool = False
     change_risk: str = "medium"
 
@@ -81,6 +82,7 @@ HARDENING_KB: dict[str, dict[str, Any]] = {
         ],
         "verification": "getenforce   # expected: Enforcing",
         "references": ["CIS RHEL 9 1.6.1.1", "NIST SP 800-53 AC-3", "STIG RHEL-09-651015"],
+        "cis_controls": ["CIS-RHEL9 1.6.1.1"],
         "reboot_required": True,
         "change_risk": "high",
     },
@@ -97,6 +99,7 @@ HARDENING_KB: dict[str, dict[str, Any]] = {
         ],
         "verification": "getenforce   # expected: Enforcing",
         "references": ["CIS RHEL 9 1.6.1.2", "NIST SP 800-53 AC-3"],
+        "cis_controls": ["CIS-RHEL9 1.6.1.2"],
         "reboot_required": False,
         "change_risk": "medium",
     },
@@ -113,6 +116,7 @@ HARDENING_KB: dict[str, dict[str, Any]] = {
         ],
         "verification": "getenforce || sudo aa-status",
         "references": ["CIS RHEL 9 1.6.1", "NIST SP 800-53 AC-3"],
+        "cis_controls": ["CIS-RHEL9 1.6.1"],
         "reboot_required": True,
         "change_risk": "high",
     },
@@ -128,6 +132,7 @@ HARDENING_KB: dict[str, dict[str, Any]] = {
         ],
         "verification": "sudo aa-status | grep complain   # expected: 0",
         "references": ["CIS Ubuntu 4.4", "NIST SP 800-53 AC-3"],
+        "cis_controls": ["CIS-Ubuntu 4.4"],
         "reboot_required": False,
         "change_risk": "medium",
     },
@@ -143,6 +148,7 @@ HARDENING_KB: dict[str, dict[str, Any]] = {
         ],
         "verification": "sudo systemctl is-active auditd   # expected: active",
         "references": ["CIS RHEL 9 4.1.1.1", "NIST SP 800-53 AU-2", "STIG RHEL-09-651010"],
+        "cis_controls": ["CIS-RHEL9 4.1.1.1"],
         "reboot_required": False,
         "change_risk": "low",
     },
@@ -159,6 +165,7 @@ HARDENING_KB: dict[str, dict[str, Any]] = {
         ],
         "verification": "cat /proc/sys/kernel/randomize_va_space   # expected: 2",
         "references": ["CIS RHEL 9 1.4.2", "NIST SP 800-53 SC-30"],
+        "cis_controls": ["CIS-RHEL9 1.4.2"],
         "reboot_required": False,
         "change_risk": "low",
     },
@@ -174,6 +181,7 @@ HARDENING_KB: dict[str, dict[str, Any]] = {
         ],
         "verification": "cat /proc/sys/kernel/kptr_restrict   # expected: 1",
         "references": ["CIS RHEL 9 1.4.3", "NIST SP 800-53 SC-30"],
+        "cis_controls": ["CIS-RHEL9 1.4.3"],
         "reboot_required": False,
         "change_risk": "low",
     },
@@ -189,6 +197,7 @@ HARDENING_KB: dict[str, dict[str, Any]] = {
         ],
         "verification": "cat /proc/sys/kernel/dmesg_restrict   # expected: 1",
         "references": ["CIS RHEL 9 1.4.4", "NIST SP 800-53 AC-3"],
+        "cis_controls": ["CIS-RHEL9 1.4.4"],
         "reboot_required": False,
         "change_risk": "low",
     },
@@ -203,6 +212,7 @@ HARDENING_KB: dict[str, dict[str, Any]] = {
         ],
         "verification": "grep minlen /etc/security/pwquality.conf",
         "references": ["CIS RHEL 9 6.2.1", "NIST SP 800-53 IA-5"],
+        "cis_controls": ["CIS-RHEL9 6.2.1"],
         "reboot_required": False,
         "change_risk": "low",
     },
@@ -219,6 +229,7 @@ HARDENING_KB: dict[str, dict[str, Any]] = {
         ],
         "verification": "grep deny /etc/security/faillock.conf",
         "references": ["CIS RHEL 9 6.3.2", "NIST SP 800-53 AC-7"],
+        "cis_controls": ["CIS-RHEL9 6.3.2"],
         "reboot_required": False,
         "change_risk": "medium",
     },
@@ -237,6 +248,7 @@ HARDENING_KB: dict[str, dict[str, Any]] = {
         ],
         "verification": "ss -tlnp | grep <PORT>   # bind address should be internal",
         "references": ["CIS RHEL 9 3.5", "NIST SP 800-53 SC-7"],
+        "cis_controls": ["CIS-RHEL9 3.5"],
         "reboot_required": False,
         "change_risk": "medium",
     },

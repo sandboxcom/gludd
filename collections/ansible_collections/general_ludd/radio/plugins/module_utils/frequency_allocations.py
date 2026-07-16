@@ -17,12 +17,16 @@ Data shape:
     }
 
 Additional data structures:
-    - ITU Region 2 HF bands
+    - ITU Region 1 HF/VHF/UHF amateur bands (Europe / Africa / Middle East / N Asia)
+    - ITU Region 2 HF bands (Americas)
+    - ITU Region 3 HF/VHF/UHF amateur bands (Asia-Pacific / Oceania)
     - Marine VHF channel plan (channels 1-88)
 
 Functions:
     lookup_frequency(freq_mhz, country) -> allocation info
     get_band_plan(band_name, country) -> band limits + privileges
+    get_itu_bands(region=2) -> unified region accessor (1, 2, or 3)
+    get_itu_region1_bands / get_itu_region2_bands / get_itu_region3_bands
 """
 
 from __future__ import annotations

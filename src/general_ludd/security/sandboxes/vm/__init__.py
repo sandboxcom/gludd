@@ -35,6 +35,11 @@ from general_ludd.security.sandboxes.vm.metrics import (
     VMSandboxMetricsCollector,
     VMSandboxMetricsSnapshot,
 )
+from general_ludd.security.sandboxes.vm.pool import (
+    PoolConfig,
+    PoolStats,
+    VMSandboxPool,
+)
 
 __all__ = [
     "AgentExecutor",
@@ -42,6 +47,8 @@ __all__ = [
     "FirecrackerBackend",
     "GvisorBackend",
     "ImageManifest",
+    "PoolConfig",
+    "PoolStats",
     "VMInstance",
     "VMLifecycleState",
     "VMMetrics",
@@ -49,6 +56,7 @@ __all__ = [
     "VMSandboxManager",
     "VMSandboxMetricsCollector",
     "VMSandboxMetricsSnapshot",
+    "VMSandboxPool",
     "build_firecracker_image",
     "build_gvisor_image",
     "build_rootfs",
