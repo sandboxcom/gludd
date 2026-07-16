@@ -25,19 +25,52 @@
 
 ### Beta releases
 
-**No beta release has ever been cut.** Tags `v0.1.0-beta.1` through `v0.1.0-beta.4` do not exist as GitHub Releases. Code versions `0.1.0-beta.2` through `0.1.0-beta.4` exist only in `pyproject.toml`/`__init__.py` — version bumps without a corresponding release cut.
+| Tag | Date | Assets | Status |
+|-----|------|--------|--------|
+| `v0.1.0-beta.1` | 2026-07-14 | 1/12 | published but **INCOMPLETE** — only 1 of 12 required assets |
+| | | | **Release URL:** https://github.com/sandboxcom/gludd/releases/tag/v0.1.0-beta.1 |
+
+Code versions `0.1.0-beta.2` through `0.1.0-beta.5` exist in `pyproject.toml`/`__init__.py` — version bumps without a corresponding release cut. `v0.1.0-beta.1` was cut via `make release-create` (CI bypass, PyInstaller build, 1 asset verified).
 
 ---
 
-## SESSION 34 — 2026-07-14 (current)
+## SESSION 50 — 2026-07-16 (current)
 
-- **HEAD: `034ce6ab`** on `development` branch
-- **Version: 0.1.0-beta.4**
-- **TASKS.md: 261/261 complete (100%)**
-- **Gate: GREEN** — lint 0, typecheck 0, collect OK, hook-runtime 99/18 pass
-- **CI: PENDING** — run 29317300683 (version bump)
-- **Working tree: CLEAN**
-- **Next:** CI green → merge to master → release cut
+- **HEAD: `09c43221`** on `development` branch (63 commits beyond remote tip `8e290afd70ea`)
+- **Version: 0.1.0-beta.5** (pyproject.toml)
+- **Push status: NOT PUSHED** — 63 local commits on development not on remote
+- **CI: PENDING** — run `29515568379` in_progress on development
+- **Gate: NOT RUN** — full gate not re-run on HEAD
+- **Working tree: DIRTY** — physics/chemistry modules, governance modules, enforcement fixes, tracking docs
+- **TASKS.md: 335/336 checked (99%)** — A.4 (beta.2 release) only unchecked item, BLOCKED on CI
+
+### New commits since Session 49 tracking update (7: `3a2b0e10..09c43221`)
+
+| Hash | Message |
+|------|---------|
+| `09c43221` | feat: add physical chemistry, analytical chemistry, materials science knowledge modules + 100 tests |
+| `3a51c115` | fix: lint errors - E501 line breaks in physical_chemistry.py, RUF012 ClassVar annotations |
+| `2d4b6854` | feat: governance environmental/immigration systems modules + tests |
+| `13d2bcc5` | feat: governance transportation systems module + enforcement pid staleness test fixes + multitask plugin update |
+| `a034f6f1` | docs: update tracking docs for Session 49 — HEAD 7af6f4f6, 56 commits not pushed, GER-3/GER-4/GER-6 + session-start fixes |
+| `346819f3` | feat: healthcare/transportation governance modules, enforce-multitask plugin update, test coverage for new modules, dead code baseline refresh |
+| `3a2b0e10` | proactive: governance healthcare/transportation systems + enforcement plugin fix |
+
+### Open items
+
+| Item | Status |
+|------|--------|
+| A.4 — Cut v0.1.0-beta.2 release | BLOCKED on CI (run 29515568379 in_progress) |
+| Push 63 development commits to remote | NOT PUSHED |
+| Commit dirty working tree (physics/governance/plugins) | NOT STAGED |
+| opencode restart to activate enforcement plugin fixes | PENDING (user action) |
+
+### Next
+
+1. Commit tracking doc updates (SESSION.md, TASKS.md, BUGS.md)
+2. Restart opencode to activate hot-reload enforcement fixes (`9447d577`)
+3. Wait for CI green on run 29515568379
+4. Push development, cut beta.2 via `make release-cut`
 
 ---
 

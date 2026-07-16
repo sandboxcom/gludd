@@ -1,6 +1,6 @@
 # TASKS.md — Evidence Ledger
 
-**Last consolidated: 2026-07-14 Session 33 — ALL PHASES COMPLETE (262/262 items, 100%). Gate GREEN (lint 0, typecheck 0, collect OK, hook-runtime 99/18 PASS, node-v26-compat 2/2 PASS). HEAD 1d5ec007.**
+**Last consolidated: 2026-07-16 Session 50. HEAD `09c43221` on `development` (63 commits not pushed: `2f2d66ff..09c43221`). A.9 COMPLETE (beta.1 cut via release-create). A.4 BLOCKED on CI (run 29515568379 in_progress). Tree DIRTY (physics/chemistry modules, governance modules, enforcement fixes, tracking docs). 335/336 items checked (99%) — A.4 is the only open item. 7 new commits since last tracking update: healthcare/transportation governance (`3a2b0e10`), healthcare/transportation governance modules + multitask plugin update (`346819f3`), tracking docs (`a034f6f1`), transportation systems + pid staleness fix (`13d2bcc5`), environmental/immigration governance (`2d4b6854`), lint fixes (`3a51c115`), physical chemistry/analytical chemistry/materials science knowledge modules + 100 tests (`09c43221`).**
 
 Each line ticked when `make gate` is green and evidence is pasted.
 
@@ -509,3 +509,26 @@ State backend for terraform with HTTP API (lock/unlock/get/update), replacing lo
 - [x] log_analyzer role — Ansible role for log analysis | evidence: Wave 34
 - [x] game SearX e2e tests — end-to-end tests for SearX game integration | evidence: Wave 34
 - [x] enforce-multitask min-dispatch — fix for enforce-multitask.ts min-dispatch threshold | evidence: Wave 34
+
+---
+
+## New Features — Session 50 (2026-07-16, in progress)
+
+New governance and physics/chemistry collections added in commits `3a2b0e10..09c43221`. Not yet tracked with individual boxes — will be split into items once committed and tests pass.
+
+### NF.11 — Governance Collection Extension
+- [ ] NF.11.1 — Healthcare systems module + tests | status: in_progress | commits: `3a2b0e10`, `346819f3`
+- [ ] NF.11.2 — Transportation systems module + tests | status: in_progress | commits: `13d2bcc5`
+- [ ] NF.11.3 — Environmental systems module + tests | status: in_progress | commits: `2d4b6854`
+- [ ] NF.11.4 — Immigration systems module + tests | status: in_progress | commits: `2d4b6854`
+
+### NF.12 — Physics Collection
+- [ ] NF.12.1 — Physical chemistry knowledge module (organic_chemistry, inorganic_chemistry, quantum_mechanics, thermodynamics, advanced_math) | status: in_progress | commits: `09c43221`
+- [ ] NF.12.2 — Analytical chemistry module + tests | status: in_progress | commits: `09c43221`
+- [ ] NF.12.3 — Materials science module + tests | status: in_progress | commits: `09c43221`
+- [ ] NF.12.4 — Research paper expert module + tests | status: in_progress | commits: `09c43221`
+- [ ] NF.12.5 — Latex expert, math modeler, organic synthesist, paper reviewer, particle experiment analyst, quantum computer, spectroscopy analyst, thermodynamics engineer roles | status: in_progress (untracked files in working tree)
+
+### Enforcement Fixes
+- [x] NF-enf-1 — Enforcement PID staleness test fixes + multitask plugin update | status: completed | commits: `13d2bcc5`, `346819f3`
+- [x] NF-enf-2 — Lint E501/RUF012 fixes for physical_chemistry.py | status: completed | commit: `3a51c115`
