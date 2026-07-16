@@ -37,40 +37,44 @@ Code versions `0.1.0-beta.2` through `0.1.0-beta.5` exist in `pyproject.toml`/`_
 
 ## SESSION 44 — 2026-07-16
 
-- **HEAD: `f1a15908`** on `development` branch
+- **HEAD: `17b27326`** on `master` branch (development `f1a15908..dd4914b7` batch-pushed to master)
 - **Version: 0.1.0-beta.5** (pyproject.toml)
 - **Push status: NOT VERIFIED** — verify-remote not run this session
 - **CI: NOT CHECKED** — no ci-verdict run this session
 - **Gate: quality gate pass at `c5a66a27`** — lint 0, typecheck 766 files OK, collect OK, test-hook-runtime 115/133, all 10 enforcement BLOCKING+PASS, proactive-scan clean
-- **Working tree: near-clean** — `.ci-status` + 6 binary_re role YAMLs + 2 molecule converge YAMLs modified (concurrent work in flight)
+- **Working tree: near-clean** — `.ci-status` modified only
+- **Batch-push: development→master** — 11 development commits (`f1a15908..dd4914b7`) batch-pushed to master. Additional 4 commits on master: `dd4914b7` (molecule CI fixes: ansible_date_time lookup pipe fallback 6 binary roles, VIRTUAL_ENV python3 fallback 10 prepare ymls, retry_after_header asyncio sleep patch), `9dfdd057` (docs: TASKS+SESSION update), `79e63e05` (session state/dist cleanup), `17b27326` (VM test fixes, lint E501, Makefile test-sts/test-vm targets)
 
-### Commits since Session 43 doc update (7 commits: `48cdee26..f1a15908`)
+### Commits on master (10: `f1a15908..17b27326`)
 
-| Category | Description | Commit(s) |
-|----------|-------------|-----------|
-| **Docs** | NF.4 Radio Engineer, NF.6 OS Expert, NF.7 STS Tokens specs marked IMPLEMENTED | `f1a15908` |
-| **Test/Makefile fixes** | bootstrap_coverage test `_os` import fix, Makefile gate-refresh grep fix, retry_after_header test fix | `2e355a23` |
-| **Ansible-lint sweep** | 8 risky-shell-pipe, 4 command-instead-of-shell, 23 no-changed-when, 5 name casing | `8041a8c2` |
-| **Migration parity fix** | test counted `batch_op.create_index` as 0 create ops | `eca7ad3a` |
-| **Docs** | NF.3 Binary RE + NF.5 E2E Test Gen specs marked IMPLEMENTED (8 binary_re + 5 e2e_test_gen roles confirmed on disk) | `9db6768a` |
-| **enforce-stop e2e** | 18 tests verify text-only blocking via real filesystem state through full plugin chain | `33224670` |
-| **Quality gate pass** | lint 0, typecheck 766 files OK, collect OK, test-hook-runtime 115/133, all 10 enforcement BLOCKING+PASS, 25 stale state files cleaned, proactive-scan clean | `c5a66a27` |
+| Hash | Message |
+|------|---------|
+| `17b27326` | fix: lint E501 long lines in test_vm_sandbox_integration, VM test fixes for macOS, Makefile test-sts test-vm targets |
+| `79e63e05` | session state update: ci-status + AGENTS.md + TASKS.md |
+| `9dfdd057` | docs: TASKS.md + SESSION.md Session 44 update — HEAD dd4914b7, 20 molecule CI fixes, CI PENDING run 29475457426 |
+| `dd4914b7` | fix: molecule CI - ansible_date_time lookup pipe fallback 6 binary roles, VIRTUAL_ENV python3 fallback 10 prepare yml files, retry_after_header asyncio sleep patch |
+| `5520628c` | docs: TASKS.md + SESSION.md Session 44 state |
+| `f1a15908` | docs: mark NF.4, NF.6, NF.7 IMPLEMENTED |
+| `2e355a23` | fix: bootstrap_coverage _os import, gate-refresh grep, retry_after_header |
+| `8041a8c2` | fix: ansible-lint violations (40 total) |
+| `eca7ad3a` | fix: migration parity test batch_op.create_index counting |
+| `9db6768a` | docs: mark NF.3, NF.5 IMPLEMENTED |
 
 ### Remaining open items
 
 | Item | Status |
 |------|--------|
-| A.4 — Cut v0.1.0-beta.2 release | BLOCKED on CI (awaiting verdict on tip `f1a15908`) |
-| Push development to remote + verify | NOT VERIFIED |
+| A.4 — Cut v0.1.0-beta.2 release | BLOCKED on CI (awaiting verdict on master tip `17b27326`) |
+| verify-remote master | NOT VERIFIED |
 | opencode restart to activate enforcement fixes (10c64ee5, 77ba3714, 631dd626) | PENDING (user action) |
 
 ### Next
 
 1. Restart opencode to activate enforcement plugin fixes
-2. Push development, wait for CI green on tip `f1a15908`
+2. Verify master remote match, wait for CI green on tip `17b27326`
 3. Cut beta.2 via `make release-cut`
 
-- **Last Updated: 2026-07-16 — Session 44.** HEAD `f1a15908` on `development`. Quality gate pass at c5a66a27 (lint 0, typecheck 766 files OK, all 10 enforcement BLOCKING+PASS). Ansible-lint sweep + migration parity fix + enforce-stop e2e tests + 5 spec docs marked IMPLEMENTED. A.4 (beta.2 release) blocked on CI.
+- **Last Updated: 2026-07-16 — Session 44.** HEAD `17b27326` on `master`. Development batch-pushed to master (11 dev commits + 4 master commits). Quality gate pass at c5a66a27. Molecule CI fixes (20 files). VM test fixes. Dist files cleaned up. A.4 (beta.2 release) blocked on CI.
 
 ---
 

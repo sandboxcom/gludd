@@ -45,6 +45,7 @@
     "./.opencode/plugin/enforce-multitask.ts",
     "./.opencode/plugin/enforce-enhancement-ratio.ts",
     "./.opencode/plugin/enforce-stop.ts",
+    "./.opencode/plugin/enforce-batch-push.ts",
     "./.opencode/plugins/watchdog.ts"
   ]
 }
