@@ -42,7 +42,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         _commit-lock-acquire check-clean-tree ship-commit-files \
         molecule-version molecule-test molecule-test-all \
         collection-roles collection-modules molecule-scenarios \
-        test-binary-re test-radio test-os-expert test-e2e-test-gen test-language test-collections \
+        test-binary-re test-radio test-os-expert test-e2e-test-gen test-language test-language-expert test-collections \
         molecule-test-binary-re molecule-test-radio molecule-test-os-expert molecule-test-e2e-test-gen molecule-test-language \
         move-ansible-roles \
         container-build container-run container-push \
@@ -132,6 +132,7 @@ help:
 	@echo "  test-live-zai         Live GLM model test (requires API key)"
 	@echo "  test-guardrails       Test guardrail infrastructure"
 	@echo "  test-install          Run install.sh bats tests"
+	@echo "  test-language-expert  Language collection E2E: schema + unit + integration + coverage (>=85%)"
 	@echo ""
 	@echo "  --- Terraform ---"
 	@echo "  tf-cache-warm         Download all providers ONCE into the shared plugin cache"
@@ -4175,6 +4176,27 @@ test-language:
 	else \
 		echo "language collection has no Python tests yet (Ansible roles + knowledge modules only)"; \
 	fi
+
+# test-language-expert: E2E target per spec FEATURE_LANGUAGE_EXPERT.md Section 8.
+# Runs collection schema check + ALL unit tests + integration tests + coverage gate (>=85%).
+test-language-expert:
+	@echo "=== test-language-expert: schema + unit + integration + coverage ==="
+	@$(UV) run python -m pytest \
+		tests/unit/test_language_expert_collection.py \
+		tests/unit/test_language_phase_c.py \
+		tests/unit/test_language_phase_d.py \
+		tests/unit/test_language_phase_e.py \
+		tests/unit/test_language_phase_f.py \
+		tests/unit/test_language_font_data.py \
+		tests/unit/test_language_i18n_data.py \
+		tests/unit/test_language_role_integration.py \
+		tests/integration/test_language_expert_integration.py \
+		tests/integration/test_language_cli.py \
+		collections/ansible_collections/general_ludd/language/tests/ \
+		--cov=src/general_ludd/language \
+		--cov-report=term-missing \
+		--cov-fail-under=85 \
+		-v --tb=short
 
 # molecule-test-binary-re: runs molecule scenarios for binary_re collection roles
 molecule-test-binary-re:

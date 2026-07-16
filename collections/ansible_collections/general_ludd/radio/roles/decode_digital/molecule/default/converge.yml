@@ -1,0 +1,52 @@
+---
+- name: Converge
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Run decode_digital role (dstar, no input file)
+      ansible.builtin.include_role:
+        name: general_ludd.radio.decode_digital
+      vars:
+        decode_digital_enabled: true
+        decode_digital_mode: dstar
+        decode_digital_input_file: ""
+        decode_digital_sample_rate: 2048000
+        decode_digital_center_freq_hz: 144000000
+        decode_digital_output_dir: /tmp/gludd-decode-digital
+
+    - name: Assert verdict structure
+      ansible.builtin.assert:
+        that:
+          - decode_digital_verdict.role == "decode_digital"
+          - decode_digital_verdict.mode == "dstar"
+          - decode_digital_verdict.protocol == "D-STAR"
+        fail_msg: "Verdict structure incorrect: {{ decode_digital_verdict }}"
+
+    - name: Assert JSON output written
+      ansible.builtin.stat:
+        path: /tmp/gludd-decode-digital/decode_digital.json
+      register: _stat_json
+
+    - name: Verify JSON file exists
+      ansible.builtin.assert:
+        that: _stat_json.stat.exists
+        fail_msg: "decode_digital.json not written"
+
+    - name: Parse JSON output
+      ansible.builtin.slurp:
+        src: /tmp/gludd-decode-digital/decode_digital.json
+      register: _json_raw
+
+    - name: Assert decode metadata
+      ansible.builtin.assert:
+        that:
+          - (_json_raw.content | b64decode | from_json).mode == "D-STAR"
+          - (_json_raw.content | b64decode | from_json).modulation == "GMSK (Gaussian Minimum Shift Keying)"
+          - (_json_raw.content | b64decode | from_json).symbol_rate == 4800
+        fail_msg: "JSON content mismatch"
+
+    - name: Cleanup
+      ansible.builtin.file:
+        path: /tmp/gludd-decode-digital
+        state: absent

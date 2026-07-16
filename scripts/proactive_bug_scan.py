@@ -121,9 +121,24 @@ def check_stale_state_files() -> list[str]:
     tmp = Path("/tmp")
     if not tmp.exists():
         return []
+    # Reuse the same ACTIVE_KEEP allowlist as clean_tmp.py so deliberately-
+    # preserved runtime state files (floor-override, watchdog CI state, CI
+    # check cooldown, etc.) are not false-positive flagged as stale. These
+    # files are re-read by enforcement hooks on each invocation and are
+    # expected to sit idle between active sessions; clean_tmp.py already
+    # treats them as active. Without this allowlist, proactive-scan reports
+    # issues that clean-tmp intentionally will not resolve.
+    try:
+        scripts_dir = Path(__file__).resolve().parent
+        sys.path.insert(0, str(scripts_dir))
+        from clean_tmp import ACTIVE_KEEP
+    except ImportError:
+        ACTIVE_KEEP = set()
     cutoff = time.time() - STALE_THRESHOLD_SEC
     issues: list[str] = []
     for entry in tmp.glob("gludd-*"):
+        if entry.name in ACTIVE_KEEP:
+            continue
         try:
             mtime = entry.stat().st_mtime
         except OSError:

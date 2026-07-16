@@ -149,12 +149,16 @@ def main() -> int:
             continue
         try:
             if os.path.getmtime(entry) < cutoff:
-                if os.path.isfile(entry):
-                    freed += os.path.getsize(entry)
-                    os.remove(entry)
-                    deleted_count += 1
-                elif os.path.isdir(entry):
+                if os.path.isdir(entry):
                     shutil.rmtree(entry)
+                    deleted_count += 1
+                else:
+                    # Covers regular files AND non-regular filesystem entries
+                    # (sockets, fifos, broken symlinks) that leak from test
+                    # runs. os.path.isfile() returns False for sockets, which
+                    # previously left stale gludd-test-fc-*.sock files behind.
+                    freed += _size(entry)
+                    os.remove(entry)
                     deleted_count += 1
         except OSError:
             pass

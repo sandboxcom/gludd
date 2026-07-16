@@ -1,0 +1,58 @@
+---
+- name: Converge
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Run signal_identify role (parametric, no IQ file)
+      ansible.builtin.include_role:
+        name: general_ludd.radio.signal_identify
+      vars:
+        signal_identify_enabled: true
+        signal_identify_input_file: ""
+        signal_identify_sample_rate: 2048000
+        signal_identify_center_freq_hz: 440000000
+        signal_identify_method: fft
+        signal_identify_threshold_db: 10.0
+        signal_identify_bandwidth_hz: 6250
+        signal_identify_symbol_rate_baud: 4800
+        signal_identify_spectrum_shape: tdma_fsk
+        signal_identify_output_dir: /tmp/gludd-signal-identify
+
+    - name: Assert verdict structure
+      ansible.builtin.assert:
+        that:
+          - signal_identify_verdict.role == "signal_identify"
+          - signal_identify_verdict.method == "fft"
+          - signal_identify_verdict.verdict == "identified"
+          - signal_identify_verdict.candidates | length > 0
+        fail_msg: "Verdict structure incorrect: {{ signal_identify_verdict }}"
+
+    - name: Assert JSON output written
+      ansible.builtin.stat:
+        path: /tmp/gludd-signal-identify/signal_identify.json
+      register: _stat_json
+
+    - name: Verify JSON file exists
+      ansible.builtin.assert:
+        that: _stat_json.stat.exists
+        fail_msg: "signal_identify.json not written"
+
+    - name: Parse JSON output
+      ansible.builtin.slurp:
+        src: /tmp/gludd-signal-identify/signal_identify.json
+      register: _json_raw
+
+    - name: Assert classification structure
+      ansible.builtin.assert:
+        that:
+          - (_json_raw.content | b64decode | from_json).role == "signal_identify"
+          - (_json_raw.content | b64decode | from_json).classification.candidates | length > 0
+          - (_json_raw.content | b64decode | from_json).classification.top_hit is defined
+          - (_json_raw.content | b64decode | from_json).verdict == "identified"
+        fail_msg: "JSON content mismatch"
+
+    - name: Cleanup
+      ansible.builtin.file:
+        path: /tmp/gludd-signal-identify
+        state: absent
