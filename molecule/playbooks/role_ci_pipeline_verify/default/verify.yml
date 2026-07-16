@@ -6,7 +6,19 @@
   vars:
     mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8808', true) }}"
     pidfile: "/tmp/gludd-mock-ci-verify-{{ mock_port }}.pid"
+    artifact_dir: "/tmp/gludd-ci-pipeline-verify-molecule"
   tasks:
+    # Rehydrate ci_verdict from the JSON file written by converge.yml — facts
+    # set inside the include_role do not persist between molecule plays.
+    - name: Load persisted ci_verdict
+      ansible.builtin.slurp:
+        src: "{{ artifact_dir }}/ci-verdict.json"
+      register: ci_verdict_raw
+
+    - name: Parse ci_verdict
+      ansible.builtin.set_fact:
+        ci_verdict: "{{ ci_verdict_raw.content | b64decode | from_json }}"
+
     - name: Assert ci_verdict fact exists
       ansible.builtin.assert:
         that:

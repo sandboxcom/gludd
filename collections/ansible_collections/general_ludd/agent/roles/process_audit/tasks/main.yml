@@ -30,7 +30,7 @@
 - name: Count lint errors from output
   ansible.builtin.set_fact:
     _pa_lint_errors: >-
-      {{ _pa_lint_out.stdout_lines | select('search', 'Found [0-9]+ error') | map('regex_replace', '.*Found ([0-9]+) error.*', '\1') | map('int') | first | default(0) }}
+      {{ (_pa_lint_out.stdout_lines | default([])) | select('search', 'Found [0-9]+ error') | map('regex_replace', '.*Found ([0-9]+) error.*', '\1') | map('int') | list | first | default(0) }}
 
 # ── Step 3: Run the process overhead test ────────────────────────────────
 
@@ -44,8 +44,8 @@
 
 - name: Check test pass/fail from exit code
   ansible.builtin.set_fact:
-    _pa_test_passed: "{{ _pa_test_out.rc == 0 }}"
-    _pa_test_output: "{{ _pa_test_out.stdout_lines[-5:] | default(['(no output)']) if _pa_test_out.stdout_lines else ['(no output)'] }}"
+    _pa_test_passed: "{{ _pa_test_out.rc | default(1) == 0 }}"
+    _pa_test_output: "{{ (_pa_test_out.stdout_lines | default([]))[-5:] | default(['(no output)']) if (_pa_test_out.stdout_lines | default([])) else ['(no output)'] }}"
 
 # ── Step 4: Check anti-stop state files ──────────────────────────────────
 

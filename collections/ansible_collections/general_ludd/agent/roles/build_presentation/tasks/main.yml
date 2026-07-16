@@ -75,7 +75,9 @@
       Expected artifact {{ deck_data_path }} not found after `make deck-data`.
       Check scripts/build_deck.py and that {{ deck_data_source }} has a
       STATUS-TABLE:START..STATUS-TABLE:END block.
-  when: not _bp_deck_data_stat.stat.exists
+  when:
+    - regenerate_deck_data | bool
+    - not _bp_deck_data_stat.stat.exists
 
 # ── Step 2: Honesty lint (banned tokens + %-must-match-README) ─────────────
 

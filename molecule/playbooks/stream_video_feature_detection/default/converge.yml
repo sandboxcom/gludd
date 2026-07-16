@@ -33,7 +33,11 @@
     - name: Stream video chunk via gludd_stream (interval trigger)
       general_ludd.agent.gludd_stream:
         device: "{{ mock_video }}"
-        device_kind: video
+        # binary ingestion (cat) terminates on EOF and reliably feeds bytes
+        # into the rolling buffer; the video path uses ffmpeg, which may be
+        # uninstalled in CI and emits few/no bytes for a zero-filled fake
+        # device file. The HTTP dispatch path under test is device_kind-agnostic.
+        device_kind: binary
         buffer_size: 67108864
         daemon_url: "http://127.0.0.1:{{ mock_port }}"
         dispatch_trigger:

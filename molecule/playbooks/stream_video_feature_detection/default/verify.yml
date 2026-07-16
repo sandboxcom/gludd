@@ -18,14 +18,17 @@
         stream_result: "{{ result_raw.content | b64decode | from_json }}"
 
     # gludd_stream returns a flat dict: {bytes_processed, chunks, dispatches,
-    # last_task_id, stopped_by, changed, failed}. Assert it ran cleanly.
+    # last_task_id, stopped_by, changed, failed}. Assert it ran cleanly AND
+    # actually dispatched at least one chunk (dispatches=0 means the HTTP
+    # dispatch path was never exercised — a silent regression).
     - name: Assert stream result shape
       ansible.builtin.assert:
         that:
           - stream_result.failed is defined
           - stream_result.stopped_by is defined
           - not stream_result.failed
-        fail_msg: "gludd_stream video result incomplete: {{ stream_result }}"
+          - stream_result.dispatches | default(0) | int > 0
+        fail_msg: "gludd_stream video result incomplete or did not dispatch: {{ stream_result }}"
         success_msg: >-
           gludd_stream video ran: stopped_by={{ stream_result.stopped_by }}
           dispatches={{ stream_result.dispatches | default(0) }}

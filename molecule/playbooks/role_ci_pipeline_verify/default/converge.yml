@@ -8,10 +8,18 @@
   gather_facts: false
   vars:
     mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8808', true) }}"
+    artifact_dir: "/tmp/gludd-ci-pipeline-verify-molecule"
   tasks:
+    - name: Ensure artifact directory exists
+      ansible.builtin.file:
+        path: "{{ artifact_dir }}"
+        state: directory
+        mode: "0755"
+
     - name: Invoke ci_pipeline_verify (polls mock daemon /ci-status)
       ansible.builtin.include_role:
         name: general_ludd.agent.ci_pipeline_verify
+        public: true
       vars:
         daemon_url: "http://127.0.0.1:{{ mock_port }}"
         psk: ""
@@ -20,3 +28,12 @@
         ci_status_endpoint: "http://127.0.0.1:{{ mock_port }}/ci-status"
         ci_poll_timeout_seconds: 60
         ci_poll_interval: 5
+
+    # Facts set inside an include_role do NOT persist across molecule plays
+    # (converge and verify are separate ansible-playbook invocations). Persist
+    # ci_verdict to a JSON file so verify.yml can rehydrate it.
+    - name: Persist ci_verdict for verify play
+      ansible.builtin.copy:
+        content: "{{ ci_verdict | to_nice_json }}"
+        dest: "{{ artifact_dir }}/ci-verdict.json"
+        mode: "0644"

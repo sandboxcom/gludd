@@ -13,7 +13,7 @@
       ansible.builtin.stat:
         path: "{{ artifact }}"
       register: art
-      failed_when: "{{ not art.stat.exists }}"
+      failed_when: not art.stat.exists
 
     - name: Load JSON artifact
       ansible.builtin.slurp:
@@ -44,7 +44,7 @@
       ansible.builtin.stat:
         path: "{{ artifact_md }}"
       register: art_md
-      failed_when: "{{ not art_md.stat.exists }}"
+      failed_when: not art_md.stat.exists
 
     # ---- cleanup: stop daemon ----
     - name: Stop mock daemon
