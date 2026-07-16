@@ -1,6 +1,6 @@
 # Feature: OS Expert Collection
 
-**Status: DRAFT** | **Created: 2026-07-14** | **Target: v0.1.0-beta.2**
+**Status: IMPLEMENTED** | **Created: 2026-07-14** | **Target: v0.1.0-beta.2**
 
 ## 1. Overview
 
