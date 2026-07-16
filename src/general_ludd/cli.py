@@ -1042,6 +1042,12 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     add_account_subparser(sub)
     account_parser = sub.choices["account"]
 
+    # `gludd physics` — computational physics, chemistry, and math toolkit.
+    from general_ludd.cli_physics import add_physics_subparser
+
+    add_physics_subparser(sub)
+    physics_parser = sub.choices["physics"]
+
     testbg_parser = sub.add_parser("test-bg", help="Background test runner commands")
     testbg_parser.set_defaults(func=None)
     tbg_sub = testbg_parser.add_subparsers(dest="testbg_command")
@@ -1125,6 +1131,7 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
         "make": make_parser,
         "payment": payment_parser,
         "account": account_parser,
+        "physics": physics_parser,
         "audit-plugins": audit_plugins_parser,
         "collection": collection_parser,
         "config": config_parser,
