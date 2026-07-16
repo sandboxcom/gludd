@@ -2588,7 +2588,7 @@ git-reset:
 		echo "Usage: make git-reset FILES='HEAD~1' (or specific ref)"; \
 		exit 1; \
 	fi
-	@git reset $(FILES)
+	@git reset -- $(FILES)
 
 git-restore:
 	@if [ -z "$(FILES)" ]; then \
