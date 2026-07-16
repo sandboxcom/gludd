@@ -310,7 +310,7 @@ The state-file pattern is the canonical mechanism for runtime enforcement tuning
 10. **Bash unavailable ⇒ adapt in ≤2 turns.** If `make` commands fail or bash is missing from your tool list, execute the 3-step diagnosis (check tool list, read SESSION.md for known issue, read opencode.json for permissions) IN ONE PARALLEL MESSAGE. Then adapt: use read/edit/write/grep/glob tools directly. Never spend 10+ turns diagnosing a tool-unavailable error — it is either a provider/model limitation (unfixable mid-session) or a permission-ordering bug (one-line fix). SESSION.md line ~9 documents known bash-unavailable sessions. BUGS.md tracks bash-diagnosis-relapse incidents.
     - **When you detect you're grinding inline** (main-thread streak accumulating, floor plugin blocking your edits, enforcement errors on every edit) → run `make disengage-enforcement` before any other action. This writes the emergency disengage signal that all enforcement hooks respect. Then fix the offending plugin code, run `make write-plugin-manifest`, and restart opencode.
 11. **No external file access.** Read/Write/Edit/Glob/Grep MUST stay inside `/Users/shawnwilson/gludd/` or `/tmp/gludd-*`. Any tool call targeting a path outside the workspace prompts the user and blocks work. See "CRITICAL: No External File Access."
-12. **NEVER use `COMMIT_THRESHOLD=1`. NEVER use `make ship-commit` while CI is running. Use `make git-commit` for local commits. Push only when CI is idle.** `COMMIT_THRESHOLD=1` and `ship-commit`-while-CI-pending both push every commit individually, cancelling every prior CI run — zero validation occurs. The sanctioned push is `make batch-push` (default 5+ commits threshold) with `make ci-verdict-safe` confirming CI idle first. Local commits accumulate via `make git-commit`; the batch push is a single event, not per-commit. See "CRITICAL: Don't Push Every Commit — Batch Locally, Push Once."
+12. **NEVER use `COMMIT_THRESHOLD=1`. Use `make git-commit` or `make ship-commit` for local commits. Push only when CI is idle.** `COMMIT_THRESHOLD=1` bypasses the batch-push threshold and pushes every commit individually, cancelling every prior CI run — zero validation occurs. Since GER-5, `make ship-commit` commits locally by default (`PUSH=0`); to push after commit, use `make ship-commit MSG='...' PUSH=1` or a separate `make batch-push`. The sanctioned push is `make batch-push` (default 5+ commits threshold) with `make ci-verdict-safe` confirming CI idle first. Local commits accumulate via `make git-commit` or `make ship-commit`; the batch push is a single event, not per-commit. See "CRITICAL: Don't Push Every Commit — Batch Locally, Push Once."
 
 ## CRITICAL: No External File Access
 
@@ -2537,7 +2537,7 @@ Subagents fail when they try to run long operations. To maximize success rate:
 **Pattern for each wave:**
 1. Get 10 subagent results
 2. Write ZERO analysis text
-3. Immediately dispatch 10 new subagents — one does `make ship-commit`, nine do work
+3. Immediately dispatch 10 new subagents — one does `make ship-commit` (local commit only; push separately with `make batch-push`), nine do work
 4. Repeat
 
 #### Background-gate workflow (canonical way to run a long gate)
@@ -2585,7 +2585,7 @@ The goal is a **continuous, pipelined** stream of subagent batches — not a saw
 3. **Always have the next wave ready.** Before the current batch returns, know what the next 10 tasks will be. The moment results arrive, dispatch — don't think, don't plan, dispatch.
 4. **Prefer uniform-duration tasks.** If all 10 tasks take ~2 min, they finish together and you refill immediately. If some take 30s and others 5min, you're at 3-4 agents for minutes waiting for the slow ones.
 5. **Read-only research tasks are the filler.** When you don't have 10 edit tasks, fill the remaining slots with research/audit/review tasks. They're reliable and always productive.
-6. **Dispatch commit+push AS a subagent.** One of the 10 tasks runs `make ship-commit MSG='...'`. This keeps 9 productive tasks running while the commit happens in parallel.
+6. **Dispatch commit AS a subagent.** One of the 10 tasks runs `make ship-commit MSG='...'` (local commit only; `PUSH=0` is the default since GER-5). Push separately with `make batch-push` when the batch threshold is met. This keeps 9 productive tasks running while the commit happens in parallel.
 7. **Max 3 file reads between results and dispatch.** After subagent results arrive, the agent gets at most 3 read/grep/glob calls before the next tool call MUST be a dispatch. File inspection between waves is a dispatching bug — reads during the result-processing window drain the subagent pool and reduce the refill wave size. Enforced mechanically by `enforce-floor.ts` (`POST_RESULT_READ_LIMIT = 3`; the 4th read in the post-result grace window is denied).
 
 ### Message-shape mechanical rule (HARD ENFORCEMENT)

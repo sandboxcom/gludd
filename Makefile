@@ -2523,16 +2523,18 @@ repo-commit: _commit-lock-acquire
 	@if [ -z "$(MSG)" ]; then echo "Usage: make repo-commit MSG='message'"; exit 1; fi
 	@git diff --cached --quiet && echo "Nothing to commit" || git commit -n -m "$(MSG)"
 
-# ship-commit: commit staged changes then batch-push. Designed for subagent
-# dispatch (per AGENTS.md "Dispatch commit+push AS a subagent") so the main
-# thread stays free while the commit + push runs in parallel. Allowlisted
-# from the local _gate-fresh-check (CI is the gate for subagent-dispatched
-# pushes; see test_commit_gate_freshness.py ALLOWLIST_NO_GATE).
+# ship-commit: commit staged changes locally. By default (PUSH=0), does NOT
+# push — push requires explicit PUSH=1 or a separate make development-push
+# / make batch-push. This prevents the CI cancellation loop where every
+# commit triggers a push that cancels the prior CI run.
+# Allowlisted from the local _gate-fresh-check (CI is the gate for
+# subagent-dispatched pushes; see test_commit_gate_freshness.py ALLOWLIST_NO_GATE).
+PUSH ?= 0
 ship-commit: _commit-lock-acquire
 	@if [ -z "$(MSG)" ]; then echo "Usage: make ship-commit MSG='message'"; exit 1; fi
 	@$(MAKE) --no-print-directory collect-check
 	@git diff --cached --quiet && echo "Nothing to commit" || git commit -n -m "$(MSG)"
-	@$(MAKE) --no-print-directory batch-push
+	@if [ "$(PUSH)" = "1" ]; then $(MAKE) --no-print-directory batch-push; else echo "Committed locally. Use PUSH=1 to push, or make batch-push separately."; fi
 
 # ship-commit-files: atomic staging + commit under the commit lock. Bundles
 # `git-add` + `ship-commit` so one subagent's `git add -A` cannot sweep
