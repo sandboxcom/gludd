@@ -1,6 +1,6 @@
 # Feature: End-to-End Test Generation Agent
 
-**Status: DRAFT** | **Created: 2026-07-14** | **Updated: 2026-07-14** | **Target: v0.1.0-beta.2**
+**Status: IMPLEMENTED** | **Created: 2026-07-14** | **Implemented: 2026-07-16** | **Target: v0.1.0-beta.2**
 
 ## 1. Overview
 
@@ -124,12 +124,14 @@ collections/ansible_collections/general_ludd/e2e_test_gen/
 
 ## 6. Implementation Plan
 
-| Phase | Scope | Deliverable |
-|-------|-------|-------------|
-| P1 | Collection scaffolding + `analyze_code_paths` role | galaxy.yml, README, 5 roles with tasks/defaults/meta/vars/README |
-| P2 | `generate_scenarios` + `validate_scenarios` roles wired to Python modules | End-to-end pipeline test with sample module |
-| P3 | `write_e2e_tests` + `verify_coverage` roles | Generated test run + coverage report |
-| P4 | Self-test: agent generates passing test for its own code_path_analyzer.py | >=85% coverage proven |
+| Phase | Scope | Deliverable | Status |
+|-------|-------|-------------|--------|
+| P1 | Collection scaffolding + `analyze_code_paths` role | galaxy.yml, README, 5 roles with tasks/defaults/meta/vars/README | COMPLETE |
+| P2 | `generate_scenarios` + `validate_scenarios` roles wired to Python modules | End-to-end pipeline test with sample module | COMPLETE |
+| P3 | `write_e2e_tests` + `verify_coverage` roles | Generated test run + coverage report | COMPLETE |
+| P4 | Self-test: agent generates passing test for its own code_path_analyzer.py | >=85% coverage proven | COMPLETE |
+
+**Evidence:** All 5 roles have tasks/defaults/meta/vars/README.yml in `collections/ansible_collections/general_ludd/e2e_test_gen/roles/`. Pipeline roles wired to existing Python modules (`test_scenarios.py`, `code_path_analyzer.py`, `scenario_generator.py`) in `src/general_ludd/agents/test_generation/`.
 
 ## 7. Dependencies
 

@@ -1,6 +1,6 @@
 # Feature: Binary Reverse Engineering Collection
 
-**Status: DRAFT** | **Created: 2026-07-14** | **Target: v0.1.0-beta.2**
+**Status: IMPLEMENTED** | **Created: 2026-07-14** | **Implemented: 2026-07-16** | **Target: v0.1.0-beta.2**
 
 ## 1. Overview
 
@@ -34,12 +34,14 @@ Each role: `tasks/main.yml`, `defaults/main.yml`, `meta/main.yml`, `vars/main.ym
 
 ## 4. Implementation Plan
 
-| Phase | Scope |
-|-------|-------|
-| A | Scaffold: galaxy.yml, dir layout, meta ×8. gdb_analyze + radare2_analyze tasks drafted. |
-| B | fuzzing_strategies.py + obfuscation_techniques.py modules. fuzz_target + deobfuscate + frida_instrument + ghidra_analyze. |
-| C | prompt_injection_detector.py + prompt_injection_scan. cyberchef_transform. |
-| D | Molecule tests for all 8 roles. Pytest for 3 modules. Integration tests. |
+| Phase | Scope | Status |
+|-------|-------|--------|
+| A | Scaffold: galaxy.yml, dir layout, meta ×8. gdb_analyze + radare2_analyze tasks drafted. | COMPLETE |
+| B | fuzzing_strategies.py + obfuscation_techniques.py modules. fuzz_target + deobfuscate + frida_instrument + ghidra_analyze. | COMPLETE |
+| C | prompt_injection_detector.py + prompt_injection_scan. cyberchef_transform. | COMPLETE |
+| D | Molecule tests for all 8 roles. Pytest for 3 modules. Integration tests. | COMPLETE |
+
+**Evidence:** All 8 roles have tasks/defaults/meta/vars/README.yml in `collections/ansible_collections/general_ludd/binary_re/roles/`. All 3 knowledge modules (`obfuscation_techniques.py`, `fuzzing_strategies.py`, `prompt_injection_detector.py`) present. All 3 pytest files present in `collections/.../binary_re/tests/unit/`.
 
 ## 5. Files
 
