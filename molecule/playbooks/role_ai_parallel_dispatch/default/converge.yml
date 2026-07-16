@@ -21,8 +21,8 @@
         join_policy: "required"
         async_timeout: 60
         call_request_timeout: 30
-        barrier_retries: 30
-        barrier_delay: 1
+        barrier_retries: 5
+        barrier_delay: 0.5
         dispatch_calls:
           - name: planner
             prompt: "Plan the migration of module X."

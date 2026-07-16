@@ -62,18 +62,16 @@
     label: "jid {{ _apd_jid }}"
   register: _apd_poll
   until: >-
-    {{
-      ( _apd_poll.results is defined ) and (
-        ( join_policy == 'any' and
-          (_apd_poll.results | selectattr('finished', 'defined') | selectattr('finished') | list | length) >= 1 )
-        or
-        ( join_policy != 'any' and
-          (_apd_poll.results
-             | selectattr('ansible_job_id', 'in', _apd_wait_jids)
-             | selectattr('finished', 'defined') | selectattr('finished')
-             | list | length) >= (_apd_wait_jids | length) )
-      )
-    }}
+    ( _apd_poll.results is defined ) and (
+      ( join_policy == 'any' and
+        (_apd_poll.results | selectattr('finished', 'defined') | selectattr('finished') | list | length) >= 1 )
+      or
+      ( join_policy != 'any' and
+        (_apd_poll.results
+           | selectattr('ansible_job_id', 'in', _apd_wait_jids)
+           | selectattr('finished', 'defined') | selectattr('finished')
+           | list | length) >= (_apd_wait_jids | length) )
+    )
   retries: "{{ barrier_retries | int }}"
   delay: "{{ barrier_delay | int }}"
   # Don't hard-fail the play if optional jobs never finished — the join-policy

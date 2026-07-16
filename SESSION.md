@@ -37,13 +37,13 @@ Code versions `0.1.0-beta.2` through `0.1.0-beta.5` exist in `pyproject.toml`/`_
 
 ## SESSION 45 — 2026-07-16
 
-- **HEAD: `fdfa84bb`** on `development` branch (15 commits beyond remote tip `8e290afd70ea`)
+- **HEAD: `ab954a3b`** on `development` branch (17 commits beyond remote tip `8e290afd70ea`)
 - **Version: 0.1.0-beta.5** (pyproject.toml)
-- **Push status: NOT PUSHED** — 15 local commits on development not on remote (`2f2d66ff..fdfa84bb`)
-- **CI: NO RUN** for HEAD `fdfa84bb` (not pushed); prior run `29481378611` was on `2311571c`
-- **Gate: quality gate pass at `c5a66a27`** (Session 44 baseline; full gate not re-run on HEAD `fdfa84bb`)
-- **Working tree: DIRTY** — `tests/e2e/test_sts_revocation_cascade.py` modified, `molecule/noop/` untracked
-- **New commits since Session 44 (12: `90638419..fdfa84bb`)**: NF.8+NF.10 spec docs (`b81e0c04`), Session 44 docs (`90638419`), NF.4 molecule scenarios for 3 radio roles (`c3a5dceb`), language e2e target test (`585e276d`), 3 molecule verify.yml fixes (`510b4cd0`, `1e6059f4`, `3ae25f04`), 11 molecule CI failures fix (`2311571c`), batch-push rule codification (`49867cff`), beta.2 release walk-through (`ccf886d8`), Session 45 docs (`5a0d8e32`), NF.7 STS revocation cascade e2e 9 tests (`44401d63`), NF.2 verify/release benchmarks (`fdfa84bb`)
+- **Push status: NOT PUSHED** — 17 local commits on development not on remote (`2f2d66ff..ab954a3b`)
+- **CI: PENDING** — run `29500154922` in_progress (triggered after push of earlier commits); HEAD `ab954a3b` not yet on a CI run
+- **Gate: quality gate pass at `c5a66a27`** (Session 44 baseline; full gate not re-run on HEAD `ab954a3b`)
+- **Working tree: DIRTY** — `.ci-status`, `collections/.../ai_parallel_dispatch/tasks/dispatch_batch.yml`, `molecule/playbooks/role_ai_parallel_dispatch/default/converge.yml` modified
+- **New commits since Session 44 (14: `90638419..ab954a3b`)**: NF.8+NF.10 spec docs (`b81e0c04`), Session 44 docs (`90638419`), NF.4 molecule scenarios for 3 radio roles (`c3a5dceb`), language e2e target test (`585e276d`), 3 molecule verify.yml fixes (`510b4cd0`, `1e6059f4`, `3ae25f04`), 11 molecule CI failures fix (`2311571c`), batch-push rule codification (`49867cff`), beta.2 release walk-through (`ccf886d8`), Session 45 docs (`5a0d8e32`), NF.7 STS revocation cascade e2e 9 tests (`44401d63`), NF.2 verify/release benchmarks (`fdfa84bb`), dev→master merge plan (`440409c0`), NF.3 binary_re integration 20 tests + NF.5 E2E integration 14 tests + NF.9 collection fix + enforce-stop liveness markers + proactive scan + abtest fixes (`ab954a3b`)
 
 ### Commits on development not yet pushed (15: `2f2d66ff..fdfa84bb`)
 
