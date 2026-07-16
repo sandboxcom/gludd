@@ -5,8 +5,6 @@ VMSandboxMetricsCollector basic operations.
 """
 from __future__ import annotations
 
-import pytest
-
 from general_ludd.security.sandboxes.vm.metrics import (
     VMSandboxHealth,
     VMSandboxMetricsCollector,

@@ -48,7 +48,9 @@ class TestPoolConfig:
             PoolConfig(idle_timeout_seconds=-1)
 
     def test_valid_custom_config(self) -> None:
-        cfg = PoolConfig(min_idle=2, max_size=10, prewarm_count=4, idle_timeout_seconds=600.0)
+        cfg = PoolConfig(
+            min_idle=2, max_size=10, prewarm_count=4, idle_timeout_seconds=600.0
+        )
         assert cfg.min_idle == 2
         assert cfg.max_size == 10
         assert cfg.prewarm_count == 4
@@ -96,24 +98,20 @@ class TestPoolStats:
         }
 
 
+def _make_spec() -> PermissionSpec:
+    return PermissionSpec(agent_type="test")
+
+
+def _make_target() -> SandboxTarget:
+    return SandboxTarget()
+
+
 class TestVMSandboxPoolConstruction:
-    def _make_spec(self) -> PermissionSpec:
-        return PermissionSpec(
-            name="test-spec",
-            allowed_tools={"read", "write"},
-        )
-
-    def _make_target(self) -> SandboxTarget:
-        return SandboxTarget(
-            image="test-image",
-            command=["echo", "hello"],
-        )
-
     def test_construct_pool_defaults(self) -> None:
         pool = VMSandboxPool(
             backend_name="qemu",
-            spec=self._make_spec(),
-            target=self._make_target(),
+            spec=_make_spec(),
+            target=_make_target(),
         )
         assert pool.available_count() == 0
         assert pool.checked_out_count() == 0
@@ -125,8 +123,8 @@ class TestVMSandboxPoolConstruction:
         cfg = PoolConfig(min_idle=0, max_size=3, prewarm_count=0)
         pool = VMSandboxPool(
             backend_name="qemu",
-            spec=self._make_spec(),
-            target=self._make_target(),
+            spec=_make_spec(),
+            target=_make_target(),
             config=cfg,
         )
         assert pool.config.min_idle == 0
@@ -134,8 +132,8 @@ class TestVMSandboxPoolConstruction:
     def test_stats_empty_pool(self) -> None:
         pool = VMSandboxPool(
             backend_name="qemu",
-            spec=self._make_spec(),
-            target=self._make_target(),
+            spec=_make_spec(),
+            target=_make_target(),
         )
         stats = pool.stats()
         assert stats.available == 0
@@ -146,8 +144,8 @@ class TestVMSandboxPoolConstruction:
     def test_prewarm_shutdown_pool_returns_zero(self) -> None:
         pool = VMSandboxPool(
             backend_name="qemu",
-            spec=self._make_spec(),
-            target=self._make_target(),
+            spec=_make_spec(),
+            target=_make_target(),
         )
         pool._shutdown = True
         assert pool.prewarm() == 0
@@ -155,8 +153,8 @@ class TestVMSandboxPoolConstruction:
     def test_auto_scale_shutdown_pool_returns_zero(self) -> None:
         pool = VMSandboxPool(
             backend_name="qemu",
-            spec=self._make_spec(),
-            target=self._make_target(),
+            spec=_make_spec(),
+            target=_make_target(),
         )
         pool._shutdown = True
         assert pool.auto_scale() == 0
@@ -164,8 +162,8 @@ class TestVMSandboxPoolConstruction:
     def test_checkout_shutdown_pool_raises(self) -> None:
         pool = VMSandboxPool(
             backend_name="qemu",
-            spec=self._make_spec(),
-            target=self._make_target(),
+            spec=_make_spec(),
+            target=_make_target(),
         )
         pool._shutdown = True
         with pytest.raises(RuntimeError, match="shut down"):
@@ -174,8 +172,8 @@ class TestVMSandboxPoolConstruction:
     def test_checkout_empty_pool_raises(self) -> None:
         pool = VMSandboxPool(
             backend_name="qemu",
-            spec=self._make_spec(),
-            target=self._make_target(),
+            spec=_make_spec(),
+            target=_make_target(),
         )
         with pytest.raises(RuntimeError, match="no available VM"):
             pool.checkout()
@@ -183,8 +181,8 @@ class TestVMSandboxPoolConstruction:
     def test_return_unregistered_instance_raises(self) -> None:
         pool = VMSandboxPool(
             backend_name="qemu",
-            spec=self._make_spec(),
-            target=self._make_target(),
+            spec=_make_spec(),
+            target=_make_target(),
         )
         with pytest.raises(KeyError, match="not registered"):
             pool.return_instance("nonexistent-id")
@@ -192,24 +190,27 @@ class TestVMSandboxPoolConstruction:
     def test_return_instance_not_checked_out_is_noop(self) -> None:
         pool = VMSandboxPool(
             backend_name="qemu",
-            spec=self._make_spec(),
-            target=self._make_target(),
+            spec=_make_spec(),
+            target=_make_target(),
         )
-        pool.return_instance("nonexistent-id")
+        pool.manager.instances["inst-x"] = None  # type: ignore[index]
+        pool.return_instance("inst-x")
+        assert pool.checked_out_count() == 0
+        assert pool.available_count() == 0
 
     def test_reap_idle_empty_pool(self) -> None:
         pool = VMSandboxPool(
             backend_name="qemu",
-            spec=self._make_spec(),
-            target=self._make_target(),
+            spec=_make_spec(),
+            target=_make_target(),
         )
         assert pool.reap_idle() == 0
 
     def test_reap_idle_shutdown_pool(self) -> None:
         pool = VMSandboxPool(
             backend_name="qemu",
-            spec=self._make_spec(),
-            target=self._make_target(),
+            spec=_make_spec(),
+            target=_make_target(),
         )
         pool._shutdown = True
         assert pool.reap_idle() == 0
@@ -217,8 +218,8 @@ class TestVMSandboxPoolConstruction:
     def test_shutdown_idempotent(self) -> None:
         pool = VMSandboxPool(
             backend_name="qemu",
-            spec=self._make_spec(),
-            target=self._make_target(),
+            spec=_make_spec(),
+            target=_make_target(),
         )
         pool.shutdown()
         pool.shutdown()
@@ -226,8 +227,8 @@ class TestVMSandboxPoolConstruction:
     def test_mark_failed_quarantines_instance(self) -> None:
         pool = VMSandboxPool(
             backend_name="qemu",
-            spec=self._make_spec(),
-            target=self._make_target(),
+            spec=_make_spec(),
+            target=_make_target(),
         )
         pool._available.append("inst-1")
         pool._checked_out.add("inst-2")
@@ -241,17 +242,20 @@ class TestVMSandboxPoolConstruction:
     def test_return_failed_instance_returns_early(self) -> None:
         pool = VMSandboxPool(
             backend_name="qemu",
-            spec=self._make_spec(),
-            target=self._make_target(),
+            spec=_make_spec(),
+            target=_make_target(),
         )
+        pool.manager.instances["inst-1"] = None  # type: ignore[index]
         pool._failed.add("inst-1")
         pool.return_instance("inst-1")
+        assert "inst-1" in pool._failed
+        assert pool.checked_out_count() == 0
 
     def test_stats_reflects_pool_state(self) -> None:
         pool = VMSandboxPool(
             backend_name="qemu",
-            spec=self._make_spec(),
-            target=self._make_target(),
+            spec=_make_spec(),
+            target=_make_target(),
         )
         pool._available.append("a1")
         pool._available.append("a2")
