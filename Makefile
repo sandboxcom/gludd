@@ -882,10 +882,6 @@ venv-repair:
 	@uv sync
 	@echo "venv repaired"
 
-list-tmp:
-	@du -sh /tmp/gludd-* 2>/dev/null | sort -rh | head -40; echo "---"; du -sh /tmp/gludd-*/*.log 2>/dev/null | sort -rh | head -20 || true
-	@echo "list-tmp done"
-
 clean-tmp:
 	@rm -rf /tmp/gludd-iso-* /tmp/gludd-gate-basetemp /tmp/gludd-winfix*-gate.log /tmp/gludd-test-gate.txt /tmp/pytest-of-* 2>/dev/null || true
 	@rm -rf /tmp/gludd-gate-* /tmp/gludd-gate-lite-* 2>/dev/null || true
