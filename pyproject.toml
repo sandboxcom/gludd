@@ -134,11 +134,7 @@ disallow_untyped_defs = true
 exclude = ["scripts/", "tests/unit/test_injection_patterns.py", "tests/unit/test_sql_injection_patterns.py", "tests/unit/test_ci_push_guard.py", "abtest/"]
 
 [[tool.mypy.overrides]]
-module = ["pygments", "pygments.*", "ansible.*", "hvac.*", "psycopg.*", "yaml.*", "tree_sitter.*", "tree_sitter_python.*", "huggingface_hub.*", "diskcache.*", "watchdog.*", "croniter.*", "jsonschema", "googleapiclient.*", "google.*", "azure.*", "ansible_runner", "scapy", "scapy.*", "xmlsec"]
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = ["tests.fixtures", "tests.fixtures.*"]
+module = ["pygments", "pygments.*", "ansible.*", "hvac.*", "psycopg.*", "yaml.*", "tree_sitter.*", "tree_sitter_python.*", "huggingface_hub.*", "diskcache.*", "watchdog.*", "croniter.*", "jsonschema", "googleapiclient.*", "google.*", "azure.*", "ansible_runner", "scapy", "scapy.*", "xmlsec", "lxml", "lxml.etree", "lxml.*", "pyVim", "pyVim.*", "pyVmomi", "pyVmomi.*", "openai", "openai.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
@@ -153,15 +149,6 @@ disable_error_code = ["misc"]
 module = "general_ludd.observability.metrics_exporter"
 disable_error_code = ["type-arg"]
 
-[[tool.mypy.overrides]]
-module = ["tests", "tests.*"]
-disallow_untyped_defs = false
-disallow_untyped_calls = false
-check_untyped_defs = true
-disallow_incomplete_defs = false
-warn_return_any = false
-warn_unused_ignores = false
-disable_error_code = ["arg-type", "attr-defined", "type-arg", "index", "operator", "union-attr", "assignment", "comparison-overlap", "var-annotated", "misc", "name-defined", "has-type", "type-var", "call-overload", "return-value", "list-item", "untyped-decorator", "redundant-cast", "truthy-function", "no-redef", "name-match", "unused-ignore", "typeddict-unknown-key", "typeddict-item", "dict-item"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
