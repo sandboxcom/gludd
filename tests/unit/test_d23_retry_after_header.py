@@ -102,7 +102,7 @@ class TestRetryAfterHeaderHonored:
                 "primary",
                 [{"role": "user", "content": "hi"}],
                 base_backoff_seconds=0.0,
-            )
+            ))
 
         assert sleeps, "time.sleep was never called by the retry path"
         # _compute_backoff returns max(retry_after, 1.0) for RATE_LIMITED when
@@ -144,7 +144,7 @@ class TestRetryAfterHeaderHonored:
                 "primary",
                 [{"role": "user", "content": "hi"}],
                 base_backoff_seconds=0.0,
-            )
+            ))
 
         assert sleeps, "time.sleep was never called by the retry path"
         # Without a header we must NOT invent a 30s wait — backoff should be

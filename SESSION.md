@@ -35,6 +35,56 @@ Code versions `0.1.0-beta.2` through `0.1.0-beta.5` exist in `pyproject.toml`/`_
 
 ---
 
+## SESSION 43 — 2026-07-16
+
+- **HEAD: `48cdee26`** on `development` branch
+- **Version: 0.1.0-beta.5** (pyproject.toml)
+- **Push status: NOT VERIFIED** — verify-remote not run this session
+- **CI: NOT CHECKED** — no ci-verdict run this session
+- **Gate: NOT RUN** — full gate not re-run on HEAD
+- **Working tree: near-clean** — `.ci-status` modified, `.ansible/.lock` deleted
+
+### Commits since Session 42 doc update (3 commits: `deb07989..48cdee26`)
+
+| Category | Description | Commit(s) |
+|----------|-------------|-----------|
+| **CI ansible sweep** | YAML nested quotes, jinja2 regex_search, jinja2 slice syntax, unnamed blocks — 12 files | `48cdee26` |
+| **Docs** | TASKS.md + SESSION.md Session 42 state | `62d956a9` |
+| **Docs** | NF.2 Unikernel Sandbox spec marked IMPLEMENTED (P1-P6 done, 227+ tests) | `deb07989` |
+
+### Enforcement fixes summary (Session 42, all committed)
+
+| Fix | Commit |
+|-----|--------|
+| enforce-stop disengage bypass (disengage no longer skips `hasRealPendingWork()` text-only block; heuristics-only skip) | `10c64ee5` |
+| enforce-verified-claims evidence regex narrowed (requires ≥1 hex letter — pure-digit strings no longer count as commit-hash evidence) | `10c64ee5` |
+| enforce-session-start `isTaskFileRead` input shape (checks both `tool_call.path` and `tool_call.tool_input?.path`) | `10c64ee5` |
+| watchdog observability improvements | `10c64ee5` |
+| enforce-stop UNDER-FLOOR dispatch detection from multitask state — cross-plugin backstop closing BUGS.md #14 gap | `77ba3714` |
+| workspace-restricted path permissions for read/write/edit/glob/grep tools | `631dd626` |
+
+### ⚠️ RESTART-REQUIRED CAVEAT
+
+**All enforcement plugin fixes above are committed but INERT until opencode is restarted.** OpenCode loads `.opencode/plugin/*.ts` at startup only — there is no hot-reload API for plugin source. Behavioral enforcement in the current session runs the PRE-fix plugin code. After restart, verify by attempting a text-only response / 0-dispatch edit with pending work — it should be blocked. If it goes through, the fix didn't take effect and needs investigation. (AGENTS.md "CRITICAL: Enforcement Plugin Changes Require Restart".)
+
+### Remaining open items
+
+| Item | Status |
+|------|--------|
+| A.4 — Cut v0.1.0-beta.2 release | BLOCKED on CI (awaiting verdict on tip `48cdee26`) |
+| Push development to remote + verify | NOT VERIFIED |
+| opencode restart to activate enforcement fixes | PENDING (user action) |
+
+### Next
+
+1. Restart opencode to activate enforcement plugin fixes (10c64ee5, 77ba3714, 631dd626)
+2. Push development, wait for CI green on tip `48cdee26`
+3. Cut beta.2 via `make release-cut`
+
+- **Last Updated: 2026-07-16 — Session 43.** HEAD `48cdee26` on `development`. CI ansible sweep landed. All Session 42 enforcement fixes committed but restart-required before behavioral effect. BUGS.md #14 marked resolved-pending-restart. A.4 (beta.2 release) blocked on CI.
+
+---
+
 ## SESSION 42 — 2026-07-15
 
 - **HEAD: `0ad6e5d5`** on `development` branch

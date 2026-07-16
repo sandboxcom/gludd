@@ -1,10 +1,13 @@
 /**
  * enforce-multitask.ts — MECHANICALLY FORCES dispatching subagents per wave.
  *
- * Rewritten 2026-07-13: NO text.complete export. Message boundaries detected
- * via 5s inter-call timeout in tool.execute.before. Dispatch counting,
- * zero-streak tracking, and per-message enforcement all happen in a single
- * hook — no second hook needed.
+ * 2026-07-16: text.complete is now the CANONICAL message-boundary signal.
+ * handleMessageBoundary() is called at the end of text.complete to reset
+ * thisMessageDispatches. The heuristic detection in tool.execute.before
+ * (time gap / pattern / high-water-mark) is a fallback only, gated behind
+ * a module-level flag to prevent double-processing. This fixes the
+ * thisMessageDispatches inflation bug where the counter persisted across
+ * messages because boundary detection missed transitions.
  *
  * FAIL-OPEN: any error → allow. Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.
  * Floor: GLUDD_MULTITASK_MIN_DISPATCHES (default 10).
@@ -105,6 +108,18 @@ function hasPendingWork(): boolean {
 }
 
 function handleMessageBoundary(s: MultitaskState): void {
+  const now = Date.now()
+  // Idempotency guard: prevent double-processing within 500ms. When
+  // text.complete calls handleMessageBoundary first (canonical signal),
+  // the heuristic detection in tool.execute.before may fire again on
+  // the same boundary within the same process. Without this guard,
+  // zeroStreak double-increments and waveHistory gets duplicate entries.
+  const lastB = (s as any)._lastBoundaryTs
+  if (lastB && now - lastB < 500) {
+    return
+  }
+  (s as any)._lastBoundaryTs = now
+
   s.prevMessageDispatches = s.thisMessageDispatches
   if (s.thisMessageDispatches === 0) {
     s.zeroStreak++
@@ -176,6 +191,9 @@ const defaultImpl: HotModule = {
       const disengaged = isDisengaged()
 
       // --- Message boundary detection: multi-signal ---
+      // Signal 0 (canonical): text.complete hook calls handleMessageBoundary
+      // at message end. The 500ms idempotency guard in handleMessageBoundary
+      // prevents double-processing if the heuristic signals below also fire.
       // Signal 1: time gap > MSG_GAP_MS since last tool call
       let boundaryDetected = false
       if (_state.lastToolCallTs > 0 && (now - _state.lastToolCallTs) > MSG_GAP_MS) {
@@ -384,6 +402,17 @@ export default (({ }) => {
         ].join("\n"),
       }
     }
+
+    // --- Canonical message boundary: text.complete ---
+    // text.complete fires at the end of every assistant response. This is
+    // the ONLY reliable message-boundary signal. Resetting thisMessageDispatches
+    // here fixes the inflation bug where the counter persisted across messages
+    // because heuristic detection (time gap / pattern / high-water-mark)
+    // missed boundary transitions. The 500ms idempotency guard in
+    // handleMessageBoundary prevents double-processing if heuristic signals
+    // also fire.
+    handleMessageBoundary(_state)
+    writeState(_state)
 
     return output
   },
