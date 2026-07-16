@@ -1,6 +1,6 @@
 # TASKS.md — Evidence Ledger
 
-**Last consolidated: 2026-07-16 Session 50. HEAD `09c43221` on `development` (63 commits not pushed: `2f2d66ff..09c43221`). A.9 COMPLETE (beta.1 cut via release-create). A.4 BLOCKED on CI (run 29515568379 in_progress). Tree DIRTY (physics/chemistry modules, governance modules, enforcement fixes, tracking docs). 335/336 items checked (99%) — A.4 is the only open item. 7 new commits since last tracking update: healthcare/transportation governance (`3a2b0e10`), healthcare/transportation governance modules + multitask plugin update (`346819f3`), tracking docs (`a034f6f1`), transportation systems + pid staleness fix (`13d2bcc5`), environmental/immigration governance (`2d4b6854`), lint fixes (`3a51c115`), physical chemistry/analytical chemistry/materials science knowledge modules + 100 tests (`09c43221`).**
+**Last consolidated: 2026-07-16 Session 50. HEAD `bffea0fd` on `master` (development merged at `26092383`; 0 unpushed). Tree DIRTY: staged collections (forensics, physics roles), staged tests (forensics, physics, cli_physics, model_analysis), untracked files (trace_evidence_examiner, fingerprint_analyst, forensics_coordinator, photo_forensics_analyst, test_forensics_materials). NF.11-NF.12 physics/governance tracked; NF.11.1-NF.11.4 + NF.12.1-NF.12.5 unchecked. Latest 10 commits on master: `bffea0fd` (behavioral analysis), `a773bb30` (materials_science fixes), `0a4d9187` (tracking docs), `8b49ed57` (rebase), `8e290afd` (git-bisect), `26092383` (merge development), `52bd47b2` (beta.1 version refs), `746d72f4` (CI fixes), `02e5c637` (ci-await), `9dda5291` (merge dev).**
 
 Each line ticked when `make gate` is green and evidence is pasted.
 
@@ -17,9 +17,9 @@ Each line ticked when `make gate` is green and evidence is pasted.
 | J | Terraform HTTP Backend | 0 | 4 | 100% |
 | K | Workload-Aware Deployment | 0 | 2 | 100% |
 | L | SearX Model Search + Deploy | 0 | 3 | 100% |
-| **Total Active** | | **1** | **75** | **99%** |
+| **Total Active** | | **11** | **75** | **85%** |
 | *Archived* | *14 phases* | *0* | *188* | *100%* |
-| **Grand Total** | | **1** | **263** | **~100%** |
+| **Grand Total** | | **11** | **263** | **96%** |
 
 ---
 
@@ -522,12 +522,14 @@ New governance and physics/chemistry collections added in commits `3a2b0e10..09c
 - [ ] NF.11.3 — Environmental systems module + tests | status: in_progress | commits: `2d4b6854`
 - [ ] NF.11.4 — Immigration systems module + tests | status: in_progress | commits: `2d4b6854`
 
-### NF.12 — Physics Collection
+### NF.12 — Physics + Forensics Collection
 - [ ] NF.12.1 — Physical chemistry knowledge module (organic_chemistry, inorganic_chemistry, quantum_mechanics, thermodynamics, advanced_math) | status: in_progress | commits: `09c43221`
 - [ ] NF.12.2 — Analytical chemistry module + tests | status: in_progress | commits: `09c43221`
-- [ ] NF.12.3 — Materials science module + tests | status: in_progress | commits: `09c43221`
+- [ ] NF.12.3 — Materials science module + tests | status: in_progress | commits: `09c43221`, `a773bb30`
 - [ ] NF.12.4 — Research paper expert module + tests | status: in_progress | commits: `09c43221`
-- [ ] NF.12.5 — Latex expert, math modeler, organic synthesist, paper reviewer, particle experiment analyst, quantum computer, spectroscopy analyst, thermodynamics engineer roles | status: in_progress (untracked files in working tree)
+- [ ] NF.12.5 — Physics roles (latex_expert, math_modeler, organic_synthesist, paper_reviewer, particle_experiment_analyst, quantum_computer, spectroscopy_analyst, thermodynamics_engineer) + cli_physics + mechanistic_interpretability | status: in_progress (staged, not committed)
+- [ ] NF.12.6 — Behavioral analysis (social_engineering, behavioral_cues, animal_behavior) + 838 lines of tests | status: in_progress | commit: `bffea0fd`
+- [ ] NF.12.7 — Forensics collection (chain_of_custody, materials_forensics, photo_forensics, DNA analyst, trace evidence examiner roles) + test_forensics_chain_of_custody, test_forensics_photo | status: in_progress (staged, not committed)
 
 ### Enforcement Fixes
 - [x] NF-enf-1 — Enforcement PID staleness test fixes + multitask plugin update | status: completed | commits: `13d2bcc5`, `346819f3`

@@ -36,17 +36,19 @@ Code versions `0.1.0-beta.2` through `0.1.0-beta.5` exist in `pyproject.toml`/`_
 
 ## SESSION 50 — 2026-07-16 (current, UPDATED)
 
-- **HEAD: `0a4d9187`** on `master` branch (development merged to master at `26092383`)
+- **HEAD: `bffea0fd`** on `master` branch (development merged to master at `26092383`)
 - **Version: 0.1.0-beta.1** (pyproject.toml — bumped beta.4→beta.1 in `746d72f4`)
 - **Push status: NOT PUSHED** — local master commits not pushed to sandboxcom
 - **CI: NOT RUN** on current HEAD
-- **Working tree: DIRTY** — physics/chemistry modules, governance modules, enforcement fixes, new untracked collections (behavioral, forensics, physics roles/plugins, cli_physics, new test files)
-- **TASKS.md: 336/336 checked (100%)** — all items complete
+- **Working tree: DIRTY** — staged: forensics collection (chain_of_custody, materials_forensics, photo_forensics, DNA analyst, trace evidence examiner roles), physics collection (mechanistic_interpretability, 8 roles), molecule/prompt_eval, model_analysis plugin, cli_physics module, multiple new/updated test files. Untracked: trace_evidence_examiner.py, fingerprint_analyst role, forensics_coordinator role, photo_forensics_analyst role, test_forensics_materials.py
+- **TASKS.md: NF.11-NF.12 unchecked** — 9 new-feature items in progress, not yet committed
 
-### Master fix + beta.1 deletion (commits on master: `0a4d9187`)
+### Master commits (`bffea0fd` most recent)
 
 | Hash | Message |
 |------|---------|
+| `bffea0fd` | feat: add behavioral analysis modules and comprehensive tests - social_engineering, behavioral_cues, animal_behavior with 838 lines of tests |
+| `a773bb30` | fix: materials_science.py fix E501 long lines in characterization data, fix type errors at sort lambda and hall-petch return |
 | `0a4d9187` | docs: update tracking docs for Session 50 |
 | `8b49ed57` | resolve rebase conflicts: keep physics collection files on development |
 | `8e290afd` | feat: git-bisect target for automated regression finding |
@@ -82,7 +84,7 @@ Code versions `0.1.0-beta.2` through `0.1.0-beta.5` exist in `pyproject.toml`/`_
 
 ### Next
 
-1. Commit dirty working tree (physics, governance, behavioral, forensics collections)
+1. Stage and commit dirty working tree (forensics collection, physics collection, molecule/prompt_eval, model_analysis, cli_physics, tests)
 2. Run gate locally, verify green
 3. Push master to sandboxcom
 4. Wait for CI green

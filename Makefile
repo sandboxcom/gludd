@@ -425,7 +425,7 @@ collect-check:
 	@$(UV) run python -m pytest tests/ --co -q > /tmp/gludd-collect-output.txt 2>&1; EXIT=$$?; \
 	if [ $$EXIT -ne 0 ]; then \
 		echo "COLLECTION ERRORS DETECTED"; \
-		grep -E "ERROR|error" /tmp/gludd-collect-output.txt | head -5; \
+		grep -E "ERROR|error" /tmp/gludd-collect-output.txt | grep -vE '^\s+<(Function|Coroutine|Class)' | head -20; \
 		exit 1; \
 	fi; \
 	echo "Collection OK"
@@ -872,9 +872,25 @@ molecule-test-shard:
 log-agent-result:
 	@$(UV) run python3 scripts/log_agent_result.py
 
+list-tmp:
+	@du -sh /tmp/gludd-* 2>/dev/null | sort -rh | head -40; echo "---"; du -sh /tmp/gludd-*/*.log 2>/dev/null | sort -rh | head -20 || true
+	@echo "list-tmp done"
+
+venv-repair:
+	@rm -rf .venv
+	@uv venv .venv
+	@uv sync
+	@echo "venv repaired"
+
+list-tmp:
+	@du -sh /tmp/gludd-* 2>/dev/null | sort -rh | head -40; echo "---"; du -sh /tmp/gludd-*/*.log 2>/dev/null | sort -rh | head -20 || true
+	@echo "list-tmp done"
+
 clean-tmp:
 	@rm -rf /tmp/gludd-iso-* /tmp/gludd-gate-basetemp /tmp/gludd-winfix*-gate.log /tmp/gludd-test-gate.txt /tmp/pytest-of-* 2>/dev/null || true
+	@rm -rf /tmp/gludd-gate-* /tmp/gludd-gate-lite-* 2>/dev/null || true
 	@rm -rf /private/tmp/gludd-iso-* /private/tmp/pytest-of-* 2>/dev/null || true
+	@rm -rf /private/tmp/gludd-gate-* /private/tmp/gludd-gate-lite-* 2>/dev/null || true
 	@$(UV) run python3 scripts/clean_tmp.py
 	@echo "clean-tmp done"
 

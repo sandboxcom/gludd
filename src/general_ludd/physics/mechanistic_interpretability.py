@@ -11,7 +11,8 @@ from __future__ import annotations
 
 import math
 import random
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 _EPS: float = 1e-8
 _H: float = 1e-4
@@ -139,7 +140,7 @@ SUPERVISION_EVALUATION: dict[str, str] = {
 # ---------------------------------------------------------------------------
 
 def _dot(a: list[float], b: list[float]) -> float:
-    return sum(ai * bi for ai, bi in zip(a, b))
+    return sum(ai * bi for ai, bi in zip(a, b, strict=False))
 
 
 def _matvec(M: list[list[float]], v: list[float]) -> list[float]:
@@ -147,11 +148,11 @@ def _matvec(M: list[list[float]], v: list[float]) -> list[float]:
 
 
 def _vec_add(a: list[float], b: list[float]) -> list[float]:
-    return [ai + bi for ai, bi in zip(a, b)]
+    return [ai + bi for ai, bi in zip(a, b, strict=False)]
 
 
 def _vec_sub(a: list[float], b: list[float]) -> list[float]:
-    return [ai - bi for ai, bi in zip(a, b)]
+    return [ai - bi for ai, bi in zip(a, b, strict=False)]
 
 
 def _vec_scale(v: list[float], s: float) -> list[float]:
@@ -609,7 +610,7 @@ def train_probing_classifier(
     if not layer_activations or not labels:
         return {"weights": [], "bias": 0.0, "accuracy": 0.0}
 
-    weights, bias, loss_history = _sgd_linear_fit(
+    weights, bias, _loss_history = _sgd_linear_fit(
         layer_activations, labels, epochs=epochs, lr=lr)
 
     correct = 0
@@ -691,7 +692,7 @@ def analyze_attention_patterns(
                 "entropy_per_head": [], "sparsity_per_head": []}
 
     num_heads = len(attention_weights)
-    seq_len = len(attention_weights[0]) if num_heads > 0 else 0
+    len(attention_weights[0]) if num_heads > 0 else 0
 
     mean_attn: list[float] = []
     entropies: list[float] = []
@@ -789,7 +790,7 @@ def tcav_score(
     labels = [1.0] * n + [0.0] * n
 
     X = [[v] for v in combined]
-    weights, bias, _ = _sgd_linear_fit(X, labels, epochs=200, lr=0.01)
+    weights, _bias, _ = _sgd_linear_fit(X, labels, epochs=200, lr=0.01)
 
     concept_dir = weights[0] if weights else 0.0
     if abs(concept_dir) < _EPS:
@@ -843,7 +844,7 @@ def toy_model_reversal_curse(
     pairs = [(i, i + half) for i in range(half)]
 
     loss_history: list[float] = []
-    for step in range(training_steps):
+    for _step in range(training_steps):
         total_loss = 0.0
         for a_idx, b_idx in pairs:
             hidden = _matvec(W_fwd, embeddings[a_idx])
@@ -862,7 +863,7 @@ def toy_model_reversal_curse(
     reverse_correct = 0
     for a_idx, b_idx in pairs:
         hidden_fwd = [_relu(h) for h in _matvec(W_fwd, embeddings[a_idx])]
-        pred_fwd = _dot(hidden_fwd, embeddings[b_idx])
+        _dot(hidden_fwd, embeddings[b_idx])
         fwd_best = a_idx
         fwd_best_score = -float("inf")
         for t in range(num_tokens):
@@ -874,7 +875,7 @@ def toy_model_reversal_curse(
         if fwd_best == b_idx:
             forward_correct += 1
 
-        hidden_rev = [_relu(h) for h in _matvec(W_fwd, embeddings[b_idx])]
+        [_relu(h) for h in _matvec(W_fwd, embeddings[b_idx])]
         rev_best = b_idx
         rev_best_score = -float("inf")
         for t in range(num_tokens):

@@ -57,6 +57,7 @@ def main() -> int:
         "gludd-task-deadlines.warnings.log",
         "gludd-watchdog.log",
         "gludd-task-watchdog.log",
+        "gludd-auto-reset.log",
         "gludd-secrets-fresh.json",
     ]
     for fn in truncate_files:

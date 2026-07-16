@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable
 
 import pytest
 
@@ -43,20 +43,10 @@ from general_ludd.physics.mechanistic_interpretability import (
 )
 
 
-# ---------------------------------------------------------------------------
-# Test helpers
-# ---------------------------------------------------------------------------
-
-
 def _linear_model(input_data: list[float]) -> list[float]:
     w = [1.0, 0.5, 0.3, 0.2, 0.1, 0.05, 0.02, 0.01]
-    score = sum(a * b for a, b in zip(input_data, w[:len(input_data)]))
+    score = sum(a * b for a, b in zip(input_data, w[:len(input_data)], strict=False))
     return [score * 0.2, score * 0.5, score * 0.3]
-
-
-def _linear_model_scalar(input_data: list[float]) -> float:
-    w = [1.0, 0.5, 0.3, 0.2, 0.1, 0.05, 0.02, 0.01]
-    return sum(a * b for a, b in zip(input_data, w[:len(input_data)]))
 
 
 def _identity_decoder(activation_vector: list[float]) -> list[float]:
@@ -67,11 +57,6 @@ def _make_classifier_fn() -> Callable[[list[float]], float]:
     def classifier(activations: list[float]) -> float:
         return 1.0 if sum(activations) / max(len(activations), 1) > 0.5 else -1.0
     return classifier
-
-
-# ============================================================================
-# Data table tests
-# ============================================================================
 
 
 class TestDataTables:
@@ -104,11 +89,6 @@ class TestDataTables:
     def test_supervision_evaluation_has_entries(self) -> None:
         assert len(SUPERVISION_EVALUATION) >= 1
         assert "faithfulness" in SUPERVISION_EVALUATION
-
-
-# ============================================================================
-# Utility function tests
-# ============================================================================
 
 
 class TestNormalizeAttribution:
@@ -159,11 +139,6 @@ class TestInterpolateInput:
         assert result == [1.0, 2.0]
 
 
-# ============================================================================
-# Feature visualization tests
-# ============================================================================
-
-
 class TestActivationMaximization:
     def test_returns_list_of_floats(self) -> None:
         result = activation_maximization(
@@ -210,11 +185,6 @@ class TestFeatureInversion:
         )
         assert isinstance(result, list)
         assert len(result) == len(features)
-
-
-# ============================================================================
-# Attribution tests
-# ============================================================================
 
 
 class TestSaliencyMap:
@@ -278,15 +248,8 @@ class TestLimeExplain:
         assert "features" in result
 
     def test_empty_input_graceful(self) -> None:
-        result = lime_explain(
-            model_fn=_linear_model, input_data=[], num_samples=10,
-        )
+        result = lime_explain(model_fn=_linear_model, input_data=[], num_samples=10)
         assert isinstance(result, dict)
-
-
-# ============================================================================
-# Sparse autoencoder tests
-# ============================================================================
 
 
 class TestSparseAutoencoder:
@@ -321,11 +284,6 @@ class TestSparseAutoencoder:
         assert result == []
 
 
-# ============================================================================
-# Probing and knowledge neurons tests
-# ============================================================================
-
-
 class TestTrainProbingClassifier:
     def test_returns_dict_with_weights_accuracy(self) -> None:
         activations = [[0.5, 0.2], [0.3, 0.7], [0.8, 0.1], [0.1, 0.9]]
@@ -354,11 +312,6 @@ class TestKnowledgeNeuronScore:
 
     def test_short_input_returns_zero(self) -> None:
         assert compute_knowledge_neuron_score([1.0], [1.0]) == 0.0
-
-
-# ============================================================================
-# Circuit and attention analysis tests
-# ============================================================================
 
 
 class TestDetectCircuits:
@@ -410,11 +363,6 @@ class TestCopySuppressionScore:
         assert compute_copy_suppression_score([], []) == 0.0
 
 
-# ============================================================================
-# Concept-based interpretability tests
-# ============================================================================
-
-
 class TestTcavScore:
     def test_returns_float(self) -> None:
         concept = [0.5, 0.3, 0.8, 0.1, 0.9, 0.7, 0.6, 0.4]
@@ -441,11 +389,6 @@ class TestConceptBottleneckPredict:
         weights = [0.5, 0.5]
         result = concept_bottleneck_predict(concepts, weights)
         assert result == pytest.approx(2.5, 1e-6)
-
-
-# ============================================================================
-# Toy model tests
-# ============================================================================
 
 
 class TestReversalCurse:
@@ -494,11 +437,6 @@ class TestPhaseChangeDetect:
     def test_short_series(self) -> None:
         result = phase_change_detect([1.0, 2.0], "loss", window=50)
         assert result["change_points"] == []
-
-
-# ============================================================================
-# Evaluation metric tests
-# ============================================================================
 
 
 class TestFaithfulnessCompleteness:

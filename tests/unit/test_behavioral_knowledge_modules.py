@@ -58,6 +58,9 @@ ANIMAL_LANGUAGE_RESEARCH = animal_behavior.ANIMAL_LANGUAGE_RESEARCH
 classify_behavior = animal_behavior.classify_behavior
 interpret_vocalization = animal_behavior.interpret_vocalization
 recommend_training_approach = animal_behavior.recommend_training_approach
+query_language_research = animal_behavior.query_language_research
+compare_cognition = animal_behavior.compare_cognition
+classify_language_capability = animal_behavior.classify_language_capability
 
 
 # ============================================================================
@@ -675,11 +678,14 @@ class TestTrainingMethods:
 
 
 class TestAnimalLanguageResearch:
-    def test_eight_research_programs(self):
+    def test_fourteen_research_programs(self):
         expected = {
             "washoe", "koko", "nim_chimpsky", "alex_the_parrot",
             "dolphin_signature_whistles", "corvid_tool_use",
             "prairie_dog_alarm_calls", "bee_waggle_dance",
+            "kanzi", "dolphin_syntactic_comprehension",
+            "raven_problem_solving", "corvid_episodic_memory",
+            "cephalopod_intelligence", "elephant_infrasound",
         }
         assert set(ANIMAL_LANGUAGE_RESEARCH) == expected
 
@@ -881,3 +887,202 @@ class TestRecommendTrainingApproach:
             "negative_reinforcement" in result["recommended_method"]
             or "pressure" in str(result["protocol_steps"]).lower()
         )
+
+
+# ============================================================================
+# animal_behavior — new research entries: data integrity
+# ============================================================================
+
+class TestNewLanguageResearchEntries:
+    def test_kanzi_entry_has_fields(self):
+        entry = ANIMAL_LANGUAGE_RESEARCH["kanzi"]
+        for field in ("species", "researchers", "period", "key_findings", "significance"):
+            assert field in entry, f"kanzi missing {field}"
+        assert "Pan paniscus" in entry["species"]
+        assert "lexigram" in str(entry).lower()
+        assert len(entry["key_findings"]) >= 5
+
+    def test_dolphin_syntactic_entry(self):
+        entry = ANIMAL_LANGUAGE_RESEARCH["dolphin_syntactic_comprehension"]
+        assert "Tursiops truncatus" in entry["species"]
+        assert "Louis Herman" in entry["researchers"]
+        assert len(entry["key_findings"]) >= 5
+        findings_text = " ".join(entry["key_findings"]).lower()
+        assert "syntactic" in findings_text or "syntax" in findings_text
+
+    def test_raven_entry(self):
+        entry = ANIMAL_LANGUAGE_RESEARCH["raven_problem_solving"]
+        assert "Corvus corax" in entry["species"]
+        assert len(entry["key_findings"]) >= 4
+        findings_text = " ".join(entry["key_findings"]).lower()
+        assert "planning" in findings_text
+
+    def test_corvid_episodic_entry(self):
+        entry = ANIMAL_LANGUAGE_RESEARCH["corvid_episodic_memory"]
+        assert "Aphelocoma" in entry["species"] or "scrub jay" in entry["species"].lower()
+        assert "Nicola Clayton" in entry["researchers"]
+        assert len(entry["key_findings"]) >= 4
+
+    def test_cephalopod_entry(self):
+        entry = ANIMAL_LANGUAGE_RESEARCH["cephalopod_intelligence"]
+        assert "octopus" in entry["species"].lower()
+        assert "Octopus" in entry["species"]
+        assert len(entry["key_findings"]) >= 5
+        findings_text = " ".join(entry["key_findings"]).lower()
+        assert "rna editing" in findings_text or "chromatophore" in findings_text
+
+    def test_elephant_infrasound_entry(self):
+        entry = ANIMAL_LANGUAGE_RESEARCH["elephant_infrasound"]
+        assert "Loxodonta" in entry["species"] or "Elephas" in entry["species"]
+        assert len(entry["key_findings"]) >= 5
+        assert "infrasound" in str(entry).lower() or "seismic" in str(entry).lower()
+
+    def test_kanzi_has_criticisms(self):
+        entry = ANIMAL_LANGUAGE_RESEARCH["kanzi"]
+        assert "criticisms" in entry
+        assert len(entry["criticisms"]) >= 1
+
+    def test_all_new_entries_have_significance(self):
+        new_keys = {
+            "kanzi", "dolphin_syntactic_comprehension", "raven_problem_solving",
+            "corvid_episodic_memory", "cephalopod_intelligence", "elephant_infrasound",
+        }
+        for key in new_keys:
+            assert "significance" in ANIMAL_LANGUAGE_RESEARCH[key], f"{key} missing significance"
+            assert len(ANIMAL_LANGUAGE_RESEARCH[key]["significance"]) > 50, (
+                f"{key} significance too short"
+            )
+
+
+# ============================================================================
+# animal_behavior — query_language_research
+# ============================================================================
+
+class TestQueryLanguageResearch:
+    def test_exact_bonobo_match(self):
+        result = query_language_research("bonobo")
+        assert result["matched_entry"] == "kanzi"
+        assert result["confidence"] >= 0.7
+        assert "Sue Savage-Rumbaugh" in result["researchers"]
+        assert len(result["key_findings"]) > 0
+
+    def test_scientific_name_match(self):
+        result = query_language_research("Pan paniscus")
+        assert result["matched_entry"] == "kanzi"
+
+    def test_octopus_match(self):
+        result = query_language_research("octopus")
+        assert result["matched_entry"] == "cephalopod_intelligence"
+        assert "distributed" in " ".join(result["key_findings"]).lower()
+
+    def test_cuttlefish_match(self):
+        result = query_language_research("cuttlefish")
+        assert result["matched_entry"] == "cephalopod_intelligence"
+
+    def test_raven_match(self):
+        result = query_language_research("raven")
+        assert result["matched_entry"] == "raven_problem_solving"
+
+    def test_scrub_jay_match(self):
+        result = query_language_research("scrub jay")
+        assert result["matched_entry"] == "corvid_episodic_memory"
+
+    def test_elephant_match(self):
+        result = query_language_research("elephant")
+        assert result["matched_entry"] == "elephant_infrasound"
+
+    def test_dolphin_herman_match(self):
+        result = query_language_research("Louis Herman")
+        assert result["matched_entry"] == "dolphin_syntactic_comprehension"
+
+    def test_unknown_species(self):
+        result = query_language_research("giraffe")
+        assert result["matched_entry"] is None
+        assert result["confidence"] == 0.0
+        assert result["key_findings"] == []
+
+    def test_result_has_all_fields(self):
+        result = query_language_research("kanzi")
+        for field in (
+            "matched_entry", "species", "researchers", "period",
+            "key_findings", "significance", "confidence",
+        ):
+            assert field in result, f"Missing field: {field}"
+
+
+# ============================================================================
+# animal_behavior — compare_cognition
+# ============================================================================
+
+class TestCompareCognition:
+    def test_raven_vs_octopus(self):
+        result = compare_cognition("raven", "octopus")
+        assert result["species_a"]["matched"] is not None
+        assert result["species_b"]["matched"] is not None
+        assert "shared_capabilities" in result
+        assert "unique_to_a" in result
+        assert "unique_to_b" in result
+        assert len(result["review"]) > 20
+
+    def test_kanzi_vs_dolphin(self):
+        result = compare_cognition("bonobo", "dolphin")
+        assert result["species_a"]["matched"] == "kanzi"
+        assert result["species_b"]["matched"] is not None
+
+    def test_unknown_first_species(self):
+        result = compare_cognition("giraffe", "raven")
+        assert result["species_a"]["matched"] is None
+        assert result["species_b"]["matched"] is not None
+        assert len(result["review"]) > 0
+
+    def test_shared_capabilities_is_list(self):
+        result = compare_cognition("elephant", "bee")
+        assert isinstance(result["shared_capabilities"], list)
+        assert isinstance(result["unique_to_a"], list)
+        assert isinstance(result["unique_to_b"], list)
+
+
+# ============================================================================
+# animal_behavior — classify_language_capability
+# ============================================================================
+
+class TestClassifyLanguageCapability:
+    def test_kanzi_strong_evidence(self):
+        result = classify_language_capability("kanzi")
+        assert result["tier"] in ("strong_evidence", "moderate_evidence")
+        assert result["matched_research"] == "kanzi"
+        assert len(result["capability_summary"]) > 0
+
+    def test_dolphin_strong_evidence(self):
+        result = classify_language_capability("dolphin")
+        assert result["tier"] in ("strong_evidence", "moderate_evidence")
+
+    def test_raven_strong_evidence(self):
+        result = classify_language_capability("raven")
+        assert result["tier"] in ("strong_evidence", "moderate_evidence")
+        assert result["convergent_evolution"] is True
+
+    def test_octopus_convergent(self):
+        result = classify_language_capability("octopus")
+        assert result["convergent_evolution"] is True
+
+    def test_elephant_not_convergent(self):
+        result = classify_language_capability("elephant")
+        assert result["convergent_evolution"] is False
+
+    def test_bee_communicative_tier(self):
+        result = classify_language_capability("bee")
+        assert result["tier"] in ("communicative", "moderate_evidence", "strong_evidence")
+
+    def test_unknown_species_tier(self):
+        result = classify_language_capability("giraffe")
+        assert result["tier"] == "unknown"
+        assert result["matched_research"] is None
+
+    def test_all_tiers_produce_valid_fields(self):
+        for species in ("kanzi", "raven", "elephant", "bee", "giraffe"):
+            result = classify_language_capability(species)
+            for field in ("tier", "tier_description", "matched_research",
+                          "capability_summary", "research_confidence", "convergent_evolution"):
+                assert field in result, f"{species} missing {field}"
+            assert isinstance(result["capability_summary"], list)

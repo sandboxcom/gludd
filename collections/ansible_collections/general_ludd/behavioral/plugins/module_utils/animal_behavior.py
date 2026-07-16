@@ -1,18 +1,23 @@
 """Animal behavior analysis module: ethology, communication, stress,
-social structures, training, and animal language research.
+social structures, training, and deep animal language research.
 
 Public surface::
 
     classify_behavior(species, observation)           -> dict
     interpret_vocalization(species, audio_features)    -> dict
     recommend_training_approach(species, goal)         -> dict
+    query_language_research(species)                   -> dict
+    compare_cognition(species_a, species_b)            -> dict
+    classify_language_capability(species)              -> dict
 
     FIXED_ACTION_PATTERNS         dict[species] -> patterns
+    IMPRINTING_DATA               dict[type] -> properties
     ANIMAL_COMMUNICATION_MODES    dict[mode] -> properties
     STRESS_INDICATORS             dict[indicator] -> species
     SOCIAL_STRUCTURES             dict[structure] -> properties
     TRAINING_METHODS              dict[method] -> properties
     ANIMAL_LANGUAGE_RESEARCH      dict[species] -> findings
+    BEHAVIOR_CLASSIFICATIONS      dict[origin] -> list
 """
 
 from __future__ import annotations
@@ -348,6 +353,7 @@ ANIMAL_LANGUAGE_RESEARCH: dict[str, dict[str, Any]] = {
             "Internet chat event: answered questions via interpreter (AOL 1998)",
         ],
         "criticisms": ["heavy_reliance_on_interpreter_interpretation", "lack_of_blind_testing", "single_experimenter_bias", "unreplicable_results"],
+        "significance": "Most famous gorilla language subject; brought ape language research into public consciousness, though methodological concerns limit scientific weight of findings",
     },
     "nim_chimpsky": {
         "species": "Pan troglodytes (chimpanzee)",
@@ -393,7 +399,7 @@ ANIMAL_LANGUAGE_RESEARCH: dict[str, dict[str, Any]] = {
             "Dolphins remember signature whistles of former tank mates for 20+ years (longest non-human social memory documented)",
             "Coalition whistles: allied males converge on a shared whistle, suggesting group identity signaling",
         ],
-        "significance": "Only non-human animal demonstrated to use individually distinctive vocal labels that function as names",
+        "significance": "Only non-human animal demonstrated to use individually distinctive, learned vocal labels that function as referential names — suggesting a symbolic referential communication system convergent with human naming",
     },
     "corvid_tool_use": {
         "species": "Corvus moneduloides (New Caledonian crow)",
@@ -423,7 +429,7 @@ ANIMAL_LANGUAGE_RESEARCH: dict[str, dict[str, Any]] = {
     },
     "bee_waggle_dance": {
         "species": "Apis mellifera (western honey bee)",
-        "researchers": "Karl von Frisch (Nobel 1973)",
+        "researchers": "Karl von Frisch (Nobel 1973); Thomas Seeley, Juergen Tautz, Randolf Menzel",
         "period": "1920s-1940s (foundational); ongoing research",
         "encoding": {
             "direction": "Angle of waggle run relative to vertical on comb = angle of food source relative to sun azimuth",
@@ -436,8 +442,115 @@ ANIMAL_LANGUAGE_RESEARCH: dict[str, dict[str, Any]] = {
             "Dance-followers evaluate dances from multiple foragers before choosing destination",
             "Stop signals: bees head-butt dancing bees to inhibit dances for dangerous or overcrowded food sources (negative feedback loop)",
             "Cross-species dance comprehension: Apis cerana and Apis mellifera understand each other's dialect",
+            "The waggle dance is a true symbolic system: the bee encodes spatial coordinates that are decoded by observers and used for navigation without the observer ever having visited the site",
+            "Bees integrate celestial compass cues (sun position, polarization patterns) and optic flow (visual odometer) to compute vector path",
         ],
-        "significance": "Demonstrates that complex symbolic communication does not require a large brain or mammalian nervous system",
+        "significance": "Demonstrates that complex symbolic communication does not require a large brain or mammalian nervous system; the ~1M-neuron bee brain performs coordinate encoding/decoding comparable to a GPS system",
+    },
+    "kanzi": {
+        "species": "Pan paniscus (bonobo)",
+        "researchers": "Sue Savage-Rumbaugh, Duane Rumbaugh; later William Fields",
+        "period": "1980-present (ongoing at Ape Cognition and Conservation Initiative, formerly LRC)",
+        "language_medium": "Lexigram keyboard (400+ abstract geometric symbols) + spontaneous spoken English comprehension",
+        "vocabulary_size": "~500 lexigrams (production); ~3,000 spoken English words (comprehension, comparable to a 2.5-year-old human child)",
+        "key_findings": [
+            "Acquired lexigram use through OBSERVATION of his adoptive mother Matata's training (not direct instruction) — first evidence of observational language learning in a non-human ape",
+            "Demonstrated syntactic comprehension: correctly interpreted novel sentences like 'Put the ball on the hat' vs. 'Put the hat on the ball' (reversible sentences testing word-order understanding) at ~75% accuracy without prior training on those specific sentences",
+            "Manufactured and used stone tools (flint knapping) to cut ropes and access food — first bonobo to spontaneously make Oldowan-style stone tools",
+            "Learned to build fires, gather firewood, and toast marshmallows — demonstrating causal understanding of combustion",
+            "Comprehends spoken English at a level equivalent to a 2.5-year-old human child (tested via blind trials with novel sentences through headphones, eliminating Clever Hans effects)",
+            "Spontaneous vocalizations with intent: produces distinct vocalizations for specific referents (banana, grape, juice, yes, no) that are recognized by blind raters",
+            "Uses lexigram keyboard to communicate future intentions ('chase Kanzi', 'go to treehouse'), not just immediate desires — demonstrating displacement and planning",
+        ],
+        "criticisms": [
+            "Some linguistics (notably Chomsky, Pinker) argue Kanzi is performing sophisticated pattern-matching, not true syntactic competence",
+            "Truswell (2017): Kanzi's syntax is limited to linear order, lacking hierarchical phrase structure",
+            "Lexigram symbols are trained, not naturally acquired; comprehension may reflect association rather than symbolic understanding",
+        ],
+        "significance": "Kanzi is arguably the strongest counterexample to the claim that only humans possess syntactic language; his spontaneous acquisition, blind-tested novel sentence comprehension, and cross-modal understanding (spoken English → lexigram production) challenge the 'ape language failure' narrative that followed Nim",
+    },
+    "dolphin_syntactic_comprehension": {
+        "species": "Tursiops truncatus (bottlenose dolphin)",
+        "researchers": "Louis Herman, Adam Pack, Stan Kuczaj",
+        "period": "1979-2004 (Kewalo Basin Marine Mammal Laboratory)",
+        "language_medium": "Artificial gestural language (trainers' arm signals) and acoustic computer-generated whistle language",
+        "vocabulary_size": "~40+ words in two-way communication system; comprehension of novel 5-word sentences",
+        "key_findings": [
+            "Two dolphins (Akeakamai and Phoenix) learned artificial languages — Akeakamai via gestural signs, Phoenix via computer-generated acoustic whistles — demonstrating cross-modal language capacity",
+            "Syntactic understanding: correctly interpreted novel sentences with relational structure — 'SURFBOARD OVER PIPE FETCH' (take surfboard to the pipe) vs. 'PIPE OVER SURFBOARD FETCH' (take pipe to the surfboard) — 75-85% accuracy on reversible sentences",
+            "Understood the semantic difference between relational words (LEFT, RIGHT, OVER, UNDER, THROUGH, IN) and object words (HOOP, BALL, PIPE, SURFBOARD) — treating them as distinct grammatical categories",
+            "Demonstrated displacement: responded correctly to sentences about objects not currently visible (e.g., 'FETCH FRISBEE' when frisbee was behind a screen, requiring search)",
+            "Spontaneous behavioral innovation: when asked to create a novel behavior NOT in their repertoire ('CREATE HOOP PIPE'), both dolphins performed synchronized, never-before-seen behaviors, demonstrating comprehension of the instruction's gist",
+            "Reported modality: Akeakamai could report whether a named object was present or absent in the pool via distinct paddles (YES/NO), demonstrating declarative communication",
+            "Echolocation integrated with communication: dolphins could identify named objects via echolocation alone (blindfolded) and then respond to language instructions about those objects",
+        ],
+        "criticisms": [
+            "Artifical language systems may not reflect natural communication; syntactic skills in artificial context may not map to natural vocal syntax",
+            "Small sample size (2 individuals) limits generalizability to all dolphins",
+        ],
+        "significance": "The Herman lab produced the strongest evidence for syntactic processing in a non-human species: reversible sentence comprehension controlling for word-order requires true grammatical parsing, not associative chaining",
+    },
+    "raven_problem_solving": {
+        "species": "Corvus corax (common raven)",
+        "researchers": "Bernd Heinrich, Thomas Bugnyar, Mathias Osvath, Can Kabadayi",
+        "period": "1990s-present",
+        "key_findings": [
+            "PLANNING: ravens select and save tools for future use (up to 17 hours in advance), trading a less-preferred immediate reward for a tool needed later — demonstrating mental time travel previously thought unique to humans",
+            "BARTERING AND DELAYED GRATIFICATION: ravens barter with humans (exchange tokens for food) and out-perform chimpanzees on delayed gratification tasks, waiting up to 15 minutes to trade a low-value token for a high-value reward",
+            "THEORY OF MIND: ravens adjust cache-protection strategies based on whether a conspecific can SEE or HEAR them — hiding food more carefully when observed, using visual barriers, and even creating false caches to deceive observers",
+            "INSIGHT-BASED PROBLEM SOLVING: ravens solve novel multi-step problems (pulling strings, using tools in sequence) on first attempt without trial-and-error, suggesting causal reasoning",
+            "COALITIONS AND RECONCILIATION: ravens form strategic alliances, reconcile after conflicts, and console victims of aggression — behaviors previously documented only in primates",
+            "META-TOOL USE: ravens use one object to retrieve another object needed for the final task (e.g., using a short stick to retrieve a longer stick needed to reach food) — sequential tool use with planning",
+        ],
+        "significance": "Ravens demonstrate cognitive abilities (planning, delayed gratification beyond 15 min, theory of mind, insight) that rival or exceed great apes, despite having a brain <1% the size of a human brain — convergent evolution of intelligence in a non-mammalian lineage",
+    },
+    "corvid_episodic_memory": {
+        "species": "Aphelocoma californica (western scrub jay) + Pica pica (Eurasian magpie)",
+        "researchers": "Nicola Clayton, Nathan Emery, Anthony Dickinson, Helmut Prior",
+        "period": "1998-present",
+        "key_findings": [
+            "EPISODIC-LIKE MEMORY: scrub jays remember WHAT food they cached, WHERE they cached it, and WHEN they cached it — the what-where-when triad that defines episodic memory in humans",
+            "They cached perishable wax worms and non-perishable peanuts in different trays; after the wax worms degraded (4h later), they preferentially retrieved peanuts, but after short intervals (4h) when worms were still fresh, they retrieved worms first — demonstrating memory for the temporal context of caching",
+            "Experience projection: if a scrub jay itself has stolen another bird's caches, it becomes MORE likely to re-cache its own food when observed, suggesting it projects its own thieving experience onto the observer's intentions (experience-projection theory of mind)",
+            "MAGPIE MIRROR SELF-RECOGNITION: Eurasian magpies pass the mirror mark test — a colored sticker placed on their throat (visible only in a mirror) elicits self-directed scratching/touching — making them the first non-mammalian species to demonstrate MSR",
+            "Magpies show neural activation in the nidopallium caudolaterale (NCL, functionally analogous to mammalian prefrontal cortex) during cognitive tasks, supporting the convergent evolution hypothesis",
+        ],
+        "significance": "Corvids possess episodic-like memory and some show mirror self-recognition, previously considered uniquely human or great-ape capacities; these findings forced a fundamental re-evaluation of the neural requirements for complex cognition",
+    },
+    "cephalopod_intelligence": {
+        "species": "Octopus vulgaris (common octopus), Sepia officinalis (common cuttlefish), Enteroctopus dofleini (giant Pacific octopus)",
+        "researchers": "Jennifer Mather, Roger Hanlon, Peter Godfrey-Smith, Michael Kuba",
+        "period": "1990s-present",
+        "key_findings": [
+            "DISTRIBUTED NERVOUS SYSTEM: two-thirds of octopus neurons are in the arms (not the brain); arms can execute complex behaviors (grasping, chemotaxis, color matching) independently of central brain control — a fundamentally different cognitive architecture from vertebrates",
+            "TOOL USE: veined octopuses (Amphioctopus marginatus) carry coconut shells for later use as portable shelters — planning future shelter needs and transporting tools",
+            "PLAY BEHAVIOR: octopuses engage in object play (repeatedly squirting water at floating objects, manipulating novel objects with no apparent food or escape function) — a behavior marker of complex cognition",
+            "INDIVIDUAL RECOGNITION: octopuses can individually recognize human handlers, responding differently to familiar vs. unfamiliar people (approaching feeders, squirting at harassers) after a single encounter",
+            "PUZZLE SOLVING: octopuses open childproof pill bottles, unscrew jar lids, and navigate mazes using spatial memory and manipulative dexterity — integrating motor planning with problem-solving",
+            "CHROMATOPHORE COMMUNICATION: cuttlefish and squid communicate via rapid, millisecond-precision skin pattern changes (chromatophores, iridophores, leucophores) — a visual communication channel capable of producing distinct patterns for aggression, courtship, camouflage, and deception",
+            "DELAYED GRATIFICATION: cuttlefish pass the marshmallow test (Stanford marshmallow experiment adapted for cephalopods) — they wait up to 130 seconds for a preferred prey item (live shrimp) rather than taking immediately available less-preferred food (crab), and the individuals who wait longest also perform best on learning tasks",
+            "CUTTLEFISH EPISODIC MEMORY: cuttlefish remember what they ate, where, and how long ago, adjusting future foraging accordingly — the what-where-when triad demonstrated in an invertebrate",
+            "RNA EDITING EXTRAORDINAIRE: coleoid cephalopods recode the majority of proteins in their nervous system through extensive RNA editing (A-to-I by ADAR enzymes), orders of magnitude more than any other animal — a unique molecular mechanism for neural plasticity that may underpin their cognitive flexibility",
+        ],
+        "significance": "Cephalopods represent a completely independent evolutionary origin of complex intelligence: separated from vertebrates by 600 million years, they converged on play, tool use, episodic memory, and individual recognition using radically different neural architecture — challenging the assumption that complex cognition requires a vertebrate brain plan",
+    },
+    "elephant_infrasound": {
+        "species": "Loxodonta africana (African savanna elephant), Elephas maximus (Asian elephant)",
+        "researchers": "Katy Payne, Joyce Poole, Caitlin O'Connell-Rodwell, Karen McComb",
+        "period": "1984-present",
+        "language_medium": "Infrasound (1-20 Hz) — below human hearing threshold — and seismic communication through ground vibrations",
+        "key_findings": [
+            "INFRASOUND RANGE: elephant calls propagate 4-10 km through air (even farther under temperature inversion conditions) and 16-32 km through the ground as seismic waves — enabling long-distance coordination across fragmented habitats",
+            "FAMILY-SPECIFIC CALLS: matriarchal family groups have distinct contact calls; elephants can identify and locate over 100 individual family members by voice alone, even after years of separation",
+            "SEISMIC COMMUNICATION: elephants detect ground-borne vibrations through pressure-sensitive Pacinian and Meissner corpuscles in their feet, trunk tip, and toe bones; they freeze and press their feet to the ground when listening to distant seismic signals",
+            "ANATOMICAL ADAPTATION: elephants possess a unique fatty pad (digital cushion) in each foot that acts as an acoustic impedance-matching device, coupling ground vibrations to bone conduction pathways in the foot and leg skeleton",
+            "MATING COORDINATION: female elephants in estrus produce distinct infrasonic calls that attract males from kilometers away; males converge on the source despite dense vegetation and zero visual contact",
+            "MOURNING BEHAVIOR: elephants exhibit grief and mourning rituals for deceased conspecifics — they visit bones of dead family members, touch them with trunks and feet, and remain silent for extended periods; they also cover dead elephants with branches and soil (apparent burial behavior)",
+            "ANTI-PREDATOR COORDINATION: when one family group detects lions (via sound or sight), the matriarch coordinates a group defense using infrasonic rumbles that organize the herd into a protective formation with calves in the center — demonstrating coordinated defensive communication",
+            "DIALECTS: acoustic analysis reveals regional dialects in elephant calls; forest elephants (Loxodonta cyclotis) produce structurally different calls from savanna elephants, with playback experiments showing elephants respond more strongly to familiar dialects",
+            "SEISMIC WARNING NETWORK: elephants can detect approaching thunderstorms, helicopters, and vehicles through long-distance seismic sensing, potentially serving as an early-warning system analogous to a seismic monitoring network",
+        ],
+        "significance": "Elephants maintain the most spatially extensive communication system of any terrestrial animal (air + ground channels spanning up to 32 km) and are the only mammals definitively demonstrated to use seismic communication for social coordination, mating, and predator defense",
     },
 }
 
@@ -488,7 +601,7 @@ def classify_behavior(species: str, observation: dict[str, Any]) -> dict[str, An
 
     behavior_type = "learned"
     functional_category = "general"
-    specific_classification = "undetermined"
+    specific_classification = "general_activity"
     confidence = 0.3
     related: list[str] = []
 
@@ -876,4 +989,320 @@ def recommend_training_approach(species: str, goal: dict[str, Any]) -> dict[str,
         "cautions": cautions,
         "reinforcement_type": reinforcement_type,
         "supporting_methods": supporting_methods,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Language Research Query Functions
+# ---------------------------------------------------------------------------
+
+def query_language_research(species: str) -> dict[str, Any]:
+    """Query the animal language research database for a given species.
+
+    Performs fuzzy matching against species/topic identifiers across the
+    ANIMAL_LANGUAGE_RESEARCH knowledge base.
+
+    Args:
+        species: Species identifier (common or scientific name), or research
+                 topic keyword (e.g., "bonobo", "octopus", "elephant", "dolphin",
+                 "raven", "corvid", "cuttlefish", "scrub jay", "magpie").
+
+    Returns:
+        Dict with:
+            - matched_entry: str | None — key in ANIMAL_LANGUAGE_RESEARCH
+            - species: str — canonical species name
+            - researchers: str — lead researchers
+            - period: str — active research period
+            - key_findings: list[str] — major findings
+            - significance: str — importance summary
+            - vocabulary_size: str | None — if applicable
+            - language_medium: str | None — if applicable
+            - criticisms: list[str] — scholarly criticisms
+            - confidence: float — match confidence (0.0-1.0)
+    """
+    species_lower = species.lower()
+    matched_key: str | None = None
+    confidence = 0.0
+
+    mapping: dict[str, str] = {
+        # Great apes
+        "bonobo": "kanzi",
+        "kanzi": "kanzi",
+        "pan paniscus": "kanzi",
+        "chimpanzee": "washoe",
+        "chimp": "washoe",
+        "pan troglodytes": "washoe",
+        "gorilla": "koko",
+        "koko": "koko",
+        "gorilla gorilla": "koko",
+        "nim": "nim_chimpsky",
+        "nim chimpsky": "nim_chimpsky",
+        # Parrots
+        "parrot": "alex_the_parrot",
+        "alex": "alex_the_parrot",
+        "grey parrot": "alex_the_parrot",
+        "african grey": "alex_the_parrot",
+        "psittacus": "alex_the_parrot",
+        # Dolphins
+        "dolphin": "dolphin_signature_whistles",
+        "tursiops": "dolphin_signature_whistles",
+        "bottlenose": "dolphin_signature_whistles",
+        "akeakamai": "dolphin_syntactic_comprehension",
+        "louis herman": "dolphin_syntactic_comprehension",
+        # Corvids
+        "crow": "corvid_tool_use",
+        "new caledonian": "corvid_tool_use",
+        "corvus moneduloides": "corvid_tool_use",
+        "raven": "raven_problem_solving",
+        "corvus corax": "raven_problem_solving",
+        "scrub jay": "corvid_episodic_memory",
+        "aphelocoma": "corvid_episodic_memory",
+        "magpie": "corvid_episodic_memory",
+        "pica pica": "corvid_episodic_memory",
+        "corvid": "corvid_tool_use",
+        # Cephalopods
+        "octopus": "cephalopod_intelligence",
+        "cuttlefish": "cephalopod_intelligence",
+        "squid": "cephalopod_intelligence",
+        "cephalopod": "cephalopod_intelligence",
+        "octopus vulgaris": "cephalopod_intelligence",
+        "sepia": "cephalopod_intelligence",
+        # Elephants
+        "elephant": "elephant_infrasound",
+        "loxodonta": "elephant_infrasound",
+        "elephas maximus": "elephant_infrasound",
+        "infrasound": "elephant_infrasound",
+        # Bees
+        "bee": "bee_waggle_dance",
+        "honey bee": "bee_waggle_dance",
+        "apis mellifera": "bee_waggle_dance",
+        "waggle": "bee_waggle_dance",
+        # Prairie dogs
+        "prairie dog": "prairie_dog_alarm_calls",
+        "cynomys": "prairie_dog_alarm_calls",
+    }
+
+    for keyword, key in mapping.items():
+        if keyword in species_lower:
+            matched_key = key
+            confidence = 0.95 if species_lower == keyword else 0.75
+            break
+
+    if matched_key is None:
+        return {
+            "matched_entry": None,
+            "species": species,
+            "researchers": "N/A",
+            "period": "N/A",
+            "key_findings": [],
+            "significance": f"No language research data found for '{species}'. Try: bonobo, dolphin, raven, octopus, elephant, bee, prairie dog, parrot, crow, scrub jay, cuttlefish, magpie.",
+            "vocabulary_size": None,
+            "language_medium": None,
+            "criticisms": [],
+            "confidence": 0.0,
+        }
+
+    entry = ANIMAL_LANGUAGE_RESEARCH[matched_key]
+
+    return {
+        "matched_entry": matched_key,
+        "species": entry.get("species", ""),
+        "researchers": entry.get("researchers", ""),
+        "period": entry.get("period", ""),
+        "key_findings": entry.get("key_findings", []),
+        "significance": entry.get("significance", ""),
+        "vocabulary_size": entry.get("vocabulary_size"),
+        "language_medium": entry.get("language_medium"),
+        "criticisms": entry.get("criticisms", []),
+        "confidence": round(confidence, 2),
+    }
+
+
+def compare_cognition(species_a: str, species_b: str) -> dict[str, Any]:
+    """Compare cognitive-communicative capabilities of two species.
+
+    Queries both species against ANIMAL_LANGUAGE_RESEARCH and returns
+    a structured comparison including shared capabilities and unique strengths.
+
+    Args:
+        species_a: First species identifier.
+        species_b: Second species identifier.
+
+    Returns:
+        Dict with:
+            - species_a: dict — query result for species_a
+            - species_b: dict — query result for species_b
+            - shared_capabilities: list[str] — overlapping cognitive traits
+            - unique_to_a: list[str] — traits unique to species_a
+            - unique_to_b: list[str] — traits unique to species_b
+            - review: str — narrative comparison summary
+    """
+    result_a = query_language_research(species_a)
+    result_b = query_language_research(species_b)
+
+    cognitive_traits: dict[str, set[str]] = {}
+    for label, result in [("a", result_a), ("b", result_b)]:
+        traits: set[str] = set()
+        findings_text = " ".join(result.get("key_findings", [])).lower()
+        significance_text = result.get("significance", "").lower()
+
+        trait_markers = {
+            "tool_use": ["tool", "manufacture", "stone tool"],
+            "syntax": ["syntactic", "syntax", "grammar", "word order", "sentence"],
+            "planning": ["planning", "future", "mental time travel", "episodic"],
+            "theory_of_mind": ["theory of mind", "deception", "observer", "projection"],
+            "vocal_learning": ["vocal", "imitation", "mimicry", "song"],
+            "self_recognition": ["mirror", "self-recognition", "msr"],
+            "symbolic_communication": ["symbol", "lexigram", "gestural", "referential"],
+            "displacement": ["displacement", "absent", "not present"],
+            "delayed_gratification": ["delayed", "gratification", "marshmallow", "wait"],
+            "cooperation": ["cooperative", "coalition", "alliance", "coordination"],
+            "cross_modal": ["cross-modal", "multimodal", "modality"],
+            "numerical": ["count", "number", "zero", "quantity"],
+        }
+
+        for trait, markers in trait_markers.items():
+            if any(m in findings_text or m in significance_text for m in markers):
+                traits.add(trait)
+
+        cognitive_traits[label] = traits
+
+    shared = sorted(cognitive_traits["a"] & cognitive_traits["b"])
+    unique_a = sorted(cognitive_traits["a"] - cognitive_traits["b"] - {"syntax", "grammar"} if cognitive_traits["a"] - cognitive_traits["b"] == set() else cognitive_traits["a"] - cognitive_traits["b"])
+    unique_b = sorted(cognitive_traits["b"] - cognitive_traits["a"])
+
+    review_parts: list[str] = []
+    if result_a["matched_entry"] and result_b["matched_entry"]:
+        review_parts.append(
+            f"{result_a['species'].split('(')[0].strip()} and {result_b['species'].split('(')[0].strip()} "
+            f"both demonstrate advanced cognitive-communicative abilities."
+        )
+    if shared:
+        review_parts.append(f"Shared capabilities: {', '.join(shared)}.")
+    if unique_a:
+        review_parts.append(f"{result_a['species'].split('(')[0].strip()}-unique: {', '.join(unique_a)}.")
+    if unique_b:
+        review_parts.append(f"{result_b['species'].split('(')[0].strip()}-unique: {', '.join(unique_b)}.")
+
+    if not review_parts:
+        review_parts.append("One or both species lack language-research data; comparison is limited.")
+
+    return {
+        "species_a": {
+            "input": species_a,
+            "matched": result_a["matched_entry"],
+            "researchers": result_a["researchers"],
+        },
+        "species_b": {
+            "input": species_b,
+            "matched": result_b["matched_entry"],
+            "researchers": result_b["researchers"],
+        },
+        "shared_capabilities": shared,
+        "unique_to_a": unique_a,
+        "unique_to_b": unique_b,
+        "review": " ".join(review_parts),
+    }
+
+
+def classify_language_capability(species: str) -> dict[str, Any]:
+    """Classify a species' language capability tier based on research evidence.
+
+    Tiers:
+        - strong_evidence: Experimental evidence of syntax, displacement, planning.
+        - moderate_evidence: Referential/symbolic communication with experimental support.
+        - communicative: Complex natural communication system, limited experimental syntax evidence.
+        - unknown: No data in research database.
+
+    Args:
+        species: Species identifier.
+
+    Returns:
+        Dict with:
+            - tier: str
+            - tier_description: str
+            - matched_research: str | None
+            - capability_summary: list[str]
+            - research_confidence: float
+            - convergent_evolution: bool — has radically different brain architecture than primates
+    """
+    result = query_language_research(species)
+
+    if result["matched_entry"] is None:
+        return {
+            "tier": "unknown",
+            "tier_description": "No language research data in database",
+            "matched_research": None,
+            "capability_summary": [result["significance"]],
+            "research_confidence": 0.0,
+            "convergent_evolution": False,
+        }
+
+    entry = ANIMAL_LANGUAGE_RESEARCH[result["matched_entry"]]
+    findings = entry.get("key_findings", [])
+    significance = entry.get("significance", "")
+    findings_text = " ".join(findings).lower() + " " + significance.lower()
+
+    tier = "communicative"
+    tier_desc = (
+        "Complex natural communication system documented; "
+        "limited or mixed experimental evidence for human-like linguistic capacity"
+    )
+
+    strong_indicators = {
+        "syntax": ["syntactic", "word order", "grammar", "reversible sentence"],
+        "planning": ["planning", "future", "mental time travel"],
+        "displacement": ["displacement", "not present", "novel sentence"],
+        "meta_cognition": ["mirror", "metacognit", "self-recogn"],
+    }
+
+    moderate_indicators = {
+        "symbolic": ["symbol", "lexigram", "referential communication"],
+        "tool_complex": ["tool use", "sequential tool", "manufacture"],
+        "vocal_label": ["vocal label", "name", "signature whistle", "individually distinctive", "referential"],
+    }
+
+    strong_count = sum(
+        1 for markers in strong_indicators.values()
+        if any(m in findings_text for m in markers)
+    )
+    moderate_count = sum(
+        1 for markers in moderate_indicators.values()
+        if any(m in findings_text for m in markers)
+    )
+
+    if strong_count >= 2 or (strong_count >= 1 and moderate_count >= 2):
+        tier = "strong_evidence"
+        tier_desc = (
+            "Multiple lines of experimental evidence for syntactic processing, "
+            "displacement, planning, or metacognitive capacity"
+        )
+    elif strong_count >= 1 or moderate_count >= 2:
+        tier = "moderate_evidence"
+        tier_desc = (
+            "Experimental evidence of symbolic/referential communication "
+            "or complex cognitive abilities; limited or mixed syntax results"
+        )
+
+    convergent_lineages = {
+        "corvid_tool_use",
+        "raven_problem_solving",
+        "corvid_episodic_memory",
+        "cephalopod_intelligence",
+        "bee_waggle_dance",
+        "alex_the_parrot",
+    }
+    convergent = result["matched_entry"] in convergent_lineages
+
+    capability_summary: list[str] = []
+    for finding in findings[:6]:
+        capability_summary.append(finding)
+
+    return {
+        "tier": tier,
+        "tier_description": tier_desc,
+        "matched_research": result["matched_entry"],
+        "capability_summary": capability_summary,
+        "research_confidence": result["confidence"],
+        "convergent_evolution": convergent,
     }
