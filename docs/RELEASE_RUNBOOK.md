@@ -19,19 +19,110 @@ COMPLETENESS CHECK: PASS — all 16 checks passed.
 Anything short of that literal `PASS` line is not a release, no matter what the
 GitHub UI shows.
 
-## Cutting a release
+## Beta.2 release — exact steps once CI is green
+
+A linear, copy-pasteable walk-through for `v0.1.0-beta.2`. Run each step in
+order; **stop and fix** on any non-zero exit. Do not skip ahead.
+
+### 0. Preconditions
+
+- Working tree clean: `make git-status` shows no uncommitted changes.
+- Version already bumped to `0.1.0-beta.2` in `pyproject.toml`,
+  `src/general_ludd/__init__.py`, `CHANGELOG.md`, and the README status table
+  (`**Status as of v0.1.0-beta.2 — <date>**`).
+- `make check-readme-status TAG=v0.1.0-beta.2` exits 0.
+
+### 1. Verify CI is GREEN on `development`
 
 ```
-make release-cut TAG=v0.1.0-beta.2 MSG='release notes'
+make ci-verdict-safe BRANCH=development
 ```
 
-That is the **only** sanctioned path. It is fail-closed at every step:
+Requires `conclusion: success` **and** `headSha == development tip`. If PENDING
+→ wait and resume other work; re-check at the next natural break (the cooldown
+is 10 min — do NOT poll tighter). If RED → fix-forward on `development`, do not
+proceed. A cancelled run is **not** a verdict (see "A cancelled CI run is NOT a
+verdict" below); treat cancelled/no-run as red.
+
+### 2. Merge `development` → `master` (main checkout only)
+
+```
+make development-merge-to-master
+```
+
+This performs a `--no-ff` merge on the **main checkout** (`/Users/shawnwilson/gludd`),
+never inside a worktree. It requires CI green on `development`. After it
+completes, verify `master` tip matches the merged commit:
+
+```
+make verify-remote BRANCH=master SHA=$(make git-rev-parse REF=HEAD)
+```
+
+Expect `VERIFIED master@<sha>`. A `REMOTE MISMATCH` means the push did not land
+— re-run the push, do not proceed.
+
+### 3. Cut the release
+
+```
+make release-cut TAG=v0.1.0-beta.2 MSG='v0.1.0-beta.2: <one-line summary>'
+```
+
+This is the **only** sanctioned release path. It is fail-closed at every step:
 
 1. `require-ci-green` — aborts unless CI is GREEN for the exact SHA being tagged.
 2. `check-readme-status` — the README status table must be current for this tag.
 3. push, then annotated tag + push (this is what triggers the CI release job).
 4. `release-view` — confirm the GitHub Release exists.
 5. poll, then **`verify-release-completeness`** — its exit code is the verdict.
+
+`release-cut`'s local poll gives up after ~10 min. A cold, tag-triggered
+full-matrix build runs **30–60 min**, so a poll timeout means **"still
+building"**, not failure. Do not conclude the release is broken on a poll
+exhaustion — proceed to step 4.
+
+### 4. Verify the 12 assets
+
+```
+make verify-release-completeness TAG=v0.1.0-beta.2
+```
+
+This is the **real gate** (not `verify-release-artifact`). It requires all 12
+artifact categories (see "What 'complete' means" below), the prerelease flag
+matching the `-beta` tag, version-stamped asset names, and no zero-size assets.
+Expect:
+
+```
+COMPLETENESS CHECK: PASS — all 16 checks passed.
+```
+
+If CI is still building, the check will report missing assets — wait and re-run
+rather than declaring failure. If CI is **complete** and assets are still
+missing, the release is broken; see "If CI is red for the tag" below.
+
+### 5. Publish / confirm
+
+Once `verify-release-completeness` passes, the GitHub Release created by
+`release-cut` step 4 is already public and non-draft. Confirm:
+
+```
+make release-view TAG=v0.1.0-beta.2
+```
+
+Expect `isDraft: false`, `isPrerelease: true`, and ≥12 assets listed. Paste the
+release URL and the `COMPLETENESS CHECK: PASS` line as the completion evidence
+in `TASKS.md` — without both, the release task is **not** done.
+
+### Rollback / repair
+
+If the tagged SHA turned red after tagging, or assets are incomplete on a
+**completed** CI run: do **not** back-fill locally-built binaries. Either
+`make release-recut TAG=v0.1.0-beta.2` (requires CI-green on the tag) or cut
+`v0.1.0-beta.3` from a green SHA and mark beta.2 superseded in its notes.
+
+For an already-published release missing only CI-built artifacts:
+`make release-upload-assets TAG=v0.1.0-beta.2 FILES='...'` (CI-built, tagged-SHA
+artifacts only), then `make release-set-prerelease TAG=v0.1.0-beta.2`, then
+re-run `verify-release-completeness`.
 
 Preconditions: the working tree must be clean, and the version must already be
 bumped in `pyproject.toml`, `__init__.py`, `CHANGELOG.md`, and `README.md`.
