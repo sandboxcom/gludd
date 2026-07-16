@@ -133,9 +133,9 @@ console.log(JSON.stringify({{ output_text: output.text, result_text: result?.tex
     assert result is not None
     out_text = result.get("output_text", "")
     res_text = result.get("result_text", "")
-    text = out_text or res_text
+    text = res_text or out_text
     assert "BLOCK" in text, (
-        f"Expected 'BLOCK' in text, got: {text[:200]!r}"
+        f"Expected 'BLOCK' in text, got output_text={out_text[:200]!r} result_text={res_text[:200]!r}"
     )
 
 
