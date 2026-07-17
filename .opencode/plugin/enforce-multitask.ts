@@ -360,6 +360,34 @@ export const defaultImpl: HotModule = {
       return
     }
   },
+  "text.complete": async (_input: unknown, output: unknown) => {
+    if (isSubagent()) return output
+    if (!FLOOR_ENFORCE) return undefined
+    const text = typeof output === "string" ? output
+      : (output as any)?.text ? String((output as any).text) : ""
+    if (!text || text.trim().length === 0) return output
+    if (isDisengaged()) return output
+    if (!hasPendingWork()) return output
+    const isToolOutput = (output as any)?.isToolOutput === true
+    if (isToolOutput) return output
+    if (_state.thisMessageDispatches > 0 && _state.thisMessageDispatches < MIN_DISPATCHES) {
+      const dispatched = _state.thisMessageDispatches
+      handleMessageBoundary(_state)
+      writeState(_state)
+      return {
+        text: [
+          "THIN WAVE BLOCKED",
+          `This message had only ${dispatched} dispatch(es).`,
+          `The 10-agent floor REQUIRES ${MIN_DISPATCHES} per wave.`,
+          "Your text has been blanked. Re-send with >= " + String(MIN_DISPATCHES) + " dispatches.",
+          "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
+        ].join("\n"),
+      }
+    }
+    handleMessageBoundary(_state)
+    writeState(_state)
+    return output
+  },
 }
 
 // ============================================================================
