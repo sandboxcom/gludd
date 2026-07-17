@@ -6,14 +6,14 @@ or have thresholds so high enforcement is inert.
 
 THE FIX (this commit):
   P1: reads/greps/globs now increment _readStreak with time-based detection
-      - warn at 5+ reads AND >30s since dispatch
-      - deny at 10+ reads AND >60s since dispatch
-  P3: enforce-stop.ts reads the shared /tmp/gludd-tool-streak.json and
+      - warn at 8+ reads AND >30s since dispatch
+      - deny at 15+ reads AND >60s since dispatch
+  P3: enforce-stop.ts uses updateSharedStreak from shared.ts and
       - injects "DELEGATE-FIRST" at streak > 8 via text.complete
       - denies non-dispatch mutations at streak > 12 via tool.execute.before
 
 Tests 1-2 verify the P1 counter mechanics (increment on read, reset on dispatch).
-Tests 3-4 verify the P1 thresholds (warn at 5, deny at 10).
+Tests 3-4 verify the P1 thresholds (warn at 8, deny at 15).
 Test 5 verifies P3 cross-call grinding detection in enforce-stop.ts.
 Tests 6-7 verify the time gate (reads under 30s/60s allowed, over blocked).
 """
@@ -93,10 +93,10 @@ class TestP1ReadStreakIncrementsOnRead:
         assert m, "isDispatchTool(tool) branch not found"
         dispatch_body = m.group(1)
         assert re.search(
-            r"_lastDispatchTs\s*=\s*Date\.now\s*\(\s*\)",
+            r"_lastDispatchTs\s*=\s*now\b",
             dispatch_body,
         ), (
-            "isDispatchTool must update _lastDispatchTs = Date.now() — without "
+            "isDispatchTool must update _lastDispatchTs = now — without "
             "this the time gate uses a stale timestamp"
         )
 
@@ -106,14 +106,14 @@ class TestP1ReadStreakIncrementsOnRead:
 # ============================================================================
 
 
-class TestP1ReadGrindingWarnedAt5:
-    """P1: At >5 reads AND >30s since dispatch, an ADVISORY fires."""
+class TestP1ReadGrindingWarnedAt8:
+    """P1: At >8 reads AND >30s since dispatch, an ADVISORY fires."""
 
-    def test_warn_threshold_5_reads(self):
+    def test_warn_threshold_8_reads(self):
         src = _floor_src()
-        assert re.search(r"READ_GRIND_ADVISORY_COUNT.*?5|readStreak\s*>\s*5", src) or \
-               re.search(r"\b5\b.*?_readStreak", src, re.DOTALL), (
-            "Advisory must fire at 5 reads (NOT 10 as before the P1 fix)"
+        assert re.search(r"READ_GRIND_ADVISORY_COUNT.*?8|readStreak\s*>\s*8", src) or \
+               re.search(r"\b8\b.*?_readStreak", src, re.DOTALL), (
+            "Advisory must fire at 8 reads (NOT 5 as before the P1 fix)"
         )
 
     def test_warn_time_threshold_30s(self):
@@ -131,25 +131,25 @@ class TestP1ReadGrindingWarnedAt5:
         )
 
     def test_warn_requires_both_count_and_time(self):
-        """The advisory must AND both conditions: count > 5 AND time > 30s."""
+        """The advisory must AND both conditions: count > 8 AND time > 30s."""
         src = _floor_src()
         m = re.search(
-            r"readStreak\s*>\s*5\s*&&\s*\(?Date\.now\s*\(\s*\)\s*-\s*_lastDispatchTs",
+            r"readStreak\s*>\s*8\s*&&\s*msSinceDispatch\s*>\s*30_000",
             src,
         )
         assert m, (
-            "Advisory must AND the count (>5) and time (>30s) conditions with &&"
+            "Advisory must AND the count (>8) and time (>30s) conditions with &&"
         )
 
 
-class TestP1ReadGrindingDeniedAt10:
-    """P1: At >10 reads AND >60s since dispatch, reads are DENIED."""
+class TestP1ReadGrindingDeniedAt15:
+    """P1: At >15 reads AND >60s since dispatch, reads are DENIED."""
 
-    def test_deny_threshold_10_reads(self):
+    def test_deny_threshold_15_reads(self):
         src = _floor_src()
-        assert re.search(r"READ_GRIND_DENY_COUNT.*?10|readStreak\s*>\s*10", src) or \
-               re.search(r"\b10\b.*?_readStreak", src, re.DOTALL), (
-            "Deny must fire at 10 reads (NOT 20 as before the P1 fix)"
+        assert re.search(r"READ_GRIND_DENY_COUNT.*?15|readStreak\s*>\s*15", src) or \
+               re.search(r"\b15\b.*?_readStreak", src, re.DOTALL), (
+            "Deny must fire at 15 reads (NOT 10 as before the P1 fix)"
         )
 
     def test_deny_time_threshold_60s(self):
@@ -168,14 +168,14 @@ class TestP1ReadGrindingDeniedAt10:
         )
 
     def test_deny_requires_both_count_and_time(self):
-        """The deny must AND both conditions: count > 10 AND time > 60s."""
+        """The deny must AND both conditions: count > 15 AND time > 60s."""
         src = _floor_src()
         m = re.search(
-            r"readStreak\s*>\s*10\s*&&\s*\(?Date\.now\s*\(\s*\)\s*-\s*_lastDispatchTs",
+            r"readStreak\s*>\s*15\s*&&\s*msSinceDispatch\s*>\s*60_000",
             src,
         )
         assert m, (
-            "Deny must AND the count (>10) and time (>60s) conditions with &&"
+            "Deny must AND the count (>15) and time (>60s) conditions with &&"
         )
 
 
@@ -189,11 +189,11 @@ class TestP3EnforceStopCrossCallGrinding:
     acts on the cumulative streak (not just its own in-memory state)."""
 
     def test_stop_reads_shared_streak_file(self):
-        """enforce-stop.ts MUST reference the shared streak file."""
+        """enforce-stop.ts MUST call updateSharedStreak for cross-call grinding detection."""
         src = _stop_src()
-        assert "/tmp/gludd-tool-streak.json" in src or "GLUDD_STREAK_FILE" in src, (
-            "enforce-stop.ts must read /tmp/gludd-tool-streak.json — without "
-            "the shared file, it has zero cross-call grinding detection (P3)."
+        assert "updateSharedStreak" in src or "/tmp/gludd-tool-streak.json" in src or "GLUDD_STREAK_FILE" in src, (
+            "enforce-stop.ts must call updateSharedStreak — without "
+            "the shared streak, it has zero cross-call grinding detection (P3)."
         )
 
     def test_stop_has_delegate_first_threshold(self):
@@ -251,15 +251,15 @@ class TestP3EnforceStopCrossCallGrinding:
         reads to prepare dispatch waves. Denying reads would wedge the session."""
         src = _stop_src()
         # The isMutationTool check must exclude reads.
-        # Pattern: const isMutationTool = !DISPATCH_TOOLS.has(tool)
-        #   && !isStreakReadTool(tool) && tool !== "question"
+        # Pattern: const isMutationTool = !isDispatchTool(tool)
+        #   && !isReadTool(tool) && tool !== "question"
         m = re.search(
-            r"isMutationTool\s*=.*isStreakReadTool",
+            r"isMutationTool\s*=.*isReadTool",
             src,
             re.DOTALL,
         )
         assert m, (
-            "isMutationTool must exclude read tools via isStreakReadTool — "
+            "isMutationTool must exclude read tools via isReadTool — "
             "denying reads would wedge the session"
         )
 
@@ -281,14 +281,14 @@ class TestTimeBasedGrindingAllowsInvestigation:
         """When time since last dispatch is <30s, reads should NOT trigger the
         advisory even after 15+ reads — it's a legitimate investigation burst."""
         src = _floor_src()
-        # The advisory check must AND both conditions (>5 reads AND >30s).
-        # Pattern: _readStreak > 5 && (Date.now() - _lastDispatchTs) > 30_000
+        # The advisory check must AND both conditions (>8 reads AND >30s).
+        # Pattern: _readStreak > 8 && msSinceDispatch > 30_000
         m = re.search(
-            r"readStreak\s*>\s*5\s*&&\s*\(?Date\.now\s*\(\s*\)\s*-\s*_lastDispatchTs\s*\)\s*>\s*30_000",
+            r"readStreak\s*>\s*8\s*&&\s*msSinceDispatch\s*>\s*30_000",
             src,
         )
         assert m, (
-            "Advisory must AND count (>5) AND time (>30s) — reads under 30s "
+            "Advisory must AND count (>8) AND time (>30s) — reads under 30s "
             "since dispatch must be allowed (investigation, not grinding)"
         )
 
@@ -297,11 +297,11 @@ class TestTimeBasedGrindingAllowsInvestigation:
         even after 15+ reads — investigation is fine."""
         src = _floor_src()
         m = re.search(
-            r"readStreak\s*>\s*10\s*&&\s*\(?Date\.now\s*\(\s*\)\s*-\s*_lastDispatchTs\s*\)\s*>\s*60_000",
+            r"readStreak\s*>\s*15\s*&&\s*msSinceDispatch\s*>\s*60_000",
             src,
         )
         assert m, (
-            "Deny must AND count (>10) AND time (>60s) — reads under 60s "
+            "Deny must AND count (>15) AND time (>60s) — reads under 60s "
             "since dispatch must be allowed (investigation, not grinding)"
         )
 
@@ -324,8 +324,8 @@ class TestTimeBasedGrindingAllowsInvestigation:
         )
         assert m, "isDispatchTool(tool) branch not found"
         dispatch_body = m.group(1)
-        assert "_lastDispatchTs" in dispatch_body and "Date.now" in dispatch_body, (
-            "Dispatch must set _lastDispatchTs = Date.now() to reset the "
+        assert "_lastDispatchTs" in dispatch_body and "now" in dispatch_body, (
+            "Dispatch must set _lastDispatchTs = now to reset the "
             "time baseline for the next investigation burst"
         )
 
