@@ -384,6 +384,7 @@ function hasRealPendingWork(): WorkState {
 
   // UNCONDITIONAL filesystem read — NO caching. Read TASKS.md every time.
   const root = getProjectRoot()
+  const cwd = process.cwd()
   let tasksMdUnchecked = false
   let tasksMdUncheckedCount = 0
   let ratchetEntries = 0
@@ -449,11 +450,12 @@ function hasRealPendingWork(): WorkState {
     const ciCachePath = "/tmp/gludd-watchdog-ci.json"
     if (fs.existsSync(ciCachePath)) {
       const ciData = JSON.parse(fs.readFileSync(ciCachePath, "utf8"))
-      const lastCheck = ciData.last_ci_check || 0
+      const rawLastCheck: number = ciData.last_ci_check || 0
+      // 2026-07-17: watchdog writes epoch SECONDS (time.time()), but Date.now()
+      // returns MILLISECONDS. Normalize: if the value is < 1e11 (~5138 AD in ms),
+      // treat it as seconds and convert to ms.
+      const lastCheck: number = rawLastCheck < 1e11 ? rawLastCheck * 1000 : rawLastCheck
       const lastStatus = ciData.last_ci_status || ""
-      // 2026-07-15: window widened 120s → 10min. CI runs take 30-40 min;
-      // a PENDING verdict polled minutes ago is still PENDING. The old 120s
-      // window made CI-pending invisible between watchdog polls.
       if (now - lastCheck < 600_000 && lastStatus) {
         if (ciCooldownMasked(ciData)) {
           // ci-verdict-safe exit 3: check REFUSED. CI state is UNKNOWN — the
@@ -663,7 +665,8 @@ function ciIsPendingOrRed(): boolean {
     const ciCachePath = "/tmp/gludd-watchdog-ci.json"
     if (fs.existsSync(ciCachePath)) {
       const ciData = JSON.parse(fs.readFileSync(ciCachePath, "utf8"))
-      const lastCheck = ciData.last_ci_check || 0
+      const rawLastCheck: number = ciData.last_ci_check || 0
+      const lastCheck: number = rawLastCheck < 1e11 ? rawLastCheck * 1000 : rawLastCheck
       const lastStatus = ciData.last_ci_status || ""
       if (Date.now() - lastCheck < 600_000 && lastStatus) {
         // CI-COOLDOWN ≠ PENDING: a cooldown-refused check means CI state is
@@ -681,7 +684,8 @@ function ciIsUnknown(): boolean {
     const ciCachePath = "/tmp/gludd-watchdog-ci.json"
     if (fs.existsSync(ciCachePath)) {
       const ciData = JSON.parse(fs.readFileSync(ciCachePath, "utf8"))
-      const lastCheck = ciData.last_ci_check || 0
+      const rawLastCheck: number = ciData.last_ci_check || 0
+      const lastCheck: number = rawLastCheck < 1e11 ? rawLastCheck * 1000 : rawLastCheck
       if (Date.now() - lastCheck < 600_000 && ciCooldownMasked(ciData)) return true
     }
   } catch {}

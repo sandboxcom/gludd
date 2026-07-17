@@ -251,6 +251,31 @@ export const defaultImpl: HotModule = {
         return
       }
 
+      // === UNDER-FLOOR HARD BLOCK ===
+      // Per AGENTS.md "UNDER-FLOOR HARD BLOCK (2026-07-15)": EVERY non-dispatch
+      // tool call — including read/glob/grep — is blocked until the wave
+      // reaches the floor. This closes the "dispatch 1, then grind reads"
+      // bypass.
+      if (
+        !disengaged &&
+        hasPendingWork() &&
+        _state.thisMessageDispatches < MIN_DISPATCHES &&
+        (lt === "edit" || lt === "write" || lt === "bash")
+      ) {
+        writeState(_state)
+        return {
+          permissionDecision: "deny" as const,
+          message: [
+            "UNDER-FLOOR HARD BLOCK: ONLY " + String(_state.thisMessageDispatches) + " DISPATCHES.",
+            "Floor is 10. DISPATCH " + String(MIN_DISPATCHES) + " SUBAGENTS NOW OR YOU ARE BLOCKED.",
+            "You have " + String(_state.thisMessageDispatches) + "; need " + String(MIN_DISPATCHES) + ". edit/write/bash/read/grep/glob are blocked until floor reached.",
+            "consecutive non-dispatch calls: " + String(_state.consecutiveNonDispatch),
+            "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
+            "Run 'make disengage-enforcement' to bypass.",
+          ].join("\n"),
+        }
+      }
+
       if (!FLOOR_ENFORCE) return
 
       // --- Consecutive non-dispatch counter (grinding detection) ---
@@ -329,31 +354,6 @@ export const defaultImpl: HotModule = {
         _state.sawNonDispatchSinceDispatch = false
         writeState(_state)
         return
-      }
-
-      // === UNDER-FLOOR HARD BLOCK ===
-      // Per AGENTS.md "UNDER-FLOOR HARD BLOCK (2026-07-15)": EVERY non-dispatch
-      // tool call — including read/glob/grep — is blocked until the wave
-      // reaches the floor. This closes the "dispatch 1, then grind reads"
-      // bypass.
-      if (
-        !disengaged &&
-        hasPendingWork() &&
-        _state.thisMessageDispatches < MIN_DISPATCHES &&
-        (lt === "edit" || lt === "write" || lt === "bash")
-      ) {
-        writeState(_state)
-        return {
-          permissionDecision: "deny" as const,
-          message: [
-            "UNDER-FLOOR HARD BLOCK: ONLY " + String(_state.thisMessageDispatches) + " DISPATCHES.",
-            "Floor is 10. DISPATCH " + String(MIN_DISPATCHES) + " SUBAGENTS NOW OR YOU ARE BLOCKED.",
-            "You have " + String(_state.thisMessageDispatches) + "; need " + String(MIN_DISPATCHES) + ". edit/write/bash/read/grep/glob are blocked until floor reached.",
-            "consecutive non-dispatch calls: " + String(_state.consecutiveNonDispatch),
-            "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
-            "Run 'make disengage-enforcement' to bypass.",
-          ].join("\n"),
-        }
       }
 
       writeState(_state)
