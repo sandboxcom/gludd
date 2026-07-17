@@ -348,9 +348,6 @@ function detectStopPattern(text: string): boolean {
 // ============================================================================
 const defaultImpl: HotModule = {
     "tool.execute.before": async (input, output) => {
-        // process.env.OPENCODE_SUBAGENT guard
-        const _sub = isSubagent()
-        if (_sub) { return }
         reportAlive("enforce-make")
 
         if (input.tool === "bash") {

@@ -50,6 +50,7 @@ import {
   isReadTool,
   readJsonFile,
   writeJsonFile,
+  getProjectRoot,
 } from "../lib/shared.ts"
 import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
 
@@ -382,7 +383,7 @@ function hasRealPendingWork(): WorkState {
   const now = Date.now()
 
   // UNCONDITIONAL filesystem read — NO caching. Read TASKS.md every time.
-  const cwd = process.cwd()
+  const root = getProjectRoot()
   let tasksMdUnchecked = false
   let tasksMdUncheckedCount = 0
   let ratchetEntries = 0
@@ -392,7 +393,7 @@ function hasRealPendingWork(): WorkState {
   let gateStatusRed = false
 
   try {
-    const tasksPath = path.join(cwd, "TASKS.md")
+    const tasksPath = path.join(root, "TASKS.md")
     if (fs.existsSync(tasksPath)) {
       const content = fs.readFileSync(tasksPath, "utf8")
       const matches = content.match(/^[-*]\s+\[ \]/gm)
@@ -404,7 +405,7 @@ function hasRealPendingWork(): WorkState {
   } catch {}
 
   try {
-    const ratchetPath = path.join(cwd, "config", "ratchet.yml")
+    const ratchetPath = path.join(root, "config", "ratchet.yml")
     if (fs.existsSync(ratchetPath)) {
       const content = fs.readFileSync(ratchetPath, "utf8")
       ratchetEntries = content.split("\n").filter(
@@ -414,7 +415,7 @@ function hasRealPendingWork(): WorkState {
   } catch {}
 
   try {
-    const bugsPath = path.join(cwd, "BUGS.md")
+    const bugsPath = path.join(root, "BUGS.md")
     if (fs.existsSync(bugsPath)) {
       const content = fs.readFileSync(bugsPath, "utf8")
       const openIncidents = content
@@ -426,7 +427,7 @@ function hasRealPendingWork(): WorkState {
   } catch {}
 
   try {
-    const gatePath = path.join(cwd, ".gate-status")
+    const gatePath = path.join(root, ".gate-status")
     if (!fs.existsSync(gatePath)) {
       gateStatusMissing = true
     } else {

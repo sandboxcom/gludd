@@ -1437,6 +1437,11 @@ _push-rate-guard:
 force-push:
 	@GLUDD_FORCE_PUSH=1 $(MAKE) git-push-sandboxcom
 
+master-force-push:
+	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push --force --no-verify -u sandboxcom master
+	@$(MAKE) verify-remote BRANCH=master SHA=$$(git rev-parse master)
+	@echo "Master branch force-pushed and verified"
+
 git-push-sandboxcom: check-clean-tree _push-rate-guard
 	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push -u sandboxcom master
 	@echo "Pushed to sandboxcom/gludd"
