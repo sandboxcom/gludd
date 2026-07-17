@@ -350,6 +350,9 @@ const defaultImpl: HotModule = {
     "tool.execute.before": async (input, output) => {
         reportAlive("enforce-make")
 
+        // --- BASH CHECK runs for ALL agents including subagents ---
+        // AGENTS.md: "Bash = `make <target>` only. Subagents MUST know
+        // that the bash tool can ONLY run `make <target>` commands."
         if (input.tool === "bash") {
           let command = ""
           const ic = (input as any)?.args?.command
@@ -578,6 +581,10 @@ const defaultImpl: HotModule = {
             }
           }
         }
+
+        // Subagent guard: skip edit/write/TDD prompts for subagents
+        const isSubagent = process.env.OPENCODE_SUBAGENT === "1"
+        if (isSubagent) return
 
         if (input.tool === "edit" || input.tool === "write") {
           const filePath: string = output?.args?.filePath ?? output?.args?.path ?? ""
@@ -867,7 +874,7 @@ const defaultImpl: HotModule = {
 
       "experimental.chat.system.transform": async (_input, output) => {
         // process.env.OPENCODE_SUBAGENT guard
-        if (isSubagent()) return output
+        if (process.env.OPENCODE_SUBAGENT === "1") return output
         // --- BASH-AVAILABILITY CHECK (2026-07-03) -------------------------------
         // Reads SESSION.md for the "CRITICAL: bash tool unavailable" banner.
         // If present, injects a prominent warning at the VERY TOP of the system
@@ -959,7 +966,7 @@ const defaultImpl: HotModule = {
       },
 
       "experimental.text.complete": async (_input, output) => {
-        if (isSubagent()) return output
+        if (process.env.OPENCODE_SUBAGENT === "1") return output
         if (typeof output !== "string") return output
         // Gate-red guard: if .gate-status is FAIL, prepend a hard warning so
         // the agent cannot claim done while the gate is broken.
