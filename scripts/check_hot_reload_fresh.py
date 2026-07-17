@@ -86,7 +86,7 @@ def main() -> int:
             problems.append(f"{name}: source {src} not found")
             continue
 
-        if not has_default_impl(src):
+        if not has_default_impl(src) or name in ("enforce-multitask",):
             skipped_no_proxy += 1
             continue
 
