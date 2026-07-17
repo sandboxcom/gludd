@@ -228,7 +228,7 @@ function readBlockCounter(): BlockCounter {
       if (c.lastBlockTs && (now - c.lastBlockTs) > 120_000 && c.consecutiveBlocks > 0) {
         c.consecutiveBlocks = 0
       }
-      const MAX_DISENGAGE = now + 3_600_000
+  const MAX_DISENGAGE = now + 300_000
       if (c.disengageUntil > MAX_DISENGAGE) {
         c.disengageUntil = MAX_DISENGAGE
         try { fs.writeFileSync(BLOCK_COUNTER_FILE, JSON.stringify(c), "utf8") } catch {}
@@ -788,7 +788,6 @@ const defaultImpl: HotModule = {
 
   "experimental.text.complete": async (_input: unknown, output: unknown) => {
     if (isSubagent()) return output
-    if (process.env.GLUDD_STOP_ENFORCE === "0") return undefined
     incrementTextCompleteCount()
     reportAlive("enforce-stop")
     writeHeartbeat("enforce-stop")

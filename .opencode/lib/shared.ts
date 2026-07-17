@@ -11,6 +11,9 @@ import * as path from "node:path"
 export const DISENGAGE_PATH =
   process.env.GLUDD_DISENGAGE_PATH || "/tmp/gludd-watchdog-disengage.json"
 
+export const DISENGAGE_AUDIT_PATH =
+  process.env.GLUDD_DISENGAGE_AUDIT_PATH || "/tmp/gludd-disengage-audit.jsonl"
+
 export const ALIVE_PATH =
   process.env.GLUDD_ALIVE_PATH || "/tmp/gludd-plugin-alive.json"
 
@@ -37,15 +40,24 @@ export interface DisengageOpts {
   maxMs?: number // maximum forward duration (default 3_600_000 = 1 hour)
 }
 
+const _sessionUuid = `${process.pid}-${Math.floor(Date.now() / 1000)}`
+
 export function isDisengaged(opts: DisengageOpts = {}): boolean {
-  const maxMs = opts.maxMs ?? 3_600_000
+  const maxMs = opts.maxMs ?? 300_000
   try {
     if (!fs.existsSync(DISENGAGE_PATH)) return false
     const d = JSON.parse(fs.readFileSync(DISENGAGE_PATH, "utf8"))
     if (typeof d.disengage_until !== "number") return false
     const now = Date.now()
     const effective = Math.min(d.disengage_until, now + maxMs)
-    return effective > now
+    if (effective > now) {
+      try {
+        const audit = JSON.stringify({ ts: now, pid: process.pid, sessionUuid: _sessionUuid }) + "\n"
+        fs.appendFileSync(DISENGAGE_AUDIT_PATH, audit, "utf8")
+      } catch { /* fail-open */ }
+      return true
+    }
+    return false
   } catch {
     return false
   }

@@ -190,7 +190,6 @@ export const defaultImpl: HotModule = {
     }
 
     try {
-      if (!FLOOR_ENFORCE) return
       const tool = (input?.tool ?? "") as string
       const lt = tool.toLowerCase()
       const now = Date.now()
@@ -251,6 +250,8 @@ export const defaultImpl: HotModule = {
         writeState(_state)
         return
       }
+
+      if (!FLOOR_ENFORCE) return
 
       // --- Consecutive non-dispatch counter (grinding detection) ---
       // Counts every non-dispatch tool call. After THRESHOLD calls within the

@@ -26,6 +26,22 @@ from tests.unit._hook_fixtures import (
 
 ROOT = Path(__file__).parent.parent.parent
 
+# Hardcoded /tmp state files that enforce-stop.ts reads directly with no
+# env-var override and that are NOT covered by the fixture's snapshot.
+# Run this before any test that expects clean (no-pending-work) state.
+_LEAKED_STATE_PATHS = [
+    "/tmp/gludd-multitask-state.json",
+    "/tmp/gludd-release-completeness.json",
+    "/tmp/gludd-last-test-result.json",
+    "/tmp/gludd-watchdog-ci.json",
+]
+
+def _clean_leaked_state_files() -> None:
+    """Remove hardcoded /tmp state files that aren't isolated by the fixture."""
+    for p in _LEAKED_STATE_PATHS:
+        with contextlib.suppress(OSError):
+            Path(p).unlink(missing_ok=True)
+
 # Several tests seed the SHARED /tmp/gludd-watchdog-ci.json CI cache that
 # hasRealPendingWork() reads — serialize onto one xdist worker (same group as
 # test_enforce_stop_mixed_response.py) so concurrent seeds can't race.
@@ -104,16 +120,23 @@ def test_stop_text_complete_subagent_guard_skips_enforcement(hook_plugin_env: Ho
 
 
 def test_stop_text_complete_env_disable_bypasses_enforcement(hook_plugin_env: HookEnv):
-    """GLUDD_STOP_ENFORCE=0: text.complete returns undefined (allows text through)."""
-    parsed, _raw, stderr, rc = _invoke_text_complete(
+    """GLUDD_STOP_ENFORCE=0: text.complete NO LONGER bypasses enforcement.
+
+    The GLUDD_STOP_ENFORCE===0 early-return was removed 2026-07-16 —
+    text-only blocking is NEVER bypassable. The hook fires anyway."""
+    _parsed, _raw, stderr, rc = _invoke_text_complete(
         hook_plugin_env,
         "All done. Everything is complete.",
         env_overrides={"GLUDD_STOP_ENFORCE": "0"},
     )
     assert rc == 0, stderr
-    # When disabled, the hook returns undefined → harness prints null
-    assert parsed is None, (
-        f"Hook must return undefined when disabled; got: {parsed}"
+    pb = _read_persist_block(hook_plugin_env)
+    assert pb is not None, (
+        f"GLUDD_STOP_ENFORCE=0 no longer bypasses stop enforcement. "
+        f"Text must be blocked. stderr={stderr}"
+    )
+    assert pb.get("blocked") is True, (
+        f"Block must be recorded even when GLUDD_STOP_ENFORCE=0; got: {pb}"
     )
 
 
@@ -171,9 +194,14 @@ def test_stop_text_complete_false_done_all_done_blocked(hook_plugin_env: HookEnv
 def test_stop_text_complete_false_done_with_evidence_passes(hook_plugin_env: HookEnv):
     """False-done phrase WITH commit hash + pass count evidence is NOT blocked.
 
-    The narrowing at line 1244 checks hasStructuredEvidence — a commit hash
-    plus a pass count with text length < 500 bypasses the false-done block.
+    The narrowing checks hasStructuredEvidence — a commit hash
+    plus a pass count bypasses the false-done block.
     """
+    # Clean hardcoded /tmp state files that leak from real sessions.
+    # The fixture only snapshots a subset; multitask/ci-check state
+    # can make hasRealPendingWork() report pending work erroneously.
+    _clean_leaked_state_files()
+
     # hasRealPendingWork() reads /tmp/gludd-watchdog-ci.json directly.
     # Seed a clean CI cache so live CI state doesn't interfere.
     ci_path = Path("/tmp/gludd-watchdog-ci.json")
@@ -182,7 +210,7 @@ def test_stop_text_complete_false_done_with_evidence_passes(hook_plugin_env: Hoo
         "last_ci_check": int(time.time() * 1000),
         "last_ci_status": "SUCCESS",
         "run_id": "000000",
-        "head_sha": "000000000",
+        "head_sha": "abc0000def",
     }))
 
     try:
@@ -257,6 +285,8 @@ def test_stop_text_complete_disengage_allows_through(hook_plugin_env: HookEnv):
     Here we seed NO pending work, so the block does not fire and the
     text passes through. This is CORRECT: disengage is a heuristic bypass,
     not a get-out-of-work-free card."""
+    _clean_leaked_state_files()
+
     # hasRealPendingWork() reads /tmp/gludd-watchdog-ci.json directly.
     ci_path = Path("/tmp/gludd-watchdog-ci.json")
     _old_ci = ci_path.read_bytes() if ci_path.exists() else None
@@ -567,6 +597,8 @@ def test_disengage_still_allows_completion_smell_when_no_work(
     firing, so when no work exists, completion-adjacent text is never blocked.
     """
     import time as _time
+
+    _clean_leaked_state_files()
 
     now_ms = int(_time.time() * 1000)
 

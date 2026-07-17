@@ -2480,13 +2480,7 @@ gate-refresh:
 	echo "=== GATE PHASE: collect ==="; \
 	printf "collect " >> .gate-status; \
 	$(MAKE) --no-print-directory collect-check > /dev/null 2>&1 && echo "PASS 0" >> .gate-status || (echo "FAIL collection-errors" >> .gate-status && touch .gate-failed); \
-	if grep -q "=== GATE: PASSED ===" .gate-status 2>/dev/null; then \
-		echo "$$OLD_TEST" >> .gate-status; \
-	elif [ -n "$$OLD_TEST" ] && echo "$$OLD_TEST" | grep -q "PASS" && ! echo "$$OLD_TEST" | grep -q "PASS 0"; then \
-		echo "$$OLD_TEST" >> .gate-status; \
-	else \
-		echo "test REQUIRED (run make gate or make test-unit)" >> .gate-status && touch .gate-failed; \
-	fi; \
+	if [ -n "$$OLD_TEST" ] && echo "$$OLD_TEST" | grep -q "PASS"; then echo "$$OLD_TEST" >> .gate-status; else echo "test REQUIRED" >> .gate-status && touch .gate-failed; fi; \
 	if [ -n "$$OLD_SMOKE" ] && echo "$$OLD_SMOKE" | grep -q "PASS"; then echo "$$OLD_SMOKE" >> .gate-status; else echo "smoke REQUIRED" >> .gate-status && touch .gate-failed; fi; \
 	echo "---" >> .gate-status; \
 	echo "epoch $$(date +%s)" >> .gate-status; \

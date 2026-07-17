@@ -921,3 +921,64 @@ jobs:
         run: |
           uv run python scripts/verify_release_completeness.py \
             ${{ github.ref_name }} ${{ github.repository }}
+      - name: Post-deploy smoke test — Linux binary
+        run: |
+          set -e
+          TAG="${{ github.ref_name }}"
+          echo "--- Downloading Linux x86_64 binary from release $TAG ---"
+          gh release download "$TAG" \
+            --repo "${{ github.repository }}" \
+            --pattern '*linux-x86_64*' \
+            --dir /tmp/gludd-smoke
+          echo "--- Staged files ---"
+          ls -la /tmp/gludd-smoke
+          echo "--- Extracting ---"
+          BIN=$(find /tmp/gludd-smoke -type f -not -name '*.sha256' -not -name '*.tar.gz' | head -1)
+          if file "$BIN" | grep -q 'gzip compressed'; then
+            mv "$BIN" /tmp/gludd-smoke/gludd.tar.gz
+            tar -xzf /tmp/gludd-smoke/gludd.tar.gz -C /tmp/gludd-smoke
+          else
+            mv "$BIN" /tmp/gludd-smoke/gludd
+          fi
+          chmod +x /tmp/gludd-smoke/gludd || true
+          find /tmp/gludd-smoke -name gludd -exec chmod +x {} \;
+          echo "--- Running gludd version ---"
+          /tmp/gludd-smoke/gludd version || {
+            find /tmp/gludd-smoke -type f | xargs -I{} sh -c 'echo "--- {} ---"; {} version 2>&1 || true'
+            echo "FAIL: could not run gludd version"
+            exit 1
+          }
+          echo "--- Running gludd --help ---"
+          /tmp/gludd-smoke/gludd --help
+          echo "--- Verifying version matches tag ---"
+          RAW_VERSION=$(/tmp/gludd-smoke/gludd version 2>&1 | tr -d '[:space:]')
+          EXPECTED=$(echo "$TAG" | sed 's/^v//' | tr -d '[:space:]')
+          if echo "$RAW_VERSION" | grep -q "$EXPECTED"; then
+            echo "PASS: version '$RAW_VERSION' matches tag '$TAG'"
+          else
+            echo "FAIL: version '$RAW_VERSION' does not contain expected '$EXPECTED' (tag: $TAG)"
+            exit 1
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Post-deploy verify — .deb package validity
+        run: |
+          set -e
+          TAG="${{ github.ref_name }}"
+          echo "--- Downloading .deb from release $TAG ---"
+          gh release download "$TAG" \
+            --repo "${{ github.repository }}" \
+            --pattern '*.deb' \
+            --dir /tmp/gludd-deb
+          echo "--- Staged files ---"
+          ls -la /tmp/gludd-deb
+          DEB=$(find /tmp/gludd-deb -name '*.deb' | head -1)
+          echo "--- dpkg-deb --info $DEB ---"
+          dpkg-deb --info "$DEB"
+          echo "--- dpkg-deb --contents $DEB ---"
+          dpkg-deb --contents "$DEB"
+          echo "--- Verifying gludd binary inside .deb ---"
+          dpkg-deb --contents "$DEB" | grep -q 'gludd' && echo "PASS: gludd binary found in .deb" || { echo "FAIL: gludd binary not found in .deb"; exit 1; }
+          echo "PASS: .deb package is valid"
+        env:
+          GH_TOKEN: ${{ github.token }}

@@ -62,24 +62,32 @@ importlib.import_module("general_ludd.routing_roles")
 
 
 def pytest_configure(config: pytest.Config) -> None:
-    """Limit virtual memory per xdist worker to prevent OOM kills.
+    """Per-worker RLIMIT_AS backstop — DISABLED in CI.
 
-    When pytest-cov traces ``general_ludd`` under xdist, each worker's virtual
-    address space can exceed the CI runner's RAM (7 GB).  RLIMIT_AS causes the
-    *kernel* to kill just the offending worker (exit 137) rather than the OOM
-    killer taking down the entire runner — isolation that xdist can recover from
-    by re-spawning the worker.
+    RLIMIT_AS breaks Node.js WASM (amaro TypeScript parser) on Linux
+    because V8 requires a large contiguous virtual address space for
+    WebAssembly instantiation.  With the 6 GiB ceiling, Node child processes
+    fail with ``RangeError: WebAssembly.Instance(): Out of memory``,
+    causing ALL test shards to fail.
 
-    Controlled by the same env var referenced in CI config::
+    The adaptive test runner (adaptive_test.py) limits xdist workers by
+    available RAM — that is the real OOM protection.  RLIMIT_AS is kept
+    as an opt-in for local debugging:
 
-        GLUDD_TEST_WORKER_MEM_MB=6144  →  6 GiB per-worker ceiling
+        GLUDD_TEST_WORKER_MEM_MB=8192 pytest ...
+
+    but is unconditionally disabled in CI (the corresponding env var in
+    .github/workflows/build.yml has been removed).
     """
-    import resource
-
-    mem_mb = int(os.environ.get("GLUDD_TEST_WORKER_MEM_MB", "0"))
-    if mem_mb > 0:
-        limit = mem_mb * 1024 * 1024
-        resource.setrlimit(resource.RLIMIT_AS, (limit, limit))
+    # RLIMIT_AS is intentionally NOT set here.
+    # The adaptive_test.py worker cap is sufficient OOM protection.
+    # Uncomment the block below for local memory-pressure debugging:
+    #
+    # import resource
+    # mem_mb = int(os.environ.get("GLUDD_TEST_WORKER_MEM_MB", "0"))
+    # if mem_mb > 0:
+    #     limit = mem_mb * 1024 * 1024
+    #     resource.setrlimit(resource.RLIMIT_AS, (limit, limit))
 
 
 def _parse_ratchet_entries() -> dict[str, str]:
