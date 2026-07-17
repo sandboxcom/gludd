@@ -203,9 +203,25 @@ export function writeHeartbeat(pluginName: string): void {
 // Robustly finds the project root regardless of process.cwd(). Plugin worker
 // processes may have a different cwd than the main opencode process, causing
 // hasPendingWork()/openWorkExists() to fail finding TASKS.md/ratchet.yml.
-// Resolution order: GLUDD_PROJECT_ROOT env → walk up from cwd → cwd fallback.
+// Resolution order: GLUDD_PROJECT_ROOT env (unconditional when the directory
+// exists — T34: an explicit root with no TASKS.md means "no pending work",
+// never "borrow another project's ledger") → walk up from cwd → cwd fallback.
+// The cache is keyed on (GLUDD_PROJECT_ROOT, cwd) so a mid-session change to
+// either invalidates the cached resolution.
 
 let _cachedRoot: string | null = null
+let _cachedRootKey: string | null = null
+
+function _projectRootCacheKey(): string {
+  let cwd = ""
+  try { cwd = process.cwd() } catch { /* cwd deleted → key on env only */ }
+  return `${process.env.GLUDD_PROJECT_ROOT || ""}\u0000${cwd}`
+}
+
+export function invalidateProjectRootCache(): void {
+  _cachedRoot = null
+  _cachedRootKey = null
+}
 
 // ── Session-start mtime staleness guards ─────────────────────────────────
 // When opencode reuses PIDs across restarts, PID-only detection fails and
@@ -236,11 +252,13 @@ export function isStateFileMtimeStale(stateFilePath: string): boolean {
 }
 
 export function getProjectRoot(): string {
-  if (_cachedRoot !== null) return _cachedRoot
+  const key = _projectRootCacheKey()
+  if (_cachedRoot !== null && _cachedRootKey === key) return _cachedRoot
   try {
     const envRoot = process.env.GLUDD_PROJECT_ROOT
-    if (envRoot && fs.existsSync(path.join(envRoot, "TASKS.md"))) {
+    if (envRoot && fs.existsSync(envRoot) && fs.statSync(envRoot).isDirectory()) {
       _cachedRoot = envRoot
+      _cachedRootKey = key
       return _cachedRoot
     }
   } catch { /* ignore */ }
@@ -249,10 +267,12 @@ export function getProjectRoot(): string {
     for (let i = 0; i < 15; i++) {
       if (fs.existsSync(path.join(dir, "TASKS.md"))) {
         _cachedRoot = dir
+        _cachedRootKey = key
         return _cachedRoot
       }
       if (fs.existsSync(path.join(dir, "opencode.json")) && fs.existsSync(path.join(dir, "Makefile"))) {
         _cachedRoot = dir
+        _cachedRootKey = key
         return _cachedRoot
       }
       const parent = path.dirname(dir)
@@ -261,5 +281,6 @@ export function getProjectRoot(): string {
     }
   } catch { /* ignore */ }
   _cachedRoot = process.cwd()
+  _cachedRootKey = key
   return _cachedRoot
 }

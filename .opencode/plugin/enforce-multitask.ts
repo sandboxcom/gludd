@@ -52,7 +52,8 @@ export const CONSECUTIVE_NON_DISPATCH_THRESHOLD = parseInt(
 export const CONSECUTIVE_NON_DISPATCH_WINDOW_MS = parseInt(
   process.env.GLUDD_CONSECUTIVE_NON_DISPATCH_WINDOW_MS || "30000", 10)
 
-export const MULTITASK_STATE_FILE = "/tmp/gludd-multitask-state.json"
+// Env-overridable (T10) so tests isolate from live sessions; default stays in /tmp.
+export const MULTITASK_STATE_FILE = process.env.GLUDD_MULTITASK_STATE_FILE || "/tmp/gludd-multitask-state.json"
 
 interface MultitaskState {
   pid: number
@@ -96,7 +97,7 @@ function writeState(s: MultitaskState): void {
   writeJsonFile(MULTITASK_STATE_FILE, s)
 }
 
-function hasPendingWork(): boolean {
+export function hasPendingWork(): boolean {
   try {
     const tasksPath = path.join(getProjectRoot(), "TASKS.md")
     if (!fs.existsSync(tasksPath)) return false
@@ -164,10 +165,18 @@ let _state: MultitaskState = (() => {
   return s
 })()
 
+// Per-test state isolation (T8): resets both the in-memory module state and
+// the persisted state file to a fresh baseline.
+export function resetMultitaskState(): void {
+  _state = freshState()
+  writeState(_state)
+}
+
 // ============================================================================
 // DEFAULT IMPLEMENTATION (compiled-in fallback)
+// Exported (T7) so tests invoke the real hooks without hot-module indirection.
 // ============================================================================
-const defaultImpl: HotModule = {
+export const defaultImpl: HotModule = {
   "tool.execute.before": async (input: { tool?: string }) => {
     // process.env.OPENCODE_SUBAGENT guard
     if (isSubagent()) return
@@ -246,6 +255,9 @@ const defaultImpl: HotModule = {
       // --- Consecutive non-dispatch counter (grinding detection) ---
       // Counts every non-dispatch tool call. After THRESHOLD calls within the
       // time window, blocks ALL non-dispatch tools until a dispatch resets.
+      // Read tools (isReadTool(tool)) are excluded from the COUNTER to avoid
+      // penalizing investigation bursts — they are still gated by the
+      // UNDER-FLOOR block below.
       if (!disengaged) {
         if (_state.consecutiveNonDispatchStartTs === 0) {
           _state.consecutiveNonDispatchStartTs = now
@@ -255,6 +267,10 @@ const defaultImpl: HotModule = {
         } else {
           _state.consecutiveNonDispatch = 0
           _state.consecutiveNonDispatchStartTs = now
+          // The window-restarting call IS a non-dispatch call inside the new
+          // window — count it as 1 (T25), or every post-expiry threshold is
+          // off by one (6 calls trip it instead of 5).
+          _state.consecutiveNonDispatch++
         }
 
         // === CONSECUTIVE NON-DISPATCH BLOCK ===
@@ -315,8 +331,10 @@ const defaultImpl: HotModule = {
       }
 
       // === UNDER-FLOOR HARD BLOCK ===
-      // Only the mutating tools (edit/write/bash) are gated by the floor; read
-      // tools (read/glob/grep) stay available so the agent can investigate.
+      // Per AGENTS.md "UNDER-FLOOR HARD BLOCK (2026-07-15)": EVERY non-dispatch
+      // tool call — including read/glob/grep — is blocked until the wave
+      // reaches the floor. This closes the "dispatch 1, then grind reads"
+      // bypass.
       if (
         !disengaged &&
         hasPendingWork() &&
@@ -329,7 +347,7 @@ const defaultImpl: HotModule = {
           message: [
             "UNDER-FLOOR HARD BLOCK: ONLY " + String(_state.thisMessageDispatches) + " DISPATCHES.",
             "Floor is 10. DISPATCH " + String(MIN_DISPATCHES) + " SUBAGENTS NOW OR YOU ARE BLOCKED.",
-            "You have " + String(_state.thisMessageDispatches) + "; need " + String(MIN_DISPATCHES) + ". edit/write/bash are blocked until floor reached.",
+            "You have " + String(_state.thisMessageDispatches) + "; need " + String(MIN_DISPATCHES) + ". edit/write/bash/read/grep/glob are blocked until floor reached.",
             "consecutive non-dispatch calls: " + String(_state.consecutiveNonDispatch),
             "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
             "Run 'make disengage-enforcement' to bypass.",
@@ -385,6 +403,10 @@ export default (({ }) => {
     // for the message that just completed (all tool calls have fired).
     if (_state.thisMessageDispatches > 0 && _state.thisMessageDispatches < MIN_DISPATCHES) {
       const dispatched = _state.thisMessageDispatches
+      // Close the message boundary BEFORE returning the blanked text (T21):
+      // the blanked message is OVER — its stale dispatch count must not
+      // consume the ceiling when the agent re-sends the corrective 10-wave.
+      handleMessageBoundary(_state)
       writeState(_state)
       return {
         text: [

@@ -55,7 +55,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
          secrets-scrub secrets-scan secrets-baseline security-audit clean-artifacts health-check \
         git-remote-sandboxcom git-push-sandboxcom git-pull-sandboxcom git-fetch-sandboxcom \
         git-add-all help grep scan-secrets-fresh untrack \
-        git-tracked-keys git-ls-tracked git-history-file dist-path-check git-is-ancestor git-revlist-count \
+         git-tracked-keys git-ls-tracked git-history-file dist-path-check git-is-ancestor git-revlist-count check-git-hygiene \
         molecule-clean plan ps-gludd kill-stale kill-gate-force \
         gate-async gate-status floor-plan gated-merge ship-async write-gate-safe-hook \
         repo-visibility \
@@ -1164,6 +1164,43 @@ grepf:
 git-tracked-keys:
 	@echo "=== Tracked files matching private-key / key patterns ==="
 	@git ls-files | grep -E 'id_rsa|id_ed25519|\.pem$$|_rsa$$|_rsa\.pub$$|sandboxcom_github' || echo "NONE TRACKED"
+
+# Check git hygiene: tracked pyc/__pycache__, .gitignore, private key files.
+# Exit 0 = clean, exit 1 = issues found.
+check-git-hygiene:
+	@echo "=== Git Hygiene Check ==="; \
+	errors=0; \
+	echo "--- Checking for tracked __pycache__/ and .pyc files ---"; \
+	tracked_pyc=$$(git ls-files | grep -E '__pycache__/|\.pyc$$' || true); \
+	if [ -n "$$tracked_pyc" ]; then \
+		echo "FAIL: Tracked __pycache__/ or .pyc files found:"; \
+		echo "$$tracked_pyc"; \
+		errors=$$((errors+1)); \
+	else \
+		echo "PASS: No tracked __pycache__/ or .pyc files"; \
+	fi; \
+	echo "--- Checking .gitignore exists ---"; \
+	if [ -f .gitignore ]; then \
+		echo "PASS: .gitignore exists"; \
+	else \
+		echo "FAIL: .gitignore is missing"; \
+		errors=$$((errors+1)); \
+	fi; \
+	echo "--- Checking for tracked private key files ---"; \
+	tracked_keys=$$(git ls-files | grep -E 'sandboxcom_github_rsa|\.deepseek\.key|\.zai\.key|\.deepseek\.config' || true); \
+	if [ -n "$$tracked_keys" ]; then \
+		echo "FAIL: Tracked private key files found:"; \
+		echo "$$tracked_keys"; \
+		errors=$$((errors+1)); \
+	else \
+		echo "PASS: No tracked private key files"; \
+	fi; \
+	if [ $$errors -gt 0 ]; then \
+		echo "=== Git Hygiene Check: $$errors issue(s) found ==="; \
+		exit 1; \
+	else \
+		echo "=== Git Hygiene Check: PASSED ==="; \
+	fi
 
 git-ls-tracked:
 	@git ls-files $(if $(Q),| grep -E "$(Q)",)
@@ -4351,3 +4388,6 @@ diag-e2e:
 
 show-multitask-state:
 	@if [ -f /tmp/gludd-multitask-state.json ]; then ls -la /tmp/gludd-multitask-state.json; echo "---"; cat /tmp/gludd-multitask-state.json; else echo "File does not exist: /tmp/gludd-multitask-state.json"; fi
+
+test-multitask-node: ## Run enforce-multitask behavioral node tests (node --test)
+	@node --experimental-strip-types --test .opencode/plugin/enforce-multitask.test.node.mjs

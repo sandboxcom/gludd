@@ -241,8 +241,13 @@ class TestEnvVarDisable:
 
 class TestStateFilePath:
     def test_state_file_is_in_tmp(self):
-        raw = _extract_string_value(_plugin_source(), "MULTITASK_STATE_FILE")
-        assert raw == "/tmp/gludd-multitask-state.json", f"Wrong state file path: {raw}"
+        """State file defaults to /tmp but honors GLUDD_MULTITASK_STATE_FILE
+        so tests can isolate from live sessions (node T10)."""
+        raw = _extract_export_value(_plugin_source(), "MULTITASK_STATE_FILE")
+        assert "process.env.GLUDD_MULTITASK_STATE_FILE" in raw, (
+            f"State file must honor the GLUDD_MULTITASK_STATE_FILE env override, got: {raw}"
+        )
+        assert '"/tmp/gludd-multitask-state.json"' in raw, f"Wrong default state file path: {raw}"
 
 
 class TestDenyMessageContent:
