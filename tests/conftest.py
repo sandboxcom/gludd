@@ -61,6 +61,27 @@ for _path in (str(_SCRIPTS_DIR), str(_SRC_DIR)):
 importlib.import_module("general_ludd.routing_roles")
 
 
+def pytest_configure(config: pytest.Config) -> None:
+    """Limit virtual memory per xdist worker to prevent OOM kills.
+
+    When pytest-cov traces ``general_ludd`` under xdist, each worker's virtual
+    address space can exceed the CI runner's RAM (7 GB).  RLIMIT_AS causes the
+    *kernel* to kill just the offending worker (exit 137) rather than the OOM
+    killer taking down the entire runner — isolation that xdist can recover from
+    by re-spawning the worker.
+
+    Controlled by the same env var referenced in CI config::
+
+        GLUDD_TEST_WORKER_MEM_MB=6144  →  6 GiB per-worker ceiling
+    """
+    import resource
+
+    mem_mb = int(os.environ.get("GLUDD_TEST_WORKER_MEM_MB", "0"))
+    if mem_mb > 0:
+        limit = mem_mb * 1024 * 1024
+        resource.setrlimit(resource.RLIMIT_AS, (limit, limit))
+
+
 def _parse_ratchet_entries() -> dict[str, str]:
     """Parse config/ratchet.yml into {node_id: reason} map.
 
