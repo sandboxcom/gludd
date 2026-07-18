@@ -5,29 +5,6 @@
       "*": "deny",
       "make *": "allow"
     },
-    "read": {
-      "*": "deny",
-      "/Users/shawnwilson/gludd/**": "allow",
-      "/tmp/gludd-*": "allow"
-    },
-    "write": {
-      "*": "deny",
-      "/Users/shawnwilson/gludd/**": "allow",
-      "/tmp/gludd-*": "allow"
-    },
-    "edit": {
-      "*": "deny",
-      "/Users/shawnwilson/gludd/**": "allow",
-      "/tmp/gludd-*": "allow"
-    },
-    "glob": {
-      "*": "deny",
-      "/Users/shawnwilson/gludd/**": "allow"
-    },
-    "grep": {
-      "*": "deny",
-      "/Users/shawnwilson/gludd/**": "allow"
-    },
     "doom_loop": "deny"
   },
   "plugin": [
@@ -45,9 +22,6 @@
     "./.opencode/plugin/enforce-multitask.ts",
     "./.opencode/plugin/enforce-enhancement-ratio.ts",
     "./.opencode/plugin/enforce-stop.ts",
-    "./.opencode/plugin/enforce-batch-push.ts",
-    "./.opencode/plugin/enforce-depth.ts",
-    "./.opencode/plugin/enforce-tdd.ts",
     "./.opencode/plugins/watchdog.ts"
   ]
 }
