@@ -19,7 +19,6 @@ from __future__ import annotations
 import re
 from collections import Counter
 from pathlib import Path
-from typing import TypedDict
 
 from general_ludd.language.polyglot import (
     FileEncoding,
@@ -40,27 +39,7 @@ _WORD_RE = re.compile(r"[\w]+", re.UNICODE)
 _VALID_UNITS: frozenset[str] = frozenset({"char", "word"})
 
 
-class FrequencyReport(TypedDict):
-    """Aggregate frequency analysis across the corpus."""
 
-    char_counts: dict[str, int]
-    word_counts: dict[str, int]
-    total_chars: int
-    total_words: int
-    top_chars: list[tuple[str, int]]
-    top_words: list[tuple[str, int]]
-
-
-class EncodingStats(TypedDict):
-    """Aggregate encoding statistics across the corpus."""
-
-    total_files: int
-    by_encoding: dict[str, int]
-    boms_present: list[str]
-    files_with_bom: int
-    files_without_bom: int
-    is_consistent: bool
-    files: list[FileEncoding]
 
 
 class CorpusAnalyzer:
@@ -117,7 +96,7 @@ class CorpusAnalyzer:
 
     # ── public API ─────────────────────────────────────────────────────────
 
-    def frequency_analysis(self, top_n: int | None = None) -> FrequencyReport:
+    def frequency_analysis(self, top_n: int | None = None) -> dict[str, object]:
         """Count character and word frequencies across the corpus.
 
         Aggregates counts across all readable files. Character counts are
@@ -218,7 +197,7 @@ class CorpusAnalyzer:
             counts[label] += 1
         return dict(counts)
 
-    def encoding_statistics(self) -> EncodingStats:
+    def encoding_statistics(self) -> dict[str, object]:
         """Aggregate BOM/encoding stats across the corpus.
 
         Reuses :func:`polyglot._detect_encoding` for the per-file sniff
@@ -256,6 +235,4 @@ class CorpusAnalyzer:
 
 __all__ = [
     "CorpusAnalyzer",
-    "EncodingStats",
-    "FrequencyReport",
 ]

@@ -24,11 +24,10 @@ rather than re-implementing them.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TypedDict
+from typing import TypedDict, cast
 
 from general_ludd.language.charset_map import BOM_BY_SEQUENCE
 from general_ludd.language.homoglyph_data import (
-    ConfusableFinding,
     detect_confusables,
 )
 
@@ -166,33 +165,6 @@ _SEVERITY_MEDIUM_MAX = 4
 # ── Typed result shapes ────────────────────────────────────────────────────
 
 
-class LanguagePresence(TypedDict):
-    """One language detected in the directory, with its footprint."""
-
-    language: str
-    file_count: int
-    extensions: list[str]
-    marker_files: list[str]
-
-
-class PolyglotReport(TypedDict):
-    """Result of :func:`detect_languages_in_directory`."""
-
-    path: str
-    languages: list[LanguagePresence]
-    total_files: int
-    marker_files: dict[str, str]
-
-
-class CrossLanguageFinding(TypedDict):
-    """One file's worth of cross-language homoglyph findings."""
-
-    file: str
-    language: str
-    confusables: list[ConfusableFinding]
-    severity: str
-
-
 class FileEncoding(TypedDict):
     """Per-file encoding info, as surfaced by :func:`encoding_conflict_report`."""
 
@@ -200,16 +172,6 @@ class FileEncoding(TypedDict):
     bom: str | None
     encoding: str
     has_bom: bool
-
-
-class EncodingConflictReport(TypedDict):
-    """Aggregated encoding-mismatch report across a list of files."""
-
-    files: list[FileEncoding]
-    encodings_present: list[str]
-    boms_present: list[str]
-    conflicts: list[str]
-    is_consistent: bool
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────
@@ -289,7 +251,7 @@ def _severity_for(count: int) -> str:
 # ── Public API ─────────────────────────────────────────────────────────────
 
 
-def detect_languages_in_directory(path: str | Path) -> PolyglotReport:
+def detect_languages_in_directory(path: str | Path) -> dict[str, object]:
     """Walk ``path`` and identify the programming languages present.
 
     Counts files per language via extension lookup (:data:`_EXTENSION_MAP`)
@@ -339,7 +301,7 @@ def detect_languages_in_directory(path: str | Path) -> PolyglotReport:
         counts[language] = counts.get(language, 0) + 1
         extensions_seen.setdefault(language, set()).add(suffix)
 
-    languages: list[LanguagePresence] = []
+    languages = []
     for language, count in counts.items():
         languages.append({
             "language": language,
@@ -349,7 +311,7 @@ def detect_languages_in_directory(path: str | Path) -> PolyglotReport:
                 m for m, lang in marker_hits.items() if lang == language
             ),
         })
-    languages.sort(key=lambda p: (-p["file_count"], p["language"]))
+    languages.sort(key=lambda p: (-cast(int, p["file_count"]), p["language"]))
 
     return {
         "path": str(root),
@@ -361,7 +323,7 @@ def detect_languages_in_directory(path: str | Path) -> PolyglotReport:
 
 def cross_language_homoglyph_scan(
     files: list[str | Path],
-) -> list[CrossLanguageFinding]:
+) -> list[dict[str, object]]:
     """Scan ``files`` for confusable (homoglyph) characters per file.
 
     Returns one :class:`CrossLanguageFinding` per file that contains at
@@ -376,7 +338,7 @@ def cross_language_homoglyph_scan(
     not a homoglyph problem, and is better surfaced by
     :func:`encoding_conflict_report`).
     """
-    findings: list[CrossLanguageFinding] = []
+    findings: list[dict[str, object]] = []
     for raw in files:
         path = Path(raw)
         if not path.is_file():
@@ -403,7 +365,7 @@ def cross_language_homoglyph_scan(
 
 def encoding_conflict_report(
     files: list[str | Path],
-) -> EncodingConflictReport:
+) -> dict[str, object]:
     """Identify encoding mismatches across ``files``.
 
     Sniffs each file's BOM via :data:`charset_map.BOM_SIGNATURES` and
@@ -470,11 +432,7 @@ def encoding_conflict_report(
 
 
 __all__ = [
-    "CrossLanguageFinding",
-    "EncodingConflictReport",
     "FileEncoding",
-    "LanguagePresence",
-    "PolyglotReport",
     "cross_language_homoglyph_scan",
     "detect_languages_in_directory",
     "encoding_conflict_report",
