@@ -22,7 +22,12 @@ const BASH_POLICY_FIX = [
 const BASH_POLICY_REF = "See AGENTS.md for existing make targets and the full policy.\n"
 
 const MAKE_ENFORCE = process.env.GLUDD_MAKE_ENFORCE !== "0"
-const SHELL_META_CHARS = /[|;&(){}$`\\!]/
+// Bare `(` and `)` removed 2026-07-18: they triggered false positives on
+// legitimate commit messages (e.g. MSG="fix foo (see #123)"). The actual
+// shell-injection vector is `$()` command substitution, which is still
+// caught via the `$` char in this class. Backticks, `;`, `|`, `&&`, `||`,
+// `{}`, `\`, `!` all remain blocked.
+const SHELL_META_CHARS = /[|;&{}$`\\!]/
 
 function formatBashBlockedMessage(attemptedCommand: string, reason?: string): string {
   return [
@@ -243,11 +248,16 @@ const BASH_METACHAR_POLICY = [
   "",
   "Shell metacharacters are FORBIDDEN in bash commands. This includes:",
   "  | (pipe)   ; (semicolon)   && (and)   || (or)",
-  "  () (subshell)   $ (variable)   ` (backtick)   ! (history)",
+  "  $ (variable/command-substitution)   ` (backtick)   ! (history)",
   "  {} (brace expansion)   \\ (escape)",
+  "  (Bare parens are NOT forbidden — see note below.)",
   "",
   "These allow chaining commands, piping output, running subcommands,",
   "and other side effects that bypass the make-only policy.",
+  "",
+  "NOTE: bare parens `(` `)` are NOT blocked (commit messages legitimately",
+  "contain them, e.g. MSG=\"fix foo (see #123)\"). The shell-injection",
+  "risk `$()` command substitution is still blocked via the `$` char.",
   "",
   "If you need to combine operations, create a Makefile target that",
   "does the combination. Make targets ARE allowed to use these",
@@ -384,8 +394,9 @@ const defaultImpl: HotModule = {
                 formatBashBlockedMessage(
                   trimmed,
                   `Shell metacharacter(s) forbidden: ${matched?.join(", ")}. ` +
-                  `Pipes (|), chaining (&&, ||, ;), subshells ($(), ()), backticks (\`), ` +
+                  `Pipes (|), chaining (&&, ||, ;), command substitution ($()), backticks (\`), ` +
                   `variable expansion ($), and brace expansion ({}) are not allowed. ` +
+                  `Bare parens () are permitted (commit messages may contain them). ` +
                   `Create a Makefile target instead.`
                 )
               )
