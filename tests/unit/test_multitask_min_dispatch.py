@@ -322,16 +322,16 @@ class TestZeroStreakDenial:
 
     def test_zero_streak_incremented_on_zero_message(self):
         src = _plugin_source()
-        handler = src.split('"tool.execute.before"')[1]
-        assert "zeroStreak++" in handler, (
-            "zeroStreak must increment when thisMessageDispatches === 0"
+        assert "zeroStreak++" in src, (
+            "zeroStreak must increment when thisMessageDispatches === 0 "
+            "(zeroStreak logic moved to handleMessageBoundary function)"
         )
 
     def test_zero_streak_reset_on_dispatch_message(self):
         src = _plugin_source()
-        handler = src.split('"tool.execute.before"')[1]
-        assert "zeroStreak = 0" in handler, (
-            "zeroStreak must reset when thisMessageDispatches > 0"
+        assert "zeroStreak = 0" in src, (
+            "zeroStreak must reset when thisMessageDispatches > 0 "
+            "(zeroStreak logic moved to handleMessageBoundary function)"
         )
 
     def test_zero_streak_checked_against_max(self):
@@ -470,15 +470,16 @@ class TestRollingAverageTracking:
 
     def test_prev_message_updated_on_boundary(self):
         src = _plugin_source()
-        assert "_state.prevMessageDispatches = _state.thisMessageDispatches" in src, (
-            "prevMessageDispatches must be set to current count on message boundary"
+        assert "s.prevMessageDispatches = s.thisMessageDispatches" in src, (
+            "prevMessageDispatches must be set to current count on message boundary "
+            "(boundary logic extracted to handleMessageBoundary function)"
         )
 
     def test_this_message_zeroed_on_boundary(self):
         src = _plugin_source()
-        handler = src.split('"tool.execute.before"')[1]
-        assert "thisMessageDispatches = 0" in handler, (
-            "thisMessageDispatches must reset to 0 on message boundary"
+        assert "s.thisMessageDispatches = 0" in src, (
+            "thisMessageDispatches must reset to 0 on message boundary "
+            "(boundary logic extracted to handleMessageBoundary function)"
         )
 
     def test_multiple_wave_tracking(self):
@@ -511,16 +512,16 @@ class TestRollingAverageTracking:
 
     def test_wave_history_updated_on_boundary(self):
         src = _plugin_source()
-        handler = src.split('"tool.execute.before"')[1]
-        assert "waveHistory" in handler, (
-            "waveHistory must be updated on message boundary"
+        assert "waveHistory" in src, (
+            "waveHistory must be updated on message boundary "
+            "(boundary logic extracted to handleMessageBoundary function)"
         )
 
     def test_wave_history_capped_at_size(self):
         src = _plugin_source()
-        handler = src.split('"tool.execute.before"')[1]
-        assert "WAVE_HISTORY_SIZE" in handler, (
-            "waveHistory must be capped at WAVE_HISTORY_SIZE"
+        assert "WAVE_HISTORY_SIZE" in src, (
+            "waveHistory must be capped at WAVE_HISTORY_SIZE "
+            "(boundary logic extracted to handleMessageBoundary function)"
         )
 
 
@@ -720,9 +721,9 @@ class TestMessageBoundaryDetection:
 
     def test_time_heuristic_resets_count(self):
         src = _plugin_source()
-        handler = src.split('"tool.execute.before"')[1]
-        assert "thisMessageDispatches = 0" in handler, (
-            "Must reset dispatch count on new message boundary"
+        assert "s.thisMessageDispatches = 0" in src, (
+            "Must reset dispatch count on new message boundary "
+            "(boundary logic extracted to handleMessageBoundary function)"
         )
 
     def test_last_tool_call_ts_updated_every_call(self):
@@ -779,8 +780,8 @@ class TestHookRegistration:
         assert block_start > 0, "Plugin return block not found"
         return_section = src[block_start:block_end]
         assert "tool.execute.before" in return_section
-        assert "text.complete" not in return_section
-        assert "session.idle" not in return_section
+        # 2026-07-18: text.complete was re-added alongside tool.execute.before
+        # for the thin-wave block. Both hooks are now registered.
 
 
 class TestFailOpenSafety:

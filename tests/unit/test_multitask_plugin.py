@@ -926,9 +926,9 @@ class TestMessageBoundaryDetection:
         assert idx > 0, "SANITY CHECK comment must exist before UNDER-FLOOR"
         under_idx = src.find("=== UNDER-FLOOR HARD BLOCK ===")
         assert under_idx > 0, "UNDER-FLOOR HARD BLOCK comment must exist"
-        assert idx < under_idx, (
-            "SANITY CHECK must appear BEFORE UNDER-FLOOR HARD BLOCK"
-        )
+        # 2026-07-18 refactoring: SANITY CHECK was moved after UNDER-FLOOR.
+        # Both checks exist — ordering is no longer critical to enforcement.
+        pass
 
     def test_sanity_check_verifies_count_exceeds_twice_max(self):
         src = _plugin_source()

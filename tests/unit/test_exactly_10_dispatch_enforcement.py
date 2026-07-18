@@ -95,37 +95,77 @@ def test_session_start_effective_min_is_10():
 
 
 def test_multitask_min_dispatches_hardcoded_10():
-    """MIN_DISPATCHES in enforce-multitask.ts defaults to 10, not 3."""
+    """MIN_DISPATCHES in enforce-multitask.ts defaults to 10, not 3.
+
+    The parseInt chain now goes:
+      parseInt(
+        process.env.GLUDD_MIN_DISPATCHES ||
+        process.env.GLUDD_MULTITASK_MIN_DISPATCHES ||
+        "10",
+        10,
+      )
+    The env-fallback "10" is the final default; extract it.  The radix 10
+    at the end of the parseInt call is also asserted to be 10 (the radix,
+    not the default value — they happen to coincide here).
+    """
     src = _read(MULTITASK_TS)
-    val = _env_default(src, "GLUDD_MULTITASK_MIN_DISPATCHES")
+    m = re.search(
+        r'export const MIN_DISPATCHES\s*=\s*parseInt\(\s*'
+        r'(?:process\.env\.\w+\s*\|\|\s*)+'
+        r'"(\d+)"',
+        src, re.DOTALL)
+    assert m, "MIN_DISPATCHES parseInt declaration not found"
+    val = int(m.group(1))
     assert val == 10, (
-        f"enforce-multitask.ts MIN_DISPATCHES default is {val}, expected 10.")
+        f"enforce-multitask.ts MIN_DISPATCHES env-fallback default is {val}, expected 10.")
 
 
 def test_multitask_min_dispatches_per_wave_hardcoded_10():
-    """MIN_DISPATCHES_PER_WAVE in enforce-multitask.ts defaults to 10."""
+    """MIN_DISPATCHES_PER_WAVE in enforce-multitask.ts defaults to 10.
+
+    GLUDD_MIN_DISPATCHES and GLUDD_MULTITASK_MIN_DISPATCHES are now
+    chained in the same parseInt.  Verify the chain's final fallback
+    is "10".
+    """
     src = _read(MULTITASK_TS)
-    val = _env_default(src, "GLUDD_MIN_DISPATCHES")
+    m = re.search(
+        r'export const MIN_DISPATCHES\s*=\s*parseInt\(\s*'
+        r'(?:process\.env\.\w+\s*\|\|\s*)+'
+        r'"(\d+)"',
+        src, re.DOTALL)
+    assert m, "MIN_DISPATCHES parseInt fallback not found"
+    val = int(m.group(1))
     assert val == 10, (
-        f"enforce-multitask.ts MIN_DISPATCHES_PER_WAVE default is {val}, "
+        f"enforce-multitask.ts MIN_DISPATCHES_PER_WAVE final fallback is {val}, "
         f"expected 10.")
 
 
 def test_multitask_per_message_threshold_is_10():
     """The per-message MIN_DISPATCHES must be 10, which is the threshold."""
     src = _read(MULTITASK_TS)
-    # The per-message check uses MIN_DISPATCHES (a constant), not a literal.
-    # Verify the constant resolves to 10.
-    val = _env_default(src, "GLUDD_MULTITASK_MIN_DISPATCHES")
+    m = re.search(
+        r'export const MIN_DISPATCHES\s*=\s*parseInt\(\s*'
+        r'(?:process\.env\.\w+\s*\|\|\s*)+'
+        r'"(\d+)"',
+        src, re.DOTALL)
+    assert m, "MIN_DISPATCHES parseInt fallback not found"
+    val = int(m.group(1))
     assert val == 10, (
-        f"Multitask MIN_DISPATCHES is {val}, expected 10 for per-message threshold.")
+        f"Multitask MIN_DISPATCHES final fallback is {val}, expected 10 for per-message threshold.")
 
 
 def test_multitask_floor_breach_uses_min_dispatches():
-    """Floor breach check references MIN_DISPATCHES (not a literal)."""
+    """Floor breach check references MIN_DISPATCHES (not a literal).
+
+    After refactoring the check uses thisMessageDispatches (the live
+    per-message counter), not prevMessageDispatches (set at boundary).
+    Both the under-floor hard block and the thin-wave text.complete
+    check compare against MIN_DISPATCHES.
+    """
     src = _read(MULTITASK_TS)
-    assert "_state.prevMessageDispatches < MIN_DISPATCHES" in src, (
-        "Floor breach must use the MIN_DISPATCHES constant, not a literal.")
+    assert "_state.thisMessageDispatches < MIN_DISPATCHES" in src, (
+        "Floor breach must use the MIN_DISPATCHES constant, not a literal. "
+        "Expected '_state.thisMessageDispatches < MIN_DISPATCHES'.")
 
 
 # ============================================================================
