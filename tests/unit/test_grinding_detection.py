@@ -14,6 +14,14 @@ catch the grinding. ``enforce-stop.ts`` checks two thresholds:
   - streak > 12 → hard deny non-dispatch mutations with
     "MAIN-THREAD GRINDING DETECTED: N consecutive non-dispatch calls."
 
+REFACTOR NOTE (E.5, 2026-07-13): the shared-streak implementation
+(SHARED_STREAK_FILE constant, SharedStreakState interface, readSharedStreak /
+writeSharedStreak / updateSharedStreak) moved OUT of the individual plugin
+files INTO ``.opencode/lib/shared.ts``. Both plugins now import
+``updateSharedStreak`` from the shared library. The structural pins below
+therefore check shared.ts for the implementation details and check the
+plugins for the import + call sites (the integration points).
+
 TDD: this file was written FIRST and run RED against the missing implementation.
 """
 
@@ -26,8 +34,23 @@ from pathlib import Path
 ROOT = Path(__file__).parent.parent.parent
 STOP_PLUGIN = ROOT / ".opencode" / "plugin" / "enforce-stop.ts"
 FLOOR_PLUGIN = ROOT / ".opencode" / "plugin" / "enforce-floor.ts"
+SHARED_LIB = ROOT / ".opencode" / "lib" / "shared.ts"
 
 SHARED_STREAK_FILE = "/tmp/gludd-tool-streak.json"
+
+
+def _uses_shared_streak(plugin_src: str) -> bool:
+    """True when the plugin wires into the shared streak state.
+
+    After the E.5 refactor the plugin no longer contains the streak file
+    literal — it imports ``updateSharedStreak`` from ``../lib/shared`` and
+    calls it. Either the import or a direct literal reference counts.
+    """
+    imports_helper = (
+        "updateSharedStreak" in plugin_src and "lib/shared" in plugin_src
+    )
+    has_literal = SHARED_STREAK_FILE in plugin_src
+    return imports_helper or has_literal
 
 # Thresholds pinned from the spec (P3 audit fix).
 DELEGATE_FIRST_THRESHOLD = 8
@@ -45,45 +68,67 @@ READ_TOOLS = {"read", "grep", "glob"}
 
 
 class TestSharedStreakFileReferenced:
-    """Both plugins MUST reference the shared streak state file.
+    """Both plugins MUST wire into the shared streak state.
 
     Without the shared file, each plugin tracks the streak independently and
     neither can catch grinding the other misses (e.g. if floor's hook throws
     and falls through its fail-open, stop still sees the accumulated streak).
+
+    Post-E.5: the file path literal lives in shared.ts; the plugins import
+    updateSharedStreak from the shared lib. The pin checks both halves.
     """
+
+    def test_shared_lib_defines_streak_file(self):
+        src = SHARED_LIB.read_text()
+        assert SHARED_STREAK_FILE in src, (
+            ".opencode/lib/shared.ts must define the shared streak file "
+            f"{SHARED_STREAK_FILE} — it is the single source of truth for "
+            "cross-plugin grinding detection (P3 audit finding)."
+        )
 
     def test_stop_plugin_references_shared_file(self):
         src = STOP_PLUGIN.read_text()
-        assert SHARED_STREAK_FILE in src, (
-            "enforce-stop.ts must reference the shared streak file "
-            f"{SHARED_STREAK_FILE} — without it the plugin has zero "
+        assert _uses_shared_streak(src), (
+            "enforce-stop.ts must wire into the shared streak state — either "
+            "import updateSharedStreak from ../lib/shared or reference "
+            f"{SHARED_STREAK_FILE} directly. Without it the plugin has zero "
             "cross-call grinding detection (P3 audit finding)."
         )
 
     def test_floor_plugin_references_shared_file(self):
         src = FLOOR_PLUGIN.read_text()
-        assert SHARED_STREAK_FILE in src, (
-            "enforce-floor.ts must reference the shared streak file "
-            f"{SHARED_STREAK_FILE} so either plugin can catch grinding."
+        assert _uses_shared_streak(src), (
+            "enforce-floor.ts must wire into the shared streak state — either "
+            "import updateSharedStreak from ../lib/shared or reference "
+            f"{SHARED_STREAK_FILE} directly, so either plugin can catch grinding."
         )
 
-    def test_shared_file_env_override_in_stop(self):
+    def test_shared_file_env_override(self):
         """The shared file path should be overridable via env var for testing."""
-        src = STOP_PLUGIN.read_text()
+        src = SHARED_LIB.read_text()
         # The env override pattern (GLUDD_STREAK_FILE or similar) lets tests
         # isolate the streak state. Must be present so tests don't pollute /
         # read real session state.
         assert "GLUDD_STREAK_FILE" in src or "GLUDD_TOOL_STREAK_FILE" in src, (
-            "enforce-stop.ts must allow overriding the streak file path via "
+            "shared.ts must allow overriding the streak file path via "
             "an env var (GLUDD_STREAK_FILE) for test isolation."
         )
 
-    def test_shared_file_env_override_in_floor(self):
-        src = FLOOR_PLUGIN.read_text()
-        assert "GLUDD_STREAK_FILE" in src or "GLUDD_TOOL_STREAK_FILE" in src, (
-            "enforce-floor.ts must allow overriding the streak file path via "
-            "an env var (GLUDD_STREAK_FILE) for test isolation."
+    def test_shared_file_env_override_in_stop(self):
+        """enforce-stop.ts gets the env override transitively via shared.ts."""
+        assert "updateSharedStreak" in STOP_PLUGIN.read_text(), (
+            "enforce-stop.ts must use updateSharedStreak from shared.ts, "
+            "which honors GLUDD_STREAK_FILE for test isolation."
         )
+        self.test_shared_file_env_override()
+
+    def test_shared_file_env_override_in_floor(self):
+        """enforce-floor.ts gets the env override transitively via shared.ts."""
+        assert "updateSharedStreak" in FLOOR_PLUGIN.read_text(), (
+            "enforce-floor.ts must use updateSharedStreak from shared.ts, "
+            "which honors GLUDD_STREAK_FILE for test isolation."
+        )
+        self.test_shared_file_env_override()
 
 
 class TestSharedStreakSchema:
@@ -91,23 +136,33 @@ class TestSharedStreakSchema:
 
     The schema is the contract between the two plugins — if a field is
     missing or renamed unilaterally, the other plugin reads stale data.
+    Post-E.5 the schema lives once in shared.ts (SharedStreakState +
+    updateSharedStreak); each plugin must call the shared writer.
     """
+
+    def test_shared_lib_defines_all_fields(self):
+        src = SHARED_LIB.read_text()
+        for field in ["streak", "lastDispatchTs", "readStreak", "editStreak"]:
+            assert field in src, (
+                f"shared.ts must define field '{field}' in the shared "
+                f"streak schema — it is part of the cross-plugin contract."
+            )
 
     def test_stop_writes_all_fields(self):
         src = STOP_PLUGIN.read_text()
-        for field in ["streak", "lastDispatchTs", "readStreak", "editStreak"]:
-            assert field in src, (
-                f"enforce-stop.ts must write field '{field}' to the shared "
-                f"streak file — it is part of the cross-plugin schema."
-            )
+        assert "updateSharedStreak" in src, (
+            "enforce-stop.ts must call updateSharedStreak() so all schema "
+            "fields (streak/lastDispatchTs/readStreak/editStreak) are written."
+        )
+        self.test_shared_lib_defines_all_fields()
 
     def test_floor_writes_all_fields(self):
         src = FLOOR_PLUGIN.read_text()
-        for field in ["streak", "lastDispatchTs", "readStreak", "editStreak"]:
-            assert field in src, (
-                f"enforce-floor.ts must write field '{field}' to the shared "
-                f"streak file — it is part of the cross-plugin schema."
-            )
+        assert "updateSharedStreak" in src, (
+            "enforce-floor.ts must call updateSharedStreak() so all schema "
+            "fields (streak/lastDispatchTs/readStreak/editStreak) are written."
+        )
+        self.test_shared_lib_defines_all_fields()
 
 
 class TestThresholdConstants:
@@ -192,16 +247,24 @@ class TestDispatchResetsStreak:
     """A dispatch (task/agent/workflow) MUST reset the streak to 0.
 
     Without the reset, the streak climbs forever and a single dispatch after
-    a long read sequence still trips the threshold.
+    a long read sequence still trips the threshold. The reset logic lives in
+    shared.ts updateSharedStreak(); the plugins invoke it.
     """
+
+    def test_reset_on_dispatch_in_shared_lib(self):
+        src = SHARED_LIB.read_text()
+        assert "task" in src and ("streak = 0" in src or "streak: 0" in src), (
+            "shared.ts updateSharedStreak must reset the shared streak to 0 "
+            "on a dispatch tool call (task/agent/workflow)."
+        )
 
     def test_reset_on_dispatch_in_stop(self):
         src = STOP_PLUGIN.read_text()
-        # Look for the dispatch→reset logic referencing the shared file
-        assert "task" in src and ("streak = 0" in src or "streak: 0" in src), (
-            "enforce-stop.ts must reset the shared streak to 0 on a dispatch "
-            "tool call (task/agent/workflow)."
+        assert "updateSharedStreak" in src, (
+            "enforce-stop.ts must call updateSharedStreak() — the dispatch→"
+            "reset logic lives there (task/agent/workflow → streak = 0)."
         )
+        self.test_reset_on_dispatch_in_shared_lib()
 
 
 # ============================================================================
@@ -542,40 +605,52 @@ class TestRealisticGrindingSequence:
 
 
 class TestSharedStreakPidField:
-    """Both plugins MUST define a pid field in the SharedStreakState interface."""
+    """The SharedStreakState schema MUST carry a pid field.
 
-    def test_stop_interface_has_pid(self):
-        src = STOP_PLUGIN.read_text()
+    Post-E.5 the interface + read/write functions live once in shared.ts;
+    both plugins consume them via updateSharedStreak.
+    """
+
+    def test_shared_interface_has_pid(self):
+        src = SHARED_LIB.read_text()
         # The interface line: pid: number
         assert re.search(r"\bpid:\s*number\b", src), (
-            "enforce-stop.ts SharedStreakState must declare `pid: number` — "
+            "shared.ts SharedStreakState must declare `pid: number` — "
             "without it the cross-session guard cannot store the writing pid."
         )
 
+    def test_stop_interface_has_pid(self):
+        assert "updateSharedStreak" in STOP_PLUGIN.read_text(), (
+            "enforce-stop.ts must consume the shared streak schema "
+            "(updateSharedStreak import) that carries `pid: number`."
+        )
+        self.test_shared_interface_has_pid()
+
     def test_floor_interface_has_pid(self):
-        src = FLOOR_PLUGIN.read_text()
-        assert re.search(r"\bpid:\s*number\b", src), (
-            "enforce-floor.ts SharedStreakState must declare `pid: number` — "
-            "without it the cross-session guard cannot store the writing pid."
+        assert "updateSharedStreak" in FLOOR_PLUGIN.read_text(), (
+            "enforce-floor.ts must consume the shared streak schema "
+            "(updateSharedStreak import) that carries `pid: number`."
+        )
+        self.test_shared_interface_has_pid()
+
+    def test_shared_write_sets_pid(self):
+        src = SHARED_LIB.read_text()
+        assert "s.pid = process.pid" in src, (
+            "shared.ts writeSharedStreak() must set s.pid = process.pid "
+            "so every write stamps the owning process."
         )
 
     def test_stop_write_sets_pid(self):
-        src = STOP_PLUGIN.read_text()
-        assert "s.pid = process.pid" in src, (
-            "enforce-stop.ts writeSharedStreak() must set s.pid = process.pid "
-            "so every write stamps the owning process."
-        )
+        assert "updateSharedStreak" in STOP_PLUGIN.read_text()
+        self.test_shared_write_sets_pid()
 
     def test_floor_write_sets_pid(self):
-        src = FLOOR_PLUGIN.read_text()
-        assert "s.pid = process.pid" in src, (
-            "enforce-floor.ts writeSharedStreak() must set s.pid = process.pid "
-            "so every write stamps the owning process."
-        )
+        assert "updateSharedStreak" in FLOOR_PLUGIN.read_text()
+        self.test_shared_write_sets_pid()
 
     def test_default_return_includes_pid_zero(self):
         """The fallback return (file missing) must include pid: 0."""
-        src = FLOOR_PLUGIN.read_text()
+        src = SHARED_LIB.read_text()
         # The default return near the end of readSharedStreak
         handler = src.split("function readSharedStreak")[1]
         assert "pid: 0" in handler, (
@@ -584,30 +659,42 @@ class TestSharedStreakPidField:
 
 
 class TestSharedStreakPidMismatchReset:
-    """When the stored pid != process.pid, the streak MUST reset to 0."""
+    """When the stored pid != process.pid, the streak MUST reset to 0.
+
+    The pid-guard lives in shared.ts readSharedStreak(); both plugins get it
+    via updateSharedStreak.
+    """
+
+    def test_shared_read_checks_pid_mismatch(self):
+        src = SHARED_LIB.read_text()
+        assert "storedPid !== process.pid" in src, (
+            "shared.ts readSharedStreak must check storedPid !== process.pid"
+        )
 
     def test_floor_read_checks_pid_mismatch(self):
-        src = FLOOR_PLUGIN.read_text()
-        assert "storedPid !== process.pid" in src, (
-            "enforce-floor.ts readSharedStreak must check storedPid !== process.pid"
+        assert "updateSharedStreak" in FLOOR_PLUGIN.read_text(), (
+            "enforce-floor.ts must consume readSharedStreak's pid guard via "
+            "updateSharedStreak."
         )
+        self.test_shared_read_checks_pid_mismatch()
 
     def test_stop_read_checks_pid_mismatch(self):
-        src = STOP_PLUGIN.read_text()
-        assert "storedPid !== process.pid" in src, (
-            "enforce-stop.ts readSharedStreak must check storedPid !== process.pid"
+        assert "updateSharedStreak" in STOP_PLUGIN.read_text(), (
+            "enforce-stop.ts must consume readSharedStreak's pid guard via "
+            "updateSharedStreak."
         )
+        self.test_shared_read_checks_pid_mismatch()
 
     def test_pid_reset_writes_last_writer_tag(self):
         """The pid-reset path must include lastWriter: "pid-reset"."""
-        src = FLOOR_PLUGIN.read_text()
+        src = SHARED_LIB.read_text()
         assert '"pid-reset"' in src, (
-            "enforce-floor.ts pid-reset path must write lastWriter: 'pid-reset'"
+            "shared.ts pid-reset path must write lastWriter: 'pid-reset'"
         )
 
     def test_pid_reset_zeroes_all_fields(self):
         """The pid-reset zeroed state must have streak=0, lastDispatchTs=0, etc."""
-        src = FLOOR_PLUGIN.read_text()
+        src = SHARED_LIB.read_text()
         # The zeroed object in the pid-reset branch
         handler = src.split("function readSharedStreak")[1]
         assert "streak: 0" in handler and "lastDispatchTs: 0" in handler, (
@@ -616,7 +703,7 @@ class TestSharedStreakPidMismatchReset:
 
     def test_pid_stored_greater_than_zero_check(self):
         """The pid check must verify storedPid > 0 before comparing."""
-        src = FLOOR_PLUGIN.read_text()
+        src = SHARED_LIB.read_text()
         assert "storedPid > 0" in src, (
             "readSharedStreak must check storedPid > 0 before comparing to process.pid "
             "— otherwise old-format files (no pid) would trigger reset incorrectly"

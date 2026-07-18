@@ -227,6 +227,18 @@ class TestDisengageSignal:
     """Disengage signal (/tmp/gludd-watchdog-disengage.json) works across all
     enforcement plugins."""
 
+    def test_shared_lib_defines_disengage_path(self):
+        """Post-E.5 refactor: the disengage path literal lives in
+        .opencode/lib/shared.ts (DISENGAGE_PATH); plugins import
+        isDisengaged/DISENGAGE_PATH instead of duplicating the literal."""
+        shared_src = (
+            _find_plugin_dir().parent / "lib" / "shared.ts"
+        ).read_text()
+        assert "watchdog-disengage" in shared_src, (
+            "shared.ts must define the disengage signal path "
+            "(/tmp/gludd-watchdog-disengage.json)"
+        )
+
     def test_all_plugins_reference_disengage_signal(self):
         plugins = [
             "enforce-floor.ts",
@@ -234,10 +246,19 @@ class TestDisengageSignal:
             "enforce-stop.ts",
             "enforce-multitask.ts",
         ]
+        self.test_shared_lib_defines_disengage_path()
         for name in plugins:
             src = _plugin_source(name)
-            has_ref = "watchdog-disengage" in src
-            assert has_ref, f"{name} does not reference disengage signal"
+            has_ref = (
+                "watchdog-disengage" in src
+                or "isDisengaged" in src
+                or "DISENGAGE_PATH" in src
+            )
+            assert has_ref, (
+                f"{name} does not reference the disengage signal — it must "
+                "either contain the literal or import isDisengaged/"
+                "DISENGAGE_PATH from ../lib/shared"
+            )
 
     def test_disengage_signal_has_required_fields(self):
         now = _now_ms()

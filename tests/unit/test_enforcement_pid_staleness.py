@@ -223,9 +223,13 @@ class TestSharedStreakPidCheckStructural:
 
     def test_zeroes_state_on_pid_mismatch(self):
         """On PID mismatch, readSharedStreak() must zero streak/readStreak/
-        editStreak and write back with the current PID."""
+        editStreak and write back with the current PID.
+
+        Accepts both shapes: a standalone `if (storedPid !== process.pid) {`
+        block, or the current shared.ts form where the comparison feeds a
+        `pidMismatch` flag used in a combined staleness condition."""
         pid_check_match = re.search(
-            r"storedPid\s*!==\s*process\.pid\s*\)\s*\{.*?\}",
+            r"storedPid\s*!==\s*process\.pid\s*(?:\)|.*?pidMismatch\s*\))\s*\{.*?\}",
             SHARED_SRC, re.DOTALL,
         )
         assert pid_check_match, "PID mismatch block not found"
@@ -237,7 +241,7 @@ class TestSharedStreakPidCheckStructural:
         """The PID-mismatch branch must write the zeroed state back to disk
         so the stale file is corrected for other plugins."""
         pid_check_match = re.search(
-            r"storedPid\s*!==\s*process\.pid\s*\)\s*\{.*?writeFileSync.*?\}",
+            r"storedPid\s*!==\s*process\.pid\s*(?:\)|.*?pidMismatch\s*\))\s*\{.*?writeFileSync.*?\}",
             SHARED_SRC, re.DOTALL,
         )
         assert pid_check_match, (
