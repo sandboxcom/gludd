@@ -138,25 +138,31 @@ const ALLOWED_TOP_LEVEL_KEYS: ReadonlySet<string> = new Set([
 // --- Gate-concurrency probe (port of gate_concurrency_pretool.sh) -------------
 // Two independent signals (either fires the block): fresh basetemp mtime, OR
 // pgrep for a running pytest. FAIL-OPEN on any error (can't probe -> allow).
+const BASETEMP = process.env.GLUDD_GATE_BASETEMP || "/tmp/gludd-gate-basetemp"
+const STALE_SECS = parseInt(process.env.GLUDD_GATE_STALE_SECS || "600", 10)
+
+function basetempIsFresh(): boolean {
+  try {
+    const st = fs.statSync(BASETEMP)
+    const ageSec = (Date.now() - st.mtimeMs) / 1000
+    return ageSec < STALE_SECS
+  } catch {
+    return false
+  }
+}
+
 function isGateAlreadyRunning(): boolean {
   try {
-    const BASETEMP = process.env.GLUDD_GATE_BASETEMP || "/tmp/gludd-gate-basetemp"
-    const STALE_SECS = parseInt(process.env.GLUDD_GATE_STALE_SECS || "600", 10)
     if (process.env.GLUDD_GATE_PYTEST_RUNNING === "1") return true
     if (process.env.GLUDD_GATE_PYTEST_RUNNING === "0") return false
     // Signal A (definitive): pgrep -f pytest. Exit 0 = match found.
     try {
       execSync("pgrep -f pytest", { stdio: ["pipe", "pipe", "pipe"] })
       return true
-    } catch (e: unknown) {
-      const err = e as NodeJS.ErrnoException
-      if (err.code === "ENOENT") {
+    } catch (e) {
+      if (typeof e === "object" && e !== null && "code" in e && (e as { code?: unknown }).code === "ENOENT") {
         // pgrep unavailable — fall back to basetemp freshness heuristic
-        try {
-          const st = fs.statSync(BASETEMP)
-          const ageSec = (Date.now() - st.mtimeMs) / 1000
-          if (ageSec < STALE_SECS) return true
-        } catch {}
+        if (basetempIsFresh()) return true
       }
       // Non-zero exit: pgrep found nothing — no pytest running
     }

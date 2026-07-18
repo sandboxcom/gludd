@@ -60,8 +60,8 @@ function isCiPending(branch: string): boolean {
       },
     );
     return false;
-  } catch (e: any) {
-    if (e.status === 2) return true;
+  } catch (e) {
+    if (typeof e === "object" && e !== null && "status" in e && (e as { status?: number }).status === 2) return true;
     return false;
   }
 }
