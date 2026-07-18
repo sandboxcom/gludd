@@ -210,8 +210,11 @@ classic "parallel independent development of the same thing" anti-pattern.
 | enforce-make.ts | **BLOCKING** | tool.execute.before + text.complete | GLUDD_MAKE_ENFORCE=0 |
 | enforce-no-wait.ts | **BLOCKING** | tool.execute.before | GLUDD_NO_WAIT_ENFORCE=0 |
 | enforce-deletion-gate.ts | **BLOCKING** | tool.execute.before | GLUDD_DELETION_GATE_ENFORCE=0 |
+| enforce-tdd.ts | **BLOCKING** | tool.execute.before | GLUDD_TDD_ENFORCE=0 |
 
-All 13 enforcement plugins are now BLOCKING and hot-reload capable via `shared.ts`. Zero advisory-only plugins remain.
+All enforcement plugins are BLOCKING and hot-reload capable via `shared.ts`. Zero advisory-only plugins remain.
+
+**enforce-tdd.ts (2026-07-17)** — the real-time TDD guardrail. Denies `edit`/`write` to `src/general_ludd/**/*.py` when no corresponding test file exists yet. Forces the test-first workflow mechanically: you cannot write implementation code until the test file is on disk. The candidate-test-path logic mirrors `scripts/check_tdd_compliance.py` exactly so the editor gate and the commit-time gate agree. Allowlist matches the script (`__init__.py`, `*.pyi`, `protocols.py`, `typing.py`, `type_defs.py`, `_types.py`). Disable via `GLUDD_TDD_ENFORCE=0`. Tests: `tests/unit/test_enforce_tdd_plugin.py` (structural, 18 cases) + `.opencode/plugin/enforce-tdd.test.node.mjs` (runtime behavioral, 16 cases — invokes the actual compiled hook).
 Runtime verification via `make test-hook-runtime` (52 functional tests across 8 plugins).
 Node v26 `--experimental-strip-types` compatibility verified: 0 `require()` calls, 2/2 compat checks PASS.
 
@@ -1511,12 +1514,32 @@ Workflow for every change:
 6. Refactor if needed, keeping tests green.
 
 This is enforced by:
+- `.opencode/plugin/enforce-tdd.ts` — **REAL-TIME editor block**: denies `edit`/`write` to `src/general_ludd/**/*.py` when no corresponding test file exists. You literally cannot write implementation code until the test file is on disk. See "Real-Time TDD Enforcement" below.
 - `.opencode/plugin/enforce-make.ts` — prints TDD reminder when you edit files under `src/`
+- `scripts/check_tdd_compliance.py` — commit-time backstop (blocks commits with untested source)
 - This AGENTS.md section — proactive instruction
 - The guardrail-pattern skill — reusable pattern reference
 
 Do not skip steps. Do not write implementation and then retroactively add tests.
 Do not mark work complete unless a test proves the behavior exists.
+
+### Real-Time TDD Enforcement (2026-07-17)
+
+**The TDD policy is now mechanically enforced at EDIT time, not just commit time.** The `enforce-tdd.ts` plugin blocks the editor itself — you cannot write to `src/general_ludd/foo.py` until `tests/unit/test_general_ludd_foo.py` (or `tests/unit/test_foo.py`) already exists on disk.
+
+**Why this was added:** deepseek repeatedly wrote implementation code in `src/` with no corresponding test, then either (a) got blocked at commit time after wasting tokens, or (b) bypassed the commit check entirely. The commit-time check (`scripts/check_tdd_compliance.py`) is too late — by then the damage is done. The real-time plugin makes the failure structurally impossible: the edit is denied before it lands.
+
+**Workflow the plugin forces (mechanically):**
+1. Write `tests/unit/test_<module>.py` — **ALLOWED** (it's a test file, passes through)
+2. Run it, confirm it fails (TDD red phase)
+3. Write/edit `src/general_ludd/<module>.py` — **ALLOWED** (the test file now exists)
+4. Run the test, confirm it passes (TDD green phase)
+
+Skip step 1 → step 3 is **DENIED** with a message naming the expected test file path.
+
+**Scope:** only `src/general_ludd/**/*.py` is gated. Files under `tests/`, `docs/`, `scripts/`, `config/`, and non-`.py` files pass through freely. The allowlist (`__init__.py`, `*.pyi`, `protocols.py`, `typing.py`, `type_defs.py`, `_types.py`) matches `scripts/check_tdd_compliance.py` exactly — the editor gate and the commit-time gate agree on what needs a test.
+
+**Bypass:** `GLUDD_TDD_ENFORCE=0` disables the editor gate (use only for legitimate refactors of untested legacy code where writing tests first is genuinely blocked). The commit-time check remains as a backstop.
 
 ### TDD Compliance Guardrail (2026-07-12)
 

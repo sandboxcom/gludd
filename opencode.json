@@ -47,6 +47,7 @@
     "./.opencode/plugin/enforce-stop.ts",
     "./.opencode/plugin/enforce-batch-push.ts",
     "./.opencode/plugin/enforce-depth.ts",
+    "./.opencode/plugin/enforce-tdd.ts",
     "./.opencode/plugins/watchdog.ts"
   ]
 }
