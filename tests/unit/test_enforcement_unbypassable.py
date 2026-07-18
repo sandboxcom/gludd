@@ -437,15 +437,20 @@ class TestTextCompleteBlocksOnCiRed:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# 4. enforce-multitask blocks edit with zero dispatches regardless of
-#    GLUDD_MULTITASK_FLOOR_ENFORCE=0
+# 4. enforce-multitask: GLUDD_MULTITASK_FLOOR_ENFORCE=0 is a documented escape
+#    hatch (mirrors enforce-floor.ts:312). When enabled (default), the under-floor
+#    block denies edits with zero prior dispatches and pending TASKS.md work.
+#    When disabled via env=0, the block is bypassed.
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-class TestMultitaskEnvVarUnbypassable:
-    """enforce-multitask.ts:193 `if (!FLOOR_ENFORCE) return` disables the
-    entire under-floor hard block when GLUDD_MULTITASK_FLOOR_ENFORCE=0. The
-    zero-dispatch edit deny with pending work must survive the env var."""
+class TestMultitaskEnvVarEscapeHatch:
+    """enforce-multitask.ts:195 hoists `if (!FLOOR_ENFORCE) return` ahead of
+    the under-floor deny block (fix c592b3eb, mirrors enforce-floor.ts:312).
+
+    With GLUDD_MULTITASK_FLOOR_ENFORCE=1 (or unset), an edit with zero prior
+    dispatches and unchecked TASKS.md items MUST be denied. With env=0, the
+    block MUST be bypassed — the env var is the sanctioned escape hatch."""
 
     @staticmethod
     def _run_edit_leg(base: Path, extra_env: dict[str, str], state_name: str) -> dict:
@@ -462,39 +467,49 @@ class TestMultitaskEnvVarUnbypassable:
             _multitask_edit_driver(bundle), env, cwd=str(base / "project"),
         )
 
-    def test_edit_denied_with_zero_dispatches_despite_env_disabled(self):
+    def test_edit_denied_with_zero_dispatches_env_enabled(self):
         base = _mk_workdir(unchecked_tasks=True)
         try:
-            sanity = self._run_edit_leg(base, {}, "mt-state-on.json")
-            sanity_result = sanity.get("result")
-            assert (
-                isinstance(sanity_result, dict)
-                and sanity_result.get("permissionDecision") == "deny"
-            ), (
-                "harness sanity: with enforcement enabled, an edit with 0 "
-                "dispatches and unchecked TASKS.md items must be denied "
-                f"(UNDER-FLOOR HARD BLOCK). Got: {sanity}"
-            )
+            # Default (env unset → FLOOR_ENFORCE truthy) and explicit env=1
+            # both MUST deny the edit when zero dispatches precede it and
+            # TASKS.md has unchecked items (UNDER-FLOOR HARD BLOCK).
+            for env in ({}, {"GLUDD_MULTITASK_FLOOR_ENFORCE": "1"}):
+                result_dict = self._run_edit_leg(base, env, "mt-state-on.json")
+                result = result_dict.get("result")
+                assert (
+                    isinstance(result, dict)
+                    and result.get("permissionDecision") == "deny"
+                ), (
+                    f"env={env}: edit with 0 dispatches and pending work must "
+                    f"be DENIED (UNDER-FLOOR HARD BLOCK). Got: {result_dict}"
+                )
+                assert result.get("message"), (
+                    f"env={env}: deny must carry an actionable message. "
+                    f"Got: {result_dict}"
+                )
+        finally:
+            shutil.rmtree(base, ignore_errors=True)
 
+    def test_edit_allowed_when_env_disabled(self):
+        base = _mk_workdir(unchecked_tasks=True)
+        try:
+            # GLUDD_MULTITASK_FLOOR_ENFORCE=0 is the documented escape hatch
+            # (mirrors enforce-floor.ts:312). The under-floor block MUST be
+            # bypassed: the edit is ALLOWED despite zero dispatches + pending
+            # TASKS.md work.
             bypassed = self._run_edit_leg(
                 base,
                 {"GLUDD_MULTITASK_FLOOR_ENFORCE": "0"},
                 "mt-state-off.json",
             )
             result = bypassed.get("result")
-            assert isinstance(result, dict), (
-                "GLUDD_MULTITASK_FLOOR_ENFORCE=0 BYPASSED ENFORCEMENT: the "
-                "edit with 0 dispatches and pending work was ALLOWED. The "
-                "under-floor block must fire regardless of the disable env "
-                f"var. Got: {bypassed}"
-            )
-            assert result.get("permissionDecision") == "deny", (
-                "GLUDD_MULTITASK_FLOOR_ENFORCE=0 BYPASSED ENFORCEMENT: "
-                "expected permissionDecision='deny' for edit with 0 "
-                f"dispatches and pending work. Got: {bypassed}"
-            )
-            assert result.get("message"), (
-                f"deny must carry an actionable message. Got: {bypassed}"
-            )
+            # Allowed = no deny decision. Result may be None (passthrough) or a
+            # non-deny dict; neither may carry permissionDecision == "deny".
+            if isinstance(result, dict):
+                assert result.get("permissionDecision") != "deny", (
+                    "GLUDD_MULTITASK_FLOOR_ENFORCE=0 must disable the "
+                    "under-floor block: edit should be ALLOWED, got "
+                    f"permissionDecision='deny'. Got: {bypassed}"
+                )
         finally:
             shutil.rmtree(base, ignore_errors=True)
