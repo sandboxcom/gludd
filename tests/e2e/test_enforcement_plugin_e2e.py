@@ -25,6 +25,8 @@ import re
 import time
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[2]
 
 STATE_FILES = [
@@ -64,14 +66,26 @@ DISENGAGE_FILES = [
     "/tmp/gludd-watchdog-disengage.json",
 ]
 
-_GATE_STATUS_PATH = None  # lazy: resolve based on cwd in helpers
+_GATE_STATUS_ROOT: Path | None = None  # autouse fixture overrides to tmp_path
 
 
 def _gate_status_path() -> Path:
-    global _GATE_STATUS_PATH
-    if _GATE_STATUS_PATH is None:
-        _GATE_STATUS_PATH = Path(os.getcwd()) / ".gate-status"
-    return _GATE_STATUS_PATH
+    root = _GATE_STATUS_ROOT if _GATE_STATUS_ROOT is not None else Path(os.getcwd())
+    return root / ".gate-status"
+
+
+@pytest.fixture(autouse=True)
+def _isolate_gate_status(tmp_path):
+    """Redirect .gate-status reads/writes to tmp_path so tests never pollute
+    the repo working tree. A stale green .gate-status in the repo root can
+    mask a real red gate (see test-isolation bug)."""
+    global _GATE_STATUS_ROOT
+    previous = _GATE_STATUS_ROOT
+    _GATE_STATUS_ROOT = tmp_path
+    try:
+        yield tmp_path
+    finally:
+        _GATE_STATUS_ROOT = previous
 
 
 # --------------------------------------------------------------------------
@@ -430,6 +444,53 @@ class TestDispatchStreakSimulation:
         assert not _is_streak_healthy(), "Streak=10 should be unhealthy (>8)"
         s = _read_tool_streak()
         assert s["streak"] > 8
+
+
+class TestGateStatusIsolation:
+    """Verify .gate-status writes never pollute the repo working tree.
+
+    Regression guard for the test-isolation bug where helpers wrote
+    .gate-status into os.getcwd()/repo-root, leaving a stale green file
+    that could mask a real red gate on a subsequent run.
+    """
+
+    REPO_ROOT_GATE = Path(os.getcwd()) / ".gate-status"
+
+    def test_helpers_target_isolated_root(self):
+        assert _GATE_STATUS_ROOT is not None, (
+            "autouse fixture must set _GATE_STATUS_ROOT before tests run"
+        )
+        assert _gate_status_path() != self.REPO_ROOT_GATE, (
+            "helpers must target tmp_path, not the repo working tree"
+        )
+
+    def test_write_does_not_create_repo_root_gate_status(self):
+        existed_before = self.REPO_ROOT_GATE.exists()
+        mtime_before = self.REPO_ROOT_GATE.stat().st_mtime if existed_before else None
+        _write_gate_status_passing()
+        assert _gate_status_path().exists(), "isolated .gate-status should be written"
+        if not existed_before:
+            assert not self.REPO_ROOT_GATE.exists(), (
+                "Test created .gate-status at repo root - isolation broken"
+            )
+        else:
+            assert self.REPO_ROOT_GATE.stat().st_mtime == mtime_before, (
+                "Test modified existing repo-root .gate-status - isolation broken"
+            )
+
+    def test_remove_does_not_touch_repo_root_gate_status(self):
+        existed_before = self.REPO_ROOT_GATE.exists()
+        mtime_before = self.REPO_ROOT_GATE.stat().st_mtime if existed_before else None
+        _write_gate_status_passing()
+        _remove_gate_status()
+        assert not _gate_status_path().exists()
+        if existed_before:
+            assert self.REPO_ROOT_GATE.exists(), (
+                "Test deleted repo-root .gate-status - isolation broken"
+            )
+            assert self.REPO_ROOT_GATE.stat().st_mtime == mtime_before, (
+                "Test modified repo-root .gate-status mtime - isolation broken"
+            )
 
 
 class TestGateRefreshAndCommit:
