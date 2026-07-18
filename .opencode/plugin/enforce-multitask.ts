@@ -189,6 +189,11 @@ export const defaultImpl: HotModule = {
       _state = freshState()
     }
 
+    // FLOOR_ENFORCE gate MUST be the first enforcement check. Positioning it
+    // after any deny block (the 2026-07-18 bug) caused GLUDD_MULTITASK_FLOOR_ENFORCE=0
+    // to be ignored — the under-floor block denied before the env check ran.
+    if (!FLOOR_ENFORCE) return
+
     try {
       const tool = (input?.tool ?? "") as string
       const lt = tool.toLowerCase()
@@ -251,39 +256,18 @@ export const defaultImpl: HotModule = {
         return
       }
 
-      // === UNDER-FLOOR HARD BLOCK ===
-      // Per AGENTS.md "UNDER-FLOOR HARD BLOCK (2026-07-15)": EVERY non-dispatch
-      // tool call — including read/glob/grep — is blocked until the wave
-      // reaches the floor. This closes the "dispatch 1, then grind reads"
-      // bypass.
-      if (
-        !disengaged &&
-        hasPendingWork() &&
-        _state.thisMessageDispatches < MIN_DISPATCHES &&
-        (lt === "edit" || lt === "write" || lt === "bash")
-      ) {
-        writeState(_state)
-        return {
-          permissionDecision: "deny" as const,
-          message: [
-            "UNDER-FLOOR HARD BLOCK: ONLY " + String(_state.thisMessageDispatches) + " DISPATCHES.",
-            "Floor is 10. DISPATCH " + String(MIN_DISPATCHES) + " SUBAGENTS NOW OR YOU ARE BLOCKED.",
-            "You have " + String(_state.thisMessageDispatches) + "; need " + String(MIN_DISPATCHES) + ". edit/write/bash/read/grep/glob are blocked until floor reached.",
-            "consecutive non-dispatch calls: " + String(_state.consecutiveNonDispatch),
-            "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
-            "Run 'make disengage-enforcement' to bypass.",
-          ].join("\n"),
-        }
-      }
-
-      if (!FLOOR_ENFORCE) return
-
       // --- Consecutive non-dispatch counter (grinding detection) ---
       // Counts every non-dispatch tool call. After THRESHOLD calls within the
       // time window, blocks ALL non-dispatch tools until a dispatch resets.
       // Read tools (isReadTool(tool)) are excluded from the COUNTER to avoid
       // penalizing investigation bursts — they are still gated by the
       // UNDER-FLOOR block below.
+      //
+      // RUNS BEFORE the UNDER-FLOOR block so that when the streak counter has
+      // reached threshold (the agent has been grinding reads/greps), the
+      // STREAK message wins over UNDER-FLOOR. Without this ordering, a call 3
+      // edit after 2 reads would incorrectly surface UNDER-FLOOR instead of
+      // CONSECUTIVE NON-DISPATCH STREAK (2026-07-18 bug).
       if (!disengaged) {
         if (_state.consecutiveNonDispatchStartTs === 0) {
           _state.consecutiveNonDispatchStartTs = now
@@ -314,6 +298,35 @@ export const defaultImpl: HotModule = {
               "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable. Run 'make disengage-enforcement' to bypass.",
             ].join("\n"),
           }
+        }
+      }
+
+      // === UNDER-FLOOR HARD BLOCK ===
+      // Per AGENTS.md "UNDER-FLOOR HARD BLOCK (2026-07-15)": EVERY non-dispatch
+      // tool call — including read/glob/grep — is blocked until the wave
+      // reaches the floor. This closes the "dispatch 1, then grind reads"
+      // bypass.
+      //
+      // Fallback for the first-edit-with-zero-dispatches case where the streak
+      // counter (above) is still below threshold. When the streak has already
+      // hit threshold, the streak block wins.
+      if (
+        !disengaged &&
+        hasPendingWork() &&
+        _state.thisMessageDispatches < MIN_DISPATCHES &&
+        (lt === "edit" || lt === "write" || lt === "bash")
+      ) {
+        writeState(_state)
+        return {
+          permissionDecision: "deny" as const,
+          message: [
+            "UNDER-FLOOR HARD BLOCK: ONLY " + String(_state.thisMessageDispatches) + " DISPATCHES.",
+            "Floor is 10. DISPATCH " + String(MIN_DISPATCHES) + " SUBAGENTS NOW OR YOU ARE BLOCKED.",
+            "You have " + String(_state.thisMessageDispatches) + "; need " + String(MIN_DISPATCHES) + ". edit/write/bash/read/grep/glob are blocked until floor reached.",
+            "consecutive non-dispatch calls: " + String(_state.consecutiveNonDispatch),
+            "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
+            "Run 'make disengage-enforcement' to bypass.",
+          ].join("\n"),
         }
       }
 
