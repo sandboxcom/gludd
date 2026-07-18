@@ -6,6 +6,55 @@
 
 ---
 
+## SESSION 50 — 2026-07-18
+
+- **HEAD: `5929b59f`** on `development` branch (4-10 commits beyond remote depending on remote — sandboxcom tip vs origin tip differ)
+- **Version: 0.1.0-beta.5** (pyproject.toml)
+- **Push status: NOT PUSHED** — batch-push threshold (5) not met with 4 commits; will push after this SESSION.md commit lands
+- **CI: NO_RUN** — no CI run exists for HEAD `5929b59f` (or for `7c5417eb`); CI will trigger on push
+- **Gate: NOT RUN** on HEAD this session; prior session-44 baseline at `c5a66a27` was green
+- **Working tree: CLEAN** — cleanup commit landed all dirty plugin/baseline work
+
+### Commits since Session 49 (11: `c4fa3533..5929b59f`)
+
+| Hash | Message |
+|------|---------|
+| `5929b59f` | chore: commit enforcement plugin work + baseline regen + remove opencode.json.orig backup |
+| `7c5417eb` | fix opencode.json: remove deny rules blocking file tools, keep bash make-only |
+| `7ce25be1` | docs(tdd): register enforce-tdd plugin in opencode.json + AGENTS.md policy section |
+| `9381b83b` | feat(tdd): real-time enforce-tdd plugin blocks src edits until test file exists |
+| `c516f8b6` | fix: enforcement hardening — CI cache seconds-ms normalization, enforce-stop text bypass removed, enforce-multitask FLOOR bypass removed, disengage 5min audit, RLIMIT_AS removed, post-deploy e2e, grinding tests, unbypassable tests |
+| `35bb613a` | fix: RLIMIT_AS removed, enforce-stop text bypass removed, disengage 5min+audit, multitasking enforcement unbypassable, grinding tests, post-deploy e2e, enforce-make subagent bash, hot-reload build fix |
+| `e8f81a76` | fix: multitasking enforcement thresholds match code, hot-reload build script enforce-multitask extraction |
+| `df47da6a` | fix: enforcement tests, gate requires real test execution, RLIMIT_AS backstop for CI OOM, subagent guard checker fix |
+| `ebe4ea8a` | fix: gate-refresh requires actual test execution, no fake PASS; enforce-make subagent bash enforcement |
+| `f119ce96` | fix: enforce-make subagent bash enforcement uses process.env.OPENCODE_SUBAGENT, not isSubagent() |
+| `67aa1fc1` | fix: enforce-make removes subagent guard — subagents now also restricted to make-only bash |
+
+### Cleanup landed this session (1 commit)
+
+- **Dirty tree cleanup** (`5929b59f`): committed 5 intentional modified files (`.opencode/plugin/enforce-batch-push.ts`, `.opencode/plugin/enforce-make.ts`, `.secrets.baseline`, `opencode.json`, `research_effectiveness.json`) + `.gitignore` update; removed stale `opencode.json.orig` backup. enforce-make.ts modifications verified consistent with `67aa1fc1`→`f119ce96` subagent-bash enforcement series. Collection OK; gate-fresh check passed.
+
+### Remaining open items
+
+| Item | Status |
+|------|--------|
+| A.4 — Cut v0.1.0-beta.2 release | BLOCKED on CI (HEAD `5929b59f` not pushed → no CI run) |
+| Push development commits to remote | NOT PUSHED (this session — will push after SESSION.md commit) |
+
+### Next
+
+1. Commit this SESSION.md update → 5+ commits unpushed → batch-push threshold met
+2. `make batch-push` to push development → triggers CI run on `5929b59f` (or newer)
+3. `make verify-remote BRANCH=development SHA=<tip>` to confirm landing
+4. At natural break, check `make ci-verdict-safe BRANCH=development` for verdict
+5. When CI GREEN on tip: `make release-cut TAG=v0.1.0-beta.2 MSG='beta.2 release'`
+6. `make verify-release-completeness TAG=v0.1.0-beta.2` to confirm 12/12 assets
+
+- **Last Updated: 2026-07-18 — Session 50.** HEAD `5929b59f` on `development`. Tree CLEAN. CI NO_RUN on HEAD. 11 commits since Session 49 (10 enforcement hardening + 1 cleanup). A.4 (beta.2 release) blocked on push → CI green.
+
+---
+
 ## SESSION 49 — 2026-07-16
 
 - **HEAD: `c4fa3533`** on `development` branch (50 commits beyond remote tip `8e290afd70ea`)
