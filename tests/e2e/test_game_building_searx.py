@@ -220,10 +220,9 @@ def _verify_research_usage(
 # ---------------------------------------------------------------------------
 
 _OBS_DATA: dict[str, dict[str, Any]] = {}
-_OBS_PATH = _REPO_ROOT / "research_effectiveness.json"
 
 
-def _export_research_effectiveness() -> None:
+def _export_research_effectiveness(out_dir: Path) -> Path:
     report = {
         "generated": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "games": _OBS_DATA,
@@ -253,8 +252,10 @@ def _export_research_effectiveness() -> None:
             },
         },
     }
-    _OBS_PATH.write_text(json.dumps(report, indent=2))
-    print(f"research_effectiveness written to {_OBS_PATH}")
+    out_path = out_dir / "research_effectiveness.json"
+    out_path.write_text(json.dumps(report, indent=2))
+    print(f"research_effectiveness written to {out_path}")
+    return out_path
 
 
 # ---------------------------------------------------------------------------
@@ -464,9 +465,18 @@ class TestGameBuildingWithResearch:
               f"{len(obs.get('lifecycle_failures', []))} lifecycle failures")
 
     # ---- Research effectiveness report ----
-    def test_research_effectiveness_report(self):
+    def test_research_effectiveness_report(self, tmp_path):
         """Export research_effectiveness.json and print audit summary."""
-        _export_research_effectiveness()
+        out_path = _export_research_effectiveness(out_dir=tmp_path)
+
+        # Verify the report landed in the temp dir, not the repo root.
+        assert out_path.exists()
+        assert out_path.parent == tmp_path
+        loaded = json.loads(out_path.read_text())
+        assert "generated" in loaded
+        assert "games" in loaded
+        assert "summary" in loaded
+        assert not (_REPO_ROOT / "research_effectiveness.json").exists()
 
         print("\n\n" + "=" * 70)
         print("RESEARCH EFFECTIVENESS AUDIT")

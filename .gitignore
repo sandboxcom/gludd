@@ -47,6 +47,7 @@ ci-attempt-logs/
 .test-summary
 .secrets.baseline
 .game-audit-report.json
+research_effectiveness.json
 
 gludd-dist.tar.gz
 
