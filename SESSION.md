@@ -8,50 +8,53 @@
 
 ## SESSION 50 — 2026-07-18
 
-- **HEAD: `5929b59f`** on `development` branch (4-10 commits beyond remote depending on remote — sandboxcom tip vs origin tip differ)
-- **Version: 0.1.0-beta.5** (pyproject.toml)
-- **Push status: NOT PUSHED** — batch-push threshold (5) not met with 4 commits; will push after this SESSION.md commit lands
-- **CI: NO_RUN** — no CI run exists for HEAD `5929b59f` (or for `7c5417eb`); CI will trigger on push
-- **Gate: NOT RUN** on HEAD this session; prior session-44 baseline at `c5a66a27` was green
-- **Working tree: CLEAN** — cleanup commit landed all dirty plugin/baseline work
+- **HEAD: `d90fa882`** on `development` branch (pushed + VERIFIED on sandboxcom)
+- **Version: 0.1.0-beta.5** (pyproject.toml; A.4 will cut as `v0.1.0-beta.2` tag)
+- **Push status: PUSHED** — all session commits landed on sandboxcom/development
+- **CI: TRIGGERED** on `d90fa882` push; awaiting GREEN verdict
+- **Gate: RUNNING** (background pid 73161, started against `adce800a`; will show the c592b3eb regression as a failure because `d90fa882` test fix postdates gate launch; next gate run will be clean)
+- **Working tree: CLEAN** (modulo possible `research_effectiveness.json` churn if the gate's e2e tests regenerate it — the `458c293f` fix prevents new writes but the running gate loaded the old test code)
+- **Release readiness:** README check-readme-status PASS; 115/115 hook-runtime tests pass; 9/10 enforcement commits audited DELIVERED; 0 src/ files touched by recent commits → LOW risk of new regressions
 
-### Commits since Session 49 (11: `c4fa3533..5929b59f`)
+### Commits this session (7: `5929b59f..d90fa882`)
 
-| Hash | Message |
-|------|---------|
-| `5929b59f` | chore: commit enforcement plugin work + baseline regen + remove opencode.json.orig backup |
-| `7c5417eb` | fix opencode.json: remove deny rules blocking file tools, keep bash make-only |
-| `7ce25be1` | docs(tdd): register enforce-tdd plugin in opencode.json + AGENTS.md policy section |
-| `9381b83b` | feat(tdd): real-time enforce-tdd plugin blocks src edits until test file exists |
-| `c516f8b6` | fix: enforcement hardening — CI cache seconds-ms normalization, enforce-stop text bypass removed, enforce-multitask FLOOR bypass removed, disengage 5min audit, RLIMIT_AS removed, post-deploy e2e, grinding tests, unbypassable tests |
-| `35bb613a` | fix: RLIMIT_AS removed, enforce-stop text bypass removed, disengage 5min+audit, multitasking enforcement unbypassable, grinding tests, post-deploy e2e, enforce-make subagent bash, hot-reload build fix |
-| `e8f81a76` | fix: multitasking enforcement thresholds match code, hot-reload build script enforce-multitask extraction |
-| `df47da6a` | fix: enforcement tests, gate requires real test execution, RLIMIT_AS backstop for CI OOM, subagent guard checker fix |
-| `ebe4ea8a` | fix: gate-refresh requires actual test execution, no fake PASS; enforce-make subagent bash enforcement |
-| `f119ce96` | fix: enforce-make subagent bash enforcement uses process.env.OPENCODE_SUBAGENT, not isSubagent() |
-| `67aa1fc1` | fix: enforce-make removes subagent guard — subagents now also restricted to make-only bash |
+| Hash | Message | Category |
+|------|---------|----------|
+| `d90fa882` | fix test: update enforce-multitask unbypassable test to match env-disable fix in c592b3eb | fix |
+| `adce800a` | docs: update A.4 status — Session 50 pre-release fixes landed, awaiting CI green | docs |
+| `458c293f` | fix test isolation: research_effectiveness_report writes to tmp_path not repo root | fix |
+| `0c37eacc` | fix enforce-make: narrow parens matcher to dollar-paren command substitution only | fix |
+| `223f6307` | fix verify-enforcement parser: split failed/passed regexes, narrow SyntaxError attribution | fix |
+| `c592b3eb` | fix enforce-multitask: hoist FLOOR_ENFORCE gate before deny blocks + run streak counter before under-floor block | fix |
+| `5929b59f` | chore: commit enforcement plugin work + baseline regen + remove opencode.json.orig backup | cleanup |
 
-### Cleanup landed this session (1 commit)
+### Pre-release bugs found + fixed this session (6)
 
-- **Dirty tree cleanup** (`5929b59f`): committed 5 intentional modified files (`.opencode/plugin/enforce-batch-push.ts`, `.opencode/plugin/enforce-make.ts`, `.secrets.baseline`, `opencode.json`, `research_effectiveness.json`) + `.gitignore` update; removed stale `opencode.json.orig` backup. enforce-make.ts modifications verified consistent with `67aa1fc1`→`f119ce96` subagent-bash enforcement series. Collection OK; gate-fresh check passed.
+| Bug | Root cause | Fix |
+|-----|-----------|-----|
+| enforce-multitask env-disable broken | `if (!FLOOR_ENFORCE) return` after deny block instead of before | hoisted to first check (c592b3eb) |
+| enforce-multitask streak tracking mismatch | under-floor block fired before streak counter increment | reordered (c592b3eb) |
+| verify-enforcement false positives | summary regex required "failed" token; SyntaxError fallback over-matched `.ts` files | split regexes + scoped attribution (223f6307) |
+| enforce-make blocks parens in commit MSG | regex `[|;&(){}$\`\\!]` matched bare parens | narrowed to drop `(` `)`, keep `$` for `$()` (0c37eacc) |
+| research_effectiveness.json tree churn | `_OBS_PATH` hardcoded to `_REPO_ROOT` | refactored to take `out_dir=tmp_path` (458c293f) |
+| Stale test codified old buggy behavior | `test_edit_denied_with_zero_dispatches_despite_env_disabled` asserted env=0 still denies | split into env-on denies + env-off allows (d90fa882) |
 
 ### Remaining open items
 
 | Item | Status |
 |------|--------|
-| A.4 — Cut v0.1.0-beta.2 release | BLOCKED on CI (HEAD `5929b59f` not pushed → no CI run) |
-| Push development commits to remote | NOT PUSHED (this session — will push after SESSION.md commit) |
+| A.4 — Cut v0.1.0-beta.2 release | BLOCKED on CI GREEN for `d90fa882` (release-cut's require-ci-green step will abort on PENDING) |
 
 ### Next
 
-1. Commit this SESSION.md update → 5+ commits unpushed → batch-push threshold met
-2. `make batch-push` to push development → triggers CI run on `5929b59f` (or newer)
-3. `make verify-remote BRANCH=development SHA=<tip>` to confirm landing
-4. At natural break, check `make ci-verdict-safe BRANCH=development` for verdict
-5. When CI GREEN on tip: `make release-cut TAG=v0.1.0-beta.2 MSG='beta.2 release'`
-6. `make verify-release-completeness TAG=v0.1.0-beta.2` to confirm 12/12 assets
+1. Wait for background gate (pid 73161) to complete — expect FAIL because it tests `adce800a` (pre-`d90fa882` test fix); the c592b3eb regression will surface as the failing test
+2. Re-launch `make gate-background` against `d90fa882` for the clean signal
+3. At natural break, check `make ci-verdict-safe BRANCH=development` — when GREEN on `d90fa882`, proceed
+4. `make release-cut TAG=v0.1.0-beta.2 MSG='beta.2 release — enforcement hardening plus 6 pre-release bug fixes'`
+5. `make verify-release-completeness TAG=v0.1.0-beta.2` to confirm 12/12 assets
+6. Tick `[x]` on TASKS.md A.4 with artifact URL + CI run id as evidence
 
-- **Last Updated: 2026-07-18 — Session 50.** HEAD `5929b59f` on `development`. Tree CLEAN. CI NO_RUN on HEAD. 11 commits since Session 49 (10 enforcement hardening + 1 cleanup). A.4 (beta.2 release) blocked on push → CI green.
+- **Last Updated: 2026-07-18 — Session 50.** HEAD `d90fa882` on `development` (pushed + VERIFIED). 7 commits this session: 1 cleanup + 5 bug fixes + 1 docs. 6 pre-release bugs found and fixed (all enforcement-plugins test-side; 0 src/ regressions). Gate running; CI triggered. A.4 (beta.2 release) blocked on CI GREEN.
 
 ---
 
