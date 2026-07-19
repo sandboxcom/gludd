@@ -121,7 +121,10 @@ def _cmd_tax(args: argparse.Namespace) -> None:
         print(f"No tax data found for country '{code}'.", file=sys.stderr)
         sys.exit(1)
 
-    result: dict[str, Any] = {"country": code, "found": True, "currency_code": country_data.get("currency", ""), **country_data}
+    result: dict[str, Any] = {
+        "country": code, "found": True,
+        "currency_code": country_data.get("currency", ""), **country_data
+    }
     authority = tax_mod.TAX_AUTHORITIES.get(code)
     if authority:
         result["authority"] = authority
@@ -160,7 +163,10 @@ def _cmd_service(args: argparse.Namespace) -> None:
     result["name"] = result.get("issuing_body", "")
     if original_svc.lower() != svc_name:
         result["original_query"] = original_svc
-        result["notes"] = f"Mapped '{original_svc}' to nearest service '{svc_name}'. For US healthcare visit healthcare.gov"
+        result["notes"] = (
+            f"Mapped '{original_svc}' to nearest service '{svc_name}'."
+            " For US healthcare visit healthcare.gov"
+        )
     _print_result(result, json_output=args.json)
 
 
@@ -308,8 +314,17 @@ def _navigate_query(query: str, *, json_output: bool = False) -> None:
                 if any(word in haystack for word in query.split() if len(word) > 3):
                     results.append({
                         "domain": "civic_services",
-                        "match": f"{svc_def.get('issuing_body', svc_id)} ({country_code})",
-                        "data": {"country": country_code, "service_id": svc_id, "issuing_body": svc_info.get("issuing_body", "")},
+                        "match": (
+                            f"{svc_def.get('issuing_body', svc_id)}"
+                            f" ({country_code})"
+                        ),
+                        "data": {
+                            "country": country_code,
+                            "service_id": svc_id,
+                            "issuing_body": svc_info.get(
+                                "issuing_body", ""
+                            ),
+                        },
                     })
 
     # ── No results ──
@@ -340,7 +355,12 @@ def _cmd_elections(args: argparse.Namespace) -> None:
         print(f"No election data found for '{args.country.upper()}'.", file=sys.stderr)
         sys.exit(1)
     # Add human-readable body names for common countries
-    body_names = {"gb": "House of Commons", "us": "House of Representatives / Senate", "ca": "House of Commons", "au": "House of Representatives / Senate", "de": "Bundestag", "fr": "National Assembly", "jp": "House of Representatives", "in": "Lok Sabha"}
+    body_names = {
+        "gb": "House of Commons", "us": "House of Representatives / Senate",
+        "ca": "House of Commons", "au": "House of Representatives / Senate",
+        "de": "Bundestag", "fr": "National Assembly",
+        "jp": "House of Representatives", "in": "Lok Sabha",
+    }
     result["legislative_body"] = body_names.get(args.country.lower(), "")
     _print_result(result, json_output=args.json)
 

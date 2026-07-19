@@ -142,12 +142,10 @@ class TestCiCacheDetection:
         """Verify the plugin's CI-green detection reads gludd-watchdog-ci.json
         and checks last_ci_status === 'SUCCESS' within a 600s freshness window.
         This test verifies the LOGIC structure matches, not the live CI state."""
-        import json
         import time as _time
-
         from pathlib import Path
 
-        cache_path = Path("/tmp/gludd-watchdog-ci.json")
+        Path("/tmp/gludd-watchdog-ci.json")
 
         # Simulate: fresh + SUCCESS → green
         sim = {"last_ci_check": _time.time(), "last_ci_status": "SUCCESS"}

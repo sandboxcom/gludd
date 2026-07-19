@@ -853,7 +853,7 @@ class AgentTokenModel(Base):
 
     token_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     agent_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
-    parent_agent_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    parent_agent_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     role_name: Mapped[str] = mapped_column(String(256), nullable=False)
     role_id: Mapped[str] = mapped_column(String(128), nullable=False)
     scope_hash: Mapped[str] = mapped_column(String(128), nullable=False, default="")

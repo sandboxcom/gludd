@@ -46,19 +46,17 @@ def test_git_cherry_pick_rejects_missing_sha() -> None:
 
 def test_git_cherry_pick_target_help_mentions_target() -> None:
     content = MAKEFILE.read_text()
-    help_section = False
     found = False
     for line in content.split("\n"):
         if line.startswith(".PHONY"):
-            help_section = False
+            pass
         if "make help" in line or line.startswith("help:"):
-            help_section = True
             continue
         if line.startswith("\t@echo") and "git-cherry-pick" in line:
             found = True
     # Not all targets need help entries; skip if the help section isn't exhaustive
     # Just ensure the target is in PHONY
-    phony_lines = [l for l in content.split("\n") if ".PHONY" in l]
+    phony_lines = [line_ for line_ in content.split("\n") if ".PHONY" in line_]
     for pline in phony_lines:
         if "git-cherry-pick" in pline:
             found = True

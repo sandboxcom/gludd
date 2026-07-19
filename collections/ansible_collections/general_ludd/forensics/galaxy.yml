@@ -1,0 +1,18 @@
+---
+namespace: general_ludd
+name: forensics
+version: 0.1.0
+readme: README.md
+description: >
+  Forensics collection — photo forensics, chain of custody, materials
+  forensics, digital evidence handling.
+license:
+  - MIT
+authors:
+  - Agentic Harness Agent <agent@harness.local>
+tags:
+  - forensics
+  - evidence
+  - chain-of-custody
+  - digital-forensics
+dependencies: {}

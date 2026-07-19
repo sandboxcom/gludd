@@ -52,7 +52,7 @@ class TestGitWorkflowTargetsInPhony:
             if "git-status" in phony_text:
                 break
         else:
-            assert False, "Main .PHONY block (containing git-status) not found"
+            raise AssertionError("Main .PHONY block (containing git-status) not found")
         for target in ("git-merge-abort", "git-rebase-abort",
                        "git-reset-hard", "git-cherry-pick"):
             assert target in phony_text, f"{target} not in .PHONY list"
