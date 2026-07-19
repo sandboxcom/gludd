@@ -26,6 +26,7 @@
  */
 import * as fs from "node:fs";
 import type { Plugin } from "@opencode-ai/plugin";
+import { loadHotModule, type HotModule } from "../lib/hot_reload.ts";
 import { isSubagent, reportAlive } from "../lib/shared.ts";
 
 /** Lock file path (overridable via GLUDD_COMMIT_LOCK_PATH). */

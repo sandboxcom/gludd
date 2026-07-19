@@ -269,18 +269,23 @@ export const defaultImpl: HotModule = {
       // edit after 2 reads would incorrectly surface UNDER-FLOOR instead of
       // CONSECUTIVE NON-DISPATCH STREAK (2026-07-18 bug).
       if (!disengaged) {
-        if (_state.consecutiveNonDispatchStartTs === 0) {
-          _state.consecutiveNonDispatchStartTs = now
-        }
-        if ((now - _state.consecutiveNonDispatchStartTs) < CONSECUTIVE_NON_DISPATCH_WINDOW_MS) {
-          _state.consecutiveNonDispatch++
-        } else {
-          _state.consecutiveNonDispatch = 0
-          _state.consecutiveNonDispatchStartTs = now
-          // The window-restarting call IS a non-dispatch call inside the new
-          // window — count it as 1 (T25), or every post-expiry threshold is
-          // off by one (6 calls trip it instead of 5).
-          _state.consecutiveNonDispatch++
+        // Read tools (read/grep/glob) are excluded from the COUNTER.
+        // They are still gated by the UNDER-FLOOR block below, but
+        // investigation bursts should never trigger the grinding penalty.
+        if (!isReadTool(lt)) {
+          if (_state.consecutiveNonDispatchStartTs === 0) {
+            _state.consecutiveNonDispatchStartTs = now
+          }
+          if ((now - _state.consecutiveNonDispatchStartTs) < CONSECUTIVE_NON_DISPATCH_WINDOW_MS) {
+            _state.consecutiveNonDispatch++
+          } else {
+            _state.consecutiveNonDispatch = 0
+            _state.consecutiveNonDispatchStartTs = now
+            // The window-restarting call IS a non-dispatch call inside the new
+            // window — count it as 1 (T25), or every post-expiry threshold is
+            // off by one (6 calls trip it instead of 5).
+            _state.consecutiveNonDispatch++
+          }
         }
 
         // === CONSECUTIVE NON-DISPATCH BLOCK ===

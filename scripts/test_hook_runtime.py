@@ -1362,15 +1362,15 @@ const plugin = await mod.default({{}})
 // Satisfy floor: 2 dispatches
 await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
 await plugin['tool.execute.before']({{tool: 'agent'}}, undefined)
-// 3 consecutive non-dispatch calls — 3rd should be denied
-const r1 = await plugin['tool.execute.before']({{tool: 'read'}}, undefined)
-const r2 = await plugin['tool.execute.before']({{tool: 'grep'}}, undefined)
-const r3 = await plugin['tool.execute.before']({{tool: 'edit'}}, undefined)
+// 3 consecutive non-dispatch calls — read tools excluded, use edit/write/bash
+const r1 = await plugin['tool.execute.before']({{tool: 'edit'}}, undefined)
+const r2 = await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
+const r3 = await plugin['tool.execute.before']({{tool: 'bash'}}, undefined)
 console.log(JSON.stringify({{
     r1_ok: r1 === undefined || r1 === null,
     r2_ok: r2 === undefined || r2 === null,
     r3_denied: r3 !== null && r3?.permissionDecision === 'deny',
-    r3_hasConsecutive: typeof r3?.message === 'string' && r3.message.includes('consecutive non-dispatch'),
+    r3_hasConsecutive: typeof r3?.message === 'string' && r3.message.includes('CONSECUTIVE NON-DISPATCH STREAK'),
 }}))
 """
     result = _run_ts(code, env_override={
@@ -1426,16 +1426,19 @@ console.log(JSON.stringify(result ?? {{allowed: true}}))
 def test_multitask_grind_inline_no_prior_dispatch():
     """Agent grinds inline without dispatching: consecutive counter catches it.
 
-    With MIN_DISPATCHES=10 and THRESHOLD=3, makes 4 consecutive non-dispatch
-    calls without dispatching first. Per the unit-test spec, the UNDER-FLOOR
-    block only gates edit/write/bash — read tools (read/grep) are exempt so the
-    agent can investigate. The CONSECUTIVE NON-DISPATCH counter catches every
-    non-dispatch tool regardless of type.
+    Read tools (read/grep/glob) are excluded from the consecutive non-dispatch
+    counter per the plugin spec: investigation bursts should never trigger the
+    grinding penalty. Non-read tools (edit/write/bash) are counted.
 
-    Call 1 (read): consecutive=1 < threshold → ALLOWED (read exempt + below threshold).
-    Call 2 (grep): consecutive=2 < threshold → ALLOWED (read exempt + below threshold).
-    Call 3 (edit): consecutive=3 >= threshold → CONSECUTIVE NON-DISPATCH STREAK fires.
-    Call 4 (bash): consecutive=4 >= threshold → CONSECUTIVE NON-DISPATCH STREAK again.
+    With MIN_DISPATCHES=0 (under-floor disabled for this test) and THRESHOLD=3,
+    makes 4 consecutive non-read non-dispatch calls without dispatching first.
+    Read tools are allowed and do not increment the counter.
+
+    Call 1 (read): ALLOWED — read tools exempt from counter.
+    Call 2 (read): ALLOWED — read tools exempt, counter still 0.
+    Call 3 (edit): consecutive=1 < threshold → ALLOWED (below threshold).
+    Call 4 (write): consecutive=2 < threshold → ALLOWED (below threshold).
+    Call 5 (bash): consecutive=3 >= threshold → CONSECUTIVE NON-DISPATCH STREAK.
     """
     state_file = f"/tmp/gludd-multitask-grind-{os.getpid()}.json"
     _clean_state_files(state_file,
@@ -1445,41 +1448,45 @@ def test_multitask_grind_inline_no_prior_dispatch():
 const mod = await import('{PLUGIN_DIR}/enforce-multitask.ts')
 const plugin = await mod.default({{}})
 // NO dispatches — simulate agent grinding inline immediately
+// Read tools should NOT increment the counter
 const r1 = await plugin['tool.execute.before']({{tool: 'read'}}, undefined)
 const r2 = await plugin['tool.execute.before']({{tool: 'grep'}}, undefined)
+// Non-read tools increment the counter
 const r3 = await plugin['tool.execute.before']({{tool: 'edit'}}, undefined)
-const r4 = await plugin['tool.execute.before']({{tool: 'bash'}}, undefined)
+const r4 = await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
+const r5 = await plugin['tool.execute.before']({{tool: 'bash'}}, undefined)
 console.log(JSON.stringify({{
     r1_denied: r1 !== null && r1?.permissionDecision === 'deny',
     r2_denied: r2 !== null && r2?.permissionDecision === 'deny',
     r3_denied: r3 !== null && r3?.permissionDecision === 'deny',
-    r3_hasStreak: typeof r3?.message === 'string' && r3.message.includes('CONSECUTIVE NON-DISPATCH STREAK'),
     r4_denied: r4 !== null && r4?.permissionDecision === 'deny',
-    r4_hasStreak: typeof r4?.message === 'string' && r4.message.includes('CONSECUTIVE NON-DISPATCH STREAK'),
+    r5_denied: r5 !== null && r5?.permissionDecision === 'deny',
+    r5_hasStreak: typeof r5?.message === 'string' && r5.message.includes('CONSECUTIVE NON-DISPATCH STREAK'),
 }}))
 """
     result = _run_ts(code, env_override={
         "GLUDD_MULTITASK_STATE_FILE": state_file,
-        "GLUDD_MIN_DISPATCHES": "10",
+        "GLUDD_MIN_DISPATCHES": "0",
         "GLUDD_CONSECUTIVE_NON_DISPATCH_THRESHOLD": "3",
         "GLUDD_CONSECUTIVE_NON_DISPATCH_WINDOW_MS": "60000",
         "GLUDD_MULTITASK_FLOOR_ENFORCE": "1",
     })
-    # Call 1 (read): ALLOWED — read tools are exempt from the under-floor block
-    # and the consecutive counter (1) is below threshold (3).
+    # Calls 1-2 (read/grep): ALLOWED — read tools excluded from counter.
     assert result["r1_denied"] == False, (
-        f"Call 1 (read) must be allowed — reads are exempt from under-floor. Got: {result}"
+        f"Call 1 (read) must be allowed — reads excluded from counter. Got: {result}"
     )
-    # Call 2 (grep): ALLOWED — read tool exempt; consecutive=2 < threshold=3.
-    assert result["r2_denied"] == False, f"Call 2 (grep) must be allowed. Got: {result}"
-    # Call 3 (edit): consecutive counter at threshold → CONSECUTIVE NON-DISPATCH STREAK
-    assert result["r3_denied"] == True, f"Call 3 must be denied. Got: {result}"
-    assert result["r3_hasStreak"] == True, (
-        f"Call 3 (counter=3 >= threshold=3) must fire CONSECUTIVE NON-DISPATCH STREAK. Got: {result}"
+    assert result["r2_denied"] == False, (
+        f"Call 2 (grep) must be allowed — reads excluded from counter. Got: {result}"
     )
-    # Call 4: still grinding
-    assert result["r4_denied"] == True, f"Call 4 must be denied. Got: {result}"
-    assert result["r4_hasStreak"] == True, f"Call 4 must be streak-denied. Got: {result}"
+    # Call 3 (edit): consecutive=1 < threshold=3 → ALLOWED
+    assert result["r3_denied"] == False, f"Call 3 (edit) must be allowed (counter=1 < 3). Got: {result}"
+    # Call 4 (write): consecutive=2 < threshold=3 → ALLOWED
+    assert result["r4_denied"] == False, f"Call 4 (write) must be allowed (counter=2 < 3). Got: {result}"
+    # Call 5 (bash): consecutive=3 >= threshold → CONSECUTIVE NON-DISPATCH STREAK
+    assert result["r5_denied"] == True, f"Call 5 (bash) must be denied (counter=3 >= 3). Got: {result}"
+    assert result["r5_hasStreak"] == True, (
+        f"Call 5 (counter=3 >= threshold=3) must fire CONSECUTIVE NON-DISPATCH STREAK. Got: {result}"
+    )
     _clean_state_files(state_file)
 
 
@@ -1487,14 +1494,15 @@ def test_multitask_text_only_response_next_tool_blocked():
     """After floor is satisfied (15 dispatches), consecutive counter blocks grinding.
 
     With MIN_DISPATCHES=10 and THRESHOLD=3, dispatches 15 agents to satisfy
-    the floor, then makes 4 non-dispatch calls. Since the floor IS satisfied
-    (15 >= 10), the under-floor block does NOT fire. Instead, the consecutive
-    counter catches the grinding pattern:
+    the floor, then makes 4 non-dispatch calls using non-read tools (edit/write/bash).
+    Since the floor IS satisfied (15 >= 10), the under-floor block does NOT fire.
+    Read tools (read/grep/glob) are excluded from the consecutive counter per plugin spec.
+    Instead, the consecutive counter catches the grinding pattern with non-read tools:
 
-    Call 1 (read): consecutive=1 (< 3), no under-floor → ALLOWED
-    Call 2 (grep): consecutive=2 (< 3), no under-floor → ALLOWED
-    Call 3 (edit): consecutive=3 >= THRESHOLD → CONSECUTIVE GRINDING
-    Call 4 (write): consecutive=4 >= THRESHOLD → CONSECUTIVE GRINDING
+    Call 1 (edit): consecutive=1 (< 3), no under-floor → ALLOWED
+    Call 2 (write): consecutive=2 (< 3), no under-floor → ALLOWED
+    Call 3 (bash): consecutive=3 >= THRESHOLD → CONSECUTIVE GRINDING
+    Call 4 (edit): consecutive=4 >= THRESHOLD → CONSECUTIVE GRINDING
     """
     state_file = f"/tmp/gludd-multitask-text-only-{os.getpid()}.json"
     _clean_state_files(state_file,
@@ -1507,11 +1515,11 @@ const plugin = await mod.default({{}})
 for (let i = 0; i < 15; i++) {{
     await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
 }}
-// Now make non-dispatch calls — grinding after floor satisfied
-const r1 = await plugin['tool.execute.before']({{tool: 'read'}}, undefined)
-const r2 = await plugin['tool.execute.before']({{tool: 'grep'}}, undefined)
-const r3 = await plugin['tool.execute.before']({{tool: 'edit'}}, undefined)
-const r4 = await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
+// Now make non-dispatch calls with non-read tools — grinding after floor satisfied
+const r1 = await plugin['tool.execute.before']({{tool: 'edit'}}, undefined)
+const r2 = await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
+const r3 = await plugin['tool.execute.before']({{tool: 'bash'}}, undefined)
+const r4 = await plugin['tool.execute.before']({{tool: 'edit'}}, undefined)
 console.log(JSON.stringify({{
     r1_denied: r1 !== null && r1?.permissionDecision === 'deny',
     r1_allowed: r1 === undefined || r1 === null,
@@ -1534,20 +1542,20 @@ console.log(JSON.stringify({{
     })
     # Calls 1-2 are allowed: floor satisfied (15 >= 10), counter below threshold
     assert result["r1_allowed"] == True, (
-        f"Call 1 (read) must be ALLOWED: floor satisfied, counter=1 < 3. Got: {result}"
+        f"Call 1 (edit) must be ALLOWED: floor satisfied, counter=1 < 3. Got: {result}"
     )
     assert result["r2_allowed"] == True, (
-        f"Call 2 (grep) must be ALLOWED: floor satisfied, counter=2 < 3. Got: {result}"
+        f"Call 2 (write) must be ALLOWED: floor satisfied, counter=2 < 3. Got: {result}"
     )
     # Call 3: consecutive counter at threshold → CONSECUTIVE NON-DISPATCH STREAK fires
     assert result["r3_denied"] == True, (
-        f"Call 3 must be denied by CONSECUTIVE NON-DISPATCH STREAK. Got: {result}"
+        f"Call 3 (bash) must be denied by CONSECUTIVE NON-DISPATCH STREAK. Got: {result}"
     )
     assert result["r3_hasGrinding"] == True, (
         f"Call 3 message must contain CONSECUTIVE NON-DISPATCH STREAK. Got: {result}"
     )
     # Call 4: still grinding
-    assert result["r4_denied"] == True, f"Call 4 must be denied. Got: {result}"
+    assert result["r4_denied"] == True, f"Call 4 (edit) must be denied. Got: {result}"
     assert result["r4_hasGrinding"] == True, (
         f"Call 4 message must contain CONSECUTIVE NON-DISPATCH STREAK. Got: {result}"
     )

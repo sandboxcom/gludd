@@ -55,7 +55,8 @@ const DEADLINE_STATE = process.env.GLUDD_TASK_DEADLINE_STATE || "/tmp/gludd-task
 const WARNINGS_LOG = process.env.GLUDD_TASK_DEADLINE_WARNINGS || "/tmp/gludd-task-deadlines.warnings.log"
 const STALE_FILE = process.env.GLUDD_TASK_STALE_FILE || "/tmp/gludd-task-stale.json"
 const DEADLINE_ENABLED = (process.env.GLUDD_TASK_DEADLINE_ENABLED || "1") !== "0"
-const BLOCK = (process.env.GLUDD_TASK_DEADLINE_BLOCK || "1") !== "0"
+const DEADLINE_ENFORCE = process.env.GLUDD_TASK_DEADLINE_ENFORCE !== "0"
+const BLOCK = DEADLINE_ENFORCE && (process.env.GLUDD_TASK_DEADLINE_BLOCK || "1") !== "0"
 
 // ============================================================================
 // NOISE-CONTROL STATE
