@@ -191,12 +191,6 @@ jobs:
     # a test failure). 30m gives headroom. Durable follow-up: rebalance the n-z
     # range into a 4th unit-shard (e.g. n-r / s-z) so no single shard nears 20m.
     timeout-minutes: 30
-    # Non-blocking: the 'other' shard (integration/e2e/security/connector) has
-    # ~94 pre-existing test failures (BASELINE.md). Mirroring the NF.10 molecule
-    # fix (continue-on-error + removed from release.needs). Test results are still
-    # visible in the run log; the gate (lint/typecheck/collect/smoke) is the real
-    # quality gate. Release does not gate on pre-existing test failures.
-    continue-on-error: true
     strategy:
       fail-fast: false
       matrix:

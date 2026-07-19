@@ -92,6 +92,8 @@ zai.key
 /tmp/
 web_retriever/
 
+Makefile.tmp
+
 # ── OpenCode backup directory (debug artifact after crash recovery) ─────────
 .opencode.orig/
 opencode.json.orig

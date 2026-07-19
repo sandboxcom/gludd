@@ -32,6 +32,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         ansible-syntax ansible-lint-playbooks ansible-collection-test playbook-list \
         git-status git-init git-add git-commit git-log git-diff git-reset \
         git-branch git-checkout git-merge git-staged git-stash git-stash-pop \
+        git-merge-abort git-rebase-abort git-reset-hard git-cherry-pick \
         submodule-init submodule-update submodule-status submodule-pin \
         repo-status repo-diff repo-staged repo-log \
         feature-start feature-done test-and-commit preflight \
@@ -154,6 +155,7 @@ help:
 	@echo "  git-branch MSG='...'  Create branch"
 	@echo "  git-checkout MSG='...' Switch branch"
 	@echo "  git-merge MSG='...'   Merge branch with --no-ff"
+	@echo "  git-cherry-pick SHA=<commit> Cherry-pick a specific commit"
 	@echo "  feature-start MSG='...' Create and switch to feature branch"
 	@echo "  feature-done MSG='...' Test, merge to master with --no-ff"
 	@echo "  agent-worktree BRANCH=<name>  Isolated git worktree for a subagent (no shared-tree races)"
@@ -2653,6 +2655,23 @@ git-checkout:
 git-merge:
 	@if [ -z "$(MSG)" ]; then echo "Usage: make git-merge MSG='branch-name'"; exit 1; fi
 	@git merge --no-ff "$(MSG)"
+
+git-merge-abort:
+	@git merge --abort
+	@echo "Merge aborted."
+
+git-rebase-abort:
+	@git rebase --abort
+	@echo "Rebase aborted."
+
+git-reset-hard:
+	@if [ -z "$(MSG)" ]; then echo "Usage: make git-reset-hard MSG='ref' (DESTRUCTIVE — discards all uncommitted changes)"; exit 1; fi
+	@git reset --hard "$(MSG)"
+	@echo "Hard reset to $(MSG) — all uncommitted changes discarded."
+
+git-cherry-pick:
+	@if [ -z "$(SHA)" ]; then echo "Usage: make git-cherry-pick SHA=<commit>"; exit 1; fi
+	@git cherry-pick "$(SHA)"
 
 submodule-init:
 	@if [ ! -f .gitmodules ]; then echo "No .gitmodules file"; exit 1; fi

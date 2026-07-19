@@ -79,25 +79,38 @@
   failed_when: false
   no_log: "{{ psk | length > 0 }}"
 
-# 4) HARVEST: fold every FINISHED, non-failed job's text/usage into _apd_results
-#    keyed by the call name. Optional jobs that timed out are simply absent.
-- name: "Harvest finished results from batch {{ _apd_batch_idx }}"
+# 4) HARVEST: poll each job individually for fresh results, then fold into
+#    _apd_results keyed by call name. Re-querying avoids the opaque register
+#    shape of a loop+until+retries task whose results array strips module output.
+- name: "Harvest: re-poll each finished job from batch {{ _apd_batch_idx }}"
+  ansible.builtin.async_status:
+    jid: "{{ _apd_promise.0.ansible_job_id }}"
+  loop: "{{ _apd_promises }}"
+  loop_control:
+    loop_var: _apd_promise
+    label: "{{ _apd_promise.1.name }}"
+  register: _apd_reap
+  failed_when: false
+  no_log: "{{ psk | length > 0 }}"
+
+- name: "Harvest: fold re-polll results into _apd_results for batch {{ _apd_batch_idx }}"
   ansible.builtin.set_fact:
     _apd_results: >-
       {{ _apd_results | combine({
-           (item.1.name): {
-             'text': (item.0.text | default('')),
-             'model_profile_id': (item.0.model_profile_id | default('')),
-             'usage': (item.0.usage | default({})),
-             'required': (item.1.name in _apd_required_names),
+           (_apd_ri.1.name): {
+             'text': (_apd_ri.0.text | default('')),
+             'model_profile_id': (_apd_ri.0.model_profile_id | default('')),
+             'usage': (_apd_ri.0.usage | default({})),
+             'required': (_apd_ri.1.name in _apd_required_names),
              'finished': true
            }
          }) }}
-  loop: "{{ _apd_poll.results | zip(_apd_batch) | list }}"
+  loop: "{{ _apd_reap.results | zip(_apd_promises | map(attribute='1') | list) | list }}"
   loop_control:
-    label: "{{ item.1.name }}"
+    loop_var: _apd_ri
+    label: "{{ _apd_ri.1.name }}"
   when:
-    - item.0.finished is defined
-    - item.0.finished | bool
-    - not (item.0.failed | default(false) | bool)
+    - _apd_ri.0 is defined
+    - _apd_ri.0.text is defined
+    - not (_apd_ri.0.failed | default(false) | bool)
   no_log: "{{ psk | length > 0 }}"
