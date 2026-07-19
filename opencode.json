@@ -30,6 +30,9 @@
     "./.opencode/plugin/enforce-anti-essay.ts",
     "./.opencode/plugin/enforce-branch-discipline.ts",
     "./.opencode/plugin/enforce-test-integrity.ts",
+    "./.opencode/plugin/enforce-worktree.ts",
+    "./.opencode/plugin/enforce-audit.ts",
+    "./.opencode/plugin/enforce-context.ts",
     "./.opencode/plugins/watchdog.ts"
   ]
 }
