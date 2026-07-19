@@ -115,7 +115,7 @@ def parse_eventlog(raw: str, source: str = "") -> list[dict[str, Any]]:
 
 def parse_reg_query(raw: str, key: str = "") -> list[dict[str, Any]]:
     """Parse reg query output into structured list.
-    
+
     Format (Windows reg query plain-text):
         HKEY_LOCAL_MACHINE\\Path
             ValueName    REG_TYPE    ValueData
@@ -145,7 +145,7 @@ def parse_reg_query(raw: str, key: str = "") -> list[dict[str, Any]]:
 
 def parse_sc_query(raw: str) -> list[dict[str, Any]]:
     """Parse sc query state= all output into structured list.
-    
+
     Format:
         SERVICE_NAME: <name>
         DISPLAY_NAME: <display>
@@ -154,7 +154,7 @@ def parse_sc_query(raw: str) -> list[dict[str, Any]]:
     """
     services: list[dict[str, Any]] = []
     current: dict[str, Any] = {}
-    
+
     for line in raw.strip().splitlines():
         stripped = line.strip()
         if not stripped:
@@ -182,7 +182,7 @@ def parse_sc_query(raw: str) -> list[dict[str, Any]]:
                 else:
                     current[field] = val
                 break
-    
+
     if current:
         services.append(current)
     return services
@@ -220,7 +220,7 @@ def gather(
     get_service_path: str = "",
 ) -> dict[str, Any]:
     """Gather all Windows diagnostic data from collected artifact files.
-    
+
     Returns dict with keys: wmi, eventlog, registry, services.
     """
     result: dict[str, Any] = {
@@ -229,20 +229,20 @@ def gather(
         "registry": {"uninstall": [], "services": [], "policies": []},
         "services": {"sc_query": [], "get_service": []},
     }
-    
+
     if wmi_dir:
         os_raw = _read_json(f"{wmi_dir}/win32_operatingsystem.json")
         if os_raw:
             result["wmi"]["os"] = parse_wmi_os(json.dumps(os_raw))
-        
+
         cs_raw = _read_json(f"{wmi_dir}/win32_computersystem.json")
         if cs_raw:
             result["wmi"]["computersystem"] = parse_wmi_computersystem(json.dumps(cs_raw))
-        
+
         cpu_raw = _read_json(f"{wmi_dir}/win32_processor.json")
         if cpu_raw:
             result["wmi"]["processors"] = parse_wmi_processor(json.dumps(cpu_raw))
-    
+
     if eventlog_dir:
         for log_name in ["system", "application"]:
             raw = _read_json(f"{eventlog_dir}/{log_name}.json")
@@ -250,7 +250,7 @@ def gather(
                 result["eventlog"].extend(
                     parse_eventlog(json.dumps(raw), source=log_name)
                 )
-    
+
     for reg_key, reg_path in [
         ("uninstall", reg_uninstall_path),
         ("services", reg_services_path),
@@ -263,19 +263,19 @@ def gather(
                     json.dumps(raw) if isinstance(raw, (dict, list)) else str(raw),
                     key=reg_key,
                 )
-    
+
     if sc_query_path:
         raw = _read_json(sc_query_path)
         if raw:
             result["services"]["sc_query"] = parse_sc_query(
                 str(raw) if isinstance(raw, str) else json.dumps(raw)
             )
-    
+
     if get_service_path:
         raw = _read_json(get_service_path)
         if raw:
             result["services"]["get_service"] = parse_get_service(json.dumps(raw))
-    
+
     return result
 
 
@@ -290,7 +290,7 @@ def main() -> int:
     parser.add_argument("--sc-query", default="", help="Path to sc query output file")
     parser.add_argument("--get-service", default="", help="Path to Get-Service JSON file")
     args = parser.parse_args()
-    
+
     data = gather(
         wmi_dir=args.wmi_dir,
         eventlog_dir=args.eventlog_dir,

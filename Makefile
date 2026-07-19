@@ -1411,6 +1411,14 @@ MAX_CANCELLED_RUNS ?= 3
 check-clean-tree:
 	@$(PYTHON) scripts/check_clean_tree.py
 
+# Guard: prevent disabling tests in CI pipeline. Blocks push/release if
+# test-shard has continue-on-error or is removed from release.needs.
+_test-disabled-guard:
+	@if grep -A5 'test-shard:' .github/workflows/build.yml | grep -q 'continue-on-error: true'; then \
+		echo "BLOCKED: test-shard has continue-on-error: true in build.yml. Tests cannot be disabled. Revert and fix tests."; exit 1; fi
+	@if ! grep -A1 '^  release:' .github/workflows/build.yml | grep -q 'test-shard'; then \
+		echo "BLOCKED: test-shard missing from release job needs: in build.yml. Tests cannot be removed from release pipeline. Restore it."; exit 1; fi
+
 _push-rate-guard:
 	@# Force-push tracker: prevent GLUDD_FORCE_PUSH abuse (max 5 consecutive bypasses in 12h window)
 	@if [ "$$GLUDD_FORCE_PUSH" = "1" ]; then \
@@ -1455,7 +1463,7 @@ master-force-push:
 	@$(MAKE) verify-remote BRANCH=master SHA=$$(git rev-parse master)
 	@echo "Master branch force-pushed and verified"
 
-git-push-sandboxcom: check-clean-tree _push-rate-guard
+git-push-sandboxcom: check-clean-tree _test-disabled-guard _push-rate-guard
 	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push -u sandboxcom master
 	@echo "Pushed to sandboxcom/gludd"
 

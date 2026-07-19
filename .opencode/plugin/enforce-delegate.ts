@@ -637,7 +637,7 @@ function mainthreadBudgetBefore(tool: string): string | null {
     }
 
     if (!isMainthreadTool(tool)) return null
-    
+
     const fullState = readStreak()
     const streak = fullState.count
     if (streak < MAINTHREAD_THRESHOLD) return null

@@ -44,7 +44,7 @@ def test_diagnose_multitask_enforcement(tmp_path):
     _make_working_workspace(ws)
 
     result = _run_diag(str(ws), env_override={"GLUDD_MSG_GAP_MS": "500"})
-    
+
     print("\n=== DIAGNOSTIC RESULT ===")
     print(f"GLUDD_MULTITASK_FLOOR_ENFORCE = {result['env'].get('GLUDD_MULTITASK_FLOOR_ENFORCE')}")
     print(f"OPENCODE_SUBAGENT = {result['env'].get('OPENCODE_SUBAGENT')}")
@@ -52,7 +52,7 @@ def test_diagnose_multitask_enforcement(tmp_path):
     print(f"Subagent marker: {result['stateFiles'].get('/tmp/gludd-subagent-' + str(result['pid']) + '.json')}")
     print(f"hasPendingWork: {result['hasPendingWork']}")
     print(f"Plugin result: {result['pluginResult']}")
-    
+
     # The plugin should return a deny block
     pr = result.get("pluginResult", {})
     assert pr.get("permissionDecision") == "deny", (

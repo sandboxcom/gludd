@@ -278,4 +278,3 @@ class TestConcurrencyNoPushEviction:
             "PR runs must still coalesce on ref regardless of sha, so "
             "cancel-in-progress can evict the superseded run as intended"
         )
-
