@@ -621,17 +621,25 @@ class TestConsecutiveNonDispatchStreakBlock:
         )
 
     def test_respects_disengaged(self):
-        """The streak must be gated by the disengaged variable."""
+        """The streak must be gated by the disengaged variable.
+
+        The consecutive-non-dispatch counter and its block reside inside an
+        `if (!disengaged)` guard.  This test verifies that `!disengaged`
+        appears before the CONSECUTIVE NON-DISPATCH BLOCK comment.
+        (Formerly a 200-char-window check on `consecutiveNonDispatchStartTs === 0`,
+        but the isReadTool guard added comments between them that pushed
+        `disengaged` beyond the window.)
+        """
         src = _plugin_source()
-        consecutive_section = re.search(
-            r"consecutiveNonDispatchStartTs === 0",
-            src,
+        block_comment_idx = src.find("// === CONSECUTIVE NON-DISPATCH BLOCK ===")
+        assert block_comment_idx > 0, "CONSECUTIVE NON-DISPATCH BLOCK comment not found"
+        search_start = max(0, block_comment_idx - 1500)
+        disengaged_idx = src.find("!disengaged", search_start, block_comment_idx)
+        assert disengaged_idx > 0, (
+            "Consecutive block must be inside a disengaged guard"
         )
-        assert consecutive_section, "consecutive check section not found"
-        idx = consecutive_section.start()
-        before = src[max(0, idx - 200):idx]
-        assert "disengaged" in before, (
-            "Consecutive check must be preceded by disengaged check"
+        assert disengaged_idx < block_comment_idx, (
+            "Disengaged guard must appear before CONSECUTIVE NON-DISPATCH BLOCK"
         )
 
 
