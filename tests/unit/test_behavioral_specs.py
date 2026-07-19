@@ -1,5 +1,5 @@
 """tests/unit/test_behavioral_specs.py — structural verification of BEHAVIORAL_SPECS.md.
- 
+
 Verifies:
 1. All 500 numbered specs exist in the specs document.
 2. Each spec maps to at least one enforcement mechanism (plugin, Makefile guard, AGENTS.md section).
@@ -67,7 +67,9 @@ class TestSpecsExist:
 
     def test_all_expected_groups_present(self):
         ids = set(spec_ids(read_specs()))
-        for prefix in ["P", "B", "O", "T", "D", "S", "E", "M", "G", "R", "W", "F", "C", "Q", "X", "A", "N", "K", "U", "Z"]:
+        prefixes = ["P", "B", "O", "T", "D", "S", "E", "M", "G", "R",
+                     "W", "F", "C", "Q", "X", "A", "N", "K", "U", "Z"]
+        for prefix in prefixes:
             count = sum(1 for s in ids if s.startswith(prefix))
             assert count >= 20, f"Group {prefix} has {count} specs, expected >=20"
 
