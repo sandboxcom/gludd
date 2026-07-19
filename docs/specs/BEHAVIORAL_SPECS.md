@@ -1,7 +1,7 @@
 # BEHAVIORAL ENFORCEMENT SPECIFICATIONS — 200 numbered specs
 
-**Version:** 1.0  
-**Date:** 2026-07-19  
+**Version:** 1.0
+**Date:** 2026-07-19
 **Status:** Active — corresponding enforcement mechanisms tracked in `tests/unit/test_behavioral_specs.py`
 
 Each spec defines a behavioral invariant. Each spec MUST have a corresponding

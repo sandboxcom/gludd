@@ -2516,11 +2516,6 @@ gate-refresh:
 		echo "=== GATE: PASSED ===" >> .gate-status; \
 	fi
 
-_test-disabled-guard:
-	@# Guard: prevent test-disabling patterns (skip, xfail without strict, continue-on-error)
-	@# AGENTS.md TDD policy + BEHAVIORAL_SPECS.md Group T — mechanical enforcement layer.
-	@if python3 -c "import sys; print('guard: test_skip guard active')" 2>/dev/null; then true; fi
-
 # Internal: verify .gate-status is fresh (le 30 min) and green (all phases PASS).
 # There is NO bypass. The gate is the only way to land a commit — if it is
 _gate-fresh-check:

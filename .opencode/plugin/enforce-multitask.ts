@@ -85,18 +85,6 @@ function freshState(): MultitaskState {
   }
 }
 
-function freshState(): MultitaskState {
-  return {
-    thisMessageDispatches: 0,
-    prevMessageDispatches: 0,
-    zeroStreak: 0,
-    estimatedInFlight: 0,
-    lastTs: 0,
-    lastToolCallTs: 0,
-    waveHistory: [],
-  }
-}
-
 function readState(): MultitaskState {
   if (isStateFileMtimeStale(MULTITASK_STATE_FILE)) {
     return freshState()
