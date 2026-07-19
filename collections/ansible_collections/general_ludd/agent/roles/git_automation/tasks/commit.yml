@@ -27,6 +27,7 @@
     chdir: "{{ repo_path }}"
   register: _commit_gate
   failed_when: false
+  changed_when: false
   timeout: "{{ git_gate_timeout | default(60) }}"
   when: gate_cmd | default([]) | length > 0
 
@@ -43,18 +44,21 @@
   ansible.builtin.command:
     cmd: git add -A
     chdir: "{{ repo_path }}"
+  changed_when: true
 
 - name: "Commit changes"
   ansible.builtin.command:
     cmd: "git commit -m {{ commit_message | quote }}"
     chdir: "{{ repo_path }}"
   register: _commit_cmd
+  changed_when: true
 
 - name: "Get commit SHA"
   ansible.builtin.command:
     cmd: git rev-parse HEAD
     chdir: "{{ repo_path }}"
   register: _commit_sha
+  changed_when: false
 
 - name: "Set commit result fact"
   ansible.builtin.set_fact:

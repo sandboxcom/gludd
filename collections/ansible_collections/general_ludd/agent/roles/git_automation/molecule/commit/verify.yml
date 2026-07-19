@@ -20,6 +20,7 @@
         cmd: "git log --oneline -1"
         chdir: "{{ test_dir }}"
       register: _log
+      changed_when: false
 
     - name: "Verify commit message and SHA match"
       ansible.builtin.assert:

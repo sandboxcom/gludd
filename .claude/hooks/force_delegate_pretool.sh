@@ -145,7 +145,7 @@ READONLY_MAKE_RE = re.compile(
     r'test-live-zai|test-tui-daemon|test-liveness-workflow|'
     r'status-snapshot|deps-audit|plan|'
     r'collection-roles|collection-modules|molecule-scenarios|molecule-version|'
-    r'release-view|verify-release-artifact|ci-diff-since-remote|git-divergence)'
+    r'release-view|verify-release-artifact|verify-release-completeness|ci-diff-since-remote|git-divergence)'
 )
 
 # Mutating make target patterns (Bash tool)

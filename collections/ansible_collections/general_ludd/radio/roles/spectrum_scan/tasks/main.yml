@@ -1,0 +1,83 @@
+---
+# spectrum_scan role — Python backend wraps sweep tool + analysis + classification
+
+- name: Validate frequency range
+  ansible.builtin.assert:
+    that:
+      - spectrum_scan_start_freq_hz | int > 0
+      - spectrum_scan_end_freq_hz | int > spectrum_scan_start_freq_hz | int
+      - spectrum_scan_bin_size_hz | int > 0
+      - spectrum_scan_integration_time_ms | int > 0
+    fail_msg: "start_freq_hz must be > 0 and end_freq_hz must be > start_freq_hz"
+
+- name: Run spectrum_scan.py backend
+  ansible.builtin.command: >
+    {{ ansible_python_interpreter }}
+    {{ role_path }}/files/spectrum_scan.py
+    --start-freq {{ spectrum_scan_start_freq_hz }}
+    --end-freq {{ spectrum_scan_end_freq_hz }}
+    --bin-size {{ spectrum_scan_bin_size_hz }}
+    --integration-time {{ spectrum_scan_integration_time_ms }}
+    --gain {{ spectrum_scan_gain }}
+    --device {{ spectrum_scan_device_index }}
+    --output-dir {{ spectrum_scan_output_dir }}
+    --tool {{ spectrum_scan_tool }}
+    --tool-path {{ spectrum_scan_tool_path }}
+  register: _backend
+  changed_when: false
+  failed_when: false
+  when: spectrum_scan_enabled | bool
+
+- name: Parse backend JSON output
+  ansible.builtin.set_fact:
+    _scan_result: "{{ _backend.stdout | from_json }}"
+  when:
+    - spectrum_scan_enabled | bool
+    - _backend.stdout is defined
+    - _backend.stdout | length > 0
+
+- name: Register spectrum scan verdict
+  ansible.builtin.set_fact:
+    spectrum_scan_verdict:
+      role: spectrum_scan
+      tool: "{{ _scan_result.tool | default(spectrum_scan_tool) }}"
+      start_freq_hz: "{{ _scan_result.start_freq_hz | default(0) }}"
+      end_freq_hz: "{{ _scan_result.end_freq_hz | default(0) }}"
+      bandwidth_mhz: "{{ _scan_result.bandwidth_mhz | default(0) }}"
+      bin_size_hz: "{{ _scan_result.bin_size_hz | default(0) }}"
+      num_bins: "{{ _scan_result.num_bins | default(0) }}"
+      total_sweep_time_s: "{{ _scan_result.total_sweep_time_s | default(0) }}"
+      signals_detected: "{{ _scan_result.signals_detected | default(0) }}"
+      noise_floor_dbm: "{{ _scan_result.noise_floor_dbm | default(0) }}"
+      min_power_dbm: "{{ _scan_result.min_power_dbm | default(0) }}"
+      max_power_dbm: "{{ _scan_result.max_power_dbm | default(0) }}"
+      band_occupancy: "{{ _scan_result.band_occupancy | default([]) }}"
+      verdict: "{{ _scan_result.verdict | default('skipped') }}"
+      rc: "{{ _scan_result.rc | default(-1) }}"
+      output_dir: "{{ spectrum_scan_output_dir }}"
+      skipped: false
+  when:
+    - spectrum_scan_enabled | bool
+    - _scan_result is defined
+
+- name: Register skip verdict
+  ansible.builtin.set_fact:
+    spectrum_scan_verdict:
+      role: spectrum_scan
+      tool: "{{ spectrum_scan_tool }}"
+      start_freq_hz: 0
+      end_freq_hz: 0
+      bandwidth_mhz: 0
+      bin_size_hz: 0
+      num_bins: 0
+      total_sweep_time_s: 0
+      signals_detected: 0
+      noise_floor_dbm: 0
+      min_power_dbm: 0
+      max_power_dbm: 0
+      band_occupancy: []
+      verdict: skipped
+      rc: -1
+      output_dir: "{{ spectrum_scan_output_dir }}"
+      skipped: true
+  when: not (spectrum_scan_enabled | bool) or _scan_result is not defined

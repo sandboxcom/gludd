@@ -1,0 +1,57 @@
+---
+- name: Converge
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Run link_budget role
+      ansible.builtin.include_role:
+        name: general_ludd.radio.link_budget
+      vars:
+        link_budget_enabled: true
+        link_budget_tx_power_dbm: 30.0
+        link_budget_freq_hz: 144000000
+        link_budget_distance_m: 10000.0
+        link_budget_model: free_space
+        link_budget_tx_antenna_gain_dbi: 2.15
+        link_budget_rx_antenna_gain_dbi: 2.15
+        link_budget_tx_antenna_type: null
+        link_budget_rx_antenna_type: null
+
+    - name: Assert verdict structure
+      ansible.builtin.assert:
+        that:
+          - link_budget_verdict.role == "link_budget"
+          - link_budget_verdict.model == "free_space"
+          - link_budget_verdict.distance_km == "10.0"
+          - link_budget_verdict.path_loss_db | float > 0
+          - link_budget_verdict.viable | string in ["True", "False"]
+        fail_msg: "Verdict structure incorrect: {{ link_budget_verdict }}"
+
+    - name: Assert JSON output
+      ansible.builtin.stat:
+        path: /tmp/gludd-link-budget/link_budget.json
+      register: _stat_json
+
+    - name: Verify JSON file exists
+      ansible.builtin.assert:
+        that: _stat_json.stat.exists
+        fail_msg: "link_budget.json not written"
+
+    - name: Parse JSON output
+      ansible.builtin.slurp:
+        src: /tmp/gludd-link-budget/link_budget.json
+      register: _json_raw
+
+    - name: Assert path loss computed
+      ansible.builtin.assert:
+        that:
+          - (_json_raw.content | b64decode | from_json).path_loss_db | float > 0
+          - (_json_raw.content | b64decode | from_json).eirp_dbm | float > 0
+          - (_json_raw.content | b64decode | from_json).path_loss_model == "Free-Space Path Loss"
+        fail_msg: "Path loss not computed"
+
+    - name: Cleanup
+      ansible.builtin.file:
+        path: /tmp/gludd-link-budget
+        state: absent

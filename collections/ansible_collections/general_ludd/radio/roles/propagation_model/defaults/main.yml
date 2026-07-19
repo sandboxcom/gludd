@@ -1,0 +1,11 @@
+---
+# propagation_model defaults — safe-by-default
+propagation_model_enabled: false
+propagation_model_type: free_space
+propagation_model_freq_hz: 144000000
+propagation_model_tx_height_m: 10.0
+propagation_model_rx_height_m: 1.5
+propagation_model_distance_m: 1000.0
+propagation_model_terrain: urban
+propagation_model_climate: continental_temperate
+propagation_model_output_dir: /tmp/gludd-propagation

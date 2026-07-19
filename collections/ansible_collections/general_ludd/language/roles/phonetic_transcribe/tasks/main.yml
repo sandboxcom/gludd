@@ -1,0 +1,17 @@
+---
+- name: Ensure artifact directory exists
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Run phonetic_transcribe standalone script
+  ansible.builtin.script:
+    cmd: "files/phonetic_transcribe.py --input '{{ input_text }}' --method '{{ method }}' --output '{{ artifact_dir }}/phonetic_transcription.json' {% if cmu_dict_lookup | default(true) %}--cmu-dict-lookup{% endif %}"
+    executable: "{{ ansible_python_interpreter | default('python3') }}"
+  register: phonetic_result
+  changed_when: false
+
+- name: Print phonetic transcription summary
+  ansible.builtin.debug:
+    msg: "{{ phonetic_result.stdout_lines }}"

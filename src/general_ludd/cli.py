@@ -11,6 +11,7 @@ import re
 import signal
 import sys
 import time
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 import httpx
@@ -658,6 +659,37 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     resume_model.add_argument("--daemon-url", default="http://localhost:8000")
     resume_model.set_defaults(func=_cmd_resume_model)
 
+    chat_parser = sub.add_parser("chat", help="Interactive AI chat REPL")
+    chat_parser.add_argument("--eval", type=str, default=None, metavar="PROMPT",
+                             help="Single-turn evaluation (non-interactive)")
+    chat_parser.add_argument("--model", default="default",
+                             help="Model profile (e.g. openai/gpt-4o, deepseek/deepseek-chat)")
+    chat_parser.add_argument("--system-prompt", default=None, help="Override system prompt")
+    chat_parser.add_argument("--history", default=None, metavar="FILE",
+                             help="JSON-lines conversation history file")
+    chat_parser.add_argument("--resume", action="store_true",
+                             help="Resume the most recent chat session")
+    chat_parser.add_argument("--list-sessions", action="store_true",
+                             help="List saved chat sessions and exit")
+    chat_parser.add_argument("--save-interval", type=int, default=5,
+                             help="Auto-save history every N turns (default: 5)")
+    chat_parser.add_argument("--api-base", default=os.environ.get("OPENAI_BASE_URL"),
+                             help="Override API base URL (env: OPENAI_BASE_URL)")
+    chat_parser.add_argument("--api-key", default=os.environ.get("OPENAI_API_KEY"),
+                              help="Override API key (env: OPENAI_API_KEY)")
+    chat_parser.add_argument("--project-dir", default=None, metavar="PATH",
+                              help="Project directory for ansible/terraform context injection")
+    chat_parser.add_argument("--export", default=None, metavar="FORMAT",
+                              choices=["md", "json", "html"],
+                              help="Export a saved session to md/json/html and exit")
+    chat_parser.add_argument("--export-output", default=None, metavar="FILE",
+                              help="Write export output to FILE (default: stdout)")
+    chat_parser.add_argument("--stream", action="store_true", default=False,
+                              help="Stream model response tokens in real-time (--eval mode)")
+    chat_parser.add_argument("--max-context", type=int, default=None, metavar="TOKENS",
+                              help="Maximum context window size in tokens (enables sliding-window trimming)")
+    chat_parser.set_defaults(func=_cmd_chat)
+
     help_p = sub.add_parser("help", help="Show full manual")
     help_p.set_defaults(func=_cmd_help)
 
@@ -1036,6 +1068,12 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     make_parser.add_argument("--stream", action="store_true", help="Stream phase markers")
     make_parser.set_defaults(func=_cmd_make)
 
+    # `gludd language` — language expert toolkit (encoding, homoglyphs, BOM, phonetics).
+    from general_ludd.cli_language import add_language_subparser
+
+    add_language_subparser(sub)
+    language_parser = sub.choices["language"]
+
     # `gludd account` — account backup, deletion, and cloud retention policy.
     from general_ludd.cli_account import add_account_subparser
 
@@ -1130,6 +1168,7 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
         "core-changes": core_changes_parser,
         "make": make_parser,
         "payment": payment_parser,
+        "language": language_parser,
         "account": account_parser,
         "physics": physics_parser,
         "audit-plugins": audit_plugins_parser,
@@ -1138,6 +1177,7 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
         "searx": searx_parser,
         "test-bg": testbg_parser,
         "test": test_parser,
+        "chat": chat_parser,
         "pause": pause_parser,
         "resume": resume_parser,
     }
@@ -2382,6 +2422,83 @@ def _cmd_leaderboard(args: argparse.Namespace) -> None:
 def _cmd_help(args: argparse.Namespace) -> None:
     print(MAN_PAGE)
     sys.exit(0)
+
+
+def _cmd_chat(args: argparse.Namespace) -> None:
+    """Interactive chat REPL or --eval single-turn mode."""
+    import asyncio
+
+    from general_ludd.chat import ChatSession
+
+    if getattr(args, "list_sessions", False):
+        sessions = ChatSession.list_sessions()
+        if not sessions:
+            print("No saved chat sessions.")
+            return
+        print(f"Saved sessions ({len(sessions)}):")
+        for s in sessions:
+            ts = s.get("timestamp", "?")
+            model = s.get("model", "?")
+            count = s.get("message_count", 0)
+            preview = str(s.get("preview", ""))
+            file_path = s.get("file", "?")
+            print(f"  {ts}  model={model}  messages={count}")
+            print(f"    file: {file_path}")
+            if preview:
+                preview_str = preview[:72] + ("..." if len(preview) > 72 else "")
+                print(f"    preview: {preview_str}")
+            print()
+        return
+
+    history_file = getattr(args, "history", None)
+    resume = getattr(args, "resume", False)
+    save_interval = getattr(args, "save_interval", 5)
+
+    export_format = getattr(args, "export", None)
+    if export_format:
+        from general_ludd.chat.session import export_session
+
+        source_file = history_file
+        if not source_file:
+            dummy = ChatSession(model=args.model)
+            latest = dummy._find_latest_session()
+            if latest is None:
+                print("No saved session to export.", file=sys.stderr)
+                sys.exit(1)
+            source_file = str(latest)
+        out_arg = getattr(args, "export_output", None)
+        result = export_session(
+            Path(source_file),
+            format=export_format,
+            output_file=Path(out_arg) if out_arg else None,
+        )
+        if isinstance(result, Path):
+            print(f"Wrote {export_format} export to {result}")
+        else:
+            print(result)
+        return
+
+    session = ChatSession(
+        model=args.model,
+        system_prompt=args.system_prompt,
+        eval_mode=args.eval is not None,
+        api_base_url=args.api_base,
+        api_key=args.api_key,
+        project_dir=getattr(args, "project_dir", None),
+        history_file=history_file,
+        save_interval=save_interval,
+        resume=resume,
+        max_context=getattr(args, "max_context", None),
+    )
+
+    if args.eval:
+        if getattr(args, "stream", False):
+            asyncio.run(session.stream_response(args.eval))
+        else:
+            result = asyncio.run(session.run_once(args.eval))
+            print(result)
+    else:
+        asyncio.run(session.start_repl())
 
 
 def _cmd_filestore_list(args: argparse.Namespace) -> None:

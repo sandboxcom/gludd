@@ -390,16 +390,16 @@
       behavioral findings from a gludd log analysis, suggest root causes for
       each error cluster.
 
-      ERROR CLUSTERS: {{ _error_cluster_result.text | default('(no clusters)')[:3000] }}
-      ANOMALIES: {{ _anomaly_result.text | default('(no anomalies)')[:2000] }}
-      BEHAVIORAL FINDINGS: {{ _behavior_result.text | default('(no findings)')[:2000] }}
+      ERROR CLUSTERS: {{ (_error_cluster_result.text | default('(no clusters)'))[:3000] }}
+      ANOMALIES: {{ (_anomaly_result.text | default('(no anomalies)'))[:2000] }}
+      BEHAVIORAL FINDINGS: {{ (_behavior_result.text | default('(no findings)'))[:2000] }}
 
       For each error cluster, return a root_cause object with: cluster_id,
       likely_cause (specific, actionable), confidence (0.0-1.0), fix_suggestion
       (concrete steps), related_clusters (list of cluster_ids that may share
       the same cause).
 
-      {{ _log_corpus_summary[:4000] }}
+      {{ (_log_corpus_summary)[:4000] }}
     model_profile: "{{ model_profile_root_cause | default('') }}"
     max_tokens: "{{ analysis_max_tokens }}"
   register: _root_cause_result
@@ -416,7 +416,7 @@
     line: |
       === TASK: root_cause @ {{ ansible_date_time.iso8601 }} ===
       MODEL: {{ model_profile_root_cause | default('default') }}
-      PROMPT: clusters={{ _error_cluster_result.text | default('none')[:500] }}
+      PROMPT: clusters={{ (_error_cluster_result.text | default('none'))[:500] }}
       RESPONSE: {{ _root_cause_result.text | default('(error/no response)') | replace('\n', '\\n') }}
       ===
     create: true

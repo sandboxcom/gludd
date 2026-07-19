@@ -130,6 +130,7 @@
 
 - name: Append audit log entry
   ansible.builtin.shell: |
+    set -o pipefail &&
     printf '%s | %s | baseline=%s | current=%s | removed=%s | pct=%s | verdict=%s | reason="%s"\n' \
       "{{ _dg_timestamp }}" \
       "{{ target_file }}" \

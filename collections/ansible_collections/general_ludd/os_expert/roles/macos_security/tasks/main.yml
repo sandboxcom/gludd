@@ -1,0 +1,157 @@
+---
+# macos_security role — audit macOS security subsystems: csrutil,
+# spctl, xprotect, tccutil, and plist policy.
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+  when: ansible_os_family == 'Darwin'
+
+- name: Run structured audit via python backend
+  when:
+    - ansible_os_family == 'Darwin'
+    - run_backend | default(true) | bool
+  block:
+    - name: Copy macos_security_audit.py to target
+      ansible.builtin.copy:
+        src: macos_security_audit.py
+        dest: "{{ artifact_dir }}/macos_security_audit.py"
+        mode: "0755"
+
+    - name: Run audit — collect csrutil, spctl, xprotect, tccutil, plist as JSON
+      ansible.builtin.command: >
+        python3 {{ artifact_dir }}/macos_security_audit.py
+        --output {{ artifact_dir }}/security_audit.json
+      register: _backend_result
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write backend stdout/stderr to artifact_dir
+      ansible.builtin.copy:
+        content: |
+          stdout: {{ _backend_result.stdout | default('') }}
+          stderr: {{ _backend_result.stderr | default('') }}
+          rc: {{ _backend_result.rc | default('') }}
+        dest: "{{ artifact_dir }}/backend_output.txt"
+        mode: "0644"
+      when: _backend_result is defined
+
+- name: Audit csrutil (System Integrity Protection)
+  when:
+    - ansible_os_family == 'Darwin'
+    - audit_csrutil | bool
+  block:
+    - name: Run csrutil status
+      ansible.builtin.command: csrutil status
+      register: _csrutil
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write csrutil status to artifact_dir
+      ansible.builtin.copy:
+        content: "{{ _csrutil.stdout | default('') }}"
+        dest: "{{ artifact_dir }}/csrutil.txt"
+        mode: "0644"
+      when: _csrutil is success and _csrutil.stdout | default('', true) | length > 0
+
+- name: Audit spctl (Gatekeeper / Assessment)
+  when:
+    - ansible_os_family == 'Darwin'
+    - audit_spctl | bool
+  block:
+    - name: Run spctl --status and app assessment
+      ansible.builtin.shell: |
+        echo "=== spctl --status ===" && spctl --status
+        echo ""
+        echo "=== spctl --assess -v /Applications ===" && spctl --assess -v /Applications 2>&1 || true
+      register: _spctl
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write spctl output to artifact_dir
+      ansible.builtin.copy:
+        content: "{{ _spctl.stdout | default('') }}"
+        dest: "{{ artifact_dir }}/spctl.txt"
+        mode: "0644"
+      when: _spctl is success and _spctl.stdout | default('', true) | length > 0
+
+- name: Audit XProtect / MRT
+  when:
+    - ansible_os_family == 'Darwin'
+    - audit_xprotect | bool
+  block:
+    - name: Run defaults read XProtect.meta.plist
+      ansible.builtin.command: >-
+        defaults read
+        /System/Library/CoreServices/XProtect.bundle/Contents/Resources/XProtect.meta.plist
+      register: _xprotect
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write XProtect output to artifact_dir
+      ansible.builtin.copy:
+        content: "{{ _xprotect.stdout | default('') }}"
+        dest: "{{ artifact_dir }}/xprotect.txt"
+        mode: "0644"
+      when: _xprotect is success and _xprotect.stdout | default('', true) | length > 0
+
+- name: Audit tccutil (TCC / Privacy Database)
+  when:
+    - ansible_os_family == 'Darwin'
+    - audit_tccutil | bool
+  block:
+    - name: Run tccutil list for each service
+      ansible.builtin.shell: |
+        for service in Camera Microphone Accessibility FullDiskAccess; do
+          echo "=== tccutil list $service ==="
+          tccutil list "$service" 2>&1 || true
+          echo ""
+        done
+      register: _tccutil
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write tccutil output to artifact_dir
+      ansible.builtin.copy:
+        content: "{{ _tccutil.stdout | default('') }}"
+        dest: "{{ artifact_dir }}/tccutil.txt"
+        mode: "0644"
+      when: _tccutil is success and _tccutil.stdout | default('', true) | length > 0
+
+- name: Audit managed preference plists
+  when:
+    - ansible_os_family == 'Darwin'
+    - audit_plist_policy | bool
+  block:
+    - name: Create plist_policy artifact subdirectory
+      ansible.builtin.file:
+        path: "{{ artifact_dir }}/plist_policy"
+        state: directory
+        mode: "0755"
+
+    - name: Find managed preference plists
+      ansible.builtin.shell: |
+        for plist in /Library/Managed\ Preferences/*.plist ~/Library/Managed\ Preferences/*.plist 2>/dev/null; do
+          [ -f "$plist" ] || continue
+          echo "=== $(basename "$plist") ==="
+          plutil -p "$plist" 2>&1 || true
+          echo ""
+        done
+      register: _plist_policy
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write plist policy output to artifact_dir
+      ansible.builtin.copy:
+        content: "{{ _plist_policy.stdout | default('') }}"
+        dest: "{{ artifact_dir }}/plist_policy/managed_preferences.txt"
+        mode: "0644"
+      when: _plist_policy is success and _plist_policy.stdout | default('', true) | length > 0

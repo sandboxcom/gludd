@@ -1,0 +1,20 @@
+---
+gettext_markers:
+  - "_"
+  - "gettext"
+  - "ngettext"
+  - "pgettext"
+  - "npgettext"
+  - "dgettext"
+  - "dngettext"
+
+pseudoloc_transforms:
+  accents: "Add diacritics (e.g., Hello → Héllô)"
+  expand: "Double character width for UI overflow testing"
+  brackets: "Wrap with [ ... ] for string identification"
+
+i18n_lint_rules:
+  hardcoded_strings: "Detect user-facing strings not wrapped in gettext markers"
+  missing_placeholders: "Detect format strings with unmatched {} or %s"
+  broken_plural: "Detect ngettext calls with mismatched singular/plural args"
+  missing_context: "Detect ambiguous strings lacking pgettext context"

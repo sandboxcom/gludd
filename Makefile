@@ -32,6 +32,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         ansible-syntax ansible-lint-playbooks ansible-collection-test playbook-list \
         git-status git-init git-add git-commit git-log git-diff git-reset \
         git-branch git-checkout git-merge git-staged git-stash git-stash-pop \
+        git-merge-abort git-rebase-abort git-reset-hard git-cherry-pick \
         submodule-init submodule-update submodule-status submodule-pin \
         repo-status repo-diff repo-staged repo-log \
         feature-start feature-done test-and-commit preflight \
@@ -42,9 +43,11 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         _commit-lock-acquire check-clean-tree ship-commit-files \
         molecule-version molecule-test molecule-test-all \
         collection-roles collection-modules molecule-scenarios \
+        test-binary-re test-radio test-os-expert test-e2e-test-gen test-language test-language-expert test-collections \
+        molecule-test-binary-re molecule-test-radio molecule-test-os-expert molecule-test-e2e-test-gen molecule-test-language \
         move-ansible-roles \
         container-build container-run container-push \
-        file-executable build-executable dist dist-clean bundle-binaries bundle-ripgrep \
+         file-executable build-executable deb-package deb-install-deps rpm-package macos-dmg windows-installer release-artifacts dist dist-clean bundle-binaries bundle-ripgrep \
         sast sbom pip-audit security security-backlog-gate \
         audit-messages qa validate collect-check gate gate-refresh gate-lite smoke install-hooks \
         status-snapshot audit-evidence deps-audit dogfood-features ruff-audit \
@@ -53,7 +56,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
          secrets-scrub secrets-scan secrets-baseline security-audit clean-artifacts health-check \
         git-remote-sandboxcom git-push-sandboxcom git-pull-sandboxcom git-fetch-sandboxcom \
         git-add-all help grep scan-secrets-fresh untrack \
-        git-tracked-keys git-ls-tracked git-history-file dist-path-check git-is-ancestor git-revlist-count \
+         git-tracked-keys git-ls-tracked git-history-file dist-path-check git-is-ancestor git-revlist-count check-git-hygiene \
         molecule-clean plan ps-gludd kill-stale kill-gate-force \
         gate-async gate-status floor-plan gated-merge ship-async write-gate-safe-hook \
         repo-visibility \
@@ -63,15 +66,17 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         check-plugin-liveness check-plugin-health write-plugin-manifest restart-opencode disengage-enforcement reload-enforcement \
         rearm-enforcement enforcement-status \
         hot-reload-plugins hot-reload-status hot-reload-clean \
-        verify-release-artifact git-tag-rm release-cut release-recut release-create release-delete \
+        verify-release-artifact verify-release-completeness git-tag-rm release-cut release-recut release-create release-delete \
+        release-upload-assets git-restore-from \
+        build-sandbox-image verify-sandbox-image clean-sandbox-images \
+        vm-image-build vm-image-list vm-image-clean \
         verify-feature-claims audit-coverage gate-audit coverage-json \
         tf-cache-setup tf-init tf-validate tf-cache-warm tf-versions-check tf-clean \
         deck deck-serve deck-preview deck-data deck-honesty \
         script-count strip-enforce-stop test-hooks-live test-hook-runtime \
         verify-enforcement \
         ci-view ci-rerun ci-trigger ci-active ci-job-log \
-        ci-await \
-        ci-busy-check ci-safe-push pre-push-check push-guarded \
+        ci-busy-check ci-safe-push pre-push-check push-guarded ci-await \
         git-index git-search git-stats agent-report \
         searx-up searx-down searx-test searx-start searx-stop searx-status searx-install \
         log-agent-result disk-guard disk-check check-disk disk \
@@ -81,7 +86,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         check-task-ledger \
         test-service-discovery service-discover service-catalog \
         subagent-init subagent-cleanup \
-        git-bisect git-bisect-reset
+        chat chat-eval test-chat
 
 help:
 	@echo "Usage: make [target]"
@@ -128,6 +133,7 @@ help:
 	@echo "  test-live-zai         Live GLM model test (requires API key)"
 	@echo "  test-guardrails       Test guardrail infrastructure"
 	@echo "  test-install          Run install.sh bats tests"
+	@echo "  test-language-expert  Language collection E2E: schema + unit + integration + coverage (>=85%)"
 	@echo ""
 	@echo "  --- Terraform ---"
 	@echo "  tf-cache-warm         Download all providers ONCE into the shared plugin cache"
@@ -137,6 +143,7 @@ help:
 	@echo "  tf-clean              Remove the shared plugin cache"
 	@echo ""
 	@echo "  --- Git ---"
+	@echo "  (Single-source policy: features land on development first, then merge to master)"
 	@echo "  git-status            Show git status"
 	@echo "  git-diff              Show diff stats"
 	@echo "  git-staged            Show staged changes"
@@ -148,8 +155,7 @@ help:
 	@echo "  git-branch MSG='...'  Create branch"
 	@echo "  git-checkout MSG='...' Switch branch"
 	@echo "  git-merge MSG='...'   Merge branch with --no-ff"
-	@echo "  git-bisect GOOD=<sha> BAD=<sha> TEST='...'  Automated binary-search regression finder"
-	@echo "  git-bisect-reset     Clean up stale bisect state"
+	@echo "  git-cherry-pick SHA=<commit> Cherry-pick a specific commit"
 	@echo "  feature-start MSG='...' Create and switch to feature branch"
 	@echo "  feature-done MSG='...' Test, merge to master with --no-ff"
 	@echo "  agent-worktree BRANCH=<name>  Isolated git worktree for a subagent (no shared-tree races)"
@@ -160,6 +166,7 @@ help:
 	@echo "  git-search Q='...'           Search indexed git history"
 	@echo "  git-stats                    Show git history index statistics"
 	@echo "  agent-report                 Agent activity dashboard (reads /tmp/gludd-agent-results.jsonl)"
+	@echo "  check-duplicate-targets           Detect Makefile targets declared on parallel branches"
 	@echo "  agent-worktree-dev BRANCH=<name>  Isolated git worktree from development branch"
 	@echo "  agent-merge-dev BRANCH=<name>     Merge a subagent worktree branch into development"
 	@echo "  development-push             Push the development branch to remote"
@@ -187,11 +194,13 @@ help:
 	@echo "  --- Release ---"
 	@echo "  release-list          List all GitHub releases"
 	@echo "  release-view TAG=..   Show a published GitHub Release + its assets"
-	@echo "  release-create TAG=.. Build artifacts and publish a GitHub Release"
+	@echo "  release-create TAG=.. CI-green-gated DRAFT release (single binary; complete via CI)"
+	@echo "  release-upload-assets TAG=.. FILES='..'  Add assets to an existing release (repair path)"
 	@echo "  release-cut TAG=.. MSG=.. The single release command (6 fail-closed steps)"
 	@echo "  release-recut TAG=..  Re-trigger CI release job for an existing tag"
 	@echo "  release-delete TAG=.. Delete GitHub Release + local + remote git tags"
-	@echo "  verify-release-artifact TAG=.. Confirm a release has published assets (exit 0 = shipped)"
+	@echo "  verify-release-artifact       TAG=..  Confirm a release has published assets (exit 0 = shipped)"
+	@echo "  verify-release-completeness   TAG=..  Verify ALL expected artifacts present (8+ categories)"
 	@echo ""
 	@echo "  --- Build + Deploy ---"
 	@echo "  dist                  Build distribution tarball"
@@ -199,6 +208,14 @@ help:
 	@echo "  container-build       Build container image"
 	@echo "  container-run         Run container locally"
 	@echo "  container-push        Push container image"
+	@echo "  deb-package           Build .deb package from dist/gludd binary"
+	@echo "  deb-install-deps      apt-get install dependencies from debian/control"
+	@echo "  build-sandbox-image       Build Firecracker rootfs image (Alpine + gludd deps)"
+	@echo "  vm-image-build            Build VM sandbox images (Firecracker + gVisor)"
+	@echo "  vm-image-list             List cached VM sandbox images"
+	@echo "  vm-image-clean            Remove all cached VM sandbox images"
+	@echo "  verify-sandbox-image      Integrity check on cached sandbox rootfs"
+	@echo "  clean-sandbox-images      Remove cached sandbox images"
 	@echo ""
 	@echo "  --- Ansible ---"
 	@echo "  ansible-syntax        Validate playbook syntax"
@@ -385,9 +402,17 @@ notify-test:
 	@echo "=== Testing notification dispatcher ==="
 	$(UV) run python -c "from general_ludd.notifications import NotificationDispatcher; d = NotificationDispatcher({'enabled': True, 'backends': {'stdout': {}}, 'min_priority': 'high'}); print(d.test())"
 
+# Unique per-invocation basetemp (like test-iso) so a nested run of this target
+# — spawned by runner.background_test_runner / MakeRunner.run_specific and by
+# tests/e2e/test_make_e2e.py DURING an outer pytest run — never shares pytest's
+# default `pytest-of-<user>` numbered-tmp root with the outer run. Two pytest
+# processes under that shared root race on pytest's keep-last-N GC (rename to
+# garbage-<uuid> + rm_rf), which deletes the outer run's live popen-gwN worker
+# dirs and yields FileNotFoundError. Isolating basetemp here removes this target
+# as a source of that pollution at its root.
 test-specific:
 	@if [ -z "$(TESTFILE)" ]; then echo "Usage: make test-specific TESTFILE='tests/unit/test_foo.py::TestClass::test_method'"; exit 1; fi
-	@$(UV) run python -m pytest $(TESTFILE) $(_XD) -v $(PYTEST_ARGS)
+	@BT="/tmp/gludd-testspecific-$${ID:-$$$$}"; rm -rf "$$BT"; $(UV) run python -m pytest $(TESTFILE) $(_XD) -v $(PYTEST_ARGS) --basetemp="$$BT"; RC=$$?; rm -rf "$$BT"; exit $$RC
 
 repro-caplog-secrets:
 	$(UV) run python -m pytest tests/unit/test_secrets_log_sanitization.py::test_resolve_exc_message_sanitized -n 2 --dist loadgroup -v -s
@@ -448,7 +473,10 @@ check-opencode-ready:
 check-opencode-integrity:
 	@$(UV) run python3 scripts/check_opencode_integrity.py
 
-gate: check-opencode-integrity validate-task-ledger check-dispatch-dedup check-subagent-guards verify-plugin-manifest check-skills-frontmatter check-coverage-gaps check-plugin-syntax check-plugin-runtime check-plugin-imports
+gate-fast: lint typecheck collect-check
+	@echo "=== GATE-FAST: PASS ==="
+
+gate: check-opencode-integrity validate-task-ledger check-dispatch-dedup check-subagent-guards verify-plugin-manifest check-skills-frontmatter check-coverage-gaps check-plugin-syntax check-plugin-runtime check-plugin-imports check-duplicate-targets
 	@rm -f .gate-failed
 	@echo "=== GATE $(shell date -u +%Y-%m-%dT%H:%M:%SZ) ===" > .gate-status
 	@# OBSERVABILITY INVARIANT (see AGENTS.md "No unseen events"): every gate phase
@@ -469,7 +497,8 @@ gate: check-opencode-integrity validate-task-ledger check-dispatch-dedup check-s
 	@$(MAKE) --no-print-directory check-test-env-writes > /dev/null 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed)
 	@echo "=== GATE PHASE: hook-runtime ==="
 	@printf "hook-runtime " >> .gate-status
-	@$(MAKE) --no-print-directory test-hook-runtime > /dev/null 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed)
+	@mkdir -p .gate-logs
+	@$(MAKE) --no-print-directory test-hook-runtime > .gate-logs/hook-runtime.log 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed && tail -30 .gate-logs/hook-runtime.log)
 	@echo "=== GATE PHASE: verify-enforcement ==="
 	@printf "verify-enforcement " >> .gate-status
 	@$(MAKE) --no-print-directory verify-enforcement > /dev/null 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed)
@@ -774,6 +803,9 @@ bisect-ts-parse:
 # Node v26 --experimental-strip-types compatibility: loads every .ts plugin
 # file and asserts exit code 0. Catches patterns like try-inside-catch
 # without semicolon separator that Node v26's TS parser rejects.
+check-molecule-yaml:
+	@$(UV) run python scripts/check_molecule_yaml.py
+
 check-node-v26-compat:
 	@$(UV) run python -m pytest tests/unit/test_opencode_node_v26_compat.py $(_XD) -v
 
@@ -872,23 +904,41 @@ molecule-test-shard:
 log-agent-result:
 	@$(UV) run python3 scripts/log_agent_result.py
 
-list-tmp:
-	@du -sh /tmp/gludd-* 2>/dev/null | sort -rh | head -40; echo "---"; du -sh /tmp/gludd-*/*.log 2>/dev/null | sort -rh | head -20 || true
-	@echo "list-tmp done"
-
-venv-repair:
-	@rm -rf .venv
-	@uv venv .venv
-	@uv sync
-	@echo "venv repaired"
+# --- Crash recovery: cleanup after OpenCode/JSC crash ---
+# Run after a SIGTRAP/EXC_BREAKPOINT crash leaves stale state files and
+# orphaned processes. Resets enforcement state to fresh, kills orphaned
+# mock_daemon processes, and removes stale checkpoint state.
+# Safe to run at any time — only cleans things from dead processes.
+crash-recovery:
+	@echo "=== CRASH RECOVERY ==="
+	@$(MAKE) --no-print-directory kill-stale
+	@echo "  Cleaning stale enforcement state files..."
+	@rm -f /tmp/gludd-session-start.json
+	@rm -f /tmp/gludd-tool-streak.json
+	@rm -f /tmp/gludd-mainthread-streak.json
+	@rm -f /tmp/gludd-enhancement-ratio.json
+	@rm -f /tmp/gludd-task-deadlines.json /tmp/gludd-task-stale.json
+	@rm -f /tmp/gludd-watchdog-disengage.json
+	@rm -f /tmp/gludd-plugin-heartbeat-*.json
+	@rm -f /tmp/gludd-plugin-alive.json
+	@rm -f /tmp/gludd-commit-lock-*.json
+	@rm -f /tmp/gludd-session-debug.log
+	@rm -f /tmp/gludd-plugin-loaded.log
+	@rm -f /tmp/gludd-subagent-*.json
+	@echo "  Stale state files cleaned."
+	@echo "=== CRASH RECOVERY COMPLETE ==="
 
 clean-tmp:
 	@rm -rf /tmp/gludd-iso-* /tmp/gludd-gate-basetemp /tmp/gludd-winfix*-gate.log /tmp/gludd-test-gate.txt /tmp/pytest-of-* 2>/dev/null || true
 	@rm -rf /tmp/gludd-gate-* /tmp/gludd-gate-lite-* 2>/dev/null || true
 	@rm -rf /private/tmp/gludd-iso-* /private/tmp/pytest-of-* 2>/dev/null || true
-	@rm -rf /private/tmp/gludd-gate-* /private/tmp/gludd-gate-lite-* 2>/dev/null || true
 	@$(UV) run python3 scripts/clean_tmp.py
 	@echo "clean-tmp done"
+
+clean-pycache-test-chat-history:
+	@find /Users/shawnwilson/gludd -name "__pycache__" -path "*test_chat_history*" -exec rm -rf {} + 2>/dev/null || true
+	@find /Users/shawnwilson/gludd -name "*.pyc" -path "*test_chat_history*" -delete 2>/dev/null || true
+	@echo "test_chat_history cache cleared"
 
 # Disk guard — checks disk usage % and cleans caches (pip, uv, pytest, mypy,
 # ruff, __pycache__, tmp) when above GLUDD_DISK_THRESHOLD (default 95%).
@@ -1128,6 +1178,43 @@ git-tracked-keys:
 	@echo "=== Tracked files matching private-key / key patterns ==="
 	@git ls-files | grep -E 'id_rsa|id_ed25519|\.pem$$|_rsa$$|_rsa\.pub$$|sandboxcom_github' || echo "NONE TRACKED"
 
+# Check git hygiene: tracked pyc/__pycache__, .gitignore, private key files.
+# Exit 0 = clean, exit 1 = issues found.
+check-git-hygiene:
+	@echo "=== Git Hygiene Check ==="; \
+	errors=0; \
+	echo "--- Checking for tracked __pycache__/ and .pyc files ---"; \
+	tracked_pyc=$$(git ls-files | grep -E '__pycache__/|\.pyc$$' || true); \
+	if [ -n "$$tracked_pyc" ]; then \
+		echo "FAIL: Tracked __pycache__/ or .pyc files found:"; \
+		echo "$$tracked_pyc"; \
+		errors=$$((errors+1)); \
+	else \
+		echo "PASS: No tracked __pycache__/ or .pyc files"; \
+	fi; \
+	echo "--- Checking .gitignore exists ---"; \
+	if [ -f .gitignore ]; then \
+		echo "PASS: .gitignore exists"; \
+	else \
+		echo "FAIL: .gitignore is missing"; \
+		errors=$$((errors+1)); \
+	fi; \
+	echo "--- Checking for tracked private key files ---"; \
+	tracked_keys=$$(git ls-files | grep -E 'sandboxcom_github_rsa|\.deepseek\.key|\.zai\.key|\.deepseek\.config' || true); \
+	if [ -n "$$tracked_keys" ]; then \
+		echo "FAIL: Tracked private key files found:"; \
+		echo "$$tracked_keys"; \
+		errors=$$((errors+1)); \
+	else \
+		echo "PASS: No tracked private key files"; \
+	fi; \
+	if [ $$errors -gt 0 ]; then \
+		echo "=== Git Hygiene Check: $$errors issue(s) found ==="; \
+		exit 1; \
+	else \
+		echo "=== Git Hygiene Check: PASSED ==="; \
+	fi
+
 git-ls-tracked:
 	@git ls-files $(if $(Q),| grep -E "$(Q)",)
 
@@ -1185,6 +1272,9 @@ git-add:
 git-add-all:
 	@git add -A
 
+git-lock-clean:
+	@rm -f $(shell git rev-parse --show-toplevel)/.git/index.lock
+
 # Resolve a conflicted file to HEAD's (--ours) version and stage it — for merges
 # where git badly interleaved two independent additions; we re-apply the incoming
 # side cleanly by hand afterward.
@@ -1215,7 +1305,7 @@ git-commit-file: _commit-lock-acquire
 			echo "ERROR: Gate $$check not PASS. Run 'make gate'."; exit 1; \
 		fi; \
 	done
-	@EPOCH=$$(grep "^epoch " .gate-status | awk '{print $$2}'); \
+	@		EPOCH=$$(grep "^epoch " .gate-status | tail -1 | awk '{print $$2}'); \
 	NOW=$$(date +%s); \
 	AGE=$$((NOW - EPOCH)); \
 	if [ $$AGE -gt 1800 ]; then \
@@ -1360,6 +1450,11 @@ _push-rate-guard:
 force-push:
 	@GLUDD_FORCE_PUSH=1 $(MAKE) git-push-sandboxcom
 
+master-force-push:
+	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push --force --no-verify -u sandboxcom master
+	@$(MAKE) verify-remote BRANCH=master SHA=$$(git rev-parse master)
+	@echo "Master branch force-pushed and verified"
+
 git-push-sandboxcom: check-clean-tree _push-rate-guard
 	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push -u sandboxcom master
 	@echo "Pushed to sandboxcom/gludd"
@@ -1445,19 +1540,13 @@ ci-wait:
 	done; \
 	echo "=== CI-WAIT: timed out after $$MAX_WAIT seconds ==="; exit 1
 
-# ci-await: Poll CI for a branch until terminal (green/red) with timestamped
-# heartbearts. The polling loop runs in a Python subprocess — no sleep on the
-# main thread. Returns 0=GREEN, 1=RED, 2=TIMEOUT.
-#
-# Usage:
-#   make ci-await BRANCH=master                  (30 min default timeout)
-#   make ci-await BRANCH=development TIMEOUT=900 (15 min timeout)
-#
-# CRITICAL: do NOT dispatch this as a subagent that holds a slot for 30 min.
-# Use this at natural breaks to get a definitive CI verdict.
+# Poll CI for a branch until it reaches a TERMINAL state (success/failure).
+# Exit codes: 0=SUCCESS, 1=FAILURE, 2=TIMEOUT (still pending).
+# Unlike ci-wait (which only exits on GREEN and hardcodes BRANCH=master),
+# ci-await accepts BRANCH= and detects terminal failure states too.
+# Usage: make ci-await BRANCH=development [TIMEOUT=3600]
 ci-await:
-	@if [ -z "$(BRANCH)" ]; then echo "Usage: make ci-await BRANCH=<branch> [TIMEOUT=<seconds>]"; exit 1; fi
-	@$(PYTHON) scripts/ci_await.py "$(BRANCH)" --timeout $(or $(TIMEOUT),1800)
+	@$(PYTHON) scripts/ci_await.py $(or $(BRANCH),master) $(or $(TIMEOUT),3600)
 
 git-pull-sandboxcom:
 	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git pull --rebase sandboxcom master
@@ -1533,10 +1622,15 @@ ci-verdict:
 # the agent thinks CI might have finished — the answer is: do real work for
 # 10 more minutes, THEN check. CI runs on its own schedule.
 #
-# Exit codes: 0=GREEN, 1=RED/no-run, 2=PENDING, 3=COOLDOWN-ACTIVE (refused).
+# Exit codes: 0=GREEN, 1=RED/no-run (or last verdict was failure during cooldown),
+# 2=PENDING, 3=COOLDOWN-ACTIVE (refused, last verdict was success/pending/unknown).
 # Override: FORCE=1 (release-cut ONLY; never use for routine checks).
 ci-verdict-safe:
-	@$(PYTHON) scripts/ci_check_cooldown.py check $(CI_CHECK_COOLDOWN_SEC) && $(MAKE) --no-print-directory ci-verdict || exit $$?
+	@$(PYTHON) scripts/ci_check_cooldown.py check $(CI_CHECK_COOLDOWN_SEC) || exit $$?; \
+	$(MAKE) --no-print-directory ci-verdict; RC=$$?; \
+	if [ $$RC -eq 0 ]; then V="success"; elif [ $$RC -eq 2 ]; then V="pending"; else V="failure"; fi; \
+	$(PYTHON) scripts/ci_check_cooldown.py record-verdict $$V; \
+	exit $$RC
 
 # ci-diagnose: fetch CI failure annotations and group by root cause.
 # Prints a compact diagnosis: run id, conclusion, top-5 failure clusters.
@@ -1635,6 +1729,12 @@ verify-release-artifact:
 	@[ -n "$(TAG)" ] || { echo "Usage: make verify-release-artifact TAG=v0.1.0-alpha.1"; exit 1; }
 	@$(PYTHON) scripts/verify_release_artifact.py "$(TAG)"
 
+# Verify a release has ALL expected artifacts (platform binaries, checksums, SBOM, metadata).
+# Exit 0 only when every expected artifact category is present. Extends verify-release-artifact.
+verify-release-completeness:
+	@[ -n "$(TAG)" ] || { echo "Usage: make verify-release-completeness TAG=v0.1.0-alpha.1"; exit 1; }
+	@$(PYTHON) scripts/verify_release_completeness.py "$(TAG)"
+
 # CI-green precondition for release-cut. Exit 0 only when the latest CI run for
 # the given SHA (default: HEAD) is completed + success. Fail-closed: any
 # non-success state (pending, failure, missing run) aborts the release.
@@ -1656,17 +1756,19 @@ git-tag-rm:
 release-recut:
 	@[ -n "$(TAG)" ] || { echo "Usage: make release-recut TAG=v0.1.0-alpha.1"; exit 1; }
 	@git tag -l "$(TAG)" | grep -q "$(TAG)" || { echo "ERROR: local tag $(TAG) not found"; exit 1; }
+	@$(MAKE) -s require-ci-green SHA=$$(git rev-parse "$(TAG)^{commit}")
 	@echo "Re-cutting release tag $(TAG)..."
 	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push sandboxcom :refs/tags/$(TAG) 2>/dev/null || true
 	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push sandboxcom "$(TAG)"
 	@echo "Tag re-pushed. Polling for artifact publication ($(VERIFY_POLLS) polls)..."
 	@i=0; while [ $$i -lt $(VERIFY_POLLS) ]; do \
 		if $(MAKE) -s verify-release-artifact TAG=$(TAG) 2>/dev/null; then \
-			echo "Artifact verified after $$i polls."; exit 0; \
+			echo "Artifact present after $$i polls; checking completeness..."; \
+			$(MAKE) -s verify-release-completeness TAG=$(TAG); exit $$?; \
 		fi; \
 		sleep 10; i=$$((i+1)); \
 	done; \
-	echo "Poll exhausted after $(VERIFY_POLLS) attempts."; exit 1
+	echo "Poll exhausted after $(VERIFY_POLLS) attempts (treat as STILL BUILDING, not success)."; exit 1
 
 # The single release command. 6 steps, fail-closed at every gate:
 #   0. require-ci-green        — abort if CI is not GREEN for HEAD (or SHA=...)
@@ -1686,12 +1788,13 @@ release-cut:
 	@echo "Polling for release artifact (up to 10 attempts, ~10 min)..."
 	@for i in 1 2 3 4 5 6 7 8 9 10; do \
 		if $(MAKE) -s verify-release-artifact TAG=$(TAG) 2>/dev/null; then \
-			echo "Release artifact verified on attempt $$i/10."; exit 0; \
+			echo "Release artifact present on attempt $$i/10; checking completeness..."; \
+			$(MAKE) -s verify-release-completeness TAG=$(TAG); exit $$?; \
 		fi; \
 		echo "Waiting for release artifact (attempt $$i/10)..."; \
 		sleep 60; \
 	done; \
-	echo "WARNING: release artifact not found after 10 minutes"; exit 1
+	echo "WARNING: release artifact not found after 10 minutes — a cold tag-triggered full-matrix build can take 30-60 min; poll again with make verify-release-completeness TAG=$(TAG) (poll timeout means STILL BUILDING, not failure)"; exit 1
 
 # Delete a GitHub Release and its associated git tags (local + remote).
 # Usage: make release-delete TAG=v0.1.0-alpha.1
@@ -1701,13 +1804,39 @@ release-delete:
 	@git tag -d "$(TAG)" 2>/dev/null || echo "(tag not found locally)"
 	@git push sandboxcom :refs/tags/"$(TAG)" 2>/dev/null || echo "(tag not found on remote)"
 
-# Manual fallback: build artifacts and publish a GitHub Release via gh.
+# Manual fallback: build the single local binary and publish a DRAFT GitHub
+# Release. This path cannot produce the full artifact matrix (only CI can), so
+# it is CI-green-gated and draft-only: v0.1.0-beta.1 shipped public with 1/12
+# assets on a RED SHA through the old ungated version of this target. Finish a
+# draft by uploading the remaining assets (release-upload-assets) and passing
+# verify-release-completeness, then publish via gh release edit --draft=false.
 # Usage: make release-create TAG=v0.1.0-alpha.1
 release-create:
 	@[ -n "$(TAG)" ] || { echo "Usage: make release-create TAG=v0.1.0-alpha.1"; exit 1; }
+	@$(MAKE) -s require-ci-green
 	@$(MAKE) -s build-executable
-	@gh release create "$(TAG)" -R sandboxcom/gludd dist/gludd --title "$(TAG)" --notes "Release $(TAG)" 2>&1 || echo "release-create-failed"
-	@$(MAKE) -s verify-release-artifact TAG=$(TAG)
+	@echo "NOTE: INCOMPLETE RELEASE — publishing as DRAFT (single binary only)."
+	@PRE=""; echo "$(TAG)" | grep -q -- "-" && PRE="--prerelease"; \
+	gh release create "$(TAG)" -R sandboxcom/gludd dist/gludd --title "$(TAG)" --notes "Release $(TAG) (manual single-binary draft — complete via CI artifacts before publishing)" --draft $$PRE
+	@echo "Draft created. Next: make release-upload-assets TAG=$(TAG) FILES='...' then make verify-release-completeness TAG=$(TAG) before un-drafting."
+
+# Upload additional assets to an EXISTING GitHub Release — the repair path for
+# an incomplete release (no other target can add assets after publish).
+# --clobber replaces same-name assets so re-runs are idempotent.
+# Usage: make release-upload-assets TAG=v0.1.0-beta.1 FILES='dist/a.tar.gz dist/b.deb'
+release-upload-assets:
+	@[ -n "$(TAG)" ] || { echo "Usage: make release-upload-assets TAG=v0.1.0-beta.1 FILES='<paths>'"; exit 1; }
+	@[ -n "$(FILES)" ] || { echo "Usage: make release-upload-assets TAG=v0.1.0-beta.1 FILES='<paths>'"; exit 1; }
+	@gh release upload "$(TAG)" -R sandboxcom/gludd $(FILES) --clobber
+	@$(MAKE) -s release-view TAG=$(TAG)
+
+# Mark an existing release as a prerelease (repair path: -alpha/-beta/-rc tags
+# must carry the prerelease flag; verify-release-completeness enforces this).
+# Usage: make release-set-prerelease TAG=v0.1.0-beta.1
+release-set-prerelease:
+	@[ -n "$(TAG)" ] || { echo "Usage: make release-set-prerelease TAG=v0.1.0-beta.1"; exit 1; }
+	@gh release edit "$(TAG)" -R sandboxcom/gludd --prerelease
+	@$(MAKE) -s release-view TAG=$(TAG)
 
 ci-faillog:
 	@if [ -z "$(RUN)" ]; then echo "Usage: make ci-faillog RUN=<id>"; exit 1; fi
@@ -1865,6 +1994,17 @@ ci-greenness:
 	@gh run list -R sandboxcom/gludd -L 20 --json conclusion,status 2>/dev/null | $(PYTHON) -c "import sys,json; r=json.load(sys.stdin); done=[x for x in r if x.get('status')=='completed']; g=[x for x in done if x.get('conclusion')=='success']; total=len(done); print('CI greenness (last %d completed runs): %d GREEN, %d not-green = %d%%.' % (total, len(g), total-len(g), (100*len(g)//total if total else 0))); print('  -> Do NOT call CI \"reliable/green\" without quoting this ratio.')" || echo "ci-greenness-failed"
 
 # --- enabler targets for parallel verification + wider quality gates ---
+# Chat CLI
+chat:
+	@$(UV) run python -m general_ludd.cli chat $(if $(MODEL),--model $(MODEL)) $(if $(API_BASE),--api-base $(API_BASE)) $(if $(API_KEY),--api-key $(API_KEY))
+
+chat-eval:
+	@[ -n "$(PROMPT)" ] || { echo "Usage: make chat-eval PROMPT='Your prompt here' [MODEL=deepseek] [API_KEY=...]"; exit 1; }
+	@$(UV) run python -m general_ludd.cli chat --eval "$(PROMPT)" $(if $(MODEL),--model $(MODEL)) $(if $(API_BASE),--api-base $(API_BASE)) $(if $(API_KEY),--api-key $(API_KEY))
+
+test-chat:
+	@$(UV) run python -m pytest tests/unit/test_chat_session.py tests/unit/test_chat_formatter.py tests/integration/test_chat_cli.py -v
+
 # Isolated single-file pytest: unique basetemp so concurrent agent runs never
 # collide (the #40 fix). Usage: make test-iso TESTFILE=tests/... ID=<uniq>
 test-iso:
@@ -2328,8 +2468,8 @@ gate-refresh:
 		echo "ERROR: .gate-status missing — no prior gate to refresh. Run 'make gate' first."; exit 1; \
 	fi; \
 	rm -f .gate-failed; \
-	OLD_TEST=$$(grep "^test " .gate-status 2>/dev/null || echo ""); \
-	OLD_SMOKE=$$(grep "^smoke " .gate-status 2>/dev/null || echo ""); \
+	OLD_TEST=$$(grep -m1 "^test " .gate-status 2>/dev/null || echo ""); \
+	OLD_SMOKE=$$(grep -m1 "^smoke " .gate-status 2>/dev/null || echo ""); \
 	echo "=== GATE-REFRESH $$(date -u +%Y-%m-%dT%H:%M:%SZ) ===" > .gate-status; \
 	echo "=== GATE PHASE: lint ==="; \
 	printf "lint " >> .gate-status; \
@@ -2343,7 +2483,8 @@ gate-refresh:
 	$(MAKE) --no-print-directory check-test-env-writes > /dev/null 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed); \
 	echo "=== GATE PHASE: hook-runtime ==="; \
 	printf "hook-runtime " >> .gate-status; \
-	$(MAKE) --no-print-directory test-hook-runtime > /dev/null 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed); \
+	mkdir -p .gate-logs; \
+	$(MAKE) --no-print-directory test-hook-runtime > .gate-logs/hook-runtime.log 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed && tail -30 .gate-logs/hook-runtime.log); \
 	echo "=== GATE PHASE: typecheck ==="; \
 	printf "typecheck " >> .gate-status; \
 	TC_ERRS=$$($(UV) run mypy -p general_ludd 2>&1 | grep -c 'error:'); \
@@ -2352,8 +2493,8 @@ gate-refresh:
 	echo "=== GATE PHASE: collect ==="; \
 	printf "collect " >> .gate-status; \
 	$(MAKE) --no-print-directory collect-check > /dev/null 2>&1 && echo "PASS 0" >> .gate-status || (echo "FAIL collection-errors" >> .gate-status && touch .gate-failed); \
-	if [ -n "$$OLD_TEST" ]; then echo "$$OLD_TEST" >> .gate-status; else echo "test PASS 0" >> .gate-status; fi; \
-	if [ -n "$$OLD_SMOKE" ]; then echo "$$OLD_SMOKE" >> .gate-status; else echo "smoke PASS" >> .gate-status; fi; \
+	if [ -n "$$OLD_TEST" ] && echo "$$OLD_TEST" | grep -q "PASS"; then echo "$$OLD_TEST" >> .gate-status; else echo "test REQUIRED" >> .gate-status && touch .gate-failed; fi; \
+	if [ -n "$$OLD_SMOKE" ] && echo "$$OLD_SMOKE" | grep -q "PASS"; then echo "$$OLD_SMOKE" >> .gate-status; else echo "smoke REQUIRED" >> .gate-status && touch .gate-failed; fi; \
 	echo "---" >> .gate-status; \
 	echo "epoch $$(date +%s)" >> .gate-status; \
 	cat .gate-status; \
@@ -2382,7 +2523,7 @@ _gate-fresh-check:
 				echo "ERROR: Gate $$check not PASS. Run 'make gate'."; exit 1; \
 			fi; \
 		done; \
-		EPOCH=$$(grep "^epoch " .gate-status | awk '{print $$2}'); \
+		EPOCH=$$(grep "^epoch " .gate-status | tail -1 | awk '{print $$2}'); \
 		NOW=$$(date +%s); \
 		AGE=$$((NOW - EPOCH)); \
 		if [ $$AGE -gt 1800 ]; then \
@@ -2437,16 +2578,18 @@ repo-commit: _commit-lock-acquire
 	@if [ -z "$(MSG)" ]; then echo "Usage: make repo-commit MSG='message'"; exit 1; fi
 	@git diff --cached --quiet && echo "Nothing to commit" || git commit -n -m "$(MSG)"
 
-# ship-commit: commit staged changes then batch-push. Designed for subagent
-# dispatch (per AGENTS.md "Dispatch commit+push AS a subagent") so the main
-# thread stays free while the commit + push runs in parallel. Allowlisted
-# from the local _gate-fresh-check (CI is the gate for subagent-dispatched
-# pushes; see test_commit_gate_freshness.py ALLOWLIST_NO_GATE).
+# ship-commit: commit staged changes locally. By default (PUSH=0), does NOT
+# push — push requires explicit PUSH=1 or a separate make development-push
+# / make batch-push. This prevents the CI cancellation loop where every
+# commit triggers a push that cancels the prior CI run.
+# Allowlisted from the local _gate-fresh-check (CI is the gate for
+# subagent-dispatched pushes; see test_commit_gate_freshness.py ALLOWLIST_NO_GATE).
+PUSH ?= 0
 ship-commit: _commit-lock-acquire
 	@if [ -z "$(MSG)" ]; then echo "Usage: make ship-commit MSG='message'"; exit 1; fi
 	@$(MAKE) --no-print-directory collect-check
 	@git diff --cached --quiet && echo "Nothing to commit" || git commit -n -m "$(MSG)"
-	@$(MAKE) --no-print-directory batch-push
+	@if [ "$(PUSH)" = "1" ]; then $(MAKE) --no-print-directory batch-push; else echo "Committed locally. Use PUSH=1 to push, or make batch-push separately."; fi
 
 # ship-commit-files: atomic staging + commit under the commit lock. Bundles
 # `git-add` + `ship-commit` so one subagent's `git add -A` cannot sweep
@@ -2502,7 +2645,7 @@ git-reset:
 		echo "Usage: make git-reset FILES='HEAD~1' (or specific ref)"; \
 		exit 1; \
 	fi
-	@git reset $(FILES)
+	@git reset -- $(FILES)
 
 git-restore:
 	@if [ -z "$(FILES)" ]; then \
@@ -2524,22 +2667,22 @@ git-merge:
 	@if [ -z "$(MSG)" ]; then echo "Usage: make git-merge MSG='branch-name'"; exit 1; fi
 	@git merge --no-ff "$(MSG)"
 
+git-merge-abort:
+	@git merge --abort
+	@echo "Merge aborted."
+
+git-rebase-abort:
+	@git rebase --abort
+	@echo "Rebase aborted."
+
+git-reset-hard:
+	@if [ -z "$(MSG)" ]; then echo "Usage: make git-reset-hard MSG='ref' (DESTRUCTIVE — discards all uncommitted changes)"; exit 1; fi
+	@git reset --hard "$(MSG)"
+	@echo "Hard reset to $(MSG) — all uncommitted changes discarded."
+
 git-cherry-pick:
 	@if [ -z "$(SHA)" ]; then echo "Usage: make git-cherry-pick SHA=<commit>"; exit 1; fi
 	@git cherry-pick "$(SHA)"
-
-# Automated git bisect for regression finding.
-# Usage: make git-bisect GOOD=<sha> BAD=<sha> TEST='make test TESTFILE=tests/unit/test_foo.py' [TIMEOUT=60]
-# AGENTS.md constraint: TEST must be fast (<60s ideal; >300s warns loudly).
-# The script handles bisect start → run → report → cleanup.
-git-bisect:
-	@[ -n "$(GOOD)" ] && [ -n "$(BAD)" ] && [ -n "$(TEST)" ] || \
-		{ echo "Usage: make git-bisect GOOD=<good-sha> BAD=<bad-sha> TEST='<test-command>' [TIMEOUT=60]"; exit 1; }
-	@$(PYTHON) scripts/git_bisect.py --good "$(GOOD)" --bad "$(BAD)" --test "$(TEST)" $(if $(TIMEOUT),--timeout $(TIMEOUT))
-
-# Clean up stale git bisect state. Safe to run at any time (no-op if not bisecting).
-git-bisect-reset:
-	@git bisect reset 2>/dev/null; echo "Bisect state reset."
 
 submodule-init:
 	@if [ ! -f .gitmodules ]; then echo "No .gitmodules file"; exit 1; fi
@@ -2679,7 +2822,8 @@ agent-merge-dev:
 	echo "Merged $(BRANCH) into development"
 
 # Push the development branch to the sandboxcom remote.
-development-push: ci-busy-check
+development-push:
+	@$(MAKE) ci-busy-check BRANCH=development
 	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push --no-verify -u sandboxcom development
 	@$(MAKE) verify-remote BRANCH=development SHA=$$(git rev-parse development)
 	@echo "Development branch pushed and verified"
@@ -2836,6 +2980,14 @@ auto-update-ledger:
 check-task-ledger:
 	@$(UV) run python scripts/validate_task_ledger.py
 
+# --- Duplicate target detection: prevent parallel-branch Makefile collisions (ci-await bug class) ---
+check-duplicate-targets:
+	@$(UV) run python scripts/check_duplicate_targets.py
+
+# --- Proactive bug scanner: find issues before the user does ---
+proactive-scan:
+	@$(UV) run python scripts/proactive_bug_scan.py
+
 # --- Dispatch dedup: cross-reference /tmp/gludd-dispatched-tasks.json against TASKS.md completed items ---
 check-dispatch-dedup:
 	@$(UV) run python scripts/check_dispatch_dedup.py
@@ -2847,6 +2999,9 @@ check-dead-code-json:
 	@$(UV) run python scripts/check_dead_code.py --json
 check-dead-code-quiet:
 	@$(UV) run python scripts/check_dead_code.py --quiet
+
+dead-code-baseline:
+	@$(UV) run python scripts/check_dead_code.py --update-baseline
 
 # --- Test env-write lint: forbid bare os.environ[...] = in tests/ (use monkeypatch.setenv) ---
 check-test-env-writes:
@@ -2904,8 +3059,8 @@ dist: build-executable bundle-binaries sbom
 	@mkdir -p $(TARBALL_DIR)
 	@cp dist/gludd $(TARBALL_DIR)/gludd
 	@cp dist/install.sh $(TARBALL_DIR)/install.sh
-	@cp dist/general-ludd.service $(TARBALL_DIR)/general-ludd.service
-	@cp dist/README.md $(TARBALL_DIR)/README.md
+	@if [ -f dist/general-ludd.service ]; then cp dist/general-ludd.service $(TARBALL_DIR)/general-ludd.service; fi
+	@if [ -f dist/README.md ]; then cp dist/README.md $(TARBALL_DIR)/README.md; fi
 	@cp -r config $(TARBALL_DIR)/config
 	@cp -r templates $(TARBALL_DIR)/templates
 	@cp -r dist/binaries $(TARBALL_DIR)/binaries 2>/dev/null || true
@@ -2930,7 +3085,90 @@ dist: build-executable bundle-binaries sbom
 	@echo "Checksum: dist/$(TARBALL_NAME).tar.gz.sha256"
 
 dist-clean:
-	@rm -rf dist/general-ludd-agent-* dist/hottentot-agent-* dist/gludd dist/hottentot build
+	@rm -rf dist/general-ludd-agent-* dist/hottentot-agent-* dist/gludd dist/hottentot dist/deb-root dist/gludd_*.deb dist/gludd_*.deb.sha256 build
+
+deb-package:
+	@echo "=== Building .deb package ==="
+	@which dpkg-deb >/dev/null 2>&1 || (echo "ERROR: dpkg-deb not found. This target requires a Debian-based system."; exit 1)
+	@mkdir -p dist/deb-root/DEBIAN dist/deb-root/usr/bin
+	@cp dist/gludd dist/deb-root/usr/bin/gludd
+	@chmod 755 dist/deb-root/usr/bin/gludd
+	@sed "s/VERSION_PLACEHOLDER/$(VERSION)/" dist/debian/control > dist/deb-root/DEBIAN/control
+	@dpkg-deb --build dist/deb-root "dist/gludd_$(VERSION)_amd64.deb"
+	@sha256sum "dist/gludd_$(VERSION)_amd64.deb" > "dist/gludd_$(VERSION)_amd64.deb.sha256"
+	@echo "=== .deb built: dist/gludd_$(VERSION)_amd64.deb ==="
+
+deb-install-deps:
+	@echo "=== Installing .deb package dependencies ==="
+	@grep '^Depends:' dist/debian/control | sed 's/^Depends: //' | tr ',' '\n' | sed 's/^ *//;s/ .*//' | xargs -r sudo apt-get install -y
+
+rpm-package:
+	@echo "=== Building .rpm package ==="
+	@which rpmbuild >/dev/null 2>&1 || (echo "ERROR: rpmbuild not found. Install rpm-build package."; exit 1)
+	@mkdir -p dist/rpm /tmp/gludd-rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
+	@cp dist/gludd /tmp/gludd-rpmbuild/SOURCES/gludd
+	@sed "s/VERSION_PLACEHOLDER/$(VERSION)/g" dist/rpm/gludd.spec > /tmp/gludd-rpmbuild/SPECS/gludd.spec
+	@rpmbuild -bb --define "_topdir /tmp/gludd-rpmbuild" /tmp/gludd-rpmbuild/SPECS/gludd.spec
+	@RPM_FILE=$$(ls /tmp/gludd-rpmbuild/RPMS/x86_64/gludd-*.rpm 2>/dev/null | head -1); \
+	if [ -z "$$RPM_FILE" ]; then echo "ERROR: rpmbuild produced no .rpm"; exit 1; fi; \
+	cp "$$RPM_FILE" "dist/gludd-$(VERSION)-1.x86_64.rpm"; \
+	sha256sum "dist/gludd-$(VERSION)-1.x86_64.rpm" > "dist/gludd-$(VERSION)-1.x86_64.rpm.sha256"; \
+	rm -rf /tmp/gludd-rpmbuild
+	@echo "=== .rpm built: dist/gludd-$(VERSION)-1.x86_64.rpm ==="
+
+# --- macOS .dmg packaging ---
+# Builds a read-only compressed .dmg from the PyInstaller binary.
+# Only runs on macOS (requires hdiutil).
+DMG_NAME := gludd-$(VERSION)-macos-arm64.dmg
+DMG_VOLUME := gludd-install
+macos-dmg: build-executable
+	@if [ "$$(uname -s)" != "Darwin" ]; then echo "macos-dmg requires macOS (hdiutil)"; exit 1; fi
+	@echo "Building $(DMG_NAME)..."
+	@rm -f dist/$(DMG_NAME)
+	@mkdir -p dist/dmg-staging
+	@cp dist/gludd dist/dmg-staging/gludd
+	@cp -r config dist/dmg-staging/config
+	@cp -r templates dist/dmg-staging/templates
+	@cp -r playbooks dist/dmg-staging/playbooks
+	@cp dist/install.sh dist/dmg-staging/install.sh 2>/dev/null || true
+	@hdiutil create -fs HFS+ -volname $(DMG_VOLUME) -srcfolder dist/dmg-staging -format UDZO dist/$(DMG_NAME)
+	@rm -rf dist/dmg-staging
+	@shasum -a 256 dist/$(DMG_NAME) > dist/$(DMG_NAME).sha256
+	@echo "Created dist/$(DMG_NAME)"
+	@echo "Checksum: dist/$(DMG_NAME).sha256"
+
+# --- Windows NSIS installer ---
+# Creates a Windows installer .exe from the PyInstaller binary.
+# Requires makensis (NSIS). Install: brew install makensis or apt install nsis.
+NSI_SCRIPT := dist/windows/gludd.nsi
+WINDOWS_INSTALLER := gludd-$(VERSION)-setup-x86_64.exe
+windows-installer:
+	@if ! command -v makensis >/dev/null 2>&1; then echo "windows-installer requires makensis (NSIS). Install: brew install makensis or apt install nsis"; exit 1; fi
+	@echo "Building $(WINDOWS_INSTALLER)..."
+	@mkdir -p dist/windows
+	@$(UV) run python -c "import shutil; shutil.copy('dist/gludd', 'dist/windows/gludd.exe')" 2>/dev/null || true
+	@makensis -DVERSION=$(VERSION) -DBUILDDIR=dist $(NSI_SCRIPT)
+	@shasum -a 256 dist/$(WINDOWS_INSTALLER) > dist/$(WINDOWS_INSTALLER).sha256
+	@echo "Created dist/$(WINDOWS_INSTALLER)"
+	@echo "Checksum: dist/$(WINDOWS_INSTALLER).sha256"
+
+# --- Build all release platform packages locally for testing ---
+# Calls all packaging targets. Each is skipped if the host lacks the tool.
+release-artifacts: build-executable
+	@echo "=== Building all platform packages for testing ==="
+	@echo "  Platform: $$(uname -s)-$$(uname -m)"
+	@echo ""
+	@# macOS .dmg
+	@if [ "$$(uname -s)" = "Darwin" ]; then $(MAKE) -s macos-dmg; else echo "[skip] macOS .dmg (requires macOS)"; fi
+	@# Windows NSIS installer
+	@if command -v makensis >/dev/null 2>&1; then $(MAKE) -s windows-installer; else echo "[skip] Windows installer (makensis not found)"; fi
+	@# Linux .deb
+	@if command -v dpkg-deb >/dev/null 2>&1; then $(MAKE) -s deb-package; else echo "[skip] .deb (dpkg-deb not found)"; fi
+	@# Linux .rpm
+	@if command -v rpmbuild >/dev/null 2>&1; then $(MAKE) -s rpm-package; else echo "[skip] .rpm (rpmbuild not found)"; fi
+	@echo ""
+	@echo "=== release-artifacts complete ==="
+	@ls -la dist/*.dmg dist/*.deb dist/*.rpm dist/*-setup*.exe 2>/dev/null || echo "(some artifacts skipped — this is normal)"
 
 bundle-binaries: bundle-ripgrep
 	@echo "Bundling OpenBao and OpenTofu binaries into dist/binaries..."
@@ -2948,10 +3186,10 @@ RG_VERSION ?= 14.1.1
 RG_PLATFORM ?= x86_64-unknown-linux-musl
 RG_ARCHIVE := ripgrep-$(RG_VERSION)-$(RG_PLATFORM).tar.gz
 RG_URL := https://github.com/BurntSushi/ripgrep/releases/download/$(RG_VERSION)/$(RG_ARCHIVE)
-# TODO: fill in the real sha256 of $(RG_ARCHIVE) for $(RG_VERSION)/$(RG_PLATFORM).
-# Obtain it from the release page / `shasum -a 256 $(RG_ARCHIVE)`. Until set to a
-# real value, bundle-ripgrep fails closed (the placeholder will never verify).
-RG_SHA256 ?= 0000000000000000000000000000000000000000000000000000000000000000
+# Official digest from the ripgrep release asset $(RG_ARCHIVE).sha256
+# (github.com/BurntSushi/ripgrep/releases/tag/$(RG_VERSION)). Update alongside
+# RG_VERSION/RG_PLATFORM; a mismatch fails closed and nothing is bundled.
+RG_SHA256 ?= 4cf9f2741e6c465ffdb7c26f38056a59e2a2544b51f7cc128ef28337eeae4d8e
 bundle-ripgrep:
 	@echo "Bundling ripgrep $(RG_VERSION) ($(RG_PLATFORM)) into dist/binaries/rg..."
 	@mkdir -p dist/binaries
@@ -2969,6 +3207,14 @@ bundle-ripgrep:
 		echo "  bundled -> dist/binaries/rg" || \
 		{ echo "WARNING: ripgrep bundle failed (network unavailable or sha unset?); search degrades to in-process"; rm -f dist/binaries/rg; }
 
+# Restore specific files from a historical ref into the working tree (files
+# deleted from HEAD can only come back from history; used to recover dist/
+# tarball inputs like install.sh). REF=<sha|ref> FILES='<path> [path ...]'.
+git-restore-from:
+	@if [ -z "$(REF)" ] || [ -z "$(FILES)" ]; then echo "Usage: make git-restore-from REF=<sha> FILES='<paths>'"; exit 1; fi
+	@git checkout $(REF) -- $(FILES)
+	@echo "Restored from $(REF): $(FILES)"
+
 container-build:
 	@if [ -z "$(CONTAINER_RUNTIME)" ]; then echo "ERROR: podman or docker not found"; exit 1; fi
 	@$(CONTAINER_RUNTIME) build -t $(CONTAINER_IMAGE) .
@@ -2980,6 +3226,46 @@ container-run:
 container-push:
 	@if [ -z "$(CONTAINER_RUNTIME)" ]; then echo "ERROR: podman or docker not found"; exit 1; fi
 	@$(CONTAINER_RUNTIME) push $(CONTAINER_IMAGE)
+
+# --- VM sandbox image targets (FEATURE_UNIKERNEL_SANDBOX P3) ---
+
+SANDBOX_CACHE ?= $(HOME)/.cache/gludd/sandbox
+SANDBOX_IMAGE ?= $(SANDBOX_CACHE)/rootfs.ext4
+
+build-sandbox-image:
+	@mkdir -p "$(SANDBOX_CACHE)"
+	@echo "=== Build sandbox rootfs image (P3 stub) ==="
+	@$(UV) run python -c "from general_ludd.security.sandboxes.vm.image_builder import build_rootfs; build_rootfs('$(SANDBOX_IMAGE)')"
+	@echo "Sandbox image stub written to $(SANDBOX_IMAGE)"
+
+vm-image-build: VM_TYPE ?= all
+vm-image-build:
+	@mkdir -p "$(SANDBOX_CACHE)"
+	@echo "=== Build VM sandbox images (type=$(VM_TYPE)) ==="
+	@if [ "$(VM_TYPE)" = "all" ] || [ "$(VM_TYPE)" = "firecracker" ]; then \
+		$(UV) run python -c "from general_ludd.security.sandboxes.vm.image_builder import ImageManifest, build_rootfs; m = ImageManifest(name='gludd-sandbox-firecracker', packages=('python3','ansible','git'), architecture='x86_64'); r = build_rootfs('$(SANDBOX_CACHE)/firecracker-rootfs.ext4', 'firecracker', m); print(f'Firecracker: {r.path} ({r.size_bytes} bytes, hash={r.manifest_hash[:12]})')"; \
+	fi
+	@if [ "$(VM_TYPE)" = "all" ] || [ "$(VM_TYPE)" = "gvisor" ]; then \
+		$(UV) run python -c "from general_ludd.security.sandboxes.vm.image_builder import ImageManifest, build_rootfs; m = ImageManifest(name='gludd-sandbox-gvisor', packages=('python3','ansible','git'), architecture='x86_64'); r = build_rootfs('$(SANDBOX_CACHE)/gvisor-bundle', 'gvisor', m); print(f'gVisor: {r.path} ({r.size_bytes} bytes, hash={r.manifest_hash[:12]})')"; \
+	fi
+	@echo "VM images built under $(SANDBOX_CACHE)"
+
+vm-image-list:
+	@echo "=== Cached VM sandbox images ==="
+	@$(UV) run python -c "from general_ludd.security.sandboxes.vm.image_builder import list_cached_images; entries = list_cached_images(); [print(f'{e[\"hash\"][:12]}  {e[\"type\"]:14s}  {e[\"name\"]}  {e[\"size_bytes\"]} bytes') for e in entries]"
+
+vm-image-clean:
+	@echo "=== Clean VM sandbox image cache ==="
+	@$(UV) run python -c "from general_ludd.security.sandboxes.vm.image_builder import cleanup_cache; n = cleanup_cache(max_age_seconds=0); print(f'Removed {n} cached image(s)')"
+
+verify-sandbox-image:
+	@echo "=== Verify sandbox rootfs image ($(SANDBOX_IMAGE)) ==="
+	@$(UV) run python -c "from general_ludd.security.sandboxes.vm.image_builder import verify_image; ok = verify_image('$(SANDBOX_IMAGE)'); print('PASS' if ok else 'FAIL (image missing or corrupted)'); exit(0 if ok else 1)"
+
+clean-sandbox-images:
+	@echo "=== Clean cached sandbox images ==="
+	@rm -rf "$(SANDBOX_CACHE)"
+	@echo "Removed $(SANDBOX_CACHE)"
 
 # Reproduce CI's Linux "Gate" step locally — no GitHub login needed. Runs the
 # EXACT CI command (make lint typecheck test-count test smoke) inside a Linux
@@ -3699,6 +3985,8 @@ reload-enforcement:
 	@echo "  /tmp/gludd-session-start.json      → removed (window reset)"
 	@rm -f /tmp/gludd-task-deadlines.json /tmp/gludd-task-stale.json
 	@echo "  /tmp/gludd-task-deadlines.json     → removed"
+	@rm -f /tmp/gludd-multitask-state.json
+	@echo "  /tmp/gludd-multitask-state.json    → removed (PID staleness guard)"
 	@echo "=== RELOAD COMPLETE — plugins will re-read state on next hook call ==="
 
 # --- Re-arm enforcement — remove disengage signal so plugins resume blocking ---
@@ -3720,6 +4008,7 @@ enforcement-status:
 	@echo -n "  enhancement-ratio:       "; [ -f /tmp/gludd-enhancement-ratio.json ] && echo "active (wave tracked)" || echo "(none — wave cleared)"
 	@echo -n "  session-start:           "; [ -f /tmp/gludd-session-start.json ] && echo "active" || echo "(none — window reset)"
 	@echo -n "  task-deadlines:          "; [ -f /tmp/gludd-task-deadlines.json ] && echo "active" || echo "(none)"
+	@echo -n "  multitask-state:         "; [ -f /tmp/gludd-multitask-state.json ] && $(UV) run python3 -c 'import json; d=json.load(open("/tmp/gludd-multitask-state.json")); print(f"pid={d.get(\"pid\")} zeroStreak={d.get(\"zeroStreak\",0)}")' || echo "(none)"
 	@echo "=== ENFORCEMENT STATUS COMPLETE ==="
 
 # Static coverage audit: match source → test imports (no pytest run).
@@ -3922,6 +4211,119 @@ test-scapy-adapter:
 		echo "scapy not installed — skipping scapy adapter tests"; \
 	fi
 
+# --- Collection Tests ---
+# binary_re collection: 8 roles + 3 knowledge modules (fuzzing_strategies, obfuscation_techniques, prompt_injection_detector)
+test-binary-re:
+	@$(UV) run python -m pytest collections/ansible_collections/general_ludd/binary_re/tests/ -v
+
+test-binary-unit:
+	@$(UV) run python -m pytest tests/unit/test_binary_re_deobfuscate.py tests/unit/test_binary_re_fuzz_target.py tests/unit/test_binary_re_fuzzing_strategies.py tests/unit/test_binary_versions.py tests/unit/test_binary_paths.py -v --tb=short
+
+# radio collection: 10 roles + 5 knowledge modules (antenna_types, frequency_allocations, modulation_schemes, propagation_models, radio_exam_data)
+test-radio:
+	@$(UV) run python -m pytest collections/ansible_collections/general_ludd/radio/tests/ -v
+
+# os_expert collection: 12 roles (Ansible-only, no Python modules yet)
+test-os-expert:
+	@if [ -d collections/ansible_collections/general_ludd/os_expert/tests ]; then \
+		$(UV) run python -m pytest collections/ansible_collections/general_ludd/os_expert/tests/ -v; \
+	else \
+		echo "os_expert collection has no Python tests yet (Ansible roles only)"; \
+	fi
+
+# STS (Security Token Service) test suite
+test-sts:
+	@$(UV) run python -m pytest tests/unit/test_sts_issuer.py tests/unit/test_sts_daemon_wiring.py tests/unit/test_sts_reaper.py tests/unit/test_sts_audit_model.py tests/unit/test_sts_audit.py tests/integration/sts/test_sts_module_integration.py tests/integration/test_secrets_sts_integration.py tests/e2e/test_e2e_security_sts.py -v --tb=short
+
+# VM sandbox test suite
+test-vm:
+	@$(UV) run python -m pytest tests/unit/test_vm_lifecycle.py tests/unit/test_security_sandboxes_vm_lifecycle.py tests/unit/test_vm_sandbox_backends.py tests/unit/test_vm_image_builder.py tests/unit/test_vm_image_builder_self_test.py tests/unit/test_vm_p4_real_executor.py tests/unit/test_vm_p5_real_firecracker.py tests/integration/test_vm_sandbox_integration.py tests/integration/sandboxes/test_vm_sandbox_integration.py tests/bench/test_vm_sandbox_overhead.py -v --tb=short
+
+# Run all collection test suites
+test-collections: test-binary-re test-radio test-os-expert test-e2e-test-gen test-language
+
+# e2e_test_gen collection: 5 roles (analyze_code_paths, write_e2e_tests, generate_scenarios, verify_coverage, validate_scenarios)
+test-e2e-test-gen:
+	@if [ -d collections/ansible_collections/general_ludd/e2e_test_gen/tests ]; then \
+		$(UV) run python -m pytest collections/ansible_collections/general_ludd/e2e_test_gen/tests/ -v; \
+	else \
+		echo "e2e_test_gen collection has no Python tests yet (Ansible roles only)"; \
+	fi
+
+# language collection: 8 roles (font_analyze, phonetic_transcribe, i18n_extract, bom_detect, locale_format, homoglyph_scan, unicode_analyze, encoding_detect)
+test-language:
+	@if [ -d collections/ansible_collections/general_ludd/language/tests ]; then \
+		$(UV) run python -m pytest collections/ansible_collections/general_ludd/language/tests/ -v; \
+	else \
+		echo "language collection has no Python tests yet (Ansible roles + knowledge modules only)"; \
+	fi
+
+# test-language-expert: E2E target per spec FEATURE_LANGUAGE_EXPERT.md Section 8.
+# Runs collection schema check + ALL unit tests + integration tests + coverage gate (>=85%).
+test-language-expert:
+	@echo "=== test-language-expert: schema + unit + integration + coverage ==="
+	@$(UV) run python -m pytest \
+		tests/unit/test_language_expert_collection.py \
+		tests/unit/test_language_phase_c.py \
+		tests/unit/test_language_phase_d.py \
+		tests/unit/test_language_phase_e.py \
+		tests/unit/test_language_phase_f.py \
+		tests/unit/test_language_font_data.py \
+		tests/unit/test_language_i18n_data.py \
+		tests/unit/test_language_role_integration.py \
+		tests/integration/test_language_expert_integration.py \
+		tests/integration/test_language_cli.py \
+		collections/ansible_collections/general_ludd/language/tests/ \
+		--cov=src/general_ludd/language \
+		--cov-report=term-missing \
+		--cov-fail-under=85 \
+		-v --tb=short
+
+# molecule-test-binary-re: runs molecule scenarios for binary_re collection roles
+molecule-test-binary-re:
+	@echo "=== molecule-test-binary-re ==="
+	@if [ -d molecule/playbooks/binary_re ]; then \
+		$(MAKE) --no-print-directory molecule-test SCENARIO=binary_re; \
+	else \
+		echo "binary_re collection has no molecule scenarios in molecule/playbooks/"; \
+	fi
+
+# molecule-test-radio: runs molecule scenarios for radio collection roles
+molecule-test-radio:
+	@echo "=== molecule-test-radio ==="
+	@if [ -d molecule/playbooks/radio ]; then \
+		$(MAKE) --no-print-directory molecule-test SCENARIO=radio; \
+	else \
+		echo "radio collection has no molecule scenarios in molecule/playbooks/"; \
+	fi
+
+# molecule-test-os-expert: runs molecule scenarios for os_expert collection roles
+molecule-test-os-expert:
+	@echo "=== molecule-test-os-expert ==="
+	@if [ -d molecule/playbooks/os_expert ]; then \
+		$(MAKE) --no-print-directory molecule-test SCENARIO=os_expert; \
+	else \
+		echo "os_expert collection has no molecule scenarios in molecule/playbooks/"; \
+	fi
+
+# molecule-test-e2e-test-gen: runs molecule scenarios for e2e_test_gen collection roles
+molecule-test-e2e-test-gen:
+	@echo "=== molecule-test-e2e-test-gen ==="
+	@if [ -d molecule/playbooks/e2e_test_gen ]; then \
+		$(MAKE) --no-print-directory molecule-test SCENARIO=e2e_test_gen; \
+	else \
+		echo "e2e_test_gen collection has no molecule scenarios in molecule/playbooks/"; \
+	fi
+
+# molecule-test-language: runs molecule scenarios for language collection roles
+molecule-test-language:
+	@echo "=== molecule-test-language ==="
+	@if [ -d molecule/playbooks/language ]; then \
+		$(MAKE) --no-print-directory molecule-test SCENARIO=language; \
+	else \
+		echo "language collection has no molecule scenarios in molecule/playbooks/"; \
+	fi
+
 # Run networking role lint + syntax validation together
 networking-validate: networking-role-lint networking-role-syntax
 	@echo "networking role validation complete"
@@ -4013,3 +4415,15 @@ find-untested:
 
 test-hot-module-load:
 	@node --experimental-strip-types -e "try { const m = require('/tmp/gludd-hot-enforce-session-start.js'); console.log('LOADED OK: typeof default=' + typeof m.default + ', keys=' + Object.keys(m).join()); } catch(e) { console.log('LOAD FAILED: ' + e.message); console.log('FALLBACK: loadHotModule would use defaultImpl'); }"
+
+diag-multitask:
+	@node --experimental-strip-types _diag_multitask.ts
+
+diag-e2e:
+	@node --experimental-strip-types _diag_e2e.ts
+
+show-multitask-state:
+	@if [ -f /tmp/gludd-multitask-state.json ]; then ls -la /tmp/gludd-multitask-state.json; echo "---"; cat /tmp/gludd-multitask-state.json; else echo "File does not exist: /tmp/gludd-multitask-state.json"; fi
+
+test-multitask-node: ## Run enforce-multitask behavioral node tests (node --test)
+	@node --experimental-strip-types --test .opencode/plugin/enforce-multitask.test.node.mjs

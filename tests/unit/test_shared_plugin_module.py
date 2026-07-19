@@ -1,4 +1,4 @@
-"""Structural + behavioral tests for .opencode/plugin/shared.ts (E.5 refactor).
+"""Structural + behavioral tests for .opencode/lib/shared.ts (E.5 refactor).
 
 Verifies the shared module exports the 5 key functions + 2 path constants
 that were extracted from duplicated patterns across 14 enforce-*.ts plugins.
@@ -9,10 +9,11 @@ path constants, and the enforce-floor.ts integration.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-SHARED_PATH = ROOT / ".opencode" / "plugin" / "shared.ts"
+SHARED_PATH = ROOT / ".opencode" / "lib" / "shared.ts"
 FLOOR_PATH = ROOT / ".opencode" / "plugin" / "enforce-floor.ts"
 
 
@@ -173,7 +174,7 @@ class TestJsonHelpers:
     def test_write_fail_open(self):
         src = _src()
         idx = src.find("export function writeJsonFile")
-        after = src[idx:idx + 200]
+        after = src[idx:idx + 300]
         assert "catch" in after
 
 
@@ -267,7 +268,8 @@ class TestEnforceFloorUsesShared:
     def test_imports_shared_helpers(self):
         src = FLOOR_PATH.read_text()
         assert 'import {' in src
-        assert '"./shared.ts"' in src
+        # shared.ts lives in .opencode/lib/ since the E.5 refactor
+        assert '"../lib/shared.ts"' in src
 
     def test_imports_is_subagent(self):
         src = FLOOR_PATH.read_text()
@@ -299,10 +301,13 @@ class TestEnforceFloorUsesShared:
 
     def test_no_duplicate_is_subagent_definition(self):
         src = FLOOR_PATH.read_text()
-        # After refactor, the inline _isSubagent function should be replaced
-        # by a note. There should not be a function body.
+        # After the refactor the inline _isSubagent function is gone entirely;
+        # the guard must come from the shared module instead.
         assert "function _isSubagent(): boolean" not in src
-        assert "function _isSubagent():" in src or "isSubagent imported" in src
+        assert "function _isSubagent()" not in src
+        assert re.search(
+            r'import\s+\{[^}]*\bisSubagent\b[^}]*\}\s+from\s+"[^"]*shared\.ts"', src
+        ), "enforce-floor.ts must import isSubagent from shared.ts"
 
     def test_no_duplicate_report_alive_definition(self):
         src = FLOOR_PATH.read_text()
@@ -314,11 +319,15 @@ class TestEnforceFloorUsesShared:
         after = src[idx:idx + 300]
         assert "isSubagent()" in after
 
-    def test_uses_is_subagent_in_text_complete(self):
+    def test_no_text_complete_hook(self):
+        """opencode >=1.17.9 removed text.complete; enforce-floor must not declare it.
+
+        The plugin is self-contained in tool.execute.before and detects message
+        boundaries from the inter-call idle gap instead.
+        """
         src = FLOOR_PATH.read_text()
-        idx = src.find('"experimental.text.complete": async')
-        after = src[idx:idx + 300]
-        assert "isSubagent()" in after
+        assert '"experimental.text.complete"' not in src
+        assert "experimental.text.complete" not in src
 
     def test_uses_is_disengaged_in_replace_of_old_blocks(self):
         src = FLOOR_PATH.read_text()
@@ -345,8 +354,9 @@ class TestEnforceFloorUsesShared:
         src = FLOOR_PATH.read_text()
         assert "export default" in src
 
-    def test_still_has_all_three_hooks(self):
+    def test_declares_tool_execute_before_hook_only(self):
+        """Post-1.17.9 enforce-floor exposes exactly one hook."""
         src = FLOOR_PATH.read_text()
         assert '"tool.execute.before"' in src
-        assert '"session.idle"' in src
-        assert '"experimental.text.complete"' in src
+        assert '"session.idle"' not in src
+        assert '"experimental.text.complete"' not in src

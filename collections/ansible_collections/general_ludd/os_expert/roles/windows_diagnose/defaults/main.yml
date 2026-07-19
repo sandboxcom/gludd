@@ -1,0 +1,14 @@
+---
+# windows_diagnose role defaults
+
+daemon_url: "http://localhost:8000"
+psk: ""
+
+artifact_dir: "C:\\Temp\\gludd-windows-diagnose"
+
+query_wmi: true
+query_eventlog: true
+query_registry: true
+query_services: true
+
+enable_git_push: false

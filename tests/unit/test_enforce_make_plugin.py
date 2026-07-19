@@ -123,6 +123,24 @@ def test_shell_meta_chars_allows_plain_make():
     assert not meta_re.search("make lint"), "plain make lint should NOT match"
 
 
+def test_shell_meta_chars_does_not_block_bare_parens():
+    """Bare `(` and `)` must NOT match — commit messages legitimately contain them
+    (e.g. MSG="fix foo (see #123)"). The shell-injection vector `$()` is still
+    caught via the `$` char in the class. See AGENTS.md Guardrail Integrity Policy.
+    """
+    source = _read_source()
+    meta_re = _extract_regex(source, "SHELL_META_CHARS")
+    assert meta_re is not None
+    assert not meta_re.search("fix foo (see #123)"), \
+        "bare parens in commit messages must NOT match (false-positive bug fix)"
+    assert not meta_re.search("(ls)"), "bare-paren subshell no longer blocked"
+    # Real injection vector preserved: $() caught via `$`
+    assert meta_re.search("$(whoami)"), "$() command substitution must still match"
+    assert meta_re.search("`whoami`"), "backtick substitution must still match"
+    assert meta_re.search("a; b"), "; chaining must still match"
+    assert meta_re.search("a | b"), "| pipe must still match"
+
+
 # ---------------------------------------------------------------------------
 # 3. invalidPatterns array exists and contains expected patterns
 # ---------------------------------------------------------------------------
@@ -354,7 +372,7 @@ def test_format_bash_blocked_message_exists():
 # 12. Behavioral simulation — ported hook logic tested against real commands
 # ---------------------------------------------------------------------------
 
-_SHELL_META_CHARS_BEHAVIORAL = re.compile(r"[|;&(){}$`\\!]")
+_SHELL_META_CHARS_BEHAVIORAL = re.compile(r"[|;&{}$`\\!]")
 
 _INVALID_PATTERNS_BEHAVIORAL: list[re.Pattern] = [
     re.compile(r"\b2>&1\b"),
@@ -607,3 +625,20 @@ def test_bash_check_allows_make_git_commit_with_msg():
 
 def test_bash_check_blocks_make_git_commit_with_metachar():
     assert _simulate_bash_check("make git-commit MSG='fix; rm -rf /'") is not None
+
+
+def test_bash_check_allows_make_git_commit_with_parens_in_msg():
+    """Regression: bare parens in MSG="..." must NOT be blocked.
+    Prior subagent had to drop parens from a commit message because
+    SHELL_META_CHARS matched `(` and `)` literally anywhere in the command.
+    Narrowed 2026-07-18: bare parens are data inside quoted strings.
+    """
+    assert _simulate_bash_check('make git-commit MSG="fix foo (see #123)"') is None
+    assert _simulate_bash_check("make ship-commit MSG='fix enforce-make (narrow parens matcher)' PUSH=0") is None
+
+
+def test_bash_check_still_blocks_dollar_paren_in_msg():
+    """`$()` command substitution must STILL be blocked even inside MSG —
+    narrowing bare parens does NOT weaken `$` detection."""
+    assert _simulate_bash_check('make git-commit MSG="$(whoami)"') is not None
+    assert _simulate_bash_check("make git-commit MSG='`whoami`'") is not None

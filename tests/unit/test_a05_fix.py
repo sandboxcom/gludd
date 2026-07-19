@@ -61,7 +61,7 @@ class TestOverloadKindAwareCap:
     """PROVIDER_ERROR / RATE_LIMITED must use overload_max_retries (10), not
     max_retries (3)."""
 
-    def test_provider_error_retries_through_10_attempts(self) -> None:
+    async def test_provider_error_retries_through_10_attempts(self) -> None:
         """503 PROVIDER_ERROR retries through 10 attempts (overload budget),
         not 4 (buggy blanket max_retries cap)."""
         gateway, call_count = _build_gateway_with_always_failing_primary(
@@ -72,8 +72,8 @@ class TestOverloadKindAwareCap:
             ),
         )
 
-        with patch("time.sleep"), pytest.raises(httpx.HTTPStatusError):
-            cast(Any, gateway).call_model_with_retry(
+        with patch("asyncio.sleep"), pytest.raises(httpx.HTTPStatusError):
+            await cast(Any, gateway).call_model_with_retry(
                 "primary",
                 [{"role": "user", "content": "hi"}],
                 base_backoff_seconds=0.0,
@@ -84,7 +84,7 @@ class TestOverloadKindAwareCap:
             f"got {call_count[0]}. The kind-aware cap is missing or broken."
         )
 
-    def test_rate_limited_retries_through_10_attempts(self) -> None:
+    async def test_rate_limited_retries_through_10_attempts(self) -> None:
         """429 RATE_LIMITED retries through 10 attempts (overload budget)."""
         gateway, call_count = _build_gateway_with_always_failing_primary(
             httpx.HTTPStatusError(
@@ -94,8 +94,8 @@ class TestOverloadKindAwareCap:
             ),
         )
 
-        with patch("time.sleep"), pytest.raises(httpx.HTTPStatusError):
-            cast(Any, gateway).call_model_with_retry(
+        with patch("asyncio.sleep"), pytest.raises(httpx.HTTPStatusError):
+            await cast(Any, gateway).call_model_with_retry(
                 "primary",
                 [{"role": "user", "content": "hi"}],
                 base_backoff_seconds=0.0,
@@ -112,13 +112,13 @@ class TestTransientKindStillCappedAtMaxRetries:
     failover_after_retries (3). The kind-aware fix must not loosen the
     fast-failover path."""
 
-    def test_connection_timeout_caps_at_failover_after(self) -> None:
+    async def test_connection_timeout_caps_at_failover_after(self) -> None:
         gateway, call_count = _build_gateway_with_always_failing_primary(
             httpx.ConnectTimeout("connect timeout"),
         )
 
-        with patch("time.sleep"), pytest.raises(httpx.ConnectTimeout):
-            cast(Any, gateway).call_model_with_retry(
+        with patch("asyncio.sleep"), pytest.raises(httpx.ConnectTimeout):
+            await cast(Any, gateway).call_model_with_retry(
                 "primary",
                 [{"role": "user", "content": "hi"}],
                 base_backoff_seconds=0.0,
@@ -129,13 +129,13 @@ class TestTransientKindStillCappedAtMaxRetries:
             f"got {call_count[0]}. The transient path was loosened."
         )
 
-    def test_read_timeout_caps_at_failover_after(self) -> None:
+    async def test_read_timeout_caps_at_failover_after(self) -> None:
         gateway, call_count = _build_gateway_with_always_failing_primary(
             httpx.ReadTimeout("read timeout"),
         )
 
-        with patch("time.sleep"), pytest.raises(httpx.ReadTimeout):
-            cast(Any, gateway).call_model_with_retry(
+        with patch("asyncio.sleep"), pytest.raises(httpx.ReadTimeout):
+            await cast(Any, gateway).call_model_with_retry(
                 "primary",
                 [{"role": "user", "content": "hi"}],
                 base_backoff_seconds=0.0,

@@ -27,6 +27,7 @@ class TestHotReloaderEventWiring:
             config_dir=str(tmp_path),
             event_bus=bus,
             playbooks_dir=str(pb_dir),
+            min_reload_interval_s=0,
         ), pb_dir
 
     def test_removed_playbook_publishes_playbook_removed_event(self, tmp_path):

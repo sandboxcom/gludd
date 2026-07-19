@@ -40,25 +40,33 @@ def _find_function_body(source: str, func_search: str) -> str:
 
 def _get_text_complete_body() -> str:
     source = _read_source()
-    return _find_function_body(source, '"text.complete"')
+    # Scope to defaultImpl to avoid the proxy's impl["text.complete"]
+    # string literal at the bottom of the file.
+    default_impl_start = source.index("const defaultImpl")
+    region = source[default_impl_start:]
+    return _find_function_body(region, "experimental.text.complete")
 
 
 # -- 1. Subagent guard: isSubagent() → return output unchanged ---------------
 
 def test_text_complete_has_subagent_guard():
     body = _get_text_complete_body()
-    assert "isSubagent()" in body, "text.complete must call isSubagent()"
+    assert "OPENCODE_SUBAGENT" in body, (
+        "text.complete must guard on OPENCODE_SUBAGENT env var"
+    )
     subagent_return = re.search(
-        r"if\s*\(\s*isSubagent\(\)\s*\)\s*return\s+output", body
+        r"if\s*\(\s*process\.env\.OPENCODE_SUBAGENT\s*===\s*\"1\"\s*\)\s*return\s+output",
+        body,
     )
     assert subagent_return is not None, (
-        "Subagent guard must be: if (isSubagent()) return output"
+        "Subagent guard must be: "
+        'if (process.env.OPENCODE_SUBAGENT === "1") return output'
     )
 
 
 def test_subagent_returns_before_gate_check():
     body = _get_text_complete_body()
-    subagent_pos = body.index("isSubagent()")
+    subagent_pos = body.index("OPENCODE_SUBAGENT")
     gate_status_pos = body.index(".gate-status")
     assert subagent_pos < gate_status_pos, (
         "Subagent guard must fire BEFORE .gate-status read"

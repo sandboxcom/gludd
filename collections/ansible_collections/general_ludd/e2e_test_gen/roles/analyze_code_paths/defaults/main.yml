@@ -1,0 +1,9 @@
+---
+# analyze_code_paths role defaults
+
+target_module: ""
+artifact_dir: "/tmp/gludd-e2e-test-gen"
+daemon_url: "http://localhost:8000"
+psk: ""
+
+enable_git_push: false

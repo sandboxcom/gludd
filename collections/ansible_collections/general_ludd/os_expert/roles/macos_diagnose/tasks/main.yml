@@ -1,0 +1,157 @@
+---
+# macos_diagnose role — gather macOS diagnostic data from unified log,
+# spdisaster_report, launchctl, nvram, and pmset.
+# Uses the python gatherer backend in files/macos_gather.py for
+# structured JSON output, with raw shell fallbacks.
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+  when: ansible_os_family == 'Darwin'
+
+- name: Gather structured diagnostics via python backend
+  when:
+    - ansible_os_family == 'Darwin'
+    - gather_unified_log | bool or gather_launchctl | bool or gather_nvram | bool or gather_pmset | bool
+  block:
+    - name: Copy macos_gather.py to target
+      ansible.builtin.copy:
+        src: macos_gather.py
+        dest: "{{ artifact_dir }}/macos_gather.py"
+        mode: "0755"
+
+    - name: Run gatherer — collect unified log, launchctl, nvram, pmset as JSON
+      ansible.builtin.command: >
+        python3 {{ artifact_dir }}/macos_gather.py
+        --output {{ artifact_dir }}/diagnostics.json
+        --log-window {{ log_window | default('5m') }}
+      register: _gather_result
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write gather stdout/stderr to artifact_dir
+      ansible.builtin.copy:
+        content: |
+          stdout: {{ _gather_result.stdout | default('') }}
+          stderr: {{ _gather_result.stderr | default('') }}
+          rc: {{ _gather_result.rc | default('') }}
+        dest: "{{ artifact_dir }}/gather_output.txt"
+        mode: "0644"
+      when: _gather_result is defined
+
+- name: Gather unified log (last 5 min, ndjson)
+  when:
+    - ansible_os_family == 'Darwin'
+    - gather_unified_log | bool
+  block:
+    - name: Run log show
+      ansible.builtin.command: log show --last 5m --style ndjson
+      register: _unified_log
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write unified log to artifact_dir
+      ansible.builtin.copy:
+        content: "{{ _unified_log.stdout | default('') }}"
+        dest: "{{ artifact_dir }}/unified_log.json"
+        mode: "0644"
+      when: _unified_log is success and _unified_log.stdout | default('', true) | length > 0
+
+- name: Gather system profiler (spdiagnose fallback)
+  when:
+    - ansible_os_family == 'Darwin'
+    - gather_spdiagnose | bool
+  block:
+    - name: Run system_profiler detail report
+      ansible.builtin.shell: |
+        spdiagnose 2>/dev/null || system_profiler SPHardwareDataType SPSoftwareDataType SPMemoryDataType SPStorageDataType SPNetworkDataType SPThunderboltDataType
+      register: _spdiagnose
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write system_profiler output to artifact_dir
+      ansible.builtin.copy:
+        content: "{{ _spdiagnose.stdout | default('') }}"
+        dest: "{{ artifact_dir }}/system_profiler.txt"
+        mode: "0644"
+      when: _spdiagnose is success and _spdiagnose.stdout | default('', true) | length > 0
+
+- name: Gather launchctl list
+  when:
+    - ansible_os_family == 'Darwin'
+    - gather_launchctl | bool
+  block:
+    - name: Run launchctl list
+      ansible.builtin.command: launchctl list
+      register: _launchctl_list
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write launchctl list to artifact_dir
+      ansible.builtin.copy:
+        content: "{{ _launchctl_list.stdout | default('') }}"
+        dest: "{{ artifact_dir }}/launchctl_list.txt"
+        mode: "0644"
+      when: _launchctl_list is success and _launchctl_list.stdout | default('', true) | length > 0
+
+    - name: Run launchctl print system
+      ansible.builtin.command: launchctl print system
+      register: _launchctl_print
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write launchctl print system to artifact_dir
+      ansible.builtin.copy:
+        content: "{{ _launchctl_print.stdout | default('') }}"
+        dest: "{{ artifact_dir }}/launchctl_print_system.txt"
+        mode: "0644"
+      when: _launchctl_print is success and _launchctl_print.stdout | default('', true) | length > 0
+
+- name: Gather NVRAM variables
+  when:
+    - ansible_os_family == 'Darwin'
+    - gather_nvram | bool
+  block:
+    - name: Run nvram -p
+      ansible.builtin.command: nvram -p
+      become: true
+      register: _nvram
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write nvram to artifact_dir
+      ansible.builtin.copy:
+        content: "{{ _nvram.stdout | default('') }}"
+        dest: "{{ artifact_dir }}/nvram.txt"
+        mode: "0644"
+      when: _nvram is success and _nvram.stdout | default('', true) | length > 0
+
+- name: Gather pmset (power management)
+  when:
+    - ansible_os_family == 'Darwin'
+    - gather_pmset | bool
+  block:
+    - name: Run pmset -g and pmset -g assertions
+      ansible.builtin.shell: |
+        echo "=== pmset -g ===" && pmset -g
+        echo ""
+        echo "=== pmset -g assertions ===" && pmset -g assertions
+      register: _pmset
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write pmset output to artifact_dir
+      ansible.builtin.copy:
+        content: "{{ _pmset.stdout | default('') }}"
+        dest: "{{ artifact_dir }}/pmset.txt"
+        mode: "0644"
+      when: _pmset is success and _pmset.stdout | default('', true) | length > 0

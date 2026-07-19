@@ -1,0 +1,36 @@
+---
+- name: Run GDB scripted analysis
+  ansible.builtin.command:
+    cmd: >-
+      {{ ansible_python_interpreter | default('/usr/bin/env python3') }}
+      {{ script_path }}
+      --target {{ target_binary }}
+      --mode scripted
+      --output {{ output_dir }}/scripted_analysis.json
+  register: _sa_result
+  changed_when: false
+  failed_when: _sa_result.rc not in [0]
+
+- name: Read scripted analysis artifact
+  ansible.builtin.slurp:
+    src: "{{ output_dir }}/scripted_analysis.json"
+  register: _sa_raw
+
+- name: Parse scripted analysis artifact
+  ansible.builtin.set_fact:
+    scripted_analysis_artifact: >-
+      {{ _sa_raw.content | b64decode | from_json
+         if (_sa_raw is defined and _sa_raw.content is defined) else {} }}
+
+- name: Write Python GDB script to disk
+  ansible.builtin.copy:
+    content: "{{ scripted_analysis_artifact.get('script', '') }}"
+    dest: "/tmp/gludd-gdb-script.py"
+    mode: "0644"
+  when: scripted_analysis_artifact.get('script', '') | length > 0
+
+- name: Report scripted analysis summary
+  ansible.builtin.debug:
+    msg: >-
+      Scripted analysis complete:
+      log_file={{ scripted_analysis_artifact.get('log_file', 'unknown') }}

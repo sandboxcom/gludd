@@ -1,0 +1,10 @@
+---
+- name: Converge
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: "Include android_security"
+      ansible.builtin.include_role:
+        name: "android_security"
+      vars:
+        enable_git_push: false

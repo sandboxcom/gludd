@@ -145,7 +145,15 @@ class ResearchFinding(BaseModel):
 
     finding_id: str = Field(default_factory=lambda: uuid.uuid4().hex[:12])
     claim: str = ""
-    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    confidence: float = Field(default=0.0)
+
+    @field_validator("confidence", mode="before")
+    @classmethod
+    def _clamp_confidence(cls, v: Any) -> float:
+        """Validate and clamp confidence to [0.0, 1.0]."""
+        if not isinstance(v, (int, float)):
+            raise ValueError(f"confidence must be a float, got {v!r}")
+        return max(0.0, min(float(v), 1.0))
     citations: list[Citation] = Field(default_factory=list)
     corroborating_sources: int = 0
     contradictory_sources: int = 0
@@ -467,7 +475,7 @@ class ResearcherAgent:
                     f_i.corroborating_sources += 1
                     f_j.corroborating_sources += 1
         for finding in findings:
-            extra = min(0.3, math.log2(finding.corroborating_sources) * 0.1)
+            extra = min(0.3, math.log2(finding.corroborating_sources + 1) * 0.1)
             finding.confidence = min(1.0, round(finding.confidence + extra, 2))
 
     @staticmethod

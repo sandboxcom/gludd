@@ -1,0 +1,17 @@
+---
+frida_tools_path: "/usr/local/bin"
+target_binary: ""
+process_spec: ""
+output_dir: "/tmp/gludd-frida-instrument"
+analysis_mode: "basic"
+enable_function_interception: false
+enable_memory_scanning: false
+enable_ssl_pinning_bypass: false
+enable_tracing: false
+frida_intercept_targets: "open,read,write"
+frida_memory_pattern: ""
+frida_memory_hit_cap: 1000
+frida_trace_ms: 5000
+frida_trace_ret: false
+frida_trace_exec: false
+frida_trace_call_cap: 50000

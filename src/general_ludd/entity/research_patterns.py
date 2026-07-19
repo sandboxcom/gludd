@@ -14,7 +14,7 @@ IP_PATTERN = re.compile(
     r"(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\b"
 )
 
-SEC_EDGAR_CIK_PATTERN = re.compile(r"CIK\s*(?:No\.?|Number|#)?\s*[:.]?\s*(\d{7,10})", re.IGNORECASE)
+SEC_EDGAR_CIK_PATTERN = re.compile(r"CIK\s*(?:No\.?|Number|#|is)?\s*[:.]?\s*(\d{6,10})", re.IGNORECASE)
 SEC_EDGAR_FILE_PATTERN = re.compile(
     r"(?:Accession|File)\s*(?:No\.?|Number|#)?\s*[:.]?\s*(\d{1,3}-\d{1,6})",
     re.IGNORECASE,
@@ -24,14 +24,14 @@ SEC_EDGAR_FORM_PATTERN = re.compile(
 )
 
 COMPANIES_HOUSE_PATTERN = re.compile(
-    r"(?:Company|Registration)\s*(?:No\.?|Number|#)?\s*[:.]?\s*"
-    r"([A-Z]{2}\d{6}|[A-Z]\d{7}|\d{8})",
+    r"(?:(?:Company|Companies|Registration)\s*(?:No\.?|Number|#)?\s*[:.]?\s*)?"
+    r"\b([A-Z]{2}\d{6}|[A-Z]\d{7}|\d{8}\b)",
     re.IGNORECASE,
 )
 
 FUNDING_ROUND_PATTERN = re.compile(
     r"(Series\s+[A-G]|Seed|Pre-Seed|Angel|Bridge|Growth|IPO\s+Round|"
-    r"Series\s+[A-G]\d?|\$\d+(?:\.\d+)?[MBK]?\s*(?:funding|round|raised))",
+    r"Series\s+[A-G]\d?|\$\d+(?:\.\d+)?\s*(?:[MBK]|million|billion)?\s*(?:funding|round|raised|seed))",
     re.IGNORECASE,
 )
 
@@ -41,7 +41,7 @@ FUNDING_AMOUNT_PATTERN = re.compile(
 
 ACQUISITION_PATTERN = re.compile(
     r"(acquired\s+by|acquisition\s+of|merged\s+with|merger\s+with|"
-    r"purchased\s+by|takeover\s+of|buyout\s+of)\s+([A-Z][A-Za-z0-9\s&.,]{3,60})",
+    r"purchased\s+by|takeover\s+of|buyout\s+of)\s+([A-Z][A-Za-z0-9&.]{1,59})",
     re.IGNORECASE,
 )
 

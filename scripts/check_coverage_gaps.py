@@ -131,7 +131,9 @@ def _count_test_functions(test_file: Path) -> int:
         return 0
     count = 0
     for node in ast.walk(tree):
-        if isinstance(node, ast.FunctionDef) and node.name.startswith("test_"):
+        if isinstance(
+            node, (ast.FunctionDef, ast.AsyncFunctionDef)
+        ) and node.name.startswith("test_"):
             count += 1
     return count
 

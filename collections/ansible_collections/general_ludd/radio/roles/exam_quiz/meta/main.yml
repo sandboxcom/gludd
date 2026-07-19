@@ -1,0 +1,18 @@
+---
+galaxy_info:
+  role_name: exam_quiz
+  author: Gludd Agent
+  description: >
+    Structured ham (FCC Technician / General / Extra) and marine
+    (ROC-M, GMDSS) exam Q&A — select, filter, quiz.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: ["8", "9"]
+    - name: Ubuntu
+      versions: [focal, jammy, noble]
+    - name: MacOSX
+      versions: [all]
+  galaxy_tags: [exam, quiz, ham, fcc, marine, license]
+dependencies: []

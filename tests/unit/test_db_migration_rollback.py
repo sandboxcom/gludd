@@ -262,7 +262,7 @@ class TestFullChainRoundTrip:
             # Verify all tables are gone
             with eng.connect():
                 tables = inspect(eng).get_table_names()
-            assert len(tables) == 0, (
+            assert tables == ["alembic_version"], (
                 f"base downgrade left tables: {tables}"
             )
             eng.dispose()
@@ -349,8 +349,8 @@ class TestFullChainRoundTrip:
             url = f"sqlite:///{db_path}"
             db_cfg = get_alembic_config(url=url)
 
-            # Stamp a mid-point revision, then upgrade the rest
-            command.stamp(db_cfg, "010")
+            # Upgrade to a mid-point revision, then upgrade the rest
+            command.upgrade(db_cfg, "010")
             command.upgrade(db_cfg, "head")
 
             from sqlalchemy import create_engine
@@ -375,7 +375,7 @@ class TestFullChainRoundTrip:
             db_cfg = get_alembic_config(url=url)
 
             # Start at 009, upgrade to 010, then downgrade back to 009
-            command.stamp(db_cfg, "009")
+            command.upgrade(db_cfg, "009")
             command.upgrade(db_cfg, "010")
 
             from sqlalchemy import create_engine
@@ -414,10 +414,15 @@ class TestFullChainRoundTrip:
             tables_003 = inspect(eng).get_table_names()
             assert len(tables_003) > 0
 
+            # Verify plan_artifact column exists after 003 upgrade
+            cols_003 = {c["name"] for c in inspect(eng).get_columns("todos")}
+            assert "plan_artifact" in cols_003
+
             command.downgrade(db_cfg, "002")
-            tables_002 = inspect(eng).get_table_names()
-            assert tables_002 != tables_003, (
-                "downgrade 003->002 should change schema"
+            # Column removed but tables unchanged (003 only adds a column)
+            cols_002 = {c["name"] for c in inspect(eng).get_columns("todos")}
+            assert "plan_artifact" not in cols_002, (
+                "downgrade 003->002 should remove plan_artifact column"
             )
 
             # Downgrade back to 001
@@ -430,7 +435,9 @@ class TestFullChainRoundTrip:
             with patch.dict(os.environ, {"ALEMBIC_DOWNGRADE_CONFIRMED": "yes"}):
                 command.downgrade(db_cfg, "base")
             tables_base = inspect(eng).get_table_names()
-            assert len(tables_base) == 0, f"base downgrade left tables: {tables_base}"
+            assert tables_base == ["alembic_version"], (
+                f"base downgrade left tables: {tables_base}"
+            )
             eng.dispose()
         finally:
             os.unlink(db_path)
@@ -491,7 +498,9 @@ class TestAllMigrationsUpgradeDowngradeParity:
             with patch.object(mod, "op") as mock_op, contextlib.suppress(Exception):
                 mod.upgrade()
             create_count = len(mock_op.create_table.call_args_list)
-            with patch.object(mod, "op") as mock_op2, contextlib.suppress(Exception):
+            with patch.object(mod, "op") as mock_op2, \
+                 patch.dict(os.environ, {"ALEMBIC_DOWNGRADE_CONFIRMED": "yes"}), \
+                 contextlib.suppress(Exception):
                 mod.downgrade()
             drop_count = len(mock_op2.drop_table.call_args_list)
             assert create_count == drop_count, (
@@ -505,9 +514,17 @@ class TestAllMigrationsUpgradeDowngradeParity:
             with patch.object(mod, "op") as mock_op, contextlib.suppress(Exception):
                 mod.upgrade()
             add_count = len(mock_op.add_column.call_args_list)
-            with patch.object(mod, "op") as mock_op2, contextlib.suppress(Exception):
+            if add_count == 0 and mock_op.batch_alter_table.called:
+                batch_mock = mock_op.batch_alter_table.return_value.__enter__.return_value
+                add_count = len(batch_mock.add_column.call_args_list)
+            with patch.object(mod, "op") as mock_op2, \
+                 patch.dict(os.environ, {"ALEMBIC_DOWNGRADE_CONFIRMED": "yes"}), \
+                 contextlib.suppress(Exception):
                 mod.downgrade()
             drop_count = len(mock_op2.drop_column.call_args_list)
+            if drop_count == 0 and mock_op2.batch_alter_table.called:
+                batch_mock = mock_op2.batch_alter_table.return_value.__enter__.return_value
+                drop_count = len(batch_mock.drop_column.call_args_list)
             assert add_count == drop_count, (
                 f"{fname}: upgrade adds {add_count} columns, "
                 f"downgrade drops {drop_count}"
@@ -519,9 +536,17 @@ class TestAllMigrationsUpgradeDowngradeParity:
             with patch.object(mod, "op") as mock_op, contextlib.suppress(Exception):
                 mod.upgrade()
             create_count = len(mock_op.create_index.call_args_list)
-            with patch.object(mod, "op") as mock_op2, contextlib.suppress(Exception):
+            if create_count == 0 and mock_op.batch_alter_table.called:
+                batch_mock = mock_op.batch_alter_table.return_value.__enter__.return_value
+                create_count = len(batch_mock.create_index.call_args_list)
+            with patch.object(mod, "op") as mock_op2, \
+                 patch.dict(os.environ, {"ALEMBIC_DOWNGRADE_CONFIRMED": "yes"}), \
+                 contextlib.suppress(Exception):
                 mod.downgrade()
             drop_count = len(mock_op2.drop_index.call_args_list)
+            if drop_count == 0 and mock_op2.batch_alter_table.called:
+                batch_mock = mock_op2.batch_alter_table.return_value.__enter__.return_value
+                drop_count = len(batch_mock.drop_index.call_args_list)
             assert create_count == drop_count, (
                 f"{fname}: upgrade creates {create_count} indexes, "
                 f"downgrade drops {drop_count}"

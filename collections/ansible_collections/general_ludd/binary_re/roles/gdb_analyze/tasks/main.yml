@@ -1,0 +1,38 @@
+---
+- name: Validate GDB path
+  ansible.builtin.stat:
+    path: "{{ gdb_path }}"
+  register: _gdb_stat
+
+- name: Fail if GDB not found
+  ansible.builtin.fail:
+    msg: "GDB not found at {{ gdb_path }}"
+  when: not _gdb_stat.stat.exists
+
+- name: Create output directory
+  ansible.builtin.file:
+    path: "{{ output_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Run GDB breakpoint analysis
+  ansible.builtin.include_tasks: breakpoint_analysis.yml
+  when: enable_breakpoints | bool
+
+- name: Run GDB stack trace analysis
+  ansible.builtin.include_tasks: stack_trace.yml
+  when: enable_stack_trace | bool
+
+- name: Run GDB register dump
+  ansible.builtin.include_tasks: register_dump.yml
+  when: enable_register_dump | bool
+
+- name: Run GDB scripted analysis
+  ansible.builtin.include_tasks: scripted_analysis.yml
+  when: enable_scripted_analysis | bool
+
+- name: Write GDB analysis artifact
+  ansible.builtin.copy:
+    content: "{{ {'role': 'gdb_analyze', 'status': 'completed', 'verdict': 'pass', 'modes': analysis_mode, 'generated_at': lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ')} | to_nice_json }}"
+    dest: "{{ output_dir }}/gdb_analyze.json"
+    mode: "0644"

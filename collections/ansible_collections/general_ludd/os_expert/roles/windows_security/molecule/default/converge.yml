@@ -1,0 +1,8 @@
+---
+- name: Converge
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: "Include windows_security"
+      ansible.builtin.include_role:
+        name: "windows_security"

@@ -1,0 +1,17 @@
+---
+- name: Ensure artifact directory exists
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Run unicode_analyze standalone script
+  ansible.builtin.script:
+    cmd: "files/unicode_analyze.py --input '{{ input_text }}' --output '{{ artifact_dir }}/unicode_analysis.json' {% if not include_codepoints | default(true) %}--no-codepoints{% endif %} {% if not include_normalization | default(true) %}--no-normalization{% endif %} {% if not include_grapheme_clusters | default(true) %}--no-grapheme{% endif %} {% if not include_surrogates | default(true) %}--no-surrogates{% endif %} {% if not include_utf_encodings | default(true) %}--no-utf-encodings{% endif %}"
+    executable: "{{ ansible_python_interpreter | default('python3') }}"
+  register: unicode_result
+  changed_when: false
+
+- name: Print unicode analysis summary
+  ansible.builtin.debug:
+    msg: "{{ unicode_result.stdout_lines }}"

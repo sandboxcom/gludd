@@ -1,0 +1,21 @@
+---
+# link_budget defaults — safe-by-default
+link_budget_enabled: false
+link_budget_tx_power_dbm: 30.0
+link_budget_tx_antenna_type: dipole_half_wave
+link_budget_tx_antenna_gain_dbi: 2.15
+link_budget_tx_line_loss_db: 1.0
+link_budget_tx_height_m: 30.0
+link_budget_rx_antenna_type: dipole_half_wave
+link_budget_rx_antenna_gain_dbi: 2.15
+link_budget_rx_line_loss_db: 1.0
+link_budget_rx_height_m: 1.5
+link_budget_rx_sensitivity_dbm: -120.0
+link_budget_required_snr_db: 10.0
+link_budget_freq_hz: 144000000
+link_budget_distance_m: 10000.0
+link_budget_model: free_space
+link_budget_rain_enabled: false
+link_budget_rain_rate_mmh: 5.0
+link_budget_rain_polarization: horizontal
+link_budget_output_dir: /tmp/gludd-link-budget

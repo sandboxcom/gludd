@@ -1,0 +1,57 @@
+---
+# decision_maker_lookup role — expose the decision_makers.py module_util.
+
+- name: Validate decision_maker_lookup parameters
+  ansible.builtin.assert:
+    that:
+      - decision_maker_lookup_enabled | bool
+      - (decision_maker_lookup_list_countries | bool) or (decision_maker_lookup_country is defined and decision_maker_lookup_country | length == 2)
+    fail_msg: >
+      decision_maker_lookup requires a 2-letter ISO country code
+      (decision_maker_lookup_country) unless decision_maker_lookup_list_countries=true.
+
+- name: Ensure output directory exists
+  ansible.builtin.file:
+    path: "{{ decision_maker_lookup_output_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Copy decision_makers.py module_util to target
+  ansible.builtin.copy:
+    src: "{{ _decision_makers_module }}"
+    dest: "{{ decision_maker_lookup_output_dir }}/decision_makers.py"
+    mode: "0755"
+
+- name: Run decision_makers module_util
+  ansible.builtin.command: >
+    {{ ansible_python_interpreter | default('python3') }}
+    {{ decision_maker_lookup_output_dir }}/decision_makers.py
+    --country {{ decision_maker_lookup_country }}
+    {% if decision_maker_lookup_branch is defined and decision_maker_lookup_branch | length > 0 %}--branch {{ decision_maker_lookup_branch }}{% endif %}
+    {% if decision_maker_lookup_list_countries | bool %}--list-countries{% endif %}
+  register: _dm_result
+  changed_when: false
+  failed_when: false
+
+- name: Parse decision_makers result
+  ansible.builtin.set_fact:
+    decision_maker_lookup_result: "{{ (_dm_result.stdout | from_json) if _dm_result.stdout | default('') | length > 0 else {} }}"
+  when: _dm_result.stdout | default('') | length > 0
+
+- name: Write JSON output
+  ansible.builtin.copy:
+    content: "{{ decision_maker_lookup_result | to_nice_json }}"
+    dest: "{{ decision_maker_lookup_output_dir }}/decision_maker_lookup.json"
+    mode: "0644"
+  when: decision_maker_lookup_result is defined
+
+- name: Register decision_maker_lookup verdict
+  ansible.builtin.set_fact:
+    decision_maker_lookup_verdict:
+      role: decision_maker_lookup
+      country: "{{ decision_maker_lookup_country | default('N/A') }}"
+      module_util: decision_makers.py
+      found: "{{ decision_maker_lookup_result.found | default(false) }}"
+      role_count: "{{ decision_maker_lookup_result.count | default(0) }}"
+      branch_filter: "{{ decision_maker_lookup_branch | default('none') }}"
+      output: "{{ decision_maker_lookup_output_dir }}/decision_maker_lookup.json"

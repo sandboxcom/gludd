@@ -58,7 +58,7 @@ fail_chunks = [(s, e) for s, e, ok in failing_chunks if not ok]
 print(f"\nPASS chunks: {len(pass_chunks)}, FAIL chunks: {len(fail_chunks)}")
 for s, e in pass_chunks:
     print(f"  Removing [{s}:{e}] makes it PASS")
-
+    
 # If there's a chunk that fixes it when removed, focus there
 if pass_chunks:
     # Test finer-grained in the first passing chunk

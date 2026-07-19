@@ -1,0 +1,19 @@
+---
+galaxy_info:
+  role_name: conflicts_treaties_lookup
+  author: Agentic Harness Agent
+  description: >
+    Expose the conflicts_treaties.py module_util to agents: active conflicts
+    and ratified multilateral treaties for a country. Data is a static
+    knowledge base; not real-time intelligence.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+  galaxy_tags: [governance, conflict, treaties, geopolitics]
+dependencies: []

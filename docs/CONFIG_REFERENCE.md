@@ -15,15 +15,21 @@ run the daemon end-to-end.
 ## TL;DR — minimal path (3 commands)
 
 ```bash
-make init                       # 1. install deps (uv sync) + create dirs
-export ZAI_API_KEY=sk-...       # 2. configure ONE model provider
-gludd daemon                    # 3. start server (127.0.0.1:8000)
+make init                          # 1. install deps (uv sync) + create dirs
+export ZAI_API_KEY=sk-...          # 2. configure ONE model provider
+export GLUDD_CONFIG_DIR="$PWD/config"  # 3. REQUIRED from a repo checkout — see §2.0
+gludd daemon                       # 4. start server (127.0.0.1:8000)
 # in another shell:
+gludd models router-status         # MUST list a profile — empty means step 3 was skipped
 gludd add "Write a hello-world test" --work-type code
-gludd status                    # watch the todo move to completed
+gludd status                       # watch the todo move to completed
 ```
 
 That is the whole product spine. Everything below is detail.
+
+> **Do not skip step 3.** The repo's `config/` directory is not on the config
+> discovery path. Without `GLUDD_CONFIG_DIR`, no model profiles load and every
+> agent silently "completes" with empty output. See §2.0.
 
 ---
 
@@ -40,12 +46,12 @@ All are optional unless marked **required**. Defaults are read from
 | `GLUDD_PSK` | Pre-shared key (Bearer token) for daemon↔CLI/worker auth. Auto-generated and printed when binding a non-loopback interface. | `""` (auth disabled) | optional¹ | `daemon.py:2369`, `cli.py:1151` |
 | `GLUDD_REQUIRE_AUTH` | Force auth on. Truthy values: `1`,`true`,`yes`,`on`. When set without `GLUDD_PSK`, worker surface fails CLOSED (503). | `""` | optional | `daemon.py:2378` |
 | `GLUDD_ALLOW_NO_AUTH` | Explicitly bypass auth (dev only). Truthy set as above. | `""` | optional | `daemon.py:2375` |
-| `GLUDD_CONFIG_DIR` | Override the config directory (otherwise `~/.config/general-ludd/`). | builtin | optional | `daemon.py:2313` |
+| `GLUDD_CONFIG_DIR` | Override the config directory. **Set this when running from a repo checkout** — the repo's own `config/` tree is NOT on the discovery path. See §2.0. | builtin | optional | `daemon.py:2313` |
 | `GLUDD_TEMPLATES_DIR` | Override prompt-templates directory. | builtin | optional | `daemon.py:2315` |
 | `GLUDD_PLAYBOOKS_DIR` | Override ansible playbooks directory. | builtin | optional | `daemon.py:2317` |
 | `GLUDD_TICK_INTERVAL` | Event-loop tick interval in seconds. | `1.0` | optional | `daemon.py:2307` |
 | `GLUDD_LOG_LEVEL` | Daemon log level: `debug`\|`info`\|`warning`\|`error`. | `info` | optional | `daemon.py:2309` |
-| `GLUDD_WRITER_MODE` | DB writer path: `inline` (single-process) or `subprocess` (isolated writer queue, beta.3). | `inline` | optional | `daemon.py:898` |
+| `GLUDD_WRITER_MODE` | DB writer path. **`inline` is the only working mode — do NOT set `subprocess`** (see §5, Experimental flags). | `inline` | optional | `daemon.py:898` |
 | `GLUDD_DB_PATH` | SQLite database file path. | `$XDG_DATA_HOME/general-ludd/general-ludd.db` (→ `~/.local/share/general-ludd/general-ludd.db`) | optional | `db/session.py:25` |
 | `GLUDD_DAEMON_URL` | Base URL the CLI / renderer use to reach the daemon. | `http://localhost:8000` | optional | `renderers/runner.py:230` |
 | `GLUDD_WORKER_ID` | Worker identifier (multi-worker disambiguation; clamped to 1 on SQLite). | `worker` | optional | `worker/app.py:306` |
@@ -126,15 +132,49 @@ services without an explicit budget entry still get observed.
 
 ## 2. Config Files
 
-All shipped under `config/`. Operators override by copying into
-`~/.config/general-ludd/` (user) or `/etc/general-ludd/` (system); env vars
-win over all file layers. Load priority (high → low):
+### 2.0 Config discovery — read this first
+
+The daemon searches for its config directory in exactly this order:
+
+1. `$GLUDD_CONFIG_DIR` (if set)
+2. `~/.config/general-ludd`
+3. `/etc/general-ludd`
+
+**The repo's own `config/` directory is NOT on that path.** It is a set of
+*examples to copy*, not a location the daemon reads.
+
+> **The #1 "why does nothing happen?" trap.** If you start the daemon from a
+> repo checkout **without `GLUDD_CONFIG_DIR` set**, no `model_profiles/` are
+> found, so no model profiles load, the model gateway stays `None`, and the
+> dispatcher silently falls back to a **no-op executor**. Every dispatched agent
+> then returns `status="completed"` with **empty output** and **no warning is
+> logged** — while `/healthz` and `/readyz` keep returning 200/ready. Agents
+> appear to succeed instantly and do nothing.
+>
+> Do one of these before starting the daemon:
+>
+> ```bash
+> export GLUDD_CONFIG_DIR="$PWD/config"        # point at the repo's config tree
+> # ...or install the config into the real discovery path:
+> mkdir -p ~/.config/general-ludd
+> cp -r config/model_profiles ~/.config/general-ludd/
+> cp config/general-ludd.yml ~/.config/general-ludd/
+> ```
+>
+> Confirm it worked: `gludd models router-status` must list an active profile.
+> An empty profile list means you are in the no-op-executor failure mode.
+
+### 2.0.1 Layering
+
+Operators override by copying into `~/.config/general-ludd/` (user) or
+`/etc/general-ludd/` (system); env vars win over all file layers. Load priority
+(high → low):
 
 1. Environment variables
 2. `~/.config/general-ludd/user.yml` — per-user overrides
 3. `.general-ludd/agent_config.yml` — per-project agent settings
 4. `/etc/general-ludd/general-ludd.yml` — system defaults
-5. Built-in defaults (this `config/` tree)
+5. Built-in defaults compiled into the package (**not** the repo's `config/` tree)
 
 ### 2.1 Top-level files
 
@@ -298,7 +338,11 @@ router-status` (against a running daemon) lists the active profile.
 
 ### Step 3 — Start the daemon
 
+**From a repo checkout, set `GLUDD_CONFIG_DIR` first** (§2.0) — otherwise no model
+profiles load and the dispatcher silently no-ops.
+
 ```bash
+export GLUDD_CONFIG_DIR="$PWD/config"
 gludd daemon
 # or with flags:
 gludd daemon --host 127.0.0.1 --port 8000 --log-level info --tick-interval 1.0
@@ -314,6 +358,11 @@ registers model/MCP/permission subsystems.
 (equivalently `gludd health`). The first tick logs show the event loop
 running. Binding to a non-loopback host auto-generates and prints a `GLUDD_PSK`
 — all clients must then send `Authorization: Bearer <psk>`.
+
+> **`/healthz` and `/readyz` returning 200/ready does NOT prove the daemon can do
+> any work.** They report 200 even when zero model profiles loaded and the
+> dispatcher is a no-op. The real liveness check is
+> `gludd models router-status` — it must list an active profile. See §2.0.
 
 **Verified:** the daemon factory and event loop import cleanly
 (`make healthcheck`); full boot behaviour is pinned by
@@ -368,15 +417,46 @@ make gate-background && make gate-status-check
 | `GLUDD_REQUIRE_AUTH is set but no GLUDD_PSK configured ... failing CLOSED (503)` | auth forced without a PSK | `export GLUDD_PSK=$(openssl rand -hex 32)` and send it as Bearer token, or unset `GLUDD_REQUIRE_AUTH` |
 | 401 on CLI calls | daemon bound to non-loopback (auto-PSK) but CLI lacks it | re-read the PSK printed at daemon boot; `export GLUDD_PSK=<that value>` |
 | Todo stuck in `queued` | no model profile reachable / key missing | confirm the profile's `credential_alias` env var is set; `gludd models router-status` |
+| **Agents return `completed` instantly with EMPTY output, no warning, health still 200** | **No model profiles were found, so the dispatcher fell back to a no-op executor.** Almost always: the daemon was started from a repo checkout without `GLUDD_CONFIG_DIR`. | Set `GLUDD_CONFIG_DIR` (or install the config into `~/.config/general-ludd/`) and restart — see §2.0. Verify with `gludd models router-status`. |
+| Every write endpoint fails / DB is read-only | `GLUDD_WRITER_MODE=subprocess` was set | Unset it. `inline` is the only working mode — see §5. |
 | `non-SQLite URL refused` | `DATABASE_URL` points at Postgres | unset it (SQLite-only this release); Postgres is unsupported |
 | `gunicorn workers clamped to 1` warning | `--workers N>1` on SQLite | expected; single-worker is the honest SQLite config |
 | Config not applied | layering mismatch | env vars > `~/.config/general-ludd/user.yml` > `.general-ludd/agent_config.yml` > `/etc/general-ludd/general-ludd.yml` > defaults |
 
 ---
 
-## 5. Cross-references
+## 5. Experimental flags — DO NOT ENABLE
+
+These knobs exist in the code and in config schemas but are **not functional**.
+They are listed here so operators do not "discover" them and turn them on.
+
+### `GLUDD_WRITER_MODE=subprocess` — structurally non-functional
+
+Setting this **breaks every write endpoint.** Three independent defects:
+
+- The `WriteQueue` is an in-process deque with no IPC, while the writer is a
+  real subprocess — the queue **cannot reach the writer child** at all.
+- A config-shape bug leaves the writer child permanently in a stub branch, so it
+  never does any work.
+- HTTP workers are handed a genuinely read-only engine (`PRAGMA query_only=ON`).
+
+Net effect: writes are rejected and the writer does nothing.
+**`inline` (the default) is the only working mode.** Do not set this variable.
+
+### `pipeline.enabled` (feature #77) — EXPERIMENTAL, do not enable
+
+The pipeline feature's quality gate is hardcoded to `return True` — it reports
+"GREEN — committed" for a validation that never ran — and its anti-clobber merge
+passes the repo's own content as both the merge base and "ours", so it **can
+never detect a conflict**. It is harmless today only because nothing feeds it.
+Leave `pipeline.enabled` off.
+
+---
+
+## 6. Cross-references
 
 - `docs/quickstart.md` — fast-path narrative version of §3
+- `docs/RELEASE_RUNBOOK.md` — cutting a release and verifying it actually shipped
 - `docs/configuration.md` — detailed `general-ludd.yml` field reference
 - `docs/model-setup.md` — model provider onboarding
 - `docs/PROVIDER_ONBOARDING.md` — adding a new provider

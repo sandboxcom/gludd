@@ -1,0 +1,49 @@
+---
+- name: Converge
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Seed mock transform script
+      ansible.builtin.copy:
+        content: |
+          #!/usr/bin/env python3
+          import argparse, json, sys
+          p = argparse.ArgumentParser()
+          p.add_argument("--input", default="")
+          p.add_argument("--recipe", default="")
+          p.add_argument("--output", default="")
+          p.add_argument("--key", default="")
+          p.add_argument("--enable-api", action="store_true")
+          p.add_argument("--api-url", default="")
+          args = p.parse_args()
+          result = {"backend": "mock", "recipe": args.recipe,
+                    "input_length": len(args.input), "output_length": len(args.input)}
+          with open(args.output, "w") as f:
+              json.dump(result, f)
+        dest: /tmp/gludd-cc-mock/transform.py
+        mode: "0755"
+
+    - name: Run cyberchef_transform role
+      ansible.builtin.include_role:
+        name: general_ludd.binary_re.cyberchef_transform
+      vars:
+        input_data: "SGVsbG8gV29ybGQ="
+        recipe: "From Base64"
+        output_dir: "/tmp/gludd-cc-mock"
+        transform_script: "/tmp/gludd-cc-mock/transform.py"
+
+    - name: Assert artifact written
+      ansible.builtin.stat:
+        path: /tmp/gludd-cc-mock/cyberchef_transform.json
+      register: _stat
+
+    - name: Verify artifact exists
+      ansible.builtin.assert:
+        that: _stat.stat.exists
+        fail_msg: "cyberchef_transform.json not written"
+
+    - name: Cleanup
+      ansible.builtin.file:
+        path: /tmp/gludd-cc-mock
+        state: absent

@@ -1,0 +1,23 @@
+---
+galaxy_info:
+  role_name: font_analyze
+  author: Agentic Harness Agent
+  description: >
+    Analyze font files (OpenType, TrueType, WOFF, WOFF2). Parses font
+    headers and tables (cmap, name, OS/2, head, hhea, hmtx, post, GSUB,
+    GPOS). Extracts metrics (ascent, descent, line gap, cap height,
+    x-height, em units). Checks kerning, ligatures, variable font axes
+    (wght, wdth, ital, opsz, slnt), CJK font specifics, monospace
+    detection, emoji font detection, web font validation, and font
+    subsetting analysis. Produces JSON artifact. Wires to
+    src/general_ludd/language/unicode_data.py.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

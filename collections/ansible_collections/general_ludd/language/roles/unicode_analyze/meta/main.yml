@@ -1,0 +1,21 @@
+---
+galaxy_info:
+  role_name: unicode_analyze
+  author: Agentic Harness Agent
+  description: >
+    Analyze Unicode properties of text: codepoint enumeration, character
+    categories, block names, plane assignment (BMP/SMP/SIP/TIP/SSP/SPUA),
+    all four normalization forms (NFC/NFD/NFKC/NFKD), grapheme cluster
+    segmentation per UAX #29, surrogate pair decoding, script detection
+    per ISO 15924, UTF-8/16/32 byte encoding. Produces JSON artifact.
+    Wires to src/general_ludd/language/unicode_data.py.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

@@ -1,0 +1,11 @@
+---
+# windows_automation role — Windows-specific variables
+# All values below are OS-specific overrides; most defaults live in defaults/main.yml.
+# Audit (always safe, read-only):
+#   (audit tasks run unconditionally — no toggle variables)
+# Manage (mutable, gated behind booleans):
+#   manage_psremoting:           enable/configure PSRemoting via Enable-PSRemoting -Force (default: false)
+#   manage_dsc:                  apply DSC configuration via Start-DscConfiguration -UseExisting (default: false)
+#   manage_schtasks:             scheduled task mutation (placeholder; default: false)
+#   manage_unattended_install:   unattended install mutation (placeholder; default: false)
+# artifact_dir:                  directory for collected automation artifacts (default: C:\Temp\gludd-windows-automation)

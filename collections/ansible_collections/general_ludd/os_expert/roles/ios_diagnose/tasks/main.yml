@@ -1,0 +1,139 @@
+---
+# ios_diagnose role — gather iOS diagnostic data via libimobiledevice:
+# ideviceinfo, idevicesyslog, idevicediagnostics, oslog.
+# Uses the python gatherer backend in files/ios_gather.py.
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Check libimobiledevice availability
+  ansible.builtin.command: which ideviceinfo
+  register: _idevice_check
+  changed_when: false
+  ignore_errors: true
+  failed_when: false
+
+- name: Gather iOS diagnostics via python backend
+  when:
+    - _idevice_check is success
+    - gather_ideviceinfo | bool or gather_idevicesyslog | bool or gather_idevicediagnostics | bool or gather_oslog | bool
+  block:
+    - name: Copy ios_gather.py to target
+      ansible.builtin.copy:
+        src: ios_gather.py
+        dest: "{{ artifact_dir }}/ios_gather.py"
+        mode: "0755"
+
+    - name: Run gatherer — collect ideviceinfo, syslog, diagnostics
+      ansible.builtin.command: >
+        python3 {{ artifact_dir }}/ios_gather.py
+        --output {{ artifact_dir }}/diagnostics.json
+        --syslog-lines {{ syslog_lines | default(100) }}
+        {{ '--udid ' ~ device_udid if device_udid else '' }}
+      register: _gather_result
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write gather stdout/stderr to artifact_dir
+      ansible.builtin.copy:
+        content: |
+          stdout: {{ _gather_result.stdout | default('') }}
+          stderr: {{ _gather_result.stderr | default('') }}
+          rc: {{ _gather_result.rc | default('') }}
+        dest: "{{ artifact_dir }}/gather_output.txt"
+        mode: "0644"
+      when: _gather_result is defined
+
+- name: Raw ideviceinfo (fallback)
+  when:
+    - _idevice_check is success
+    - _gather_result is not success
+    - gather_ideviceinfo | bool
+  block:
+    - name: Run ideviceinfo
+      ansible.builtin.command: >
+        ideviceinfo {{ '-u ' ~ device_udid if device_udid else '' }}
+      register: _ideviceinfo_raw
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write ideviceinfo to artifact_dir
+      ansible.builtin.copy:
+        content: "{{ _ideviceinfo_raw.stdout | default('(no output)') }}"
+        dest: "{{ artifact_dir }}/ideviceinfo.txt"
+        mode: "0644"
+
+- name: Raw idevicesyslog (fallback)
+  when:
+    - _idevice_check is success
+    - _gather_result is not success
+    - gather_idevicesyslog | bool
+  block:
+    - name: Run idevicesyslog (capture 100 lines)
+      ansible.builtin.command: >
+        idevicesyslog {{ '-u ' ~ device_udid if device_udid else '' }}
+      register: _syslog_raw
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+      async: 10
+      poll: 5
+
+    - name: Write idevicesyslog to artifact_dir
+      ansible.builtin.copy:
+        content: "{{ _syslog_raw.stdout | default('(no output)') }}"
+        dest: "{{ artifact_dir }}/idevicesyslog.txt"
+        mode: "0644"
+
+- name: Raw idevicediagnostics (fallback)
+  when:
+    - _idevice_check is success
+    - _gather_result is not success
+    - gather_idevicediagnostics | bool
+  block:
+    - name: Run idevicediagnostics diagnostics All
+      ansible.builtin.command: >
+        idevicediagnostics diagnostics All {{ '-u ' ~ device_udid if device_udid else '' }}
+      register: _diagnostics_raw
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write idevicediagnostics to artifact_dir
+      ansible.builtin.copy:
+        content: "{{ _diagnostics_raw.stdout | default('(no output)') }}"
+        dest: "{{ artifact_dir }}/idevicediagnostics.txt"
+        mode: "0644"
+
+- name: Raw oslog (fallback — macOS host only)
+  when:
+    - _idevice_check is success
+    - _gather_result is not success
+    - gather_oslog | bool
+    - ansible_os_family == 'Darwin'
+  block:
+    - name: Run log stream (oslog, 100 lines)
+      ansible.builtin.command: >
+        log stream --style compact --count 100
+      register: _oslog_raw
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+      async: 10
+      poll: 5
+
+    - name: Write oslog to artifact_dir
+      ansible.builtin.copy:
+        content: "{{ _oslog_raw.stdout | default('(no output)') }}"
+        dest: "{{ artifact_dir }}/oslog.txt"
+        mode: "0644"
+
+- name: libimobiledevice not available warning
+  when: _idevice_check is not success
+  ansible.builtin.debug:
+    msg: "WARNING: ideviceinfo not found. Install libimobiledevice. iOS diagnostics skipped."

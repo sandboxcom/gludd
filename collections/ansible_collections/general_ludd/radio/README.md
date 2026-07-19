@@ -1,62 +1,52 @@
-# `general_ludd.radio` -- Radio Communications Agent Collection
+# `general_ludd.radio` — RF / SDR Agent Collection
 
-Ansible collection providing agents with radio frequency analysis, signal
-processing, propagation modeling, antenna design, and communications system
-capabilities.
+Ansible collection providing agents with radio-frequency and software-defined-radio
+capability.  Covers signal capture, digital-mode decoding, antenna design,
+propagation modeling, ham / marine exam data, frequency regulation lookup, and
+link budget calculation.
 
 ## Roles
 
 | Role | Purpose |
 |---|---|
-| `propagation_model` | RF path-loss modeling: ITM, Hata, free-space, rain attenuation |
-| `antenna_design` | Antenna types, radiation patterns, impedance matching |
-| `signal_identify` | Modulation classification, baud rate detection, signal fingerprinting |
-| `signal_decode` | Digital signal decoding from raw IQ samples |
-| `link_budget` | Link budget calculation with gain, loss, and margin analysis |
-| `spectrum_scan` | Spectrum scanning, waterfall analysis, signal detection |
-| `sdr_capture` | SDR hardware control, IQ sample capture, frequency tuning |
-| `marine_decode` | Marine VHF/HF decode: DSC, NAVTEX, AIS, GMDSS |
-| `exam_quiz` | Amateur radio exam preparation and quiz generation |
-| `regulation_lookup` | ITU/FCC band plans, license class privileges, frequency allocations |
+| `sdr_capture` | Capture IQ samples from SDR hardware |
+| `signal_identify` | Classify modulation type, baud rate, protocol |
+| `decode_digital` | Decode DMR / P25 / NXDN / D-STAR / APRS / FT8 / WSJT-X |
+| `antenna_design` | Design and simulate antenna for given parameters |
+| `propagation_model` | RF path loss (ITM Longley-Rice, Hata, free-space) |
+| `exam_quiz` | Structured ham + marine exam Q&A |
+| `regulation_lookup` | Frequency allocation, license class, band plan by country |
+| `marine_decode` | AIS, NAVTEX, DSC, EPIRB / SART decoding |
+| `link_budget` | TX power + antenna gain - path loss = SNR margin |
+| `spectrum_scan` | Wideband sweep, waterfall analysis, peak detection |
 
-## Cross-Collection Imports
+## Knowledge Modules
 
-Radio propagation and antenna models depend on physics for electromagnetic
-theory and mathematical computation:
-
-| Physics Module | Used By |
+| Module | Content |
 |---|---|
-| `electrodynamics.py` | `antenna_gain()`, refraction, polarization for antenna/propagation models |
-| `math_identities.py` | dB/log conversions, series expansions used across all path-loss models |
-| `physical_constants.py` | CODATA values (c, epsilon_0, mu_0) for wave equations and field calculations |
-
-See `plugins/module_utils/cross_references.py` for the import layer.
-
-## Related Collections
-
-| Collection | Shared Domain | Cross-Use |
-|---|---|---|
-| `general_ludd.physics` | Electromagnetics, math, wave physics | `electrodynamics.py` (antenna gain, polarization), `math_identities.py` (dB/log conversions, series expansions), `physical_constants.py` (c, ε0, μ0) |
-
-Use `get_cross_collection_help("propagation")` or `get_cross_collection_help("signal_processing")`
-from `physics.plugins.module_utils.cross_collection` to discover all related roles.
+| `radio_exam_data.py` | Structured Q&A for ham (FCC Tech/General/Extra) + marine exams |
+| `frequency_allocations.py` | Country → band → start/end/service/license_class |
+| `modulation_schemes.py` | Enum + properties per modulation mode |
+| `antenna_types.py` | Design equations + radiation patterns for common antenna types |
+| `propagation_models.py` | ITM Longley-Rice port, Hata-Okumura, free-space, two-ray |
 
 ## Quick start
 
 ```yaml
-- name: Model RF propagation loss
+- name: Capture SDR IQ samples
   hosts: localhost
   vars:
-    frequency_mhz: 900
-    distance_km: 10
-    model: "hata"
+    sdr_capture_enabled: true
+    sdr_capture_freq_hz: 162400000
+    sdr_capture_sample_rate: 2048000
   roles:
-    - general_ludd.radio.propagation_model
+    - general_ludd.radio.sdr_capture
 ```
 
 ## Dependencies
 
-- Python: numpy, scipy
-- Optional per-role: pyrtlsdr (SDR), digital_rf (IQ capture)
-- System: rtl-sdr drivers (sdr_capture role)
-- Cross-collection: `general_ludd.physics` (electrodynamics, math, constants)
+- Python: numpy, scipy (signal), pyrtlsdr, SoapySDR (optional)
+- System CLI: dsd, multimon-ng, direwolf, rtl_power, CSDR
+- Optional: GNU Radio, openEMS, WSJT-X
+
+Loose-coupling: if a system tool is absent the role returns `skipped` + `missing_tool`.

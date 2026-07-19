@@ -1,0 +1,9 @@
+---
+# regulation_lookup defaults — safe-by-default
+regulation_lookup_enabled: false
+regulation_lookup_country: US
+regulation_lookup_freq_mhz: null
+regulation_lookup_band_name: null
+regulation_lookup_license_class: null
+regulation_lookup_service: null
+regulation_lookup_output_dir: /tmp/gludd-regulation

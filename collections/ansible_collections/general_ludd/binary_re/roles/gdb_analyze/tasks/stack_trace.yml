@@ -1,0 +1,29 @@
+---
+- name: Run GDB stack trace analysis
+  ansible.builtin.command:
+    cmd: >-
+      {{ ansible_python_interpreter | default('/usr/bin/env python3') }}
+      {{ script_path }}
+      --target {{ target_binary }}
+      --mode stack_trace
+      --output {{ output_dir }}/stack_trace.json
+  register: _st_result
+  changed_when: false
+  failed_when: _st_result.rc not in [0]
+
+- name: Read stack trace artifact
+  ansible.builtin.slurp:
+    src: "{{ output_dir }}/stack_trace.json"
+  register: _st_raw
+
+- name: Parse stack trace artifact
+  ansible.builtin.set_fact:
+    stack_trace_artifact: >-
+      {{ _st_raw.content | b64decode | from_json
+         if (_st_raw is defined and _st_raw.content is defined) else {} }}
+
+- name: Report stack trace summary
+  ansible.builtin.debug:
+    msg: >-
+      Stack trace analysis complete:
+      commands={{ stack_trace_artifact.get('commands', []) | length }}

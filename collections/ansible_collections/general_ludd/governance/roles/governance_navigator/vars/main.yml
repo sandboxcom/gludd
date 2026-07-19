@@ -1,0 +1,108 @@
+---
+# Keyword -> module routing table used by governance_navigator.
+# A module is routed when the lowercased query contains any of its keywords
+# OR the module name appears in governance_navigator_force_routes.
+_governance_route_keywords:
+  borders:
+    - border
+    - borders
+    - neighbour
+    - neighbor
+    - neighbours
+    - neighbors
+    - adjacent
+    - landlocked
+    - boundary
+    - boundaries
+    - frontier
+  governing_bodies:
+    - government
+    - parliament
+    - congress
+    - legislature
+    - legislative
+    - judiciary
+    - judicial
+    - court
+    - courts
+    - executive
+    - senate
+    - diet
+    - bundestag
+    - governing body
+    - governing bodies
+  tax_currency:
+    - tax
+    - taxes
+    - currency
+    - currencies
+    - vat
+    - sales tax
+    - money
+    - dollar
+    - euro
+    - euros
+    - yen
+    - pound
+    - rupee
+    - finance
+    - financial
+    - fiscal
+  conflicts_treaties:
+    - conflict
+    - conflicts
+    - war
+    - wars
+    - treaty
+    - treaties
+    - sanctions
+    - alliance
+    - alliances
+    - ceasefire
+    - cease-fire
+    - invasion
+    - nato
+    - accord
+    - geopo
+  civic_services:
+    - civic
+    - service
+    - services
+    - public service
+    - passport
+    - health
+    - healthcare
+    - electoral
+    - vote
+    - voter
+    - postal
+    - identity
+    - emergency
+    - social security
+  decision_makers:
+    - president
+    - prime minister
+    - chancellor
+    - monarch
+    - king
+    - queen
+    - emperor
+    - speaker
+    - chief justice
+    - leader
+    - leaders
+    - head of state
+    - decision maker
+    - decision makers
+    - office holder
+  info_classification:
+    - classification
+    - classified
+    - top secret
+    - secret
+    - confidential
+    - restricted
+    - unclassified
+    - handling
+    - clearance
+    - sensitive

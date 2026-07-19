@@ -1,0 +1,32 @@
+---
+# i18n_extract role defaults — REPORT-ONLY
+
+# Input
+source_dir: ""              # Directory to scan for translatable strings
+source_patterns:             # File patterns to scan
+  - "*.py"
+  - "*.html"
+  - "*.js"
+
+# Output
+pot_file: "messages.pot"   # Output .pot template file path
+output_dir: "/tmp/gludd-i18n-extract"
+
+# Extraction
+extract_method: "gettext"   # gettext, babel, regex
+pseudolocalize: false       # Generate pseudolocalized .po for testing
+pseudoloc_locale: "en-XA"  # Target pseudolocale
+
+# I18n linting
+lint_hardcoded: false       # Detect hardcoded strings (not wrapped in _()/gettext)
+lint_placeholders: false    # Check for missing/broken format placeholders
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Artifact output
+artifact_dir: "/tmp/gludd-i18n-extract"
+
+# Destructive ops guard — report-only
+enable_git_push: false

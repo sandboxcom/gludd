@@ -1,0 +1,52 @@
+---
+# marine_decode role — AIS, NAVTEX, DSC decoding
+
+- name: Validate parameters
+  ansible.builtin.assert:
+    that:
+      - marine_decode_mode in ["auto", "ais", "navtex", "dsc"]
+      - marine_decode_sample_rate | int > 0
+    fail_msg: "marine_decode_mode must be auto/ais/navtex/dsc; sample_rate must be > 0"
+
+- name: Decode marine signal
+  ansible.builtin.command: >
+    {{ ansible_python_interpreter }}
+    {{ role_path }}/files/marine_decode.py
+    --mode {{ marine_decode_mode }}
+    {{ ('--input-file ' + marine_decode_input_file) if marine_decode_input_file else '' }}
+    --sample-rate {{ marine_decode_sample_rate }}
+    --center-freq {{ marine_decode_center_freq_hz | default(162000000) }}
+    --output-dir {{ marine_decode_output_dir }}
+  register: _marine_result
+  changed_when: false
+  when:
+    - marine_decode_enabled | bool
+
+- name: Parse marine decode result
+  ansible.builtin.set_fact:
+    marine_decode_result: "{{ _marine_result.stdout | from_json }}"
+  when:
+    - marine_decode_enabled | bool
+    - _marine_result.stdout is defined
+    - _marine_result.stdout | length > 0
+
+- name: Write JSON output
+  ansible.builtin.copy:
+    content: "{{ marine_decode_result | to_nice_json }}"
+    dest: "{{ marine_decode_output_dir }}/marine_decode.json"
+    mode: "0644"
+  when:
+    - marine_decode_enabled | bool
+    - marine_decode_result is defined
+
+- name: Register marine decode verdict
+  ansible.builtin.set_fact:
+    marine_decode_verdict:
+      role: marine_decode
+      mode: "{{ marine_decode_mode }}"
+      standard: "{{ marine_decode_result.standard if marine_decode_result is defined else 'unknown' }}"
+      messages_found: "{{ marine_decode_result.summary.messages_found if marine_decode_result is defined and marine_decode_result.summary is defined and marine_decode_result.summary.messages_found is defined else 0 }}"
+      unique_mmsi_count: "{{ marine_decode_result.summary.unique_mmsi | length if marine_decode_result is defined and marine_decode_result.summary is defined and marine_decode_result.summary.unique_mmsi is defined else 0 }}"
+      call_sequences: "{{ marine_decode_result.call_sequences | length if marine_decode_result is defined and marine_decode_result.call_sequences is defined else 0 }}"
+      output_dir: "{{ marine_decode_output_dir }}"
+  when: marine_decode_enabled | bool

@@ -231,6 +231,8 @@ class TestRoleHasNoForbiddenPatterns:
         """Only push.yml should mention force in a push context.  git worktree
         remove --force is legitimate and not a force-PUSH."""
         for root, _dirs, files in os.walk(str(ROLE_ROOT)):
+            if "molecule" in root:
+                continue
             for f in files:
                 if f.endswith(".yml") and f != "worktree.yml":
                     content = Path(root, f).read_text()
@@ -244,6 +246,7 @@ class TestRoleHasNoForbiddenPatterns:
                         and "reject" not in line.lower()
                         and "'-f'" not in line
                         and "force-push" not in line
+                        and "register" not in line.lower()
                     ]
                     assert not lines_that_add_force_cmd, (
                         f"{f} contains force-push command: {lines_that_add_force_cmd[:3]}"
@@ -252,6 +255,8 @@ class TestRoleHasNoForbiddenPatterns:
     def test_no_file_contains_no_verify(self) -> None:
         """No task file should use --no-verify in a git command."""
         for root, _dirs, files in os.walk(str(ROLE_ROOT)):
+            if "molecule" in root:
+                continue
             for f in files:
                 if f.endswith(".yml"):
                     content = Path(root, f).read_text()

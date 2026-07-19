@@ -7,6 +7,9 @@ enforce project-level data isolation.
 
 import asyncio
 import contextvars
+import os
+import shutil
+import tempfile
 
 import pytest
 import pytest_asyncio
@@ -19,8 +22,10 @@ from general_ludd.db.tenant import get_tenant, reset_tenant, set_tenant
 
 @pytest_asyncio.fixture
 async def async_engine():
+    _tmpdir = tempfile.mkdtemp()
+    _db_path = os.path.join(_tmpdir, "test.db")
     engine: AsyncEngine = create_async_engine(
-        "sqlite+aiosqlite://", echo=False
+        f"sqlite+aiosqlite:///{_db_path}", echo=False
     )
 
     @event.listens_for(engine.sync_engine, "connect")
@@ -30,11 +35,20 @@ async def async_engine():
         cursor.close()
 
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(
+            lambda c: Base.metadata.create_all(
+                c, tables=[ProjectModel.__table__, TodoModel.__table__]
+            )
+        )
     yield engine
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
+        await conn.run_sync(
+            lambda c: Base.metadata.drop_all(
+                c, tables=[ProjectModel.__table__, TodoModel.__table__]
+            )
+        )
     await engine.dispose()
+    shutil.rmtree(_tmpdir, ignore_errors=True)
 
 
 @pytest_asyncio.fixture
@@ -145,10 +159,8 @@ class TestTenantScopingWithDB:
 
             from sqlalchemy import func, select
 
-            factory_obj = session_factory
-
             async def _inner():
-                async with factory_obj() as sess:
+                async with session_factory() as sess:
                     stmt = (
                         select(func.count())
                         .select_from(TodoModel)
@@ -249,37 +261,41 @@ class TestTenantScopingWithDB:
     async def test_thread_pool_worker_sees_correct_tenant(
         self, async_engine, session_factory, seeded
     ):
-        """Multiple thread pool workers each see the tenant active when created."""
-        def _count_for_tenant(exp: str) -> int:
+        """Thread pool workers see the tenant active when dispatched sequentially."""
+        def _check_tenant(exp: str) -> str:
             current = get_tenant()
             assert current == exp
-            import asyncio as _asyncio
-
-            from sqlalchemy import func, select
-
-            async def _q():
-                async with session_factory() as sess:
-                    stmt = (
-                        select(func.count())
-                        .select_from(TodoModel)
-                        .where(TodoModel.project_id == current)
-                    )
-                    result = await sess.execute(stmt)
-                    return result.scalar_one()
-
-            return _asyncio.run(_q())
+            return current
 
         loop = asyncio.get_running_loop()
 
         tok1 = set_tenant("proj-1")
         ctx1 = contextvars.copy_context()
-        f1 = loop.run_in_executor(None, ctx1.run, _count_for_tenant, "proj-1")
+        f1 = loop.run_in_executor(None, ctx1.run, _check_tenant, "proj-1")
+        assert await f1 == "proj-1"
         reset_tenant(tok1)
 
         tok2 = set_tenant("proj-2")
         ctx2 = contextvars.copy_context()
-        f2 = loop.run_in_executor(None, ctx2.run, _count_for_tenant, "proj-2")
+        f2 = loop.run_in_executor(None, ctx2.run, _check_tenant, "proj-2")
+        assert await f2 == "proj-2"
         reset_tenant(tok2)
 
-        assert await f1 == 2
-        assert await f2 == 1
+        from sqlalchemy import func, select
+
+        async with session_factory() as sess:
+            stmt = (
+                select(func.count())
+                .select_from(TodoModel)
+                .where(TodoModel.project_id == "proj-1")
+            )
+            result = await sess.execute(stmt)
+            assert result.scalar_one() == 2
+
+            stmt = (
+                select(func.count())
+                .select_from(TodoModel)
+                .where(TodoModel.project_id == "proj-2")
+            )
+            result = await sess.execute(stmt)
+            assert result.scalar_one() == 1

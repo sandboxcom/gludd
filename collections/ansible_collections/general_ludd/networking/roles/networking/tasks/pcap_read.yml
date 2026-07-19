@@ -11,7 +11,8 @@
       - networking__pcap_path | default('') | length > 0
     fail_msg: "networking__pcap_path is required for pcap_read mode"
 
-- block:
+- name: Read pcap file
+  block:
     - name: Check pcap file existence
       ansible.builtin.stat:
         path: "{{ networking__pcap_path }}"

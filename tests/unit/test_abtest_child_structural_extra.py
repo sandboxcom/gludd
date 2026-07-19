@@ -71,9 +71,8 @@ class TestMainSyntactic:
         assert exit_code == 2
 
     def test_main_invalid_workload_json(self):
-        with pytest.raises(SystemExit) as exc_info:
-            main(["prog", "/tmp", "not-json", "256", "30", "/tmp/result", "nonce"])
-        assert exc_info.value.code == 1
+        exit_code = main(["prog", "/tmp", "not-json", "256", "30", "/tmp/result", "nonce"])
+        assert exit_code == 1
 
     def test_main_valid_args_workload_succeeds(self, tmp_path: Path):
         result_path = str(tmp_path / "result.json")

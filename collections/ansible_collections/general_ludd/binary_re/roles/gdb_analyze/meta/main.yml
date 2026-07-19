@@ -1,0 +1,17 @@
+---
+galaxy_info:
+  role_name: gdb_analyze
+  author: Agentic Harness Agent
+  description: >
+    GDB automation role — breakpoint management, stack trace analysis,
+    register dumps, and scripted debugging via the Python GDB API.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

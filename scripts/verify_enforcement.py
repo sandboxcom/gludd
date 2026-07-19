@@ -86,47 +86,79 @@ def _check_structural() -> tuple[list[str], dict[str, bool]]:
 
     return failures, status
 
+def _parse_pytest_summary(combined: str) -> tuple[int, int]:
+    """Extract (failed, passed) from pytest's summary line.
+
+    Handles all pytest output shapes:
+        "N failed, M passed"                 (no skips)
+        "M passed, K skipped"                (no failures — old regex missed this)
+        "N failed, M passed, K skipped"      (failures + skips)
+        "N passed"                           (only passes)
+    Returns (0, 0) if no summary line found.
+    """
+    failed = 0
+    passed = 0
+    m_failed = re.search(r"(\d+)\s+failed", combined)
+    m_passed = re.search(r"(\d+)\s+passed", combined)
+    if m_failed:
+        failed = int(m_failed.group(1))
+    if m_passed:
+        passed = int(m_passed.group(1))
+    return failed, passed
+
+
+def _attribute_failed_line(line: str) -> str | None:
+    """Map a pytest FAILED line to its owning plugin via test-name prefix.
+
+    Pytest FAILED format: "FAILED path::test_name - ErrorType: msg"
+    Extracts the test_name token and matches against _TEST_PREFIX_TO_PLUGIN
+    at a token boundary (not a bare substring) to prevent false attribution.
+    Returns plugin filename or None.
+    """
+    m = re.search(r"::(test_[a-z_]+)", line)
+    if not m:
+        return None
+    test_name = m.group(1)
+    for prefix, plugin in _TEST_PREFIX_TO_PLUGIN.items():
+        if test_name.startswith(prefix):
+            return plugin
+    return None
+
 
 def _check_runtime() -> tuple[int, int, int, set[str]]:
     """Run test-hook-runtime. Returns (passed, failed, total, failing_plugins)."""
     try:
         result = subprocess.run(
             ["uv", "run", "python", "scripts/test_hook_runtime.py"],
-            capture_output=True, text=True, timeout=60,
+            capture_output=True, text=True,
+            timeout=120,
             cwd=str(ROOT),
             env={**os.environ, "OPENCODE_SUBAGENT": "", "UV_NO_SYNC": "1"},
         )
     except subprocess.TimeoutExpired:
         return 0, 0, 0, {"runtime-timed-out"}
 
-    stdout = result.stdout
-    stderr = result.stderr
+    combined = result.stdout + "\n" + result.stderr
 
-    passed = 0
-    failed = 0
-
-    m = re.search(r"(\d+)\s+failed,\s+(\d+)\s+passed", stdout)
-    if m:
-        failed = int(m.group(1))
-        passed = int(m.group(2))
+    failed, passed = _parse_pytest_summary(combined)
 
     failing_plugins: set[str] = set()
-    for line in stdout.splitlines():
+    for line in combined.splitlines():
         line = line.strip()
         if not line.startswith("FAILED"):
             continue
-        for prefix, plugin in _TEST_PREFIX_TO_PLUGIN.items():
-            if prefix in line:
-                failing_plugins.add(plugin)
-                break
+        plugin = _attribute_failed_line(line)
+        if plugin is not None:
+            failing_plugins.add(plugin)
 
-    # Also check stderr for SyntaxError — all enforce-stop tests fail due to
-    # a single SyntaxError in the plugin source. Surface the file that has it.
-    if "SyntaxError" in stderr or "SyntaxError" in stdout:
-        # extract filename from stderr if possible
-        m_ts = re.search(r"([a-z_-]+\.ts):\d+", stderr + stdout)
-        if m_ts:
-            failing_plugins.add(m_ts.group(1))
+    # SyntaxError attribution: only fire when (a) "SyntaxError" appears AND
+    # (b) the filename is one of the known enforcement plugins. The old regex
+    # matched ANY .ts file in any stack frame (shared.ts, hot-reload modules,
+    # etc.), causing spurious attribution to whichever plugin appeared first.
+    if "SyntaxError" in combined:
+        for plugin_filename in ENFORCEMENT_PLUGINS:
+            if re.search(re.escape(plugin_filename) + r":\d+", combined):
+                failing_plugins.add(plugin_filename)
 
     return passed, failed, passed + failed, failing_plugins
 

@@ -1,0 +1,13 @@
+---
+phonetic_methods:
+  arpabet: "CMU ARPABET phoneme set (39 phonemes)"
+  ipa: "International Phonetic Alphabet"
+  soundex: "American Soundex phonetic hash"
+  daitch_mokotoff: "Daitch-Mokotoff Soundex (Eastern European)"
+  metaphone: "Metaphone primary code"
+  double_metaphone: "Double Metaphone (American + alternate encodings)"
+
+stress_levels:
+  0: "no stress"
+  1: "primary stress"
+  2: "secondary stress"

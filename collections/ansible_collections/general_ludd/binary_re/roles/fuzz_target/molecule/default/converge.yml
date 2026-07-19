@@ -1,0 +1,45 @@
+---
+- name: Converge
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Run fuzz_target role (all modes off, valid stat path)
+      ansible.builtin.include_role:
+        name: general_ludd.binary_re.fuzz_target
+      vars:
+        fuzzer_path: "/bin/sh"
+        output_dir: "/tmp/gludd-fuzz-target-molecule"
+        corpus_dir: "/tmp/gludd-fuzz-corpus-molecule"
+
+    - name: Assert artifact written
+      ansible.builtin.stat:
+        path: /tmp/gludd-fuzz-target-molecule/fuzz_target.json
+      register: _stat
+
+    - name: Verify artifact exists
+      ansible.builtin.assert:
+        that: _stat.stat.exists
+        fail_msg: "fuzz_target.json not written"
+
+    - name: Parse artifact
+      ansible.builtin.slurp:
+        src: /tmp/gludd-fuzz-target-molecule/fuzz_target.json
+      register: _json
+
+    - name: Assert artifact content
+      ansible.builtin.assert:
+        that:
+          - (_json.content | b64decode | from_json).role == "fuzz_target"
+          - (_json.content | b64decode | from_json).status == "completed"
+        fail_msg: "Artifact content mismatch"
+
+    - name: Cleanup
+      ansible.builtin.file:
+        path: /tmp/gludd-fuzz-target-molecule
+        state: absent
+
+    - name: Cleanup corpus
+      ansible.builtin.file:
+        path: /tmp/gludd-fuzz-corpus-molecule
+        state: absent

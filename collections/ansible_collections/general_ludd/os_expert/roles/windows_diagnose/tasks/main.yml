@@ -1,0 +1,189 @@
+---
+# windows_diagnose role — query Windows diagnostic data: WMI,
+# EventLog, registry, and service controller.
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+  when: ansible_os_family == 'Windows'
+
+- name: Create artifact subdirectories
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}/{{ item }}"
+    state: directory
+  loop:
+    - wmi
+    - eventlog
+    - services
+  when: ansible_os_family == 'Windows'
+
+- name: Gather WMI system info
+  when:
+    - ansible_os_family == 'Windows'
+    - query_wmi | bool
+  block:
+    - name: Query Win32_OperatingSystem
+      ansible.windows.win_powershell:
+        script: |
+          Get-CimInstance -ClassName Win32_OperatingSystem | ConvertTo-Json -Depth 3
+      register: _wmi_os
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write Win32_OperatingSystem to artifact_dir
+      ansible.builtin.copy:
+        content: "{{ _wmi_os.output | default([]) | to_json }}"
+        dest: "{{ artifact_dir }}/wmi/win32_operatingsystem.json"
+      when: _wmi_os is success and _wmi_os.output | default([]) | length > 0
+
+    - name: Query Win32_ComputerSystem
+      ansible.windows.win_powershell:
+        script: |
+          Get-CimInstance -ClassName Win32_ComputerSystem | ConvertTo-Json -Depth 3
+      register: _wmi_cs
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write Win32_ComputerSystem to artifact_dir
+      ansible.builtin.copy:
+        content: "{{ _wmi_cs.output | default([]) | to_json }}"
+        dest: "{{ artifact_dir }}/wmi/win32_computersystem.json"
+      when: _wmi_cs is success and _wmi_cs.output | default([]) | length > 0
+
+    - name: Query Win32_Processor
+      ansible.windows.win_powershell:
+        script: |
+          Get-CimInstance -ClassName Win32_Processor | ConvertTo-Json -Depth 3
+      register: _wmi_cpu
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write Win32_Processor to artifact_dir
+      ansible.builtin.copy:
+        content: "{{ _wmi_cpu.output | default([]) | to_json }}"
+        dest: "{{ artifact_dir }}/wmi/win32_processor.json"
+      when: _wmi_cpu is success and _wmi_cpu.output | default([]) | length > 0
+
+- name: Gather Windows EventLog
+  when:
+    - ansible_os_family == 'Windows'
+    - query_eventlog | bool
+  block:
+    - name: Query System event log
+      ansible.windows.win_powershell:
+        script: |
+          Get-WinEvent -LogName System -MaxEvents 200 | ConvertTo-Json -Depth 3
+      register: _eventlog_system
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write System event log to artifact_dir
+      ansible.builtin.copy:
+        content: "{{ _eventlog_system.output | default([]) | to_json }}"
+        dest: "{{ artifact_dir }}/eventlog/system.json"
+      when: _eventlog_system is success and _eventlog_system.output | default([]) | length > 0
+
+    - name: Query Application event log
+      ansible.windows.win_powershell:
+        script: |
+          Get-WinEvent -LogName Application -MaxEvents 200 | ConvertTo-Json -Depth 3
+      register: _eventlog_app
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write Application event log to artifact_dir
+      ansible.builtin.copy:
+        content: "{{ _eventlog_app.output | default([]) | to_json }}"
+        dest: "{{ artifact_dir }}/eventlog/application.json"
+      when: _eventlog_app is success and _eventlog_app.output | default([]) | length > 0
+
+- name: Gather registry queries
+  when:
+    - ansible_os_family == 'Windows'
+    - query_registry | bool
+  block:
+    - name: Query Uninstall registry key
+      ansible.windows.win_powershell:
+        script: |
+          reg query "HKLM\Software\Microsoft\Windows\CurrentVersion\Uninstall"
+      register: _reg_uninstall
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write Uninstall registry to artifact_dir
+      ansible.builtin.copy:
+        content: "{{ _reg_uninstall.output | default([]) | to_json }}"
+        dest: "{{ artifact_dir }}/registry_uninstall.json"
+      when: _reg_uninstall is success and _reg_uninstall.output | default([]) | length > 0
+
+    - name: Query Services registry key
+      ansible.windows.win_powershell:
+        script: |
+          reg query "HKLM\SYSTEM\CurrentControlSet\Services"
+      register: _reg_services
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write Services registry to artifact_dir
+      ansible.builtin.copy:
+        content: "{{ _reg_services.output | default([]) | to_json }}"
+        dest: "{{ artifact_dir }}/registry_services.json"
+      when: _reg_services is success and _reg_services.output | default([]) | length > 0
+
+    - name: Query Policies registry key
+      ansible.windows.win_powershell:
+        script: |
+          reg query "HKLM\SOFTWARE\Policies"
+      register: _reg_policies
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write Policies registry to artifact_dir
+      ansible.builtin.copy:
+        content: "{{ _reg_policies.output | default([]) | to_json }}"
+        dest: "{{ artifact_dir }}/registry_policies.json"
+      when: _reg_policies is success and _reg_policies.output | default([]) | length > 0
+
+- name: Gather service info
+  when:
+    - ansible_os_family == 'Windows'
+    - query_services | bool
+  block:
+    - name: Query sc query state all
+      ansible.windows.win_powershell:
+        script: |
+          sc query state= all
+      register: _svc_sc
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write sc query to artifact_dir
+      ansible.builtin.copy:
+        content: "{{ _svc_sc.output | default([]) | to_json }}"
+        dest: "{{ artifact_dir }}/services/sc_query.json"
+      when: _svc_sc is success and _svc_sc.output | default([]) | length > 0
+
+    - name: Query Get-Service
+      ansible.windows.win_powershell:
+        script: |
+          Get-Service | ConvertTo-Json -Depth 3
+      register: _svc_ps
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write Get-Service to artifact_dir
+      ansible.builtin.copy:
+        content: "{{ _svc_ps.output | default([]) | to_json }}"
+        dest: "{{ artifact_dir }}/services/get_service.json"
+      when: _svc_ps is success and _svc_ps.output | default([]) | length > 0

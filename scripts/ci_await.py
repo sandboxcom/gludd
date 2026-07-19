@@ -1,144 +1,113 @@
 #!/usr/bin/env python3
-"""Poll CI for a branch until terminal state (green or red) with heartbeat.
+"""Poll CI for a branch until it reaches a terminal state.
 
-Replaces the anti-pattern of ``sleep 60 && make ci-verdict`` loops in shell.
-The script is the subprocess — it polls, it sleeps internally with timestamped
-heartbeats, and it returns a clean exit code the orchestrator can act on.
+Unlike the inline ``ci-wait`` Makefile target (which only exits on GREEN and
+hardcodes BRANCH=master), this script:
+
+- Accepts a BRANCH parameter (default: master)
+- Polls ``gh run list --branch <b> --json conclusion,status,databaseId,headSha,createdAt``
+- Picks the LATEST run by createdAt when multiple runs exist
+- Exits 0 on terminal SUCCESS, exits 1 on terminal FAILURE/cancelled/skipped/etc
+- Has a configurable TIMEOUT (default 3600s = 60 min) to prevent infinite loops
+- Emits heartbeat timestamps every 60s per the "No Unseen Events" invariant
+- Exits 2 if still PENDING at timeout
 
 Usage::
 
-    make ci-await BRANCH=master
-    make ci-await BRANCH=development TIMEOUT=900
-
-Exit codes: 0 = GREEN, 1 = RED, 2 = TIMEOUT (no terminal before timeout).
+    make ci-await BRANCH=development TIMEOUT=120
 """
-
 from __future__ import annotations
 
-import argparse
+import json
 import os
 import subprocess
 import sys
 import time
-from datetime import datetime, timezone
-
-PROJECT_ROOT = os.environ.get(
-    "GLUDD_PROJECT_ROOT",
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-)
-
-POLL_INTERVAL = int(os.environ.get("CI_AWAIT_INTERVAL", "60"))
-DEFAULT_TIMEOUT = int(os.environ.get("CI_AWAIT_TIMEOUT", "1800"))
+from typing import Any
 
 
-def _last_commit_on_branch(branch: str) -> str:
+DEFAULT_TIMEOUT = int(os.environ.get("CI_AWAIT_TIMEOUT", "3600"))
+POLL_INTERVAL = 60
+
+TERMINAL_SUCCESS = {"success"}
+TERMINAL_FAILURE = {"failure", "cancelled", "skipped", "stale", "timed_out", "action_required", "neutral", "startup_failure"}
+NON_TERMINAL = {"queued", "in_progress", "pending", "waiting", "requested"}
+
+
+def get_latest_run(branch: str) -> dict[str, Any] | None:
     try:
-        for remote in ("sandboxcom", "origin"):
-            result = subprocess.run(
-                ["git", "rev-parse", f"{remote}/{branch}"],
-                cwd=PROJECT_ROOT,
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-            if result.returncode == 0:
-                return result.stdout.strip()
-        result = subprocess.run(
-            ["git", "rev-parse", branch],
-            cwd=PROJECT_ROOT,
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        return result.stdout.strip() if result.returncode == 0 else ""
-    except Exception:
-        return ""
-
-
-def _fetch_ci_verdict(branch: str) -> tuple[str, str, str]:
-    """Poll gh for the latest CI run on a branch.
-
-    Returns (verdict, status_str, run_id) where verdict is GREEN/RED/PENDING/UNKNOWN.
-    """
-    try:
-        result = subprocess.run(
+        result = subprocess.check_output(
             [
                 "gh", "run", "list",
-                "--branch", branch,
-                "--json", "databaseId,conclusion,headSha,status",
-                "--jq", ".[0]",
                 "-R", "sandboxcom/gludd",
-                "-L", "1",
+                "--branch", branch,
+                "-L", "5",
+                "--json", "conclusion,status,databaseId,headSha,createdAt",
             ],
-            capture_output=True,
             text=True,
-            timeout=15,
+            stderr=subprocess.PIPE,
         )
-        if result.returncode != 0 or not result.stdout.strip():
-            return ("PENDING", "no run found (waiting for CI to start)", "")
-        import json
-        run = json.loads(result.stdout)
-        conclusion = run.get("conclusion") or ""
-        status = run.get("status") or ""
-        run_id = str(run.get("databaseId", ""))
-        if conclusion == "success":
-            return ("GREEN", f"run {run_id} conclusion=success", run_id)
-        if status in ("pending", "in_progress", "queued"):
-            return ("PENDING", f"run {run_id} status={status}", run_id)
-        if conclusion in ("failure", "cancelled", "timed_out", "skipped"):
-            return ("RED", f"run {run_id} conclusion={conclusion}", run_id)
-        return ("PENDING", f"run {run_id} status={status}", run_id)
-    except Exception as exc:
-        return ("UNKNOWN", f"gh error: {exc}", "")
+        runs: list[dict[str, Any]] = json.loads(result)
+    except (subprocess.CalledProcessError, json.JSONDecodeError):
+        return None
+
+    if not runs:
+        return None
+
+    runs.sort(key=lambda r: r.get("createdAt", ""), reverse=True)
+    return runs[0]
 
 
-def _format_heartbeat(elapsed: int, verdict: str, detail: str) -> str:
-    ts = datetime.now(timezone.utc).strftime("%H:%M:%S")
-    mins = elapsed // 60
-    secs = elapsed % 60
-    return f"{ts} [heartbeat +{mins}m{secs:02d}s] CI {verdict}: {detail}"
+def ci_await(branch: str, timeout: int) -> int:
+    started = time.time()
+    print(f"=== CI-AWAIT: polling branch={branch} every {POLL_INTERVAL}s (timeout={timeout}s) ===")
+
+    last_heartbeat = started
+
+    while True:
+        elapsed = int(time.time() - started)
+
+        run = get_latest_run(branch)
+        if run is None:
+            print(f"[{elapsed}s] CI-AWAIT: no runs found for branch={branch}")
+        else:
+            run_id = run.get("databaseId", "?")
+            head_sha = (run.get("headSha", "") or "")[:12]
+            status = run.get("status", "unknown")
+            conclusion = run.get("conclusion", "")
+
+            if conclusion in TERMINAL_SUCCESS:
+                print(f"[{elapsed}s] CI-AWAIT: TERMINAL SUCCESS run={run_id} sha={head_sha} conclusion={conclusion}")
+                return 0
+
+            if conclusion in TERMINAL_FAILURE:
+                print(f"[{elapsed}s] CI-AWAIT: TERMINAL FAILURE run={run_id} sha={head_sha} conclusion={conclusion}")
+                return 1
+
+            if status in NON_TERMINAL:
+                print(f"[{elapsed}s] CI-AWAIT: status={status} run={run_id} sha={head_sha} conclusion={conclusion or 'none'}")
+            else:
+                print(f"[{elapsed}s] CI-AWAIT: status={status} conclusion={conclusion or 'none'} run={run_id} sha={head_sha}")
+
+        now = time.time()
+        if now - last_heartbeat >= POLL_INTERVAL:
+            last_heartbeat = now
+
+        if elapsed >= timeout:
+            print(f"=== CI-AWAIT: TIMEOUT after {elapsed}s (still pending) ===")
+            return 2
+
+        time.sleep(POLL_INTERVAL)
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(
-        description="Poll CI for a branch until terminal state (green or red)."
-    )
-    parser.add_argument("branch", help="Git branch to monitor (required)")
-    parser.add_argument(
-        "--timeout", type=int, default=DEFAULT_TIMEOUT,
-        help=f"Max seconds to wait (default: {DEFAULT_TIMEOUT})",
-    )
-    args = parser.parse_args()
+    branch = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("BRANCH", "master")
+    try:
+        timeout = int(sys.argv[2]) if len(sys.argv) > 2 else DEFAULT_TIMEOUT
+    except ValueError:
+        timeout = DEFAULT_TIMEOUT
 
-    branch = args.branch
-    timeout = args.timeout
-    elapsed = 0
-
-    head_sha = _last_commit_on_branch(branch)
-    sha_slug = head_sha[:12] if head_sha else "unknown"
-
-    print(f"=== CI-AWAIT: polling {branch} ({sha_slug}) every {POLL_INTERVAL}s "
-          f"(timeout {timeout}s) ===")
-
-    while elapsed < timeout:
-        verdict, detail, _run_id = _fetch_ci_verdict(branch)
-        print(_format_heartbeat(elapsed, verdict, detail))
-
-        if verdict == "GREEN":
-            print(f"=== CI GREEN after {elapsed}s ===")
-            return 0
-        if verdict == "RED":
-            print(f"=== CI RED after {elapsed}s ===")
-            return 1
-
-        next_sleep = min(POLL_INTERVAL, timeout - elapsed)
-        if next_sleep <= 0:
-            break
-        time.sleep(next_sleep)
-        elapsed += next_sleep
-
-    print(f"=== CI-AWAIT: timed out after {timeout}s ===")
-    return 2
+    return ci_await(branch, timeout)
 
 
 if __name__ == "__main__":

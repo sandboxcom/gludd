@@ -1,0 +1,22 @@
+---
+namespace: general_ludd
+name: os_expert
+version: 0.1.0
+readme: README.md
+description: >
+  Ansible collection providing roles that diagnose, audit, and automate
+  OS-level subsystems across macOS, Linux, Windows, Android, and iOS.
+  Leverages connectors for unified log, journald, proc/sys, WMI, ADB,
+  and libimobiledevice.
+license:
+  - MIT
+authors:
+  - Agentic Harness Agent <agent@harness.local>
+tags:
+  - os
+  - diagnostics
+  - security
+  - automation
+  - cross-platform
+dependencies:
+  general_ludd.agent: ">=0.1.0"

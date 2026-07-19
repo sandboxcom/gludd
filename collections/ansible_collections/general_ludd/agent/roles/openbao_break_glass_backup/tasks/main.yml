@@ -23,6 +23,7 @@
 - name: Check if user has a GPG key
   ansible.builtin.shell:
     cmd: >-
+      set -o pipefail &&
       gpg --list-secret-keys --with-colons {{ gpg_user_id | default(ansible_user_id) }}
       | grep '^sec' | head -1
   args:
@@ -34,6 +35,7 @@
 - name: Generate GPG key for user (no interactive prompt)
   ansible.builtin.shell:
     cmd: |
+      set -o pipefail &&
       cat <<'EOF' | gpg --batch --generate-key
       %no-protection
       Key-Type: RSA
@@ -44,7 +46,7 @@
       %commit
       EOF
   args:
-    creates: "{{ ansible_env.HOME }}/.gnupg/pubring.kbx"
+    creates: "{{ lookup('env', 'HOME') }}/.gnupg/pubring.kbx"
   when: (gpg_key_check.stdout | default('')) == ''
   no_log: true
 
@@ -84,7 +86,7 @@
 # Phase 3 — GPG-encrypt the snapshot
 # ──────────────────────────────────────────────────────────────────────────
 - name: GPG-encrypt the snapshot to the recipient public key
-  ansible.builtin.shell:
+  ansible.builtin.command:
     cmd: >-
       gpg --batch --yes --trust-model always
       --recipient {{ gpg_recipient }}
@@ -108,7 +110,7 @@
   register: _obg_backup_stat
 
 - name: Verify the encrypted file is well-formed (no decrypt)
-  ansible.builtin.shell:
+  ansible.builtin.command:
     cmd: "gpg --list-packets {{ backup_path }}"
   register: _obg_verify
   changed_when: false

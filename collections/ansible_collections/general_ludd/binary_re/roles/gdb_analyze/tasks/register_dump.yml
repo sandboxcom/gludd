@@ -1,0 +1,29 @@
+---
+- name: Run GDB register dump
+  ansible.builtin.command:
+    cmd: >-
+      {{ ansible_python_interpreter | default('/usr/bin/env python3') }}
+      {{ script_path }}
+      --target {{ target_binary }}
+      --mode register_dump
+      --output {{ output_dir }}/register_dump.json
+  register: _rd_result
+  changed_when: false
+  failed_when: _rd_result.rc not in [0]
+
+- name: Read register dump artifact
+  ansible.builtin.slurp:
+    src: "{{ output_dir }}/register_dump.json"
+  register: _rd_raw
+
+- name: Parse register dump artifact
+  ansible.builtin.set_fact:
+    register_dump_artifact: >-
+      {{ _rd_raw.content | b64decode | from_json
+         if (_rd_raw is defined and _rd_raw.content is defined) else {} }}
+
+- name: Report register dump summary
+  ansible.builtin.debug:
+    msg: >-
+      Register dump complete:
+      commands={{ register_dump_artifact.get('commands', []) | length }}

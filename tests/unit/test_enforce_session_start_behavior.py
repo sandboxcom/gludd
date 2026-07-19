@@ -436,19 +436,40 @@ class TestBehavioralInvariants:
     """Cross-cutting checks that ensure coherent behavior."""
 
     def test_min_dispatch_is_at_least_5(self, plugin_src):
-        """EFFECTIVE_MIN must be >=5 to enforce meaningful fan-out."""
-        match = re.search(r'EFFECTIVE_MIN\s*=\s*Math\.max\(.*?,\s*Math\.min\(.*?,\s*(\d+)\)\)', plugin_src)
+        """EFFECTIVE_MIN must be >=5 to enforce meaningful fan-out.
+
+        Accepts both the plain-literal form (``const EFFECTIVE_MIN = 10``) and the
+        older clamped form (``Math.max(..., Math.min(..., N))``).
+        """
+        clamped = re.search(
+            r'EFFECTIVE_MIN\s*=\s*Math\.max\(.*?,\s*Math\.min\(.*?,\s*(\d+)\)\)', plugin_src
+        )
+        literal = re.search(r'EFFECTIVE_MIN\s*=\s*(\d+)', plugin_src)
+        match = clamped or literal
         assert match is not None, "EFFECTIVE_MIN not found"
         effective_min_value = int(match.group(1))
         assert effective_min_value >= 5, (
             f"EFFECTIVE_MIN={effective_min_value} is too low; need >=5"
         )
 
-    def test_tool_classification_functions_exported(self, plugin_src):
-        """isDispatchTool, isReadTool, isTaskFileRead must be declared."""
+    def test_tool_classification_functions_exported(self, plugin_src, shared_src):
+        """isDispatchTool, isReadTool, isTaskFileRead must be available to the plugin.
+
+        The E.5 refactor moved isDispatchTool/isReadTool into .opencode/lib/shared.ts,
+        so a function now counts as available if the plugin either declares it locally
+        or imports it from the shared module (which must actually export it).
+        """
         for fn in ("isDispatchTool", "isReadTool", "isTaskFileRead"):
-            assert f"function {fn}" in plugin_src, (
-                f"Missing function {fn} in plugin source"
+            declared_locally = f"function {fn}" in plugin_src
+            imported = bool(
+                re.search(
+                    r'import\s+\{[^}]*\b' + fn + r'\b[^}]*\}\s+from\s+"[^"]*shared\.ts"',
+                    plugin_src,
+                )
+            ) and f"export function {fn}" in shared_src
+            assert declared_locally or imported, (
+                f"{fn} is neither declared in enforce-session-start.ts nor imported "
+                f"from an exporting shared.ts"
             )
 
     def test_plugin_uses_hot_module_loader(self, plugin_src):

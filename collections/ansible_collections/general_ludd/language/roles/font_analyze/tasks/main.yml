@@ -1,0 +1,17 @@
+---
+- name: Ensure artifact directory exists
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Run font_analyze standalone script
+  ansible.builtin.script:
+    cmd: "files/font_analyze.py --input '{{ font_file }}' --output '{{ artifact_dir }}/font_analysis.json' {% if not check_tables | default(true) %}--no-tables{% endif %} {% if not check_metrics | default(true) %}--no-metrics{% endif %} {% if not check_features | default(true) %}--no-features{% endif %} {% if not check_variable | default(true) %}--no-variable{% endif %} {% if not check_monospace | default(true) %}--no-monospace{% endif %} {% if not check_web_font | default(true) %}--no-web-font{% endif %}"
+    executable: "{{ ansible_python_interpreter | default('python3') }}"
+  register: font_result
+  changed_when: false
+
+- name: Print font analysis summary
+  ansible.builtin.debug:
+    msg: "{{ font_result.stdout_lines }}"

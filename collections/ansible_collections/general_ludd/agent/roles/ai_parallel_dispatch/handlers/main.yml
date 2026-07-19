@@ -17,7 +17,7 @@
 #   so we persist each promise's job id to a fact file and re-join after flush.
 #   For full, ordered, per-call result harvesting prefer tasks/main.yml (async).
 
-- name: apd_dispatch_one
+- name: Apd_dispatch_one
   # One handler invocation per notify. Launches the model call async (poll:0) and
   # records its job id to a shared fact list. flush_handlers runs these in notify
   # order; the async: makes the in-flight daemon calls overlap despite that.
@@ -35,7 +35,7 @@
   listen: "apd dispatch"
   no_log: "{{ psk | length > 0 }}"
 
-- name: apd_record_jid
+- name: Apd_record_jid
   # Append the just-launched promise (job id + call name) to a run-scoped file so
   # the post-flush barrier can await them. A file (not a fact) because handler
   # set_fact ordering during flush is fragile across the notify loop.

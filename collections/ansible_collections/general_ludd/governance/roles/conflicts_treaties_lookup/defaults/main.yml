@@ -1,0 +1,6 @@
+---
+# conflicts_treaties_lookup defaults — safe-by-default
+conflicts_treaties_lookup_enabled: false
+conflicts_treaties_lookup_country: null
+conflicts_treaties_lookup_scope: both
+conflicts_treaties_lookup_output_dir: /tmp/gludd-governance-conflicts

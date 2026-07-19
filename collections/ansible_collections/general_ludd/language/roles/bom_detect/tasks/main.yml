@@ -1,0 +1,17 @@
+---
+- name: Ensure artifact directory exists
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Run bom_detect standalone script
+  ansible.builtin.script:
+    cmd: "files/bom_detect.py --input-bytes '{{ input_bytes }}' --output '{{ artifact_dir }}/bom_detection.json' {% if strip_bom | default(false) %}--strip{% endif %} {% if add_bom | default(false) %}--add-bom --add-bom-encoding '{{ add_bom_encoding | default('UTF-8') }}'{% endif %}"
+    executable: "{{ ansible_python_interpreter | default('python3') }}"
+  register: bom_result
+  changed_when: false
+
+- name: Print BOM detection summary
+  ansible.builtin.debug:
+    msg: "{{ bom_result.stdout_lines }}"

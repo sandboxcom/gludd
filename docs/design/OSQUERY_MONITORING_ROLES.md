@@ -97,13 +97,21 @@ needs "is osquery here" without running a query — reused by the new
 `src/general_ludd/filestore/bootstrap.py`:
 - `BinaryBootstrapper.KNOWN_VERSIONS["osquery"] = OSQUERY_VERSION` (`:82`,
   `OSQUERY_VERSION = "5.10.2"` at `:52`).
-- `_osquery_download_url` (`:250-275`) builds the GitHub release tarball URL
-  `osquery-5.10.2.<macos|linux>_<x86_64|arm64>.tar.gz`. **Known bug already
-  flagged in `docs/design/BINARY_BUNDLING.md:207-208`, still present**:
-  `:270-271` `if osq_arch != "x86_64": return None` wrongly drops
-  linux/arm64 (osquery DOES publish a linux arm64 tarball for 5.10.2); macOS
-  correctly has no arm64 tarball (`:265-266` only branches on `darwin`/
-  `linux`, never returns an arm64 asset for darwin — that part is right).
+- `_osquery_download_url` (`:250-289`) builds the GitHub release tarball URL.
+  **FIXED** (previously flagged here and in
+  `docs/design/BINARY_BUNDLING.md:207-208` as a live bug — both 404s
+  confirmed against the real 5.10.2 release asset list and corrected):
+  linux assets carry a `_1` build-revision infix (`osquery-5.10.2_1.
+  linux_x86_64.tar.gz` / `osquery-5.10.2_1.linux_aarch64.tar.gz` — arm64
+  IS published, under the name `aarch64` not `arm64`, so it no longer
+  returns `None`), and macOS ships exactly one (x86_64-only) tarball
+  (`osquery-5.10.2_1.macos_x86_64.tar.gz`), resolved for both amd64 and
+  arm64 Macs (arm64 runs the extracted `osqueryi` under Rosetta 2) since
+  there is no `macos_arm64.tar.gz` asset — that absence was the original
+  404 this bootstrapper hit. Covered by
+  `tests/unit/test_bootstrap_coverage.py::TestGetDownloadUrl` and
+  `tests/unit/test_cross_platform_urls.py`; verified end-to-end via
+  `make bundle-binaries` (osquery downloads a real ~24MB tarball, no 404).
 - `_TARBALL_BINARIES: ClassVar[dict[str, str]] = {"osquery": "osqueryi", ...}`
   (`:353-356`) — **the extraction map only pulls the `osqueryi` executable
   out of the downloaded tarball.** The same tarball also contains `osqueryd`
@@ -557,10 +565,12 @@ Extends `BinaryBootstrapper` per the gap identified in §1.4:
    `KNOWN_SHA256["osquery"]` (identical tarball bytes, `_verify_digest` runs
    before extraction, `:117-140`) — document this so an operator setting
    `GLUDD_BINARY_SHA256` doesn't assume a second, different pin is needed.
-3. **Fix the linux/arm64 drop** (`_osquery_download_url:270-271`) — per
-   `docs/design/BINARY_BUNDLING.md:207-208`'s already-verified finding,
-   osquery 5.10.2 DOES publish a linux arm64 tarball; the current `if
-   osq_arch != "x86_64": return None` wrongly refuses it. Fix alongside (1)-(2).
+3. ~~Fix the linux/arm64 drop~~ **DONE** — `_osquery_download_url` now
+   resolves linux/arm64 (asset name `aarch64`) and macOS (single universal
+   `macos_x86_64` tarball for both amd64/arm64) against the real 5.10.2
+   release asset list; see the updated §1.4 note above. Nothing further
+   needed here for `osquery`/`osqueryi` — only the new `osqueryd` manifest
+   entry in (1) still needs this same URL logic wired up when it lands.
 4. **`osquery_bootstrap`'s auto-detect order** (§3.1) is PATH → bundled →
    `.gludd/binaries/` (§1.6) → filestore → bootstrap-download-if-allowed —
    calling `BinaryBootstrapper` methods directly (as `gludd_osquery.py`

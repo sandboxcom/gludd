@@ -1,0 +1,277 @@
+---
+# linux_diagnose role — gather Linux diagnostic data from /proc/*,
+# journalctl, sysfs, dmesg, lsmod, and sysctl.
+# Uses the python gatherer backend in files/linux_gather.py for
+# structured JSON output, with raw shell fallbacks.
+
+- name: Create artifact directory
+  when: ansible_os_family in ['RedHat', 'Debian', 'Suse', 'Archlinux']
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Create artifact subdirectories
+  when: ansible_os_family in ['RedHat', 'Debian', 'Suse', 'Archlinux']
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}/{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - proc
+    - sysfs
+
+- name: Gather structured diagnostics via python backend
+  when:
+    - ansible_os_family in ['RedHat', 'Debian', 'Suse', 'Archlinux']
+    - gather_proc | bool or gather_dmesg | bool or gather_lsmod | bool or gather_sysctl | bool
+  block:
+    - name: Copy linux_gather.py to target
+      ansible.builtin.copy:
+        src: linux_gather.py
+        dest: "{{ artifact_dir }}/linux_gather.py"
+        mode: "0755"
+
+    - name: Run gatherer — collect proc, dmesg, lsmod, sysctl as JSON
+      ansible.builtin.command: >
+        python3 {{ artifact_dir }}/linux_gather.py
+        --output {{ artifact_dir }}/diagnostics.json
+        --dmesg-lines {{ dmesg_lines | default(500) }}
+      register: _gather_result
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write gather stdout/stderr to artifact_dir
+      ansible.builtin.copy:
+        content: |
+          stdout: {{ _gather_result.stdout | default('') }}
+          stderr: {{ _gather_result.stderr | default('') }}
+          rc: {{ _gather_result.rc | default('') }}
+        dest: "{{ artifact_dir }}/gather_output.txt"
+        mode: "0644"
+      when: _gather_result is defined
+
+- name: Gather /proc files
+  when:
+    - ansible_os_family in ['RedHat', 'Debian', 'Suse', 'Archlinux']
+    - gather_proc | bool
+  block:
+    - name: Copy /proc/cpuinfo
+      ansible.builtin.command: cat /proc/cpuinfo
+      register: _proc_cpuinfo
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write /proc/cpuinfo to artifact_dir
+      ansible.builtin.copy:
+        content: "{{ _proc_cpuinfo.stdout | default('') }}"
+        dest: "{{ artifact_dir }}/proc/cpuinfo.txt"
+        mode: "0644"
+      when: _proc_cpuinfo is success and _proc_cpuinfo.stdout | default('', true) | length > 0
+
+    - name: Copy /proc/meminfo
+      ansible.builtin.command: cat /proc/meminfo
+      register: _proc_meminfo
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write /proc/meminfo to artifact_dir
+      ansible.builtin.copy:
+        content: "{{ _proc_meminfo.stdout | default('') }}"
+        dest: "{{ artifact_dir }}/proc/meminfo.txt"
+        mode: "0644"
+      when: _proc_meminfo is success and _proc_meminfo.stdout | default('', true) | length > 0
+
+    - name: Copy /proc/version
+      ansible.builtin.command: cat /proc/version
+      register: _proc_version
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write /proc/version to artifact_dir
+      ansible.builtin.copy:
+        content: "{{ _proc_version.stdout | default('') }}"
+        dest: "{{ artifact_dir }}/proc/version.txt"
+        mode: "0644"
+      when: _proc_version is success and _proc_version.stdout | default('', true) | length > 0
+
+    - name: Run lspci
+      ansible.builtin.command: lspci
+      register: _lspci
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write lspci to artifact_dir
+      ansible.builtin.copy:
+        content: "{{ _lspci.stdout | default('') }}"
+        dest: "{{ artifact_dir }}/lspci.txt"
+        mode: "0644"
+      when: _lspci is success and _lspci.stdout | default('', true) | length > 0
+
+    - name: Run lsusb
+      ansible.builtin.command: lsusb
+      register: _lsusb
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write lsusb to artifact_dir
+      ansible.builtin.copy:
+        content: "{{ _lsusb.stdout | default('') }}"
+        dest: "{{ artifact_dir }}/lsusb.txt"
+        mode: "0644"
+      when: _lsusb is success and _lsusb.stdout | default('', true) | length > 0
+
+    - name: Run df -h
+      ansible.builtin.command: df -h
+      register: _df
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write df -h to artifact_dir
+      ansible.builtin.copy:
+        content: "{{ _df.stdout | default('') }}"
+        dest: "{{ artifact_dir }}/df.txt"
+        mode: "0644"
+      when: _df is success and _df.stdout | default('', true) | length > 0
+
+    - name: Run ip addr
+      ansible.builtin.command: ip addr
+      register: _ip_addr
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write ip addr to artifact_dir
+      ansible.builtin.copy:
+        content: "{{ _ip_addr.stdout | default('') }}"
+        dest: "{{ artifact_dir }}/ip_addr.txt"
+        mode: "0644"
+      when: _ip_addr is success and _ip_addr.stdout | default('', true) | length > 0
+
+- name: Gather journalctl
+  when:
+    - ansible_os_family in ['RedHat', 'Debian', 'Suse', 'Archlinux']
+    - gather_journalctl | bool
+  block:
+    - name: Run journalctl
+      ansible.builtin.command: journalctl -n 500 --no-pager
+      register: _journalctl
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write journalctl to artifact_dir
+      ansible.builtin.copy:
+        content: "{{ _journalctl.stdout | default('') }}"
+        dest: "{{ artifact_dir }}/journalctl.txt"
+        mode: "0644"
+      when: _journalctl is success and _journalctl.stdout | default('', true) | length > 0
+
+- name: Gather sysfs info
+  when:
+    - ansible_os_family in ['RedHat', 'Debian', 'Suse', 'Archlinux']
+    - gather_sysfs | bool
+  block:
+    - name: Run lsblk
+      ansible.builtin.command: lsblk -o NAME,SIZE,TYPE,MOUNTPOINT,FSTYPE,LABEL
+      register: _lsblk
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write lsblk to artifact_dir
+      ansible.builtin.copy:
+        content: "{{ _lsblk.stdout | default('') }}"
+        dest: "{{ artifact_dir }}/sysfs/lsblk.txt"
+        mode: "0644"
+      when: _lsblk is success and _lsblk.stdout | default('', true) | length > 0
+
+    - name: Run findmnt --json
+      ansible.builtin.command: findmnt --json
+      register: _findmnt
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write findmnt to artifact_dir
+      ansible.builtin.copy:
+        content: "{{ _findmnt.stdout | default('') }}"
+        dest: "{{ artifact_dir }}/sysfs/findmnt.json"
+        mode: "0644"
+      when: _findmnt is success and _findmnt.stdout | default('', true) | length > 0
+
+- name: Gather dmesg
+  when:
+    - ansible_os_family in ['RedHat', 'Debian', 'Suse', 'Archlinux']
+    - gather_dmesg | bool
+  block:
+    - name: Run dmesg --level=err,warn
+      ansible.builtin.command: dmesg --level=err,warn
+      register: _dmesg_err
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Run dmesg -T
+      ansible.builtin.command: dmesg -T
+      register: _dmesg_ts
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write dmesg to artifact_dir
+      ansible.builtin.copy:
+        content: |
+          === dmesg --level=err,warn ===
+          {{ _dmesg_err.stdout | default('(no output)') }}
+
+          === dmesg -T ===
+          {{ _dmesg_ts.stdout | default('(no output)') }}
+        dest: "{{ artifact_dir }}/dmesg.txt"
+        mode: "0644"
+
+- name: Gather lsmod
+  when:
+    - ansible_os_family in ['RedHat', 'Debian', 'Suse', 'Archlinux']
+    - gather_lsmod | bool
+  block:
+    - name: Run lsmod
+      ansible.builtin.command: lsmod
+      register: _lsmod
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write lsmod to artifact_dir
+      ansible.builtin.copy:
+        content: "{{ _lsmod.stdout | default('') }}"
+        dest: "{{ artifact_dir }}/lsmod.txt"
+        mode: "0644"
+      when: _lsmod is success and _lsmod.stdout | default('', true) | length > 0
+
+- name: Gather sysctl
+  when:
+    - ansible_os_family in ['RedHat', 'Debian', 'Suse', 'Archlinux']
+    - gather_sysctl | bool
+  block:
+    - name: Run sysctl -a
+      ansible.builtin.command: sysctl -a
+      become: true
+      register: _sysctl
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write sysctl to artifact_dir
+      ansible.builtin.copy:
+        content: "{{ _sysctl.stdout | default('') }}"
+        dest: "{{ artifact_dir }}/sysctl.txt"
+        mode: "0644"
+      when: _sysctl is success and _sysctl.stdout | default('', true) | length > 0

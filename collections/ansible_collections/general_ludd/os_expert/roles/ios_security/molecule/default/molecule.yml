@@ -1,0 +1,21 @@
+---
+dependency:
+  name: galaxy
+  options:
+    role-file: requirements.yml
+driver:
+  name: delegated
+platforms:
+  - name: localhost
+    ansible_connection: local
+provisioner:
+  name: ansible
+  config_options:
+    defaults:
+      gathering: explicit
+      callbacks_enabled: ansible.posix.profile_tasks
+  playbooks:
+    converge: converge.yml
+    verify: verify.yml
+verifier:
+  name: ansible

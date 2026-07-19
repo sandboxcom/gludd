@@ -2,7 +2,7 @@
 - name: Prepare - mock OpenBao + throwaway GPG key for openbao_break_glass_backup
   hosts: localhost
   connection: local
-  gather_facts: true
+  gather_facts: false
   vars:
     project_dir: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
     mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8794', true) }}"
@@ -13,8 +13,8 @@
     - name: Launch mock daemon (background, nohup)
       ansible.builtin.shell:
         cmd: >-
-          nohup {{ lookup('env', 'VIRTUAL_ENV') | default('/usr', true) }}/bin/python3
-          "/Users/shawnwilson/gludd/molecule/mock_daemon/server.py"
+          nohup {{ (lookup('env', 'VIRTUAL_ENV') + '/bin/python3') if lookup('env', 'VIRTUAL_ENV') else 'python3' }}
+          "{{ project_dir }}/molecule/mock_daemon/server.py"
           --port {{ mock_port }} --host 127.0.0.1 --pidfile "{{ pidfile }}"
           > /tmp/gludd-mock-{{ mock_port }}.log 2>&1 &
       changed_when: true

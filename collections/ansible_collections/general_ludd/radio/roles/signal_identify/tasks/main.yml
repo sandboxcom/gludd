@@ -1,0 +1,58 @@
+---
+# signal_identify role — modulation classification and protocol identification
+
+- name: Validate parameters
+  ansible.builtin.assert:
+    that:
+      - signal_identify_sample_rate | int > 0
+      - signal_identify_center_freq_hz | int > 0
+      - signal_identify_method in ["fft", "cyclostationary", "auto"]
+    fail_msg: "sample_rate must be > 0; method must be fft / cyclostationary / auto"
+
+- name: Check numpy/scipy availability
+  ansible.builtin.command: "{{ ansible_python_interpreter }} -c 'import numpy; import scipy.signal'"
+  register: _py_check
+  changed_when: false
+  failed_when: false
+
+- name: Identify signals
+  ansible.builtin.command: >
+    {{ ansible_python_interpreter }}
+    {{ role_path }}/files/signal_identify.py
+    {{ ('--input-file ' + signal_identify_input_file) if signal_identify_input_file else '' }}
+    --sample-rate {{ signal_identify_sample_rate }}
+    --center-freq {{ signal_identify_center_freq_hz }}
+    --method {{ signal_identify_method }}
+    --threshold {{ signal_identify_threshold_db }}
+    {{ ('--bandwidth ' + (signal_identify_bandwidth_hz | string)) if signal_identify_bandwidth_hz is defined else '' }}
+    {{ ('--symbol-rate ' + (signal_identify_symbol_rate_baud | string)) if signal_identify_symbol_rate_baud is defined else '' }}
+    {{ ('--spectrum-shape ' + signal_identify_spectrum_shape) if signal_identify_spectrum_shape is defined else '' }}
+  register: _signal_result
+  changed_when: false
+  when:
+    - signal_identify_enabled | bool
+
+- name: Parse classification result
+  ansible.builtin.set_fact:
+    signal_identify_result: "{{ _signal_result.stdout | from_json }}"
+  when:
+    - signal_identify_enabled | bool
+
+- name: Write JSON output
+  ansible.builtin.copy:
+    content: "{{ signal_identify_result | to_nice_json }}"
+    dest: "{{ signal_identify_output_dir }}/signal_identify.json"
+    mode: "0644"
+  when: signal_identify_enabled | bool
+
+- name: Register signal identify verdict
+  ansible.builtin.set_fact:
+    signal_identify_verdict:
+      role: signal_identify
+      method: "{{ signal_identify_method }}"
+      top_hit: "{{ signal_identify_result.classification.top_hit.scheme if signal_identify_result.classification.top_hit else 'unknown' }}"
+      candidates: "{{ signal_identify_result.classification.candidates | map(attribute='scheme') | list }}"
+      protocol_candidates: "{{ signal_identify_result.classification.protocol_candidates | map(attribute='protocol') | list }}"
+      verdict: "{{ signal_identify_result.verdict }}"
+      output_dir: "{{ signal_identify_output_dir }}"
+  when: signal_identify_enabled | bool

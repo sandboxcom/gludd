@@ -14,9 +14,16 @@ Usage::
     make deploy-and-forget         # push + record timestamp + print checkback
     make ci-cooldown-status        # show remaining cooldown seconds
 
+Exit codes for ``check``: 0=proceed to ci-verdict, 1=cooldown blocks AND last
+verdict was RED/failure (the failure IS surfaced), 3=cooldown blocks and last
+verdict was success/pending/unknown. In all cases the last known verdict is
+printed to stderr so the caller never sees "PENDING" when CI was already RED.
+
 State file: ``/tmp/gludd-ci-check-state.json``
     {"last_check_epoch": <float>, "last_push_epoch": <float>,
-     "last_head_sha": "<sha>", "check_count": <int>}
+     "last_head_sha": "<sha>", "check_count": <int>,
+     "last_verdict": "<success|failure|pending|unknown>",
+     "last_verdict_epoch": <float>}
 
 Default cooldown: 600s (10 min). Override via ``CI_CHECK_COOLDOWN_SEC``.
 """
@@ -37,7 +44,8 @@ def load_state() -> dict:
     try:
         return json.loads(STATE_FILE.read_text())
     except (FileNotFoundError, json.JSONDecodeError):
-        return {"last_check_epoch": 0.0, "last_push_epoch": 0.0, "last_head_sha": "", "check_count": 0}
+        return {"last_check_epoch": 0.0, "last_push_epoch": 0.0, "last_head_sha": "", "check_count": 0,
+                "last_verdict": "", "last_verdict_epoch": 0.0}
 
 
 def save_state(state: dict) -> None:
@@ -78,17 +86,47 @@ def cmd_check(cooldown: int, force: bool) -> int:
     if remaining > 0 and not force:
         mins = int(remaining // 60)
         secs = int(remaining % 60)
+        last_verdict = state.get("last_verdict", "")
+        last_verdict_epoch = state.get("last_verdict_epoch", 0.0)
+        verdict_detail = _format_last_verdict(last_verdict, last_verdict_epoch)
         print(
             f"CI-COOLDOWN: {mins}m{secs}s remaining since last check "
             f"(check #{state.get('check_count', 0)}). "
+            f"{verdict_detail} "
             f"CI runs on its own schedule; polling does not speed it up. "
             f"Resume real work; check back later with `make ci-verdict-safe`. "
             f"(override with FORCE=1 ONLY for release-cut)",
             file=sys.stderr,
         )
+        if last_verdict in ("failure", "red", "error", "cancelled", "timed_out"):
+            return 1
         return 3
     record_check(head_sha)
     print(f"CI-CHECK-{state.get('check_count', 0) + 1}: running ci-verdict for {head_sha[:12]}")
+    return 0
+
+
+def _format_last_verdict(verdict: str, epoch: float) -> str:
+    if not verdict:
+        return "Last known verdict: unknown (no prior check recorded)."
+    age_str = _age_str(epoch)
+    return f"Last known verdict: {verdict.upper()}{age_str}."
+
+
+def _age_str(epoch: float) -> str:
+    if not epoch:
+        return ""
+    age = int(time.time() - epoch)
+    if age < 60:
+        return f" ({age}s ago)"
+    return f" ({age // 60}m{age % 60}s ago)"
+
+
+def cmd_record_verdict(verdict: str) -> int:
+    state = load_state()
+    state["last_verdict"] = verdict.strip().lower()
+    state["last_verdict_epoch"] = time.time()
+    save_state(state)
     return 0
 
 
@@ -109,6 +147,8 @@ def cmd_status(cooldown: int) -> int:
     last_push = state.get("last_push_epoch", 0.0)
     count = state.get("check_count", 0)
     head = state.get("last_head_sha", "")
+    last_verdict = state.get("last_verdict", "")
+    last_verdict_epoch = state.get("last_verdict_epoch", 0.0)
     if remaining > 0:
         mins = int(remaining // 60)
         secs = int(remaining % 60)
@@ -117,22 +157,29 @@ def cmd_status(cooldown: int) -> int:
         print(f"COOLDOWN-EXPIRED: may check now (last check was {int(time.time() - last_check)}s ago)")
     if last_push:
         print(f"  last push: {int(time.time() - last_push)}s ago ({head[:12]})")
+    if last_verdict:
+        age = _age_str(last_verdict_epoch)
+        print(f"  last verdict: {last_verdict.upper()}{age}")
     return 0
 
 
 def main() -> int:
     if len(sys.argv) < 2:
-        print("usage: ci_check_cooldown.py {check|deploy|status} [cooldown_sec]", file=sys.stderr)
+        print("usage: ci_check_cooldown.py {check|deploy|status|record-verdict} [args...]", file=sys.stderr)
         return 2
     cmd = sys.argv[1]
-    cooldown = int(sys.argv[2]) if len(sys.argv) > 2 else DEFAULT_COOLDOWN_SEC
     force = os.environ.get("FORCE", "") == "1"
     if cmd == "check":
+        cooldown = int(sys.argv[2]) if len(sys.argv) > 2 else DEFAULT_COOLDOWN_SEC
         return cmd_check(cooldown, force)
     if cmd == "deploy":
         return cmd_deploy()
     if cmd == "status":
+        cooldown = int(sys.argv[2]) if len(sys.argv) > 2 else DEFAULT_COOLDOWN_SEC
         return cmd_status(cooldown)
+    if cmd == "record-verdict":
+        verdict = sys.argv[2] if len(sys.argv) > 2 else "unknown"
+        return cmd_record_verdict(verdict)
     print(f"unknown command: {cmd}", file=sys.stderr)
     return 2
 

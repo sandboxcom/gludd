@@ -1,0 +1,19 @@
+---
+galaxy_info:
+  role_name: civic_service_finder
+  author: Agentic Harness Agent
+  description: >
+    Expose the civic_services.py module_util to agents: public/civic services
+    (health, identity, electoral, emergency, postal) for a country, with
+    optional category filter.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+  galaxy_tags: [governance, civic, services, public]
+dependencies: []

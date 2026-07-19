@@ -1,0 +1,35 @@
+---
+galaxy_info:
+  role_name: governance_navigator
+  author: Agentic Harness Agent
+  description: >
+    Composite governance router: given a natural-language query, determines
+    which governance module(s) (borders, governing bodies, tax & currency,
+    conflicts & treaties, civic services, decision makers, information
+    classification) to consult and dispatches the matching sub-roles,
+    aggregating their verdicts.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+  galaxy_tags: [governance, router, navigator, composite, query]
+dependencies:
+  - role: navigate_borders
+    when: false
+  - role: lookup_governing_body
+    when: false
+  - role: tax_currency_info
+    when: false
+  - role: conflicts_treaties_lookup
+    when: false
+  - role: civic_service_finder
+    when: false
+  - role: decision_maker_lookup
+    when: false
+  - role: info_classification_check
+    when: false

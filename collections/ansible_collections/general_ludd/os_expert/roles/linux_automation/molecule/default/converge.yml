@@ -1,0 +1,10 @@
+---
+- name: Converge
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: "Include linux_automation"
+      ansible.builtin.include_role:
+        name: "linux_automation"
+      vars:
+        enable_git_push: false

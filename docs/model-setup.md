@@ -4,6 +4,27 @@
 
 General Ludd Agent supports multiple model providers including OpenAI, Z.AI (ZAI), and local inference engines (llama.cpp, vllm). Models can be added/removed at runtime via the admin API or CLI.
 
+> ### ⚠ Before you configure any model: the config-discovery trap
+>
+> The daemon discovers its config directory as `$GLUDD_CONFIG_DIR` → `~/.config/general-ludd`
+> → `/etc/general-ludd`. **The repo's own `config/` directory is NOT on that path** — the
+> files under `config/` in a source checkout are *examples to copy*, not files the daemon
+> reads.
+>
+> If you start the daemon from a repo checkout **without `GLUDD_CONFIG_DIR` set**, no model
+> profiles load, the model gateway stays `None`, and the dispatcher silently falls back to a
+> **no-op executor**: every dispatched agent returns `status="completed"` with **empty
+> output** and **no warning is logged**, while `/healthz` and `/readyz` still return
+> 200/ready. Agents appear to succeed instantly and do nothing — none of the setup below
+> will have any effect.
+>
+> ```bash
+> export GLUDD_CONFIG_DIR="$PWD/config"     # from a source checkout
+> gludd models router-status                # must list an active profile; empty = still trapped
+> ```
+>
+> Full detail: [`docs/CONFIG_REFERENCE.md`](CONFIG_REFERENCE.md#config-directory-discovery).
+
 ## OpenAI Setup
 
 ### 1. Get an API Key
@@ -226,7 +247,11 @@ curl -X POST http://localhost:8000/admin/hooks \
 
 ## Model Routing
 
-Configure role-based routing in `config/model_routing.yml`:
+Configure role-based routing in `model_routing.yml` **inside the discovered config
+directory** (`$GLUDD_CONFIG_DIR/model_routing.yml`, `~/.config/general-ludd/model_routing.yml`,
+or `/etc/general-ludd/model_routing.yml`). The repo's `config/model_routing.yml` is an
+example to copy — the daemon does not read it unless `GLUDD_CONFIG_DIR` points at the
+repo's `config/` tree (see the trap callout at the top of this page):
 
 ```yaml
 default_profile: openai-gpt4o

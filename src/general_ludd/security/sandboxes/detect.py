@@ -1,11 +1,15 @@
 """Auto-detect the best sandbox backend for the current host.
 
 Selection order (informed by the permission/sandbox research survey —
-Linux per-task sandboxing is best served by Landlock + bubblewrap, which are
-per-process / unprivileged; AppArmor + SELinux are demoted to host-level
-defense-in-depth):
+hardware-virtualized or userspace-kernel boundaries are strongest; per-process
+and namespace jail are secondary; system-wide MAC is defense-in-depth):
 
   * **Linux**:
+      0a. **Firecracker** (``/dev/kvm`` readable + ``firecracker`` binary) —
+          hardware-virtualized microVM. Strongest isolation (<5 MiB overhead,
+          <125 ms boot).
+      0b. **gVisor** (``runsc`` binary present) — userspace application kernel.
+          Strong isolation; no KVM required.
       1. **Landlock** (kernel ≥ 6.7, pylandlock importable) — per-process,
          unprivileged, fine-grained. The best fit for per-agent sandboxing.
       2. **bubblewrap** (``bwrap`` binary present) — namespace-isolated
@@ -133,6 +137,24 @@ def auto() -> SandboxBackend | None:
     none is usable."""
     plat = sys.platform
     if plat.startswith("linux"):
+        # 0a. Firecracker microVM — strongest isolation (KVM required).
+        try:
+            from general_ludd.security.sandboxes.vm.firecracker_backend import (
+                FirecrackerBackend,
+            )
+            if FirecrackerBackend.available():
+                return FirecrackerBackend
+        except ImportError:
+            pass
+        # 0b. gVisor application kernel — strong isolation (no KVM required).
+        try:
+            from general_ludd.security.sandboxes.vm.gvisor_backend import (
+                GvisorBackend,
+            )
+            if GvisorBackend.available():
+                return GvisorBackend
+        except ImportError:
+            pass
         # 1. Landlock — per-process, unprivileged (preferred for per-agent).
         if _landlock_available():
             from general_ludd.security.sandboxes.linux_landlock import LandlockBackend
@@ -167,8 +189,8 @@ def auto() -> SandboxBackend | None:
             return SELinuxBackend
         logger.warning(
             "No sandbox backend available on this Linux host "
-            "(neither Landlock nor bubblewrap nor AppArmor nor SELinux); "
-            "dispatching UNSANDBOXED. Install pylandlock "
+            "(neither Firecracker nor gVisor nor Landlock nor bubblewrap nor "
+            "AppArmor nor SELinux); dispatching UNSANDBOXED. Install pylandlock "
             "(pip install general-ludd-agent[sandbox]) or bubblewrap "
             "(apt install bubblewrap) for per-agent isolation."
         )

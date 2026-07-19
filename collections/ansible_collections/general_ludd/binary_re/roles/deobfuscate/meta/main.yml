@@ -1,0 +1,18 @@
+---
+galaxy_info:
+  role_name: deobfuscate
+  author: Agentic Harness Agent
+  description: >
+    Deobfuscation analysis role — packing detection, control-flow flattening
+    detection, string deobfuscation, and opaque predicate detection.
+    Report-only.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

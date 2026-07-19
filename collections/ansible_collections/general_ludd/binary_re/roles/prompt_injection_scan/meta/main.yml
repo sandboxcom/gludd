@@ -1,0 +1,18 @@
+---
+galaxy_info:
+  role_name: prompt_injection_scan
+  author: Agentic Harness Agent
+  description: >
+    Prompt injection scanning role — scan binaries and scripts for embedded
+    prompt-injection payloads in hex, ASCII, JS AST, and base64 encodings.
+    Report-only.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

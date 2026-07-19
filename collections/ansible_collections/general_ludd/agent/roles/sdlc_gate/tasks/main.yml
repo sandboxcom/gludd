@@ -162,11 +162,14 @@
             'checks': _sg_entry_checks,
             'block_reasons': _sg_block_reasons,
             'token_chain': {
-              'previous_stage': (_sg_pipeline_stages[_sg_stage_number | int - 1].stage | default('none')),
-              'previous_token_present': _sg_prev_token_stat.stat.exists | default(false) if (_sg_stage_number | int) > 0 else null
+              'previous_stage': (_sg_pipeline_stages[(_sg_stage_number | int) - 1].stage | default('none'))
+                 if ((_sg_stage_number | int) > 0) else 'none',
+              'previous_token_present': _sg_prev_token_stat.get('stat', {}).get('exists', false)
+                 if ((_sg_stage_number | int) > 0) else false
             },
             'system_context': {
-              'backlog_size': live_facts.ansible_facts.gludd.todos.backlog_size | default(0) | int
+              'backlog_size': (live_facts.get('ansible_facts', {}).get('gludd', {}).get('todos', {}).get('backlog_size', 0) | int)
+                 if live_facts is not failed else 0
             }
           } | to_nice_json }}
         dest: "{{ artifact_dir }}/sdlc_entry_{{ stage }}.json"
@@ -226,7 +229,12 @@
     # -- Check evidence bundle artifacts --
     - name: "[check_stage_exit] Stat evidence bundle artifacts"
       ansible.builtin.stat:
-        path: "{{ item.path | default(artifact_dir + '/' + item.artifact) }}"
+        path: >-
+          {%- if '{{' in (item.path | default('')) -%}
+          {{ artifact_dir + '/' + item.artifact }}
+          {%- else -%}
+          {{ item.path | default(artifact_dir + '/' + item.artifact) }}
+          {%- endif -%}
       register: _sg_evidence_stats
       loop: "{{ (_sg_evidence_bundles[stage].required | default([])) }}"
       loop_control:
@@ -280,7 +288,7 @@
           {%- endfor -%}
           {{ verdicts }}
 
-    - name: "[check_stage_exit] Determine exit gate passed (fail-closed)"
+    - name: "[check_stage_exit] Determine exit checks complete (fail-closed)"
       ansible.builtin.set_fact:
         _sg_exit_checks_complete: >-
           {%- set all_checks = [] -%}
@@ -294,6 +302,9 @@
             {%- set _ = all_checks.append(q.passed) -%}
           {%- endfor -%}
           {{ all_checks | length > 0 and (false not in all_checks) }}
+
+    - name: "[check_stage_exit] Determine exit gate passed"
+      ansible.builtin.set_fact:
         _sg_exit_gate_passed: >-
           {{ _sg_exit_checks_complete | bool }}
 
@@ -509,48 +520,54 @@
         label: "{{ item.item.token }}"
       when: item.stat.exists | default(false)
 
+    - name: "[audit_token_chain] Build token chain"
+      ansible.builtin.set_fact:
+        _sg_token_chain_built: >-
+          {%- set chain = [] -%}
+          {%- for stat in _sg_token_stats.results -%}
+            {%- set token_info = {'token': stat.item.token,
+                                  'stage': stat.item.stage,
+                                  'number': stat.item.number,
+                                  'present': stat.stat.exists | default(false),
+                                  'valid': false} -%}
+            {%- if stat.stat.exists | default(false) -%}
+              {%- set slurp = _sg_token_slurps.results | selectattr('item.item.token', 'equalto', stat.item.token) | first | default({}) -%}
+              {%- if slurp.content | default('') | length > 0 -%}
+                {%- set parsed = slurp.content | b64decode | from_json | default({}) -%}
+                {%- set _ = token_info.update({
+                  'valid': parsed.token == stat.item.token,
+                  'task_id_match': parsed.task_id == task_id if task_id | length > 0 else null,
+                  'has_next_stage': parsed.next_stage | default('') | length > 0,
+                  'produced_at': parsed.produced_at | default('unknown')
+                }) -%}
+              {%- else -%}
+                {%- set _ = token_info.update({'valid': false, 'error': 'empty_file'}) -%}
+              {%- endif -%}
+            {%- endif -%}
+            {%- set _ = chain.append(token_info) -%}
+          {%- endfor -%}
+          {{ chain | to_json }}
+
     - name: "[audit_token_chain] Build token chain audit report"
       ansible.builtin.set_fact:
-        _sg_token_audit:
-          chain: >-
-            {%- set chain = [] -%}
-            {%- for stat in _sg_token_stats.results -%}
-              {%- set token_info = {'token': stat.item.token,
-                                    'stage': stat.item.stage,
-                                    'number': stat.item.number,
-                                    'present': stat.stat.exists | default(false)} -%}
-              {%- if stat.stat.exists | default(false) -%}
-                {%- set slurp = _sg_token_slurps.results | selectattr('item.item.token', 'equalto', stat.item.token) | first | default({}) -%}
-                {%- if slurp.content | default('') | length > 0 -%}
-                  {%- set parsed = slurp.content | b64decode | from_json | default({}) -%}
-                  {%- set _ = token_info.update({
-                    'valid': parsed.token == stat.item.token,
-                    'task_id_match': parsed.task_id == task_id if task_id | length > 0 else null,
-                    'has_next_stage': parsed.next_stage | default('') | length > 0,
-                    'produced_at': parsed.produced_at | default('unknown')
-                  }) -%}
-                {%- else -%}
-                  {%- set _ = token_info.update({'valid': false, 'error': 'empty_file'}) -%}
-                {%- endif -%}
-              {%- endif -%}
-              {%- set _ = chain.append(token_info) -%}
-            {%- endfor -%}
-            {{ chain }}
-          chain_health:
-            total_present: "{{ _sg_token_audit.chain | selectattr('present') | list | length }}"
-            total_expected: "{{ _sg_token_chain | length }}"
-            valid_tokens: "{{ _sg_token_audit.chain | selectattr('valid', 'equalto', true) | list | length }}"
-            first_missing: >-
-              {{ (_sg_token_audit.chain
-                  | selectattr('present', 'equalto', false)
-                  | map(attribute='token')
-                  | first) | default('none') }}
-          task_id: "{{ task_id }}"
+        _sg_token_audit: >-
+          {%- set chain = _sg_token_chain_built | from_json -%}
+          {%- set report = {
+            'chain': chain,
+            'chain_health': {
+              'total_present': chain | selectattr('present') | list | length,
+              'total_expected': _sg_token_chain | length,
+              'valid_tokens': chain | selectattr('valid', 'equalto', true) | list | length,
+              'first_missing': (chain | selectattr('present', 'equalto', false) | map(attribute='token') | first) | default('none')
+            },
+            'task_id': task_id
+          } -%}
+          {{ report | to_json }}
 
     - name: "[audit_token_chain] Write token chain audit artifact"
       ansible.builtin.copy:
         content: >-
-          {{ _sg_token_audit | to_nice_json }}
+          {{ _sg_token_audit | from_json | to_nice_json }}
         dest: "{{ artifact_dir }}/sdlc_token_chain_audit.json"
         mode: "0644"
 
@@ -745,8 +762,8 @@
       pipeline_healthy={{ _sg_pipeline_healthy | default('n/a') }}
       defects={{ _sg_pipeline_defects | default([]) | length }}
       {% elif operation == 'audit_token_chain' %}
-      tokens_present={{ _sg_token_audit.chain_health.total_present | default(0) }}/{{ _sg_token_audit.chain_health.total_expected | default(0) }}
-      first_missing={{ _sg_token_audit.chain_health.first_missing | default('none') }}
+      tokens_present={{ (_sg_token_audit | from_json).chain_health.total_present | default(0) }}/{{ (_sg_token_audit | from_json).chain_health.total_expected | default(0) }}
+      first_missing={{ (_sg_token_audit | from_json).chain_health.first_missing | default('none') }}
       {% elif operation == 'list_stages' %}
       current_stage={{ _sg_current_stage | default('intake') }}
       exit_gated={{ _sg_stage_table | selectattr('exit_gated') | list | length }}/{{ _sg_stage_table | length }}

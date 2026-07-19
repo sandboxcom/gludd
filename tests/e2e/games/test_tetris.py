@@ -95,8 +95,12 @@ class TestTetris:
         print(f"  interactions_completed={stress.get('interactions_completed', 0)}")
         print(f"  crashed={stress.get('crashed')} ended_gracefully={stress.get('ended_gracefully')}")
 
-    def test_gap_report(self):
-        _export_observability_report()
+    def test_gap_report(self, tmp_path):
+        out_path = _export_observability_report(out_dir=tmp_path)
+        assert out_path.exists()
+        assert out_path.parent == tmp_path
+        from tests.e2e.test_game_building_deepseek import _REPO_ROOT
+        assert not (_REPO_ROOT / ".game-audit-report.json").exists()
         print("\nTetris test complete.")
 
 

@@ -8,20 +8,25 @@
     "doom_loop": "deny"
   },
   "plugin": [
+    "./.opencode/plugin/enforce-session-start.ts",
     "./.opencode/plugin/enforce-make.ts",
     "./.opencode/plugin/enforce-floor.ts",
     "./.opencode/plugin/enforce-delegate.ts",
-    "./.opencode/plugin/enforce-session-start.ts",
+    "./.opencode/plugin/enforce-multitask.ts",
+    "./.opencode/plugin/enforce-stop.ts",
     "./.opencode/plugin/enforce-deadline.ts",
-    "./.opencode/plugin/enforce-deletion-gate.ts",
-    "./.opencode/plugin/enforce-no-suppressions.ts",
-    "./.opencode/plugin/enforce-no-wait.ts",
+    "./.opencode/plugin/enforce-enhancement-ratio.ts",
     "./.opencode/plugin/enforce-clean-tree.ts",
     "./.opencode/plugin/enforce-commit-lock.ts",
     "./.opencode/plugin/enforce-verified-claims.ts",
-    "./.opencode/plugin/enforce-multitask.ts",
-    "./.opencode/plugin/enforce-enhancement-ratio.ts",
-    "./.opencode/plugin/enforce-stop.ts",
+    "./.opencode/plugin/enforce-no-suppressions.ts",
+    "./.opencode/plugin/enforce-no-wait.ts",
+    "./.opencode/plugin/enforce-deletion-gate.ts",
+    "./.opencode/plugin/enforce-commit-lock.ts",
+    "./.opencode/plugin/enforce-batch-push.ts",
+    "./.opencode/plugin/enforce-depth.ts",
+    "./.opencode/plugin/enforce-tdd.ts",
+    "./.opencode/plugin/enforce-objective.ts",
     "./.opencode/plugins/watchdog.ts"
   ]
 }

@@ -1,0 +1,23 @@
+---
+galaxy_info:
+  role_name: encoding_detect
+  author: Agentic Harness Agent
+  description: >
+    chardet-style encoding detection and conversion. Detects encoding from
+    raw bytes with confidence scores, converts between encodings
+    (transcoding), detects mojibake patterns, and attempts repair via
+    round-trip heuristics. Covers single-byte (ISO 8859-x, Windows-125x,
+    IBM code pages), multi-byte CJK (Shift-JIS, EUC-JP/KR, GB2312,
+    GB18030, Big5), and Cyrillic (KOI8-R/U) encodings. Produces JSON
+    artifact with detected encoding, confidence, and converted text
+    preview. Wires to src/general_ludd/language/charset_map.py.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

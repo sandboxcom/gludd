@@ -1,0 +1,23 @@
+---
+namespace: general_ludd
+name: governance
+version: 0.1.0
+readme: README.md
+description: >
+  Governance capabilities for agents -- decision-maker profiles, influence
+  network mapping, jurisdictional role lookup, and proclivity assessment
+  for heads of state, ministers, legislators, judges, regulators, military
+  leaders, diplomats, bureaucrats, and local officials.
+license:
+  - MIT
+authors:
+  - Agentic Harness Agent <agent@harness.local>
+tags:
+  - governance
+  - policy
+  - decision_makers
+  - influence
+  - lobbying
+  - jurisdiction
+  - political
+dependencies: {}

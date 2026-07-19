@@ -1,0 +1,8 @@
+---
+- name: Converge
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: "Include windows_automation"
+      ansible.builtin.include_role:
+        name: "windows_automation"

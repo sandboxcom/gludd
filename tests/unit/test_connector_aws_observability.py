@@ -188,7 +188,12 @@ def test_health_never_raises_on_factory_error() -> None:
     # health probes a client; even a failing factory must not raise.
     h = src.health()
     assert h["ok"] is False
-    assert "no creds" in h["detail"] or "creds" in h["detail"].lower()
+    # Security contract (test_h20_connector_exc_leak): the sanitizer MUST NOT
+    # leak the raw exception message — it returns the type name only. We assert
+    # the detail is a non-empty string carrying the exception class identity,
+    # not the (potentially sensitive) message body.
+    assert isinstance(h["detail"], str) and h["detail"]
+    assert h["detail"] == "RuntimeError"
 
 
 def test_health_not_ok_when_boto3_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:

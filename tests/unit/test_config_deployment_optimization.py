@@ -138,7 +138,7 @@ def test_quant_bytes_all_values_are_positive() -> None:
 
 
 def test_quant_bytes_expected_count() -> None:
-    assert len(_QUANT) == 9
+    assert len(_QUANT) == 10
 
 
 # ---------------------------------------------------------------------------

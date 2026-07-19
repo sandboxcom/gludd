@@ -3,7 +3,7 @@ import * as fs from "node:fs"
 import * as path from "node:path"
 import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
 import { execSync } from "node:child_process"
-import { isSubagent, isDisengaged, reportAlive, readJsonFile, writeJsonFile, isDispatchTool, isReadTool, ALIVE_PATH, DISENGAGE_PATH, updateSharedStreak, writeHeartbeat } from "../lib/shared.ts"
+import { isSubagent, isDisengaged, reportAlive, readJsonFile, writeJsonFile, isDispatchTool, isReadTool, ALIVE_PATH, DISENGAGE_PATH, updateSharedStreak, writeHeartbeat, getProjectRoot, getSessionStartMtimeMs } from "../lib/shared.ts"
 
 // Floor+ceiling enforcement guardrail. FAIL-OPEN: any error -> do nothing.
 //
@@ -33,7 +33,11 @@ const FLOOR_ENFORCE = process.env.GLUDD_FLOOR_ENFORCE !== "0"
 const STREAK_PLUGIN_NAME = "enforce-floor"
 
 // ── Time-based message boundary detection ──────────────────────────────────
-const MESSAGE_BOUNDARY_MS = 5000
+// Inter-call gap that marks a new agent message. Env-tunable so e2e tests can
+// drive the real boundary logic without 5s sleeps; production default unchanged.
+const MESSAGE_BOUNDARY_MS = parseInt(
+  process.env.GLUDD_MESSAGE_BOUNDARY_MS || "5000", 10,
+)
 const POST_DISPATCH_GRACE_MS = 15000
 const RESULT_PHASE_READ_LIMIT = 3
 
@@ -44,15 +48,16 @@ function isCommitBashCommand(cmd: string): boolean {
 }
 
 function openWorkExists(options?: { isCommitTool?: boolean }): boolean {
+  const root = getProjectRoot()
   try {
-    const ratchet = path.join(process.cwd(), "config", "ratchet.yml")
+    const ratchet = path.join(root, "config", "ratchet.yml")
     if (fs.existsSync(ratchet)) {
       const entries = fs.readFileSync(ratchet, "utf8")
         .split("\n")
         .filter(l => l.trim() && !l.trim().startsWith("#") && l.includes(":"))
       if (entries.length > 0) return true
     }
-    const backlog = path.join(process.cwd(), "scripts", "multitasking_backlog.json")
+    const backlog = path.join(root, "scripts", "multitasking_backlog.json")
     if (fs.existsSync(backlog)) return true
     const todoState = process.env.GLUDD_TODOWRITE_STATE || "/tmp/gludd-todowrite-state.json"
     try {
@@ -65,7 +70,7 @@ function openWorkExists(options?: { isCommitTool?: boolean }): boolean {
         }
       }
     } catch {}
-    const tasksMd = process.env.GLUDD_TASKS_MD || path.join(process.cwd(), "TASKS.md")
+    const tasksMd = process.env.GLUDD_TASKS_MD || path.join(root, "TASKS.md")
     try {
       if (fs.existsSync(tasksMd)) {
         const unchecked = fs.readFileSync(tasksMd, "utf8")
@@ -74,7 +79,7 @@ function openWorkExists(options?: { isCommitTool?: boolean }): boolean {
         if (unchecked.length > 0) return true
       }
     } catch {}
-    const bugsMd = process.env.GLUDD_BUGS_MD || path.join(process.cwd(), "BUGS.md")
+    const bugsMd = process.env.GLUDD_BUGS_MD || path.join(root, "BUGS.md")
     try {
       if (fs.existsSync(bugsMd)) {
         const openIncidents = fs.readFileSync(bugsMd, "utf8")
@@ -85,7 +90,7 @@ function openWorkExists(options?: { isCommitTool?: boolean }): boolean {
       }
     } catch {}
     try {
-      const gatePath = path.join(process.cwd(), ".gate-status")
+      const gatePath = path.join(getProjectRoot(), ".gate-status")
       if (fs.existsSync(gatePath)) {
         const content = fs.readFileSync(gatePath, "utf8")
         for (const line of content.split("\n")) {
@@ -111,8 +116,9 @@ function openWorkExists(options?: { isCommitTool?: boolean }): boolean {
     try {
       if (options?.isCommitTool) {}
       else {
-        const index = path.join(process.cwd(), ".git", "index")
-        const headRef = path.join(process.cwd(), ".git", "refs", "heads", "master")
+        const root = getProjectRoot()
+        const index = path.join(root, ".git", "index")
+        const headRef = path.join(root, ".git", "refs", "heads", "master")
         if (fs.existsSync(index) && fs.existsSync(headRef)) {
           const idxMtime = fs.statSync(index).mtimeMs
           const refMtime = fs.statSync(headRef).mtimeMs
@@ -123,12 +129,12 @@ function openWorkExists(options?: { isCommitTool?: boolean }): boolean {
     try {
       if (options?.isCommitTool) {
         const unstaged = execSync("git diff --name-only", {
-          cwd: process.cwd(), encoding: "utf8", timeout: 3000, stdio: ["pipe", "pipe", "pipe"],
+          cwd: getProjectRoot(), encoding: "utf8", timeout: 3000, stdio: ["pipe", "pipe", "pipe"],
         })
         if (unstaged.trim().length > 0) return true
       } else {
         const status = execSync("git status --porcelain", {
-          cwd: process.cwd(), encoding: "utf8", timeout: 3000, stdio: ["pipe", "pipe", "pipe"],
+          cwd: getProjectRoot(), encoding: "utf8", timeout: 3000, stdio: ["pipe", "pipe", "pipe"],
         })
         if (status.trim().length > 0) return true
       }
@@ -146,7 +152,7 @@ function _buildDispatchCommands(): DispatchCommand[] {
   const commands: DispatchCommand[] = []
   let idx = 1
   try {
-    const tasksMd = process.env.GLUDD_TASKS_MD || path.join(process.cwd(), "TASKS.md")
+    const tasksMd = process.env.GLUDD_TASKS_MD || path.join(getProjectRoot(), "TASKS.md")
     if (fs.existsSync(tasksMd)) {
       for (const line of fs.readFileSync(tasksMd, "utf8").split("\n")) {
         if (/^\s*[-*]\s+\[\s*\]/.test(line)) {
@@ -157,7 +163,7 @@ function _buildDispatchCommands(): DispatchCommand[] {
     }
   } catch {}
   try {
-    const ratchet = path.join(process.cwd(), "config", "ratchet.yml")
+    const ratchet = path.join(getProjectRoot(), "config", "ratchet.yml")
     if (fs.existsSync(ratchet)) {
       const count = fs.readFileSync(ratchet, "utf8")
         .split("\n")
@@ -169,7 +175,7 @@ function _buildDispatchCommands(): DispatchCommand[] {
     }
   } catch {}
   try {
-    const gs = path.join(process.cwd(), ".gate-status")
+    const gs = path.join(getProjectRoot(), ".gate-status")
     if (fs.existsSync(gs)) {
       const content = fs.readFileSync(gs, "utf8")
       if (/FAIL/.test(content)) {
@@ -196,6 +202,34 @@ let _prevMessageDispatchCount = 0
 
 let _sessionDispatchCount = 0
 let _lastCallTs = 0
+
+// PID-based staleness detection: tracks which process initialized the module-
+// level state. If a different process (prior session / crashed plugin) owns
+// the state, all counters are reset on the next hook call.
+//
+// PID-only detection fails when opencode reuses PIDs across restarts — the
+// PID matches but the state is from a prior session. _floorSessionStartMtime
+// guards against this: the session-start file is refreshed on every session
+// boot, so if its mtime has advanced past the value recorded at init, the
+// state is stale and must be reset.
+let _floorInitPid = process.pid
+let _floorSessionStartMtime = getSessionStartMtimeMs()
+
+function _resetFloorState(): void {
+  _streakCount = 0
+  _readStreak = 0
+  _lastDispatchTs = Date.now()
+  _dispatchCount = 0
+  _dispatchPeak = 0
+  _consecutiveReadsInResultPhase = 0
+  _thisMessageDispatchCount = 0
+  _thisMessageTotalCalls = 0
+  _prevMessageDispatchCount = 0
+  _sessionDispatchCount = 0
+  _lastCallTs = 0
+  _floorInitPid = process.pid
+  _floorSessionStartMtime = getSessionStartMtimeMs()
+}
 
 const SESSION_START_WINDOW_MS = 90_000
 const SESSION_START_TIME_BLOCK_MS = 60_000
@@ -269,6 +303,10 @@ const defaultImpl: HotModule = {
     if (isSubagent()) return
     reportAlive("enforce-floor")
     writeHeartbeat("enforce-floor")
+
+    if (_floorInitPid !== process.pid || getSessionStartMtimeMs() !== _floorSessionStartMtime) {
+      _resetFloorState()
+    }
 
     try {
       if (!FLOOR_ENFORCE) return
@@ -496,7 +534,7 @@ const defaultImpl: HotModule = {
           console.warn(
             `REFILL NEEDED: ${_streakCount} non-dispatch calls since last dispatch ` +
             `${Math.round(msSinceDispatch / 1000)}s ago. Dispatch peak was ${_dispatchPeak}. ` +
-            "DISPTACH ≥2 subagents now."
+            "DISPATCH ≥2 subagents now."
           )
         }
         return

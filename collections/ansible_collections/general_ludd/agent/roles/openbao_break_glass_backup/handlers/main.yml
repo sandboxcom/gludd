@@ -2,7 +2,7 @@
 # handlers/main.yml — retention pruner for the openbao_break_glass_backup role.
 # Notified by tasks/main.yml after the encrypted backup has been verified.
 
-- name: cleanup old backups
+- name: Cleanup old backups
   ansible.builtin.find:
     paths: "{{ backup_dir }}"
     patterns: "openbao-*.gpg"

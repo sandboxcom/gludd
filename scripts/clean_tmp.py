@@ -6,9 +6,12 @@ Truncates large log files, deletes stale state files, keeps active ones.
 
 import glob
 import os
+import shutil
 import sys
+import time
 
 TMP = "/tmp"
+STALE_AGE_SEC = 3600
 
 ACTIVE_KEEP = {
     "gludd-floor-override",
@@ -57,7 +60,6 @@ def main() -> int:
         "gludd-task-deadlines.warnings.log",
         "gludd-watchdog.log",
         "gludd-task-watchdog.log",
-        "gludd-auto-reset.log",
         "gludd-secrets-fresh.json",
     ]
     for fn in truncate_files:
@@ -133,6 +135,33 @@ def main() -> int:
             freed += _size(fp)
             os.remove(fp)
             deleted_count += 1
+
+    # ── Delete stale test artifacts older than STALE_AGE_SEC ───────────────
+    # Catches molecule logs, mock JSON, stream fixtures, etc. that accumulate
+    # from test runs but aren't covered by the specific patterns above.
+    cutoff = time.time() - STALE_AGE_SEC
+    keep_prefixes = tuple(ACTIVE_KEEP)
+    for entry in glob.glob(os.path.join(TMP, "gludd-*")):
+        basename = os.path.basename(entry)
+        if basename in ACTIVE_KEEP:
+            continue
+        if basename.startswith(keep_prefixes):
+            continue
+        try:
+            if os.path.getmtime(entry) < cutoff:
+                if os.path.isdir(entry):
+                    shutil.rmtree(entry)
+                    deleted_count += 1
+                else:
+                    # Covers regular files AND non-regular filesystem entries
+                    # (sockets, fifos, broken symlinks) that leak from test
+                    # runs. os.path.isfile() returns False for sockets, which
+                    # previously left stale gludd-test-fc-*.sock files behind.
+                    freed += _size(entry)
+                    os.remove(entry)
+                    deleted_count += 1
+        except OSError:
+            pass
 
     # ── Summary ────────────────────────────────────────────────────────────
     print(f"  truncated: {truncated_count} file(s)")

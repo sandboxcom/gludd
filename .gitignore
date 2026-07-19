@@ -10,9 +10,28 @@ _run_test_local_memory.py
 .coverage
 coverage.xml
 htmlcov/
+# dist/ is HALF-TRACKED: hand-authored build INPUTS are committed (install.sh,
+# README.md, general-ludd.service, debian/control, rpm/gludd.spec,
+# windows/gludd.nsi) because `make dist` / deb-package / rpm-package /
+# windows-installer read them — a fresh clone cannot build the release matrix
+# without them. Build OUTPUTS are ignored below. Do not blanket-ignore dist/.
 dist/gludd
 dist/general-ludd-agent-*
 dist/build/
+dist/deb-root/
+dist/binaries/
+dist/dmg-staging/
+dist/gludd_*.deb
+dist/gludd_*.deb.sha256
+dist/gludd-*.rpm
+dist/gludd-*.rpm.sha256
+dist/gludd-*.dmg
+dist/gludd-*.dmg.sha256
+dist/gludd-*setup*.exe
+dist/gludd-*setup*.exe.sha256
+dist/*.tar.gz
+dist/*.tar.gz.sha256
+dist/SHA256SUMS
 dist/sbom-test.json
 dist/*.json
 build/
@@ -23,10 +42,12 @@ build/
 .gate-lite-failed
 .gate-background.pid
 .gate-logs/
+.ci-status
 ci-attempt-logs/
 .test-summary
 .secrets.baseline
 .game-audit-report.json
+research_effectiveness.json
 
 gludd-dist.tar.gz
 
@@ -71,8 +92,11 @@ zai.key
 /tmp/
 web_retriever/
 
+Makefile.tmp
+
 # ── OpenCode backup directory (debug artifact after crash recovery) ─────────
 .opencode.orig/
+opencode.json.orig
 
 # ── Claude Code harness: transient / machine-local items ─────────────────────
 # Committed (safe to track): .claude/hooks/  .claude/settings.json  .claude/workflows/

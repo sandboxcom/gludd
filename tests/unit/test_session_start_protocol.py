@@ -77,12 +77,14 @@ class TestSessionStartEnforcesFloor:
         ), "Plugin must define a minimum-dispatches threshold (>= 5)."
 
     def test_distinguishes_dispatch_tools_from_read_tools(self, plugin_src):
-        # The plugin must classify task/agent/workflow as dispatches and
-        # read/glob/grep as reads (so it doesn't nag on legitimate investigation).
+        # Post E.5 refactor the dispatch/read classification sets live in
+        # shared.ts (DISPATCH_TOOLS / READ_TOOLS); the plugin imports them.
+        shared = (PLUGIN.parents[1] / "lib" / "shared.ts").read_text()
         for tok in ("task", "agent", "workflow"):
-            assert tok in plugin_src, f"Plugin must classify '{tok}' as a dispatch."
+            assert tok in shared, f"shared.ts must classify '{tok}' as a dispatch."
         for tok in ("read", "glob", "grep"):
-            assert tok in plugin_src, f"Plugin must classify '{tok}' as a read."
+            assert tok in shared, f"shared.ts must classify '{tok}' as a read."
+        assert "isDispatchTool" in plugin_src or "isReadTool" in plugin_src
 
 
 class TestSessionStartStateTracking:
@@ -117,12 +119,17 @@ class TestSessionStartSystemInjection:
         )
 
     def test_injection_orders_tasks_before_dispatch(self, plugin_src):
-        # The protocol must instruct: locate work FIRST, then dispatch.
-        upper = plugin_src.upper()
+        # The protocol must instruct: locate work FIRST, then dispatch. Scope
+        # to the buildSessionDirective body. Match the dispatch INSTRUCTION
+        # ("DISPATCH >=" / "DISPATCH >") rather than bare DISPATCH, which also
+        # appears inside the GLUDD_SESSION_START_DISPATCH_NOW_SECS env var name.
+        directive_idx = plugin_src.find("buildSessionDirective")
+        directive = plugin_src[directive_idx:] if directive_idx > 0 else plugin_src
+        upper = directive.upper()
         tasks_idx = upper.find("TASKS.MD")
-        dispatch_idx = upper.find("DISPATCH")
+        dispatch_idx = upper.find("DISPATCH >")
         if tasks_idx == -1 or dispatch_idx == -1:
-            pytest.skip("Protocol ordering not names-checked in source")
+            pytest.skip("Protocol ordering not names-checked in directive")
         assert tasks_idx < dispatch_idx, (
             "Protocol must instruct reading TASKS.md BEFORE dispatching."
         )

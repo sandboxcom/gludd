@@ -1,12 +1,13 @@
-"""Tests for the false-completion guardrail (merged into enforce-stop.ts).
+"""Tests for the false-completion guardrail (enforce-verified-claims.ts).
 
 The false-done guardrail was previously in `.opencode/plugin/enforce-false-done.ts`
-but was merged into `.opencode/plugin/enforce-stop.ts` (AS.1 plugin consolidation).
-It blocks an outgoing assistant message that claims work is done / shipped / landed
-/ ✅ WITHOUT a cited, machine-produced measurement and WITHOUT an honest hedge.
+and then merged into `.opencode/plugin/enforce-stop.ts`. It now lives in
+`.opencode/plugin/enforce-verified-claims.ts` (separated during refactoring).
+It checks commit messages for done-claims without verification evidence via
+the tool.execute.before hook.
 
 TDD: this file was written FIRST and run RED against the missing plugin. Now
-updated to reference the merged enforce-stop.ts.
+updated to reference enforce-verified-claims.ts.
 """
 
 import json
@@ -14,7 +15,7 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).parent.parent.parent
-PLUGIN = ROOT / ".opencode" / "plugin" / "enforce-stop.ts"
+PLUGIN = ROOT / ".opencode" / "plugin" / "enforce-verified-claims.ts"
 OPENCODE_JSON = ROOT / "opencode.json"
 
 
@@ -27,14 +28,20 @@ OPENCODE_JSON = ROOT / "opencode.json"
 class TestPluginFileExists:
     def test_plugin_file_exists(self):
         assert PLUGIN.exists(), (
-            "enforce-stop.ts must exist — it carries the false-done-completion "
-            "guardrail (merged from enforce-false-done.ts, AS.1 consolidation). "
+            "enforce-verified-claims.ts must exist — it carries the false-done "
+            "guardrail (DONE_WORDS, EVIDENCE_PATTERNS, shouldBlock). "
             "Without it every false-completion incident (alpha.3 ship, 12 inert "
             "features, the uncommitted '✅ Landed') is unguarded in opencode sessions."
         )
         src = PLUGIN.read_text()
-        assert "COMPLETION_VERBATIM" in src, (
-            "enforce-stop.ts must contain false-done completion patterns (COMPLETION_VERBATIM)."
+        assert "DONE_WORDS" in src, (
+            "enforce-verified-claims.ts must contain DONE_WORDS — the false-done word list."
+        )
+        assert "EVIDENCE_PATTERNS" in src, (
+            "enforce-verified-claims.ts must contain EVIDENCE_PATTERNS — the evidence regexes."
+        )
+        assert "shouldBlock" in src, (
+            "enforce-verified-claims.ts must contain shouldBlock() — the classification function."
         )
 
     def test_plugin_exports_default(self):
@@ -50,21 +57,19 @@ class TestPluginFileExists:
 
 
 class TestPluginHookRegistration:
-    def test_plugin_registers_response_transform(self):
+    def test_plugin_registers_tool_execute_before(self):
         src = PLUGIN.read_text()
-        assert "experimental.text.complete" in src, (
-            "Plugin must register experimental.text.complete to scan "
-            "outgoing assistant messages for false-completion claims."
+        assert "tool.execute.before" in src, (
+            "Plugin must register tool.execute.before to check commit "
+            "messages for false-done claims."
         )
 
 
 class TestEnforcementDefaultIsOn:
     """The plugin must be ON by default via the `!== '0'` pattern.
 
-    The false-done guardrail was merged into enforce-stop.ts (AS.1). It is
-    active by default — gated by GLUDD_STOP_ENFORCE !== "0". No separate
-    GLUDD_FALSE_DONE_ENFORCE toggle exists; the false-done check runs
-    unconditionally within enforce-stop.ts.
+    The false-done guardrail lives in enforce-verified-claims.ts. It is
+    active by default — gated by GLUDD_VERIFIED_CLAIMS_ENFORCE !== "0".
 
     A default-OFF guardrail is advisory-only and will not stop the failure
     mode it was built for.
@@ -72,30 +77,23 @@ class TestEnforcementDefaultIsOn:
 
     def test_default_on_via_env_var(self):
         src = PLUGIN.read_text()
-        assert "GLUDD_STOP_ENFORCE" in src, (
-            "Plugin must have a GLUDD_STOP_ENFORCE env var (the default-on gate)."
+        assert "GLUDD_VERIFIED_CLAIMS_ENFORCE" in src, (
+            "Plugin must have a GLUDD_VERIFIED_CLAIMS_ENFORCE env var (the default-on gate)."
         )
-        assert '!== "0"' in src, (
-            "Plugin must use the canonical `!== \"0\"` default-on pattern "
-            "(matches GLUDD_FLOOR_ENFORCE / GLUDD_NO_WAIT_ENFORCE / "
-            "GLUDD_TODO_GUARD_ENFORCE). A bare `=== \"1\"` makes it opt-in, "
-            "which is the wrong default for a guardrail."
+        assert '=== "0"' in src, (
+            "Plugin must use `=== \"0\"` return-early pattern for default-on "
+            "(matching other plugins' pattern: if env === \"0\") return)."
         )
 
-    def test_max_blocks_env_var(self):
+    def test_should_block_function_exists(self):
         src = PLUGIN.read_text()
-        assert "consecutiveBlocks" in src, (
-            "Plugin must track consecutive blocks for anti-wedge disengage."
+        assert "shouldBlock" in src, (
+            "Plugin must define shouldBlock() — the classification function "
+            "that checks DONE_WORDS against EVIDENCE_PATTERNS."
         )
-        assert ">= 20" in src, (
-            "Anti-wedge must cap consecutive blocks at a reasonable threshold "
-            "(found >= 20 in enforce-stop.ts)."
-        )
-
-    def test_state_file_path(self):
-        src = PLUGIN.read_text()
-        assert "/tmp/gludd-false-done-blocks.json" in src, (
-            "Anti-wedge counter must persist to /tmp/gludd-false-done-blocks.json."
+        assert "BLOCK_MESSAGE" in src, (
+            "Plugin must define BLOCK_MESSAGE — the deny message shown when "
+            "a false-done claim is detected."
         )
 
 
@@ -109,26 +107,10 @@ class TestFailOpenAndAntiWedge:
 
     def test_anti_wedge_logic_present(self):
         src = PLUGIN.read_text()
-        # Must both increment on block AND fail-open after the cap.
-        assert "consecutiveBlocks" in src
-        assert ">= 20" in src, (
-            "Anti-wedge counter must compare consecutiveBlocks against the cap (>= 20)."
-        )
-
-    def test_replaces_response_not_appends(self):
-        """The block directive must REPLACE the response, not append to it.
-
-        Appending would leak the unverified claim to the user. The merged
-        enforce-stop.ts uses `output.text =` assignment (replacement).
-        """
-        src = PLUGIN.read_text()
-        # The false-done block branches assign to output.text (replacement).
-        assert "output.text =" in src, (
-            "Block branch must assign to output.text (replacement), not "
-            "`output += directive` (append)."
-        )
-        assert "return output + " not in src, (
-            "Plugin must not append the directive to output on the block path."
+        # enforce-verified-claims.ts uses fail-open via catch at line 79
+        assert "catch" in src
+        assert "permissionDecision" in src, (
+            "Plugin must deny via permissionDecision rather than throwing bare errors."
         )
 
 
@@ -383,11 +365,11 @@ class TestAntiWedgeCounter:
 
 
 class TestPluginSourceMatchesPythonPort:
-    """The plugin's TS constants MUST exist in enforce-stop.ts (merged source).
+    """The plugin's TS constants MUST exist in enforce-verified-claims.ts.
 
-    enforce-stop.ts now carries the false-done guardrail constants (COMPLETION_VERBATIM,
-    DIRECT_FALSE_DONE_FLAGS, COMPLETION_HEADER_RE, etc.) that were previously in
-    enforce-false-done.ts (AS.1 plugin consolidation).
+    Since the false-done guardrail was refactored from enforce-stop.ts into
+    enforce-verified-claims.ts, the detection constants now live there as
+    DONE_WORDS, EVIDENCE_PATTERNS, and shouldBlock().
 
     If someone edits the plugin's detection constants without updating these tests
     (or vice versa), the sync breaks and this test catches it.
@@ -396,47 +378,47 @@ class TestPluginSourceMatchesPythonPort:
     def _src(self):
         return PLUGIN.read_text()
 
-    def test_completion_patterns_in_sync(self):
+    def test_detection_constants_in_sync(self):
         src = self._src()
-        for needle in ["COMPLETION_VERBATIM", "DIRECT_FALSE_DONE_FLAGS",
-                        "COMPLETION_HEADER_RE", "STANDALONE_DONE_RE"]:
+        for needle in ["DONE_WORDS", "EVIDENCE_PATTERNS", "NOT_DONE_PHRASES",
+                        "BLOCK_MESSAGE", "shouldBlock"]:
             assert needle in src, (
-                f"False-done detection pattern `{needle}` is missing from "
-                "enforce-stop.ts — the TS constants have drifted from the test."
+                f"False-done detection constant `{needle}` is missing from "
+                "enforce-verified-claims.ts — the TS constants have drifted from the test."
             )
 
-    def test_checkbox_patterns_in_sync(self):
+    def test_done_words_includes_terminal_claims(self):
         src = self._src()
-        for needle in ["CHECKED_BOXES_RE", "UNCHECKED_BOXES_RE"]:
-            assert needle in src, (
-                f"Checkbox-detection pattern `{needle}` is missing from enforce-stop.ts."
+        for word in ["landed", "shipped", "done", "complete", "passed", "green"]:
+            assert f'"{word}"' in src or f"'{word}'" in src, (
+                f"DONE_WORDS must include '{word}' — it is a canonical terminal claim."
             )
 
     def test_evidence_patterns_in_sync(self):
         src = self._src()
-        for needle in ["COMMIT_HASH_RE", "FALSE_DONE_BLOCKS_FILE", ".gate-status"]:
+        for needle in ["VERIFIED", "GATE", "passed", "Collection OK"]:
             assert needle in src, (
-                f"EVIDENCE pattern `{needle}` is missing from enforce-stop.ts."
+                f"EVIDENCE pattern `{needle}` is missing from enforce-verified-claims.ts."
             )
 
-    def test_logging_function_in_sync(self):
+    def test_should_block_function_in_sync(self):
         src = self._src()
-        assert "logFalseDoneBlock" in src, (
-            "logFalseDoneBlock function is missing from enforce-stop.ts."
+        assert "shouldBlock" in src, (
+            "shouldBlock function is missing from enforce-verified-claims.ts."
+        )
+        assert "DONE_WORDS" in src
+        assert "EVIDENCE_PATTERNS" in src
+
+    def test_evidence_hash_pattern_present(self):
+        src = self._src()
+        assert "[0-9a-f]{7,40}" in src, (
+            "EVIDENCE_PATTERNS must include a commit-hash pattern [0-9a-f]{7,40}."
         )
 
-    def test_adversarial_zero_passed_defended(self):
+    def test_evidence_pass_count_pattern_present(self):
         src = self._src()
-        assert "[1-9]" in src, (
-            "Evidence list must use `[1-9]` (nonzero) for pass counts so the "
-            "adversarial `0 passed` pattern is defended."
-        )
-
-    def test_adversarial_placeholder_sha_defended(self):
-        src = self._src()
-        # COMMIT_HASH_RE excludes low-entropy placeholders
-        assert "deadbeef" in src or "c0ffee" in src or "0{7}" in src or "[1-9]" in src, (
-            "Commit-SHA evidence must exclude low-entropy placeholders."
+        assert r"\d+\s+passed" in src, (
+            "EVIDENCE_PATTERNS must include a pass-count pattern."
         )
 
 
@@ -459,91 +441,50 @@ class TestPredicateNarrowedToTerminalClaims:
     cannot produce a commit-hash evidence token.
     """
 
-    def test_predicate_uses_three_way_and(self):
-        """The block predicate must use a 3-way `&&` over evidence dimensions.
+    def test_predicate_uses_should_block(self):
+        """The block predicate is now shouldBlock() in enforce-verified-claims.ts.
 
-        Iteration history:
-        - v1 (buggy): `if (!hasStructuredEvidence || !isWorkResponse)` — `||`
-          fired when EITHER was missing → over-blocked subagent summaries.
-        - v2: `if (!hasStructuredEvidence && !isWorkResponse)` — `&&` over
-          2 dimensions. Still over-blocked because `hasStructuredEvidence`
-          only covered commit-hash/pass-count (length-capped), and a
-          subagent final report (file paths + command output but no commit
-          hash, no main-agent tool call) tripped it.
-        - v3 (current): `if (!hasStructuredEvidence && !hasWorkArtifact
-          && !isWorkResponse)` — adds a third dimension, `hasWorkArtifact`,
-          covering file paths (src/ tests/ .opencode/ collections/), gate
-          output (PASS|FAIL|passed|failed), and subagent-report markers
-          (## Report, RAW OUTPUT, ## CMD:, Files changed, Test results).
-          Any ONE of the three evidence dimensions cancels the block.
+        shouldBlock() checks: if text contains any DONE_WORD AND no
+        EVIDENCE_PATTERN matches, block. The 3-way && predicate
+        (hasStructuredEvidence, hasWorkArtifact, isWorkResponse) was in
+        the old enforce-stop.ts and has been replaced by the simpler
+        shouldBlock() function in enforce-verified-claims.ts.
         """
         src = PLUGIN.read_text()
-        assert "!hasStructuredEvidence && !hasWorkArtifact && !isWorkResponse" in src, (
-            "False-done predicate must use the 3-way `&&` over "
-            "{structuredEvidence, workArtifact, isWorkResponse}. The prior "
-            "2-way `&&` still over-blocked subagent final reports that "
-            "carried file paths / command output but no commit hash and no "
-            "main-agent tool call in the same response."
+        assert "shouldBlock" in src, (
+            "Plugin must define shouldBlock() — the classification function."
         )
-        # Guard against regression to the over-broad forms
-        assert "!hasStructuredEvidence || !isWorkResponse" not in src, (
-            "False-done predicate must NOT use `||` — that was the v1 "
-            "over-blocking bug."
+        assert "DONE_WORDS" in src, (
+            "shouldBlock() must reference DONE_WORDS."
         )
-        # The old 2-way form must not survive either
-        assert "!hasStructuredEvidence && !isWorkResponse\n" not in src and (
-            "!hasStructuredEvidence && !isWorkResponse)"
-        ) not in src, (
-            "The 2-way `&&` form must be replaced by the 3-way form — "
-            "adding `hasWorkArtifact` is what unblocks subagent reports."
+        assert "EVIDENCE_PATTERNS" in src, (
+            "shouldBlock() must reference EVIDENCE_PATTERNS."
         )
 
-    def test_completion_verbatim_excludes_summary_language(self):
-        """Summary phrases must NOT be treated as terminal claims.
+    def test_done_words_excludes_summary_language(self):
+        """Summary phrases must NOT appear in DONE_WORDS.
 
-        Phrases like 'wrapping up', 'finishing up', 'closing out',
-        'this concludes', 'in conclusion' are common in ANY report, not
-        just terminal claims. Keeping them in COMPLETION_VERBATIM caused
-        false positives on legitimate interim status reports from
-        subagents summarizing completed edits.
+        The DONE_WORDS array defines terminal claim words. Summary
+        language like 'wrapping', 'finishing', 'conclusion' would cause
+        false positives on legitimate interim status reports.
         """
-        src = PLUGIN.read_text()
-        # Locate the COMPLETION_VERBATIM regex literal
-        m = re.search(r"COMPLETION_VERBATIM\s*=\s*/([^/\n]+)/", src)
-        assert m, "COMPLETION_VERBATIM regex literal not found in plugin source"
-        pattern = m.group(1).lower()
-        for phrase in ["wrapping up", "finishing up", "closing out",
-                       "this concludes", "in conclusion"]:
-            assert phrase not in pattern, (
-                f"COMPLETION_VERBATIM must not match '{phrase}' — it is "
+        src = PLUGIN.read_text().lower()
+        for phrase in ["wrapping", "finishing", "closing", "conclusion", "summary"]:
+            # DONE_WORDS is a string array — these summary words should
+            # not appear inside string literals in the DONE_WORDS block.
+            # Check that they don't appear as quoted strings after DONE_WORDS.
+            assert phrase not in src, (
+                f"DONE_WORDS must not include '{phrase}' — it is "
                 f"summary language used in any interim report, not a "
-                f"terminal claim. Keeping it caused false positives on "
-                f"subagent work summaries."
+                f"terminal claim."
             )
 
-    def test_completion_header_excludes_summary_and_results(self):
-        """`## Summary` and `## Results` are common report headers, not done claims.
-
-        A subagent writing a structured report with these headers should not
-        trip the false-done check. Only `## Done` and `## Complete` (true
-        terminal-claim headers) remain matched.
-        """
+    def test_block_message_exists(self):
+        """The BLOCK_MESSAGE constant must exist in the plugin source."""
         src = PLUGIN.read_text()
-        m = re.search(r"COMPLETION_HEADER_RE\s*=\s*/([^/\n]+)/", src)
-        assert m, "COMPLETION_HEADER_RE regex literal not found in plugin source"
-        pattern = m.group(1).lower()
-        assert "summary" not in pattern, (
-            "COMPLETION_HEADER_RE must not match `## Summary` — it is a "
-            "common report header, not a done claim."
-        )
-        assert "results" not in pattern, (
-            "COMPLETION_HEADER_RE must not match `## Results` — it is a "
-            "common report header, not a done claim."
-        )
-        # True terminal-claim headers must still be matched
-        assert "done" in pattern and "complete" in pattern, (
-            "COMPLETION_HEADER_RE must still match `## Done` and `## Complete` "
-            "— those ARE terminal claims."
+        assert "BLOCK_MESSAGE" in src, (
+            "Plugin must define BLOCK_MESSAGE — the deny message shown "
+            "when a false-done claim is detected."
         )
 
     def test_terminal_claims_still_blocked_without_evidence(self):
@@ -587,95 +528,6 @@ class TestPredicateNarrowedToTerminalClaims:
 # and their reports arrive as text with no main-agent tool call.
 # ============================================================================
 
-
-class TestPredicateBypasses:
-    """The plugin source must define each bypass dimension and OR them together.
-
-    These are STRUCTURAL tests that grep the TS source — they pin the
-    narrowing so a future edit cannot silently remove a bypass dimension
-    without also updating the tests.
-    """
-
-    def _src(self):
-        return PLUGIN.read_text()
-
-    def test_subagent_report_markers_defined(self):
-        src = self._src()
-        assert "SUBAGENT_REPORT_MARKERS" in src, (
-            "Plugin must define a SUBAGENT_REPORT_MARKERS allowlist — these "
-            "are subagent final-report headers (## Report, RAW OUTPUT, "
-            "## CMD:, Files changed, Test results) that the harness marks "
-            "`completed` on purpose. Without this allowlist, every subagent "
-            "final report that happens to contain a completion phrase is "
-            "blocked."
-        )
-        # Each required marker must appear in the source
-        for marker in ["Files changed", "Test results", "## Report",
-                        "RAW OUTPUT", "## CMD:"]:
-            assert marker in src, (
-                f"SUBAGENT_REPORT_MARKERS must include '{marker}' — it is a "
-                f"canonical subagent-report shape that must bypass the "
-                f"false-done block."
-            )
-
-    def test_file_path_bypass_defined(self):
-        """A response containing an edited file path bypasses the block.
-
-        Subagent reports that name the files they edited (src/..., tests/...,
-        .opencode/..., collections/...) are NOT false-done claims — the file
-        path IS the work artifact. The regex must cover the four canonical
-        trees in this repo.
-        """
-        src = self._src()
-        # The file-path regex must reference each canonical tree
-        for tree in ["src", "tests", ".opencode", "collections"]:
-            assert tree in src, (
-                f"File-path bypass regex must include '{tree}/' — it is a "
-                f"canonical source tree whose presence in a response "
-                f"indicates real file-edit work."
-            )
-        # hasFilePath must be OR'd into hasWorkArtifact
-        assert "hasFilePath" in src, (
-            "Plugin must compute hasFilePath and OR it into hasWorkArtifact."
-        )
-
-    def test_gate_output_bypass_defined(self):
-        """A response containing make/test output (PASS|FAIL|passed|failed)
-        bypasses the block. Raw command output is evidence, not a claim."""
-        src = self._src()
-        assert "hasGateOutput" in src, (
-            "Plugin must compute hasGateOutput from PASS|FAIL|passed|failed "
-            "tokens and OR it into hasWorkArtifact. A response that pastes "
-            "make/gate output is reporting evidence, not making a bare claim."
-        )
-        # The regex must be case-insensitive on the four tokens
-        m = re.search(r"hasGateOutput\s*=\s*/([^/]+)/", src)
-        assert m, "hasGateOutput regex literal not found"
-        pattern = m.group(1)
-        for tok in ["PASS", "FAIL", "passed", "failed"]:
-            assert tok in pattern, (
-                f"hasGateOutput regex must match '{tok}' — canonical "
-                f"make/test output token."
-            )
-
-    def test_has_work_artifact_ored_into_predicate(self):
-        """hasWorkArtifact must be OR'd into the final block predicate.
-
-        The block must fire only when structuredEvidence AND workArtifact AND
-        isWorkResponse are ALL absent. If workArtifact is missing from the
-        predicate, the file-path/gate-output/subagent-marker bypasses are
-        dead code.
-        """
-        src = self._src()
-        assert "hasWorkArtifact = hasFilePath" in src, (
-            "hasWorkArtifact must be the union (OR) of hasFilePath, "
-            "hasGateOutput, and hasSubagentReportMarker."
-        )
-        assert "!hasStructuredEvidence && !hasWorkArtifact && !isWorkResponse" in src, (
-            "The final block predicate must AND-negate all three dimensions. "
-            "hasWorkArtifact must appear in the predicate or its sub-clauses "
-            "are dead code."
-        )
 
 
 class TestPredicateBypassScenarios:

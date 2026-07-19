@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import subprocess
 import tempfile
 from pathlib import Path
@@ -23,33 +22,20 @@ def test_all_plugin_ts_files_parse_cleanly():
 
 
 def test_invalid_ts_file_detected():
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".ts", dir="/tmp", prefix="broken_plugin_", delete=False
-    ) as f:
-        f.write("THIS is NOT valid TypeScript {{{ [[[ ;;;\n")
-        broken_path = f.name
-
-    try:
-        plugin_dir = ROOT / ".opencode" / "plugin"
-        list(plugin_dir.glob("*.ts"))
-
-        # Symlink broken file into plugin dir so the script finds it
-        target = plugin_dir / "zzz_broken_test.ts"
-        os.symlink(broken_path, str(target))
-
-        try:
-            result = subprocess.run(
-                ["python", str(SCRIPT)],
-                capture_output=True, text=True, timeout=30, cwd=str(ROOT),
-            )
-            assert result.returncode == 1, (
-                f"Expected exit 1 for invalid syntax, got {result.returncode}\n"
-                f"stdout: {result.stdout}\n"
-                f"stderr: {result.stderr}"
-            )
-            assert "SYNTAX ERROR" in result.stdout or "SYNTAX ERROR" in result.stderr
-        finally:
-            os.unlink(target)
-
-    finally:
-        os.unlink(broken_path)
+    # Use an isolated temp directory instead of the real .opencode/plugin/ dir.
+    # Writing a broken symlink into the real plugin dir races with the parallel
+    # test_all_plugin_ts_files_parse_cleanly under pytest-xdist (both tests would
+    # share the directory). The script now accepts an explicit dir argument.
+    with tempfile.TemporaryDirectory(prefix="plugin_syntax_test_") as tmpdir:
+        broken = Path(tmpdir) / "zzz_broken_test.ts"
+        broken.write_text("THIS is NOT valid TypeScript {{{ [[[ ;;;\n")
+        result = subprocess.run(
+            ["python", str(SCRIPT), str(tmpdir)],
+            capture_output=True, text=True, timeout=30, cwd=str(ROOT),
+        )
+        assert result.returncode == 1, (
+            f"Expected exit 1 for invalid syntax, got {result.returncode}\n"
+            f"stdout: {result.stdout}\n"
+            f"stderr: {result.stderr}"
+        )
+        assert "SYNTAX ERROR" in result.stdout or "SYNTAX ERROR" in result.stderr

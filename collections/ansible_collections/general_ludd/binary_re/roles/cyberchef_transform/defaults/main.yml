@@ -1,0 +1,13 @@
+---
+cyberchef_url: "http://localhost:3000"
+output_dir: "/tmp/gludd-cyberchef-transform"
+input_data: ""
+recipe: ""
+recipe_key: ""
+enable_api: false
+recipe_file: ""
+
+enable_encoding: false
+enable_decoding: false
+enable_encryption: false
+enable_compression: false

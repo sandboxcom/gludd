@@ -1,0 +1,59 @@
+---
+# exam_quiz role -- ham/marine exam Q&A loading and grading
+# Invokes the standalone files/exam_quiz.py CLI backend.
+
+- name: Validate exam_quiz parameters
+  ansible.builtin.assert:
+    that:
+      - exam_quiz_exam in ["fcc_tech", "fcc_general", "fcc_extra", "roc_m", "gmdss"]
+      - exam_quiz_count | int > 0
+      - exam_quiz_count | int <= 100
+    fail_msg: >
+      exam must be fcc_tech / fcc_general / fcc_extra / roc_m / gmdss;
+      count must be > 0 and <= 100
+  when: exam_quiz_enabled | bool
+
+- name: Ensure output directory exists
+  ansible.builtin.file:
+    path: "{{ exam_quiz_output_dir }}"
+    state: directory
+    mode: "0755"
+  when: exam_quiz_enabled | bool
+
+- name: Run exam_quiz.py with answers (when provided)
+  ansible.builtin.command: >
+    {{ ansible_python_interpreter }} {{ role_path }}/files/exam_quiz.py
+    --exam {{ exam_quiz_exam }}
+    --count {{ exam_quiz_count }}
+    --seed {{ exam_quiz_seed | default(42) }}
+    --output-dir {{ exam_quiz_output_dir }}
+    --format {{ exam_quiz_format | default("json") }}
+    {% if exam_quiz_user_answers | default([]) | length > 0 %}
+    --answers '{{ exam_quiz_user_answers | to_json }}'
+    {% endif %}
+  register: _exam_result
+  changed_when: false
+  when: exam_quiz_enabled | bool
+
+- name: Parse exam_quiz result
+  ansible.builtin.set_fact:
+    exam_quiz_result: "{{ (_exam_result.stdout | from_json) if _exam_result.stdout is defined and _exam_result.stdout | length > 0 else {} }}"
+  when:
+    - exam_quiz_enabled | bool
+    - exam_quiz_format | default("json") == "json"
+
+- name: Register exam_quiz verdict
+  ansible.builtin.set_fact:
+    exam_quiz_verdict:
+      role: exam_quiz
+      exam: "{{ exam_quiz_exam }}"
+      exam_display: "{{ exam_quiz_exam | replace('_', ' ') | title }}"
+      questions_loaded: "{{ exam_quiz_result.count_returned | default(0) }}"
+      total_available: "{{ exam_quiz_result.total_available | default(0) }}"
+      score: "{{ exam_quiz_result.grade.correct if exam_quiz_result.grade is defined else 'N/A' }}"
+      total: "{{ exam_quiz_result.grade.total if exam_quiz_result.grade is defined else 'N/A' }}"
+      percentage: "{{ exam_quiz_result.grade.percentage if exam_quiz_result.grade is defined else 'N/A' }}"
+      passed: "{{ exam_quiz_result.grade.passed if exam_quiz_result.grade is defined else 'N/A' }}"
+      output_dir: "{{ exam_quiz_output_dir }}"
+      output_format: "{{ exam_quiz_format | default('json') }}"
+  when: exam_quiz_enabled | bool

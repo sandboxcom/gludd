@@ -1,0 +1,21 @@
+---
+galaxy_info:
+  role_name: bom_detect
+  author: Agentic Harness Agent
+  description: >
+    Detect, strip, and add Byte Order Marks per encoding. Identifies BOM
+    signatures for UTF-8 (EF BB BF), UTF-16 BE (FE FF), UTF-16 LE (FF FE),
+    UTF-32 BE (00 00 FE FF), UTF-32 LE (FF FE 00 00), UTF-7, SCSU, and
+    GB-18030. Reports which BOM was found (or none), BOM size, and
+    RFC/IETF compliance (required vs optional). Produces JSON artifact.
+    Wires to src/general_ludd/language/charset_map.py.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

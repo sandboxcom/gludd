@@ -172,9 +172,14 @@ into SESSION.md.
 Only after WP-A3 acceptance:
 1. `make release-cut TAG='v0.1.0-beta.1' MSG='Release v0.1.0-beta.1'`
    (aborts itself if CI is not green — that is correct behavior, not a bug).
-2. `make verify-release-artifact TAG='v0.1.0-beta.1'` must PASS.
+   `release-cut` is the ONLY sanctioned publish path. `make release-create` is a
+   CI-green-gated **draft-only** single-binary fallback and cannot publish.
+2. `make verify-release-completeness TAG='v0.1.0-beta.1'` must PASS.
+   **`verify-release-artifact` is NOT the gate** — it only proves "non-draft + ≥1
+   asset", which is exactly how beta.1 shipped with 1 of 12 required assets.
 3. Update SESSION.md + TASKS.md (tick the ship row with run id + tag URL).
-**Acceptance**: release exists with artifacts; verify target PASS output pasted.
+**Acceptance**: `verify-release-completeness` PASS output pasted (all 12 artifact
+categories present). Full procedure: `docs/RELEASE_RUNBOOK.md`.
 
 ---
 

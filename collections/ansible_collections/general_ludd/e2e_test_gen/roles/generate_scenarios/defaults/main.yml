@@ -1,0 +1,11 @@
+---
+# generate_scenarios role defaults
+
+symbols_artifact: ""
+# If symbols_artifact is empty, target_module triggers a fresh analyze_code_paths run
+target_module: ""
+artifact_dir: "/tmp/gludd-e2e-test-gen"
+daemon_url: "http://localhost:8000"
+psk: ""
+
+enable_git_push: false

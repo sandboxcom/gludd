@@ -1,0 +1,52 @@
+---
+- name: Converge
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Run regulation_lookup role — frequency lookup
+      ansible.builtin.include_role:
+        name: general_ludd.radio.regulation_lookup
+      vars:
+        regulation_lookup_enabled: true
+        regulation_lookup_country: US
+        regulation_lookup_freq_mhz: 146.52
+
+    - name: Assert frequency lookup result
+      ansible.builtin.assert:
+        that:
+          - regulation_lookup_verdict.role == "regulation_lookup"
+          - regulation_lookup_verdict.country == "US"
+          - regulation_lookup_verdict.found | string in ["True", "False"]
+        fail_msg: "Frequency lookup verdict: {{ regulation_lookup_verdict }}"
+
+    - name: Run regulation_lookup role — band plan query
+      ansible.builtin.include_role:
+        name: general_ludd.radio.regulation_lookup
+      vars:
+        regulation_lookup_enabled: true
+        regulation_lookup_country: US
+        regulation_lookup_band_name: "20m"
+        regulation_lookup_freq_mhz: null
+
+    - name: Assert band plan result
+      ansible.builtin.assert:
+        that:
+          - regulation_lookup_verdict.role == "regulation_lookup"
+          - regulation_lookup_verdict.band_requested == "20m"
+        fail_msg: "Band plan verdict: {{ regulation_lookup_verdict }}"
+
+    - name: Assert JSON output
+      ansible.builtin.stat:
+        path: /tmp/gludd-regulation/regulation_lookup.json
+      register: _stat_json
+
+    - name: Verify JSON exists
+      ansible.builtin.assert:
+        that: _stat_json.stat.exists
+        fail_msg: "regulation_lookup.json not written"
+
+    - name: Cleanup
+      ansible.builtin.file:
+        path: /tmp/gludd-regulation
+        state: absent

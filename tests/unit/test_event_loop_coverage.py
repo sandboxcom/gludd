@@ -202,7 +202,7 @@ class TestReconcilePhaseCommitsCompletedDecisions:
         todo.status = TodoStatus.REVIEWING_RETURN.value
         todo.version = 7
         todo.project_id = None
-        mocks["todo_repo"].get_by_id.return_value = todo
+        mocks["todo_repo"].get_by_ids = AsyncMock(return_value={"TODO-RC-1": todo})
 
         # Make the push a no-op success so the apply ledger records the decision.
         async def _noop_commit(_todo):
@@ -305,16 +305,17 @@ class TestLeaseReclaimedWhenExpired:
         expired_result = MagicMock()
         expired_result.scalars().all.return_value = [expired]
 
-        # `session.scalar` is used to check for a NEWER live lease — return None
-        # so the reclaim proceeds (no live lease shadows the expired one).
         live_lease_result = MagicMock()
-        live_lease_result.scalar_one_or_none.return_value = None
+        live_lease_result.scalars().all.return_value = []
 
-        # `session.execute` is called first for the expired-lease select, then
-        # for the conditional UPDATE on TodoModel. The first returns the lease;
-        # the update result is unused.
-        session.execute.side_effect = [expired_result, MagicMock()]
-        session.scalar.return_value = None
+        update_result = MagicMock()
+        delete_result = MagicMock()
+        session.execute.side_effect = [
+            expired_result,
+            live_lease_result,
+            update_result,
+            delete_result,
+        ]
         session.delete = AsyncMock()
         session.flush = AsyncMock()
 

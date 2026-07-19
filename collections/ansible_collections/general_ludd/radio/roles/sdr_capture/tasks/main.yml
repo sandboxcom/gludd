@@ -1,0 +1,74 @@
+---
+# sdr_capture role — capture IQ samples, compute statistics, write JSON verdict
+# Invokes the standalone files/sdr_capture.py CLI backend.
+
+- name: Validate required parameters
+  ansible.builtin.assert:
+    that:
+      - sdr_capture_freq_hz | int > 0
+      - sdr_capture_sample_rate | int > 0
+      - sdr_capture_duration_sec | float > 0
+      - sdr_capture_format in ["int8", "int16", "float32"]
+    fail_msg: >
+      sdr_capture_freq_hz and sdr_capture_sample_rate must be positive integers;
+      sdr_capture_duration_sec must be > 0; sdr_capture_format must be int8/int16/float32
+  when: sdr_capture_enabled | bool
+
+- name: Ensure output directory exists
+  ansible.builtin.file:
+    path: "{{ sdr_capture_output_dir }}"
+    state: directory
+    mode: "0755"
+  when: sdr_capture_enabled | bool
+
+- name: Run sdr_capture.py CLI backend
+  ansible.builtin.command: >
+    {{ ansible_python_interpreter }} {{ role_path }}/files/sdr_capture.py
+    --freq {{ sdr_capture_freq_hz }}
+    --sample-rate {{ sdr_capture_sample_rate }}
+    --duration {{ sdr_capture_duration_sec }}
+    --gain {{ sdr_capture_gain }}
+    --device {{ sdr_capture_device_index }}
+    --format {{ sdr_capture_format }}
+    --output-dir {{ sdr_capture_output_dir }}
+    --tool {{ sdr_capture_tool }}
+    {% if sdr_capture_tool_path | default('') | length > 0 %}
+    --tool-path {{ sdr_capture_tool_path }}
+    {% endif %}
+  register: _sdr_result
+  changed_when: false
+  when: sdr_capture_enabled | bool
+
+- name: Parse sdr_capture result
+  ansible.builtin.set_fact:
+    sdr_capture_result: "{{ (_sdr_result.stdout | from_json) if _sdr_result.stdout is defined and _sdr_result.stdout | length > 0 else {} }}"
+  when:
+    - sdr_capture_enabled | bool
+
+- name: Write JSON output
+  ansible.builtin.copy:
+    content: "{{ sdr_capture_result | to_nice_json }}"
+    dest: "{{ sdr_capture_output_dir }}/sdr_capture.json"
+    mode: "0644"
+  when:
+    - sdr_capture_enabled | bool
+    - sdr_capture_result is defined
+    - sdr_capture_result | length > 0
+
+- name: Register sdr_capture verdict
+  ansible.builtin.set_fact:
+    sdr_capture_verdict:
+      role: sdr_capture
+      success: "{{ sdr_capture_result.rc == 0 }}"
+      freq_hz: "{{ sdr_capture_result.freq_hz | default(0) }}"
+      sample_count: "{{ sdr_capture_result.sample_count | default(0) }}"
+      duration_sec: "{{ sdr_capture_result.duration_sec | default(0) }}"
+      sample_rate: "{{ sdr_capture_result.sample_rate | default(0) }}"
+      format: "{{ sdr_capture_result.format | default(sdr_capture_format) }}"
+      iq_stats: "{{ sdr_capture_result.iq_stats | default({}) }}"
+      avg_power_db: "{{ sdr_capture_result.iq_stats.avg_power_db | default('N/A') }}"
+      peak_power_db: "{{ sdr_capture_result.iq_stats.peak_power_db | default('N/A') }}"
+      output_file: "{{ sdr_capture_result.output_file | default('') }}"
+      tool: "{{ sdr_capture_result.tool | default(sdr_capture_tool) }}"
+      output_dir: "{{ sdr_capture_output_dir }}"
+  when: sdr_capture_enabled | bool

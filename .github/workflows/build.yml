@@ -44,7 +44,19 @@ on:
         default: ""
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  # PR runs coalesce on the PR ref and cancel superseded runs (cancel-in-progress:
+  # true) — that eviction is intentional, since only the latest push in a PR needs
+  # a verdict. Push/tag runs (and workflow_dispatch) key on github.sha instead of
+  # github.ref: every commit gets its OWN concurrency group, so a later push to the
+  # same branch can NEVER evict/cancel the still-queued or in-progress run for an
+  # earlier commit. Without this, GitHub's "one pending run per group" behavior
+  # silently cancels the older commit's run the instant a new one is pushed to the
+  # same ref, leaving that commit with a `cancelled`/zero-jobs run — which is the
+  # ABSENCE of a CI verdict, not a pass or fail. A commit can only be tagged and
+  # released via `make release-cut`, which is fail-closed on `require-ci-green`
+  # (scripts/require_ci_green.py treats cancelled/missing runs as CI RED), so this
+  # keys the group to guarantee every commit actually GETS a real run to check.
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
@@ -447,6 +459,41 @@ jobs:
           make molecule-test-shard SHARD=${{ matrix.shard }}/4
         env:
           GLUDD_PSK: ""
+      - name: Tail molecule logs (quick triage)
+        # `molecule-test-shard` (Makefile) writes one log per scenario to
+        # /tmp/gludd-molecule-<scenario>.log and NEVER surfaces it in CI output
+        # — historically the only way to see why a scenario failed was to
+        # reproduce locally. `if: always()` makes this run whether the previous
+        # step passed or failed (the job also sets continue-on-error: true, but
+        # that only affects the job's conclusion — without if: always() here,
+        # a failed "Run molecule shard" step would skip every step after it,
+        # including this one and the artifact upload below). Tail (not cat) so
+        # a runaway scenario log can't flood the Actions log UI.
+        if: always()
+        run: |
+          shopt -s nullglob
+          logs=(/tmp/gludd-molecule-*.log)
+          if [ ${#logs[@]} -eq 0 ]; then
+            echo "No molecule scenario logs found under /tmp/gludd-molecule-*.log"
+          else
+            for f in "${logs[@]}"; do
+              echo "::group::$(basename "$f") (last 100 lines)"
+              tail -n 100 "$f"
+              echo "::endgroup::"
+            done
+          fi
+      - name: Upload molecule logs (shard ${{ matrix.shard }}/4)
+        # Primary fix for the observability gap: the full per-scenario logs
+        # (not just the tail above) are uploaded so a failure can be diagnosed
+        # from CI without reproducing locally. if: always() is required for the
+        # same reason as the tail step above — a failed shard must still upload.
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
+        with:
+          name: molecule-logs-shard-${{ matrix.shard }}
+          path: /tmp/gludd-molecule-*.log
+          if-no-files-found: warn
+          retention-days: 7
 
   linux:
     needs: [version, gate, test-shard]
@@ -470,18 +517,30 @@ jobs:
         run: |
           mkdir -p dist/release
           cp dist/gludd dist/release/gludd
+          cp dist/install.sh dist/release/install.sh && chmod +x dist/release/install.sh
           cp -r config dist/release/config
           cp -r templates dist/release/templates
           cp -r playbooks dist/release/playbooks
           cd dist/release
           tar czf "../gludd-${VERSION}-linux-x86_64.tar.gz" .
           sha256sum "../gludd-${VERSION}-linux-x86_64.tar.gz" > "../gludd-${VERSION}-linux-x86_64.tar.gz.sha256"
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
+      - name: Build .deb package
+        run: make deb-package
+      - name: Build RPM package
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq rpm-build
+          make rpm-package
+      - if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
         with:
           name: gludd-linux-x86_64
           path: |
             dist/gludd-${{ env.VERSION }}-linux-x86_64.tar.gz
             dist/gludd-${{ env.VERSION }}-linux-x86_64.tar.gz.sha256
+            dist/gludd_${{ env.VERSION }}_amd64.deb
+            dist/gludd_${{ env.VERSION }}_amd64.deb.sha256
+            dist/gludd-${{ env.VERSION }}-1.x86_64.rpm
+            dist/gludd-${{ env.VERSION }}-1.x86_64.rpm.sha256
 
   macos:
     needs: [version, gate, test-shard]
@@ -505,18 +564,33 @@ jobs:
         run: |
           mkdir -p dist/release
           cp dist/gludd dist/release/gludd
+          cp dist/install.sh dist/release/install.sh && chmod +x dist/release/install.sh
           cp -r config dist/release/config
           cp -r templates dist/release/templates
           cp -r playbooks dist/release/playbooks
           cd dist/release
           tar czf "../gludd-${VERSION}-macos-arm64.tar.gz" .
           shasum -a 256 "../gludd-${VERSION}-macos-arm64.tar.gz" > "../gludd-${VERSION}-macos-arm64.tar.gz.sha256"
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
+      - name: Package .dmg
+        run: |
+          mkdir -p dist/dmg-staging
+          cp dist/gludd dist/dmg-staging/gludd
+          cp dist/install.sh dist/dmg-staging/install.sh && chmod +x dist/dmg-staging/install.sh
+          cp -r config dist/dmg-staging/config
+          cp -r templates dist/dmg-staging/templates
+          cp -r playbooks dist/dmg-staging/playbooks
+          hdiutil create -fs HFS+ -volname gludd-install -srcfolder dist/dmg-staging -format UDZO "dist/gludd-${VERSION}-macos-arm64.dmg"
+          rm -rf dist/dmg-staging
+          shasum -a 256 "dist/gludd-${VERSION}-macos-arm64.dmg" > "dist/gludd-${VERSION}-macos-arm64.dmg.sha256"
+      - if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
         with:
           name: gludd-macos-arm64
           path: |
             dist/gludd-${{ env.VERSION }}-macos-arm64.tar.gz
             dist/gludd-${{ env.VERSION }}-macos-arm64.tar.gz.sha256
+            dist/gludd-${{ env.VERSION }}-macos-arm64.dmg
+            dist/gludd-${{ env.VERSION }}-macos-arm64.dmg.sha256
 
   windows:
     needs: [version, gate, test-shard]
@@ -557,12 +631,23 @@ jobs:
           Copy-Item -r playbooks dist/release/playbooks
           Compress-Archive -Path dist/release/* -DestinationPath "dist/gludd-$env:VERSION-windows-x86_64.zip"
           certutil -hashfile "dist/gludd-$env:VERSION-windows-x86_64.zip" SHA256 > "dist/gludd-$env:VERSION-windows-x86_64.zip.sha256"
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
+      - name: Build NSIS installer
+        shell: pwsh
+        run: |
+          choco install nsis -y --no-progress
+          mkdir -p dist/windows
+          Copy-Item dist/gludd.exe dist/windows/gludd.exe
+          makensis -DVERSION="$env:VERSION" -DBUILDDIR="dist" dist/windows/gludd.nsi
+          certutil -hashfile "dist/gludd-$env:VERSION-setup-x86_64.exe" SHA256 > "dist/gludd-$env:VERSION-setup-x86_64.exe.sha256"
+      - if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
         with:
           name: gludd-windows-x86_64
           path: |
             dist/gludd-${{ env.VERSION }}-windows-x86_64.zip
             dist/gludd-${{ env.VERSION }}-windows-x86_64.zip.sha256
+            dist/gludd-${{ env.VERSION }}-setup-x86_64.exe
+            dist/gludd-${{ env.VERSION }}-setup-x86_64.exe.sha256
 
   termux:
     needs: [version, gate, test-shard]
@@ -589,13 +674,15 @@ jobs:
         run: |
           mkdir -p dist/release
           cp dist/gludd dist/release/gludd
+          cp dist/install.sh dist/release/install.sh && chmod +x dist/release/install.sh
           cp -r config dist/release/config
           cp -r templates dist/release/templates
           cp -r playbooks dist/release/playbooks
           cd dist/release
           tar czf "../gludd-${VERSION}-linux-aarch64.tar.gz" .
           sha256sum "../gludd-${VERSION}-linux-aarch64.tar.gz" > "../gludd-${VERSION}-linux-aarch64.tar.gz.sha256"
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
+      - if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
         with:
           name: gludd-linux-aarch64
           path: |
@@ -709,7 +796,7 @@ jobs:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
 
   release:
-    needs: [version, gate, test-shard, linux, macos, windows, termux, container]
+    needs: [version, gate, test-shard, linux, macos, windows, termux]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     if: startsWith(github.ref, 'refs/tags/v')
@@ -718,6 +805,10 @@ jobs:
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1 (node24)
       - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0 (node24)
+      - name: Inject version
+        run: |
+          sed -i "s/__version__ = \".*\"/__version__ = \"$VERSION\"/" src/general_ludd/__init__.py
+          sed -i "s/^version = \".*\"/version = \"$VERSION\"/" pyproject.toml
       - name: Verify status table current (release gate)
         # On tag builds the release must not be cut with a stale status table.
         run: |
@@ -739,10 +830,52 @@ jobs:
           mkdir -p release-assets
           cp -v artifacts/* release-assets/
           cp -v dist/sbom.json release-assets/sbom.json
+          cp -v dist/install.sh release-assets/install.sh
           cp -v LICENSE release-assets/LICENSE
           cp -v THIRD_PARTY_LICENSES.md release-assets/THIRD_PARTY_LICENSES.md
           echo "--- staged release assets ---"
           ls -la release-assets/
+      - name: Verify staged assets (pre-publish gate)
+        # Prevents publishing an incomplete release: windows and termux are
+        # continue-on-error, so the release job proceeds even if those builds
+        # failed and uploaded nothing. Without this gate, action-gh-release
+        # (next step) would publish a public release missing those binaries,
+        # and verify_release_completeness.py (which queries the GH API) would
+        # only catch it AFTER the release is already live — exactly how
+        # v0.1.0-beta.1 shipped with 1 of 12 assets. This local check runs
+        # BEFORE publish so a missing category aborts the job.
+        run: |
+          set -e
+          cd release-assets
+          missing=0
+          check() {
+            if compgen -G "$1" > /dev/null; then
+              echo "  PASS  $2"
+            else
+              echo "  FAIL  $2 — no file matching '$1'"
+              missing=$((missing + 1))
+            fi
+          }
+          check '*linux-x86_64*'      'linux-x86_64 binary'
+          check '*linux-aarch64*'     'linux-aarch64 binary'
+          check '*macos-arm64*'       'macos-arm64 binary'
+          check '*windows-x86_64*'    'windows-x86_64 binary'
+          check '*.deb'               '.deb package'
+          check '*.rpm'               '.rpm package'
+          check '*.dmg'               '.dmg (macOS)'
+          check '*setup*x86_64.exe'   '.exe installer (Windows)'
+          check '*.sha256'            'checksums (.sha256)'
+          check '*sbom*'              'SBOM'
+          check 'LICENSE'             'LICENSE'
+          check 'THIRD_PARTY*'        'THIRD_PARTY_LICENSES'
+          echo
+          if [ "$missing" -gt 0 ]; then
+            echo "PRE-PUBLISH GATE: FAIL — $missing asset category(ies) missing."
+            echo "Aborting BEFORE publish. Upstream build jobs may have failed"
+            echo "(windows/termux are continue-on-error)."
+            exit 1
+          fi
+          echo "PRE-PUBLISH GATE: PASS — all 12 asset categories present."
       - name: Generate SHA256SUMS aggregate
         run: |
           cd release-assets
@@ -771,21 +904,81 @@ jobs:
           prerelease: ${{ contains(github.ref_name, '-') }}
           files: release-assets/*
           generate_release_notes: true
-      - name: Verify release has assets
-        # Fail loudly if the release has fewer than 4 assets (platform tarballs
-        # + SBOM + licenses) — catches the "tag exists but no artifacts" failure
-        # mode that shipped alpha.2 and alpha.3 as false releases.
+      - name: Verify release completeness (blocking)
+        # Single source of truth for "the release actually shipped": the same
+        # scripts/verify_release_completeness.py used locally checks every
+        # artifact category (4 platform binaries, .deb/.rpm/.dmg/.exe,
+        # checksums, SBOM, licenses), the >=12 asset floor, the prerelease
+        # flag vs tag shape, version-stamped names, and zero-size assets.
+        # Replaces the old inline `assets | length >= 6` check, whose threshold
+        # had drifted from the verifier's and which counted names only —
+        # 6 .sha256 files and no binaries would have passed. v0.1.0-beta.1
+        # shipped with 1 asset because no completeness check ran in CI at all.
         # GH_TOKEN is REQUIRED: a bare `run:` gh call is unauthenticated and
-        # aborts with exit 4 (gh auth error) BEFORE counting — which false-RED'd
-        # the v0.1.0-alpha.5 release even though 12 assets published fine.
+        # aborts before checking (the false-RED that hit v0.1.0-alpha.5).
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          ASSET_COUNT=$(gh release view ${{ github.ref_name }} --json assets --jq '.assets | length')
-          echo "Release ${{ github.ref_name }} has $ASSET_COUNT assets"
-          if [ "$ASSET_COUNT" -lt 4 ]; then
-            echo "ERROR: Release has only $ASSET_COUNT assets (expected >= 4)"
-            gh release view ${{ github.ref_name }} --json assets --jq '.assets[].name'
+          uv run python scripts/verify_release_completeness.py \
+            ${{ github.ref_name }} ${{ github.repository }}
+      - name: Post-deploy smoke test — Linux binary
+        run: |
+          set -e
+          TAG="${{ github.ref_name }}"
+          echo "--- Downloading Linux x86_64 binary from release $TAG ---"
+          gh release download "$TAG" \
+            --repo "${{ github.repository }}" \
+            --pattern '*linux-x86_64*' \
+            --dir /tmp/gludd-smoke
+          echo "--- Staged files ---"
+          ls -la /tmp/gludd-smoke
+          echo "--- Extracting ---"
+          BIN=$(find /tmp/gludd-smoke -type f -not -name '*.sha256' -not -name '*.tar.gz' | head -1)
+          if file "$BIN" | grep -q 'gzip compressed'; then
+            mv "$BIN" /tmp/gludd-smoke/gludd.tar.gz
+            tar -xzf /tmp/gludd-smoke/gludd.tar.gz -C /tmp/gludd-smoke
+          else
+            mv "$BIN" /tmp/gludd-smoke/gludd
+          fi
+          chmod +x /tmp/gludd-smoke/gludd || true
+          find /tmp/gludd-smoke -name gludd -exec chmod +x {} \;
+          echo "--- Running gludd version ---"
+          /tmp/gludd-smoke/gludd version || {
+            find /tmp/gludd-smoke -type f | xargs -I{} sh -c 'echo "--- {} ---"; {} version 2>&1 || true'
+            echo "FAIL: could not run gludd version"
+            exit 1
+          }
+          echo "--- Running gludd --help ---"
+          /tmp/gludd-smoke/gludd --help
+          echo "--- Verifying version matches tag ---"
+          RAW_VERSION=$(/tmp/gludd-smoke/gludd version 2>&1 | tr -d '[:space:]')
+          EXPECTED=$(echo "$TAG" | sed 's/^v//' | tr -d '[:space:]')
+          if echo "$RAW_VERSION" | grep -q "$EXPECTED"; then
+            echo "PASS: version '$RAW_VERSION' matches tag '$TAG'"
+          else
+            echo "FAIL: version '$RAW_VERSION' does not contain expected '$EXPECTED' (tag: $TAG)"
             exit 1
           fi
-          echo "OK: release has $ASSET_COUNT assets"
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Post-deploy verify — .deb package validity
+        run: |
+          set -e
+          TAG="${{ github.ref_name }}"
+          echo "--- Downloading .deb from release $TAG ---"
+          gh release download "$TAG" \
+            --repo "${{ github.repository }}" \
+            --pattern '*.deb' \
+            --dir /tmp/gludd-deb
+          echo "--- Staged files ---"
+          ls -la /tmp/gludd-deb
+          DEB=$(find /tmp/gludd-deb -name '*.deb' | head -1)
+          echo "--- dpkg-deb --info $DEB ---"
+          dpkg-deb --info "$DEB"
+          echo "--- dpkg-deb --contents $DEB ---"
+          dpkg-deb --contents "$DEB"
+          echo "--- Verifying gludd binary inside .deb ---"
+          dpkg-deb --contents "$DEB" | grep -q 'gludd' && echo "PASS: gludd binary found in .deb" || { echo "FAIL: gludd binary not found in .deb"; exit 1; }
+          echo "PASS: .deb package is valid"
+        env:
+          GH_TOKEN: ${{ github.token }}

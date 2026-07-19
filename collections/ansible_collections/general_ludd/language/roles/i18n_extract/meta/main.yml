@@ -1,0 +1,23 @@
+---
+galaxy_info:
+  role_name: i18n_extract
+  author: Agentic Harness Agent
+  description: >
+    Extract translatable strings from source code (xgettext-style).
+    Scans source files for gettext markers (_(), gettext(), ngettext(),
+    pgettext()), generates .pot template files, creates/updates .po files
+    per locale, compiles .mo files, and pseudolocalizes for in-place
+    testing. Includes i18n linting for hardcoded strings, missing
+    placeholders, broken format specifiers, and CJK/BDI text handling.
+    Produces artifact path and string count. Wires to
+    src/general_ludd/language/locale_data.py.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

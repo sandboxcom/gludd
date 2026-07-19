@@ -1,0 +1,15 @@
+---
+# macos_security role defaults
+
+daemon_url: "http://localhost:8000"
+psk: ""
+
+artifact_dir: "/tmp/gludd-macos-security"
+
+audit_csrutil: true
+audit_spctl: true
+audit_xprotect: true
+audit_tccutil: true
+audit_plist_policy: true
+
+enable_git_push: false

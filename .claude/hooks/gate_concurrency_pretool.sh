@@ -69,9 +69,17 @@ if [ "${GLUDD_GATE_PYTEST_RUNNING}" = "1" ]; then
 elif [ "${GLUDD_GATE_PYTEST_RUNNING}" = "0" ]; then
     pytest_running=0
 else
-    # Signal A: basetemp dir exists and is fresh.
-    if [ -d "$BASETEMP" ]; then
-        age_secs="$(python3 -c "
+    # Signal A (definitive): pgrep for a running pytest process.
+    if command -v pgrep >/dev/null 2>&1; then
+        if pgrep -f "pytest" >/dev/null 2>&1; then
+            pytest_running=1
+        fi
+        # pgrep exists and found nothing — no gate running, skip basetemp
+    else
+        # Signal B (fallback): pgrep not available — fall back to basetemp
+        # freshness heuristic. A fresh basetemp suggests a gate may be running.
+        if [ -d "$BASETEMP" ]; then
+            age_secs="$(python3 -c "
 import os, time
 try:
     mt = os.path.getmtime('${BASETEMP}')
@@ -79,16 +87,10 @@ try:
 except Exception:
     print(99999)
 " 2>/dev/null)"
-        case "$age_secs" in ''|*[!0-9]*) age_secs=99999 ;; esac
-        if [ "$age_secs" -lt "$STALE_SECS" ]; then
-            pytest_running=1
-        fi
-    fi
-
-    # Signal B: pgrep for a running pytest process (belt-and-suspenders).
-    if [ "$pytest_running" -eq 0 ]; then
-        if pgrep -f "pytest" >/dev/null 2>&1; then
-            pytest_running=1
+            case "$age_secs" in ''|*[!0-9]*) age_secs=99999 ;; esac
+            if [ "$age_secs" -lt "$STALE_SECS" ]; then
+                pytest_running=1
+            fi
         fi
     fi
 fi

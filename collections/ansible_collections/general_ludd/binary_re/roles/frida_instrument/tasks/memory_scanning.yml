@@ -1,0 +1,40 @@
+---
+- name: Run Frida memory scanning
+  ansible.builtin.command:
+    cmd: >-
+      {{ ansible_python_interpreter | default('/usr/bin/env python3') }}
+      {{ script_path }}
+      --target {{ target_binary }}
+      --mode memory_scanning
+      --process {{ process_spec | default(target_binary) }}
+      --pattern "{{ frida_memory_pattern }}"
+      --hit-cap {{ frida_memory_hit_cap }}
+      --output {{ output_dir }}/memory_scanning.json
+  register: _ms_result
+  changed_when: false
+  failed_when: _ms_result.rc not in [0]
+
+- name: Read memory scanning artifact
+  ansible.builtin.slurp:
+    src: "{{ output_dir }}/memory_scanning.json"
+  register: _ms_raw
+
+- name: Parse memory scanning artifact
+  ansible.builtin.set_fact:
+    memory_scanning_artifact: >-
+      {{ _ms_raw.content | b64decode | from_json
+         if (_ms_raw is defined and _ms_raw.content is defined) else {} }}
+
+- name: Write Frida memory scan script to disk
+  ansible.builtin.copy:
+    content: "{{ memory_scanning_artifact.get('script', '') }}"
+    dest: "{{ memory_scanning_artifact.get('script_path', '/tmp/gludd-frida-memory-scan.js') }}"
+    mode: "0644"
+  when: memory_scanning_artifact.get('script', '') | length > 0
+
+- name: Report memory scanning summary
+  ansible.builtin.debug:
+    msg: >-
+      Memory scanning ready:
+      pattern={{ memory_scanning_artifact.get('pattern', 'unknown') }},
+      hit_cap={{ memory_scanning_artifact.get('hit_cap', 'unknown') }}

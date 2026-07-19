@@ -1,0 +1,26 @@
+---
+encoding_categories:
+  single-byte:
+    - ISO-8859-1
+    - ISO-8859-2
+    - ISO-8859-5
+    - ISO-8859-7
+    - windows-1251
+    - windows-1252
+    - windows-1255
+    - KOI8-R
+    - KOI8-U
+    - IBM866
+  multi-byte:
+    - Shift_JIS
+    - EUC-JP
+    - EUC-KR
+    - GB2312
+    - GB18030
+    - Big5
+
+confidence_thresholds:
+  entry: 0.20
+  usable: 0.50
+  reliable: 0.80
+  trusted: 0.95

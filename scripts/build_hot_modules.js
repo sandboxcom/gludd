@@ -2,6 +2,8 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const vm = require("node:vm");
+const { spawnSync } = require("node:child_process");
 
 const PLUGIN_DIR = path.resolve(__dirname, "..", ".opencode", "plugin");
 const OUT_DIR = "/tmp";
@@ -27,7 +29,7 @@ function tsToJs(content) {
     .replace(/import type \{ Plugin \} from "@opencode-ai\/plugin"/g, "// @opencode-ai/plugin (stripped)")
     .replace(/import \* as (\w+) from "node:(\w+)"/g, 'var $1 = require("node:$2");')
     .replace(/import \* as (\w+) from "(\w+)"/g, 'var $1 = require("$2");')
-    .replace(/import\s*\{\s*([^}]+)\}\s*from\s*"[^"]+"/g, '// import { $1 } (stripped)')
+    .replace(/import\s*\{[^}]*\}\s*from\s*"[^"]+";?/g, "// import (stripped)")
     .replace(/export type \w+\s*=\s*[^;]+;/g, "")
     .replace(/export interface \w+\s*\{[^}]*\}/g, "")
     .replace(/export const /g, "var ")
@@ -62,6 +64,7 @@ function tsToJs(content) {
     .replace(/:\s*\w+\s*=\s*null/g, " = null")
     .replace(/const (\w+): ([^=]+)=/g, "var $1 =")
     .replace(/let (\w+): ([^=]+)=/g, "var $1 =")
+    .replace(/var (\w+)\s*:\s*[^=\n]+?=/g, "var $1 =")
     .replace(/function (\w+)\(([^)]*)\): ([^{]+)\{/g, "function $1($2) {")
     .replace(/;\s*\w+(?:\[\])?\s*:\s*(string|number|boolean|any|void|never|unknown|object)(\[\])?\s*;/g, ";")
     .replace(/,\s*(\w+(?:\[\])?)\s*:\s*(string|number|boolean|any|void|never|unknown|object)(\[\])?\s*,/g, ",$1,")
@@ -74,7 +77,7 @@ function tsToJs(content) {
     .replace(/(?<!&)&(?!&)\s*\w+(<[^>]*>)?(\[\])?\s*/g, "")
     .replace(/:\s*\{[^}]*\}\s*/g, " ")
     .replace(/\bas\s+[A-Z]\w*(\[\])?\b/g, "")
-    .replace(/(\w+):\s+\w+(\[\])?(?=\s*[,)])/g, "$1")
+    .replace(/(\w+):\s+(?!true\b|false\b|null\b|undefined\b|\d)(\w+)(\[\])?(?=\s*[,)])/g, "$1")
     .replace(/(\w+):\s*\{[^{}]*\}(?:\s*[&|]\s*(?:\w+(?:<[^>]*>)?))*(?=\s*[,)])/g, "$1")
     .replace(/catch \{/g, "catch (e) {")
     .replace(/catch\s*\n\s*\{/g, "catch (e) {")
@@ -182,7 +185,9 @@ function buildPlugin(name) {
   out += `  try {\n`;
   out += `    var p = process.env.GLUDD_ALIVE_PATH || "/tmp/gludd-plugin-alive.json";\n`;
   out += `    var a = {}; try { if (_fs.existsSync(p)) a = JSON.parse(_fs.readFileSync(p, "utf8")); } catch (e) {}\n`;
-  out += `    a[pluginName] = { last_seen: Date.now() };\n`;
+  out += `    var now = Date.now();\n`;
+  out += `    var existing = a[pluginName] || {};\n`;
+  out += `    a[pluginName] = { last_seen: now, ts: now, loaded: existing.loaded || now };\n`;
   out += `    _fs.writeFileSync(p, JSON.stringify(a), "utf8");\n`;
   out += `  } catch (e) {}\n`;
   out += `}\n`;
@@ -231,7 +236,7 @@ function buildPlugin(name) {
     .replace(/^\/\/ import [^\n]*\n/gm, "")
     .replace(/interface \w+\s*\{[^}]*\}/g, "")
     .replace(/:\s*readonly\s+RegExp\[\]\s*/g, " ")
-    .replace(/: [^=\n,;]+?(?=\s*=)/g, "");
+    .replace(/: [^=\n,;()]+?(?=\s*=(?![>=]))/g, "");
   out += "// === module-level declarations ===\n";
   out += moduleBody.trim() + "\n";
   out += "// === end module-level declarations ===\n\n";
@@ -248,6 +253,45 @@ function buildPlugin(name) {
   }
 
   fs.writeFileSync(outPath, out, "utf8");
+
+  // Validate the generated module. Three outcomes:
+  //   1. Parse/require failure — HARMLESS: loadHotModule() catches the error
+  //      and falls back to the compiled-in defaultImpl. Keep the file, warn.
+  //   2. Loads but exports none of the extracted hooks — DANGEROUS: the proxy
+  //      does `fn ? await fn(...) : undefined`, so an empty-export module
+  //      silently DISABLES the plugin's enforcement. Delete the file so
+  //      loadHotModule falls back to defaultImpl (missing file => defaults).
+  //   3. Loads with the expected hook exports — fully functional hot module.
+  let parseOk = true;
+  try {
+    new vm.Script(out, { filename: outPath });
+  } catch (e) {
+    parseOk = false;
+    console.log(`  WARN ${name}: generated module has invalid JS (${e.message}) — kept; loadHotModule will fail-open to compiled-in defaultImpl`);
+  }
+  if (parseOk) {
+    const hookNames = Object.keys(methods);
+    const probe = spawnSync("node", ["-e",
+      `const m = require(${JSON.stringify(outPath)}); process.stdout.write(JSON.stringify(Object.keys(m)));`,
+    ], { timeout: 10000, encoding: "utf8" });
+    if (probe.status !== 0) {
+      const errLine = (probe.stderr || "").split("\n").find(l => l.trim()) || "unknown error";
+      console.log(`  WARN ${name}: generated module failed to require (${errLine.trim()}) — kept; loadHotModule will fail-open to compiled-in defaultImpl`);
+    } else {
+      let exported = [];
+      try { exported = JSON.parse(probe.stdout || "[]"); } catch (e) { exported = []; }
+      const missing = hookNames.filter(h => !exported.includes(h));
+      if (missing.length === hookNames.length) {
+        fs.unlinkSync(outPath);
+        console.log(`  SKIP ${name}: module loads but exports ZERO hooks (would silently disable enforcement) — removed; plugin falls back to compiled-in defaultImpl`);
+        return false;
+      }
+      if (missing.length > 0) {
+        console.log(`  WARN ${name}: module missing hook exports: ${missing.join(", ")}`);
+      }
+    }
+  }
+
   console.log(`  BUILT ${name} → ${outPath} (${Object.keys(methods).length} hooks)`);
   return true;
 }

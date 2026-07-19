@@ -1,0 +1,16 @@
+---
+galaxy_info:
+  role_name: linux_diagnose
+  author: Agentic Harness Agent
+  description: >
+    Gather Linux diagnostic data: /proc/* filesystem metrics, journalctl
+    logs, sysfs device tree, dmesg kernel ring buffer, loaded kernel
+    modules (lsmod), and sysctl kernel parameters.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+dependencies: []

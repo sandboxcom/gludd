@@ -202,12 +202,9 @@ class TestC16DownloadFlowIntegrity:
 
 
 class TestC16SyncBundledToFilestoreGap:
-    def test_sync_bundled_stores_without_checksum(self, real_hash: str) -> None:
-        """sync_bundled_to_filestore stores bundled bytes WITHOUT checksum
-        verification. This is a known gap: if an attacker plants a file in the
-        bundled-directory tree, it is accepted unchallenged. The download()
-        method properly verifies on the same path; sync_bundled_to_filestore should
-        call _verify_digest before store_binary."""
+    def test_sync_bundled_rejects_tampered_binary(self, real_hash: str) -> None:
+        """sync_bundled_to_filestore MUST verify digest before store_binary.
+        A tampered binary whose sha256 does not match the pin is refused."""
         store = MagicMock()
         store.exists.return_value = False
         boot = BinaryBootstrapper(store=store, known_sha256={"openbao": real_hash})
@@ -221,12 +218,53 @@ class TestC16SyncBundledToFilestoreGap:
                 known_sha256={"openbao": real_hash},
             )
 
-            with patch.object(boot, "store_binary") as spy_store:
-                boot.sync_bundled_to_filestore()
+            synced = boot.sync_bundled_to_filestore()
 
-            spy_store.assert_called_once()
-            stored_data = spy_store.call_args[0][1]
-            assert stored_data == b"attacker-planted-binary"
+            assert synced == []
+            store.write_bytes.assert_not_called()
+
+    def test_sync_bundled_accepts_verified_binary(self, real_hash: str) -> None:
+        """sync_bundled_to_filestore stores a bundled binary whose sha256
+        matches the configured pin."""
+        store = MagicMock()
+        store.exists.return_value = False
+        data = b"safe-binary-data"
+        boot = BinaryBootstrapper(store=store, known_sha256={"openbao": real_hash})
+
+        with tempfile.TemporaryDirectory() as tmp:
+            bundled = Path(tmp) / "openbao"
+            bundled.write_bytes(data)
+            boot = BinaryBootstrapper(
+                store=store,
+                bundled_binaries_dir=str(tmp),
+                known_sha256={"openbao": real_hash},
+            )
+
+            synced = boot.sync_bundled_to_filestore()
+
+            assert synced == ["openbao"]
+            store.write_bytes.assert_called_once_with("binaries/openbao", data)
+
+    def test_sync_bundled_skips_unpinned_binary(self) -> None:
+        """sync_bundled_to_filestore skipfs a binary that has no configured pin
+        (fail-closed — an unpinned binary must not be stored)."""
+        store = MagicMock()
+        store.exists.return_value = False
+        boot = BinaryBootstrapper(store=store, known_sha256={})
+
+        with tempfile.TemporaryDirectory() as tmp:
+            bundled = Path(tmp) / "openbao"
+            bundled.write_bytes(b"some-data")
+            boot = BinaryBootstrapper(
+                store=store,
+                bundled_binaries_dir=str(tmp),
+                known_sha256={},
+            )
+
+            synced = boot.sync_bundled_to_filestore()
+
+            assert synced == []
+            store.write_bytes.assert_not_called()
 
 
 class TestC16ResolvePinsPrecedence:

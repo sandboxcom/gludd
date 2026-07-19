@@ -62,6 +62,7 @@
 - name: Poll background test until terminal or timeout (state=launch)
   ansible.builtin.shell:
     cmd: >-
+      set -o pipefail &&
       for i in $(seq 1 {{ poll_max_iterations }});
       do
         echo "=== poll iteration $i ===";

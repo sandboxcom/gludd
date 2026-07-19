@@ -107,7 +107,7 @@ function processFile(info: FileInfo): boolean {
             let cutStart = startIdx;
             while (cutStart > 0 && content[cutStart - 1] === "\n") cutStart--;
             if (cutStart > 0 && content[cutStart - 1] === "\r") cutStart--;
-
+            
             content = content.substring(0, cutStart) + content.substring(cutEnd);
             changed = true;
           }
@@ -146,7 +146,7 @@ function processFile(info: FileInfo): boolean {
           let cutStart = startIdx;
           while (cutStart > 0 && content[cutStart - 1] === "\n") cutStart--;
           if (cutStart > 0 && content[cutStart - 1] === "\r") cutStart--;
-
+          
           content = content.substring(0, cutStart) + content.substring(cutEnd);
           changed = true;
         }
@@ -178,9 +178,9 @@ function processFile(info: FileInfo): boolean {
     const sharedImports: string[] = [];
     if (info.hasSubagent) sharedImports.push("isSubagent");
     if (info.hasReportAlive) sharedImports.push("reportAlive");
-
+    
     const importLine = `import { ${sharedImports.join(", ")} } from "./shared.ts";`;
-
+    
     // Check if already has a shared.ts import
     if (!content.includes('from "./shared.ts"')) {
       // Insert after the last existing import line or at the top
@@ -218,7 +218,7 @@ function processFile(info: FileInfo): boolean {
 
     // Step 6: Clean up - remove duplicate blank lines
     content = content.replace(/\n{3,}/g, "\n\n");
-
+    
     // Write back
     fs.writeFileSync(info.path, content, "utf8");
   }
@@ -229,7 +229,7 @@ function processFile(info: FileInfo): boolean {
 function main() {
   const files = findPluginFiles();
   console.log(`Found ${files.length} files to process`);
-
+  
   let modified = 0;
   for (const info of files) {
     const wasChanged = processFile(info);
@@ -238,7 +238,7 @@ function main() {
       console.log(`  ✓ ${info.name} — applies both isSubagent and reportAlive`);
     }
   }
-
+  
   console.log(`\nModified ${modified} files.`);
   console.log("Run `node --check` manually or via `make verify-plugin-syntax` to validate.");
 }

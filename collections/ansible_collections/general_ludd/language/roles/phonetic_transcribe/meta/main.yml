@@ -1,0 +1,23 @@
+---
+galaxy_info:
+  role_name: phonetic_transcribe
+  author: Agentic Harness Agent
+  description: >
+    Text-to-phoneme conversion supporting IPA transcription with stress
+    marks, ARPABET encoding (CMU standard 39-phoneme set), Soundex code
+    generation (American + Daitch-Mokotoff), Metaphone primary/secondary
+    codes, and Double Metaphone encoding. Includes CMU Pronouncing
+    Dictionary lookup, IPA/ARPABET/X-SAMPA cross-conversion, phoneme
+    similarity distance computation, homophone detection, and syllable
+    count / stress pattern analysis. Produces JSON artifact.
+    Wires to src/general_ludd/language/phonetic_data.py.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

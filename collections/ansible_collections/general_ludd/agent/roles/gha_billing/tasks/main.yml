@@ -15,7 +15,7 @@
     _gha_billing_ready: true
   when: gha_billing_token_source == 'mock'
 
-- name: env — fetch billing usage via GITHUB_TOKEN
+- name: Env — fetch billing usage via GITHUB_TOKEN
   ansible.builtin.command:
     argv:
       - gh
@@ -28,7 +28,7 @@
   failed_when: false
   when: gha_billing_token_source == 'env'
 
-- name: gh_cli — fetch billing usage
+- name: Gh_cli — fetch billing usage
   ansible.builtin.command:
     argv:
       - gh

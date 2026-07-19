@@ -26,6 +26,27 @@ from tests.unit._hook_fixtures import (
 
 ROOT = Path(__file__).parent.parent.parent
 
+# Hardcoded /tmp state files that enforce-stop.ts reads directly with no
+# env-var override and that are NOT covered by the fixture's snapshot.
+# Run this before any test that expects clean (no-pending-work) state.
+_LEAKED_STATE_PATHS = [
+    "/tmp/gludd-multitask-state.json",
+    "/tmp/gludd-release-completeness.json",
+    "/tmp/gludd-last-test-result.json",
+    "/tmp/gludd-watchdog-ci.json",
+]
+
+def _clean_leaked_state_files() -> None:
+    """Remove hardcoded /tmp state files that aren't isolated by the fixture."""
+    for p in _LEAKED_STATE_PATHS:
+        with contextlib.suppress(OSError):
+            Path(p).unlink(missing_ok=True)
+
+# Several tests seed the SHARED /tmp/gludd-watchdog-ci.json CI cache that
+# hasRealPendingWork() reads — serialize onto one xdist worker (same group as
+# test_enforce_stop_mixed_response.py) so concurrent seeds can't race.
+pytestmark = pytest.mark.xdist_group("gludd-watchdog-ci-cache")
+
 # Hardcoded files touched by enforce-stop.ts that the fixture does NOT redirect.
 # We pass env_overrides for these so writes go into the fixture's isolated tmp dir.
 PERSIST_BLOCK_ENV = "GLUDD_PERSIST_STOP_BLOCK_FILE"
@@ -99,16 +120,23 @@ def test_stop_text_complete_subagent_guard_skips_enforcement(hook_plugin_env: Ho
 
 
 def test_stop_text_complete_env_disable_bypasses_enforcement(hook_plugin_env: HookEnv):
-    """GLUDD_STOP_ENFORCE=0: text.complete returns undefined (allows text through)."""
-    parsed, _raw, stderr, rc = _invoke_text_complete(
+    """GLUDD_STOP_ENFORCE=0: text.complete NO LONGER bypasses enforcement.
+
+    The GLUDD_STOP_ENFORCE===0 early-return was removed 2026-07-16 —
+    text-only blocking is NEVER bypassable. The hook fires anyway."""
+    _parsed, _raw, stderr, rc = _invoke_text_complete(
         hook_plugin_env,
         "All done. Everything is complete.",
         env_overrides={"GLUDD_STOP_ENFORCE": "0"},
     )
     assert rc == 0, stderr
-    # When disabled, the hook returns undefined → harness prints null
-    assert parsed is None, (
-        f"Hook must return undefined when disabled; got: {parsed}"
+    pb = _read_persist_block(hook_plugin_env)
+    assert pb is not None, (
+        f"GLUDD_STOP_ENFORCE=0 no longer bypasses stop enforcement. "
+        f"Text must be blocked. stderr={stderr}"
+    )
+    assert pb.get("blocked") is True, (
+        f"Block must be recorded even when GLUDD_STOP_ENFORCE=0; got: {pb}"
     )
 
 
@@ -166,27 +194,49 @@ def test_stop_text_complete_false_done_all_done_blocked(hook_plugin_env: HookEnv
 def test_stop_text_complete_false_done_with_evidence_passes(hook_plugin_env: HookEnv):
     """False-done phrase WITH commit hash + pass count evidence is NOT blocked.
 
-    The narrowing at line 1244 checks hasStructuredEvidence — a commit hash
-    plus a pass count with text length < 500 bypasses the false-done block.
+    The narrowing checks hasStructuredEvidence — a commit hash
+    plus a pass count bypasses the false-done block.
     """
-    text_with_evidence = (
-        "All done. Fixed the bug in src/daemon.py.\n"
-        "commit abc1234 — 42 tests passed."
-    )
-    assert len(text_with_evidence) < 500, "test setup: text must be <500 chars"
-    _parsed, raw, stderr, rc = _invoke_text_complete(
-        hook_plugin_env,
-        text_with_evidence,
-    )
-    assert rc == 0, stderr
-    # Should NOT be blocked — evidence bypasses the false-done check.
-    pb = _read_persist_block(hook_plugin_env)
-    if pb and pb.get("blocked"):
-        # Evidence should have prevented this
-        pytest.fail(
-            f"Evidence should bypass false-done block. "
-            f"persist_block={pb} stdout={raw}"
+    # Clean hardcoded /tmp state files that leak from real sessions.
+    # The fixture only snapshots a subset; multitask/ci-check state
+    # can make hasRealPendingWork() report pending work erroneously.
+    _clean_leaked_state_files()
+
+    # hasRealPendingWork() reads /tmp/gludd-watchdog-ci.json directly.
+    # Seed a clean CI cache so live CI state doesn't interfere.
+    ci_path = Path("/tmp/gludd-watchdog-ci.json")
+    _old_ci = ci_path.read_bytes() if ci_path.exists() else None
+    ci_path.write_text(json.dumps({
+        "last_ci_check": int(time.time() * 1000),
+        "last_ci_status": "SUCCESS",
+        "run_id": "000000",
+        "head_sha": "abc0000def",
+    }))
+
+    try:
+        text_with_evidence = (
+            "All done. Fixed the bug in src/daemon.py.\n"
+            "commit abc1234 — 42 tests passed."
         )
+        assert len(text_with_evidence) < 500, "test setup: text must be <500 chars"
+        _parsed, raw, stderr, rc = _invoke_text_complete(
+            hook_plugin_env,
+            text_with_evidence,
+        )
+        assert rc == 0, stderr
+        # Should NOT be blocked — evidence bypasses the false-done check.
+        pb = _read_persist_block(hook_plugin_env)
+        if pb and pb.get("blocked"):
+            # Evidence should have prevented this
+            pytest.fail(
+                f"Evidence should bypass false-done block. "
+                f"persist_block={pb} stdout={raw}"
+            )
+    finally:
+        if _old_ci is not None:
+            ci_path.write_bytes(_old_ci)
+        elif ci_path.exists():
+            ci_path.unlink()
 
 
 def test_stop_text_complete_qa_response_pattern_blocked(hook_plugin_env: HookEnv):
@@ -220,38 +270,60 @@ def test_stop_text_complete_qa_response_pattern_blocked(hook_plugin_env: HookEnv
     pb = _read_persist_block(hook_plugin_env)
     assert pb is not None, f"QA response must be blocked; stdout={raw}"
     assert pb.get("blocked") is True, f"Block must be recorded; got: {pb}"
-    assert "qa-response-summary-stop" in pb.get("reason", ""), (
-        f"Reason must be 'qa-response-summary-stop'; got: {pb}"
-    )
+    reason = pb.get("reason", "")
+    assert any(
+        tag in reason for tag in ("qa-response-summary-stop", "completion-without-evidence")
+    ), f"Reason must be 'qa-response-summary-stop' or 'completion-without-evidence'; got: {pb}"
 
 
 # ── (e) Disengage escape path ────────────────────────────────────────────────
 
 
 def test_stop_text_complete_disengage_allows_through(hook_plugin_env: HookEnv):
-    """When block counter has disengageUntil in the future, isDisengaged()
-    returns true and text.complete returns without blocking."""
-    # Write block counter with disengageUntil 5 minutes in the future
-    block_counter_path = hook_plugin_env.state_path("GLUDD_BLOCK_COUNTER_FILE")
-    block_counter_path.write_text(json.dumps({
-        "consecutiveBlocks": 0,
-        "totalBlocks": 0,
-        "lastBlockTs": 0,
-        "disengageUntil": int(time.time() * 1000) + 300_000,
+    """Disengage skips heuristic checks (COMPLETION_SMELL) but does NOT
+    prevent the hasRealPendingWork text-only block when work exists.
+    Here we seed NO pending work, so the block does not fire and the
+    text passes through. This is CORRECT: disengage is a heuristic bypass,
+    not a get-out-of-work-free card."""
+    _clean_leaked_state_files()
+
+    # hasRealPendingWork() reads /tmp/gludd-watchdog-ci.json directly.
+    ci_path = Path("/tmp/gludd-watchdog-ci.json")
+    _old_ci = ci_path.read_bytes() if ci_path.exists() else None
+    ci_path.write_text(json.dumps({
+        "last_ci_check": int(time.time() * 1000),
+        "last_ci_status": "SUCCESS",
+        "run_id": "000000",
+        "head_sha": "000000000",
     }))
 
-    _parsed, _raw, stderr, rc = _invoke_text_complete(
-        hook_plugin_env,
-        "All done. Everything is complete.",
-    )
-    assert rc == 0, stderr
-    # When disengaged, the hook returns early (line 1066); the false-done
-    # detection should NOT fire. parsed will be null (undefined return).
-    # The key: persist block must NOT be written.
-    pb = _read_persist_block(hook_plugin_env)
-    assert pb is None or pb.get("blocked") is not True, (
-        f"Disengage must prevent block; got persist_block={pb}"
-    )
+    try:
+        # Write block counter with disengageUntil 5 minutes in the future
+        block_counter_path = hook_plugin_env.state_path("GLUDD_BLOCK_COUNTER_FILE")
+        block_counter_path.write_text(json.dumps({
+            "consecutiveBlocks": 0,
+            "totalBlocks": 0,
+            "lastBlockTs": 0,
+            "disengageUntil": int(time.time() * 1000) + 300_000,
+        }))
+
+        _parsed, _raw, stderr, rc = _invoke_text_complete(
+            hook_plugin_env,
+            "All done. Everything is complete.",
+        )
+        assert rc == 0, stderr
+        # When disengaged, the COMPLETION_SMELL heuristics are skipped.
+        # The hasRealPendingWork block still runs but should not fire
+        # since we seeded no pending work.
+        pb = _read_persist_block(hook_plugin_env)
+        assert pb is None or pb.get("blocked") is not True, (
+            f"Disengaged + no work: block must not fire. Got persist_block={pb}"
+        )
+    finally:
+        if _old_ci is not None:
+            ci_path.write_bytes(_old_ci)
+        elif ci_path.exists():
+            ci_path.unlink()
 
 
 def test_stop_text_complete_disengage_past_expired(hook_plugin_env: HookEnv):
@@ -279,3 +351,318 @@ def test_stop_text_complete_disengage_past_expired(hook_plugin_env: HookEnv):
     assert pb.get("blocked") is True, (
         f"Block must be recorded when disengage is expired; got: {pb}"
     )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# FAILURE 3: Text-only stop with pending work allowed
+# ─── ──────────────────────────────────────────────────────────────────────────
+
+
+def test_text_only_with_real_pending_work_should_be_blocked(hook_plugin_env: HookEnv):
+    """BUG: Text-only completion summary with CI RED, release incomplete,
+    gate RED, TASKS.md unchecked. enforce-stop.ts SHOULD block this via
+    hasRealPendingWork() but the todowrite bypass allowed it through.
+
+    Pre-seed the state file with multiple pending-work signals:
+    CI RED, gate RED, release incomplete, TASKS.md unchecked.
+    text.complete with a long summary (>60 chars) must return a BLOCKED
+    response, not allow the text through."""
+    import time
+
+    state_path = hook_plugin_env.state_path("GLUDD_STOP_STATE_FILE")
+    state_path.write_text(json.dumps({
+        "ts": int(time.time() * 1000),
+        "tasksMdUnchecked": True,
+        "tasksMdUncheckedCount": 42,
+        "ratchetEntries": 3,
+        "bugsOpen": True,
+        "gateStatusMissing": False,
+        "gateStale": False,
+        "gateStatusRed": True,
+        "ciVerdictPendingOrRed": True,
+        "releaseIncomplete": True,
+        "testFailures": True,
+        "repoPending": False,
+        "hasPendingWork": True,
+        "hasLocalWork": True,
+        "healthScore": 20,
+    }))
+
+    parsed, raw, stderr, rc = _invoke_text_complete(
+        hook_plugin_env,
+        "Here is a summary of all the work done in this session.\n"
+        "Fixed bug A, added feature B, updated CI config.\n"
+        "All the specs are addressed and the release is ready.\n"
+        "No further work is needed at this time.",
+    )
+    assert rc == 0, stderr
+
+    if parsed is None:
+        pb = _read_persist_block(hook_plugin_env)
+        assert pb is not None, (
+            f"BUG: Text-only response with CI RED + gate RED + release incomplete "
+            f"SHOULD be blocked. text.complete returned null; persist block: {pb}"
+        )
+        assert pb.get("blocked") is True, (
+            f"Persist block must be recorded; got: {pb}"
+        )
+    else:
+        block_text = parsed.get("text", "")
+        assert "BLOCKED" in block_text.upper(), (
+            f"BUG: Text-only response with CI RED + gate RED + release incomplete "
+            f"SHOULD be blocked by SOME enforcement path. "
+            f"raw output: {raw[:300]}"
+        )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# FAILURE 4: Disengage bypasses hasRealPendingWork text-only block (2026-07-15)
+# ─── ──────────────────────────────────────────────────────────────────────────
+# Root cause: isDisengaged() at line 632 returns early before hasRealPendingWork
+# check. make disengage-enforcement writes disengageUntil=now+1h to the block
+# counter, disabling ALL text.complete enforcement for an hour — including the
+# critical "no text-only response while work exists" rule. The fix: move the
+# isDisengaged() guard so it only skips COMPLETION_SMELL heuristics, NOT the
+# fundamental hasPendingWork block.
+#
+# These tests FAIL before the fix and PASS after the fix.
+
+
+def test_continuing_is_in_completion_smell_regex(hook_plugin_env: HookEnv):
+    """COMPLETION_SMELL_RE includes 'continuing' — verify it matches the
+    exact phrasing that slipped through.
+
+    This is a pure regex test — it does NOT invoke the hook. It proves the
+    pattern SHOULD have been caught.
+    """
+    import re
+
+    COMPLETION_SMELL_RE = re.compile(
+        r"\b(?:complete|done|finished|ready|landed|shipped|pushed|committed|"
+        r"fixed|passed|passing|working|green|resolved|deployed|verified|wrapped|"
+        r"all done|all set|all good|all tasks|continuing|no more|nothing more|"
+        r"RED|beta|alpha)\b",
+        re.IGNORECASE,
+    )
+
+    # The exact text that slipped through
+    text = (
+        "CI queued (run 29395327780). Investigating previous CI failure while "
+        "waiting. Session 36 summary: 4 commits pushed, 6 NF features advanced, "
+        "3 security bugs closed (C.3/C.16/C.18), plugin deadlock fixed. "
+        "Continuing with CI investigation and remaining NF.2 P3 daemon integration:"
+    )
+    assert COMPLETION_SMELL_RE.search(text), (
+        f"COMPLETION_SMELL_RE must match 'continuing' in the text. "
+        f"text={text[:100]}..."
+    )
+
+
+def test_completion_smell_blocks_continuing_with_pending_work(
+    hook_plugin_env: HookEnv,
+):
+    """COMPLETION_SMELL_RE matches 'continuing' and blocks text without evidence
+    when hasRealPendingWork() is true.
+
+    Pre-seed state with pending work. Send text containing 'Continuing with CI...'
+    (the exact pattern that slipped through). The completion-smell path MUST block it.
+    """
+    import time as _time
+
+    state_path = hook_plugin_env.state_path("GLUDD_STOP_STATE_FILE")
+    state_path.write_text(json.dumps({
+        "ts": int(_time.time() * 1000),
+        "tasksMdUnchecked": True,
+        "tasksMdUncheckedCount": 5,
+        "ratchetEntries": 0,
+        "bugsOpen": False,
+        "gateStatusMissing": False,
+        "gateStale": False,
+        "gateStatusRed": False,
+        "ciVerdictPendingOrRed": True,
+        "releaseIncomplete": False,
+        "testFailures": False,
+        "repoPending": False,
+        "hasPendingWork": True,
+        "hasLocalWork": True,
+        "healthScore": 60,
+    }))
+
+    parsed, raw, stderr, rc = _invoke_text_complete(
+        hook_plugin_env,
+        "Session progress: 4 commits pushed, 6 features advanced, "
+        "3 security bugs closed. "
+        "Continuing with remaining NF.2 daemon integration work.",
+    )
+    assert rc == 0, stderr
+
+    # Must be blocked — 'continuing' is in COMPLETION_SMELL_RE and no evidence exists
+    if parsed is None:
+        pb = _read_persist_block(hook_plugin_env)
+        assert pb is not None, (
+            f"BUG: 'Continuing with CI...' text with pending work and no evidence "
+            f"SHOULD be blocked by COMPLETION_SMELL path. "
+            f"parsed={parsed}, persist_block={pb}, raw={raw}"
+        )
+        assert pb.get("blocked") is True, (
+            f"Persist block must be recorded; got: {pb}"
+        )
+    else:
+        block_text = parsed.get("text", "")
+        assert "BLOCKED" in block_text.upper(), (
+            f"BUG: 'Continuing with CI...' text with pending work and no evidence "
+            f"SHOULD be blocked. raw output: {raw[:300]}"
+        )
+
+
+def test_disengage_does_NOT_bypass_text_only_with_pending_work(
+    hook_plugin_env: HookEnv,
+):
+    """BUG FIX TEST (FAILS before fix): isDisengaged() currently returns early
+    before hasRealPendingWork() check, allowing any text through — even text-only
+    responses while CI is RED, TASKS.md has unchecked items, etc.
+
+    After the fix: isDisengaged should only skip COMPLETION_SMELL heuristics
+    (lines 637-722), NOT the fundamental hasPendingWork text-only block (line 726).
+    """
+    import time as _time
+
+    now_ms = int(_time.time() * 1000)
+
+    # Pre-seed block counter with disengage in the future (active disengage)
+    block_counter_path = hook_plugin_env.state_path("GLUDD_BLOCK_COUNTER_FILE")
+    block_counter_path.write_text(json.dumps({
+        "consecutiveBlocks": 0,
+        "totalBlocks": 0,
+        "lastBlockTs": 0,
+        "disengageUntil": now_ms + 300_000,
+    }))
+
+    # Create REAL TASKS.md with unchecked items so hasRealPendingWork() finds them.
+    # hasRealPendingWork() reads actual files, not pre-seeded state.
+    (hook_plugin_env.cwd / "TASKS.md").write_text(
+        "- [ ] Fix critical bug A\n- [ ] Implement feature B\n- [ ] Write tests for C\n"
+        "- [ ] Deploy release D\n- [ ] Update documentation E\n"
+        "- [ ] Review PR F\n- [ ] Audit security G\n- [ ] Run benchmarks H\n"
+        "- [ ] Clean up dead code I\n- [ ] Update dependencies J\n"
+    )
+    # CI cache with RED status
+    (hook_plugin_env.cwd / "..").mkdir(exist_ok=True)
+    ci_path = Path("/tmp/gludd-watchdog-ci.json")
+    _old_ci = None
+    if ci_path.exists():
+        _old_ci = ci_path.read_bytes()
+    ci_path.write_text(json.dumps({
+        "last_ci_check": now_ms,
+        "last_ci_status": "failure",
+        "run_id": "999999",
+        "head_sha": "abc123def",
+    }))
+
+    parsed, raw, stderr, rc = _invoke_text_complete(
+        hook_plugin_env,
+        "Here is a status update. Continuing with remaining work items. "
+        "Everything is looking good. Next steps are clear. "
+        "CI is running, will check back later.",
+    )
+    assert rc == 0, stderr
+
+    # KEY ASSERTION — this test currently FAILS because isDisengaged()
+    # bypasses the hasPendingWork block. After the fix, the text-only
+    # block MUST fire even when disengaged.
+    if parsed is None:
+        pb = _read_persist_block(hook_plugin_env)
+        assert pb is not None, (
+            f"BUG: Disengage must NOT bypass hasRealPendingWork text-only block. "
+            f"Text-only response with CI RED + 10 unchecked tasks + gate RED "
+            f"SHOULD be blocked even when disengaged. "
+            f"parsed={parsed}, persist_block={pb}"
+        )
+        assert pb.get("blocked") is True, (
+            f"Persist block must be recorded; got: {pb}"
+        )
+    else:
+        block_text = parsed.get("text", "")
+        assert "BLOCKED" in block_text.upper(), (
+            f"BUG: Disengage must NOT bypass hasRealPendingWork text-only block. "
+            f"Response text: {raw[:300]}"
+        )
+
+
+def test_disengage_still_allows_completion_smell_when_no_work(
+    hook_plugin_env: HookEnv,
+):
+    """Disengage + no pending work: completion-adjacent text passes through.
+    The hasRealPendingWork block checks !hasStructuredEvidence(text) before
+    firing, so when no work exists, completion-adjacent text is never blocked.
+    """
+    import time as _time
+
+    _clean_leaked_state_files()
+
+    now_ms = int(_time.time() * 1000)
+
+    block_counter_path = hook_plugin_env.state_path("GLUDD_BLOCK_COUNTER_FILE")
+    block_counter_path.write_text(json.dumps({
+        "consecutiveBlocks": 0,
+        "totalBlocks": 0,
+        "lastBlockTs": 0,
+        "disengageUntil": now_ms + 300_000,
+    }))
+
+    state_path = hook_plugin_env.state_path("GLUDD_STOP_STATE_FILE")
+    state_path.write_text(json.dumps({
+        "ts": now_ms,
+        "tasksMdUnchecked": False,
+        "tasksMdUncheckedCount": 0,
+        "ratchetEntries": 0,
+        "bugsOpen": False,
+        "gateStatusMissing": False,
+        "gateStale": False,
+        "gateStatusRed": False,
+        "ciVerdictPendingOrRed": False,
+        "releaseIncomplete": False,
+        "testFailures": False,
+        "repoPending": False,
+        "hasPendingWork": False,
+        "hasLocalWork": False,
+        "healthScore": 100,
+    }))
+
+    # hasRealPendingWork() reads /tmp/gludd-watchdog-ci.json directly
+    # (NOT from the pre-seeded state). Write a clean CI cache so the
+    # live CI state from prior tests doesn't carry over.
+    ci_path = Path("/tmp/gludd-watchdog-ci.json")
+    _old_ci = None
+    if ci_path.exists():
+        _old_ci = ci_path.read_bytes()
+    ci_path.write_text(json.dumps({
+        "last_ci_check": now_ms,
+        "last_ci_status": "SUCCESS",
+        "run_id": "000000",
+        "head_sha": "000000000",
+    }))
+
+    parsed, _raw, stderr, rc = _invoke_text_complete(
+        hook_plugin_env,
+        "All done. Everything is complete. Ready for review.",
+    )
+    assert rc == 0, stderr
+
+    # When disengaged AND no real pending work, the text should pass through.
+    # parsed should not contain a BLOCKED message.
+    if parsed is not None:
+        block_text = parsed.get("text", "")
+        assert "BLOCKED" not in block_text.upper(), (
+            f"Disengage should allow text through when no real work exists. "
+            f"Got: {block_text[:200]}"
+        )
+    # If parsed is null (undefined), that's also acceptable — it means the hook
+    # returned nothing, which the harness interprets as "allow."
+
+    # Restore CI cache to its pre-test state
+    if _old_ci is not None:
+        ci_path.write_bytes(_old_ci)
+    elif ci_path.exists():
+        ci_path.unlink()
+

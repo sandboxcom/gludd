@@ -1,0 +1,263 @@
+---
+# governance_navigator tasks — route a natural-language query to governance modules.
+
+- name: Validate governance_navigator parameters
+  ansible.builtin.assert:
+    that:
+      - governance_navigator_enabled | bool
+      - governance_navigator_query is defined
+      - governance_navigator_query | length > 0
+    fail_msg: >
+      governance_navigator requires a non-empty query string
+      (governance_navigator_query).
+
+- name: Ensure output directory exists
+  ansible.builtin.file:
+    path: "{{ governance_navigator_output_dir }}"
+    state: directory
+    mode: "0755"
+
+# ---------------------------------------------------------------------------
+# Route resolution: a module matches when its keyword list intersects the
+# lowercased query, OR it is named in governance_navigator_force_routes.
+# Country-specific modules are only dispatched when a country code is supplied;
+# otherwise they are recorded as skipped_missing_country.
+# ---------------------------------------------------------------------------
+- name: Compute matched routes from query keywords
+  ansible.builtin.set_fact:
+    _gov_matched_routes: >-
+      {%- set q = (governance_navigator_query | default('')) | lower -%}
+      {%- set forced = governance_navigator_force_routes | default([]) -%}
+      {%- set ns = namespace(out=[]) -%}
+      {%- for mod, kws in _governance_route_keywords.items() -%}
+        {%- if mod in forced or (kws | select('in', q) | list | length > 0) -%}
+          {%- set ns.out = ns.out + [mod] -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ ns.out }}
+
+- name: Compute country-specific matched routes
+  ansible.builtin.set_fact:
+    _gov_country_routes: >-
+      {{ _gov_matched_routes | difference(['info_classification']) }}
+
+- name: Compute missing-country skipped routes
+  ansible.builtin.set_fact:
+    _gov_skipped_missing_country: >-
+      {{
+        _gov_country_routes
+        | select('ne', 'info_classification')
+        | list
+        if (governance_navigator_country is not defined
+            or governance_navigator_country | length != 2)
+        else []
+      }}
+
+- name: Initialize routes aggregator
+  ansible.builtin.set_fact:
+    governance_navigator_routes: {}
+    governance_navigator_route_results: []
+
+# --- borders --------------------------------------------------------------
+- name: Dispatch navigate_borders
+  when:
+    - "'borders' in _gov_matched_routes"
+    - governance_navigator_country is defined
+    - governance_navigator_country | length == 2
+  ansible.builtin.include_role:
+    name: navigate_borders
+    public: true
+  vars:
+    navigate_borders_enabled: true
+    navigate_borders_country: "{{ governance_navigator_country }}"
+    navigate_borders_output_dir: "{{ governance_navigator_output_dir }}/borders"
+
+- name: Record navigate_borders route
+  ansible.builtin.set_fact:
+    governance_navigator_routes: >-
+      {{ governance_navigator_routes | combine({'borders': navigate_borders_verdict | default({})}) }}
+    governance_navigator_route_results: >-
+      {{ governance_navigator_route_results + [{'module': 'borders', 'dispatched': true}] }}
+  when:
+    - "'borders' in _gov_matched_routes"
+    - governance_navigator_country is defined
+    - governance_navigator_country | length == 2
+
+# --- governing_bodies -----------------------------------------------------
+- name: Dispatch lookup_governing_body
+  when:
+    - "'governing_bodies' in _gov_matched_routes"
+    - governance_navigator_country is defined
+    - governance_navigator_country | length == 2
+  ansible.builtin.include_role:
+    name: lookup_governing_body
+    public: true
+  vars:
+    lookup_governing_body_enabled: true
+    lookup_governing_body_country: "{{ governance_navigator_country }}"
+    lookup_governing_body_output_dir: "{{ governance_navigator_output_dir }}/governing_bodies"
+
+- name: Record lookup_governing_body route
+  ansible.builtin.set_fact:
+    governance_navigator_routes: >-
+      {{ governance_navigator_routes | combine({'governing_bodies': lookup_governing_body_verdict | default({})}) }}
+    governance_navigator_route_results: >-
+      {{ governance_navigator_route_results + [{'module': 'governing_bodies', 'dispatched': true}] }}
+  when:
+    - "'governing_bodies' in _gov_matched_routes"
+    - governance_navigator_country is defined
+    - governance_navigator_country | length == 2
+
+# --- tax_currency ---------------------------------------------------------
+- name: Dispatch tax_currency_info
+  when:
+    - "'tax_currency' in _gov_matched_routes"
+    - governance_navigator_country is defined
+    - governance_navigator_country | length == 2
+  ansible.builtin.include_role:
+    name: tax_currency_info
+    public: true
+  vars:
+    tax_currency_info_enabled: true
+    tax_currency_info_country: "{{ governance_navigator_country }}"
+    tax_currency_info_output_dir: "{{ governance_navigator_output_dir }}/tax_currency"
+
+- name: Record tax_currency_info route
+  ansible.builtin.set_fact:
+    governance_navigator_routes: >-
+      {{ governance_navigator_routes | combine({'tax_currency': tax_currency_info_verdict | default({})}) }}
+    governance_navigator_route_results: >-
+      {{ governance_navigator_route_results + [{'module': 'tax_currency', 'dispatched': true}] }}
+  when:
+    - "'tax_currency' in _gov_matched_routes"
+    - governance_navigator_country is defined
+    - governance_navigator_country | length == 2
+
+# --- conflicts_treaties ---------------------------------------------------
+- name: Dispatch conflicts_treaties_lookup
+  when:
+    - "'conflicts_treaties' in _gov_matched_routes"
+    - governance_navigator_country is defined
+    - governance_navigator_country | length == 2
+  ansible.builtin.include_role:
+    name: conflicts_treaties_lookup
+    public: true
+  vars:
+    conflicts_treaties_lookup_enabled: true
+    conflicts_treaties_lookup_country: "{{ governance_navigator_country }}"
+    conflicts_treaties_lookup_output_dir: "{{ governance_navigator_output_dir }}/conflicts_treaties"
+
+- name: Record conflicts_treaties_lookup route
+  ansible.builtin.set_fact:
+    governance_navigator_routes: >-
+      {{ governance_navigator_routes | combine({'conflicts_treaties': conflicts_treaties_lookup_verdict | default({})}) }}
+    governance_navigator_route_results: >-
+      {{ governance_navigator_route_results + [{'module': 'conflicts_treaties', 'dispatched': true}] }}
+  when:
+    - "'conflicts_treaties' in _gov_matched_routes"
+    - governance_navigator_country is defined
+    - governance_navigator_country | length == 2
+
+# --- civic_services -------------------------------------------------------
+- name: Dispatch civic_service_finder
+  when:
+    - "'civic_services' in _gov_matched_routes"
+    - governance_navigator_country is defined
+    - governance_navigator_country | length == 2
+  ansible.builtin.include_role:
+    name: civic_service_finder
+    public: true
+  vars:
+    civic_service_finder_enabled: true
+    civic_service_finder_country: "{{ governance_navigator_country }}"
+    civic_service_finder_output_dir: "{{ governance_navigator_output_dir }}/civic_services"
+
+- name: Record civic_service_finder route
+  ansible.builtin.set_fact:
+    governance_navigator_routes: >-
+      {{ governance_navigator_routes | combine({'civic_services': civic_service_finder_verdict | default({})}) }}
+    governance_navigator_route_results: >-
+      {{ governance_navigator_route_results + [{'module': 'civic_services', 'dispatched': true}] }}
+  when:
+    - "'civic_services' in _gov_matched_routes"
+    - governance_navigator_country is defined
+    - governance_navigator_country | length == 2
+
+# --- decision_makers ------------------------------------------------------
+- name: Dispatch decision_maker_lookup
+  when:
+    - "'decision_makers' in _gov_matched_routes"
+    - governance_navigator_country is defined
+    - governance_navigator_country | length == 2
+  ansible.builtin.include_role:
+    name: decision_maker_lookup
+    public: true
+  vars:
+    decision_maker_lookup_enabled: true
+    decision_maker_lookup_country: "{{ governance_navigator_country }}"
+    decision_maker_lookup_output_dir: "{{ governance_navigator_output_dir }}/decision_makers"
+
+- name: Record decision_maker_lookup route
+  ansible.builtin.set_fact:
+    governance_navigator_routes: >-
+      {{ governance_navigator_routes | combine({'decision_makers': decision_maker_lookup_verdict | default({})}) }}
+    governance_navigator_route_results: >-
+      {{ governance_navigator_route_results + [{'module': 'decision_makers', 'dispatched': true}] }}
+  when:
+    - "'decision_makers' in _gov_matched_routes"
+    - governance_navigator_country is defined
+    - governance_navigator_country | length == 2
+
+# --- info_classification (no country needed) ------------------------------
+- name: Dispatch info_classification_check
+  when: "'info_classification' in _gov_matched_routes"
+  ansible.builtin.include_role:
+    name: info_classification_check
+    public: true
+  vars:
+    info_classification_check_enabled: true
+    info_classification_check_scheme: "{{ governance_navigator_scheme }}"
+    info_classification_check_output_dir: "{{ governance_navigator_output_dir }}/info_classification"
+
+- name: Record info_classification_check route
+  ansible.builtin.set_fact:
+    governance_navigator_routes: >-
+      {{ governance_navigator_routes | combine({'info_classification': info_classification_check_verdict | default({})}) }}
+    governance_navigator_route_results: >-
+      {{ governance_navigator_route_results + [{'module': 'info_classification', 'dispatched': true}] }}
+  when: "'info_classification' in _gov_matched_routes"
+
+# --- aggregate ------------------------------------------------------------
+- name: Build unified navigator verdict
+  ansible.builtin.set_fact:
+    governance_navigator_verdict:
+      role: governance_navigator
+      query: "{{ governance_navigator_query }}"
+      country: "{{ governance_navigator_country | default('N/A') }}"
+      matched_routes: "{{ _gov_matched_routes }}"
+      skipped_missing_country: "{{ _gov_skipped_missing_country }}"
+      dispatched_modules: "{{ governance_navigator_route_results | map(attribute='module') | list }}"
+      routes: "{{ governance_navigator_routes }}"
+      output_dir: "{{ governance_navigator_output_dir }}"
+
+- name: Write unified navigator output
+  ansible.builtin.copy:
+    content: "{{ governance_navigator_verdict | to_nice_json }}"
+    dest: "{{ governance_navigator_output_dir }}/governance_navigator.json"
+    mode: "0644"
+
+- name: Warn when no routes matched
+  ansible.builtin.debug:
+    msg: >
+      governance_navigator matched no modules for query:
+      '{{ governance_navigator_query }}'.
+      Consider rephrasing or using governance_navigator_force_routes.
+  when: _gov_matched_routes | length == 0
+
+- name: Warn when country-specific routes skipped for missing country
+  ansible.builtin.debug:
+    msg: >
+      governance_navigator skipped country-specific routes
+      ({{ _gov_skipped_missing_country }}) because no 2-letter
+      governance_navigator_country was provided.
+  when: _gov_skipped_missing_country | length > 0

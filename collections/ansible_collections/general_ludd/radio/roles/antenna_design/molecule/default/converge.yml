@@ -1,0 +1,56 @@
+---
+- name: Converge
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Run antenna_design role (dipole)
+      ansible.builtin.include_role:
+        name: general_ludd.radio.antenna_design
+      vars:
+        antenna_design_enabled: true
+        antenna_design_type: dipole
+        antenna_design_freq_hz: 144000000
+        antenna_design_polarization: vertical
+        antenna_design_impedance_ohms: 50.0
+        antenna_design_material: copper
+        antenna_design_output_dir: /tmp/gludd-antenna-design
+
+    - name: Assert verdict structure
+      ansible.builtin.assert:
+        that:
+          - antenna_design_verdict.role == "antenna_design"
+          - antenna_design_verdict.type == "dipole"
+          - antenna_design_verdict.freq_mhz == "144.0"
+          - antenna_design_verdict.polarization == "vertical"
+        fail_msg: "Verdict structure incorrect: {{ antenna_design_verdict }}"
+
+    - name: Assert JSON output written
+      ansible.builtin.stat:
+        path: /tmp/gludd-antenna-design/antenna_design.json
+      register: _stat_json
+
+    - name: Verify JSON file exists
+      ansible.builtin.assert:
+        that: _stat_json.stat.exists
+        fail_msg: "antenna_design.json not written"
+
+    - name: Parse JSON output
+      ansible.builtin.slurp:
+        src: /tmp/gludd-antenna-design/antenna_design.json
+      register: _json_raw
+
+    - name: Assert computed dimensions
+      ansible.builtin.assert:
+        that:
+          - (_json_raw.content | b64decode | from_json).type == "dipole"
+          - (_json_raw.content | b64decode | from_json).wavelength_m | float > 0
+          - (_json_raw.content | b64decode | from_json).element_length_m | float > 0
+          - (_json_raw.content | b64decode | from_json).gain_dbi == 2.15
+          - (_json_raw.content | b64decode | from_json).material == "copper"
+        fail_msg: "JSON content mismatch"
+
+    - name: Cleanup
+      ansible.builtin.file:
+        path: /tmp/gludd-antenna-design
+        state: absent

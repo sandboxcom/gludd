@@ -1,0 +1,8 @@
+---
+# marine_decode defaults — safe-by-default
+marine_decode_enabled: false
+marine_decode_mode: auto
+marine_decode_input_file: /tmp/gludd-sdr-capture/iq_samples.bin
+marine_decode_sample_rate: 2048000
+marine_decode_center_freq_hz: 162000000
+marine_decode_output_dir: /tmp/gludd-marine-decode

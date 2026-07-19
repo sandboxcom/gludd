@@ -1,0 +1,18 @@
+---
+# write_e2e_tests role defaults
+
+validated_scenarios_artifact: ""
+artifact_dir: "/tmp/gludd-e2e-test-gen"
+output_dir: "tests/e2e/generated"
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Project fixture names for test generation
+test_client_fixture: "TestClient"
+cli_runner_fixture: "_run_cli"
+tmp_path_fixture: "tmp_path"
+
+# Test file naming
+test_file_prefix: "test_e2e_generated_"
+
+enable_git_push: false

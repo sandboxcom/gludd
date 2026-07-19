@@ -1,0 +1,14 @@
+---
+galaxy_info:
+  role_name: windows_security
+  author: Agentic Harness Agent
+  description: >
+    Audit Windows security posture: Defender antivirus preferences
+    (Get-MpPreference), firewall rules (Get-FirewallRule), audit
+    policy (auditpol), and security configuration (secedit).
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: Windows
+      versions: [all]
+dependencies: []

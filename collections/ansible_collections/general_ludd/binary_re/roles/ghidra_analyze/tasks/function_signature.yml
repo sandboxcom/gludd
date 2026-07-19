@@ -1,0 +1,38 @@
+---
+- name: Run Ghidra function signature analysis
+  ansible.builtin.command:
+    cmd: >-
+      {{ ansible_python_interpreter | default('/usr/bin/env python3') }}
+      {{ script_path }}
+      --target {{ target_binary }}
+      --mode function_signature
+      --ghidra-path {{ ghidra_path }}
+      --project-dir {{ project_dir }}
+      --output {{ output_dir }}/function_signature.json
+  register: _fs_result
+  changed_when: false
+  failed_when: _fs_result.rc not in [0]
+
+- name: Read function signature artifact
+  ansible.builtin.slurp:
+    src: "{{ output_dir }}/function_signature.json"
+  register: _fs_raw
+
+- name: Parse function signature artifact
+  ansible.builtin.set_fact:
+    function_signature_artifact: >-
+      {{ _fs_raw.content | b64decode | from_json
+         if (_fs_raw is defined and _fs_raw.content is defined) else {} }}
+
+- name: Write GhidraScript signature query to disk
+  ansible.builtin.copy:
+    content: "{{ function_signature_artifact.get('postscript', '') }}"
+    dest: "{{ function_signature_artifact.get('postscript_path', '/tmp/gludd-ghidra-fnsig.py') }}"
+    mode: "0644"
+  when: function_signature_artifact.get('postscript', '') | length > 0
+
+- name: Report function signature summary
+  ansible.builtin.debug:
+    msg: >-
+      Function signature analysis ready:
+      postscript_path={{ function_signature_artifact.get('postscript_path', 'unknown') }}

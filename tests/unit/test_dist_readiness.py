@@ -10,7 +10,9 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 def _require_dist() -> None:
     if not (REPO_ROOT / "dist").is_dir() or not list((REPO_ROOT / "dist").iterdir()):
-        pytest.skip("dist/ directory is empty or missing — run `make dist` to populate")
+        pytest.skip("dist/ directory is empty or missing")
+    if not (REPO_ROOT / "dist" / "README.md").exists() or not (REPO_ROOT / "dist" / "general-ludd.service").exists():
+        pytest.skip("dist/ is not a full distribution (run make dist to generate)")
 
 
 class TestDistributionConfig:

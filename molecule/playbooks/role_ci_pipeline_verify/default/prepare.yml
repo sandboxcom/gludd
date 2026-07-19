@@ -12,7 +12,7 @@
     - name: Launch mock daemon (background, nohup)
       ansible.builtin.shell:
         cmd: >-
-          nohup {{ lookup('env', 'VIRTUAL_ENV') | default('/usr', true) }}/bin/python3
+          nohup {{ (lookup('env', 'VIRTUAL_ENV') + '/bin/python3') if lookup('env', 'VIRTUAL_ENV') else 'python3' }}
           "{{ project_dir }}/molecule/mock_daemon/server.py"
           --port {{ mock_port }} --host 127.0.0.1 --pidfile "{{ pidfile }}"
           > /tmp/gludd-mock-ci-verify-{{ mock_port }}.log 2>&1 &

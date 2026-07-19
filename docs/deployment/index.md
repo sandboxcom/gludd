@@ -6,8 +6,13 @@ Guides for deploying General Ludd in various environments.
 
 This directory does not yet hold split-out deployment pages. Terraform and
 Slurm deployment design live in [Model Serving Deployment](../design/MODEL_SERVING_DEPLOYMENT.md)
-and [Terraform Infra Structure](../design/TERRAFORM_INFRA_STRUCTURE.md); release
-process is in the root [RELEASE_CHECKLIST.md](../RELEASE_CHECKLIST.md).
+and [Terraform Infra Structure](../design/TERRAFORM_INFRA_STRUCTURE.md).
+
+**Release process:** [RELEASE_RUNBOOK.md](../RELEASE_RUNBOOK.md) is the authoritative
+guide — read it before touching any release target. [RELEASE_CHECKLIST.md](../RELEASE_CHECKLIST.md)
+is the step-by-step tick list. In short: `make release-cut TAG=... MSG='...'` is the only
+sanctioned path, and `make verify-release-completeness TAG=...` (not
+`verify-release-artifact`) is the gate that decides whether a release actually shipped.
 
 ## Deployment Architectures
 
@@ -39,6 +44,13 @@ make local-model-vllm MODEL_ID=meta-llama/Llama-3.1-8B-Instruct
 ```
 
 ### Model Profiles
+
+Config discovery is `$GLUDD_CONFIG_DIR` → `~/.config/general-ludd` → `/etc/general-ludd`.
+**The repo's own `config/` directory is NOT on that path.** If the daemon finds no
+profiles, it silently dispatches to a no-op executor — agents return `completed` with
+empty output while `/healthz` still reports 200. See
+[CONFIG_REFERENCE.md §2.0](../CONFIG_REFERENCE.md).
+
 Configure model endpoints in `~/.config/general-ludd/model_profiles/`:
 - `zai_coder.yml` — Z.AI GLM (primary)
 - `deepseek_coder.yml` — DeepSeek fallback

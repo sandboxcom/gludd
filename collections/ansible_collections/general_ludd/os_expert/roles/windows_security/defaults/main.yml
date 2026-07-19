@@ -1,0 +1,14 @@
+---
+# windows_security role defaults
+
+daemon_url: "http://localhost:8000"
+psk: ""
+
+artifact_dir: "C:\\Temp\\gludd-windows-security"
+
+audit_defender: true
+audit_firewall: true
+audit_auditpol: true
+audit_secedit: true
+
+enable_git_push: false

@@ -1,0 +1,8 @@
+---
+# windows_diagnose role — Windows-specific variables
+# All values below are OS-specific overrides; most defaults live in defaults/main.yml.
+# artifact_dir:      directory for collected diagnostics artifacts (default: C:\Temp\gludd-windows-diagnose)
+# query_wmi:         gather WMI system info (Win32_OS, Win32_CS, Win32_CPU) (default: true)
+# query_eventlog:    pull System + Application event log entries (default: true)
+# query_registry:    query Uninstall, Services, and Policies registry keys (default: true)
+# query_services:    gather sc query + Get-Service output (default: true)

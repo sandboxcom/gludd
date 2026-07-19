@@ -14,7 +14,7 @@
     - name: Launch mock daemon (background, nohup)
       ansible.builtin.shell:
         cmd: >-
-          nohup {{ lookup('env', 'VIRTUAL_ENV') | default('/usr', true) }}/bin/python3
+          nohup {{ (lookup('env', 'VIRTUAL_ENV') + '/bin/python3') if lookup('env', 'VIRTUAL_ENV') else 'python3' }}
           "{{ project_dir }}/molecule/mock_daemon/server.py"
           --port {{ mock_port }} --host 127.0.0.1 --pidfile "{{ pidfile }}"
           > /tmp/gludd-mock-{{ mock_port }}.log 2>&1 &
@@ -61,6 +61,19 @@
             "story_points": 3
           }
         dest: "{{ fixture_dir }}/story_create.json"
+        mode: "0644"
+
+    - name: Seed backlog_groom artifact (gate_passed=true)
+      ansible.builtin.copy:
+        content: |
+          {
+            "role": "backlog_groom",
+            "status": "completed",
+            "gate_passed": true,
+            "task_id": "test-task-001",
+            "groomed": true
+          }
+        dest: "{{ fixture_dir }}/backlog_groom.json"
         mode: "0644"
 
     - name: Seed intake.json evidence artifact

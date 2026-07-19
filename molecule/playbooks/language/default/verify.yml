@@ -1,0 +1,213 @@
+---
+- name: Verify - language role outputs
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    base_dir: "/tmp/gludd-molecule-language"
+  tasks:
+    # ---- bom_detect ----
+    - name: Assert bom_detect artifact exists
+      ansible.builtin.stat:
+        path: "{{ base_dir }}/bom-detect/bom_detection.json"
+      register: art_bom
+      failed_when: not art_bom.stat.exists
+
+    - name: Load bom_detect artifact
+      ansible.builtin.slurp:
+        src: "{{ base_dir }}/bom-detect/bom_detection.json"
+      register: raw_bom
+
+    - name: Parse bom_detect artifact
+      ansible.builtin.set_fact:
+        result_bom: "{{ raw_bom.content | b64decode | from_json }}"
+
+    - name: Assert bom_detect output
+      ansible.builtin.assert:
+        that:
+          - result_bom.bom_detected == true
+          - "'utf-8' in (result_bom.encoding | lower)"
+        fail_msg: "BOM detection failed. Got: {{ result_bom }}"
+        success_msg: "bom_detect: BOM detected, encoding=utf-8"
+
+    # ---- encoding_detect ----
+    - name: Assert encoding_detect artifact exists
+      ansible.builtin.stat:
+        path: "{{ base_dir }}/encoding-detect/encoding_detection.json"
+      register: art_enc
+      failed_when: not art_enc.stat.exists
+
+    - name: Load encoding_detect artifact
+      ansible.builtin.slurp:
+        src: "{{ base_dir }}/encoding-detect/encoding_detection.json"
+      register: raw_enc
+
+    - name: Parse encoding_detect artifact
+      ansible.builtin.set_fact:
+        result_enc: "{{ raw_enc.content | b64decode | from_json }}"
+
+    - name: Assert encoding_detect output
+      ansible.builtin.assert:
+        that:
+          - result_enc.detected_encoding in ['ascii', 'utf-8', 'ASCII', 'UTF-8']
+          - result_enc.confidence_level in ['usable', 'reliable', 'trusted']
+        fail_msg: "Encoding detection failed. Got: {{ result_enc }}"
+        success_msg: "encoding_detect: encoding={{ result_enc.detected_encoding }}, confidence={{ result_enc.confidence_level }}"
+
+    # ---- font_analyze ----
+    - name: Assert font_analyze artifact exists
+      ansible.builtin.stat:
+        path: "{{ base_dir }}/font-analyze/font_analysis.json"
+      register: art_font
+      failed_when: not art_font.stat.exists
+
+    - name: Load font_analyze artifact
+      ansible.builtin.slurp:
+        src: "{{ base_dir }}/font-analyze/font_analysis.json"
+      register: raw_font
+
+    - name: Parse font_analyze artifact
+      ansible.builtin.set_fact:
+        result_font: "{{ raw_font.content | b64decode | from_json }}"
+
+    - name: Assert font_analyze output
+      ansible.builtin.assert:
+        that:
+          - result_font.error is defined
+          - "'font file not found' in (result_font.error | lower)"
+        fail_msg: "Font analysis did not report expected error. Got: {{ result_font }}"
+        success_msg: "font_analyze: error={{ result_font.error }}"
+
+    # ---- homoglyph_scan ----
+    - name: Assert homoglyph_scan artifact exists
+      ansible.builtin.stat:
+        path: "{{ base_dir }}/homoglyph-scan/homoglyph_scan.json"
+      register: art_homo
+      failed_when: not art_homo.stat.exists
+
+    - name: Load homoglyph_scan artifact
+      ansible.builtin.slurp:
+        src: "{{ base_dir }}/homoglyph-scan/homoglyph_scan.json"
+      register: raw_homo
+
+    - name: Parse homoglyph_scan artifact
+      ansible.builtin.set_fact:
+        result_homo: "{{ raw_homo.content | b64decode | from_json }}"
+
+    - name: Assert homoglyph_scan output
+      ansible.builtin.assert:
+        that:
+          - result_homo.input_length == 5
+          - result_homo.total_findings is number
+        fail_msg: "Homoglyph scan failed. Got: {{ result_homo }}"
+        success_msg: "homoglyph_scan: input_length=5, findings={{ result_homo.total_findings }}"
+
+    # ---- i18n_extract ----
+    - name: Assert i18n_extract artifact exists
+      ansible.builtin.stat:
+        path: "{{ base_dir }}/i18n-extract/extraction_report.json"
+      register: art_i18n
+      failed_when: not art_i18n.stat.exists
+
+    - name: Load i18n_extract artifact
+      ansible.builtin.slurp:
+        src: "{{ base_dir }}/i18n-extract/extraction_report.json"
+      register: raw_i18n
+
+    - name: Parse i18n_extract artifact
+      ansible.builtin.set_fact:
+        result_i18n: "{{ raw_i18n.content | b64decode | from_json }}"
+
+    - name: Assert i18n_extract output
+      ansible.builtin.assert:
+        that:
+          - result_i18n.string_count >= 1
+          - result_i18n.pot_path | length > 0
+        fail_msg: "i18n extraction failed. Got: {{ result_i18n }}"
+        success_msg: "i18n_extract: strings={{ result_i18n.string_count }}, pot={{ result_i18n.pot_path }}"
+
+    # ---- locale_format ----
+    - name: Assert locale_format artifact exists
+      ansible.builtin.stat:
+        path: "{{ base_dir }}/locale-format/locale_format.json"
+      register: art_locale
+      failed_when: not art_locale.stat.exists
+
+    - name: Load locale_format artifact
+      ansible.builtin.slurp:
+        src: "{{ base_dir }}/locale-format/locale_format.json"
+      register: raw_locale
+
+    - name: Parse locale_format artifact
+      ansible.builtin.set_fact:
+        result_locale: "{{ raw_locale.content | b64decode | from_json }}"
+
+    - name: Assert locale_format output
+      ansible.builtin.assert:
+        that:
+          - result_locale.locale == "de-DE"
+          - result_locale.is_rtl == false
+          - (result_locale.formatted_value | string | length) > 0
+          - result_locale.first_day_of_week == 1
+        fail_msg: "Locale format failed. Got: {{ result_locale }}"
+        success_msg: "locale_format: locale=de-DE, rtl=false, day=1"
+
+    # ---- phonetic_transcribe ----
+    - name: Assert phonetic_transcribe artifact exists
+      ansible.builtin.stat:
+        path: "{{ base_dir }}/phonetic-transcribe/phonetic_transcription.json"
+      register: art_phon
+      failed_when: not art_phon.stat.exists
+
+    - name: Load phonetic_transcribe artifact
+      ansible.builtin.slurp:
+        src: "{{ base_dir }}/phonetic-transcribe/phonetic_transcription.json"
+      register: raw_phon
+
+    - name: Parse phonetic_transcribe artifact
+      ansible.builtin.set_fact:
+        result_phon: "{{ raw_phon.content | b64decode | from_json }}"
+
+    - name: Assert phonetic_transcribe output
+      ansible.builtin.assert:
+        that:
+          - result_phon.method == "arpabet"
+          - result_phon.words is iterable
+          - (result_phon.words | length) >= 1
+        fail_msg: "Phonetic transcription failed. Got: {{ result_phon }}"
+        success_msg: "phonetic_transcribe: method=arpabet, words={{ result_phon.words | length }}"
+
+    # ---- unicode_analyze ----
+    - name: Assert unicode_analyze artifact exists
+      ansible.builtin.stat:
+        path: "{{ base_dir }}/unicode-analyze/unicode_analysis.json"
+      register: art_uni
+      failed_when: not art_uni.stat.exists
+
+    - name: Load unicode_analyze artifact
+      ansible.builtin.slurp:
+        src: "{{ base_dir }}/unicode-analyze/unicode_analysis.json"
+      register: raw_uni
+
+    - name: Parse unicode_analyze artifact
+      ansible.builtin.set_fact:
+        result_uni: "{{ raw_uni.content | b64decode | from_json }}"
+
+    - name: Assert unicode_analyze output
+      ansible.builtin.assert:
+        that:
+          - result_uni.input_length >= 5
+          - result_uni.codepoints is iterable
+          - "'NFC' in result_uni.normalization"
+          - "'NFD' in result_uni.normalization"
+          - "'NFKC' in result_uni.normalization"
+          - "'NFKD' in result_uni.normalization"
+        fail_msg: "Unicode analysis failed. Got: {{ result_uni }}"
+        success_msg: "unicode_analyze: length={{ result_uni.input_length }}, codepoints={{ result_uni.codepoints | length }}"
+
+    # ---- Cleanup ----
+    - name: Remove molecule language artifact tree
+      ansible.builtin.file:
+        path: "{{ base_dir }}"
+        state: absent
+      failed_when: false

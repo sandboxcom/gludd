@@ -204,7 +204,7 @@
 
 - name: Check unpushed commits
   ansible.builtin.shell:
-    cmd: "git log @{u}..HEAD 2>&1 | wc -l | tr -d ' '"
+    cmd: "set -o pipefail && git log @{u}..HEAD 2>&1 | wc -l | tr -d ' '"
     chdir: "{{ repo_path }}"
   register: _wc_unpushed_run
   changed_when: false

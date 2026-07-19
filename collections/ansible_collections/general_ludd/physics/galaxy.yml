@@ -1,0 +1,18 @@
+---
+namespace: general_ludd
+name: physics
+version: 0.1.0
+readme: README.md
+description: >
+  Physics collection — advanced math, simulation, wave analysis,
+  and physical systems modeling.
+license:
+  - MIT
+authors:
+  - Agentic Harness Agent <agent@harness.local>
+tags:
+  - physics
+  - math
+  - simulation
+  - modeling
+dependencies: {}

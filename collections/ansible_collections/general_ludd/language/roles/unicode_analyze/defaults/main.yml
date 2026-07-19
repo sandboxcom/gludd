@@ -1,0 +1,29 @@
+---
+# unicode_analyze role defaults — REPORT-ONLY
+
+# Input
+input_text: ""              # Text string to analyze
+input_file: ""              # Alternative: path to file containing text
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Artifact output
+artifact_dir: "/tmp/gludd-unicode-analyze"
+output_format: "json"       # json
+
+# Analysis options
+include_codepoints: true    # Report individual codepoint details
+include_categories: true    # Report Unicode character categories
+include_blocks: true        # Report Unicode block names
+include_planes: true        # Report Unicode plane assignment
+include_normalization: true # Report all 4 normalization forms (NFC/NFD/NFKC/NFKD)
+include_grapheme_clusters: true  # Segment and report grapheme clusters
+include_scripts: true       # Report script property per char
+include_surrogates: true    # Detect and decode surrogate pairs
+include_utf_encodings: true # Show byte representations in UTF-8/16/32
+include_version_info: false # Include Unicode version history
+
+# Destructive ops guard — report-only
+enable_git_push: false

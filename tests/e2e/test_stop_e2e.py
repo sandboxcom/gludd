@@ -111,7 +111,7 @@ console.log(JSON.stringify({{ output_text: output.text, result_text: result?.tex
     assert result is not None, "Expected result from text.complete hook, got None"
     out_text = result.get("output_text", "")
     res_text = result.get("result_text", "")
-    text = out_text or res_text
+    text = res_text or out_text
     assert "BLOCKED" in text, (
         f"Expected blocked text, got output_text={out_text[:200]!r} result_text={res_text[:200]!r}"
     )
@@ -133,9 +133,9 @@ console.log(JSON.stringify({{ output_text: output.text, result_text: result?.tex
     assert result is not None
     out_text = result.get("output_text", "")
     res_text = result.get("result_text", "")
-    text = out_text or res_text
+    text = res_text or out_text
     assert "BLOCK" in text, (
-        f"Expected 'BLOCK' in text, got: {text[:200]!r}"
+        f"Expected 'BLOCK' in text, got output_text={out_text[:200]!r} result_text={res_text[:200]!r}"
     )
 
 
@@ -293,7 +293,7 @@ console.log(JSON.stringify({{ output_text: output.text, result_text: result?.tex
     assert result is not None
     out_text = result.get("output_text", "")
     res_text = result.get("result_text", "")
-    text = out_text or res_text
+    text = res_text or out_text
     assert "BLOCKED" in text, (
         f"Expected blocked text, got output_text={out_text[:200]!r} result_text={res_text[:200]!r}"
     )
@@ -401,9 +401,11 @@ console.log(JSON.stringify({{ output_text: output.text, result_text: result?.tex
 """
     r1 = _run_plugin(code, cwd=str(cwd))
     assert r1 is not None, "Expected result from step 1, got None"
-    text1 = r1.get("output_text", "")
+    text1 = r1.get("result_text", "") or r1.get("output_text", "")
     assert "BLOCKED" in text1, (
-        f"Step 1: pending ratchet must block, got output_text={text1!r}"
+        f"Step 1: pending ratchet must block, "
+        f"got output_text={r1.get('output_text', '')!r} "
+        f"result_text={r1.get('result_text', '')!r}"
     )
 
     # 2. Remove ratchet -> allowed

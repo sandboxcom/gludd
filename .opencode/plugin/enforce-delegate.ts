@@ -81,6 +81,7 @@ const DISK_HARD_FLOOR_GB = parseFloat(process.env.GLUDD_DISK_HARD_FLOOR_GB || "1
 const WORKTREE_CAP = parseInt(process.env.GLUDD_WORKTREE_CAP || "6", 10)
 const WORKTREE_MIN_FREE_GB = parseFloat(process.env.GLUDD_MIN_FREE_GB || "5.0")
 
+
 // ============================================================================
 // HELPERS
 // ============================================================================
@@ -366,7 +367,7 @@ function enforceDiskDiscipline(args: Record<string, unknown> | undefined): strin
 // escape after MAXBLOCK consecutive denials (anti-wedge).
 // Returns: null = allow, string = block reason.
 // ============================================================================
-const READONLY_MAKE_RE = /^make\s+(git-(status|log|diff|staged|branch|ls-tracked|history-file|remote-sandboxcom|fetch-sandboxcom|ls-remote-sandboxcom|tracked-keys)|ci-(status|verdict|poll|greenness|head-compare|jobs-anon|status-anon|run-detail|artifacts|log|remotes|joblog-anon|checkrun-anno|annotations-anon|wait-anon|watch|watch-head|pyver-list|auth|ssh-test|faillog)|disk$|disk-guard|floor-status|floor-plan|lint$|lint-all|typecheck$|typecheck-all|test-count|test-unit|test-iso|test-xdist|collect-check|healthcheck|ps-gludd|ps-pytest|gate-status|help$|branches-unmerged|repo-status|repo-diff|repo-staged|repo-log|verify-remote|ci-head-compare|ci-greenness|audit-messages|scan-secrets$|sast|sbom|pip-audit|security$|test-no-wait-hook|test-model-ratio-hook|test-force-delegate-hook|test-hooks|test-stop-hooks|test-guardrails|test-scripts|test-db|test-live-zai|test-tui-daemon|test-liveness-workflow|status-snapshot|deps-audit|plan|collection-roles|collection-modules|molecule-scenarios|molecule-version|release-view|verify-release-artifact|ci-diff-since-remote|git-divergence)(\s|$)/
+const READONLY_MAKE_RE = /^make\s+(git-(status|log|diff|staged|branch|ls-tracked|history-file|remote-sandboxcom|fetch-sandboxcom|ls-remote-sandboxcom|tracked-keys)|ci-(status|verdict|poll|greenness|head-compare|jobs-anon|status-anon|run-detail|artifacts|log|remotes|joblog-anon|checkrun-anno|annotations-anon|wait-anon|watch|watch-head|pyver-list|auth|ssh-test|faillog)|disk$|disk-guard|floor-status|floor-plan|lint$|lint-all|typecheck$|typecheck-all|test-count|test-unit|test-iso|test-xdist|collect-check|healthcheck|ps-gludd|ps-pytest|gate-status|help$|branches-unmerged|repo-status|repo-diff|repo-staged|repo-log|verify-remote|ci-head-compare|ci-greenness|audit-messages|scan-secrets$|sast|sbom|pip-audit|security$|test-no-wait-hook|test-model-ratio-hook|test-force-delegate-hook|test-hooks|test-stop-hooks|test-guardrails|test-scripts|test-db|test-live-zai|test-tui-daemon|test-liveness-workflow|status-snapshot|deps-audit|plan|collection-roles|collection-modules|molecule-scenarios|molecule-version|release-view|verify-release-artifact|verify-release-completeness|ci-diff-since-remote|git-divergence)(\s|$)/
 
 const MUTATING_MAKE_RE = /^make\s+(git-(commit|add$|add-all|merge$|push|tag|revert|rm$|reset$|cherry|stash|cherry-pick|cherry-continue|cherry-abort|ff-only|merge-nc)|commit$|commit-no-verify|commit-bootstrap|ship$|ship-ff|ship-async|release-cut|feature-done|feature-start|wt-sync|wt-apply|wt-import|wt-prune|wt-sync-all|gate$|gate-async|test-and-commit|bootstrap$|install-hooks$|clean$|clean-tmp|clean-hooks|clean-untracked|clean-worktree-venvs|untrack$|git-push-sandboxcom|git-push-branch$|git-push-branch-nv|git-pull-sandboxcom|git-stash-rebase-pop|git-add|gated-merge|write-gate-safe-hook)(\s|$)/
 
@@ -463,7 +464,7 @@ function enforceForceDelegate(
 // agent sees EXACTLY what to dispatch on instead of a generic "delegate" nudge.
 // ============================================================================
 
-const FORCE_DISPATCH_FILE = "/tmp/gludd-force-dispatch.json"
+const FORCE_DISPATCH_FILE = process.env.GLUDD_FORCE_DISPATCH_PATH || "/tmp/gludd-force-dispatch.json"
 
 interface DispatchItem {
   index: number
@@ -536,24 +537,37 @@ function writeForceDispatchSignal(cmds: DispatchItem[]): void {
     }))
   } catch { /* fail open */ }
 }
-function readStreak(): number {
-  try {
-    const raw = fs.readFileSync(MAINTHREAD_STREAK_FILE, "utf8").trim()
-    // Back-compat: accept a bare integer (pre-.json format) OR a JSON object.
-    if (raw.startsWith("{")) {
-      const obj = JSON.parse(raw)
-      const n = parseInt(obj.count, 10)
-      return Number.isNaN(n) ? 0 : n
-    }
-    const n = parseInt(raw, 10)
-    return Number.isNaN(n) ? 0 : n
-  } catch { return 0 }
+interface MainthreadStreakState {
+  count: number
+  ts: number
 }
 
-function writeStreak(n: number): void {
+function readStreak(): MainthreadStreakState {
   try {
+    const raw = fs.readFileSync(MAINTHREAD_STREAK_FILE, "utf8").trim()
+    if (raw.startsWith("{")) {
+      const obj = JSON.parse(raw)
+      return {
+        count: parseInt(obj.count, 10) || 0,
+        ts: parseInt(obj.ts, 10) || 0,
+      }
+    }
+    const n = parseInt(raw, 10)
+    return {
+      count: Number.isNaN(n) ? 0 : n,
+      ts: 0,
+    }
+  } catch {
+    return { count: 0, ts: 0 }
+  }
+}
+
+function writeStreak(partial: Partial<MainthreadStreakState>): void {
+  try {
+    const current = readStreak()
+    const merged: MainthreadStreakState = { ...current, ...partial, ts: Date.now() }
     const tmp = MAINTHREAD_STREAK_FILE + ".tmp"
-    fs.writeFileSync(tmp, JSON.stringify({ count: n, ts: Date.now() }))
+    fs.writeFileSync(tmp, JSON.stringify(merged))
     fs.renameSync(tmp, MAINTHREAD_STREAK_FILE)
   } catch { /* fail open */ }
 }
@@ -623,7 +637,9 @@ function mainthreadBudgetBefore(tool: string): string | null {
     }
 
     if (!isMainthreadTool(tool)) return null
-    const streak = readStreak()
+    
+    const fullState = readStreak()
+    const streak = fullState.count
     if (streak < MAINTHREAD_THRESHOLD) return null
     const live = countLiveAgents()
     if (live === null) return null
@@ -631,7 +647,7 @@ function mainthreadBudgetBefore(tool: string): string | null {
 
     // Re-arm to fire again after a few more inline calls (periodic, not every call).
     const rearm = Math.max(0, MAINTHREAD_THRESHOLD - 3)
-    writeStreak(rearm)
+    writeStreak({ count: rearm })
 
     // Write force-dispatch signal with specific tasks so the agent sees
     // EXACTLY what to dispatch — not a generic "delegate" nudge.
@@ -662,11 +678,11 @@ function mainthreadBudgetBefore(tool: string): string | null {
 function mainthreadBudgetAfter(tool: string): void {
   try {
     if (isDispatchTool(tool)) {
-      writeStreak(0)
-      // Reset the read-grind counter + update dispatch timestamp.
+      writeStreak({ count: 0 })
       saveReadGrindState(0, Date.now())
     } else if (isMainthreadTool(tool)) {
-      writeStreak(readStreak() + 1)
+      const s = readStreak()
+      writeStreak({ count: s.count + 1 })
     } else if (isReadTool(tool)) {
       // Increment the read-grind counter; preserve the last dispatch timestamp.
       const rs = loadReadGrindState()

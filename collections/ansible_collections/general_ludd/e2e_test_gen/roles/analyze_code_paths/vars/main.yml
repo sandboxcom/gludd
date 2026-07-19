@@ -1,0 +1,4 @@
+---
+# analyze_code_paths role vars — internal, not for override
+analyze_artifact_name: "module_symbols.json"
+analyze_script_module: "general_ludd.agents.test_generation.code_path_analyzer"

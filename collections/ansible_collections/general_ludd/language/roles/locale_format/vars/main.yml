@@ -1,0 +1,25 @@
+---
+date_lengths:
+  - full
+  - long
+  - medium
+  - short
+
+plural_categories:
+  - zero
+  - one
+  - two
+  - few
+  - many
+  - other
+
+rtl_languages:
+  - ar
+  - he
+  - fa
+  - ur
+  - ps
+  - sd
+  - ug
+  - yi
+  - dv

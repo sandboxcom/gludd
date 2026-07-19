@@ -22,7 +22,12 @@ const BASH_POLICY_FIX = [
 const BASH_POLICY_REF = "See AGENTS.md for existing make targets and the full policy.\n"
 
 const MAKE_ENFORCE = process.env.GLUDD_MAKE_ENFORCE !== "0"
-const SHELL_META_CHARS = /[|;&(){}$`\\!]/
+// Bare `(` and `)` removed 2026-07-18: they triggered false positives on
+// legitimate commit messages (e.g. MSG="fix foo (see #123)"). The actual
+// shell-injection vector is `$()` command substitution, which is still
+// caught via the `$` char in this class. Backticks, `;`, `|`, `&&`, `||`,
+// `{}`, `\`, `!` all remain blocked.
+const SHELL_META_CHARS = /[|;&{}$`\\!]/
 
 function formatBashBlockedMessage(attemptedCommand: string, reason?: string): string {
   return [
@@ -39,6 +44,10 @@ function formatBashBlockedMessage(attemptedCommand: string, reason?: string): st
 
 let _pendingCommitReminder = false
 let _pendingPreflightGate = ""
+// Set when a bash command is blocked for violating the make-only policy. The
+// experimental.text.complete hook consumes (and clears) it to re-inject the
+// bash-policy nudge into the assistant's context so the next turn corrects.
+let _bashPolicyNudge = false
 
 // --- Non-behavioral edit detection ------------------------------------------
 // Returns true when an edit only touches comments (# ...) and/or docstring
@@ -134,25 +143,35 @@ const ALLOWED_TOP_LEVEL_KEYS: ReadonlySet<string> = new Set([
 // --- Gate-concurrency probe (port of gate_concurrency_pretool.sh) -------------
 // Two independent signals (either fires the block): fresh basetemp mtime, OR
 // pgrep for a running pytest. FAIL-OPEN on any error (can't probe -> allow).
+const BASETEMP = process.env.GLUDD_GATE_BASETEMP || "/tmp/gludd-gate-basetemp"
+const STALE_SECS = parseInt(process.env.GLUDD_GATE_STALE_SECS || "600", 10)
+
+function basetempIsFresh(): boolean {
+  try {
+    const st = fs.statSync(BASETEMP)
+    const ageSec = (Date.now() - st.mtimeMs) / 1000
+    return ageSec < STALE_SECS
+  } catch {
+    return false
+  }
+}
+
 function isGateAlreadyRunning(): boolean {
   try {
-    const BASETEMP = process.env.GLUDD_GATE_BASETEMP || "/tmp/gludd-gate-basetemp"
-    const STALE_SECS = parseInt(process.env.GLUDD_GATE_STALE_SECS || "600", 10)
-    // Signal A: basetemp exists + fresh mtime.
-    try {
-      const st = fs.statSync(BASETEMP)
-      const ageSec = (Date.now() - st.mtimeMs) / 1000
-      if (ageSec < STALE_SECS) return true
-    } catch {}
-    // Signal B: pgrep -f pytest. Exit 0 = match found.
     if (process.env.GLUDD_GATE_PYTEST_RUNNING === "1") return true
     if (process.env.GLUDD_GATE_PYTEST_RUNNING === "0") return false
+    // Signal A (definitive): pgrep -f pytest. Exit 0 = match found.
     try {
       execSync("pgrep -f pytest", { stdio: ["pipe", "pipe", "pipe"] })
-      return true  // pgrep exited 0 — a pytest process is running
-    } catch {
-      return false  // pgrep exited non-zero — no match
+      return true
+    } catch (e) {
+      if (typeof e === "object" && e !== null && "code" in e && (e as { code?: unknown }).code === "ENOENT") {
+        // pgrep unavailable — fall back to basetemp freshness heuristic
+        if (basetempIsFresh()) return true
+      }
+      // Non-zero exit: pgrep found nothing — no pytest running
     }
+    return false
   } catch {
     return false
   }
@@ -229,11 +248,16 @@ const BASH_METACHAR_POLICY = [
   "",
   "Shell metacharacters are FORBIDDEN in bash commands. This includes:",
   "  | (pipe)   ; (semicolon)   && (and)   || (or)",
-  "  () (subshell)   $ (variable)   ` (backtick)   ! (history)",
+  "  $ (variable/command-substitution)   ` (backtick)   ! (history)",
   "  {} (brace expansion)   \\ (escape)",
+  "  (Bare parens are NOT forbidden — see note below.)",
   "",
   "These allow chaining commands, piping output, running subcommands,",
   "and other side effects that bypass the make-only policy.",
+  "",
+  "NOTE: bare parens `(` `)` are NOT blocked (commit messages legitimately",
+  "contain them, e.g. MSG=\"fix foo (see #123)\"). The shell-injection",
+  "risk `$()` command substitution is still blocked via the `$` char.",
   "",
   "If you need to combine operations, create a Makefile target that",
   "does the combination. Make targets ARE allowed to use these",
@@ -340,11 +364,11 @@ function detectStopPattern(text: string): boolean {
 // ============================================================================
 const defaultImpl: HotModule = {
     "tool.execute.before": async (input, output) => {
-        // process.env.OPENCODE_SUBAGENT guard
-        const _sub = isSubagent()
-        if (_sub) { return }
         reportAlive("enforce-make")
 
+        // --- BASH CHECK runs for ALL agents including subagents ---
+        // AGENTS.md: "Bash = `make <target>` only. Subagents MUST know
+        // that the bash tool can ONLY run `make <target>` commands."
         if (input.tool === "bash") {
           let command = ""
           const ic = (input as any)?.args?.command
@@ -361,22 +385,25 @@ const defaultImpl: HotModule = {
           const trimmed = command.replace(/^\S*\$\s*/, "").trim()
 
           if (MAKE_ENFORCE) {
-            const cmdMatch = trimmed.match(/^(make\s+\S+)/)
-            const cmdPortion = cmdMatch ? cmdMatch[1] : trimmed
-            if (cmdPortion && SHELL_META_CHARS.test(cmdPortion)) {
-              const matched = cmdPortion.match(SHELL_META_CHARS)
+            // Scan the FULL command for shell metacharacters first — pipes,
+            // chaining, subshells, etc. anywhere in the line are forbidden.
+            if (SHELL_META_CHARS.test(trimmed)) {
+              _bashPolicyNudge = true
+              const matched = trimmed.match(SHELL_META_CHARS)
               throw new Error(
                 formatBashBlockedMessage(
                   trimmed,
                   `Shell metacharacter(s) forbidden: ${matched?.join(", ")}. ` +
-                  `Pipes (|), chaining (&&, ||, ;), subshells ($(), ()), backticks (\`), ` +
+                  `Pipes (|), chaining (&&, ||, ;), command substitution ($()), backticks (\`), ` +
                   `variable expansion ($), and brace expansion ({}) are not allowed. ` +
+                  `Bare parens () are permitted (commit messages may contain them). ` +
                   `Create a Makefile target instead.`
                 )
               )
             }
 
             if (!trimmed.startsWith("make ") && trimmed !== "make") {
+              _bashPolicyNudge = true
               throw new Error(formatBashBlockedMessage(trimmed, "Command does not start with 'make'"))
             }
           }
@@ -393,8 +420,8 @@ const defaultImpl: HotModule = {
             if (isGateAlreadyRunning()) {
               throw new Error([
                 "GATE CONCURRENCY VIOLATION: a pytest / gate run appears to already",
-                "be in progress (basetemp /tmp/gludd-gate-basetemp is fresh OR pgrep",
-                "found a pytest process). Launching a second concurrent pytest",
+                "be in progress (pgrep found a pytest process). Launching a second",
+                "concurrent pytest",
                 "triggers keep-last-3 basetemp rotation, which deletes the first",
                 "gate's worker dirs mid-flight and produces hundreds of spurious",
                 "FileNotFoundError errors (the 2026-06-15 208-error incident).",
@@ -571,6 +598,10 @@ const defaultImpl: HotModule = {
             }
           }
         }
+
+        // Subagent guard: skip edit/write/TDD prompts for subagents
+        const isSubagent = process.env.OPENCODE_SUBAGENT === "1"
+        if (isSubagent) return
 
         if (input.tool === "edit" || input.tool === "write") {
           const filePath: string = output?.args?.filePath ?? output?.args?.path ?? ""
@@ -858,26 +889,9 @@ const defaultImpl: HotModule = {
         }
       },
 
-      "text.complete": async (_input, output) => {
-        if (isSubagent()) return output
-        if (typeof output !== "string") return output
-        const hasRed = (() => {
-          try {
-            const p = path.join(process.cwd(), ".gate-status")
-            if (fs.existsSync(p)) {
-              const c = fs.readFileSync(p, "utf8")
-              return /FAIL/.test(c)
-            }
-          } catch {}
-          return false
-        })()
-        if (hasRed) return "[GATE RED] Fix failures before committing.\n\n" + output
-        return output
-      },
-
       "experimental.chat.system.transform": async (_input, output) => {
         // process.env.OPENCODE_SUBAGENT guard
-        if (isSubagent()) return output
+        if (process.env.OPENCODE_SUBAGENT === "1") return output
         // --- BASH-AVAILABILITY CHECK (2026-07-03) -------------------------------
         // Reads SESSION.md for the "CRITICAL: bash tool unavailable" banner.
         // If present, injects a prominent warning at the VERY TOP of the system
@@ -968,6 +982,42 @@ const defaultImpl: HotModule = {
         return output // FORBIDDEN stop patterns enforced by this contract + response.transform hook
       },
 
+      "experimental.text.complete": async (_input, output) => {
+        if (process.env.OPENCODE_SUBAGENT === "1") return output
+        if (typeof output !== "string") return output
+        // Gate-red guard: if .gate-status is FAIL, prepend a hard warning so
+        // the agent cannot claim done while the gate is broken.
+        const hasRed = (() => {
+          try {
+            const p = path.join(process.cwd(), ".gate-status")
+            if (fs.existsSync(p)) {
+              const c = fs.readFileSync(p, "utf8")
+              return /FAIL/.test(c)
+            }
+          } catch {}
+          return false
+        })()
+        if (hasRed) {
+          return "[GATE RED] Fix failures before committing.\n\n" + output
+        }
+        // Bash-policy nudge: if a bash command was blocked this turn for
+        // violating the make-only policy, re-inject the rule so the next
+        // turn corrects. Consumed and cleared here (and reset in session.idle).
+        if (_bashPolicyNudge) {
+          _bashPolicyNudge = false
+          return BASH_POLICY_HEADER + BASH_POLICY_RULE + BASH_POLICY_FIX + BASH_POLICY_REF + "\n\n" + output
+        }
+        return output
+      },
+
+      "session.idle": async () => {
+        // Per-turn reset: clear transient flags so they don't bleed across
+        // turns. Required so a blocked bash in one turn does not nag forever.
+        _bashPolicyNudge = false
+        _pendingCommitReminder = false
+        _pendingPreflightGate = ""
+      },
+
 
     }
 
@@ -998,11 +1048,17 @@ export default (({ }) => {
       return fn ? await fn(_input, output) : output
     },
 
-    "text.complete": async (_input, output) => {
+    "experimental.text.complete": async (_input, output) => {
       if (isSubagent()) return output
       const impl = loadHotModule("enforce-make", defaultImpl)
-      const fn = impl["text.complete"]
+      const fn = impl["experimental.text.complete"] || impl["text.complete"]
       return fn ? await fn(_input, output) : output
+    },
+
+    "session.idle": async () => {
+      const impl = loadHotModule("enforce-make", defaultImpl)
+      const fn = impl["session.idle"]
+      if (fn) { try { await fn() } catch { /* fail-open */ } }
     },
 
   }

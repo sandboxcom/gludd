@@ -1,0 +1,48 @@
+---
+font_formats:
+  - ttf
+  - otf
+  - woff
+  - woff2
+  - ttc
+
+open_type_tables:
+  required:
+    - cmap
+    - head
+    - hhea
+    - hmtx
+    - maxp
+    - name
+    - OS/2
+    - post
+  optional:
+    - GSUB
+    - GPOS
+    - GDEF
+    - kern
+    - gasp
+    - hdmx
+    - LTSH
+    - PCLT
+    - VDMX
+    - vhea
+    - vmtx
+    - BASE
+    - EBDT
+    - EBLC
+    - EBSC
+
+variable_font_axes:
+  wght: "Weight"
+  wdth: "Width"
+  ital: "Italic"
+  opsz: "Optical Size"
+  slnt: "Slant"
+  GRAD: "Grade"
+  XOPQ: "X Opaque"
+  YOPQ: "Y Opaque"
+  XTRA: "X Transparent"
+  YTRA: "Y Transparent"
+  YTUC: "Y Transparent Uppercase"
+  YTLC: "Y Transparent Lowercase"

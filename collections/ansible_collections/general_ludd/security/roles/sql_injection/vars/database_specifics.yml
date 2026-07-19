@@ -132,7 +132,7 @@ database_specifics:
     comment_obfuscation:
       - "SEL/**/ECT — inline comment splitting"
       - "UN/**/ION/**/SEL/**/ECT — multi-comment split"
-      - "SE%00LECT — null byte termination (PHP)"
+      - "SE%00LECT — null byte termination (PHP)" 
     whitespace_alternatives:
       - "UNION%0dSELECT — carriage return"
       - "UNION%0aSELECT — newline"

@@ -1,0 +1,24 @@
+---
+namespace: general_ludd
+name: e2e_test_gen
+version: 0.1.0
+readme: README.md
+description: >
+  Ansible collection for end-to-end test generation. Five-role pipeline:
+  analyze_code_paths (wraps tree-sitter CodePathAnalyzer), generate_scenarios
+  (maps code paths to E2E patterns), validate_scenarios (ResearcherAgent
+  cross-reference), write_e2e_tests (emits pytest files with project fixtures),
+  verify_coverage (pytest-cov threshold check). Leverages core code_intelligence
+  (ASTBlockExtractor, CodeSearch, CallGraph) and ResearcherAgent via daemon API.
+license:
+  - MIT
+authors:
+  - Agentic Harness Agent <agent@harness.local>
+tags:
+  - testing
+  - e2e
+  - code-coverage
+  - test-generation
+  - agentic
+dependencies:
+  general_ludd.agent: ">=0.2.0"

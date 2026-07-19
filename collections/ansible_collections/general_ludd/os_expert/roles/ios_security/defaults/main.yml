@@ -1,0 +1,16 @@
+---
+# ios_security role defaults
+
+daemon_url: "http://localhost:8000"
+psk: ""
+
+artifact_dir: "/tmp/gludd-ios-security"
+
+audit_amfi: true
+audit_trustcache: true
+audit_sandbox: true
+audit_codesign: true
+
+device_udid: ""
+
+enable_git_push: false

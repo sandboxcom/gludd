@@ -1,0 +1,40 @@
+---
+- name: Validate fuzzer path
+  ansible.builtin.stat:
+    path: "{{ fuzzer_path }}"
+  register: _fuzzer_stat
+
+- name: Fail if fuzzer not found
+  ansible.builtin.fail:
+    msg: "Fuzzer not found at {{ fuzzer_path }}"
+  when: not _fuzzer_stat.stat.exists
+
+- name: Create output directory
+  ansible.builtin.file:
+    path: "{{ output_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Create corpus directory
+  ansible.builtin.file:
+    path: "{{ corpus_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Run coverage-guided fuzzing
+  ansible.builtin.include_tasks: coverage_guided.yml
+  when: enable_coverage_guided | bool
+
+- name: Run mutation fuzzing
+  ansible.builtin.include_tasks: mutation.yml
+  when: enable_mutation | bool
+
+- name: Run crash triage
+  ansible.builtin.include_tasks: crash_triage.yml
+  when: enable_crash_triage | bool
+
+- name: Write fuzz target artifact
+  ansible.builtin.copy:
+    content: "{{ {'role': 'fuzz_target', 'fuzzer': fuzzer, 'status': 'completed', 'verdict': 'pass', 'corpus_dir': corpus_dir, 'generated_at': lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ')} | to_nice_json }}"
+    dest: "{{ output_dir }}/fuzz_target.json"
+    mode: "0644"

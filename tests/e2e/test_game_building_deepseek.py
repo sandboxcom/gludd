@@ -91,18 +91,19 @@ _DEEPSEEK_KEY = _get_deepseek_key()
 # ---------------------------------------------------------------------------
 
 _OBSERVABILITY_DATA: dict[str, Any] = {}
-_OBS_REPORT_PATH = Path(__file__).parent.parent.parent / ".game-audit-report.json"
 
 
-def _export_observability_report() -> None:
-    """Write the accumulated observability data to a JSON report file."""
+def _export_observability_report(out_dir: Path) -> Path:
+    """Write the accumulated observability data to a JSON report file in ``out_dir``."""
     report = {
         "report_generated": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "games": _OBSERVABILITY_DATA,
         "summary": _compute_obs_summary(),
     }
-    _OBS_REPORT_PATH.write_text(json.dumps(report, indent=2))
-    print(f"\nObservability report written to {_OBS_REPORT_PATH}")
+    out_path = out_dir / ".game-audit-report.json"
+    out_path.write_text(json.dumps(report, indent=2))
+    print(f"\nObservability report written to {out_path}")
+    return out_path
 
 
 def _compute_obs_summary() -> dict[str, Any]:
@@ -3276,7 +3277,7 @@ class TestDeepSeekGameBuilding:
 class TestGameBuildingGapAnalysis:
     """After running all game-building tests, analyze gludd's pipeline for gaps."""
 
-    def test_gap_report(self):
+    def test_gap_report(self, tmp_path: Path):
         """Print a comprehensive gap analysis based on all game-building results."""
         gaps = TestDeepSeekGameBuilding._gaps
         if not gaps:
@@ -3300,8 +3301,11 @@ class TestGameBuildingGapAnalysis:
             for g in gaps:
                 print(f"  [{g['game']}] {g['category']}: {g['detail'][:200]}")
 
-        # Always export observability report
-        _export_observability_report()
+        # Always export observability report into tmp_path (never repo root).
+        out_path = _export_observability_report(out_dir=tmp_path)
+        assert out_path.exists()
+        assert out_path.parent == tmp_path
+        assert not (_REPO_ROOT / ".game-audit-report.json").exists()
 
         print("\n" + "="*70)
         print("PIPELINE IMPROVEMENT RECOMMENDATIONS")
@@ -3878,7 +3882,7 @@ class TestGamePersistence:
         self._build_and_stress(gateway, tmp_path, "tic_tac_toe")
 
     # ---- Persistence Gap Report ----
-    def test_persistence_gap_report(self):
+    def test_persistence_gap_report(self, tmp_path: Path):
         """Print a comprehensive persistence gap analysis."""
         gaps = TestGamePersistence._persistence_gaps
         if not gaps:
@@ -3902,7 +3906,10 @@ class TestGamePersistence:
             for g in gaps:
                 print(f"  [{g['game']}] {g['category']}: {g['detail'][:200]}")
 
-        # Always export observability report
-        _export_observability_report()
+        # Always export observability report into tmp_path (never repo root).
+        out_path = _export_observability_report(out_dir=tmp_path)
+        assert out_path.exists()
+        assert out_path.parent == tmp_path
+        assert not (_REPO_ROOT / ".game-audit-report.json").exists()
 
         print("\n" + "=" * 70)

@@ -1,0 +1,14 @@
+---
+severity_levels:
+  critical: "Active attack indicator — block immediately"
+  high: "Likely malicious — investigate now"
+  medium: "Suspicious — review required"
+  low: "Unusual but possibly benign"
+
+attack_vectors:
+  domain_spoofing: "Homoglyph characters in domain names"
+  code_injection: "Bidi control characters hiding malicious code"
+  filename_confusion: "Visually identical filenames"
+  string_comparison_bypass: "Invisible characters bypassing blocklists"
+  package_typosquatting: "Impersonating package names"
+  comment_trojan: "Bidi overrides making code appear commented out"

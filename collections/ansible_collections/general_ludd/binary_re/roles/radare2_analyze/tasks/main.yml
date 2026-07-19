@@ -1,0 +1,38 @@
+---
+- name: Validate radare2 path
+  ansible.builtin.stat:
+    path: "{{ r2_path }}"
+  register: _r2_stat
+
+- name: Fail if radare2 not found
+  ansible.builtin.fail:
+    msg: "radare2 not found at {{ r2_path }}"
+  when: not _r2_stat.stat.exists
+
+- name: Create output directory
+  ansible.builtin.file:
+    path: "{{ output_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Run disassembly analysis
+  ansible.builtin.include_tasks: disassembly.yml
+  when: enable_disassembly | bool
+
+- name: Run entropy scan
+  ansible.builtin.include_tasks: entropy_scan.yml
+  when: enable_entropy_scan | bool
+
+- name: Run string search
+  ansible.builtin.include_tasks: string_search.yml
+  when: enable_string_search | bool
+
+- name: Run CFG analysis
+  ansible.builtin.include_tasks: cfg_analysis.yml
+  when: enable_cfg_analysis | bool
+
+- name: Write radare2 analysis artifact
+  ansible.builtin.copy:
+    content: "{{ {'role': 'radare2_analyze', 'status': 'completed', 'verdict': 'pass', 'modes': analysis_mode, 'generated_at': lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ')} | to_nice_json }}"
+    dest: "{{ output_dir }}/radare2_analyze.json"
+    mode: "0644"

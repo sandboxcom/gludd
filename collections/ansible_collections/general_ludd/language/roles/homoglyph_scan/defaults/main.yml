@@ -1,0 +1,23 @@
+---
+# homoglyph_scan role defaults — REPORT-ONLY
+
+# Input
+input_text: ""              # Text to scan for homoglyph/confusable characters
+input_domain: ""            # Alternative: domain name to scan for spoofing
+
+# Scan options
+check_confusables: true      # UTS #39 confusable character detection
+check_invisible: true        # Zero-width and invisible character detection
+check_bidi: true             # Bidirectional text spoofing (CVE-2021-42574)
+check_mixed_script: true     # Mixed-script detection (e.g., Cyrillic in Latin)
+min_severity: "low"          # low, medium, high, critical — filter findings
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Artifact output
+artifact_dir: "/tmp/gludd-homoglyph-scan"
+
+# Destructive ops guard — report-only
+enable_git_push: false

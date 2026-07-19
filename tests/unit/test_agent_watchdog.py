@@ -45,6 +45,11 @@ _check_force_dispatch = aw._check_force_dispatch
 _is_force_dispatch_active = aw._is_force_dispatch_active
 FORCE_DISPATCH_FILE = aw.FORCE_DISPATCH_FILE
 FORCE_DISPATCH_MAX_AGE = aw.FORCE_DISPATCH_MAX_AGE
+_check_under_floor_dispatch = aw._check_under_floor_dispatch
+_read_multitask_state = aw._read_multitask_state
+MULTITASK_STATE_FILE = aw.MULTITASK_STATE_FILE
+PURE_IDLE_DIRECTIVE = aw.PURE_IDLE_DIRECTIVE
+pending_work_exists = aw._pending_work_exists
 # ── script exists ─────────────────────────────────────────────────────────────
 
 
@@ -1220,3 +1225,228 @@ def test_check_force_dispatch_stale_flag_ignored(tmp_path: Path, monkeypatch: py
     result = _check_force_dispatch()
     assert result is False
     assert not force_flag.exists()  # stale flag removed
+
+
+# ── Under-floor dispatch detection tests ──────────────────────────────────
+
+
+def test_read_multitask_state_no_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(aw, "MULTITASK_STATE_FILE", str(tmp_path / "nonexistent-multitask-state.json"))
+    state = _read_multitask_state()
+    assert state == {}
+
+
+def test_read_multitask_state_valid_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    state_file = tmp_path / "multitask-state.json"
+    state_file.write_text(json.dumps({
+        "thisMessageDispatches": 3,
+        "zeroStreak": 1,
+        "estimatedInFlight": 5,
+    }))
+    monkeypatch.setattr(aw, "MULTITASK_STATE_FILE", str(state_file))
+    state = _read_multitask_state()
+    assert state["thisMessageDispatches"] == 3
+    assert state["zeroStreak"] == 1
+    assert state["estimatedInFlight"] == 5
+
+
+def test_check_under_floor_no_state_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(aw, "MULTITASK_STATE_FILE", str(tmp_path / "nonexistent.json"))
+    monkeypatch.setattr(aw, "PURE_IDLE_DIRECTIVE", str(tmp_path / "pure-idle.txt"))
+    monkeypatch.setattr(aw, "RESET_LOG", str(tmp_path / "reset.log"))
+    _check_under_floor_dispatch()
+    assert not (tmp_path / "pure-idle.txt").exists()
+
+
+def test_check_under_floor_at_ceiling_no_action(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    state_file = tmp_path / "multitask-state.json"
+    state_file.write_text(json.dumps({
+        "thisMessageDispatches": 10,
+        "zeroStreak": 0,
+        "estimatedInFlight": 10,
+    }))
+    monkeypatch.setattr(aw, "MULTITASK_STATE_FILE", str(state_file))
+    monkeypatch.setattr(aw, "PURE_IDLE_DIRECTIVE", str(tmp_path / "pure-idle.txt"))
+    monkeypatch.setattr(aw, "RESET_LOG", str(tmp_path / "reset.log"))
+    _check_under_floor_dispatch()
+    assert not (tmp_path / "pure-idle.txt").exists()
+
+
+def test_check_under_floor_detects_below_ten_with_pending(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    state_file = tmp_path / "multitask-state.json"
+    state_file.write_text(json.dumps({
+        "thisMessageDispatches": 3,
+        "zeroStreak": 0,
+        "estimatedInFlight": 3,
+    }))
+    monkeypatch.setattr(aw, "MULTITASK_STATE_FILE", str(state_file))
+    monkeypatch.setattr(aw, "PURE_IDLE_DIRECTIVE", str(tmp_path / "pure-idle.txt"))
+    monkeypatch.setattr(aw, "RESET_LOG", str(tmp_path / "reset.log"))
+
+    tasks_md = tmp_path / "TASKS.md"
+    tasks_md.write_text("- [ ] pending task\n")
+    monkeypatch.setattr(aw, "_TASKS_MD", tasks_md)
+
+    ratchet_yml = tmp_path / "ratchet.yml"
+    ratchet_yml.write_text("# empty\n")
+    monkeypatch.setattr(aw, "_RATCHET_YML", ratchet_yml)
+
+    gate_status = tmp_path / ".gate-status"
+    gate_status.write_text("lint PASS 0\n")
+    monkeypatch.setattr(aw, "_GATE_STATUS", gate_status)
+
+    _check_under_floor_dispatch()
+
+    directive_path = tmp_path / "pure-idle.txt"
+    assert directive_path.exists(), "Should write directive when under-floor detected"
+    content = directive_path.read_text()
+    assert "UNDER-FLOOR DETECTED" in content
+    assert "3 dispatch" in content
+    assert "Floor is 10" in content
+
+
+def test_check_under_floor_pipeline_dry_with_streak(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    state_file = tmp_path / "multitask-state.json"
+    state_file.write_text(json.dumps({
+        "thisMessageDispatches": 0,
+        "zeroStreak": 2,
+        "estimatedInFlight": 1,
+    }))
+    monkeypatch.setattr(aw, "MULTITASK_STATE_FILE", str(state_file))
+    monkeypatch.setattr(aw, "PURE_IDLE_DIRECTIVE", str(tmp_path / "pure-idle.txt"))
+    monkeypatch.setattr(aw, "RESET_LOG", str(tmp_path / "reset.log"))
+
+    tasks_md = tmp_path / "TASKS.md"
+    tasks_md.write_text("- [ ] fix the parser\n")
+    monkeypatch.setattr(aw, "_TASKS_MD", tasks_md)
+
+    ratchet_yml = tmp_path / "ratchet.yml"
+    ratchet_yml.write_text("key: value\n")
+    monkeypatch.setattr(aw, "_RATCHET_YML", ratchet_yml)
+
+    gate_status = tmp_path / ".gate-status"
+    gate_status.write_text("lint PASS 0\n")
+    monkeypatch.setattr(aw, "_GATE_STATUS", gate_status)
+
+    _check_under_floor_dispatch()
+
+    directive_path = tmp_path / "pure-idle.txt"
+    assert directive_path.exists(), "Should write directive when pipeline is dry"
+    content = directive_path.read_text()
+    assert "UNDER-FLOOR DETECTED" in content
+
+
+def test_check_under_floor_no_action_when_no_pending_work(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    state_file = tmp_path / "multitask-state.json"
+    state_file.write_text(json.dumps({
+        "thisMessageDispatches": 1,
+        "zeroStreak": 3,
+        "estimatedInFlight": 0,
+    }))
+    monkeypatch.setattr(aw, "MULTITASK_STATE_FILE", str(state_file))
+    monkeypatch.setattr(aw, "PURE_IDLE_DIRECTIVE", str(tmp_path / "pure-idle.txt"))
+    monkeypatch.setattr(aw, "RESET_LOG", str(tmp_path / "reset.log"))
+
+    tasks_md = tmp_path / "TASKS.md"
+    tasks_md.write_text("- [x] all done\n")
+    monkeypatch.setattr(aw, "_TASKS_MD", tasks_md)
+
+    ratchet_yml = tmp_path / "ratchet.yml"
+    ratchet_yml.write_text("# empty\n")
+    monkeypatch.setattr(aw, "_RATCHET_YML", ratchet_yml)
+
+    gate_status = tmp_path / ".gate-status"
+    gate_status.write_text("lint PASS 0\ntypecheck PASS 0\n")
+    monkeypatch.setattr(aw, "_GATE_STATUS", gate_status)
+
+    _check_under_floor_dispatch()
+
+    assert not (tmp_path / "pure-idle.txt").exists(), (
+        "Should NOT write directive when no pending work exists"
+    )
+
+
+def test_check_under_floor_dry_but_no_streak_no_action(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    state_file = tmp_path / "multitask-state.json"
+    state_file.write_text(json.dumps({
+        "thisMessageDispatches": 0,
+        "zeroStreak": 0,
+        "estimatedInFlight": 1,
+    }))
+    monkeypatch.setattr(aw, "MULTITASK_STATE_FILE", str(state_file))
+    monkeypatch.setattr(aw, "PURE_IDLE_DIRECTIVE", str(tmp_path / "pure-idle.txt"))
+    monkeypatch.setattr(aw, "RESET_LOG", str(tmp_path / "reset.log"))
+
+    tasks_md = tmp_path / "TASKS.md"
+    tasks_md.write_text("- [ ] something\n")
+    monkeypatch.setattr(aw, "_TASKS_MD", tasks_md)
+
+    ratchet_yml = tmp_path / "ratchet.yml"
+    ratchet_yml.write_text("# empty\n")
+    monkeypatch.setattr(aw, "_RATCHET_YML", ratchet_yml)
+
+    gate_status = tmp_path / ".gate-status"
+    gate_status.write_text("lint PASS 0\n")
+    monkeypatch.setattr(aw, "_GATE_STATUS", gate_status)
+
+    _check_under_floor_dispatch()
+
+    assert not (tmp_path / "pure-idle.txt").exists(), (
+        "Pipeline dry but zeroStreak=0 — should not fire yet"
+    )
+
+
+def test_check_and_reset_includes_under_floor_check(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    _setup_full(monkeypatch, tmp_path)
+
+    streak_path = tmp_path / "streak.json"
+    streak_path.write_text('{"count":1,"last_tool":"read"}')
+    monkeypatch.setattr(aw, "STREAK_FILE", str(streak_path))
+
+    state_file = tmp_path / "multitask-state.json"
+    state_file.write_text(json.dumps({
+        "thisMessageDispatches": 2,
+        "zeroStreak": 1,
+        "estimatedInFlight": 2,
+        "pid": os.getpid(),
+    }))
+    monkeypatch.setattr(aw, "MULTITASK_STATE_FILE", str(state_file))
+    monkeypatch.setattr(aw, "PURE_IDLE_DIRECTIVE", str(tmp_path / "pure-idle.txt"))
+    monkeypatch.setattr(aw, "ORCHESTRATOR_STATE_FILE", str(tmp_path / "orchestrator.json"))
+    monkeypatch.setattr(aw, "HEALTH_SCORE_FILE", str(tmp_path / "health.json"))
+    monkeypatch.setattr(aw, "DISENGAGE_FILE", str(tmp_path / "disengage.json"))
+    monkeypatch.setattr(aw, "PUSH_LOOP_FILE", str(tmp_path / "push-ts.json"))
+    monkeypatch.setattr(aw, "_should_run_check", lambda name, cooldown_secs=aw._CHECK_COOLDOWN_SECS: True)
+
+    tasks_md = tmp_path / "TASKS.md"
+    tasks_md.write_text("- [ ] urgent fix needed\n")
+    monkeypatch.setattr(aw, "_TASKS_MD", tasks_md)
+
+    ratchet_yml = tmp_path / "ratchet.yml"
+    ratchet_yml.write_text("key: value\n")
+    monkeypatch.setattr(aw, "_RATCHET_YML", ratchet_yml)
+
+    gate_status = tmp_path / "gate-status"
+    gate_status.write_text("lint PASS 0\n")
+    monkeypatch.setattr(aw, "_GATE_STATUS", gate_status)
+
+    def mock_subprocess_run(cmd, **_kwargs):
+        if isinstance(cmd, list) and "ci-verdict" in str(cmd):
+            return subprocess.CompletedProcess(
+                args=cmd, returncode=0,
+                stdout="CI SUCCESS: abc123 run 12345 conclusion: success\n",
+                stderr="",
+            )
+        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", mock_subprocess_run)
+
+    _ = aw.check_and_reset()
+
+    directive_path = tmp_path / "pure-idle.txt"
+    assert directive_path.exists(), (
+        "check_and_reset should call _check_under_floor_dispatch, "
+        "which should write directive for under-floor detection"
+    )
+    content = directive_path.read_text()
+    assert "UNDER-FLOOR DETECTED" in content

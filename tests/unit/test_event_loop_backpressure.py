@@ -485,7 +485,9 @@ class TestLeaseReclaim:
     @pytest.mark.asyncio
     async def test_reclaim_no_expired(self) -> None:
         ses = AsyncMock()
-        ses.execute.return_value.scalars.return_value.all.return_value = []
+        result_mock = MagicMock()
+        result_mock.scalars.return_value.all.return_value = []
+        ses.execute.return_value = result_mock
         count = await reclaim_expired_leases(ses)
         assert count == 0
 
@@ -503,7 +505,9 @@ class TestLeaseEdgeCases:
     @pytest.mark.asyncio
     async def test_acquire_lease_zero_ttl_still_works(self) -> None:
         ses = AsyncMock()
-        ses.execute.return_value.scalars.return_value.all.return_value = []
+        result_mock = MagicMock()
+        result_mock.scalars.return_value.all.return_value = []
+        ses.execute.return_value = result_mock
         result = await acquire_lease(ses, "bucket-0", "holder-z", 0)
         assert result is not None
 
@@ -511,6 +515,9 @@ class TestLeaseEdgeCases:
     async def test_acquire_leases_batch_empty(self) -> None:
         from general_ludd.event_loop.lease import acquire_leases_batch
         ses = AsyncMock()
+        result_mock = MagicMock()
+        result_mock.scalars.return_value.all.return_value = []
+        ses.execute.return_value = result_mock
         results = await acquire_leases_batch(ses, [], "holder-x", 300)
         assert results == []
 
@@ -644,9 +651,9 @@ class TestQueueConfig:
         assert q1.max_error_rate == 1.0
 
     def test_queue_caps_consistent(self) -> None:
-        q = Queue(queue_name="q", hard_cap=5, soft_cap=10)
-        assert q.hard_cap == 5
-        assert q.soft_cap == 10
+        q = Queue(queue_name="q", hard_cap=10, soft_cap=5)
+        assert q.hard_cap == 10
+        assert q.soft_cap == 5
 
     def test_queue_priority_weight_default(self) -> None:
         q = Queue(queue_name="q")
@@ -662,7 +669,9 @@ class TestLease:
     @pytest.mark.asyncio
     async def test_acquire_lease_creates_new(self) -> None:
         ses = AsyncMock()
-        ses.execute.return_value.scalars.return_value.all.return_value = []
+        result_mock = MagicMock()
+        result_mock.scalars.return_value.all.return_value = []
+        ses.execute.return_value = result_mock
         result = await acquire_lease(ses, "bucket-1", "holder-a", 300)
         assert result is not None
 
@@ -672,7 +681,9 @@ class TestLease:
         existing = MagicMock()
         existing.bucket_key = "bucket-1"
         existing.holder_id = "holder-a"
-        ses.execute.return_value.scalars.return_value.all.return_value = [existing]
+        result_mock = MagicMock()
+        result_mock.scalars.return_value.all.return_value = [existing]
+        ses.execute.return_value = result_mock
         result = await acquire_lease(ses, "bucket-1", "holder-a", 300)
         assert result is existing
 
@@ -697,7 +708,9 @@ class TestLease:
     @pytest.mark.asyncio
     async def test_acquire_lease_with_project_id(self) -> None:
         ses = AsyncMock()
-        ses.execute.return_value.scalars.return_value.all.return_value = []
+        result_mock = MagicMock()
+        result_mock.scalars.return_value.all.return_value = []
+        ses.execute.return_value = result_mock
         result = await acquire_lease(ses, "b1", "h1", 300, project_id="proj-1")
         assert result is not None
 
@@ -717,16 +730,16 @@ class TestTodoStatus:
         assert isinstance(TodoStatus.QUEUED, str)
 
     def test_todo_creation_defaults(self) -> None:
-        todo = Todo(summary="test task")  # type: ignore[call-arg]
-        assert todo.summary == "test task"
-        assert todo.status == TodoStatus.QUEUED
+        todo = Todo(title="test task")
+        assert todo.title == "test task"
+        assert todo.status == TodoStatus.BACKLOG
 
     def test_todo_work_type_default(self) -> None:
-        todo = Todo(summary="task")  # type: ignore[call-arg]
-        assert todo.work_type == "agent"
+        todo = Todo(title="task")
+        assert todo.work_type.value == "unknown"
 
     def test_todo_priority_bounds(self) -> None:
-        todo = Todo(summary="task")  # type: ignore[call-arg]
+        todo = Todo(title="task")
         assert 0 <= todo.priority <= 1000
 
     def test_todo_blocked_state_value(self) -> None:

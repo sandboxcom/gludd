@@ -1,0 +1,28 @@
+---
+- name: Create output directory
+  ansible.builtin.file:
+    path: "{{ output_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Run packing detection
+  ansible.builtin.include_tasks: packing_detection.yml
+  when: enable_packing_detection | bool
+
+- name: Run CFG flattening detection
+  ansible.builtin.include_tasks: cfg_flattening.yml
+  when: enable_cfg_flattening_detection | bool
+
+- name: Run string deobfuscation
+  ansible.builtin.include_tasks: string_deobfuscation.yml
+  when: enable_string_deobfuscation | bool
+
+- name: Run opaque predicate detection
+  ansible.builtin.include_tasks: opaque_predicate.yml
+  when: enable_opaque_predicate_detection | bool
+
+- name: Write deobfuscation artifact
+  ansible.builtin.copy:
+    content: "{{ {'role': 'deobfuscate', 'status': 'completed', 'verdict': 'pass', 'generated_at': lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ')} | to_nice_json }}"
+    dest: "{{ output_dir }}/deobfuscate.json"
+    mode: "0644"

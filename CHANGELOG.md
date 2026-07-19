@@ -5,6 +5,41 @@ All notable changes to this project are documented here. Format follows [Keep a 
 ## [Unreleased]
 
 ### Added
+- NF.1 Chat CLI: ChatSession state machine, streaming formatter, multi-model support, chat history, chat export, ContextWindow token tracking (180+ tests)
+- NF.2 Unikernel sandbox: Firecracker/GVisor backends, image builder, VMSandboxManager, REST API, VM metrics, VM pool (280+ tests)
+- NF.3 Binary RE collection: 8 roles (cyberchef, deobfuscate, frida, fuzz, gdb, ghidra, prompt_injection, radare2) with Python backends, pattern DB (326+ tests)
+- NF.4 Radio engineer: 10 roles (antenna, decode, exam, link_budget, marine, propagation, regulation, sdr, signal, spectrum) with APRS AX.25 decoder, ITU models (365+ tests)
+- NF.5 E2E test gen: code_path_analyzer, scenario_generator, verify_coverage, gap heatmap, diff report (62+ tests)
+- NF.6 OS expert: 12 roles across android/ios/linux/macos/windows, CIS Benchmark mapping, compliance report generator (246+ tests)
+- NF.7 STS tokens: TokenMinter, TokenStore, TokenReaper, cascade, daemon wiring, e2e lifecycle, visualizer, TokenQuotaEnforcer, STS quotas, TokenRotator
+- NF.8 Multitasking enforcement: enforce-multitask.ts, enforce-delegate.ts hardening
+- NF.9 Language expert: 8 roles (bom, encoding, font, homoglyph, i18n, locale, phonetic, unicode) with polyglot detection, performance benchmarks (438+ tests)
+- NF.10 enforce-stop.ts false-completion fix: comprehensive work-detection checks CI, release, gate state
+- Governance collection: elections, international_relations, legal_systems, public_finance modules, plugins, roles, tests, demos
+- enforce-tdd.ts plugin: real-time editor block (18 structural + 16 runtime tests)
+- Phase J: Terraform HTTP state backend (lock/unlock/get/update with HMAC + OpenBao encryption)
+- Phase K+L: Workload-aware deployment + SearX model search/discover/deploy (65+ tests)
+
+### Fixed
+- enforce-multitask.ts: env-disable escape hatch (`GLUDD_MULTITASK_FLOOR_ENFORCE=0`) restored; streak counter reordered before under-floor block (c592b3eb)
+- verify-enforcement parser: false-positive runtime failures from regex requiring "failed" token + SyntaxError over-attribution (223f6307)
+- enforce-make.ts: narrowed SHELL_META_CHARS to allow bare parens in commit messages; `$()` still blocked via `$` char (0c37eacc)
+- 3 test-isolation bugs fixed: research_effectiveness.json, .game-audit-report.json, .gate-status all now write to tmp_path (458c293f, 41befa5d, 89962319)
+- CI PENDING removed from EVIDENCE_PATTERNS — status claims no longer bypass pending-work text block (40872c4e)
+- enforce-stop.ts disengage bypass: heuristics-only skip → never skips hasRealPendingWork() text-only block
+- enforce-verified-claims.ts: evidence regex requires ≥1 hex letter (pure-digit strings no longer counted as commit hashes)
+- enforce-session-start.ts isTaskFileRead: input shape fix (checks both tool_call.path and tool_call.tool_input?.path)
+
+### Changed
+- Enforcement plugin suite: all 13 plugins hot-reload capable, BLOCKING, Node v26 `--experimental-strip-types` compatible
+- AGENTS.md: codified CI COOLDOWN ≠ PENDING masking rule, no-lint-suppression policy, single-source feature development rule
+- Batch-push COMMIT_THRESHOLD=1 now triggers warning banner; minimum inter-push interval 120s added to rate guard
+- README status table: updated to v0.1.0-beta.2
+- Presentation deck refreshed with current metrics
+
+## [0.1.0-beta.2] — 2026-07-15 — Sessions 34-36: feature collections (binary RE, radio, OS expert, language expert), STS token system, multitasking enforcement hardening
+
+### Added
 - L.3 SearX model gateway wiring: SearxModelDiscoverer bridges SearXModelSearch→ModelGateway with TTL cache + fallback
 - 66 new notification dispatcher unit tests
 - POST /admin/models/discover-searx endpoint for on-demand model refresh

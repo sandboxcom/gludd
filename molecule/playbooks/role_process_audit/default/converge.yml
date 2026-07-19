@@ -6,6 +6,10 @@
   vars:
     mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8846', true) }}"
   tasks:
+    - name: Gather date_time for artifact generation
+      ansible.builtin.setup:
+        gather_subset: "!all,date_time"
+
     - name: Invoke process_audit
       ansible.builtin.include_role:
         name: general_ludd.agent.process_audit

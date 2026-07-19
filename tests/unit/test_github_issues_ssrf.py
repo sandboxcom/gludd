@@ -13,8 +13,20 @@ from typing import Any
 
 import pytest
 
-from general_ludd.issue_sources.base import IssueSource
+from general_ludd.issue_sources.base import IssueRecord, IssueSource, Transition
 from general_ludd.issue_sources.github_issues import GitHubIssuesSource
+
+
+class _StubIssueSource(IssueSource):
+    """Minimal concrete subclass for testing the base SSRF guard."""
+
+    SOURCE = "stub"
+
+    def fetch(self, spec: dict | None = None) -> list[IssueRecord]:
+        return []
+
+    def write_back(self, external_id: str, transition: Transition) -> bool:
+        return True
 
 
 class RecordingTransport:
@@ -191,7 +203,7 @@ def test_post_construction_mutation_blocked_in_write_back() -> None:
 def test_base_issue_source_guards_when_require_base_url_false() -> None:
     """A present internal base_url is rejected even with require_base_url=False."""
     with pytest.raises(ValueError, match="internal base_url host"):
-        IssueSource(
+        _StubIssueSource(
             {"base_url": "http://169.254.169.254"},
             require_base_url=False,
         )
@@ -199,15 +211,15 @@ def test_base_issue_source_guards_when_require_base_url_false() -> None:
 
 def test_base_issue_source_missing_url_allowed_when_not_required() -> None:
     """No base_url + require_base_url=False constructs cleanly (guard is a no-op)."""
-    src = IssueSource({}, require_base_url=False)
+    src = _StubIssueSource({}, require_base_url=False)
     assert src.base_url is None
 
 
 def test_base_issue_source_public_url_allowed() -> None:
-    src = IssueSource({"base_url": "https://example.com"}, require_base_url=False)
+    src = _StubIssueSource({"base_url": "https://example.com"}, require_base_url=False)
     assert src.base_url == "https://example.com"
 
 
 def test_base_issue_source_missing_url_required_raises() -> None:
     with pytest.raises(ValueError, match=r"base_url.* is required"):
-        IssueSource({}, require_base_url=True)
+        _StubIssueSource({}, require_base_url=True)

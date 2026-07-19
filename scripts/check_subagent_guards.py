@@ -32,16 +32,20 @@ BLANK_LINE_RE = re.compile(r"^\s*$")
 COMMENT_LINE_RE = re.compile(r"^\s*(//|/\*|\*)\s")
 
 
-def _find_handler_start(lines, hook_re):
-    """Find a handler registration. Returns (decl_line_idx, brace_line_idx) or None."""
+def _find_all_handler_starts(lines, hook_re):
+    """Find ALL handler registrations. Returns list of (decl_line_idx, brace_line_idx)."""
+    candidates = []
     for i, line in enumerate(lines):
         if hook_re.search(line):
-            if "{" in line:
-                return (i, i)
-            for j in range(i + 1, min(i + 5, len(lines))):
-                if "{" in lines[j]:
-                    return (i, j)
-    return None
+            brace_idx = i if "{" in line else None
+            if brace_idx is None:
+                for j in range(i + 1, min(i + 5, len(lines))):
+                    if "{" in lines[j]:
+                        brace_idx = j
+                        break
+            if brace_idx is not None:
+                candidates.append((i, brace_idx))
+    return candidates
 
 
 def _extract_first_substantive_lines(lines, start_from, count=10):
@@ -67,102 +71,82 @@ def _check_guard_in_lines(substantive_lines):
     return False
 
 
+def _check_single_handler(lines, brace_idx, hook_type):
+    """Check one handler occurrence. Returns (has_guard, error_reason_or_none)."""
+    substantive = _extract_first_substantive_lines(lines, brace_idx + 1)
+    has_guard = _check_guard_in_lines(substantive)
+
+    if not has_guard:
+        return (False, "missing OPENCODE_SUBAGENT guard")
+
+    if hook_type == "tool.execute.before":
+        for line in substantive:
+            if SUBAGENT_GUARD_RE.search(line) and "return output" in line:
+                return (True, "guard uses 'return output' — should be 'return'")
+        return (True, None)
+    elif hook_type in ("text.complete", "system.transform"):
+        for line in substantive:
+            if SUBAGENT_GUARD_RE.search(line):
+                stripped = line.strip()
+                if "return output" not in stripped and "return" in stripped:
+                    return (True, "guard uses bare 'return' — should be 'return output'")
+                break
+        return (True, None)
+
+    return (has_guard, None if has_guard else "missing OPENCODE_SUBAGENT guard")
+
+
+def _check_hook_type(lines, hook_re, hook_type):
+    """Check all handlers of a given hook type. Returns finding or None.
+    PASS if ANY handler has a valid guard; FAIL if none do; no finding if zero handlers.
+    """
+    all_starts = _find_all_handler_starts(lines, hook_re)
+    if not all_starts:
+        return None
+
+    any_has_guard = False
+    errors = []
+    for _decl_idx, brace_idx in all_starts:
+        has_guard, err = _check_single_handler(lines, brace_idx, hook_type)
+        if has_guard and err is None:
+            any_has_guard = True
+        elif err:
+            errors.append(err)
+
+    if any_has_guard:
+        return {
+            "hook": hook_type,
+            "status": "PASS",
+            "reason": "guard present",
+        }
+    else:
+        return {
+            "hook": hook_type,
+            "status": "FAIL",
+            "reason": errors[0] if errors else "missing OPENCODE_SUBAGENT guard",
+        }
+
+
 def check_plugin(filepath):
     """Check a single plugin file. Returns list of findings."""
     findings = []
     content = filepath.read_text()
     lines = content.splitlines()
 
-    tbe = _find_handler_start(lines, TOOL_BEFORE_RE)
-    if tbe is not None:
-        decl_idx, brace_idx = tbe
-        substantive = _extract_first_substantive_lines(lines, brace_idx + 1)
-        has_guard = _check_guard_in_lines(substantive)
-        guard_uses_return_output = False
-        for line in substantive:
-            if SUBAGENT_GUARD_RE.search(line) and "return output" in line:
-                guard_uses_return_output = True
-                break
+    tbe_finding = _check_hook_type(lines, TOOL_BEFORE_RE, "tool.execute.before")
+    if tbe_finding is not None:
+        tbe_finding["plugin"] = filepath.name
+        findings.append(tbe_finding)
 
-        status = "PASS"
-        reason = ""
-        if not has_guard:
-            status = "FAIL"
-            reason = "missing OPENCODE_SUBAGENT guard"
-        elif guard_uses_return_output:
-            status = "FAIL"
-            reason = "guard uses 'return output' — should be 'return'"
-        else:
-            reason = "guard present"
+    tc_finding = _check_hook_type(lines, TEXT_COMPLETE_RE, "text.complete")
+    if tc_finding is not None:
+        tc_finding["plugin"] = filepath.name
+        findings.append(tc_finding)
 
-        findings.append({
-            "plugin": filepath.name,
-            "hook": "tool.execute.before",
-            "status": status,
-            "reason": reason,
-        })
-
-    tc = _find_handler_start(lines, TEXT_COMPLETE_RE)
-    if tc is not None:
-        decl_idx, brace_idx = tc
-        substantive = _extract_first_substantive_lines(lines, brace_idx + 1)
-        has_guard = _check_guard_in_lines(substantive)
-        guard_uses_bare_return = False
-        for line in substantive:
-            if SUBAGENT_GUARD_RE.search(line):
-                stripped = line.strip()
-                if "return output" not in stripped and "return" in stripped:
-                    guard_uses_bare_return = True
-                break
-
-        status = "PASS"
-        reason = ""
-        if not has_guard:
-            status = "FAIL"
-            reason = "missing OPENCODE_SUBAGENT guard"
-        elif guard_uses_bare_return:
-            status = "FAIL"
-            reason = "guard uses bare 'return' — should be 'return output'"
-        else:
-            reason = "guard present"
-
-        findings.append({
-            "plugin": filepath.name,
-            "hook": "text.complete",
-            "status": status,
-            "reason": reason,
-        })
-
-    st = _find_handler_start(lines, SYSTEM_TRANSFORM_RE)
-    if st is not None:
-        decl_idx, brace_idx = st
-        substantive = _extract_first_substantive_lines(lines, brace_idx + 1)
-        has_guard = _check_guard_in_lines(substantive)
-        guard_uses_bare_return = False
-        for line in substantive:
-            if SUBAGENT_GUARD_RE.search(line):
-                stripped = line.strip()
-                if "return output" not in stripped and "return" in stripped:
-                    guard_uses_bare_return = True
-                break
-
-        status = "PASS"
-        reason = ""
-        if not has_guard:
-            status = "FAIL"
-            reason = "missing OPENCODE_SUBAGENT guard"
-        elif guard_uses_bare_return:
-            status = "FAIL"
-            reason = "guard uses bare 'return' — should be 'return output'"
-        else:
-            reason = "guard present"
-
-        findings.append({
-            "plugin": filepath.name,
-            "hook": "system.transform",
-            "status": status,
-            "reason": reason,
-        })
+    st_finding = _check_hook_type(lines, SYSTEM_TRANSFORM_RE, "system.transform")
+    if st_finding is not None:
+        st_finding["plugin"] = filepath.name
+        findings.append(st_finding)
 
     return findings
 

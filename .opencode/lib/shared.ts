@@ -1,4 +1,5 @@
 import * as fs from "node:fs"
+import * as path from "node:path"
 
 // ── Shared helpers for enforcement plugins ────────────────────────────────
 // Extracted from 14 enforce-*.ts plugins (2026-07-13, E.5 refactor).
@@ -9,6 +10,9 @@ import * as fs from "node:fs"
 
 export const DISENGAGE_PATH =
   process.env.GLUDD_DISENGAGE_PATH || "/tmp/gludd-watchdog-disengage.json"
+
+export const DISENGAGE_AUDIT_PATH =
+  process.env.GLUDD_DISENGAGE_AUDIT_PATH || "/tmp/gludd-disengage-audit.jsonl"
 
 export const ALIVE_PATH =
   process.env.GLUDD_ALIVE_PATH || "/tmp/gludd-plugin-alive.json"
@@ -36,15 +40,24 @@ export interface DisengageOpts {
   maxMs?: number // maximum forward duration (default 3_600_000 = 1 hour)
 }
 
+const _sessionUuid = `${process.pid}-${Math.floor(Date.now() / 1000)}`
+
 export function isDisengaged(opts: DisengageOpts = {}): boolean {
-  const maxMs = opts.maxMs ?? 3_600_000
+  const maxMs = opts.maxMs ?? 300_000
   try {
     if (!fs.existsSync(DISENGAGE_PATH)) return false
     const d = JSON.parse(fs.readFileSync(DISENGAGE_PATH, "utf8"))
     if (typeof d.disengage_until !== "number") return false
     const now = Date.now()
     const effective = Math.min(d.disengage_until, now + maxMs)
-    return effective > now
+    if (effective > now) {
+      try {
+        const audit = JSON.stringify({ ts: now, pid: process.pid, sessionUuid: _sessionUuid }) + "\n"
+        fs.appendFileSync(DISENGAGE_AUDIT_PATH, audit, "utf8")
+      } catch { /* fail-open */ }
+      return true
+    }
+    return false
   } catch {
     return false
   }
@@ -64,7 +77,9 @@ export function readJsonFile<T>(filePath: string, defaultVal: T): T {
 
 export function writeJsonFile(filePath: string, data: unknown): void {
   try {
-    fs.writeFileSync(filePath, JSON.stringify(data), "utf8")
+    const tmp = `${filePath}.tmp.${process.pid}`
+    fs.writeFileSync(tmp, JSON.stringify(data), "utf8")
+    fs.renameSync(tmp, filePath)
   } catch { /* permission / disk-full → silently skip */ }
 }
 
@@ -108,16 +123,17 @@ export function readSharedStreak(): SharedStreakState {
     if (fs.existsSync(SHARED_STREAK_FILE)) {
       const raw = JSON.parse(fs.readFileSync(SHARED_STREAK_FILE, "utf8"))
       const now = Date.now()
+      const fileMtime = fs.statSync(SHARED_STREAK_FILE).mtimeMs
       const lastTs = typeof raw.lastUpdateTs === "number" ? raw.lastUpdateTs : 0
       const STALE_MS = 60_000
-      if (lastTs > 0 && now - lastTs > STALE_MS) {
-        const zeroed = { streak: 0, lastDispatchTs: 0, readStreak: 0, editStreak: 0, lastUpdateTs: now, lastWriter: "stale-reset", pid: process.pid }
-        try { fs.writeFileSync(SHARED_STREAK_FILE, JSON.stringify(zeroed), "utf8") } catch {}
-        return zeroed
-      }
+      const sessionStartMtime = getSessionStartMtimeMs()
+      const mtimeStale = sessionStartMtime > 0 && fileMtime < sessionStartMtime
+      const timeStale = lastTs > 0 && now - lastTs > STALE_MS
       const storedPid = typeof raw.pid === "number" ? raw.pid : 0
-      if (storedPid > 0 && storedPid !== process.pid) {
-        const zeroed = { streak: 0, lastDispatchTs: 0, readStreak: 0, editStreak: 0, lastUpdateTs: now, lastWriter: "pid-reset", pid: process.pid }
+      const pidMismatch = storedPid > 0 && storedPid !== process.pid
+      if (mtimeStale || timeStale || pidMismatch) {
+        const reason = mtimeStale ? "mtime-reset" : timeStale ? "stale-reset" : "pid-reset"
+        const zeroed = { streak: 0, lastDispatchTs: 0, readStreak: 0, editStreak: 0, lastUpdateTs: now, lastWriter: reason, pid: process.pid }
         try { fs.writeFileSync(SHARED_STREAK_FILE, JSON.stringify(zeroed), "utf8") } catch {}
         return zeroed
       }
@@ -169,8 +185,17 @@ export function updateSharedStreak(tool: string, pluginName: string): SharedStre
 
 export function reportAlive(pluginName: string): void {
   try {
-    const alive = readJsonFile<Record<string, unknown>>(ALIVE_PATH, {})
-    alive[pluginName] = { last_seen: Date.now() }
+    const now = Date.now()
+    const alive = readJsonFile<Record<string, Record<string, unknown>>>(ALIVE_PATH, {})
+    const existing = alive[pluginName] || {}
+    // Write all three timestamp fields so liveness checkers that read any
+    // of last_seen / ts / loaded all see a current value. `loaded` is
+    // stamped once (first load) and preserved across subsequent heartbeats.
+    alive[pluginName] = {
+      last_seen: now,
+      ts: now,
+      loaded: existing.loaded || now,
+    }
     writeJsonFile(ALIVE_PATH, alive)
   } catch { /* fail-open */ }
 }
@@ -184,4 +209,90 @@ export function writeHeartbeat(pluginName: string): void {
       plugin: pluginName, ts: Date.now(), pid: process.pid
     })
   } catch { /* fail-open */ }
+}
+
+// ── Project root detection ────────────────────────────────────────────────
+// Robustly finds the project root regardless of process.cwd(). Plugin worker
+// processes may have a different cwd than the main opencode process, causing
+// hasPendingWork()/openWorkExists() to fail finding TASKS.md/ratchet.yml.
+// Resolution order: GLUDD_PROJECT_ROOT env (unconditional when the directory
+// exists — T34: an explicit root with no TASKS.md means "no pending work",
+// never "borrow another project's ledger") → walk up from cwd → cwd fallback.
+// The cache is keyed on (GLUDD_PROJECT_ROOT, cwd) so a mid-session change to
+// either invalidates the cached resolution.
+
+let _cachedRoot: string | null = null
+let _cachedRootKey: string | null = null
+
+function _projectRootCacheKey(): string {
+  let cwd = ""
+  try { cwd = process.cwd() } catch { /* cwd deleted → key on env only */ }
+  return `${process.env.GLUDD_PROJECT_ROOT || ""}\u0000${cwd}`
+}
+
+export function invalidateProjectRootCache(): void {
+  _cachedRoot = null
+  _cachedRootKey = null
+}
+
+// ── Session-start mtime staleness guards ─────────────────────────────────
+// When opencode reuses PIDs across restarts, PID-only detection fails and
+// stale state persists. This complements the PID check with mtime-based
+// detection: if a state file was last modified before the current session
+// started, it is stale and must be discarded.
+
+export const SESSION_START_STATE_FILE = "/tmp/gludd-session-start.json"
+
+export function getSessionStartMtimeMs(): number {
+  try {
+    if (fs.existsSync(SESSION_START_STATE_FILE)) {
+      return fs.statSync(SESSION_START_STATE_FILE).mtimeMs
+    }
+  } catch { /* missing / unreadable */ }
+  return 0
+}
+
+export function isStateFileMtimeStale(stateFilePath: string): boolean {
+  try {
+    const sessionMtime = getSessionStartMtimeMs()
+    if (sessionMtime === 0) return false
+    if (!fs.existsSync(stateFilePath)) return false
+    return fs.statSync(stateFilePath).mtimeMs < sessionMtime
+  } catch {
+    return false
+  }
+}
+
+export function getProjectRoot(): string {
+  const key = _projectRootCacheKey()
+  if (_cachedRoot !== null && _cachedRootKey === key) return _cachedRoot
+  try {
+    const envRoot = process.env.GLUDD_PROJECT_ROOT
+    if (envRoot && fs.existsSync(envRoot) && fs.statSync(envRoot).isDirectory()) {
+      _cachedRoot = envRoot
+      _cachedRootKey = key
+      return _cachedRoot
+    }
+  } catch { /* ignore */ }
+  try {
+    let dir = process.cwd()
+    for (let i = 0; i < 15; i++) {
+      if (fs.existsSync(path.join(dir, "TASKS.md"))) {
+        _cachedRoot = dir
+        _cachedRootKey = key
+        return _cachedRoot
+      }
+      if (fs.existsSync(path.join(dir, "opencode.json")) && fs.existsSync(path.join(dir, "Makefile"))) {
+        _cachedRoot = dir
+        _cachedRootKey = key
+        return _cachedRoot
+      }
+      const parent = path.dirname(dir)
+      if (parent === dir) break
+      dir = parent
+    }
+  } catch { /* ignore */ }
+  _cachedRoot = process.cwd()
+  _cachedRootKey = key
+  return _cachedRoot
 }

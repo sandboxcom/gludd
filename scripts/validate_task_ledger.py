@@ -25,8 +25,27 @@ from collections import defaultdict
 from pathlib import Path
 
 ID_PATTERN = re.compile(r"\b([A-Z]{1,3}\d*(?:\.\d+(?:\.\d+)*|-\d+))\b")
+PRIMARY_ID_PATTERN = re.compile(r"^-\s*\[[ x]\]\s+([A-Z]{1,3}\d*(?:\.\d+(?:\.\d+)*|-\d+))\b")
 EPOCH_PATTERN = re.compile(r"epoch\s+(\d{10,})")
 STALE_SECONDS = 24 * 3600
+
+
+def _primary_ids(stripped: str) -> list[str]:
+    """Extract the primary task ID(s) from a checkbox line.
+
+    Returns the first ID match after the checkbox marker as the primary ID.
+    Secondary IDs in evidence text are NOT extracted to avoid false
+    re-dispatch/duplicate flags when items reference each other.
+    """
+    primary = PRIMARY_ID_PATTERN.search(stripped)
+    if primary:
+        return [primary.group(1)]
+    return []
+
+
+def _all_ids(stripped: str) -> list[str]:
+    """Extract all IDs for MISSING-ID detection."""
+    return ID_PATTERN.findall(stripped)
 
 
 def extract_tasks(tasks_path: Path) -> tuple[list[dict], list[dict]]:
@@ -41,7 +60,12 @@ def extract_tasks(tasks_path: Path) -> tuple[list[dict], list[dict]]:
             continue
 
         is_checked = stripped.startswith("- [x]")
-        ids = ID_PATTERN.findall(stripped)
+        all_ids = _all_ids(stripped)
+
+        # Primary IDs used for dedup/re-dispatch — only the ID immediately
+        # after the checkbox marker. Secondary IDs in evidence text are
+        # informational cross-references, not task declarations.
+        primary = _primary_ids(stripped)
 
         # Extract epoch timestamp if present
         epoch_match = re.search(r"(?:epoch|ts)\s+(\d{10,})", stripped)
@@ -52,7 +76,8 @@ def extract_tasks(tasks_path: Path) -> tuple[list[dict], list[dict]]:
 
         task: dict = {
             "line": stripped,
-            "ids": ids,
+            "ids": primary,
+            "all_ids": all_ids,
             "status": status,
             "epoch": epoch,
         }

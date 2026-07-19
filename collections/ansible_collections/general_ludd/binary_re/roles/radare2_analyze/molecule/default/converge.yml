@@ -1,0 +1,39 @@
+---
+- name: Converge
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Run radare2_analyze role (all modes off, valid stat path)
+      ansible.builtin.include_role:
+        name: general_ludd.binary_re.radare2_analyze
+      vars:
+        r2_path: "/bin/sh"
+        output_dir: "/tmp/gludd-radare2-analyze-molecule"
+
+    - name: Assert artifact written
+      ansible.builtin.stat:
+        path: /tmp/gludd-radare2-analyze-molecule/radare2_analyze.json
+      register: _stat
+
+    - name: Verify artifact exists
+      ansible.builtin.assert:
+        that: _stat.stat.exists
+        fail_msg: "radare2_analyze.json not written"
+
+    - name: Parse artifact
+      ansible.builtin.slurp:
+        src: /tmp/gludd-radare2-analyze-molecule/radare2_analyze.json
+      register: _json
+
+    - name: Assert artifact content
+      ansible.builtin.assert:
+        that:
+          - (_json.content | b64decode | from_json).role == "radare2_analyze"
+          - (_json.content | b64decode | from_json).status == "completed"
+        fail_msg: "Artifact content mismatch"
+
+    - name: Cleanup
+      ansible.builtin.file:
+        path: /tmp/gludd-radare2-analyze-molecule
+        state: absent

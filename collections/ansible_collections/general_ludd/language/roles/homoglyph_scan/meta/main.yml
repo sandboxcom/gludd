@@ -1,0 +1,24 @@
+---
+galaxy_info:
+  role_name: homoglyph_scan
+  author: Agentic Harness Agent
+  description: >
+    Detect confusable and homoglyph characters per UTS #39 (Unicode
+    Security Mechanisms). Identifies Latin/Cyrillic/Greek/Armenian
+    lookalikes, invisible characters (zero-width space/joiner/non-joiner,
+    soft hyphen, bidi controls, word joiner), mixed-script text, bidi
+    spoofing (CVE-2021-42574 Trojan Source), and whole-script
+    confusables. Classifies attack vectors: domain spoofing, code
+    injection, filename confusion, string comparison bypass, package
+    typosquatting. Produces JSON with findings and severity ratings.
+    Wires to src/general_ludd/language/homoglyph_data.py.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

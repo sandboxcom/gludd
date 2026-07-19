@@ -4,7 +4,7 @@
   connection: local
   gather_facts: false
   vars:
-    project_dir: "{{ lookup('env', 'GLUDD_PROJECT_ROOT') }}"
+    project_dir: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
     mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8842', true) }}"
     pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8842', true) }}.pid"
   tasks:

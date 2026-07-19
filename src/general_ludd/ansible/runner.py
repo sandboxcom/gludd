@@ -7,9 +7,12 @@ and Jinja2 templating.
 
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
 import os
 import shutil
+import sys
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -49,11 +52,110 @@ if not DEFAULT_REGISTRY:
     DEFAULT_REGISTRY["noop.yml"] = str(_PLAYBOOKS_ROOT / "noop.yml")
 
 
+_LANGUAGE_ROLES_ROOT = (
+    Path(__file__).resolve().parent.parent.parent.parent
+    / "collections"
+    / "ansible_collections"
+    / "general_ludd"
+    / "language"
+    / "roles"
+)
+
+
 def _build_registry(extra: dict[str, str] | None = None) -> dict[str, str]:
     reg = dict(DEFAULT_REGISTRY)
     if extra:
         reg.update(extra)
     return reg
+
+
+def _convert_role_args(role: str, extra: dict[str, Any]) -> list[str]:
+    if role in ("bom_detect", "encoding_detect"):
+        if "file_path" in extra:
+            return ["--input-file", str(extra["file_path"])]
+    elif role == "font_analyze":
+        if "file_path" in extra:
+            return ["--input", str(extra["file_path"])]
+    elif role in ("homoglyph_scan", "unicode_analyze"):
+        if "text" in extra:
+            return ["--input", str(extra["text"])]
+    elif role == "i18n_extract":
+        if "directory" in extra:
+            return ["--source-dir", str(extra["directory"])]
+    elif role == "locale_format":
+        if "locale" in extra:
+            return ["--locale", str(extra["locale"])]
+    elif role == "phonetic_transcribe":
+        args: list[str] = []
+        if "text" in extra:
+            args.extend(["--input", str(extra["text"])])
+        args.extend(["--method", "ipa"])
+        return args
+    return []
+
+
+def _normalize_role_output(role: str, raw: dict[str, Any]) -> dict[str, Any]:
+    if role == "bom_detect":
+        raw["has_bom"] = raw.get("bom_detected", False)
+        enc = raw.get("encoding")
+        if enc:
+            raw["encoding"] = str(enc).lower()
+    elif role == "encoding_detect":
+        if "detected_encoding" in raw:
+            raw.setdefault("encoding", raw["detected_encoding"])
+    elif role == "font_analyze":
+        fmt = str(raw.get("format", "unknown"))
+        if fmt in ("ttf", "otf", "ttc", "woff", "woff2"):
+            fname = Path(str(raw.get("file", ""))).stem
+            raw.setdefault("font_name", fname or fmt.upper())
+        else:
+            raw.setdefault(
+                "error", f"Unrecognized font format: {fmt}"
+            )
+    elif role == "homoglyph_scan":
+        findings = raw.get("findings", [])
+        if not isinstance(findings, list):
+            findings = []
+        confusables = [
+            f for f in findings
+            if isinstance(f, dict) and f.get("type") == "confusable"
+        ]
+        raw["confusable_count"] = len(confusables)
+        raw["confusables"] = confusables
+    elif role == "locale_format":
+        locale_str = str(raw.get("locale", ""))
+        codeset = ""
+        locale_part = locale_str
+        if "." in locale_str:
+            locale_part, codeset = locale_str.rsplit(".", 1)
+        parts = locale_part.replace("-", "_").split("_")
+        raw["language"] = parts[0] if parts and parts[0] else ""
+        raw["territory"] = parts[1] if len(parts) > 1 else ""
+        if codeset:
+            raw["codeset"] = codeset
+    elif role == "phonetic_transcribe":
+        words = raw.get("words", [])
+        if not isinstance(words, list):
+            words = []
+        ipa_parts = [
+            str(w.get("transcription", ""))
+            for w in words
+            if isinstance(w, dict)
+        ]
+        raw["ipa"] = " ".join(ipa_parts)
+    elif role == "unicode_analyze":
+        raw["character_count"] = raw.get("input_length", 0)
+        codepoints = raw.get("codepoints", [])
+        if (
+            isinstance(codepoints, list)
+            and codepoints
+            and isinstance(codepoints[0], dict)
+        ):
+            first = codepoints[0]
+            raw.setdefault("codepoint", first.get("codepoint"))
+            raw.setdefault("name", first.get("name"))
+            raw.setdefault("category", first.get("category"))
+    return raw
 
 
 class AnsibleRunnerAdapter:
@@ -258,6 +360,57 @@ class AnsibleRunnerAdapter:
         except Exception as exc:
             logger.error("Ansible core runner failed: %s", exc)
             return {"status": "failed", "rc": 1, "error": str(exc), "events": []}
+
+    async def run_role(self, task_args: dict[str, Any]) -> dict[str, Any]:
+        role = str(task_args.get("role", ""))
+        if not role:
+            return {"error": "No 'role' specified in task_args"}
+
+        script_path = _LANGUAGE_ROLES_ROOT / role / "files" / f"{role}.py"
+        if not script_path.is_file():
+            return {"error": f"Role script not found: {script_path}"}
+
+        extra = {
+            k: v for k, v in task_args.items()
+            if k not in ("collection", "role")
+        }
+        cli_args = _convert_role_args(role, extra)
+        repo_root = Path(__file__).resolve().parent.parent.parent.parent
+        cmd = [sys.executable, str(script_path), *cli_args]
+
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=str(repo_root),
+            )
+            stdout_b, stderr_b = await asyncio.wait_for(
+                proc.communicate(), timeout=30.0
+            )
+            stdout_text = stdout_b.decode("utf-8", errors="replace").strip()
+            stderr_text = stderr_b.decode("utf-8", errors="replace").strip()
+
+            if proc.returncode != 0:
+                return {
+                    "error": f"Role '{role}' exited {proc.returncode}",
+                    "stderr": stderr_text[:500],
+                }
+
+            if not stdout_text:
+                return {"error": f"Role '{role}' produced no output"}
+
+            raw = json.loads(stdout_text)
+            if not isinstance(raw, dict):
+                return {"error": f"Role '{role}' returned non-dict JSON"}
+            return _normalize_role_output(role, raw)
+        except TimeoutError:
+            return {"error": f"Role '{role}' timed out after 30s"}
+        except json.JSONDecodeError as exc:
+            return {"error": f"Invalid JSON from role '{role}': {exc}"}
+        except Exception as exc:
+            logger.error("run_role failed for %s: %s", role, exc)
+            return {"error": str(exc)}
 
     def refresh_playbooks(self) -> dict[str, Any]:
         if self._playbooks_dir:

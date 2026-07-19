@@ -245,7 +245,7 @@ class TestMatcherVerdicts:
         assert self._check("src/foo.py", "x = 1 + 2\n") == "allow"
 
     def test_allow_when_allowlisted_fix_not_disable(self):
-        # fix_not_disable.py contains "# noqa" as a string literal inside a
+        # fix_not_disable.py contains the literal string 'noqa' as data inside a
         # frozenset (DATA, not a suppression comment). Must be allowlisted.
         assert self._check(
             "src/general_ludd/security/fix_not_disable.py",

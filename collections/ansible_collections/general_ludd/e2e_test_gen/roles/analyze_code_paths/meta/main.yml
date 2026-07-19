@@ -1,0 +1,18 @@
+---
+galaxy_info:
+  role_name: analyze_code_paths
+  author: Agentic Harness Agent
+  description: >
+    Wraps the CodePathAnalyzer (tree-sitter AST walk) to extract public APIs,
+    functions, classes, and methods from a Python source module. Produces a
+    ModuleSymbols JSON artifact. Uses core code_intelligence facilities.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

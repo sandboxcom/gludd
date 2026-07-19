@@ -1,0 +1,8 @@
+---
+# civic_service_finder defaults — safe-by-default
+civic_service_finder_enabled: false
+civic_service_finder_country: null
+civic_service_finder_category: null
+civic_service_finder_list_countries: false
+civic_service_finder_list_categories: false
+civic_service_finder_output_dir: /tmp/gludd-governance-civic

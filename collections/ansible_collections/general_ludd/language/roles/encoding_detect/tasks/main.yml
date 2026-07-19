@@ -1,0 +1,17 @@
+---
+- name: Ensure artifact directory exists
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Run encoding_detect standalone script
+  ansible.builtin.script:
+    cmd: "files/encoding_detect.py --input-bytes '{{ input_bytes }}' --output '{{ artifact_dir }}/encoding_detection.json' {% if target_encoding | default('') %}--target-encoding '{{ target_encoding }}'{% endif %} {% if detect_mojibake | default(false) %}--detect-mojibake{% endif %}"
+    executable: "{{ ansible_python_interpreter | default('python3') }}"
+  register: encoding_result
+  changed_when: false
+
+- name: Print encoding detection summary
+  ansible.builtin.debug:
+    msg: "{{ encoding_result.stdout_lines }}"

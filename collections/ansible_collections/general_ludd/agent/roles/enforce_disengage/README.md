@@ -84,7 +84,7 @@ freshness, so it is safer than a raw `git commit`.
   connection: local
   gather_facts: true
   vars:
-    repo_path: "/Users/shawnwilson/gludd"
+    repo_path: "{{ playbook_dir }}"
   tasks:
     - name: Write commit message to /tmp/msg.txt
       ansible.builtin.copy:

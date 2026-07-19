@@ -1,0 +1,17 @@
+---
+galaxy_info:
+  role_name: radare2_analyze
+  author: Agentic Harness Agent
+  description: >
+    Radare2-based reverse engineering role — disassembly, entropy scanning,
+    string search, and control-flow graph analysis. Report-only.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

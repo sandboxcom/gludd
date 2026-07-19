@@ -1,0 +1,38 @@
+---
+- name: Run Ghidra scripted export
+  ansible.builtin.command:
+    cmd: >-
+      {{ ansible_python_interpreter | default('/usr/bin/env python3') }}
+      {{ script_path }}
+      --target {{ target_binary }}
+      --mode scripted_export
+      --ghidra-path {{ ghidra_path }}
+      --project-dir {{ project_dir }}
+      --output {{ output_dir }}/scripted_export.json
+  register: _se_result
+  changed_when: false
+  failed_when: _se_result.rc not in [0]
+
+- name: Read scripted export artifact
+  ansible.builtin.slurp:
+    src: "{{ output_dir }}/scripted_export.json"
+  register: _se_raw
+
+- name: Parse scripted export artifact
+  ansible.builtin.set_fact:
+    scripted_export_artifact: >-
+      {{ _se_raw.content | b64decode | from_json
+         if (_se_raw is defined and _se_raw.content is defined) else {} }}
+
+- name: Write GhidraScript decompiler to disk
+  ansible.builtin.copy:
+    content: "{{ scripted_export_artifact.get('postscript', '') }}"
+    dest: "{{ scripted_export_artifact.get('postscript_path', '/tmp/gludd-ghidra-decompile.py') }}"
+    mode: "0644"
+  when: scripted_export_artifact.get('postscript', '') | length > 0
+
+- name: Report scripted export summary
+  ansible.builtin.debug:
+    msg: >-
+      Scripted export ready:
+      postscript_path={{ scripted_export_artifact.get('postscript_path', 'unknown') }}

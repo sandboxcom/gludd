@@ -230,7 +230,16 @@ class StsIssuer:
         )
 
     def get_token(self, token_id: str) -> StsToken | None:
-        return self._tokens.get(token_id)
+        """Return the token if it exists AND has not expired, else ``None``.
+
+        Fail-closed: an expired token resolves to ``None`` (matching
+        :meth:`STSRegistry.resolve` semantics). The entry is retained so a
+        subsequent :meth:`revoke` still reports the drop.
+        """
+        token = self._tokens.get(token_id)
+        if token is None or self._clock() >= token.expires_at:
+            return None
+        return token
 
     def list_active(self) -> list[StsToken]:
         """Return all non-expired tokens (lazy-evicting expired ones)."""
@@ -256,8 +265,13 @@ class StsAuditLog:
 
     def __init__(self) -> None:
         self._events: list[dict[str, object]] = []
+        self._token_agents: dict[str, tuple[str, str]] = {}
 
     def record_issue(self, token: StsToken) -> None:
+        self._token_agents[token.token_id] = (
+            token.issuer_agent_id,
+            token.subject_agent_id,
+        )
         self._events.append(
             {
                 "event": "issued",
@@ -273,12 +287,13 @@ class StsAuditLog:
     def record_use(
         self, token_id: str, capability: Capability, target: str
     ) -> None:
+        issuer_id, subject_id = self._token_agents.get(token_id, (None, None))
         self._events.append(
             {
                 "event": "used",
                 "token_id": token_id,
-                "issuer_agent_id": None,
-                "subject_agent_id": None,
+                "issuer_agent_id": issuer_id,
+                "subject_agent_id": subject_id,
                 "capability": capability.resource,
                 "target": target,
                 "at": time.time(),
@@ -286,12 +301,13 @@ class StsAuditLog:
         )
 
     def record_expiry(self, token_id: str) -> None:
+        issuer_id, subject_id = self._token_agents.get(token_id, (None, None))
         self._events.append(
             {
                 "event": "expired",
                 "token_id": token_id,
-                "issuer_agent_id": None,
-                "subject_agent_id": None,
+                "issuer_agent_id": issuer_id,
+                "subject_agent_id": subject_id,
                 "capability": None,
                 "target": None,
                 "at": time.time(),

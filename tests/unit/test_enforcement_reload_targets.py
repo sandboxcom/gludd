@@ -13,7 +13,15 @@ import subprocess
 import time
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[2]
+
+# Every test in this module mutates shared global /tmp/gludd-* state files.
+# Under xdist (--dist loadgroup), concurrent workers corrupt each other's
+# setup (worker B deletes /tmp/gludd-tool-streak.json while worker A reads it).
+# Force the whole module onto a single worker to eliminate the race.
+pytestmark = pytest.mark.xdist_group("enforcement_state_files")
 
 ENFORCEMENT_STATE_FILES = [
     "/tmp/gludd-floor-override",
@@ -24,6 +32,7 @@ ENFORCEMENT_STATE_FILES = [
     "/tmp/gludd-session-start.json",
     "/tmp/gludd-task-deadlines.json",
     "/tmp/gludd-task-stale.json",
+    "/tmp/gludd-multitask-state.json",
     "/tmp/gludd-block-counter.json",
     "/tmp/gludd-watchdog-ci.json",
 ]
@@ -94,6 +103,23 @@ class TestReloadEnforcement:
             )
             assert result.returncode == 0, result.stderr
             assert not os.path.exists("/tmp/gludd-enhancement-ratio.json")
+        finally:
+            _cleanup_enf_state()
+
+    def test_reload_removes_multitask_state(self):
+        """PID staleness guard: reload must clear multitask-state.json so a
+        dead prior-process pid does not persist into the new session."""
+        try:
+            _cleanup_enf_state()
+            with open("/tmp/gludd-multitask-state.json", "w") as f:
+                json.dump({"pid": 99999, "zeroStreak": 5}, f)
+            result = subprocess.run(
+                ["make", "reload-enforcement"],
+                capture_output=True, text=True, timeout=15,
+                cwd=str(ROOT),
+            )
+            assert result.returncode == 0, result.stderr
+            assert not os.path.exists("/tmp/gludd-multitask-state.json")
         finally:
             _cleanup_enf_state()
 

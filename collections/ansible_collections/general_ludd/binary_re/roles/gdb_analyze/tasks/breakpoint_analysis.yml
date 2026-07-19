@@ -1,0 +1,31 @@
+---
+- name: Run GDB breakpoint analysis
+  ansible.builtin.command:
+    cmd: >-
+      {{ ansible_python_interpreter | default('/usr/bin/env python3') }}
+      {{ script_path }}
+      --target {{ target_binary }}
+      --mode breakpoint
+      --breakpoints {{ gdb_breakpoints }}
+      --output {{ output_dir }}/breakpoint_analysis.json
+  register: _bp_result
+  changed_when: false
+  failed_when: _bp_result.rc not in [0]
+
+- name: Read breakpoint artifact
+  ansible.builtin.slurp:
+    src: "{{ output_dir }}/breakpoint_analysis.json"
+  register: _bp_raw
+
+- name: Parse breakpoint artifact
+  ansible.builtin.set_fact:
+    breakpoint_artifact: >-
+      {{ _bp_raw.content | b64decode | from_json
+         if (_bp_raw is defined and _bp_raw.content is defined) else {} }}
+
+- name: Report breakpoint summary
+  ansible.builtin.debug:
+    msg: >-
+      Breakpoint analysis complete:
+      target={{ breakpoint_artifact.get('target', 'unknown') }},
+      commands={{ breakpoint_artifact.get('commands', []) | length }}

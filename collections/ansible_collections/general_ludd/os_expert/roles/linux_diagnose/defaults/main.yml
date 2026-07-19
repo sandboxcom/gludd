@@ -1,0 +1,16 @@
+---
+# linux_diagnose role defaults
+
+daemon_url: "http://localhost:8000"
+psk: ""
+
+artifact_dir: "/tmp/gludd-linux-diagnose"
+
+gather_proc: true
+gather_journalctl: true
+gather_sysfs: true
+gather_dmesg: true
+gather_lsmod: true
+gather_sysctl: true
+
+enable_git_push: false

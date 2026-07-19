@@ -30,7 +30,7 @@
 - name: Count lint errors from output
   ansible.builtin.set_fact:
     _pa_lint_errors: >-
-      {{ _pa_lint_out.stdout_lines | select('search', 'Found [[:digit:]]+ error') | map('regex_replace', '.*Found ([[:digit:]]+) error.*', '\1') | map('int') | first | default(0) }}
+      {{ (_pa_lint_out.stdout_lines | default([])) | select('search', 'Found [0-9]+ error') | map('regex_replace', '.*Found ([0-9]+) error.*', '\1') | map('int') | list | first | default(0) }}
 
 # ── Step 3: Run the process overhead test ────────────────────────────────
 
@@ -44,8 +44,8 @@
 
 - name: Check test pass/fail from exit code
   ansible.builtin.set_fact:
-    _pa_test_passed: "{{ _pa_test_out.rc == 0 }}"
-    _pa_test_output: "{{ _pa_test_out.stdout_lines[-5:] | default(['(no output)']) if _pa_test_out.stdout_lines else ['(no output)'] }}"
+    _pa_test_passed: "{{ _pa_test_out.rc | default(1) == 0 }}"
+    _pa_test_output: "{{ (_pa_test_out.stdout_lines | default([]))[-5:] | default(['(no output)']) if (_pa_test_out.stdout_lines | default([])) else ['(no output)'] }}"
 
 # ── Step 4: Check anti-stop state files ──────────────────────────────────
 
@@ -173,7 +173,7 @@
 
 - name: Count CI_RED_PATTERNS entries in enforce-stop.ts
   ansible.builtin.shell:
-    cmd: "grep -c 'CI_RED_PATTERNS' {{ project_root }}/.opencode/plugin/enforce-stop.ts 2>/dev/null; grep -A 30 'const CI_RED_PATTERNS' {{ project_root }}/.opencode/plugin/enforce-stop.ts 2>/dev/null | grep -cE '/\\b' || echo 0"
+    cmd: "set -o pipefail && grep -c 'CI_RED_PATTERNS' {{ project_root }}/.opencode/plugin/enforce-stop.ts 2>/dev/null; grep -A 30 'const CI_RED_PATTERNS' {{ project_root }}/.opencode/plugin/enforce-stop.ts 2>/dev/null | grep -cE '/\\b' || echo 0"
   register: _pa_ci_red_patterns
   changed_when: false
 
@@ -181,7 +181,6 @@
   ansible.builtin.set_fact:
     _pa_total_patterns: >-
       {{ (_pa_no_wait_patterns.stdout | trim | int) +
-         (_pa_claim_patterns.stdout | trim | int) +
          (_pa_completion_sounding.stdout | trim | int) +
          (_pa_ci_red_patterns.stdout | trim | int) }}
 

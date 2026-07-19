@@ -1,0 +1,11 @@
+---
+# antenna_design defaults — safe-by-default
+antenna_design_enabled: false
+antenna_design_type: dipole
+antenna_design_freq_hz: 144000000
+antenna_design_polarization: vertical
+antenna_design_gain_dbi: 2.15
+antenna_design_impedance_ohms: 50.0
+antenna_design_simulator: equation
+antenna_design_material: copper
+antenna_design_output_dir: /tmp/gludd-antenna-design

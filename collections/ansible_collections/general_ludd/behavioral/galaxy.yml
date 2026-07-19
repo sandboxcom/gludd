@@ -1,0 +1,18 @@
+---
+namespace: general_ludd
+name: behavioral
+version: 0.1.0
+readme: README.md
+description: >
+  Behavioral analysis collection — social engineering, deception detection,
+  animal behavior analysis, and behavioral cues modeling.
+license:
+  - MIT
+authors:
+  - Agentic Harness Agent <agent@harness.local>
+tags:
+  - behavioral
+  - social-engineering
+  - deception
+  - psychology
+dependencies: {}

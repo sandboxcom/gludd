@@ -1,0 +1,71 @@
+---
+- name: Verify macos_diagnose
+  hosts: localhost
+  gather_facts: false
+  vars:
+    artifact_dir: "/tmp/gludd-macos-diagnose"
+  tasks:
+    - name: Stat artifact_dir
+      ansible.builtin.stat:
+        path: "{{ artifact_dir }}"
+      register: _dir
+    - name: Assert artifact_dir exists and is a directory
+      ansible.builtin.assert:
+        that:
+          - _dir.stat.exists
+          - _dir.stat.isdir
+        fail_msg: "{{ artifact_dir }} does not exist or is not a directory"
+
+    - name: Stat unified_log.json
+      ansible.builtin.stat:
+        path: "{{ artifact_dir }}/unified_log.json"
+      register: _unified_log
+    - name: Assert unified_log.json exists
+      ansible.builtin.assert:
+        that: _unified_log.stat.exists
+        fail_msg: "{{ artifact_dir }}/unified_log.json missing"
+
+    - name: Stat system_profiler.txt
+      ansible.builtin.stat:
+        path: "{{ artifact_dir }}/system_profiler.txt"
+      register: _sp
+    - name: Assert system_profiler.txt exists
+      ansible.builtin.assert:
+        that: _sp.stat.exists
+        fail_msg: "{{ artifact_dir }}/system_profiler.txt missing"
+
+    - name: Stat launchctl_list.txt
+      ansible.builtin.stat:
+        path: "{{ artifact_dir }}/launchctl_list.txt"
+      register: _launchctl_list
+    - name: Assert launchctl_list.txt exists
+      ansible.builtin.assert:
+        that: _launchctl_list.stat.exists
+        fail_msg: "{{ artifact_dir }}/launchctl_list.txt missing"
+
+    - name: Stat launchctl_print_system.txt
+      ansible.builtin.stat:
+        path: "{{ artifact_dir }}/launchctl_print_system.txt"
+      register: _launchctl_print
+    - name: Assert launchctl_print_system.txt exists
+      ansible.builtin.assert:
+        that: _launchctl_print.stat.exists
+        fail_msg: "{{ artifact_dir }}/launchctl_print_system.txt missing"
+
+    - name: Stat nvram.txt
+      ansible.builtin.stat:
+        path: "{{ artifact_dir }}/nvram.txt"
+      register: _nvram
+    - name: Assert nvram.txt exists
+      ansible.builtin.assert:
+        that: _nvram.stat.exists
+        fail_msg: "{{ artifact_dir }}/nvram.txt missing"
+
+    - name: Stat pmset.txt
+      ansible.builtin.stat:
+        path: "{{ artifact_dir }}/pmset.txt"
+      register: _pmset
+    - name: Assert pmset.txt exists
+      ansible.builtin.assert:
+        that: _pmset.stat.exists
+        fail_msg: "{{ artifact_dir }}/pmset.txt missing"

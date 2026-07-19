@@ -1,0 +1,7 @@
+---
+# decision_maker_lookup defaults — safe-by-default
+decision_maker_lookup_enabled: false
+decision_maker_lookup_country: null
+decision_maker_lookup_branch: null
+decision_maker_lookup_list_countries: false
+decision_maker_lookup_output_dir: /tmp/gludd-governance-deciders

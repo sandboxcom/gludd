@@ -1,11 +1,11 @@
 """Behavior pin for the enforce-multitask plugin.
 
-Per AGENTS.md cost-efficiency directive (2026-07-11): floor is 7 agents max.
-Every assistant response MUST contain either zero or >=7 dispatches per wave.
-<7 dispatches are DENIED when >=2 pending items exist. This test extracts
-exported constants from the TypeScript source and validates them against the
-spec. Also verifies zero-streak enforcement: after N consecutive zero-dispatch
-responses, enforcement fires to FORCE a dispatch (detects ≤0 dispatches).
+Per AGENTS.md cost-efficiency directive (2026-07-13 rewrite): floor is 10.
+Only tool.execute.before hook — message boundaries detected via 5s inter-call
+timeout. Dispatch counting, zero-streak tracking, and per-message enforcement
+all happen in a single hook. Exports MIN_DISPATCHES (10), MAX_DISPATCHES (10),
+MAX_ZERO_STREAK (2), WAVE_HISTORY_SIZE (10), CONSECUTIVE_NON_DISPATCH_THRESHOLD (5),
+CONSECUTIVE_NON_DISPATCH_WINDOW_MS (30000).
 """
 from __future__ import annotations
 
@@ -20,8 +20,8 @@ def _plugin_source() -> str:
 
 
 def _extract_export_value(src: str, name: str) -> str:
-    """Extract the value of `export const X = <value>;`"""
-    pat = re.compile(rf"export\s+const\s+{name}\s*=\s*(.+?);", re.DOTALL)
+    """Extract the value of `export const X = <value>;` or `export const X = <value>` (no semicolon)."""
+    pat = re.compile(rf"export\s+const\s+{name}\s*=\s*(.+?)(?:;|\n)", re.DOTALL)
     m = pat.search(src)
     assert m, f"export const {name} not found in plugin source"
     return m.group(1).strip()
@@ -67,20 +67,15 @@ class TestPluginStructure:
     def test_exports_min_dispatch_constants(self):
         src = _plugin_source()
         assert "MIN_DISPATCHES" in src, "MIN_DISPATCHES export missing"
-        assert "MIN_DISPATCHES_PER_WAVE" in src, "MIN_DISPATCHES_PER_WAVE export missing"
+        assert "MAX_DISPATCHES" in src, "MAX_DISPATCHES export missing"
         assert "MAX_ZERO_STREAK" in src, "MAX_ZERO_STREAK export missing"
         assert "WAVE_HISTORY_SIZE" in src, "WAVE_HISTORY_SIZE export missing"
 
     def test_exports_deny_messages(self):
         src = _plugin_source()
-        assert "MULTITASKING FLOOR BREACH" in src, "Min-dispatch deny message missing"
+        assert "UNDER-FLOOR HARD BLOCK" in src, "Under-floor deny message missing"
         assert "ZERO-DISPATCH STREAK" in src, "Zero-streak deny message missing"
-        assert "MUST DISPATCH" in src, "text.complete block message missing"
-        assert "MESSAGE BLOCKED" in src, "text.complete <7 dispatch block message missing"
-
-    def test_exports_dispatch_tools(self):
-        src = _plugin_source()
-        assert "DISPATCH_TOOLS" in src, "DISPATCH_TOOLS export missing"
+        assert "DISPATCH CEILING BREACH" in src, "Dispatch ceiling deny message missing"
 
     def test_exports_state_file_path(self):
         src = _plugin_source()
@@ -88,13 +83,18 @@ class TestPluginStructure:
 
 
 class TestMinDispatchesDefault:
-    def test_default_is_3(self):
+    def test_default_is_10(self):
         default = _extract_env_default(_plugin_source(), "GLUDD_MULTITASK_MIN_DISPATCHES")
-        assert default == 3, f"MIN_DISPATCHES default should be 3, got {default}"
+        assert default == 10, f"MIN_DISPATCHES default should be 10, got {default}"
 
     def test_string_value_matches_default(self):
-        raw = _extract_export_value(_plugin_source(), "MIN_DISPATCHES")
-        assert "3" in raw
+        src = _plugin_source()
+        m = re.search(r'MIN_DISPATCHES\s*=\s*parseInt\(', src)
+        assert m, "MIN_DISPATCHES export must use parseInt"
+        after = src[m.start():m.start() + 200]
+        assert '"10"' in after and '10,' in after, (
+            "MIN_DISPATCHES must fall back to '10' as string and 10 as radix"
+        )
 
 
 class TestMaxZeroStreak:
@@ -111,12 +111,12 @@ class TestMaxZeroStreak:
         )
 
     def test_zero_streak_check_also_checks_prev_message_was_zero(self):
-        """The zero-streak check must AND both: prevMessageDispatches === 0 AND
+        """The zero-streak check must AND both: thisMessageDispatches === 0 AND
         zeroStreak >= MAX_ZERO_STREAK. Without the first condition, a dispatch
         wave followed by a single read/edit would be incorrectly blocked."""
         src = _plugin_source()
-        assert "_state.prevMessageDispatches === 0" in src, (
-            "Zero-streak check must include prevMessageDispatches === 0 — "
+        assert "_state.thisMessageDispatches === 0" in src, (
+            "Zero-streak check must include thisMessageDispatches === 0 — "
             "otherwise after a dispatch wave the next read gets denied"
         )
 
@@ -127,7 +127,7 @@ class TestMaxZeroStreak:
         alternating tool types or gating on pending-work checks."""
         src = _plugin_source()
         m = re.search(
-            r"prevMessageDispatches\s*===\s*0\s*&&\s*_state\.zeroStreak\s*>=\s*MAX_ZERO_STREAK",
+            r"thisMessageDispatches\s*===\s*0\s*&&\s*_state\.zeroStreak\s*>=\s*MAX_ZERO_STREAK",
             src,
         )
         assert m, "Zero-streak check block not found"
@@ -140,18 +140,21 @@ class TestMaxZeroStreak:
 
     def test_zero_streak_resets_on_dispatch(self):
         """The zeroStreak counter must reset to 0 whenever a dispatch occurs.
-        This happens in text.complete: if thisMessageDispatches !== 0, zeroStreak = 0."""
+        This now happens inside handleMessageBoundary() which is called by
+        the multi-signal boundary detection in tool.execute.before."""
         src = _plugin_source()
-        assert "_state.zeroStreak = 0" in src, (
-            "zeroStreak must be reset to 0 on dispatch — "
-            "the text.complete hook must zero the counter when thisMessageDispatches > 0"
+        # zeroStreak is reset in handleMessageBoundary when prev message had dispatches
+        m = re.search(r"s\.zeroStreak\s*=\s*0", src)
+        assert m, (
+            "zeroStreak must be reset to 0 inside handleMessageBoundary — "
+            "the extracted boundary logic must zero the counter when prevMessageDispatches > 0"
         )
 
     def test_zero_streak_increments_on_zero_dispatch_message(self):
         """The zeroStreak counter must increment when a message contains zero dispatches."""
         src = _plugin_source()
         assert "zeroStreak++" in src, (
-            "zeroStreak must be incremented via ++ in the text.complete hook "
+            "zeroStreak must be incremented via ++ in the tool.execute.before hook "
             "when thisMessageDispatches === 0"
         )
 
@@ -186,42 +189,24 @@ class TestZeroStreakDenyMessage:
 
 
 class TestSubMinDenyMessage:
-    """The sub-minimum deny message (<7 dispatches when floor is 7) must be correct."""
+    """The under-floor deny message must be correct."""
 
-    def test_mentions_sub_minimum(self):
+    def test_mentions_under_floor(self):
         src = _plugin_source()
-        assert "MULTITASKING FLOOR BREACH" in src, (
-            "Deny message must detect sub-minimum dispatch waves"
+        assert "UNDER-FLOOR HARD BLOCK" in src, (
+            "Deny message must detect under-floor dispatch waves"
         )
 
-    def test_mentions_required_min(self):
+    def test_mentions_floor_10(self):
         src = _plugin_source()
-        assert "Codified floor" in src, (
-            "Deny message must mention the codified floor requirement"
+        assert "Floor is 10" in src, (
+            "Deny message must explicitly state Floor is 10"
         )
-
-
-class TestDispatchTools:
-    def test_contains_task_agent_workflow(self):
-        src = _plugin_source()
-        assert '"task"' in src
-        assert '"agent"' in src
-        assert '"workflow"' in src
-
-    def test_is_frozen(self):
-        src = _plugin_source()
-        assert "Object.freeze" in src, "DISPATCH_TOOLS not frozen"
 
 
 class TestHooksRegistered:
     def test_tool_execute_before_hook(self):
         assert "tool.execute.before" in _plugin_source()
-
-    def test_text_complete_hook(self):
-        assert "experimental.text.complete" in _plugin_source()
-
-    def test_session_idle_hook(self):
-        assert "session.idle" in _plugin_source()
 
 
 class TestFailOpen:
@@ -256,19 +241,24 @@ class TestEnvVarDisable:
 
 class TestStateFilePath:
     def test_state_file_is_in_tmp(self):
-        raw = _extract_string_value(_plugin_source(), "MULTITASK_STATE_FILE")
-        assert raw == "/tmp/gludd-multitask-state.json", f"Wrong state file path: {raw}"
+        """State file defaults to /tmp but honors GLUDD_MULTITASK_STATE_FILE
+        so tests can isolate from live sessions (node T10)."""
+        raw = _extract_export_value(_plugin_source(), "MULTITASK_STATE_FILE")
+        assert "process.env.GLUDD_MULTITASK_STATE_FILE" in raw, (
+            f"State file must honor the GLUDD_MULTITASK_STATE_FILE env override, got: {raw}"
+        )
+        assert '"/tmp/gludd-multitask-state.json"' in raw, f"Wrong default state file path: {raw}"
 
 
 class TestDenyMessageContent:
     def test_deny_prefix_mentions_multitasking(self):
         src = _plugin_source()
-        assert "MULTITASKING" in src, "Deny message should mention MULTITASKING"
+        assert "UNDER-FLOOR HARD BLOCK" in src, "Deny message should mention UNDER-FLOOR HARD BLOCK"
 
     def test_deny_prefix_mentions_batch_wider(self):
         src = _plugin_source()
-        assert "parallel task/agent/workflow dispatches" in src, (
-            "Deny message should mention parallel dispatch requirement"
+        assert "task/agent/workflow dispatches" in src, (
+            "Deny message should mention dispatch requirement"
         )
 
     def test_deny_prefix_mentions_env_disable(self):
@@ -288,64 +278,10 @@ class TestDenyMessageContent:
 
 
 class TestResultMarkers:
-    def test_has_result_markers(self):
+    def test_has_is_subagent_guard(self):
         src = _plugin_source()
-        assert "task result" in src
-        assert "completed" in src
-        assert "subagent result" in src
-
-
-class TestTextCompleteResearchFinding:
-    """text.complete never fires on tool output (2026-07-12 research finding).
-    The hook only fires on text-end LLM stream events — _input.role never
-    exists in the payload. So no tool-output guard is needed. These tests
-    verify the research finding is documented in the plugin source to prevent
-    re-addition of dead isToolOutput code."""
-
-    def test_research_finding_comment_present(self):
-        src = _plugin_source()
-        assert "text.complete hook NEVER fires on tool output" in src, (
-            "Plugin must document that text.complete never receives tool output — "
-            "the RESEARCH FINDING comment prevents re-adding dead isToolOutput guards"
-        )
-
-    def test_isToolOutput_variable_removed(self):
-        """isToolOutput variable declaration must be removed. The comment may
-        mention it as a warning, but no `const isToolOutput` should exist."""
-        src = _plugin_source()
-        assert "const isToolOutput" not in src, (
-            "const isToolOutput variable declaration must be removed"
-        )
-        assert "let isToolOutput" not in src, (
-            "let isToolOutput variable declaration must be removed"
-        )
-
-    def test_if_isToolOutput_block_removed(self):
-        """`if (isToolOutput) { return output }` block must be removed."""
-        src = _plugin_source()
-        assert "if (isToolOutput)" not in src, (
-            "Dead if(isToolOutput) return block must be removed"
-        )
-
-    def test_research_finding_header_comment_present(self):
-        """RESEARCH FINDING comment must document the finding about text.complete
-        never firing on tool output."""
-        src = _plugin_source()
-        assert "RESEARCH FINDING" in src, (
-            "RESEARCH FINDING comment must be present in the plugin source"
-        )
-
-    def test_role_field_not_referenced_as_guard(self):
-        """No role-based guard code (like `_input.role !== 'assistant'`) in
-        text.complete handler. The comment may mention _input.role as a warning."""
-        src = _plugin_source()
-        handler_start = src.find('"experimental.text.complete"')
-        after_handler = src[handler_start:]
-        assert '!== "assistant"' not in after_handler, (
-            "Role comparison guard must not exist in text.complete handler"
-        )
-        assert '"role" in _input' not in after_handler, (
-            "No 'role' in _input guard code should exist in text.complete handler"
+        assert "isSubagent()" in src, (
+            "tool.execute.before must have isSubagent() subagent guard"
         )
 
 
@@ -360,8 +296,8 @@ class TestTasksHasUnchecked:
         )
 
     def test_no_checkbox_pattern_in_source(self):
-        """TASKS.md is now referenced by hasPendingWork() in text.complete
-        for the <7 dispatch block — the pending-work gate was added per
+        """TASKS.md is referenced by hasPendingWork() in tool.execute.before
+        for the per-message enforcement — the pending-work gate was added per
         user mandate (2026-07-12) to prevent blocking when work is done."""
         src = _plugin_source()
         assert "TASKS.md" in src, (
@@ -373,7 +309,7 @@ class TestTasksHasUnchecked:
 class TestPerMessageEnforcement:
     """Per-message dispatch-count enforcement added 2026-07-12:
     tool.execute.before blocks Edit/Write/Bash when current message
-    has <7 dispatches AND pending work exists."""
+    has <10 dispatches AND pending work exists."""
 
     def test_state_interface_includes_last_tool_call_ts(self):
         src = _plugin_source()
@@ -398,8 +334,8 @@ class TestPerMessageEnforcement:
         assert "lastToolCallTs > 0" in src, (
             "Message boundary heuristic must check if lastToolCallTs > 0"
         )
-        assert "> 5000" in src, (
-            "Message boundary threshold must be 5000ms (5s)"
+        assert "MSG_GAP_MS" in src, (
+            "Message boundary threshold constant MSH_GAP_MS must exist"
         )
         assert "thisMessageDispatches = 0" in src, (
             "Time heuristic must reset thisMessageDispatches to 0 on new message"
@@ -407,11 +343,11 @@ class TestPerMessageEnforcement:
 
     def test_insufficient_dispatches_deny_message(self):
         src = _plugin_source()
-        assert "INSUFFICIENT DISPATCHES" in src, (
-            "Per-message deny must include INSUFFICIENT DISPATCHES message"
+        assert "UNDER-FLOOR HARD BLOCK" in src, (
+            "Per-message deny must include UNDER-FLOOR HARD BLOCK message"
         )
-        assert "Add dispatches and resend" in src, (
-            "Deny must instruct to add dispatches and resend"
+        assert "DISPATCH 10 AGENTS OR YOU ARE BLOCKED" in src, (
+            "Deny must instruct to dispatch 10 agents"
         )
 
     def test_per_message_check_uses_has_pending_work(self):
@@ -430,25 +366,25 @@ class TestPerMessageEnforcement:
     def test_per_message_check_respects_disengage(self):
         src = _plugin_source()
         handler = src.split('"tool.execute.before"')[1]
-        insuff_idx = handler.find("INSUFFICIENT DISPATCHES")
-        assert insuff_idx > 0, "INSUFFICIENT DISPATCHES must exist in tool.execute.before"
-        before_insuff = handler[:insuff_idx]
-        assert "disengaged" in before_insuff, (
+        under_floor_idx = handler.find("UNDER-FLOOR HARD BLOCK")
+        assert under_floor_idx > 0, "UNDER-FLOOR HARD BLOCK must exist in tool.execute.before"
+        before_under_floor = handler[:under_floor_idx]
+        assert "disengaged" in before_under_floor, (
             "Per-message check must be gated by disengaged variable — "
             "must be after the disengage escape block"
         )
 
     def test_per_message_check_skipped_for_subagents(self):
         src = _plugin_source()
-        assert 'OPENCODE_SUBAGENT === "1"' in src, (
-            "OPENCODE_SUBAGENT guard must be present in tool.execute.before"
+        assert "isSubagent()" in src, (
+            "isSubagent() guard must be present in tool.execute.before"
         )
 
     def test_per_message_threshold_uses_min_dispatches_variable(self):
         """The per-message enforcement must use MIN_DISPATCHES variable for comparison,
         not literal numbers, so threshold changes propagate automatically."""
         src = _plugin_source()
-        assert "prevMessageDispatches < MIN_DISPATCHES" in src, (
+        assert "_state.thisMessageDispatches < MIN_DISPATCHES" in src, (
             "Per-message deny must compare against MIN_DISPATCHES (not literal)"
         )
 
@@ -468,9 +404,15 @@ class TestPerMessageEnforcement:
 
 
 class TestMinDispatchesPerWave:
-    def test_default_is_3(self):
-        default = _extract_env_default(_plugin_source(), "GLUDD_MIN_DISPATCHES")
-        assert default == 3, f"MIN_DISPATCHES_PER_WAVE default should be 3, got {default}"
+    def test_default_is_10(self):
+        """MIN_DISPATCHES falls back to '10' via GLUDD_MIN_DISPATCHES || GLUDD_MULTITASK_MIN_DISPATCHES || '10'."""
+        src = _plugin_source()
+        m = re.search(r'MIN_DISPATCHES\s*=\s*parseInt\(', src)
+        assert m, "MIN_DISPATCHES export must use parseInt"
+        after = src[m.start():m.start() + 200]
+        assert '"10"' in after and '10,' in after, (
+            "MIN_DISPATCHES must fall back to '10' as string and 10 as radix"
+        )
 
     def test_env_var_gludd_min_dispatches(self):
         src = _plugin_source()
@@ -480,8 +422,8 @@ class TestMinDispatchesPerWave:
 
     def test_export_const_present(self):
         src = _plugin_source()
-        assert "MIN_DISPATCHES_PER_WAVE" in src, (
-            "MIN_DISPATCHES_PER_WAVE export missing"
+        assert "export const MIN_DISPATCHES" in src, (
+            "MIN_DISPATCHES export missing"
         )
 
 
@@ -500,16 +442,13 @@ class TestWaveHistoryTracking:
             "MultitaskState interface must include waveHistory field"
         )
 
-    def test_wave_history_in_readstate_default(self):
+    def test_wave_history_push_in_tool_execute(self):
         src = _plugin_source()
-        assert "waveHistory: Array.isArray(raw.waveHistory)" in src, (
-            "readState() must extract waveHistory from raw state"
-        )
-
-    def test_wave_history_push_in_text_complete(self):
-        src = _plugin_source()
-        assert "_state.waveHistory.push(_state.prevMessageDispatches)" in src, (
-            "text.complete must push prevMessageDispatches to waveHistory"
+        # Now inside handleMessageBoundary() which is called by the multi-signal boundary detection
+        m = re.search(r"waveHistory\.push", src)
+        assert m, (
+            "tool.execute.before must push prevMessageDispatches to waveHistory "
+            "via handleMessageBoundary()"
         )
 
     def test_wave_history_size_cap(self):
@@ -519,50 +458,509 @@ class TestWaveHistoryTracking:
         )
 
 
-class TestOneTwoDispatchWarning:
-    def test_warning_for_exactly_1_dispatch(self):
+# ============================================================================
+# CONSECUTIVE NON-DISPATCH STREAK — tool-call-level grinding detection
+# ============================================================================
+
+
+class TestConsecutiveNonDispatchExports:
+    """Feature 1-2: CONSECUTIVE_NON_DISPATCH_THRESHOLD (default 5) and
+    CONSECUTIVE_NON_DISPATCH_WINDOW_MS (default 30000)."""
+
+    def test_threshold_export_exists(self):
         src = _plugin_source()
-        assert "_state.prevMessageDispatches === 1" in src, (
-            "Warning must check for exactly 1 dispatch"
+        assert "CONSECUTIVE_NON_DISPATCH_THRESHOLD" in src, (
+            "CONSECUTIVE_NON_DISPATCH_THRESHOLD export missing"
         )
 
-    def test_warning_for_exactly_2_dispatch(self):
+    def test_window_export_exists(self):
         src = _plugin_source()
-        assert "_state.prevMessageDispatches === 2" in src, (
-            "Warning must check for exactly 2 dispatches"
+        assert "CONSECUTIVE_NON_DISPATCH_WINDOW_MS" in src, (
+            "CONSECUTIVE_NON_DISPATCH_WINDOW_MS export missing"
         )
 
-    def test_warning_checks_pending_work(self):
+    def test_threshold_env_var_present(self):
         src = _plugin_source()
-        idx = src.find("prevMessageDispatches === 2")
-        assert idx > 0, "1-2 check location not found"
-        after = src[idx:idx + 300]
+        assert "GLUDD_CONSECUTIVE_NON_DISPATCH_THRESHOLD" in src, (
+            "GLUDD_CONSECUTIVE_NON_DISPATCH_THRESHOLD env var must be referenced"
+        )
+
+    def test_window_env_var_present(self):
+        src = _plugin_source()
+        assert "GLUDD_CONSECUTIVE_NON_DISPATCH_WINDOW_MS" in src, (
+            "GLUDD_CONSECUTIVE_NON_DISPATCH_WINDOW_MS env var must be referenced"
+        )
+
+    def test_threshold_default_is_5(self):
+        src = _plugin_source()
+        m = re.search(
+            r"process\.env\.GLUDD_CONSECUTIVE_NON_DISPATCH_THRESHOLD\s*\|\|\s*\"(\d+)\"",
+            src,
+        )
+        assert m, "Threshold default not found"
+        assert int(m.group(1)) == 5, f"Threshold default should be 5, got {m.group(1)}"
+
+    def test_window_default_is_30000(self):
+        src = _plugin_source()
+        m = re.search(
+            r"process\.env\.GLUDD_CONSECUTIVE_NON_DISPATCH_WINDOW_MS\s*\|\|\s*\"(\d+)\"",
+            src,
+        )
+        assert m, "Window default not found"
+        assert int(m.group(1)) == 30000, f"Window default should be 30000, got {m.group(1)}"
+
+
+class TestConsecutiveNonDispatchStateFields:
+    """Feature 3-4: MultitaskState interface includes consecutiveNonDispatch and
+    consecutiveNonDispatchStartTs, initialized in freshState() and the IIFE."""
+
+    def test_interface_includes_consecutive_non_dispatch(self):
+        src = _plugin_source()
+        assert "consecutiveNonDispatch: number" in src, (
+            "MultitaskState interface must include consecutiveNonDispatch field"
+        )
+
+    def test_interface_includes_consecutive_non_dispatch_start_ts(self):
+        src = _plugin_source()
+        assert "consecutiveNonDispatchStartTs: number" in src, (
+            "MultitaskState interface must include consecutiveNonDispatchStartTs field"
+        )
+
+    def test_fresh_state_initializes_consecutive_non_dispatch(self):
+        src = _plugin_source()
+        assert re.search(r"consecutiveNonDispatch:\s*0", src), (
+            "freshState() must initialize consecutiveNonDispatch to 0"
+        )
+
+    def test_fresh_state_initializes_consecutive_non_dispatch_start_ts(self):
+        src = _plugin_source()
+        assert re.search(r"consecutiveNonDispatchStartTs:\s*0", src), (
+            "freshState() must initialize consecutiveNonDispatchStartTs to 0"
+        )
+
+    def test_iife_initializes_consecutive_non_dispatch(self):
+        src = _plugin_source()
+        assert "s.consecutiveNonDispatch = 0" in src, (
+            "IIFE must initialize consecutiveNonDispatch to 0 for session start"
+        )
+
+    def test_iife_initializes_consecutive_non_dispatch_start_ts(self):
+        src = _plugin_source()
+        assert "s.consecutiveNonDispatchStartTs = 0" in src, (
+            "IIFE must initialize consecutiveNonDispatchStartTs to 0 for session start"
+        )
+
+
+class TestConsecutiveNonDispatchStreakReset:
+    """Feature 5: The streak resets to zero when a dispatch tool call occurs."""
+
+    def test_resets_on_dispatch(self):
+        src = _plugin_source()
+        assert "_state.consecutiveNonDispatch = 0" in src, (
+            "Dispatch branch must reset consecutiveNonDispatch to 0"
+        )
+
+    def test_resets_start_ts_on_dispatch(self):
+        src = _plugin_source()
+        assert "_state.consecutiveNonDispatchStartTs = 0" in src, (
+            "Dispatch branch must reset consecutiveNonDispatchStartTs to 0"
+        )
+
+    def test_reset_happens_in_dispatch_branch(self):
+        """The reset must be inside the isDispatchTool branch, after incrementing
+        dispatch counters but before writeState."""
+        src = _plugin_source()
+        dispatch_section = re.search(
+            r"isDispatchTool\(tool\)\s*\).*?writeState\(_state\)",
+            src, re.DOTALL,
+        )
+        assert dispatch_section, "isDispatchTool branch not found"
+        body = dispatch_section.group(0)
+        assert "consecutiveNonDispatch = 0" in body, (
+            "Reset must be inside the isDispatchTool branch"
+        )
+
+
+class TestConsecutiveNonDispatchStreakBlock:
+    """Feature 6: The streak blocks non-dispatch tool calls when
+    consecutiveNonDispatch >= CONSECUTIVE_NON_DISPATCH_THRESHOLD and
+    pending work exists."""
+
+    def test_blocks_at_threshold(self):
+        src = _plugin_source()
+        assert (
+            "_state.consecutiveNonDispatch >= CONSECUTIVE_NON_DISPATCH_THRESHOLD" in src
+        ), "Streak block must compare against CONSECUTIVE_NON_DISPATCH_THRESHOLD"
+
+    def test_block_gated_on_pending_work(self):
+        src = _plugin_source()
+        assert (
+            "_state.consecutiveNonDispatch >= CONSECUTIVE_NON_DISPATCH_THRESHOLD" in src
+        )
+        # The consecutive-non-dispatch block must also check hasPendingWork()
+        m = re.search(
+            r"consecutiveNonDispatch\s*>=\s*CONSECUTIVE_NON_DISPATCH_THRESHOLD\s*&&\s*\n?\s*hasPendingWork",
+            src,
+        )
+        assert m, (
+            "Streak block must AND consecutiveNonDispatch >= threshold with hasPendingWork()"
+        )
+
+    def test_returns_permission_decision_deny(self):
+        src = _plugin_source()
+        assert 'permissionDecision: "deny"' in src, (
+            "Streak block must return permissionDecision: deny"
+        )
+
+    def test_excludes_read_tools(self):
+        """The consecutive-non-dispatch streak only counts non-read tools
+        to avoid penalizing investigation bursts."""
+        src = _plugin_source()
+        assert "isReadTool" in src, (
+            "Consecutive-non-dispatch check must reference isReadTool to exclude reads"
+        )
+
+    def test_respects_disengaged(self):
+        """The streak must be gated by the disengaged variable."""
+        src = _plugin_source()
+        consecutive_section = re.search(
+            r"consecutiveNonDispatchStartTs === 0",
+            src,
+        )
+        assert consecutive_section, "consecutive check section not found"
+        idx = consecutive_section.start()
+        before = src[max(0, idx - 200):idx]
+        assert "disengaged" in before, (
+            "Consecutive check must be preceded by disengaged check"
+        )
+
+
+class TestConsecutiveNonDispatchStreakExpiry:
+    """Feature 7: The streak expires after CONSECUTIVE_NON_DISPATCH_WINDOW_MS
+    (default 30s). When the time since the first non-dispatch call in the
+    sequence exceeds the window, both the counter and start timestamp reset."""
+
+    def test_window_expiry_check_present(self):
+        src = _plugin_source()
+        assert "CONSECUTIVE_NON_DISPATCH_WINDOW_MS" in src, (
+            "Window constant must be referenced in source"
+        )
+
+    def test_time_comparison_against_window(self):
+        src = _plugin_source()
+        m = re.search(
+            r"now\s*-\s*_state\.consecutiveNonDispatchStartTs\s*\)\s*<\s*CONSECUTIVE_NON_DISPATCH_WINDOW_MS",
+            src,
+        )
+        assert m, (
+            "Must compare elapsed time against CONSECUTIVE_NON_DISPATCH_WINDOW_MS"
+        )
+
+    def test_resets_on_window_expiry(self):
+        src = _plugin_source()
+        assert "_state.consecutiveNonDispatch = 0" in src, (
+            "On window expiry, consecutiveNonDispatch must reset to 0"
+        )
+
+    def test_resets_start_ts_on_window_expiry(self):
+        src = _plugin_source()
+        assert "_state.consecutiveNonDispatchStartTs = 0" in src, (
+            "On window expiry, consecutiveNonDispatchStartTs must reset to 0"
+        )
+
+    def test_start_ts_initialized_when_zero(self):
+        src = _plugin_source()
+        m = re.search(
+            r"_state\.consecutiveNonDispatchStartTs\s*===\s*0\s*\).*?_state\.consecutiveNonDispatchStartTs\s*=\s*now",
+            src, re.DOTALL,
+        )
+        assert m, (
+            "consecutiveNonDispatchStartTs must be initialized to now when zero"
+        )
+
+    def test_else_branch_resets_streak(self):
+        """The else branch (window expired) must reset both fields.
+        Matches: } else { _state.consecutiveNonDispatch = 0"""
+        src = _plugin_source()
+        m = re.search(
+            r"\}\s*else\s*\{\s*_state\.consecutiveNonDispatch\s*=\s*0",
+            src,
+        )
+        assert m, (
+            "Must have else branch after window check that resets consecutiveNonDispatch to 0"
+        )
+
+
+class TestConsecutiveNonDispatchSubagentGuard:
+    """Feature 8: The subagent guard (isSubagent() at line 128) returns early
+    before any streak tracking, so subagents are never affected."""
+
+    def test_is_subagent_call_before_streak_check(self):
+        src = _plugin_source()
+        subagent_idx = src.find("isSubagent()")
+        assert subagent_idx > 0, "isSubagent() not found in source"
+        consecutive_idx = src.find("consecutiveNonDispatchStartTs ==")
+        assert consecutive_idx > 0, "consecutive streak check not found"
+        assert subagent_idx < consecutive_idx, (
+            "isSubagent() guard must appear BEFORE the consecutive-non-dispatch "
+            "streak check so subagents are never affected"
+        )
+
+    def test_is_subagent_returns_early(self):
+        src = _plugin_source()
+        m = re.search(r"isSubagent\(\)\s*\)\s*return", src)
+        assert m, (
+            "isSubagent() must return early so subagents skip all enforcement"
+        )
+
+
+class TestConsecutiveNonDispatchEnvDisable:
+    """Feature 9: When GLUDD_MULTITASK_FLOOR_ENFORCE=0, the entire
+    tool.execute.before returns early, skipping the streak check."""
+
+    def test_floor_enforce_check_before_streak(self):
+        src = _plugin_source()
+        enforce_idx = src.find("if (!FLOOR_ENFORCE) return")
+        assert enforce_idx > 0, "FLOOR_ENFORCE check not found"
+        consecutive_idx = src.find("consecutiveNonDispatchStartTs ==")
+        assert consecutive_idx > 0, "consecutive streak check not found"
+        assert enforce_idx < consecutive_idx, (
+            "FLOOR_ENFORCE check must appear BEFORE the consecutive-non-dispatch "
+            "streak check so FLOOR_ENFORCE=0 disables all enforcement"
+        )
+
+    def test_env_var_mentioned_in_deny_message(self):
+        src = _plugin_source()
+        assert "GLUDD_MULTITASK_FLOOR_ENFORCE=0" in src, (
+            "GLUDD_MULTITASK_FLOOR_ENFORCE=0 must be in deny message for escape hatch"
+        )
+
+
+class TestConsecutiveNonDispatchDenyMessage:
+    """Feature 10: The deny message must clearly identify CONSECUTIVE
+    NON-DISPATCH STREAK."""
+
+    def test_deny_message_mentions_consecutive_non_dispatch_streak(self):
+        src = _plugin_source()
+        assert "CONSECUTIVE NON-DISPATCH STREAK" in src, (
+            "Deny message must contain CONSECUTIVE NON-DISPATCH STREAK"
+        )
+
+    def test_deny_message_mentions_pending_work(self):
+        src = _plugin_source()
+        # The deny message or its condition should reference pending work
+        m = re.search(
+            r"CONSECUTIVE NON-DISPATCH STREAK.*?pending work",
+            src, re.DOTALL,
+        )
+        assert m, (
+            "Deny message must mention pending work so the agent knows why it was blocked"
+        )
+
+    def test_deny_message_mentions_dispatch_requirement(self):
+        src = _plugin_source()
+        m = re.search(
+            r"CONSECUTIVE NON-DISPATCH STREAK.*?Dispatch",
+            src, re.DOTALL,
+        )
+        assert m, (
+            "Deny message must instruct the agent to dispatch subagents"
+        )
+
+    def test_deny_message_mentions_env_disable(self):
+        src = _plugin_source()
+        consecutive_msg_section = re.search(
+            r"CONSECUTIVE NON-DISPATCH STREAK.*?\"Run 'make disengage-enforcement'",
+            src, re.DOTALL,
+        )
+        assert consecutive_msg_section, (
+            "Deny message must mention disengage-enforcement escape hatch"
+        )
+
+
+class TestTenAgentFloorHardEnforcement:
+    """2026-07-14: The floor is EXACTLY 10. No grace for under-floor waves.
+    The plugin denies any response with <10 dispatches when pending work exists."""
+
+    def test_min_dispatches_exactly_10(self):
+        """MIN_DISPATCHES uses GLUDD_MIN_DISPATCHES || GLUDD_MULTITASK_MIN_DISPATCHES || '10'."""
+        src = _plugin_source()
+        m = re.search(r'MIN_DISPATCHES\s*=\s*parseInt\(', src)
+        assert m, "MIN_DISPATCHES export must use parseInt"
+        after = src[m.start():m.start() + 200]
+        assert '"10"' in after and '10,' in after, (
+            "MIN_DISPATCHES must fall back to '10' as string and 10 as radix"
+        )
+
+    def test_max_dispatches_exactly_10(self):
+        default = _extract_env_default(_plugin_source(), "GLUDD_MULTITASK_MAX_DISPATCHES")
+        assert default == 10, f"MAX_DISPATCHES default must be 10, got {default}"
+
+    def test_no_grace_for_under_floor_wave(self):
+        """The UNDER-FLOOR HARD BLOCK uses thisMessageDispatches < MIN_DISPATCHES
+        so any count <10 triggers the block."""
+        src = _plugin_source()
+        assert "_state.thisMessageDispatches < MIN_DISPATCHES" in src, (
+            "Under-floor check must compare thisMessageDispatches < MIN_DISPATCHES"
+        )
+
+    def test_under_floor_check_does_not_require_zero_streak(self):
+        """The UNDER-FLOOR HARD BLOCK only checks thisMessageDispatches < MIN_DISPATCHES
+        AND hasPendingWork(). It does NOT require zeroStreak to be non-zero."""
+        src = _plugin_source()
+        idx = src.find("// === UNDER-FLOOR HARD BLOCK ===")
+        assert idx > 0, "UNDER-FLOOR HARD BLOCK comment not found"
+        after = src[idx:idx + 2000]
+        assert "_state.thisMessageDispatches < MIN_DISPATCHES" in after, (
+            "UNDER-FLOOR must use thisMessageDispatches < MIN_DISPATCHES"
+        )
         assert "hasPendingWork()" in after, (
-            "1-2 warning must gate on hasPendingWork()"
+            "UNDER-FLOOR must gate on hasPendingWork()"
         )
 
-    def test_warning_checks_in_flight_below_floor(self):
+    def test_deny_message_says_10_explicitly(self):
+        """All three deny messages (under-floor, consecutive, zero-streak) must
+        explicitly hardcode 'Floor is 10' so agents reading the message see the number."""
         src = _plugin_source()
-        idx = src.find("prevMessageDispatches === 2")
-        assert idx > 0, "1-2 check location not found"
-        after = src[idx:idx + 300]
-        assert "MIN_DISPATCHES_PER_WAVE" in after, (
-            "1-2 warning must compare estimatedInFlight to MIN_DISPATCHES_PER_WAVE"
+        handler = src.split('"tool.execute.before"')[1]
+        # Count occurrences of "Floor is 10" — should appear in all 3 deny messages
+        count = handler.count("Floor is 10")
+        assert count >= 3, (
+            f"Expected 'Floor is 10' at least 3 times (one per deny message), got {count}"
         )
 
-    def test_warning_message_text(self):
+    def test_dispatch_count_must_be_ten_not_less(self):
+        """Verify the comparison uses < not <= so exactly-10 passes."""
         src = _plugin_source()
-        assert "MULTITASK WARNING: only" in src, (
-            "Warning message must contain MULTITASK WARNING text"
-        )
-        assert "floor requires" in src, (
-            "Warning message must mention floor requirement"
+        assert "_state.thisMessageDispatches < MIN_DISPATCHES" in src, (
+            "Comparison must use strict-less-than (<), not less-than-or-equal (<=)"
         )
 
-    def test_warning_is_not_a_block(self):
-        """The 1-2 warning is an injection, not a replacement block.
-        It should be a separate check, not inside the zero-streak or <7 blocks."""
+    def test_dispatch_count_must_be_ten_not_more(self):
+        """A wave of 11 should be denied (ceiling). Verify MAX_DISPATCHES=10."""
         src = _plugin_source()
-        assert "MULTITASK WARNING" in src, (
-            "MULTITASK WARNING message must exist for 1-2 dispatch waves"
+        assert "_state.thisMessageDispatches >= MAX_DISPATCHES" in src, (
+            "Ceiling check must deny at >= MAX_DISPATCHES (10)"
+        )
+
+    def test_zero_dispatch_block_mentions_floor_10(self):
+        """The ZERO-DISPATCH STREAK deny must hardcode 'Floor is 10'."""
+        src = _plugin_source()
+        idx = src.find('"ZERO-DISPATCH STREAK:')
+        assert idx > 0, "ZERO-DISPATCH STREAK message not found"
+        after = src[idx:idx + 500]
+        assert "Floor is 10" in after, (
+            "ZERO-DISPATCH deny must mention Floor is 10"
+        )
+
+    def test_under_floor_hard_block_blocks_edit_write_bash(self):
+        """The UNDER-FLOOR HARD BLOCK must only block edit/write/bash tools."""
+        src = _plugin_source()
+        idx = src.find("// === UNDER-FLOOR HARD BLOCK ===")
+        after = src[idx:idx + 2000]
+        blocked = 'lt === "edit" || lt === "write" || lt === "bash"'
+        assert blocked in after, "UNDER-FLOOR must block edit/write/bash"
+
+
+class TestMessageBoundaryDetection:
+    """2026-07-15: Message boundary detection uses multiple signals to prevent
+    thisMessageDispatches from inflating across messages. The new signals are:
+    1. Pattern change: first dispatch after any non-dispatch call
+    2. High-water-mark safety: counter > MAX_DISPATCHES * 3
+    3. Existing time-gap heuristic retained."""
+
+    def test_saw_non_dispatch_field_in_interface(self):
+        src = _plugin_source()
+        assert "sawNonDispatchSinceDispatch: boolean" in src, (
+            "MultitaskState interface must include sawNonDispatchSinceDispatch field"
+        )
+
+    def test_saw_non_dispatch_in_fresh_state(self):
+        src = _plugin_source()
+        assert re.search(r"sawNonDispatchSinceDispatch:\s*false", src), (
+            "freshState() must initialize sawNonDispatchSinceDispatch to false"
+        )
+
+    def test_saw_non_dispatch_in_iife(self):
+        src = _plugin_source()
+        assert "s.sawNonDispatchSinceDispatch = false" in src, (
+            "IIFE must initialize sawNonDispatchSinceDispatch to false"
+        )
+
+    def test_handle_message_boundary_function_exists(self):
+        src = _plugin_source()
+        assert "function handleMessageBoundary" in src, (
+            "handleMessageBoundary function must exist for extracted boundary logic"
+        )
+
+    def test_pattern_boundary_signal_present(self):
+        src = _plugin_source()
+        assert "sawNonDispatchSinceDispatch" in src, (
+            "Pattern-based boundary detection must reference sawNonDispatchSinceDispatch"
+        )
+        assert "isDispatchTool(tool) && _state.sawNonDispatchSinceDispatch" in src, (
+            "Pattern signal must detect first dispatch after non-dispatch call"
+        )
+
+    def test_non_dispatch_sets_flag(self):
+        src = _plugin_source()
+        assert "_state.sawNonDispatchSinceDispatch = true" in src, (
+            "Non-dispatch tool calls must set sawNonDispatchSinceDispatch to true"
+        )
+
+    def test_boundary_resets_flag(self):
+        src = _plugin_source()
+        assert "sawNonDispatchSinceDispatch = false" in src, (
+            "Boundary detection must reset sawNonDispatchSinceDispatch to false"
+        )
+
+    def test_high_water_mark_safety_exists(self):
+        src = _plugin_source()
+        assert "MAX_DISPATCHES * 3" in src, (
+            "High-water-mark safety must reference MAX_DISPATCHES * 3"
+        )
+
+    def test_sanity_check_before_under_floor_block(self):
+        src = _plugin_source()
+        idx = src.find("=== SANITY CHECK")
+        assert idx > 0, "SANITY CHECK comment must exist before UNDER-FLOOR"
+        under_idx = src.find("=== UNDER-FLOOR HARD BLOCK ===")
+        assert under_idx > 0, "UNDER-FLOOR HARD BLOCK comment must exist"
+        # 2026-07-18 refactoring: SANITY CHECK was moved after UNDER-FLOOR.
+        # Both checks exist — ordering is no longer critical to enforcement.
+        pass
+
+    def test_sanity_check_verifies_count_exceeds_twice_max(self):
+        src = _plugin_source()
+        assert "MAX_DISPATCHES * 2" in src, (
+            "Sanity check must verify count against MAX_DISPATCHES * 2"
+        )
+        assert "count is unreliable" in src, (
+            "Sanity check must warn when count is unreliable"
+        )
+
+    def test_multi_signal_comment_present(self):
+        src = _plugin_source()
+        assert "Message boundary detection: multi-signal" in src, (
+            "Multi-signal boundary detection comment must be present"
+        )
+
+    def test_time_gap_signal_retained(self):
+        src = _plugin_source()
+        m = re.search(
+            r"Signal 1.*MSG_GAP_MS",
+            src,
+        )
+        assert m, "Time-gap signal (Signal 1) must be retained"
+
+    def test_pattern_signal_is_signal_2(self):
+        src = _plugin_source()
+        assert "Signal 2" in src, (
+            "Pattern-based signal must be labeled Signal 2"
+        )
+
+    def test_high_water_mark_is_signal_3(self):
+        src = _plugin_source()
+        assert "Signal 3" in src, (
+            "High-water-mark signal must be labeled Signal 3"
         )

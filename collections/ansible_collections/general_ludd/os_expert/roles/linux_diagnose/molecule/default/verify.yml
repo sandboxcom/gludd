@@ -1,0 +1,17 @@
+---
+- name: Verify linux_diagnose
+  hosts: localhost
+  gather_facts: false
+  vars:
+    artifact_dir: "/tmp/gludd-linux-diagnose"
+  tasks:
+    - name: Stat artifact_dir
+      ansible.builtin.stat:
+        path: "{{ artifact_dir }}"
+      register: _dir
+    - name: Assert artifact_dir exists and is a directory
+      ansible.builtin.assert:
+        that:
+          - _dir.stat.exists
+          - _dir.stat.isdir
+        fail_msg: "{{ artifact_dir }} does not exist or is not a directory"

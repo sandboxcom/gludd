@@ -1,0 +1,17 @@
+---
+- name: Ensure artifact directory exists
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Run i18n_extract standalone script
+  ansible.builtin.script:
+    cmd: "files/i18n_extract.py --source-dir '{{ source_dir }}' --output-dir '{{ output_dir }}' --output '{{ artifact_dir }}/extraction_report.json'"
+    executable: "{{ ansible_python_interpreter | default('python3') }}"
+  register: i18n_result
+  changed_when: false
+
+- name: Print i18n extraction summary
+  ansible.builtin.debug:
+    msg: "{{ i18n_result.stdout_lines }}"

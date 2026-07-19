@@ -1,0 +1,21 @@
+---
+# locale_format role defaults — REPORT-ONLY
+
+# Input
+value: ""                   # The value to format (date string / number / amount)
+value_type: "date"          # date, number, currency
+locale: "en-US"             # BCP 47 locale tag
+
+# Options
+date_length: "medium"       # full, long, medium, short
+currency_code: "USD"        # ISO 4217 currency code (for currency type)
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Artifact output
+artifact_dir: "/tmp/gludd-locale-format"
+
+# Destructive ops guard — report-only
+enable_git_push: false

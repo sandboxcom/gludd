@@ -1,0 +1,32 @@
+---
+- name: Verify ios_security
+  hosts: localhost
+  gather_facts: false
+  vars:
+    artifact_dir: "/tmp/gludd-ios-security"
+  tasks:
+    - name: Stat artifact_dir
+      ansible.builtin.stat:
+        path: "{{ artifact_dir }}"
+      register: _dir
+    - name: Assert artifact_dir exists and is a directory
+      ansible.builtin.assert:
+        that:
+          - _dir.stat.exists
+          - _dir.stat.isdir
+        fail_msg: "{{ artifact_dir }} does not exist or is not a directory"
+    - name: Stat subdirectories
+      ansible.builtin.stat:
+        path: "{{ artifact_dir }}/{{ item }}"
+      loop:
+        - amfi
+        - codesign
+        - sandbox
+        - trustcache
+      register: _subdirs
+    - name: Assert all subdirectories exist
+      ansible.builtin.assert:
+        that:
+          - "{{ _subdirs.results | map(attribute='stat.exists') | list | min }}"
+          - "{{ _subdirs.results | map(attribute='stat.isdir') | list | min }}"
+        fail_msg: "One or more subdirectories missing under {{ artifact_dir }}"

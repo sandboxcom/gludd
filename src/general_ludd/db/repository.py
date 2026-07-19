@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import contextlib
-from collections.abc import AsyncGenerator, Callable
+from collections.abc import AsyncGenerator, Callable, Generator
 from datetime import UTC, datetime
 from typing import Any, cast
 
@@ -45,6 +45,21 @@ from general_ludd.schemas.todo import TodoStatus
 # itself capped at this value so a single query can never load an unbounded
 # result set into memory. ``offset`` enables forward pagination.
 _DEFAULT_LIST_LIMIT = 1000
+
+
+# C.3 / S27: scoped_to context manager for explicit tenant-scoped operations.
+# Sets the tenant contextvar for the duration of the block and restores it on
+# exit.  Combined with the do_orm_execute listener in session.py, this makes
+# every ORM query inside the block auto-filter to the given project_id.
+@contextlib.contextmanager
+def scoped_to(project_id: str) -> Generator[None, None, None]:
+    from general_ludd.db.tenant import reset_tenant, set_tenant
+
+    token = set_tenant(project_id)
+    try:
+        yield
+    finally:
+        reset_tenant(token)
 
 VALID_TRANSITIONS: dict[TodoStatus, set[TodoStatus]] = {
     TodoStatus.BACKLOG: {TodoStatus.QUEUED, TodoStatus.SCHEDULED, TodoStatus.CANCELLED},

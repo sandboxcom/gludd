@@ -51,7 +51,7 @@
     _sql_total_findings: >-
       {{ (_sql_code_findings | default([]) | length) + (_sql_log_findings | default([]) | length) }}
     _sql_critical_count: >-
-      {{
+      {{ 
         ((_sql_code_findings | default([])) | selectattr('severity', 'equalto', 'critical') | list | length)
         + ((_sql_log_findings | default([])) | selectattr('severity', 'equalto', 'critical') | list | length)
       }}

@@ -1,0 +1,70 @@
+---
+- name: Converge
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Run propagation_model role — free_space
+      ansible.builtin.include_role:
+        name: general_ludd.radio.propagation_model
+      vars:
+        propagation_model_enabled: true
+        propagation_model_type: free_space
+        propagation_model_freq_hz: 144000000
+        propagation_model_distance_m: 10000.0
+        propagation_model_tx_height_m: 30.0
+        propagation_model_rx_height_m: 1.5
+
+    - name: Assert free_space path loss computed
+      ansible.builtin.assert:
+        that:
+          - propagation_model_verdict.role == "propagation_model"
+          - propagation_model_verdict.model == "free_space"
+          - propagation_model_verdict.path_loss_db | float > 0
+        fail_msg: "Free-space path loss: {{ propagation_model_verdict }}"
+
+    - name: Run propagation_model role — hata
+      ansible.builtin.include_role:
+        name: general_ludd.radio.propagation_model
+      vars:
+        propagation_model_enabled: true
+        propagation_model_type: hata
+        propagation_model_freq_hz: 450000000
+        propagation_model_distance_m: 5000.0
+        propagation_model_tx_height_m: 30.0
+        propagation_model_rx_height_m: 1.5
+
+    - name: Assert hata path loss computed
+      ansible.builtin.assert:
+        that:
+          - propagation_model_verdict.model == "hata"
+          - propagation_model_verdict.path_loss_db | float > 0
+        fail_msg: "Hata path loss: {{ propagation_model_verdict }}"
+
+    - name: Assert JSON output
+      ansible.builtin.stat:
+        path: /tmp/gludd-propagation/propagation_model.json
+      register: _stat_json
+
+    - name: Verify JSON exists
+      ansible.builtin.assert:
+        that: _stat_json.stat.exists
+        fail_msg: "propagation_model.json not written"
+
+    - name: Parse JSON
+      ansible.builtin.slurp:
+        src: /tmp/gludd-propagation/propagation_model.json
+      register: _json_raw
+
+    - name: Assert JSON content
+      ansible.builtin.assert:
+        that:
+          - (_json_raw.content | b64decode | from_json).model == "hata"
+          - (_json_raw.content | b64decode | from_json).path_loss_db | float > 0
+          - (_json_raw.content | b64decode | from_json).input.distance_km == 5.0
+        fail_msg: "JSON content mismatch"
+
+    - name: Cleanup
+      ansible.builtin.file:
+        path: /tmp/gludd-propagation
+        state: absent

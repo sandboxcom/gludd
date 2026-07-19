@@ -1,0 +1,43 @@
+---
+- name: Run Frida runtime tracing
+  ansible.builtin.command:
+    cmd: >-
+      {{ ansible_python_interpreter | default('/usr/bin/env python3') }}
+      {{ script_path }}
+      --target {{ target_binary }}
+      --mode tracing
+      --process {{ process_spec | default(target_binary) }}
+      --trace-ms {{ frida_trace_ms }}
+      {{ '--trace-ret' if (frida_trace_ret | bool) else '' }}
+      {{ '--trace-exec' if (frida_trace_exec | bool) else '' }}
+      --call-cap {{ frida_trace_call_cap }}
+      --output {{ output_dir }}/tracing.json
+  register: _tr_result
+  changed_when: false
+  failed_when: _tr_result.rc not in [0]
+
+- name: Read tracing artifact
+  ansible.builtin.slurp:
+    src: "{{ output_dir }}/tracing.json"
+  register: _tr_raw
+
+- name: Parse tracing artifact
+  ansible.builtin.set_fact:
+    tracing_artifact: >-
+      {{ _tr_raw.content | b64decode | from_json
+         if (_tr_raw is defined and _tr_raw.content is defined) else {} }}
+
+- name: Write Frida trace script to disk
+  ansible.builtin.copy:
+    content: "{{ tracing_artifact.get('script', '') }}"
+    dest: "{{ tracing_artifact.get('script_path', '/tmp/gludd-frida-trace.js') }}"
+    mode: "0644"
+  when: tracing_artifact.get('script', '') | length > 0
+
+- name: Report tracing summary
+  ansible.builtin.debug:
+    msg: >-
+      Runtime tracing ready:
+      trace_ms={{ tracing_artifact.get('trace_ms', 'unknown') }},
+      call_cap={{ tracing_artifact.get('call_cap', 'unknown') }},
+      script_path={{ tracing_artifact.get('script_path', 'unknown') }}

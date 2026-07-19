@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import os as _os
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -218,7 +219,9 @@ class TestSyncBundledToFilestore:
     def test_syncs_missing(self, bootstrapper, mock_store):
         mock_store.exists.return_value = False
         with patch.object(bootstrapper, "get_bundled_binary_path", return_value="/bundled/openbao"), \
-             patch("general_ludd.filestore.bootstrap.Path.read_bytes", return_value=b"\x00"):
+             patch("general_ludd.filestore.bootstrap.Path.read_bytes", return_value=b"\x00"), \
+             patch.object(bootstrapper, "KNOWN_SHA256",
+                          {"openbao": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d"}):
             synced = bootstrapper.sync_bundled_to_filestore()
             assert "openbao" in synced
 
@@ -258,27 +261,39 @@ class TestGetDownloadUrl:
         url = bootstrapper.get_download_url("osquery")
         assert url is not None
         assert "osquery/osquery/releases/download/5.10.2" in url
-        assert url.endswith("osquery-5.10.2.linux_x86_64.tar.gz")
+        # Verified against the real 5.10.2 release asset list: linux assets
+        # carry a "_1" build-revision infix before the OS component.
+        assert url.endswith("osquery-5.10.2_1.linux_x86_64.tar.gz")
 
     @patch("general_ludd.filestore.bootstrap.platform.machine", return_value="arm64")
     @patch("general_ludd.filestore.bootstrap.platform.system", return_value="Darwin")
-    def test_osquery_macos_arm64(self, mock_sys, mock_mach, bootstrapper):
+    def test_osquery_macos_arm64_resolves_to_only_published_tarball(self, mock_sys, mock_mach, bootstrapper):
+        # osquery 5.10.2 publishes only ONE macOS tarball — "macos_x86_64"
+        # — there is no separate "macos_arm64" asset (arm64 native support
+        # ships only in the .pkg). Apple Silicon must resolve to that same
+        # x86_64-named asset (runs under Rosetta 2); this was the exact
+        # 404: the old code built a macos_arm64.tar.gz URL that does not
+        # exist.
         url = bootstrapper.get_download_url("osquery")
         assert url is not None
-        assert url.endswith("osquery-5.10.2.macos_arm64.tar.gz")
+        assert url.endswith("osquery-5.10.2_1.macos_x86_64.tar.gz")
 
     @patch("general_ludd.filestore.bootstrap.platform.machine", return_value="x86_64")
     @patch("general_ludd.filestore.bootstrap.platform.system", return_value="Darwin")
     def test_osquery_macos_x86_64(self, mock_sys, mock_mach, bootstrapper):
         url = bootstrapper.get_download_url("osquery")
         assert url is not None
-        assert url.endswith("osquery-5.10.2.macos_x86_64.tar.gz")
+        assert url.endswith("osquery-5.10.2_1.macos_x86_64.tar.gz")
 
     @patch("general_ludd.filestore.bootstrap.platform.machine", return_value="aarch64")
     @patch("general_ludd.filestore.bootstrap.platform.system", return_value="Linux")
-    def test_osquery_linux_arm64_unavailable(self, mock_sys, mock_mach, bootstrapper):
-        # osquery 5.10.2 publishes no linux arm64 tarball -> None.
-        assert bootstrapper.get_download_url("osquery") is None
+    def test_osquery_linux_arm64_uses_aarch64_asset(self, mock_sys, mock_mach, bootstrapper):
+        # osquery 5.10.2 DOES publish a linux arm64 tarball, just under the
+        # asset-name "aarch64" rather than "arm64". The old code treated
+        # this platform as unpublished (returned None); it should resolve.
+        url = bootstrapper.get_download_url("osquery")
+        assert url is not None
+        assert url.endswith("osquery-5.10.2_1.linux_aarch64.tar.gz")
 
     @patch("general_ludd.filestore.bootstrap.platform.machine", return_value="amd64")
     @patch("general_ludd.filestore.bootstrap.platform.system", return_value="Windows")
@@ -400,23 +415,28 @@ class TestDownloadAll:
     async def test_downloads_all(self, bootstrapper):
         with patch.object(bootstrapper, "download", new_callable=AsyncMock, return_value=True):
             results = await bootstrapper.download_all()
-            assert "openbao" in results
-            assert "opentofu" in results
+            for name in bootstrapper.KNOWN_VERSIONS:
+                assert name in results, f"{name} missing from download_all results"
             assert all(results.values())
+
+
+def _make_tarball(member_name: str, content: bytes | None = None) -> bytes:
+    """Build a minimal in-memory .tar.gz containing a single member."""
+    import io as _io
+    import tarfile as _tf
+
+    payload = content or b"\x7fELF fake binary"
+    buf = _io.BytesIO()
+    with _tf.open(fileobj=buf, mode="w:gz") as archive:
+        info = _tf.TarInfo(name=member_name)
+        info.size = len(payload)
+        archive.addfile(info, _io.BytesIO(payload))
+    return buf.getvalue()
 
 
 def _make_osquery_tarball(member_name: str = "osquery-5.10.2.linux_x86_64/bin/osqueryi") -> bytes:
     """Build a minimal in-memory .tar.gz containing a single osqueryi member."""
-    import io as _io
-    import tarfile as _tf
-
-    content = b"\x7fELF fake osqueryi binary"
-    buf = _io.BytesIO()
-    with _tf.open(fileobj=buf, mode="w:gz") as archive:
-        info = _tf.TarInfo(name=member_name)
-        info.size = len(content)
-        archive.addfile(info, _io.BytesIO(content))
-    return buf.getvalue()
+    return _make_tarball(member_name, b"\x7fELF fake osqueryi binary")
 
 
 class TestOsqueryExtraction:
@@ -547,3 +567,76 @@ async def test_download_rejects_oversized_response(tmp_path):
     assert result is False, "oversized download must be rejected"
     stored = boot.get_binary_path("osquery")
     assert stored is None or not _os.path.isfile(stored), "nothing stored on rejection"
+
+
+@pytest.mark.asyncio
+async def test_codebase_memory_binary_is_executable_after_download(tmp_path):
+    """After download(), the stored codebase-memory-mcp binary must satisfy
+    os.access(path, os.X_OK), proving the sha256 pin + extract + chmod chain
+    works for this tarball-packaged binary."""
+    import os as _os
+
+    from general_ludd.filestore.bootstrap import BinaryBootstrapper
+    from general_ludd.filestore.store import FileStore
+
+    payload = b"\x7fELF-codebase-memory-mcp-binary"
+    tar_bytes = _make_tarball("codebase-memory-mcp", payload)
+
+    store = FileStore(root_path=str(tmp_path))
+    boot = BinaryBootstrapper(
+        store=store,
+        known_sha256={"codebase-memory-mcp": hashlib.sha256(tar_bytes).hexdigest()},
+    )
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.content = tar_bytes
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(return_value=mock_resp)
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+
+    with patch.object(boot, "get_bundled_binary_path", return_value=None), \
+         patch.object(boot, "get_download_url", return_value="https://example.com/codebase-memory.tar.gz"), \
+         patch("httpx.AsyncClient", return_value=mock_client):
+        result = await boot.download("codebase-memory-mcp")
+
+    assert result is True, "download() must return True on HTTP 200"
+    stored_path = boot.get_binary_path("codebase-memory-mcp")
+    assert stored_path is not None
+    assert _os.path.isfile(stored_path)
+    assert _os.access(stored_path, _os.X_OK), (
+        f"codebase-memory-mcp binary at {stored_path!r} is NOT executable after download"
+    )
+
+
+@pytest.mark.asyncio
+async def test_codebase_memory_download_rejected_without_pin(tmp_path):
+    """download() for codebase-memory-mcp must fail without a sha256 pin."""
+    from general_ludd.filestore.bootstrap import BinaryBootstrapper
+    from general_ludd.filestore.store import FileStore
+
+    payload = b"\x7fELF-codebase-memory-mcp-binary"
+    tar_bytes = _make_tarball("codebase-memory-mcp", payload)
+
+    store = FileStore(root_path=str(tmp_path))
+    boot = BinaryBootstrapper(store=store)
+
+    assert "codebase-memory-mcp" not in boot.KNOWN_SHA256
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.content = tar_bytes
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(return_value=mock_resp)
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+
+    with patch.object(boot, "get_bundled_binary_path", return_value=None), \
+         patch.object(boot, "get_download_url", return_value="https://example.com/codebase-memory.tar.gz"), \
+         patch("httpx.AsyncClient", return_value=mock_client):
+        result = await boot.download("codebase-memory-mcp")
+
+    assert result is False, "download without sha256 pin must be refused"
+    stored = boot.get_binary_path("codebase-memory-mcp")
+    assert stored is None or not _os.path.isfile(stored)

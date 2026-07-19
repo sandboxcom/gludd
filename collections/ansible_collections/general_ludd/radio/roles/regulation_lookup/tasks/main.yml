@@ -1,0 +1,73 @@
+---
+# regulation_lookup role -- frequency allocation, band plan, license-class lookup
+# Invokes the standalone files/regulation_lookup.py CLI backend.
+
+- name: Validate regulation lookup parameters
+  ansible.builtin.assert:
+    that:
+      - regulation_lookup_country | length == 2
+      - (regulation_lookup_freq_mhz is defined and regulation_lookup_freq_mhz | float > 0) or
+        (regulation_lookup_band_name is defined and regulation_lookup_band_name | length > 0) or
+        (regulation_lookup_license_class is defined and regulation_lookup_license_class | length > 0) or
+        (regulation_lookup_marine_channel is defined and regulation_lookup_marine_channel | int > 0)
+    fail_msg: >
+      country must be a 2-letter ISO code;
+      must provide freq_mhz, band_name, license_class, or marine_channel
+  when: regulation_lookup_enabled | bool
+
+- name: Ensure output directory exists
+  ansible.builtin.file:
+    path: "{{ regulation_lookup_output_dir }}"
+    state: directory
+    mode: "0755"
+  when: regulation_lookup_enabled | bool
+
+- name: Run regulation_lookup.py
+  ansible.builtin.command: >
+    {{ ansible_python_interpreter }} {{ role_path }}/files/regulation_lookup.py
+    --country {{ regulation_lookup_country }}
+    --output-dir {{ regulation_lookup_output_dir }}
+    {% if regulation_lookup_freq_mhz is defined and regulation_lookup_freq_mhz | float > 0 %}
+    --freq-mhz {{ regulation_lookup_freq_mhz }}
+    {% endif %}
+    {% if regulation_lookup_band_name is defined and regulation_lookup_band_name | length > 0 %}
+    --band {{ regulation_lookup_band_name }}
+    {% endif %}
+    {% if regulation_lookup_license_class is defined and regulation_lookup_license_class | length > 0 %}
+    --license-class {{ regulation_lookup_license_class }}
+    {% endif %}
+    {% if regulation_lookup_marine_channel is defined and regulation_lookup_marine_channel | int > 0 %}
+    --marine-channel {{ regulation_lookup_marine_channel }}
+    {% endif %}
+  register: _reg_result
+  changed_when: false
+  when: regulation_lookup_enabled | bool
+
+- name: Parse regulation lookup result
+  ansible.builtin.set_fact:
+    regulation_lookup_result: "{{ (_reg_result.stdout | from_json) if _reg_result.stdout is defined and _reg_result.stdout | length > 0 else {} }}"
+  when: regulation_lookup_enabled | bool
+
+- name: Write JSON output
+  ansible.builtin.copy:
+    content: "{{ regulation_lookup_result | to_nice_json }}"
+    dest: "{{ regulation_lookup_output_dir }}/regulation_lookup.json"
+    mode: "0644"
+  when:
+    - regulation_lookup_enabled | bool
+    - regulation_lookup_result is defined
+    - regulation_lookup_result | length > 0
+
+- name: Register regulation lookup verdict
+  ansible.builtin.set_fact:
+    regulation_lookup_verdict:
+      role: regulation_lookup
+      country: "{{ regulation_lookup_country }}"
+      frequency_mhz: "{{ regulation_lookup_freq_mhz | default('N/A') }}"
+      band_requested: "{{ regulation_lookup_band_name | default('N/A') }}"
+      license_class: "{{ regulation_lookup_license_class | default('N/A') }}"
+      found: "{{ regulation_lookup_result.frequency_lookup is defined and regulation_lookup_result.frequency_lookup != none }}"
+      result_type: "{{ (regulation_lookup_result.frequency_lookup.type if regulation_lookup_result.frequency_lookup is defined and regulation_lookup_result.frequency_lookup else 'none') }}"
+      has_band_plan: "{{ regulation_lookup_result.band_plan is defined and regulation_lookup_result.band_plan != none }}"
+      output_dir: "{{ regulation_lookup_output_dir }}"
+  when: regulation_lookup_enabled | bool

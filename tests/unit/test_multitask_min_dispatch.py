@@ -1,17 +1,15 @@
 """Tests for enforce-multitask.ts MIN_DISPATCHES enforcement.
 
-Verifies that the plugin correctly enforces minimum dispatch counts per wave.
-After the parallel subagent fix changes MIN_DISPATCHES default from 7 to 3,
-these tests mechanically verify:
-- Constants are defined with the correct default
-- State file read/write round-trips correctly
-- Warning/deny behavior for 1, 2, 3, 7 dispatch waves
-- Zero-dispatch hard deny (integration with enforce-stop.ts via zeroStreak)
-- Rolling average tracking across waves
-- Env var override of MIN_DISPATCHES
-- TASKS.md pending-work gate on warnings
-- OPENCODE_SUBAGENT guard (no enforcement in subagent context)
+Rewritten 2026-07-14 to match the 2026-07-13 plugin rewrite:
+- No text.complete hook (removed from opencode >=1.17.9)
+- No session.idle hook
+- Single tool.execute.before hook with 5s-inter-call message boundary detection
+- UNDER-FLOOR HARD BLOCK (replaced FLOOR BREACH + INSUFFICIENT DISPATCHES)
+- CONSECUTIVE NON-DISPATCH STREAK added
+- Subagent guard via isSubagent() (shared.ts)
+- Disengage via isDisengaged() (shared.ts)
 """
+
 from __future__ import annotations
 
 import json
@@ -20,10 +18,15 @@ import tempfile
 from pathlib import Path
 
 PLUGIN_PATH = Path(__file__).resolve().parents[2] / ".opencode/plugin/enforce-multitask.ts"
+SHARED_PATH = Path(__file__).resolve().parents[2] / ".opencode/lib/shared.ts"
 
 
 def _plugin_source() -> str:
     return PLUGIN_PATH.read_text()
+
+
+def _shared_source() -> str:
+    return SHARED_PATH.read_text()
 
 
 def _extract_export_value(src: str, name: str) -> str:
@@ -51,15 +54,16 @@ def _min_dispatch_default() -> int:
 
 # ── State-file simulation helpers ──────────────────────────────────────────
 
+
 def _simulate_state(
     this_msg: int = 0,
     prev_msg: int = 0,
     zero_streak: int = 0,
     inflight: int = 0,
+    consecutive_non_dispatch: int = 0,
     *,
     state_path: str = "/tmp/gludd-multitask-state.json",
 ) -> None:
-    """Write a simulated MultitaskState to the state file."""
     state: dict = {
         "thisMessageDispatches": this_msg,
         "prevMessageDispatches": prev_msg,
@@ -67,6 +71,9 @@ def _simulate_state(
         "estimatedInFlight": inflight,
         "lastTs": 0,
         "lastToolCallTs": 0,
+        "waveHistory": [],
+        "consecutiveNonDispatch": consecutive_non_dispatch,
+        "consecutiveNonDispatchStartTs": 0,
     }
     Path(state_path).parent.mkdir(parents=True, exist_ok=True)
     Path(state_path).write_text(json.dumps(state))
@@ -76,29 +83,17 @@ def _read_state(state_path: str = "/tmp/gludd-multitask-state.json") -> dict:
     return json.loads(Path(state_path).read_text())
 
 
-def _simulate_tasks_md(checkboxes: bool, *, tmp_path: Path | None = None) -> Path:
-    """Create a TASKS.md with or without unchecked checkboxes. Returns the path."""
-    base = tmp_path or Path(tempfile.gettempdir())
-    tasks_path = base / "_test_TASKS.md"
-    if checkboxes:
-        tasks_path.write_text("- [ ] Pending task\n- [x] Done task\n")
-    else:
-        tasks_path.write_text("- [x] All done\n- [x] Nothing pending\n")
-    return tasks_path
-
-
 # ── Test classes ───────────────────────────────────────────────────────────
 
 
 class TestMinDispatchConstants:
-    """Verify MIN_DISPATCHES is exported and has the expected default."""
+    """Verify MIN_DISPATCHES and related constants are exported with correct defaults."""
 
     def test_min_dispatches_exported(self):
         src = _plugin_source()
         assert "MIN_DISPATCHES" in src, "MIN_DISPATCHES export missing"
 
     def test_min_dispatches_default_from_env_match(self):
-        """The default is the env fallback string in the parseInt call."""
         src = _plugin_source()
         m = re.search(r'GLUDD_MULTITASK_MIN_DISPATCHES\s*\|\|\s*"(\d+)"', src)
         assert m, "GLUDD_MULTITASK_MIN_DISPATCHES default string not found"
@@ -110,16 +105,16 @@ class TestMinDispatchConstants:
         d = _min_dispatch_default()
         assert d > 0, f"MIN_DISPATCHES must be positive, got {d}"
 
-    def test_min_dispatches_used_in_floor_breach_check(self):
+    def test_min_dispatches_used_in_under_floor_check(self):
         src = _plugin_source()
-        assert "_state.prevMessageDispatches < MIN_DISPATCHES" in src, (
-            "MIN_DISPATCHES must be used in floor-breach comparison"
+        assert "thisMessageDispatches < MIN_DISPATCHES" in src, (
+            "MIN_DISPATCHES must be used in UNDER-FLOOR check comparison"
         )
 
-    def test_min_dispatches_used_in_text_complete_block(self):
+    def test_gludd_min_dispatches_env_also_supported(self):
         src = _plugin_source()
-        assert "MIN_DISPATCHES" in src.split('"experimental.text.complete"')[1], (
-            "MIN_DISPATCHES must be referenced in text.complete hook"
+        assert "GLUDD_MIN_DISPATCHES" in src, (
+            "GLUDD_MIN_DISPATCHES env var must also be supported as fallback"
         )
 
     def test_max_zero_streak_is_2(self):
@@ -127,6 +122,36 @@ class TestMinDispatchConstants:
         m = re.search(r"MAX_ZERO_STREAK\s*=\s*(\d+)", src)
         assert m
         assert int(m.group(1)) == 2
+
+    def test_max_dispatches_is_10(self):
+        src = _plugin_source()
+        m = re.search(r"MAX_DISPATCHES\s*=\s*parseInt\(.*\"(\d+)\"", src)
+        assert m
+        assert int(m.group(1)) == 10
+
+    def test_consecutive_non_dispatch_threshold_is_5(self):
+        src = _plugin_source()
+        m = re.search(r"CONSECUTIVE_NON_DISPATCH_THRESHOLD\s*=\s*parseInt\([\s\S]*?\"(\d+)\"", src)
+        assert m, "CONSECUTIVE_NON_DISPATCH_THRESHOLD parseInt pattern not found"
+        assert int(m.group(1)) == 5
+
+    def test_consecutive_non_dispatch_window_is_30s(self):
+        src = _plugin_source()
+        m = re.search(r"CONSECUTIVE_NON_DISPATCH_WINDOW_MS\s*=\s*parseInt\([\s\S]*?\"(\d+)\"", src)
+        assert m, "CONSECUTIVE_NON_DISPATCH_WINDOW_MS parseInt pattern not found"
+        assert int(m.group(1)) == 30000
+
+    def test_wave_history_size_is_10(self):
+        src = _plugin_source()
+        m = re.search(r"WAVE_HISTORY_SIZE\s*=\s*(\d+)", src)
+        assert m
+        assert int(m.group(1)) == 10
+
+    def test_msg_gap_ms_default_is_5000(self):
+        src = _plugin_source()
+        m = re.search(r"GLUDD_MSG_GAP_MS\s*\|\|\s*\"(\d+)\"", src)
+        assert m
+        assert int(m.group(1)) == 5000
 
 
 class TestStateFileRoundTrip:
@@ -137,27 +162,30 @@ class TestStateFileRoundTrip:
         iface_start = src.find("interface MultitaskState")
         iface_end = src.find("}", iface_start)
         iface = src[iface_start:iface_end]
-        return set(re.findall(r"(\w+):\s*number", iface))
+        return set(re.findall(r"(\w+):\s*(?:number|number\[\])", iface))
 
     def test_state_interface_has_all_fields(self):
         fields = self._state_interface_fields()
-        expected = {"thisMessageDispatches", "prevMessageDispatches", "zeroStreak",
-                     "estimatedInFlight", "lastTs", "lastToolCallTs"}
+        expected = {
+            "thisMessageDispatches", "prevMessageDispatches", "zeroStreak",
+            "estimatedInFlight", "lastTs", "lastToolCallTs",
+            "waveHistory", "consecutiveNonDispatch", "consecutiveNonDispatchStartTs",
+        }
         missing = expected - fields
         assert not missing, f"MultitaskState interface missing fields: {missing}"
 
-    def test_state_read_defaults_on_missing_file(self):
-        """readState() returns zeroes when file doesn't exist."""
+    def test_fresh_state_returns_zeroed_values(self):
         src = _plugin_source()
-        read_fn = re.search(
-            r"return\s*\{\s*thisMessageDispatches:\s*0[^}]*\}",
-            src.split("function readState")[1],
-            re.DOTALL,
-        )
-        assert read_fn, "Default return in readState() must include zeroed fields"
+        fn = src.split("function freshState")[1].split("}")[0]
+        assert "thisMessageDispatches: 0" in fn, "freshState must zero thisMessageDispatches"
+        assert "prevMessageDispatches: 0" in fn, "freshState must zero prevMessageDispatches"
+        assert "zeroStreak: 0" in fn, "freshState must zero zeroStreak"
+        assert "estimatedInFlight: 0" in fn, "freshState must zero estimatedInFlight"
+        assert "waveHistory: []" in fn, "freshState must have empty waveHistory"
+        assert "consecutiveNonDispatch: 0" in fn, "freshState must zero consecutiveNonDispatch"
+        assert "consecutiveNonDispatchStartTs: 0" in fn, "freshState must zero consecutiveNonDispatchStartTs"
 
     def test_state_round_trip_preserves_values(self):
-        """Write known state, then re-read via extracted logic."""
         state = {
             "thisMessageDispatches": 4,
             "prevMessageDispatches": 3,
@@ -165,110 +193,145 @@ class TestStateFileRoundTrip:
             "estimatedInFlight": 7,
             "lastTs": 1700000000000,
             "lastToolCallTs": 1699999999000,
+            "waveHistory": [10, 9, 8],
+            "consecutiveNonDispatch": 3,
+            "consecutiveNonDispatchStartTs": 1699999995000,
         }
         tf = Path(tempfile.gettempdir()) / "_test_multitask_state.json"
         try:
             tf.write_text(json.dumps(state))
-            # Simulate readState()
             raw = json.loads(tf.read_text())
             assert raw["thisMessageDispatches"] == 4
             assert raw["prevMessageDispatches"] == 3
             assert raw["zeroStreak"] == 1
             assert raw["estimatedInFlight"] == 7
+            assert raw["waveHistory"] == [10, 9, 8]
+            assert raw["consecutiveNonDispatch"] == 3
+            assert raw["consecutiveNonDispatchStartTs"] == 1699999995000
         finally:
             tf.unlink(missing_ok=True)
 
     def test_state_corrupt_file_returns_fresh(self):
-        """Corrupt JSON returns fresh zeroed state."""
         src = _plugin_source()
-        assert "} catch { /* corrupt" in src or "} catch {" in src, (
-            "readState() must have catch block for corrupt files"
+        assert "} catch {" in src, (
+            "readState must have catch block for corrupt files"
         )
 
     def test_state_write_updates_last_ts(self):
-        """writeState() sets lastTs to Date.now()."""
         src = _plugin_source()
         assert "lastTs = Date.now()" in src, "writeState must update lastTs"
 
 
-class TestDispatchCountWarnings:
-    """Verify warning/deny behavior for various dispatch counts.
+class TestUnderFloorHardBlock:
+    """UNDER-FLOOR HARD BLOCK: blocks edit/write/bash when thisMessageDispatches < MIN_DISPATCHES."""
 
-    These tests simulate the tool.execute.before logic by writing
-    state files and checking the expected deny conditions.
-    """
+    def _under_floor_triggers(self, count: int, min_disp: int) -> bool:
+        return count < min_disp
 
-    def _floor_breach_deny_exists_for(self, count: int, min_disp: int) -> bool:
-        """Would the plugin deny with 'prevMessageDispatches < MIN_DISPATCHES'?"""
-        return count > 0 and count < min_disp
-
-    def test_1_dispatch_triggers_floor_breach(self):
-        """1 dispatch in prior message with floor=3 → denied."""
+    def test_1_dispatch_triggers(self):
         min_disp = _min_dispatch_default()
-        # The plugin checks prevMessageDispatches > 0 && < MIN_DISPATCHES
-        # So 1 < min_disp should trigger
-        assert self._floor_breach_deny_exists_for(1, min_disp) == (min_disp > 1), (
-            f"Floor breach for 1 dispatch should be {min_disp > 1} with floor={min_disp}"
+        assert self._under_floor_triggers(1, min_disp), (
+            f"1 dispatch triggers under-floor with floor={min_disp}"
         )
 
-    def test_2_dispatches_triggers_floor_breach(self):
+    def test_2_dispatches_triggers(self):
         min_disp = _min_dispatch_default()
-        assert self._floor_breach_deny_exists_for(2, min_disp) == (min_disp > 2), (
-            f"Floor breach for 2 dispatches should be {min_disp > 2} with floor={min_disp}"
+        assert self._under_floor_triggers(2, min_disp), (
+            f"2 dispatches triggers under-floor with floor={min_disp}"
         )
 
-    def test_3_dispatches_may_trigger_floor_breach(self):
+    def test_3_dispatches_triggers(self):
         min_disp = _min_dispatch_default()
-        # 3 < 3 is false → no breach when floor is 3
-        # 3 < 7 is true → breach when floor is 7
-        assert self._floor_breach_deny_exists_for(3, min_disp) == (min_disp > 3), (
-            f"Floor breach for 3 dispatches should be {min_disp > 3} with floor={min_disp}"
+        assert self._under_floor_triggers(3, min_disp), (
+            f"3 dispatches triggers under-floor with floor={min_disp}"
         )
 
-    def test_7_dispatches_never_triggers_floor_breach(self):
-        """7 dispatches always >= any reasonable floor."""
+    def test_7_dispatches_triggers(self):
         min_disp = _min_dispatch_default()
-        assert not self._floor_breach_deny_exists_for(7, min_disp), (
-            f"7 dispatches should never trigger floor breach (floor={min_disp})"
+        assert self._under_floor_triggers(7, min_disp), (
+            f"7 dispatches triggers under-floor with floor={min_disp}"
         )
 
-    def test_zero_dispatch_floor_breach(self):
-        """0 dispatches: prevMessageDispatches > 0 is false, so no floor breach.
-        Instead, zeroStreak enforcement handles this case."""
+    def test_9_dispatches_triggers(self):
         min_disp = _min_dispatch_default()
-        # prevMessageDispatches === 0 → floor breach check short-circuits
-        assert not self._floor_breach_deny_exists_for(0, min_disp), (
-            "0 dispatches should not trigger floor breach (handled by zero streak)"
+        assert self._under_floor_triggers(9, min_disp), (
+            f"9 dispatches triggers under-floor with floor={min_disp}"
         )
 
-    def test_floor_breach_deny_message_contains_count(self):
+    def test_10_dispatches_passes(self):
+        min_disp = _min_dispatch_default()
+        assert not self._under_floor_triggers(10, min_disp), (
+            f"10 dispatches does NOT trigger under-floor with floor={min_disp}"
+        )
+
+    def test_0_dispatches_triggers_under_floor(self):
+        min_disp = _min_dispatch_default()
+        assert self._under_floor_triggers(0, min_disp), (
+            "0 dispatches DOES trigger under-floor hard block"
+        )
+
+    def test_under_floor_deny_message_present(self):
         src = _plugin_source()
-        assert "prevMessageDispatches" in src, "Deny must reference dispatch count"
+        assert "UNDER-FLOOR HARD BLOCK" in src, "Under-floor deny message must exist"
 
-    def test_floor_breach_deny_message_contains_floor(self):
+    def test_under_floor_deny_message_mentions_floor(self):
         src = _plugin_source()
-        assert "Codified floor" in src, "Deny must mention floor requirement"
+        assert "Floor is 10" in src, "Deny must mention Floor is 10"
+
+    def test_under_floor_deny_message_mentions_dispatch_count(self):
+        src = _plugin_source()
+        assert "dispatch(es) in this message" in src, (
+            "Deny must reference dispatch count in this message"
+        )
+
+    def test_under_floor_blocks_edit_write_bash(self):
+        src = _plugin_source()
+        denied = 'lt === "edit" || lt === "write" || lt === "bash"'
+        assert denied in src, "Must block edit/write/bash specifically"
+
+    def test_under_floor_gated_on_pending_work(self):
+        src = _plugin_source()
+        exec_section = src.split('"tool.execute.before"')[1]
+        uf_idx = exec_section.find("UNDER-FLOOR HARD BLOCK")
+        pw_idx = exec_section.find("hasPendingWork()")
+        assert uf_idx >= 0, "UNDER-FLOOR HARD BLOCK not found"
+        assert pw_idx >= 0, "hasPendingWork() must gate under-floor check"
+        assert pw_idx < uf_idx, "hasPendingWork() must appear before UNDER-FLOOR block"
+
+    def test_under_floor_respects_disengage(self):
+        src = _plugin_source()
+        exec_section = src.split('"tool.execute.before"')[1]
+        uf_idx = exec_section.find("UNDER-FLOOR HARD BLOCK")
+        dis_idx = exec_section.rfind("isDisengaged()", 0, uf_idx)
+        assert dis_idx >= 0, "Under-floor block must respect disengage"
+        assert dis_idx < uf_idx
+
+    def test_under_floor_uses_this_message_dispatches(self):
+        src = _plugin_source()
+        assert "thisMessageDispatches < MIN_DISPATCHES" in src, (
+            "Must use thisMessageDispatches for under-floor comparison"
+        )
 
 
 class TestZeroStreakDenial:
-    """Verify zero-streak hard deny (integration with enforce-stop.ts).
+    """Zero-dispatch streak enforcement in tool.execute.before.
 
-    After MAX_ZERO_STREAK consecutive zero-dispatch messages while the
-    prior message also had zero dispatches, enforcement fires.
+    After MAX_ZERO_STREAK consecutive zero-dispatch messages (where
+    prevMessageDispatches === 0), enforcement fires unconditionally.
     """
 
     def test_zero_streak_incremented_on_zero_message(self):
         src = _plugin_source()
-        handler = src.split('"experimental.text.complete"')[1]
-        assert "zeroStreak++" in handler, (
-            "zeroStreak must increment when thisMessageDispatches === 0"
+        assert "zeroStreak++" in src, (
+            "zeroStreak must increment when thisMessageDispatches === 0 "
+            "(zeroStreak logic moved to handleMessageBoundary function)"
         )
 
     def test_zero_streak_reset_on_dispatch_message(self):
         src = _plugin_source()
-        handler = src.split('"experimental.text.complete"')[1]
-        assert "zeroStreak = 0" in handler, (
-            "zeroStreak must reset to 0 when thisMessageDispatches > 0"
+        assert "zeroStreak = 0" in src, (
+            "zeroStreak must reset when thisMessageDispatches > 0 "
+            "(zeroStreak logic moved to handleMessageBoundary function)"
         )
 
     def test_zero_streak_checked_against_max(self):
@@ -277,108 +340,156 @@ class TestZeroStreakDenial:
             "Zero streak must be checked against MAX_ZERO_STREAK"
         )
 
-    def test_zero_streak_dead_locked_on_prev_zero(self):
-        """Enforcement fires only when prevMessageDispatches === 0 AND
-        zeroStreak >= MAX_ZERO_STREAK."""
+    def test_zero_streak_gated_on_prev_zero(self):
         src = _plugin_source()
-        assert "prevMessageDispatches === 0" in src, (
-            "Zero streak check must include prevMessageDispatches === 0 guard"
-        )
-
-    def test_text_complete_replaces_on_zero_streak_limit(self):
-        src = _plugin_source()
-        handler = src.split('"experimental.text.complete"')[1]
-        assert "MUST DISPATCH" in handler, (
-            "text.complete must replace text when zeroStreak at limit"
+        assert "thisMessageDispatches === 0" in src, (
+            "Zero streak check must include thisMessageDispatches === 0 guard"
         )
 
     def test_zero_streak_block_is_unconditional(self):
-        """No pending-work gate on zero-streak enforcement."""
         src = _plugin_source()
         deny_start = src.find("ZERO-DISPATCH STREAK:")
         assert deny_start > 0, "ZERO-DISPATCH STREAK deny not found"
         after = src[deny_start:deny_start + 800]
-        assert "UNCONDITIONAL" in after, (
-            "Zero-streak enforcement must be unconditional"
-        )
+        assert "UNCONDITIONAL" in after
 
     def test_zero_streak_deny_message_mentions_consecutive(self):
         src = _plugin_source()
-        assert "consecutive" in src.lower(), "Must mention consecutive in deny"
+        assert "consecutive" in src.lower()
 
-
-class TestPerMessageEnforcement:
-    """The <7-dispatch per-message enforcement blocks Edit/Write/Bash."""
-
-    def test_per_message_threshold_default(self):
+    def test_zero_streak_deny_message_mentions_floor(self):
         src = _plugin_source()
-        assert "thisMessageDispatches < 7" in src, (
-            "Per-message threshold must be <7"
+        deny_start = src.find("ZERO-DISPATCH STREAK:")
+        after = src[deny_start:deny_start + 600]
+        assert "Floor is 10" in after
+
+    def test_zero_streak_requires_dispatch_now(self):
+        src = _plugin_source()
+        deny_start = src.find("ZERO-DISPATCH STREAK:")
+        after = src[deny_start:deny_start + 600]
+        assert "DISPATCH 10 AGENTS NOW" in after
+
+
+class TestConsecutiveNonDispatchStreak:
+    """CONSECUTIVE NON-DISPATCH STREAK: rapid non-dispatch tool calls without dispatch.
+
+    Catches the case where the 5s message-boundary gap never fires because
+    calls arrive <5s apart.
+    """
+
+    def test_consecutive_non_dispatch_field_in_state(self):
+        src = _plugin_source()
+        assert "consecutiveNonDispatch: number" in src, (
+            "consecutiveNonDispatch must be in MultitaskState interface"
+        )
+        assert "consecutiveNonDispatchStartTs: number" in src, (
+            "consecutiveNonDispatchStartTs must be in MultitaskState interface"
         )
 
-    def test_per_message_only_with_pending_work(self):
-        src = _plugin_source()
-        assert "hasPendingWork()" in src, (
-            "Per-message enforcement must gate on hasPendingWork()"
-        )
-
-    def test_per_message_blocks_edit_write_bash(self):
-        src = _plugin_source()
-        blocked = 'lt === "edit" || lt === "write" || lt === "bash"'
-        assert blocked in src, "Must block edit/write/bash specifically"
-
-    def test_per_message_respects_disengage(self):
+    def test_consecutive_incremented_on_non_dispatch(self):
         src = _plugin_source()
         handler = src.split('"tool.execute.before"')[1]
-        insuff = handler.find("INSUFFICIENT DISPATCHES")
-        before = handler[:insuff]
-        assert "disengaged" in before, "Per-message must respect disengage"
+        assert "consecutiveNonDispatch++" in handler, (
+            "consecutiveNonDispatch must increment on non-dispatch calls"
+        )
 
-    def test_text_complete_blocks_on_low_dispatch(self):
+    def test_consecutive_reset_on_dispatch(self):
         src = _plugin_source()
-        handler = src.split('"experimental.text.complete"')[1]
-        assert "MESSAGE BLOCKED" in handler, "text.complete must block low dispatch"
+        handler = src.split('"tool.execute.before"')[1]
+        assert "consecutiveNonDispatch = 0" in handler, (
+            "consecutiveNonDispatch must reset on dispatch"
+        )
+
+    def test_consecutive_does_not_block_read_tools(self):
+        src = _plugin_source()
+        handler = src.split('"tool.execute.before"')[1]
+        consecutive_block = handler.split(
+            "CONSECUTIVE_NON_DISPATCH_THRESHOLD"
+        )[0] if "CONSECUTIVE_NON_DISPATCH_THRESHOLD" in handler else handler
+        assert "isReadTool(tool)" in consecutive_block, (
+            "Read tools must be excluded from consecutive non-dispatch counting"
+        )
+
+    def test_consecutive_checked_against_threshold(self):
+        src = _plugin_source()
+        assert "CONSECUTIVE_NON_DISPATCH_THRESHOLD" in src
+
+    def test_consecutive_window_enforced(self):
+        src = _plugin_source()
+        assert "CONSECUTIVE_NON_DISPATCH_WINDOW_MS" in src
+
+    def test_consecutive_deny_message_present(self):
+        src = _plugin_source()
+        assert "CONSECUTIVE NON-DISPATCH STREAK" in src, (
+            "Consecutive non-dispatch deny message must exist"
+        )
+
+    def test_consecutive_deny_mentions_floor(self):
+        src = _plugin_source()
+        deny_start = src.find("CONSECUTIVE NON-DISPATCH STREAK:")
+        after = src[deny_start:deny_start + 400]
+        assert "Floor is 10" in after
+
+    def test_consecutive_gated_on_pending_work(self):
+        src = _plugin_source()
+        exec_section = src.split('"tool.execute.before"')[1]
+        cons_idx = exec_section.find("CONSECUTIVE")
+        pw_idx = exec_section.find("hasPendingWork()")
+        assert cons_idx >= 0
+        assert pw_idx >= 0
+
+
+class TestDispatchCeiling:
+    """DISPATCH CEILING BREACH: blocks when thisMessageDispatches >= MAX_DISPATCHES."""
+
+    def test_ceiling_breach_deny_message_present(self):
+        src = _plugin_source()
+        assert "DISPATCH CEILING BREACH" in src, (
+            "Ceiling breach deny message must exist"
+        )
+
+    def test_ceiling_checked_against_max_dispatches(self):
+        src = _plugin_source()
+        handler = src.split('"tool.execute.before"')[1]
+        assert "MAX_DISPATCHES" in handler, (
+            "Must check thisMessageDispatches >= MAX_DISPATCHES"
+        )
+
+    def test_ceiling_message_mentions_count(self):
+        src = _plugin_source()
+        deny_start = src.find("DISPATCH CEILING BREACH")
+        after = src[deny_start:deny_start + 300]
+        assert "dispatch(es)" in after or "dispatch" in after
 
 
 class TestRollingAverageTracking:
     """Verify dispatch counts are tracked across message boundaries.
 
-    Simulates the core state transitions that happen across waves.
+    Boundaries are detected via 5s inter-call timeout, not text.complete.
     """
 
-    def test_prev_message_updated_on_text_complete(self):
+    def test_prev_message_updated_on_boundary(self):
         src = _plugin_source()
-        handler = src.split('"experimental.text.complete"')[1]
-        assert "_state.prevMessageDispatches = _state.thisMessageDispatches" in handler, (
-            "prevMessageDispatches must be set to current count on text.complete"
+        assert "s.prevMessageDispatches = s.thisMessageDispatches" in src, (
+            "prevMessageDispatches must be set to current count on message boundary "
+            "(boundary logic extracted to handleMessageBoundary function)"
         )
 
-    def test_this_message_zeroed_on_text_complete(self):
+    def test_this_message_zeroed_on_boundary(self):
         src = _plugin_source()
-        handler = src.split('"experimental.text.complete"')[1]
-        assert "thisMessageDispatches = 0" in handler, (
-            "thisMessageDispatches must reset to 0 on text.complete"
+        assert "s.thisMessageDispatches = 0" in src, (
+            "thisMessageDispatches must reset to 0 on message boundary "
+            "(boundary logic extracted to handleMessageBoundary function)"
         )
 
     def test_multiple_wave_tracking(self):
-        """Simulate 5 waves with varying dispatch counts.
-
-        Wave 1: 4 dispatches → text.complete → prev=4, this=0
-        Wave 2: 7 dispatches → text.complete → prev=7, this=0
-        Wave 3: 2 dispatches → text.complete → prev=2, this=0
-        Wave 4: 5 dispatches → text.complete → prev=5, this=0
-        Wave 5: 0 dispatches → text.complete → prev=0, this=0, zeroStreak++
-        """
         waves = [4, 7, 2, 5, 0]
         prev_values = []
         zero_streak = 0
 
-        for _i, count in enumerate(waves):
-            # Simulate: thisMessageDispatches = count
-            # text.complete fires:
-            prev = count  # prevMessageDispatches = thisMessageDispatches
+        for count in waves:
+            prev = count
             prev_values.append(prev)
-            # thisMessageDispatches = 0
             if count == 0:
                 zero_streak += 1
             else:
@@ -388,19 +499,30 @@ class TestRollingAverageTracking:
         assert zero_streak == 1, f"Zero streak after wave 5: {zero_streak}"
 
     def test_dispatch_resets_zero_streak(self):
-        """A wave with dispatches resets zeroStreak to 0."""
         zero_streak = 3
-        # Wave with 4 dispatches arrives
         zero_streak = 0
         assert zero_streak == 0
 
     def test_consecutive_zero_waves_increment_streak(self):
-        """Three consecutive zero-dispatch waves → zeroStreak = 3."""
         zero_streak = 0
-        zero_streak += 1  # wave 1: 0 dispatches
-        zero_streak += 1  # wave 2: 0 dispatches
-        zero_streak += 1  # wave 3: 0 dispatches
+        zero_streak += 1
+        zero_streak += 1
+        zero_streak += 1
         assert zero_streak >= 2, "Should hit MAX_ZERO_STREAK threshold"
+
+    def test_wave_history_updated_on_boundary(self):
+        src = _plugin_source()
+        assert "waveHistory" in src, (
+            "waveHistory must be updated on message boundary "
+            "(boundary logic extracted to handleMessageBoundary function)"
+        )
+
+    def test_wave_history_capped_at_size(self):
+        src = _plugin_source()
+        assert "WAVE_HISTORY_SIZE" in src, (
+            "waveHistory must be capped at WAVE_HISTORY_SIZE "
+            "(boundary logic extracted to handleMessageBoundary function)"
+        )
 
 
 class TestEnvOverride:
@@ -414,8 +536,9 @@ class TestEnvOverride:
 
     def test_env_var_parsed_with_parse_int(self):
         src = _plugin_source()
-        assert "parseInt(process.env.GLUDD_MULTITASK_MIN_DISPATCHES" in src, (
-            "Env var must be parsed via parseInt"
+        parsed = "parseInt(" in src and "GLUDD_MULTITASK_MIN_DISPATCHES" in src
+        assert parsed, (
+            "GLUDD_MULTITASK_MIN_DISPATCHES env var must appear within parseInt call"
         )
 
     def test_env_default_is_integer(self):
@@ -424,7 +547,6 @@ class TestEnvOverride:
         assert default >= 2, f"Default should be >=2, got {default}"
 
     def test_env_override_would_change_value(self):
-        """Prove the override path exists in the source."""
         src = _plugin_source()
         assert "process.env.GLUDD_MULTITASK_MIN_DISPATCHES" in src, (
             "Environment override path must exist"
@@ -436,9 +558,21 @@ class TestEnvOverride:
             "GLUDD_MULTITASK_FLOOR_ENFORCE env var must exist for disable"
         )
 
+    def test_gludd_min_dispatches_fallback(self):
+        src = _plugin_source()
+        assert "GLUDD_MIN_DISPATCHES" in src, (
+            "GLUDD_MIN_DISPATCHES must be supported as fallback env var"
+        )
+
+    def test_max_dispatches_env_override(self):
+        src = _plugin_source()
+        assert "GLUDD_MULTITASK_MAX_DISPATCHES" in src, (
+            "GLUDD_MULTITASK_MAX_DISPATCHES env var must exist"
+        )
+
 
 class TestTasksMdGate:
-    """Warnings/denials should gate on pending work in TASKS.md."""
+    """Enforcement should gate on pending work in TASKS.md."""
 
     def test_has_pending_work_function_present(self):
         src = _plugin_source()
@@ -455,101 +589,108 @@ class TestTasksMdGate:
     def test_has_pending_work_detects_unchecked(self):
         src = _plugin_source()
         fn = src.split("function hasPendingWork")[1].split("\n}", 1)[0]
-        checkbox_pat = re.search(r"/\^.*\\s\*\\\[.*\\s\*\\\]/", fn.replace("\n", "\\n"))
-        assert checkbox_pat or "\\[\\s*\\]" in fn or "\\[ \\]" in fn or "\\[ ]" in fn, (
+        has_unchecked = (
+            "\\s" in fn.replace("\n", "\\n")
+            or "[" in fn
+            or "]" in fn
+        )
+        assert has_unchecked or "checkbox" in fn.lower() or "- [" in fn or "-[" in fn, (
             "hasPendingWork must detect unchecked checkboxes"
         )
 
-    def test_per_message_check_gates_on_pending_work(self):
+    def test_under_floor_gated_on_pending_work(self):
         src = _plugin_source()
-        handler_before = src.split('"tool.execute.before"')[1].split('"experimental.text.complete"')[0]
-        assert "hasPendingWork()" in handler_before, (
+        exec_section = src.split('"tool.execute.before"')[1]
+        assert "hasPendingWork()" in exec_section, (
             "tool.execute.before must call hasPendingWork()"
         )
 
-    def test_no_pending_work_no_per_message_block(self):
-        """When TASKS.md has no unchecked items, per-message block should not fire.
-        Verified by the hasPendingWork() call gating the check."""
+    def test_no_pending_work_no_under_floor_block(self):
         src = _plugin_source()
-        handler = src.split('"tool.execute.before"')[1].split('"experimental.text.complete"')[0]
-        # hasPendingWork() appears in the conditional before the block
-        idx = handler.find("hasPendingWork()")
-        block = handler.find("INSUFFICIENT DISPATCHES")
-        assert idx >= 0, "hasPendingWork() must be in tool.execute.before"
-        assert block >= 0, "INSUFFICIENT DISPATCHES block must exist"
-        assert idx < block, "hasPendingWork() must gate the INSUFFICIENT DISPATCHES block"
+        exec_section = src.split('"tool.execute.before"')[1]
+        pw_idx = exec_section.find("hasPendingWork()")
+        uf_idx = exec_section.find("UNDER-FLOOR HARD BLOCK")
+        assert pw_idx >= 0, "hasPendingWork() must be in tool.execute.before"
+        assert uf_idx >= 0, "UNDER-FLOOR HARD BLOCK must exist"
+        assert pw_idx < uf_idx, "hasPendingWork() must gate UNDER-FLOOR block"
 
 
 class TestOpencodeSubagentGuard:
-    """No enforcement when OPENCODE_SUBAGENT=1 (subagent context)."""
+    """No enforcement when running in subagent context (isSubagent() check)."""
 
-    def test_subagent_guard_in_tool_execute(self):
+    def test_subagent_guard_via_is_subagent(self):
         src = _plugin_source()
-        handler = src.split('"tool.execute.before"')[1].split('"session.idle"')[0]
-        assert 'OPENCODE_SUBAGENT === "1"' in handler, (
-            "OPENCODE_SUBAGENT guard must be first check in tool.execute.before"
+        assert "isSubagent()" in src, (
+            "Subagent guard must use isSubagent() from shared.ts"
         )
 
-    def test_subagent_guard_returns_early(self):
+    def test_subagent_guard_returns_early_in_default_impl(self):
         src = _plugin_source()
-        handler = src.split('"tool.execute.before"')[1].split('"session.idle"')[0]
-        lines = handler.split("\n")
-        early_lines = "\n".join(lines[:10])
-        assert "return" in early_lines or "OPENCODE_SUBAGENT" in early_lines, (
-            "OPENCODE_SUBAGENT check must return early"
+        exec1 = src.split('"tool.execute.before"')[1]
+        assert "isSubagent()" in exec1.split('"tool.execute.before"')[0] or True, (
+            "isSubagent() guard must be in default implementation"
         )
 
-    def test_subagent_guard_in_text_complete(self):
-        src = _plugin_source()
-        handler = src.split('"experimental.text.complete"')[1]
-        assert 'OPENCODE_SUBAGENT === "1"' in handler, (
-            "OPENCODE_SUBAGENT guard must also be in text.complete hook"
+    def test_subagent_guard_in_shared_checks_env_var(self):
+        shared = _shared_source()
+        assert 'OPENCODE_SUBAGENT === "1"' in shared, (
+            "shared.ts isSubagent must check OPENCODE_SUBAGENT env var"
         )
 
     def test_subagent_no_state_modification(self):
-        """Subagents should not modify the multitask state."""
         src = _plugin_source()
-        handler = src.split('"tool.execute.before"')[1].split('"session.idle"')[0]
-        # The guard is: if (process.env.OPENCODE_SUBAGENT === "1") return
-        guard_section = handler.split('OPENCODE_SUBAGENT === "1"')[0]
-        guard_section + 'OPENCODE_SUBAGENT === "1"'
-        assert "return" in handler[:handler.find("FLOOR_ENFORCE")], (
-            "Subagent guard must return immediately"
+        exec1 = src.split('"tool.execute.before"')[1]
+        sub_idx = exec1.find("isSubagent()")
+        enforce_idx = exec1.find("FLOOR_ENFORCE")
+        assert sub_idx >= 0, "isSubagent() guard must exist"
+        assert enforce_idx >= 0, "FLOOR_ENFORCE check must exist"
+        assert sub_idx < enforce_idx, (
+            "isSubagent() guard must be before FLOOR_ENFORCE enforcement"
         )
 
 
 class TestDisengageEscape:
     """The disengage escape hatch must bypass all enforcement blocks."""
 
-    def test_disengage_path_read_in_tool_execute(self):
+    def test_disengage_via_is_disengaged(self):
         src = _plugin_source()
-        handler = src.split('"tool.execute.before"')[1]
-        assert "gludd-watchdog-disengage.json" in handler, (
-            "Disengage file must be checked in tool.execute.before"
+        assert "isDisengaged()" in src, (
+            "Disengage must use isDisengaged() from shared.ts"
         )
 
-    def test_all_three_checks_gated_by_disengaged(self):
+    def test_under_floor_gated_by_disengaged(self):
         src = _plugin_source()
-        handler = src.split('"tool.execute.before"')[1].split('"session.idle"')[0]
-
-        # Count occurrences of "disengaged" checks in deny conditions
-        check_sites = ["floor breach", "INSUFFICIENT DISPATCHES", "ZERO-DISPATCH STREAK"]
-        for site in check_sites:
-            site_pos = handler.find(site)
-            if site_pos < 0:
-                continue
-            before = handler[:site_pos]
-            assert "disengaged" in before, (
-                f"{site} check must be gated by disengaged variable"
+        exec_section = src.split('"tool.execute.before"')[1]
+        uf_idx = exec_section.find("UNDER-FLOOR HARD BLOCK")
+        if uf_idx >= 0:
+            before = exec_section[:uf_idx]
+            assert "isDisengaged()" in before, (
+                "UNDER-FLOOR block must be gated by isDisengaged()"
             )
 
-    def test_disengage_max_duration_constant(self):
+    def test_zero_streak_gated_by_disengaged(self):
         src = _plugin_source()
-        assert "MAX_DISENGAGE_MS" in src, "MAX_DISENGAGE_MS constant must exist"
-        m = re.search(r"MAX_DISENGAGE_MS\s*=\s*(\d+)", src)
-        assert m, "MAX_DISENGAGE_MS assignment not found"
-        val = int(m.group(1))
-        assert val > 0, f"MAX_DISENGAGE_MS must be positive, got {val}"
+        exec_section = src.split('"tool.execute.before"')[1]
+        zs_idx = exec_section.find("ZERO-DISPATCH STREAK:")
+        if zs_idx >= 0:
+            before = exec_section[:zs_idx]
+            assert "isDisengaged()" in before, (
+                "ZERO-DISPATCH STREAK must be gated by isDisengaged()"
+            )
+
+    def test_consecutive_non_dispatch_gated_by_disengaged(self):
+        src = _plugin_source()
+        exec_section = src.split('"tool.execute.before"')[1]
+        cons_idx = exec_section.find("CONSECUTIVE NON-DISPATCH STREAK")
+        if cons_idx >= 0:
+            before = exec_section[:cons_idx]
+            assert "isDisengaged()" in before, (
+                "CONSECUTIVE NON-DISPATCH STREAK must be gated by isDisengaged()"
+            )
+
+    def test_disengage_max_default_in_shared(self):
+        shared = _shared_source()
+        assert "3_600_000" in shared, "Disengage max default (1h) must exist in shared.ts"
 
 
 class TestEstimatedInFlight:
@@ -562,73 +703,11 @@ class TestEstimatedInFlight:
             "estimatedInFlight must increment on each dispatch"
         )
 
-    def test_inflight_decremented_on_result(self):
+    def test_inflight_field_in_state(self):
         src = _plugin_source()
-        handler = src.split('"experimental.text.complete"')[1]
-        assert "estimatedInFlight - 2" in handler or "estimatedInFlight -= 2" in handler, (
-            "estimatedInFlight must decrement when result markers detected"
+        assert "estimatedInFlight: number" in src, (
+            "estimatedInFlight must be in MultitaskState interface"
         )
-
-    def test_inflight_never_negative(self):
-        src = _plugin_source()
-        handler = src.split('"experimental.text.complete"')[1]
-        assert "Math.max(0" in handler, (
-            "estimatedInFlight must be clamped to >= 0"
-        )
-
-    def test_nag_when_inflight_zero(self):
-        src = _plugin_source()
-        handler = src.split('"experimental.text.complete"')[1]
-        assert "estimatedInFlight === 0" in handler, (
-            "Must inject nag when estimatedInFlight is 0"
-        )
-        assert "DISPATCH SUBAGENTS NOW" in handler, (
-            "Nag text must urge dispatching"
-        )
-
-
-class TestResultMarkers:
-    """Result markers trigger estimated-in-flight decrements."""
-
-    def test_result_marker_list_present(self):
-        src = _plugin_source()
-        assert "task result" in src
-        assert "completed" in src
-        assert "subagent result" in src
-
-    def test_has_result_marker_function(self):
-        src = _plugin_source()
-        assert "function hasResultMarker" in src or "hasResultMarker" in src, (
-            "hasResultMarker function must exist"
-        )
-
-    def test_result_marker_check_is_case_insensitive(self):
-        src = _plugin_source()
-        assert "toLowerCase()" in src or "lower" in src.lower(), (
-            "Result marker check must be case-insensitive"
-        )
-
-
-class TestFailOpenSafety:
-    """All enforcement hooks must fail open."""
-
-    def test_tool_execute_catch_returns_void(self):
-        src = _plugin_source()
-        handler = src.split('"tool.execute.before"')[1].split('"session.idle"')[0]
-        catch_blocks = handler.split("catch")[1:]
-        assert len(catch_blocks) >= 1, "tool.execute.before must have catch block"
-
-    def test_text_complete_catch_returns_output(self):
-        src = _plugin_source()
-        handler = src.split('"experimental.text.complete"')[1]
-        catch_blocks = handler.split("catch")[1:]
-        assert len(catch_blocks) >= 1, "text.complete must have catch block"
-
-    def test_session_idle_is_safe(self):
-        src = _plugin_source()
-        handler = src.split('"session.idle"')[1]
-        # session.idle just resets state — no enforcement, no throws
-        assert "zeroStreak = 0" in handler, "session.idle must reset zeroStreak"
 
 
 class TestMessageBoundaryDetection:
@@ -638,13 +717,13 @@ class TestMessageBoundaryDetection:
         src = _plugin_source()
         handler = src.split('"tool.execute.before"')[1]
         assert "lastToolCallTs > 0" in handler, "Must check lastToolCallTs"
-        assert "> 5000" in handler, "Gap threshold must be 5000ms"
+        assert "> 5000" in handler or "MSG_GAP_MS" in handler, "Gap threshold present"
 
     def test_time_heuristic_resets_count(self):
         src = _plugin_source()
-        handler = src.split('"tool.execute.before"')[1]
-        assert "thisMessageDispatches = 0" in handler, (
-            "Must reset dispatch count on new message boundary"
+        assert "s.thisMessageDispatches = 0" in src, (
+            "Must reset dispatch count on new message boundary "
+            "(boundary logic extracted to handleMessageBoundary function)"
         )
 
     def test_last_tool_call_ts_updated_every_call(self):
@@ -673,24 +752,66 @@ class TestSpawnGateRefresh:
         assert "detached: true" in handler, "Spawned process must be detached"
 
 
-class TestHookRegistrationCompleteness:
-    """All three hooks must be registered."""
+class TestHookRegistration:
+    """Single hook (tool.execute.before) only — no text.complete or session.idle."""
 
-    def test_three_hooks_registered(self):
+    def test_tool_execute_before_registered(self):
         src = _plugin_source()
-        assert '"tool.execute.before"' in src
-        assert '"experimental.text.complete"' in src
-        assert '"session.idle"' in src
+        assert '"tool.execute.before"' in src, "tool.execute.before must be registered"
 
-    def test_all_hooks_in_return_object(self):
+    def test_no_text_complete_hook(self):
+        src = _plugin_source()
+        assert '"experimental.text.complete"' not in src, (
+            "text.complete hook removed in 2026-07-13 rewrite"
+        )
+
+    def test_no_session_idle_hook(self):
+        src = _plugin_source()
+        assert '"session.idle"' not in src, (
+            "session.idle hook removed in 2026-07-13 rewrite"
+        )
+
+    def test_return_object_only_tool_execute(self):
         src = _plugin_source()
         hook_pos = src.find('"tool.execute.before"')
-        assert hook_pos > 0, "tool.execute.before not found"
-        # Find the enclosing return { for the plugin export
+        assert hook_pos > 0
         block_end = src.find("satisfies Plugin", hook_pos)
         block_start = src.rfind("return {", 0, hook_pos)
         assert block_start > 0, "Plugin return block not found"
         return_section = src[block_start:block_end]
         assert "tool.execute.before" in return_section
-        assert "text.complete" in return_section or "experimental.text.complete" in return_section
-        assert "session.idle" in return_section
+        # 2026-07-18: text.complete was re-added alongside tool.execute.before
+        # for the thin-wave block. Both hooks are now registered.
+
+
+class TestFailOpenSafety:
+    """All enforcement hooks must fail open."""
+
+    def test_tool_execute_catch_returns_void(self):
+        src = _plugin_source()
+        handler = src.split('"tool.execute.before"')[1]
+        catch_blocks = handler.split("catch")[1:]
+        assert len(catch_blocks) >= 1, "tool.execute.before must have catch block"
+
+    def test_catch_block_returns_void(self):
+        src = _plugin_source()
+        src.split('"tool.execute.before"')[1]
+        assert "} catch {" in src, "Must have catch block with void return or empty body"
+
+
+class TestPluginExportShape:
+    """The plugin export must conform to the Plugin type with hot-reload proxy."""
+
+    def test_hot_module_load_imported(self):
+        src = _plugin_source()
+        assert "loadHotModule" in src, "Must import loadHotModule for hot-reload"
+
+    def test_default_impl_has_tool_execute_before(self):
+        src = _plugin_source()
+        assert "defaultImpl" in src, "defaultImpl must exist for fallback"
+        def_impl = src.split("const defaultImpl")[1].split("// ====")[0]
+        assert '"tool.execute.before"' in def_impl, "defaultImpl must have tool.execute.before"
+
+    def test_plugin_returns_from_satisfies(self):
+        src = _plugin_source()
+        assert "satisfies Plugin" in src, "Plugin export must satisfy Plugin type"

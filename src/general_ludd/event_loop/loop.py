@@ -109,6 +109,7 @@ PHASE_ORDER = [
     "self_improve",
     "poll_issue_sources",
     "service_discovery",
+    "reap_expired_sts_tokens",
     "emit_tick_metrics",
 ]
 
@@ -334,6 +335,7 @@ class EventLoop:
         deployment_health_router: Any | None = None,
         memory_repo: Any = None,
         sandbox_executor: Any | None = None,
+        sandbox_config: Any | None = None,
         run_recorder: Any | None = None,
         prompt_variant_selector: Any | None = None,
         checkpointer: TickCheckpointer | None = None,
@@ -473,6 +475,7 @@ class EventLoop:
         self._deployment_health_router: Any = deployment_health_router
         self._memory_repo: Any = memory_repo
         self._sandbox_executor = sandbox_executor
+        self._sandbox_config = sandbox_config
         # Task #48: plan-time technical-debt evaluator (config-gated at the
         # dispatch seam; default OFF). Wired to the model gateway when present;
         # a None gateway leaves the evaluator on its deterministic structural
@@ -4653,6 +4656,29 @@ class EventLoop:
             )
         except Exception as exc:
             logger.warning("Service discovery tick failed: %s", exc, exc_info=True)
+
+    async def _phase_reap_expired_sts_tokens(self) -> None:
+        """Periodically sweep TTL-expired STS tokens via ``TokenReaper``.
+
+        Reads the reaper from ``daemon_state["_sts_reaper"]`` (wired by the
+        daemon's ``_build_sts_reaper`` factory). Gated by
+        ``sts_reap_interval_ticks`` (default 60; <=0 disables). Records the
+        reaped count in tick_metrics for observability. A reaper failure is
+        logged and never aborts the tick — the next interval retries.
+        """
+        if self._daemon_state is None:
+            return
+        reaper = self._daemon_state.get("_sts_reaper")
+        if reaper is None:
+            return
+        interval = int(self.config.get("sts_reap_interval_ticks", 60))
+        if interval <= 0 or self._total_ticks % interval != 0:
+            return
+        try:
+            reaped = await reaper.reap_expired()
+            self._tick_metrics["sts_tokens_reaped"] = reaped
+        except Exception as exc:
+            logger.warning("STS reap phase failed: %s: %s", type(exc).__name__, exc)
 
     async def _phase_emit_tick_metrics(self) -> None:
         logger.info("Tick metrics: %s", self._tick_metrics)

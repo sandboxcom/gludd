@@ -17,6 +17,7 @@ deterministic regardless of the load on the machine running the suite.
 from __future__ import annotations
 
 import importlib.util
+import os
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -290,3 +291,72 @@ def test_run_returns_immediately_on_clean_exit(monkeypatch: pytest.MonkeyPatch) 
     rc = at.run(["tests/unit"], env={}, runner=runner)
     assert rc == 1
     assert n_calls == 1  # no retry on a non-OOM failure
+
+
+# ---- shared-tmp-root isolation (the popen-gwN FileNotFoundError race) -----
+
+
+def test_has_basetemp_detects_both_forms() -> None:
+    assert at.has_basetemp(["tests/unit", "--basetemp=/tmp/x"]) is True
+    assert at.has_basetemp(["tests/unit", "--basetemp", "/tmp/x"]) is True
+    assert at.has_basetemp(["tests/unit", "-q"]) is False
+
+
+def test_unique_basetemp_is_unique_and_namespaced() -> None:
+    a = at.unique_basetemp()
+    b = at.unique_basetemp()
+    assert a != b  # uuid-keyed uniqueness
+    assert "gludd-adaptive-basetemp" in a
+    # A path is returned, not created — pytest creates/wipes the basetemp itself.
+    assert not os.path.exists(a)
+
+
+def test_run_injects_unique_basetemp_when_absent(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A run with no caller basetemp gets a process-unique --basetemp so the
+    shard's workers never share pytest's default pytest-of-<user> tmp root."""
+    monkeypatch.setattr(at, "decide_nproc", lambda env=None: 1)
+    seen: dict[str, list[str]] = {}
+
+    def runner(cmd):
+        seen["cmd"] = list(cmd)
+        return 0, "ok"
+
+    rc = at.run(["tests/unit"], env={}, runner=runner)
+    assert rc == 0
+    injected = [a for a in seen["cmd"] if a.startswith("--basetemp=")]
+    assert len(injected) == 1
+    assert "gludd-adaptive-basetemp" in injected[0]
+
+
+def test_run_respects_caller_basetemp(monkeypatch: pytest.MonkeyPatch) -> None:
+    """run_gate.sh already passes --basetemp; we must NOT add a second one."""
+    monkeypatch.setattr(at, "decide_nproc", lambda env=None: 1)
+    seen: dict[str, list[str]] = {}
+
+    def runner(cmd):
+        seen["cmd"] = list(cmd)
+        return 0, "ok"
+
+    at.run(["tests/unit", "--basetemp=/tmp/gludd-gate-abc123"], env={}, runner=runner)
+    basetemps = [a for a in seen["cmd"] if a.startswith("--basetemp")]
+    assert basetemps == ["--basetemp=/tmp/gludd-gate-abc123"]
+
+
+def test_run_reuses_same_basetemp_across_oom_retries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The injected basetemp is stable across the OOM-halving retries (each retry
+    wipes+recreates the SAME dir) — not a fresh dir per attempt."""
+    monkeypatch.setattr(at, "decide_nproc", lambda env=None: 4)
+    basetemps: list[str] = []
+
+    def runner(cmd):
+        bt = next(a for a in cmd if a.startswith("--basetemp="))
+        basetemps.append(bt)
+        n = int(cmd[cmd.index("-n") + 1])
+        return (137, "worker crashed") if n > 1 else (0, "ok")
+
+    rc = at.run(["tests/unit"], env={}, runner=runner)
+    assert rc == 0
+    assert len(basetemps) == 3  # -n 4, 2, 1
+    assert len(set(basetemps)) == 1  # all identical across retries

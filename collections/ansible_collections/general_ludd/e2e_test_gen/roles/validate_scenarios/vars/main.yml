@@ -1,0 +1,4 @@
+---
+# validate_scenarios role vars — internal, not for override
+validated_artifact_name: "validated_scenarios.json"
+validate_script: "{{ role_path }}/files/validate_scenarios.py"

@@ -171,6 +171,24 @@ class TerraformConfig(BaseModel):
     engine: str = "vllm"
 
 
+class VmSandboxConfig(BaseModel):
+    """VM-level sandbox configuration (Firecracker microVMs, gVisor app kernels).
+
+    Maps to SandboxConfig fields used by the daemon dispatch pipeline.
+    ``image_type`` selects the backend: "firecracker" or "gvisor".
+    ``auto_build`` controls whether the default image is built at daemon startup.
+    """
+
+    enabled: bool = False
+    image_type: str = "firecracker"
+    default_image: str = ""
+    kernel_path: str = ""
+    vsock_port: int = 0
+    vcpu_count: int = 1
+    mem_mib: int = 512
+    auto_build: bool = False
+
+
 class HumanInTheLoopConfig(BaseModel):
     enabled: bool = False
     confidence_threshold: float = 0.7
@@ -288,6 +306,7 @@ class UserConfig(BaseSettings):
     compute_idle_teardown_threshold_ticks: int = 3
     compute_idle_gpu_sm_pct: float = 5.0
     compute_idle_preemption_notice_ticks: int = 1
+    vm_sandbox: VmSandboxConfig = VmSandboxConfig()
     default_spot: bool = True
     slurm_max_resubmits: int = 3
     slurm_preemption_backoff_schedule: list[int] = [30, 60, 120]

@@ -1,0 +1,279 @@
+---
+# linux_kernel role — manage Linux kernel subsystems: modprobe,
+# eBPF, namespaces, cgroups, sysctl tunables.
+# All destructive operations default OFF via defaults/main.yml.
+
+- name: Create artifact directory
+  when: ansible_os_family in ['RedHat', 'Debian', 'Suse', 'Archlinux']
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Run structured audit via python backend
+  when:
+    - ansible_os_family in ['RedHat', 'Debian', 'Suse', 'Archlinux']
+    - run_backend | default(true) | bool
+  block:
+    - name: Copy linux_kernel_audit.py to target
+      ansible.builtin.copy:
+        src: linux_kernel_audit.py
+        dest: "{{ artifact_dir }}/linux_kernel_audit.py"
+        mode: "0755"
+
+    - name: Run audit — collect modules, sysctl, cgroups, namespaces, ebpf as JSON
+      ansible.builtin.command: >
+        python3 {{ artifact_dir }}/linux_kernel_audit.py
+        --output {{ artifact_dir }}/kernel_audit.json
+      register: _backend_result
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write backend stdout/stderr to artifact_dir
+      ansible.builtin.copy:
+        content: |
+          stdout: {{ _backend_result.stdout | default('') }}
+          stderr: {{ _backend_result.stderr | default('') }}
+          rc: {{ _backend_result.rc | default('') }}
+        dest: "{{ artifact_dir }}/backend_output.txt"
+        mode: "0644"
+      when: _backend_result is defined
+
+- name: Gather kernel modules info (read-only audit)
+  when: ansible_os_family in ['RedHat', 'Debian', 'Suse', 'Archlinux']
+  block:
+    - name: Run lsmod
+      ansible.builtin.command: lsmod
+      register: _lsmod
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Run modinfo on key modules
+      ansible.builtin.shell: |
+        for mod in $(lsmod | awk 'NR>1 {print $1}'); do
+          echo "=== modinfo $mod ==="
+          modinfo "$mod" 2>/dev/null || echo "(modinfo unavailable for $mod)"
+          echo ""
+        done
+      register: _modinfo
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write kernel modules info to artifact_dir
+      ansible.builtin.copy:
+        content: |
+          === lsmod ===
+          {{ _lsmod.stdout | default('(no output)') }}
+
+          === modinfo ===
+          {{ _modinfo.stdout | default('(no output)') }}
+        dest: "{{ artifact_dir }}/kernel_modules.txt"
+        mode: "0644"
+
+- name: Gather sysctl tunables (read-only audit)
+  when: ansible_os_family in ['RedHat', 'Debian', 'Suse', 'Archlinux']
+  block:
+    - name: Run sysctl -a
+      ansible.builtin.command: sysctl -a
+      become: true
+      register: _sysctl
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write sysctl to artifact_dir
+      ansible.builtin.copy:
+        content: "{{ _sysctl.stdout | default('') }}"
+        dest: "{{ artifact_dir }}/sysctl.txt"
+        mode: "0644"
+      when: _sysctl is success and _sysctl.stdout | default('', true) | length > 0
+
+- name: Gather cgroup hierarchy (read-only audit)
+  when: ansible_os_family in ['RedHat', 'Debian', 'Suse', 'Archlinux']
+  block:
+    - name: Read /proc/cgroups
+      ansible.builtin.command: cat /proc/cgroups
+      register: _proc_cgroups
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Read init process cgroup
+      ansible.builtin.command: cat /proc/1/cgroup
+      register: _pid1_cgroup
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Run findmnt for cgroup filesystems
+      ansible.builtin.command: findmnt -t cgroup,cgroup2
+      register: _findmnt_cgroup
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write cgroup info to artifact_dir
+      ansible.builtin.copy:
+        content: |
+          === /proc/cgroups ===
+          {{ _proc_cgroups.stdout | default('(no output)') }}
+
+          === /proc/1/cgroup ===
+          {{ _pid1_cgroup.stdout | default('(no output)') }}
+
+          === findmnt -t cgroup,cgroup2 ===
+          {{ _findmnt_cgroup.stdout | default('(no output)') }}
+        dest: "{{ artifact_dir }}/cgroups.txt"
+        mode: "0644"
+
+- name: Gather namespace info (read-only audit)
+  when: ansible_os_family in ['RedHat', 'Debian', 'Suse', 'Archlinux']
+  block:
+    - name: Run lsns --json (if available)
+      ansible.builtin.command: lsns --json
+      register: _lsns
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Read init process namespaces
+      ansible.builtin.shell: ls -la /proc/1/ns/
+      register: _pid1_ns
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: Write namespace info to artifact_dir
+      ansible.builtin.copy:
+        content: |
+          === lsns --json ===
+          {{ _lsns.stdout | default('(lsns not available)') }}
+
+          === /proc/1/ns/ ===
+          {{ _pid1_ns.stdout | default('(no output)') }}
+        dest: "{{ artifact_dir }}/namespaces.txt"
+        mode: "0644"
+
+- name: Manage kernel modules (modprobe)
+  when:
+    - ansible_os_family in ['RedHat', 'Debian', 'Suse', 'Archlinux']
+    - manage_modprobe | bool
+  block:
+    - name: Load kernel modules
+      community.general.modprobe:
+        name: "{{ item.name }}"
+        state: "{{ item.state | default('present') }}"
+        params: "{{ item.params | default(omit) }}"
+      loop: "{{ kernel_modules | default([]) }}"
+      when: kernel_modules | default([]) | length > 0
+      ignore_errors: true
+
+    - name: Set modprobe blacklist entries
+      ansible.builtin.copy:
+        content: |
+          {% for entry in kernel_blacklist | default([]) %}
+          blacklist {{ entry }}
+          {% endfor %}
+        dest: "/etc/modprobe.d/gludd-blacklist.conf"
+        mode: "0644"
+      when: kernel_blacklist | default([]) | length > 0
+
+- name: Manage sysctl tunables
+  when:
+    - ansible_os_family in ['RedHat', 'Debian', 'Suse', 'Archlinux']
+    - manage_sysctl | bool
+  block:
+    - name: Apply sysctl tunables
+      ansible.posix.sysctl:
+        name: "{{ item.key }}"
+        value: "{{ item.value }}"
+        state: present
+        sysctl_file: "/etc/sysctl.d/99-gludd.conf"
+        reload: true
+      loop: "{{ sysctl_tunables | dict2items }}"
+      when: sysctl_tunables | default({}) | length > 0
+      ignore_errors: true
+
+- name: Manage namespaces
+  when:
+    - ansible_os_family in ['RedHat', 'Debian', 'Suse', 'Archlinux']
+    - manage_namespaces | bool
+  block:
+    - name: Document namespace management
+      ansible.builtin.debug:
+        msg: >
+          Namespace management from Ansible is limited to unshare(1) via
+          command module. Use the community.general.unshare module if available,
+          or exec 'unshare' with appropriate flags. For persistent network
+          namespaces, consider 'ip netns add <name>'. No automated namespace
+          operations are performed here; set 'manage_namespaces: true' and
+          supply 'namespace_operations' list var to execute custom commands.
+
+    - name: Execute custom namespace operations
+      ansible.builtin.command: "{{ item }}"
+      loop: "{{ namespace_operations | default([]) }}"
+      when: namespace_operations | default([]) | length > 0
+      changed_when: true
+      ignore_errors: true
+
+- name: Manage eBPF programs
+  when:
+    - ansible_os_family in ['RedHat', 'Debian', 'Suse', 'Archlinux']
+    - manage_ebpf | bool
+  block:
+    - name: Check bpftool availability
+      ansible.builtin.command: which bpftool
+      register: _bpftool_check
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+
+    - name: List loaded eBPF programs
+      ansible.builtin.command: bpftool prog list
+      register: _bpftool_progs
+      changed_when: false
+      ignore_errors: true
+      failed_when: false
+      when: _bpftool_check.rc == 0
+
+    - name: Write eBPF program listing to artifact_dir
+      ansible.builtin.copy:
+        content: |
+          === bpftool prog list ===
+          {{ _bpftool_progs.stdout | default('(bpftool not available)') }}
+        dest: "{{ artifact_dir }}/ebpf_programs.txt"
+        mode: "0644"
+
+    - name: Load eBPF programs
+      ansible.builtin.shell: bpftool prog load "{{ item.path }}" "{{ item.pin_path }}" type "{{ item.type }}"
+      loop: "{{ ebpf_programs | default([]) }}"
+      when:
+        - ebpf_programs | default([]) | length > 0
+        - _bpftool_check.rc == 0
+      ignore_errors: true
+      changed_when: true
+
+- name: Manage cgroups
+  when:
+    - ansible_os_family in ['RedHat', 'Debian', 'Suse', 'Archlinux']
+    - manage_cgroups | bool
+  block:
+    - name: Document cgroup management
+      ansible.builtin.debug:
+        msg: >
+          Cgroup management is typically done via systemd unit properties
+          or cgroupfs mount operations. For cgroup v2, use systemd ControlGroup
+          properties. For cgroup v1, mount cgroup controllers to
+          /sys/fs/cgroup/<controller> and write to the appropriate files.
+          No automated cgroup operations are performed here; set
+          'manage_cgroups: true' and supply 'cgroup_operations' list var.
+
+    - name: Execute custom cgroup operations
+      ansible.builtin.command: "{{ item }}"
+      loop: "{{ cgroup_operations | default([]) }}"
+      when: cgroup_operations | default([]) | length > 0
+      changed_when: true
+      ignore_errors: true

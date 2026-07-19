@@ -1,0 +1,7 @@
+---
+# lookup_governing_body defaults — safe-by-default
+lookup_governing_body_enabled: false
+lookup_governing_body_country: null
+lookup_governing_body_type: null
+lookup_governing_body_list_countries: false
+lookup_governing_body_output_dir: /tmp/gludd-governance-bodies

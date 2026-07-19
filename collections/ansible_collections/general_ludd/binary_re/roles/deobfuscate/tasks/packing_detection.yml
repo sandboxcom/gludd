@@ -1,0 +1,32 @@
+---
+- name: Detect packing signatures
+  ansible.builtin.command:
+    cmd: >-
+      {{ ansible_python_interpreter | default('/usr/bin/env python3') }}
+      {{ role_path }}/files/deobfuscate.py
+      --mode packing
+      --binary {{ binary_path }}
+      --output {{ output_dir }}/packing_detection.json
+  register: _packing_result
+  changed_when: false
+  failed_when: _packing_result.rc not in [0]
+
+- name: Read packing detection artifact
+  ansible.builtin.slurp:
+    src: "{{ output_dir }}/packing_detection.json"
+  register: _packing_artifact_raw
+
+- name: Parse packing detection artifact
+  ansible.builtin.set_fact:
+    packing_artifact: >-
+      {{ _packing_artifact_raw.content | b64decode | from_json
+         if (_packing_artifact_raw is defined and _packing_artifact_raw.content is defined)
+         else {} }}
+
+- name: Report packing detection summary
+  ansible.builtin.debug:
+    msg: >-
+      Packing detection complete:
+      file_type={{ packing_artifact.get('file_type', 'unknown') }},
+      detections={{ packing_artifact.get('detections', []) | length }},
+      packed={{ packing_artifact.get('packed', false) }}

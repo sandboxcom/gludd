@@ -29,6 +29,7 @@
         env_extra:
           MAKEFILES: "/tmp/gludd-test-make-Makefile"
       register: bad_result
+      failed_when: false
 
     - name: Persist results for verify
       ansible.builtin.copy:

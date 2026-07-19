@@ -1,0 +1,23 @@
+---
+# android_diagnose role defaults
+
+daemon_url: "http://localhost:8000"
+psk: ""
+
+artifact_dir: "/tmp/gludd-android-diagnose"
+
+gather_logcat: true
+gather_dumpsys: true
+gather_getprop: true
+gather_pm_list: true
+
+adb_serial: ""
+
+# Python backend settings
+logcat_lines: 200
+dumpsys_services:
+  - meminfo
+  - activity
+  - package
+
+enable_git_push: false

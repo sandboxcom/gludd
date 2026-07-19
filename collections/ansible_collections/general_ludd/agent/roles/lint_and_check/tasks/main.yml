@@ -16,7 +16,7 @@
     cmd: "{{ lint_cmd }}"
     chdir: "{{ project_dir }}"
   register: lint_result
-  failed_when: "fail_on_lint and lint_result.rc != 0"
+  failed_when: fail_on_lint and lint_result.rc != 0
   changed_when: false
 
 - name: Run typecheck command
@@ -24,7 +24,7 @@
     cmd: "{{ typecheck_cmd }}"
     chdir: "{{ project_dir }}"
   register: typecheck_result
-  failed_when: "fail_on_typecheck and typecheck_result.rc != 0"
+  failed_when: fail_on_typecheck and typecheck_result.rc != 0
   changed_when: false
 
 - name: Write quality check artifact

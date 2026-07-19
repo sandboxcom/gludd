@@ -105,7 +105,11 @@ def main(argv: list[str]) -> int:
         return 2
 
     candidate_root = argv[1]
-    workload = json.loads(argv[2])
+    try:
+        workload = json.loads(argv[2])
+    except json.JSONDecodeError:
+        sys.stderr.write(f"invalid workload JSON: {argv[2]!r}\n")
+        return 1
     mem_limit_mb = int(argv[3])
     cpu_seconds = int(argv[4])
     result_path = argv[5]

@@ -1,0 +1,17 @@
+---
+- name: Ensure artifact directory exists
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Run homoglyph_scan standalone script
+  ansible.builtin.script:
+    cmd: "files/homoglyph_scan.py --input '{{ input_text }}' --output '{{ artifact_dir }}/homoglyph_scan.json' {% if input_domain | default('') %}--input-domain '{{ input_domain }}'{% endif %} {% if not check_confusables | default(true) %}--no-confusables{% endif %} {% if not check_invisible | default(true) %}--no-invisible{% endif %} {% if not check_bidi | default(true) %}--no-bidi{% endif %} {% if not check_mixed_script | default(true) %}--no-mixed-script{% endif %}"
+    executable: "{{ ansible_python_interpreter | default('python3') }}"
+  register: homoglyph_result
+  changed_when: false
+
+- name: Print homoglyph scan summary
+  ansible.builtin.debug:
+    msg: "{{ homoglyph_result.stdout_lines }}"

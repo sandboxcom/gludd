@@ -47,7 +47,10 @@ def _resolve_repo() -> str:
     rc, out, _ = _run(["git", "remote", "get-url", "sandboxcom"])
     if rc == 0 and out:
         # git@github.com:owner/repo.git  or  https://github.com/owner/repo.git
-        url = out.rstrip(".git")
+        # NOTE: .rstrip(".git") strips a CHARACTER SET, not a suffix — it would
+        # mangle a repo name ending in any of 'g'/'i'/'t'/'.' (e.g. "sandboxcom/gitit"
+        # -> "sandboxcom/g"). removesuffix() only strips the literal suffix.
+        url = out.removesuffix(".git")
         if "github.com:" in url:
             return url.split("github.com:")[-1]
         if "github.com/" in url:
@@ -68,15 +71,43 @@ def _resolve_sha(sha: str | None) -> str | None:
     return out.strip()
 
 
-def _fetch_runs(repo: str, limit: int = 40) -> list[dict] | None:
+_RUN_LIST_FIELDS = "databaseId,headSha,status,conclusion,workflowName,displayTitle"
+# Fallback window size when the commit-scoped query (below) comes back empty.
+# Generous on purpose: it is only a defense-in-depth second attempt, not the
+# primary lookup path, so a bigger window costs one extra `gh` call, not
+# correctness.
+_FALLBACK_LIMIT = 100
+
+
+def _fetch_runs(repo: str, sha: str, limit: int = 40) -> list[dict] | None:
     """
-    Call `gh run list` and return parsed JSON list, or None on failure.
-    Uses --repo flag so it works from any cwd.
+    Fetch the CI runs for `sha`, or None on a hard gh failure (fail-closed).
+
+    Primary path: `gh run list --commit <sha>` scopes the query SERVER-SIDE to
+    the target commit, so it cannot miss a run that exists but happens to have
+    aged out of an arbitrary "most recent N runs" window. Bug this replaces:
+    the old code fetched the `limit` most recent runs across every workflow on
+    the whole repo and only THEN filtered by headSha in verdict_for() -- with
+    this repo's push cadence (many pushes/workflows), a target SHA's run could
+    easily fall outside even limit=40, producing a false "CI RED: no run found"
+    for a commit that was actually green. That false-RED is still fail-closed
+    in the safety sense (it never lets a bad SHA through), but it can WRONGLY
+    block a legitimate release -- exactly the kind of false report AGENTS.md's
+    "no unquantified status claims" rule exists to prevent.
+
+    Fallback path: if `--commit` yields zero rows (e.g. an older `gh` without
+    the flag treating it as a no-op filter, or a genuine no-run case), fetch a
+    much larger unscoped window and let verdict_for's headSha prefix-match do
+    the filtering -- so a `gh` version quirk in the primary query still can't
+    produce a false RED, while a commit with truly no run still correctly
+    yields an empty list (-> "no run found", CI RED, unchanged fail-closed
+    behavior).
     """
     rc, out, err = _run([
         "gh", "run", "list",
         "--repo", repo,
-        "--json", "databaseId,headSha,status,conclusion,workflowName,displayTitle",
+        "--commit", sha,
+        "--json", _RUN_LIST_FIELDS,
         "--limit", str(limit),
     ])
     if rc != 0:
@@ -84,10 +115,37 @@ def _fetch_runs(repo: str, limit: int = 40) -> list[dict] | None:
         print(f"ERROR: gh run list failed: {msg}", file=sys.stderr)
         return None
     try:
-        return json.loads(out)
+        runs = json.loads(out)
     except json.JSONDecodeError as exc:
         print(f"ERROR: could not parse gh output as JSON: {exc}", file=sys.stderr)
         return None
+
+    if runs:
+        return runs
+
+    # --commit came back empty. Don't trust that alone -- fall back to an
+    # unscoped, larger window before concluding "no run found".
+    rc2, out2, err2 = _run([
+        "gh", "run", "list",
+        "--repo", repo,
+        "--json", _RUN_LIST_FIELDS,
+        "--limit", str(_FALLBACK_LIMIT),
+    ])
+    if rc2 != 0:
+        # The primary --commit query already succeeded (rc == 0, zero rows);
+        # a fallback transport failure is not new information, so surface the
+        # zero-row result rather than a spurious hard error.
+        print(
+            f"WARNING: fallback gh run list failed ({err2 or 'no stderr'}); "
+            "trusting the --commit query's empty result",
+            file=sys.stderr,
+        )
+        return []
+    try:
+        return json.loads(out2)
+    except json.JSONDecodeError as exc:
+        print(f"WARNING: could not parse fallback gh output as JSON: {exc}", file=sys.stderr)
+        return []
 
 
 def verdict_for(runs: list[dict], sha: str) -> tuple[int, str]:
@@ -144,7 +202,7 @@ def main(argv: list[str]) -> int:
 
     repo = _resolve_repo()
 
-    runs = _fetch_runs(repo)
+    runs = _fetch_runs(repo, sha)
     if runs is None:
         # gh not installed / not authed / no network
         print(f"CI RED: could not fetch runs from {repo} — gh unavailable or not authenticated (fail-closed)")

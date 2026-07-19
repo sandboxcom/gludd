@@ -12,7 +12,8 @@
       - networking__dissector_language | default('lua') in ['lua', 'c']
     fail_msg: "networking__dissector_name and networking__dissector_language (lua or c) are required"
 
-- block:
+- name: Generate Wireshark dissector
+  block:
     - name: Set dissector output path
       ansible.builtin.set_fact:
         _dc_output_file: >-

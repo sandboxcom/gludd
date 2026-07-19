@@ -1,0 +1,17 @@
+---
+galaxy_info:
+  role_name: frida_instrument
+  author: Agentic Harness Agent
+  description: >
+    Frida dynamic instrumentation role — function hooking and interception,
+    memory scanning, SSL pinning bypass, and runtime tracing. Report-only.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

@@ -1,0 +1,59 @@
+---
+- name: Converge
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Seed mock scan script
+      ansible.builtin.copy:
+        content: |
+          #!/usr/bin/env python3
+          import argparse, json, sys
+          p = argparse.ArgumentParser()
+          p.add_argument("--text", default="")
+          p.add_argument("--file", default="")
+          p.add_argument("--format", default="json")
+          p.add_argument("--min-severity", default="medium")
+          p.add_argument("--output", default="")
+          p.add_argument("--scan-obfuscation", action="store_true")
+          args = p.parse_args()
+          result = {"scan": {"finding_count": 0, "overall_severity": "none"},
+                    "prompts": [], "findings": []}
+          with open(args.output, "w") as f:
+              json.dump(result, f)
+        dest: /tmp/gludd-pis-mock/scan.py
+        mode: "0755"
+
+    - name: Run prompt_injection_scan role
+      ansible.builtin.include_role:
+        name: general_ludd.binary_re.prompt_injection_scan
+      vars:
+        input_text: "Hello, world"
+        output_dir: "/tmp/gludd-pis-mock"
+        scan_script: "/tmp/gludd-pis-mock/scan.py"
+
+    - name: Assert artifact written
+      ansible.builtin.stat:
+        path: /tmp/gludd-pis-mock/prompt_injection_scan.json
+      register: _stat
+
+    - name: Verify artifact exists
+      ansible.builtin.assert:
+        that: _stat.stat.exists
+        fail_msg: "prompt_injection_scan.json not written"
+
+    - name: Parse artifact
+      ansible.builtin.slurp:
+        src: /tmp/gludd-pis-mock/prompt_injection_scan.json
+      register: _json
+
+    - name: Assert artifact content
+      ansible.builtin.assert:
+        that:
+          - (_json.content | b64decode | from_json).scan.finding_count == 0
+        fail_msg: "Artifact content mismatch"
+
+    - name: Cleanup
+      ansible.builtin.file:
+        path: /tmp/gludd-pis-mock
+        state: absent

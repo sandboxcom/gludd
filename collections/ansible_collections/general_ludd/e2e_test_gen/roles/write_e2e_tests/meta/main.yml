@@ -1,0 +1,20 @@
+---
+galaxy_info:
+  role_name: write_e2e_tests
+  author: Agentic Harness Agent
+  description: >
+    Generates pytest test files from validated E2E scenarios. Emits tests
+    using project fixtures (TestClient, _run_cli, tmp_path) with proper AAA
+    structure (Arrange/Act/Assert) and coverage markers. Writes test files
+    to a specified output directory with import plumbing.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies:
+  - general_ludd.e2e_test_gen.validate_scenarios

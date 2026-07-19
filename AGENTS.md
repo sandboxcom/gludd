@@ -43,6 +43,7 @@ If you are reading this and NOT dispatching subagents, you are violating the con
 12. **Bash = `make <target>` only.** Subagents MUST know that the bash tool can ONLY run `make <target>` commands — no `cd`, `python`, `pip`, `git`, or any other bare command. If a subagent needs a command that lacks a make target, it must either create the target or request one. This constraint must be in every subagent prompt that includes bash.
 13. **Subagents need grep/glob/read tool context.** When dispatching subagents that use grep, explicitly state: `path` = directory to search in, `include` = file pattern (e.g. `*.py`), `pattern` = regex. Subagent confusion about tool parameter names is a dispatch bug — the dispatcher didn't explain the tools.
 14. **Never re-dispatch completed work.** Before dispatching a subagent, check: has this exact task (file + objective) already been completed or dispatched in this session? Subagents repeating their parent's already-completed work is a cost bug. Gludd must have a deduplication check: hash the task spec, store in a set, reject duplicates.
+15. **Subagent slots are precious.** A slot filled with a status-check task is a slot stolen from real work. See "Subagent Task Design — Fix, Don't Check" below for the codified rule.
 
 ### Override precedence
 
@@ -86,6 +87,103 @@ The `enforce-enhancement-ratio.ts` plugin mechanically enforces the ratio rule:
 4. **`make batch-push` pushes the CURRENT branch.** Verify which branch you're on with `make verify-state` before pushing.
 5. **Enforced by:** `.opencode/plugin/enforce-clean-tree.ts` and this section. A push to master that adds commits beyond what development has is a policy violation.
 
+## CRITICAL: Subagent Task Design — Fix, Don't Check
+
+**Every subagent MUST produce a concrete fix or deliverable — never just a status report, audit finding, or problem list.** A subagent that reads files, reports problems, and returns without fixing them is a slot wasted. The 10-agent floor means nothing if half the slots are running read-only status checks.
+
+### The six rules
+
+1. **Every subagent MUST produce a concrete fix/deliverable.** A code change committed on a branch, a test file written, a config applied, a PR merged, a make target created — something that persists after the subagent returns. A bullet-point list of findings is NOT a deliverable. "I read 3 files and found 4 issues" is a FAILED subagent task.
+
+2. **"Check CI" subagents are FORBIDDEN.** The task must be "find AND fix the CI failure." A subagent that runs `make ci-verdict`, reports "CI is red, here are the failures," and returns has produced zero value — it consumed a slot to report information one read-only tool call could have returned. The correct subagent task: "Read the CI failure log, identify the root cause, fix the code, commit the fix on a branch, and return the commit hash."
+
+3. **"Audit lint/typecheck" subagents are FORBIDDEN.** The task must be "fix all lint and typecheck errors." Running `make lint` or `make typecheck` inside a subagent and returning the error list is a wasted slot — the orchestrator can run those in <1 second on the main thread. The correct subagent task: "Run `make lint` and `make typecheck`, fix every error found, run them again to confirm green, and return the commit hash."
+
+4. **"Check dirty tree" / "git status" subagents are FORBIDDEN.** `git status` is a read-only tool call that takes <0.1 seconds. Dispatching a subagent to run it burns a floor slot on an operation the orchestrator can do inline. Use the bash tool directly — never dispatch this.
+
+5. **Every subagent prompt MUST end with: "Do NOT just report problems. Fix them."** This is a mechanical prompt suffix — if the subagent receives a task that could be interpreted as "survey and report," this directive forces it to produce a fix instead. A subagent prompt without this suffix is a dispatch bug.
+
+6. **Status-check subagents are a FALSE FLOOR.** They count toward the 10-agent floor in the enforcement plugins but produce zero value. A wave of 10 subagents where 5 are "check CI," "audit lint," "scan for dead code," "survey test coverage," and "list uncommitted files" is functionally a wave of 5 — the floor is 5, not 10. The orchestrator MUST NOT pad a wave with status-check subagents to satisfy the floor plugin. If only 5 real tasks exist, dispatch 5 AND 5 research/refactor subagents that produce actual deliverables — never 5 check-only placeholders.
+
+### Forbidden subagent task descriptions (dispatch prompt keywords — any match is a dispatch bug)
+
+| Forbidden prompt phrase | Why forbidden | Correct alternative |
+|---|---|---|
+| "check CI status" / "check if CI is green" | Read-only poll; produces no fix | "Find AND fix the CI failure" |
+| "audit lint" / "run lint and report" | Read-only; produces no fix | "Fix all lint errors" |
+| "check for type errors" / "audit typecheck" | Read-only; produces no fix | "Fix all typecheck errors" |
+| "check dirty tree" / "check git status" | <0.1s read-only; never needs a subagent | Run `make git-status` inline |
+| "scan for dead code" / "find unused imports" | Read-only audit; produces no fix | "Remove all dead code found by vulture" |
+| "survey test coverage" / "list uncovered files" | Read-only; produces no fix | "Write missing tests to bring coverage above 85%" |
+| "review and report" / "read and summarize" | Read-only; produces no fix | "Read, identify the issue, AND fix it" |
+| "check for secrets" / "audit for vulnerabilities" | Read-only; produces no fix | "Fix all detected secrets violations" |
+| "poll until" / "wait for" / "watch for" | Holds slot doing nothing | Use a background watcher or check at natural breaks |
+
+### Research subagent exception
+
+Read-only research subagents (e.g., "what does this library do?") that are explicitly dispatched to answer a question ARE valid when the prompt specifies the specific question and a concrete deliverable (a decision recommendation, a comparison table, an architecture proposal). The distinction: a research subagent ANSWERS a question the orchestrator does not know the answer to; a status-check subagent REPORTS information the orchestrator could obtain with one tool call. "Should we use library X or library Y for Z?" is research. "What is the current lint output?" is status-check — never dispatch it.
+
+### Enforcement
+
+- **Prompt** — this section (proactive instruction for every agent and subagent reading AGENTS.md).
+- **Plugin (future)** — a matcher on task/agent/workflow dispatch prompts that checks for forbidden phrases and DENIES the dispatch.
+- **Test** — `tests/unit/test_subagent_fix_not_check.py` (structural pin on this section's existence and the forbidden phrases table).
+
+## CRITICAL: Single-Source Feature Development
+
+**Every feature, Makefile target, config change, or shared-infrastructure edit MUST
+land on exactly ONE branch first, then be merged/cherry-picked to other branches.
+Never create the same feature independently on two branches.**
+
+### The incident (ci-await duplication, 2026-07-14)
+
+A Makefile target (`ci-await`) was independently created on both `master` and
+`development` by two different subagents working in parallel. When the branches
+merged, the Makefile had duplicate targets and merge conflicts. This is the
+classic "parallel independent development of the same thing" anti-pattern.
+
+### Rules (each is machine-enforced)
+
+1. **Features land on development first.** Create the feature on `development`,
+   commit, push, then merge `development→master`. Never create the same feature
+   on `master` and `development` independently.
+2. **Emergency fixes on master get backported.** If a fix is urgently needed on
+   `master`, create it there, then IMMEDIATELY cherry-pick or merge it to
+   `development`. The fix must exist on BOTH branches before any further
+   feature work lands on either.
+3. **Shared-infrastructure files are single-writer.** When a subagent is
+   modifying a Makefile, config file, or any shared infrastructure file
+   (Makefile, `opencode.json`, `AGENTS.md`, `.claude/settings.json`,
+   `config/*.yml`, `.github/workflows/*.yml`), it MUST record which branch
+   it is working on, and the orchestrator MUST NOT dispatch another agent to
+   modify the same file on a different branch.
+4. **No parallel Makefile edits on different branches.** Makefile targets,
+   config keys, and shared infrastructure MUST NOT be created independently
+   on both `master` and `development`. If a target is needed on both branches,
+   create it on one, merge it to the other.
+5. **Duplicate target detection at gate time.** `make check-duplicate-targets`
+   scans the Makefile for targets declared more than once. Duplicate targets
+   are a hard gate failure. This catches the ci-await class of bug before it
+   reaches a merge.
+
+### Enforcement
+
+- **Script:** `scripts/check_duplicate_targets.py` — parses the Makefile,
+  extracts all target declarations (lines matching `^[a-zA-Z_-]+:.*` at
+  column 0), and flags any target that appears more than once. Exit 0 on
+  clean, exit 1 on duplicates found.
+- **Make target:** `make check-duplicate-targets` — runs the script.
+- **Gate:** `make gate` includes `check-duplicate-targets` as a prerequisite.
+- **Prompt:** this section — proactive instruction for every agent and
+  subagent reading AGENTS.md.
+
+### What this prevents
+
+- Two subagents independently adding the same Makefile target on different branches
+- Config drift between master and development from independent edits
+- Merge conflicts in shared infrastructure files from parallel development
+- Duplicate target errors at `make` invocation time
+
 ### Enforcement
 
 - `enforce-floor.ts`: floor=10, ceiling=10, target=10 (updated 2026-07-12)
@@ -112,12 +210,60 @@ The `enforce-enhancement-ratio.ts` plugin mechanically enforces the ratio rule:
 | enforce-make.ts | **BLOCKING** | tool.execute.before + text.complete | GLUDD_MAKE_ENFORCE=0 |
 | enforce-no-wait.ts | **BLOCKING** | tool.execute.before | GLUDD_NO_WAIT_ENFORCE=0 |
 | enforce-deletion-gate.ts | **BLOCKING** | tool.execute.before | GLUDD_DELETION_GATE_ENFORCE=0 |
+| enforce-tdd.ts | **BLOCKING** | tool.execute.before | GLUDD_TDD_ENFORCE=0 |
 
-All 13 enforcement plugins are now BLOCKING and hot-reload capable via `shared.ts`. Zero advisory-only plugins remain.
+All enforcement plugins are BLOCKING and hot-reload capable via `shared.ts`. Zero advisory-only plugins remain.
+
+**enforce-tdd.ts (2026-07-17)** — the real-time TDD guardrail. Denies `edit`/`write` to `src/general_ludd/**/*.py` when no corresponding test file exists yet. Forces the test-first workflow mechanically: you cannot write implementation code until the test file is on disk. The candidate-test-path logic mirrors `scripts/check_tdd_compliance.py` exactly so the editor gate and the commit-time gate agree. Allowlist matches the script (`__init__.py`, `*.pyi`, `protocols.py`, `typing.py`, `type_defs.py`, `_types.py`). Disable via `GLUDD_TDD_ENFORCE=0`. Tests: `tests/unit/test_enforce_tdd_plugin.py` (structural, 18 cases) + `.opencode/plugin/enforce-tdd.test.node.mjs` (runtime behavioral, 16 cases — invokes the actual compiled hook).
 Runtime verification via `make test-hook-runtime` (52 functional tests across 8 plugins).
 Node v26 `--experimental-strip-types` compatibility verified: 0 `require()` calls, 2/2 compat checks PASS.
 
 **Note:** Enforcement plugin changes take effect on opencode restart. During a session where plugin source was edited, behavioral enforcement may lag until restart.
+
+### CRITICAL: Enforcement Plugin Changes Require Restart
+
+**When any enforcement plugin source code is edited, opencode must be restarted for the changes to take effect.** Hot-reload modules are built, but the runtime loads plugins at startup only.
+
+Plugin changes do NOT take effect until opencode is restarted. The hot modules in `/tmp/` are the compiled code, but opencode's plugin loader reads them once at startup. After editing any `.opencode/plugin/*.ts` file, the agent MUST inform the user that a restart is required AND continue working with the existing behavior until then.
+
+After restart, verify enforcement is working by attempting a text-only response — if it goes through, the fix didn't take effect and needs investigation.
+
+### 2026-07-15: enforce-stop.ts Disengage Bypass Fix
+
+**Bug:** `make disengage-enforcement` was bypassing ALL `text.complete` enforcement
+in `enforce-stop.ts`, including the fundamental `hasRealPendingWork()` text-only block.
+The disengage signal (written to `/tmp/gludd-watchdog-disengage`) caused the plugin to
+skip the check that blocks text-only responses when unchecked TASKS.md items, ratchet
+entries, red gate, or unreleased tags exist. Agents could respond with text-only
+summaries while work remained — the exact failure mode the plugin was built to prevent.
+
+**Fix (2026-07-15):**
+- Disengage now only skips **heuristic checks**: `COMPLETION_SMELL` patterns,
+  `COMPLETION_WORDS` detection, and `QA_RESPONSE_PATTERNS` matching.
+- The fundamental `hasRealPendingWork()` text-only block is **NEVER bypassed** by
+  disengage. Any text-only response while pending work exists is always blanked,
+  regardless of disengage state.
+
+**Additional fix — evidence regex narrowed:**
+- `enforce-verified-claims.ts` regex for commit-hash evidence narrowed from
+  `\b[0-9a-f]{7,40}\b` to `\b[0-9a-f]*[a-f][0-9a-f]{6,39}\b`. The old regex
+  matched pure-digit 7+-character strings (CI run numbers, timestamps, build IDs),
+  causing false-positive "evidence present" matches. The new regex requires at
+  least one hex letter (`[a-f]`), ensuring only actual git commit hashes match.
+
+### 2026-07-15: enforce-session-start.ts isTaskFileRead Input Shape Fix
+
+**Bug:** `isTaskFileRead()` received an input object where the `path` field was
+not at the top level but nested inside a `tool_input` object. The function
+extracted `tool_call.path` directly, which was `undefined`, so no file read was
+ever recognized as a task-tracking file read. This caused the session-start
+protocol to block all initial tool calls — including reads of TASKS.md/BUGS.md/
+ratchet.yml/SESSION.md — defeating the protocol's own escape hatch.
+
+**Fix:** `isTaskFileRead()` now checks both `tool_call.path` and
+`tool_call.tool_input?.path` (the nested form), so file reads are correctly
+identified regardless of input shape. The session-start protocol now allows the
+initial parallel reads to proceed before enforcing the dispatch wave requirement.
 
 ### Subagent Enforcement Isolation
 
@@ -148,7 +294,7 @@ OpenCode loads plugins at startup only — there is no hot-reload API. To change
 - `make reload-enforcement` — resets all enforcement state files to pick up env var changes
 - All enforcement plugins re-read shared state files on each hook invocation (not cached at init)
 - State files in `/tmp/gludd-*`: floor-override, tool-streak, watchdog-disengage, enhancement-ratio, task-deadlines, session-start
-- To temporarily disable all enforcement: `make disengage-enforcement` (writes disengage signal)
+- To temporarily disable all enforcement: `make disengage-enforcement` (writes disengage signal). **As of 2026-07-15, disengage only skips heuristic checks (COMPLETION_SMELL, COMPLETION_WORDS, QA patterns) in `enforce-stop.ts` — it NEVER skips the fundamental `hasRealPendingWork()` text-only block.** The prior behavior (disengage bypassing ALL enforcement) allowed agents to send text-only responses while work remained, defeating the core stop-prevention mechanism.
 - To set floor override: `echo 10 > /tmp/gludd-floor-override`
 
 The state-file pattern is the canonical mechanism for runtime enforcement tuning. Plugin source changes still require an opencode restart.
@@ -166,6 +312,27 @@ The state-file pattern is the canonical mechanism for runtime enforcement tuning
 9. **No unseen events — an unobservable operation is a broken operation.** Any operation that runs longer than a few seconds (a gate, a test suite, a build, a poll loop, a backgrounded task, a daemon background job) MUST surface continuous progress: stream its output (`tee`), emit a per-phase marker, or print a periodic heartbeat. Never redirect a long-running operation solely to `/dev/null` or a buffered file with no live signal. If an event happens and no one can see it, it did not happen. Enforced by `tests/unit/test_observability_guardrails.py`; mirrored for agent behavior in [[gludd-observability-invariant]] memory.
 10. **Bash unavailable ⇒ adapt in ≤2 turns.** If `make` commands fail or bash is missing from your tool list, execute the 3-step diagnosis (check tool list, read SESSION.md for known issue, read opencode.json for permissions) IN ONE PARALLEL MESSAGE. Then adapt: use read/edit/write/grep/glob tools directly. Never spend 10+ turns diagnosing a tool-unavailable error — it is either a provider/model limitation (unfixable mid-session) or a permission-ordering bug (one-line fix). SESSION.md line ~9 documents known bash-unavailable sessions. BUGS.md tracks bash-diagnosis-relapse incidents.
     - **When you detect you're grinding inline** (main-thread streak accumulating, floor plugin blocking your edits, enforcement errors on every edit) → run `make disengage-enforcement` before any other action. This writes the emergency disengage signal that all enforcement hooks respect. Then fix the offending plugin code, run `make write-plugin-manifest`, and restart opencode.
+11. **No external file access.** Read/Write/Edit/Glob/Grep MUST stay inside `/Users/shawnwilson/gludd/` or `/tmp/gludd-*`. Any tool call targeting a path outside the workspace prompts the user and blocks work. See "CRITICAL: No External File Access."
+12. **NEVER use `COMMIT_THRESHOLD=1`. Use `make git-commit` or `make ship-commit` for local commits. Push only when CI is idle.** `COMMIT_THRESHOLD=1` bypasses the batch-push threshold and pushes every commit individually, cancelling every prior CI run — zero validation occurs. Since GER-5, `make ship-commit` commits locally by default (`PUSH=0`); to push after commit, use `make ship-commit MSG='...' PUSH=1` or a separate `make batch-push`. The sanctioned push is `make batch-push` (default 5+ commits threshold) with `make ci-verdict-safe` confirming CI idle first. Local commits accumulate via `make git-commit` or `make ship-commit`; the batch push is a single event, not per-commit. See "CRITICAL: Don't Push Every Commit — Batch Locally, Push Once."
+
+## CRITICAL: No External File Access
+
+**Read/Write/Edit/Glob/Grep MUST NOT access paths outside `/Users/shawnwilson/gludd/` or `/tmp/gludd-*`.** External file access prompts the user for permission and blocks work — a blocked tool call stalls the session exactly like a premature stop.
+
+### Rules
+
+1. **Allowed path prefixes (exhaustive):** `/Users/shawnwilson/gludd/` (the workspace) and `/tmp/gludd-*` (session state files). Everything else is out of bounds.
+2. **Applies to ALL file tools:** Read, Write, Edit, Glob (`path` parameter), Grep (`path` parameter). A glob/grep with an external `path` is the same violation as an external read.
+3. **Applies to subagents.** Every dispatched subagent inherits this restriction; subagent prompts that reference external paths are a dispatch bug.
+4. **No exceptions for "just reading."** Reading `~/.config/...`, `/etc/...`, another repo, or any home-directory file outside the workspace prompts the user and blocks work. If external content is genuinely needed, request a make target or ask the user — do not attempt the access.
+5. **If a task appears to require an external path**, the correct responses are: (a) find the equivalent data inside the workspace, (b) add a make target that surfaces it, or (c) report the specific path needed in ≤2 lines and continue other work. Never fire the external tool call and let it block.
+
+### Enforcement
+
+- **Prompt** — this section + Mechanical Contract rule 11 (proactive instruction).
+- **Permission layer** — external paths trigger a user prompt (hard gate at the harness level).
+- **Plugin (future)** — a `tool.execute.before` matcher on read/write/edit/glob/grep paths may deny out-of-workspace targets mechanically.
+
 ## ⛔ PRE-GENERATION CONTRACT (READ BEFORE GENERATING ANY TEXT)
 
 **This section is mechanically injected by the enforce-stop.ts plugin at generation time. It is ALSO present here as a permanent part of the system prompt.**
@@ -217,6 +384,8 @@ The ONLY valid exceptions to step 2: (a) the user's first message is a direct fa
 - **Step 1 → step 2 is ONE turn, not N turns.** After the parallel 6-call backlog read completes, the response message containing the result ingestion MUST also contain the dispatch wave. There is no "process results first, then dispatch" turn — the process-and-dispatch turn is the SAME turn.
 
 A Q&A-style first response ("Sure! Let me look into that.") with no tool calls is a **policy violation** whenever a task backlog exists. Prose-first session starts are forbidden.
+
+**STATUS_SUMMARY_RE detection (2026-07-15):** `enforce-stop.ts` `text.complete` hook now applies `STATUS_SUMMARY_RE` + `looksLikeStatusSummary()` structural detection during the session-start window. A status-summary response before the first dispatch wave is blanked — even if it carries evidence tokens. The only valid response after the backlog reads is a dispatch wave; any summary text is a protocol violation.
 
 ## CRITICAL: Bash Tool Unavailability — 4-Step Diagnosis (MAX 4 TURNS)
 
@@ -274,8 +443,10 @@ Three possible root causes — NEVER default to "provider limitation":
 
 **Enforcement (3-layer guardrail):**
 - **Prompt** — this section (proactive instruction).
-- **Plugin** — `.opencode/plugin/enforce-session-start.ts` injects a `SESSION START PROTOCOL` banner at boot via `experimental.chat.system.transform` AND (via `tool.execute.before`) tracks per-session dispatch count in `/tmp/gludd-session-start.json`. Until `GLUDD_SESSION_START_MIN_DISPATCHES` (default 5) parallel task/agent dispatches have been made, every non-dispatch, non-read tool call gets a loud `console.warn`. Set `GLUDD_SESSION_START_ENFORCE=1` to elevate to a hard deny.
-- **Test** — `tests/unit/test_session_start_protocol.py` pins the plugin shape (system.transform + tool.execute.before + state file + floor constant).
+- **Plugin** — `.opencode/plugin/enforce-session-start.ts` injects a `SESSION START PROTOCOL` banner at boot via `experimental.chat.system.transform` AND (via `tool.execute.before`) tracks per-session dispatch count in `/tmp/gludd-session-start.json`. Until `GLUDD_SESSION_START_MIN_DISPATCHES` (default **10**, hardcoded `EFFECTIVE_MIN = 10`) parallel task/agent dispatches have been made, every non-dispatch, non-read tool call is **hard-denied by default** (`ENFORCE = process.env.GLUDD_SESSION_START_ENFORCE !== "0"`). Set `GLUDD_SESSION_START_ENFORCE=0` to fall back to advisory (directive-only) mode.
+- **Time-based gates** (2026-07-16, new): if 0 dispatches after `GLUDD_SESSION_START_DISPATCH_NOW_SECS` (default **60s**) a `DISPATCH NOW` warning fires; after `GLUDD_SESSION_START_HARD_DENY_SECS` (default **120s**) non-dispatch mutations are hard-denied. Both gates reset on first successful dispatch.
+- **Crash recovery** (2026-07-16, new): `loadState()` detects a stale state file from a prior crashed session via (a) PID mismatch (`storedPid !== process.pid`, only when the recorded PID is a real nonzero PID — test fixtures/hand-written files do not trigger the reset) or (b) state age > `STALE_MS` (300s). On either, the state resets to fresh. `saveState()` writes to a PID-unique temp file then `renameSync`s atomically, preventing partial-read races when multiple Node processes share `/tmp/gludd-session-start.json` (also avoids EXDEV on the macOS `/tmp` → `/private/tmp` symlink). Run `make crash-recovery` to manually reset enforcement state files.
+- **Test** — `tests/unit/test_session_start_protocol.py` pins the plugin shape (system.transform + tool.execute.before + state file + floor constant). `tests/unit/test_enforce_session_start_behavior.py` + `tests/unit/test_enforcement_session_start_plugin.py` pin the time-gate constants (DISPATCH_NOW=60, HARD_DENY=120), atomic-rename requirement, and PID-mismatch crash-recovery path.
 
 ## Completion = Green Gate + TASKS.md Evidence
 
@@ -286,6 +457,8 @@ A task may be called complete ONLY when:
 - `make test-count` shows 0 collection errors
 
 NOTE: `make test-failures` previously masked collection ERRORs by grepping only `^FAILED`. If any gate target output disagrees with `make test`, the FULL `make test` output is the truth, and fixing the gate target is your first task.
+
+**`enforce-stop.ts` text.complete hook NOW blocks ANY text-only response when `hasRealPendingWork()` returns true — regardless of todowrite state.** An empty todowrite is NOT evidence that work is complete. Pending work is defined as: unchecked TASKS.md items, non-empty `config/ratchet.yml`, red gate status, unreleased tags without artifacts, or CI-not-green on the current branch. A text-only response while any of these hold is silently blanked by the plugin.
 
 ## CRITICAL: "Done" Claims Require Observable Verification Evidence
 
@@ -302,7 +475,7 @@ code/workflow" is NOT done — authorship is not verification.
 | Committed | Commit hash from `make git-log` + the gate evidence above |
 | Pushed | `make verify-remote BRANCH=<b> SHA=<sha>` → `VERIFIED <branch>@<sha>` |
 | CI-green | `make ci-verdict BRANCH=<b>` → `conclusion: success` + headSha == branch tip |
-| Shipped / released | `make verify-release-artifact TAG=<t>` PASS + `gh release view` showing isDraft:false, assets ≥ 1, download URL(s) |
+| Shipped / released | `make verify-release-completeness TAG=<t>` PASS + `gh release view` showing isDraft:false + download URL(s). (`verify-release-artifact` is NOT the gate — it only proves "non-draft + ≥1 asset".) |
 
 An unverified "done" is indistinguishable from a false claim — this project's history
 (false alpha.3 ship, 12 confirmed-inert features, the reviewer silently failing, the
@@ -379,6 +552,8 @@ The sections below are the full policy. The 7-rule contract above is the priorit
 4. If you catch yourself writing a completion summary, status report, or "done" message — STOP. Replace it with a tool call.
 
 **This is a HARD block. Text-only responses while work remains are a policy violation.**
+
+**STATUS_SUMMARY_RE enforcement (2026-07-15):** `enforce-stop.ts` now detects status summaries by structural pattern (bolded section headers + status tables/bullets) AND by explicit phrase matching (`"here's the status"`, `"final status"`, `"session N summary"`, `"status report:"`). When detected AND pending work exists, the response is blanked **regardless of embedded evidence** (commit hashes, test counts, CI verdicts). Evidence proves a claim true — it does NOT make stopping-to-summarize acceptable. A response with bolded headers, a status table, and a commit hash is STILL a premature stop.
 
 ## CRITICAL: Session-Start Orchestration Contract
 
@@ -562,6 +737,7 @@ in code — they must be tracked, root-caused, and fixed before moving on.
 
 **This is enforced by:**
 - This AGENTS.md section — proactive instruction to audit on session start
+- `.opencode/plugin/enforce-stop.ts` — `text.complete` hook checks CI verdict (via `make ci-verdict BRANCH=<b>` → `conclusion: success` + headSha == branch tip), release completeness (`make verify-release-completeness TAG=<t>` → PASS), gate status (`.gate-status` PASS), AND TASKS.md (unchecked items) — NOT just todowrite. An empty todowrite with a red gate, CI-not-green, or unreleased tags is still a premature stop.
 - `.opencode/plugin/enforce-make.ts` — `session.idle` hook detects stop patterns (note: `chat.response.transform` surface was replaced by `session.idle` + `text.complete` per Q3.12)
 - `BUGS.md` — persistent bug tracking for process failures
 
@@ -1338,12 +1514,32 @@ Workflow for every change:
 6. Refactor if needed, keeping tests green.
 
 This is enforced by:
+- `.opencode/plugin/enforce-tdd.ts` — **REAL-TIME editor block**: denies `edit`/`write` to `src/general_ludd/**/*.py` when no corresponding test file exists. You literally cannot write implementation code until the test file is on disk. See "Real-Time TDD Enforcement" below.
 - `.opencode/plugin/enforce-make.ts` — prints TDD reminder when you edit files under `src/`
+- `scripts/check_tdd_compliance.py` — commit-time backstop (blocks commits with untested source)
 - This AGENTS.md section — proactive instruction
 - The guardrail-pattern skill — reusable pattern reference
 
 Do not skip steps. Do not write implementation and then retroactively add tests.
 Do not mark work complete unless a test proves the behavior exists.
+
+### Real-Time TDD Enforcement (2026-07-17)
+
+**The TDD policy is now mechanically enforced at EDIT time, not just commit time.** The `enforce-tdd.ts` plugin blocks the editor itself — you cannot write to `src/general_ludd/foo.py` until `tests/unit/test_general_ludd_foo.py` (or `tests/unit/test_foo.py`) already exists on disk.
+
+**Why this was added:** deepseek repeatedly wrote implementation code in `src/` with no corresponding test, then either (a) got blocked at commit time after wasting tokens, or (b) bypassed the commit check entirely. The commit-time check (`scripts/check_tdd_compliance.py`) is too late — by then the damage is done. The real-time plugin makes the failure structurally impossible: the edit is denied before it lands.
+
+**Workflow the plugin forces (mechanically):**
+1. Write `tests/unit/test_<module>.py` — **ALLOWED** (it's a test file, passes through)
+2. Run it, confirm it fails (TDD red phase)
+3. Write/edit `src/general_ludd/<module>.py` — **ALLOWED** (the test file now exists)
+4. Run the test, confirm it passes (TDD green phase)
+
+Skip step 1 → step 3 is **DENIED** with a message naming the expected test file path.
+
+**Scope:** only `src/general_ludd/**/*.py` is gated. Files under `tests/`, `docs/`, `scripts/`, `config/`, and non-`.py` files pass through freely. The allowlist (`__init__.py`, `*.pyi`, `protocols.py`, `typing.py`, `type_defs.py`, `_types.py`) matches `scripts/check_tdd_compliance.py` exactly — the editor gate and the commit-time gate agree on what needs a test.
+
+**Bypass:** `GLUDD_TDD_ENFORCE=0` disables the editor gate (use only for legitimate refactors of untested legacy code where writing tests first is genuinely blocked). The commit-time check remains as a backstop.
 
 ### TDD Compliance Guardrail (2026-07-12)
 
@@ -1698,6 +1894,7 @@ Run `make help` for the full categorized list (~100 targets). Key targets below.
 - `make clean-tmp` - Clean /tmp/gludd-* files
 
 ### Recovery / Other
+- `make crash-recovery` - Reset enforcement state files (`/tmp/gludd-session-start.json` et al.) after a crashed session leaves stale state (PID mismatch / age-gated)
 - `make backup-opencode` - Snapshot .opencode/ -> .opencode.orig/ (run before long sessions)
 - `make check-opencode-backup` - Warn if .opencode.orig/ is stale (>24h older than .opencode/)
 - `make verify-opencode-backup` - Verify backup is current (file listing + shared.ts export parity)
@@ -1994,8 +2191,25 @@ against HEAD. It queries GitHub Actions via `gh run list` and is fail-closed:
 
 ## CRITICAL: A Release is an Artifact, Not a Tag (codified)
 
+> **⚠ 2026-07-14 CORRECTION — read this before the rest of the section.**
+> The gate named throughout the text below (`make verify-release-artifact`) is
+> **NOT the release gate**. It only proves "non-draft + at least one asset", so a
+> release carrying one binary and no SBOM, no checksums, and no Linux build passes
+> it. **`make verify-release-completeness TAG=<tag>` is the real gate** — it checks
+> 12 artifact categories, the prerelease-flag-vs-tag shape, version-stamped asset
+> names, and zero-size assets, and CI runs it as a blocking step on tag builds.
+> Wherever this section says `verify-release-artifact`, read
+> `verify-release-completeness`. Related: **`make release-create` cannot publish a
+> public release** — it is a CI-green-gated, **draft-only** single-binary fallback;
+> `make release-cut TAG=… MSG='…'` is the only sanctioned publish path. Full
+> procedure: **`docs/RELEASE_RUNBOOK.md`**.
+>
+> This correction exists because `verify-release-artifact` passing is exactly how
+> v0.1.0-beta.1 was declared shipped with 1 of 12 required assets.
+
 **A version is NOT done until its Build-and-Release CI run is GREEN and
-`make verify-release-artifact TAG=<tag>` exits 0 (published assets confirmed).**
+`make verify-release-completeness TAG=<tag>` exits 0 (all required published assets
+confirmed).**
 
 This was codified after neither `v0.1.0-alpha.2` nor `v0.1.0-alpha.3` ever
 produced a downloadable artifact: the gate was red on both releases, so the
@@ -2051,6 +2265,105 @@ the machine-enforceable correction.
   If `release-cut` timed out on its poll, run `verify-release-artifact` manually
   after CI finishes.
 
+## CRITICAL: 10-Agent Dispatch Floor (HARD ENFORCEMENT)
+
+**Every dispatch wave MUST contain EXACTLY 10 task/agent/workflow dispatches when
+pending work exists.** This is not a guideline, not a suggestion, not an
+aspirational target — it is a **mechanically enforced hard floor.** Any response
+with <10 dispatches while `TASKS.md` has unchecked items or `config/ratchet.yml`
+has entries is a **policy violation** that the plugin will deny.
+
+### Why exactly 10
+
+A dispatch wave with fewer than 10 subagents leaves compute capacity idle. The
+COST-EFFICIENCY DIRECTIVE caps concurrent subagents at exactly 10 — the ceiling
+is also the floor. Running at 7 or 5 when 10 is permitted is leaving tokens on
+the table. Every subagent slot that goes unfilled is a slot that should be doing
+a code audit, writing a test, improving a docstring, adding a guardrail — any
+productive unit of work.
+
+### Enforcement (machine)
+
+**`enforce-multitask.ts`** mechanically blocks non-dispatch tools (Edit/Write/Bash)
+when:
+- The **prior message** had >0 but <10 dispatches (FLOOR BREACH)
+- The **current message** has 0 dispatches and pending work exists (INSUFFICIENT DISPATCHES)
+- **MAX_ZERO_STREAK** (2) consecutive responses had 0 dispatches (ZERO-DISPATCH STREAK)
+
+The plugin's `tool.execute.before` hook fires on every tool call. A dispatch wave
+resets the counters. A non-dispatch tool call with an uncleared breach is denied
+with a message naming the exact count and floor.
+
+```text
+MULTITASKING FLOOR BREACH: only 7 dispatch(es) in prior message.
+Codified floor: 10. This is NOT advisory.
+REQUIRED: ≥10 parallel task/agent/workflow dispatches in ONE message.
+```
+
+**UNDER-FLOOR HARD BLOCK (2026-07-15):** The block now fires IMMEDIATELY when fewer than 10 dispatches have been made in the current message — it does NOT wait for a message boundary. Every non-dispatch tool call (including read/glob/grep) is blocked until >=10 dispatches have been made in the session. Previously the block fired on the NEXT message after a thin wave; now it fires within the same wave, closing the "dispatch 1, then grind reads" bypass. When pending work exists, the ONLY valid next action is a >=10-dispatch wave.
+
+### Subagent quality requirements
+
+**Every dispatched subagent MUST produce a deliverable.** Subagent slots are
+finite — a slot filled with a bogus task is a slot stolen from real work.
+
+- **Every subagent MUST be given enough context to do real work.** Full file
+  reads, multi-step tasks — not single grep/check operations that return
+  immediately. A subagent that reports back in 30 seconds with "found nothing"
+  did no work.
+- **Subagents that only do read/grep/return-status are wasted slots.** Use the
+  read/grep/glob tools directly for single searches. Subagents exist for
+  synthesis and production — reading files, reasoning about them, and producing
+  a concrete output (a code change, a test file, a documented analysis).
+- **Each subagent task should be sized for 2–5 minutes of meaningful work.**
+  Shorter = wasteful overhead. Longer = deadline risk.
+- **"Research" subagents are NOT placeholders.** A research subagent that
+  "greps for a pattern" is filler. A research subagent that "reads 3 files,
+  cross-references their callers, and proposes a refactoring plan" does real work.
+
+### COST-EFFICIENCY DIRECTIVE interaction
+
+The COST-EFFICIENCY DIRECTIVE sets the ceiling at 10. This section sets the
+floor at 10. Together they define the sole legal dispatch wave size:
+
+| Wave size | Status | Why |
+|---|---|---|
+| 10 | **REQUIRED** | Ceiling == floor == 10. The only valid wave size when work exists. |
+| 1–9 | **DENIED** | Below floor. Plugin blocks. |
+| 0 | **DENIED** | Zero-dispatch streak builds; blocked at MAX_ZERO_STREAK=2. |
+| 11+ | **DENIED** | Above ceiling (COST-EFFICIENCY DIRECTIVE). Plugin blocks. |
+
+The COST-EFFICIENCY DIRECTIVE's other rules (terse prompts, serialized research,
+coding subagents ≤2 parallel) remain in force and are NOT overridden by this
+section.
+
+### Override
+
+| Mechanism | Effect |
+|---|---|
+| `GLUDD_MIN_DISPATCHES` env var | Override the floor (default `10`, min `2`). Set to `2` for focused single-file work. |
+| `GLUDD_MULTITASK_FLOOR_ENFORCE=0` | Disable ALL multitask enforcement entirely. |
+| `make disengage-enforcement` | Temporary emergency bypass for the current session. Expires after `MAX_DISENGAGE_MS`. |
+
+**`GLUDD_MIN_DISPATCHES` may never be set below 2.** A floor of 1 or 0
+functionally disables the multitask enforcement and is equivalent to
+`GLUDD_MULTITASK_FLOOR_ENFORCE=0` — use that instead.
+
+### "No work to dispatch"
+
+If there is genuinely no work to dispatch, then there is no pending work in
+`TASKS.md` and no entries in `config/ratchet.yml` — and the plugin's
+`hasPendingWork()` gate will not fire. The floor only applies when work exists.
+When all work is done, the plugin is silent.
+
+### Enforcement layers
+
+1. **Plugin** — `.opencode/plugin/enforce-multitask.ts` (MIN_DISPATCHES=10,
+   MIN_DISPATCHES_PER_WAVE=10, MAX_DISPATCHES=10).
+2. **Prompt** — this section.
+3. **Test** — `tests/unit/test_multitask_plugin.py`
+   `TestTenAgentFloorHardEnforcement`, `tests/unit/test_multitask_min_dispatch.py`.
+
 ## CRITICAL: Minimum 10 Subagents at All Times
 
 **You MUST maintain a MINIMUM of 10 concurrent subagent threads doing useful work at all times.** Never let the active count drop below 10 while work remains.
@@ -2076,6 +2389,27 @@ The `scripts/agent_liveness.py` probe (Python-side live counting) informs the sh
 **This is NOT optional.** Running with fewer than 10 subagents is a bug. The user will interrupt and ask why the floor isn't maintained. The enforce-floor.ts plugin will inject floor-breach directives if the streak-based heuristic detects the collapse.
 
 **See also:** the *Steady-state dispatch (the 10-agent floor)* subsection under Pipeline Orchestration Model below for the concrete behavioral rules (fast result processing, no long foreground ops, next-wave-ready, uniform-duration tasks, research as filler) that make maintaining this floor possible in practice.
+
+## CRITICAL: Anti-Grinding Enforcement
+
+**The `enforce-floor.ts` plugin maintains a consecutive non-dispatch counter that blocks ALL non-dispatch tools (including read/grep/glob) after 5 calls within a 30-second sliding window.** This closes the "rapid-grinding bypass" where the agent could make 20+ inline calls in under 5 seconds without ever dispatching a subagent — functionally violating the 10-agent floor while technically satisfying message-shape rules.
+
+### How it works
+
+1. **Every non-dispatch tool call** (read, glob, grep, edit, write, bash) increments a consecutive-non-dispatch counter.
+2. **The counter is time-bounded** — it resets if no non-dispatch calls occur within a 30-second window.
+3. **At counter = 5**, ALL non-dispatch tool calls are blocked with a `GRINDING BLOCKED` message.
+4. **The ONLY way to unblock:** dispatch subagents (task/agent/workflow), which resets the counter to 0.
+
+### Rationale
+
+The prior enforcement relied on message-shape rules (≥2 dispatches per message) and streak-based blocking (after 2 zero-dispatch messages). Both were bypassable: the agent could send response after response with 1 dispatch + N reads, or send rapid-fire read-only messages with zero dispatches, each resetting the message-level counters but never actually dispatching meaningful work. The per-call counter with a time window makes this structurally impossible.
+
+### Enforcement
+
+- **Plugin:** `.opencode/plugin/enforce-floor.ts` — `tool.execute.before` hook, consecutive-non-dispatch counter, 5-call / 30s threshold, blocks all non-dispatch tools at threshold.
+- **Prompt:** this section.
+- **Disable:** `GLUDD_FLOOR_ENFORCE=0` disables the floor plugin entirely (including this check).
 
 ## Pipeline Orchestration Model
 
@@ -2169,6 +2503,30 @@ shared tree" failure mode. Tests:
 `tests/unit/test_agent_worktree_targets.py`. Make targets: `agent-worktree`,
 `agent-merge`, `agent-cleanup`, `agent-worktree-list`.
 
+#### ⚠️ KNOWN GAP: git locking is broken inside worktrees (read before running a wide worktree wave)
+
+**Verified 2026-07-14**, `src/general_ludd/git_automation/locking.py:120-131`
++ `:267-280`. The cross-process lock-file locator (`_git_dir()`) checks
+`os.path.isdir(repo/.git)` to find where to place the flock. **Inside a git
+worktree `.git` is a FILE, not a directory**, so the check fails, `_git_dir()`
+returns `None`, and `git_repo_lock` silently falls back to an in-process
+`threading.RLock`. Because every `make agent-worktree`-spawned subagent is its
+own OS **process**, that fallback gives **zero cross-process serialization**.
+Right now, nothing stops two worktree-agent processes from interleaving writes
+if they both run mutating git operations against this repo at the same time.
+
+**What this does NOT affect:** read-only git ops, and the routine case above
+(each agent committing inside its own worktree/branch) — that stays low-risk.
+**What this DOES affect:** running `make agent-merge` / `agent-merge-dev` /
+`git-tag-push` / `git-push-sandboxcom` from more than one place concurrently.
+Those already MUST be serialized through the orchestrator on the main checkout
+per this section — the caveat is that this is currently discipline only, with
+**no mechanical lock backing it** while the worktree bug is open. Do not
+dispatch two subagents in the same wave that both merge/tag/push against this
+repo. Fix: `git rev-parse --git-common-dir` (specced, not yet built — see
+`docs/design/NEXT_RELEASE_BETA2_SPEC.md`). Full writeup:
+`docs/MULTITASKING_POLICY.md`.
+
 ### Subagent dispatch reliability rules
 
 Subagents fail when they try to run long operations. To maximize success rate:
@@ -2202,7 +2560,7 @@ Subagents fail when they try to run long operations. To maximize success rate:
 **Pattern for each wave:**
 1. Get 10 subagent results
 2. Write ZERO analysis text
-3. Immediately dispatch 10 new subagents — one does `make ship-commit`, nine do work
+3. Immediately dispatch 10 new subagents — one does `make ship-commit` (local commit only; push separately with `make batch-push`), nine do work
 4. Repeat
 
 #### Background-gate workflow (canonical way to run a long gate)
@@ -2250,7 +2608,7 @@ The goal is a **continuous, pipelined** stream of subagent batches — not a saw
 3. **Always have the next wave ready.** Before the current batch returns, know what the next 10 tasks will be. The moment results arrive, dispatch — don't think, don't plan, dispatch.
 4. **Prefer uniform-duration tasks.** If all 10 tasks take ~2 min, they finish together and you refill immediately. If some take 30s and others 5min, you're at 3-4 agents for minutes waiting for the slow ones.
 5. **Read-only research tasks are the filler.** When you don't have 10 edit tasks, fill the remaining slots with research/audit/review tasks. They're reliable and always productive.
-6. **Dispatch commit+push AS a subagent.** One of the 10 tasks runs `make ship-commit MSG='...'`. This keeps 9 productive tasks running while the commit happens in parallel.
+6. **Dispatch commit AS a subagent.** One of the 10 tasks runs `make ship-commit MSG='...'` (local commit only; `PUSH=0` is the default since GER-5). Push separately with `make batch-push` when the batch threshold is met. This keeps 9 productive tasks running while the commit happens in parallel.
 7. **Max 3 file reads between results and dispatch.** After subagent results arrive, the agent gets at most 3 read/grep/glob calls before the next tool call MUST be a dispatch. File inspection between waves is a dispatching bug — reads during the result-processing window drain the subagent pool and reduce the refill wave size. Enforced mechanically by `enforce-floor.ts` (`POST_RESULT_READ_LIMIT = 3`; the 4th read in the post-result grace window is denied).
 
 ### Message-shape mechanical rule (HARD ENFORCEMENT)
@@ -2334,6 +2692,8 @@ The CI-poll anti-pattern above is now blocked by a **machine-enforced cooldown**
 | `FORCE=1` set | 0 | Skip cooldown check; record + run ci-verdict (release-cut only) |
 
 **Pinned by:** `tests/unit/test_ci_check_cooldown.py` (7 tests covering cooldown refusal, post-cooldown allowance, FORCE bypass, deploy timestamp recording, COOLDOWN-ACTIVE status output, state round-trip, and check_count increment).
+
+**CI-COOLDOWN ≠ PENDING (cooldown masking).** When `ci-verdict-safe` returns exit 3, CI state is UNKNOWN, not PENDING. The cooldown message (`CI-COOLDOWN: NmMs remaining`) means the check was REFUSED — it says nothing about the actual CI run, which may already be GREEN or RED. Never report CI as PENDING based on a cooldown block. Use `FORCE=1` to check actual state if the cooldown is >5 min old.
 
 **Plugin layer (dispatch-time block):** `.opencode/plugin/enforce-no-wait.ts` exports a `CI_POLL_DISPATCH_PATTERNS` list and a matcher that DENIES Task/agent/workflow dispatches whose prompt contains anti-pattern phrases ("poll CI until terminal", "wait for CI green", "loop on make ci-verdict", "every 60 seconds ... up to N iterations", "until conclusion success"). This blocks the dispatch intent at the source, complementing the runtime cooldown on the `make` side. Fail-open on any error.
 

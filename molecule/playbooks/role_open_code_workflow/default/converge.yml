@@ -5,10 +5,12 @@
   gather_facts: false
   vars:
     mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8842', true) }}"
+    project_dir: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
   tasks:
     - name: Invoke open_code_workflow
       ansible.builtin.include_role:
         name: general_ludd.agent.open_code_workflow
       vars:
         oc_action: "gate_check"
+        repo_path: "{{ project_dir }}"
         artifact_dir: "/tmp/gludd-open-code-workflow-{{ mock_port }}"

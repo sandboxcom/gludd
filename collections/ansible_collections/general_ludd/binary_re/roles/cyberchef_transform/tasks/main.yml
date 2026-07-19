@@ -1,0 +1,50 @@
+---
+- name: Validate input parameters
+  ansible.builtin.fail:
+    msg: "input_data and recipe must both be provided"
+  when:
+    - (input_data | default('')) == '' or (recipe | default('')) == ''
+
+- name: Create output directory
+  ansible.builtin.file:
+    path: "{{ output_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Build transform arguments
+  ansible.builtin.set_fact:
+    _transform_args: >-
+      --input="{{ input_data }}"
+      --recipe={{ recipe }}
+      --output={{ output_dir }}/cyberchef_transform.json
+      {% if recipe_key | length > 0 %}--key="{{ recipe_key }}"{% endif %}
+      {% if enable_api | bool %}--enable-api --api-url={{ cyberchef_url }}{% endif %}
+
+- name: Run CyberChef transform
+  ansible.builtin.command:
+    cmd: >-
+      {{ ansible_python_interpreter | default('/usr/bin/env python3') }}
+      {{ transform_script }}
+      {{ _transform_args }}
+  register: _transform_result
+  changed_when: false
+  failed_when: _transform_result.rc not in [0]
+
+- name: Read transform artifact
+  ansible.builtin.slurp:
+    src: "{{ output_dir }}/cyberchef_transform.json"
+  register: _artifact_raw
+
+- name: Parse transform artifact
+  ansible.builtin.set_fact:
+    transform_artifact: >-
+      {{ _artifact_raw.content | b64decode | from_json
+         if (_artifact_raw is defined and _artifact_raw.content is defined)
+         else {} }}
+
+- name: Report transform summary
+  ansible.builtin.debug:
+    msg: >-
+      Transform {{ recipe }} complete:
+      backend={{ transform_artifact.get('backend', 'unknown') }},
+      output_length={{ transform_artifact.get('output_length', 0) }}

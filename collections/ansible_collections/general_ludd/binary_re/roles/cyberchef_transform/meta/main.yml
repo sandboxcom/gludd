@@ -1,0 +1,17 @@
+---
+galaxy_info:
+  role_name: cyberchef_transform
+  author: Agentic Harness Agent
+  description: >
+    CyberChef API transformation role — recipe execution for encoding,
+    decoding, encryption, compression, and custom pipelines. Report-only.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

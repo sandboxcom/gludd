@@ -1,0 +1,58 @@
+---
+# antenna_design role — design + simulate antennas via analytical equations
+
+- name: Validate parameters
+  ansible.builtin.assert:
+    that:
+      - antenna_design_type in ["dipole", "yagi", "loop", "patch", "discone"]
+      - antenna_design_freq_hz | int > 0
+      - antenna_design_polarization in ["vertical", "horizontal"]
+    fail_msg: >
+      antenna_design_type must be dipole / yagi / loop / patch / discone;
+      freq_hz must be > 0; polarization must be vertical / horizontal
+
+- name: Design antenna via Python calculator
+  ansible.builtin.command: >
+    {{ ansible_python_interpreter }}
+    {{ role_path }}/files/antenna_design.py
+    --type {{ antenna_design_type }}
+    --freq {{ antenna_design_freq_hz }}
+    --polarization {{ antenna_design_polarization }}
+    --impedance {{ antenna_design_impedance_ohms }}
+    --material {{ antenna_design_material }}
+    --output-dir {{ antenna_design_output_dir }}
+  register: _antenna_result
+  changed_when: false
+  when:
+    - antenna_design_enabled | bool
+
+- name: Parse antenna design result
+  ansible.builtin.set_fact:
+    antenna_design_result: "{{ _antenna_result.stdout | from_json }}"
+  when:
+    - antenna_design_enabled | bool
+    - _antenna_result.stdout is defined
+    - _antenna_result.stdout | length > 0
+
+- name: Write JSON output
+  ansible.builtin.copy:
+    content: "{{ antenna_design_result | to_nice_json }}"
+    dest: "{{ antenna_design_output_dir }}/antenna_design.json"
+    mode: "0644"
+  when:
+    - antenna_design_enabled | bool
+    - antenna_design_result is defined
+
+- name: Register antenna design verdict
+  ansible.builtin.set_fact:
+    antenna_design_verdict:
+      role: antenna_design
+      type: "{{ antenna_design_type }}"
+      freq_mhz: "{{ (antenna_design_freq_hz | int / 1_000_000.0) | round(4) }}"
+      wavelength_m: "{{ antenna_design_result.wavelength_m if antenna_design_result is defined and antenna_design_result.wavelength_m is defined else 'N/A' }}"
+      element_length_m: "{{ antenna_design_result.element_length_m if antenna_design_result is defined and antenna_design_result.element_length_m is defined else 'N/A' }}"
+      gain_dbi: "{{ antenna_design_result.gain_dbi if antenna_design_result is defined and antenna_design_result.gain_dbi is defined else 'N/A' }}"
+      impedance_ohms: "{{ antenna_design_result.impedance_ohms if antenna_design_result is defined and antenna_design_result.impedance_ohms is defined else 'N/A' }}"
+      polarization: "{{ antenna_design_polarization }}"
+      output_dir: "{{ antenna_design_output_dir }}"
+  when: antenna_design_enabled | bool

@@ -1,0 +1,55 @@
+---
+# info_classification_check role — expose the info_classification.py module_util.
+
+- name: Validate info_classification_check parameters
+  ansible.builtin.assert:
+    that:
+      - info_classification_check_enabled | bool
+      - info_classification_check_scheme in ['government', 'data']
+    fail_msg: >
+      info_classification_check requires scheme in [government, data].
+
+- name: Ensure output directory exists
+  ansible.builtin.file:
+    path: "{{ info_classification_check_output_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Copy info_classification.py module_util to target
+  ansible.builtin.copy:
+    src: "{{ _info_classification_module }}"
+    dest: "{{ info_classification_check_output_dir }}/info_classification.py"
+    mode: "0755"
+
+- name: Run info_classification module_util
+  ansible.builtin.command: >
+    {{ ansible_python_interpreter | default('python3') }}
+    {{ info_classification_check_output_dir }}/info_classification.py
+    --scheme {{ info_classification_check_scheme }}
+    {% if info_classification_check_level is defined and info_classification_check_level | length > 0 %}--level {{ info_classification_check_level }}{% endif %}
+    {% if info_classification_check_list_schemes | bool %}--list-schemes{% endif %}
+  register: _ic_result
+  changed_when: false
+  failed_when: false
+
+- name: Parse info_classification result
+  ansible.builtin.set_fact:
+    info_classification_check_result: "{{ (_ic_result.stdout | from_json) if _ic_result.stdout | default('') | length > 0 else {} }}"
+  when: _ic_result.stdout | default('') | length > 0
+
+- name: Write JSON output
+  ansible.builtin.copy:
+    content: "{{ info_classification_check_result | to_nice_json }}"
+    dest: "{{ info_classification_check_output_dir }}/info_classification_check.json"
+    mode: "0644"
+  when: info_classification_check_result is defined
+
+- name: Register info_classification_check verdict
+  ansible.builtin.set_fact:
+    info_classification_check_verdict:
+      role: info_classification_check
+      scheme: "{{ info_classification_check_scheme }}"
+      module_util: info_classification.py
+      found: "{{ info_classification_check_result.found | default(false) }}"
+      level: "{{ info_classification_check_result.level | default('scheme overview') }}"
+      output: "{{ info_classification_check_output_dir }}/info_classification_check.json"

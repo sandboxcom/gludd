@@ -1,0 +1,16 @@
+---
+galaxy_info:
+  role_name: linux_kernel
+  author: Agentic Harness Agent
+  description: >
+    Manage Linux kernel subsystems: kernel module loading (modprobe),
+    eBPF program attachment, network/pid/mount namespaces, cgroup
+    resource limits, and sysctl kernel tunables.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+dependencies: []

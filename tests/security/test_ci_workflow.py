@@ -313,13 +313,23 @@ class TestReleaseJobGating:
             "release cleanup step must target ${{ github.ref_name }}"
         )
 
-    def test_release_job_verifies_assets_after_publish(self) -> None:
-        """The release job must verify the published release has assets (>= 4).
+    def test_release_job_verifies_completeness_after_publish(self) -> None:
+        """The release job must run the blocking completeness verifier after
+        publishing.
 
-        This catches the alpha.2/alpha.3 failure mode where a tag was pushed and
-        a release record existed, but zero assets were attached (CI skipped the
-        release job or it errored mid-upload). A post-release verification step
-        makes that failure loud instead of silent.
+        This catches the alpha.2/alpha.3/beta.1 failure mode where a tag was
+        pushed and a release record existed, but the assets were missing or
+        incomplete (CI skipped the release job, errored mid-upload, or — as
+        with v0.1.0-beta.1 — no completeness check ran in CI at all). The old
+        inline `assets | length >= N` check only counted asset *names*, so 6
+        .sha256 sidecars and zero binaries would have passed it; it also drifted
+        out of sync with the real completeness rules. That check was replaced
+        by a blocking call to scripts/verify_release_completeness.py — the same
+        script used locally — which checks every artifact category (platform
+        binaries, packages, checksums, SBOM, licenses), the asset-count floor,
+        the prerelease flag vs tag shape, version-stamped names, and zero-size
+        assets. A post-release step makes any of those failures loud instead of
+        silent.
         """
         wf = _load_workflow()
         release_steps = wf["jobs"]["release"].get("steps", [])
@@ -333,22 +343,29 @@ class TestReleaseJobGating:
         post_release_steps = release_steps[gh_release_idx + 1:]
         assert post_release_steps, (
             "release job must have at least one step after action-gh-release "
-            "(the post-release asset verification step)"
+            "(the post-release completeness verification step)"
         )
         post_run_text = " ".join(
             s.get("run", "") for s in post_release_steps if isinstance(s, dict)
         )
-        assert "gh release view" in post_run_text, (
-            "post-release step must use 'gh release view' to inspect the published release"
+        assert "verify_release_completeness.py" in post_run_text, (
+            "post-release step must invoke scripts/verify_release_completeness.py "
+            "to check the published release for completeness"
         )
-        assert "assets" in post_run_text, (
-            "post-release step must inspect the release assets list"
-        )
-        # Must enforce a minimum asset count (>= 4: linux, macos, windows, termux
-        # at minimum — usually plus SBOM, LICENSE, THIRD_PARTY_LICENSES).
-        assert re.search(r"ASSET_COUNT|-lt\s+\d+|\.assets\s*\|\s*length", post_run_text), (
-            "post-release step must assert a minimum asset count (>= 4)"
-        )
+        # The verifier must actually gate the job: no post-release step may be
+        # marked continue-on-error, or a failing completeness check would be
+        # silently swallowed (exactly the beta.1 failure mode this replaced).
+        verify_steps = [
+            s for s in post_release_steps
+            if isinstance(s, dict) and "verify_release_completeness.py" in s.get("run", "")
+        ]
+        assert verify_steps, "no post-release step found invoking verify_release_completeness.py"
+        for s in verify_steps:
+            assert not s.get("continue-on-error", False), (
+                "the verify_release_completeness.py step must be blocking "
+                "(continue-on-error must not be set), or asset-completeness "
+                "failures would be silently swallowed"
+            )
 
 
     def test_release_job_generates_sha256sums_aggregate(self) -> None:

@@ -1,0 +1,17 @@
+---
+# validate_scenarios role defaults
+
+scenarios_artifact: ""
+artifact_dir: "/tmp/gludd-e2e-test-gen"
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# ResearcherAgent overrides
+research_categories:
+  - general
+  - it
+research_time_range: "year"
+max_search_results: 10
+confidence_threshold: 0.4
+
+enable_git_push: false

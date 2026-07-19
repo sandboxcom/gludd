@@ -39,6 +39,10 @@ import time
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import TYPE_CHECKING, Protocol
+
+if TYPE_CHECKING:
+    pass
 
 from pydantic import BaseModel, Field
 
@@ -47,6 +51,21 @@ from general_ludd.agents.context import ContextMessage
 logger = logging.getLogger(__name__)
 
 SCHEMA_VERSION = 2
+
+
+class TokenCreds(BaseModel):
+    """Return type for :meth:`TokenReviver.revive`."""
+
+    role_id: str
+    secret_id: str
+
+
+class TokenReviver(Protocol):
+    """Protocol for STS token renewal providers."""
+
+    async def revive(self, task_id: str) -> TokenCreds:
+        ...
+
 
 # Characters permitted in a snapshot filename stem.  Anything else (``/``,
 # ``..``, control chars) is collapsed to ``_`` so a hostile task_id such as
@@ -446,6 +465,11 @@ class ParkedEnv:
     :class:`HibernationHandle` alive — the caller is free to drop its own
     reference to the context.  On block exit the env is rehydrated and exposed
     via :attr:`snapshot`.
+
+    When *token_reviver* is provided, ``_resume()`` calls
+    ``token_reviver.revive()`` after rehydration and stores the fresh STS
+    credentials in ``snapshot.scratch`` (keys ``sts_role_id`` and
+    ``sts_secret_id``) for injection into the revived agent.
     """
 
     def __init__(
@@ -453,6 +477,7 @@ class ParkedEnv:
         store: HibernationStore,
         original: AgentEnvironmentSnapshot,
         handle: HibernationHandle | None,
+        token_reviver: TokenReviver | None = None,
     ) -> None:
         self._store = store
         # When dehydrated we deliberately drop the strong reference to the
@@ -461,6 +486,7 @@ class ParkedEnv:
             None if handle is not None else original
         )
         self._handle = handle
+        self._token_reviver = token_reviver
         self.snapshot: AgentEnvironmentSnapshot | None = None
 
     @property
@@ -477,10 +503,25 @@ class ParkedEnv:
             return
         try:
             self.snapshot = await self._store.hydrate_async(self._handle)
+            if self._token_reviver is not None and self.snapshot is not None:
+                await self._revive_token(self.snapshot)
         finally:
             # Always remove the on-disk snapshot, even if hydrate failed (e.g.
             # IntegrityError) — a parked file must never leak on the floor.
             await self._store.discard_async(self._handle)
+
+    async def _revive_token(self, snapshot: AgentEnvironmentSnapshot) -> None:
+        """Mint a fresh STS secret_id and store it in ``snapshot.scratch``."""
+        if self._token_reviver is None:
+            return
+        try:
+            creds = await self._token_reviver.revive(snapshot.task_id)
+            snapshot.scratch["sts_role_id"] = creds.role_id
+            snapshot.scratch["sts_secret_id"] = creds.secret_id
+        except Exception:
+            logger.exception(
+                "Failed to revive STS token for agent=%s", snapshot.task_id
+            )
 
 
 class HibernationController:
@@ -490,6 +531,10 @@ class HibernationController:
     recursion stack (so it will stay dormant for a while) and heavy enough (so
     the reclaimed RAM justifies the disk round-trip).  Shallow or near-empty
     envs are left resident — dehydrating them would cost more than it saves.
+
+    When *token_reviver* is provided, the controller calls
+    ``token_reviver.revive()`` on every rehydration to mint a fresh STS
+    secret_id for the revived agent (Phase P3).
     """
 
     def __init__(
@@ -499,12 +544,14 @@ class HibernationController:
         min_depth: int = 3,
         min_context_messages: int = 8,
         clock: Callable[[], float] | None = None,
+        token_reviver: TokenReviver | None = None,
     ) -> None:
         self._store = store
         self._min_depth = min_depth
         self._min_context_messages = min_context_messages
         self._clock: Callable[[], float] = clock if clock is not None else time.monotonic
         self._paused_projects: set[str] = set()
+        self._token_reviver = token_reviver
 
     def pause_project(self, project_id: str) -> None:
         """Mark a project as paused so its dispatch is gated."""
@@ -547,7 +594,8 @@ class HibernationController:
         handle: HibernationHandle | None = None
         if self.should_dehydrate(snap):
             handle = await self._store.dehydrate_async(snap)
-        parked = ParkedEnv(self._store, snap, handle)
+        parked = ParkedEnv(self._store, snap, handle,
+                           token_reviver=self._token_reviver)
         if handle is not None:
             # Release THIS generator frame's last strong reference to the heavy
             # snapshot (ParkedEnv already dropped its own).  Without this ``del``

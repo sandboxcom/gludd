@@ -136,6 +136,7 @@ def scan_tasks_dir(
 # -- Streak-reset watchdog ----------------------------------------------------
 
 STREAK_FILE = "/tmp/gludd-mainthread-streak.json"
+MULTITASK_STATE_FILE = "/tmp/gludd-multitask-state.json"
 WATCHDOG_ACTIVITY_FILE = "/tmp/gludd-watchdog-last-activity.json"
 TODOWRITE_STATE = os.environ.get("GLUDD_TODOWRITE_STATE", "/tmp/gludd-todowrite-state.json")
 RESET_LOG = "/tmp/gludd-auto-reset.log"
@@ -2352,6 +2353,59 @@ def _check_force_dispatch() -> bool:
         return False
 
 
+def _read_multitask_state() -> dict:
+    try:
+        p = Path(MULTITASK_STATE_FILE)
+        if not p.exists():
+            return {}
+        return json.loads(p.read_text())
+    except Exception:
+        return {}
+
+
+def _check_under_floor_dispatch() -> None:
+    state = _read_multitask_state()
+    if not state:
+        return
+
+    dispatch_count = int(state.get("thisMessageDispatches", 0))
+    zero_streak = int(state.get("zeroStreak", 0))
+    estimated_in_flight = int(state.get("estimatedInFlight", 0))
+
+    if dispatch_count >= 10:
+        if zero_streak > 0:
+            _log(f"DISPATCH OK: {dispatch_count} dispatches this wave, {estimated_in_flight} estimated in flight — floor satisfied")
+        return
+
+    if not _pending_work_exists():
+        return
+
+    pipeline_dry = estimated_in_flight <= 2
+
+    if dispatch_count > 0 and dispatch_count < 10:
+        _log(
+            f"UNDER-FLOOR DETECTED: only {dispatch_count} dispatches this wave "
+            f"(floor=10, zero_streak={zero_streak}, in_flight={estimated_in_flight})"
+        )
+        directive = (
+            f"[{_now()}] UNDER-FLOOR DETECTED: only {dispatch_count} dispatch(es) in current wave.\n"
+            f"Floor is 10. pending work exists. Dispatch {10 - dispatch_count} more subagents NOW.\n"
+            f"zero_streak={zero_streak}, estimated_in_flight={estimated_in_flight}\n"
+        )
+        Path(PURE_IDLE_DIRECTIVE).write_text(directive)
+    elif pipeline_dry and zero_streak > 0:
+        _log(
+            f"UNDER-FLOOR DETECTED: pipeline dry — zero dispatch streak={zero_streak}, "
+            f"only {estimated_in_flight} estimated in flight (floor=10)"
+        )
+        directive = (
+            f"[{_now()}] UNDER-FLOOR DETECTED: zero dispatch streak={zero_streak}.\n"
+            f"Estimated in flight: {estimated_in_flight}. Floor is 10. pending work exists.\n"
+            f"DISPATCH A FULL WAVE OF 10 SUBAGENTS NOW.\n"
+        )
+        Path(PURE_IDLE_DIRECTIVE).write_text(directive)
+
+
 def check_and_reset() -> dict:
     global _POLL_CYCLE_COUNT
     result = {
@@ -2721,6 +2775,29 @@ def check_and_reset() -> dict:
     if ci_true_stall:
         _log(f"CI TRUE STALL: pending >{CI_TRUE_STALL_MINUTES}min with no pushes for {CI_TRUE_STALL_NO_PUSH_MINUTES}min. CI may be broken.")
 
+    # ── Under-floor dispatch detection ────────────────────────────────────
+    _check_under_floor_dispatch()
+
+    # ── New: CI red after tag push detection ─────────────────────────────
+    ci_red_after_tag = _check_ci_red_after_tag_push()
+    if ci_red_after_tag:
+        result["ci_red_after_tag"] = ci_red_after_tag
+
+    # ── New: Release completeness verification ───────────────────────────
+    release_status = _check_release_completeness()
+    if release_status:
+        result["release_incomplete"] = release_status
+
+    # ── New: Secrets committed detection ────────────────────────────────
+    secrets_violation = _check_secrets_committed()
+    if secrets_violation:
+        result["secrets_violation"] = secrets_violation
+
+    # ── New: Stale release detection ────────────────────────────────────
+    stale_release = _check_stale_release()
+    if stale_release:
+        result["stale_release"] = stale_release
+
     # ── Item 13: Write unified orchestrator state ────────────────────────
     agent_active = mtime_age is not None and mtime_age < PURE_IDLE_SECS
     _write_orchestrator_state(
@@ -2737,6 +2814,348 @@ def check_and_reset() -> dict:
     _auto_reengage_enforcement(mtime_age)
 
     return result
+
+
+# -- New detection checks: CI red after tag, release completeness, secrets, stale releases --
+
+RELEASE_CHECK_COOLDOWN_SECS = 600
+SECRETS_SCAN_COOLDOWN_SECS = 300
+STALE_RELEASE_MINUTES = 30
+
+RELEASE_COMPLETENESS_FILE = "/tmp/gludd-release-completeness.json"
+SECRETS_VIOLATION_FILE = "/tmp/gludd-secrets-violation.json"
+STALE_RELEASE_FILE = "/tmp/gludd-stale-release.json"
+
+
+def _get_tags() -> list[str]:
+    """Return all annotated/lightweight tags in the repo, newest first."""
+    try:
+        result = subprocess.run(
+            ["git", "tag", "--sort=-creatordate"],
+            capture_output=True, text=True, timeout=10,
+            cwd=str(_WORKSPACE),
+        )
+        if result.returncode != 0:
+            return []
+        return [t.strip() for t in result.stdout.strip().split("\n") if t.strip()]
+    except Exception:
+        return []
+
+
+def _get_tags_with_commits() -> list[tuple[str, str]]:
+    """Return list of (tag, commit_hash) for all tags, newest first."""
+    try:
+        result = subprocess.run(
+            ["git", "for-each-ref", "--sort=-creatordate",
+             "--format=%(refname:short) %(objectname)", "refs/tags"],
+            capture_output=True, text=True, timeout=10,
+            cwd=str(_WORKSPACE),
+        )
+        if result.returncode != 0:
+            return []
+        pairs: list[tuple[str, str]] = []
+        for line in result.stdout.strip().split("\n"):
+            if not line.strip():
+                continue
+            parts = line.split(None, 1)
+            if len(parts) == 2:
+                pairs.append((parts[0], parts[1]))
+        return pairs
+    except Exception:
+        return []
+
+
+def _gh_release_exists(tag: str) -> tuple[bool, dict]:
+    """Check if a GitHub Release exists for the given tag.
+
+    Returns (exists, release_data). release_data contains keys:
+      - isDraft, isPrerelease, assetCount, publishedAt
+    """
+    try:
+        result = subprocess.run(
+            ["gh", "release", "view", tag, "--json", "isDraft,isPrerelease,assets,publishedAt,url"],
+            capture_output=True, text=True, timeout=15,
+        )
+        if result.returncode != 0:
+            return False, {}
+        data = json.loads(result.stdout)
+        asset_count = len(data.get("assets", []))
+        return True, {
+            "isDraft": data.get("isDraft", True),
+            "isPrerelease": data.get("isPrerelease", False),
+            "assetCount": asset_count,
+            "publishedAt": data.get("publishedAt", ""),
+            "url": data.get("url", ""),
+        }
+    except subprocess.TimeoutExpired:
+        return False, {"_error": "timeout"}
+    except Exception as e:
+        return False, {"_error": str(e)}
+
+
+def _check_ci_red_after_tag_push() -> dict | None:
+    """Detect when a tag push exists but CI is red (release blocked).
+
+    If a recent tag has a CI run that is FAILURE, the release pipeline is
+    blocked. Returns a findings dict or None.
+    """
+    if not _should_run_check("ci_red_after_tag", cooldown_secs=CI_CHECK_INTERVAL):
+        return None
+    try:
+        tags = _get_tags_with_commits()
+        if not tags:
+            _mark_check_run("ci_red_after_tag")
+            return None
+
+        latest_tag, tag_sha = tags[0]
+
+        result = subprocess.run(
+            ["gh", "run", "list", f"--commit={tag_sha}", "--json", "status,conclusion,createdAt,databaseId",
+             "--jq", ".[0]"],
+            capture_output=True, text=True, timeout=15,
+        )
+        _mark_check_run("ci_red_after_tag")
+
+        if not result.stdout.strip():
+            return None
+
+        data = json.loads(result.stdout)
+        if not isinstance(data, dict):
+            return None
+
+        conclusion = data.get("conclusion", "")
+        status = data.get("status", "")
+
+        if conclusion == "failure" or status == "completed" and conclusion != "success":
+            _log(f"CI RED AFTER TAG PUSH: tag={latest_tag} sha={tag_sha[:8]} conclusion={conclusion}")
+            return {
+                "ci_red_after_tag": True,
+                "tag": latest_tag,
+                "sha": tag_sha,
+                "conclusion": conclusion,
+                "status": status,
+                "run_id": data.get("databaseId"),
+            }
+
+    except subprocess.TimeoutExpired:
+        _mark_check_run("ci_red_after_tag")
+    except Exception as e:
+        _log(f"_check_ci_red_after_tag_push error: {e}")
+        _mark_check_run("ci_red_after_tag")
+
+    return None
+
+
+def _check_release_completeness() -> dict | None:
+    """Verify that the latest tag has a complete GitHub Release with expected artifacts.
+
+    Writes to /tmp/gludd-release-completeness.json for enforce-stop.ts consumption.
+    Returns a findings dict or None.
+    """
+    if not _should_run_check("release_completeness", cooldown_secs=RELEASE_CHECK_COOLDOWN_SECS):
+        return None
+
+    try:
+        tags = _get_tags()
+        if not tags:
+            _mark_check_run("release_completeness")
+            Path(RELEASE_COMPLETENESS_FILE).write_text(json.dumps({
+                "ts": time.time(), "incomplete": False, "reason": "no tags found",
+            }))
+            return None
+
+        latest_tag = tags[0]
+        exists, release_data = _gh_release_exists(latest_tag)
+
+        errors = release_data.get("_error")
+        if errors:
+            _log(f"RELEASE CHECK SKIPPED: gh API error for tag {latest_tag}: {errors}")
+            _mark_check_run("release_completeness")
+            return None
+
+        if not exists:
+            _log(f"RELEASE INCOMPLETE: tag {latest_tag} has no GitHub Release")
+            result_data = {
+                "ts": time.time(),
+                "tag": latest_tag,
+                "incomplete": True,
+                "reason": "no release created",
+                "assetCount": 0,
+            }
+            Path(RELEASE_COMPLETENESS_FILE).write_text(json.dumps(result_data))
+            _mark_check_run("release_completeness")
+            return result_data
+
+        is_draft = release_data.get("isDraft", True)
+        asset_count = release_data.get("assetCount", 0)
+
+        if is_draft:
+            _log(f"RELEASE INCOMPLETE: tag {latest_tag} release is still a draft, {asset_count} assets")
+            result_data = {
+                "ts": time.time(),
+                "tag": latest_tag,
+                "incomplete": True,
+                "reason": "release is draft" if asset_count == 0 else f"draft with {asset_count} assets",
+                "assetCount": asset_count,
+                "isDraft": True,
+            }
+            Path(RELEASE_COMPLETENESS_FILE).write_text(json.dumps(result_data))
+            _mark_check_run("release_completeness")
+            return result_data
+
+        if asset_count == 0:
+            _log(f"RELEASE INCOMPLETE: tag {latest_tag} release has 0 artifacts")
+            result_data = {
+                "ts": time.time(),
+                "tag": latest_tag,
+                "incomplete": True,
+                "reason": "zero artifacts",
+                "assetCount": 0,
+                "isDraft": is_draft,
+            }
+            Path(RELEASE_COMPLETENESS_FILE).write_text(json.dumps(result_data))
+            _mark_check_run("release_completeness")
+            return result_data
+
+        Path(RELEASE_COMPLETENESS_FILE).write_text(json.dumps({
+            "ts": time.time(),
+            "tag": latest_tag,
+            "incomplete": False,
+            "reason": f"ok — {asset_count} assets",
+            "assetCount": asset_count,
+            "isDraft": is_draft,
+        }))
+        _mark_check_run("release_completeness")
+        return None
+
+    except Exception as e:
+        _log(f"_check_release_completeness error: {e}")
+        _mark_check_run("release_completeness")
+        return None
+
+
+def _check_secrets_committed() -> dict | None:
+    """Periodically scan for secrets committed to tracked files.
+
+    Runs `make secrets-scan` which checks against `.secrets.baseline`.
+    Writes findings to /tmp/gludd-secrets-violation.json.
+    """
+    if not _should_run_check("secrets_scan", cooldown_secs=SECRETS_SCAN_COOLDOWN_SECS):
+        return None
+
+    try:
+        result = subprocess.run(
+            ["make", "secrets-scan"],
+            capture_output=True, text=True, timeout=60,
+            cwd=str(_WORKSPACE),
+        )
+        _mark_check_run("secrets_scan")
+
+        output = result.stdout + result.stderr
+
+        if result.returncode != 0:
+            _log(f"SECRETS VIOLATION: secrets-scan exited {result.returncode}")
+            violation_data = {
+                "ts": time.time(),
+                "violation": True,
+                "exit_code": result.returncode,
+                "output_snippet": output[:500],
+            }
+            Path(SECRETS_VIOLATION_FILE).write_text(json.dumps(violation_data))
+            return violation_data
+
+        Path(SECRETS_VIOLATION_FILE).write_text(json.dumps({
+            "ts": time.time(), "violation": False,
+        }))
+        return None
+
+    except subprocess.TimeoutExpired:
+        _mark_check_run("secrets_scan")
+        _log("SECRETS SCAN TIMEOUT: >60s")
+        return {"ts": time.time(), "violation": None, "reason": "timeout"}
+    except Exception as e:
+        _mark_check_run("secrets_scan")
+        _log(f"_check_secrets_committed error: {e}")
+        return None
+
+
+def _check_stale_release() -> dict | None:
+    """Detect tags that exist but have no GitHub Release after a timeout.
+
+    A tag pushed more than STALE_RELEASE_MINUTES ago that still has no
+    release is stale — the CI release pipeline either failed or was never
+    triggered. Writes to /tmp/gludd-stale-release.json.
+    """
+    if not _should_run_check("stale_release", cooldown_secs=RELEASE_CHECK_COOLDOWN_SECS):
+        return None
+
+    try:
+        tag_commits = _get_tags_with_commits()
+        if not tag_commits:
+            _mark_check_run("stale_release")
+            Path(STALE_RELEASE_FILE).write_text(json.dumps({
+                "ts": time.time(), "stale": False,
+            }))
+            return None
+
+        stale_findings: list[dict] = []
+        now = time.time()
+
+        for tag, sha in tag_commits:
+            try:
+                commit_result = subprocess.run(
+                    ["git", "log", "-1", "--format=%ct", sha],
+                    capture_output=True, text=True, timeout=5,
+                    cwd=str(_WORKSPACE),
+                )
+                commit_ts = float(commit_result.stdout.strip() or 0)
+            except Exception:
+                continue
+
+            tag_age_minutes = (now - commit_ts) / 60.0 if commit_ts > 0 else 0
+            if tag_age_minutes < STALE_RELEASE_MINUTES:
+                continue
+
+            exists, release_data = _gh_release_exists(tag)
+            if exists and not release_data.get("_error"):
+                continue
+
+            error = release_data.get("_error", "")
+            if error:
+                _log(f"STALE RELEASE WARN: tag {tag} (age {tag_age_minutes:.0f}m) — gh error: {error}")
+                continue
+
+            _log(f"STALE RELEASE: tag {tag} (age {tag_age_minutes:.0f}m) has no GitHub Release")
+            stale_findings.append({
+                "tag": tag,
+                "sha": sha,
+                "age_minutes": round(tag_age_minutes, 1),
+                "reason": "no release created within timeout",
+            })
+
+            if len(tag) > 0 and commit_ts > 0:
+                break
+
+        if stale_findings:
+            stale_data = {
+                "ts": time.time(),
+                "stale": True,
+                "findings": stale_findings,
+            }
+            Path(STALE_RELEASE_FILE).write_text(json.dumps(stale_data))
+            _mark_check_run("stale_release")
+            return stale_data
+
+        Path(STALE_RELEASE_FILE).write_text(json.dumps({
+            "ts": time.time(), "stale": False,
+        }))
+        _mark_check_run("stale_release")
+        return None
+
+    except Exception as e:
+        _log(f"_check_stale_release error: {e}")
+        _mark_check_run("stale_release")
+        return None
 
 
 # -- CLI ----------------------------------------------------------------------

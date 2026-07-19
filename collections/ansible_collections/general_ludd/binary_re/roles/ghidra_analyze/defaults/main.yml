@@ -1,0 +1,9 @@
+---
+ghidra_path: "/opt/ghidra"
+target_binary: ""
+output_dir: "/tmp/gludd-ghidra-analyze"
+project_dir: "/tmp/gludd-ghidra-proj"
+analysis_mode: "basic"
+enable_headless_analysis: false
+enable_scripted_export: false
+enable_function_signature: false

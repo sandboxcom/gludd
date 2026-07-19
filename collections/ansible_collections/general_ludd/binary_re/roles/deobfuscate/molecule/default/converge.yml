@@ -1,0 +1,38 @@
+---
+- name: Converge
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Run deobfuscate role (all detectors off)
+      ansible.builtin.include_role:
+        name: general_ludd.binary_re.deobfuscate
+      vars:
+        output_dir: "/tmp/gludd-deobfuscate-molecule"
+
+    - name: Assert artifact written
+      ansible.builtin.stat:
+        path: /tmp/gludd-deobfuscate-molecule/deobfuscate.json
+      register: _stat
+
+    - name: Verify artifact exists
+      ansible.builtin.assert:
+        that: _stat.stat.exists
+        fail_msg: "deobfuscate.json not written"
+
+    - name: Parse artifact
+      ansible.builtin.slurp:
+        src: /tmp/gludd-deobfuscate-molecule/deobfuscate.json
+      register: _json
+
+    - name: Assert artifact content
+      ansible.builtin.assert:
+        that:
+          - (_json.content | b64decode | from_json).role == "deobfuscate"
+          - (_json.content | b64decode | from_json).status == "completed"
+        fail_msg: "Artifact content mismatch"
+
+    - name: Cleanup
+      ansible.builtin.file:
+        path: /tmp/gludd-deobfuscate-molecule
+        state: absent

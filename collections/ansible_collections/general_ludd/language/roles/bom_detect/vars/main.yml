@@ -1,0 +1,18 @@
+---
+bom_signatures:
+  UTF-8: "EF BB BF"
+  UTF-16-BE: "FE FF"
+  UTF-16-LE: "FF FE"
+  UTF-32-BE: "00 00 FE FF"
+  UTF-32-LE: "FF FE 00 00"
+  UTF-7: "2B 2F 76"
+  SCSU: "0E FE FF"
+  GB-18030: "84 31 95 33"
+
+bom_required_encodings:
+  - UTF-16
+  - UTF-16BE
+  - UTF-16LE
+
+bom_optional_encodings:
+  - UTF-8

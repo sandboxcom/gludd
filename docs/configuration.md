@@ -1,8 +1,33 @@
 # Configuration Reference
 
+## Config Directory Discovery
+
+The daemon looks for its config directory in exactly this order:
+
+1. `$GLUDD_CONFIG_DIR` (if set)
+2. `~/.config/general-ludd`
+3. `/etc/general-ludd`
+
+**The repo's own `config/` directory is NOT on that path.** Everything under `config/`
+in a source checkout is an *example to copy*, not a file the daemon reads.
+
+> ### ⚠ The silent no-op trap
+>
+> Starting the daemon from a repo checkout **without `GLUDD_CONFIG_DIR` set** means no
+> `model_profiles/` are found. No model profiles load, the model gateway stays `None`,
+> and the dispatcher silently falls back to a **no-op executor**: every dispatched agent
+> returns `status="completed"` with **empty output** and **no warning is logged**, while
+> `/healthz` and `/readyz` still report 200/ready.
+>
+> If agents appear to succeed instantly and produce nothing, this is why. Fix it by
+> setting `GLUDD_CONFIG_DIR="$PWD/config"`, or by copying the config into
+> `~/.config/general-ludd/`. Confirm with `gludd models router-status` — an empty
+> profile list means you are still in the trap.
+
 ## Config File Locations
 
-General Ludd Agent loads configuration from multiple layers, in priority order:
+Within the discovered config directory, General Ludd Agent loads configuration from
+multiple layers, in priority order:
 
 | Priority | Location | Purpose |
 |----------|----------|---------|
@@ -10,7 +35,7 @@ General Ludd Agent loads configuration from multiple layers, in priority order:
 | 2 | `~/.config/general-ludd/user.yml` | Per-user overrides |
 | 3 | `.general-ludd/agent_config.yml` | Per-project agent settings |
 | 4 | `/etc/general-ludd/general-ludd.yml` | System-wide defaults |
-| 5 (lowest) | Built-in defaults | Hardcoded fallbacks |
+| 5 (lowest) | Built-in defaults | Hardcoded fallbacks (**not** the repo's `config/` tree) |
 
 ## Main Config: general-ludd.yml
 
@@ -99,8 +124,16 @@ budget:
 
 ## Model Profiles
 
-Model profiles are YAML files in `config/model_profiles/`. Each defines a model
-provider connection. The daemon loads all `*.yml` files in this directory at startup.
+Model profiles are YAML files in the **`model_profiles/` subdirectory of the discovered
+config directory** (see "Config Directory Discovery" above) — i.e.
+`~/.config/general-ludd/model_profiles/`, `/etc/general-ludd/model_profiles/`, or
+`$GLUDD_CONFIG_DIR/model_profiles/`. Each defines a model provider connection; the
+daemon loads all `*.yml` files it finds there at startup.
+
+The repo's `config/model_profiles/` holds **examples to copy** into that directory —
+the daemon does not read it unless you point `GLUDD_CONFIG_DIR` at the repo's `config/`.
+If no profiles are found, the daemon dispatches to a silent no-op executor (see the trap
+above).
 
 **API keys are NEVER stored in profile YAML files.** Each profile has a
 `credential_alias` field that names the secret. The daemon resolves it through:
@@ -219,13 +252,38 @@ agents:
 ZAI_API_KEY=your-key
 ZAI_BASE_URL=https://open.bigmodel.cn/api/paas/v4
 
-# Database
-DATABASE_URL=postgresql://gludd:password@localhost:5432/gludd
+# Database (SQLite only — a non-SQLite URL is refused at startup)
+DATABASE_URL=sqlite+aiosqlite:////var/lib/general-ludd/gludd.db
+
+# Config directory (required when running from a source checkout)
+GLUDD_CONFIG_DIR=/etc/general-ludd
 
 # Optional
 GLUDD_LOG_LEVEL=info
 GLUDD_WORKERS=1
 ```
+
+## Experimental Flags — DO NOT ENABLE
+
+These exist in the code and in config schemas but are **not functional**. They are
+documented here only so operators do not turn them on.
+
+### `GLUDD_WRITER_MODE=subprocess`
+
+**Structurally non-functional — enabling it breaks every write endpoint.** The
+in-process `WriteQueue` has no IPC and cannot reach the writer subprocess; a
+config-shape bug keeps the writer child permanently in a stub branch; and HTTP workers
+are handed a genuinely read-only engine (`PRAGMA query_only=ON`). Writes are rejected
+and the writer does nothing.
+
+**`inline` (the default) is the only working mode.** Do not set this variable.
+
+### `pipeline.enabled` (feature #77)
+
+**EXPERIMENTAL — do not enable.** Its quality gate is hardcoded to `return True` (it
+logs "GREEN — committed" for a validation that never ran), and its anti-clobber merge
+passes the repo's own content as both the merge base and "ours", so it can never detect
+a conflict. It is harmless today only because nothing feeds it.
 
 ## Directory Structure
 
