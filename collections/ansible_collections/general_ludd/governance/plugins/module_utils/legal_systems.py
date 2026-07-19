@@ -686,13 +686,55 @@ def supreme_court(country_code: str) -> str | None:
     return fed.get("supreme_court", None)
 
 
+COUNTRY_LEGAL_SYSTEMS = COURT_HIERARCHIES
+
+
+def lookup_legal_system(country: str) -> dict[str, Any] | None:
+    code = _norm_country(country)
+    data = get_legal_system(code)
+    if data is None:
+        return None
+    result: dict[str, Any] = dict(data)
+    result["found"] = True
+    return result
+
+
+def lookup_rights_charter(charter_name: str) -> dict[str, Any] | None:
+    charters = {
+        "udhr": {"name": "Universal Declaration of Human Rights", "year": 1948, "adopted_by": "UN General Assembly", "binding": False, "articles": 30},
+        "echr": {"name": "European Convention on Human Rights", "year": 1950, "adopted_by": "Council of Europe", "binding": True, "articles": 59},
+        "iccpr": {"name": "International Covenant on Civil and Political Rights", "year": 1966, "adopted_by": "UN General Assembly", "binding": True, "articles": 53},
+        "icescr": {"name": "International Covenant on Economic, Social and Cultural Rights", "year": 1966, "adopted_by": "UN General Assembly", "binding": True, "articles": 31},
+    }
+    q = charter_name.strip().lower()
+    result = charters.get(q)
+    if result is not None:
+        result["found"] = True
+    return result
+
+
+def search_court_system(country: str) -> dict[str, Any] | None:
+    code = _norm_country(country)
+    data = get_court_hierarchy(code)
+    if data is None:
+        return None
+    result: dict[str, Any] = dict(data)
+    result["found"] = True
+    result["country"] = code
+    return result
+
+
 __all__ = [
     "LEGAL_SYSTEM_TYPES",
     "COURT_HIERARCHIES",
+    "COUNTRY_LEGAL_SYSTEMS",
     "APPEAL_PROCESSES",
     "LEGAL_TERMINOLOGY",
     "get_legal_system",
+    "lookup_legal_system",
     "get_court_hierarchy",
+    "lookup_rights_charter",
+    "search_court_system",
     "get_appeal_process",
     "get_term",
     "terms_by_category",

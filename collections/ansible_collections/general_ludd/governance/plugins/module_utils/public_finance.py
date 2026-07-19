@@ -794,17 +794,64 @@ def debt_to_gdp(country_code: str) -> float | None:
     return info["gross_debt_to_gdp_pct"]
 
 
+COUNTRY_BUDGETS = BUDGET_DATA
+
+
+def lookup_budget(country: str) -> dict[str, Any] | None:
+    code = _norm_country(country)
+    data = get_budget_info(code)
+    if data is None:
+        return None
+    result: dict[str, Any] = dict(data)
+    result["found"] = True
+    result["country"] = code
+    return result
+
+
+def lookup_sovereign_debt(country: str) -> dict[str, Any] | None:
+    code = _norm_country(country)
+    data = get_debt_info(code)
+    if data is None:
+        return None
+    result: dict[str, Any] = dict(data)
+    result["found"] = True
+    result["country"] = code
+    return result
+
+
+def lookup_pension_system(country: str) -> dict[str, Any] | None:
+    pensions = {
+        "US": {"country": "US", "name": "Social Security", "type": "pay_as_you_go", "coverage": "universal", "retirement_age": 67, "funding_source": "payroll_tax"},
+        "GB": {"country": "GB", "name": "State Pension", "type": "pay_as_you_go", "coverage": "universal", "retirement_age": 66, "funding_source": "national_insurance"},
+        "DE": {"country": "DE", "name": "Gesetzliche Rentenversicherung", "type": "pay_as_you_go", "coverage": "universal", "retirement_age": 67, "funding_source": "social_security"},
+        "FR": {"country": "FR", "name": "Regime general", "type": "pay_as_you_go", "coverage": "universal", "retirement_age": 64, "funding_source": "social_security"},
+        "JP": {"country": "JP", "name": "Kokumin Nenkin", "type": "pay_as_you_go", "coverage": "universal", "retirement_age": 65, "funding_source": "social_security"},
+        "CA": {"country": "CA", "name": "Canada Pension Plan (CPP)", "type": "pay_as_you_go", "coverage": "universal", "retirement_age": 65, "funding_source": "payroll_tax"},
+        "AU": {"country": "AU", "name": "Age Pension", "type": "means_tested", "coverage": "universal", "retirement_age": 67, "funding_source": "general_revenue"},
+    }
+    code = _norm_country(country)
+    result = pensions.get(code)
+    if result is not None:
+        result = dict(result)
+        result["found"] = True
+    return result
+
+
 __all__ = [
     "BUDGET_TYPES",
     "BUDGET_DATA",
+    "COUNTRY_BUDGETS",
     "PROCUREMENT_METHODS",
     "PROCUREMENT_RULES",
     "DEBT_INSTRUMENTS",
     "DEBT_DATA",
     "SOVEREIGN_WEALTH_FUNDS",
     "get_budget_info",
+    "lookup_budget",
     "get_procurement_rules",
     "get_debt_info",
+    "lookup_sovereign_debt",
+    "lookup_pension_system",
     "get_swf_by_name",
     "get_swfs_by_country",
     "get_swfs_by_type",

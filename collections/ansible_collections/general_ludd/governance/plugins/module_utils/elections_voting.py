@@ -641,3 +641,24 @@ def get_voter_eligibility(country: str) -> dict[str, Any] | None:
 def list_countries_with_elections() -> list[str]:
     """Return the sorted list of ISO-3166-1 alpha-2 codes covered by ELECTION_DATA."""
     return sorted(ELECTION_DATA.keys())
+
+
+COUNTRY_ELECTIONS = ELECTION_DATA
+
+
+def lookup_elections(country: str) -> dict[str, Any] | None:
+    code = _norm_country(country)
+    data = ELECTION_DATA.get(code)
+    if data is None:
+        return None
+    result: dict[str, Any] = dict(data)
+    result["found"] = True
+    result["country"] = code
+    return result
+
+
+def get_voting_method(method_name: str) -> dict[str, Any] | None:
+    q = method_name.strip().lower().replace(" ", "_")
+    if q in ("paper_ballot", "paper"):
+        return {"method": "paper_ballot", "description": "Traditional paper ballot marked by hand and counted manually or by optical scanner.", "voting_machine_support": "optional"}
+    return None

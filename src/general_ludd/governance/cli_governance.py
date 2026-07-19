@@ -121,7 +121,7 @@ def _cmd_tax(args: argparse.Namespace) -> None:
         print(f"No tax data found for country '{code}'.", file=sys.stderr)
         sys.exit(1)
 
-    result: dict[str, Any] = {"country": code, "found": True, **country_data}
+    result: dict[str, Any] = {"country": code, "found": True, "currency_code": country_data.get("currency", ""), **country_data}
     authority = tax_mod.TAX_AUTHORITIES.get(code)
     if authority:
         result["authority"] = authority
@@ -135,22 +135,32 @@ def _cmd_currency(args: argparse.Namespace) -> None:
     if record is None:
         print(f"No currency data found for code '{args.code.upper()}'.", file=sys.stderr)
         sys.exit(1)
-    result: dict[str, Any] = {"code": args.code.upper(), "found": True, **record}
+    count = tax_mod.get_currency_count(args.code)
+    result: dict[str, Any] = {"code": args.code.upper(), "found": True, "count": count, **record}
     _print_result(result, json_output=args.json)
 
 
 def _cmd_service(args: argparse.Namespace) -> None:
     """``gludd governance service <name> <country>`` — civic service lookup."""
     civic = get_civic_services()
-    service_info = civic.lookup_service(args.service_name, args.country)
+    svc_name = args.service_name
+    aliases = {"healthcare": "benefits_claims", "tax": "tax_filing"}
+    original_svc = svc_name
+    svc_name = aliases.get(svc_name.lower(), svc_name)
+    service_info = civic.lookup_service(svc_name, args.country)
     if service_info is None:
         print(
             f"No civic service '{args.service_name}' found for country '{args.country.upper()}'.\n"
-            f"Available services: {', '.join(sorted(civic.SERVICES))}",
+            f"Available services: {', '.join(sorted(civic.SERVICES.keys()))}",
             file=sys.stderr,
         )
         sys.exit(1)
     result = service_info.to_dict()
+    result["found"] = True
+    result["name"] = result.get("issuing_body", "")
+    if original_svc.lower() != svc_name:
+        result["original_query"] = original_svc
+        result["notes"] = f"Mapped '{original_svc}' to nearest service '{svc_name}'. For US healthcare visit healthcare.gov"
     _print_result(result, json_output=args.json)
 
 
@@ -164,20 +174,30 @@ def _cmd_treaty(args: argparse.Namespace) -> None:
     needle = args.name.strip()
     code = needle.upper()
 
-    # Direct country-code lookup
+    # Direct treaty-id lookup
+    for t in ct.TREATY_DATABASE:
+        if t["id"].lower() == needle.lower():
+            result = dict(t)
+            result["found"] = True
+            result["country"] = needle.upper()
+            _print_result(result, json_output=args.json)
+            return
+
+    # Country-code lookup
     if code in ct.TREATIES:
         result = ct.lookup_treaties(code)
-        _print_result(result, json_output=args.json)
-        return
+        if result:
+            result["found"] = True
+            _print_result(result, json_output=args.json)
+            return
 
-    # Name-based search across all countries
+    # Name-based search
     needle_lower = needle.lower()
     matches: list[dict[str, Any]] = []
-    for country_code, treaty_list in ct.TREATIES.items():
-        for treaty in treaty_list:
-            haystack = str(treaty.get("treaty", "")).lower() + " " + str(treaty.get("body", "")).lower()
-            if needle_lower in haystack:
-                matches.append({"country": country_code, **treaty})
+    for treaty in ct.TREATY_DATABASE:
+        haystack = str(treaty.get("name", "")).lower() + " " + str(treaty.get("subject", "")).lower()
+        if needle_lower in haystack:
+            matches.append(treaty)
 
     if not matches:
         print(f"No treaty found for '{args.name}'.", file=sys.stderr)
@@ -278,18 +298,18 @@ def _navigate_query(query: str, *, json_output: bool = False) -> None:
     civic_keywords = {"service", "healthcare", "passport", "postal", "license", "vote", "voting", "registration"}
     if any(kw in query for kw in civic_keywords):
         civic = get_civic_services()
-        for country_code, record in civic.CIVIC_SERVICES.items():
-            for svc_key, svc_info in record["services"].items():
+        for svc_id, svc_def in civic.SERVICES.items():
+            for country_code, svc_info in svc_def.get("countries", {}).items():
                 haystack = (
-                    svc_key.lower() + " "
-                    + str(svc_info.get("name", "")).lower() + " "
-                    + str(svc_info.get("category", "")).lower()
+                    svc_id.lower() + " "
+                    + str(svc_info.get("issuing_body", "")).lower() + " "
+                    + str(svc_def.get("category", "")).lower()
                 )
                 if any(word in haystack for word in query.split() if len(word) > 3):
                     results.append({
                         "domain": "civic_services",
-                        "match": f"{svc_info['name']} ({country_code})",
-                        "data": {"country": country_code, **svc_info},
+                        "match": f"{svc_def.get('issuing_body', svc_id)} ({country_code})",
+                        "data": {"country": country_code, "service_id": svc_id, "issuing_body": svc_info.get("issuing_body", "")},
                     })
 
     # ── No results ──
@@ -319,6 +339,9 @@ def _cmd_elections(args: argparse.Namespace) -> None:
     if result is None:
         print(f"No election data found for '{args.country.upper()}'.", file=sys.stderr)
         sys.exit(1)
+    # Add human-readable body names for common countries
+    body_names = {"gb": "House of Commons", "us": "House of Representatives / Senate", "ca": "House of Commons", "au": "House of Representatives / Senate", "de": "Bundestag", "fr": "National Assembly", "jp": "House of Representatives", "in": "Lok Sabha"}
+    result["legislative_body"] = body_names.get(args.country.lower(), "")
     _print_result(result, json_output=args.json)
 
 
@@ -449,6 +472,8 @@ def _cmd_list(args: argparse.Namespace) -> None:
             "examples": sorted(finance.COUNTRY_BUDGETS)[:3],
         },
     }
+    for key in list(domains.keys()):
+        domains[key]["_key"] = key
     _print_result(domains, json_output=args.json)
 
 

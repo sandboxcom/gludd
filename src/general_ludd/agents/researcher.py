@@ -475,7 +475,7 @@ class ResearcherAgent:
                     f_i.corroborating_sources += 1
                     f_j.corroborating_sources += 1
         for finding in findings:
-            extra = min(0.3, math.log2(finding.corroborating_sources) * 0.1)
+            extra = min(0.3, math.log2(finding.corroborating_sources + 1) * 0.1)
             finding.confidence = min(1.0, round(finding.confidence + extra, 2))
 
     @staticmethod

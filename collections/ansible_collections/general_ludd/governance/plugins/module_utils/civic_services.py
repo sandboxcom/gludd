@@ -1291,10 +1291,14 @@ def get_postage_rate(
     )
 
 
+CIVIC_SERVICES = SERVICES
+
+
 __all__ = [
     "SERVICE_CATEGORIES",
     "REQUIRED_SERVICE_KEYS",
     "SERVICES",
+    "CIVIC_SERVICES",
     "SERVICE_OFFICES",
     "POSTAL_SYSTEMS",
     "ServiceInfo",

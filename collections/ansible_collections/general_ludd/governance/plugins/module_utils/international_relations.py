@@ -824,3 +824,49 @@ def get_visa_waiver_members(program: str) -> list[str] | None:
 def list_visa_waiver_programs() -> list[str]:
     """Return the sorted list of known visa waiver program keys."""
     return sorted(VISA_WAIVER_PROGRAMS.keys())
+
+
+ALLIANCES: dict[str, list[str]] = {
+    code: data.get("alliances", [])
+    for code, data in DIPLOMATIC_RELATIONS.items()
+}
+
+
+def lookup_diplomatic_relations(country: str) -> dict[str, Any] | None:
+    code = _norm_country(country)
+    data = DIPLOMATIC_RELATIONS.get(code)
+    if data is None:
+        return None
+    result: dict[str, Any] = dict(data)
+    result["found"] = True
+    result["country"] = code
+    return result
+
+
+def lookup_sanctions(target_country: str) -> dict[str, Any] | None:
+    info = get_sanctions_info(target_country)
+    if info is None:
+        return None
+    info["found"] = True
+    return info
+
+
+def search_alliance(query: str) -> list[dict[str, Any]]:
+    q = query.strip().lower()
+    results: list[dict[str, Any]] = []
+    for _key, agreement in TRADE_AGREEMENTS.items():
+        if q in agreement["name"].lower():
+            results.append(dict(agreement))
+    if not results:
+        for code, data in DIPLOMATIC_RELATIONS.items():
+            for alliance in data.get("alliances", []):
+                if q in alliance.lower():
+                    entry: dict[str, Any] = {"alliance": alliance, "member": code, "member_name": data["name"]}
+                    if alliance.lower() == "nato":
+                        entry["full_name"] = "North Atlantic Treaty Organization"
+                    elif alliance.lower() == "five eyes":
+                        entry["full_name"] = "Five Eyes Intelligence Alliance"
+                    elif alliance.lower() == "aukus":
+                        entry["full_name"] = "AUKUS Trilateral Security Pact"
+                    results.append(entry)
+    return results

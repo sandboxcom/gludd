@@ -829,3 +829,12 @@ def list_countries() -> list[str]:
 def list_currencies() -> list[str]:
     """Return the sorted list of currency codes covered by CURRENCIES."""
     return sorted(CURRENCIES.keys())
+
+
+TAX_CURRENCY = TAX_DATA
+
+
+def get_currency_count(code: str) -> int:
+    """Return how many TAX_DATA countries use a given currency code."""
+    c = code.strip().upper()
+    return sum(1 for v in TAX_DATA.values() if v.get("currency") == c)

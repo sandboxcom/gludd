@@ -465,13 +465,29 @@ def check_court_jurisdiction(court_id: str, case_type: str) -> bool:
     return case_type in cases
 
 
+TREATIES: dict[str, list[dict[str, Any]]] = {
+    t["id"]: [t] for t in TREATY_DATABASE
+}
+
+
+def lookup_treaties(treaty_id: str) -> dict[str, Any] | None:
+    for t in TREATY_DATABASE:
+        if t["id"].lower() == treaty_id.lower():
+            result: dict[str, Any] = dict(t)
+            result["country"] = treaty_id.upper()
+            return result
+    return None
+
+
 __all__ = [
     "ConflictType",
     "CONFLICT_TYPES",
     "ACTIVE_CONFLICTS",
     "TREATY_DATABASE",
+    "TREATIES",
     "INTERNATIONAL_COURTS",
     "lookup_conflict",
+    "lookup_treaties",
     "get_treaty",
     "get_treaty_parties",
     "get_treaty_obligations",
