@@ -2524,6 +2524,10 @@ git-merge:
 	@if [ -z "$(MSG)" ]; then echo "Usage: make git-merge MSG='branch-name'"; exit 1; fi
 	@git merge --no-ff "$(MSG)"
 
+git-cherry-pick:
+	@if [ -z "$(SHA)" ]; then echo "Usage: make git-cherry-pick SHA=<commit>"; exit 1; fi
+	@git cherry-pick "$(SHA)"
+
 # Automated git bisect for regression finding.
 # Usage: make git-bisect GOOD=<sha> BAD=<sha> TEST='make test TESTFILE=tests/unit/test_foo.py' [TIMEOUT=60]
 # AGENTS.md constraint: TEST must be fast (<60s ideal; >300s warns loudly).
