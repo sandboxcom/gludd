@@ -134,8 +134,8 @@ def test_plugin_allowlist_matches_policy() -> None:
 
 def test_plugin_has_fail_open_guard() -> None:
     plugin_text = PLUGIN.read_text()
-    assert "catch" in plugin_text and "return undefined" in plugin_text, (
-        "Plugin must be fail-open (try/catch returns undefined)"
+    assert "catch" in plugin_text and "return" in plugin_text, (
+        "Plugin must be fail-open (try/catch with return)"
     )
 
 

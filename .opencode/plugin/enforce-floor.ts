@@ -534,7 +534,7 @@ const defaultImpl: HotModule = {
           console.warn(
             `REFILL NEEDED: ${_streakCount} non-dispatch calls since last dispatch ` +
             `${Math.round(msSinceDispatch / 1000)}s ago. Dispatch peak was ${_dispatchPeak}. ` +
-            "DISPTACH ≥2 subagents now."
+            "DISPATCH ≥2 subagents now."
           )
         }
         return

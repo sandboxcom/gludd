@@ -1217,7 +1217,7 @@ const defaultImpl: HotModule = {
 // ============================================================================
 // PROXY PLUGIN (hot-reload aware)
 // ============================================================================
-export default (({ }) => {
+export default (async () => {
   spawnGateRefresh()
   try {
     fs.appendFileSync(
@@ -1254,4 +1254,4 @@ export default (({ }) => {
       return fn ? await fn(input, output) : undefined
     },
   }
-}) satisfies Plugin
+})
