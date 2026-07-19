@@ -80,28 +80,30 @@ def _cmd_borders(args: argparse.Namespace) -> None:
 def _cmd_body(args: argparse.Namespace) -> None:
     """``gludd governance body <name>`` — governing body lookup.
 
-    Accepts either a country code (e.g. ``US``) or a body name fragment
-    (e.g. ``Parliament``, ``Supreme Court``). When a country code matches,
-    returns all bodies for that country. Otherwise searches all countries
-    for matching body names.
+    Accepts a body id, name, or alias (e.g. ``un``, ``United Nations``,
+    ``UNSC``). Direct match returns the body. Otherwise searches all bodies
+    for name/alias fragments.
     """
     bodies_mod = get_governing_bodies()
     needle = args.name.strip()
-    code = needle.upper()
 
-    # Direct country-code lookup
-    if code in bodies_mod.GOVERNING_BODIES:
-        result = bodies_mod.lookup_governing_bodies(code)
-        _print_result(result, json_output=args.json)
+    # Direct lookup by id, name, or alias
+    body = bodies_mod.lookup_body(needle)
+    if body is not None:
+        _print_result(body, json_output=args.json)
         return
 
-    # Name-based search across all countries
+    # Name/alias fragment search across all bodies
     needle_lower = needle.lower()
     matches: list[dict[str, Any]] = []
-    for country_code, body_list in bodies_mod.GOVERNING_BODIES.items():
-        for body in body_list:
-            if needle_lower in body["name"].lower():
-                matches.append({"country": country_code, **body})
+    for body_entry in bodies_mod.INTERNATIONAL_BODIES:
+        if needle_lower in body_entry["name"].lower():
+            matches.append(body_entry)
+        else:
+            for alias in body_entry.get("aliases", ()):
+                if needle_lower in alias.lower():
+                    matches.append(body_entry)
+                    break
 
     if not matches:
         print(f"No governing body found for '{args.name}'.", file=sys.stderr)
