@@ -1,17 +1,22 @@
 /**
  * enforce-objective.ts — ties tool calls to PRIMARY OBJECTIVE in SESSION.md.
  *
+ * v2 (2026-07-19): Upgraded from ADVISORY to BLOCKING per BEHAVIORAL_SPECS.md
+ * O02-O03. Tangential tool calls while the PRIMARY OBJECTIVE is unmet are now
+ * DENIED (not just console.warn). Dispatch, read, and CI-advancing tools
+ * always pass through.
+ *
  * Reads SESSION.md for a `PRIMARY OBJECTIVE:` field (e.g. "GREEN CI ON
  * DEVELOPMENT → 12/12 ARTIFACTS"). When set and not yet met, non-dispatch /
- * non-read / non-CI-advancing tool calls receive a console.warn advisory.
+ * non-read / non-CI-advancing tool calls are BLOCKED with a deny.
  * When NOT set, a nag is injected at response time.
  *
  * Objective-met detection: if the objective text mentions CI GREEN, the
  * plugin reads /tmp/gludd-watchdog-ci.json for `last_ci_status === "SUCCESS"`.
- * Non-CI objectives are treated as not-yet-met (advisory only).
+ * Non-CI objectives are treated as not-yet-met (blocking).
  *
- * This is ADVISORY for now — warnings, never blocks. Can be hardened to
- * deny tangential tool calls later.
+ * BLOCKING by default. Env: GLUDD_OBJECTIVE_ENFORCE=0 to disable.
+ * FORCE=1 bypasses the objective check (hotfix only).
  *
  * Env knobs:
  *   GLUDD_OBJECTIVE_ENFORCE=0 — disable entirely
@@ -69,11 +74,12 @@ export function isObjectiveMet(): boolean {
 // DEFAULT IMPLEMENTATION (compiled-in fallback)
 // ============================================================================
 const defaultImpl: HotModule = {
-  "tool.execute.before": async (input, output) => {
+  "tool.execute.before": async (input, _output) => {
     if (isSubagent()) return;
     reportAlive("enforce-objective");
     try {
       if (process.env.GLUDD_OBJECTIVE_ENFORCE === "0") return;
+      if (process.env.FORCE === "1") return;
 
       const objective = getPrimaryObjective();
       if (!objective) return;
@@ -87,11 +93,7 @@ const defaultImpl: HotModule = {
 
       // Bash: allow CI-advancing / test / commit targets.
       if (tool === "bash") {
-        const args =
-          (output as Record<string, unknown> | undefined)?.args as
-            | { command?: string }
-            | undefined;
-        const cmd = typeof args?.command === "string" ? args.command : "";
+        const cmd = typeof input?.args?.command === "string" ? input.args.command : "";
         if (
           /\bmake\s+(ci-verdict|batch-push|release-cut|verify-release|git-push|git-commit|ship-commit|test|gate|lint|typecheck)\b/.test(
             cmd,
@@ -100,6 +102,18 @@ const defaultImpl: HotModule = {
           return;
       }
 
+      // Non-allowed tool while objective unmet → BLOCK
+      if (tool === "edit" || tool === "write" || tool === "bash") {
+        return {
+          permissionDecision: "deny" as const,
+          message:
+            `PRIMARY OBJECTIVE not yet met: "${objective}". ` +
+            `Tool "${tool}" may be tangential to the objective. ` +
+            `Set GLUDD_OBJECTIVE_ENFORCE=0 to disable, or FORCE=1 to bypass.`,
+        };
+      }
+
+      // Other tools (unknown) — console.warn advisory as fallback
       console.warn(
         `[enforce-objective] PRIMARY OBJECTIVE not yet met: "${objective}". ` +
           `Tool "${tool}" may be tangential. Set GLUDD_OBJECTIVE_ENFORCE=0 to disable.`,

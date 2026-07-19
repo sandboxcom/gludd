@@ -77,6 +77,7 @@ function tsToJs(content) {
     .replace(/(?<!&)&(?!&)\s*\w+(<[^>]*>)?(\[\])?\s*/g, "")
     .replace(/:\s*\{[^}]*\}\s*/g, " ")
     .replace(/\bas\s+[A-Z]\w*(\[\])?\b/g, "")
+    .replace(/<\s*[A-Z]\w*\s*>/g, "")
     .replace(/(\w+):\s+(?!true\b|false\b|null\b|undefined\b|\d)(\w+)(\[\])?(?=\s*[,)])/g, "$1")
     .replace(/(\w+):\s*\{[^{}]*\}(?:\s*[&|]\s*(?:\w+(?:<[^>]*>)?))*(?=\s*[,)])/g, "$1")
     .replace(/catch \{/g, "catch (e) {")
@@ -129,8 +130,8 @@ function extractDefaultImplMethods(content) {
     if (braceIdx < 0 || braceIdx >= nextPos) continue;
 
     let body = bodySlice.substring(braceIdx, nextPos);
-    body = body.replace(/,\s*$/, "").trimEnd();
     body = body.replace(/\n\s*"[^"]*"\s*:\s*$/, "").trimEnd();
+    body = body.replace(/,\s*$/, "").trimEnd();
     methods[name] = body;
   }
 
