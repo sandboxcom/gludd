@@ -352,7 +352,6 @@ console.log(JSON.stringify(results));
         _script, tmp_project, state_file, script_path = self._make_base_script(
             min_dispatch=2, threshold=3,
         )
-        pid = os.getpid()
         reset_script = f"""process.env.GLUDD_MULTITASK_FLOOR_ENFORCE = "1";
 process.env.GLUDD_MULTITASK_MIN_DISPATCHES = "2";
 process.env.GLUDD_CONSECUTIVE_NON_DISPATCH_THRESHOLD = "3";
