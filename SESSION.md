@@ -6,6 +6,10 @@
 
 ---
 
+## PRIMARY OBJECTIVE: GREEN CI ON DEVELOPMENT → 12/12 ARTIFACTS FOR v0.1.0-beta.2 ON MASTER
+
+---
+
 ## SESSION 50 — 2026-07-18
 
 - **HEAD: `d90fa882`** on `development` branch (pushed + VERIFIED on sandboxcom)
