@@ -518,6 +518,30 @@ requires_postgres = pytest.mark.skipif(
 
 
 # ----------------------------------------------------------------------
+# CI: ensure .gludd/ project directory exists at the repo root
+# ----------------------------------------------------------------------
+#
+# The .gludd/ directory is gitignored and absent from fresh CI checkouts.
+# Many source modules (memory, replay, retrieval, history) default their
+# cache/store paths to subdirectories of .gludd/.  Tests that instantiate
+# these modules — or call create_daemon_app() which internally references
+# .gludd/ defaults — fail with FileNotFoundError when the parent directory
+# does not exist.  This fixture creates it once for the session lifetime.
+#
+# Why session scope: creating .gludd/ per function would race xdist workers
+# on the same filesystem path (teardown/removal by one worker during a
+# sibling's test).  Session scope means one creation, no removal — the CI
+# workspace is ephemeral anyway.
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _ensure_gludd_dir_exists():
+    gludd_dir = _REPO_ROOT / ".gludd"
+    gludd_dir.mkdir(exist_ok=True)
+    yield
+
+
+# ----------------------------------------------------------------------
 # aiosqlite event-loop teardown guard
 # ----------------------------------------------------------------------
 #
