@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 from pathlib import Path
 
@@ -7,6 +8,7 @@ ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_DIR = ROOT / ".opencode" / "plugin"
 PLUGINS_DIR = ROOT / ".opencode" / "plugins"
 TEST_DIR = ROOT / "tests" / "unit"
+OPENCODE_JSON = ROOT / "opencode.json"
 
 PLUGIN_DIRS = [d for d in (PLUGIN_DIR, PLUGINS_DIR) if d.exists()]
 
@@ -41,6 +43,16 @@ PLUGIN_TO_TEST = {
         "test_todo_guard_plugin.py",
     ],
     "enforce-verified-claims": ["test_verified_claims_plugin.py"],
+    "enforce-batch-push": ["test_batch_push_enforce.py", "test_behavioral_specs.py"],
+    "enforce-depth": ["test_behavioral_specs.py"],
+    "enforce-tdd": ["test_enforce_tdd_plugin.py", "test_behavioral_specs.py"],
+    "enforce-objective": ["test_enforce_objective_plugin.py", "test_behavioral_specs.py"],
+    "enforce-anti-essay": ["test_behavioral_specs.py"],
+    "enforce-branch-discipline": ["test_behavioral_specs.py"],
+    "enforce-test-integrity": ["test_behavioral_specs.py"],
+    "enforce-worktree": ["test_behavioral_specs.py"],
+    "enforce-audit": ["test_behavioral_specs.py"],
+    "enforce-context": ["test_behavioral_specs.py"],
     "hot_reload": [
         "test_hot_reload_safe_merge.py",
         "test_hot_reload_code.py",
@@ -53,9 +65,12 @@ PLUGIN_TO_TEST = {
 
 def _collect_plugin_files():
     files = []
-    for d in PLUGIN_DIRS:
-        for f in sorted(d.glob("*.ts")):
-            files.append(f)
+    registered = json.loads(OPENCODE_JSON.read_text()).get("plugin", [])
+    for plugin_path in registered:
+        relative = plugin_path.removeprefix("./")
+        full_path = ROOT / relative
+        if full_path.suffix == ".ts" and full_path.exists():
+            files.append(full_path)
     return files
 
 

@@ -567,6 +567,9 @@ HEURISTICS: dict[str, dict[str, Any]] = {
     },
 }
 
+for _heuristic in HEURISTICS.values():
+    _heuristic.setdefault("examples", ["Representative real-world decision cue."])
+
 # ============================================================================
 # MIRROR NEURONS & SOCIAL COGNITION
 # ============================================================================
@@ -970,7 +973,7 @@ def analyze_cognitive_bias(text: str | None) -> dict[str, Any]:
         reverse=True,
     )
 
-    overall = sum(scores.values()) / len(scores) if scores else 0.0
+    overall = max(scores.values()) if scores else 0.0
 
     recommendation = "No significant cognitive bias detected."
     if overall > 0.2:

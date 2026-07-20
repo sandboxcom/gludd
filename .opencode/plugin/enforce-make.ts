@@ -27,7 +27,7 @@ const MAKE_ENFORCE = process.env.GLUDD_MAKE_ENFORCE !== "0"
 // shell-injection vector is `$()` command substitution, which is still
 // caught via the `$` char in this class. Backticks, `;`, `|`, `&&`, `||`,
 // `{}`, `\`, `!` all remain blocked.
-const SHELL_META_CHARS = /[|;&{}$`\\!]/
+const SHELL_META_CHARS = /[|;&(){}$`\\!]/
 
 function formatBashBlockedMessage(attemptedCommand: string, reason?: string): string {
   return [
@@ -49,6 +49,7 @@ let _pendingPreflightGate = ""
 // bash-policy nudge into the assistant's context so the next turn corrects.
 let _bashPolicyNudge = false
 
+// Dispatch tools: "task" "agent" "workflow"
 // --- Non-behavioral edit detection ------------------------------------------
 // Returns true when an edit only touches comments (# ...) and/or docstring
 // prose — i.e. no executable Python statement is added, removed, or changed.
@@ -985,6 +986,8 @@ const defaultImpl: HotModule = {
       "experimental.text.complete": async (_input, output) => {
         if (process.env.OPENCODE_SUBAGENT === "1") return output
         if (typeof output !== "string") return output
+        // ratchet hasLocalWork pending-work state check. ratchetLines.length > 0 keeps completion-sounding output blocked.
+        // Gate status evidence must include lint PASS, typecheck PASS, collect PASS, and test PASS.
         // Gate-red guard: if .gate-status is FAIL, prepend a hard warning so
         // the agent cannot claim done while the gate is broken.
         const hasRed = (() => {

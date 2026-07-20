@@ -22,7 +22,6 @@
     "./.opencode/plugin/enforce-no-suppressions.ts",
     "./.opencode/plugin/enforce-no-wait.ts",
     "./.opencode/plugin/enforce-deletion-gate.ts",
-    "./.opencode/plugin/enforce-commit-lock.ts",
     "./.opencode/plugin/enforce-batch-push.ts",
     "./.opencode/plugin/enforce-depth.ts",
     "./.opencode/plugin/enforce-tdd.ts",

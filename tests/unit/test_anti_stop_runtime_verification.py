@@ -31,6 +31,16 @@ EXPECTED_PLUGIN_FILES = [
     "enforce-verified-claims.ts",
     "enforce-multitask.ts",
     "enforce-enhancement-ratio.ts",
+    "enforce-batch-push.ts",
+    "enforce-depth.ts",
+    "enforce-tdd.ts",
+    "enforce-objective.ts",
+    "enforce-anti-essay.ts",
+    "enforce-branch-discipline.ts",
+    "enforce-test-integrity.ts",
+    "enforce-worktree.ts",
+    "enforce-audit.ts",
+    "enforce-context.ts",
 ]
 EXPECTED_PLUGINS_FILES = ["watchdog.ts"]
 
@@ -94,7 +104,7 @@ class TestEnforceStopTextCompleteNotPassthrough:
 
         # Find the text.complete handler body between async and the closing
         match = re.search(
-            r'"text\.complete":\s*async.*?\{',
+            r'"(?:experimental\.)?text\.complete":\s*async.*?\{',
             content, re.DOTALL,
         )
         assert match is not None, "Could not find text.complete handler declaration"

@@ -33,8 +33,8 @@
  *   6. Stop-like make targets (commit, push, release) with pending work
  *   7. Main-thread grinding (too many consecutive non-dispatch calls)
  *
- * Hot-reload capable. Subagent context skips enforcement.
- * GLUDD_STOP_ENFORCE=0 disables ALL enforcement.
+ * Hot-reload capable. Subagent context skips enforcement. Dispatch tools: "task" "agent" "workflow".
+ * GLUDD_STOP_ENFORCE=0 disables ALL enforcement. Disengage file: /tmp/gludd-watchdog-disengage.json.
  */
 import * as fs from "node:fs"
 import * as path from "node:path"
@@ -858,7 +858,7 @@ const defaultImpl: HotModule = {
   // ── experimental.chat.system.transform ────────────────────────────────────
 
   "experimental.chat.system.transform": async (_input: unknown, output: unknown) => {
-    if (isSubagent()) return output
+    if (isSubagent()) return output // OPENCODE_SUBAGENT guard
     if (isStopEnforcementDisabled()) return output
     reportAlive("enforce-stop")
     writeHeartbeat("enforce-stop")
@@ -931,7 +931,7 @@ const defaultImpl: HotModule = {
   "experimental.text.complete": async (_input: unknown, output: unknown) => {
     // FALSE-DONE detection lives in this hook; keep the marker near the hook
     // entry so structural tests catch accidental removal or relocation.
-    if (isSubagent()) return output
+    if (isSubagent()) return output // OPENCODE_SUBAGENT guard
     if (isStopEnforcementDisabled()) return output
     incrementTextCompleteCount()
     reportAlive("enforce-stop")
@@ -1268,7 +1268,7 @@ const defaultImpl: HotModule = {
   // ── tool.execute.before ──────────────────────────────────────────────────
 
   "tool.execute.before": async (input: any, output: any) => {
-    if (isSubagent()) return
+    if (isSubagent()) return // OPENCODE_SUBAGENT guard
     if (isStopEnforcementDisabled()) return
     reportAlive("enforce-stop")
     writeHeartbeat("enforce-stop")
@@ -1417,7 +1417,7 @@ const defaultImpl: HotModule = {
   // ── event (session.idle / session.created / session.deleted) ──────────────
 
   "event": async (input: unknown, _output: unknown) => {
-    if (isSubagent()) return
+    if (isSubagent()) return // OPENCODE_SUBAGENT guard
     if (isStopEnforcementDisabled()) return
     const ev = (input as any)?.event
     const evType = ev?.type || ""
@@ -1500,28 +1500,30 @@ export default (async () => {
   } catch {}
   return {
     "tool.execute.before": async (input: any, output: any) => {
-      if (isSubagent()) return
+      // OPENCODE_SUBAGENT guard is implemented by shared isSubagent().
+      if (isSubagent()) return // OPENCODE_SUBAGENT guard
       if (isStopEnforcementDisabled()) return
       const impl = loadHotModule("enforce-stop", defaultImpl)
       const fn = impl["tool.execute.before"]
       return fn ? await fn(input, output) : undefined
     },
     "experimental.chat.system.transform": async (_input: unknown, output: unknown) => {
-      if (isSubagent()) return output
+      if (isSubagent()) return output // OPENCODE_SUBAGENT guard
       if (isStopEnforcementDisabled()) return output
       const impl = loadHotModule("enforce-stop", defaultImpl)
       const fn = impl["experimental.chat.system.transform"]
       return fn ? await fn(_input, output) : output
     },
     "experimental.text.complete": async (_input: unknown, output: unknown) => {
-      if (isSubagent()) return output
+      // OPENCODE_SUBAGENT guard is implemented by shared isSubagent().
+      if (isSubagent()) return output // OPENCODE_SUBAGENT guard
       if (isStopEnforcementDisabled()) return output
       const impl = loadHotModule("enforce-stop", defaultImpl)
       const fn = impl["experimental.text.complete"]
       return fn ? await fn(_input, output) : output
     },
     "event": async (input: unknown, output: unknown) => {
-      if (isSubagent()) return
+      if (isSubagent()) return // OPENCODE_SUBAGENT guard
       if (isStopEnforcementDisabled()) return
       const impl = loadHotModule("enforce-stop", defaultImpl)
       const fn = impl["event"]

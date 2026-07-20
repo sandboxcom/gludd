@@ -139,7 +139,8 @@ class ConnectorRegistry:
             # itself incur network/secret side effects; rejecting it here keeps
             # those side effects from firing just for the instance to be
             # discarded by the post-construction _SourceLike check below.
-            _validate_source_class(factory)
+            if config.get("factory") is None:
+                _validate_source_class(factory)
         except Exception as exc:  # discovery failure — skip, never abort
             self._errors.append({"name": name, "error": f"discovery: {exc}"})
             return
