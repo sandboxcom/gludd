@@ -78,11 +78,11 @@
   ansible.builtin.set_fact:
     _pa_stale_state_files: >-
       {{ [
-        _pa_stop_state.stat.exists and ((ansible_date_time.epoch | int) - (_pa_stop_state.stat.mtime | int) > process_audit_state_file_max_age_seconds | int),
-        _pa_false_done_state.stat.exists and ((ansible_date_time.epoch | int) - (_pa_false_done_state.stat.mtime | int) > process_audit_state_file_max_age_seconds | int),
-        _pa_session_start_state.stat.exists and ((ansible_date_time.epoch | int) - (_pa_session_start_state.stat.mtime | int) > process_audit_state_file_max_age_seconds | int),
-        _pa_force_delegate_state.stat.exists and ((ansible_date_time.epoch | int) - (_pa_force_delegate_state.stat.mtime | int) > process_audit_state_file_max_age_seconds | int),
-        _pa_mainthread_streak.stat.exists and ((ansible_date_time.epoch | int) - (_pa_mainthread_streak.stat.mtime | int) > process_audit_state_file_max_age_seconds | int)
+        _pa_stop_state.stat.exists and ((ansible_facts.date_time.epoch | int) - (_pa_stop_state.stat.mtime | int) > process_audit_state_file_max_age_seconds | int),
+        _pa_false_done_state.stat.exists and ((ansible_facts.date_time.epoch | int) - (_pa_false_done_state.stat.mtime | int) > process_audit_state_file_max_age_seconds | int),
+        _pa_session_start_state.stat.exists and ((ansible_facts.date_time.epoch | int) - (_pa_session_start_state.stat.mtime | int) > process_audit_state_file_max_age_seconds | int),
+        _pa_force_delegate_state.stat.exists and ((ansible_facts.date_time.epoch | int) - (_pa_force_delegate_state.stat.mtime | int) > process_audit_state_file_max_age_seconds | int),
+        _pa_mainthread_streak.stat.exists and ((ansible_facts.date_time.epoch | int) - (_pa_mainthread_streak.stat.mtime | int) > process_audit_state_file_max_age_seconds | int)
       ] | select | list | length }}
 
 - name: Count how many state files exist
