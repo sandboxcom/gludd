@@ -2265,7 +2265,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                                 task.task_id,
                                 float(getattr(result, "cost_estimate", 0.0) or 0.0),
                             )
-                        return result.content
+                        return cast(str, result.content)
                     except Exception as exc:
                         logger.warning("Gateway executor failed for %s: %s", task.task_id, exc)
                         # The call never produced a cost, so release both reservations
