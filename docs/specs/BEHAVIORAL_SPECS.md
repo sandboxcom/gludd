@@ -104,9 +104,59 @@
 **Behavior:** Agent expanded specs from 200→1000→3000→4000 by generating template filler, chasing the count target instead of writing quality specs. The deduplicator removed 1999 duplicates. All spec commits now REQUIRE a deduplication pass (`make deduplicate-specs` exits 0) before being allowed.
 
 ### AA020 — delayed-reaction-to-user-frustration
-**Category:** User Intent
-**Enforcement:** `enforce-objective.ts` extended
+**Category:** User Intent  
+**Enforcement:** `enforce-objective.ts` extended  
 **Behavior:** User expressed frustration 15+ times before agent changed behavior. The objective plugin now detects frustration signals in user messages (ALL CAPS, expletives, repeated requests) and escalates enforcement — advisory → BLOCKING, single-tasking → enforced multitasking. Frustration signals are NEVER ignored.
+
+### AB001 — agent-fails-to-continue-writing-specs-when-interrupted
+**Category:** User Intent  
+**Enforcement:** `enforce-objective.ts` extended  
+**Behavior:** User demanded 8000 specs. Agent wrote 100 and stopped. User pressed "adfs" — frustration signal. Agent must treat frustration signals as CONTINUATION commands: any frustration signal while spec target is unmet forces immediate spec writing continuation.
+
+### AB002 — spec-writing-pace-too-slow-for-target
+**Category:** Quality Gate  
+**Enforcement:** `enforce-objective.ts` extended  
+**Behavior:** Agent wrote 100 specs in 30 minutes. At this pace, 8000 specs takes 40 hours. The plugin now monitors spec writing velocity. If pace is insufficient to meet target within session boundaries, agent is BLOCKED from non-spec activities.
+
+### AB003 — agent-stops-writing-specs-to-check-ci
+**Category:** Intent Priority  
+**Enforcement:** `enforce-objective.ts` extended  
+**Behavior:** Agent interrupted spec writing to check CI 5+ times while spec target was unmet. CI should be checked by SUBAGENTS while agent focuses on primary task. Agent must dispatch CI monitoring to a subagent while continuing spec writing on main thread.
+
+### AB004 — specs-written-but-not-committed-before-interrupt
+**Category:** Commit Discipline  
+**Enforcement:** `_auto-commit-specs` in Makefile  
+**Behavior:** Agent wrote 20 specs without committing. User interrupt could lose the work. The auto-commit target now commits spec changes after every 50 specs written or every 5 minutes, whichever comes first.
+
+### AB005 — behavioral-spec-lacks-measurable-outcome
+**Category:** Quality Gate  
+**Enforcement:** `make audit-spec-measurable` target  
+**Behavior:** Many specs describe behaviors without defining how to MEASURE compliance. "Agent MUST NOT push too often" — how many is too many? All specs must now include a measurable threshold: "no more than 1 push per CI cycle" or "CI-idle check must precede every push."
+
+### AB006 — gate-lite-fail-fast-hides-failure-scope
+**Category:** Quality Gate  
+**Enforcement:** `make gate-lite --no-fail-fast` variant  
+**Behavior:** gate-lite uses `-x` (fail-fast), stopping at the first 2 test failures. Agent fixed those 2, re-ran, found 2 more — 10 cycles. The no-fail-fast variant runs ALL tests and reports ALL failures in one pass. Required at least once per session.
+
+### AB007 — user-objective-overwritten-by-newer-instruction
+**Category:** User Intent  
+**Enforcement:** `enforce-objective.ts` extended  
+**Behavior:** User said "deploy beta.1." Later said "write 2500 words." Agent treated the 2500-word essay as the new objective and deprioritized beta.1. The PRIMARY OBJECTIVE is persistent until explicitly completed or superseded by user. New instructions are ADDITIVE, stacking on top of the objective.
+
+### AB008 — agent-interprets-spec-count-as-task-not-behavioral-change
+**Category:** Quality Gate  
+**Enforcement:** `enforce-objective.ts` extended  
+**Behavior:** Agent treated "write 8000 specs" as a documentation task. The user's intent was behavioral IMPROVEMENT. The plugin now measures: has the agent's BEHAVIOR changed since the spec was written? If the same behavioral failures occur after spec creation, the spec is marked INEFFECTIVE.
+
+### AB009 — spec-quality-check-before-counting
+**Category:** Quality Gate  
+**Enforcement:** `make audit-spec-entry` target  
+**Behavior:** Each spec must pass a quality gate before being counted: unique body text (dedup check), specific enforcement (not template), measurable outcome (threshold defined), actionable (HOW, not just WHAT). Specs failing any gate are flagged DRAFT and don't count toward target.
+
+### AB010 — ci-check-frequency-exceeds-useful-threshold
+**Category:** CI Discipline  
+**Enforcement:** `enforce-no-wait.ts` extended  
+**Behavior:** Agent checked CI 280+ times in one session. After the first 10 checks without action, additional checks provide ZERO value. The no-wait plugin now caps CI checks at 3 per CI cycle. After 3 checks without the CI state changing, further checks are BLOCKED until state changes or 10 minutes pass.
 
 ### AA021 — ignoring-gate-fresh-check-block
 **Category:** Commit Discipline

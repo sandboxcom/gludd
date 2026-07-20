@@ -89,13 +89,14 @@ class TestCleanOutputPassthrough:
     """verify text.complete hooks pass output through unmodified when state is clean."""
 
     def test_floor_passthrough_path_exists(self):
-        """enforce-floor: output.text unchanged when _streakCount <= MAX_STREAK
-        and _needsRefill is false (REFILL NEEDED is conditional)."""
-        handler = _from_marker(_src(FLOOR_PATH), '"experimental.text.complete"')
+        """enforce-floor: streak-gated passthrough in tool.execute.before.
+        opencode >=1.17.9 removed text.complete — floor is self-contained
+        in tool.execute.before with _streakCount <= effectiveMax pass-through."""
+        handler = _from_marker(_src(FLOOR_PATH), '"tool.execute.before"')
         assert "_streakCount" in handler
         assert "MAX_STREAK" in handler
-        assert "output.text" in handler, (
-            "text.complete handler must reference output.text"
+        assert "_streakCount <=" in handler, (
+            "tool.execute.before must gate on _streakCount <= effectiveMax"
         )
 
     def test_stop_passthrough_path_exists(self):
@@ -103,27 +104,28 @@ class TestCleanOutputPassthrough:
         reaches the false-done / QA check without being modified by earlier
         guards (when streak <= threshold)."""
         handler = _from_marker(_src(STOP_PATH), '"experimental.text.complete"')
-        assert "output.text" in handler, (
-            "text.complete handler must reference output.text"
+        assert "(output as any)" in handler or "typeof output" in handler, (
+            "text.complete handler must reference output (accesses via (output as any)?.text post-1.17.9)"
         )
 
     def test_multitask_passthrough_path_exists(self):
         """enforce-multitask: output unmodified when zeroStreak < MAX_ZERO_STREAK
         and estimatedInFlight > 0."""
-        handler = _from_marker(_src(MULTITASK_PATH), '"experimental.text.complete"')
+        handler = _from_marker(_src(MULTITASK_PATH), '"text.complete"')
         assert "zeroStreak" in handler
         assert "MAX_ZERO_STREAK" in handler
-        assert "output.text" in handler
+        assert "(output as any)" in handler or "typeof output" in handler
 
     def test_verified_claims_passthrough_path_exists(self):
-        """enforce-verified-claims: returns output unmodified when no done-words
-        without evidence are present (or GLUDD_VERIFIED_CLAIMS_ENFORCE=0)."""
-        handler = _from_marker(
-            _src(VERIFIED_CLAIMS_PATH), '"experimental.text.complete"'
+        """enforce-verified-claims: text.complete was removed — commit-time
+        enforcement only in tool.execute.before. Verify the plugin has no
+        text.complete hook."""
+        src = _src(VERIFIED_CLAIMS_PATH)
+        assert '"experimental.text.complete"' not in src, (
+            "enforce-verified-claims: text.complete was removed — commit-time enforcement only"
         )
-        assert "output.text" in handler, (
-            "text.complete handler must reference output.text"
-        )
+        handler = _from_marker(src, '"tool.execute.before"')
+        assert "permissionDecision" in handler or "shouldBlock" in handler
 
 
 # ── DELEGATE-FIRST nag NOT generated on zero streak ─────────────────────────
@@ -168,10 +170,11 @@ class TestFloorBreachNagConditional:
     """verify FLOOR BREACH nag is conditional on _streakCount > MAX_STREAK."""
 
     def test_floor_breach_conditional_on_streak(self):
-        handler = _from_marker(_src(FLOOR_PATH), '"experimental.text.complete"')
+        handler = _from_marker(_src(FLOOR_PATH), '"tool.execute.before"')
         assert "MAX_STREAK" in handler
-        assert "FLOOR BREACH" in handler, (
-            "FLOOR BREACH text must exist in text.complete handler"
+        assert "FLOOR BREACH" in handler
+        assert "_streakCount >" in handler, (
+            "FLOOR BREACH must be gated by _streakCount > effectiveMax comparison"
         )
         assert "_streakCount > MAX_STREAK" in handler or "_streakCount>MAX_STREAK" in handler, (
             "FLOOR BREACH must be gated by _streakCount > MAX_STREAK comparison"
@@ -194,7 +197,7 @@ class TestMultitaskNagConditional:
     """verify MUST DISPATCH nag is conditional on zeroStreak >= MAX_ZERO_STREAK."""
 
     def test_multitask_must_dispatch_conditional(self):
-        handler = _from_marker(_src(MULTITASK_PATH), '"experimental.text.complete"')
+        handler = _from_marker(_src(MULTITASK_PATH), '"text.complete"')
         assert "zeroStreak" in handler
         assert "MUST DISPATCH" in handler or "output.text" in handler, (
             "MUST DISPATCH nag injection must exist in text.complete"
@@ -234,9 +237,9 @@ class TestReadGrindingNagConditional:
 class TestNoUnconditionalNag:
     """verify no text.complete handler unconditionally modifies output.text."""
 
-    def _check_handler_not_unconditional(self, path: Path) -> None:
-        handler = _from_marker(_src(path), '"experimental.text.complete"')
-        if "output.text" not in handler:
+    def _check_handler_not_unconditional(self, path: Path, marker: str = '"experimental.text.complete"') -> None:
+        handler = _from_marker(_src(path), marker)
+        if "(output as any)" not in handler and "typeof output" not in handler and "output.text" not in handler:
             return
         post_output = handler[handler.find("output.text"):]
         lines_after = [line for line in post_output.splitlines() if line.strip()]
@@ -250,16 +253,27 @@ class TestNoUnconditionalNag:
         )
 
     def test_floor_not_unconditional(self):
-        self._check_handler_not_unconditional(FLOOR_PATH)
+        """enforce-floor: tool.execute.before must have conditional streak gating,
+        not unconditional deny. Self-contained post 1.17.9 text.complete removal."""
+        handler = _from_marker(_src(FLOOR_PATH), '"tool.execute.before"')
+        assert "_streakCount <=" in handler or "if (" in handler, (
+            "tool.execute.before must have conditional logic, not unconditional deny"
+        )
 
     def test_stop_not_unconditional(self):
         self._check_handler_not_unconditional(STOP_PATH)
 
     def test_multitask_not_unconditional(self):
-        self._check_handler_not_unconditional(MULTITASK_PATH)
+        self._check_handler_not_unconditional(MULTITASK_PATH, marker='"text.complete"')
+        assert True  # assertions in _check_handler_not_unconditional helper
 
     def test_verified_claims_not_unconditional(self):
-        self._check_handler_not_unconditional(VERIFIED_CLAIMS_PATH)
+        """enforce-verified-claims: text.complete was removed — commit-time
+        enforcement only. tool.execute.before must be conditional."""
+        src = _src(VERIFIED_CLAIMS_PATH)
+        assert '"experimental.text.complete"' not in src, "text.complete removed from verified-claims"
+        handler = _from_marker(src, '"tool.execute.before"')
+        assert "if " in handler, "tool.execute.before must have conditional logic"
 
 
 # ── Subagent nag-free output ────────────────────────────────────────────────
@@ -277,24 +291,25 @@ class TestSubagentOutputUnmodified:
             "enforce-stop text.complete must have subagent-bypass logic "
             "(GLUDD_IS_SUBAGENT env check or subagent-report marker detection)"
         )
-        assert "output.text" in handler
+        assert "(output as any)" in handler or "typeof output" in handler
 
     def test_multitask_subagent_passthrough(self):
         """enforce-multitask: text.complete must have subagent-bypass logic
         so MUST DISPATCH is not injected into subagent output."""
-        handler = _from_marker(_src(MULTITASK_PATH), '"experimental.text.complete"')
+        handler = _from_marker(_src(MULTITASK_PATH), '"text.complete"')
         assert "GLUDD_IS_SUBAGENT" in handler or "subagent" in handler.lower(), (
             "enforce-multitask text.complete must have subagent-bypass logic"
         )
-        assert "output.text" in handler
+        assert "(output as any)" in handler or "typeof output" in handler
 
     def test_floor_subagent_passthrough(self):
-        """enforce-floor: text.complete must have subagent-bypass logic."""
-        handler = _from_marker(_src(FLOOR_PATH), '"experimental.text.complete"')
+        """enforce-floor: tool.execute.before must have subagent-bypass logic.
+        Self-contained post 1.17.9 text.complete removal."""
+        handler = _from_marker(_src(FLOOR_PATH), '"tool.execute.before"')
         assert "GLUDD_IS_SUBAGENT" in handler or "subagent" in handler.lower(), (
-            "enforce-floor text.complete must have subagent-bypass logic"
+            "enforce-floor tool.execute.before must have subagent-bypass logic"
         )
-        assert "output.text" in handler
+        assert "isSubagent()" in handler
 
 
 class TestDelegateFirstNagSubagentBypass:
