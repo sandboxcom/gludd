@@ -20315,4 +20315,3 @@ The agent MUST run verify-state before making any status claim. This invariant M
 The agent MUST fix ratchet entries before declaring the session done. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
 **Enforcement:** AGENTS.md `/tmp/gludd-tool-streak.json` + `.opencode/plugin/enforce-session-start.ts` state-aware block
 **Test:** `test_i153_152`
-
