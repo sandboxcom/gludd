@@ -290,13 +290,12 @@ class LangGraphModelCallError(Exception):
         self.__cause__ = original_error
 
 
-# Back-compat default. ``create_daemon_app()`` builds a FRESH per-app dict
 # Per-app daemon state: each app owns a fresh dict so todos / tick_metrics /
 # quality_gate cannot bleed across FastAPI instances in one process. The
 # authoritative store is ``app.state.daemon_state`` (set by the factory).
 # This module-level name exists ONLY as a migration shim for legacy callers
-# (scripts/dogfood.py, test fixtures); it starts as ``None`` and is rebound
-# to the most recently created app's dict by ``create_daemon_app()``.
+# (scripts/dogfood.py, test fixtures); it starts unset and is rebound to the
+# most recently created app's dict by ``create_daemon_app()``.
 # New code MUST NOT access this global — use explicit injection instead.
 _daemon_state: Any = None
 
@@ -2265,7 +2264,8 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                                 task.task_id,
                                 float(getattr(result, "cost_estimate", 0.0) or 0.0),
                             )
-                        return result.content
+                        content = result.content
+                        return content if isinstance(content, str) else str(content)
                     except Exception as exc:
                         logger.warning("Gateway executor failed for %s: %s", task.task_id, exc)
                         # The call never produced a cost, so release both reservations
