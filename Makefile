@@ -4541,3 +4541,8 @@ generate-specs-fix:
 	@$(UV) run python3 scripts/spec_generator_loop.py --fix --target $(or $(TARGET),1000)
 generate-specs:
 	@$(UV) run python3 scripts/spec_generator_loop.py --target $(or $(TARGET),1000)
+
+# Expand BEHAVIORAL_SPECS.md with unique, real-enforcement specs to reach TARGET
+# Usage: make expand-specs TARGET=4000
+expand-specs:
+	@$(UV) run python3 scripts/generate_specs_to_4000.py --target $(or $(TARGET),4000)

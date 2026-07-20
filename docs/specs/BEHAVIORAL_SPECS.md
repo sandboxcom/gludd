@@ -1,4 +1,4 @@
-# BEHAVIORAL ENFORCEMENT SPECIFICATIONS — 3000 numbered specs
+# BEHAVIORAL ENFORCEMENT SPECIFICATIONS — 4000 numbered specs
 
 **Version:** 4.0
 **Date:** 2026-07-20
@@ -9,7 +9,7 @@ enforcement mechanism (plugin, Makefile guard, or AGENTS.md policy section) and
 a structural test verifying that mechanism exists.
 
 Groups P-Z (20 groups × 100-125 specs each), H-V-J-L-Y (5 groups × 100 each), I (120 specs).
-Total: 3000 specs across 26 groups.
+Total: 4000 specs across 26 groups.
 
 ---
 
@@ -14887,3 +14887,5432 @@ Intent priority: restart required: inform user plugin changes need restart. This
 Intent priority: enforcement verify: verify enforcement active after restart. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
 **Enforcement:** AGENTS.md `scripts/task_watchdog.py` enforcement
 **Test:** `test_i102_intent_priority_102`
+
+
+## Expansion: Push Discipline (P121–P154) (34 specs)
+
+### P121 — The agent MUST warn when pushing while sibling branches have unmerged upstream changes.
+The agent MUST warn when pushing while sibling branches have unmerged upstream changes. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make typecheck` prerequisite
+**Test:** `test_p121_120`
+
+### P122 — The agent MUST record each push's verified-remote output in the session evidence log.
+The agent MUST record each push's verified-remote output in the session evidence log. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/verify_release_artifact.py` enforcement
+**Test:** `test_p122_121`
+
+### P123 — The agent MUST NOT push to a branch while an active git-bisect session is in progress.
+The agent MUST NOT push to a branch while an active git-bisect session is in progress. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-delegate.ts` `tool.execute.before` block
+**Test:** `test_p123_122`
+
+### P124 — The agent MUST verify that no .env files containing secrets are staged before pushing.
+The agent MUST verify that no .env files containing secrets are staged before pushing. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-multitask.ts` permissionDecision deny
+**Test:** `test_p124_123`
+
+### P125 — The agent MUST reject pushes where the .gitignore has been modified but not committed separately.
+The agent MUST reject pushes where the .gitignore has been modified but not committed separately. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make test` fail-closed guard
+**Test:** `test_p125_124`
+
+### P126 — The agent MUST verify the SSH agent has a loaded key for sandboxcom before pushing.
+The agent MUST verify the SSH agent has a loaded key for sandboxcom before pushing. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` state-file enforced block
+**Test:** `test_p126_125`
+
+### P127 — The agent MUST record push timestamps to a state file for audit and rate-limiting.
+The agent MUST record push timestamps to a state file for audit and rate-limiting. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-audit.ts` + `make collect-check` combined
+**Test:** `test_p127_126`
+
+### P128 — The agent MUST block pushes when the pre-commit hook config has changed but hooks not reinstalled.
+The agent MUST block pushes when the pre-commit hook config has changed but hooks not reinstalled. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:gate-failure` ratchet-tracked gate
+**Test:** `test_p128_127`
+
+### P129 — The agent MUST check that the push target branch is not a release branch lacking release-manager role.
+The agent MUST check that the push target branch is not a release branch lacking release-manager role. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-linux` CI workflow enforcement
+**Test:** `test_p129_128`
+
+### P130 — The agent MUST verify that all submodules are clean and committed before pushing.
+The agent MUST verify that all submodules are clean and committed before pushing. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` + `.opencode/plugin/enforce-deadline.ts` dual layer
+**Test:** `test_p130_129`
+
+### P131 — The agent MUST block pushes that would exceed a 50-commit batch limit in a single operation.
+The agent MUST block pushes that would exceed a 50-commit batch limit in a single operation. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make reload-enforcement` combined
+**Test:** `test_p131_130`
+
+### P132 — The agent MUST confirm the remote repository exists before attempting to push.
+The agent MUST confirm the remote repository exists before attempting to push. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make test-unit` + `scripts/check_readme_status_current.py` script-backed guard
+**Test:** `test_p132_131`
+
+### P133 — The agent MUST verify commit signatures on all commits in the push batch.
+The agent MUST verify commit signatures on all commits in the push batch. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-suppressions.ts` env-var-gated BLOCKING (GLUDD_P_ENFORCE=0 for disable)
+**Test:** `test_p133_132`
+
+### P134 — The agent MUST reject pushes from non-main checkout to master branch permanently.
+The agent MUST reject pushes from non-main checkout to master branch permanently. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Codify Improvements` + `config/ratchet.yml:dead-code` ratchet-combined
+**Test:** `test_p134_133`
+
+### P135 — The agent MUST log every push operation to a push-audit state file with timestamp and SHA.
+The agent MUST log every push operation to a push-audit state file with timestamp and SHA. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-tool-streak.json` + `.opencode/plugin/enforce-floor.ts` state-aware block
+**Test:** `test_p135_134`
+
+### P136 — The agent MUST block pushes when the local-vs-remote tag refs are mismatched.
+The agent MUST block pushes when the local-vs-remote tag refs are mismatched. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:test-failure` + `scripts/test_hook_runtime.py` ratchet+script gate
+**Test:** `test_p136_135`
+
+### P137 — The agent MUST check that the disk has more than 5% free space before pushing.
+The agent MUST check that the disk has more than 5% free space before pushing. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:sbom` + Makefile `make git-checkout` CI+local dual
+**Test:** `test_p137_136`
+
+### P138 — The agent MUST verify SSH key fingerprint matches a known-good value before pushing.
+The agent MUST verify SSH key fingerprint matches a known-good value before pushing. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-tdd.ts` x `.opencode/plugin/enforce-session-start.ts` cross-plugin
+**Test:** `test_p138_137`
+
+### P139 — The agent MUST block pushes when a background gate operation is producing output to the same branch.
+The agent MUST block pushes when a background gate operation is producing output to the same branch. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Premature-Stop Audit Policy` + `scripts/ci_check_cooldown.py` + `.opencode/plugin/enforce-multitask.ts` triple layer
+**Test:** `test_p139_138`
+
+### P140 — The agent MUST verify that no unstaged files match the content of files being committed.
+The agent MUST verify that no unstaged files match the content of files being committed. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Self-Test Quality` section
+**Test:** `test_p140_139`
+
+### P141 — The agent MUST track deploy timestamps via deploy-and-forget state for push accounting.
+The agent MUST track deploy timestamps via deploy-and-forget state for push accounting. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make gate-background` prerequisite
+**Test:** `test_p141_140`
+
+### P142 — The agent MUST block pushes after a git-filter-branch or history rewrite permanently.
+The agent MUST block pushes after a git-filter-branch or history rewrite permanently. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_green_branch_guard.py` enforcement
+**Test:** `test_p142_141`
+
+### P143 — The agent MUST verify no unmerged worktree branches exist on the same target before pushing.
+The agent MUST verify no unmerged worktree branches exist on the same target before pushing. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-tdd.ts` `tool.execute.before` block
+**Test:** `test_p143_142`
+
+### P144 — The agent MUST check system clock skew against NTP and warn if deviation exceeds 60 seconds.
+The agent MUST check system clock skew against NTP and warn if deviation exceeds 60 seconds. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-session-start.ts` permissionDecision deny
+**Test:** `test_p144_143`
+
+### P145 — The agent MUST confirm batch-push uses _push-rate-guard as a prerequisite.
+The agent MUST confirm batch-push uses _push-rate-guard as a prerequisite. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make gate-audit` fail-closed guard
+**Test:** `test_p145_144`
+
+### P146 — The agent MUST require a sign-off in commit messages when pushing to unprotected branches.
+The agent MUST require a sign-off in commit messages when pushing to unprotected branches. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-watchdog-disengage` state-file enforced block
+**Test:** `test_p146_145`
+
+### P147 — The agent MUST block pushes when a docker/buildx daemon is running to avoid build conflicts.
+The agent MUST block pushes when a docker/buildx daemon is running to avoid build conflicts. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-audit.ts` + `make test-integration` combined
+**Test:** `test_p147_146`
+
+### P148 — The agent MUST verify no rollback is in progress before pushing new commits.
+The agent MUST verify no rollback is in progress before pushing new commits. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:stale-gate` ratchet-tracked gate
+**Test:** `test_p148_147`
+
+### P149 — The agent MUST ensure git-index is not stale (updated within 1 hour) before pushing.
+The agent MUST ensure git-index is not stale (updated within 1 hour) before pushing. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-linux` CI workflow enforcement
+**Test:** `test_p149_148`
+
+### P150 — The agent MUST require re-audit when ratchet-baseline has changed since last push.
+The agent MUST require re-audit when ratchet-baseline has changed since last push. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_disk_usage.py` + `.opencode/plugin/enforce-objective.ts` dual layer
+**Test:** `test_p150_149`
+
+### P151 — The agent MUST block pushes that would trigger more than one CI workflow simultaneously.
+The agent MUST block pushes that would trigger more than one CI workflow simultaneously. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make watchdog-auto` combined
+**Test:** `test_p151_150`
+
+### P152 — The agent MUST ensure the push commit batch does not include commits with merge conflict markers.
+The agent MUST ensure the push commit batch does not include commits with merge conflict markers. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make crash-recovery` + `scripts/require_ci_green.py` script-backed guard
+**Test:** `test_p152_151`
+
+### P153 — The agent MUST verify that .secrets.baseline is current (less than 24 hours old) before pushing.
+The agent MUST verify that .secrets.baseline is current (less than 24 hours old) before pushing. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-tdd.ts` env-var-gated BLOCKING (GLUDD_P_ENFORCE=0 for disable)
+**Test:** `test_p153_152`
+
+### P154 — The agent MUST warn when pushing with a stale .gate-status older than the last commit.
+The agent MUST warn when pushing with a stale .gate-status older than the last commit. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `No-Manual-Default Policy` + `config/ratchet.yml:dirty-tree` ratchet-combined
+**Test:** `test_p154_153`
+
+
+## Expansion: Branch Discipline (B121–B154) (34 specs)
+
+### B121 — The agent MUST use the submodule branch (not the parent repo branch) when on a submodule path.
+The agent MUST use the submodule branch (not the parent repo branch) when on a submodule path. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:lint-baseline` + `scripts/check_readme_status_current.py` ratchet+script gate
+**Test:** `test_b121_120`
+
+### B122 — The agent MUST not allow branch names that are identical to a make target.
+The agent MUST not allow branch names that are identical to a make target. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:sbom` + Makefile `make check-readme-status` CI+local dual
+**Test:** `test_b122_121`
+
+### B123 — The agent MUST block branch pushes when the git index is stale for more than 1 hour.
+The agent MUST block branch pushes when the git index is stale for more than 1 hour. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-deletion-gate.ts` x `.opencode/plugin/enforce-deadline.ts` cross-plugin
+**Test:** `test_b123_122`
+
+### B124 — The agent MUST warn when creating a branch from a commit without a TASKS.md update.
+The agent MUST warn when creating a branch from a commit without a TASKS.md update. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Guardrail Integrity Policy` + `scripts/check_disk_usage.py` + `.opencode/plugin/enforce-floor.ts` triple layer
+**Test:** `test_b124_123`
+
+### B125 — The agent MUST detect ambiguous upstream tracking when a branch has multiple tracking refs.
+The agent MUST detect ambiguous upstream tracking when a branch has multiple tracking refs. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Codify Improvements` section
+**Test:** `test_b125_124`
+
+### B126 — The agent MUST defer branch creation during a background gate operation.
+The agent MUST defer branch creation during a background gate operation. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make test-integration` prerequisite
+**Test:** `test_b126_125`
+
+### B127 — The agent MUST verify linearity after a git-rebranch-onto before merging.
+The agent MUST verify linearity after a git-rebranch-onto before merging. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` enforcement
+**Test:** `test_b127_126`
+
+### B128 — The agent MUST block branches whose commits all lack verified GPG signatures.
+The agent MUST block branches whose commits all lack verified GPG signatures. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-deadline.ts` `tool.execute.before` block
+**Test:** `test_b128_127`
+
+### B129 — The agent MUST require a CI-gate override when pushing branches that modify .github/workflows.
+The agent MUST require a CI-gate override when pushing branches that modify .github/workflows. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-worktree.ts` permissionDecision deny
+**Test:** `test_b129_128`
+
+### B130 — The agent MUST remove associated /tmp/gludd-worktrees paths when cleaning up branches.
+The agent MUST remove associated /tmp/gludd-worktrees paths when cleaning up branches. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make secrets-baseline` fail-closed guard
+**Test:** `test_b130_129`
+
+### B131 — The agent MUST include a TASKS.md completion tick when merging a feature branch.
+The agent MUST include a TASKS.md completion tick when merging a feature branch. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` state-file enforced block
+**Test:** `test_b131_130`
+
+### B132 — The agent MUST warn when pushing while agent_worktree_list shows orphaned refs.
+The agent MUST warn when pushing while agent_worktree_list shows orphaned refs. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-audit.ts` + `make development-start` combined
+**Test:** `test_b132_131`
+
+### B133 — The agent MUST warn when branching from development that has not been pushed to the remote.
+The agent MUST warn when branching from development that has not been pushed to the remote. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:ci-failure` ratchet-tracked gate
+**Test:** `test_b133_132`
+
+### B134 — The agent MUST require an explicit origin/ prefix when deleting a remote tracking branch.
+The agent MUST require an explicit origin/ prefix when deleting a remote tracking branch. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-linux` CI workflow enforcement
+**Test:** `test_b134_133`
+
+### B135 — The agent MUST track branch creation date in SESSION.md for session audit purposes.
+The agent MUST track branch creation date in SESSION.md for session audit purposes. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_node_v26_compat.py` + `.opencode/plugin/enforce-commit-lock.ts` dual layer
+**Test:** `test_b135_134`
+
+### B136 — The agent MUST enforce branch name character rules: slash only, no leading dash.
+The agent MUST enforce branch name character rules: slash only, no leading dash. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make test-integration` combined
+**Test:** `test_b136_135`
+
+### B137 — The agent MUST block checkout of shared branches from within a worktree.
+The agent MUST block checkout of shared branches from within a worktree. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make agent-merge` + `scripts/agent_liveness.py` script-backed guard
+**Test:** `test_b137_136`
+
+### B138 — The agent MUST warn on every push from a branch with no remote tracking set.
+The agent MUST warn on every push from a branch with no remote tracking set. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-anti-essay.ts` env-var-gated BLOCKING (GLUDD_B_ENFORCE=0 for disable)
+**Test:** `test_b138_137`
+
+### B139 — The agent MUST permanently deny pushes from a detached HEAD state.
+The agent MUST permanently deny pushes from a detached HEAD state. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Guardrail Integrity Policy` + `config/ratchet.yml:typecheck-baseline` ratchet-combined
+**Test:** `test_b139_138`
+
+### B140 — The agent MUST require release-promote (not plain merge) when merging release branches.
+The agent MUST require release-promote (not plain merge) when merging release branches. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-tool-streak.json` + `.opencode/plugin/enforce-no-suppressions.ts` state-aware block
+**Test:** `test_b140_139`
+
+### B141 — The agent MUST block branching from a commit where verify-state shows REMOTE MISMATCH.
+The agent MUST block branching from a commit where verify-state shows REMOTE MISMATCH. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:typecheck-baseline` + `scripts/check_tdd_compliance.py` ratchet+script gate
+**Test:** `test_b141_140`
+
+### B142 — The agent MUST verify backup exists before creating a branch after file deletion.
+The agent MUST verify backup exists before creating a branch after file deletion. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:sbom` + Makefile `make ship-commit` CI+local dual
+**Test:** `test_b142_141`
+
+### B143 — The agent MUST require a split-feature review when the diff from master exceeds 500 lines.
+The agent MUST require a split-feature review when the diff from master exceeds 500 lines. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-worktree.ts` x `.opencode/plugin/enforce-commit-lock.ts` cross-plugin
+**Test:** `test_b143_142`
+
+### B144 — The agent MUST detect and warn on uncommitted symlink changes before branch operations.
+The agent MUST detect and warn on uncommitted symlink changes before branch operations. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Release Branch Lifecycle` + `scripts/agent_liveness.py` + `.opencode/plugin/enforce-test-integrity.ts` triple layer
+**Test:** `test_b144_143`
+
+### B145 — The agent MUST block branch creation while CI is deploying to the same environment.
+The agent MUST block branch creation while CI is deploying to the same environment. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Long-Running Operations MUST Be Backgrounded` section
+**Test:** `test_b145_144`
+
+### B146 — The agent MUST record the worktree-path in the branch description for worktree branches.
+The agent MUST record the worktree-path in the branch description for worktree branches. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make hot-reload-plugins` prerequisite
+**Test:** `test_b146_145`
+
+### B147 — The agent MUST require a flag when merging a branch with --squash to preserve history.
+The agent MUST require a flag when merging a branch with --squash to preserve history. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/verify_release_completeness.py` enforcement
+**Test:** `test_b147_146`
+
+### B148 — The agent MUST push a tag simultaneously when pushing a tag-annotated commit.
+The agent MUST push a tag simultaneously when pushing a tag-annotated commit. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-audit.ts` `tool.execute.before` block
+**Test:** `test_b148_147`
+
+### B149 — The agent MUST verify the working tree is clean before creating a new branch.
+The agent MUST verify the working tree is clean before creating a new branch. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-floor.ts` permissionDecision deny
+**Test:** `test_b149_148`
+
+### B150 — The agent MUST stash or commit dirty tree changes before switching branches.
+The agent MUST stash or commit dirty tree changes before switching branches. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-checkout` fail-closed guard
+**Test:** `test_b150_149`
+
+### B151 — The agent MUST confirm no unmerged commits exist before deleting a branch.
+The agent MUST confirm no unmerged commits exist before deleting a branch. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-watchdog-disengage` state-file enforced block
+**Test:** `test_b151_150`
+
+### B152 — The agent MUST update all remote tracking refs when renaming a branch.
+The agent MUST update all remote tracking refs when renaming a branch. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-audit.ts` + `make release-promote` combined
+**Test:** `test_b152_151`
+
+### B153 — The agent MUST block branch creation from a commit with a red gate status.
+The agent MUST block branch creation from a commit with a red gate status. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:typecheck-baseline` ratchet-tracked gate
+**Test:** `test_b153_152`
+
+### B154 — The agent MUST deny branch creation when the working tree has uncommitted merge state.
+The agent MUST deny branch creation when the working tree has uncommitted merge state. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-linux` CI workflow enforcement
+**Test:** `test_b154_153`
+
+
+## Expansion: Objective Tracking (O102–O154) (53 specs)
+
+### O102 — The agent MUST deduplicate similar objectives from different sources.
+The agent MUST deduplicate similar objectives from different sources. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make test-hook-runtime` combined
+**Test:** `test_o102_101`
+
+### O103 — The agent MUST treat ratchet entries as implicit objectives that must be resolved.
+The agent MUST treat ratchet entries as implicit objectives that must be resolved. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make require-ci-green` + `scripts/verify_release_completeness.py` script-backed guard
+**Test:** `test_o103_102`
+
+### O104 — The agent MUST require at least 2 independent confirmation sources for objective completion.
+The agent MUST require at least 2 independent confirmation sources for objective completion. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-stop.ts` env-var-gated BLOCKING (GLUDD_O_ENFORCE=0 for disable)
+**Test:** `test_o104_103`
+
+### O105 — The agent MUST trigger a stale warning for objectives inactive for more than 24 hours.
+The agent MUST trigger a stale warning for objectives inactive for more than 24 hours. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Don't Push Every Commit` + `config/ratchet.yml:ci-failure` ratchet-combined
+**Test:** `test_o105_104`
+
+### O106 — The agent MUST transfer objective integrity across session boundaries.
+The agent MUST transfer objective integrity across session boundaries. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-session-start.json` + `.opencode/plugin/enforce-batch-push.ts` state-aware block
+**Test:** `test_o106_105`
+
+### O107 — The agent MUST auto-create a fix objective when CI turns red.
+The agent MUST auto-create a fix objective when CI turns red. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:gate-failure` + `scripts/verify_release_artifact.py` ratchet+script gate
+**Test:** `test_o107_106`
+
+### O108 — The agent MUST auto-create a ship objective when a release is incomplete.
+The agent MUST auto-create a ship objective when a release is incomplete. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:sbom` + Makefile `make test-hook-runtime` CI+local dual
+**Test:** `test_o108_107`
+
+### O109 — The agent MUST serialize two objectives that target the same file (no parallel mutation).
+The agent MUST serialize two objectives that target the same file (no parallel mutation). This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-audit.ts` x `.opencode/plugin/enforce-branch-discipline.ts` cross-plugin
+**Test:** `test_o109_108`
+
+### O110 — The agent MUST prevent auto-start of objectives requiring network when the system is offline.
+The agent MUST prevent auto-start of objectives requiring network when the system is offline. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Commit-After-Green Policy` + `scripts/check_duplicate_targets.py` + `.opencode/plugin/enforce-branch-discipline.ts` triple layer
+**Test:** `test_o110_109`
+
+### O111 — The agent MUST checkpoint progress for long-running objectives at regular intervals.
+The agent MUST checkpoint progress for long-running objectives at regular intervals. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `CI-Poll Subagents Are Forbidden` section
+**Test:** `test_o111_110`
+
+### O112 — The agent MUST re-open a completed objective as critical severity if a regression re-breaks it.
+The agent MUST re-open a completed objective as critical severity if a regression re-breaks it. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make development-status` prerequisite
+**Test:** `test_o112_111`
+
+### O113 — The agent MUST flag an objective as forgotten when not mentioned for 20 consecutive turns.
+The agent MUST flag an objective as forgotten when not mentioned for 20 consecutive turns. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` enforcement
+**Test:** `test_o113_112`
+
+### O114 — The agent MUST include an evidence hash in every objective completion attestation.
+The agent MUST include an evidence hash in every objective completion attestation. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-verified-claims.ts` `tool.execute.before` block
+**Test:** `test_o114_113`
+
+### O115 — The agent MUST auto-create fix objectives from open BUGS.md entries.
+The agent MUST auto-create fix objectives from open BUGS.md entries. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-verified-claims.ts` permissionDecision deny
+**Test:** `test_o115_114`
+
+### O116 — The agent MUST lock an objective while it is being worked on by another agent.
+The agent MUST lock an objective while it is being worked on by another agent. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make release-promote` fail-closed guard
+**Test:** `test_o116_115`
+
+### O117 — The agent MUST estimate tool-call cost before starting each objective.
+The agent MUST estimate tool-call cost before starting each objective. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` state-file enforced block
+**Test:** `test_o117_116`
+
+### O118 — The agent MUST batch related objectives into a single dispatch wave when possible.
+The agent MUST batch related objectives into a single dispatch wave when possible. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-audit.ts` + `make git-diff` combined
+**Test:** `test_o118_117`
+
+### O119 — The agent MUST allow higher-priority objectives to preempt lower-priority ones mid-execution.
+The agent MUST allow higher-priority objectives to preempt lower-priority ones mid-execution. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dirty-tree` ratchet-tracked gate
+**Test:** `test_o119_118`
+
+### O120 — The agent MUST preserve state when reassigning an objective from one subagent to another.
+The agent MUST preserve state when reassigning an objective from one subagent to another. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-linux` CI workflow enforcement
+**Test:** `test_o120_119`
+
+### O121 — The agent MUST cache objective state and invalidate on TASKS.md changes.
+The agent MUST cache objective state and invalidate on TASKS.md changes. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/verify_release_completeness.py` + `.opencode/plugin/enforce-audit.ts` dual layer
+**Test:** `test_o121_120`
+
+### O122 — The agent MUST log every objective state change with a reason for the transition.
+The agent MUST log every objective state change with a reason for the transition. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make gate-audit` combined
+**Test:** `test_o122_121`
+
+### O123 — The agent MUST support replay of objective resolution steps on demand.
+The agent MUST support replay of objective resolution steps on demand. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make ci-verdict-safe` + `scripts/check_node_v26_compat.py` script-backed guard
+**Test:** `test_o123_122`
+
+### O124 — The agent MUST flag mid-execution changes to an objective's description as scope drift.
+The agent MUST flag mid-execution changes to an objective's description as scope drift. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-session-start.ts` env-var-gated BLOCKING (GLUDD_O_ENFORCE=0 for disable)
+**Test:** `test_o124_123`
+
+### O125 — The agent MUST treat Makefile targets as codified objectives.
+The agent MUST treat Makefile targets as codified objectives. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `10-Agent Dispatch Floor` + `config/ratchet.yml:stale-gate` ratchet-combined
+**Test:** `test_o125_124`
+
+### O126 — The agent MUST treat plugin blocks as objective enforcement points.
+The agent MUST treat plugin blocks as objective enforcement points. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-tool-streak.json` + `.opencode/plugin/enforce-worktree.ts` state-aware block
+**Test:** `test_o126_125`
+
+### O127 — The agent MUST require 100% of sub-steps done before marking an objective complete.
+The agent MUST require 100% of sub-steps done before marking an objective complete. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:duplicate-target` + `scripts/agent_liveness.py` ratchet+script gate
+**Test:** `test_o127_126`
+
+### O128 — The agent MUST only allow objective renunciation with a documented reason.
+The agent MUST only allow objective renunciation with a documented reason. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:sbom` + Makefile `make secrets-baseline` CI+local dual
+**Test:** `test_o128_127`
+
+### O129 — The agent MUST run a background watcher that polls objective state independently.
+The agent MUST run a background watcher that polls objective state independently. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-context.ts` x `.opencode/plugin/enforce-batch-push.ts` cross-plugin
+**Test:** `test_o129_128`
+
+### O130 — The agent MUST prevent the agent from spoofing its own objective completion signal.
+The agent MUST prevent the agent from spoofing its own objective completion signal. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Verification Before Claim` + `scripts/verify_release_artifact.py` + `.opencode/plugin/enforce-audit.ts` triple layer
+**Test:** `test_o130_129`
+
+### O131 — The agent MUST chain objectives so the output of one feeds as input to the next.
+The agent MUST chain objectives so the output of one feeds as input to the next. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Background Operations NEVER Block Dispatch` section
+**Test:** `test_o131_130`
+
+### O132 — The agent MUST clearly bound and test every objective's scope boundary.
+The agent MUST clearly bound and test every objective's scope boundary. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make agent-worktree` prerequisite
+**Test:** `test_o132_131`
+
+### O133 — The agent MUST track created_at, updated_at, and completed_at timestamps per objective.
+The agent MUST track created_at, updated_at, and completed_at timestamps per objective. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/ci_check_cooldown.py` enforcement
+**Test:** `test_o133_132`
+
+### O134 — The agent MUST reflect on the objective completion process to improve future work.
+The agent MUST reflect on the objective completion process to improve future work. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-anti-essay.ts` `tool.execute.before` block
+**Test:** `test_o134_133`
+
+### O135 — The agent MUST auto-create objectives from gate red entries.
+The agent MUST auto-create objectives from gate red entries. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-tdd.ts` permissionDecision deny
+**Test:** `test_o135_134`
+
+### O136 — The agent MUST auto-create a write-test objective when a coverage gap is detected.
+The agent MUST auto-create a write-test objective when a coverage gap is detected. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make agent-worktree` fail-closed guard
+**Test:** `test_o136_135`
+
+### O137 — The agent MUST auto-create a remove-objective when dead code is detected.
+The agent MUST auto-create a remove-objective when dead code is detected. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-watchdog-disengage` state-file enforced block
+**Test:** `test_o137_136`
+
+### O138 — The agent MUST break cycles when objective A depends on B depends on A.
+The agent MUST break cycles when objective A depends on B depends on A. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-audit.ts` + `make lint` combined
+**Test:** `test_o138_137`
+
+### O139 — The agent MUST verify a precondition checklist before marking an objective active.
+The agent MUST verify a precondition checklist before marking an objective active. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dead-code` ratchet-tracked gate
+**Test:** `test_o139_138`
+
+### O140 — The agent MUST support a FAIL state for objectives, with root cause logged.
+The agent MUST support a FAIL state for objectives, with root cause logged. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-linux` CI workflow enforcement
+**Test:** `test_o140_139`
+
+### O141 — The agent MUST persist the primary objective across session restarts via SESSION.md.
+The agent MUST persist the primary objective across session restarts via SESSION.md. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/task_watchdog.py` + `.opencode/plugin/enforce-stop.ts` dual layer
+**Test:** `test_o141_140`
+
+### O142 — The agent MUST detect sub-objective completion and propagate to the parent objective.
+The agent MUST detect sub-objective completion and propagate to the parent objective. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make typecheck` combined
+**Test:** `test_o142_141`
+
+### O143 — The agent MUST handle mid-session objective reprioritization without losing state.
+The agent MUST handle mid-session objective reprioritization without losing state. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-add` + `scripts/check_tdd_compliance.py` script-backed guard
+**Test:** `test_o143_142`
+
+### O144 — The agent MUST require a measurable signal (test pass, commit hash, CI green) for objective completion.
+The agent MUST require a measurable signal (test pass, commit hash, CI green) for objective completion. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-deletion-gate.ts` env-var-gated BLOCKING (GLUDD_O_ENFORCE=0 for disable)
+**Test:** `test_o144_143`
+
+### O145 — The agent MUST propagate parent objective completion when all children are complete.
+The agent MUST propagate parent objective completion when all children are complete. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Constraints Are To Engineer Around` + `config/ratchet.yml:gate-failure` ratchet-combined
+**Test:** `test_o145_144`
+
+### O146 — The agent MUST escalate to the user when an objective exceeds its deadline.
+The agent MUST escalate to the user when an objective exceeds its deadline. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-session-start.json` + `.opencode/plugin/enforce-anti-essay.ts` state-aware block
+**Test:** `test_o146_145`
+
+### O147 — The agent MUST prevent two conflicting objectives from both being marked primary.
+The agent MUST prevent two conflicting objectives from both being marked primary. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:missing-test` + `scripts/ci_check_cooldown.py` ratchet+script gate
+**Test:** `test_o147_146`
+
+### O148 — The agent MUST annotate every tool call with the objective ID it advances.
+The agent MUST annotate every tool call with the objective ID it advances. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:sbom` + Makefile `make ci-verdict` CI+local dual
+**Test:** `test_o148_147`
+
+### O149 — The agent MUST present a visual progress bar for the current objective in output.
+The agent MUST present a visual progress bar for the current objective in output. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-branch-discipline.ts` x `.opencode/plugin/enforce-verified-claims.ts` cross-plugin
+**Test:** `test_o149_148`
+
+### O150 — The agent MUST detect when a low-priority objective is blocking a high-priority one.
+The agent MUST detect when a low-priority objective is blocking a high-priority one. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Model Utilization` + `scripts/require_ci_green.py` + `.opencode/plugin/enforce-deletion-gate.ts` triple layer
+**Test:** `test_o150_149`
+
+### O151 — The agent MUST require explicit accept before adding a new objective (scope creep prevention).
+The agent MUST require explicit accept before adding a new objective (scope creep prevention). This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Pipeline Orchestration Model` section
+**Test:** `test_o151_150`
+
+### O152 — The agent MUST revert state changes when a failed objective is rolled back.
+The agent MUST revert state changes when a failed objective is rolled back. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make check-readme-status` prerequisite
+**Test:** `test_o152_151`
+
+### O153 — The agent MUST include objective context in every subagent dispatch.
+The agent MUST include objective context in every subagent dispatch. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/task_watchdog.py` enforcement
+**Test:** `test_o153_152`
+
+### O154 — The agent MUST verify objective completion via an independent check, not self-report.
+The agent MUST verify objective completion via an independent check, not self-report. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-make.ts` `tool.execute.before` block
+**Test:** `test_o154_153`
+
+
+## Expansion: Test Integrity (T101–T154) (54 specs)
+
+### T101 — The agent MUST require a docstring justification for any test that patches stdlib.
+The agent MUST require a docstring justification for any test that patches stdlib. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make reload-enforcement` fail-closed guard
+**Test:** `test_t101_100`
+
+### T102 — The agent MUST require a timeout for any test that uses subprocess.
+The agent MUST require a timeout for any test that uses subprocess. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` state-file enforced block
+**Test:** `test_t102_101`
+
+### T103 — The agent MUST name each case in a parametrized test for clarity.
+The agent MUST name each case in a parametrized test for clarity. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-audit.ts` + `make watchdog-auto` combined
+**Test:** `test_t103_102`
+
+### T104 — The agent MUST prevent tests from importing from a different directory's conftest.
+The agent MUST prevent tests from importing from a different directory's conftest. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:lint-baseline` ratchet-tracked gate
+**Test:** `test_t104_103`
+
+### T105 — The agent MUST ensure mock specs match the actual function signatures being mocked.
+The agent MUST ensure mock specs match the actual function signatures being mocked. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-linux` CI workflow enforcement
+**Test:** `test_t105_104`
+
+### T106 — The agent MUST include an assertion message explaining expected vs actual values.
+The agent MUST include an assertion message explaining expected vs actual values. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/agent_liveness.py` + `.opencode/plugin/enforce-batch-push.ts` dual layer
+**Test:** `test_t106_105`
+
+### T107 — The agent MUST use pytest's tmp_path fixture for temporary file creation.
+The agent MUST use pytest's tmp_path fixture for temporary file creation. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make validate` combined
+**Test:** `test_t107_106`
+
+### T108 — The agent MUST ensure tests do not leave child processes running after completion.
+The agent MUST ensure tests do not leave child processes running after completion. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make secrets-scan` + `scripts/check_duplicate_targets.py` script-backed guard
+**Test:** `test_t108_107`
+
+### T109 — The agent MUST register all custom test markers in pytest.ini.
+The agent MUST register all custom test markers in pytest.ini. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-test-integrity.ts` env-var-gated BLOCKING (GLUDD_T_ENFORCE=0 for disable)
+**Test:** `test_t109_108`
+
+### T110 — The agent MUST catch silent tests that pass but assert nothing meaningful.
+The agent MUST catch silent tests that pass but assert nothing meaningful. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `COST-EFFICIENCY DIRECTIVE` + `config/ratchet.yml:coverage-baseline` ratchet-combined
+**Test:** `test_t110_109`
+
+### T111 — The agent MUST use monkeypatch to override production config when a test reads config.
+The agent MUST use monkeypatch to override production config when a test reads config. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-tool-streak.json` + `.opencode/plugin/enforce-delegate.ts` state-aware block
+**Test:** `test_t111_110`
+
+### T112 — The agent MUST use tmp_path for any test that writes to disk.
+The agent MUST use tmp_path for any test that writes to disk. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dirty-tree` + `scripts/check_green_branch_guard.py` ratchet+script gate
+**Test:** `test_t112_111`
+
+### T113 — The agent MUST block commits when modified code has coverage gaps larger than 5 lines.
+The agent MUST block commits when modified code has coverage gaps larger than 5 lines. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:sbom` + Makefile `make feature-start` CI+local dual
+**Test:** `test_t113_112`
+
+### T114 — The agent MUST seed random number generators for reproducibility in tests.
+The agent MUST seed random number generators for reproducibility in tests. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-anti-essay.ts` x `.opencode/plugin/enforce-multitask.ts` cross-plugin
+**Test:** `test_t114_113`
+
+### T115 — The agent MUST use freezegun when a test depends on system time.
+The agent MUST use freezegun when a test depends on system time. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `10-Agent Dispatch Floor` + `scripts/check_tdd_compliance.py` + `.opencode/plugin/enforce-objective.ts` triple layer
+**Test:** `test_t115_114`
+
+### T116 — The agent MUST ensure test collection succeeds before running any tests.
+The agent MUST ensure test collection succeeds before running any tests. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Anti-Grinding Enforcement` section
+**Test:** `test_t116_115`
+
+### T117 — The agent MUST forbid wildcard imports of the module under test.
+The agent MUST forbid wildcard imports of the module under test. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make verify-remote` prerequisite
+**Test:** `test_t117_116`
+
+### T118 — The agent MUST ensure mocks do not mock the function that is under test.
+The agent MUST ensure mocks do not mock the function that is under test. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_disk_usage.py` enforcement
+**Test:** `test_t118_117`
+
+### T119 — The agent MUST require the test module name to match the source module name.
+The agent MUST require the test module name to match the source module name. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-floor.ts` `tool.execute.before` block
+**Test:** `test_t119_118`
+
+### T120 — The agent MUST prevent conftest files from containing test functions.
+The agent MUST prevent conftest files from containing test functions. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-enhancement-ratio.ts` permissionDecision deny
+**Test:** `test_t120_119`
+
+### T121 — The agent MUST mark tests with external dependencies as integration tests.
+The agent MUST mark tests with external dependencies as integration tests. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make test-count` fail-closed guard
+**Test:** `test_t121_120`
+
+### T122 — The agent MUST justify every coverage omission (omit pattern) per file.
+The agent MUST justify every coverage omission (omit pattern) per file. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-watchdog-disengage` state-file enforced block
+**Test:** `test_t122_121`
+
+### T123 — The agent MUST capture (not print) stdout in tests that verify output.
+The agent MUST capture (not print) stdout in tests that verify output. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-audit.ts` + `make agent-worktree` combined
+**Test:** `test_t123_122`
+
+### T124 — The agent MUST use pytest.raises for expected exceptions instead of try/except.
+The agent MUST use pytest.raises for expected exceptions instead of try/except. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:missing-test` ratchet-tracked gate
+**Test:** `test_t124_123`
+
+### T125 — The agent MUST require explicit teardown for fixtures scoped to session.
+The agent MUST require explicit teardown for fixtures scoped to session. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-linux` CI workflow enforcement
+**Test:** `test_t125_124`
+
+### T126 — The agent MUST ensure every test file contains at least one class or function.
+The agent MUST ensure every test file contains at least one class or function. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/test_hook_runtime.py` + `.opencode/plugin/enforce-test-integrity.ts` dual layer
+**Test:** `test_t126_125`
+
+### T127 — The agent MUST forbid the use of exit() or sys.exit() in test code.
+The agent MUST forbid the use of exit() or sys.exit() in test code. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make security` combined
+**Test:** `test_t127_126`
+
+### T128 — The agent MUST use pytest-benchmark marker for benchmark tests.
+The agent MUST use pytest-benchmark marker for benchmark tests. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make gate-status` + `scripts/ci_check_cooldown.py` script-backed guard
+**Test:** `test_t128_127`
+
+### T129 — The agent MUST treat a previously passing test that now fails as a release blocker.
+The agent MUST treat a previously passing test that now fails as a release blocker. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-deadline.ts` env-var-gated BLOCKING (GLUDD_T_ENFORCE=0 for disable)
+**Test:** `test_t129_128`
+
+### T130 — The agent MUST not assert on log output format strings in tests.
+The agent MUST not assert on log output format strings in tests. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Release Cut = Update README` + `config/ratchet.yml:untested-source` ratchet-combined
+**Test:** `test_t130_129`
+
+### T131 — The agent MUST ensure tests do not depend on execution order in CI.
+The agent MUST ensure tests do not depend on execution order in CI. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-session-start.json` + `.opencode/plugin/enforce-enhancement-ratio.ts` state-aware block
+**Test:** `test_t131_130`
+
+### T132 — The agent MUST require thread join in teardown for any test using threading.
+The agent MUST require thread join in teardown for any test using threading. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:stale-gate` + `scripts/check_node_v26_compat.py` ratchet+script gate
+**Test:** `test_t132_131`
+
+### T133 — The agent MUST include re-exports in test coverage for __init__.py.
+The agent MUST include re-exports in test coverage for __init__.py. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:sbom` + Makefile `make hot-reload-plugins` CI+local dual
+**Test:** `test_t133_132`
+
+### T134 — The agent MUST validate external data used in parametrized tests.
+The agent MUST validate external data used in parametrized tests. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-test-integrity.ts` x `.opencode/plugin/enforce-anti-essay.ts` cross-plugin
+**Test:** `test_t134_133`
+
+### T135 — The agent MUST regenerate snapshot tests when --snapshot-update is passed.
+The agent MUST regenerate snapshot tests when --snapshot-update is passed. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Background Operations NEVER Block Dispatch` + `scripts/task_watchdog.py` + `.opencode/plugin/enforce-no-wait.ts` triple layer
+**Test:** `test_t135_134`
+
+### T136 — The agent MUST detect and reject tests that call the function under test zero times.
+The agent MUST detect and reject tests that call the function under test zero times. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Minimum 10 Subagents` section
+**Test:** `test_t136_135`
+
+### T137 — The agent MUST set or disable deadlines for hypothesis tests.
+The agent MUST set or disable deadlines for hypothesis tests. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-stash` prerequisite
+**Test:** `test_t137_136`
+
+### T138 — The agent MUST not read the environment in test assertions.
+The agent MUST not read the environment in test assertions. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_readme_status_current.py` enforcement
+**Test:** `test_t138_137`
+
+### T139 — The agent MUST prevent mutation of shared fixtures inside parametrized loops.
+The agent MUST prevent mutation of shared fixtures inside parametrized loops. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-objective.ts` `tool.execute.before` block
+**Test:** `test_t139_138`
+
+### T140 — The agent MUST ensure test collection has no side effects.
+The agent MUST ensure test collection has no side effects. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-batch-push.ts` permissionDecision deny
+**Test:** `test_t140_139`
+
+### T141 — The agent MUST NOT allow pytest.skip in the committed test suite.
+The agent MUST NOT allow pytest.skip in the committed test suite. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make typecheck` fail-closed guard
+**Test:** `test_t141_140`
+
+### T142 — The agent MUST require strict=True and a documented reason for any xfail marker.
+The agent MUST require strict=True and a documented reason for any xfail marker. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` state-file enforced block
+**Test:** `test_t142_141`
+
+### T143 — The agent MUST enforce a minimum 85% coverage threshold per modified module.
+The agent MUST enforce a minimum 85% coverage threshold per modified module. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-audit.ts` + `make ci-wait` combined
+**Test:** `test_t143_142`
+
+### T144 — The agent MUST reject any test file that contains zero assertions.
+The agent MUST reject any test file that contains zero assertions. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:suppression-comment` ratchet-tracked gate
+**Test:** `test_t144_143`
+
+### T145 — The agent MUST ensure all test functions are discoverable by pytest collection.
+The agent MUST ensure all test functions are discoverable by pytest collection. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-linux` CI workflow enforcement
+**Test:** `test_t145_144`
+
+### T146 — The agent MUST guarantee test isolation: no test may depend on the order of execution.
+The agent MUST guarantee test isolation: no test may depend on the order of execution. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` + `.opencode/plugin/enforce-verified-claims.ts` dual layer
+**Test:** `test_t146_145`
+
+### T147 — The agent MUST scope test fixtures correctly (function vs module vs session).
+The agent MUST scope test fixtures correctly (function vs module vs session). This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make git-diff` combined
+**Test:** `test_t147_146`
+
+### T148 — The agent MUST forbid hardcoded absolute paths in test assertions.
+The agent MUST forbid hardcoded absolute paths in test assertions. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make test-e2e` + `scripts/test_hook_runtime.py` script-backed guard
+**Test:** `test_t148_147`
+
+### T149 — The agent MUST use in-memory SQLite for test databases, never the production database.
+The agent MUST use in-memory SQLite for test databases, never the production database. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-make.ts` env-var-gated BLOCKING (GLUDD_T_ENFORCE=0 for disable)
+**Test:** `test_t149_148`
+
+### T150 — The agent MUST clean up mock patches in teardown for every test.
+The agent MUST clean up mock patches in teardown for every test. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Session Persistence Policy` + `config/ratchet.yml:duplicate-target` ratchet-combined
+**Test:** `test_t150_149`
+
+### T151 — The agent MUST require at least 2 cases for any parametrized test.
+The agent MUST require at least 2 cases for any parametrized test. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-tool-streak.json` + `.opencode/plugin/enforce-session-start.ts` state-aware block
+**Test:** `test_t151_150`
+
+### T152 — The agent MUST apply the slow marker to any test exceeding 1 second execution time.
+The agent MUST apply the slow marker to any test exceeding 1 second execution time. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:untested-source` + `scripts/task_watchdog.py` ratchet+script gate
+**Test:** `test_t152_151`
+
+### T153 — The agent MUST forbid network calls in unit tests.
+The agent MUST forbid network calls in unit tests. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:sbom` + Makefile `make gate-audit` CI+local dual
+**Test:** `test_t153_152`
+
+### T154 — The agent MUST clean up temporary directories and files after each test.
+The agent MUST clean up temporary directories and files after each test. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-commit-lock.ts` x `.opencode/plugin/enforce-deletion-gate.ts` cross-plugin
+**Test:** `test_t154_153`
+
+
+## Expansion: Dispatch Floor (D100–D154) (55 specs)
+
+### D100 — The agent MUST limit subagent prompts to 20 lines or fewer.
+The agent MUST limit subagent prompts to 20 lines or fewer. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `10-Agent Dispatch Floor` section
+**Test:** `test_d100_99`
+
+### D101 — The agent MUST require subagents to return a summary of 10 lines or fewer.
+The agent MUST require subagents to return a summary of 10 lines or fewer. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-diff` prerequisite
+**Test:** `test_d101_100`
+
+### D102 — The agent MUST serialize research subagents (max 1 at a time) to avoid collisions.
+The agent MUST serialize research subagents (max 1 at a time) to avoid collisions. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/agent_liveness.py` enforcement
+**Test:** `test_d102_101`
+
+### D103 — The agent MUST parallelize coding subagents (max 2) that touch disjoint files.
+The agent MUST parallelize coding subagents (max 2) that touch disjoint files. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-stop.ts` `tool.execute.before` block
+**Test:** `test_d103_102`
+
+### D104 — The agent MUST never re-dispatch a completed task (deduplication by task ID).
+The agent MUST never re-dispatch a completed task (deduplication by task ID). This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-branch-discipline.ts` permissionDecision deny
+**Test:** `test_d104_103`
+
+### D105 — The agent MUST use an isolated worktree for every file-editing subagent.
+The agent MUST use an isolated worktree for every file-editing subagent. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-status` fail-closed guard
+**Test:** `test_d105_104`
+
+### D106 — The agent MUST serialize merges through the orchestrator on the main checkout.
+The agent MUST serialize merges through the orchestrator on the main checkout. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-watchdog-disengage` state-file enforced block
+**Test:** `test_d106_105`
+
+### D107 — The agent MUST enforce one branch per worktree agent (branch uniqueness).
+The agent MUST enforce one branch per worktree agent (branch uniqueness). This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-audit.ts` + `make security` combined
+**Test:** `test_d107_106`
+
+### D108 — The agent MUST record each dispatch to a state file with timestamp and task ID.
+The agent MUST record each dispatch to a state file with timestamp and task ID. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:test-failure` ratchet-tracked gate
+**Test:** `test_d108_107`
+
+### D109 — The agent MUST retry failed dispatches with exponential backoff.
+The agent MUST retry failed dispatches with exponential backoff. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-linux` CI workflow enforcement
+**Test:** `test_d109_108`
+
+### D110 — The agent MUST inform each subagent of the available tools it can use.
+The agent MUST inform each subagent of the available tools it can use. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/ci_check_cooldown.py` + `.opencode/plugin/enforce-worktree.ts` dual layer
+**Test:** `test_d110_109`
+
+### D111 — The agent MUST inform each subagent of the available make targets.
+The agent MUST inform each subagent of the available make targets. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make git-checkout` combined
+**Test:** `test_d111_110`
+
+### D112 — The agent MUST restrict each subagent to workspace and /tmp/gludd-* paths.
+The agent MUST restrict each subagent to workspace and /tmp/gludd-* paths. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make disengage-enforcement` + `scripts/task_watchdog.py` script-backed guard
+**Test:** `test_d112_111`
+
+### D113 — The agent MUST enforce GLUDD_TASK_TIMEOUT_MS per dispatched task.
+The agent MUST enforce GLUDD_TASK_TIMEOUT_MS per dispatched task. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-worktree.ts` env-var-gated BLOCKING (GLUDD_D_ENFORCE=0 for disable)
+**Test:** `test_d113_112`
+
+### D114 — The agent MUST log each dispatch wave with timestamp and task IDs for auditing.
+The agent MUST log each dispatch wave with timestamp and task IDs for auditing. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Pipeline Orchestration Model` + `config/ratchet.yml:test-failure` ratchet-combined
+**Test:** `test_d114_113`
+
+### D115 — The agent MUST support GLUDD_MULTITASK_FLOOR_ENFORCE=0 for focused single-file work.
+The agent MUST support GLUDD_MULTITASK_FLOOR_ENFORCE=0 for focused single-file work. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-session-start.json` + `.opencode/plugin/enforce-objective.ts` state-aware block
+**Test:** `test_d115_114`
+
+### D116 — The agent MUST reset dispatch counters on crash recovery.
+The agent MUST reset dispatch counters on crash recovery. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:suppression-comment` + `scripts/require_ci_green.py` ratchet+script gate
+**Test:** `test_d116_115`
+
+### D117 — The agent MUST expose make floor-status to show the current in-flight count.
+The agent MUST expose make floor-status to show the current in-flight count. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:sbom` + Makefile `make git-status` CI+local dual
+**Test:** `test_d117_116`
+
+### D118 — The agent MUST enforce the hard cap of 10 concurrent subagents.
+The agent MUST enforce the hard cap of 10 concurrent subagents. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-floor.ts` x `.opencode/plugin/enforce-make.ts` cross-plugin
+**Test:** `test_d118_117`
+
+### D119 — The agent MUST record the model used for each dispatch for utilization tracking.
+The agent MUST record the model used for each dispatch for utilization tracking. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Keep Opus Lean` + `scripts/check_node_v26_compat.py` + `.opencode/plugin/enforce-verified-claims.ts` triple layer
+**Test:** `test_d119_118`
+
+### D120 — The agent MUST enforce a minimum 50% enhancement ratio per dispatch wave.
+The agent MUST enforce a minimum 50% enhancement ratio per dispatch wave. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `A Release is an Artifact` section
+**Test:** `test_d120_119`
+
+### D121 — The agent MUST prevent dispatch during release-cut operations.
+The agent MUST prevent dispatch during release-cut operations. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make secrets-baseline` prerequisite
+**Test:** `test_d121_120`
+
+### D122 — The agent MUST block dispatch when the git working tree is dirty.
+The agent MUST block dispatch when the git working tree is dirty. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_node_v26_compat.py` enforcement
+**Test:** `test_d122_121`
+
+### D123 — The agent MUST support emergency disengage bypass for stuck sessions.
+The agent MUST support emergency disengage bypass for stuck sessions. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-worktree.ts` `tool.execute.before` block
+**Test:** `test_d123_122`
+
+### D124 — The agent MUST throttle dispatch when disk usage exceeds 95%.
+The agent MUST throttle dispatch when disk usage exceeds 95%. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-stop.ts` permissionDecision deny
+**Test:** `test_d124_123`
+
+### D125 — The agent MUST make the dispatch count observable to the user.
+The agent MUST make the dispatch count observable to the user. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make ci-verdict` fail-closed guard
+**Test:** `test_d125_124`
+
+### D126 — The agent MUST trigger a refill check automatically when a subagent completes.
+The agent MUST trigger a refill check automatically when a subagent completes. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` state-file enforced block
+**Test:** `test_d126_125`
+
+### D127 — The agent MUST log estimated token costs for each dispatch wave.
+The agent MUST log estimated token costs for each dispatch wave. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-audit.ts` + `make gate-background` combined
+**Test:** `test_d127_126`
+
+### D128 — The agent MUST apply backpressure (pause dispatch) when results are unprocessed.
+The agent MUST apply backpressure (pause dispatch) when results are unprocessed. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:duplicate-target` ratchet-tracked gate
+**Test:** `test_d128_127`
+
+### D129 — The agent MUST permit limited reads during the result-processing grace window.
+The agent MUST permit limited reads during the result-processing grace window. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-linux` CI workflow enforcement
+**Test:** `test_d129_128`
+
+### D130 — The agent MUST dispatch higher-priority tasks before lower-priority ones.
+The agent MUST dispatch higher-priority tasks before lower-priority ones. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_readme_status_current.py` + `.opencode/plugin/enforce-multitask.ts` dual layer
+**Test:** `test_d130_129`
+
+### D131 — The agent MUST isolate each agent with its own worktree to prevent cross-contamination.
+The agent MUST isolate each agent with its own worktree to prevent cross-contamination. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make ci-verdict` combined
+**Test:** `test_d131_130`
+
+### D132 — The agent MUST verify a subagent's result before marking the task as done.
+The agent MUST verify a subagent's result before marking the task as done. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make agent-worktree-list` + `scripts/verify_release_artifact.py` script-backed guard
+**Test:** `test_d132_131`
+
+### D133 — The agent MUST avoid dispatch patterns that have previously failed.
+The agent MUST avoid dispatch patterns that have previously failed. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-commit-lock.ts` env-var-gated BLOCKING (GLUDD_D_ENFORCE=0 for disable)
+**Test:** `test_d133_132`
+
+### D134 — The agent MUST rely on the task watchdog to kill hung subagents.
+The agent MUST rely on the task watchdog to kill hung subagents. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Instruction-Following Priority` + `config/ratchet.yml:suppression-comment` ratchet-combined
+**Test:** `test_d134_133`
+
+### D135 — The agent MUST mechanically enforce the minimum 10 task/agent dispatches per wave.
+The agent MUST mechanically enforce the minimum 10 task/agent dispatches per wave. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-tool-streak.json` + `.opencode/plugin/enforce-audit.ts` state-aware block
+**Test:** `test_d135_134`
+
+### D136 — The agent MUST maintain a zero-dispatch streak counter that blocks at MAX_ZERO_STREAK=2.
+The agent MUST maintain a zero-dispatch streak counter that blocks at MAX_ZERO_STREAK=2. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dead-code` + `scripts/check_duplicate_targets.py` ratchet+script gate
+**Test:** `test_d136_135`
+
+### D137 — The agent MUST enforce the post-result read limit of POST_RESULT_READ_LIMIT=3 calls.
+The agent MUST enforce the post-result read limit of POST_RESULT_READ_LIMIT=3 calls. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:sbom` + Makefile `make verify-remote` CI+local dual
+**Test:** `test_d137_136`
+
+### D138 — The agent MUST prevent pool drainage with an estimatedInFlight counter.
+The agent MUST prevent pool drainage with an estimatedInFlight counter. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-delegate.ts` x `.opencode/plugin/enforce-enhancement-ratio.ts` cross-plugin
+**Test:** `test_d138_137`
+
+### D139 — The agent MUST track waveHistory per wave dispatch count for audit purposes.
+The agent MUST track waveHistory per wave dispatch count for audit purposes. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Q&A Response Pattern` + `scripts/test_hook_runtime.py` + `.opencode/plugin/enforce-enhancement-ratio.ts` triple layer
+**Test:** `test_d139_138`
+
+### D140 — The agent MUST reset the consecutiveNonDispatch count on any dispatch.
+The agent MUST reset the consecutiveNonDispatch count on any dispatch. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Release Pipeline Must Be CI-Green` section
+**Test:** `test_d140_139`
+
+### D141 — The agent MUST block grinding at 5 consecutive non-dispatch calls within a 30-second window.
+The agent MUST block grinding at 5 consecutive non-dispatch calls within a 30-second window. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make typecheck` prerequisite
+**Test:** `test_d141_140`
+
+### D142 — The agent MUST require dispatch refill when in-flight count drops below 10.
+The agent MUST require dispatch refill when in-flight count drops below 10. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_duplicate_targets.py` enforcement
+**Test:** `test_d142_141`
+
+### D143 — The agent MUST deny 1-dispatch messages when 2 or more pending work items exist.
+The agent MUST deny 1-dispatch messages when 2 or more pending work items exist. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-clean-tree.ts` `tool.execute.before` block
+**Test:** `test_d143_142`
+
+### D144 — The agent MUST emit a text.complete nag when the wave count is below 10 with pending work.
+The agent MUST emit a text.complete nag when the wave count is below 10 with pending work. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-make.ts` permissionDecision deny
+**Test:** `test_d144_143`
+
+### D145 — The agent MUST not increment the streak counter for read-only tools (read, grep, glob).
+The agent MUST not increment the streak counter for read-only tools (read, grep, glob). This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make check-readme-status` fail-closed guard
+**Test:** `test_d145_144`
+
+### D146 — The agent MUST respect the floor override value from /tmp/gludd-floor-override.
+The agent MUST respect the floor override value from /tmp/gludd-floor-override. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-watchdog-disengage` state-file enforced block
+**Test:** `test_d146_145`
+
+### D147 — The agent MUST honor the GLUDD_MIN_DISPATCHES env var for floor tuning.
+The agent MUST honor the GLUDD_MIN_DISPATCHES env var for floor tuning. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-audit.ts` + `make reload-enforcement` combined
+**Test:** `test_d147_146`
+
+### D148 — The agent MUST trigger the session-start dispatch requirement immediately on session start.
+The agent MUST trigger the session-start dispatch requirement immediately on session start. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:untested-source` ratchet-tracked gate
+**Test:** `test_d148_147`
+
+### D149 — The agent MUST treat subagent result arrival as a dispatch opportunity window.
+The agent MUST treat subagent result arrival as a dispatch opportunity window. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-linux` CI workflow enforcement
+**Test:** `test_d149_148`
+
+### D150 — The agent MUST dispatch any main-thread operation exceeding 3 seconds to a subagent.
+The agent MUST dispatch any main-thread operation exceeding 3 seconds to a subagent. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_duplicate_targets.py` + `.opencode/plugin/enforce-no-wait.ts` dual layer
+**Test:** `test_d150_149`
+
+### D151 — The agent MUST dispatch commit operations as subagent tasks, not main-thread mutating bash.
+The agent MUST dispatch commit operations as subagent tasks, not main-thread mutating bash. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make verify-remote` combined
+**Test:** `test_d151_150`
+
+### D152 — The agent MUST fill thin edit backlogs with research filler subagents.
+The agent MUST fill thin edit backlogs with research filler subagents. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make check-duplicate-targets` + `scripts/check_disk_usage.py` script-backed guard
+**Test:** `test_d152_151`
+
+### D153 — The agent MUST prefer uniform-duration tasks to minimize pipeline drainage.
+The agent MUST prefer uniform-duration tasks to minimize pipeline drainage. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-enhancement-ratio.ts` env-var-gated BLOCKING (GLUDD_D_ENFORCE=0 for disable)
+**Test:** `test_d153_152`
+
+### D154 — The agent MUST process results in under 5 seconds and dispatch the next wave immediately.
+The agent MUST process results in under 5 seconds and dispatch the next wave immediately. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Premature-Stop Audit Policy` + `config/ratchet.yml:missing-test` ratchet-combined
+**Test:** `test_d154_153`
+
+
+## Expansion: Stop Prevention (S100–S154) (55 specs)
+
+### S100 — The agent MUST block claims of 'CI green' made from memory without a fresh check.
+The agent MUST block claims of 'CI green' made from memory without a fresh check. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:ci-failure` + `scripts/check_disk_usage.py` ratchet+script gate
+**Test:** `test_s100_99`
+
+### S101 — The agent MUST treat 'task complete' without a TASKS.md update as an incomplete stop.
+The agent MUST treat 'task complete' without a TASKS.md update as an incomplete stop. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:sbom` + Makefile `make agent-cleanup` CI+local dual
+**Test:** `test_s101_100`
+
+### S102 — The agent MUST flag 'moving on to' statements that abandon an incomplete current objective.
+The agent MUST flag 'moving on to' statements that abandon an incomplete current objective. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-multitask.ts` x `.opencode/plugin/enforce-floor.ts` cross-plugin
+**Test:** `test_s102_101`
+
+### S103 — The agent MUST never permit a stop when ratchet.yml has entries.
+The agent MUST never permit a stop when ratchet.yml has entries. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `COST-EFFICIENCY DIRECTIVE` + `scripts/check_green_branch_guard.py` + `.opencode/plugin/enforce-stop.ts` triple layer
+**Test:** `test_s103_102`
+
+### S104 — The agent MUST never permit a stop when gate-status is FAIL.
+The agent MUST never permit a stop when gate-status is FAIL. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Multitasking / Blockers` section
+**Test:** `test_s104_103`
+
+### S105 — The agent MUST never permit a stop when .gate-status is missing.
+The agent MUST never permit a stop when .gate-status is missing. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make gate-background` prerequisite
+**Test:** `test_s105_104`
+
+### S106 — The agent MUST never permit a stop when a release tag has no downloadable artifact.
+The agent MUST never permit a stop when a release tag has no downloadable artifact. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/test_hook_runtime.py` enforcement
+**Test:** `test_s106_105`
+
+### S107 — The agent MUST never permit a stop when uncommitted changes exist in the working tree.
+The agent MUST never permit a stop when uncommitted changes exist in the working tree. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-branch-discipline.ts` `tool.execute.before` block
+**Test:** `test_s107_106`
+
+### S108 — The agent MUST never permit a stop when CI is red on the current branch.
+The agent MUST never permit a stop when CI is red on the current branch. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-audit.ts` permissionDecision deny
+**Test:** `test_s108_107`
+
+### S109 — The agent MUST never permit a stop when development has diverged from master.
+The agent MUST never permit a stop when development has diverged from master. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make development-start` fail-closed guard
+**Test:** `test_s109_108`
+
+### S110 — The agent MUST never permit a stop when a submodule is dirty after update.
+The agent MUST never permit a stop when a submodule is dirty after update. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` state-file enforced block
+**Test:** `test_s110_109`
+
+### S111 — The agent MUST never permit a stop when a docker container is running in the background.
+The agent MUST never permit a stop when a docker container is running in the background. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-audit.ts` + `make check-node-v26-compat` combined
+**Test:** `test_s111_110`
+
+### S112 — The agent MUST never permit a stop when ssh-agent has no loaded keys for sandboxcom.
+The agent MUST never permit a stop when ssh-agent has no loaded keys for sandboxcom. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:coverage-baseline` ratchet-tracked gate
+**Test:** `test_s112_111`
+
+### S113 — The agent MUST never permit a stop when worktree branches are unmerged and active.
+The agent MUST never permit a stop when worktree branches are unmerged and active. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-linux` CI workflow enforcement
+**Test:** `test_s113_112`
+
+### S114 — The agent MUST never permit a stop when TASKS.md has items older than the session start.
+The agent MUST never permit a stop when TASKS.md has items older than the session start. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_green_branch_guard.py` + `.opencode/plugin/enforce-anti-essay.ts` dual layer
+**Test:** `test_s114_113`
+
+### S115 — The agent MUST never permit a stop when SESSION.md is stale (more than 1 hour old).
+The agent MUST never permit a stop when SESSION.md is stale (more than 1 hour old). This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make verify-release-completeness` combined
+**Test:** `test_s115_114`
+
+### S116 — The agent MUST never permit a stop when BUGS.md has open incidents without resolution.
+The agent MUST never permit a stop when BUGS.md has open incidents without resolution. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make verify-state` + `scripts/check_green_branch_guard.py` script-backed guard
+**Test:** `test_s116_115`
+
+### S117 — The agent MUST never permit a stop when .secrets.baseline is modified but not committed.
+The agent MUST never permit a stop when .secrets.baseline is modified but not committed. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` env-var-gated BLOCKING (GLUDD_S_ENFORCE=0 for disable)
+**Test:** `test_s117_116`
+
+### S118 — The agent MUST never permit a stop when pre-commit hooks are not installed.
+The agent MUST never permit a stop when pre-commit hooks are not installed. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Bash Command Policy` + `config/ratchet.yml:lint-baseline` ratchet-combined
+**Test:** `test_s118_117`
+
+### S119 — The agent MUST never permit a stop when disk usage exceeds the 90% threshold.
+The agent MUST never permit a stop when disk usage exceeds the 90% threshold. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-tool-streak.json` + `.opencode/plugin/enforce-multitask.ts` state-aware block
+**Test:** `test_s119_118`
+
+### S120 — The agent MUST never permit a stop when verify-enforcement reports non-blocking plugins.
+The agent MUST never permit a stop when verify-enforcement reports non-blocking plugins. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:coverage-baseline` + `scripts/verify_release_completeness.py` ratchet+script gate
+**Test:** `test_s120_119`
+
+### S121 — The agent MUST rotate stop logs when incident count exceeds 100 per file.
+The agent MUST rotate stop logs when incident count exceeds 100 per file. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:sbom` + Makefile `make test` CI+local dual
+**Test:** `test_s121_120`
+
+### S122 — The agent MUST require root cause analysis for every stop incident.
+The agent MUST require root cause analysis for every stop incident. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-stop.ts` x `.opencode/plugin/enforce-context.ts` cross-plugin
+**Test:** `test_s122_121`
+
+### S123 — The agent MUST cover 50 or more known stop patterns with regex detection.
+The agent MUST cover 50 or more known stop patterns with regex detection. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Task Completion Policy` + `scripts/verify_release_completeness.py` + `.opencode/plugin/enforce-delegate.ts` triple layer
+**Test:** `test_s123_122`
+
+### S124 — The agent MUST not block legitimate completion (false positive prevention).
+The agent MUST not block legitimate completion (false positive prevention). This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Model Utilization` section
+**Test:** `test_s124_123`
+
+### S125 — The agent MUST resume all work after recovering from a false stop.
+The agent MUST resume all work after recovering from a false stop. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make test-integration` prerequisite
+**Test:** `test_s125_124`
+
+### S126 — The agent MUST escalate when the same stop pattern occurs twice in one session.
+The agent MUST escalate when the same stop pattern occurs twice in one session. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/verify_release_artifact.py` enforcement
+**Test:** `test_s126_125`
+
+### S127 — The agent MUST log every stop block with the blocked text content for auditing.
+The agent MUST log every stop block with the blocked text content for auditing. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-session-start.ts` `tool.execute.before` block
+**Test:** `test_s127_126`
+
+### S128 — The agent MUST only allow GLUDD_STOP_ENFORCE=0 for emergency situations.
+The agent MUST only allow GLUDD_STOP_ENFORCE=0 for emergency situations. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-delegate.ts` permissionDecision deny
+**Test:** `test_s128_127`
+
+### S129 — The agent MUST prepend a STOP BLOCKED directive to blanked text responses.
+The agent MUST prepend a STOP BLOCKED directive to blanked text responses. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make watchdog-auto` fail-closed guard
+**Test:** `test_s129_128`
+
+### S130 — The agent MUST track and report session-level stop-rate metrics.
+The agent MUST track and report session-level stop-rate metrics. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-watchdog-disengage` state-file enforced block
+**Test:** `test_s130_129`
+
+### S131 — The agent MUST codify results first before stopping after a subagent wave.
+The agent MUST codify results first before stopping after a subagent wave. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-audit.ts` + `make git-stash` combined
+**Test:** `test_s131_130`
+
+### S132 — The agent MUST treat a between-wave gap exceeding 30 seconds without dispatch as a stop.
+The agent MUST treat a between-wave gap exceeding 30 seconds without dispatch as a stop. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:gate-failure` ratchet-tracked gate
+**Test:** `test_s132_131`
+
+### S133 — The agent MUST NOT treat a plugin error as a license to stop working.
+The agent MUST NOT treat a plugin error as a license to stop working. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-linux` CI workflow enforcement
+**Test:** `test_s133_132`
+
+### S134 — The agent MUST self-correct stop behavior after receiving the second block.
+The agent MUST self-correct stop behavior after receiving the second block. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` + `.opencode/plugin/enforce-clean-tree.ts` dual layer
+**Test:** `test_s134_133`
+
+### S135 — The agent MUST not treat open human-todos (requiring human action) as 'done'.
+The agent MUST not treat open human-todos (requiring human action) as 'done'. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make check-node-v26-compat` combined
+**Test:** `test_s135_134`
+
+### S136 — The agent MUST codify results first after receiving CI GREEN before stopping.
+The agent MUST codify results first after receiving CI GREEN before stopping. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-branch` + `scripts/check_readme_status_current.py` script-backed guard
+**Test:** `test_s136_135`
+
+### S137 — The agent MUST commit first after receiving gate PASS before stopping.
+The agent MUST commit first after receiving gate PASS before stopping. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-audit.ts` env-var-gated BLOCKING (GLUDD_S_ENFORCE=0 for disable)
+**Test:** `test_s137_136`
+
+### S138 — The agent MUST not treat 'waiting for background op' as a reason to stop.
+The agent MUST not treat 'waiting for background op' as a reason to stop. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Model Utilization` + `config/ratchet.yml:dead-code` ratchet-combined
+**Test:** `test_s138_137`
+
+### S139 — The agent MUST not treat 'waiting for in-flight subagents' as a reason to stop.
+The agent MUST not treat 'waiting for in-flight subagents' as a reason to stop. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-session-start.json` + `.opencode/plugin/enforce-clean-tree.ts` state-aware block
+**Test:** `test_s139_138`
+
+### S140 — The agent MUST complete the next pending TASKS item before stopping.
+The agent MUST complete the next pending TASKS item before stopping. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:test-failure` + `scripts/test_hook_runtime.py` ratchet+script gate
+**Test:** `test_s140_139`
+
+### S141 — The agent MUST commit an inline fix before stopping the session.
+The agent MUST commit an inline fix before stopping the session. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:sbom` + Makefile `make typecheck` CI+local dual
+**Test:** `test_s141_140`
+
+### S142 — The agent MUST take action after a file read — reading is not doing.
+The agent MUST take action after a file read — reading is not doing. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-deadline.ts` x `.opencode/plugin/enforce-objective.ts` cross-plugin
+**Test:** `test_s142_141`
+
+### S143 — The agent MUST implement a fix after a grep — finding is not fixing.
+The agent MUST implement a fix after a grep — finding is not fixing. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `No Lint-Suppression Comments` + `scripts/ci_check_cooldown.py` + `.opencode/plugin/enforce-commit-lock.ts` triple layer
+**Test:** `test_s143_142`
+
+### S144 — The agent MUST run a newly written test (confirm red or green) before stopping.
+The agent MUST run a newly written test (confirm red or green) before stopping. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Self-Audit Policy` section
+**Test:** `test_s144_143`
+
+### S145 — The agent MUST wire in a newly created file before claiming the work is done.
+The agent MUST wire in a newly created file before claiming the work is done. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make hot-reload-plugins` prerequisite
+**Test:** `test_s145_144`
+
+### S146 — The agent MUST verify post-merge gate green before stopping after a merge.
+The agent MUST verify post-merge gate green before stopping after a merge. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_green_branch_guard.py` enforcement
+**Test:** `test_s146_145`
+
+### S147 — The agent MUST verify the remote SHA matches before stopping after a push.
+The agent MUST verify the remote SHA matches before stopping after a push. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-commit-lock.ts` `tool.execute.before` block
+**Test:** `test_s147_146`
+
+### S148 — The agent MUST verify release completeness before stopping after a version bump.
+The agent MUST verify release completeness before stopping after a version bump. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-suppressions.ts` permissionDecision deny
+**Test:** `test_s148_147`
+
+### S149 — The agent MUST blank any text-only response when TASKS.md has unchecked items.
+The agent MUST blank any text-only response when TASKS.md has unchecked items. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make gate-background` fail-closed guard
+**Test:** `test_s149_148`
+
+### S150 — The agent MUST detect and blank summary tables via enforce-stop.ts.
+The agent MUST detect and blank summary tables via enforce-stop.ts. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` state-file enforced block
+**Test:** `test_s150_149`
+
+### S151 — The agent MUST match the 'all done' completion-word heuristic pattern.
+The agent MUST match the 'all done' completion-word heuristic pattern. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-audit.ts` + `make validate` combined
+**Test:** `test_s151_150`
+
+### S152 — The agent MUST block 'ready for review' when pending work exists.
+The agent MUST block 'ready for review' when pending work exists. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:stale-gate` ratchet-tracked gate
+**Test:** `test_s152_151`
+
+### S153 — The agent MUST detect 'shall I continue' as a permission-seeking stop pattern.
+The agent MUST detect 'shall I continue' as a permission-seeking stop pattern. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-linux` CI workflow enforcement
+**Test:** `test_s153_152`
+
+### S154 — The agent MUST blank prose summaries emitted before a dispatch wave.
+The agent MUST blank prose summaries emitted before a dispatch wave. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_disk_usage.py` + `.opencode/plugin/enforce-deletion-gate.ts` dual layer
+**Test:** `test_s154_153`
+
+
+## Expansion: Essay Prevention (E100–E154) (55 specs)
+
+### E100 — The agent MUST detect markdown formatting (bold, italic) in messages without tool calls.
+The agent MUST detect markdown formatting (bold, italic) in messages without tool calls. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make security-audit` + `scripts/require_ci_green.py` script-backed guard
+**Test:** `test_e100_99`
+
+### E101 — The agent MUST flag bulleted lists exceeding 5 items without intervening tool calls.
+The agent MUST flag bulleted lists exceeding 5 items without intervening tool calls. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-floor.ts` env-var-gated BLOCKING (GLUDD_E_ENFORCE=0 for disable)
+**Test:** `test_e101_100`
+
+### E102 — The agent MUST flag numbered lists exceeding 5 items without intervening tool calls.
+The agent MUST flag numbered lists exceeding 5 items without intervening tool calls. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Long-Running Operations MUST Be Backgrounded` + `config/ratchet.yml:dirty-tree` ratchet-combined
+**Test:** `test_e102_101`
+
+### E103 — The agent MUST flag code-fenced blocks longer than 20 lines in text-only responses.
+The agent MUST flag code-fenced blocks longer than 20 lines in text-only responses. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-tool-streak.json` + `.opencode/plugin/enforce-make.ts` state-aware block
+**Test:** `test_e103_102`
+
+### E104 — The agent MUST flag text containing more than 3 URLs without tool calls as noise.
+The agent MUST flag text containing more than 3 URLs without tool calls as noise. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:lint-baseline` + `scripts/check_readme_status_current.py` ratchet+script gate
+**Test:** `test_e104_103`
+
+### E105 — The agent MUST blank responses that are more than 90% tool output echo plus commentary.
+The agent MUST blank responses that are more than 90% tool output echo plus commentary. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:sbom` + Makefile `make git-commit` CI+local dual
+**Test:** `test_e105_104`
+
+### E106 — The agent MUST blank text that summarizes what was just done instead of stating what is next.
+The agent MUST blank text that summarizes what was just done instead of stating what is next. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-enhancement-ratio.ts` x `.opencode/plugin/enforce-no-suppressions.ts` cross-plugin
+**Test:** `test_e106_105`
+
+### E107 — The agent MUST replace 'I will now...' future-intent prose with an actual tool call.
+The agent MUST replace 'I will now...' future-intent prose with an actual tool call. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Never Block on Questions` + `scripts/check_disk_usage.py` + `.opencode/plugin/enforce-anti-essay.ts` triple layer
+**Test:** `test_e107_106`
+
+### E108 — The agent MUST flag text explaining why a tool call was made as unnecessary meta-commentary.
+The agent MUST flag text explaining why a tool call was made as unnecessary meta-commentary. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Task Self-Tracking` section
+**Test:** `test_e108_107`
+
+### E109 — The agent MUST flag text explaining what a tool call will do as unnecessary.
+The agent MUST flag text explaining what a tool call will do as unnecessary. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make development-status` prerequisite
+**Test:** `test_e109_108`
+
+### E110 — The agent MUST parse and remove meta-commentary about the agent's own process.
+The agent MUST parse and remove meta-commentary about the agent's own process. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` enforcement
+**Test:** `test_e110_109`
+
+### E111 — The agent MUST detect filler phrases like 'based on the above' or 'as you can see'.
+The agent MUST detect filler phrases like 'based on the above' or 'as you can see'. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-batch-push.ts` `tool.execute.before` block
+**Test:** `test_e111_110`
+
+### E112 — The agent MUST flag responses that open with a heading but lack a tool call.
+The agent MUST flag responses that open with a heading but lack a tool call. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-deletion-gate.ts` permissionDecision deny
+**Test:** `test_e112_111`
+
+### E113 — The agent MUST flag text that includes a table of contents or index of its own content.
+The agent MUST flag text that includes a table of contents or index of its own content. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make validate` fail-closed guard
+**Test:** `test_e113_112`
+
+### E114 — The agent MUST flag text that echoes the user's message back to them as redundant.
+The agent MUST flag text that echoes the user's message back to them as redundant. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-watchdog-disengage` state-file enforced block
+**Test:** `test_e114_113`
+
+### E115 — The agent MUST flag preachy phrases like 'please note that' or 'it is important to'.
+The agent MUST flag preachy phrases like 'please note that' or 'it is important to'. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-audit.ts` + `make test-count` combined
+**Test:** `test_e115_114`
+
+### E116 — The agent MUST blank responses that would render as more than one scroll page without tool calls.
+The agent MUST blank responses that would render as more than one scroll page without tool calls. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:ci-failure` ratchet-tracked gate
+**Test:** `test_e116_115`
+
+### E117 — The agent MUST enforce a character-count gate: responses exceeding 2000 chars need tool calls.
+The agent MUST enforce a character-count gate: responses exceeding 2000 chars need tool calls. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-linux` CI workflow enforcement
+**Test:** `test_e117_116`
+
+### E118 — The agent MUST enforce a line-count gate: responses exceeding 40 lines need tool calls.
+The agent MUST enforce a line-count gate: responses exceeding 40 lines need tool calls. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_node_v26_compat.py` + `.opencode/plugin/enforce-delegate.ts` dual layer
+**Test:** `test_e118_117`
+
+### E119 — The agent MUST enforce a paragraph-count gate: responses exceeding 3 paragraphs need tool calls.
+The agent MUST enforce a paragraph-count gate: responses exceeding 3 paragraphs need tool calls. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make development-start` combined
+**Test:** `test_e119_118`
+
+### E120 — The agent MUST track text-only token consumption against the dispatch budget.
+The agent MUST track text-only token consumption against the dispatch budget. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make lint-fix` + `scripts/agent_liveness.py` script-backed guard
+**Test:** `test_e120_119`
+
+### E121 — The agent MUST surface the session-level text-to-code ratio to the user.
+The agent MUST surface the session-level text-to-code ratio to the user. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-clean-tree.ts` env-var-gated BLOCKING (GLUDD_E_ENFORCE=0 for disable)
+**Test:** `test_e121_120`
+
+### E122 — The agent MUST maintain a per-session word count in the essay watchdog state file.
+The agent MUST maintain a per-session word count in the essay watchdog state file. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Q&A Response Pattern` + `config/ratchet.yml:typecheck-baseline` ratchet-combined
+**Test:** `test_e122_121`
+
+### E123 — The agent MUST log an incident when exceeding 500 words without a tool call.
+The agent MUST log an incident when exceeding 500 words without a tool call. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-session-start.json` + `.opencode/plugin/enforce-tdd.ts` state-aware block
+**Test:** `test_e123_122`
+
+### E124 — The agent MUST double the word budget after 2 consecutive text-only turns (quicksand).
+The agent MUST double the word budget after 2 consecutive text-only turns (quicksand). This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:typecheck-baseline` + `scripts/check_tdd_compliance.py` ratchet+script gate
+**Test:** `test_e124_123`
+
+### E125 — The agent MUST flag self-referential prose like 'as an AI' or 'as an agent'.
+The agent MUST flag self-referential prose like 'as an AI' or 'as an agent'. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:sbom` + Makefile `make verify-release-completeness` CI+local dual
+**Test:** `test_e125_124`
+
+### E126 — The agent MUST recognize that meta-discussion about communication style is itself essay.
+The agent MUST recognize that meta-discussion about communication style is itself essay. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-clean-tree.ts` x `.opencode/plugin/enforce-stop.ts` cross-plugin
+**Test:** `test_e126_125`
+
+### E127 — The agent MUST flag apologetic prose ('sorry', 'I apologize') as unnecessary words.
+The agent MUST flag apologetic prose ('sorry', 'I apologize') as unnecessary words. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `No-Commit-Bypass Policy` + `scripts/agent_liveness.py` + `.opencode/plugin/enforce-context.ts` triple layer
+**Test:** `test_e127_126`
+
+### E128 — The agent MUST flag uncertain prose ('I think', 'maybe', 'perhaps') and require verification.
+The agent MUST flag uncertain prose ('I think', 'maybe', 'perhaps') and require verification. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Session Persistence Policy` section
+**Test:** `test_e128_127`
+
+### E129 — The agent MUST replace uncertain prose with a verification tool call.
+The agent MUST replace uncertain prose with a verification tool call. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make agent-worktree` prerequisite
+**Test:** `test_e129_128`
+
+### E130 — The agent MUST flag hedging language ('should be', 'ought to', 'probably') as low-confidence.
+The agent MUST flag hedging language ('should be', 'ought to', 'probably') as low-confidence. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/verify_release_completeness.py` enforcement
+**Test:** `test_e130_129`
+
+### E131 — The agent MUST flag prose that explains a policy instead of simply following it.
+The agent MUST flag prose that explains a policy instead of simply following it. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-multitask.ts` `tool.execute.before` block
+**Test:** `test_e131_130`
+
+### E132 — The agent MUST flag session history recaps that exceed 3 lines.
+The agent MUST flag session history recaps that exceed 3 lines. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-commit-lock.ts` permissionDecision deny
+**Test:** `test_e132_131`
+
+### E133 — The agent MUST detect 'to recap' or 'to summarize the session so far' phrases.
+The agent MUST detect 'to recap' or 'to summarize the session so far' phrases. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-commit` fail-closed guard
+**Test:** `test_e133_132`
+
+### E134 — The agent MUST blank any text appearing after the final tool call of a session.
+The agent MUST blank any text appearing after the final tool call of a session. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` state-file enforced block
+**Test:** `test_e134_133`
+
+### E135 — The agent MUST flag deferential prose: 'feel free to', 'don't hesitate to'.
+The agent MUST flag deferential prose: 'feel free to', 'don't hesitate to'. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-audit.ts` + `make development-status` combined
+**Test:** `test_e135_134`
+
+### E136 — The agent MUST blank closing phrases like 'I hope this helps' when pending work exists.
+The agent MUST blank closing phrases like 'I hope this helps' when pending work exists. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:typecheck-baseline` ratchet-tracked gate
+**Test:** `test_e136_135`
+
+### E137 — The agent MUST block text that offers options ('would you like me to...') as a stop pattern.
+The agent MUST block text that offers options ('would you like me to...') as a stop pattern. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-linux` CI workflow enforcement
+**Test:** `test_e137_136`
+
+### E138 — The agent MUST flag qualitative assessment prose ('on a scale of 1-10').
+The agent MUST flag qualitative assessment prose ('on a scale of 1-10'). This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/verify_release_artifact.py` + `.opencode/plugin/enforce-make.ts` dual layer
+**Test:** `test_e138_137`
+
+### E139 — The agent MUST flag markdown admonitions (!!! note, ??? warning) in responses.
+The agent MUST flag markdown admonitions (!!! note, ??? warning) in responses. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make ship-commit` combined
+**Test:** `test_e139_138`
+
+### E140 — The agent MUST reduce code review prose to a test case rather than commentary.
+The agent MUST reduce code review prose to a test case rather than commentary. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make test-guardrails` + `scripts/verify_release_completeness.py` script-backed guard
+**Test:** `test_e140_139`
+
+### E141 — The agent MUST flag explanatory prose patterns: 'this is because', 'the reason is'.
+The agent MUST flag explanatory prose patterns: 'this is because', 'the reason is'. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-batch-push.ts` env-var-gated BLOCKING (GLUDD_E_ENFORCE=0 for disable)
+**Test:** `test_e141_140`
+
+### E142 — The agent MUST defer design-decision prose ('I chose X because Y') to the commit message.
+The agent MUST defer design-decision prose ('I chose X because Y') to the commit message. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Guardrail Policy` + `config/ratchet.yml:ci-failure` ratchet-combined
+**Test:** `test_e142_141`
+
+### E143 — The agent MUST flag architecture-discussion prose in tool-call responses.
+The agent MUST flag architecture-discussion prose in tool-call responses. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-tool-streak.json` + `.opencode/plugin/enforce-context.ts` state-aware block
+**Test:** `test_e143_142`
+
+### E144 — The agent MUST flag prose about error handling strategy (instead of implementing it).
+The agent MUST flag prose about error handling strategy (instead of implementing it). This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:gate-failure` + `scripts/verify_release_artifact.py` ratchet+script gate
+**Test:** `test_e144_143`
+
+### E145 — The agent MUST flag 'edge case' discussion prose that lacks an implemented test.
+The agent MUST flag 'edge case' discussion prose that lacks an implemented test. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:sbom` + Makefile `make development-status` CI+local dual
+**Test:** `test_e145_144`
+
+### E146 — The agent MUST flag 'alternative approach' discussion that lacks a dispatch.
+The agent MUST flag 'alternative approach' discussion that lacks a dispatch. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-verified-claims.ts` x `.opencode/plugin/enforce-test-integrity.ts` cross-plugin
+**Test:** `test_e146_145`
+
+### E147 — The agent MUST flag prose comparing library A vs B without dispatching research.
+The agent MUST flag prose comparing library A vs B without dispatching research. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Session Persistence Policy` + `scripts/check_duplicate_targets.py` + `.opencode/plugin/enforce-worktree.ts` triple layer
+**Test:** `test_e147_146`
+
+### E148 — The agent MUST flag 'best practice' lecture prose in responses.
+The agent MUST flag 'best practice' lecture prose in responses. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Verification Before Claim` section
+**Test:** `test_e148_147`
+
+### E149 — The agent MUST flag design-pattern discussion prose that lacks accompanying code.
+The agent MUST flag design-pattern discussion prose that lacks accompanying code. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make check-readme-status` prerequisite
+**Test:** `test_e149_148`
+
+### E150 — The agent MUST flag prose that predicts future problems instead of preventing them.
+The agent MUST flag prose that predicts future problems instead of preventing them. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` enforcement
+**Test:** `test_e150_149`
+
+### E151 — The agent MUST flag prose that catalogues risks without dispatching mitigations.
+The agent MUST flag prose that catalogues risks without dispatching mitigations. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-deletion-gate.ts` `tool.execute.before` block
+**Test:** `test_e151_150`
+
+### E152 — The agent MUST block aspirational prose ('in the future we should...').
+The agent MUST block aspirational prose ('in the future we should...'). This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-clean-tree.ts` permissionDecision deny
+**Test:** `test_e152_151`
+
+### E153 — The agent MUST flag prose about technical debt (instead of paying it down).
+The agent MUST flag prose about technical debt (instead of paying it down). This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make verify-remote` fail-closed guard
+**Test:** `test_e153_152`
+
+### E154 — The agent MUST flag unbounded brainstorming ('we could also', 'another option would be').
+The agent MUST flag unbounded brainstorming ('we could also', 'another option would be'). This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-watchdog-disengage` state-file enforced block
+**Test:** `test_e154_153`
+
+
+## Expansion: Merge Safety (M126–M154) (29 specs)
+
+### M126 — The agent MUST block merges when post-merge gate would be red based on pre-merge state.
+The agent MUST block merges when post-merge gate would be red based on pre-merge state. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dirty-tree` ratchet-tracked gate
+**Test:** `test_m126_125`
+
+### M127 — The agent MUST record the merge commit with a descriptive message including the branch name.
+The agent MUST record the merge commit with a descriptive message including the branch name. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-linux` CI workflow enforcement
+**Test:** `test_m127_126`
+
+### M128 — The agent MUST verify agent-cleanup has been done before merging worktree branches.
+The agent MUST verify agent-cleanup has been done before merging worktree branches. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/verify_release_completeness.py` + `.opencode/plugin/enforce-branch-discipline.ts` dual layer
+**Test:** `test_m128_127`
+
+### M129 — The agent MUST check that the merge destination does not have uncommitted changes.
+The agent MUST check that the merge destination does not have uncommitted changes. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make hot-reload-plugins` combined
+**Test:** `test_m129_128`
+
+### M130 — The agent MUST verify that the CI workflow for the source branch has completed.
+The agent MUST verify that the CI workflow for the source branch has completed. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make clean-tmp` + `scripts/check_node_v26_compat.py` script-backed guard
+**Test:** `test_m130_129`
+
+### M131 — The agent MUST require an explicit confirmation before merging with conflicting files.
+The agent MUST require an explicit confirmation before merging with conflicting files. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-context.ts` env-var-gated BLOCKING (GLUDD_M_ENFORCE=0 for disable)
+**Test:** `test_m131_130`
+
+### M132 — The agent MUST block merges when development has diverged from master by more than 50 commits.
+The agent MUST block merges when development has diverged from master by more than 50 commits. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `No-Commit-Bypass Policy` + `config/ratchet.yml:stale-gate` ratchet-combined
+**Test:** `test_m132_131`
+
+### M133 — The agent MUST verify that all submodules are clean before merging.
+The agent MUST verify that all submodules are clean before merging. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-session-start.json` + `.opencode/plugin/enforce-commit-lock.ts` state-aware block
+**Test:** `test_m133_132`
+
+### M134 — The agent MUST run collect-check after any merge to detect collection errors.
+The agent MUST run collect-check after any merge to detect collection errors. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:duplicate-target` + `scripts/agent_liveness.py` ratchet+script gate
+**Test:** `test_m134_133`
+
+### M135 — The agent MUST enforce that merges happen in dependency order (dependencies first).
+The agent MUST enforce that merges happen in dependency order (dependencies first). This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:sbom` + Makefile `make test-count` CI+local dual
+**Test:** `test_m135_134`
+
+### M136 — The agent MUST record the pre-merge and post-merge SHA in the session log.
+The agent MUST record the pre-merge and post-merge SHA in the session log. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-suppressions.ts` x `.opencode/plugin/enforce-worktree.ts` cross-plugin
+**Test:** `test_m136_135`
+
+### M137 — The agent MUST block merges when the staging area has unrelated changes.
+The agent MUST block merges when the staging area has unrelated changes. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Multitasking / Blockers` + `scripts/verify_release_artifact.py` + `.opencode/plugin/enforce-tdd.ts` triple layer
+**Test:** `test_m137_136`
+
+### M138 — The agent MUST verify remote branches are up to date before a local merge.
+The agent MUST verify remote branches are up to date before a local merge. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Evidence-Based Response Policy` section
+**Test:** `test_m138_137`
+
+### M139 — The agent MUST block merges that would introduce merge conflict markers into tracked files.
+The agent MUST block merges that would introduce merge conflict markers into tracked files. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make verify-remote` prerequisite
+**Test:** `test_m139_138`
+
+### M140 — The agent MUST require a gate-lite run on the merge result before pushing.
+The agent MUST require a gate-lite run on the merge result before pushing. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/ci_check_cooldown.py` enforcement
+**Test:** `test_m140_139`
+
+### M141 — The agent MUST not merge a branch that has been force-pushed since last fetch.
+The agent MUST not merge a branch that has been force-pushed since last fetch. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-enhancement-ratio.ts` `tool.execute.before` block
+**Test:** `test_m141_140`
+
+### M142 — The agent MUST ensure the merge preserves all TASKS.md completions from both branches.
+The agent MUST ensure the merge preserves all TASKS.md completions from both branches. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-objective.ts` permissionDecision deny
+**Test:** `test_m142_141`
+
+### M143 — The agent MUST block merges that would remove enforcement plugins or guardrails.
+The agent MUST block merges that would remove enforcement plugins or guardrails. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make feature-start` fail-closed guard
+**Test:** `test_m143_142`
+
+### M144 — The agent MUST verify that the merge commit message follows the project conventions.
+The agent MUST verify that the merge commit message follows the project conventions. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` state-file enforced block
+**Test:** `test_m144_143`
+
+### M145 — The agent MUST check for circular merge dependencies before executing.
+The agent MUST check for circular merge dependencies before executing. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-audit.ts` + `make git-commit` combined
+**Test:** `test_m145_144`
+
+### M146 — The agent MUST detect when a merge would produce a different result after rebase.
+The agent MUST detect when a merge would produce a different result after rebase. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dead-code` ratchet-tracked gate
+**Test:** `test_m146_145`
+
+### M147 — The agent MUST ensure the merge does not reintroduce previously removed dead code.
+The agent MUST ensure the merge does not reintroduce previously removed dead code. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-linux` CI workflow enforcement
+**Test:** `test_m147_146`
+
+### M148 — The agent MUST verify that no lint suppressions are added by the merge.
+The agent MUST verify that no lint suppressions are added by the merge. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/task_watchdog.py` + `.opencode/plugin/enforce-enhancement-ratio.ts` dual layer
+**Test:** `test_m148_147`
+
+### M149 — The agent MUST check that the merge does not lower the overall test coverage.
+The agent MUST check that the merge does not lower the overall test coverage. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make test` combined
+**Test:** `test_m149_148`
+
+### M150 — The agent MUST block merges that delete test files without corresponding source changes.
+The agent MUST block merges that delete test files without corresponding source changes. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make development-push` + `scripts/check_tdd_compliance.py` script-backed guard
+**Test:** `test_m150_149`
+
+### M151 — The agent MUST verify that the merge does not introduce duplicate Makefile targets.
+The agent MUST verify that the merge does not introduce duplicate Makefile targets. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-delegate.ts` env-var-gated BLOCKING (GLUDD_M_ENFORCE=0 for disable)
+**Test:** `test_m151_150`
+
+### M152 — The agent MUST check that the merge does not downgrade dependencies.
+The agent MUST check that the merge does not downgrade dependencies. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `A Release is an Artifact` + `config/ratchet.yml:gate-failure` ratchet-combined
+**Test:** `test_m152_151`
+
+### M153 — The agent MUST verify that the merge does not remove AGENTS.md policy sections.
+The agent MUST verify that the merge does not remove AGENTS.md policy sections. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-tool-streak.json` + `.opencode/plugin/enforce-stop.ts` state-aware block
+**Test:** `test_m153_152`
+
+### M154 — The agent MUST ensure that the merge does not break the node v26 compatibility.
+The agent MUST ensure that the merge does not break the node v26 compatibility. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:missing-test` + `scripts/ci_check_cooldown.py` ratchet+script gate
+**Test:** `test_m154_153`
+
+
+## Expansion: Gate Discipline (G126–G154) (29 specs)
+
+### G126 — The agent MUST include the sbom generation step in the full gate pipeline.
+The agent MUST include the sbom generation step in the full gate pipeline. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-session-start.ts` x `.opencode/plugin/enforce-no-wait.ts` cross-plugin
+**Test:** `test_g126_125`
+
+### G127 — The agent MUST verify that ansible syntax is valid during the validate gate.
+The agent MUST verify that ansible syntax is valid during the validate gate. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Minimum 10 Subagents` + `scripts/require_ci_green.py` + `.opencode/plugin/enforce-batch-push.ts` triple layer
+**Test:** `test_g127_126`
+
+### G128 — The agent MUST run the molecule tests during the full gate when ansible content changed.
+The agent MUST run the molecule tests during the full gate when ansible content changed. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Don't Push Every Commit` section
+**Test:** `test_g128_127`
+
+### G129 — The agent MUST verify terraform syntax during the gate when infra content changed.
+The agent MUST verify terraform syntax during the gate when infra content changed. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-stash` prerequisite
+**Test:** `test_g129_128`
+
+### G130 — The agent MUST check for submodule drift during the gate.
+The agent MUST check for submodule drift during the gate. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/task_watchdog.py` enforcement
+**Test:** `test_g130_129`
+
+### G131 — The agent MUST verify that the git index is current (synced within the last hour).
+The agent MUST verify that the git index is current (synced within the last hour). This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-context.ts` `tool.execute.before` block
+**Test:** `test_g131_130`
+
+### G132 — The agent MUST fail the gate if pre-commit hooks are not installed.
+The agent MUST fail the gate if pre-commit hooks are not installed. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-anti-essay.ts` permissionDecision deny
+**Test:** `test_g132_131`
+
+### G133 — The agent MUST require the test-hook-runtime target to pass during enforcement gate checks.
+The agent MUST require the test-hook-runtime target to pass during enforcement gate checks. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make ship-commit` fail-closed guard
+**Test:** `test_g133_132`
+
+### G134 — The agent MUST verify plugin manifest integrity during the enforcement gate.
+The agent MUST verify plugin manifest integrity during the enforcement gate. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-watchdog-disengage` state-file enforced block
+**Test:** `test_g134_133`
+
+### G135 — The agent MUST check for stale agent worktrees during the gate.
+The agent MUST check for stale agent worktrees during the gate. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-audit.ts` + `make typecheck` combined
+**Test:** `test_g135_134`
+
+### G136 — The agent MUST fail the gate when the ratchet has more entries than the previous gate.
+The agent MUST fail the gate when the ratchet has more entries than the previous gate. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:lint-baseline` ratchet-tracked gate
+**Test:** `test_g136_135`
+
+### G137 — The agent MUST verify that no dead code has accumulated since the last gate.
+The agent MUST verify that no dead code has accumulated since the last gate. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-linux` CI workflow enforcement
+**Test:** `test_g137_136`
+
+### G138 — The agent MUST check for untested source files during the coverage audit gate.
+The agent MUST check for untested source files during the coverage audit gate. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/agent_liveness.py` + `.opencode/plugin/enforce-tdd.ts` dual layer
+**Test:** `test_g138_137`
+
+### G139 — The agent MUST verify that docker buildx has sufficient disk space for the container gate.
+The agent MUST verify that docker buildx has sufficient disk space for the container gate. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make test-count` combined
+**Test:** `test_g139_138`
+
+### G140 — The agent MUST ensure that the CI workflow is syntactically valid during the gate.
+The agent MUST ensure that the CI workflow is syntactically valid during the gate. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make check-disk` + `scripts/check_duplicate_targets.py` script-backed guard
+**Test:** `test_g140_139`
+
+### G141 — The agent MUST verify that all required system dependencies are installed.
+The agent MUST verify that all required system dependencies are installed. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-verified-claims.ts` env-var-gated BLOCKING (GLUDD_G_ENFORCE=0 for disable)
+**Test:** `test_g141_140`
+
+### G142 — The agent MUST check that the python version meets the minimum requirement.
+The agent MUST check that the python version meets the minimum requirement. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Root-Cause-Only Fix Policy` + `config/ratchet.yml:coverage-baseline` ratchet-combined
+**Test:** `test_g142_141`
+
+### G143 — The agent MUST verify that node.js is available for plugin execution.
+The agent MUST verify that node.js is available for plugin execution. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-session-start.json` + `.opencode/plugin/enforce-verified-claims.ts` state-aware block
+**Test:** `test_g143_142`
+
+### G144 — The agent MUST check that the database migration chain is unbroken.
+The agent MUST check that the database migration chain is unbroken. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dirty-tree` + `scripts/check_green_branch_guard.py` ratchet+script gate
+**Test:** `test_g144_143`
+
+### G145 — The agent MUST verify that all registered playbooks have valid syntax.
+The agent MUST verify that all registered playbooks have valid syntax. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:sbom` + Makefile `make git-stash` CI+local dual
+**Test:** `test_g145_144`
+
+### G146 — The agent MUST check that pyproject.toml is parseable and version is correct.
+The agent MUST check that pyproject.toml is parseable and version is correct. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-make.ts` x `.opencode/plugin/enforce-clean-tree.ts` cross-plugin
+**Test:** `test_g146_145`
+
+### G147 — The agent MUST verify that no binary files are accidentally committed outside of dist/.
+The agent MUST verify that no binary files are accidentally committed outside of dist/. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `CI-Poll Subagents Are Forbidden` + `scripts/check_tdd_compliance.py` + `.opencode/plugin/enforce-make.ts` triple layer
+**Test:** `test_g147_146`
+
+### G148 — The agent MUST check that .gitignore covers all generated and temporary file patterns.
+The agent MUST check that .gitignore covers all generated and temporary file patterns. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `No-Commit-Bypass Policy` section
+**Test:** `test_g148_147`
+
+### G149 — The agent MUST verify that the README status table matches the current version.
+The agent MUST verify that the README status table matches the current version. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-diff` prerequisite
+**Test:** `test_g149_148`
+
+### G150 — The agent MUST fail the gate if any expected documentation file is missing.
+The agent MUST fail the gate if any expected documentation file is missing. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_disk_usage.py` enforcement
+**Test:** `test_g150_149`
+
+### G151 — The agent MUST ensure lint passes with zero errors before claiming gate green.
+The agent MUST ensure lint passes with zero errors before claiming gate green. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-suppressions.ts` `tool.execute.before` block
+**Test:** `test_g151_150`
+
+### G152 — The agent MUST verify typecheck results are at or below the established baseline.
+The agent MUST verify typecheck results are at or below the established baseline. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-deadline.ts` permissionDecision deny
+**Test:** `test_g152_151`
+
+### G153 — The agent MUST run collect-check and confirm zero collection errors.
+The agent MUST run collect-check and confirm zero collection errors. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make test-integration` fail-closed guard
+**Test:** `test_g153_152`
+
+### G154 — The agent MUST run the full test suite and confirm zero failures.
+The agent MUST run the full test suite and confirm zero failures. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` state-file enforced block
+**Test:** `test_g154_153`
+
+
+## Expansion: Release Integrity (R126–R154) (29 specs)
+
+### R126 — The agent MUST verify the RPM package version matches the release tag.
+The agent MUST verify the RPM package version matches the release tag. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:missing-test` ratchet-tracked gate
+**Test:** `test_r126_125`
+
+### R127 — The agent MUST check the Debian package changelog version against the release.
+The agent MUST check the Debian package changelog version against the release. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-linux` CI workflow enforcement
+**Test:** `test_r127_126`
+
+### R128 — The agent MUST ensure the macOS binary is notarized (or documented as unnotarized).
+The agent MUST ensure the macOS binary is notarized (or documented as unnotarized). This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/test_hook_runtime.py` + `.opencode/plugin/enforce-floor.ts` dual layer
+**Test:** `test_r128_127`
+
+### R129 — The agent MUST verify the Linux binary is statically linked.
+The agent MUST verify the Linux binary is statically linked. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make gate-background` combined
+**Test:** `test_r129_128`
+
+### R130 — The agent MUST check that the install script references the correct release version.
+The agent MUST check that the install script references the correct release version. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make release-cut` + `scripts/ci_check_cooldown.py` script-backed guard
+**Test:** `test_r130_129`
+
+### R131 — The agent MUST verify the systemd service file version matches the release.
+The agent MUST verify the systemd service file version matches the release. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-objective.ts` env-var-gated BLOCKING (GLUDD_R_ENFORCE=0 for disable)
+**Test:** `test_r131_130`
+
+### R132 — The agent MUST ensure release artifacts are not overwritten by a subsequent release.
+The agent MUST ensure release artifacts are not overwritten by a subsequent release. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `ANTI-LOOP DIRECTIVE` + `config/ratchet.yml:untested-source` ratchet-combined
+**Test:** `test_r132_131`
+
+### R133 — The agent MUST check that the release download URLs are accessible.
+The agent MUST check that the release download URLs are accessible. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-tool-streak.json` + `.opencode/plugin/enforce-no-wait.ts` state-aware block
+**Test:** `test_r133_132`
+
+### R134 — The agent MUST verify the release tag does not already exist before creating it.
+The agent MUST verify the release tag does not already exist before creating it. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:stale-gate` + `scripts/check_node_v26_compat.py` ratchet+script gate
+**Test:** `test_r134_133`
+
+### R135 — The agent MUST ensure that a failed release does not leave a partial tag.
+The agent MUST ensure that a failed release does not leave a partial tag. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:sbom` + Makefile `make check-node-v26-compat` CI+local dual
+**Test:** `test_r135_134`
+
+### R136 — The agent MUST verify that the release process was not interrupted mid-stream.
+The agent MUST verify that the release process was not interrupted mid-stream. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` x `.opencode/plugin/enforce-delegate.ts` cross-plugin
+**Test:** `test_r136_135`
+
+### R137 — The agent MUST check that all submodule pins are at tagged commits for a release.
+The agent MUST check that all submodule pins are at tagged commits for a release. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Root-Cause-Only Fix Policy` + `scripts/task_watchdog.py` + `.opencode/plugin/enforce-no-suppressions.ts` triple layer
+**Test:** `test_r137_136`
+
+### R138 — The agent MUST ensure no release is made from a branch with known security issues.
+The agent MUST ensure no release is made from a branch with known security issues. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Commit-After-Green Policy` section
+**Test:** `test_r138_137`
+
+### R139 — The agent MUST verify that the release's dependencies are all audited (pip-audit).
+The agent MUST verify that the release's dependencies are all audited (pip-audit). This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make secrets-baseline` prerequisite
+**Test:** `test_r139_138`
+
+### R140 — The agent MUST check that no deprecation warnings are present in the release.
+The agent MUST check that no deprecation warnings are present in the release. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_readme_status_current.py` enforcement
+**Test:** `test_r140_139`
+
+### R141 — The agent MUST ensure the minimum python version is documented in the release notes.
+The agent MUST ensure the minimum python version is documented in the release notes. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-test-integrity.ts` `tool.execute.before` block
+**Test:** `test_r141_140`
+
+### R142 — The agent MUST verify that all documentation links in the release are valid.
+The agent MUST verify that all documentation links in the release are valid. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` permissionDecision deny
+**Test:** `test_r142_141`
+
+### R143 — The agent MUST check that the release does not regress any previously passing tests.
+The agent MUST check that the release does not regress any previously passing tests. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make lint` fail-closed guard
+**Test:** `test_r143_142`
+
+### R144 — The agent MUST verify the release has been tested on all supported platforms.
+The agent MUST verify the release has been tested on all supported platforms. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-watchdog-disengage` state-file enforced block
+**Test:** `test_r144_143`
+
+### R145 — The agent MUST ensure the release commit passes the full gate (not just gate-lite).
+The agent MUST ensure the release commit passes the full gate (not just gate-lite). This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-audit.ts` + `make agent-cleanup` combined
+**Test:** `test_r145_144`
+
+### R146 — The agent MUST verify that the release does not include any uncommitted changes.
+The agent MUST verify that the release does not include any uncommitted changes. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:suppression-comment` ratchet-tracked gate
+**Test:** `test_r146_145`
+
+### R147 — The agent MUST check that the release tag is on the master branch (not a feature branch).
+The agent MUST check that the release tag is on the master branch (not a feature branch). This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-linux` CI workflow enforcement
+**Test:** `test_r147_146`
+
+### R148 — The agent MUST ensure the release pipeline has not been modified since the last release.
+The agent MUST ensure the release pipeline has not been modified since the last release. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` + `.opencode/plugin/enforce-session-start.ts` dual layer
+**Test:** `test_r148_147`
+
+### R149 — The agent MUST verify that the deploy script is up to date with the release version.
+The agent MUST verify that the deploy script is up to date with the release version. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make lint` combined
+**Test:** `test_r149_148`
+
+### R150 — The agent MUST check that the release does not break backward compatibility.
+The agent MUST check that the release does not break backward compatibility. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-merge` + `scripts/test_hook_runtime.py` script-backed guard
+**Test:** `test_r150_149`
+
+### R151 — The agent MUST gate every release on ci-green before pushing the tag.
+The agent MUST gate every release on ci-green before pushing the tag. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-branch-discipline.ts` env-var-gated BLOCKING (GLUDD_R_ENFORCE=0 for disable)
+**Test:** `test_r151_150`
+
+### R152 — The agent MUST verify release completeness (12 artifact categories) before claiming shipped.
+The agent MUST verify release completeness (12 artifact categories) before claiming shipped. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Fix Means Repair Never Disable` + `config/ratchet.yml:duplicate-target` ratchet-combined
+**Test:** `test_r152_151`
+
+### R153 — The agent MUST not treat a draft release as a shipped release.
+The agent MUST not treat a draft release as a shipped release. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-session-start.json` + `.opencode/plugin/enforce-deletion-gate.ts` state-aware block
+**Test:** `test_r153_152`
+
+### R154 — The agent MUST verify that the release tag matches the semver version in pyproject.toml.
+The agent MUST verify that the release tag matches the semver version in pyproject.toml. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:untested-source` + `scripts/task_watchdog.py` ratchet+script gate
+**Test:** `test_r154_153`
+
+
+## Expansion: Worktree Isolation (W121–W154) (34 specs)
+
+### W121 — The agent MUST verify that the worktree base commit exists on the remote.
+The agent MUST verify that the worktree base commit exists on the remote. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-batch-push.ts` x `.opencode/plugin/enforce-branch-discipline.ts` cross-plugin
+**Test:** `test_w121_120`
+
+### W122 — The agent MUST restore the main checkout state after merging a worktree.
+The agent MUST restore the main checkout state after merging a worktree. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Instruction-Following Priority` + `scripts/check_readme_status_current.py` + `.opencode/plugin/enforce-clean-tree.ts` triple layer
+**Test:** `test_w122_121`
+
+### W123 — The agent MUST verify git lock compatibility before parallel worktree operations.
+The agent MUST verify git lock compatibility before parallel worktree operations. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `TDD Policy` section
+**Test:** `test_w123_122`
+
+### W124 — The agent MUST ensure worktree agents do not share the same virtual environment.
+The agent MUST ensure worktree agents do not share the same virtual environment. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make typecheck` prerequisite
+**Test:** `test_w124_123`
+
+### W125 — The agent MUST check disk space before creating a new worktree.
+The agent MUST check disk space before creating a new worktree. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/agent_liveness.py` enforcement
+**Test:** `test_w125_124`
+
+### W126 — The agent MUST not create a worktree inside another worktree.
+The agent MUST not create a worktree inside another worktree. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.before` block
+**Test:** `test_w126_125`
+
+### W127 — The agent MUST verify that the worktree is on the correct branch before dispatching.
+The agent MUST verify that the worktree is on the correct branch before dispatching. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-context.ts` permissionDecision deny
+**Test:** `test_w127_126`
+
+### W128 — The agent MUST log worktree creation and cleanup timestamps to a state file.
+The agent MUST log worktree creation and cleanup timestamps to a state file. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make security` fail-closed guard
+**Test:** `test_w128_127`
+
+### W129 — The agent MUST ensure subagent commit messages include the worktree branch name.
+The agent MUST ensure subagent commit messages include the worktree branch name. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` state-file enforced block
+**Test:** `test_w129_128`
+
+### W130 — The agent MUST verify no orphaned worktree refs exist after agent-cleanup.
+The agent MUST verify no orphaned worktree refs exist after agent-cleanup. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-audit.ts` + `make verify-remote` combined
+**Test:** `test_w130_129`
+
+### W131 — The agent MUST not reuse a worktree branch for a completely different task.
+The agent MUST not reuse a worktree branch for a completely different task. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:test-failure` ratchet-tracked gate
+**Test:** `test_w131_130`
+
+### W132 — The agent MUST handle the case where a worktree branch already exists (re-attach).
+The agent MUST handle the case where a worktree branch already exists (re-attach). This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-linux` CI workflow enforcement
+**Test:** `test_w132_131`
+
+### W133 — The agent MUST verify that the merge was successful before cleaning up the worktree.
+The agent MUST verify that the merge was successful before cleaning up the worktree. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/ci_check_cooldown.py` + `.opencode/plugin/enforce-context.ts` dual layer
+**Test:** `test_w133_132`
+
+### W134 — The agent MUST use --no-ff when merging worktree branches to preserve history.
+The agent MUST use --no-ff when merging worktree branches to preserve history. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make collect-check` combined
+**Test:** `test_w134_133`
+
+### W135 — The agent MUST verify that the merged commit appears in master's log after merge.
+The agent MUST verify that the merged commit appears in master's log after merge. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make healthcheck` + `scripts/task_watchdog.py` script-backed guard
+**Test:** `test_w135_134`
+
+### W136 — The agent MUST handle merge conflicts from worktrees with the union strategy.
+The agent MUST handle merge conflicts from worktrees with the union strategy. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-multitask.ts` env-var-gated BLOCKING (GLUDD_W_ENFORCE=0 for disable)
+**Test:** `test_w136_135`
+
+### W137 — The agent MUST not modify the main checkout while a worktree merge is in progress.
+The agent MUST not modify the main checkout while a worktree merge is in progress. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Verification Before Claim` + `config/ratchet.yml:test-failure` ratchet-combined
+**Test:** `test_w137_136`
+
+### W138 — The agent MUST verify that the worktree path is inside /tmp/gludd-worktrees/.
+The agent MUST verify that the worktree path is inside /tmp/gludd-worktrees/. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-tool-streak.json` + `.opencode/plugin/enforce-branch-discipline.ts` state-aware block
+**Test:** `test_w138_137`
+
+### W139 — The agent MUST ensure worktree cleanup removes the git-worktree reference.
+The agent MUST ensure worktree cleanup removes the git-worktree reference. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:suppression-comment` + `scripts/require_ci_green.py` ratchet+script gate
+**Test:** `test_w139_138`
+
+### W140 — The agent MUST not create a worktree from a detached HEAD state.
+The agent MUST not create a worktree from a detached HEAD state. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:sbom` + Makefile `make gate-background` CI+local dual
+**Test:** `test_w140_139`
+
+### W141 — The agent MUST verify that worktree agents have access to the same tools.
+The agent MUST verify that worktree agents have access to the same tools. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-objective.ts` x `.opencode/plugin/enforce-tdd.ts` cross-plugin
+**Test:** `test_w141_140`
+
+### W142 — The agent MUST not dispatch more worktree agents than there are available worktree slots.
+The agent MUST not dispatch more worktree agents than there are available worktree slots. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `No-Manual-Default Policy` + `scripts/check_node_v26_compat.py` + `.opencode/plugin/enforce-deadline.ts` triple layer
+**Test:** `test_w142_141`
+
+### W143 — The agent MUST ensure worktree agents do not share a branch with the main checkout.
+The agent MUST ensure worktree agents do not share a branch with the main checkout. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Bash Command Policy` section
+**Test:** `test_w143_142`
+
+### W144 — The agent MUST verify that subagent commits in a worktree are isolated from the main index.
+The agent MUST verify that subagent commits in a worktree are isolated from the main index. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make gate-background` prerequisite
+**Test:** `test_w144_143`
+
+### W145 — The agent MUST clean up partially created worktrees on failure.
+The agent MUST clean up partially created worktrees on failure. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_node_v26_compat.py` enforcement
+**Test:** `test_w145_144`
+
+### W146 — The agent MUST not run gate operations from within a worktree.
+The agent MUST not run gate operations from within a worktree. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-delegate.ts` `tool.execute.before` block
+**Test:** `test_w146_145`
+
+### W147 — The agent MUST not merge one worktree into another worktree directly.
+The agent MUST not merge one worktree into another worktree directly. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-multitask.ts` permissionDecision deny
+**Test:** `test_w147_146`
+
+### W148 — The agent MUST create an isolated git worktree for every file-editing subagent.
+The agent MUST create an isolated git worktree for every file-editing subagent. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-stash` fail-closed guard
+**Test:** `test_w148_147`
+
+### W149 — The agent MUST create one branch per worktree and enforce branch uniqueness.
+The agent MUST create one branch per worktree and enforce branch uniqueness. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-watchdog-disengage` state-file enforced block
+**Test:** `test_w149_148`
+
+### W150 — The agent MUST use agent-worktree from the Makefile (not raw git worktree commands).
+The agent MUST use agent-worktree from the Makefile (not raw git worktree commands). This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-audit.ts` + `make git-status` combined
+**Test:** `test_w150_149`
+
+### W151 — The agent MUST merge worktree branches via agent-merge from the main checkout.
+The agent MUST merge worktree branches via agent-merge from the main checkout. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:duplicate-target` ratchet-tracked gate
+**Test:** `test_w151_150`
+
+### W152 — The agent MUST clean up worktrees with agent-cleanup after merging.
+The agent MUST clean up worktrees with agent-cleanup after merging. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-linux` CI workflow enforcement
+**Test:** `test_w152_151`
+
+### W153 — The agent MUST not merge to master from inside a worktree (main checkout only).
+The agent MUST not merge to master from inside a worktree (main checkout only). This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_readme_status_current.py` + `.opencode/plugin/enforce-deadline.ts` dual layer
+**Test:** `test_w153_152`
+
+### W154 — The agent MUST cap concurrent worktree agents at 6 to prevent disk exhaustion.
+The agent MUST cap concurrent worktree agents at 6 to prevent disk exhaustion. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make secrets-baseline` combined
+**Test:** `test_w154_153`
+
+
+## Expansion: File Safety (F121–F154) (34 specs)
+
+### F121 — The agent MUST not access files outside the workspace or /tmp/gludd-* paths.
+The agent MUST not access files outside the workspace or /tmp/gludd-* paths. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-suppressions.ts` env-var-gated BLOCKING (GLUDD_F_ENFORCE=0 for disable)
+**Test:** `test_f121_120`
+
+### F122 — The agent MUST verify that written content is valid before closing the file handle.
+The agent MUST verify that written content is valid before closing the file handle. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Anti-Grinding Enforcement` + `config/ratchet.yml:suppression-comment` ratchet-combined
+**Test:** `test_f122_121`
+
+### F123 — The agent MUST not overwrite a file that was modified externally since last read.
+The agent MUST not overwrite a file that was modified externally since last read. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-session-start.json` + `.opencode/plugin/enforce-floor.ts` state-aware block
+**Test:** `test_f123_122`
+
+### F124 — The agent MUST check that the target directory exists before writing a file.
+The agent MUST check that the target directory exists before writing a file. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dead-code` + `scripts/check_duplicate_targets.py` ratchet+script gate
+**Test:** `test_f124_123`
+
+### F125 — The agent MUST ensure the file encoding is UTF-8 for all Python source files.
+The agent MUST ensure the file encoding is UTF-8 for all Python source files. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:sbom` + Makefile `make security` CI+local dual
+**Test:** `test_f125_124`
+
+### F126 — The agent MUST not create files with names that conflict with existing directories.
+The agent MUST not create files with names that conflict with existing directories. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-tdd.ts` x `.opencode/plugin/enforce-session-start.ts` cross-plugin
+**Test:** `test_f126_125`
+
+### F127 — The agent MUST verify that symlinks are not broken after creating or moving files.
+The agent MUST verify that symlinks are not broken after creating or moving files. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Branch discipline` + `scripts/test_hook_runtime.py` + `.opencode/plugin/enforce-multitask.ts` triple layer
+**Test:** `test_f127_126`
+
+### F128 — The agent MUST check file permissions before writing to ensure writability.
+The agent MUST check file permissions before writing to ensure writability. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Never Block on Questions` section
+**Test:** `test_f128_127`
+
+### F129 — The agent MUST not write secrets or API keys to disk in plaintext.
+The agent MUST not write secrets or API keys to disk in plaintext. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make test-integration` prerequisite
+**Test:** `test_f129_128`
+
+### F130 — The agent MUST use atomic writes (write to temp, rename) for critical files.
+The agent MUST use atomic writes (write to temp, rename) for critical files. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_duplicate_targets.py` enforcement
+**Test:** `test_f130_129`
+
+### F131 — The agent MUST verify the file integrity after writing (re-read and compare).
+The agent MUST verify the file integrity after writing (re-read and compare). This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-tdd.ts` `tool.execute.before` block
+**Test:** `test_f131_130`
+
+### F132 — The agent MUST not create files with names starting with a dash (interpreted as flags).
+The agent MUST not create files with names starting with a dash (interpreted as flags). This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-session-start.ts` permissionDecision deny
+**Test:** `test_f132_131`
+
+### F133 — The agent MUST ensure file paths do not exceed the OS maximum path length.
+The agent MUST ensure file paths do not exceed the OS maximum path length. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make verify-release-completeness` fail-closed guard
+**Test:** `test_f133_132`
+
+### F134 — The agent MUST not write to files that are currently being read by another process.
+The agent MUST not write to files that are currently being read by another process. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` state-file enforced block
+**Test:** `test_f134_133`
+
+### F135 — The agent MUST verify that the file is not a hardlink to a protected system file.
+The agent MUST verify that the file is not a hardlink to a protected system file. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-audit.ts` + `make gate-audit` combined
+**Test:** `test_f135_134`
+
+### F136 — The agent MUST check that the file size does not exceed the disk free space.
+The agent MUST check that the file size does not exceed the disk free space. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:untested-source` ratchet-tracked gate
+**Test:** `test_f136_135`
+
+### F137 — The agent MUST not create files in git-ignored directories without explicit intent.
+The agent MUST not create files in git-ignored directories without explicit intent. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-linux` CI workflow enforcement
+**Test:** `test_f137_136`
+
+### F138 — The agent MUST ensure that temporary files are cleaned up after use.
+The agent MUST ensure that temporary files are cleaned up after use. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_duplicate_targets.py` + `.opencode/plugin/enforce-objective.ts` dual layer
+**Test:** `test_f138_137`
+
+### F139 — The agent MUST not modify tracked files tracked by git without proper staging.
+The agent MUST not modify tracked files tracked by git without proper staging. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make git-status` combined
+**Test:** `test_f139_138`
+
+### F140 — The agent MUST verify that the file extension matches the expected content type.
+The agent MUST verify that the file extension matches the expected content type. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make gate` + `scripts/check_disk_usage.py` script-backed guard
+**Test:** `test_f140_139`
+
+### F141 — The agent MUST not open binary files in text mode (or vice versa).
+The agent MUST not open binary files in text mode (or vice versa). This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-tdd.ts` env-var-gated BLOCKING (GLUDD_F_ENFORCE=0 for disable)
+**Test:** `test_f141_140`
+
+### F142 — The agent MUST check for file locking conflicts before writing.
+The agent MUST check for file locking conflicts before writing. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Keep Opus Lean` + `config/ratchet.yml:missing-test` ratchet-combined
+**Test:** `test_f142_141`
+
+### F143 — The agent MUST verify that the parent directory is writable before file creation.
+The agent MUST verify that the parent directory is writable before file creation. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-tool-streak.json` + `.opencode/plugin/enforce-deadline.ts` state-aware block
+**Test:** `test_f143_142`
+
+### F144 — The agent MUST not create deeply nested directory structures (max 20 levels).
+The agent MUST not create deeply nested directory structures (max 20 levels). This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:ci-failure` + `scripts/check_disk_usage.py` ratchet+script gate
+**Test:** `test_f144_143`
+
+### F145 — The agent MUST ensure filenames do not contain shell metacharacters.
+The agent MUST ensure filenames do not contain shell metacharacters. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:sbom` + Makefile `make ci-wait` CI+local dual
+**Test:** `test_f145_144`
+
+### F146 — The agent MUST verify that the file owner matches the expected user.
+The agent MUST verify that the file owner matches the expected user. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-deletion-gate.ts` x `.opencode/plugin/enforce-deadline.ts` cross-plugin
+**Test:** `test_f146_145`
+
+### F147 — The agent MUST not move or rename files that are required by running processes.
+The agent MUST not move or rename files that are required by running processes. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Nothing-Dropped Guardrail` + `scripts/check_green_branch_guard.py` + `.opencode/plugin/enforce-floor.ts` triple layer
+**Test:** `test_f147_146`
+
+### F148 — The agent MUST check that the file being edited is not a generated file.
+The agent MUST check that the file being edited is not a generated file. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Release Branch Lifecycle` section
+**Test:** `test_f148_147`
+
+### F149 — The agent MUST not write to .pyc or __pycache__ directories.
+The agent MUST not write to .pyc or __pycache__ directories. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make hot-reload-plugins` prerequisite
+**Test:** `test_f149_148`
+
+### F150 — The agent MUST verify that the file being deleted is not the last copy.
+The agent MUST verify that the file being deleted is not the last copy. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/test_hook_runtime.py` enforcement
+**Test:** `test_f150_149`
+
+### F151 — The agent MUST not create files with names that are reserved on Windows.
+The agent MUST not create files with names that are reserved on Windows. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-deadline.ts` `tool.execute.before` block
+**Test:** `test_f151_150`
+
+### F152 — The agent MUST ensure symlink targets exist before creating the symlink.
+The agent MUST ensure symlink targets exist before creating the symlink. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-worktree.ts` permissionDecision deny
+**Test:** `test_f152_151`
+
+### F153 — The agent MUST not create files in /tmp that are not under /tmp/gludd-*.
+The agent MUST not create files in /tmp that are not under /tmp/gludd-*. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make agent-cleanup` fail-closed guard
+**Test:** `test_f153_152`
+
+### F154 — The agent MUST verify that the file's content is parseable after writing.
+The agent MUST verify that the file's content is parseable after writing. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-watchdog-disengage` state-file enforced block
+**Test:** `test_f154_153`
+
+
+## Expansion: Context Freshness (C121–C154) (34 specs)
+
+### C121 — The agent MUST check for uncommitted changes before dispatching subagents.
+The agent MUST check for uncommitted changes before dispatching subagents. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:coverage-baseline` ratchet-tracked gate
+**Test:** `test_c121_120`
+
+### C122 — The agent MUST verify that the gate status is fresh before committing.
+The agent MUST verify that the gate status is fresh before committing. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-linux` CI workflow enforcement
+**Test:** `test_c122_121`
+
+### C123 — The agent MUST check for stale enforcement state files before relying on them.
+The agent MUST check for stale enforcement state files before relying on them. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_green_branch_guard.py` + `.opencode/plugin/enforce-commit-lock.ts` dual layer
+**Test:** `test_c123_122`
+
+### C124 — The agent MUST read the relevant design doc before implementing a feature.
+The agent MUST read the relevant design doc before implementing a feature. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make git-commit` combined
+**Test:** `test_c124_123`
+
+### C125 — The agent MUST verify that the implementation matches the design doc (or update the doc).
+The agent MUST verify that the implementation matches the design doc (or update the doc). This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make floor-status` + `scripts/check_green_branch_guard.py` script-backed guard
+**Test:** `test_c125_124`
+
+### C126 — The agent MUST check for existing tests before writing new ones for the same behavior.
+The agent MUST check for existing tests before writing new ones for the same behavior. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-anti-essay.ts` env-var-gated BLOCKING (GLUDD_C_ENFORCE=0 for disable)
+**Test:** `test_c126_125`
+
+### C127 — The agent MUST verify that a library is already used in the project before importing it.
+The agent MUST verify that a library is already used in the project before importing it. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Session Start Protocol` + `config/ratchet.yml:lint-baseline` ratchet-combined
+**Test:** `test_c127_126`
+
+### C128 — The agent MUST check the project's dependency list before adding a new dependency.
+The agent MUST check the project's dependency list before adding a new dependency. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-session-start.json` + `.opencode/plugin/enforce-no-suppressions.ts` state-aware block
+**Test:** `test_c128_127`
+
+### C129 — The agent MUST read the relevant AGENTS.md section before performing a guarded operation.
+The agent MUST read the relevant AGENTS.md section before performing a guarded operation. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:coverage-baseline` + `scripts/verify_release_completeness.py` ratchet+script gate
+**Test:** `test_c129_128`
+
+### C130 — The agent MUST verify the .gitignore rules before creating new generated files.
+The agent MUST verify the .gitignore rules before creating new generated files. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:sbom` + Makefile `make agent-worktree` CI+local dual
+**Test:** `test_c130_129`
+
+### C131 — The agent MUST check the pyproject.toml for project metadata before making changes.
+The agent MUST check the pyproject.toml for project metadata before making changes. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-worktree.ts` x `.opencode/plugin/enforce-commit-lock.ts` cross-plugin
+**Test:** `test_c131_130`
+
+### C132 — The agent MUST read the CLI help text to understand available commands.
+The agent MUST read the CLI help text to understand available commands. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Fix Means Repair Never Disable` + `scripts/verify_release_completeness.py` + `.opencode/plugin/enforce-test-integrity.ts` triple layer
+**Test:** `test_c132_131`
+
+### C133 — The agent MUST verify the database schema before adding new models.
+The agent MUST verify the database schema before adding new models. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Release Cut = Update README` section
+**Test:** `test_c133_132`
+
+### C134 — The agent MUST check the active branch's relationship to master before merging.
+The agent MUST check the active branch's relationship to master before merging. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make development-status` prerequisite
+**Test:** `test_c134_133`
+
+### C135 — The agent MUST verify the remote tracking status before pushing.
+The agent MUST verify the remote tracking status before pushing. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/verify_release_artifact.py` enforcement
+**Test:** `test_c135_134`
+
+### C136 — The agent MUST check for open PRs on a branch before making changes.
+The agent MUST check for open PRs on a branch before making changes. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-audit.ts` `tool.execute.before` block
+**Test:** `test_c136_135`
+
+### C137 — The agent MUST read the release runbook before performing any release operation.
+The agent MUST read the release runbook before performing any release operation. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-floor.ts` permissionDecision deny
+**Test:** `test_c137_136`
+
+### C138 — The agent MUST verify that the current version number is consistent across all files.
+The agent MUST verify that the current version number is consistent across all files. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make hot-reload-plugins` fail-closed guard
+**Test:** `test_c138_137`
+
+### C139 — The agent MUST check the ansible inventory before running playbooks.
+The agent MUST check the ansible inventory before running playbooks. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` state-file enforced block
+**Test:** `test_c139_138`
+
+### C140 — The agent MUST verify terraform state is initialized before planning.
+The agent MUST verify terraform state is initialized before planning. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-audit.ts` + `make feature-start` combined
+**Test:** `test_c140_139`
+
+### C141 — The agent MUST check the molecule test configuration before running ansible tests.
+The agent MUST check the molecule test configuration before running ansible tests. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:gate-failure` ratchet-tracked gate
+**Test:** `test_c141_140`
+
+### C142 — The agent MUST read the Makefile for context on related target dependencies.
+The agent MUST read the Makefile for context on related target dependencies. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-linux` CI workflow enforcement
+**Test:** `test_c142_141`
+
+### C143 — The agent MUST verify that gunicorn configuration is correct before starting the daemon.
+The agent MUST verify that gunicorn configuration is correct before starting the daemon. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` + `.opencode/plugin/enforce-no-suppressions.ts` dual layer
+**Test:** `test_c143_142`
+
+### C144 — The agent MUST check the daemon health endpoint before assuming it is running.
+The agent MUST check the daemon health endpoint before assuming it is running. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make git-stash` combined
+**Test:** `test_c144_143`
+
+### C145 — The agent MUST verify that the database is reachable before running migrations.
+The agent MUST verify that the database is reachable before running migrations. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make gated-merge` + `scripts/check_readme_status_current.py` script-backed guard
+**Test:** `test_c145_144`
+
+### C146 — The agent MUST check the secrets engine status before attempting secret operations.
+The agent MUST check the secrets engine status before attempting secret operations. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-stop.ts` env-var-gated BLOCKING (GLUDD_C_ENFORCE=0 for disable)
+**Test:** `test_c146_145`
+
+### C147 — The agent MUST verify that the user's objective is consistent with the task backlog.
+The agent MUST verify that the user's objective is consistent with the task backlog. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Never Block on Questions` + `config/ratchet.yml:dead-code` ratchet-combined
+**Test:** `test_c147_146`
+
+### C148 — The agent MUST check the model availability before dispatching to a specific model.
+The agent MUST check the model availability before dispatching to a specific model. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-tool-streak.json` + `.opencode/plugin/enforce-batch-push.ts` state-aware block
+**Test:** `test_c148_147`
+
+### C149 — The agent MUST read the disk usage before file-intensive operations.
+The agent MUST read the disk usage before file-intensive operations. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:test-failure` + `scripts/test_hook_runtime.py` ratchet+script gate
+**Test:** `test_c149_148`
+
+### C150 — The agent MUST verify that the SSH key is loaded before git remote operations.
+The agent MUST verify that the SSH key is loaded before git remote operations. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:sbom` + Makefile `make watchdog-auto` CI+local dual
+**Test:** `test_c150_149`
+
+### C151 — The agent MUST read TASKS.md at session start to understand the current work backlog.
+The agent MUST read TASKS.md at session start to understand the current work backlog. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-audit.ts` x `.opencode/plugin/enforce-branch-discipline.ts` cross-plugin
+**Test:** `test_c151_150`
+
+### C152 — The agent MUST read BUGS.md at session start to avoid repeating known failures.
+The agent MUST read BUGS.md at session start to avoid repeating known failures. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Bash Command Policy` + `scripts/ci_check_cooldown.py` + `.opencode/plugin/enforce-branch-discipline.ts` triple layer
+**Test:** `test_c152_151`
+
+### C153 — The agent MUST read SESSION.md at session start to restore prior session context.
+The agent MUST read SESSION.md at session start to restore prior session context. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Fix Means Repair Never Disable` section
+**Test:** `test_c153_152`
+
+### C154 — The agent MUST read config/ratchet.yml to know the current known-unfixed issues.
+The agent MUST read config/ratchet.yml to know the current known-unfixed issues. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make agent-worktree` prerequisite
+**Test:** `test_c154_153`
+
+
+## Expansion: Quality Gate (Q126–Q154) (29 specs)
+
+### Q126 — The agent MUST check that no hardcoded credentials or secrets are in the source.
+The agent MUST check that no hardcoded credentials or secrets are in the source. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-verified-claims.ts` `tool.execute.before` block
+**Test:** `test_q126_125`
+
+### Q127 — The agent MUST verify that the code handles edge cases gracefully.
+The agent MUST verify that the code handles edge cases gracefully. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-verified-claims.ts` permissionDecision deny
+**Test:** `test_q127_126`
+
+### Q128 — The agent MUST ensure that API endpoints return appropriate status codes.
+The agent MUST ensure that API endpoints return appropriate status codes. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make test-hook-runtime` fail-closed guard
+**Test:** `test_q128_127`
+
+### Q129 — The agent MUST check that async code does not block the event loop.
+The agent MUST check that async code does not block the event loop. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-watchdog-disengage` state-file enforced block
+**Test:** `test_q129_128`
+
+### Q130 — The agent MUST verify that database connections are properly pooled.
+The agent MUST verify that database connections are properly pooled. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-audit.ts` + `make ci-verdict` combined
+**Test:** `test_q130_129`
+
+### Q131 — The agent MUST ensure that logging is appropriate (not too verbose, not too sparse).
+The agent MUST ensure that logging is appropriate (not too verbose, not too sparse). This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:stale-gate` ratchet-tracked gate
+**Test:** `test_q131_130`
+
+### Q132 — The agent MUST check that error messages are informative and actionable.
+The agent MUST check that error messages are informative and actionable. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-linux` CI workflow enforcement
+**Test:** `test_q132_131`
+
+### Q133 — The agent MUST verify that the code follows the Single Responsibility Principle.
+The agent MUST verify that the code follows the Single Responsibility Principle. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_disk_usage.py` + `.opencode/plugin/enforce-audit.ts` dual layer
+**Test:** `test_q133_132`
+
+### Q134 — The agent MUST ensure that function signatures have proper type annotations.
+The agent MUST ensure that function signatures have proper type annotations. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make ci-wait` combined
+**Test:** `test_q134_133`
+
+### Q135 — The agent MUST check that the code does not have unreachable statements.
+The agent MUST check that the code does not have unreachable statements. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make feature-done` + `scripts/require_ci_green.py` script-backed guard
+**Test:** `test_q135_134`
+
+### Q136 — The agent MUST verify that all external API calls have timeout handling.
+The agent MUST verify that all external API calls have timeout handling. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-session-start.ts` env-var-gated BLOCKING (GLUDD_Q_ENFORCE=0 for disable)
+**Test:** `test_q136_135`
+
+### Q137 — The agent MUST ensure that no recursion without a base case is present.
+The agent MUST ensure that no recursion without a base case is present. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Self-Audit Policy` + `config/ratchet.yml:dirty-tree` ratchet-combined
+**Test:** `test_q137_136`
+
+### Q138 — The agent MUST check that file handles are properly closed after use.
+The agent MUST check that file handles are properly closed after use. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-session-start.json` + `.opencode/plugin/enforce-worktree.ts` state-aware block
+**Test:** `test_q138_137`
+
+### Q139 — The agent MUST verify that context managers are used for resource management.
+The agent MUST verify that context managers are used for resource management. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:lint-baseline` + `scripts/check_readme_status_current.py` ratchet+script gate
+**Test:** `test_q139_138`
+
+### Q140 — The agent MUST ensure that the code does not use mutable default arguments.
+The agent MUST ensure that the code does not use mutable default arguments. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:sbom` + Makefile `make lint` CI+local dual
+**Test:** `test_q140_139`
+
+### Q141 — The agent MUST check that string formatting uses f-strings consistently.
+The agent MUST check that string formatting uses f-strings consistently. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-context.ts` x `.opencode/plugin/enforce-batch-push.ts` cross-plugin
+**Test:** `test_q141_140`
+
+### Q142 — The agent MUST verify that imports are sorted and grouped correctly.
+The agent MUST verify that imports are sorted and grouped correctly. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Don't Push Every Commit` + `scripts/check_disk_usage.py` + `.opencode/plugin/enforce-audit.ts` triple layer
+**Test:** `test_q142_141`
+
+### Q143 — The agent MUST ensure that the code does not have commented-out code blocks.
+The agent MUST ensure that the code does not have commented-out code blocks. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `No Lint-Suppression Comments` section
+**Test:** `test_q143_142`
+
+### Q144 — The agent MUST check that all TODO comments reference a TASKS.md item.
+The agent MUST check that all TODO comments reference a TASKS.md item. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make check-readme-status` prerequisite
+**Test:** `test_q144_143`
+
+### Q145 — The agent MUST verify that the code does not use bare except clauses.
+The agent MUST verify that the code does not use bare except clauses. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` enforcement
+**Test:** `test_q145_144`
+
+### Q146 — The agent MUST ensure that exception messages include relevant context.
+The agent MUST ensure that exception messages include relevant context. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-anti-essay.ts` `tool.execute.before` block
+**Test:** `test_q146_145`
+
+### Q147 — The agent MUST check that the code does not swallow exceptions silently.
+The agent MUST check that the code does not swallow exceptions silently. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-tdd.ts` permissionDecision deny
+**Test:** `test_q147_146`
+
+### Q148 — The agent MUST verify that numeric operations handle overflow and division by zero.
+The agent MUST verify that numeric operations handle overflow and division by zero. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make collect-check` fail-closed guard
+**Test:** `test_q148_147`
+
+### Q149 — The agent MUST ensure that the code does not have resource leaks.
+The agent MUST ensure that the code does not have resource leaks. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` state-file enforced block
+**Test:** `test_q149_148`
+
+### Q150 — The agent MUST check that the code handles Unicode correctly.
+The agent MUST check that the code handles Unicode correctly. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-audit.ts` + `make secrets-baseline` combined
+**Test:** `test_q150_149`
+
+### Q151 — The agent MUST ensure ruff lint passes with zero errors before declaring work done.
+The agent MUST ensure ruff lint passes with zero errors before declaring work done. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:ci-failure` ratchet-tracked gate
+**Test:** `test_q151_150`
+
+### Q152 — The agent MUST verify mypy typecheck is at or below the established baseline.
+The agent MUST verify mypy typecheck is at or below the established baseline. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-linux` CI workflow enforcement
+**Test:** `test_q152_151`
+
+### Q153 — The agent MUST ensure test collection produces zero errors.
+The agent MUST ensure test collection produces zero errors. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_node_v26_compat.py` + `.opencode/plugin/enforce-stop.ts` dual layer
+**Test:** `test_q153_152`
+
+### Q154 — The agent MUST verify that all tests pass before committing.
+The agent MUST verify that all tests pass before committing. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make release-promote` combined
+**Test:** `test_q154_153`
+
+
+## Expansion: Subagent Discipline (X121–X154) (34 specs)
+
+### X121 — The agent MUST verify subagent results before marking the task as complete.
+The agent MUST verify subagent results before marking the task as complete. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-deletion-gate.ts` env-var-gated BLOCKING (GLUDD_X_ENFORCE=0 for disable)
+**Test:** `test_x121_120`
+
+### X122 — The agent MUST retry failed subagent dispatches with exponential backoff.
+The agent MUST retry failed subagent dispatches with exponential backoff. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `CI-Poll Subagents Are Forbidden` + `config/ratchet.yml:typecheck-baseline` ratchet-combined
+**Test:** `test_x122_121`
+
+### X123 — The agent MUST not dispatch subagents that would exceed the 10-agent ceiling.
+The agent MUST not dispatch subagents that would exceed the 10-agent ceiling. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-tool-streak.json` + `.opencode/plugin/enforce-anti-essay.ts` state-aware block
+**Test:** `test_x123_122`
+
+### X124 — The agent MUST log subagent dispatch details (task, model, timestamp) for audit.
+The agent MUST log subagent dispatch details (task, model, timestamp) for audit. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:typecheck-baseline` + `scripts/check_tdd_compliance.py` ratchet+script gate
+**Test:** `test_x124_123`
+
+### X125 — The agent MUST prefer the sonnet model for subagent dispatches.
+The agent MUST prefer the sonnet model for subagent dispatches. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:sbom` + Makefile `make git-diff` CI+local dual
+**Test:** `test_x125_124`
+
+### X126 — The agent MUST ensure subagent tasks are sized for 2-5 minute completion.
+The agent MUST ensure subagent tasks are sized for 2-5 minute completion. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-branch-discipline.ts` x `.opencode/plugin/enforce-verified-claims.ts` cross-plugin
+**Test:** `test_x126_125`
+
+### X127 — The agent MUST not dispatch a subagent to run make gate (use gate-background).
+The agent MUST not dispatch a subagent to run make gate (use gate-background). This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Task Self-Tracking` + `scripts/agent_liveness.py` + `.opencode/plugin/enforce-deletion-gate.ts` triple layer
+**Test:** `test_x127_126`
+
+### X128 — The agent MUST inform subagents that bash means make targets only.
+The agent MUST inform subagents that bash means make targets only. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Guardrail Integrity Policy` section
+**Test:** `test_x128_127`
+
+### X129 — The agent MUST not dispatch CI-poll subagents that hold a slot doing nothing.
+The agent MUST not dispatch CI-poll subagents that hold a slot doing nothing. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make verify-remote` prerequisite
+**Test:** `test_x129_128`
+
+### X130 — The agent MUST ensure subagents understand the tool parameter names (path, include, pattern).
+The agent MUST ensure subagents understand the tool parameter names (path, include, pattern). This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/verify_release_completeness.py` enforcement
+**Test:** `test_x130_129`
+
+### X131 — The agent MUST specify that subagents must read files but return only terse summaries.
+The agent MUST specify that subagents must read files but return only terse summaries. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-make.ts` `tool.execute.before` block
+**Test:** `test_x131_130`
+
+### X132 — The agent MUST dispatch replacement subagents immediately when one completes.
+The agent MUST dispatch replacement subagents immediately when one completes. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-test-integrity.ts` permissionDecision deny
+**Test:** `test_x132_131`
+
+### X133 — The agent MUST process subagent results in under 5 seconds before dispatching more.
+The agent MUST process subagent results in under 5 seconds before dispatching more. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-diff` fail-closed guard
+**Test:** `test_x133_132`
+
+### X134 — The agent MUST not dispatch status-check-only subagents (every subagent must produce a deliverable).
+The agent MUST not dispatch status-check-only subagents (every subagent must produce a deliverable). This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-watchdog-disengage` state-file enforced block
+**Test:** `test_x134_133`
+
+### X135 — The agent MUST include a 'Do NOT just report problems. Fix them.' directive in subagent prompts.
+The agent MUST include a 'Do NOT just report problems. Fix them.' directive in subagent prompts. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-audit.ts` + `make test-hook-runtime` combined
+**Test:** `test_x135_134`
+
+### X136 — The agent MUST verify that a subagent's assigned file is not already being edited by another agent.
+The agent MUST verify that a subagent's assigned file is not already being edited by another agent. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:typecheck-baseline` ratchet-tracked gate
+**Test:** `test_x136_135`
+
+### X137 — The agent MUST ensure subagent branches have unique names (no collisions).
+The agent MUST ensure subagent branches have unique names (no collisions). This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-linux` CI workflow enforcement
+**Test:** `test_x137_136`
+
+### X138 — The agent MUST not dispatch subagents from within a subagent (no nesting).
+The agent MUST not dispatch subagents from within a subagent (no nesting). This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/verify_release_artifact.py` + `.opencode/plugin/enforce-batch-push.ts` dual layer
+**Test:** `test_x138_137`
+
+### X139 — The agent MUST include the AGENTS.md policy context in subagent prompts when relevant.
+The agent MUST include the AGENTS.md policy context in subagent prompts when relevant. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make check-readme-status` combined
+**Test:** `test_x139_138`
+
+### X140 — The agent MUST verify that the subagent has the correct working directory before dispatching.
+The agent MUST verify that the subagent has the correct working directory before dispatching. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make batch-push` + `scripts/verify_release_completeness.py` script-backed guard
+**Test:** `test_x140_139`
+
+### X141 — The agent MUST handle subagent timeout gracefully (retry or reassign).
+The agent MUST handle subagent timeout gracefully (retry or reassign). This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-test-integrity.ts` env-var-gated BLOCKING (GLUDD_X_ENFORCE=0 for disable)
+**Test:** `test_x141_140`
+
+### X142 — The agent MUST not abandon a subagent's work if it returns a partial result.
+The agent MUST not abandon a subagent's work if it returns a partial result. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Pre-Generation Contract` + `config/ratchet.yml:ci-failure` ratchet-combined
+**Test:** `test_x142_141`
+
+### X143 — The agent MUST classify subagent completion status correctly (completed vs failed).
+The agent MUST classify subagent completion status correctly (completed vs failed). This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-session-start.json` + `.opencode/plugin/enforce-delegate.ts` state-aware block
+**Test:** `test_x143_142`
+
+### X144 — The agent MUST not auto-redispatch completed subagents (the result IS the deliverable).
+The agent MUST not auto-redispatch completed subagents (the result IS the deliverable). This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:gate-failure` + `scripts/verify_release_artifact.py` ratchet+script gate
+**Test:** `test_x144_143`
+
+### X145 — The agent MUST ensure subagent work is committed before the agent marks it done.
+The agent MUST ensure subagent work is committed before the agent marks it done. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:sbom` + Makefile `make release-promote` CI+local dual
+**Test:** `test_x145_144`
+
+### X146 — The agent MUST merge worktree subagent results from the main checkout only.
+The agent MUST merge worktree subagent results from the main checkout only. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-anti-essay.ts` x `.opencode/plugin/enforce-multitask.ts` cross-plugin
+**Test:** `test_x146_145`
+
+### X147 — The agent MUST verify subagent commits are on the correct worktree branch.
+The agent MUST verify subagent commits are on the correct worktree branch. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Release Pipeline Must Be CI-Green` + `scripts/check_duplicate_targets.py` + `.opencode/plugin/enforce-objective.ts` triple layer
+**Test:** `test_x147_146`
+
+### X148 — The agent MUST clean up subagent worktrees after the result has been merged.
+The agent MUST clean up subagent worktrees after the result has been merged. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Guardrail Policy` section
+**Test:** `test_x148_147`
+
+### X149 — The agent MUST not let subagent worktrees accumulate across dispatch waves.
+The agent MUST not let subagent worktrees accumulate across dispatch waves. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-stash` prerequisite
+**Test:** `test_x149_148`
+
+### X150 — The agent MUST track subagent task IDs in TASKS.md for cross-reference.
+The agent MUST track subagent task IDs in TASKS.md for cross-reference. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` enforcement
+**Test:** `test_x150_149`
+
+### X151 — The agent MUST give each subagent a focused, single-task assignment.
+The agent MUST give each subagent a focused, single-task assignment. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-floor.ts` `tool.execute.before` block
+**Test:** `test_x151_150`
+
+### X152 — The agent MUST include the objective context in every subagent dispatch.
+The agent MUST include the objective context in every subagent dispatch. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-enhancement-ratio.ts` permissionDecision deny
+**Test:** `test_x152_151`
+
+### X153 — The agent MUST specify exactly which file(s) a subagent should edit.
+The agent MUST specify exactly which file(s) a subagent should edit. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make ci-wait` fail-closed guard
+**Test:** `test_x153_152`
+
+### X154 — The agent MUST inform each subagent of the available tools it can use.
+The agent MUST inform each subagent of the available tools it can use. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` state-file enforced block
+**Test:** `test_x154_153`
+
+
+## Expansion: Audit Completeness (A126–A154) (29 specs)
+
+### A126 — The agent MUST check for stale agent worktrees during the audit.
+The agent MUST check for stale agent worktrees during the audit. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dirty-tree` ratchet-tracked gate
+**Test:** `test_a126_125`
+
+### A127 — The agent MUST verify that the git index is current for all sessions.
+The agent MUST verify that the git index is current for all sessions. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-linux` CI workflow enforcement
+**Test:** `test_a127_126`
+
+### A128 — The agent MUST audit the .secrets.baseline for new secret patterns added.
+The agent MUST audit the .secrets.baseline for new secret patterns added. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/verify_release_completeness.py` + `.opencode/plugin/enforce-test-integrity.ts` dual layer
+**Test:** `test_a128_127`
+
+### A129 — The agent MUST check for uncommitted changes across all worktrees.
+The agent MUST check for uncommitted changes across all worktrees. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make feature-start` combined
+**Test:** `test_a129_128`
+
+### A130 — The agent MUST verify that all registered plugins are in opencode.json.
+The agent MUST verify that all registered plugins are in opencode.json. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-log` + `scripts/check_node_v26_compat.py` script-backed guard
+**Test:** `test_a130_129`
+
+### A131 — The agent MUST audit the Makefile for duplicate targets.
+The agent MUST audit the Makefile for duplicate targets. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-deadline.ts` env-var-gated BLOCKING (GLUDD_A_ENFORCE=0 for disable)
+**Test:** `test_a131_130`
+
+### A132 — The agent MUST check node v26 compatibility for all plugin files.
+The agent MUST check node v26 compatibility for all plugin files. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Nothing-Dropped Guardrail` + `config/ratchet.yml:stale-gate` ratchet-combined
+**Test:** `test_a132_131`
+
+### A133 — The agent MUST verify that test coverage has not regressed since the last audit.
+The agent MUST verify that test coverage has not regressed since the last audit. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-tool-streak.json` + `.opencode/plugin/enforce-enhancement-ratio.ts` state-aware block
+**Test:** `test_a133_132`
+
+### A134 — The agent MUST audit the session stop rate and identify patterns.
+The agent MUST audit the session stop rate and identify patterns. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:duplicate-target` + `scripts/agent_liveness.py` ratchet+script gate
+**Test:** `test_a134_133`
+
+### A135 — The agent MUST check for any lint suppression comments that were added.
+The agent MUST check for any lint suppression comments that were added. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:sbom` + Makefile `make development-start` CI+local dual
+**Test:** `test_a135_134`
+
+### A136 — The agent MUST verify that type annotations do not use Any.
+The agent MUST verify that type annotations do not use Any. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-test-integrity.ts` x `.opencode/plugin/enforce-anti-essay.ts` cross-plugin
+**Test:** `test_a136_135`
+
+### A137 — The agent MUST audit the dependency tree for known vulnerabilities.
+The agent MUST audit the dependency tree for known vulnerabilities. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Anti-Grinding Enforcement` + `scripts/verify_release_artifact.py` + `.opencode/plugin/enforce-no-wait.ts` triple layer
+**Test:** `test_a137_136`
+
+### A138 — The agent MUST check that all submodules are at the expected pins.
+The agent MUST check that all submodules are at the expected pins. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Nothing-Dropped Guardrail` section
+**Test:** `test_a138_137`
+
+### A139 — The agent MUST verify that the pre-commit hooks are all passing.
+The agent MUST verify that the pre-commit hooks are all passing. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-diff` prerequisite
+**Test:** `test_a139_138`
+
+### A140 — The agent MUST audit the background operation log for orphaned processes.
+The agent MUST audit the background operation log for orphaned processes. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/ci_check_cooldown.py` enforcement
+**Test:** `test_a140_139`
+
+### A141 — The agent MUST check that disk usage is below the 90% threshold.
+The agent MUST check that disk usage is below the 90% threshold. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-objective.ts` `tool.execute.before` block
+**Test:** `test_a141_140`
+
+### A142 — The agent MUST verify that the watchdog daemon is running.
+The agent MUST verify that the watchdog daemon is running. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-batch-push.ts` permissionDecision deny
+**Test:** `test_a142_141`
+
+### A143 — The agent MUST audit the enforcement plugin state files for corruption.
+The agent MUST audit the enforcement plugin state files for corruption. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make check-node-v26-compat` fail-closed guard
+**Test:** `test_a143_142`
+
+### A144 — The agent MUST check that the TASKS.md ledger has no stale entries.
+The agent MUST check that the TASKS.md ledger has no stale entries. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-watchdog-disengage` state-file enforced block
+**Test:** `test_a144_143`
+
+### A145 — The agent MUST verify that SESSION.md is current with the last work done.
+The agent MUST verify that SESSION.md is current with the last work done. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-audit.ts` + `make check-readme-status` combined
+**Test:** `test_a145_144`
+
+### A146 — The agent MUST audit the CI verdict history for cancellation patterns.
+The agent MUST audit the CI verdict history for cancellation patterns. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dead-code` ratchet-tracked gate
+**Test:** `test_a146_145`
+
+### A147 — The agent MUST check that the git remote tracking branches are up to date.
+The agent MUST check that the git remote tracking branches are up to date. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-linux` CI workflow enforcement
+**Test:** `test_a147_146`
+
+### A148 — The agent MUST verify that the ansible inventory is consistent.
+The agent MUST verify that the ansible inventory is consistent. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/task_watchdog.py` + `.opencode/plugin/enforce-verified-claims.ts` dual layer
+**Test:** `test_a148_147`
+
+### A149 — The agent MUST audit terraform state for drift.
+The agent MUST audit terraform state for drift. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make agent-cleanup` combined
+**Test:** `test_a149_148`
+
+### A150 — The agent MUST check that molecule test configurations are valid.
+The agent MUST check that molecule test configurations are valid. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make qa` + `scripts/check_tdd_compliance.py` script-backed guard
+**Test:** `test_a150_149`
+
+### A151 — The agent MUST perform a full self-audit after completing a significant body of work.
+The agent MUST perform a full self-audit after completing a significant body of work. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-make.ts` env-var-gated BLOCKING (GLUDD_A_ENFORCE=0 for disable)
+**Test:** `test_a151_150`
+
+### A152 — The agent MUST cross-reference all user requests against implementation during audit.
+The agent MUST cross-reference all user requests against implementation during audit. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Commit-After-Green Policy` + `config/ratchet.yml:gate-failure` ratchet-combined
+**Test:** `test_a152_151`
+
+### A153 — The agent MUST scan for dead code during the audit phase.
+The agent MUST scan for dead code during the audit phase. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-session-start.json` + `.opencode/plugin/enforce-session-start.ts` state-aware block
+**Test:** `test_a153_152`
+
+### A154 — The agent MUST verify that all new code is wired into the system.
+The agent MUST verify that all new code is wired into the system. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:missing-test` + `scripts/ci_check_cooldown.py` ratchet+script gate
+**Test:** `test_a154_153`
+
+
+## Expansion: Naming/Code Quality (N121–N154) (34 specs)
+
+### N121 — The agent MUST use consistent terraform resource naming with project prefix.
+The agent MUST use consistent terraform resource naming with project prefix. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-commit-lock.ts` x `.opencode/plugin/enforce-deletion-gate.ts` cross-plugin
+**Test:** `test_n121_120`
+
+### N122 — The agent MUST name docker containers and images with the project namespace.
+The agent MUST name docker containers and images with the project namespace. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Long-Running Operations MUST Be Backgrounded` + `scripts/require_ci_green.py` + `.opencode/plugin/enforce-session-start.ts` triple layer
+**Test:** `test_n122_121`
+
+### N123 — The agent MUST use consistent model class naming that matches the database table.
+The agent MUST use consistent model class naming that matches the database table. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Task Completion Policy` section
+**Test:** `test_n123_122`
+
+### N124 — The agent MUST name pytest fixtures with descriptive names indicating their purpose.
+The agent MUST name pytest fixtures with descriptive names indicating their purpose. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make secrets-baseline` prerequisite
+**Test:** `test_n124_123`
+
+### N125 — The agent MUST use the _types.py suffix for type definition modules.
+The agent MUST use the _types.py suffix for type definition modules. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/task_watchdog.py` enforcement
+**Test:** `test_n125_124`
+
+### N126 — The agent MUST name protocol classes with the Protocol suffix.
+The agent MUST name protocol classes with the Protocol suffix. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-stop.ts` `tool.execute.before` block
+**Test:** `test_n126_125`
+
+### N127 — The agent MUST use the Base prefix for abstract base classes.
+The agent MUST use the Base prefix for abstract base classes. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-branch-discipline.ts` permissionDecision deny
+**Test:** `test_n127_126`
+
+### N128 — The agent MUST name exception classes with the Error suffix.
+The agent MUST name exception classes with the Error suffix. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make development-status` fail-closed guard
+**Test:** `test_n128_127`
+
+### N129 — The agent MUST use consistent template file naming with descriptive suffixes.
+The agent MUST use consistent template file naming with descriptive suffixes. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` state-file enforced block
+**Test:** `test_n129_128`
+
+### N130 — The agent MUST name state files with the gludd- prefix under /tmp/.
+The agent MUST name state files with the gludd- prefix under /tmp/. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-audit.ts` + `make git-checkout` combined
+**Test:** `test_n130_129`
+
+### N131 — The agent MUST use descriptive branch names that indicate the work being done.
+The agent MUST use descriptive branch names that indicate the work being done. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:lint-baseline` ratchet-tracked gate
+**Test:** `test_n131_130`
+
+### N132 — The agent MUST name commit messages in imperative mood with a type prefix.
+The agent MUST name commit messages in imperative mood with a type prefix. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-linux` CI workflow enforcement
+**Test:** `test_n132_131`
+
+### N133 — The agent MUST use consistent log level naming that matches the severity.
+The agent MUST use consistent log level naming that matches the severity. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/agent_liveness.py` + `.opencode/plugin/enforce-worktree.ts` dual layer
+**Test:** `test_n133_132`
+
+### N134 — The agent MUST name secret keys with a hierarchical dot-separated convention.
+The agent MUST name secret keys with a hierarchical dot-separated convention. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make development-status` combined
+**Test:** `test_n134_133`
+
+### N135 — The agent MUST use consistent metric naming with namespace and unit suffix.
+The agent MUST use consistent metric naming with namespace and unit suffix. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make gate-lite` + `scripts/check_duplicate_targets.py` script-backed guard
+**Test:** `test_n135_134`
+
+### N136 — The agent MUST name event types with a past-tense verb indicating the action.
+The agent MUST name event types with a past-tense verb indicating the action. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-worktree.ts` env-var-gated BLOCKING (GLUDD_N_ENFORCE=0 for disable)
+**Test:** `test_n136_135`
+
+### N137 — The agent MUST use consistent job spec naming with descriptive task identifiers.
+The agent MUST use consistent job spec naming with descriptive task identifiers. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Release Pipeline Must Be CI-Green` + `config/ratchet.yml:coverage-baseline` ratchet-combined
+**Test:** `test_n137_136`
+
+### N138 — The agent MUST name worktree branches with the agent-<description> pattern.
+The agent MUST name worktree branches with the agent-<description> pattern. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-tool-streak.json` + `.opencode/plugin/enforce-objective.ts` state-aware block
+**Test:** `test_n138_137`
+
+### N139 — The agent MUST use consistent config section naming in YAML/TOML files.
+The agent MUST use consistent config section naming in YAML/TOML files. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dirty-tree` + `scripts/check_green_branch_guard.py` ratchet+script gate
+**Test:** `test_n139_138`
+
+### N140 — The agent MUST name human todo categories with consistent snake_case.
+The agent MUST name human todo categories with consistent snake_case. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:sbom` + Makefile `make collect-check` CI+local dual
+**Test:** `test_n140_139`
+
+### N141 — The agent MUST use consistent field naming in SQLAlchemy models.
+The agent MUST use consistent field naming in SQLAlchemy models. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-floor.ts` x `.opencode/plugin/enforce-make.ts` cross-plugin
+**Test:** `test_n141_140`
+
+### N142 — The agent MUST name alembic revision identifiers with a short descriptive prefix.
+The agent MUST name alembic revision identifiers with a short descriptive prefix. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Constraints Are To Engineer Around` + `scripts/check_tdd_compliance.py` + `.opencode/plugin/enforce-verified-claims.ts` triple layer
+**Test:** `test_n142_141`
+
+### N143 — The agent MUST use consistent naming for database indexes and constraints.
+The agent MUST use consistent naming for database indexes and constraints. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Premature-Stop Audit Policy` section
+**Test:** `test_n143_142`
+
+### N144 — The agent MUST name environment-specific config overrides with the environment prefix.
+The agent MUST name environment-specific config overrides with the environment prefix. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make typecheck` prerequisite
+**Test:** `test_n144_143`
+
+### N145 — The agent MUST use consistent naming for pytest markers.
+The agent MUST use consistent naming for pytest markers. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_disk_usage.py` enforcement
+**Test:** `test_n145_144`
+
+### N146 — The agent MUST name documentation files with UPPER_CASE for policy docs.
+The agent MUST name documentation files with UPPER_CASE for policy docs. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-worktree.ts` `tool.execute.before` block
+**Test:** `test_n146_145`
+
+### N147 — The agent MUST use consistent naming for release tags (v<major>.<minor>.<patch>-<stage>.<num>).
+The agent MUST use consistent naming for release tags (v<major>.<minor>.<patch>-<stage>.<num>). This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-stop.ts` permissionDecision deny
+**Test:** `test_n147_146`
+
+### N148 — The agent MUST name CI workflow jobs with descriptive kebab-case.
+The agent MUST name CI workflow jobs with descriptive kebab-case. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make test` fail-closed guard
+**Test:** `test_n148_147`
+
+### N149 — The agent MUST use consistent naming for GitHub release artifacts.
+The agent MUST use consistent naming for GitHub release artifacts. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-watchdog-disengage` state-file enforced block
+**Test:** `test_n149_148`
+
+### N150 — The agent MUST name ansible variable names with consistent prefixing.
+The agent MUST name ansible variable names with consistent prefixing. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-audit.ts` + `make collect-check` combined
+**Test:** `test_n150_149`
+
+### N151 — The agent MUST use snake_case for all Python function and variable names.
+The agent MUST use snake_case for all Python function and variable names. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:missing-test` ratchet-tracked gate
+**Test:** `test_n151_150`
+
+### N152 — The agent MUST use PascalCase for class names in Python.
+The agent MUST use PascalCase for class names in Python. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-linux` CI workflow enforcement
+**Test:** `test_n152_151`
+
+### N153 — The agent MUST use UPPER_CASE for module-level constants.
+The agent MUST use UPPER_CASE for module-level constants. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/test_hook_runtime.py` + `.opencode/plugin/enforce-multitask.ts` dual layer
+**Test:** `test_n153_152`
+
+### N154 — The agent MUST use descriptive variable names (no single-letter vars except loop indices).
+The agent MUST use descriptive variable names (no single-letter vars except loop indices). This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make reload-enforcement` combined
+**Test:** `test_n154_153`
+
+
+## Expansion: Knowledge Management (K121–K154) (34 specs)
+
+### K121 — The agent MUST track disk usage trends to predict and prevent ENOSPC.
+The agent MUST track disk usage trends to predict and prevent ENOSPC. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-commit-lock.ts` env-var-gated BLOCKING (GLUDD_K_ENFORCE=0 for disable)
+**Test:** `test_k121_120`
+
+### K122 — The agent MUST maintain a known-gap list in SESSION.md for unresolved issues.
+The agent MUST maintain a known-gap list in SESSION.md for unresolved issues. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Self-Test Quality` + `config/ratchet.yml:untested-source` ratchet-combined
+**Test:** `test_k122_121`
+
+### K123 — The agent MUST record system clock skew observations for debugging.
+The agent MUST record system clock skew observations for debugging. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-session-start.json` + `.opencode/plugin/enforce-audit.ts` state-aware block
+**Test:** `test_k123_122`
+
+### K124 — The agent MUST track SSH key availability status for git remote operations.
+The agent MUST track SSH key availability status for git remote operations. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:stale-gate` + `scripts/check_node_v26_compat.py` ratchet+script gate
+**Test:** `test_k124_123`
+
+### K125 — The agent MUST maintain a dependency freshness audit log.
+The agent MUST maintain a dependency freshness audit log. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:sbom` + Makefile `make git-checkout` CI+local dual
+**Test:** `test_k125_124`
+
+### K126 — The agent MUST record the background operation history (gate, tests, builds).
+The agent MUST record the background operation history (gate, tests, builds). This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-delegate.ts` x `.opencode/plugin/enforce-enhancement-ratio.ts` cross-plugin
+**Test:** `test_k126_125`
+
+### K127 — The agent MUST track the enforcement plugin hot-reload status.
+The agent MUST track the enforcement plugin hot-reload status. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Priority Stacking` + `scripts/task_watchdog.py` + `.opencode/plugin/enforce-enhancement-ratio.ts` triple layer
+**Test:** `test_k127_126`
+
+### K128 — The agent MUST log every crash-recovery event with the state before and after.
+The agent MUST log every crash-recovery event with the state before and after. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Session Start Protocol` section
+**Test:** `test_k128_127`
+
+### K129 — The agent MUST maintain an idempotency log for operations that should be run-once.
+The agent MUST maintain an idempotency log for operations that should be run-once. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make gate-background` prerequisite
+**Test:** `test_k129_128`
+
+### K130 — The agent MUST track the gate pass/fail history for trend analysis.
+The agent MUST track the gate pass/fail history for trend analysis. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_readme_status_current.py` enforcement
+**Test:** `test_k130_129`
+
+### K131 — The agent MUST record the test count history to detect regressions.
+The agent MUST record the test count history to detect regressions. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-clean-tree.ts` `tool.execute.before` block
+**Test:** `test_k131_130`
+
+### K132 — The agent MUST maintain a type-safety compliance log.
+The agent MUST maintain a type-safety compliance log. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-make.ts` permissionDecision deny
+**Test:** `test_k132_131`
+
+### K133 — The agent MUST track lint violation counts over time.
+The agent MUST track lint violation counts over time. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make gate-audit` fail-closed guard
+**Test:** `test_k133_132`
+
+### K134 — The agent MUST record the secrets baseline change history.
+The agent MUST record the secrets baseline change history. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` state-file enforced block
+**Test:** `test_k134_133`
+
+### K135 — The agent MUST maintain a merge-conflict resolution log for audit.
+The agent MUST maintain a merge-conflict resolution log for audit. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-audit.ts` + `make test-integration` combined
+**Test:** `test_k135_134`
+
+### K136 — The agent MUST track the agent worktree lifecycle (create, merge, cleanup).
+The agent MUST track the agent worktree lifecycle (create, merge, cleanup). This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:suppression-comment` ratchet-tracked gate
+**Test:** `test_k136_135`
+
+### K137 — The agent MUST record the subagent dispatch and result history.
+The agent MUST record the subagent dispatch and result history. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-linux` CI workflow enforcement
+**Test:** `test_k137_136`
+
+### K138 — The agent MUST maintain the enhancement-to-fix ratio history per wave.
+The agent MUST maintain the enhancement-to-fix ratio history per wave. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` + `.opencode/plugin/enforce-no-wait.ts` dual layer
+**Test:** `test_k138_137`
+
+### K139 — The agent MUST track the session stop rate and patterns for process improvement.
+The agent MUST track the session stop rate and patterns for process improvement. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make watchdog-auto` combined
+**Test:** `test_k139_138`
+
+### K140 — The agent MUST record the pre-commit hook install status history.
+The agent MUST record the pre-commit hook install status history. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make crash-recovery` + `scripts/test_hook_runtime.py` script-backed guard
+**Test:** `test_k140_139`
+
+### K141 — The agent MUST maintain a node v26 compatibility test history.
+The agent MUST maintain a node v26 compatibility test history. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-enhancement-ratio.ts` env-var-gated BLOCKING (GLUDD_K_ENFORCE=0 for disable)
+**Test:** `test_k141_140`
+
+### K142 — The agent MUST track the ratchet burn-down rate over time.
+The agent MUST track the ratchet burn-down rate over time. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Single-Source Feature Development` + `config/ratchet.yml:duplicate-target` ratchet-combined
+**Test:** `test_k142_141`
+
+### K143 — The agent MUST record the objective completion rate per session.
+The agent MUST record the objective completion rate per session. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-tool-streak.json` + `.opencode/plugin/enforce-test-integrity.ts` state-aware block
+**Test:** `test_k143_142`
+
+### K144 — The agent MUST maintain a guardrail integrity test history.
+The agent MUST maintain a guardrail integrity test history. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:untested-source` + `scripts/task_watchdog.py` ratchet+script gate
+**Test:** `test_k144_143`
+
+### K145 — The agent MUST track the enforcement plugin behavior test pass/fail history.
+The agent MUST track the enforcement plugin behavior test pass/fail history. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:sbom` + Makefile `make check-readme-status` CI+local dual
+**Test:** `test_k145_144`
+
+### K146 — The agent MUST record the codebase audit findings for trend analysis.
+The agent MUST record the codebase audit findings for trend analysis. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-multitask.ts` x `.opencode/plugin/enforce-floor.ts` cross-plugin
+**Test:** `test_k146_145`
+
+### K147 — The agent MUST maintain a dead code removal log.
+The agent MUST maintain a dead code removal log. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Single-Source Feature Development` + `scripts/check_readme_status_current.py` + `.opencode/plugin/enforce-stop.ts` triple layer
+**Test:** `test_k147_146`
+
+### K148 — The agent MUST track the test coverage trend over time.
+The agent MUST track the test coverage trend over time. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Branch discipline` section
+**Test:** `test_k148_147`
+
+### K149 — The agent MUST record the CI pipeline duration trend for performance analysis.
+The agent MUST record the CI pipeline duration trend for performance analysis. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make test-integration` prerequisite
+**Test:** `test_k149_148`
+
+### K150 — The agent MUST maintain the release pipeline reliability statistics.
+The agent MUST maintain the release pipeline reliability statistics. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/agent_liveness.py` enforcement
+**Test:** `test_k150_149`
+
+### K151 — The agent MUST maintain TASKS.md as the machine-verifiable task ledger.
+The agent MUST maintain TASKS.md as the machine-verifiable task ledger. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-branch-discipline.ts` `tool.execute.before` block
+**Test:** `test_k151_150`
+
+### K152 — The agent MUST maintain BUGS.md as the process failure and incident tracker.
+The agent MUST maintain BUGS.md as the process failure and incident tracker. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-audit.ts` permissionDecision deny
+**Test:** `test_k152_151`
+
+### K153 — The agent MUST maintain SESSION.md for cross-session context restoration.
+The agent MUST maintain SESSION.md for cross-session context restoration. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make secrets-baseline` fail-closed guard
+**Test:** `test_k153_152`
+
+### K154 — The agent MUST maintain config/ratchet.yml for known-unfixed work tracking.
+The agent MUST maintain config/ratchet.yml for known-unfixed work tracking. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-watchdog-disengage` state-file enforced block
+**Test:** `test_k154_153`
+
+
+## Expansion: User Intent (U121–U154) (34 specs)
+
+### U121 — The agent MUST not ignore a user's directive to use a specific approach or tool.
+The agent MUST not ignore a user's directive to use a specific approach or tool. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:test-failure` ratchet-tracked gate
+**Test:** `test_u121_120`
+
+### U122 — The agent MUST interpret 'don't push' as a permanent constraint, not a one-time skip.
+The agent MUST interpret 'don't push' as a permanent constraint, not a one-time skip. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-linux` CI workflow enforcement
+**Test:** `test_u122_121`
+
+### U123 — The agent MUST not reinterpret 'fix X' as 'disable X' (fix means repair, never disable).
+The agent MUST not reinterpret 'fix X' as 'disable X' (fix means repair, never disable). This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/ci_check_cooldown.py` + `.opencode/plugin/enforce-anti-essay.ts` dual layer
+**Test:** `test_u123_122`
+
+### U124 — The agent MUST detect when a user directive conflicts with a codified policy and flag it.
+The agent MUST detect when a user directive conflicts with a codified policy and flag it. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make test-integration` combined
+**Test:** `test_u124_123`
+
+### U125 — The agent MUST apply user preferences consistently across the entire session.
+The agent MUST apply user preferences consistently across the entire session. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make agent-merge` + `scripts/task_watchdog.py` script-backed guard
+**Test:** `test_u125_124`
+
+### U126 — The agent MUST remember user-requested conventions that differ from project defaults.
+The agent MUST remember user-requested conventions that differ from project defaults. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` env-var-gated BLOCKING (GLUDD_U_ENFORCE=0 for disable)
+**Test:** `test_u126_125`
+
+### U127 — The agent MUST not silently revert a user-requested change in a later operation.
+The agent MUST not silently revert a user-requested change in a later operation. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `No Lint-Suppression Comments` + `config/ratchet.yml:test-failure` ratchet-combined
+**Test:** `test_u127_126`
+
+### U128 — The agent MUST verify that a user-requested change was actually applied before claiming it is done.
+The agent MUST verify that a user-requested change was actually applied before claiming it is done. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-session-start.json` + `.opencode/plugin/enforce-multitask.ts` state-aware block
+**Test:** `test_u128_127`
+
+### U129 — The agent MUST track all user requests from the conversation and audit against implementation.
+The agent MUST track all user requests from the conversation and audit against implementation. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:suppression-comment` + `scripts/require_ci_green.py` ratchet+script gate
+**Test:** `test_u129_128`
+
+### U130 — The agent MUST not drop user requests that were mentioned early in a long session.
+The agent MUST not drop user requests that were mentioned early in a long session. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:sbom` + Makefile `make ship-commit` CI+local dual
+**Test:** `test_u130_129`
+
+### U131 — The agent MUST parse multi-part user messages and extract every distinct request.
+The agent MUST parse multi-part user messages and extract every distinct request. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-stop.ts` x `.opencode/plugin/enforce-context.ts` cross-plugin
+**Test:** `test_u131_130`
+
+### U132 — The agent MUST detect when a user is repeating a request and escalate priority.
+The agent MUST detect when a user is repeating a request and escalate priority. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Session Start Protocol` + `scripts/check_node_v26_compat.py` + `.opencode/plugin/enforce-delegate.ts` triple layer
+**Test:** `test_u132_131`
+
+### U133 — The agent MUST not ask the user 'are you sure?' for non-destructive operations.
+The agent MUST not ask the user 'are you sure?' for non-destructive operations. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `COST-EFFICIENCY DIRECTIVE` section
+**Test:** `test_u133_132`
+
+### U134 — The agent MUST default to action when the user gives a general directive.
+The agent MUST default to action when the user gives a general directive. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make hot-reload-plugins` prerequisite
+**Test:** `test_u134_133`
+
+### U135 — The agent MUST not ask the user to make decisions the agent can make itself.
+The agent MUST not ask the user to make decisions the agent can make itself. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_node_v26_compat.py` enforcement
+**Test:** `test_u135_134`
+
+### U136 — The agent MUST interpret 'keep working' as 'maintain the floor and continue all tasks'.
+The agent MUST interpret 'keep working' as 'maintain the floor and continue all tasks'. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-session-start.ts` `tool.execute.before` block
+**Test:** `test_u136_135`
+
+### U137 — The agent MUST not reduce scope when the user says 'and also' or 'in addition'.
+The agent MUST not reduce scope when the user says 'and also' or 'in addition'. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-delegate.ts` permissionDecision deny
+**Test:** `test_u137_136`
+
+### U138 — The agent MUST track which user requests it has and has not yet addressed.
+The agent MUST track which user requests it has and has not yet addressed. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-checkout` fail-closed guard
+**Test:** `test_u138_137`
+
+### U139 — The agent MUST prioritize explicit user instructions over implied tasks.
+The agent MUST prioritize explicit user instructions over implied tasks. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` state-file enforced block
+**Test:** `test_u139_138`
+
+### U140 — The agent MUST not treat a user's status inquiry as a stop signal.
+The agent MUST not treat a user's status inquiry as a stop signal. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-audit.ts` + `make release-promote` combined
+**Test:** `test_u140_139`
+
+### U141 — The agent MUST answer the user's question and immediately resume work.
+The agent MUST answer the user's question and immediately resume work. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:duplicate-target` ratchet-tracked gate
+**Test:** `test_u141_140`
+
+### U142 — The agent MUST not present a list of options to the user when it can choose the best one.
+The agent MUST not present a list of options to the user when it can choose the best one. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-linux` CI workflow enforcement
+**Test:** `test_u142_141`
+
+### U143 — The agent MUST state its assumption and proceed when the user's intent is ambiguous.
+The agent MUST state its assumption and proceed when the user's intent is ambiguous. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_readme_status_current.py` + `.opencode/plugin/enforce-clean-tree.ts` dual layer
+**Test:** `test_u143_142`
+
+### U144 — The agent MUST not ask the user for permission to do its job.
+The agent MUST not ask the user for permission to do its job. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make test-hook-runtime` combined
+**Test:** `test_u144_143`
+
+### U145 — The agent MUST recognize when a user is expressing frustration and adjust approach.
+The agent MUST recognize when a user is expressing frustration and adjust approach. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make require-ci-green` + `scripts/verify_release_artifact.py` script-backed guard
+**Test:** `test_u145_144`
+
+### U146 — The agent MUST not argue with user feedback about its own behavior.
+The agent MUST not argue with user feedback about its own behavior. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-audit.ts` env-var-gated BLOCKING (GLUDD_U_ENFORCE=0 for disable)
+**Test:** `test_u146_145`
+
+### U147 — The agent MUST immediately correct behavior the user identifies as a problem.
+The agent MUST immediately correct behavior the user identifies as a problem. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Evidence-Based Response Policy` + `config/ratchet.yml:suppression-comment` ratchet-combined
+**Test:** `test_u147_146`
+
+### U148 — The agent MUST not repeat a behavior pattern the user has explicitly criticized.
+The agent MUST not repeat a behavior pattern the user has explicitly criticized. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-tool-streak.json` + `.opencode/plugin/enforce-clean-tree.ts` state-aware block
+**Test:** `test_u148_147`
+
+### U149 — The agent MUST treat user feedback as a mandatory corrective, not a suggestion.
+The agent MUST treat user feedback as a mandatory corrective, not a suggestion. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dead-code` + `scripts/check_duplicate_targets.py` ratchet+script gate
+**Test:** `test_u149_148`
+
+### U150 — The agent MUST codify user feedback into AGENTS.md or plugin enforcement when applicable.
+The agent MUST codify user feedback into AGENTS.md or plugin enforcement when applicable. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:sbom` + Makefile `make test-hook-runtime` CI+local dual
+**Test:** `test_u150_149`
+
+### U151 — The agent MUST interpret new user instructions additively (AND), not substitutively (OR).
+The agent MUST interpret new user instructions additively (AND), not substitutively (OR). This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-deadline.ts` x `.opencode/plugin/enforce-objective.ts` cross-plugin
+**Test:** `test_u151_150`
+
+### U152 — The agent MUST stack new priorities on top of existing objectives.
+The agent MUST stack new priorities on top of existing objectives. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Guardrail Policy` + `scripts/test_hook_runtime.py` + `.opencode/plugin/enforce-commit-lock.ts` triple layer
+**Test:** `test_u152_151`
+
+### U153 — The agent MUST interpret 'fix X FIRST' as a prefix, not a replacement of the work queue.
+The agent MUST interpret 'fix X FIRST' as a prefix, not a replacement of the work queue. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `ANTI-LOOP DIRECTIVE` section
+**Test:** `test_u153_152`
+
+### U154 — The agent MUST interpret 'fix X NOW' as immediate preemption without dropping other work.
+The agent MUST interpret 'fix X NOW' as immediate preemption without dropping other work. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make development-status` prerequisite
+**Test:** `test_u154_153`
+
+
+## Expansion: Zero-Failure (Z126–Z154) (29 specs)
+
+### Z126 — The agent MUST guarantee that the ansible syntax is valid.
+The agent MUST guarantee that the ansible syntax is valid. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-commit-lock.ts` `tool.execute.before` block
+**Test:** `test_z126_125`
+
+### Z127 — The agent MUST guarantee that terraform state is initialized.
+The agent MUST guarantee that terraform state is initialized. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-suppressions.ts` permissionDecision deny
+**Test:** `test_z127_126`
+
+### Z128 — The agent MUST guarantee that the watchdog daemon is running.
+The agent MUST guarantee that the watchdog daemon is running. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make release-promote` fail-closed guard
+**Test:** `test_z128_127`
+
+### Z129 — The agent MUST guarantee that no orphaned background processes exist.
+The agent MUST guarantee that no orphaned background processes exist. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-watchdog-disengage` state-file enforced block
+**Test:** `test_z129_128`
+
+### Z130 — The agent MUST guarantee that the session state files are not corrupted.
+The agent MUST guarantee that the session state files are not corrupted. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-audit.ts` + `make git-diff` combined
+**Test:** `test_z130_129`
+
+### Z131 — The agent MUST guarantee that TASKS.md has no stale entries.
+The agent MUST guarantee that TASKS.md has no stale entries. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:untested-source` ratchet-tracked gate
+**Test:** `test_z131_130`
+
+### Z132 — The agent MUST guarantee that SESSION.md is current.
+The agent MUST guarantee that SESSION.md is current. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-linux` CI workflow enforcement
+**Test:** `test_z132_131`
+
+### Z133 — The agent MUST guarantee that BUGS.md open incidents have resolution plans.
+The agent MUST guarantee that BUGS.md open incidents have resolution plans. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_duplicate_targets.py` + `.opencode/plugin/enforce-deletion-gate.ts` dual layer
+**Test:** `test_z133_132`
+
+### Z134 — The agent MUST guarantee that the ratchet is not growing (burn-down trend positive).
+The agent MUST guarantee that the ratchet is not growing (burn-down trend positive). This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make gate-audit` combined
+**Test:** `test_z134_133`
+
+### Z135 — The agent MUST guarantee that no uncommitted changes exist at session end.
+The agent MUST guarantee that no uncommitted changes exist at session end. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make ci-verdict-safe` + `scripts/check_disk_usage.py` script-backed guard
+**Test:** `test_z135_134`
+
+### Z136 — The agent MUST guarantee that all subagent results are codified before stopping.
+The agent MUST guarantee that all subagent results are codified before stopping. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-floor.ts` env-var-gated BLOCKING (GLUDD_Z_ENFORCE=0 for disable)
+**Test:** `test_z136_135`
+
+### Z137 — The agent MUST guarantee that the 10-agent dispatch floor was maintained throughout.
+The agent MUST guarantee that the 10-agent dispatch floor was maintained throughout. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Minimum 10 Subagents` + `config/ratchet.yml:missing-test` ratchet-combined
+**Test:** `test_z137_136`
+
+### Z138 — The agent MUST guarantee that no test skip, xfail, or continue-on-error exists.
+The agent MUST guarantee that no test skip, xfail, or continue-on-error exists. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-session-start.json` + `.opencode/plugin/enforce-make.ts` state-aware block
+**Test:** `test_z138_137`
+
+### Z139 — The agent MUST guarantee that all tests have meaningful assertions.
+The agent MUST guarantee that all tests have meaningful assertions. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:ci-failure` + `scripts/check_disk_usage.py` ratchet+script gate
+**Test:** `test_z139_138`
+
+### Z140 — The agent MUST guarantee that test isolation is maintained (no order dependency).
+The agent MUST guarantee that test isolation is maintained (no order dependency). This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:sbom` + Makefile `make secrets-baseline` CI+local dual
+**Test:** `test_z140_139`
+
+### Z141 — The agent MUST guarantee that no hardcoded credentials exist in the source.
+The agent MUST guarantee that no hardcoded credentials exist in the source. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-enhancement-ratio.ts` x `.opencode/plugin/enforce-no-suppressions.ts` cross-plugin
+**Test:** `test_z141_140`
+
+### Z142 — The agent MUST guarantee that all API endpoints return documented status codes.
+The agent MUST guarantee that all API endpoints return documented status codes. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Release Cut = Update README` + `scripts/check_green_branch_guard.py` + `.opencode/plugin/enforce-anti-essay.ts` triple layer
+**Test:** `test_z142_141`
+
+### Z143 — The agent MUST guarantee that error messages are informative and actionable.
+The agent MUST guarantee that error messages are informative and actionable. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Single-Source Feature Development` section
+**Test:** `test_z143_142`
+
+### Z144 — The agent MUST guarantee that the code does not have resource leaks.
+The agent MUST guarantee that the code does not have resource leaks. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make agent-worktree` prerequisite
+**Test:** `test_z144_143`
+
+### Z145 — The agent MUST guarantee that the code handles Unicode correctly.
+The agent MUST guarantee that the code handles Unicode correctly. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/test_hook_runtime.py` enforcement
+**Test:** `test_z145_144`
+
+### Z146 — The agent MUST guarantee that external API calls have timeout handling.
+The agent MUST guarantee that external API calls have timeout handling. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-batch-push.ts` `tool.execute.before` block
+**Test:** `test_z146_145`
+
+### Z147 — The agent MUST guarantee that no circular imports exist.
+The agent MUST guarantee that no circular imports exist. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-deletion-gate.ts` permissionDecision deny
+**Test:** `test_z147_146`
+
+### Z148 — The agent MUST guarantee that the code does not use bare except clauses.
+The agent MUST guarantee that the code does not use bare except clauses. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make agent-worktree` fail-closed guard
+**Test:** `test_z148_147`
+
+### Z149 — The agent MUST guarantee that string formatting is consistent.
+The agent MUST guarantee that string formatting is consistent. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` state-file enforced block
+**Test:** `test_z149_148`
+
+### Z150 — The agent MUST guarantee that all TODO comments reference a TASKS.md item.
+The agent MUST guarantee that all TODO comments reference a TASKS.md item. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-audit.ts` + `make lint` combined
+**Test:** `test_z150_149`
+
+### Z151 — The agent MUST guarantee that lint has zero errors before any claim of completeness.
+The agent MUST guarantee that lint has zero errors before any claim of completeness. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:coverage-baseline` ratchet-tracked gate
+**Test:** `test_z151_150`
+
+### Z152 — The agent MUST guarantee that typecheck is within the established baseline.
+The agent MUST guarantee that typecheck is within the established baseline. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-linux` CI workflow enforcement
+**Test:** `test_z152_151`
+
+### Z153 — The agent MUST guarantee that test collection has zero errors.
+The agent MUST guarantee that test collection has zero errors. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_green_branch_guard.py` + `.opencode/plugin/enforce-delegate.ts` dual layer
+**Test:** `test_z153_152`
+
+### Z154 — The agent MUST guarantee that all tests pass before claiming work is done.
+The agent MUST guarantee that all tests pass before claiming work is done. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make typecheck` combined
+**Test:** `test_z154_153`
+
+
+## Expansion: Hard Break Enforcement (H101–H154) (54 specs)
+
+### H101 — The agent MUST re-verify disk space before the next batch after a hard break.
+The agent MUST re-verify disk space before the next batch after a hard break. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-clean-tree.ts` env-var-gated BLOCKING (GLUDD_H_ENFORCE=0 for disable)
+**Test:** `test_h101_100`
+
+### H102 — The agent MUST detect hard-break-loops: more than 3 breaks within 5 minutes.
+The agent MUST detect hard-break-loops: more than 3 breaks within 5 minutes. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Disk Discipline` + `config/ratchet.yml:lint-baseline` ratchet-combined
+**Test:** `test_h102_101`
+
+### H103 — The agent MUST not break with an active submodule update in progress.
+The agent MUST not break with an active submodule update in progress. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-tool-streak.json` + `.opencode/plugin/enforce-tdd.ts` state-aware block
+**Test:** `test_h103_102`
+
+### H104 — The agent MUST re-verify that pre-commit hooks are installed after each break.
+The agent MUST re-verify that pre-commit hooks are installed after each break. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:coverage-baseline` + `scripts/verify_release_completeness.py` ratchet+script gate
+**Test:** `test_h104_103`
+
+### H105 — The agent MUST not break with orphaned state files in /tmp/gludd-*.
+The agent MUST not break with orphaned state files in /tmp/gludd-*. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:sbom` + Makefile `make ci-verdict` CI+local dual
+**Test:** `test_h105_104`
+
+### H106 — The agent MUST ensure all ratchet entries from the prior batch are resolved before break.
+The agent MUST ensure all ratchet entries from the prior batch are resolved before break. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-clean-tree.ts` x `.opencode/plugin/enforce-stop.ts` cross-plugin
+**Test:** `test_h106_105`
+
+### H107 — The agent MUST signal the batch transition with a visible marker in the session output.
+The agent MUST signal the batch transition with a visible marker in the session output. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `TDD Policy` + `scripts/verify_release_completeness.py` + `.opencode/plugin/enforce-context.ts` triple layer
+**Test:** `test_h107_106`
+
+### H108 — The agent MUST checkpoint the current working tree state before a hard break.
+The agent MUST checkpoint the current working tree state before a hard break. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `No-Manual-Default Policy` section
+**Test:** `test_h108_107`
+
+### H109 — The agent MUST verify that the task watchdog is still running after each break.
+The agent MUST verify that the task watchdog is still running after each break. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make check-readme-status` prerequisite
+**Test:** `test_h109_108`
+
+### H110 — The agent MUST not break with a test coverage report older than the last edit.
+The agent MUST not break with a test coverage report older than the last edit. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/verify_release_artifact.py` enforcement
+**Test:** `test_h110_109`
+
+### H111 — The agent MUST enforce a mandatory hard break between unrelated work batches.
+The agent MUST enforce a mandatory hard break between unrelated work batches. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-multitask.ts` `tool.execute.before` block
+**Test:** `test_h111_110`
+
+### H112 — The agent MUST refuse to start new work before completing the current batch.
+The agent MUST refuse to start new work before completing the current batch. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-commit-lock.ts` permissionDecision deny
+**Test:** `test_h112_111`
+
+### H113 — The agent MUST detect batch boundaries by checking for gate status between phases.
+The agent MUST detect batch boundaries by checking for gate status between phases. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make reload-enforcement` fail-closed guard
+**Test:** `test_h113_112`
+
+### H114 — The agent MUST insert a verify-state checkpoint at every hard break transition.
+The agent MUST insert a verify-state checkpoint at every hard break transition. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-watchdog-disengage` state-file enforced block
+**Test:** `test_h114_113`
+
+### H115 — The agent MUST not chain tool calls across unrelated task domains.
+The agent MUST not chain tool calls across unrelated task domains. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-audit.ts` + `make watchdog-auto` combined
+**Test:** `test_h115_114`
+
+### H116 — The agent MUST require explicit batch-completion markers before starting the next.
+The agent MUST require explicit batch-completion markers before starting the next. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:gate-failure` ratchet-tracked gate
+**Test:** `test_h116_115`
+
+### H117 — The agent MUST log every batch transition with timestamps for session audit.
+The agent MUST log every batch transition with timestamps for session audit. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-linux` CI workflow enforcement
+**Test:** `test_h117_116`
+
+### H118 — The agent MUST re-read TASKS.md at every hard break to refresh priority awareness.
+The agent MUST re-read TASKS.md at every hard break to refresh priority awareness. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` + `.opencode/plugin/enforce-make.ts` dual layer
+**Test:** `test_h118_117`
+
+### H119 — The agent MUST require collect-check to pass at every hard break boundary.
+The agent MUST require collect-check to pass at every hard break boundary. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make validate` combined
+**Test:** `test_h119_118`
+
+### H120 — The agent MUST not allow partial-batch results to leak into the next batch.
+The agent MUST not allow partial-batch results to leak into the next batch. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make secrets-scan` + `scripts/check_readme_status_current.py` script-backed guard
+**Test:** `test_h120_119`
+
+### H121 — The agent MUST ensure all subagents from the prior batch have returned before continuing.
+The agent MUST ensure all subagents from the prior batch have returned before continuing. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-batch-push.ts` env-var-gated BLOCKING (GLUDD_H_ENFORCE=0 for disable)
+**Test:** `test_h121_120`
+
+### H122 — The agent MUST verify that no worktree artifacts remain from the previous batch.
+The agent MUST verify that no worktree artifacts remain from the previous batch. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Branch discipline` + `config/ratchet.yml:dead-code` ratchet-combined
+**Test:** `test_h122_121`
+
+### H123 — The agent MUST check commit count at batch boundaries to detect stalled work.
+The agent MUST check commit count at batch boundaries to detect stalled work. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-session-start.json` + `.opencode/plugin/enforce-context.ts` state-aware block
+**Test:** `test_h123_122`
+
+### H124 — The agent MUST enforce that unrelated files are not edited in the same batch.
+The agent MUST enforce that unrelated files are not edited in the same batch. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:test-failure` + `scripts/test_hook_runtime.py` ratchet+script gate
+**Test:** `test_h124_123`
+
+### H125 — The agent MUST separate research and coding phases with a hard break.
+The agent MUST separate research and coding phases with a hard break. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:sbom` + Makefile `make feature-start` CI+local dual
+**Test:** `test_h125_124`
+
+### H126 — The agent MUST verify the gate is green at every hard break before the next batch.
+The agent MUST verify the gate is green at every hard break before the next batch. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-verified-claims.ts` x `.opencode/plugin/enforce-test-integrity.ts` cross-plugin
+**Test:** `test_h126_125`
+
+### H127 — The agent MUST not carry uncommitted changes across a hard break boundary.
+The agent MUST not carry uncommitted changes across a hard break boundary. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Evidence-Based Response Policy` + `scripts/ci_check_cooldown.py` + `.opencode/plugin/enforce-worktree.ts` triple layer
+**Test:** `test_h127_126`
+
+### H128 — The agent MUST flush all state files at hard break to avoid stale enforcement.
+The agent MUST flush all state files at hard break to avoid stale enforcement. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Q&A Response Pattern` section
+**Test:** `test_h128_127`
+
+### H129 — The agent MUST re-verify the current branch at each hard break.
+The agent MUST re-verify the current branch at each hard break. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make verify-remote` prerequisite
+**Test:** `test_h129_128`
+
+### H130 — The agent MUST recheck CI status at each hard break to detect regressions.
+The agent MUST recheck CI status at each hard break to detect regressions. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_green_branch_guard.py` enforcement
+**Test:** `test_h130_129`
+
+### H131 — The agent MUST re-evaluate the enhancement-to-fix ratio at each hard break.
+The agent MUST re-evaluate the enhancement-to-fix ratio at each hard break. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-deletion-gate.ts` `tool.execute.before` block
+**Test:** `test_h131_130`
+
+### H132 — The agent MUST re-scan for dead code at each hard break in large sessions.
+The agent MUST re-scan for dead code at each hard break in large sessions. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-clean-tree.ts` permissionDecision deny
+**Test:** `test_h132_131`
+
+### H133 — The agent MUST re-run the self-audit checklist at each hard break.
+The agent MUST re-run the self-audit checklist at each hard break. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make test-count` fail-closed guard
+**Test:** `test_h133_132`
+
+### H134 — The agent MUST require a dispatch wave to complete before a hard break.
+The agent MUST require a dispatch wave to complete before a hard break. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` state-file enforced block
+**Test:** `test_h134_133`
+
+### H135 — The agent MUST not break mid-merge: complete the merge before the hard break.
+The agent MUST not break mid-merge: complete the merge before the hard break. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-audit.ts` + `make agent-worktree` combined
+**Test:** `test_h135_134`
+
+### H136 — The agent MUST verify remote SHA matches before declaring a hard break complete.
+The agent MUST verify remote SHA matches before declaring a hard break complete. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:stale-gate` ratchet-tracked gate
+**Test:** `test_h136_135`
+
+### H137 — The agent MUST re-sync the git index at each hard break boundary.
+The agent MUST re-sync the git index at each hard break boundary. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-linux` CI workflow enforcement
+**Test:** `test_h137_136`
+
+### H138 — The agent MUST not break while a background gate operation is running.
+The agent MUST not break while a background gate operation is running. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_disk_usage.py` + `.opencode/plugin/enforce-branch-discipline.ts` dual layer
+**Test:** `test_h138_137`
+
+### H139 — The agent MUST not break while CI is pending on the current branch.
+The agent MUST not break while CI is pending on the current branch. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make security` combined
+**Test:** `test_h139_138`
+
+### H140 — The agent MUST re-confirm the user objective at each hard break.
+The agent MUST re-confirm the user objective at each hard break. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make gate-status` + `scripts/require_ci_green.py` script-backed guard
+**Test:** `test_h140_139`
+
+### H141 — The agent MUST track hard break count and surface if >10 in one session.
+The agent MUST track hard break count and surface if >10 in one session. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-context.ts` env-var-gated BLOCKING (GLUDD_H_ENFORCE=0 for disable)
+**Test:** `test_h141_140`
+
+### H142 — The agent MUST log the reason for each hard break (batch complete vs. forced).
+The agent MUST log the reason for each hard break (batch complete vs. forced). This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Release Branch Lifecycle` + `config/ratchet.yml:dirty-tree` ratchet-combined
+**Test:** `test_h142_141`
+
+### H143 — The agent MUST require all prior batch tasks to be ticked in TASKS.md before break.
+The agent MUST require all prior batch tasks to be ticked in TASKS.md before break. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-tool-streak.json` + `.opencode/plugin/enforce-commit-lock.ts` state-aware block
+**Test:** `test_h143_142`
+
+### H144 — The agent MUST update SESSION.md with batch summary at each hard break.
+The agent MUST update SESSION.md with batch summary at each hard break. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:lint-baseline` + `scripts/check_readme_status_current.py` ratchet+script gate
+**Test:** `test_h144_143`
+
+### H145 — The agent MUST not break during a release-cut operation under any circumstances.
+The agent MUST not break during a release-cut operation under any circumstances. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:sbom` + Makefile `make hot-reload-plugins` CI+local dual
+**Test:** `test_h145_144`
+
+### H146 — The agent MUST detect when a hard break is actually a premature stop disguised as a break.
+The agent MUST detect when a hard break is actually a premature stop disguised as a break. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-suppressions.ts` x `.opencode/plugin/enforce-worktree.ts` cross-plugin
+**Test:** `test_h146_145`
+
+### H147 — The agent MUST require a minimum of 3 completed tasks before a legitimate hard break.
+The agent MUST require a minimum of 3 completed tasks before a legitimate hard break. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Self-Audit Policy` + `scripts/check_disk_usage.py` + `.opencode/plugin/enforce-tdd.ts` triple layer
+**Test:** `test_h147_146`
+
+### H148 — The agent MUST not break within the first 5 minutes of a session (startup phase).
+The agent MUST not break within the first 5 minutes of a session (startup phase). This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Pre-Generation Contract` section
+**Test:** `test_h148_147`
+
+### H149 — The agent MUST enforce that merge operations cannot be split across hard breaks.
+The agent MUST enforce that merge operations cannot be split across hard breaks. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-stash` prerequisite
+**Test:** `test_h149_148`
+
+### H150 — The agent MUST verify no active worktree agents remain at hard break time.
+The agent MUST verify no active worktree agents remain at hard break time. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` enforcement
+**Test:** `test_h150_149`
+
+### H151 — The agent MUST re-audit for plugin hot-reload status at each hard break.
+The agent MUST re-audit for plugin hot-reload status at each hard break. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-enhancement-ratio.ts` `tool.execute.before` block
+**Test:** `test_h151_150`
+
+### H152 — The agent MUST not break while test collection has errors.
+The agent MUST not break while test collection has errors. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-objective.ts` permissionDecision deny
+**Test:** `test_h152_151`
+
+### H153 — The agent MUST re-run collect-check if a hard break lasted more than 10 minutes.
+The agent MUST re-run collect-check if a hard break lasted more than 10 minutes. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make typecheck` fail-closed guard
+**Test:** `test_h153_152`
+
+### H154 — The agent MUST not break during an active git-bisect session.
+The agent MUST not break during an active git-bisect session. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-watchdog-disengage` state-file enforced block
+**Test:** `test_h154_153`
+
+
+## Expansion: Verification Enforcement (V101–V154) (54 specs)
+
+### V101 — The agent MUST verify that the install script references the correct release version.
+The agent MUST verify that the install script references the correct release version. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:ci-failure` ratchet-tracked gate
+**Test:** `test_v101_100`
+
+### V102 — The agent MUST confirm that the systemd service file version matches.
+The agent MUST confirm that the systemd service file version matches. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-linux` CI workflow enforcement
+**Test:** `test_v102_101`
+
+### V103 — The agent MUST verify that release artifact checksums are present and correct.
+The agent MUST verify that release artifact checksums are present and correct. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_node_v26_compat.py` + `.opencode/plugin/enforce-enhancement-ratio.ts` dual layer
+**Test:** `test_v103_102`
+
+### V104 — The agent MUST confirm that the SBOM was generated for the correct release version.
+The agent MUST confirm that the SBOM was generated for the correct release version. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make git-diff` combined
+**Test:** `test_v104_103`
+
+### V105 — The agent MUST verify that the release is non-draft before claiming it as shipped.
+The agent MUST verify that the release is non-draft before claiming it as shipped. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make test-e2e` + `scripts/agent_liveness.py` script-backed guard
+**Test:** `test_v105_104`
+
+### V106 — The agent MUST confirm that no zero-size assets exist in the release.
+The agent MUST confirm that no zero-size assets exist in the release. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-delegate.ts` env-var-gated BLOCKING (GLUDD_V_ENFORCE=0 for disable)
+**Test:** `test_v106_105`
+
+### V107 — The agent MUST verify that all 12 artifact categories are present before marking release complete.
+The agent MUST verify that all 12 artifact categories are present before marking release complete. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Task Self-Tracking` + `config/ratchet.yml:typecheck-baseline` ratchet-combined
+**Test:** `test_v107_106`
+
+### V108 — The agent MUST confirm that the release notes are populated before publishing.
+The agent MUST confirm that the release notes are populated before publishing. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-session-start.json` + `.opencode/plugin/enforce-stop.ts` state-aware block
+**Test:** `test_v108_107`
+
+### V109 — The agent MUST run verify-state before making any status claim to the user.
+The agent MUST run verify-state before making any status claim to the user. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:typecheck-baseline` + `scripts/check_tdd_compliance.py` ratchet+script gate
+**Test:** `test_v109_108`
+
+### V110 — The agent MUST verify that the remote SHA matches the local HEAD after every push.
+The agent MUST verify that the remote SHA matches the local HEAD after every push. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:sbom` + Makefile `make gate-audit` CI+local dual
+**Test:** `test_v110_109`
+
+### V111 — The agent MUST confirm CI verdict headSha matches branch tip before citing it.
+The agent MUST confirm CI verdict headSha matches branch tip before citing it. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-session-start.ts` x `.opencode/plugin/enforce-no-wait.ts` cross-plugin
+**Test:** `test_v111_110`
+
+### V112 — The agent MUST verify that the .gate-status file is fresher than the last code edit.
+The agent MUST verify that the .gate-status file is fresher than the last code edit. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `A Release is an Artifact` + `scripts/agent_liveness.py` + `.opencode/plugin/enforce-batch-push.ts` triple layer
+**Test:** `test_v112_111`
+
+### V113 — The agent MUST re-verify gate green after every file edit before committing.
+The agent MUST re-verify gate green after every file edit before committing. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Priority Stacking` section
+**Test:** `test_v113_112`
+
+### V114 — The agent MUST verify that the test suite ran successfully before claiming work done.
+The agent MUST verify that the test suite ran successfully before claiming work done. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-diff` prerequisite
+**Test:** `test_v114_113`
+
+### V115 — The agent MUST confirm the git working tree is clean before any status claim.
+The agent MUST confirm the git working tree is clean before any status claim. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/verify_release_completeness.py` enforcement
+**Test:** `test_v115_114`
+
+### V116 — The agent MUST verify that TASKS.md entries are all ticked before claiming completion.
+The agent MUST verify that TASKS.md entries are all ticked before claiming completion. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-context.ts` `tool.execute.before` block
+**Test:** `test_v116_115`
+
+### V117 — The agent MUST verify that SESSION.md is current before stopping the session.
+The agent MUST verify that SESSION.md is current before stopping the session. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-anti-essay.ts` permissionDecision deny
+**Test:** `test_v117_116`
+
+### V118 — The agent MUST confirm that all plugin enforcements are active after a restart.
+The agent MUST confirm that all plugin enforcements are active after a restart. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-status` fail-closed guard
+**Test:** `test_v118_117`
+
+### V119 — The agent MUST verify that pre-commit hooks pass before pushing any commits.
+The agent MUST verify that pre-commit hooks pass before pushing any commits. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` state-file enforced block
+**Test:** `test_v119_118`
+
+### V120 — The agent MUST confirm that the release tag has downloadable artifacts before shipping.
+The agent MUST confirm that the release tag has downloadable artifacts before shipping. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-audit.ts` + `make security` combined
+**Test:** `test_v120_119`
+
+### V121 — The agent MUST verify that CHANGELOG entries correspond to actual code changes.
+The agent MUST verify that CHANGELOG entries correspond to actual code changes. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:typecheck-baseline` ratchet-tracked gate
+**Test:** `test_v121_120`
+
+### V122 — The agent MUST confirm that version numbers are consistent across all project files.
+The agent MUST confirm that version numbers are consistent across all project files. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-linux` CI workflow enforcement
+**Test:** `test_v122_121`
+
+### V123 — The agent MUST verify that CI build matrix jobs all passed before releasing.
+The agent MUST verify that CI build matrix jobs all passed before releasing. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/verify_release_artifact.py` + `.opencode/plugin/enforce-tdd.ts` dual layer
+**Test:** `test_v123_122`
+
+### V124 — The agent MUST confirm that no dead code exists in the committed tree before releasing.
+The agent MUST confirm that no dead code exists in the committed tree before releasing. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make git-checkout` combined
+**Test:** `test_v124_123`
+
+### V125 — The agent MUST verify that dependency pins are at secure, audited versions.
+The agent MUST verify that dependency pins are at secure, audited versions. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make disengage-enforcement` + `scripts/verify_release_completeness.py` script-backed guard
+**Test:** `test_v125_124`
+
+### V126 — The agent MUST confirm that the .secrets.baseline covers all current code paths.
+The agent MUST confirm that the .secrets.baseline covers all current code paths. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-verified-claims.ts` env-var-gated BLOCKING (GLUDD_V_ENFORCE=0 for disable)
+**Test:** `test_v126_125`
+
+### V127 — The agent MUST verify that disk usage is below the threshold before claiming done.
+The agent MUST verify that disk usage is below the threshold before claiming done. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Background Operations NEVER Block Dispatch` + `config/ratchet.yml:ci-failure` ratchet-combined
+**Test:** `test_v127_126`
+
+### V128 — The agent MUST confirm that all submodules are at the expected pinned commits.
+The agent MUST confirm that all submodules are at the expected pinned commits. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-tool-streak.json` + `.opencode/plugin/enforce-verified-claims.ts` state-aware block
+**Test:** `test_v128_127`
+
+### V129 — The agent MUST verify that the Makefile has no duplicate targets before merging.
+The agent MUST verify that the Makefile has no duplicate targets before merging. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:gate-failure` + `scripts/verify_release_artifact.py` ratchet+script gate
+**Test:** `test_v129_128`
+
+### V130 — The agent MUST confirm that node v26 compatibility is maintained across all plugins.
+The agent MUST confirm that node v26 compatibility is maintained across all plugins. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:sbom` + Makefile `make git-status` CI+local dual
+**Test:** `test_v130_129`
+
+### V131 — The agent MUST verify that typecheck passes at or below the established baseline.
+The agent MUST verify that typecheck passes at or below the established baseline. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-make.ts` x `.opencode/plugin/enforce-clean-tree.ts` cross-plugin
+**Test:** `test_v131_130`
+
+### V132 — The agent MUST confirm that lint has zero errors across all committed files.
+The agent MUST confirm that lint has zero errors across all committed files. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Pipeline Orchestration Model` + `scripts/check_duplicate_targets.py` + `.opencode/plugin/enforce-make.ts` triple layer
+**Test:** `test_v132_131`
+
+### V133 — The agent MUST verify that test coverage meets the 85% threshold per modified module.
+The agent MUST verify that test coverage meets the 85% threshold per modified module. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Instruction-Following Priority` section
+**Test:** `test_v133_132`
+
+### V134 — The agent MUST confirm that test collection has zero errors before running tests.
+The agent MUST confirm that test collection has zero errors before running tests. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make secrets-baseline` prerequisite
+**Test:** `test_v134_133`
+
+### V135 — The agent MUST verify that no lint suppression comments exist in the committed code.
+The agent MUST verify that no lint suppression comments exist in the committed code. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` enforcement
+**Test:** `test_v135_134`
+
+### V136 — The agent MUST confirm that the ratchet has fewer entries than at the last gate.
+The agent MUST confirm that the ratchet has fewer entries than at the last gate. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-suppressions.ts` `tool.execute.before` block
+**Test:** `test_v136_135`
+
+### V137 — The agent MUST verify that all enforcement plugins are structurally valid and active.
+The agent MUST verify that all enforcement plugins are structurally valid and active. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-deadline.ts` permissionDecision deny
+**Test:** `test_v137_136`
+
+### V138 — The agent MUST confirm that the git index was updated within the last hour.
+The agent MUST confirm that the git index was updated within the last hour. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make ci-verdict` fail-closed guard
+**Test:** `test_v138_137`
+
+### V139 — The agent MUST verify that the README status table matches the current version.
+The agent MUST verify that the README status table matches the current version. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-watchdog-disengage` state-file enforced block
+**Test:** `test_v139_138`
+
+### V140 — The agent MUST confirm that the SSH key for sandboxcom is loaded and valid.
+The agent MUST confirm that the SSH key for sandboxcom is loaded and valid. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-audit.ts` + `make gate-background` combined
+**Test:** `test_v140_139`
+
+### V141 — The agent MUST verify that the agent already verified the current branch identity before dispatch.
+The agent MUST verify that the agent already verified the current branch identity before dispatch. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dirty-tree` ratchet-tracked gate
+**Test:** `test_v141_140`
+
+### V142 — The agent MUST confirm that no background operations are orphaned.
+The agent MUST confirm that no background operations are orphaned. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-linux` CI workflow enforcement
+**Test:** `test_v142_141`
+
+### V143 — The agent MUST verify that the task watchdog process is alive and monitoring.
+The agent MUST verify that the task watchdog process is alive and monitoring. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/verify_release_completeness.py` + `.opencode/plugin/enforce-floor.ts` dual layer
+**Test:** `test_v143_142`
+
+### V144 — The agent MUST confirm that all subagent results have been codified before stopping.
+The agent MUST confirm that all subagent results have been codified before stopping. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make ci-verdict` combined
+**Test:** `test_v144_143`
+
+### V145 — The agent MUST verify that merge commits follow the --no-ff convention.
+The agent MUST verify that merge commits follow the --no-ff convention. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make agent-worktree-list` + `scripts/check_node_v26_compat.py` script-backed guard
+**Test:** `test_v145_144`
+
+### V146 — The agent MUST confirm that the feature branch was properly merged to development.
+The agent MUST confirm that the feature branch was properly merged to development. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-objective.ts` env-var-gated BLOCKING (GLUDD_V_ENFORCE=0 for disable)
+**Test:** `test_v146_145`
+
+### V147 — The agent MUST verify that the release branch lifecycle rules were followed.
+The agent MUST verify that the release branch lifecycle rules were followed. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Priority Stacking` + `config/ratchet.yml:stale-gate` ratchet-combined
+**Test:** `test_v147_146`
+
+### V148 — The agent MUST confirm that emergency fixes on master were backported to development.
+The agent MUST confirm that emergency fixes on master were backported to development. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-session-start.json` + `.opencode/plugin/enforce-no-wait.ts` state-aware block
+**Test:** `test_v148_147`
+
+### V149 — The agent MUST verify that no single-source feature was independently created on two branches.
+The agent MUST verify that no single-source feature was independently created on two branches. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:duplicate-target` + `scripts/agent_liveness.py` ratchet+script gate
+**Test:** `test_v149_148`
+
+### V150 — The agent MUST confirm that the container image tag matches the release version.
+The agent MUST confirm that the container image tag matches the release version. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:sbom` + Makefile `make verify-remote` CI+local dual
+**Test:** `test_v150_149`
+
+### V151 — The agent MUST verify that the RPM package version matches the release tag.
+The agent MUST verify that the RPM package version matches the release tag. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` x `.opencode/plugin/enforce-delegate.ts` cross-plugin
+**Test:** `test_v151_150`
+
+### V152 — The agent MUST confirm that the Debian changelog entry matches the release version.
+The agent MUST confirm that the Debian changelog entry matches the release version. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Codify Improvements` + `scripts/verify_release_artifact.py` + `.opencode/plugin/enforce-no-suppressions.ts` triple layer
+**Test:** `test_v152_151`
+
+### V153 — The agent MUST verify that the macOS binary is notarized or documented as unnotarized.
+The agent MUST verify that the macOS binary is notarized or documented as unnotarized. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Keep Opus Lean` section
+**Test:** `test_v153_152`
+
+### V154 — The agent MUST confirm that the Linux binary is statically linked.
+The agent MUST confirm that the Linux binary is statically linked. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make typecheck` prerequisite
+**Test:** `test_v154_153`
+
+
+## Expansion: Judgment Enforcement (J101–J153) (53 specs)
+
+### J101 — The agent MUST judge whether an async function truly needs to be async.
+The agent MUST judge whether an async function truly needs to be async. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-test-integrity.ts` `tool.execute.before` block
+**Test:** `test_j101_100`
+
+### J102 — The agent MUST determine whether to log a message at DEBUG, INFO, WARN, or ERROR level.
+The agent MUST determine whether to log a message at DEBUG, INFO, WARN, or ERROR level. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` permissionDecision deny
+**Test:** `test_j102_101`
+
+### J103 — The agent MUST assess whether a CLI flag should be required or have a default.
+The agent MUST assess whether a CLI flag should be required or have a default. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make check-readme-status` fail-closed guard
+**Test:** `test_j103_102`
+
+### J104 — The agent MUST judge whether a daemon endpoint should be GET, POST, or PUT.
+The agent MUST judge whether a daemon endpoint should be GET, POST, or PUT. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` state-file enforced block
+**Test:** `test_j104_103`
+
+### J105 — The agent MUST decide whether a database migration should be reversible or destructive.
+The agent MUST decide whether a database migration should be reversible or destructive. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-audit.ts` + `make reload-enforcement` combined
+**Test:** `test_j105_104`
+
+### J106 — The agent MUST assess whether an ansible role should be idempotent-only or can be run-once.
+The agent MUST assess whether an ansible role should be idempotent-only or can be run-once. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dead-code` ratchet-tracked gate
+**Test:** `test_j106_105`
+
+### J107 — The agent MUST judge whether a terraform change requires plan-and-apply or can be direct.
+The agent MUST judge whether a terraform change requires plan-and-apply or can be direct. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-linux` CI workflow enforcement
+**Test:** `test_j107_106`
+
+### J108 — The agent MUST determine whether a config value should be env-var-overridable.
+The agent MUST determine whether a config value should be env-var-overridable. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/task_watchdog.py` + `.opencode/plugin/enforce-session-start.ts` dual layer
+**Test:** `test_j108_107`
+
+### J109 — The agent MUST assess whether a session has enough context to continue without re-reading files.
+The agent MUST assess whether a session has enough context to continue without re-reading files. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make verify-remote` combined
+**Test:** `test_j109_108`
+
+### J110 — The agent MUST judge whether the user's silence means approval, confusion, or frustration.
+The agent MUST judge whether the user's silence means approval, confusion, or frustration. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make check-duplicate-targets` + `scripts/check_tdd_compliance.py` script-backed guard
+**Test:** `test_j110_109`
+
+### J111 — The agent MUST prefer the simplest correct solution over a complex elegant one.
+The agent MUST prefer the simplest correct solution over a complex elegant one. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-branch-discipline.ts` env-var-gated BLOCKING (GLUDD_J_ENFORCE=0 for disable)
+**Test:** `test_j111_110`
+
+### J112 — The agent MUST choose the approach with the fewest side effects when options are equal.
+The agent MUST choose the approach with the fewest side effects when options are equal. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Task Completion Policy` + `config/ratchet.yml:gate-failure` ratchet-combined
+**Test:** `test_j112_111`
+
+### J113 — The agent MUST default to existing project patterns rather than introducing new ones.
+The agent MUST default to existing project patterns rather than introducing new ones. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-tool-streak.json` + `.opencode/plugin/enforce-deletion-gate.ts` state-aware block
+**Test:** `test_j113_112`
+
+### J114 — The agent MUST judge whether a fix should be root-cause or symptomatic before acting.
+The agent MUST judge whether a fix should be root-cause or symptomatic before acting. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:missing-test` + `scripts/ci_check_cooldown.py` ratchet+script gate
+**Test:** `test_j114_113`
+
+### J115 — The agent MUST assess whether a task is too large for a subagent and split it if needed.
+The agent MUST assess whether a task is too large for a subagent and split it if needed. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:sbom` + Makefile `make agent-cleanup` CI+local dual
+**Test:** `test_j115_114`
+
+### J116 — The agent MUST determine whether an error is transient (retry) or permanent (fix).
+The agent MUST determine whether an error is transient (retry) or permanent (fix). This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-batch-push.ts` x `.opencode/plugin/enforce-branch-discipline.ts` cross-plugin
+**Test:** `test_j116_115`
+
+### J117 — The agent MUST judge whether a test failure is a regression or a pre-existing issue.
+The agent MUST judge whether a test failure is a regression or a pre-existing issue. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Disk Discipline` + `scripts/require_ci_green.py` + `.opencode/plugin/enforce-clean-tree.ts` triple layer
+**Test:** `test_j117_116`
+
+### J118 — The agent MUST decide whether inline work or subagent dispatch is appropriate per task.
+The agent MUST decide whether inline work or subagent dispatch is appropriate per task. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Disk Discipline` section
+**Test:** `test_j118_117`
+
+### J119 — The agent MUST assess disk cost before creating worktree-isolated agent environments.
+The agent MUST assess disk cost before creating worktree-isolated agent environments. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make gate-background` prerequisite
+**Test:** `test_j119_118`
+
+### J120 — The agent MUST judge whether a CI failure is a flake or a real regression.
+The agent MUST judge whether a CI failure is a flake or a real regression. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/task_watchdog.py` enforcement
+**Test:** `test_j120_119`
+
+### J121 — The agent MUST determine when a gate run is necessary vs when gate-lite suffices.
+The agent MUST determine when a gate run is necessary vs when gate-lite suffices. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.before` block
+**Test:** `test_j121_120`
+
+### J122 — The agent MUST assess whether a new dependency is warranted or can be avoided.
+The agent MUST assess whether a new dependency is warranted or can be avoided. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-context.ts` permissionDecision deny
+**Test:** `test_j122_121`
+
+### J123 — The agent MUST judge whether a merge conflict requires both-sides union or a choice.
+The agent MUST judge whether a merge conflict requires both-sides union or a choice. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make development-start` fail-closed guard
+**Test:** `test_j123_122`
+
+### J124 — The agent MUST decide whether to batch work locally or push for CI validation.
+The agent MUST decide whether to batch work locally or push for CI validation. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-watchdog-disengage` state-file enforced block
+**Test:** `test_j124_123`
+
+### J125 — The agent MUST assess the risk of a change before applying it without confirmation.
+The agent MUST assess the risk of a change before applying it without confirmation. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-audit.ts` + `make check-node-v26-compat` combined
+**Test:** `test_j125_124`
+
+### J126 — The agent MUST judge whether a ratchet entry represents a real issue or a false positive.
+The agent MUST judge whether a ratchet entry represents a real issue or a false positive. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:lint-baseline` ratchet-tracked gate
+**Test:** `test_j126_125`
+
+### J127 — The agent MUST determine whether a test should be unit, integration, or e2e.
+The agent MUST determine whether a test should be unit, integration, or e2e. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-linux` CI workflow enforcement
+**Test:** `test_j127_126`
+
+### J128 — The agent MUST assess whether a plugin change requires a hot-reload or a full restart.
+The agent MUST assess whether a plugin change requires a hot-reload or a full restart. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/agent_liveness.py` + `.opencode/plugin/enforce-context.ts` dual layer
+**Test:** `test_j128_127`
+
+### J129 — The agent MUST judge whether a session has become stuck and needs the disengage escape.
+The agent MUST judge whether a session has become stuck and needs the disengage escape. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make verify-release-completeness` combined
+**Test:** `test_j129_128`
+
+### J130 — The agent MUST decide whether to report an issue or fix it immediately.
+The agent MUST decide whether to report an issue or fix it immediately. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make verify-state` + `scripts/check_duplicate_targets.py` script-backed guard
+**Test:** `test_j130_129`
+
+### J131 — The agent MUST assess whether a user directive conflicts with a codified policy.
+The agent MUST assess whether a user directive conflicts with a codified policy. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-multitask.ts` env-var-gated BLOCKING (GLUDD_J_ENFORCE=0 for disable)
+**Test:** `test_j131_130`
+
+### J132 — The agent MUST judge whether a worktree is stale and should be cleaned up.
+The agent MUST judge whether a worktree is stale and should be cleaned up. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `TDD Policy` + `config/ratchet.yml:coverage-baseline` ratchet-combined
+**Test:** `test_j132_131`
+
+### J133 — The agent MUST determine whether the current model is appropriate for the dispatch.
+The agent MUST determine whether the current model is appropriate for the dispatch. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-session-start.json` + `.opencode/plugin/enforce-branch-discipline.ts` state-aware block
+**Test:** `test_j133_132`
+
+### J134 — The agent MUST assess whether an error message is actionable or needs improvement.
+The agent MUST assess whether an error message is actionable or needs improvement. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dirty-tree` + `scripts/check_green_branch_guard.py` ratchet+script gate
+**Test:** `test_j134_133`
+
+### J135 — The agent MUST judge whether a coverage gap is acceptable or must be filled.
+The agent MUST judge whether a coverage gap is acceptable or must be filled. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:sbom` + Makefile `make test` CI+local dual
+**Test:** `test_j135_134`
+
+### J136 — The agent MUST decide whether a commit message is descriptive enough.
+The agent MUST decide whether a commit message is descriptive enough. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-objective.ts` x `.opencode/plugin/enforce-tdd.ts` cross-plugin
+**Test:** `test_j136_135`
+
+### J137 — The agent MUST assess whether a branch name follows the project convention.
+The agent MUST assess whether a branch name follows the project convention. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Pre-Generation Contract` + `scripts/check_tdd_compliance.py` + `.opencode/plugin/enforce-deadline.ts` triple layer
+**Test:** `test_j137_136`
+
+### J138 — The agent MUST judge whether a design decision needs a design doc or a code comment.
+The agent MUST judge whether a design decision needs a design doc or a code comment. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Constraints Are To Engineer Around` section
+**Test:** `test_j138_137`
+
+### J139 — The agent MUST determine whether a background operation has genuinely hung vs is slow.
+The agent MUST determine whether a background operation has genuinely hung vs is slow. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make test-integration` prerequisite
+**Test:** `test_j139_138`
+
+### J140 — The agent MUST assess whether to prioritize speed or correctness for a given task.
+The agent MUST assess whether to prioritize speed or correctness for a given task. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_disk_usage.py` enforcement
+**Test:** `test_j140_139`
+
+### J141 — The agent MUST judge whether a new enforcement plugin is needed or existing ones suffice.
+The agent MUST judge whether a new enforcement plugin is needed or existing ones suffice. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-delegate.ts` `tool.execute.before` block
+**Test:** `test_j141_140`
+
+### J142 — The agent MUST decide whether to serialize or parallelize two coding tasks.
+The agent MUST decide whether to serialize or parallelize two coding tasks. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-multitask.ts` permissionDecision deny
+**Test:** `test_j142_141`
+
+### J143 — The agent MUST assess whether to reuse existing Makefile infrastructure or add new targets.
+The agent MUST assess whether to reuse existing Makefile infrastructure or add new targets. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make watchdog-auto` fail-closed guard
+**Test:** `test_j143_142`
+
+### J144 — The agent MUST judge whether a secret has been truly scrubbed vs merely suppressed.
+The agent MUST judge whether a secret has been truly scrubbed vs merely suppressed. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` state-file enforced block
+**Test:** `test_j144_143`
+
+### J145 — The agent MUST determine whether a code pattern is risky enough to warrant a guardrail.
+The agent MUST determine whether a code pattern is risky enough to warrant a guardrail. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-audit.ts` + `make git-stash` combined
+**Test:** `test_j145_144`
+
+### J146 — The agent MUST assess whether an external library is mature enough to depend on.
+The agent MUST assess whether an external library is mature enough to depend on. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:missing-test` ratchet-tracked gate
+**Test:** `test_j146_145`
+
+### J147 — The agent MUST judge whether a session has been productive based on commit count and quality.
+The agent MUST judge whether a session has been productive based on commit count and quality. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-linux` CI workflow enforcement
+**Test:** `test_j147_146`
+
+### J148 — The agent MUST decide whether a feature is ready for release or needs more stabilization.
+The agent MUST decide whether a feature is ready for release or needs more stabilization. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/test_hook_runtime.py` + `.opencode/plugin/enforce-deadline.ts` dual layer
+**Test:** `test_j148_147`
+
+### J149 — The agent MUST assess whether a bug is a release blocker or can ship as known.
+The agent MUST assess whether a bug is a release blocker or can ship as known. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make check-node-v26-compat` combined
+**Test:** `test_j149_148`
+
+### J150 — The agent MUST judge whether two tasks should be on the same branch or separate branches.
+The agent MUST judge whether two tasks should be on the same branch or separate branches. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-branch` + `scripts/ci_check_cooldown.py` script-backed guard
+**Test:** `test_j150_149`
+
+### J151 — The agent MUST determine whether a test assertion is meaningful or just coverage padding.
+The agent MUST determine whether a test assertion is meaningful or just coverage padding. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-suppressions.ts` env-var-gated BLOCKING (GLUDD_J_ENFORCE=0 for disable)
+**Test:** `test_j151_150`
+
+### J152 — The agent MUST assess whether a plugin deny message is helpful or confusing.
+The agent MUST assess whether a plugin deny message is helpful or confusing. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Multitasking / Blockers` + `config/ratchet.yml:untested-source` ratchet-combined
+**Test:** `test_j152_151`
+
+### J153 — The agent MUST judge whether a code change preserves backward compatibility.
+The agent MUST judge whether a code change preserves backward compatibility. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-tool-streak.json` + `.opencode/plugin/enforce-floor.ts` state-aware block
+**Test:** `test_j153_152`
+
+
+## Expansion: Learning Enforcement (L101–L153) (53 specs)
+
+### L101 — The agent MUST learn which model profile routes to which actual model for dispatch accuracy.
+The agent MUST learn which model profile routes to which actual model for dispatch accuracy. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:sbom` + Makefile `make typecheck` CI+local dual
+**Test:** `test_l101_100`
+
+### L102 — The agent MUST identify when a guardrail is causing false positives and narrow it.
+The agent MUST identify when a guardrail is causing false positives and narrow it. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-tdd.ts` x `.opencode/plugin/enforce-session-start.ts` cross-plugin
+**Test:** `test_l102_101`
+
+### L103 — The agent MUST learn from the self-audit findings to prevent the same gaps from recurring.
+The agent MUST learn from the self-audit findings to prevent the same gaps from recurring. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `ANTI-LOOP DIRECTIVE` + `scripts/task_watchdog.py` + `.opencode/plugin/enforce-multitask.ts` triple layer
+**Test:** `test_l103_102`
+
+### L104 — The agent MUST recognize when the task backlog is growing faster than it is being cleared.
+The agent MUST recognize when the task backlog is growing faster than it is being cleared. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Root-Cause-Only Fix Policy` section
+**Test:** `test_l104_103`
+
+### L105 — The agent MUST learn from the user's explicit feedback to adjust future behavior.
+The agent MUST learn from the user's explicit feedback to adjust future behavior. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make hot-reload-plugins` prerequisite
+**Test:** `test_l105_104`
+
+### L106 — The agent MUST identify which ratchet entries are new vs persistent and prioritize accordingly.
+The agent MUST identify which ratchet entries are new vs persistent and prioritize accordingly. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_readme_status_current.py` enforcement
+**Test:** `test_l106_105`
+
+### L107 — The agent MUST learn the project's module dependency graph to avoid circular imports.
+The agent MUST learn the project's module dependency graph to avoid circular imports. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-tdd.ts` `tool.execute.before` block
+**Test:** `test_l107_106`
+
+### L108 — The agent MUST recognize when a subagent prompt was too vague and improve specificity.
+The agent MUST recognize when a subagent prompt was too vague and improve specificity. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-session-start.ts` permissionDecision deny
+**Test:** `test_l108_107`
+
+### L109 — The agent MUST learn which tasks genuinely benefit from concurrency vs serialization.
+The agent MUST learn which tasks genuinely benefit from concurrency vs serialization. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make gate-background` fail-closed guard
+**Test:** `test_l109_108`
+
+### L110 — The agent MUST identify when a policy section in AGENTS.md has become stale or contradictory.
+The agent MUST identify when a policy section in AGENTS.md has become stale or contradictory. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-watchdog-disengage` state-file enforced block
+**Test:** `test_l110_109`
+
+### L111 — The agent MUST learn from prior session's BUGS.md entries and avoid repeating them.
+The agent MUST learn from prior session's BUGS.md entries and avoid repeating them. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-audit.ts` + `make validate` combined
+**Test:** `test_l111_110`
+
+### L112 — The agent MUST adapt its dispatch strategy based on historical wave success rates.
+The agent MUST adapt its dispatch strategy based on historical wave success rates. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:suppression-comment` ratchet-tracked gate
+**Test:** `test_l112_111`
+
+### L113 — The agent MUST recognize when a subagent task pattern consistently fails and adjust.
+The agent MUST recognize when a subagent task pattern consistently fails and adjust. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-linux` CI workflow enforcement
+**Test:** `test_l113_112`
+
+### L114 — The agent MUST learn the user's communication style and adjust verbosity accordingly.
+The agent MUST learn the user's communication style and adjust verbosity accordingly. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` + `.opencode/plugin/enforce-objective.ts` dual layer
+**Test:** `test_l114_113`
+
+### L115 — The agent MUST identify recurring lint violations and proactively fix the root pattern.
+The agent MUST identify recurring lint violations and proactively fix the root pattern. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make agent-worktree` combined
+**Test:** `test_l115_114`
+
+### L116 — The agent MUST learn which files are hot and serialize access without being told.
+The agent MUST learn which files are hot and serialize access without being told. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make security-audit` + `scripts/test_hook_runtime.py` script-backed guard
+**Test:** `test_l116_115`
+
+### L117 — The agent MUST recognize when gate-lite is sufficient vs when full gate is needed.
+The agent MUST recognize when gate-lite is sufficient vs when full gate is needed. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-tdd.ts` env-var-gated BLOCKING (GLUDD_L_ENFORCE=0 for disable)
+**Test:** `test_l117_116`
+
+### L118 — The agent MUST learn from prior merge conflicts to predict and avoid future ones.
+The agent MUST learn from prior merge conflicts to predict and avoid future ones. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Codify Improvements` + `config/ratchet.yml:duplicate-target` ratchet-combined
+**Test:** `test_l118_117`
+
+### L119 — The agent MUST identify which test patterns are flaky and avoid introducing new ones.
+The agent MUST identify which test patterns are flaky and avoid introducing new ones. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-session-start.json` + `.opencode/plugin/enforce-deadline.ts` state-aware block
+**Test:** `test_l119_118`
+
+### L120 — The agent MUST learn from CI failure patterns to prevent them pre-commit.
+The agent MUST learn from CI failure patterns to prevent them pre-commit. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:untested-source` + `scripts/task_watchdog.py` ratchet+script gate
+**Test:** `test_l120_119`
+
+### L121 — The agent MUST recognize coverage gap patterns and proactively write tests for them.
+The agent MUST recognize coverage gap patterns and proactively write tests for them. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:sbom` + Makefile `make git-commit` CI+local dual
+**Test:** `test_l121_120`
+
+### L122 — The agent MUST learn which dispatch model produces the best results per task type.
+The agent MUST learn which dispatch model produces the best results per task type. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-deletion-gate.ts` x `.opencode/plugin/enforce-deadline.ts` cross-plugin
+**Test:** `test_l122_121`
+
+### L123 — The agent MUST identify dead code accumulation patterns and prevent them early.
+The agent MUST identify dead code accumulation patterns and prevent them early. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Premature-Stop Audit Policy` + `scripts/check_readme_status_current.py` + `.opencode/plugin/enforce-floor.ts` triple layer
+**Test:** `test_l123_122`
+
+### L124 — The agent MUST learn the user's priority patterns to pre-sort the task queue.
+The agent MUST learn the user's priority patterns to pre-sort the task queue. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Self-Test Quality` section
+**Test:** `test_l124_123`
+
+### L125 — The agent MUST recognize when it is in a grinding loop and self-correct.
+The agent MUST recognize when it is in a grinding loop and self-correct. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make development-status` prerequisite
+**Test:** `test_l125_124`
+
+### L126 — The agent MUST learn from stop incidents to prevent future stops under similar conditions.
+The agent MUST learn from stop incidents to prevent future stops under similar conditions. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/agent_liveness.py` enforcement
+**Test:** `test_l126_125`
+
+### L127 — The agent MUST identify which make targets are most frequently needed and optimize.
+The agent MUST identify which make targets are most frequently needed and optimize. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-deadline.ts` `tool.execute.before` block
+**Test:** `test_l127_126`
+
+### L128 — The agent MUST learn which files a task type typically touches to size subagents better.
+The agent MUST learn which files a task type typically touches to size subagents better. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-worktree.ts` permissionDecision deny
+**Test:** `test_l128_127`
+
+### L129 — The agent MUST recognize when a pattern from AGENTS.md is actively violated and escalate.
+The agent MUST recognize when a pattern from AGENTS.md is actively violated and escalate. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make validate` fail-closed guard
+**Test:** `test_l129_128`
+
+### L130 — The agent MUST learn the project's code conventions from existing files and apply consistently.
+The agent MUST learn the project's code conventions from existing files and apply consistently. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` state-file enforced block
+**Test:** `test_l130_129`
+
+### L131 — The agent MUST identify which search patterns yield results and which are noise.
+The agent MUST identify which search patterns yield results and which are noise. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-audit.ts` + `make test-count` combined
+**Test:** `test_l131_130`
+
+### L132 — The agent MUST learn which type of test (unit/int/e2e) each behavior requires.
+The agent MUST learn which type of test (unit/int/e2e) each behavior requires. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:test-failure` ratchet-tracked gate
+**Test:** `test_l132_131`
+
+### L133 — The agent MUST recognize when it has asked the same question twice and stop doing so.
+The agent MUST recognize when it has asked the same question twice and stop doing so. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-linux` CI workflow enforcement
+**Test:** `test_l133_132`
+
+### L134 — The agent MUST learn from past gate failures to address them before re-running.
+The agent MUST learn from past gate failures to address them before re-running. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/ci_check_cooldown.py` + `.opencode/plugin/enforce-commit-lock.ts` dual layer
+**Test:** `test_l134_133`
+
+### L135 — The agent MUST identify which enforcement plugins trigger most and tune accordingly.
+The agent MUST identify which enforcement plugins trigger most and tune accordingly. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make development-start` combined
+**Test:** `test_l135_134`
+
+### L136 — The agent MUST learn the repo's dependency graph to minimize unnecessary re-reads.
+The agent MUST learn the repo's dependency graph to minimize unnecessary re-reads. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make lint-fix` + `scripts/task_watchdog.py` script-backed guard
+**Test:** `test_l136_135`
+
+### L137 — The agent MUST recognize when a file has been edited recently and needs gate refresh.
+The agent MUST recognize when a file has been edited recently and needs gate refresh. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-anti-essay.ts` env-var-gated BLOCKING (GLUDD_L_ENFORCE=0 for disable)
+**Test:** `test_l137_136`
+
+### L138 — The agent MUST identify which subagent prompt patterns produce good deliverables.
+The agent MUST identify which subagent prompt patterns produce good deliverables. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `No-Manual-Default Policy` + `config/ratchet.yml:test-failure` ratchet-combined
+**Test:** `test_l138_137`
+
+### L139 — The agent MUST learn from release incidents to prevent future release failures.
+The agent MUST learn from release incidents to prevent future release failures. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-tool-streak.json` + `.opencode/plugin/enforce-no-suppressions.ts` state-aware block
+**Test:** `test_l139_138`
+
+### L140 — The agent MUST recognize when disk pressure forces worktree cleanup and act proactively.
+The agent MUST recognize when disk pressure forces worktree cleanup and act proactively. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:suppression-comment` + `scripts/require_ci_green.py` ratchet+script gate
+**Test:** `test_l140_139`
+
+### L141 — The agent MUST learn which merge-conflict resolution strategies work best per file type.
+The agent MUST learn which merge-conflict resolution strategies work best per file type. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:sbom` + Makefile `make verify-release-completeness` CI+local dual
+**Test:** `test_l141_140`
+
+### L142 — The agent MUST identify when a documentation file is stale and needs refresh.
+The agent MUST identify when a documentation file is stale and needs refresh. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-worktree.ts` x `.opencode/plugin/enforce-commit-lock.ts` cross-plugin
+**Test:** `test_l142_141`
+
+### L143 — The agent MUST recognize the session length pattern to budget subagent work appropriately.
+The agent MUST recognize the session length pattern to budget subagent work appropriately. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Guardrail Integrity Policy` + `scripts/check_node_v26_compat.py` + `.opencode/plugin/enforce-test-integrity.ts` triple layer
+**Test:** `test_l143_142`
+
+### L144 — The agent MUST learn when the user wants detail vs when they want brevity.
+The agent MUST learn when the user wants detail vs when they want brevity. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Codify Improvements` section
+**Test:** `test_l144_143`
+
+### L145 — The agent MUST identify which commands are blocked by enforce-make.ts and why.
+The agent MUST identify which commands are blocked by enforce-make.ts and why. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make agent-worktree` prerequisite
+**Test:** `test_l145_144`
+
+### L146 — The agent MUST learn which AGENTS.md sections are most critical for current work.
+The agent MUST learn which AGENTS.md sections are most critical for current work. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_node_v26_compat.py` enforcement
+**Test:** `test_l146_145`
+
+### L147 — The agent MUST recognize when a CI run will likely fail based on local gate results.
+The agent MUST recognize when a CI run will likely fail based on local gate results. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-audit.ts` `tool.execute.before` block
+**Test:** `test_l147_146`
+
+### L148 — The agent MUST learn the typical gate duration to avoid dispatching during it.
+The agent MUST learn the typical gate duration to avoid dispatching during it. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-floor.ts` permissionDecision deny
+**Test:** `test_l148_147`
+
+### L149 — The agent MUST identify which state files accumulate and need periodic cleanup.
+The agent MUST identify which state files accumulate and need periodic cleanup. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-commit` fail-closed guard
+**Test:** `test_l149_148`
+
+### L150 — The agent MUST learn from the project's git history which types of changes cause regressions.
+The agent MUST learn from the project's git history which types of changes cause regressions. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-watchdog-disengage` state-file enforced block
+**Test:** `test_l150_149`
+
+### L151 — The agent MUST recognize when a subagent result is partial and needs follow-up vs complete.
+The agent MUST recognize when a subagent result is partial and needs follow-up vs complete. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-audit.ts` + `make development-status` combined
+**Test:** `test_l151_150`
+
+### L152 — The agent MUST learn which test files are slow and batch them separately.
+The agent MUST learn which test files are slow and batch them separately. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:duplicate-target` ratchet-tracked gate
+**Test:** `test_l152_151`
+
+### L153 — The agent MUST identify which error messages in the codebase are misleading and fix them.
+The agent MUST identify which error messages in the codebase are misleading and fix them. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-linux` CI workflow enforcement
+**Test:** `test_l153_152`
+
+
+## Expansion: Yield Enforcement (Y101–Y153) (53 specs)
+
+### Y101 — The agent MUST yield to the pip-audit requirement and fix known vulnerabilities.
+The agent MUST yield to the pip-audit requirement and fix known vulnerabilities. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make ship-commit` combined
+**Test:** `test_y101_100`
+
+### Y102 — The agent MUST yield to the SAST scan requirement for security-sensitive changes.
+The agent MUST yield to the SAST scan requirement for security-sensitive changes. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make test-guardrails` + `scripts/verify_release_artifact.py` script-backed guard
+**Test:** `test_y102_101`
+
+### Y103 — The agent MUST yield to the SBOM generation requirement for release builds.
+The agent MUST yield to the SBOM generation requirement for release builds. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-stop.ts` env-var-gated BLOCKING (GLUDD_Y_ENFORCE=0 for disable)
+**Test:** `test_y103_102`
+
+### Y104 — The agent MUST yield to the release-readiness check and verify completeness before claiming.
+The agent MUST yield to the release-readiness check and verify completeness before claiming. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Guardrail Integrity Policy` + `config/ratchet.yml:suppression-comment` ratchet-combined
+**Test:** `test_y104_103`
+
+### Y105 — The agent MUST yield to the hot-reload requirement and rebuild modules after plugin edits.
+The agent MUST yield to the hot-reload requirement and rebuild modules after plugin edits. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-session-start.json` + `.opencode/plugin/enforce-batch-push.ts` state-aware block
+**Test:** `test_y105_104`
+
+### Y106 — The agent MUST yield to the enforcement-verify requirement and confirm plugins active.
+The agent MUST yield to the enforcement-verify requirement and confirm plugins active. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dead-code` + `scripts/check_duplicate_targets.py` ratchet+script gate
+**Test:** `test_y106_105`
+
+### Y107 — The agent MUST yield to the agent-worktree-cleanup requirement and prune stale trees.
+The agent MUST yield to the agent-worktree-cleanup requirement and prune stale trees. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:sbom` + Makefile `make development-status` CI+local dual
+**Test:** `test_y107_106`
+
+### Y108 — The agent MUST yield to the crash-recovery requirement and reset stale state.
+The agent MUST yield to the crash-recovery requirement and reset stale state. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-audit.ts` x `.opencode/plugin/enforce-branch-discipline.ts` cross-plugin
+**Test:** `test_y108_107`
+
+### Y109 — The agent MUST yield to the watchdog-auto requirement and ensure daemon is running.
+The agent MUST yield to the watchdog-auto requirement and ensure daemon is running. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Release Branch Lifecycle` + `scripts/test_hook_runtime.py` + `.opencode/plugin/enforce-branch-discipline.ts` triple layer
+**Test:** `test_y109_108`
+
+### Y110 — The agent MUST yield to the floor requirement and maintain minimum dispatch count.
+The agent MUST yield to the floor requirement and maintain minimum dispatch count. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Long-Running Operations MUST Be Backgrounded` section
+**Test:** `test_y110_109`
+
+### Y111 — The agent MUST yield the main thread to subagent dispatch when work queued exceeds 5 items.
+The agent MUST yield the main thread to subagent dispatch when work queued exceeds 5 items. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make check-readme-status` prerequisite
+**Test:** `test_y111_110`
+
+### Y112 — The agent MUST yield control after 3 consecutive inline edits to prevent grinding.
+The agent MUST yield control after 3 consecutive inline edits to prevent grinding. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_duplicate_targets.py` enforcement
+**Test:** `test_y112_111`
+
+### Y113 — The agent MUST yield to the next dispatch wave when subagent results arrive.
+The agent MUST yield to the next dispatch wave when subagent results arrive. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-verified-claims.ts` `tool.execute.before` block
+**Test:** `test_y113_112`
+
+### Y114 — The agent MUST yield the commit slot to the highest-priority completed task first.
+The agent MUST yield the commit slot to the highest-priority completed task first. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-verified-claims.ts` permissionDecision deny
+**Test:** `test_y114_113`
+
+### Y115 — The agent MUST yield to CI completion by checking at natural breaks, not polling.
+The agent MUST yield to CI completion by checking at natural breaks, not polling. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make verify-remote` fail-closed guard
+**Test:** `test_y115_114`
+
+### Y116 — The agent MUST yield the merge slot to the oldest unmerged feature branch first.
+The agent MUST yield the merge slot to the oldest unmerged feature branch first. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` state-file enforced block
+**Test:** `test_y116_115`
+
+### Y117 — The agent MUST yield to the background gate operation and not run competing ops.
+The agent MUST yield to the background gate operation and not run competing ops. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-audit.ts` + `make verify-release-completeness` combined
+**Test:** `test_y117_116`
+
+### Y118 — The agent MUST yield to the task watchdog timeout and accept the kill gracefully.
+The agent MUST yield to the task watchdog timeout and accept the kill gracefully. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:untested-source` ratchet-tracked gate
+**Test:** `test_y118_117`
+
+### Y119 — The agent MUST yield to a higher-priority user directive when received mid-wave.
+The agent MUST yield to a higher-priority user directive when received mid-wave. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-linux` CI workflow enforcement
+**Test:** `test_y119_118`
+
+### Y120 — The agent MUST yield to the enforcement plugin block and correct behavior, not fight it.
+The agent MUST yield to the enforcement plugin block and correct behavior, not fight it. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_duplicate_targets.py` + `.opencode/plugin/enforce-audit.ts` dual layer
+**Test:** `test_y120_119`
+
+### Y121 — The agent MUST yield to disk pressure and defer worktree creation when space is low.
+The agent MUST yield to disk pressure and defer worktree creation when space is low. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make hot-reload-plugins` combined
+**Test:** `test_y121_120`
+
+### Y122 — The agent MUST yield to the enhancement ratio requirement and include enhancement tasks.
+The agent MUST yield to the enhancement ratio requirement and include enhancement tasks. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make clean-tmp` + `scripts/check_disk_usage.py` script-backed guard
+**Test:** `test_y122_121`
+
+### Y123 — The agent MUST yield to the clean-tree requirement and commit or stash before dispatching.
+The agent MUST yield to the clean-tree requirement and commit or stash before dispatching. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-session-start.ts` env-var-gated BLOCKING (GLUDD_Y_ENFORCE=0 for disable)
+**Test:** `test_y123_122`
+
+### Y124 — The agent MUST yield to the ratchet burn-down requirement and fix known issues first.
+The agent MUST yield to the ratchet burn-down requirement and fix known issues first. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Don't Push Every Commit` + `config/ratchet.yml:missing-test` ratchet-combined
+**Test:** `test_y124_123`
+
+### Y125 — The agent MUST yield to the TDD requirement and write tests before implementation.
+The agent MUST yield to the TDD requirement and write tests before implementation. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-tool-streak.json` + `.opencode/plugin/enforce-worktree.ts` state-aware block
+**Test:** `test_y125_124`
+
+### Y126 — The agent MUST yield to the no-suppression policy and fix the underlying issue.
+The agent MUST yield to the no-suppression policy and fix the underlying issue. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:ci-failure` + `scripts/check_disk_usage.py` ratchet+script gate
+**Test:** `test_y126_125`
+
+### Y127 — The agent MUST yield to the batch-push threshold and accumulate locally before pushing.
+The agent MUST yield to the batch-push threshold and accumulate locally before pushing. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:sbom` + Makefile `make test-count` CI+local dual
+**Test:** `test_y127_126`
+
+### Y128 — The agent MUST yield to the CI cooldown and check at appropriate intervals.
+The agent MUST yield to the CI cooldown and check at appropriate intervals. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-context.ts` x `.opencode/plugin/enforce-batch-push.ts` cross-plugin
+**Test:** `test_y128_127`
+
+### Y129 — The agent MUST yield to the green-branch guard and not push commits to immutable branches.
+The agent MUST yield to the green-branch guard and not push commits to immutable branches. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Commit-After-Green Policy` + `scripts/check_green_branch_guard.py` + `.opencode/plugin/enforce-audit.ts` triple layer
+**Test:** `test_y129_128`
+
+### Y130 — The agent MUST yield to the release-cut exclusivity and not dispatch during release.
+The agent MUST yield to the release-cut exclusivity and not dispatch during release. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `CI-Poll Subagents Are Forbidden` section
+**Test:** `test_y130_129`
+
+### Y131 — The agent MUST yield to the merge safety check and verify gate green before merging.
+The agent MUST yield to the merge safety check and verify gate green before merging. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make verify-remote` prerequisite
+**Test:** `test_y131_130`
+
+### Y132 — The agent MUST yield to the evidence-before-claim rule and gather evidence first.
+The agent MUST yield to the evidence-before-claim rule and gather evidence first. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/test_hook_runtime.py` enforcement
+**Test:** `test_y132_131`
+
+### Y133 — The agent MUST yield to the root-cause-fix policy and address why, not what.
+The agent MUST yield to the root-cause-fix policy and address why, not what. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-anti-essay.ts` `tool.execute.before` block
+**Test:** `test_y133_132`
+
+### Y134 — The agent MUST yield to the single-source rule and land features on one branch first.
+The agent MUST yield to the single-source rule and land features on one branch first. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-tdd.ts` permissionDecision deny
+**Test:** `test_y134_133`
+
+### Y135 — The agent MUST yield to the nothing-dropped guardrail and codify all results.
+The agent MUST yield to the nothing-dropped guardrail and codify all results. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make feature-start` fail-closed guard
+**Test:** `test_y135_134`
+
+### Y136 — The agent MUST yield to the session-start protocol and dispatch immediately.
+The agent MUST yield to the session-start protocol and dispatch immediately. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-watchdog-disengage` state-file enforced block
+**Test:** `test_y136_135`
+
+### Y137 — The agent MUST yield to the anti-loop directive and not run compulsive checks.
+The agent MUST yield to the anti-loop directive and not run compulsive checks. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-audit.ts` + `make git-commit` combined
+**Test:** `test_y137_136`
+
+### Y138 — The agent MUST yield to the node-v26 compat check and fix before committing.
+The agent MUST yield to the node-v26 compat check and fix before committing. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:coverage-baseline` ratchet-tracked gate
+**Test:** `test_y138_137`
+
+### Y139 — The agent MUST yield to the duplicate-target detection and avoid creating dupes.
+The agent MUST yield to the duplicate-target detection and avoid creating dupes. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-linux` CI workflow enforcement
+**Test:** `test_y139_138`
+
+### Y140 — The agent MUST yield to the gate-freshness requirement and re-run gate when stale.
+The agent MUST yield to the gate-freshness requirement and re-run gate when stale. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_green_branch_guard.py` + `.opencode/plugin/enforce-stop.ts` dual layer
+**Test:** `test_y140_139`
+
+### Y141 — The agent MUST yield to the push-rate guard and respect the cooldown interval.
+The agent MUST yield to the push-rate guard and respect the cooldown interval. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make test` combined
+**Test:** `test_y141_140`
+
+### Y142 — The agent MUST yield to the verify-remote requirement after every push.
+The agent MUST yield to the verify-remote requirement after every push. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make development-push` + `scripts/check_green_branch_guard.py` script-backed guard
+**Test:** `test_y142_141`
+
+### Y143 — The agent MUST yield to the CI-busy check and not push when CI is in progress.
+The agent MUST yield to the CI-busy check and not push when CI is in progress. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-deletion-gate.ts` env-var-gated BLOCKING (GLUDD_Y_ENFORCE=0 for disable)
+**Test:** `test_y143_142`
+
+### Y144 — The agent MUST yield to the pre-commit hooks and not bypass them without cause.
+The agent MUST yield to the pre-commit hooks and not bypass them without cause. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `10-Agent Dispatch Floor` + `config/ratchet.yml:lint-baseline` ratchet-combined
+**Test:** `test_y144_143`
+
+### Y145 — The agent MUST yield to the typecheck baseline and not exceed it without justification.
+The agent MUST yield to the typecheck baseline and not exceed it without justification. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-session-start.json` + `.opencode/plugin/enforce-anti-essay.ts` state-aware block
+**Test:** `test_y145_144`
+
+### Y146 — The agent MUST yield to the coverage threshold and write tests for modified code.
+The agent MUST yield to the coverage threshold and write tests for modified code. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:coverage-baseline` + `scripts/verify_release_completeness.py` ratchet+script gate
+**Test:** `test_y146_145`
+
+### Y147 — The agent MUST yield to the collect-check requirement and fix collection errors first.
+The agent MUST yield to the collect-check requirement and fix collection errors first. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:sbom` + Makefile `make validate` CI+local dual
+**Test:** `test_y147_146`
+
+### Y148 — The agent MUST yield to the test-hook-runtime requirement for plugin changes.
+The agent MUST yield to the test-hook-runtime requirement for plugin changes. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-branch-discipline.ts` x `.opencode/plugin/enforce-verified-claims.ts` cross-plugin
+**Test:** `test_y148_147`
+
+### Y149 — The agent MUST yield to the version-check requirement before claiming consistency.
+The agent MUST yield to the version-check requirement before claiming consistency. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Verification Before Claim` + `scripts/verify_release_completeness.py` + `.opencode/plugin/enforce-deletion-gate.ts` triple layer
+**Test:** `test_y149_148`
+
+### Y150 — The agent MUST yield to the disk-check requirement and free space when threshold exceeded.
+The agent MUST yield to the disk-check requirement and free space when threshold exceeded. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Background Operations NEVER Block Dispatch` section
+**Test:** `test_y150_149`
+
+### Y151 — The agent MUST yield to the submodule-status requirement and pin at tagged commits.
+The agent MUST yield to the submodule-status requirement and pin at tagged commits. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-stash` prerequisite
+**Test:** `test_y151_150`
+
+### Y152 — The agent MUST yield to the ansible-syntax requirement for configuration changes.
+The agent MUST yield to the ansible-syntax requirement for configuration changes. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/verify_release_artifact.py` enforcement
+**Test:** `test_y152_151`
+
+### Y153 — The agent MUST yield to the terraform-validate requirement for infrastructure changes.
+The agent MUST yield to the terraform-validate requirement for infrastructure changes. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-make.ts` `tool.execute.before` block
+**Test:** `test_y153_152`
+
+
+## Expansion: Intent Priority (I103–I153) (51 specs)
+
+### I103 — The agent MUST prioritize release advancement over all other categories of work.
+The agent MUST prioritize release advancement over all other categories of work. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make ship-commit` fail-closed guard
+**Test:** `test_i103_102`
+
+### I104 — The agent MUST fix CI failures before starting any feature development work.
+The agent MUST fix CI failures before starting any feature development work. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` state-file enforced block
+**Test:** `test_i104_103`
+
+### I105 — The agent MUST fix failing tests before refactoring the code that those tests cover.
+The agent MUST fix failing tests before refactoring the code that those tests cover. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-audit.ts` + `make typecheck` combined
+**Test:** `test_i105_104`
+
+### I106 — The agent MUST restore gate green status before writing new feature code.
+The agent MUST restore gate green status before writing new feature code. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:gate-failure` ratchet-tracked gate
+**Test:** `test_i106_105`
+
+### I107 — The agent MUST fix security vulnerabilities before optimizing performance.
+The agent MUST fix security vulnerabilities before optimizing performance. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-linux` CI workflow enforcement
+**Test:** `test_i107_106`
+
+### I108 — The agent MUST fix user-reported bugs before implementing self-found improvements.
+The agent MUST fix user-reported bugs before implementing self-found improvements. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` + `.opencode/plugin/enforce-batch-push.ts` dual layer
+**Test:** `test_i108_107`
+
+### I109 — The agent MUST fix regressions before adding new tests for unrelated behavior.
+The agent MUST fix regressions before adding new tests for unrelated behavior. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make test-count` combined
+**Test:** `test_i109_108`
+
+### I110 — The agent MUST preempt all lower-severity work when a critical (sev1) issue is detected.
+The agent MUST preempt all lower-severity work when a critical (sev1) issue is detected. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make check-disk` + `scripts/check_readme_status_current.py` script-backed guard
+**Test:** `test_i110_109`
+
+### I111 — The agent MUST resolve merge conflicts before continuing parallel development.
+The agent MUST resolve merge conflicts before continuing parallel development. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-test-integrity.ts` env-var-gated BLOCKING (GLUDD_I_ENFORCE=0 for disable)
+**Test:** `test_i111_110`
+
+### I112 — The agent MUST refresh stale CI verdicts before making any CI-based claims.
+The agent MUST refresh stale CI verdicts before making any CI-based claims. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Constraints Are To Engineer Around` + `config/ratchet.yml:dead-code` ratchet-combined
+**Test:** `test_i112_111`
+
+### I113 — The agent MUST clean the working tree before starting any new work item.
+The agent MUST clean the working tree before starting any new work item. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-tool-streak.json` + `.opencode/plugin/enforce-delegate.ts` state-aware block
+**Test:** `test_i113_112`
+
+### I114 — The agent MUST fix a broken main branch before working on any feature branch.
+The agent MUST fix a broken main branch before working on any feature branch. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:test-failure` + `scripts/test_hook_runtime.py` ratchet+script gate
+**Test:** `test_i114_113`
+
+### I115 — The agent MUST merge unmerged worktrees before dispatching additional worktree agents.
+The agent MUST merge unmerged worktrees before dispatching additional worktree agents. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:sbom` + Makefile `make git-stash` CI+local dual
+**Test:** `test_i115_114`
+
+### I116 — The agent MUST burn down the ratchet (known-unfixed items) before adding features.
+The agent MUST burn down the ratchet (known-unfixed items) before adding features. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-anti-essay.ts` x `.opencode/plugin/enforce-multitask.ts` cross-plugin
+**Test:** `test_i116_115`
+
+### I117 — The agent MUST update stale documentation before cutting a release.
+The agent MUST update stale documentation before cutting a release. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Model Utilization` + `scripts/ci_check_cooldown.py` + `.opencode/plugin/enforce-objective.ts` triple layer
+**Test:** `test_i117_116`
+
+### I118 — The agent MUST remove deprecated APIs before adding new ones.
+The agent MUST remove deprecated APIs before adding new ones. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Pipeline Orchestration Model` section
+**Test:** `test_i118_117`
+
+### I119 — The agent MUST remove dead code before writing new code in the same module.
+The agent MUST remove dead code before writing new code in the same module. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-diff` prerequisite
+**Test:** `test_i119_118`
+
+### I120 — The agent MUST fix Any type usage before adding new type-annotated code.
+The agent MUST fix Any type usage before adding new type-annotated code. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_green_branch_guard.py` enforcement
+**Test:** `test_i120_119`
+
+### I121 — The agent MUST fix lint errors in a file before writing new code in that same file.
+The agent MUST fix lint errors in a file before writing new code in that same file. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-floor.ts` `tool.execute.before` block
+**Test:** `test_i121_120`
+
+### I122 — The agent MUST fix test collection errors before running the full test suite.
+The agent MUST fix test collection errors before running the full test suite. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-enhancement-ratio.ts` permissionDecision deny
+**Test:** `test_i122_121`
+
+### I123 — The agent MUST block all work when a live secret is detected (scrub first).
+The agent MUST block all work when a live secret is detected (scrub first). This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make test-integration` fail-closed guard
+**Test:** `test_i123_122`
+
+### I124 — The agent MUST free disk space before creating any new files.
+The agent MUST free disk space before creating any new files. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-watchdog-disengage` state-file enforced block
+**Test:** `test_i124_123`
+
+### I125 — The agent MUST audit dependencies for vulnerabilities before adding new ones.
+The agent MUST audit dependencies for vulnerabilities before adding new ones. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-audit.ts` + `make test` combined
+**Test:** `test_i125_124`
+
+### I126 — The agent MUST fix a broken CI pipeline configuration before pushing code.
+The agent MUST fix a broken CI pipeline configuration before pushing code. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:stale-gate` ratchet-tracked gate
+**Test:** `test_i126_125`
+
+### I127 — The agent MUST unblock a blocked release before bumping the version number.
+The agent MUST unblock a blocked release before bumping the version number. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-linux` CI workflow enforcement
+**Test:** `test_i127_126`
+
+### I128 — The agent MUST fix a broken gate before running the gate on newly added code.
+The agent MUST fix a broken gate before running the gate on newly added code. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_disk_usage.py` + `.opencode/plugin/enforce-test-integrity.ts` dual layer
+**Test:** `test_i128_127`
+
+### I129 — The agent MUST fix plugin errors before editing files guarded by that plugin.
+The agent MUST fix plugin errors before editing files guarded by that plugin. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make gate-background` combined
+**Test:** `test_i129_128`
+
+### I130 — The agent MUST fix Makefile syntax errors before adding new targets.
+The agent MUST fix Makefile syntax errors before adding new targets. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make release-cut` + `scripts/require_ci_green.py` script-backed guard
+**Test:** `test_i130_129`
+
+### I131 — The agent MUST back up the opencode config before performing destructive edits.
+The agent MUST back up the opencode config before performing destructive edits. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-deadline.ts` env-var-gated BLOCKING (GLUDD_I_ENFORCE=0 for disable)
+**Test:** `test_i131_130`
+
+### I132 — The agent MUST recover crashed session state before continuing any work.
+The agent MUST recover crashed session state before continuing any work. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `COST-EFFICIENCY DIRECTIVE` + `config/ratchet.yml:dirty-tree` ratchet-combined
+**Test:** `test_i132_131`
+
+### I133 — The agent MUST obey an explicit user directive ('fix X') over the agent's own plan.
+The agent MUST obey an explicit user directive ('fix X') over the agent's own plan. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-session-start.json` + `.opencode/plugin/enforce-enhancement-ratio.ts` state-aware block
+**Test:** `test_i133_132`
+
+### I134 — The agent MUST treat a user's FIRST keyword as immediate priority preemption.
+The agent MUST treat a user's FIRST keyword as immediate priority preemption. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:lint-baseline` + `scripts/check_readme_status_current.py` ratchet+script gate
+**Test:** `test_i134_133`
+
+### I135 — The agent MUST treat a user's NOW keyword as requiring immediate action.
+The agent MUST treat a user's NOW keyword as requiring immediate action. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:sbom` + Makefile `make check-node-v26-compat` CI+local dual
+**Test:** `test_i135_134`
+
+### I136 — The agent MUST enforce ordering when the user specifies 'do X BEFORE Y'.
+The agent MUST enforce ordering when the user specifies 'do X BEFORE Y'. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-test-integrity.ts` x `.opencode/plugin/enforce-anti-essay.ts` cross-plugin
+**Test:** `test_i136_135`
+
+### I137 — The agent MUST detect urgency markers in user messages and elevate priority.
+The agent MUST detect urgency markers in user messages and elevate priority. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `10-Agent Dispatch Floor` + `scripts/check_disk_usage.py` + `.opencode/plugin/enforce-no-wait.ts` triple layer
+**Test:** `test_i137_136`
+
+### I138 — The agent MUST revert the most recent change before adding more changes if asked.
+The agent MUST revert the most recent change before adding more changes if asked. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Anti-Grinding Enforcement` section
+**Test:** `test_i138_137`
+
+### I139 — The agent MUST never ask a blocking question (lowest priority action).
+The agent MUST never ask a blocking question (lowest priority action). This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make secrets-baseline` prerequisite
+**Test:** `test_i139_138`
+
+### I140 — The agent MUST work on alternatives while waiting for a required permission.
+The agent MUST work on alternatives while waiting for a required permission. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` enforcement
+**Test:** `test_i140_139`
+
+### I141 — The agent MUST continue other work while CI runs (never wait on CI).
+The agent MUST continue other work while CI runs (never wait on CI). This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-objective.ts` `tool.execute.before` block
+**Test:** `test_i141_140`
+
+### I142 — The agent MUST dispatch other subagents while a background gate is running.
+The agent MUST dispatch other subagents while a background gate is running. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-batch-push.ts` permissionDecision deny
+**Test:** `test_i142_141`
+
+### I143 — The agent MUST re-dispatch a replacement when a subagent fails.
+The agent MUST re-dispatch a replacement when a subagent fails. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make lint` fail-closed guard
+**Test:** `test_i143_142`
+
+### I144 — The agent MUST process subagent results before dispatching the next wave.
+The agent MUST process subagent results before dispatching the next wave. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` state-file enforced block
+**Test:** `test_i144_143`
+
+### I145 — The agent MUST codify one result before reading the next subagent's result.
+The agent MUST codify one result before reading the next subagent's result. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-audit.ts` + `make agent-cleanup` combined
+**Test:** `test_i145_144`
+
+### I146 — The agent MUST commit green work before starting new unrelated work.
+The agent MUST commit green work before starting new unrelated work. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:ci-failure` ratchet-tracked gate
+**Test:** `test_i146_145`
+
+### I147 — The agent MUST batch commits locally and push only at the batch threshold.
+The agent MUST batch commits locally and push only at the batch threshold. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-linux` CI workflow enforcement
+**Test:** `test_i147_146`
+
+### I148 — The agent MUST update TASKS.md before dispatching to ensure accuracy.
+The agent MUST update TASKS.md before dispatching to ensure accuracy. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_node_v26_compat.py` + `.opencode/plugin/enforce-verified-claims.ts` dual layer
+**Test:** `test_i148_147`
+
+### I149 — The agent MUST update SESSION.md before stopping to preserve context.
+The agent MUST update SESSION.md before stopping to preserve context. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Minimum 10 Subagents` + Makefile `make lint` combined
+**Test:** `test_i149_148`
+
+### I150 — The agent MUST log an incident in BUGS.md before fixing it.
+The agent MUST log an incident in BUGS.md before fixing it. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-merge` + `scripts/agent_liveness.py` script-backed guard
+**Test:** `test_i150_149`
+
+### I151 — The agent MUST gather evidence before claiming any work as complete.
+The agent MUST gather evidence before claiming any work as complete. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-make.ts` env-var-gated BLOCKING (GLUDD_I_ENFORCE=0 for disable)
+**Test:** `test_i151_150`
+
+### I152 — The agent MUST run verify-state before making any status claim.
+The agent MUST run verify-state before making any status claim. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Release Cut = Update README` + `config/ratchet.yml:typecheck-baseline` ratchet-combined
+**Test:** `test_i152_151`
+
+### I153 — The agent MUST fix ratchet entries before declaring the session done.
+The agent MUST fix ratchet entries before declaring the session done. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-tool-streak.json` + `.opencode/plugin/enforce-session-start.ts` state-aware block
+**Test:** `test_i153_152`
+
