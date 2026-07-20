@@ -6,6 +6,9 @@ ROOT = Path(__file__).resolve().parent.parent
 PLUGIN_DIR = ROOT / ".opencode" / "plugin"
 PLUGINS_DIR = ROOT / ".opencode" / "plugins"
 
+def _is_transient_fixture(path: Path) -> bool:
+    return path.name.startswith("zzz_") and path.name.endswith("_test.ts")
+
 def check_ts_file(path: Path) -> bool:
     """Validate TypeScript syntax using node --check."""
     result = subprocess.run(
@@ -25,7 +28,8 @@ def main(argv: list[str] | None = None) -> int:
     # to validate syntax in an isolated temp dir without polluting the real
     # plugin directory (which would race with the concurrent parse-all test).
     dirs: list[Path]
-    if args:
+    explicit_dir = bool(args)
+    if explicit_dir:
         dirs = [Path(args[0]).resolve()]
     else:
         dirs = [PLUGIN_DIR, PLUGINS_DIR]
@@ -33,6 +37,8 @@ def main(argv: list[str] | None = None) -> int:
     for d in dirs:
         if d.exists():
             for f in sorted(d.glob("*.ts")):
+                if not explicit_dir and _is_transient_fixture(f):
+                    continue
                 if not check_ts_file(f):
                     errors += 1
     if errors:

@@ -39,3 +39,20 @@ def test_invalid_ts_file_detected():
             f"stderr: {result.stderr}"
         )
         assert "SYNTAX ERROR" in result.stdout or "SYNTAX ERROR" in result.stderr
+
+
+def test_default_scan_ignores_transient_plugin_fixture():
+    target = ROOT / ".opencode" / "plugin" / "zzz_broken_test.ts"
+    target.write_text("THIS is NOT valid TypeScript {{{ [[[ ;;;\n")
+    try:
+        result = subprocess.run(
+            ["python", str(SCRIPT)],
+            capture_output=True, text=True, timeout=60, cwd=str(ROOT),
+        )
+    finally:
+        target.unlink()
+    assert result.returncode == 0, (
+        f"default scan should ignore transient fixtures\n"
+        f"stdout: {result.stdout}\n"
+        f"stderr: {result.stderr}"
+    )
