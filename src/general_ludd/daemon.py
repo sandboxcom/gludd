@@ -290,13 +290,12 @@ class LangGraphModelCallError(Exception):
         self.__cause__ = original_error
 
 
-# Back-compat default. ``create_daemon_app()`` builds a FRESH per-app dict
 # Per-app daemon state: each app owns a fresh dict so todos / tick_metrics /
 # quality_gate cannot bleed across FastAPI instances in one process. The
 # authoritative store is ``app.state.daemon_state`` (set by the factory).
 # This module-level name exists ONLY as a migration shim for legacy callers
-# (scripts/dogfood.py, test fixtures); it starts as ``None`` and is rebound
-# to the most recently created app's dict by ``create_daemon_app()``.
+# (scripts/dogfood.py, test fixtures); it starts unset and is rebound to the
+# most recently created app's dict by ``create_daemon_app()``.
 # New code MUST NOT access this global — use explicit injection instead.
 _daemon_state: Any = None
 
