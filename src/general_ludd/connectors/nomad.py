@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Protocol, cast, runtime_checkable
 from urllib.parse import urlparse
 
 from general_ludd.connectors._protocols import HttpResponse
@@ -131,7 +131,10 @@ class NomadSource:
         self._allow_private = bool(cfg.get("allow_private", False))
         self._token_env = cfg.get("token_env")
         transport = cfg.get("transport")
-        self._transport: _Transport = transport if transport is not None else _urllib_transport
+        self._transport: _Transport = cast(
+            _Transport,
+            transport if transport is not None else _urllib_transport,
+        )
 
     # -- SSRF + auth ----------------------------------------------------------
     def _guard_ssrf(self) -> None:

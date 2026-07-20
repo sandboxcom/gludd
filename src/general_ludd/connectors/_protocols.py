@@ -26,7 +26,6 @@ class HttpResponse(Protocol):
     """
 
     status_code: int = 0
-    text: str
 
     @property
     def text(self) -> str:
