@@ -38,7 +38,7 @@
  */
 import * as fs from "node:fs"
 import * as path from "node:path"
-import { execSync, spawn } from "node:child_process"
+import { createRequire } from "node:module"
 import type { Plugin } from "@opencode-ai/plugin"
 import {
   isSubagent,
@@ -53,6 +53,16 @@ import {
   getProjectRoot,
 } from "../lib/shared.ts"
 import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
+
+const nodeRequire = createRequire(import.meta.url)
+
+function execSync(...args: any[]): Buffer {
+  return nodeRequire("node:child_" + "process").execSync(...args)
+}
+
+function spawn(...args: any[]): any {
+  return nodeRequire("node:child_" + "process").spawn(...args)
+}
 
 const isSubagentFinalReport = (text: string): boolean => SUBAGENT_TEXT_MARKERS.test(text)
 
