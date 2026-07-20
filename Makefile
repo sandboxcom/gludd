@@ -936,6 +936,9 @@ molecule-test-all:
 			PASSED="$$PASSED $$s"; echo "    PASS $$s"; \
 		else \
 			FAILED="$$FAILED $$s"; echo "    FAIL $$s (see /tmp/gludd-molecule-$$s.log)"; \
+			echo "---- BEGIN failed molecule log: $$s ----"; \
+			tail -n $${MOLECULE_LOG_TAIL_LINES:-200} "/tmp/gludd-molecule-$$s.log" || true; \
+			echo "---- END failed molecule log: $$s ----"; \
 		fi; \
 	done; \
 	echo ""; echo "PASSED:$$PASSED"; \
@@ -964,6 +967,9 @@ molecule-test-shard:
 			PASSED="$$PASSED $$s"; echo "    PASS $$s"; \
 		else \
 			FAILED="$$FAILED $$s"; echo "    FAIL $$s (see /tmp/gludd-molecule-$$s.log)"; \
+			echo "---- BEGIN failed molecule log: $$s ----"; \
+			tail -n $${MOLECULE_LOG_TAIL_LINES:-200} "/tmp/gludd-molecule-$$s.log" || true; \
+			echo "---- END failed molecule log: $$s ----"; \
 		fi; \
 	done; \
 	echo ""; echo "SHARD-PASSED:$$PASSED"; \
@@ -1551,6 +1557,15 @@ push-dev-nv: check-clean-tree _push-rate-guard
 git-push-sandboxcom-nv: check-clean-tree _push-rate-guard
 	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push --no-verify -u sandboxcom master
 	@echo "Pushed to sandboxcom/gludd (--no-verify)"
+	@python3 -c "import json,time;from pathlib import Path;p=Path('/tmp/gludd-watchdog-push-timestamps.json');d=json.loads(p.read_text()) if p.exists() else [];d.append(time.time());p.write_text(json.dumps(d[-50:]))" 2>/dev/null || true
+
+# Push only the committed HEAD for the current branch. This is for CI candidate
+# runs from a dirty integration checkout; uncommitted files are not included.
+git-push-current-head-nv: _push-rate-guard
+	@BRANCH=$$(git branch --show-current); \
+	if [ -z "$$BRANCH" ]; then echo "Cannot push detached HEAD"; exit 1; fi; \
+	GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push --no-verify -u sandboxcom HEAD:$$BRANCH
+	@echo "Pushed committed HEAD to sandboxcom/gludd"
 	@python3 -c "import json,time;from pathlib import Path;p=Path('/tmp/gludd-watchdog-push-timestamps.json');d=json.loads(p.read_text()) if p.exists() else [];d.append(time.time());p.write_text(json.dumps(d[-50:]))" 2>/dev/null || true
 
 # Batch push using the no-verify variant. COMMIT_THRESHOLD=1 forces a push.
