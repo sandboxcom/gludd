@@ -66,8 +66,8 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         check-plugin-liveness check-plugin-health write-plugin-manifest restart-opencode disengage-enforcement reload-enforcement \
         rearm-enforcement enforcement-status \
         hot-reload-plugins hot-reload-status hot-reload-clean \
-        verify-release-artifact verify-release-completeness git-tag-rm release-cut release-recut release-create release-delete \
-        release-upload-assets git-restore-from \
+         verify-release-artifact verify-release-completeness git-tag-rm git-tag-delete git-tag-move release-cut release-recut release-create release-delete \
+         release-upload-assets git-restore-from release-deploy \
         build-sandbox-image verify-sandbox-image clean-sandbox-images \
         vm-image-build vm-image-list vm-image-clean \
         verify-feature-claims audit-coverage gate-audit coverage-json \
@@ -83,10 +83,11 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         networking-role-lint networking-role-syntax test-scapy-adapter networking-validate \
         networking-healthcheck \
         install-bats test-install check-subagent-guards verify-plugin-manifest \
-        check-task-ledger \
-        test-service-discovery service-discover service-catalog \
-        subagent-init subagent-cleanup \
-        chat chat-eval test-chat
+         check-task-ledger \
+         test-service-discovery service-discover service-catalog \
+         subagent-init subagent-cleanup \
+         chat chat-eval test-chat \
+         git-tag-delete git-tag-move release-deploy _no-raw-git-guard
 
 help:
 	@echo "Usage: make [target]"
@@ -173,6 +174,10 @@ help:
 	@echo "  development-merge-to-master  Merge development into master (release prep; CI-green required)"
 	@echo "  development-start            Create development branch from master if it doesn't exist"
 	@echo "  development-status           Show commits on development not yet on master"
+	@echo "  git-tag-push TAG=<t> [COMMIT=<sha>] [MSG='...']  Create annotated tag + push to sandboxcom"
+	@echo "  git-tag-rm TAG=<t>           Delete tag locally and on sandboxcom"
+	@echo "  git-tag-delete TAG=<t>       Alias for git-tag-rm"
+	@echo "  git-tag-move TAG=<t> MSG='..'  Delete old tag + create new at HEAD + push"
 	@echo "  submodule-init        Initialize all git submodules (recursive)"
 	@echo "  submodule-update      Update submodules to latest remote (--merge)"
 	@echo "  submodule-status      Show status of each submodule"
@@ -198,6 +203,7 @@ help:
 	@echo "  release-upload-assets TAG=.. FILES='..'  Add assets to an existing release (repair path)"
 	@echo "  release-cut TAG=.. MSG=.. The single release command (6 fail-closed steps)"
 	@echo "  release-recut TAG=..  Re-trigger CI release job for an existing tag"
+	@echo "  release-deploy TAG=.. MSG=..  Auto-deploy: merge dev->master, push, tag, wait for CI"
 	@echo "  release-delete TAG=.. Delete GitHub Release + local + remote git tags"
 	@echo "  verify-release-artifact       TAG=..  Confirm a release has published assets (exit 0 = shipped)"
 	@echo "  verify-release-completeness   TAG=..  Verify ALL expected artifacts present (8+ categories)"
@@ -930,9 +936,6 @@ crash-recovery:
 
 clean-tmp:
 	@rm -rf /tmp/gludd-iso-* /tmp/gludd-gate-basetemp /tmp/gludd-winfix*-gate.log /tmp/gludd-test-gate.txt /tmp/pytest-of-* 2>/dev/null || true
-	@rm -rf /tmp/gludd-gate-* /tmp/gludd-gate-lite-* 2>/dev/null || true
-	@rm -rf /private/tmp/gludd-iso-* /private/tmp/pytest-of-* 2>/dev/null || true
-	@$(UV) run python3 scripts/clean_tmp.py
 	@echo "clean-tmp done"
 
 clean-pycache-test-chat-history:
@@ -1748,6 +1751,15 @@ verify-release-completeness:
 require-ci-green:
 	@$(UV) run python scripts/require_ci_green.py $(SHA)
 
+# Create an annotated tag at HEAD and force-move it (delete old local+remote,
+# create new at HEAD, push). Usage:
+#   make git-tag-move TAG=v0.1.0-beta.1 MSG='release notes'
+git-tag-move:
+	@[ -n "$(TAG)" ] || { echo "Usage: make git-tag-move TAG=v0.1.0-beta.1 [MSG='...']"; exit 1; }
+	@$(MAKE) -s git-tag-rm TAG=$(TAG)
+	@$(MAKE) -s git-tag-push TAG=$(TAG) MSG="$(MSG)"
+	@echo "Tag $(TAG) moved to HEAD and pushed to sandboxcom"
+
 # Delete a tag both locally and on sandboxcom. Usage:
 #   make git-tag-rm TAG=v0.1.0-alpha.1
 git-tag-rm:
@@ -1755,6 +1767,10 @@ git-tag-rm:
 	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push sandboxcom :refs/tags/$(TAG) 2>/dev/null || true
 	@git tag -d "$(TAG)" 2>/dev/null || true
 	@echo "Deleted tag $(TAG) locally and on sandboxcom"
+
+# Alias for git-tag-rm. Usage:
+#   make git-tag-delete TAG=v0.1.0-alpha.1
+git-tag-delete: git-tag-rm
 
 # Re-trigger a release CI job for an existing tag whose release job was skipped.
 # Deletes and re-pushes the tag, then polls verify-release-artifact.
@@ -1802,13 +1818,33 @@ release-cut:
 	done; \
 	echo "WARNING: release artifact not found after 10 minutes — a cold tag-triggered full-matrix build can take 30-60 min; poll again with make verify-release-completeness TAG=$(TAG) (poll timeout means STILL BUILDING, not failure)"; exit 1
 
+# Auto-deployment target: merge dev->master (if needed), push master, create/push
+# tag, wait for CI. Simplifies the three-step deploy cycle into one command.
+# Usage: make release-deploy TAG=v0.1.0-beta.2 MSG='beta.2 release'
+release-deploy: _no-raw-git-guard
+	@[ -n "$(TAG)" ] || { echo "Usage: make release-deploy TAG=v0.1.0-beta.N MSG='release notes'"; exit 1; }
+	@DEV_AHEAD=$$(git rev-list --count master..development 2>/dev/null || echo 0); \
+	if [ "$$DEV_AHEAD" -gt 0 ]; then \
+		echo "=== Development has $$DEV_AHEAD commits not on master. Merging... ==="; \
+		$(MAKE) -s development-merge-to-master; \
+	else \
+		echo "=== Master already up to date with development ==="; \
+	fi
+	@echo "=== Pushing master to sandboxcom ==="
+	@$(MAKE) -s git-push-sandboxcom
+	@echo "=== Creating and pushing tag $(TAG) ==="
+	@$(MAKE) -s git-tag-push TAG=$(TAG) MSG="$(MSG)"
+	@echo "=== Tag pushed. Waiting for CI on master ==="
+	@$(MAKE) -s ci-await BRANCH=master || true
+	@echo "=== Deploy complete for $(TAG) ==="
+
 # Delete a GitHub Release and its associated git tags (local + remote).
 # Usage: make release-delete TAG=v0.1.0-alpha.1
 release-delete:
 	@[ -n "$(TAG)" ] || { echo "Usage: make release-delete TAG=v0.1.0-alpha.1"; exit 1; }
 	@gh release delete "$(TAG)" -R sandboxcom/gludd --yes 2>/dev/null || echo "(release not found on GitHub)"
 	@git tag -d "$(TAG)" 2>/dev/null || echo "(tag not found locally)"
-	@git push sandboxcom :refs/tags/"$(TAG)" 2>/dev/null || echo "(tag not found on remote)"
+	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push sandboxcom :refs/tags/"$(TAG)" 2>/dev/null || echo "(tag not found on remote)"
 
 # Manual fallback: build the single local binary and publish a DRAFT GitHub
 # Release. This path cannot produce the full artifact matrix (only CI can), so
@@ -2887,6 +2923,7 @@ test-and-commit: _commit-lock-acquire
 
 clean:
 	@rm -rf .venv dist build *.egg-info src/*.egg-info .pytest_cache .mypy_cache .coverage coverage.xml htmlcov .ruff_cache
+	@rm -f Makefile.tmp
 	@find . -name __pycache__ -type d -exec rm -rf {} + 2>/dev/null || true
 	@git rm -r --cached '*__pycache__*' 2>/dev/null || true
 	@git rm --cached .coverage coverage.xml 2>/dev/null || true
@@ -2988,6 +3025,21 @@ check-task-ledger:
 # --- Duplicate target detection: prevent parallel-branch Makefile collisions (ci-await bug class) ---
 check-duplicate-targets:
 	@$(UV) run python scripts/check_duplicate_targets.py
+
+# Mechanical guard: block any Makefile target from using raw `git push` without
+# the GIT_SSH_COMMAND prefix (which routes through the sandboxcom SSH key).
+# This prevents the class of bugs where a new Makefile target introduces a raw
+# git push that silently fails or pushes to the wrong remote.
+# Scans the Makefile itself and exits 1 if any line contains `git push` but
+# does not contain `GIT_SSH_COMMAND`. Exits 0 clean otherwise.
+_no-raw-git-guard:
+	@if grep -n 'git push' Makefile | grep -v 'GIT_SSH_COMMAND'; then \
+		echo "ERROR: raw git push detected in Makefile without GIT_SSH_COMMAND prefix."; \
+		echo "All git pushes MUST use GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa ...'"; \
+		echo "See AGENTS.md \"Critical: Bash Command Policy\" and \"No-Manual-Default Policy\""; \
+		exit 1; \
+	fi
+	@echo "_no-raw-git-guard: PASS (all git push commands use GIT_SSH_COMMAND)"
 
 # --- Proactive bug scanner: find issues before the user does ---
 proactive-scan:
@@ -4456,3 +4508,21 @@ ci-poll-master:
 	done; \
 	echo "=== TIMEOUT: CI did not resolve after $$MAX polls ==="; \
 	exit 1
+
+# Generate 2000 expansion specs and append to BEHAVIORAL_SPECS.md
+generate-specs-expansion:
+	@echo "Generating 2000 behavioral spec expansions..."
+	@$(UV) run python3 scripts/generate_specs_expansion.py
+
+# Deduplicate behavioral specs: find overlapping specs by Jaccard similarity,
+# flag exact body-text duplicates, and optionally deduplicate the file.
+# Usage: make deduplicate-specs [THRESHOLD=0.80]
+#   make deduplicate-specs              # print report only
+#   make deduplicate-specs DEDUP=1      # deduplicate the file
+#   make deduplicate-specs DRY_RUN=1    # show what would be removed
+deduplicate-specs:
+	@$(UV) run python3 scripts/spec_deduplicator.py $(if $(THRESHOLD),--threshold $(THRESHOLD)) $(if $(DRY_RUN),--dry-run) $(if $(DEDUP),--deduplicate)
+
+# Count behavioral specs per group
+count-specs:
+	@$(UV) run python3 scripts/spec_deduplicator.py --json 2>/dev/null | $(UV) run python3 -c "import json,sys; d=json.load(sys.stdin); print(f'Total: {d[\"stats\"][\"total_specs\"]} specs, {d[\"stats\"][\"unique_bodies\"]} unique bodies'); [print(f'  {g}: {c}') for g,c in sorted(d['stats']['by_group'].items())]"

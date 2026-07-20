@@ -1,7 +1,7 @@
 """tests/unit/test_behavioral_specs.py — structural verification of BEHAVIORAL_SPECS.md.
 
 Verifies:
-1. All 500 numbered specs exist in the specs document.
+1. All 3000 numbered specs exist in the specs document.
 2. Each spec maps to at least one enforcement mechanism (plugin, Makefile guard, AGENTS.md section).
 3. Each enforcement mechanism has at least one corresponding structural test.
 4. New plugins required by the specs exist and are structurally valid.
@@ -33,11 +33,12 @@ def read_specs() -> str:
 def spec_ids(specs_text: str) -> list[str]:
     """Extract all spec IDs like P01, B01, etc. from the spec doc."""
     _pat = (
-        r"^###\s+(P\d{2}|B\d{2}|O\d{2}|T\d{2}|D\d{2}|"
-        r"S\d{2}|E\d{2}|M\d{2}|G\d{2}|R\d{2}|"
-        r"W\d{2}|F\d{2}|C\d{2}|Q\d{2}|X\d{2}|"
-        r"A\d{2}|N\d{2}|K\d{2}|U\d{2}|Z\d{2}|"
-        r"H\d{2}|V\d{2}|J\d{2}|L\d{2}|Y\d{2})\b"
+        r"^###\s+(P\d{2,3}|B\d{2,3}|O\d{2,3}|T\d{2,3}|D\d{2,3}|"
+        r"S\d{2,3}|E\d{2,3}|M\d{2,3}|G\d{2,3}|R\d{2,3}|"
+        r"W\d{2,3}|F\d{2,3}|C\d{2,3}|Q\d{2,3}|X\d{2,3}|"
+        r"A\d{2,3}|N\d{2,3}|K\d{2,3}|U\d{2,3}|Z\d{2,3}|"
+        r"H\d{2,3}|V\d{2,3}|J\d{2,3}|L\d{2,3}|Y\d{2,3}|"
+        r"I\d{2,3})\b"
     )
     matches = re.findall(_pat, specs_text, re.MULTILINE)
     return matches
@@ -57,20 +58,20 @@ def spec_has_mechanism(spec_id: str, specs_text: str) -> bool:
 # ── Spec existence tests ─────────────────────────────────────────────────────
 
 class TestSpecsExist:
-    """Verify all 200 specs exist in BEHAVIORAL_SPECS.md."""
+    """Verify specs exist in BEHAVIORAL_SPECS.md (deduplicated + expanded)."""
 
     def test_specs_file_exists(self):
         assert SPECS_PATH.exists(), f"{SPECS_PATH} missing"
 
-    def test_at_least_1000_specs(self):
+    def test_at_least_2000_specs(self):
         ids = spec_ids(read_specs())
-        assert len(ids) >= 1000, f"Expected >=1000 specs, found {len(ids)}: {sorted(set(ids))}"
+        assert len(ids) >= 2000, f"Expected >=2000 specs, found {len(ids)}"
 
     def test_all_expected_groups_present(self):
         ids = set(spec_ids(read_specs()))
         prefixes = ["P", "B", "O", "T", "D", "S", "E", "M", "G", "R",
                      "W", "F", "C", "Q", "X", "A", "N", "K", "U", "Z",
-                     "H", "V", "J", "L", "Y"]
+                     "H", "V", "J", "L", "Y", "I"]
         for prefix in prefixes:
             count = sum(1 for s in ids if s.startswith(prefix))
             assert count >= 20, f"Group {prefix} has {count} specs, expected >=20"
