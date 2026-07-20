@@ -94,7 +94,7 @@ const defaultImpl: HotModule = {
       if (mtime !== null && isStale(mtime, staleSec)) {
         saveState({ lastCheckedEpoch: Math.floor(Date.now() / 1000), sessionPid: process.pid });
         return {
-          permissionDecision: "allow",
+          permissionDecision: "deny",
           message:
             `CONTEXT: SESSION.md is stale (>${Math.round(staleSec / 3600)}h since update). ` +
             `Read SESSION.md to restore context from prior sessions. ` +

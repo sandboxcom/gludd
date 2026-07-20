@@ -87,15 +87,14 @@ const defaultImpl: HotModule = {
 
       if (hasDoneWord && !hasEvidence) {
         const uncheckedCount = (tasks.match(/^[ \t]*-[ \t]+\[[^\]]\]/gm) || []).length;
-        return {
-          text:
-            "AUDIT REQUIRED: " +
-            `${uncheckedCount} unchecked TASKS.md item(s) remain. ` +
-            (ratchetSet ? "config/ratchet.yml has known-unfixed entries. " : "") +
-            "Claims of completion require evidence (commit hash, test counts, CI verdict). " +
-            "Tick items with evidence before declaring done. " +
-            "Set GLUDD_AUDIT_ENFORCE=0 to disable.",
-        };
+        throw new Error(
+          "AUDIT REQUIRED: " +
+          `${uncheckedCount} unchecked TASKS.md item(s) remain. ` +
+          (ratchetSet ? "config/ratchet.yml has known-unfixed entries. " : "") +
+          "Claims of completion require evidence (commit hash, test counts, CI verdict). " +
+          "Tick items with evidence before declaring done. " +
+          "Set GLUDD_AUDIT_ENFORCE=0 to disable.",
+        );
       }
     } catch {
       // Fail-open
