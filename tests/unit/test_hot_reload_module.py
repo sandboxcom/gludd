@@ -14,9 +14,13 @@ import subprocess
 import time
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[2]
 HOT_RELOAD = ROOT / ".opencode" / "plugin" / "hot_reload.ts"
-HOT_PREFIX = "/tmp/gludd-hot-"
+HOT_PREFIX = f"/tmp/gludd-hot-{os.getpid()}-hot-reload-module-"
+
+pytestmark = pytest.mark.xdist_group("hot_reload_module")
 
 def _call_load_hot_module(name: str, ts_defaults: str) -> dict | None:
     """Write a small TS wrapper that calls loadHotModule(name, defaults) and
@@ -33,6 +37,7 @@ def _call_load_hot_module(name: str, ts_defaults: str) -> dict | None:
         f.write(code)
     env = os.environ.copy()
     env["OPENCODE_SUBAGENT"] = ""
+    env["GLUDD_HOT_MODULE_PREFIX"] = HOT_PREFIX
     proc = subprocess.run(
         ["node", "--experimental-strip-types", "/tmp/_test_hot_reload.ts"],
         capture_output=True, text=True, timeout=15,

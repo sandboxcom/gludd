@@ -96,6 +96,7 @@ VALID_TRANSITIONS: dict[TodoStatus, set[TodoStatus]] = {
 
 _MAX_PRIORITY: int = 1000
 _MIN_PRIORITY: int = 0
+_PRIORITY_LABELS: dict[str, int] = {"low": 0, "medium": 1, "high": 2, "critical": 3}
 
 
 # Fields that callers are permitted to set via TodoRepository.create().

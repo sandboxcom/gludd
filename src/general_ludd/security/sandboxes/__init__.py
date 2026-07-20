@@ -101,7 +101,9 @@ def constraint_value(cap: Capability, key: str) -> Any | None:
 def path_prefix(cap: Capability) -> str | None:
     """Return the ``path_prefix`` constraint value as a string or None."""
     v = constraint_value(cap, "path_prefix")
-    return v if isinstance(v, str) else None
+    if isinstance(v, str):
+        return v
+    return None
 
 
 def allowed_hosts(cap: Capability) -> list[str]:
@@ -111,6 +113,9 @@ def allowed_hosts(cap: Capability) -> list[str]:
         return [str(h) for h in v]
     if isinstance(v, str):
         return [v]
+    parts = cap.resource.split(":")
+    if len(parts) >= 3 and parts[0] == "net":
+        return [parts[2]]
     return []
 
 
@@ -121,6 +126,12 @@ def allowed_ports(cap: Capability) -> list[int]:
         return [int(p) for p in v]
     if isinstance(v, int):
         return [v]
+    parts = cap.resource.split(":")
+    if len(parts) >= 4 and parts[0] == "net":
+        try:
+            return [int(parts[3])]
+        except ValueError:
+            return []
     return []
 
 

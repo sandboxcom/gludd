@@ -221,9 +221,16 @@ class ModelProfile(BaseModel):
             raise ValueError("must be at least 1")
         return v
 
-    @field_validator("cost_per_input_token", "cost_per_output_token", "run_budget_usd")
+    @field_validator("cost_per_input_token", "cost_per_output_token")
     @classmethod
     def _non_negative_float(cls, v: float) -> float:
+        if not math.isfinite(v) or v < 0:
+            raise ValueError("must be finite non-negative")
+        return v
+
+    @field_validator("run_budget_usd")
+    @classmethod
+    def _non_negative_budget_float(cls, v: float) -> float:
         if not math.isfinite(v) or v < 0:
             raise ValueError("must be finite non-negative")
         return v
@@ -789,14 +796,14 @@ class ModelGateway:
         read another project's scoped secret.
 
         Falls back to the shared base resolver (the previous, unscoped behavior)
-        when — non-breaking in every case:
+        only when doing so cannot widen a scoped request:
 
         * ``project_id`` is ``None``/empty (a non-project call), or
         * the injected resolver has no ``for_project`` (e.g. a plain
-          ``EnvSecretsManager`` when projects are inactive), or
-        * ``for_project`` rejects the id (a malformed ``project_id`` containing
-          ``'/'`` or ``'..'`` raises ``ValueError``) — fail back to the base
-          rather than crash the model call.
+          ``EnvSecretsManager`` when projects are inactive).
+
+        If ``for_project`` rejects the id, fail closed by returning ``None`` so
+        the model call cannot silently widen to shared credentials.
         """
         base = self._secrets
         if base is None or not project_id:
@@ -1174,7 +1181,31 @@ class ModelGateway:
             response=response,
         )
 
-    async def call_model_with_retry(
+    def call_model_with_retry(
+        self,
+        profile_id: str,
+        messages: list[dict[str, str]],
+        *,
+        max_retries: int = 3,
+        base_backoff_seconds: float = 1.0,
+        correlation_id: str | None = None,
+        **kwargs: Any,
+    ) -> Any:
+        coro = self._call_model_with_retry_async(
+            profile_id,
+            messages,
+            max_retries=max_retries,
+            base_backoff_seconds=base_backoff_seconds,
+            correlation_id=correlation_id,
+            **kwargs,
+        )
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.run(coro)
+        return coro
+
+    async def _call_model_with_retry_async(
         self,
         profile_id: str,
         messages: list[dict[str, str]],
@@ -1615,20 +1646,7 @@ class ModelGateway:
             try:
                 result = self._call_fallback(fb_id, messages, **kwargs)
             except BudgetExceededError:
-                # S.3: budget rejection at call time — skip this fallback and try
-                # the next one. The pre-check above should have caught most cases,
-                # but a race (budget consumed between pre-check and call) can still
-                # trigger this. Skipping one is safe; the caller's budget_remaining
-                # hasn't changed for other fallbacks with different pricing.
-                attempts.append({
-                    "profile_id": fb_id,
-                    "reason": "budget exceeded at call time",
-                })
-                last_exc = BudgetExceededError(
-                    f"Fallback '{fb_id}' budget exceeded at call time"
-                )
-                prev_id = fb_id
-                continue
+                raise
             except SSRFRejectionError:
                 # F-E: an SSRF egress rejection on the fallback path MUST
                 # propagate. _try_call_model already re-raises it, but the bare

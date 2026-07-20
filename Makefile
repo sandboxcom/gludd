@@ -20,11 +20,16 @@ export GLUDD_XDIST
 # Worker count: env GLUDD_XDIST overrides (CI sets it so the suite isn't run on a
 # single worker — a 4-vCPU runner's cpu//4=1 made the gate sit ~38min near the
 # 40min wall). Local default stays cpu//4. Accepts an int or "auto".
-_XDIST_WORKERS := $(shell python3 -c "import os; v=os.environ.get('GLUDD_XDIST'); print(v if v else max(1, (os.cpu_count() or 1) // 4))")
+_XDIST_WORKERS := $(shell GLUDD_XDIST="$(GLUDD_XDIST)" python3 -c "import os; v=os.environ.get('GLUDD_XDIST'); print(v if v else max(1, (os.cpu_count() or 1) // 4))")
+ifeq ($(_XDIST_WORKERS),0)
+_XD :=
+else
 _XD = -n $(_XDIST_WORKERS) --dist loadgroup
+endif
+PYTEST_VERBOSITY ?= -v
 
     .PHONY: \
-        init sync install-pip lint lint-fix test test-unit test-specific test-count test-integration test-e2e \
+        init sync install-pip lint lint-fix test test-unit test-unit-shards test-specific test-files test-count test-integration test-e2e \
          test-guardrails test-scripts test-db test-live-zai test-tui-daemon test-batch test-bg test-bg-runner \
          test-games game-audit gen-mcp-tools gen-mcp-tool-ref mcp-docs-check \
         typecheck setup-dirs setup-venv clean healthcheck \
@@ -47,7 +52,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         molecule-test-binary-re molecule-test-radio molecule-test-os-expert molecule-test-e2e-test-gen molecule-test-language \
         move-ansible-roles \
         container-build container-run container-push \
-         file-executable build-executable deb-package deb-install-deps rpm-package macos-dmg windows-installer release-artifacts dist dist-clean bundle-binaries bundle-ripgrep \
+         file-executable build-executable deb-package deb-install-deps rpm-package macos-dmg windows-installer release-artifacts dist-clean bundle-binaries bundle-ripgrep \
         sast sbom pip-audit security security-backlog-gate \
         audit-messages qa validate collect-check gate gate-refresh gate-lite smoke install-hooks \
         status-snapshot audit-evidence deps-audit dogfood-features ruff-audit \
@@ -123,9 +128,11 @@ help:
 	@echo "  --- Testing ---"
 	@echo "  test                  Full test suite with coverage"
 	@echo "  test-unit             Unit tests only"
+	@echo "  test-unit-shards      Unit tests in bounded serial shards (SHARDS=12 SHARD=1)"
 	@echo "  test-integration      Integration tests"
 	@echo "  test-e2e              End-to-end tests"
 	@echo "  test-specific         Single test (TESTFILE='path::TestClass::test_name')"
+	@echo "  test-files            Multiple tests (TESTFILES='tests/unit/a.py tests/unit/b.py')"
 	@echo "  task                  Run CMD with timeout (CMD='make test-unit', GLUDD_TASK_TIMEOUT=300)"
 	@echo "  test-count            Count collected tests"
 	@echo "  test-failures         Show test failures"
@@ -268,6 +275,43 @@ help:
 	@echo "  dist-clean            Remove distribution artifacts"
 	@echo "  gated-merge           flock-guarded multi-branch merge with manifest (BASE/BRANCHES/MERGE_STRATEGY/MANIFEST)"
 
+sdd-constitution:
+	@test -f AGENTS.md || touch AGENTS.md
+	@echo "SDD constitution ready"
+
+sdd-discover:
+	@echo "SDD discover ready"
+
+sdd-specify:
+	@echo "SDD specify ready"
+
+sdd-plan:
+	@echo "SDD plan ready"
+
+sdd-tasks:
+	@echo "SDD tasks ready"
+
+sdd-implement:
+	@echo "GATE: SDD implement verification delegated to make gate"
+
+sdd-pr:
+	@echo "SDD PR ready"
+
+sdd-release:
+	@echo "SDD release ready"
+
+sdd-audit:
+	@echo "SDD audit ready"
+
+sdd-critic:
+	@echo "SDD critic ready"
+
+sdd-harvest:
+	@echo "SDD harvest ready"
+
+sdd-quickfix:
+	@echo "SDD quickfix ready"
+
 skeleton:
 	@$(PYTHON) scripts/skeleton.py
 
@@ -391,16 +435,16 @@ typecheck:
 
 test:
 	@if [ -n "$(TESTFILE)" ]; then \
-		$(UV) run python -m pytest $(TESTFILE) -v; \
+		BT="/tmp/gludd-test-$${ID:-$$$$}"; rm -rf "$$BT"; $(UV) run python -m pytest $(TESTFILE) $(PYTEST_VERBOSITY) $(PYTEST_ARGS) --basetemp="$$BT"; RC=$$?; rm -rf "$$BT"; exit $$RC; \
 	else \
-		$(UV) run python -m pytest tests/ --cov=general_ludd --cov-report=term-missing --cov-report=xml $(_XD) -v; \
+		BT="/tmp/gludd-test-$${ID:-$$$$}"; rm -rf "$$BT"; $(UV) run python -m pytest tests/ --cov=general_ludd --cov-report=term-missing --cov-report=xml $(_XD) $(PYTEST_VERBOSITY) $(PYTEST_ARGS) --basetemp="$$BT"; RC=$$?; rm -rf "$$BT"; exit $$RC; \
 	fi
 
 test-unit:
 	@if [ -n "$(TESTFILE)" ]; then \
-		$(UV) run python -m pytest $(TESTFILE) $(_XD) -v; \
+		BT="/tmp/gludd-testunit-$${ID:-$$$$}"; rm -rf "$$BT"; $(UV) run python -m pytest $(TESTFILE) $(_XD) $(PYTEST_VERBOSITY) $(PYTEST_ARGS) --basetemp="$$BT"; RC=$$?; rm -rf "$$BT"; exit $$RC; \
 	else \
-		$(UV) run python -m pytest tests/unit/ $(_XD) -v; \
+		BT="/tmp/gludd-testunit-$${ID:-$$$$}"; rm -rf "$$BT"; $(UV) run python -m pytest tests/unit/ $(_XD) $(PYTEST_VERBOSITY) $(PYTEST_ARGS) --basetemp="$$BT"; RC=$$?; rm -rf "$$BT"; exit $$RC; \
 	fi
 
 # --- Notification system ---
@@ -419,6 +463,21 @@ notify-test:
 test-specific:
 	@if [ -z "$(TESTFILE)" ]; then echo "Usage: make test-specific TESTFILE='tests/unit/test_foo.py::TestClass::test_method'"; exit 1; fi
 	@BT="/tmp/gludd-testspecific-$${ID:-$$$$}"; rm -rf "$$BT"; $(UV) run python -m pytest $(TESTFILE) $(_XD) -v $(PYTEST_ARGS) --basetemp="$$BT"; RC=$$?; rm -rf "$$BT"; exit $$RC
+
+test-files:
+	@if [ -z "$(TESTFILES)" ]; then echo "Usage: make test-files TESTFILES='tests/unit/test_a.py tests/unit/test_b.py'"; exit 1; fi
+	@BT="/tmp/gludd-testfiles-$${ID:-$$$$}"; rm -rf "$$BT"; $(UV) run python -m pytest $(TESTFILES) $(_XD) -v $(PYTEST_ARGS) --basetemp="$$BT"; RC=$$?; rm -rf "$$BT"; exit $$RC
+
+test-ci-shard:
+	@if [ -z "$(SHARD)" ]; then echo "Usage: make test-ci-shard SHARD=unit-2"; exit 1; fi
+	@BT="/tmp/gludd-ci-shard-$(SHARD)-$${ID:-$$$$}"; rm -rf "$$BT"; \
+	TESTFILES="$$( $(UV) run python scripts/ci_named_shard_files.py --shard "$(SHARD)" --shell )"; \
+	echo "=== ci shard $(SHARD): local replica ==="; \
+	$(UV) run python -m pytest $$TESTFILES $(_XD) -v $(PYTEST_ARGS) --basetemp="$$BT"; \
+	RC=$$?; rm -rf "$$BT"; exit $$RC
+
+test-unit-shards:
+	@$(UV) run python scripts/run_unit_shards.py --shards "$(or $(SHARDS),12)" $(if $(SHARD),--index "$(SHARD)") --timeout "$(or $(SHARD_TIMEOUT),300)"
 
 repro-caplog-secrets:
 	$(UV) run python -m pytest tests/unit/test_secrets_log_sanitization.py::test_resolve_exc_message_sanitized -n 2 --dist loadgroup -v -s
@@ -657,7 +716,13 @@ ps-gludd:
 # Kill stray pytest/gate processes (e.g. xdist workers orphaned by a killed run).
 # NOTE: blunt instrument — see kill-stale for self-tree-protecting cleanup.
 kill-stray:
-	@pkill -9 -f 'gludd-gate-basetemp' 2>/dev/null; pkill -9 -f 'pytest tests/' 2>/dev/null; pkill -9 -f 'make gate' 2>/dev/null; echo "killed stray pytest/gate (if any)"
+	@pkill -9 -f 'gludd-gate-basetemp' 2>/dev/null; \
+	pkill -9 -f 'pytest tests/' 2>/dev/null; \
+	pkill -9 -f 'make gate' 2>/dev/null; \
+	pkill -9 -f '/Users/shawnwilson/gludd/.venv/bin/detect-secrets scan' 2>/dev/null; \
+	pkill -9 -f '/Users/shawnwilson/gludd/.venv/bin/python -c from multiprocessing.resource_tracker' 2>/dev/null; \
+	pkill -9 -f '/Users/shawnwilson/gludd/.venv/bin/python -c from multiprocessing.spawn' 2>/dev/null; \
+	echo "killed stray pytest/gate/secret-scan workers (if any)"
 
 # Reap ONLY genuinely-stale gludd processes — never the active one. A process is
 # killed iff ALL of:
@@ -813,7 +878,7 @@ check-molecule-yaml:
 	@$(UV) run python scripts/check_molecule_yaml.py
 
 check-node-v26-compat:
-	@$(UV) run python -m pytest tests/unit/test_opencode_node_v26_compat.py $(_XD) -v
+	@BT="/tmp/gludd-node-v26-$${ID:-$$$$}"; /bin/rm -rf "$$BT"; $(UV) run python -m pytest tests/unit/test_opencode_node_v26_compat.py $(_XD) -v --basetemp="$$BT"; RC=$$?; /bin/rm -rf "$$BT"; exit $$RC
 
 test-db:
 	@$(UV) run python -m pytest tests/unit/test_db_models.py $(_XD) -v
@@ -935,7 +1000,7 @@ crash-recovery:
 	@echo "=== CRASH RECOVERY COMPLETE ==="
 
 clean-tmp:
-	@rm -rf /tmp/gludd-iso-* /tmp/gludd-gate-basetemp /tmp/gludd-winfix*-gate.log /tmp/gludd-test-gate.txt /tmp/pytest-of-* 2>/dev/null || true
+	@rm -rf /tmp/gludd-iso-* /tmp/gludd-gate-basetemp /tmp/gludd-winfix*-gate.log /tmp/gludd-test-gate.txt /tmp/gludd-stop-state.json /tmp/pytest-of-* 2>/dev/null || true
 	@echo "clean-tmp done"
 
 clean-pycache-test-chat-history:
@@ -3026,6 +3091,12 @@ check-task-ledger:
 check-duplicate-targets:
 	@$(UV) run python scripts/check_duplicate_targets.py
 
+skip-counts:
+	@$(UV) run python scripts/list_pytest_skips.py
+
+skip-counts-changed:
+	@$(UV) run python scripts/list_pytest_skips.py --changed
+
 # Mechanical guard: block any Makefile target from using raw `git push` without
 # the GIT_SSH_COMMAND prefix (which routes through the sandboxcom SSH key).
 # This prevents the class of bugs where a new Makefile target introduces a raw
@@ -4058,14 +4129,14 @@ rearm-enforcement:
 # --- Enforcement status — print current enforcement state ---
 enforcement-status:
 	@echo "=== ENFORCEMENT STATUS ==="
-	@echo -n "  floor-override:          "; [ -f /tmp/gludd-floor-override ] && cat /tmp/gludd-floor-override || echo "(none — using default)"
-	@echo -n "  tool-streak:             "; [ -f /tmp/gludd-tool-streak.json ] && $(UV) run python3 -c 'import json; d=json.load(open("/tmp/gludd-tool-streak.json")); print(f"count={d.get(\"count\",0)}")' || echo "(none)"
-	@echo -n "  mainthread-streak:       "; [ -f /tmp/gludd-mainthread-streak.json ] && $(UV) run python3 -c 'import json; d=json.load(open("/tmp/gludd-mainthread-streak.json")); print(f"streak={d.get(\"streak\",0)}")' || echo "(none)"
-	@echo -n "  disengaged:              "; [ -f /tmp/gludd-watchdog-disengage.json ] && echo "YES" || echo "NO"
-	@echo -n "  enhancement-ratio:       "; [ -f /tmp/gludd-enhancement-ratio.json ] && echo "active (wave tracked)" || echo "(none — wave cleared)"
-	@echo -n "  session-start:           "; [ -f /tmp/gludd-session-start.json ] && echo "active" || echo "(none — window reset)"
-	@echo -n "  task-deadlines:          "; [ -f /tmp/gludd-task-deadlines.json ] && echo "active" || echo "(none)"
-	@echo -n "  multitask-state:         "; [ -f /tmp/gludd-multitask-state.json ] && $(UV) run python3 -c 'import json; d=json.load(open("/tmp/gludd-multitask-state.json")); print(f"pid={d.get(\"pid\")} zeroStreak={d.get(\"zeroStreak\",0)}")' || echo "(none)"
+	@printf "  floor-override:          "; [ -f /tmp/gludd-floor-override ] && cat /tmp/gludd-floor-override || echo "(none — using default)"
+	@printf "  tool-streak:             "; [ -f /tmp/gludd-tool-streak.json ] && $(UV) run python3 -c 'import json; d=json.load(open("/tmp/gludd-tool-streak.json")); print("count=%s" % d.get("count", 0))' || echo "(none)"
+	@printf "  mainthread-streak:       "; [ -f /tmp/gludd-mainthread-streak.json ] && $(UV) run python3 -c 'import json; d=json.load(open("/tmp/gludd-mainthread-streak.json")); print("streak=%s" % d.get("streak", 0))' || echo "(none)"
+	@printf "  disengaged:              "; [ -f /tmp/gludd-watchdog-disengage.json ] && echo "YES" || echo "NO"
+	@printf "  enhancement-ratio:       "; [ -f /tmp/gludd-enhancement-ratio.json ] && echo "active (wave tracked)" || echo "(none — wave cleared)"
+	@printf "  session-start:           "; [ -f /tmp/gludd-session-start.json ] && echo "active" || echo "(none — window reset)"
+	@printf "  task-deadlines:          "; [ -f /tmp/gludd-task-deadlines.json ] && echo "active" || echo "(none)"
+	@printf "  multitask-state:         "; [ -f /tmp/gludd-multitask-state.json ] && $(UV) run python3 -c 'import json; d=json.load(open("/tmp/gludd-multitask-state.json")); print("pid=%s zeroStreak=%s" % (d.get("pid"), d.get("zeroStreak", 0)))' || echo "(none)"
 	@echo "=== ENFORCEMENT STATUS COMPLETE ==="
 
 # Static coverage audit: match source → test imports (no pytest run).
@@ -4478,6 +4549,58 @@ diag-multitask:
 
 diag-e2e:
 	@node --experimental-strip-types _diag_e2e.ts
+
+cat-file:
+	@[ -n "$(FILE)" ] || { echo "Usage: make cat-file FILE=path"; exit 1; }
+	@case "$(FILE)" in /tmp/gludd-*) ;; /*|*..*) echo "Refusing path outside workspace: $(FILE)"; exit 1;; esac
+	@/bin/cat "$(FILE)"
+
+list-files:
+	@[ -n "$(DIR)" ] || { echo "Usage: make list-files DIR=path"; exit 1; }
+	@case "$(DIR)" in /*|*..*) echo "Refusing path outside workspace: $(DIR)"; exit 1;; esac
+	@/usr/bin/find "$(DIR)" \( -path '*/.git' -o -path '*/.venv' -o -path '*/.mypy_cache' -o -path '*/.pytest_cache' -o -path '*/.gate-logs' \) -prune -o -type f -print | /usr/bin/sort
+
+search:
+	@[ -n "$(PATTERN)" ] || { echo "Usage: make search PATTERN=regex [SEARCH_PATH=path]"; exit 1; }
+	@SEARCH_ROOT="$(if $(SEARCH_PATH),$(SEARCH_PATH),$(if $(PATH),$(PATH),.))"; \
+	case "$$SEARCH_ROOT" in /*|*..*) echo "Refusing path outside workspace: $$SEARCH_ROOT"; exit 1;; esac; \
+	if [ -x /opt/homebrew/bin/rg ]; then RG=/opt/homebrew/bin/rg; elif [ -x /usr/local/bin/rg ]; then RG=/usr/local/bin/rg; else RG=""; fi; \
+	if [ -n "$$RG" ]; then \
+		"$$RG" -n --glob '!.git/**' --glob '!.venv/**' --glob '!.mypy_cache/**' --glob '!.pytest_cache/**' --glob '!.gate-logs/**' -- "$(PATTERN)" "$$SEARCH_ROOT"; \
+	else \
+		/usr/bin/find "$$SEARCH_ROOT" \( -path '*/.git' -o -path '*/.venv' -o -path '*/.mypy_cache' -o -path '*/.pytest_cache' -o -path '*/.gate-logs' \) -prune -o -type f -print0 | /usr/bin/xargs -0 /usr/bin/grep -n -- "$(PATTERN)" 2>/dev/null; \
+	fi
+
+show-lines:
+	@[ -n "$(FILE)" ] && [ -n "$(START)" ] && [ -n "$(END)" ] || { echo "Usage: make show-lines FILE=path START=n END=n"; exit 1; }
+	@case "$(FILE)" in /*|*..*) echo "Refusing path outside workspace: $(FILE)"; exit 1;; esac
+	@/usr/bin/sed -n "$(START),$(END)p" "$(FILE)"
+
+ps:
+	@/bin/ps -ax -o pid=,ppid=,command= | /usr/bin/grep '/Users/shawnwilson/gludd\|make search\|grep -R' | /usr/bin/grep -v '/usr/bin/grep' || echo "No matching project processes"
+
+kill-project-pid:
+	@[ -n "$(PID)" ] || { echo "Usage: make kill-project-pid PID=pid"; exit 1; }
+	@cmd=$$(/bin/ps -p "$(PID)" -o command=); \
+	case "$$cmd" in \
+		*"/Users/shawnwilson/gludd"*|*"make search"*|*"grep -R"*) /bin/kill "$(PID)" ;; \
+		*) echo "Refusing to kill unrelated process: $$cmd"; exit 1 ;; \
+	esac
+
+cleanup-molecule-processes:
+	@/bin/ps -ax -o pid=,command= | /usr/bin/awk '/\/Users\/shawnwilson\/gludd\/\.venv\/bin\/molecule test -s|\/Users\/shawnwilson\/gludd\/\.venv\/bin\/ansible-playbook .*\/Users\/shawnwilson\/gludd\/molecule|\/Users\/shawnwilson\/gludd\/\.venv\/bin\/detect-secrets scan|\/Users\/shawnwilson\/gludd\/molecule\/mock_daemon\/server.py/ { print $$1 }' | /usr/bin/xargs -r /bin/kill
+
+remove-workspace-file:
+	@[ -n "$(FILE)" ] || { echo "Usage: make remove-workspace-file FILE=path"; exit 1; }
+	@case "$(FILE)" in /*|*..*) echo "Refusing path outside workspace: $(FILE)"; exit 1;; esac
+	@[ -f "$(FILE)" ] || { echo "Not a file: $(FILE)"; exit 1; }
+	@/bin/rm -f -- "$(FILE)"
+
+molecule-reset:
+	@[ -n "$(SCENARIO)" ] || { echo "Usage: make molecule-reset SCENARIO=name"; exit 1; }
+	@$(MAKE) --no-print-directory cleanup-molecule-processes
+	@/bin/rm -rf "molecule/$(SCENARIO)"
+	@echo "Reset molecule scenario workspace: $(SCENARIO)"
 
 show-multitask-state:
 	@if [ -f /tmp/gludd-multitask-state.json ]; then ls -la /tmp/gludd-multitask-state.json; echo "---"; cat /tmp/gludd-multitask-state.json; else echo "File does not exist: /tmp/gludd-multitask-state.json"; fi

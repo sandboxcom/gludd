@@ -1195,30 +1195,21 @@ class TestRetryBackoffCumulativeCap:
 
         slept: list[float] = []
 
-        def _fake_sleep(s: float) -> None:
+        async def _fake_sleep(s: float) -> None:
             slept.append(s)
 
         with (
             patch.object(reg, "is_installed", return_value=True),
             patch.object(reg, "get_provider_class", return_value=FakeChatModel),
             patch("general_ludd.models.gateway.ModelGateway.call_model_with_retry.__wrapped__", create=True),
+            patch("general_ludd.models.gateway.asyncio.sleep", side_effect=_fake_sleep),
+            contextlib.suppress(Exception),
         ):
-            # Patch `time.sleep` inside the method's closure via the module-level
-            # `time` import that the closure captures as `_time`.
-
-            # Patch time.sleep at the source: the closure imports `time as _time`
-            # and calls `_time.sleep`. We patch `time.sleep` globally for this
-            # test's duration.
-            import time as _time_mod
-            with (
-                patch.object(_time_mod, "sleep", side_effect=_fake_sleep),
-                contextlib.suppress(Exception),
-            ):
-                gw.call_model_with_retry(
-                    "retry_cap",
-                    [{"role": "user", "content": "hi"}],
-                    max_retries=3,
-                )
+            gw.call_model_with_retry(
+                "retry_cap",
+                [{"role": "user", "content": "hi"}],
+                max_retries=3,
+            )
 
         total_slept = sum(slept)
         assert total_slept <= 300.0 + 1e-6, (
@@ -1260,14 +1251,14 @@ class TestRetryBackoffCumulativeCap:
 
         slept: list[float] = []
 
-        def _fake_sleep(s: float) -> None:
+        async def _fake_sleep(s: float) -> None:
             slept.append(s)
 
-        import time as _time_mod
         with (
             patch.object(reg, "is_installed", return_value=True),
             patch.object(reg, "get_provider_class", return_value=FakeChatModel),
-            patch.object(_time_mod, "sleep", side_effect=_fake_sleep),contextlib.suppress(Exception)
+            patch("general_ludd.models.gateway.asyncio.sleep", side_effect=_fake_sleep),
+            contextlib.suppress(Exception),
         ):
             gw.call_model_with_retry(
                 "retry_cap2",

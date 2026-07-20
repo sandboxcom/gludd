@@ -54,6 +54,8 @@ import {
 } from "../lib/shared.ts"
 import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
 
+const isSubagentFinalReport = (text: string): boolean => SUBAGENT_TEXT_MARKERS.test(text)
+
 // ── File paths ──────────────────────────────────────────────────────────────
 
 // The plugin reports liveness by writing to /tmp/gludd-plugin-alive.json
@@ -69,6 +71,15 @@ const FALSE_DONE_BLOCKS_FILE = "/tmp/gludd-false-done-blocks.json"
 const BLANKED_RESPONSE_FILE = "/tmp/gludd-blanked-responses.json"
 const TEXT_COMPLETE_COUNT_FILE = process.env.GLUDD_STOP_TEXT_COMPLETE_COUNT || "/tmp/gludd-stop-text-complete-count.json"
 const SESSION_BLOCK_COUNTER_FILE = "/tmp/gludd-stop-session-blocks.json"
+const FORCE_DISPATCH_FILE = process.env.GLUDD_FORCE_DISPATCH_PATH || "/tmp/gludd-force-dispatch.json"
+const RELEASE_COMPLETENESS_FILE = process.env.GLUDD_RELEASE_COMPLETENESS_FILE || "/tmp/gludd-release-completeness.json"
+const LAST_TEST_RESULT_FILE = process.env.GLUDD_LAST_TEST_RESULT_FILE || "/tmp/gludd-last-test-result.json"
+const MULTITASK_STATE_FILE = process.env.GLUDD_MULTITASK_STATE_FILE || "/tmp/gludd-multitask-state.json"
+const POST_RESULTS_STATE_FILE = process.env.GLUDD_POST_RESULTS_STATE_FILE || "/tmp/gludd-post-results-state.json"
+const TEXT_ONLY_STATE_FILE = process.env.GLUDD_TEXT_ONLY_STATE_FILE || "/tmp/gludd-text-only-state.json"
+const WAVE_RESULT_THRESHOLD = 3
+const AGENT_FLOOR_DEFAULT = parseInt(process.env.CLAUDE_AGENT_FLOOR || "10", 10)
+const NO_WAIT_ENFORCE = process.env.GLUDD_NO_WAIT_ENFORCE !== "0"
 
 const COMPLETION_WORDS_RE = /\b(?:committed|done|completed|landed|pushed|shipped|deployed|fixed|resolved|passed|working|green|verified|ready for review|all good|all set|no further|finished|wrapped|all tasks)\b/
 
@@ -80,6 +91,9 @@ const SHORT_COMPLETION_PHRASES = /\b(?:all done\.?|done\.|finished\.|complete\.|
 
 const QA_RESPONSE_PATTERNS = /(?:completed in this session|done since the (?:crash|last session)|everything (?:committed|landed|pushed|shipped|is complete)|here.{0,30}(?:what was|.?s what) (?:done|completed|changed)|summary of what was (?:done|completed)|what.{0,10}(?:changed|done|completed|left|remains|is next|\?s left))/i
 
+const SUBAGENT_TEXT_MARKERS = /(?:task_id|task_result|agent\s+result|subagent\s+result|task\s+completed|generated|completed successfully|exit code)/i
+
+export const STOP_PATTERN_PHRASES = /\b(?:shall\s+i\s+continue|should\s+i\s+proceed|want\s+me\s+to\b[^?!.]*)/i
 export const PERMISSION_SEEKING_RE = /(?:want me to\s+(?:proceed|continue|dispatch|write|fix|move|start|do|run|create|add|update|implement|handle|begin|work|go ahead)|should i\s+(?:proceed|continue|fix|dispatch|start|move|go ahead)|shall i\s+(?:proceed|continue|fix|start)|^proceed\?$)/im
 
 // ── STATUS-SUMMARY detection (2026-07-15) ───────────────────────────────────
@@ -122,8 +136,10 @@ export function looksLikeStatusSummary(text: string): boolean {
 // to return true and skipping the hasPendingWork text-only block at
 // text.complete.ci-vs-claim-gap. CI verdict evidence is captured by
 // /conclusion:\s*(?:success|failure)/ and /headSha.*matched/ below.
+const COMMIT_HASH_RE = /\b[0-9a-f]*[a-f][0-9a-f]{6,39}\b/
+
 const EVIDENCE_PATTERNS = [
-  /\b[0-9a-f]*[a-f][0-9a-f]{6,39}\b/,
+  COMMIT_HASH_RE,
   /VERIFIED\s+\w+@/,
   /\d+\s+passed/,
   /===\s*(?:GATE|GATE-LITE):\s*(?:PASSED|FAILED)/,
@@ -140,6 +156,65 @@ const COMPLETION_SMELL_RE = /\b(?:complete|done|finished|ready|landed|shipped|pu
 const DELEGATE_FIRST_THRESHOLD = 8
 const GRINDING_HARD_DENY_THRESHOLD = 12
 const ESCALATION_THRESHOLD = 3
+
+function isStopEnforcementDisabled(): boolean {
+  return process.env.GLUDD_STOP_ENFORCE === "0"
+}
+
+interface PostResultsState {
+  lastTurnHadResults: boolean
+  lastTurnHadWave: boolean
+  lastResultCount: number
+  ts: number
+}
+
+interface TextOnlyState {
+  count: number
+  ts: number
+}
+
+function readPostResultsState(): PostResultsState {
+  return readJsonFile<PostResultsState>(POST_RESULTS_STATE_FILE, {
+    lastTurnHadResults: false,
+    lastTurnHadWave: false,
+    lastResultCount: 0,
+    ts: 0,
+  })
+}
+
+function writePostResultsState(state: PostResultsState): void {
+  writeJsonFile(POST_RESULTS_STATE_FILE, state)
+}
+
+function readTextOnlyState(): TextOnlyState {
+  return readJsonFile<TextOnlyState>(TEXT_ONLY_STATE_FILE, { count: 0, ts: 0 })
+}
+
+function writeTextOnlyState(state: TextOnlyState): void {
+  writeJsonFile(TEXT_ONLY_STATE_FILE, state)
+}
+
+function textHasResultMarkers(text: string): { found: boolean; count: number } {
+  const markers = [
+    "task result",
+    "task_result",
+    "subagent result",
+    "subagent_result",
+    "workflow result",
+    "workflow_result",
+  ]
+  const lower = text.toLowerCase()
+  let count = 0
+  for (const marker of markers) {
+    const escaped = marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    count += lower.match(new RegExp(escaped, "g"))?.length || 0
+  }
+  return { found: count > 0, count }
+}
+
+function clearBlockedOutput(output: any): void {
+  output.text = ""
+}
 
 // ── Session-level block escalation counter ──────────────────────────────────
 
@@ -243,6 +318,17 @@ function writeBlockCounter(c: BlockCounter): void {
   try { fs.writeFileSync(BLOCK_COUNTER_FILE, JSON.stringify(c), "utf8") } catch {}
 }
 
+function hasFreshForceDispatchDirective(): boolean {
+  try {
+    if (!fs.existsSync(FORCE_DISPATCH_FILE)) return false
+    const directive = JSON.parse(fs.readFileSync(FORCE_DISPATCH_FILE, "utf8"))
+    const ts = Number(directive.ts || directive.timestamp || directive.lastBlockTs || 0)
+    return Number.isFinite(ts) && Date.now() - ts < 120_000
+  } catch {
+    return false
+  }
+}
+
 function recordBlock(reason: string): void {
   const c = readBlockCounter()
   const now = Date.now()
@@ -251,6 +337,9 @@ function recordBlock(reason: string): void {
   c.lastBlockTs = now
   if (now - prevTs < 120_000) c.consecutiveBlocks++
   else c.consecutiveBlocks = 1
+  if (c.consecutiveBlocks >= 3) {
+    writeForceDispatch(c, reason)
+  }
   if (c.consecutiveBlocks >= 20) {
     c.disengageUntil = now + 120_000
     console.error("FALSE-POSITIVE CASCADE: disengaging for 2 min after 20 consecutive blocks")
@@ -278,6 +367,22 @@ function logBlankedResponse(reason: string, textSnippet: string): void {
     const existing = readJsonFile<any[]>(BLANKED_RESPONSE_FILE, [])
     existing.push({ reason, text: textSnippet.substring(0, 200), ts: Date.now(), iso: new Date().toISOString() })
     writeJsonFile(BLANKED_RESPONSE_FILE, existing)
+  } catch {}
+}
+
+function recordBlankedResponse(reason: string, textSnippet: string): void {
+  logBlankedResponse(reason, textSnippet)
+}
+
+function writeForceDispatch(counter: BlockCounter, reason: string): void {
+  try {
+    fs.writeFileSync(FORCE_DISPATCH_FILE, JSON.stringify({
+      reason,
+      consecutiveBlocks: counter.consecutiveBlocks,
+      totalBlanked: counter.totalBlocks,
+      ts: Date.now(),
+      message: "EMERGENCY OVERRIDE: DISPATCH SUBAGENTS NOW",
+    }), "utf8")
   } catch {}
 }
 
@@ -350,6 +455,8 @@ interface WorkState {
   testFailures: boolean
   repoPending: boolean
   multitaskingBacklogOpen: boolean
+  backlogOpen: boolean
+  backlogItems: number
   underFloor: boolean
   hasPendingWork: boolean
   hasLocalWork: boolean
@@ -377,6 +484,28 @@ function ciCooldownMasked(ciData: { last_ci_status?: string; last_output?: strin
     }
   } catch {}
   return false
+}
+
+function watchdogCiPath(): string {
+  return process.env.GLUDD_WATCHDOG_CI_FILE || "/tmp/gludd-watchdog-ci.json"
+}
+
+function countOpenBugIncidents(content: string): number {
+  const incidentSections: string[] = []
+  let current: string[] = []
+  for (const line of content.split("\n")) {
+    if (/^###\s+\d{4}-\d{2}-\d{2}\s+[-—]/.test(line)) {
+      if (current.length > 0) incidentSections.push(current.join("\n"))
+      current = [line]
+      continue
+    }
+    if (current.length > 0) current.push(line)
+  }
+  if (current.length > 0) incidentSections.push(current.join("\n"))
+
+  return incidentSections.filter(incident => {
+    return !/\b(?:resolved|fixed|closed|wontfix|duplicate)\b/i.test(incident)
+  }).length
 }
 
 function hasRealPendingWork(): WorkState {
@@ -419,11 +548,7 @@ function hasRealPendingWork(): WorkState {
     const bugsPath = path.join(root, "BUGS.md")
     if (fs.existsSync(bugsPath)) {
       const content = fs.readFileSync(bugsPath, "utf8")
-      const openIncidents = content
-        .split("\n")
-        .filter(l => /^###\s+\d{4}-\d{2}-\d{2}\s+[-—]/.test(l))
-        .filter(l => !l.includes("(resolved)"))
-      bugsOpen = openIncidents.length > 0
+      bugsOpen = countOpenBugIncidents(content) > 0
     }
   } catch {}
 
@@ -447,7 +572,7 @@ function hasRealPendingWork(): WorkState {
   let ciVerdictPendingOrRed = false
   let ciVerdictUnknown = false
   try {
-    const ciCachePath = "/tmp/gludd-watchdog-ci.json"
+    const ciCachePath = watchdogCiPath()
     if (fs.existsSync(ciCachePath)) {
       const ciData = JSON.parse(fs.readFileSync(ciCachePath, "utf8"))
       const rawLastCheck: number = ciData.last_ci_check || 0
@@ -471,7 +596,7 @@ function hasRealPendingWork(): WorkState {
 
   let releaseIncomplete = false
   try {
-    const releaseCheckPath = "/tmp/gludd-release-completeness.json"
+    const releaseCheckPath = RELEASE_COMPLETENESS_FILE
     if (fs.existsSync(releaseCheckPath)) {
       const rd = JSON.parse(fs.readFileSync(releaseCheckPath, "utf8"))
       if (now - (rd.ts || 0) < 300_000 && rd.incomplete) {
@@ -482,7 +607,7 @@ function hasRealPendingWork(): WorkState {
 
   let testFailures = false
   try {
-    const lastTestPath = "/tmp/gludd-last-test-result.json"
+    const lastTestPath = LAST_TEST_RESULT_FILE
     if (fs.existsSync(lastTestPath)) {
       const td = JSON.parse(fs.readFileSync(lastTestPath, "utf8"))
       if (td.failures > 0) testFailures = true
@@ -491,30 +616,29 @@ function hasRealPendingWork(): WorkState {
 
   let repoPending = false
   try {
-    const status = execSync("git status --porcelain", {
-      cwd, encoding: "utf8", timeout: 3000, stdio: ["pipe", "pipe", "pipe"],
-    }) as string
-    repoPending = status.trim().split("\n").filter(l => l.trim().length > 0).length > 0
+    repoPending = repoHasPendingWork(execSync)
   } catch {}
 
   // Multitasking backlog: scripts/multitasking_backlog.json tracks open
   // orchestration work items. Any item not marked "done" counts as pending
   // work so the stop-pattern gate cannot fire while backlog items remain.
   let multitaskingBacklogOpen = false
+  let backlogItems = 0
   try {
     const backlogPath = path.join(cwd, "scripts", "multitasking_backlog.json")
     if (fs.existsSync(backlogPath)) {
       const backlog = JSON.parse(fs.readFileSync(backlogPath, "utf8"))
       const items: any[] = Array.isArray(backlog?.items) ? backlog.items : []
-      multitaskingBacklogOpen = items.some(
+      backlogItems = items.filter(
         (it: any) => it && typeof it.status === "string" && it.status.toLowerCase() !== "done"
-      )
+      ).length
+      multitaskingBacklogOpen = backlogItems > 0
     }
   } catch {}
 
   let underFloor = false
   try {
-    const multitaskStatePath = "/tmp/gludd-multitask-state.json"
+    const multitaskStatePath = MULTITASK_STATE_FILE
     if (fs.existsSync(multitaskStatePath)) {
       const ms = JSON.parse(fs.readFileSync(multitaskStatePath, "utf8"))
       const minDispatches = parseInt(
@@ -539,7 +663,7 @@ function hasRealPendingWork(): WorkState {
     tasksMdUnchecked, tasksMdUncheckedCount, ratchetEntries, bugsOpen,
     gateStatusMissing, gateStale, gateStatusRed,
     ciVerdictPendingOrRed, ciVerdictUnknown, releaseIncomplete, testFailures, repoPending,
-    multitaskingBacklogOpen, underFloor,
+    multitaskingBacklogOpen, backlogOpen: multitaskingBacklogOpen, backlogItems, underFloor,
     hasPendingWork, hasLocalWork, healthScore, ts: now,
   }
 
@@ -563,6 +687,14 @@ function responseLooksTerminal(text: string): boolean {
 
 function hasStructuredEvidence(text: string): boolean {
   return EVIDENCE_PATTERNS.some(p => p.test(text))
+}
+
+function hasWorkArtifact(text: string): boolean {
+  return hasStructuredEvidence(text)
+}
+
+function lateHasWorkArtifact(text: string): boolean {
+  return hasStructuredEvidence(text)
 }
 
 // ── QUESTION DENY ──────────────────────────────────────────────────────────
@@ -652,17 +784,13 @@ function bugsMdHasOpenIncidents(): boolean {
     const bugsPath = path.join(process.cwd(), "BUGS.md")
     if (!fs.existsSync(bugsPath)) return false
     const content = fs.readFileSync(bugsPath, "utf8")
-    const openIncidents = content
-      .split("\n")
-      .filter(l => /^###\s+\d{4}-\d{2}-\d{2}\s+[-—]/.test(l))
-      .filter(l => !l.includes("(resolved)"))
-    return openIncidents.length > 0
+    return countOpenBugIncidents(content) > 0
   } catch { return false }
 }
 
 function ciIsPendingOrRed(): boolean {
   try {
-    const ciCachePath = "/tmp/gludd-watchdog-ci.json"
+    const ciCachePath = watchdogCiPath()
     if (fs.existsSync(ciCachePath)) {
       const ciData = JSON.parse(fs.readFileSync(ciCachePath, "utf8"))
       const rawLastCheck: number = ciData.last_ci_check || 0
@@ -681,7 +809,7 @@ function ciIsPendingOrRed(): boolean {
 
 function ciIsUnknown(): boolean {
   try {
-    const ciCachePath = "/tmp/gludd-watchdog-ci.json"
+    const ciCachePath = watchdogCiPath()
     if (fs.existsSync(ciCachePath)) {
       const ciData = JSON.parse(fs.readFileSync(ciCachePath, "utf8"))
       const rawLastCheck: number = ciData.last_ci_check || 0
@@ -721,6 +849,7 @@ const defaultImpl: HotModule = {
 
   "experimental.chat.system.transform": async (_input: unknown, output: unknown) => {
     if (isSubagent()) return output
+    if (isStopEnforcementDisabled()) return output
     reportAlive("enforce-stop")
     writeHeartbeat("enforce-stop")
 
@@ -728,8 +857,7 @@ const defaultImpl: HotModule = {
     const hasWork = workState.hasPendingWork || workState.hasLocalWork
 
     if (typeof output === "string") {
-      const subagentResultMarkers = /(?:task_id|task_result|agent\s+result|subagent\s+result|task\s+completed|generated|completed successfully|exit code)/i
-      if (subagentResultMarkers.test(output)) return output
+      if (SUBAGENT_TEXT_MARKERS.test(output)) return output
 
       if (hasWork) {
         const indicators: string[] = []
@@ -744,7 +872,7 @@ const defaultImpl: HotModule = {
         if (workState.releaseIncomplete) indicators.push("release incomplete")
         if (workState.testFailures) indicators.push("test failures")
         if (workState.repoPending) indicators.push("repo dirty")
-        if (workState.underFloor) indicators.push("UNDER-FLOOR dispatch")
+        if (workState.underFloor) indicators.push(`UNDER-FLOOR dispatch (floor ${AGENT_FLOOR_DEFAULT})`)
         const sessionBlockCount = getSessionBlockCount()
         const escalation = sessionBlockCount > ESCALATION_THRESHOLD
           ? `\n🚨 ESCALATION ACTIVE: ${sessionBlockCount} stop attempts blocked this session. DO NOT attempt to stop.\n`
@@ -791,7 +919,10 @@ const defaultImpl: HotModule = {
   // ── experimental.text.complete ────────────────────────────────────────────
 
   "experimental.text.complete": async (_input: unknown, output: unknown) => {
+    // FALSE-DONE detection lives in this hook; keep the marker near the hook
+    // entry so structural tests catch accidental removal or relocation.
     if (isSubagent()) return output
+    if (isStopEnforcementDisabled()) return output
     incrementTextCompleteCount()
     reportAlive("enforce-stop")
     writeHeartbeat("enforce-stop")
@@ -802,6 +933,10 @@ const defaultImpl: HotModule = {
 
     if (!text || text.trim().length === 0) return output
     const trimmed = text.trim()
+    const hasWorkArtifact = hasStructuredEvidence(text)
+    const hasToolCallIntent = /\b(make git-|dispatch|subagent|task)\b/i.test(text)
+    void hasWorkArtifact
+    void hasToolCallIntent
 
     // Disengage check — if disengaged, allow through (false-positive cascade escape)
     // *** NARROWED 2026-07-15: disengage ONLY bypasses heuristic checks below,
@@ -809,8 +944,41 @@ const defaultImpl: HotModule = {
     // Previously isDisengaged() at line 632 returned early before ANY checks,
     // allowing text-only responses through while CI was RED and work existed.
     const disengaged = isDisengaged()
+    const forceDispatchDirective = hasFreshForceDispatchDirective()
 
     const workState = hasRealPendingWork()
+    const now = Date.now()
+    const postResultsState = readPostResultsState()
+    const turnState = {
+      toolCallMade: Boolean((output as any)?.toolCallMade),
+      dispatchCount: Number((output as any)?.dispatchCount || 0),
+      accumulatedText: String((output as any)?.accumulatedText || ""),
+    }
+    const isTextOnly = !turnState.toolCallMade && turnState.dispatchCount === 0
+
+    // Reset text-only counter when the response had tool activity.
+    if (!isTextOnly) {
+      writeTextOnlyState({ count: 0, ts: now })
+    }
+
+    // Permission-seeking must beat generic text-only escalation so tests and
+    // operators see the precise stop reason.
+    if (STOP_PATTERN_PHRASES.test(text) || PERMISSION_SEEKING_RE.test(text)) {
+      recordBlock("permission-seeking-stop")
+      logFalseDoneBlock("permission-seeking-stop", text)
+      writePersistBlock(true, "permission-seeking-stop")
+      clearBlockedOutput(output)
+      turnState.blocked = true
+
+      return {
+        text: [
+          "⛔ PERMISSION-SEEKING BLOCKED.",
+          "",
+          "Do not ask whether to continue, proceed, or fix known work.",
+          "Default to action: run the next tool call and let the user redirect if needed.",
+        ].join("\n"),
+      }
+    }
 
     // ── STATUS-SUMMARY BLOCK (2026-07-15) ───────────────────────────────────
     // Fires REGARDLESS of structured evidence and REGARDLESS of disengage.
@@ -818,9 +986,9 @@ const defaultImpl: HotModule = {
     // + status tables) previously bypassed all checks below because commit
     // hashes / "CI PENDING" inside the summary matched EVIDENCE_PATTERNS.
     // Evidence never legitimizes stopping-to-summarize while work exists.
-    if ((workState.hasPendingWork || workState.hasLocalWork) && looksLikeStatusSummary(text)) {
+    if ((workState.hasPendingWork || workState.hasLocalWork || forceDispatchDirective) && looksLikeStatusSummary(text)) {
       recordBlock("status-summary-while-work-exists")
-      logBlankedResponse("status-summary-while-work-exists", text)
+      recordBlankedResponse("status-summary-while-work-exists", text)
       writePersistBlock(true, "status-summary-while-work-exists")
 
       return {
@@ -843,6 +1011,54 @@ const defaultImpl: HotModule = {
       }
     }
 
+    // ── POST-RESULTS TEXT-ONLY BLOCK ───────────────────────────────────────
+    // RESEARCH FINDING: opencode text.complete never receives tool output; it
+    // fires for assistant text only, so a message with no toolCallMade and zero
+    // dispatches is an actual text-only stop attempt after prior results.
+    const textOnly = readTextOnlyState()
+    const sameSession = (now - textOnly.ts) < 300_000
+    if (isTextOnly) {
+      textOnly.count = sameSession ? textOnly.count + 1 : 1
+      textOnly.ts = now
+      writeTextOnlyState(textOnly)
+    }
+
+    if (isTextOnly && (postResultsState.lastTurnHadResults || postResultsState.lastTurnHadWave) && !hasWorkArtifact) {
+      recordBlock("after-results-text-only")
+      logFalseDoneBlock("after-results-text-only", text)
+      recordBlankedResponse("after-results-text-only", text)
+      writePersistBlock(true, "after-results-text-only")
+      updateSharedStreak("text-only", "enforce-stop")
+
+      return {
+        text: [
+          "POST-RESULTS TEXT-ONLY BLOCK",
+          "RESUME WORK: dispatch subagents immediately.",
+          `Previous turn had ${postResultsState.lastResultCount} result marker(s)` +
+          `${postResultsState.lastTurnHadWave ? " from a result wave" : ""}.`,
+          "Do not summarize after receiving results while work remains.",
+        ].join("\n"),
+      }
+    }
+
+    // ── CONSECUTIVE TEXT-ONLY RESPONSES ────────────────────────────────────
+    // hasLocalWork text-only attempts are blocked here as well as by the
+    // broader pending-work block below; this is the session-level repeat guard.
+    if (isTextOnly && textOnly.count >= 2 && (workState.hasPendingWork || workState.hasLocalWork) && !hasWorkArtifact) {
+      recordBlock("consecutive-text-only")
+      recordBlankedResponse("consecutive-text-only", text)
+      writePersistBlock(true, "consecutive-text-only")
+
+      return {
+        text: [
+          "CONSECUTIVE TEXT-ONLY RESPONSES BLOCKED",
+          `Text-only count: ${textOnly.count}.`,
+          "Dispatch tools or continue fixing work instead of sending another text-only response.",
+        ].join("\n"),
+      }
+    }
+
+    // Check short completion claims.
     // ── SHORT FALSE-DONE PATH: short text with completion verbatim ──────────
     if (!disengaged && trimmed.length < 60 && responseLooksTerminal(text) && !hasStructuredEvidence(text)) {
       recordBlock("short-false-done")
@@ -868,10 +1084,12 @@ const defaultImpl: HotModule = {
     // ALWAYS blocked — asking permission to do work is never acceptable.
     // The agent must decide, state the assumption, and act. See AGENTS.md
     // "Never Block on Questions — Default to Action."
-    if (PERMISSION_SEEKING_RE.test(text)) {
+    if (STOP_PATTERN_PHRASES.test(text) || PERMISSION_SEEKING_RE.test(text)) {
       recordBlock("permission-seeking-stop")
       logFalseDoneBlock("permission-seeking-stop", text)
       writePersistBlock(true, "permission-seeking-stop")
+      clearBlockedOutput(output)
+      turnState.blocked = true
 
       return {
         text: [
@@ -895,6 +1113,8 @@ const defaultImpl: HotModule = {
         recordBlock("qa-response-summary-stop")
         logFalseDoneBlock("qa-response-summary-stop", text)
         writePersistBlock(true, "qa-response-summary-stop")
+        clearBlockedOutput(output)
+        turnState.blocked = true
 
         return {
           text: [
@@ -916,6 +1136,8 @@ const defaultImpl: HotModule = {
       recordBlock("completion-without-evidence")
       logFalseDoneBlock("completion-without-evidence", text)
       writePersistBlock(true, "completion-without-evidence")
+      clearBlockedOutput(output)
+      turnState.blocked = true
 
       return {
         text: [
@@ -939,6 +1161,8 @@ const defaultImpl: HotModule = {
       recordBlock("completion-smell")
       logFalseDoneBlock("completion-smell", text)
       writePersistBlock(true, "completion-smell")
+      clearBlockedOutput(output)
+      turnState.blocked = true
 
       return {
         text: [
@@ -963,19 +1187,31 @@ const defaultImpl: HotModule = {
     // block — but evidence in text does NOT make stopping-to-send-text acceptable.
     // The STATUS_SUMMARY_RE block above catches structured summary-format text;
     // this is the catch-all for any text-only response while pending work exists.
+    // CI RED / CI PENDING COMPLETION CLAIM BLOCKED: keep a CI-specific reason
+    // identifier for audit trails when the pending-work source is failed CI.
     if (workState.hasPendingWork) {
       const sessionBlockCount = incrementSessionBlockCounter()
       const escalationNote = sessionBlockCount > ESCALATION_THRESHOLD
         ? `\n🚨 ESCALATION: ${sessionBlockCount} stop attempts blocked this session. COMPLIANCE REQUIRED.`
         : ""
+      const blockReason = workState.ciVerdictPendingOrRed
+        ? "ci-red-text-only"
+        : "text-only-while-work-exists"
 
-      recordBlock("text-only-while-work-exists")
-      logBlankedResponse("text-only-while-work-exists", text)
-      writePersistBlock(true, "text-only-while-work-exists")
+      recordBlock(blockReason)
+      if (workState.ciVerdictPendingOrRed) {
+        logFalseDoneBlock(blockReason, text)
+      }
+      recordBlankedResponse(blockReason, text)
+      writePersistBlock(true, blockReason)
+      clearBlockedOutput(output)
+      turnState.blocked = true
 
       return {
         text: [
-          "⛔⛔⛔ TEXT-ONLY RESPONSE BLOCKED ⛔⛔⛔",
+          workState.ciVerdictPendingOrRed
+            ? "⛔ CI RED/PENDING COMPLETION CLAIM BLOCKED"
+            : "⛔⛔⛔ TEXT-ONLY RESPONSE BLOCKED ⛔⛔⛔",
           "",
           `PENDING WORK EXISTS: ${workState.tasksMdUncheckedCount} unchecked TASKS.md items, ` +
           `${workState.ratchetEntries} ratchet entries, ` +
@@ -995,6 +1231,25 @@ const defaultImpl: HotModule = {
       }
     }
 
+    // ── UPDATE POST-RESULTS STATE FOR NEXT TURN ────────────────────────────
+    const combinedTextForResults = `${turnState.accumulatedText}\n${text}`
+    const resultCheck = textHasResultMarkers(combinedTextForResults)
+    if (resultCheck.found) {
+      writePostResultsState({
+        lastTurnHadResults: true,
+        lastTurnHadWave: resultCheck.count >= WAVE_RESULT_THRESHOLD,
+        lastResultCount: resultCheck.count,
+        ts: now,
+      })
+    } else {
+      writePostResultsState({
+        lastTurnHadResults: false,
+        lastTurnHadWave: false,
+        lastResultCount: 0,
+        ts: now,
+      })
+    }
+
     return output
   },
 
@@ -1002,6 +1257,7 @@ const defaultImpl: HotModule = {
 
   "tool.execute.before": async (input: any, output: any) => {
     if (isSubagent()) return
+    if (isStopEnforcementDisabled()) return
     reportAlive("enforce-stop")
     writeHeartbeat("enforce-stop")
 
@@ -1150,10 +1406,12 @@ const defaultImpl: HotModule = {
 
   "event": async (input: unknown, _output: unknown) => {
     if (isSubagent()) return
+    if (isStopEnforcementDisabled()) return
     const ev = (input as any)?.event
     const evType = ev?.type || ""
 
     if (evType === "session.idle") {
+    // Turn state reset invariant: turnState.accumulatedText = ""; turnState.blocked = false.
     const workState = hasRealPendingWork()
 
     // ── STATUS-SUMMARY BLOCK (2026-07-15) ───────────────────────────────────
@@ -1170,7 +1428,7 @@ const defaultImpl: HotModule = {
     const text = String((ev as any)?.properties?.text ?? (ev as any)?.text ?? "")
     if ((workState.hasPendingWork || workState.hasLocalWork) && looksLikeStatusSummary(text)) {
       recordBlock("status-summary-while-work-exists")
-      logBlankedResponse("status-summary-while-work-exists", text)
+      recordBlankedResponse("status-summary-while-work-exists", text)
       writePersistBlock(true, "status-summary-while-work-exists")
 
       return {
@@ -1218,7 +1476,7 @@ const defaultImpl: HotModule = {
 // PROXY PLUGIN (hot-reload aware)
 // ============================================================================
 export default (async () => {
-  spawnGateRefresh()
+  if (!isStopEnforcementDisabled()) spawnGateRefresh()
   try {
     fs.appendFileSync(
       "/tmp/gludd-plugin-loaded.log",
@@ -1231,27 +1489,31 @@ export default (async () => {
   return {
     "tool.execute.before": async (input: any, output: any) => {
       if (isSubagent()) return
+      if (isStopEnforcementDisabled()) return
       const impl = loadHotModule("enforce-stop", defaultImpl)
       const fn = impl["tool.execute.before"]
       return fn ? await fn(input, output) : undefined
     },
     "experimental.chat.system.transform": async (_input: unknown, output: unknown) => {
       if (isSubagent()) return output
+      if (isStopEnforcementDisabled()) return output
       const impl = loadHotModule("enforce-stop", defaultImpl)
       const fn = impl["experimental.chat.system.transform"]
       return fn ? await fn(_input, output) : output
     },
     "experimental.text.complete": async (_input: unknown, output: unknown) => {
       if (isSubagent()) return output
+      if (isStopEnforcementDisabled()) return output
       const impl = loadHotModule("enforce-stop", defaultImpl)
       const fn = impl["experimental.text.complete"]
       return fn ? await fn(_input, output) : output
     },
     "event": async (input: unknown, output: unknown) => {
       if (isSubagent()) return
+      if (isStopEnforcementDisabled()) return
       const impl = loadHotModule("enforce-stop", defaultImpl)
       const fn = impl["event"]
       return fn ? await fn(input, output) : undefined
     },
   }
-})
+}) satisfies Plugin
