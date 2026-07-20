@@ -87,17 +87,21 @@ function getDeletionReason(): string | undefined {
   return reason && reason.trim().length > 0 ? reason.trim() : undefined;
 }
 
+function _reportAlive(): void {
+  reportAlive("enforce-deletion-gate");
+}
+
 // ============================================================================
 // DEFAULT IMPLEMENTATION (compiled-in fallback)
 // ============================================================================
 const defaultImpl: HotModule = {
   "tool.execute.before": async (input, output) => {
+    // process.env.OPENCODE_SUBAGENT guard
+    if (isSubagent()) return;
+    _reportAlive();
     // Keep the generated CommonJS hot module fail-open until build_hot_modules
     // can safely transform this hook's deletion-audit formatting.
     void import.meta.url;
-    // process.env.OPENCODE_SUBAGENT guard
-    if (isSubagent()) return;
-    reportAlive("enforce-deletion-gate");
 
     if (process.env.GLUDD_DELETION_GATE_ENFORCE === "0") return;
 
