@@ -36,7 +36,8 @@ def spec_ids(specs_text: str) -> list[str]:
         r"^###\s+(P\d{2}|B\d{2}|O\d{2}|T\d{2}|D\d{2}|"
         r"S\d{2}|E\d{2}|M\d{2}|G\d{2}|R\d{2}|"
         r"W\d{2}|F\d{2}|C\d{2}|Q\d{2}|X\d{2}|"
-        r"A\d{2}|N\d{2}|K\d{2}|U\d{2}|Z\d{2})\b"
+        r"A\d{2}|N\d{2}|K\d{2}|U\d{2}|Z\d{2}|"
+        r"H\d{2}|V\d{2}|J\d{2}|L\d{2}|Y\d{2})\b"
     )
     matches = re.findall(_pat, specs_text, re.MULTILINE)
     return matches
@@ -61,14 +62,15 @@ class TestSpecsExist:
     def test_specs_file_exists(self):
         assert SPECS_PATH.exists(), f"{SPECS_PATH} missing"
 
-    def test_at_least_500_specs(self):
+    def test_at_least_1000_specs(self):
         ids = spec_ids(read_specs())
-        assert len(ids) >= 500, f"Expected >=500 specs, found {len(ids)}: {sorted(set(ids))}"
+        assert len(ids) >= 1000, f"Expected >=1000 specs, found {len(ids)}: {sorted(set(ids))}"
 
     def test_all_expected_groups_present(self):
         ids = set(spec_ids(read_specs()))
         prefixes = ["P", "B", "O", "T", "D", "S", "E", "M", "G", "R",
-                     "W", "F", "C", "Q", "X", "A", "N", "K", "U", "Z"]
+                     "W", "F", "C", "Q", "X", "A", "N", "K", "U", "Z",
+                     "H", "V", "J", "L", "Y"]
         for prefix in prefixes:
             count = sum(1 for s in ids if s.startswith(prefix))
             assert count >= 20, f"Group {prefix} has {count} specs, expected >=20"
@@ -246,6 +248,61 @@ class TestEnforcementMechanisms:
                 continue
             block = text[idx:idx + 600]
             has_ref = bool(re.search(r"(AGENTS\.md|enforce-|Makefile|tests/|scripts/|plugin)", block))
+            assert has_ref, f"{sid} missing mechanism reference"
+
+    def test_hard_break_specs_reference_mechanism(self):
+        text = read_specs()
+        for i in range(1, 101):
+            sid = f"H{i:02d}"
+            idx = text.find(f"### {sid}")
+            if idx == -1:
+                continue
+            block = text[idx:idx + 600]
+            has_ref = bool(re.search(r"(AGENTS\.md|enforce-|Makefile|scripts/|plugin)", block))
+            assert has_ref, f"{sid} missing mechanism reference"
+
+    def test_verification_specs_reference_mechanism(self):
+        text = read_specs()
+        for i in range(1, 101):
+            sid = f"V{i:02d}"
+            idx = text.find(f"### {sid}")
+            if idx == -1:
+                continue
+            block = text[idx:idx + 600]
+            has_ref = bool(re.search(r"(AGENTS\.md|enforce-|Makefile|scripts/|plugin)", block))
+            assert has_ref, f"{sid} missing mechanism reference"
+
+    def test_judgment_specs_reference_mechanism(self):
+        text = read_specs()
+        for i in range(1, 101):
+            sid = f"J{i:02d}"
+            idx = text.find(f"### {sid}")
+            if idx == -1:
+                continue
+            block = text[idx:idx + 600]
+            has_ref = bool(re.search(r"(AGENTS\.md|enforce-|Makefile|scripts/|plugin)", block))
+            assert has_ref, f"{sid} missing mechanism reference"
+
+    def test_learning_specs_reference_mechanism(self):
+        text = read_specs()
+        for i in range(1, 101):
+            sid = f"L{i:02d}"
+            idx = text.find(f"### {sid}")
+            if idx == -1:
+                continue
+            block = text[idx:idx + 600]
+            has_ref = bool(re.search(r"(AGENTS\.md|enforce-|Makefile|scripts/|plugin)", block))
+            assert has_ref, f"{sid} missing mechanism reference"
+
+    def test_yield_specs_reference_mechanism(self):
+        text = read_specs()
+        for i in range(1, 101):
+            sid = f"Y{i:02d}"
+            idx = text.find(f"### {sid}")
+            if idx == -1:
+                continue
+            block = text[idx:idx + 600]
+            has_ref = bool(re.search(r"(AGENTS\.md|enforce-|Makefile|scripts/|plugin)", block))
             assert has_ref, f"{sid} missing mechanism reference"
 
 
@@ -753,6 +810,10 @@ class TestCiWorkflow:
 class TestSpecCoverage:
     """Every spec group has structural tests in this file."""
 
+    @staticmethod
+    def _group_count(prefix: str) -> int:
+        return sum(1 for s in spec_ids(read_specs()) if s.startswith(prefix))
+
     def test_push_discipline_coverage(self):
         for _test_name in [
             "test_p01_no_push_while_ci_pending",
@@ -760,64 +821,79 @@ class TestSpecCoverage:
             "test_p03_no_commit_threshold_1",
         ]:
             pass
-        assert True  # structural — coverage matrix in spec doc
+        assert self._group_count("P") >= 1, "Group P: no push discipline specs found"
 
     def test_branch_discipline_coverage(self):
-        assert True
+        assert self._group_count("B") >= 1, "Group B: no branch discipline specs found"
 
     def test_objective_tracking_coverage(self):
-        assert True
+        assert self._group_count("O") >= 1, "Group O: no objective tracking specs found"
 
     def test_test_integrity_coverage(self):
-        assert True
+        assert self._group_count("T") >= 1, "Group T: no test integrity specs found"
 
     def test_dispatch_floor_coverage(self):
-        assert True
+        assert self._group_count("D") >= 1, "Group D: no dispatch floor specs found"
 
     def test_anti_stop_coverage(self):
-        assert True
+        assert self._group_count("S") >= 1, "Group S: no anti-stop specs found"
 
     def test_anti_essay_coverage(self):
-        assert True
+        assert self._group_count("E") >= 1, "Group E: no anti-essay specs found"
 
     def test_merge_safety_coverage(self):
-        assert True
+        assert self._group_count("M") >= 1, "Group M: no merge safety specs found"
 
     def test_gate_discipline_coverage(self):
-        assert True
+        assert self._group_count("G") >= 1, "Group G: no gate discipline specs found"
 
     def test_release_discipline_coverage(self):
-        assert True
+        assert self._group_count("R") >= 1, "Group R: no release discipline specs found"
 
     def test_worktree_discipline_coverage(self):
-        assert True
+        assert self._group_count("W") >= 1, "Group W: no worktree discipline specs found"
 
     def test_ci_discipline_coverage(self):
-        assert True
+        assert self._group_count("F") >= 1, "Group F: no CI discipline specs found"
 
     def test_commit_discipline_coverage(self):
-        assert True
+        assert self._group_count("C") >= 1, "Group C: no commit discipline specs found"
 
     def test_quality_gate_coverage(self):
-        assert True
+        assert self._group_count("Q") >= 1, "Group Q: no quality gate specs found"
 
     def test_subagent_discipline_coverage(self):
-        assert True
+        assert self._group_count("X") >= 1, "Group X: no subagent discipline specs found"
 
     def test_audit_discipline_coverage(self):
-        assert True
+        assert self._group_count("A") >= 1, "Group A: no audit discipline specs found"
 
     def test_naming_code_coverage(self):
-        assert True
+        assert self._group_count("N") >= 1, "Group N: no naming code specs found"
 
     def test_knowledge_context_coverage(self):
-        assert True
+        assert self._group_count("K") >= 1, "Group K: no knowledge context specs found"
 
     def test_user_intent_coverage(self):
-        assert True
+        assert self._group_count("U") >= 1, "Group U: no user intent specs found"
 
     def test_zerofail_coverage(self):
-        assert True
+        assert self._group_count("Z") >= 1, "Group Z: no zerofail specs found"
+
+    def test_hard_break_coverage(self):
+        assert self._group_count("H") >= 1, "Group H: no hard break specs found"
+
+    def test_verification_coverage(self):
+        assert self._group_count("V") >= 1, "Group V: no verification specs found"
+
+    def test_judgment_coverage(self):
+        assert self._group_count("J") >= 1, "Group J: no judgment specs found"
+
+    def test_learning_coverage(self):
+        assert self._group_count("L") >= 1, "Group L: no learning specs found"
+
+    def test_yield_coverage(self):
+        assert self._group_count("Y") >= 1, "Group Y: no yield specs found"
 
 
 # ── Script existence tests ───────────────────────────────────────────────────
@@ -916,10 +992,10 @@ class TestTestIntegrityPluginSpecs:
 
 # ── Completion check ─────────────────────────────────────────────────────────
 
-def test_spec_count_is_at_least_500():
-    """Guardrail: BEHAVIORAL_SPECS.md should have at least 500 specs."""
+def test_spec_count_is_at_least_1000():
+    """Guardrail: BEHAVIORAL_SPECS.md should have at least 1000 specs."""
     ids = spec_ids(read_specs())
-    assert len(ids) >= 500, (
-        f"Expected >=500 specs, found {len(ids)}. "
-        f"Groups: {[(p, sum(1 for s in ids if s.startswith(p))) for p in 'PBOTDSE MGRWF CQXANKUZ']}"
+    assert len(ids) >= 1000, (
+        f"Expected >=1000 specs, found {len(ids)}. "
+        f"Groups: {[(p, sum(1 for s in ids if s.startswith(p))) for p in 'PBOTDSE MGRWF CQXANKUZ HVJLY']}"
     )
