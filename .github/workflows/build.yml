@@ -493,6 +493,11 @@ jobs:
     needs: [version, gate, test-shard]
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # Non-blocking: a Linux pyinstaller/build hiccup must not sink a Release
+    # that already carries the macos artifacts. The per-build-env variability
+    # is the same class of risk as the windows/termux jobs. Pre-publish gate
+    # in the release job catches missing artifacts before publish.
+    continue-on-error: true
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/'))
     env:
       VERSION: ${{ needs.version.outputs.version }}
@@ -540,6 +545,11 @@ jobs:
     needs: [version, gate, test-shard]
     runs-on: macos-latest
     timeout-minutes: 30
+    # Non-blocking: a macOS pyinstaller/build hiccup must not sink a Release
+    # that already carries the linux artifacts. The per-build-env variability
+    # is the same class of risk as the windows/termux jobs. Pre-publish gate
+    # in the release job catches missing artifacts before publish.
+    continue-on-error: true
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/'))
     env:
       VERSION: ${{ needs.version.outputs.version }}
