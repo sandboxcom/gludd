@@ -30,6 +30,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_DIR = ROOT / ".opencode" / "plugin"
+LIB_DIR = ROOT / ".opencode" / "lib"
 
 _tmp_counter = 0
 
@@ -328,28 +329,28 @@ def test_deadline_source_has_subagent_guard():
     """enforce-deadline.ts imports isSubagent from shared.ts with file-based fallback."""
     source = (PLUGIN_DIR / "enforce-deadline.ts").read_text()
     assert "isSubagent" in source, "enforce-deadline.ts must import isSubagent()"
-    assert "gludd-subagent" in source, "enforce-deadline.ts must reference file-based fallback"
+    assert "../lib/shared.ts" in source, "enforce-deadline.ts must import from shared.ts (file-based fallback lives there)"
 
 
 def test_floor_source_has_subagent_guard():
     """enforce-floor.ts imports isSubagent from shared.ts with file-based fallback."""
     source = (PLUGIN_DIR / "enforce-floor.ts").read_text()
     assert "isSubagent" in source, "enforce-floor.ts must import isSubagent()"
-    assert "gludd-subagent" in source, "enforce-floor.ts must reference file-based fallback"
+    assert "../lib/shared.ts" in source, "enforce-floor.ts must import from shared.ts (file-based fallback lives there)"
 
 
 def test_clean_tree_source_has_subagent_guard():
     """enforce-clean-tree.ts imports isSubagent from shared.ts with file-based fallback."""
     source = (PLUGIN_DIR / "enforce-clean-tree.ts").read_text()
     assert "isSubagent" in source, "enforce-clean-tree.ts must import isSubagent()"
-    assert "gludd-subagent" in source, "enforce-clean-tree.ts must reference file-based fallback"
+    assert "../lib/shared.ts" in source, "enforce-clean-tree.ts must import from shared.ts (file-based fallback lives there)"
 
 
 def test_enhancement_source_has_subagent_guard():
     """enforce-enhancement-ratio.ts imports isSubagent from shared.ts with file-based fallback."""
     source = (PLUGIN_DIR / "enforce-enhancement-ratio.ts").read_text()
     assert "isSubagent" in source, "enforce-enhancement-ratio.ts must import isSubagent()"
-    assert "gludd-subagent" in source, "enforce-enhancement-ratio.ts must reference file-based fallback"
+    assert "../lib/shared.ts" in source, "enforce-enhancement-ratio.ts must import from shared.ts (file-based fallback lives there)"
 
 
 ALL_HOT_MODULE_PLUGINS = [
@@ -371,7 +372,7 @@ def test_hot_module_plugins_use_subagent_guard():
     for fn in ["enforce-clean-tree.ts", "enforce-delegate.ts"]:
         source = (PLUGIN_DIR / fn).read_text()
         assert "isSubagent" in source, f"{fn}: must import isSubagent() from shared.ts"
-        assert "gludd-subagent" in source, f"{fn}: must reference file-based fallback"
+        assert "../lib/shared.ts" in source, f"{fn}: must import from shared.ts (file-based fallback lives there)"
 
 
 # ============================================================================
@@ -386,7 +387,7 @@ const hotPath = '/tmp/gludd-hot-test-subagent.js'
 const corruptCode = 'THIS IS NOT VALID JAVASCRIPT {{{{{{}}}}}};;;'
 fs.writeFileSync(hotPath, corruptCode)
 
-const mod = await import('{PLUGIN_DIR}/hot_reload.ts')
+const mod = await import('{LIB_DIR}/hot_reload.ts')
 const defaults = {{ "tool.execute.before": async () => "default called" }}
 const result = mod.loadHotModule('test-subagent', defaults)
 const fn = result['tool.execute.before']
@@ -408,7 +409,7 @@ def test_broken_hot_module_does_not_crash():
 const fs = await import('node:fs')
 fs.writeFileSync('{hot_path}', 'throw new Error("BROKEN HOT MODULE")')
 
-const mod = await import('{PLUGIN_DIR}/hot_reload.ts')
+const mod = await import('{LIB_DIR}/hot_reload.ts')
 const defaults = {{ "tool.execute.before": async () => "default-fallback" }}
 const loaded = mod.loadHotModule('{hot_name}', defaults)
 const fn = loaded['tool.execute.before']
@@ -425,7 +426,7 @@ console.log(JSON.stringify({{result, didNotCrash: true, isFallback: result === '
 def test_missing_hot_module_returns_defaults():
     """loadHotModule returns defaults when hot module file does not exist."""
     code = f"""\
-const mod = await import('{PLUGIN_DIR}/hot_reload.ts')
+const mod = await import('{LIB_DIR}/hot_reload.ts')
 const defaults = {{ "tool.execute.before": async () => "default-only" }}
 const loaded = mod.loadHotModule('nonexistent-subagent-test', defaults)
 const fn = loaded['tool.execute.before']
@@ -453,7 +454,7 @@ def test_nullish_hot_module_hook_does_not_crash():
 const fs = await import('node:fs')
 fs.writeFileSync('{hot_path}', 'var exports = exports || {{}}; exports["tool.execute.before"] = null')
 
-const mod = await import('{PLUGIN_DIR}/hot_reload.ts')
+const mod = await import('{LIB_DIR}/hot_reload.ts')
 const defaults = {{ "tool.execute.before": async () => "default-from-null" }}
 let loaded, fn, err
 try {{
