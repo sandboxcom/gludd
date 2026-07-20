@@ -82,7 +82,7 @@ class TestPluginExports:
     def test_has_report_alive(self):
         # Post E.5 refactor reportAlive is imported from shared.ts.
         src = _src()
-        assert "function _reportAlive" in src or "reportAlive" in src
+        assert "reportAlive" in src, "Plugin must import reportAlive from shared.ts"
 
     def test_uses_plugin_type(self):
         src = _src()

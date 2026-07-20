@@ -109,16 +109,16 @@ class TestIsDisengaged:
     def test_fail_open_returns_false(self):
         src = _src()
         idx = src.find("export function isDisengaged")
-        after = src[idx:idx + 500]
-        catches = after.count("catch")
+        after = src[idx:]
+        catches = after[:1200].count("catch")
         assert catches >= 1, "isDisengaged must have catch blocks"
-        assert "return false" in after
+        assert "return false" in after[:1200]
 
-    def test_default_max_ms_is_1_hour(self):
+    def test_default_max_ms_is_5_minutes(self):
         src = _src()
         idx = src.find("isDisengaged")
-        after = src[idx:idx + 300]
-        assert "3_600_000" in after
+        after = src[idx:idx + 400]
+        assert "300_000" in after
 
     def test_disengage_opts_interface(self):
         src = _src()
@@ -207,20 +207,20 @@ class TestReportAlive:
     def test_uses_write_json_file(self):
         src = _src()
         idx = src.find("export function reportAlive")
-        after = src[idx:idx + 300]
+        after = src[idx:idx + 600]
         assert "writeJsonFile" in after
 
     def test_sets_last_seen_timestamp(self):
         src = _src()
         idx = src.find("export function reportAlive")
-        after = src[idx:idx + 300]
+        after = src[idx:idx + 600]
         assert "last_seen" in after
         assert "Date.now()" in after
 
     def test_fail_open(self):
         src = _src()
         idx = src.find("export function reportAlive")
-        after = src[idx:idx + 400]
+        after = src[idx:idx + 600]
         assert "catch" in after
 
 

@@ -157,7 +157,7 @@ class TestTaskFileRead:
         )
 
     def test_task_file_read_used_in_tool_before(self, plugin_src):
-        assert "isTaskFileRead(tool, input)" in plugin_src, (
+        assert "isTaskFileRead(tool, input" in plugin_src, (
             "tool.execute.before must call isTaskFileRead()."
         )
 

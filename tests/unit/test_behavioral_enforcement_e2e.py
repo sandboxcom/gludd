@@ -190,10 +190,10 @@ class TestInsufficientDispatchesBlocked:
             )
 
     def test_is_dispatch_tool_function_exists(self):
-        """Must have isDispatchTool() helper."""
+        """Must import isDispatchTool() from shared.ts."""
         src = ENFORCE_MULTITASK.read_text()
-        assert "function isDispatchTool" in src, (
-            "isDispatchTool function missing"
+        assert "isDispatchTool" in src, (
+            "isDispatchTool import from shared.ts missing"
         )
 
     def test_insufficient_dispatch_block_returns_deny(self):

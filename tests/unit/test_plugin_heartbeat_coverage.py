@@ -22,12 +22,17 @@ import pytest
 REPO_ROOT = Path(__file__).parent.parent.parent
 OPENCODE_JSON = REPO_ROOT / "opencode.json"
 
-# Definition: `function _reportAlive` (optionally `async function`).
-_REPORT_ALIVE_DEF = re.compile(r"function\s+_reportAlive\s*\(")
+# Definition: `function _reportAlive` (old, inline) or `function reportAlive` (new, shared).
+# Post E.5 refactor: plugins import reportAlive from shared.ts instead of defining locally.
+_REPORT_ALIVE_DEF = re.compile(r"function\s+_?reportAlive\s*\(")
 
-# Call: `_reportAlive()` — parens present, optional leading `await`.
-# Excludes the definition itself (which is `function _reportAlive(...)`).
-_REPORT_ALIVE_CALL = re.compile(r"(?<!function\s)_reportAlive\s*\(\s*\)")
+# Import from shared.ts: `import { ..., reportAlive, ... } from "../lib/shared.ts"`
+_REPORT_ALIVE_IMPORT = re.compile(r'import\s+\{[^}]*\breportAlive\b[^}]*\}\s+from\s+"[^"]*shared\.ts"')
+
+# Call: `reportAlive("plugin")` or `_reportAlive()` — parens present, optional await.
+# Excludes the definition itself (which is `function reportAlive(...)`).
+# Post E.5 refactor: calls pass string arg like `reportAlive("enforce-make")`.
+_REPORT_ALIVE_CALL = re.compile(r"(?<!function\s)_?reportAlive\s*\(")
 
 
 def _registered_plugins() -> list[tuple[str, Path]]:
@@ -58,42 +63,46 @@ PLUGINS = _registered_plugins()
     ids=[name for name, _ in PLUGINS],
 )
 def test_plugin_has_heartbeat(plugin_name: str, plugin_path: Path) -> None:
-    """Each registered plugin must define, call, and self-identify its heartbeat."""
+    """Each registered plugin must define OR import, call, and self-identify its heartbeat.
+
+    Post E.5 refactor: plugins import `reportAlive` from shared.ts instead of
+    defining `_reportAlive` locally. Both patterns are accepted.
+    """
     assert plugin_path.exists(), f"plugin file referenced in opencode.json missing: {plugin_path}"
     src = plugin_path.read_text()
 
-    # 1. Definition present: `function _reportAlive(...)`
-    assert _REPORT_ALIVE_DEF.search(src), (
-        f"{plugin_path.name}: missing `function _reportAlive(...)` definition. "
-        "Every plugin must define a heartbeat probe so the watchdog can confirm "
-        "the hook entry point fires."
+    # 1. Definition OR import present
+    has_def = bool(_REPORT_ALIVE_DEF.search(src))
+    has_import = bool(_REPORT_ALIVE_IMPORT.search(src))
+    assert has_def or has_import, (
+        f"{plugin_path.name}: must define `reportAlive()` or import it from "
+        f"../lib/shared.ts. Every plugin must have a heartbeat probe."
     )
 
-    # 2. Called somewhere (not just defined): `_reportAlive()` with parens.
-    #    Strip the definition line so we don't false-positive on the signature.
+    # 2. Called somewhere: `reportAlive()` or `_reportAlive()` with parens.
     src_without_def = _REPORT_ALIVE_DEF.sub("", src)
     assert _REPORT_ALIVE_CALL.search(src_without_def), (
-        f"{plugin_path.name}: `_reportAlive()` is defined but never invoked. "
+        f"{plugin_path.name}: `reportAlive()` is defined/imported but never invoked. "
         "The heartbeat must be called from at least one hook entry point "
         "(tool.execute.before / chat.response.transform / system.transform / etc)."
     )
 
-    # 3. The plugin's name appears as the JSON key in the alive write
-    #    (e.g. `alive["enforce-stop"]`), so the heartbeat is self-identifying
-    #    rather than masquerading as another plugin.
+    # 3. Self-identification: either the old key pattern OR new shared import
+    #    (reportAlive("plugin-name") from shared.ts self-identifies).
     expected_key = f'alive["{plugin_name}"]'
-    assert expected_key in src, (
-        f"{plugin_path.name}: alive-map write must use the plugin's own name as key — "
-        f"expected `{expected_key}` (the plugin must self-identify)."
+    expected_call = f'reportAlive("{plugin_name}")'
+    assert expected_key in src or expected_call in src, (
+        f"{plugin_path.name}: must self-identify — expected `{expected_key}` "
+        f"or `{expected_call}`."
     )
 
 
 def test_all_registered_plugins_have_heartbeats() -> None:
     """Count assert — catches NEW plugins added without heartbeats.
 
-    If a plugin is added to opencode.json without a `_reportAlive` definition,
-    the per-plugin case above fails — but this count assert is the structural
-    backstop that fails LOUDLY with a diff of the missing plugins.
+    If a plugin is added to opencode.json without a `reportAlive` definition
+    or import, the per-plugin case above fails — but this count assert is
+    the structural backstop that fails LOUDLY with a diff of the missing plugins.
     """
     missing: list[str] = []
     for name, path in PLUGINS:
@@ -101,15 +110,19 @@ def test_all_registered_plugins_have_heartbeats() -> None:
             missing.append(f"{name} (file missing: {path})")
             continue
         src = path.read_text()
-        if not _REPORT_ALIVE_DEF.search(src):
+        has_def = bool(_REPORT_ALIVE_DEF.search(src))
+        has_import = bool(_REPORT_ALIVE_IMPORT.search(src))
+        if not has_def and not has_import:
             missing.append(name)
             continue
         src_without_def = _REPORT_ALIVE_DEF.sub("", src)
         if not _REPORT_ALIVE_CALL.search(src_without_def):
-            missing.append(f"{name} (defined but never called)")
+            missing.append(f"{name} (defined/imported but never called)")
             continue
-        if f'alive["{name}"]' not in src:
-            missing.append(f"{name} (missing self-identifying alive key)")
+        expected_key = f'alive["{name}"]'
+        expected_call = f'reportAlive("{name}")'
+        if expected_key not in src and expected_call not in src:
+            missing.append(f"{name} (missing self-identifying alive key or call)")
             continue
 
     assert not missing, (

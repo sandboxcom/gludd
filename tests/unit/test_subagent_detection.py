@@ -479,7 +479,13 @@ console.log(JSON.stringify({{didNotCrash: !err, fnIsNull: fn === null}}))
 # process.env.OPENCODE_SUBAGENT first). This test documents the bug pattern.
 
 def test_detect_is_subagent_bug():
-    """Structural check: _isSubagent() should check env var, not call itself."""
+    """Post E.5 refactor: plugins import isSubagent from shared.ts.
+
+    The old _isSubagent() self-recursion bug (calling itself instead of
+    checking OPENCODE_SUBAGENT env var first) was fixed by centralizing the
+    subagent guard into shared.ts. This test verifies all previously-buggy
+    plugins now import the correct isSubagent from shared.ts.
+    """
     import re
     for fn in [
         "enforce-deadline.ts",
@@ -489,16 +495,14 @@ def test_detect_is_subagent_bug():
         "enforce-delegate.ts",
     ]:
         source = (PLUGIN_DIR / fn).read_text()
-        has_fn = "function _isSubagent" in source
-        assert has_fn, f"{fn}: _isSubagent() not found"
-
-        # Find the function body
-        m = re.search(r"function _isSubagent\(\)[^{]*\{([^}]*)\}", source)
-        if m:
-            body = m.group(1)
-            has_file_check = "gludd-subagent" in body
-            # The correct pattern checks env var first, then file fallback.
-            # The bug pattern calls self recursively.
-            # This test is INFORMATIONAL - it documents current state.
-            assert has_file_check, f"{fn}: _isSubagent() body must check gludd-subagent file"
-            # NOTE: when has_env_check is False and calls_self is True, the bug exists
+        # Post-refactor: no local _isSubagent definition — import from shared.ts
+        has_old_fn = "function _isSubagent" in source
+        assert not has_old_fn, (
+            f"{fn}: stale _isSubagent() definition found — should import "
+            f"isSubagent from ../lib/shared.ts instead"
+        )
+        has_import = re.search(
+            r'import\s+\{[^}]*\bisSubagent\b[^}]*\}\s+from\s+"[^"]*shared\.ts"',
+            source,
+        )
+        assert has_import, f"{fn}: must import isSubagent from shared.ts"
