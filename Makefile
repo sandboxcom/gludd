@@ -4433,6 +4433,36 @@ show-multitask-state:
 test-multitask-node: ## Run enforce-multitask behavioral node tests (node --test)
 	@node --experimental-strip-types --test .opencode/plugin/enforce-multitask.test.node.mjs
 
+merge-spec-groups:
+	@python3 -c 'import os, sys; \
+		spec_file = "docs/specs/BEHAVIORAL_SPECS.md"; \
+		with open(spec_file) as f: \
+			lines = f.readlines(); \
+		groups = []; \
+		for suffix in ["h", "v", "j", "l", "y"]: \
+			tmp = f"/tmp/gludd-specs-group-{suffix}.md"; \
+			if os.path.isfile(tmp): \
+				with open(tmp) as f: \
+					content = f.read(); \
+				groups.append(content.strip()); \
+		insert_at = None; \
+		for i, line in enumerate(lines): \
+			if line.startswith("## Coverage Matrix"): \
+				insert_at = i; \
+				break; \
+		if insert_at is None: \
+			print("ERROR: Coverage Matrix not found", file=sys.stderr); \
+			sys.exit(1); \
+		inserted = "\n".join(groups) + "\n" if groups else ""; \
+		new_lines = lines[:insert_at] + [inserted + "\n" if inserted and i == insert_at - 1 else inserted] if inserted else lines[:insert_at] + lines[insert_at:]; \
+		if not inserted: \
+			sys.exit(0); \
+		new_lines = [l.rstrip("\n") + "\n" for l in new_lines]; \
+		with open(spec_file, "w") as f: \
+			f.writelines(new_lines); \
+		print(f"Merged {len(groups)} groups into {spec_file} before Coverage Matrix");'
+	@echo "merge-spec-groups done"
+
 # ci-poll-master: poll CI verdict + release artifact every 120s until terminal.
 # Usage: make ci-poll-master [MAX_POLLS=15] [INTERVAL=120]
 # Returns: 0 if CI GREEN, 1 if RED/TIMEOUT.

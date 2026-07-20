@@ -1,6 +1,6 @@
-# BEHAVIORAL ENFORCEMENT SPECIFICATIONS — 500 numbered specs
+# BEHAVIORAL ENFORCEMENT SPECIFICATIONS — 1000 numbered specs
 
-**Version:** 2.0
+**Version:** 3.0
 **Date:** 2026-07-19
 **Status:** Active — corresponding enforcement mechanisms tracked in `tests/unit/test_behavioral_specs.py`
 
@@ -8,7 +8,8 @@ Each spec defines a behavioral invariant. Each spec MUST have a corresponding
 enforcement mechanism (plugin, Makefile guard, or AGENTS.md policy section) and
 a structural test verifying that mechanism exists.
 
-Groups P-R (200 existing), W-Z (300 new). Total: 500 specs across 20 groups.
+Groups P-R (200 existing), W-Z (300 existing), H/L/J/V/Y (500 new).
+Total: 1000 specs across 25 groups.
 
 ---
 
@@ -2835,10 +2836,10 @@ The test file `test_behavioral_specs.py` MUST assert on every spec group's exist
 **Enforcement:** `tests/unit/test_behavioral_specs.py` group coverage tests
 **Test:** `test_z29_spec_coverage_tracked_by_test`
 
-### Z30 — 500 specs, all enforceable, all tested
-BEHAVIORAL_SPECS.md MUST contain exactly 500 specs (20 groups × 25-30 specs each), all with enforcement and tests.
+### Z30 — 1000 specs (25 groups × 25-100 specs each), all enforceable, all tested
+BEHAVIORAL_SPECS.md MUST contain exactly 1000 specs across 25 groups, all with enforcement and tests.
 **Enforcement:** `tests/unit/test_behavioral_specs.py` count assertion + AGENTS.md
-**Test:** `test_z30_500_specs_all_enforceable_all_tested`
+**Test:** `test_z30_1000_specs_all_enforceable_all_tested`
 
 ---
 
