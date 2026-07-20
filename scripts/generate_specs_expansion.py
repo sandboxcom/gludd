@@ -414,7 +414,7 @@ def group_spec(name: str, prefix: str, start: int, count: int, title_fn) -> str:
         title, test_id, enforcement = title_fn(n)
         spec_id = f"{prefix}{n:02d}"
         lines.append(f"### {spec_id} — {title}")
-        lines.append(f"The agent MUST enforce this invariant mechanically at runtime — no advisory-only, no opt-in.")
+        lines.append(f"{title}. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.")
         lines.append(f"**Enforcement:** {enforcement}")
         lines.append(f"**Test:** `{test_id}`")
         lines.append("")

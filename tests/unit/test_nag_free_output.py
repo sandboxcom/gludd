@@ -10,6 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+SHARED_PATH = ROOT / ".opencode/lib/shared.ts"
 FLOOR_PATH = ROOT / ".opencode/plugin/enforce-floor.ts"
 STOP_PATH = ROOT / ".opencode/plugin/enforce-stop.ts"
 MULTITASK_PATH = ROOT / ".opencode/plugin/enforce-multitask.ts"
@@ -31,52 +32,54 @@ def _from_marker(src: str, marker: str) -> str:
 
 
 class TestReadSharedStreakStaleZero:
-    """verify readSharedStreak() zeroes all fields when state file is >60s old."""
+    """verify readSharedStreak() zeroes all fields when state file is >60s old.
+    Post E.5 refactor: readSharedStreak lives in lib/shared.ts; plugins import
+    updateSharedStreak (which wraps it) instead."""
 
-    def _check_stale_zero_in(self, path: Path) -> None:
-        src = _src(path)
+    def test_shared_readSharedStreak_zeroes_stale_state(self):
+        src = _src(SHARED_PATH)
         assert "readSharedStreak" in src, (
-            f"readSharedStreak function missing from {path.name}"
+            "readSharedStreak function missing from shared.ts"
         )
         assert "STALE_MS" in src or "60_000" in src or "60000" in src, (
-            f"STALE threshold (60_000) not found in {path.name}"
+            "STALE threshold (60_000) not found in shared.ts"
         )
         assert "streak: 0" in src or "streak:0" in src, (
-            f"zeroed streak not found in {path.name}"
+            "zeroed streak not found in shared.ts"
         )
         assert "lastDispatchTs: 0" in src or "lastDispatchTs:0" in src, (
-            f"zeroed lastDispatchTs not found in {path.name}"
+            "zeroed lastDispatchTs not found in shared.ts"
         )
-        # W.1 fix: pid field must be in all zeroed states
         assert "pid:" in src and ("process.pid" in src or "pid: 0" in src), (
-            f"pid field missing from readSharedStreak zeroed/default returns in {path.name}"
+            "pid field missing from readSharedStreak zeroed/default returns in shared.ts"
         )
 
-    def test_floor_readSharedStreak_zeroes_stale_state(self):
-        self._check_stale_zero_in(FLOOR_PATH)
+    def test_floor_imports_updateSharedStreak(self):
+        src = _src(FLOOR_PATH)
+        assert "updateSharedStreak" in src, (
+            "enforce-floor must import updateSharedStreak from lib/shared.ts"
+        )
 
-    def test_stop_readSharedStreak_zeroes_stale_state(self):
-        self._check_stale_zero_in(STOP_PATH)
+    def test_stop_imports_updateSharedStreak(self):
+        src = _src(STOP_PATH)
+        assert "updateSharedStreak" in src, (
+            "enforce-stop must import updateSharedStreak from lib/shared.ts"
+        )
 
 
 class TestStaleStateDefaultsAreZero:
-    """verify the fallback/default return from readSharedStreak is all-zeros."""
+    """verify the fallback/default return from readSharedStreak is all-zeros.
+    Post E.5 refactor: readSharedStreak is in lib/shared.ts."""
 
-    def _check_default_zero(self, path: Path) -> None:
-        src = _src(path)
+    def test_shared_default_return_is_zero(self):
+        src = _src(SHARED_PATH)
         handler = _from_marker(src, "readSharedStreak")
         assert "return {" in handler, (
-            f"readSharedStreak fallback return missing in {path.name}"
+            "readSharedStreak fallback return missing in shared.ts"
         )
         assert "streak:0" in handler or "streak: 0" in handler, (
-            f"default streak zero missing in {path.name}"
+            "default streak zero missing in shared.ts"
         )
-
-    def test_floor_default_return_is_zero(self):
-        self._check_default_zero(FLOOR_PATH)
-
-    def test_stop_default_return_is_zero(self):
-        self._check_default_zero(STOP_PATH)
 
 
 # ── text.complete clean-output passthrough ──────────────────────────────────
@@ -305,7 +308,7 @@ class TestDelegateFirstNagSubagentBypass:
         handler = _from_marker(_src(STOP_PATH), '"experimental.text.complete"')
         assert "DELEGATE-FIRST" in handler
         assert "DELEGATE_FIRST_THRESHOLD" in handler
-        assert "shared.streak" in handler or "sharedState" in handler
+        assert "streakState.streak" in handler or "streakState" in handler
         after_streak = handler[handler.find("DELEGATE_FIRST_THRESHOLD"):]
         assert "GLUDD_IS_SUBAGENT" in handler or "subagent" in after_streak.lower() or (
             "\n" in after_streak[max(0, after_streak.find("GLUDD_IS_SUBAGENT") - 50):]

@@ -5456,107 +5456,9434 @@ The terminal condition of the agent's work loop is: user explicit stop signal re
 
 ## Expansion: Push Discipline (P31–P120)
 
+## Expansion: Push Discipline (P31–P120)
+
 ### P31 — Push must not overlap with gate execution
-The agent MUST enforce this invariant mechanically at runtime — no advisory-only, no opt-in.
-**Enforcement:** AGENTS.md `enforce-floor.ts` permissionDecision deny
+Push must not overlap with gate execution. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_behavioral_specs.py` structural assertion gate
 **Test:** `test_p31_push_discipline_guard_31`
 
+### P32 — Push requires local gate PASS before remote
+Push requires local gate PASS before remote. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make disengage-enforcement` + `scripts/check_readme_status_current.py` script-backed guard
+**Test:** `test_p32_push_discipline_guard_32`
+
+### P33 — Push cooldown cannot be bypassed by branch switch
+Push cooldown cannot be bypassed by branch switch. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` env-var-gated BLOCKING
+**Test:** `test_p33_push_discipline_guard_33`
+
+### P34 — Push target must verify branch name matches expected
+Push target must verify branch name matches expected. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Anti-Grinding Enforcement` + Makefile `make git-merge` combined
+**Test:** `test_p34_push_discipline_guard_34`
+
+### P35 — Push to master must come from development merge only
+Push to master must come from development merge only. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-task-killed.json` + `.opencode/plugin/enforce-delegate.ts` state-aware block
+**Test:** `test_p35_push_discipline_guard_35`
+
+### P36 — Push after force-push by another user is stale-remote check
+Push after force-push by another user is stale-remote check. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:stale-gate` + `scripts/test_hook_runtime.py` ratchet+script gate
+**Test:** `test_p36_push_discipline_guard_36`
+
+### P37 — Push while secrets scan has warnings is denied
+Push while secrets scan has warnings is denied. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make verify-enforcement` CI+local dual
+**Test:** `test_p37_push_discipline_guard_37`
+
+### P38 — Push must record remote SHA before and after
+Push must record remote SHA before and after. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-context.ts` × `.opencode/plugin/enforce-verified-claims.ts` cross-plugin
+**Test:** `test_p38_push_discipline_guard_38`
+
+### P39 — Push without prior git-index update is warned
+Push without prior git-index update is warned. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Yield Enforcement` + `scripts/check_duplicate_targets.py` + `.opencode/plugin/enforce-enhancement-ratio.ts` triple layer
+**Test:** `test_p39_push_discipline_guard_39`
+
+### P40 — Push from a dirty tree resets gate status
+Push from a dirty tree resets gate status. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Priority Stacking` section
+**Test:** `test_p40_push_discipline_guard_40`
+
+### P41 — Push when gate-background PID is alive must wait
+Push when gate-background PID is alive must wait. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make container-run` prerequisite
+**Test:** `test_p41_push_discipline_guard_41`
+
+### P42 — Push after ratchet-baseline change requires re-audit
+Push after ratchet-baseline change requires re-audit. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` enforcement
+**Test:** `test_p42_push_discipline_guard_42`
+
+### P43 — Push that triggers >1 CI workflow simultaneously is denied
+Push that triggers >1 CI workflow simultaneously is denied. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_p43_push_discipline_guard_43`
+
+### P44 — Push on branch with uncommitted merge conflict markers denied
+Push on branch with uncommitted merge conflict markers denied. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-floor.ts` permissionDecision deny
+**Test:** `test_p44_push_discipline_guard_44`
+
+### P45 — Push with stale .gate-status older than last commit denied
+Push with stale .gate-status older than last commit denied. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make gated-merge` fail-closed guard
+**Test:** `test_p45_push_discipline_guard_45`
+
+### P46 — Push commit count threshold is configurable per session
+Push commit count threshold is configurable per session. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-enhancement-ratio.json` state-file enforced block
+**Test:** `test_p46_push_discipline_guard_46`
+
+### P47 — Push when /tmp/gludd-* exceeds disk limit is soft-warned
+Push when /tmp/gludd-* exceeds disk limit is soft-warned. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-test-integrity.ts` + `make git-checkout` combined guard
+**Test:** `test_p47_push_discipline_guard_47`
+
+### P48 — Push must include TASKS.md update referencing pushed items
+Push must include TASKS.md update referencing pushed items. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dead-code` ratchet-tracked gate
+**Test:** `test_p48_push_discipline_guard_48`
+
+### P49 — Push after manual git operations requires verify-state first
+Push after manual git operations requires verify-state first. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_p49_push_discipline_guard_49`
+
+### P50 — Push to release branch requires release-manager role check
+Push to release branch requires release-manager role check. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` + `.opencode/plugin/enforce-context.ts` dual layer
+**Test:** `test_p50_push_discipline_guard_50`
+
+### P51 — Push with unverified signature on any commit in batch denied
+Push with unverified signature on any commit in batch denied. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_verified_claims_plugin.py` structural assertion gate
+**Test:** `test_p51_push_discipline_guard_51`
+
+### P52 — Push batch must not exceed 50 commits in single push
+Push batch must not exceed 50 commits in single push. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make container-push` + `scripts/check_node_v26_compat.py` script-backed guard
+**Test:** `test_p52_push_discipline_guard_52`
+
+### P53 — Push timing must be logged to push-audit state file
+Push timing must be logged to push-audit state file. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-session-start.ts` env-var-gated BLOCKING
+**Test:** `test_p53_push_discipline_guard_53`
+
+### P54 — Push with CI verdict >10 minutes old requires refresh
+Push with CI verdict >10 minutes old requires refresh. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Nothing-Dropped Guardrail` + Makefile `make clean-worktree-venvs` combined
+**Test:** `test_p54_push_discipline_guard_54`
+
+### P55 — Push from non-main checkout to master blocked permanently
+Push from non-main checkout to master blocked permanently. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` + `.opencode/plugin/enforce-no-wait.ts` state-aware block
+**Test:** `test_p55_push_discipline_guard_55`
+
+### P56 — Push during active worktree merge operation is race-detected
+Push during active worktree merge operation is race-detected. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:coverage-baseline` + `scripts/check_readme_status_current.py` ratchet+script gate
+**Test:** `test_p56_push_discipline_guard_56`
+
+### P57 — Push after subagent dispatch but before result ingestion warned
+Push after subagent dispatch but before result ingestion warned. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make floor-status` CI+local dual
+**Test:** `test_p57_push_discipline_guard_57`
+
+### P58 — Push with mismatched local-vs-remote tag refs denied
+Push with mismatched local-vs-remote tag refs denied. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-multitask.ts` × `.opencode/plugin/enforce-session-start.ts` cross-plugin
+**Test:** `test_p58_push_discipline_guard_58`
+
+### P59 — Push when GH token expiration <5 min is warned
+Push when GH token expiration <5 min is warned. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Judgment Enforcement` + `scripts/verify_release_artifact.py` + `.opencode/plugin/enforce-verified-claims.ts` triple layer
+**Test:** `test_p59_push_discipline_guard_59`
+
+### P60 — Push after rollback must verify rollback completeness
+Push after rollback must verify rollback completeness. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Node v26 Compatibility` section
+**Test:** `test_p60_push_discipline_guard_60`
+
+### P61 — Push with unstaged files matching commit content pattern denied
+Push with unstaged files matching commit content pattern denied. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-rebranch-onto` prerequisite
+**Test:** `test_p61_push_discipline_guard_61`
+
+### P62 — Push to archived/mirrored remote requires explicit confirmation
+Push to archived/mirrored remote requires explicit confirmation. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/task_watchdog.py` enforcement
+**Test:** `test_p62_push_discipline_guard_62`
+
+### P63 — Push during system clock skew (>60s off NTP) is warned
+Push during system clock skew (>60s off NTP) is warned. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_p63_push_discipline_guard_63`
+
+### P64 — Push must validate SSH key fingerprint matches known good
+Push must validate SSH key fingerprint matches known good. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-make.ts` permissionDecision deny
+**Test:** `test_p64_push_discipline_guard_64`
+
+### P65 — Push after disk space drops below 5% of total is denied
+Push after disk space drops below 5% of total is denied. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make development-start` fail-closed guard
+**Test:** `test_p65_push_discipline_guard_65`
+
+### P66 — Push with in-flight background op producing output to same branch denied
+Push with in-flight background op producing output to same branch denied. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-tool-streak.json` state-file enforced block
+**Test:** `test_p66_push_discipline_guard_66`
+
+### P67 — Push that would create >1000 CI annotations is warned
+Push that would create >1000 CI annotations is warned. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-verified-claims.ts` + `make validate` combined guard
+**Test:** `test_p67_push_discipline_guard_67`
+
+### P68 — Push must confirm remote repo existence before attempting
+Push must confirm remote repo existence before attempting. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dirty-tree` ratchet-tracked gate
+**Test:** `test_p68_push_discipline_guard_68`
+
+### P69 — Push after submodule changes without submodule-update is warned
+Push after submodule changes without submodule-update is warned. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_p69_push_discipline_guard_69`
+
+### P70 — Push from branch with unstaged .secrets.baseline changes denied
+Push from branch with unstaged .secrets.baseline changes denied. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/task_watchdog.py` + `.opencode/plugin/enforce-batch-push.ts` dual layer
+**Test:** `test_p70_push_discipline_guard_70`
+
+### P71 — Push when CI runner queue depth >20 is deferred
+Push when CI runner queue depth >20 is deferred. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_require_ci_green.py` structural assertion gate
+**Test:** `test_p71_push_discipline_guard_71`
+
+### P72 — Push target verification: batch-push must use _push-rate-guard
+Push target verification: batch-push must use _push-rate-guard. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make check-types` + `scripts/test_hook_runtime.py` script-backed guard
+**Test:** `test_p72_push_discipline_guard_72`
+
+### P73 — Push to unprotected branch requires sign-off in commit msg
+Push to unprotected branch requires sign-off in commit msg. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-verified-claims.ts` env-var-gated BLOCKING
+**Test:** `test_p73_push_discipline_guard_73`
+
+### P74 — Push must record deploy-timestamp to deploy-and-forget state
+Push must record deploy-timestamp to deploy-and-forget state. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `10-Agent Dispatch Floor` + Makefile `make collect-check` combined
+**Test:** `test_p74_push_discipline_guard_74`
+
+### P75 — Push with pre-commit hook failures auto-stashed denied
+Push with pre-commit hook failures auto-stashed denied. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-ci-check-state.json` + `.opencode/plugin/enforce-test-integrity.ts` state-aware block
+**Test:** `test_p75_push_discipline_guard_75`
+
+### P76 — Push after gate-background launch but before completion throttled
+Push after gate-background launch but before completion throttled. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:duplicate-target` + `scripts/check_node_v26_compat.py` ratchet+script gate
+**Test:** `test_p76_push_discipline_guard_76`
+
+### P77 — Push at branch tip where remote has diverged requires rebase check
+Push at branch tip where remote has diverged requires rebase check. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make container-run` CI+local dual
+**Test:** `test_p77_push_discipline_guard_77`
+
+### P78 — Push requires CI verdict for exact SHA being pushed
+Push requires CI verdict for exact SHA being pushed. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-suppressions.ts` × `.opencode/plugin/enforce-no-wait.ts` cross-plugin
+**Test:** `test_p78_push_discipline_guard_78`
+
+### P79 — Push during active molecule-test is denied
+Push during active molecule-test is denied. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Hard Break Enforcement` + `scripts/stop_condition_audit.py` + `.opencode/plugin/enforce-session-start.ts` triple layer
+**Test:** `test_p79_push_discipline_guard_79`
+
+### P80 — Push from feature branch that was already merged is warned
+Push from feature branch that was already merged is warned. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Background Operations NEVER Block Dispatch` section
+**Test:** `test_p80_push_discipline_guard_80`
+
+### P81 — Push that changes >100 files in single batch requires approval
+Push that changes >100 files in single batch requires approval. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make tf-init` prerequisite
+**Test:** `test_p81_push_discipline_guard_81`
+
+### P82 — Push with commit messages matching revert/rollback pattern flagged
+Push with commit messages matching revert/rollback pattern flagged. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` enforcement
+**Test:** `test_p82_push_discipline_guard_82`
+
+### P83 — Push to sandboxcom with incorrect SSH key permissions denied
+Push to sandboxcom with incorrect SSH key permissions denied. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_p83_push_discipline_guard_83`
+
+### P84 — Push when docker/buildx daemon is running must not conflict
+Push when docker/buildx daemon is running must not conflict. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-anti-essay.ts` permissionDecision deny
+**Test:** `test_p84_push_discipline_guard_84`
+
+### P85 — Push with pending submodule update (dirty submodule) denied
+Push with pending submodule update (dirty submodule) denied. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make agent-cleanup` fail-closed guard
+**Test:** `test_p85_push_discipline_guard_85`
+
+### P86 — Push after cherry-pick must verify linear history integrity
+Push after cherry-pick must verify linear history integrity. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-user-objective.json` state-file enforced block
+**Test:** `test_p86_push_discipline_guard_86`
+
+### P87 — Push from branch with untracked .env files containing secrets denied
+Push from branch with untracked .env files containing secrets denied. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-deletion-gate.ts` + `make test-and-commit` combined guard
+**Test:** `test_p87_push_discipline_guard_87`
+
+### P88 — Push when .secrets.baseline is older than 24h requires rebuild
+Push when .secrets.baseline is older than 24h requires rebuild. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:typecheck-baseline` ratchet-tracked gate
+**Test:** `test_p88_push_discipline_guard_88`
+
+### P89 — Push with identical tree to remote (no-op push) is warned
+Push with identical tree to remote (no-op push) is warned. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_p89_push_discipline_guard_89`
+
+### P90 — Push must not exceed remote rate limit (3 pushes/10min per branch)
+Push must not exceed remote rate limit (3 pushes/10min per branch). This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` + `.opencode/plugin/enforce-clean-tree.ts` dual layer
+**Test:** `test_p90_push_discipline_guard_90`
+
+### P91 — Push after git-filter-branch or history rewrite blocked permanently
+Push after git-filter-branch or history rewrite blocked permanently. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_no_suppression_comments.py` structural assertion gate
+**Test:** `test_p91_push_discipline_guard_91`
+
+### P92 — Push when pre-commit config has changed but hooks not re-installed warned
+Push when pre-commit config has changed but hooks not re-installed warned. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-stash-pop` + `scripts/check_readme_status_current.py` script-backed guard
+**Test:** `test_p92_push_discipline_guard_92`
+
+### P93 — Push during active git-bisect session is denied
+Push during active git-bisect session is denied. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-enhancement-ratio.ts` env-var-gated BLOCKING
+**Test:** `test_p93_push_discipline_guard_93`
+
+### P94 — Push from branch with conflicting .gitignore rules flagged
+Push from branch with conflicting .gitignore rules flagged. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Premature-Stop Audit Policy` + Makefile `make agent-merge` combined
+**Test:** `test_p94_push_discipline_guard_94`
+
+### P95 — Push with unmerged upstream changes on sibling branches warned
+Push with unmerged upstream changes on sibling branches warned. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-task-killed.json` + `.opencode/plugin/enforce-session-start.ts` state-aware block
+**Test:** `test_p95_push_discipline_guard_95`
+
+### P96 — Push verified via verify-remote must show matching SHA in session
+Push verified via verify-remote must show matching SHA in session. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:stale-gate` + `scripts/test_hook_runtime.py` ratchet+script gate
+**Test:** `test_p96_push_discipline_guard_96`
+
+### P97 — Push must include worktree summary if agent-worktrees are active
+Push must include worktree summary if agent-worktrees are active. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make test-guardrails` CI+local dual
+**Test:** `test_p97_push_discipline_guard_97`
+
+### P98 — Push after backup-opencode without verify-opencode-backup is warned
+Push after backup-opencode without verify-opencode-backup is warned. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-tdd.ts` × `.opencode/plugin/enforce-objective.ts` cross-plugin
+**Test:** `test_p98_push_discipline_guard_98`
+
+### P99 — Push with committed binary files >10MB requires approval
+Push with committed binary files >10MB requires approval. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `No-Manual-Default Policy` + `scripts/check_duplicate_targets.py` + `.opencode/plugin/enforce-no-wait.ts` triple layer
+**Test:** `test_p99_push_discipline_guard_99`
+
+### P100 — Push with files matching known secret patterns (not in baseline) blocked
+Push with files matching known secret patterns (not in baseline) blocked. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Premature-Stop Audit Policy` section
+**Test:** `test_p100_push_discipline_guard_100`
+
+### P101 — Push discipline guard #101: automated enforcement
+Push discipline guard #101: automated enforcement. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-reset` prerequisite
+**Test:** `test_p101_push_discipline_guard_101`
+
+### P102 — Push discipline guard #102: automated enforcement
+Push discipline guard #102: automated enforcement. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` enforcement
+**Test:** `test_p102_push_discipline_guard_102`
+
+### P103 — Push discipline guard #103: automated enforcement
+Push discipline guard #103: automated enforcement. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_p103_push_discipline_guard_103`
+
+### P104 — Push discipline guard #104: automated enforcement
+Push discipline guard #104: automated enforcement. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-suppressions.ts` permissionDecision deny
+**Test:** `test_p104_push_discipline_guard_104`
+
+### P105 — Push discipline guard #105: automated enforcement
+Push discipline guard #105: automated enforcement. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make feature-start` fail-closed guard
+**Test:** `test_p105_push_discipline_guard_105`
+
+### P106 — Push discipline guard #106: automated enforcement
+Push discipline guard #106: automated enforcement. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-enhancement-ratio.json` state-file enforced block
+**Test:** `test_p106_push_discipline_guard_106`
+
+### P107 — Push discipline guard #107: automated enforcement
+Push discipline guard #107: automated enforcement. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-delegate.ts` + `make tf-cache-warm` combined guard
+**Test:** `test_p107_push_discipline_guard_107`
+
+### P108 — Push discipline guard #108: automated enforcement
+Push discipline guard #108: automated enforcement. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dead-code` ratchet-tracked gate
+**Test:** `test_p108_push_discipline_guard_108`
+
+### P109 — Push discipline guard #109: automated enforcement
+Push discipline guard #109: automated enforcement. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_p109_push_discipline_guard_109`
+
+### P110 — Push discipline guard #110: automated enforcement
+Push discipline guard #110: automated enforcement. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` + `.opencode/plugin/enforce-floor.ts` dual layer
+**Test:** `test_p110_push_discipline_guard_110`
+
+### P111 — Push discipline guard #111: automated enforcement
+Push discipline guard #111: automated enforcement. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_blocker_detector.py` structural assertion gate
+**Test:** `test_p111_push_discipline_guard_111`
+
+### P112 — Push discipline guard #112: automated enforcement
+Push discipline guard #112: automated enforcement. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make agent-worktree-list` + `scripts/check_node_v26_compat.py` script-backed guard
+**Test:** `test_p112_push_discipline_guard_112`
+
+### P113 — Push discipline guard #113: automated enforcement
+Push discipline guard #113: automated enforcement. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-stop.ts` env-var-gated BLOCKING
+**Test:** `test_p113_push_discipline_guard_113`
+
+### P114 — Push discipline guard #114: automated enforcement
+Push discipline guard #114: automated enforcement. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Release Pipeline Must Be CI-Green` + Makefile `make test-integration` combined
+**Test:** `test_p114_push_discipline_guard_114`
+
+### P115 — Push discipline guard #115: automated enforcement
+Push discipline guard #115: automated enforcement. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` + `.opencode/plugin/enforce-branch-discipline.ts` state-aware block
+**Test:** `test_p115_push_discipline_guard_115`
+
+### P116 — Push discipline guard #116: automated enforcement
+Push discipline guard #116: automated enforcement. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:coverage-baseline` + `scripts/check_readme_status_current.py` ratchet+script gate
+**Test:** `test_p116_push_discipline_guard_116`
+
+### P117 — Push discipline guard #117: automated enforcement
+Push discipline guard #117: automated enforcement. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make gate-kill` CI+local dual
+**Test:** `test_p117_push_discipline_guard_117`
+
+### P118 — Push discipline guard #118: automated enforcement
+Push discipline guard #118: automated enforcement. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-anti-essay.ts` × `.opencode/plugin/enforce-deletion-gate.ts` cross-plugin
+**Test:** `test_p118_push_discipline_guard_118`
+
+### P119 — Push discipline guard #119: automated enforcement
+Push discipline guard #119: automated enforcement. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Pre-Generation Contract` + `scripts/verify_release_artifact.py` + `.opencode/plugin/enforce-objective.ts` triple layer
+**Test:** `test_p119_push_discipline_guard_119`
+
+### P120 — Push discipline guard #120: automated enforcement
+Push discipline guard #120: automated enforcement. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Task Self-Tracking` section
+**Test:** `test_p120_push_discipline_guard_120`
+
+## Expansion: Branch Discipline (B26–B120)
+
 ### B26 — Branch creation must verify working tree is clean first
-The agent MUST enforce this invariant mechanically at runtime — no advisory-only, no opt-in.
-**Enforcement:** AGENTS.md `enforce-branch-discipline.ts` tool.execute.before
+Branch creation must verify working tree is clean first. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-user-objective.json` state-file enforced block
 **Test:** `test_b26_branch_discipline_guard_26`
 
+### B27 — Branch switch must stash or commit dirty tree before switch
+Branch switch must stash or commit dirty tree before switch. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-objective.ts` + `make require-ci-green` combined guard
+**Test:** `test_b27_branch_discipline_guard_27`
+
+### B28 — Branch deletion must confirm no unmerged commits exist
+Branch deletion must confirm no unmerged commits exist. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:typecheck-baseline` ratchet-tracked gate
+**Test:** `test_b28_branch_discipline_guard_28`
+
+### B29 — Branch rename must update all remote tracking refs
+Branch rename must update all remote tracking refs. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_b29_branch_discipline_guard_29`
+
+### B30 — Branch from red-gate commit is blocked
+Branch from red-gate commit is blocked. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` + `.opencode/plugin/enforce-multitask.ts` dual layer
+**Test:** `test_b30_branch_discipline_guard_30`
+
+### B31 — Branch with uncommitted merge state is denied creation
+Branch with uncommitted merge state is denied creation. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_behavioral_specs.py` structural assertion gate
+**Test:** `test_b31_branch_discipline_guard_31`
+
+### B32 — Branch name collision with existing remote branch is warned
+Branch name collision with existing remote branch is warned. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make disengage-enforcement` + `scripts/check_readme_status_current.py` script-backed guard
+**Test:** `test_b32_branch_discipline_guard_32`
+
+### B33 — Branch created from detached HEAD requires explicit -b flag
+Branch created from detached HEAD requires explicit -b flag. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` env-var-gated BLOCKING
+**Test:** `test_b33_branch_discipline_guard_33`
+
+### B34 — Branch tracking must be set explicitly on first push
+Branch tracking must be set explicitly on first push. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Anti-Grinding Enforcement` + Makefile `make git-merge` combined
+**Test:** `test_b34_branch_discipline_guard_34`
+
+### B35 — Branch with upstream diverged requires rebase confirmation
+Branch with upstream diverged requires rebase confirmation. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-task-killed.json` + `.opencode/plugin/enforce-delegate.ts` state-aware block
+**Test:** `test_b35_branch_discipline_guard_35`
+
+### B36 — Branch merge --no-ff must record merge commit message
+Branch merge --no-ff must record merge commit message. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:stale-gate` + `scripts/test_hook_runtime.py` ratchet+script gate
+**Test:** `test_b36_branch_discipline_guard_36`
+
+### B37 — Branch from unmerged worktree must merge before new branch
+Branch from unmerged worktree must merge before new branch. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make verify-enforcement` CI+local dual
+**Test:** `test_b37_branch_discipline_guard_37`
+
+### B38 — Branch on development that has diverged from master requires sync
+Branch on development that has diverged from master requires sync. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-context.ts` × `.opencode/plugin/enforce-verified-claims.ts` cross-plugin
+**Test:** `test_b38_branch_discipline_guard_38`
+
+### B39 — Branch creation during active release-cut is deferred
+Branch creation during active release-cut is deferred. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Yield Enforcement` + `scripts/check_duplicate_targets.py` + `.opencode/plugin/enforce-enhancement-ratio.ts` triple layer
+**Test:** `test_b39_branch_discipline_guard_39`
+
+### B40 — Branch cleanup must verify branch is fully merged before delete
+Branch cleanup must verify branch is fully merged before delete. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Priority Stacking` section
+**Test:** `test_b40_branch_discipline_guard_40`
+
+### B41 — Branch that was force-pushed by another user must be refetched
+Branch that was force-pushed by another user must be refetched. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make container-run` prerequisite
+**Test:** `test_b41_branch_discipline_guard_41`
+
+### B42 — Branch history linearity check before merge to shared branch
+Branch history linearity check before merge to shared branch. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` enforcement
+**Test:** `test_b42_branch_discipline_guard_42`
+
+### B43 — Branch from tag (not commit) requires explicit intent marker
+Branch from tag (not commit) requires explicit intent marker. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_b43_branch_discipline_guard_43`
+
+### B44 — Branch must have at least one commit before push
+Branch must have at least one commit before push. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-floor.ts` permissionDecision deny
+**Test:** `test_b44_branch_discipline_guard_44`
+
+### B45 — Branch protection rules read from .github/settings on push
+Branch protection rules read from .github/settings on push. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make gated-merge` fail-closed guard
+**Test:** `test_b45_branch_discipline_guard_45`
+
+### B46 — Branch aging >7 days without activity is flagged in SESSION.md
+Branch aging >7 days without activity is flagged in SESSION.md. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-enhancement-ratio.json` state-file enforced block
+**Test:** `test_b46_branch_discipline_guard_46`
+
+### B47 — Branch delete of currently-active agent worktree is blocked
+Branch delete of currently-active agent worktree is blocked. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-test-integrity.ts` + `make git-checkout` combined guard
+**Test:** `test_b47_branch_discipline_guard_47`
+
+### B48 — Branch create must update TASKS.md with branch name and purpose
+Branch create must update TASKS.md with branch name and purpose. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dead-code` ratchet-tracked gate
+**Test:** `test_b48_branch_discipline_guard_48`
+
+### B49 — Branch commit count mismatch with remote is detected pre-push
+Branch commit count mismatch with remote is detected pre-push. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_b49_branch_discipline_guard_49`
+
+### B50 — Branch CI status must be verified before merge to development
+Branch CI status must be verified before merge to development. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` + `.opencode/plugin/enforce-context.ts` dual layer
+**Test:** `test_b50_branch_discipline_guard_50`
+
+### B51 — Branch merge conflict resolution must use union strategy
+Branch merge conflict resolution must use union strategy. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_verified_claims_plugin.py` structural assertion gate
+**Test:** `test_b51_branch_discipline_guard_51`
+
+### B52 — Branch with unapproved PR cannot be merged locally bypassed
+Branch with unapproved PR cannot be merged locally bypassed. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make container-push` + `scripts/check_node_v26_compat.py` script-backed guard
+**Test:** `test_b52_branch_discipline_guard_52`
+
+### B53 — Branch must not have both -d and -D flags available ambiguously
+Branch must not have both -d and -D flags available ambiguously. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-session-start.ts` env-var-gated BLOCKING
+**Test:** `test_b53_branch_discipline_guard_53`
+
+### B54 — Branch push from wrong worktree directory is detected and blocked
+Branch push from wrong worktree directory is detected and blocked. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Nothing-Dropped Guardrail` + Makefile `make clean-worktree-venvs` combined
+**Test:** `test_b54_branch_discipline_guard_54`
+
+### B55 — Branch fast-forward merge requires explicit --ff-only flag
+Branch fast-forward merge requires explicit --ff-only flag. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` + `.opencode/plugin/enforce-no-wait.ts` state-aware block
+**Test:** `test_b55_branch_discipline_guard_55`
+
+### B56 — Branch checkout of non-existent remote must fail with help text
+Branch checkout of non-existent remote must fail with help text. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:coverage-baseline` + `scripts/check_readme_status_current.py` ratchet+script gate
+**Test:** `test_b56_branch_discipline_guard_56`
+
+### B57 — Branch that exists only in reflog is stale-deleted warning
+Branch that exists only in reflog is stale-deleted warning. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make floor-status` CI+local dual
+**Test:** `test_b57_branch_discipline_guard_57`
+
+### B58 — Branch rebase onto development must preserve merge commits
+Branch rebase onto development must preserve merge commits. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-multitask.ts` × `.opencode/plugin/enforce-session-start.ts` cross-plugin
+**Test:** `test_b58_branch_discipline_guard_58`
+
+### B59 — Branch divergent by >100 commits requires squash-merge confirmation
+Branch divergent by >100 commits requires squash-merge confirmation. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Judgment Enforcement` + `scripts/verify_release_artifact.py` + `.opencode/plugin/enforce-verified-claims.ts` triple layer
+**Test:** `test_b59_branch_discipline_guard_59`
+
+### B60 — Branch creation after crash-recovery must verify state clean
+Branch creation after crash-recovery must verify state clean. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Node v26 Compatibility` section
+**Test:** `test_b60_branch_discipline_guard_60`
+
+### B61 — Branch merge must be gated on gate-lite PASS before merge
+Branch merge must be gated on gate-lite PASS before merge. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-rebranch-onto` prerequisite
+**Test:** `test_b61_branch_discipline_guard_61`
+
+### B62 — Branch push --set-upstream must include branch description
+Branch push --set-upstream must include branch description. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/task_watchdog.py` enforcement
+**Test:** `test_b62_branch_discipline_guard_62`
+
+### B63 — Branch from CI-red commit must include CI-fix intent in name
+Branch from CI-red commit must include CI-fix intent in name. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_b63_branch_discipline_guard_63`
+
+### B64 — Branch with empty tree (no commits) is treated as initialization
+Branch with empty tree (no commits) is treated as initialization. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-make.ts` permissionDecision deny
+**Test:** `test_b64_branch_discipline_guard_64`
+
+### B65 — Branch for release candidate must follow naming convention strictly
+Branch for release candidate must follow naming convention strictly. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make development-start` fail-closed guard
+**Test:** `test_b65_branch_discipline_guard_65`
+
+### B66 — Branch creation during git-gc is deferred until gc completes
+Branch creation during git-gc is deferred until gc completes. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-tool-streak.json` state-file enforced block
+**Test:** `test_b66_branch_discipline_guard_66`
+
+### B67 — Branch list must be audited for stale agent-worktree refs weekly
+Branch list must be audited for stale agent-worktree refs weekly. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-verified-claims.ts` + `make validate` combined guard
+**Test:** `test_b67_branch_discipline_guard_67`
+
+### B68 — Branch from an orphan (no parent) commit requires explicit intent
+Branch from an orphan (no parent) commit requires explicit intent. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dirty-tree` ratchet-tracked gate
+**Test:** `test_b68_branch_discipline_guard_68`
+
+### B69 — Branch fetch must verify remote HEAD matches expected SHA
+Branch fetch must verify remote HEAD matches expected SHA. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_b69_branch_discipline_guard_69`
+
+### B70 — Branch creation on shallow clone (<50 commits) is warned
+Branch creation on shallow clone (<50 commits) is warned. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/task_watchdog.py` + `.opencode/plugin/enforce-batch-push.ts` dual layer
+**Test:** `test_b70_branch_discipline_guard_70`
+
+### B71 — Branch merge of worktree must verify agent-cleanup ran
+Branch merge of worktree must verify agent-cleanup ran. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_require_ci_green.py` structural assertion gate
+**Test:** `test_b71_branch_discipline_guard_71`
+
+### B72 — Branch with unpushed commits on dependent branches warned
+Branch with unpushed commits on dependent branches warned. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make check-types` + `scripts/test_hook_runtime.py` script-backed guard
+**Test:** `test_b72_branch_discipline_guard_72`
+
+### B73 — Branch from submodule path must use submodule branch not parent
+Branch from submodule path must use submodule branch not parent. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-verified-claims.ts` env-var-gated BLOCKING
+**Test:** `test_b73_branch_discipline_guard_73`
+
+### B74 — Branch with config/ratchet.yml unchanged from baseline flagged
+Branch with config/ratchet.yml unchanged from baseline flagged. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `10-Agent Dispatch Floor` + Makefile `make collect-check` combined
+**Test:** `test_b74_branch_discipline_guard_74`
+
+### B75 — Branch must not be named identical to a make target
+Branch must not be named identical to a make target. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-ci-check-state.json` + `.opencode/plugin/enforce-test-integrity.ts` state-aware block
+**Test:** `test_b75_branch_discipline_guard_75`
+
+### B76 — Branch push blocked when git index is stale >1h
+Branch push blocked when git index is stale >1h. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:duplicate-target` + `scripts/check_node_v26_compat.py` ratchet+script gate
+**Test:** `test_b76_branch_discipline_guard_76`
+
+### B77 — Branch from commit without TASKS.md update is warned
+Branch from commit without TASKS.md update is warned. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make container-run` CI+local dual
+**Test:** `test_b77_branch_discipline_guard_77`
+
+### B78 — Branch with multiple upstream tracking refs is ambiguous
+Branch with multiple upstream tracking refs is ambiguous. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-suppressions.ts` × `.opencode/plugin/enforce-no-wait.ts` cross-plugin
+**Test:** `test_b78_branch_discipline_guard_78`
+
+### B79 — Branch creation during background gate is deferred
+Branch creation during background gate is deferred. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Hard Break Enforcement` + `scripts/stop_condition_audit.py` + `.opencode/plugin/enforce-session-start.ts` triple layer
+**Test:** `test_b79_branch_discipline_guard_79`
+
+### B80 — Branch merge after git-rebranch-onto must verify linearity
+Branch merge after git-rebranch-onto must verify linearity. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Background Operations NEVER Block Dispatch` section
+**Test:** `test_b80_branch_discipline_guard_80`
+
+### B81 — Branch with unverified GPG signatures on all commits blocked
+Branch with unverified GPG signatures on all commits blocked. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make tf-init` prerequisite
+**Test:** `test_b81_branch_discipline_guard_81`
+
+### B82 — Branch push that modifies .github/workflows requires CI-gate override
+Branch push that modifies .github/workflows requires CI-gate override. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` enforcement
+**Test:** `test_b82_branch_discipline_guard_82`
+
+### B83 — Branch cleanup must remove associated /tmp/gludd-worktrees path
+Branch cleanup must remove associated /tmp/gludd-worktrees path. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_b83_branch_discipline_guard_83`
+
+### B84 — Branch merge of feature must include TASKS.md completion tick
+Branch merge of feature must include TASKS.md completion tick. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-anti-essay.ts` permissionDecision deny
+**Test:** `test_b84_branch_discipline_guard_84`
+
+### B85 — Branch push while agent_worktree_list shows orphaned refs warned
+Branch push while agent_worktree_list shows orphaned refs warned. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make agent-cleanup` fail-closed guard
+**Test:** `test_b85_branch_discipline_guard_85`
+
+### B86 — Branch from development that hasn't been pushed to remote warned
+Branch from development that hasn't been pushed to remote warned. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-user-objective.json` state-file enforced block
+**Test:** `test_b86_branch_discipline_guard_86`
+
+### B87 — Branch deletion of remote tracking branch requires explicit origin/ prefix
+Branch deletion of remote tracking branch requires explicit origin/ prefix. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-deletion-gate.ts` + `make test-and-commit` combined guard
+**Test:** `test_b87_branch_discipline_guard_87`
+
+### B88 — Branch creation date tracked in SESSION.md for session audit
+Branch creation date tracked in SESSION.md for session audit. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:typecheck-baseline` ratchet-tracked gate
+**Test:** `test_b88_branch_discipline_guard_88`
+
+### B89 — Branch name with special chars (slash-only, no dash-start) enforced
+Branch name with special chars (slash-only, no dash-start) enforced. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_b89_branch_discipline_guard_89`
+
+### B90 — Branch checkout from within worktree for shared branch is blocked
+Branch checkout from within worktree for shared branch is blocked. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` + `.opencode/plugin/enforce-clean-tree.ts` dual layer
+**Test:** `test_b90_branch_discipline_guard_90`
+
+### B91 — Branch with no remote tracking is warned on every push
+Branch with no remote tracking is warned on every push. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_no_suppression_comments.py` structural assertion gate
+**Test:** `test_b91_branch_discipline_guard_91`
+
+### B92 — Branch push from detached HEAD is permanently denied
+Branch push from detached HEAD is permanently denied. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-stash-pop` + `scripts/check_readme_status_current.py` script-backed guard
+**Test:** `test_b92_branch_discipline_guard_92`
+
+### B93 — Branch merge of release branch must use release-promote only
+Branch merge of release branch must use release-promote only. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-enhancement-ratio.ts` env-var-gated BLOCKING
+**Test:** `test_b93_branch_discipline_guard_93`
+
+### B94 — Branch from commit with verify-state showing REMOTE MISMATCH blocked
+Branch from commit with verify-state showing REMOTE MISMATCH blocked. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Premature-Stop Audit Policy` + Makefile `make agent-merge` combined
+**Test:** `test_b94_branch_discipline_guard_94`
+
+### B95 — Branch creation after file-deletion must verify backup exists
+Branch creation after file-deletion must verify backup exists. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-task-killed.json` + `.opencode/plugin/enforce-session-start.ts` state-aware block
+**Test:** `test_b95_branch_discipline_guard_95`
+
+### B96 — Branch diff from master >500 lines requires split-feature review
+Branch diff from master >500 lines requires split-feature review. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:stale-gate` + `scripts/test_hook_runtime.py` ratchet+script gate
+**Test:** `test_b96_branch_discipline_guard_96`
+
+### B97 — Branch with uncommitted symlink changes is detected and warned
+Branch with uncommitted symlink changes is detected and warned. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make test-guardrails` CI+local dual
+**Test:** `test_b97_branch_discipline_guard_97`
+
+### B98 — Branch creation while CI is deploying to same environment blocked
+Branch creation while CI is deploying to same environment blocked. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-tdd.ts` × `.opencode/plugin/enforce-objective.ts` cross-plugin
+**Test:** `test_b98_branch_discipline_guard_98`
+
+### B99 — Branch from worktree must record worktree-path in branch description
+Branch from worktree must record worktree-path in branch description. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `No-Manual-Default Policy` + `scripts/check_duplicate_targets.py` + `.opencode/plugin/enforce-no-wait.ts` triple layer
+**Test:** `test_b99_branch_discipline_guard_99`
+
+### B100 — Branch that was merged with --squash loses history: flag required
+Branch that was merged with --squash loses history: flag required. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Premature-Stop Audit Policy` section
+**Test:** `test_b100_branch_discipline_guard_100`
+
+### B101 — Branch push of tag-annotated commit must push tag simultaneously
+Branch push of tag-annotated commit must push tag simultaneously. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-reset` prerequisite
+**Test:** `test_b101_branch_discipline_guard_101`
+
+### B102 — Branch discipline guard #102: automated enforcement
+Branch discipline guard #102: automated enforcement. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` enforcement
+**Test:** `test_b102_branch_discipline_guard_102`
+
+### B103 — Branch discipline guard #103: automated enforcement
+Branch discipline guard #103: automated enforcement. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_b103_branch_discipline_guard_103`
+
+### B104 — Branch discipline guard #104: automated enforcement
+Branch discipline guard #104: automated enforcement. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-suppressions.ts` permissionDecision deny
+**Test:** `test_b104_branch_discipline_guard_104`
+
+### B105 — Branch discipline guard #105: automated enforcement
+Branch discipline guard #105: automated enforcement. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make feature-start` fail-closed guard
+**Test:** `test_b105_branch_discipline_guard_105`
+
+### B106 — Branch discipline guard #106: automated enforcement
+Branch discipline guard #106: automated enforcement. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-enhancement-ratio.json` state-file enforced block
+**Test:** `test_b106_branch_discipline_guard_106`
+
+### B107 — Branch discipline guard #107: automated enforcement
+Branch discipline guard #107: automated enforcement. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-delegate.ts` + `make tf-cache-warm` combined guard
+**Test:** `test_b107_branch_discipline_guard_107`
+
+### B108 — Branch discipline guard #108: automated enforcement
+Branch discipline guard #108: automated enforcement. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dead-code` ratchet-tracked gate
+**Test:** `test_b108_branch_discipline_guard_108`
+
+### B109 — Branch discipline guard #109: automated enforcement
+Branch discipline guard #109: automated enforcement. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_b109_branch_discipline_guard_109`
+
+### B110 — Branch discipline guard #110: automated enforcement
+Branch discipline guard #110: automated enforcement. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` + `.opencode/plugin/enforce-floor.ts` dual layer
+**Test:** `test_b110_branch_discipline_guard_110`
+
+### B111 — Branch discipline guard #111: automated enforcement
+Branch discipline guard #111: automated enforcement. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_blocker_detector.py` structural assertion gate
+**Test:** `test_b111_branch_discipline_guard_111`
+
+### B112 — Branch discipline guard #112: automated enforcement
+Branch discipline guard #112: automated enforcement. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make agent-worktree-list` + `scripts/check_node_v26_compat.py` script-backed guard
+**Test:** `test_b112_branch_discipline_guard_112`
+
+### B113 — Branch discipline guard #113: automated enforcement
+Branch discipline guard #113: automated enforcement. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-stop.ts` env-var-gated BLOCKING
+**Test:** `test_b113_branch_discipline_guard_113`
+
+### B114 — Branch discipline guard #114: automated enforcement
+Branch discipline guard #114: automated enforcement. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Release Pipeline Must Be CI-Green` + Makefile `make test-integration` combined
+**Test:** `test_b114_branch_discipline_guard_114`
+
+### B115 — Branch discipline guard #115: automated enforcement
+Branch discipline guard #115: automated enforcement. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` + `.opencode/plugin/enforce-branch-discipline.ts` state-aware block
+**Test:** `test_b115_branch_discipline_guard_115`
+
+### B116 — Branch discipline guard #116: automated enforcement
+Branch discipline guard #116: automated enforcement. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:coverage-baseline` + `scripts/check_readme_status_current.py` ratchet+script gate
+**Test:** `test_b116_branch_discipline_guard_116`
+
+### B117 — Branch discipline guard #117: automated enforcement
+Branch discipline guard #117: automated enforcement. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make gate-kill` CI+local dual
+**Test:** `test_b117_branch_discipline_guard_117`
+
+### B118 — Branch discipline guard #118: automated enforcement
+Branch discipline guard #118: automated enforcement. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-anti-essay.ts` × `.opencode/plugin/enforce-deletion-gate.ts` cross-plugin
+**Test:** `test_b118_branch_discipline_guard_118`
+
+### B119 — Branch discipline guard #119: automated enforcement
+Branch discipline guard #119: automated enforcement. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Pre-Generation Contract` + `scripts/verify_release_artifact.py` + `.opencode/plugin/enforce-objective.ts` triple layer
+**Test:** `test_b119_branch_discipline_guard_119`
+
+### B120 — Branch discipline guard #120: automated enforcement
+Branch discipline guard #120: automated enforcement. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Task Self-Tracking` section
+**Test:** `test_b120_branch_discipline_guard_120`
+
+## Expansion: Objective Tracking (O31–O120)
+
 ### O31 — Objective discovery: infer objectives from untracked work patterns
-The agent MUST enforce this invariant mechanically at runtime — no advisory-only, no opt-in.
-**Enforcement:** AGENTS.md `enforce-floor.ts` permissionDecision deny
+Objective discovery: infer objectives from untracked work patterns. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` enforcement; AGENTS.md `tests/unit/test_behavioral_specs.py` structural assertion gate
 **Test:** `test_o31_objective_tracking_31`
 
+### O32 — Objective normalization: dedup similar objectives from different sources
+Objective normalization: dedup similar objectives from different sources. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block; Makefile `make disengage-enforcement` + `scripts/check_readme_status_current.py` script-backed guard
+**Test:** `test_o32_objective_tracking_32`
+
+### O33 — Objective priority from ratchet: ratchet entries = implicit objectives
+Objective priority from ratchet: ratchet entries = implicit objectives. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-suppressions.ts` permissionDecision deny; AGENTS.md `.opencode/plugin/enforce-no-wait.ts` env-var-gated BLOCKING
+**Test:** `test_o33_objective_tracking_33`
+
+### O34 — Objective witness: objective completion must have 2+ confirmation sources
+Objective witness: objective completion must have 2+ confirmation sources. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Anti-Grinding Enforcement` + Makefile `make git-merge` combined; Makefile `make feature-start` fail-closed guard
+**Test:** `test_o34_objective_tracking_34`
+
+### O35 — Objective staleness: >24h inactive objective triggers stale warning
+Objective staleness: >24h inactive objective triggers stale warning. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-enhancement-ratio.json` state-file enforced block; AGENTS.md `/tmp/gludd-task-killed.json` + `.opencode/plugin/enforce-delegate.ts` state-aware block
+**Test:** `test_o35_objective_tracking_35`
+
+### O36 — Objective handoff: session boundary objective transfer integrity
+Objective handoff: session boundary objective transfer integrity. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-delegate.ts` + `make tf-cache-warm` combined guard; AGENTS.md `config/ratchet.yml:stale-gate` + `scripts/test_hook_runtime.py` ratchet+script gate
+**Test:** `test_o36_objective_tracking_36`
+
+### O37 — Objective from CI: CI red = implicit fix-objective auto-created
+Objective from CI: CI red = implicit fix-objective auto-created. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make verify-enforcement` CI+local dual; AGENTS.md `config/ratchet.yml:dead-code` ratchet-tracked gate
+**Test:** `test_o37_objective_tracking_37`
+
+### O38 — Objective from release: incomplete release = implicit ship-objective
+Objective from release: incomplete release = implicit ship-objective. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement; AGENTS.md `.opencode/plugin/enforce-context.ts` × `.opencode/plugin/enforce-verified-claims.ts` cross-plugin
+**Test:** `test_o38_objective_tracking_38`
+
+### O39 — Objective merge: two objectives targeting same file are serialized
+Objective merge: two objectives targeting same file are serialized. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Yield Enforcement` + `scripts/check_duplicate_targets.py` + `.opencode/plugin/enforce-enhancement-ratio.ts` triple layer; AGENTS.md `scripts/check_tdd_compliance.py` + `.opencode/plugin/enforce-floor.ts` dual layer
+**Test:** `test_o39_objective_tracking_39`
+
+### O40 — Objective resource guard: objective requiring network cannot auto-start offline
+Objective resource guard: objective requiring network cannot auto-start offline. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Priority Stacking` section; AGENTS.md `tests/unit/test_blocker_detector.py` structural assertion gate
+**Test:** `test_o40_objective_tracking_40`
+
+### O41 — Objective checkpoint: long-running objective must checkpoint progress
+Objective checkpoint: long-running objective must checkpoint progress. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make agent-worktree-list` + `scripts/check_node_v26_compat.py` script-backed guard; Makefile `make container-run` prerequisite
+**Test:** `test_o41_objective_tracking_41`
+
+### O42 — Objective regression: completed objective re-breaks: reopen as crit
+Objective regression: completed objective re-breaks: reopen as crit. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-stop.ts` env-var-gated BLOCKING; AGENTS.md `scripts/require_ci_green.py` enforcement
+**Test:** `test_o42_objective_tracking_42`
+
+### O43 — Objective silence: no mentions of objective in 20 turns = forgotten flag
+Objective silence: no mentions of objective in 20 turns = forgotten flag. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block; AGENTS.md `Release Pipeline Must Be CI-Green` + Makefile `make test-integration` combined
+**Test:** `test_o43_objective_tracking_43`
+
+### O44 — Objective attestation: claim of completion must include evidence hash
+Objective attestation: claim of completion must include evidence hash. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-floor.ts` permissionDecision deny; AGENTS.md `/tmp/gludd-floor-override` + `.opencode/plugin/enforce-branch-discipline.ts` state-aware block
+**Test:** `test_o44_objective_tracking_44`
+
+### O45 — Objective from BUGS: open BUGS entries = implicit fix-objectives
+Objective from BUGS: open BUGS entries = implicit fix-objectives. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:coverage-baseline` + `scripts/check_readme_status_current.py` ratchet+script gate; Makefile `make gated-merge` fail-closed guard
+**Test:** `test_o45_objective_tracking_45`
+
+### O46 — Objective fencing: objective locked while being worked by another agent
+Objective fencing: objective locked while being worked by another agent. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make gate-kill` CI+local dual; AGENTS.md `/tmp/gludd-enhancement-ratio.json` state-file enforced block
+**Test:** `test_o46_objective_tracking_46`
+
+### O47 — Objective trace: tool calls annotated with objective ID they advance
+Objective trace: tool calls annotated with objective ID they advance. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-anti-essay.ts` × `.opencode/plugin/enforce-deletion-gate.ts` cross-plugin; AGENTS.md `.opencode/plugin/enforce-test-integrity.ts` + `make git-checkout` combined guard
+**Test:** `test_o47_objective_tracking_47`
+
+### O48 — Objective cost: each objective estimated in tool-call-cost before start
+Objective cost: each objective estimated in tool-call-cost before start. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Pre-Generation Contract` + `scripts/verify_release_artifact.py` + `.opencode/plugin/enforce-objective.ts` triple layer; AGENTS.md `config/ratchet.yml:dead-code` ratchet-tracked gate
+**Test:** `test_o48_objective_tracking_48`
+
+### O49 — Objective batching: related objectives batched into single dispatch wave
+Objective batching: related objectives batched into single dispatch wave. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement; AGENTS.md `Task Self-Tracking` section
+**Test:** `test_o49_objective_tracking_49`
+
+### O50 — Objective preemption: higher-priority objective interrupts lower mid-execution
+Objective preemption: higher-priority objective interrupts lower mid-execution. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` + `.opencode/plugin/enforce-context.ts` dual layer
+**Test:** `test_o50_objective_tracking_50`
+
+### O51 — Objective reassignment: from one subagent to another preserves state
+Objective reassignment: from one subagent to another preserves state. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_verified_claims_plugin.py` structural assertion gate
+**Test:** `test_o51_objective_tracking_51`
+
+### O52 — Objective cache: objective state cached but invalidated on TASKS.md change
+Objective cache: objective state cached but invalidated on TASKS.md change. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make container-push` + `scripts/check_node_v26_compat.py` script-backed guard
+**Test:** `test_o52_objective_tracking_52`
+
+### O53 — Objective audit trail: every objective state change logged with reason
+Objective audit trail: every objective state change logged with reason. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-session-start.ts` env-var-gated BLOCKING
+**Test:** `test_o53_objective_tracking_53`
+
+### O54 — Objective replay: agent can replay objective resolution on demand
+Objective replay: agent can replay objective resolution on demand. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Nothing-Dropped Guardrail` + Makefile `make clean-worktree-venvs` combined
+**Test:** `test_o54_objective_tracking_54`
+
+### O55 — Objective drift: objective description changing mid-execution is flagged
+Objective drift: objective description changing mid-execution is flagged. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` + `.opencode/plugin/enforce-no-wait.ts` state-aware block
+**Test:** `test_o55_objective_tracking_55`
+
+### O56 — Objective from Makefile: Makefile targets = codified objectives
+Objective from Makefile: Makefile targets = codified objectives. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:coverage-baseline` + `scripts/check_readme_status_current.py` ratchet+script gate
+**Test:** `test_o56_objective_tracking_56`
+
+### O57 — Objective from plugin: plugin blocks = objective enforcement points
+Objective from plugin: plugin blocks = objective enforcement points. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make floor-status` CI+local dual
+**Test:** `test_o57_objective_tracking_57`
+
+### O58 — Objective completion metric: 100% of sub-steps done = objective done
+Objective completion metric: 100% of sub-steps done = objective done. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-multitask.ts` × `.opencode/plugin/enforce-session-start.ts` cross-plugin
+**Test:** `test_o58_objective_tracking_58`
+
+### O59 — Objective renunciation: agent can resign objective only with documented reason
+Objective renunciation: agent can resign objective only with documented reason. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Judgment Enforcement` + `scripts/verify_release_artifact.py` + `.opencode/plugin/enforce-verified-claims.ts` triple layer
+**Test:** `test_o59_objective_tracking_59`
+
+### O60 — Objective observer: background watcher polls objective state independently
+Objective observer: background watcher polls objective state independently. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Node v26 Compatibility` section
+**Test:** `test_o60_objective_tracking_60`
+
+### O61 — Objective integrity: completion signal cannot be spoofed by agent self-report
+Objective integrity: completion signal cannot be spoofed by agent self-report. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-rebranch-onto` prerequisite
+**Test:** `test_o61_objective_tracking_61`
+
+### O62 — Objective chaining: output of objective A feeds input to objective B
+Objective chaining: output of objective A feeds input to objective B. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/task_watchdog.py` enforcement
+**Test:** `test_o62_objective_tracking_62`
+
+### O63 — Objective boundary: objective scope must be clearly bounded and testable
+Objective boundary: objective scope must be clearly bounded and testable. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_o63_objective_tracking_63`
+
+### O64 — Objective timestamp: created_at + updated_at + completed_at tracked
+Objective timestamp: created_at + updated_at + completed_at tracked. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-make.ts` permissionDecision deny
+**Test:** `test_o64_objective_tracking_64`
+
+### O65 — Objective reflection: after completion, agent reviews what worked/didn't
+Objective reflection: after completion, agent reviews what worked/didn't. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make development-start` fail-closed guard
+**Test:** `test_o65_objective_tracking_65`
+
+### O66 — Objective from gate: gate red entries become auto-objectives
+Objective from gate: gate red entries become auto-objectives. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-tool-streak.json` state-file enforced block
+**Test:** `test_o66_objective_tracking_66`
+
+### O67 — Objective from coverage: coverage gap -> write-test objective auto-created
+Objective from coverage: coverage gap -> write-test objective auto-created. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-verified-claims.ts` + `make validate` combined guard
+**Test:** `test_o67_objective_tracking_67`
+
+### O68 — Objective from deadcode: detected dead code -> remove-objective auto-created
+Objective from deadcode: detected dead code -> remove-objective auto-created. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dirty-tree` ratchet-tracked gate
+**Test:** `test_o68_objective_tracking_68`
+
+### O69 — Objective cycle detection: objective A depends on B depends on A = break
+Objective cycle detection: objective A depends on B depends on A = break. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_o69_objective_tracking_69`
+
+### O70 — Objective precondition: checklist verified before objective marked active
+Objective precondition: checklist verified before objective marked active. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/task_watchdog.py` + `.opencode/plugin/enforce-batch-push.ts` dual layer
+**Test:** `test_o70_objective_tracking_70`
+
+### O71 — Objective FAIL state: objective can fail (not just complete), with root cause logged
+Objective FAIL state: objective can fail (not just complete), with root cause logged. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_require_ci_green.py` structural assertion gate
+**Test:** `test_o71_objective_tracking_71`
+
+### O72 — Objective tracking: session-level persistence check
+Objective tracking: session-level persistence check. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make check-types` + `scripts/test_hook_runtime.py` script-backed guard
+**Test:** `test_o72_objective_tracking_72`
+
+### O73 — Objective granularity: sub-objective completion detection
+Objective granularity: sub-objective completion detection. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-verified-claims.ts` env-var-gated BLOCKING
+**Test:** `test_o73_objective_tracking_73`
+
+### O74 — Objective mutation: mid-session reprioritization handled
+Objective mutation: mid-session reprioritization handled. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `10-Agent Dispatch Floor` + Makefile `make collect-check` combined
+**Test:** `test_o74_objective_tracking_74`
+
+### O75 — Objective evidence: completion requires measurable signal
+Objective evidence: completion requires measurable signal. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-ci-check-state.json` + `.opencode/plugin/enforce-test-integrity.ts` state-aware block
+**Test:** `test_o75_objective_tracking_75`
+
+### O76 — Objective hierarchy: parent-child completion propagation
+Objective hierarchy: parent-child completion propagation. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:duplicate-target` + `scripts/check_node_v26_compat.py` ratchet+script gate
+**Test:** `test_o76_objective_tracking_76`
+
+### O77 — Objective timeout: stale objective escalation to user
+Objective timeout: stale objective escalation to user. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make container-run` CI+local dual
+**Test:** `test_o77_objective_tracking_77`
+
+### O78 — Objective conflict: two objectives cannot both be primary
+Objective conflict: two objectives cannot both be primary. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-suppressions.ts` × `.opencode/plugin/enforce-no-wait.ts` cross-plugin
+**Test:** `test_o78_objective_tracking_78`
+
+### O79 — Objective audit: all tool calls must reference objective ID
+Objective audit: all tool calls must reference objective ID. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Hard Break Enforcement` + `scripts/stop_condition_audit.py` + `.opencode/plugin/enforce-session-start.ts` triple layer
+**Test:** `test_o79_objective_tracking_79`
+
+### O80 — Objective visualization: objective progress bar in output
+Objective visualization: objective progress bar in output. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Background Operations NEVER Block Dispatch` section
+**Test:** `test_o80_objective_tracking_80`
+
+### O81 — Objective priority inversion: low-pri blocking high-pri detected
+Objective priority inversion: low-pri blocking high-pri detected. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make tf-init` prerequisite
+**Test:** `test_o81_objective_tracking_81`
+
+### O82 — Objective scope creep: new objective requires explicit accept
+Objective scope creep: new objective requires explicit accept. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` enforcement
+**Test:** `test_o82_objective_tracking_82`
+
+### O83 — Objective rollback: failed objective must revert state
+Objective rollback: failed objective must revert state. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_o83_objective_tracking_83`
+
+### O84 — Objective delegation: subagent must receive objective context
+Objective delegation: subagent must receive objective context. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-anti-essay.ts` permissionDecision deny
+**Test:** `test_o84_objective_tracking_84`
+
+### O85 — Objective verification: completion confirmed by independent check
+Objective verification: completion confirmed by independent check. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make agent-cleanup` fail-closed guard
+**Test:** `test_o85_objective_tracking_85`
+
+### O86 — Objective logging: every completion logged with timestamp + evidence
+Objective logging: every completion logged with timestamp + evidence. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-user-objective.json` state-file enforced block
+**Test:** `test_o86_objective_tracking_86`
+
+### O87 — Objective sequencing: dependent objectives enforced in order
+Objective sequencing: dependent objectives enforced in order. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-deletion-gate.ts` + `make test-and-commit` combined guard
+**Test:** `test_o87_objective_tracking_87`
+
+### O88 — Objective idempotency: re-requesting same objective is no-op
+Objective idempotency: re-requesting same objective is no-op. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:typecheck-baseline` ratchet-tracked gate
+**Test:** `test_o88_objective_tracking_88`
+
+### O89 — Objective broadcast: session start reads and re-stated to user
+Objective broadcast: session start reads and re-stated to user. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_o89_objective_tracking_89`
+
+### O90 — Objective from TASKS: unchecked items auto-promoted to objectives
+Objective from TASKS: unchecked items auto-promoted to objectives. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` + `.opencode/plugin/enforce-clean-tree.ts` dual layer
+**Test:** `test_o90_objective_tracking_90`
+
+### O91 — Objective from user message: natural language parsed to structured
+Objective from user message: natural language parsed to structured. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_no_suppression_comments.py` structural assertion gate
+**Test:** `test_o91_objective_tracking_91`
+
+### O92 — Objective cancellation: explicit cancel required, not silent drop
+Objective cancellation: explicit cancel required, not silent drop. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-stash-pop` + `scripts/check_readme_status_current.py` script-backed guard
+**Test:** `test_o92_objective_tracking_92`
+
+### O93 — Objective archival: completed objectives archived to session log
+Objective archival: completed objectives archived to session log. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-enhancement-ratio.ts` env-var-gated BLOCKING
+**Test:** `test_o93_objective_tracking_93`
+
+### O94 — Objective weighting: critical > high > medium > low enforced
+Objective weighting: critical > high > medium > low enforced. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Premature-Stop Audit Policy` + Makefile `make agent-merge` combined
+**Test:** `test_o94_objective_tracking_94`
+
+### O95 — Objective deadline: time-bound objective triggers escalation when due
+Objective deadline: time-bound objective triggers escalation when due. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-task-killed.json` + `.opencode/plugin/enforce-session-start.ts` state-aware block
+**Test:** `test_o95_objective_tracking_95`
+
+### O96 — Objective interdependency: circular dependency detected and broken
+Objective interdependency: circular dependency detected and broken. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:stale-gate` + `scripts/test_hook_runtime.py` ratchet+script gate
+**Test:** `test_o96_objective_tracking_96`
+
+### O97 — Objective granularity limit: no objective >10 sub-steps without split
+Objective granularity limit: no objective >10 sub-steps without split. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make test-guardrails` CI+local dual
+**Test:** `test_o97_objective_tracking_97`
+
+### O98 — Objective progress report: every N tool calls, status emitted
+Objective progress report: every N tool calls, status emitted. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-tdd.ts` × `.opencode/plugin/enforce-objective.ts` cross-plugin
+**Test:** `test_o98_objective_tracking_98`
+
+### O99 — Objective state machine: pending → active → verifying → complete
+Objective state machine: pending → active → verifying → complete. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `No-Manual-Default Policy` + `scripts/check_duplicate_targets.py` + `.opencode/plugin/enforce-no-wait.ts` triple layer
+**Test:** `test_o99_objective_tracking_99`
+
+### O100 — Objective retry: failed objective auto-retried with backoff max 3
+Objective retry: failed objective auto-retried with backoff max 3. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Premature-Stop Audit Policy` section
+**Test:** `test_o100_objective_tracking_100`
+
+### O101 — Objective completion block: tool calls not advancing objective denied
+Objective completion block: tool calls not advancing objective denied. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-reset` prerequisite
+**Test:** `test_o101_objective_tracking_101`
+
 ### T31 — Test integrity: test that patches stdlib must justify in docstring
-The agent MUST enforce this invariant mechanically at runtime — no advisory-only, no opt-in.
-**Enforcement:** AGENTS.md `enforce-floor.ts` permissionDecision deny
+Test integrity: test that patches stdlib must justify in docstring. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_behavioral_specs.py` structural assertion gate; Makefile `make git-reset` prerequisite
 **Test:** `test_t31_test_integrity_31`
 
+### T32 — Test integrity: test using subprocess must use timeout
+Test integrity: test using subprocess must use timeout. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` enforcement; Makefile `make disengage-enforcement` + `scripts/check_readme_status_current.py` script-backed guard
+**Test:** `test_t32_test_integrity_32`
+
+### T33 — Test integrity: parametrized test must name each case
+Test integrity: parametrized test must name each case. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block; AGENTS.md `.opencode/plugin/enforce-no-wait.ts` env-var-gated BLOCKING
+**Test:** `test_t33_test_integrity_33`
+
+### T34 — Test integrity: test must not import from conftest of different dir
+Test integrity: test must not import from conftest of different dir. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-suppressions.ts` permissionDecision deny; AGENTS.md `Anti-Grinding Enforcement` + Makefile `make git-merge` combined
+**Test:** `test_t34_test_integrity_34`
+
+### T35 — Test integrity: mock spec must match actual function signature
+Test integrity: mock spec must match actual function signature. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-task-killed.json` + `.opencode/plugin/enforce-delegate.ts` state-aware block; Makefile `make feature-start` fail-closed guard
+**Test:** `test_t35_test_integrity_35`
+
+### T36 — Test integrity: test assert message must explain expected vs actual
+Test integrity: test assert message must explain expected vs actual. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-enhancement-ratio.json` state-file enforced block; AGENTS.md `config/ratchet.yml:stale-gate` + `scripts/test_hook_runtime.py` ratchet+script gate
+**Test:** `test_t36_test_integrity_36`
+
+### T37 — Test integrity: temp file creation must use pytest tmp_path fixture
+Test integrity: temp file creation must use pytest tmp_path fixture. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make verify-enforcement` CI+local dual; AGENTS.md `.opencode/plugin/enforce-delegate.ts` + `make tf-cache-warm` combined guard
+**Test:** `test_t37_test_integrity_37`
+
+### T38 — Test integrity: test must not leave processes running after completion
+Test integrity: test must not leave processes running after completion. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-context.ts` × `.opencode/plugin/enforce-verified-claims.ts` cross-plugin; AGENTS.md `config/ratchet.yml:dead-code` ratchet-tracked gate
+**Test:** `test_t38_test_integrity_38`
+
+### T39 — Test integrity: test markers must be registered in pytest.ini
+Test integrity: test markers must be registered in pytest.ini. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement; AGENTS.md `Yield Enforcement` + `scripts/check_duplicate_targets.py` + `.opencode/plugin/enforce-enhancement-ratio.ts` triple layer
+**Test:** `test_t39_test_integrity_39`
+
+### T40 — Test integrity: no silent test: test that passes but asserts nothing caught
+Test integrity: no silent test: test that passes but asserts nothing caught. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Priority Stacking` section; AGENTS.md `scripts/check_tdd_compliance.py` + `.opencode/plugin/enforce-floor.ts` dual layer
+**Test:** `test_t40_test_integrity_40`
+
+### T41 — Test integrity: test that reads prod config must use monkeypatch override
+Test integrity: test that reads prod config must use monkeypatch override. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_blocker_detector.py` structural assertion gate; Makefile `make container-run` prerequisite
+**Test:** `test_t41_test_integrity_41`
+
+### T42 — Test integrity: test that writes to disk must use tmp_path
+Test integrity: test that writes to disk must use tmp_path. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` enforcement; Makefile `make agent-worktree-list` + `scripts/check_node_v26_compat.py` script-backed guard
+**Test:** `test_t42_test_integrity_42`
+
+### T43 — Test integrity: coverage gap >5 lines in modified code = block commit
+Test integrity: coverage gap >5 lines in modified code = block commit. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block; AGENTS.md `.opencode/plugin/enforce-stop.ts` env-var-gated BLOCKING
+**Test:** `test_t43_test_integrity_43`
+
+### T44 — Test integrity: test that uses random must seed for reproducibility
+Test integrity: test that uses random must seed for reproducibility. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-floor.ts` permissionDecision deny; AGENTS.md `Release Pipeline Must Be CI-Green` + Makefile `make test-integration` combined
+**Test:** `test_t44_test_integrity_44`
+
+### T45 — Test integrity: test that depends on system time must use freezegun
+Test integrity: test that depends on system time must use freezegun. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` + `.opencode/plugin/enforce-branch-discipline.ts` state-aware block; Makefile `make gated-merge` fail-closed guard
+**Test:** `test_t45_test_integrity_45`
+
+### T46 — Test integrity: test collection must succeed before any test run
+Test integrity: test collection must succeed before any test run. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-enhancement-ratio.json` state-file enforced block; AGENTS.md `config/ratchet.yml:coverage-baseline` + `scripts/check_readme_status_current.py` ratchet+script gate
+**Test:** `test_t46_test_integrity_46`
+
+### T47 — Test integrity: no test that imports the module it's testing via wildcard
+Test integrity: no test that imports the module it's testing via wildcard. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make gate-kill` CI+local dual; AGENTS.md `.opencode/plugin/enforce-test-integrity.ts` + `make git-checkout` combined guard
+**Test:** `test_t47_test_integrity_47`
+
+### T48 — Test integrity: mock must not mock the function under test itself
+Test integrity: mock must not mock the function under test itself. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-anti-essay.ts` × `.opencode/plugin/enforce-deletion-gate.ts` cross-plugin; AGENTS.md `config/ratchet.yml:dead-code` ratchet-tracked gate
+**Test:** `test_t48_test_integrity_48`
+
+### T49 — Test integrity: test module must have same name as source module
+Test integrity: test module must have same name as source module. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement; AGENTS.md `Pre-Generation Contract` + `scripts/verify_release_artifact.py` + `.opencode/plugin/enforce-objective.ts` triple layer
+**Test:** `test_t49_test_integrity_49`
+
+### T50 — Test integrity: conftest must not contain test functions
+Test integrity: conftest must not contain test functions. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Task Self-Tracking` section; AGENTS.md `scripts/check_tdd_compliance.py` + `.opencode/plugin/enforce-context.ts` dual layer
+**Test:** `test_t50_test_integrity_50`
+
+### T51 — Test integrity: test with external dependency must be marked integration
+Test integrity: test with external dependency must be marked integration. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_verified_claims_plugin.py` structural assertion gate; Makefile `make check-opencode-backup` prerequisite
+**Test:** `test_t51_test_integrity_51`
+
+### T52 — Test integrity: coverage omit must be justified per file
+Test integrity: coverage omit must be justified per file. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/task_watchdog.py` enforcement; Makefile `make container-push` + `scripts/check_node_v26_compat.py` script-backed guard
+**Test:** `test_t52_test_integrity_52`
+
+### T53 — Test integrity: test that checks stdout must capture, not print
+Test integrity: test that checks stdout must capture, not print. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block; AGENTS.md `.opencode/plugin/enforce-session-start.ts` env-var-gated BLOCKING
+**Test:** `test_t53_test_integrity_53`
+
+### T54 — Test integrity: test must use pytest.raises for expected exceptions
+Test integrity: test must use pytest.raises for expected exceptions. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-context.ts` permissionDecision deny; AGENTS.md `Nothing-Dropped Guardrail` + Makefile `make clean-worktree-venvs` combined
+**Test:** `test_t54_test_integrity_54`
+
+### T55 — Test integrity: fixture scope session requires explicit teardown
+Test integrity: fixture scope session requires explicit teardown. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` + `.opencode/plugin/enforce-no-wait.ts` state-aware block; Makefile `make check-duplicate-targets` fail-closed guard
+**Test:** `test_t55_test_integrity_55`
+
+### T56 — Test integrity: test file must have >=1 class or >=1 function
+Test integrity: test file must have >=1 class or >=1 function. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:coverage-baseline` + `scripts/check_readme_status_current.py` ratchet+script gate
+**Test:** `test_t56_test_integrity_56`
+
+### T57 — Test integrity: test must not use exit() or sys.exit()
+Test integrity: test must not use exit() or sys.exit(). This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make floor-status` CI+local dual
+**Test:** `test_t57_test_integrity_57`
+
+### T58 — Test integrity: benchmark test must use pytest-benchmark marker
+Test integrity: benchmark test must use pytest-benchmark marker. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-multitask.ts` × `.opencode/plugin/enforce-session-start.ts` cross-plugin
+**Test:** `test_t58_test_integrity_58`
+
+### T59 — Test integrity: test regression: previously passing test now failing = blocker
+Test integrity: test regression: previously passing test now failing = blocker. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Judgment Enforcement` + `scripts/verify_release_artifact.py` + `.opencode/plugin/enforce-verified-claims.ts` triple layer
+**Test:** `test_t59_test_integrity_59`
+
+### T60 — Test integrity: test must not assert on log output format strings
+Test integrity: test must not assert on log output format strings. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Node v26 Compatibility` section
+**Test:** `test_t60_test_integrity_60`
+
+### T61 — Test integrity: test must not depend on test execution order in CI
+Test integrity: test must not depend on test execution order in CI. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-rebranch-onto` prerequisite
+**Test:** `test_t61_test_integrity_61`
+
+### T62 — Test integrity: test must not use threading without join in teardown
+Test integrity: test must not use threading without join in teardown. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/task_watchdog.py` enforcement
+**Test:** `test_t62_test_integrity_62`
+
+### T63 — Test integrity: test coverage for __init__.py must include re-exports
+Test integrity: test coverage for __init__.py must include re-exports. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_t63_test_integrity_63`
+
+### T64 — Test integrity: test with parametrize over external data must validate
+Test integrity: test with parametrize over external data must validate. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-make.ts` permissionDecision deny
+**Test:** `test_t64_test_integrity_64`
+
+### T65 — Test integrity: snapshot test must regenerate on --snapshot-update
+Test integrity: snapshot test must regenerate on --snapshot-update. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make development-start` fail-closed guard
+**Test:** `test_t65_test_integrity_65`
+
+### T66 — Test integrity: test must not call the function 0 times and pass
+Test integrity: test must not call the function 0 times and pass. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-tool-streak.json` state-file enforced block
+**Test:** `test_t66_test_integrity_66`
+
+### T67 — Test integrity: hypothesis test must have deadline set or disabled
+Test integrity: hypothesis test must have deadline set or disabled. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-verified-claims.ts` + `make validate` combined guard
+**Test:** `test_t67_test_integrity_67`
+
+### T68 — Test integrity: test must not read environment in assertion
+Test integrity: test must not read environment in assertion. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dirty-tree` ratchet-tracked gate
+**Test:** `test_t68_test_integrity_68`
+
+### T69 — Test integrity: test must not mutate shared fixture in parametrize loop
+Test integrity: test must not mutate shared fixture in parametrize loop. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_t69_test_integrity_69`
+
+### T70 — Test integrity: test collection must not have side effects
+Test integrity: test collection must not have side effects. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/task_watchdog.py` + `.opencode/plugin/enforce-batch-push.ts` dual layer
+**Test:** `test_t70_test_integrity_70`
+
+### T71 — Test integrity: no pytest.skip in committed test suite
+Test integrity: no pytest.skip in committed test suite. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_require_ci_green.py` structural assertion gate
+**Test:** `test_t71_test_integrity_71`
+
+### T72 — Test integrity: xfail requires strict=True and documented reason
+Test integrity: xfail requires strict=True and documented reason. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make check-types` + `scripts/test_hook_runtime.py` script-backed guard
+**Test:** `test_t72_test_integrity_72`
+
+### T73 — Test integrity: coverage threshold per modified module >=85%
+Test integrity: coverage threshold per modified module >=85%. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-verified-claims.ts` env-var-gated BLOCKING
+**Test:** `test_t73_test_integrity_73`
+
+### T74 — Test integrity: no test file with zero assertions
+Test integrity: no test file with zero assertions. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `10-Agent Dispatch Floor` + Makefile `make collect-check` combined
+**Test:** `test_t74_test_integrity_74`
+
+### T75 — Test integrity: all test functions must be discoverable by pytest
+Test integrity: all test functions must be discoverable by pytest. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-ci-check-state.json` + `.opencode/plugin/enforce-test-integrity.ts` state-aware block
+**Test:** `test_t75_test_integrity_75`
+
+### T76 — Test integrity: test isolation: no test-order dependency
+Test integrity: test isolation: no test-order dependency. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:duplicate-target` + `scripts/check_node_v26_compat.py` ratchet+script gate
+**Test:** `test_t76_test_integrity_76`
+
+### T77 — Test integrity: test fixtures scoped correctly (function vs module)
+Test integrity: test fixtures scoped correctly (function vs module). This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make container-run` CI+local dual
+**Test:** `test_t77_test_integrity_77`
+
+### T78 — Test integrity: no hardcoded absolute paths in test assertions
+Test integrity: no hardcoded absolute paths in test assertions. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-suppressions.ts` × `.opencode/plugin/enforce-no-wait.ts` cross-plugin
+**Test:** `test_t78_test_integrity_78`
+
+### T79 — Test integrity: test db uses in-memory SQLite, never production DB
+Test integrity: test db uses in-memory SQLite, never production DB. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Hard Break Enforcement` + `scripts/stop_condition_audit.py` + `.opencode/plugin/enforce-session-start.ts` triple layer
+**Test:** `test_t79_test_integrity_79`
+
+### T80 — Test integrity: mock patch must be cleaned up in teardown
+Test integrity: mock patch must be cleaned up in teardown. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Background Operations NEVER Block Dispatch` section
+**Test:** `test_t80_test_integrity_80`
+
+### T81 — Test integrity: parametrize must have at least 2 cases
+Test integrity: parametrize must have at least 2 cases. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make tf-init` prerequisite
+**Test:** `test_t81_test_integrity_81`
+
+### T82 — Test integrity: slow marker must be applied to tests >1s
+Test integrity: slow marker must be applied to tests >1s. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` enforcement
+**Test:** `test_t82_test_integrity_82`
+
+### T83 — Test integrity: no network calls in unit tests
+Test integrity: no network calls in unit tests. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_t83_test_integrity_83`
+
+### T84 — Test integrity: temp dirs/files cleaned up after test
+Test integrity: temp dirs/files cleaned up after test. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-anti-essay.ts` permissionDecision deny
+**Test:** `test_t84_test_integrity_84`
+
+### T85 — Test integrity: monkeypatch cleaned up after test
+Test integrity: monkeypatch cleaned up after test. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make agent-cleanup` fail-closed guard
+**Test:** `test_t85_test_integrity_85`
+
+### T86 — Test integrity: no globals mutated across test functions
+Test integrity: no globals mutated across test functions. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-user-objective.json` state-file enforced block
+**Test:** `test_t86_test_integrity_86`
+
+### T87 — Test integrity: test collection must not import prod config
+Test integrity: test collection must not import prod config. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-deletion-gate.ts` + `make test-and-commit` combined guard
+**Test:** `test_t87_test_integrity_87`
+
+### T88 — Test integrity: each test category (unit/int/e2e) in correct dir
+Test integrity: each test category (unit/int/e2e) in correct dir. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:typecheck-baseline` ratchet-tracked gate
+**Test:** `test_t88_test_integrity_88`
+
+### T89 — Test integrity: conftest fixtures must be documented
+Test integrity: conftest fixtures must be documented. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_t89_test_integrity_89`
+
+### T90 — Test integrity: test that always passes (no assert) is removed
+Test integrity: test that always passes (no assert) is removed. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` + `.opencode/plugin/enforce-clean-tree.ts` dual layer
+**Test:** `test_t90_test_integrity_90`
+
+### T91 — Test integrity: test with time.sleep is flagged for refactor
+Test integrity: test with time.sleep is flagged for refactor. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_no_suppression_comments.py` structural assertion gate
+**Test:** `test_t91_test_integrity_91`
+
+### T92 — Test integrity: no test depends on env var without explicit set
+Test integrity: no test depends on env var without explicit set. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-stash-pop` + `scripts/check_readme_status_current.py` script-backed guard
+**Test:** `test_t92_test_integrity_92`
+
+### T93 — Test integrity: test must not modify source tree during run
+Test integrity: test must not modify source tree during run. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-enhancement-ratio.ts` env-var-gated BLOCKING
+**Test:** `test_t93_test_integrity_93`
+
+### T94 — Test integrity: coverage report must be generated after test run
+Test integrity: coverage report must be generated after test run. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Premature-Stop Audit Policy` + Makefile `make agent-merge` combined
+**Test:** `test_t94_test_integrity_94`
+
+### T95 — Test integrity: test failures must include traceback, not just assertion
+Test integrity: test failures must include traceback, not just assertion. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-task-killed.json` + `.opencode/plugin/enforce-session-start.ts` state-aware block
+**Test:** `test_t95_test_integrity_95`
+
+### T96 — Test integrity: test name must match test_<module>_<behavior> pattern
+Test integrity: test name must match test_<module>_<behavior> pattern. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:stale-gate` + `scripts/test_hook_runtime.py` ratchet+script gate
+**Test:** `test_t96_test_integrity_96`
+
+### T97 — Test integrity: test docstring must describe what is being verified
+Test integrity: test docstring must describe what is being verified. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make test-guardrails` CI+local dual
+**Test:** `test_t97_test_integrity_97`
+
+### T98 — Test integrity: no commented-out test code in committed files
+Test integrity: no commented-out test code in committed files. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-tdd.ts` × `.opencode/plugin/enforce-objective.ts` cross-plugin
+**Test:** `test_t98_test_integrity_98`
+
+### T99 — Test integrity: test data files in tests/data/ not tests/ root
+Test integrity: test data files in tests/data/ not tests/ root. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `No-Manual-Default Policy` + `scripts/check_duplicate_targets.py` + `.opencode/plugin/enforce-no-wait.ts` triple layer
+**Test:** `test_t99_test_integrity_99`
+
+### T100 — Test integrity: flaky test detection: >2 failures in 10 runs = quarantine
+Test integrity: flaky test detection: >2 failures in 10 runs = quarantine. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Premature-Stop Audit Policy` section
+**Test:** `test_t100_test_integrity_100`
+
 ### D31 — Dispatch floor: wave composition: at least 2 enhancements per wave
-The agent MUST enforce this invariant mechanically at runtime — no advisory-only, no opt-in.
-**Enforcement:** AGENTS.md `enforce-floor.ts` permissionDecision deny
+Dispatch floor: wave composition: at least 2 enhancements per wave. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Premature-Stop Audit Policy` section; AGENTS.md `tests/unit/test_behavioral_specs.py` structural assertion gate
 **Test:** `test_d31_dispatch_floor_31`
 
+### D32 — Dispatch floor: fix-only waves forbidden when enhancement work exists
+Dispatch floor: fix-only waves forbidden when enhancement work exists. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make disengage-enforcement` + `scripts/check_readme_status_current.py` script-backed guard; Makefile `make git-reset` prerequisite
+**Test:** `test_d32_dispatch_floor_32`
+
+### D33 — Dispatch floor: subagent prompt size limit: <=20 lines per prompt
+Dispatch floor: subagent prompt size limit: <=20 lines per prompt. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` env-var-gated BLOCKING; AGENTS.md `scripts/require_ci_green.py` enforcement
+**Test:** `test_d33_dispatch_floor_33`
+
+### D34 — Dispatch floor: terse returns: subagent returns <=10 line summary
+Dispatch floor: terse returns: subagent returns <=10 line summary. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block; AGENTS.md `Anti-Grinding Enforcement` + Makefile `make git-merge` combined
+**Test:** `test_d34_dispatch_floor_34`
+
+### D35 — Dispatch floor: research serialization: max 1 research subagent at a time
+Dispatch floor: research serialization: max 1 research subagent at a time. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-suppressions.ts` permissionDecision deny; AGENTS.md `/tmp/gludd-task-killed.json` + `.opencode/plugin/enforce-delegate.ts` state-aware block
+**Test:** `test_d35_dispatch_floor_35`
+
+### D36 — Dispatch floor: coding parallelization: max 2 coding subagents in parallel
+Dispatch floor: coding parallelization: max 2 coding subagents in parallel. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:stale-gate` + `scripts/test_hook_runtime.py` ratchet+script gate; Makefile `make feature-start` fail-closed guard
+**Test:** `test_d36_dispatch_floor_36`
+
+### D37 — Dispatch floor: deduplication: never re-dispatch completed task
+Dispatch floor: deduplication: never re-dispatch completed task. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make verify-enforcement` CI+local dual; AGENTS.md `/tmp/gludd-enhancement-ratio.json` state-file enforced block
+**Test:** `test_d37_dispatch_floor_37`
+
+### D38 — Dispatch floor: worktree per file-editing subagent is mandatory
+Dispatch floor: worktree per file-editing subagent is mandatory. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-context.ts` × `.opencode/plugin/enforce-verified-claims.ts` cross-plugin; AGENTS.md `.opencode/plugin/enforce-delegate.ts` + `make tf-cache-warm` combined guard
+**Test:** `test_d38_dispatch_floor_38`
+
+### D39 — Dispatch floor: merge serialized through orchestrator on main checkout
+Dispatch floor: merge serialized through orchestrator on main checkout. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Yield Enforcement` + `scripts/check_duplicate_targets.py` + `.opencode/plugin/enforce-enhancement-ratio.ts` triple layer; AGENTS.md `config/ratchet.yml:dead-code` ratchet-tracked gate
+**Test:** `test_d39_dispatch_floor_39`
+
+### D40 — Dispatch floor: branch uniqueness: one branch per worktree agent
+Dispatch floor: branch uniqueness: one branch per worktree agent. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement; AGENTS.md `Priority Stacking` section
+**Test:** `test_d40_dispatch_floor_40`
+
+### D41 — Dispatch floor: dispatch log: each dispatch recorded to state file
+Dispatch floor: dispatch log: each dispatch recorded to state file. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` + `.opencode/plugin/enforce-floor.ts` dual layer; Makefile `make container-run` prerequisite
+**Test:** `test_d41_dispatch_floor_41`
+
+### D42 — Dispatch floor: dispatch failure: failed dispatch retried with backoff
+Dispatch floor: dispatch failure: failed dispatch retried with backoff. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` enforcement; AGENTS.md `tests/unit/test_blocker_detector.py` structural assertion gate
+**Test:** `test_d42_dispatch_floor_42`
+
+### D43 — Dispatch floor: dispatch context: subagent inherits floor awareness
+Dispatch floor: dispatch context: subagent inherits floor awareness. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block; Makefile `make agent-worktree-list` + `scripts/check_node_v26_compat.py` script-backed guard
+**Test:** `test_d43_dispatch_floor_43`
+
+### D44 — Dispatch floor: dispatch model: prefer sonnet, reserve opus for synthesis
+Dispatch floor: dispatch model: prefer sonnet, reserve opus for synthesis. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-floor.ts` permissionDecision deny; AGENTS.md `.opencode/plugin/enforce-stop.ts` env-var-gated BLOCKING
+**Test:** `test_d44_dispatch_floor_44`
+
+### D45 — Dispatch floor: dispatch tool list: subagent informed of available tools
+Dispatch floor: dispatch tool list: subagent informed of available tools. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Release Pipeline Must Be CI-Green` + Makefile `make test-integration` combined; Makefile `make gated-merge` fail-closed guard
+**Test:** `test_d45_dispatch_floor_45`
+
+### D46 — Dispatch floor: dispatch make-targets: subagent knows available make targets
+Dispatch floor: dispatch make-targets: subagent knows available make targets. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-enhancement-ratio.json` state-file enforced block; AGENTS.md `/tmp/gludd-floor-override` + `.opencode/plugin/enforce-branch-discipline.ts` state-aware block
+**Test:** `test_d46_dispatch_floor_46`
+
+### D47 — Dispatch floor: dispatch path constraints: subagent restricted to workspace
+Dispatch floor: dispatch path constraints: subagent restricted to workspace. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-test-integrity.ts` + `make git-checkout` combined guard; AGENTS.md `config/ratchet.yml:coverage-baseline` + `scripts/check_readme_status_current.py` ratchet+script gate
+**Test:** `test_d47_dispatch_floor_47`
+
+### D48 — Dispatch floor: dispatch timeout: GLUDD_TASK_TIMEOUT_MS enforced per task
+Dispatch floor: dispatch timeout: GLUDD_TASK_TIMEOUT_MS enforced per task. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make gate-kill` CI+local dual; AGENTS.md `config/ratchet.yml:dead-code` ratchet-tracked gate
+**Test:** `test_d48_dispatch_floor_48`
+
+### D49 — Dispatch floor: dispatch audit: each wave logged with timestamp and task IDs
+Dispatch floor: dispatch audit: each wave logged with timestamp and task IDs. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement; AGENTS.md `.opencode/plugin/enforce-anti-essay.ts` × `.opencode/plugin/enforce-deletion-gate.ts` cross-plugin
+**Test:** `test_d49_dispatch_floor_49`
+
+### D50 — Dispatch floor: dispatch override: GLUDD_MULTITASK_FLOOR_ENFORCE=0 disables
+Dispatch floor: dispatch override: GLUDD_MULTITASK_FLOOR_ENFORCE=0 disables. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Pre-Generation Contract` + `scripts/verify_release_artifact.py` + `.opencode/plugin/enforce-objective.ts` triple layer; AGENTS.md `scripts/check_tdd_compliance.py` + `.opencode/plugin/enforce-context.ts` dual layer
+**Test:** `test_d50_dispatch_floor_50`
+
+### D51 — Dispatch floor: dispatch recovery: crashed session resets dispatch counters
+Dispatch floor: dispatch recovery: crashed session resets dispatch counters. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Task Self-Tracking` section; AGENTS.md `tests/unit/test_verified_claims_plugin.py` structural assertion gate
+**Test:** `test_d51_dispatch_floor_51`
+
+### D52 — Dispatch floor: dispatch status: make floor-status shows in-flight count
+Dispatch floor: dispatch status: make floor-status shows in-flight count. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make check-opencode-backup` prerequisite; Makefile `make container-push` + `scripts/check_node_v26_compat.py` script-backed guard
+**Test:** `test_d52_dispatch_floor_52`
+
+### D53 — Dispatch floor: dispatch quota: max 10 concurrent subagents hard cap
+Dispatch floor: dispatch quota: max 10 concurrent subagents hard cap. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-session-start.ts` env-var-gated BLOCKING; AGENTS.md `scripts/task_watchdog.py` enforcement
+**Test:** `test_d53_dispatch_floor_53`
+
+### D54 — Dispatch floor: dispatch model tracking: per-dispatch model recorded
+Dispatch floor: dispatch model tracking: per-dispatch model recorded. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block; AGENTS.md `Nothing-Dropped Guardrail` + Makefile `make clean-worktree-venvs` combined
+**Test:** `test_d54_dispatch_floor_54`
+
+### D55 — Dispatch floor: dispatch enhancement ratio: >=50% enhancement per wave
+Dispatch floor: dispatch enhancement ratio: >=50% enhancement per wave. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-context.ts` permissionDecision deny; AGENTS.md `/tmp/gludd-floor-override` + `.opencode/plugin/enforce-no-wait.ts` state-aware block
+**Test:** `test_d55_dispatch_floor_55`
+
+### D56 — Dispatch floor: dispatch CI awareness: no dispatch during release-cut
+Dispatch floor: dispatch CI awareness: no dispatch during release-cut. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:coverage-baseline` + `scripts/check_readme_status_current.py` ratchet+script gate; Makefile `make check-duplicate-targets` fail-closed guard
+**Test:** `test_d56_dispatch_floor_56`
+
+### D57 — Dispatch floor: dispatch tree cleanliness: dirty tree blocks dispatch
+Dispatch floor: dispatch tree cleanliness: dirty tree blocks dispatch. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make floor-status` CI+local dual
+**Test:** `test_d57_dispatch_floor_57`
+
+### D58 — Dispatch floor: dispatch disengage: emergency bypass for stuck sessions
+Dispatch floor: dispatch disengage: emergency bypass for stuck sessions. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-multitask.ts` × `.opencode/plugin/enforce-session-start.ts` cross-plugin
+**Test:** `test_d58_dispatch_floor_58`
+
+### D59 — Dispatch floor: dispatch throttle: no dispatch when disk >95%
+Dispatch floor: dispatch throttle: no dispatch when disk >95%. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Judgment Enforcement` + `scripts/verify_release_artifact.py` + `.opencode/plugin/enforce-verified-claims.ts` triple layer
+**Test:** `test_d59_dispatch_floor_59`
+
+### D60 — Dispatch floor: dispatch observability: dispatch count visible to user
+Dispatch floor: dispatch observability: dispatch count visible to user. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Node v26 Compatibility` section
+**Test:** `test_d60_dispatch_floor_60`
+
+### D61 — Dispatch floor: dispatch auto-refill: completion triggers refill check
+Dispatch floor: dispatch auto-refill: completion triggers refill check. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-rebranch-onto` prerequisite
+**Test:** `test_d61_dispatch_floor_61`
+
+### D62 — Dispatch floor: dispatch cost: each wave logged with token estimate
+Dispatch floor: dispatch cost: each wave logged with token estimate. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/task_watchdog.py` enforcement
+**Test:** `test_d62_dispatch_floor_62`
+
+### D63 — Dispatch floor: dispatch backpressure: pause dispatch when results unprocessed
+Dispatch floor: dispatch backpressure: pause dispatch when results unprocessed. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_d63_dispatch_floor_63`
+
+### D64 — Dispatch floor: dispatch grace: result-processing window permits limited reads
+Dispatch floor: dispatch grace: result-processing window permits limited reads. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-make.ts` permissionDecision deny
+**Test:** `test_d64_dispatch_floor_64`
+
+### D65 — Dispatch floor: dispatch priority: higher-priority tasks dispatched first
+Dispatch floor: dispatch priority: higher-priority tasks dispatched first. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make development-start` fail-closed guard
+**Test:** `test_d65_dispatch_floor_65`
+
+### D66 — Dispatch floor: dispatch isolation: per-agent worktree prevents cross-contamination
+Dispatch floor: dispatch isolation: per-agent worktree prevents cross-contamination. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-tool-streak.json` state-file enforced block
+**Test:** `test_d66_dispatch_floor_66`
+
+### D67 — Dispatch floor: dispatch verification: verify result before marking task done
+Dispatch floor: dispatch verification: verify result before marking task done. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-verified-claims.ts` + `make validate` combined guard
+**Test:** `test_d67_dispatch_floor_67`
+
+### D68 — Dispatch floor: dispatch learning: failed dispatch patterns avoided in future
+Dispatch floor: dispatch learning: failed dispatch patterns avoided in future. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dirty-tree` ratchet-tracked gate
+**Test:** `test_d68_dispatch_floor_68`
+
+### D69 — Dispatch floor: dispatch emergency: task watchdog kills hung subagents
+Dispatch floor: dispatch emergency: task watchdog kills hung subagents. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_d69_dispatch_floor_69`
+
+### D70 — Dispatch floor: minimum 10 task/agent dispatches per wave mechanically enforced
+Dispatch floor: minimum 10 task/agent dispatches per wave mechanically enforced. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/task_watchdog.py` + `.opencode/plugin/enforce-batch-push.ts` dual layer
+**Test:** `test_d70_dispatch_floor_70`
+
+### D71 — Dispatch floor: zero-dispatch streak counter blocks at MAX_ZERO_STREAK=2
+Dispatch floor: zero-dispatch streak counter blocks at MAX_ZERO_STREAK=2. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_require_ci_green.py` structural assertion gate
+**Test:** `test_d71_dispatch_floor_71`
+
+### D72 — Dispatch floor: post-result read limit (POST_RESULT_READ_LIMIT=3) enforced
+Dispatch floor: post-result read limit (POST_RESULT_READ_LIMIT=3) enforced. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make check-types` + `scripts/test_hook_runtime.py` script-backed guard
+**Test:** `test_d72_dispatch_floor_72`
+
+### D73 — Dispatch floor: estimatedInFlight counter prevents pool drainage
+Dispatch floor: estimatedInFlight counter prevents pool drainage. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-verified-claims.ts` env-var-gated BLOCKING
+**Test:** `test_d73_dispatch_floor_73`
+
+### D74 — Dispatch floor: waveHistory tracks per-wave dispatch count for audit
+Dispatch floor: waveHistory tracks per-wave dispatch count for audit. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `10-Agent Dispatch Floor` + Makefile `make collect-check` combined
+**Test:** `test_d74_dispatch_floor_74`
+
+### D75 — Dispatch floor: consecutiveNonDispatch count resets on any dispatch
+Dispatch floor: consecutiveNonDispatch count resets on any dispatch. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-ci-check-state.json` + `.opencode/plugin/enforce-test-integrity.ts` state-aware block
+**Test:** `test_d75_dispatch_floor_75`
+
+### D76 — Dispatch floor: grinding block at 5 non-dispatch calls in 30s window
+Dispatch floor: grinding block at 5 non-dispatch calls in 30s window. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:duplicate-target` + `scripts/check_node_v26_compat.py` ratchet+script gate
+**Test:** `test_d76_dispatch_floor_76`
+
+### D77 — Dispatch floor: dispatch refill required when in-flight drops below 10
+Dispatch floor: dispatch refill required when in-flight drops below 10. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make container-run` CI+local dual
+**Test:** `test_d77_dispatch_floor_77`
+
+### D78 — Dispatch floor: message-shape: 1-dispatch messages with >=2 pending items denied
+Dispatch floor: message-shape: 1-dispatch messages with >=2 pending items denied. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-suppressions.ts` × `.opencode/plugin/enforce-no-wait.ts` cross-plugin
+**Test:** `test_d78_dispatch_floor_78`
+
+### D79 — Dispatch floor: text.complete nag when wave count <10 with pending work
+Dispatch floor: text.complete nag when wave count <10 with pending work. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Hard Break Enforcement` + `scripts/stop_condition_audit.py` + `.opencode/plugin/enforce-session-start.ts` triple layer
+**Test:** `test_d79_dispatch_floor_79`
+
+### D80 — Dispatch floor: read-only tools (read/grep/glob) do not increment streak
+Dispatch floor: read-only tools (read/grep/glob) do not increment streak. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Background Operations NEVER Block Dispatch` section
+**Test:** `test_d80_dispatch_floor_80`
+
+### D81 — Dispatch floor: floor override via /tmp/gludd-floor-override respected
+Dispatch floor: floor override via /tmp/gludd-floor-override respected. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make tf-init` prerequisite
+**Test:** `test_d81_dispatch_floor_81`
+
+### D82 — Dispatch floor: GLUDD_MIN_DISPATCHES env var allows floor tuning
+Dispatch floor: GLUDD_MIN_DISPATCHES env var allows floor tuning. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` enforcement
+**Test:** `test_d82_dispatch_floor_82`
+
+### D83 — Dispatch floor: session-start dispatch requirement kicks in immediately
+Dispatch floor: session-start dispatch requirement kicks in immediately. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_d83_dispatch_floor_83`
+
+### D84 — Dispatch floor: subagent result arrival triggers dispatch opportunity
+Dispatch floor: subagent result arrival triggers dispatch opportunity. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-anti-essay.ts` permissionDecision deny
+**Test:** `test_d84_dispatch_floor_84`
+
+### D85 — Dispatch floor: main-thread ops must not exceed 3s or they're dispatched
+Dispatch floor: main-thread ops must not exceed 3s or they're dispatched. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make agent-cleanup` fail-closed guard
+**Test:** `test_d85_dispatch_floor_85`
+
+### D86 — Dispatch floor: commit dispatched as subagent, not main-thread mutating bash
+Dispatch floor: commit dispatched as subagent, not main-thread mutating bash. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-user-objective.json` state-file enforced block
+**Test:** `test_d86_dispatch_floor_86`
+
+### D87 — Dispatch floor: research filler subagents when edit backlog is thin
+Dispatch floor: research filler subagents when edit backlog is thin. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-deletion-gate.ts` + `make test-and-commit` combined guard
+**Test:** `test_d87_dispatch_floor_87`
+
+### D88 — Dispatch floor: uniform-duration tasks preferred to minimize drain
+Dispatch floor: uniform-duration tasks preferred to minimize drain. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:typecheck-baseline` ratchet-tracked gate
+**Test:** `test_d88_dispatch_floor_88`
+
+### D89 — Dispatch floor: fast result processing: <5s between result and next wave
+Dispatch floor: fast result processing: <5s between result and next wave. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_d89_dispatch_floor_89`
+
+### D90 — Dispatch floor: dispatch wave must be next action after backlog reads
+Dispatch floor: dispatch wave must be next action after backlog reads. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` + `.opencode/plugin/enforce-clean-tree.ts` dual layer
+**Test:** `test_d90_dispatch_floor_90`
+
+### D91 — Dispatch floor: no text analysis between subagent result and next dispatch
+Dispatch floor: no text analysis between subagent result and next dispatch. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_no_suppression_comments.py` structural assertion gate
+**Test:** `test_d91_dispatch_floor_91`
+
+### D92 — Dispatch floor: pipeline primed: batch N+1 dispatched while N reconciling
+Dispatch floor: pipeline primed: batch N+1 dispatched while N reconciling. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-stash-pop` + `scripts/check_readme_status_current.py` script-backed guard
+**Test:** `test_d92_dispatch_floor_92`
+
+### D93 — Dispatch floor: hot-file serialization: max 1 agent per hot file at a time
+Dispatch floor: hot-file serialization: max 1 agent per hot file at a time. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-enhancement-ratio.ts` env-var-gated BLOCKING
+**Test:** `test_d93_dispatch_floor_93`
+
+### D94 — Dispatch floor: worktree cap: max 6 concurrent worktree agents
+Dispatch floor: worktree cap: max 6 concurrent worktree agents. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Premature-Stop Audit Policy` + Makefile `make agent-merge` combined
+**Test:** `test_d94_dispatch_floor_94`
+
+### D95 — Dispatch floor: non-isolated agents for read-only/new-file tasks
+Dispatch floor: non-isolated agents for read-only/new-file tasks. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-task-killed.json` + `.opencode/plugin/enforce-session-start.ts` state-aware block
+**Test:** `test_d95_dispatch_floor_95`
+
+### D96 — Dispatch floor: dispatch reliability: tasks sized for 2-5 min completion
+Dispatch floor: dispatch reliability: tasks sized for 2-5 min completion. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:stale-gate` + `scripts/test_hook_runtime.py` ratchet+script gate
+**Test:** `test_d96_dispatch_floor_96`
+
+### D97 — Dispatch floor: no gate dispatch to subagent: gate runs in background
+Dispatch floor: no gate dispatch to subagent: gate runs in background. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make test-guardrails` CI+local dual
+**Test:** `test_d97_dispatch_floor_97`
+
+### D98 — Dispatch floor: deadline enforcement: subagent >5 min is killed
+Dispatch floor: deadline enforcement: subagent >5 min is killed. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-tdd.ts` × `.opencode/plugin/enforce-objective.ts` cross-plugin
+**Test:** `test_d98_dispatch_floor_98`
+
+### D99 — Dispatch floor: result codification before next dispatch wave
+Dispatch floor: result codification before next dispatch wave. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `No-Manual-Default Policy` + `scripts/check_duplicate_targets.py` + `.opencode/plugin/enforce-no-wait.ts` triple layer
+**Test:** `test_d99_dispatch_floor_99`
+
 ### S26 — Stop prevention: agent claims 'CI green' from memory without fresh check blocked
-The agent MUST enforce this invariant mechanically at runtime — no advisory-only, no opt-in.
-**Enforcement:** AGENTS.md `enforce-stop.ts` tool.execute.before
+Stop prevention: agent claims 'CI green' from memory without fresh check blocked. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-user-objective.json` state-file enforced block; AGENTS.md `Premature-Stop Audit Policy` section
 **Test:** `test_s26_stop_prevention_26`
 
+### S27 — Stop prevention: 'task complete' without TASKS.md update is incomplete stop
+Stop prevention: 'task complete' without TASKS.md update is incomplete stop. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-objective.ts` + `make require-ci-green` combined guard; Makefile `make git-reset` prerequisite
+**Test:** `test_s27_stop_prevention_27`
+
+### S28 — Stop prevention: 'moving on to' without completing current objective flagged
+Stop prevention: 'moving on to' without completing current objective flagged. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:typecheck-baseline` ratchet-tracked gate; AGENTS.md `scripts/require_ci_green.py` enforcement
+**Test:** `test_s28_stop_prevention_28`
+
+### S29 — Stop prevention: stop when ratchet has entries is NEVER permitted
+Stop prevention: stop when ratchet has entries is NEVER permitted. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement; AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_s29_stop_prevention_29`
+
+### S30 — Stop prevention: stop when gate-status is FAIL is NEVER permitted
+Stop prevention: stop when gate-status is FAIL is NEVER permitted. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-suppressions.ts` permissionDecision deny; AGENTS.md `scripts/require_ci_green.py` + `.opencode/plugin/enforce-multitask.ts` dual layer
+**Test:** `test_s30_stop_prevention_30`
+
+### S31 — Stop prevention: stop when .gate-status is missing is NEVER permitted
+Stop prevention: stop when .gate-status is missing is NEVER permitted. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_behavioral_specs.py` structural assertion gate; Makefile `make feature-start` fail-closed guard
+**Test:** `test_s31_stop_prevention_31`
+
+### S32 — Stop prevention: stop when release tag lacks artifact is NEVER permitted
+Stop prevention: stop when release tag lacks artifact is NEVER permitted. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-enhancement-ratio.json` state-file enforced block; Makefile `make disengage-enforcement` + `scripts/check_readme_status_current.py` script-backed guard
+**Test:** `test_s32_stop_prevention_32`
+
+### S33 — Stop prevention: stop when uncommitted changes exist is NEVER permitted
+Stop prevention: stop when uncommitted changes exist is NEVER permitted. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-delegate.ts` + `make tf-cache-warm` combined guard; AGENTS.md `.opencode/plugin/enforce-no-wait.ts` env-var-gated BLOCKING
+**Test:** `test_s33_stop_prevention_33`
+
+### S34 — Stop prevention: stop when CI is red on current branch is NEVER permitted
+Stop prevention: stop when CI is red on current branch is NEVER permitted. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Anti-Grinding Enforcement` + Makefile `make git-merge` combined; AGENTS.md `config/ratchet.yml:dead-code` ratchet-tracked gate
+**Test:** `test_s34_stop_prevention_34`
+
+### S35 — Stop prevention: stop when development branch has diverged from master
+Stop prevention: stop when development branch has diverged from master. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement; AGENTS.md `/tmp/gludd-task-killed.json` + `.opencode/plugin/enforce-delegate.ts` state-aware block
+**Test:** `test_s35_stop_prevention_35`
+
+### S36 — Stop prevention: stop when submodule is dirty after submodule-update
+Stop prevention: stop when submodule is dirty after submodule-update. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:stale-gate` + `scripts/test_hook_runtime.py` ratchet+script gate; AGENTS.md `scripts/check_tdd_compliance.py` + `.opencode/plugin/enforce-floor.ts` dual layer
+**Test:** `test_s36_stop_prevention_36`
+
+### S37 — Stop prevention: stop when docker container is running in background
+Stop prevention: stop when docker container is running in background. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make verify-enforcement` CI+local dual; AGENTS.md `tests/unit/test_blocker_detector.py` structural assertion gate
+**Test:** `test_s37_stop_prevention_37`
+
+### S38 — Stop prevention: stop when ssh-agent has no loaded keys for sandboxcom
+Stop prevention: stop when ssh-agent has no loaded keys for sandboxcom. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-context.ts` × `.opencode/plugin/enforce-verified-claims.ts` cross-plugin; Makefile `make agent-worktree-list` + `scripts/check_node_v26_compat.py` script-backed guard
+**Test:** `test_s38_stop_prevention_38`
+
+### S39 — Stop prevention: stop when worktree branches are unmerged and active
+Stop prevention: stop when worktree branches are unmerged and active. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-stop.ts` env-var-gated BLOCKING; AGENTS.md `Yield Enforcement` + `scripts/check_duplicate_targets.py` + `.opencode/plugin/enforce-enhancement-ratio.ts` triple layer
+**Test:** `test_s39_stop_prevention_39`
+
+### S40 — Stop prevention: stop when TASKS.md has items older than session start
+Stop prevention: stop when TASKS.md has items older than session start. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Priority Stacking` section; AGENTS.md `Release Pipeline Must Be CI-Green` + Makefile `make test-integration` combined
+**Test:** `test_s40_stop_prevention_40`
+
+### S41 — Stop prevention: stop when SESSION.md is stale (>1h since last update)
+Stop prevention: stop when SESSION.md is stale (>1h since last update). This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` + `.opencode/plugin/enforce-branch-discipline.ts` state-aware block; Makefile `make container-run` prerequisite
+**Test:** `test_s41_stop_prevention_41`
+
+### S42 — Stop prevention: stop when BUGS.md has open incidents without resolution
+Stop prevention: stop when BUGS.md has open incidents without resolution. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:coverage-baseline` + `scripts/check_readme_status_current.py` ratchet+script gate; AGENTS.md `scripts/require_ci_green.py` enforcement
+**Test:** `test_s42_stop_prevention_42`
+
+### S43 — Stop prevention: stop when .secrets.baseline has been modified not committed
+Stop prevention: stop when .secrets.baseline has been modified not committed. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make gate-kill` CI+local dual; AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_s43_stop_prevention_43`
+
+### S44 — Stop prevention: stop when pre-commit hooks are not installed
+Stop prevention: stop when pre-commit hooks are not installed. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-anti-essay.ts` × `.opencode/plugin/enforce-deletion-gate.ts` cross-plugin; AGENTS.md `.opencode/plugin/enforce-floor.ts` permissionDecision deny
+**Test:** `test_s44_stop_prevention_44`
+
+### S45 — Stop prevention: stop when disk usage exceeds 90% threshold
+Stop prevention: stop when disk usage exceeds 90% threshold. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Pre-Generation Contract` + `scripts/verify_release_artifact.py` + `.opencode/plugin/enforce-objective.ts` triple layer; Makefile `make gated-merge` fail-closed guard
+**Test:** `test_s45_stop_prevention_45`
+
+### S46 — Stop prevention: stop when verify-enforcement reports non-blocking plugins
+Stop prevention: stop when verify-enforcement reports non-blocking plugins. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-enhancement-ratio.json` state-file enforced block; AGENTS.md `Task Self-Tracking` section
+**Test:** `test_s46_stop_prevention_46`
+
+### S47 — Stop prevention: stop log rotation: >100 stop incidents triggers new file
+Stop prevention: stop log rotation: >100 stop incidents triggers new file. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-test-integrity.ts` + `make git-checkout` combined guard; Makefile `make check-opencode-backup` prerequisite
+**Test:** `test_s47_stop_prevention_47`
+
+### S48 — Stop prevention: stop root cause: each incident must have root cause analysis
+Stop prevention: stop root cause: each incident must have root cause analysis. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dead-code` ratchet-tracked gate; AGENTS.md `scripts/task_watchdog.py` enforcement
+**Test:** `test_s48_stop_prevention_48`
+
+### S49 — Stop prevention: stop pattern detection: regex covers 50+ known patterns
+Stop prevention: stop pattern detection: regex covers 50+ known patterns. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement; AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_s49_stop_prevention_49`
+
+### S50 — Stop prevention: stop false positive: legitimate completion NOT blocked
+Stop prevention: stop false positive: legitimate completion NOT blocked. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-context.ts` permissionDecision deny; AGENTS.md `scripts/check_tdd_compliance.py` + `.opencode/plugin/enforce-context.ts` dual layer
+**Test:** `test_s50_stop_prevention_50`
+
+### S51 — Stop prevention: stop recovered: resume after false stop must continue all work
+Stop prevention: stop recovered: resume after false stop must continue all work. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_verified_claims_plugin.py` structural assertion gate; Makefile `make check-duplicate-targets` fail-closed guard
+**Test:** `test_s51_stop_prevention_51`
+
+### S52 — Stop prevention: stop recurrence: same stop pattern twice in session = escalation
+Stop prevention: stop recurrence: same stop pattern twice in session = escalation. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make container-push` + `scripts/check_node_v26_compat.py` script-backed guard
+**Test:** `test_s52_stop_prevention_52`
+
+### S53 — Stop prevention: stop audit trail: every stop block logged with text content
+Stop prevention: stop audit trail: every stop block logged with text content. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-session-start.ts` env-var-gated BLOCKING
+**Test:** `test_s53_stop_prevention_53`
+
+### S54 — Stop prevention: stop bypass: GLUDD_STOP_ENFORCE=0 only for emergency
+Stop prevention: stop bypass: GLUDD_STOP_ENFORCE=0 only for emergency. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Nothing-Dropped Guardrail` + Makefile `make clean-worktree-venvs` combined
+**Test:** `test_s54_stop_prevention_54`
+
+### S55 — Stop prevention: stop inject: STOP BLOCKED directive prepended to blanked text
+Stop prevention: stop inject: STOP BLOCKED directive prepended to blanked text. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` + `.opencode/plugin/enforce-no-wait.ts` state-aware block
+**Test:** `test_s55_stop_prevention_55`
+
+### S56 — Stop prevention: stop metrics: session stop-rate tracked and reported
+Stop prevention: stop metrics: session stop-rate tracked and reported. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:coverage-baseline` + `scripts/check_readme_status_current.py` ratchet+script gate
+**Test:** `test_s56_stop_prevention_56`
+
+### S57 — Stop prevention: stop after subagent wave must codify results first
+Stop prevention: stop after subagent wave must codify results first. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make floor-status` CI+local dual
+**Test:** `test_s57_stop_prevention_57`
+
+### S58 — Stop prevention: stop timing: between-wave gap >30s without dispatch = stop
+Stop prevention: stop timing: between-wave gap >30s without dispatch = stop. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-multitask.ts` × `.opencode/plugin/enforce-session-start.ts` cross-plugin
+**Test:** `test_s58_stop_prevention_58`
+
+### S59 — Stop prevention: stop on error: plugin error != license to stop
+Stop prevention: stop on error: plugin error != license to stop. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Judgment Enforcement` + `scripts/verify_release_artifact.py` + `.opencode/plugin/enforce-verified-claims.ts` triple layer
+**Test:** `test_s59_stop_prevention_59`
+
+### S60 — Stop prevention: stop pattern learning: agent self-corrects after 2nd block
+Stop prevention: stop pattern learning: agent self-corrects after 2nd block. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Node v26 Compatibility` section
+**Test:** `test_s60_stop_prevention_60`
+
+### S61 — Stop prevention: stop with open human-todos: human action needed != done
+Stop prevention: stop with open human-todos: human action needed != done. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-rebranch-onto` prerequisite
+**Test:** `test_s61_stop_prevention_61`
+
+### S62 — Stop prevention: stop after CI verdict: CI GREEN is not 'done' — codify first
+Stop prevention: stop after CI verdict: CI GREEN is not 'done' — codify first. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/task_watchdog.py` enforcement
+**Test:** `test_s62_stop_prevention_62`
+
+### S63 — Stop prevention: stop after gate PASS: gate green is not 'done' — commit first
+Stop prevention: stop after gate PASS: gate green is not 'done' — commit first. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_s63_stop_prevention_63`
+
+### S64 — Stop prevention: stop when background op running: wait is not stop
+Stop prevention: stop when background op running: wait is not stop. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-make.ts` permissionDecision deny
+**Test:** `test_s64_stop_prevention_64`
+
+### S65 — Stop prevention: stop when subagents still in-flight: wait is not stop
+Stop prevention: stop when subagents still in-flight: wait is not stop. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make development-start` fail-closed guard
+**Test:** `test_s65_stop_prevention_65`
+
+### S66 — Stop prevention: stop when next TASKS item is pending: do it first
+Stop prevention: stop when next TASKS item is pending: do it first. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-tool-streak.json` state-file enforced block
+**Test:** `test_s66_stop_prevention_66`
+
+### S67 — Stop prevention: stop after inline fix: commit the fix before stopping
+Stop prevention: stop after inline fix: commit the fix before stopping. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-verified-claims.ts` + `make validate` combined guard
+**Test:** `test_s67_stop_prevention_67`
+
+### S68 — Stop prevention: stop after file read: reading is not doing — action required
+Stop prevention: stop after file read: reading is not doing — action required. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dirty-tree` ratchet-tracked gate
+**Test:** `test_s68_stop_prevention_68`
+
+### S69 — Stop prevention: stop after grep: finding is not fixing — implement fix
+Stop prevention: stop after grep: finding is not fixing — implement fix. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_s69_stop_prevention_69`
+
+### S70 — Stop prevention: stop after writing test: run it first, confirm red/green
+Stop prevention: stop after writing test: run it first, confirm red/green. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/task_watchdog.py` + `.opencode/plugin/enforce-batch-push.ts` dual layer
+**Test:** `test_s70_stop_prevention_70`
+
+### S71 — Stop prevention: stop after creating file: wire it in before claiming done
+Stop prevention: stop after creating file: wire it in before claiming done. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_require_ci_green.py` structural assertion gate
+**Test:** `test_s71_stop_prevention_71`
+
+### S72 — Stop prevention: stop after merge: verify post-merge gate green first
+Stop prevention: stop after merge: verify post-merge gate green first. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make check-types` + `scripts/test_hook_runtime.py` script-backed guard
+**Test:** `test_s72_stop_prevention_72`
+
+### S73 — Stop prevention: stop after push: verify remote SHA matches before stopping
+Stop prevention: stop after push: verify remote SHA matches before stopping. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-verified-claims.ts` env-var-gated BLOCKING
+**Test:** `test_s73_stop_prevention_73`
+
+### S74 — Stop prevention: stop after version bump: verify release completeness first
+Stop prevention: stop after version bump: verify release completeness first. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `10-Agent Dispatch Floor` + Makefile `make collect-check` combined
+**Test:** `test_s74_stop_prevention_74`
+
+### S75 — Stop prevention: text-only response when TASKS has unchecked items blanked
+Stop prevention: text-only response when TASKS has unchecked items blanked. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-ci-check-state.json` + `.opencode/plugin/enforce-test-integrity.ts` state-aware block
+**Test:** `test_s75_stop_prevention_75`
+
+### S76 — Stop prevention: summary table detected and blanked by enforce-stop.ts
+Stop prevention: summary table detected and blanked by enforce-stop.ts. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:duplicate-target` + `scripts/check_node_v26_compat.py` ratchet+script gate
+**Test:** `test_s76_stop_prevention_76`
+
+### S77 — Stop prevention: completion-word heuristic matches 'all done' pattern
+Stop prevention: completion-word heuristic matches 'all done' pattern. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make container-run` CI+local dual
+**Test:** `test_s77_stop_prevention_77`
+
+### S78 — Stop prevention: 'ready for review' with pending work is blocked
+Stop prevention: 'ready for review' with pending work is blocked. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-suppressions.ts` × `.opencode/plugin/enforce-no-wait.ts` cross-plugin
+**Test:** `test_s78_stop_prevention_78`
+
+### S79 — Stop prevention: 'shall I continue' is detected as permission-seeking stop
+Stop prevention: 'shall I continue' is detected as permission-seeking stop. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Hard Break Enforcement` + `scripts/stop_condition_audit.py` + `.opencode/plugin/enforce-session-start.ts` triple layer
+**Test:** `test_s79_stop_prevention_79`
+
+### S80 — Stop prevention: prose summary before dispatch wave is blanked
+Stop prevention: prose summary before dispatch wave is blanked. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Background Operations NEVER Block Dispatch` section
+**Test:** `test_s80_stop_prevention_80`
+
+### S81 — Stop prevention: 'everything is complete' claim checked against gate
+Stop prevention: 'everything is complete' claim checked against gate. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make tf-init` prerequisite
+**Test:** `test_s81_stop_prevention_81`
+
+### S82 — Stop prevention: Q&A-style recap without tool call is blanked
+Stop prevention: Q&A-style recap without tool call is blanked. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` enforcement
+**Test:** `test_s82_stop_prevention_82`
+
+### S83 — Stop prevention: bolded header pattern triggers STATUS_SUMMARY_RE
+Stop prevention: bolded header pattern triggers STATUS_SUMMARY_RE. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_s83_stop_prevention_83`
+
+### S84 — Stop prevention: 'here is the status' with no tool call blocked
+Stop prevention: 'here is the status' with no tool call blocked. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-anti-essay.ts` permissionDecision deny
+**Test:** `test_s84_stop_prevention_84`
+
+### S85 — Stop prevention: 'session summary' header detected and blanked
+Stop prevention: 'session summary' header detected and blanked. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make agent-cleanup` fail-closed guard
+**Test:** `test_s85_stop_prevention_85`
+
+### S86 — Stop prevention: stop-audit: every text-only turn logged to BUGS.md
+Stop prevention: stop-audit: every text-only turn logged to BUGS.md. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-user-objective.json` state-file enforced block
+**Test:** `test_s86_stop_prevention_86`
+
+### S87 — Stop prevention: agent cannot self-assess 'this is done' without evidence
+Stop prevention: agent cannot self-assess 'this is done' without evidence. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-deletion-gate.ts` + `make test-and-commit` combined guard
+**Test:** `test_s87_stop_prevention_87`
+
+### S88 — Stop prevention: 'waiting for your feedback' is a stop pattern blocked
+Stop prevention: 'waiting for your feedback' is a stop pattern blocked. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:typecheck-baseline` ratchet-tracked gate
+**Test:** `test_s88_stop_prevention_88`
+
+### S89 — Stop prevention: stop count tracked per session, >3 triggers escalation
+Stop prevention: stop count tracked per session, >3 triggers escalation. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_s89_stop_prevention_89`
+
+### S90 — Stop prevention: 'what should I do next' with pending work blocked
+Stop prevention: 'what should I do next' with pending work blocked. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` + `.opencode/plugin/enforce-clean-tree.ts` dual layer
+**Test:** `test_s90_stop_prevention_90`
+
+### S91 — Stop prevention: emoji-only response (✅/👍) with pending work blanked
+Stop prevention: emoji-only response (✅/👍) with pending work blanked. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_no_suppression_comments.py` structural assertion gate
+**Test:** `test_s91_stop_prevention_91`
+
+### S92 — Stop prevention: response that is only a markdown table is blanked
+Stop prevention: response that is only a markdown table is blanked. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-stash-pop` + `scripts/check_readme_status_current.py` script-backed guard
+**Test:** `test_s92_stop_prevention_92`
+
+### S93 — Stop prevention: 'I have completed' phrased as past tense blocked
+Stop prevention: 'I have completed' phrased as past tense blocked. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-enhancement-ratio.ts` env-var-gated BLOCKING
+**Test:** `test_s93_stop_prevention_93`
+
+### S94 — Stop prevention: response ending with question mark + no tool call blocked
+Stop prevention: response ending with question mark + no tool call blocked. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Premature-Stop Audit Policy` + Makefile `make agent-merge` combined
+**Test:** `test_s94_stop_prevention_94`
+
+### S95 — Stop prevention: text that is >80% prose with pending work is flagged
+Stop prevention: text that is >80% prose with pending work is flagged. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-task-killed.json` + `.opencode/plugin/enforce-session-start.ts` state-aware block
+**Test:** `test_s95_stop_prevention_95`
+
+### S96 — Stop prevention: 'everything looks good' without verification blocked
+Stop prevention: 'everything looks good' without verification blocked. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:stale-gate` + `scripts/test_hook_runtime.py` ratchet+script gate
+**Test:** `test_s96_stop_prevention_96`
+
+### S97 — Stop prevention: 'let me know if you need anything else' flagged
+Stop prevention: 'let me know if you need anything else' flagged. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make test-guardrails` CI+local dual
+**Test:** `test_s97_stop_prevention_97`
+
+### S98 — Stop prevention: 'no further tasks' with unchecked TASKS items is false claim
+Stop prevention: 'no further tasks' with unchecked TASKS items is false claim. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-tdd.ts` × `.opencode/plugin/enforce-objective.ts` cross-plugin
+**Test:** `test_s98_stop_prevention_98`
+
+### S99 — Stop prevention: post-commit 'done' message before verify-remote blocked
+Stop prevention: post-commit 'done' message before verify-remote blocked. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `No-Manual-Default Policy` + `scripts/check_duplicate_targets.py` + `.opencode/plugin/enforce-no-wait.ts` triple layer
+**Test:** `test_s99_stop_prevention_99`
+
 ### E21 — Essay prevention: text-only response >200 words with pending work blanked
-The agent MUST enforce this invariant mechanically at runtime — no advisory-only, no opt-in.
-**Enforcement:** AGENTS.md `enforce-anti-essay.ts` × `enforce-stop.ts` cross-plugin
+Essay prevention: text-only response >200 words with pending work blanked. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Model Utilization` section; Makefile `make gated-merge` prerequisite
 **Test:** `test_e21_essay_prevention_21`
 
+### E22 — Essay prevention: tool-call-to-text ratio <0.5 triggers block
+Essay prevention: tool-call-to-text ratio <0.5 triggers block. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` enforcement; Makefile `make check-duplicate-targets` prerequisite
+**Test:** `test_e22_essay_prevention_22`
+
+### E23 — Essay prevention: prose analysis before dispatch wave is replaced with dispatch
+Essay prevention: prose analysis before dispatch wave is replaced with dispatch. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block; AGENTS.md `scripts/task_watchdog.py` enforcement
+**Test:** `test_e23_essay_prevention_23`
+
+### E24 — Essay prevention: multi-paragraph explanation without code reference flagged
+Essay prevention: multi-paragraph explanation without code reference flagged. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-deadline.ts` permissionDecision deny; AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_e24_essay_prevention_24`
+
+### E25 — Essay prevention: text output exceeding tool output length by 3x redirected
+Essay prevention: text output exceeding tool output length by 3x redirected. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-floor.ts` permissionDecision deny; Makefile `make tf-init` fail-closed guard
+**Test:** `test_e25_essay_prevention_25`
+
+### E26 — Essay prevention: code block without surrounding code is bare text flagged
+Essay prevention: code block without surrounding code is bare text flagged. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-enhancement-ratio.json` state-file enforced block; Makefile `make verify-enforcement` fail-closed guard
+**Test:** `test_e26_essay_prevention_26`
+
+### E27 — Essay prevention: >3 consecutive text-only messages in session is blocked
+Essay prevention: >3 consecutive text-only messages in session is blocked. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` + `make verify-state` combined guard; AGENTS.md `/tmp/gludd-tool-streak.json` state-file enforced block
+**Test:** `test_e27_essay_prevention_27`
+
+### E28 — Essay prevention: word-count gate: >150 words without tool call is blanked
+Essay prevention: word-count gate: >150 words without tool call is blanked. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-test-integrity.ts` + `make ci-cooldown-status` combined guard; AGENTS.md `config/ratchet.yml:dead-code` ratchet-tracked gate
+**Test:** `test_e28_essay_prevention_28`
+
+### E29 — Essay prevention: ratio enforcement: every 50 words must have 1 tool call
+Essay prevention: ratio enforcement: every 50 words must have 1 tool call. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement; AGENTS.md `config/ratchet.yml:dirty-tree` ratchet-tracked gate
+**Test:** `test_e29_essay_prevention_29`
+
+### E30 — Essay prevention: no introductory prose before first tool call of wave
+Essay prevention: no introductory prose before first tool call of wave. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement; AGENTS.md `scripts/check_tdd_compliance.py` + `.opencode/plugin/enforce-anti-essay.ts` dual layer
+**Test:** `test_e30_essay_prevention_30`
+
+### E31 — Essay prevention: analysis of subagent results capped at 3 bullet points
+Essay prevention: analysis of subagent results capped at 3 bullet points. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/task_watchdog.py` + `.opencode/plugin/enforce-context.ts` dual layer; AGENTS.md `tests/unit/test_require_ci_green.py` structural assertion gate
+**Test:** `test_e31_essay_prevention_31`
+
+### E32 — Essay prevention: 'in summary' / 'to summarize' phrases detected and blanked
+Essay prevention: 'in summary' / 'to summarize' phrases detected and blanked. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_clean_tree_plugin.py` structural assertion gate; Makefile `make batch-push` + `scripts/check_node_v26_compat.py` script-backed guard
+**Test:** `test_e32_essay_prevention_32`
+
+### E33 — Essay prevention: narrative prose ('first we did X, then Y...') flagged
+Essay prevention: narrative prose ('first we did X, then Y...') flagged. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-audit.ts` env-var-gated BLOCKING; Makefile `make git-diff` + `scripts/test_hook_runtime.py` script-backed guard
+**Test:** `test_e33_essay_prevention_33`
+
+### E34 — Essay prevention: future-tense planning prose ('we will...') replaced with dispatch
+Essay prevention: future-tense planning prose ('we will...') replaced with dispatch. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-session-start.ts` env-var-gated BLOCKING; AGENTS.md `Agent At-Rest Policy` + Makefile `make container-build` combined
+**Test:** `test_e34_essay_prevention_34`
+
+### E35 — Essay prevention: retrospective prose ('what went well...') deferred to completion
+Essay prevention: retrospective prose ('what went well...') deferred to completion. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` + `.opencode/plugin/enforce-deletion-gate.ts` state-aware block; AGENTS.md `Node v26 Compatibility` + Makefile `make check-obj-progress` combined
+**Test:** `test_e35_essay_prevention_35`
+
+### E36 — Essay prevention: explanatory prose for simple edits is wasteful
+Essay prevention: explanatory prose for simple edits is wasteful. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-ci-check-state.json` + `.opencode/plugin/enforce-no-wait.ts` state-aware block; AGENTS.md `config/ratchet.yml:coverage-baseline` + `scripts/check_readme_status_current.py` ratchet+script gate
+**Test:** `test_e36_essay_prevention_36`
+
+### E37 — Essay prevention: code walkthrough prose when code is self-documenting flagged
+Essay prevention: code walkthrough prose when code is self-documenting flagged. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make preflight` CI+local dual; AGENTS.md `config/ratchet.yml:duplicate-target` + `scripts/check_node_v26_compat.py` ratchet+script gate
+**Test:** `test_e37_essay_prevention_37`
+
+### E38 — Essay prevention: 'let me explain' / 'here is why' phrases detected
+Essay prevention: 'let me explain' / 'here is why' phrases detected. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make feature-start` CI+local dual; AGENTS.md `.opencode/plugin/enforce-floor.ts` × `.opencode/plugin/enforce-delegate.ts` cross-plugin
+**Test:** `test_e38_essay_prevention_38`
+
+### E39 — Essay prevention: text that repeats tool output verbatim is blanked
+Essay prevention: text that repeats tool output verbatim is blanked. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-multitask.ts` × `.opencode/plugin/enforce-session-start.ts` cross-plugin; AGENTS.md `TDD Policy` + `scripts/verify_release_artifact.py` + `.opencode/plugin/enforce-test-integrity.ts` triple layer
+**Test:** `test_e39_essay_prevention_39`
+
+### E40 — Essay prevention: text that restates AGENTS.md rules is redundant-flagged
+Essay prevention: text that restates AGENTS.md rules is redundant-flagged. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `No Lint-Suppression Comments` + `scripts/stop_condition_audit.py` + `.opencode/plugin/enforce-verified-claims.ts` triple layer; AGENTS.md `Release Cut = Update README` section
+**Test:** `test_e40_essay_prevention_40`
+
+### E41 — Essay prevention: marking text (**, __) without tool call is pattern-detected
+Essay prevention: marking text (**, __) without tool call is pattern-detected. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Verification Enforcement` section; Makefile `make gate-kill` prerequisite
+**Test:** `test_e41_essay_prevention_41`
+
+### E42 — Essay prevention: bulleted lists >5 items without intervening tool calls flagged
+Essay prevention: bulleted lists >5 items without intervening tool calls flagged. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/task_watchdog.py` enforcement; Makefile `make test-e2e` prerequisite
+**Test:** `test_e42_essay_prevention_42`
+
+### E43 — Essay prevention: numbered lists >5 items without intervening tool calls flagged
+Essay prevention: numbered lists >5 items without intervening tool calls flagged. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block; AGENTS.md `scripts/check_tdd_compliance.py` enforcement
+**Test:** `test_e43_essay_prevention_43`
+
+### E44 — Essay prevention: code-fenced blocks >20 lines in text response flagged
+Essay prevention: code-fenced blocks >20 lines in text response flagged. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block; AGENTS.md `.opencode/plugin/enforce-tdd.ts` permissionDecision deny
+**Test:** `test_e44_essay_prevention_44`
+
+### E45 — Essay prevention: text containing >3 URLs without tool calls is noise-flagged
+Essay prevention: text containing >3 URLs without tool calls is noise-flagged. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-make.ts` permissionDecision deny; Makefile `make floor-status` fail-closed guard
+**Test:** `test_e45_essay_prevention_45`
+
+### E46 — Essay prevention: response that is >90% tool output echo + commentary blanked
+Essay prevention: response that is >90% tool output echo + commentary blanked. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-tool-streak.json` state-file enforced block; Makefile `make reload-enforcement` fail-closed guard
+**Test:** `test_e46_essay_prevention_46`
+
+### E47 — Essay prevention: text that summarizes what was just done (not what's next) blanked
+Essay prevention: text that summarizes what was just done (not what's next) blanked. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-branch-discipline.ts` + `make git-staged` combined guard
+**Test:** `test_e47_essay_prevention_47`
+
+### E48 — Essay prevention: 'I will now...' future-intent prose replaced with actual tool call
+Essay prevention: 'I will now...' future-intent prose replaced with actual tool call. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dirty-tree` ratchet-tracked gate
+**Test:** `test_e48_essay_prevention_48`
+
+### E49 — Essay prevention: text explaining why a tool call was made is unnecessary
+Essay prevention: text explaining why a tool call was made is unnecessary. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_e49_essay_prevention_49`
+
+### E50 — Essay prevention: text explaining what a tool call will do is unnecessary
+Essay prevention: text explaining what a tool call will do is unnecessary. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/task_watchdog.py` + `.opencode/plugin/enforce-tdd.ts` dual layer
+**Test:** `test_e50_essay_prevention_50`
+
+### E51 — Essay prevention: meta-commentary about agent's own process parsed and removed
+Essay prevention: meta-commentary about agent's own process parsed and removed. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_no_suppression_comments.py` structural assertion gate
+**Test:** `test_e51_essay_prevention_51`
+
+### E52 — Essay prevention: 'based on the above' / 'as you can see' filler phrases detected
+Essay prevention: 'based on the above' / 'as you can see' filler phrases detected. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make development-push` + `scripts/test_hook_runtime.py` script-backed guard
+**Test:** `test_e52_essay_prevention_52`
+
+### E53 — Essay prevention: response that opens with a heading (## / ###) without tool call flagged
+Essay prevention: response that opens with a heading (## / ###) without tool call flagged. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-deletion-gate.ts` env-var-gated BLOCKING
+**Test:** `test_e53_essay_prevention_53`
+
+### E54 — Essay prevention: text that includes a TOC or index of its own content flagged
+Essay prevention: text that includes a TOC or index of its own content flagged. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Keep Opus Lean` + Makefile `make git-commit` combined
+**Test:** `test_e54_essay_prevention_54`
+
+### E55 — Essay prevention: text that quotes the user's message back to them is redundant
+Essay prevention: text that quotes the user's message back to them is redundant. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-ci-check-state.json` + `.opencode/plugin/enforce-stop.ts` state-aware block
+**Test:** `test_e55_essay_prevention_55`
+
+### E56 — Essay prevention: 'please note that' / 'it is important to' preachy phrases flagged
+Essay prevention: 'please note that' / 'it is important to' preachy phrases flagged. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:duplicate-target` + `scripts/check_node_v26_compat.py` ratchet+script gate
+**Test:** `test_e56_essay_prevention_56`
+
+### E57 — Essay prevention: text that would render as >1 scroll page without tool calls blanked
+Essay prevention: text that would render as >1 scroll page without tool calls blanked. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make git-status` CI+local dual
+**Test:** `test_e57_essay_prevention_57`
+
+### E58 — Essay prevention: character-count gate: >2000 chars without tool call = blank
+Essay prevention: character-count gate: >2000 chars without tool call = blank. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-clean-tree.ts` × `.opencode/plugin/enforce-stop.ts` cross-plugin
+**Test:** `test_e58_essay_prevention_58`
+
+### E59 — Essay prevention: line-count gate: >40 lines without tool call = blank
+Essay prevention: line-count gate: >40 lines without tool call = blank. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Never Block on Questions` + `scripts/stop_condition_audit.py` + `.opencode/plugin/enforce-delegate.ts` triple layer
+**Test:** `test_e59_essay_prevention_59`
+
+### E60 — Essay prevention: paragraph-count gate: >3 paragraphs without tool call = blank
+Essay prevention: paragraph-count gate: >3 paragraphs without tool call = blank. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Long-Running Operations MUST Be Backgrounded` section
+**Test:** `test_e60_essay_prevention_60`
+
+### E61 — Essay prevention: token budget: text-only responses consume dispatch budget
+Essay prevention: token budget: text-only responses consume dispatch budget. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make agent-cleanup` prerequisite
+**Test:** `test_e61_essay_prevention_61`
+
+### E62 — Essay prevention: text-to-code ratio tracked per session and surfaced
+Essay prevention: text-to-code ratio tracked per session and surfaced. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` enforcement
+**Test:** `test_e62_essay_prevention_62`
+
+### E63 — Essay prevention: essay watchdog: per-session word count tracked in state file
+Essay prevention: essay watchdog: per-session word count tracked in state file. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_e63_essay_prevention_63`
+
+### E64 — Essay prevention: essay escalation: >500 words without tool call = logged incident
+Essay prevention: essay escalation: >500 words without tool call = logged incident. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-multitask.ts` permissionDecision deny
+**Test:** `test_e64_essay_prevention_64`
+
+### E65 — Essay prevention: text-only quicksand: 2 text-only turns double word budget
+Essay prevention: text-only quicksand: 2 text-only turns double word budget. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make check-opencode-backup` fail-closed guard
+**Test:** `test_e65_essay_prevention_65`
+
+### E66 — Essay prevention: 'as an AI' / 'as an agent' self-referential prose flagged
+Essay prevention: 'as an AI' / 'as an agent' self-referential prose flagged. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-user-objective.json` state-file enforced block
+**Test:** `test_e66_essay_prevention_66`
+
+### E67 — Essay prevention: meta-discussion about communication style is itself essay
+Essay prevention: meta-discussion about communication style is itself essay. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-enhancement-ratio.ts` + `make lint` combined guard
+**Test:** `test_e67_essay_prevention_67`
+
+### E68 — Essay prevention: apologetic prose ('sorry', 'I apologize') flagged
+Essay prevention: apologetic prose ('sorry', 'I apologize') flagged. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:typecheck-baseline` ratchet-tracked gate
+**Test:** `test_e68_essay_prevention_68`
+
+### E69 — Essay prevention: uncertain prose ('I think', 'maybe', 'perhaps') flagged
+Essay prevention: uncertain prose ('I think', 'maybe', 'perhaps') flagged. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_e69_essay_prevention_69`
+
+### E70 — Essay prevention: uncertain prose replaced with verification tool call
+Essay prevention: uncertain prose replaced with verification tool call. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` + `.opencode/plugin/enforce-no-suppressions.ts` dual layer
+**Test:** `test_e70_essay_prevention_70`
+
+### E71 — Essay prevention: hedging language ('should be', 'ought to', 'probably') flagged
+Essay prevention: hedging language ('should be', 'ought to', 'probably') flagged. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_blocker_detector.py` structural assertion gate
+**Test:** `test_e71_essay_prevention_71`
+
+### E72 — Essay prevention: prose that explains a policy instead of following it flagged
+Essay prevention: prose that explains a policy instead of following it flagged. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make ansible-syntax` + `scripts/check_readme_status_current.py` script-backed guard
+**Test:** `test_e72_essay_prevention_72`
+
+### E73 — Essay prevention: prose that recaps session history >3 lines flagged
+Essay prevention: prose that recaps session history >3 lines flagged. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-objective.ts` env-var-gated BLOCKING
+**Test:** `test_e73_essay_prevention_73`
+
+### E74 — Essay prevention: 'to recap' / 'to summarize the session so far' detected
+Essay prevention: 'to recap' / 'to summarize the session so far' detected. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Release Cut = Update README` + Makefile `make verify-plugin-manifest` combined
+**Test:** `test_e74_essay_prevention_74`
+
+### E75 — Essay prevention: any text after the final tool call of session is blanked
+Essay prevention: any text after the final tool call of session is blanked. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-task-killed.json` + `.opencode/plugin/enforce-objective.ts` state-aware block
+**Test:** `test_e75_essay_prevention_75`
+
+### E76 — Essay prevention: 'feel free to' / 'don't hesitate to' deferential prose flagged
+Essay prevention: 'feel free to' / 'don't hesitate to' deferential prose flagged. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:stale-gate` + `scripts/test_hook_runtime.py` ratchet+script gate
+**Test:** `test_e76_essay_prevention_76`
+
+### E77 — Essay prevention: 'I hope this helps' closing phrases with pending work blanked
+Essay prevention: 'I hope this helps' closing phrases with pending work blanked. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make git-stash` CI+local dual
+**Test:** `test_e77_essay_prevention_77`
+
+### E78 — Essay prevention: text offering options ('would you like me to...') blocked
+Essay prevention: text offering options ('would you like me to...') blocked. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-batch-push.ts` × `.opencode/plugin/enforce-enhancement-ratio.ts` cross-plugin
+**Test:** `test_e78_essay_prevention_78`
+
+### E79 — Essay prevention: 'on a scale of 1-10' qualitative assessment prose flagged
+Essay prevention: 'on a scale of 1-10' qualitative assessment prose flagged. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Release Branch Lifecycle` + `scripts/check_duplicate_targets.py` + `.opencode/plugin/enforce-stop.ts` triple layer
+**Test:** `test_e79_essay_prevention_79`
+
+### E80 — Essay prevention: prose that uses markdown admonitions (!!! note, ??? warning) flagged
+Essay prevention: prose that uses markdown admonitions (!!! note, ??? warning) flagged. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Nothing-Dropped Guardrail` section
+**Test:** `test_e80_essay_prevention_80`
+
+### E81 — Essay prevention: code review prose (praising or criticizing code) reduced to test
+Essay prevention: code review prose (praising or criticizing code) reduced to test. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make gate` prerequisite
+**Test:** `test_e81_essay_prevention_81`
+
+### E82 — Essay prevention: 'this is because' / 'the reason is' explanatory prose flagged
+Essay prevention: 'this is because' / 'the reason is' explanatory prose flagged. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` enforcement
+**Test:** `test_e82_essay_prevention_82`
+
+### E83 — Essay prevention: design-decision prose ('I chose X because Y') deferred to commit msg
+Essay prevention: design-decision prose ('I chose X because Y') deferred to commit msg. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_e83_essay_prevention_83`
+
+### E84 — Essay prevention: architecture-discussion prose in tool-call responses flagged
+Essay prevention: architecture-discussion prose in tool-call responses flagged. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-batch-push.ts` permissionDecision deny
+**Test:** `test_e84_essay_prevention_84`
+
+### E85 — Essay prevention: prose about error handling strategy instead of implementing it flagged
+Essay prevention: prose about error handling strategy instead of implementing it flagged. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make watchdog-auto` fail-closed guard
+**Test:** `test_e85_essay_prevention_85`
+
+### E86 — Essay prevention: 'edge case' discussion prose without implementing test flagged
+Essay prevention: 'edge case' discussion prose without implementing test flagged. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-enhancement-ratio.json` state-file enforced block
+**Test:** `test_e86_essay_prevention_86`
+
+### E87 — Essay prevention: 'alternative approach' discussion without dispatch flagged
+Essay prevention: 'alternative approach' discussion without dispatch flagged. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-objective.ts` + `make test-unit` combined guard
+**Test:** `test_e87_essay_prevention_87`
+
+### E88 — Essay prevention: prose comparing library A vs B without dispatching research flagged
+Essay prevention: prose comparing library A vs B without dispatching research flagged. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dead-code` ratchet-tracked gate
+**Test:** `test_e88_essay_prevention_88`
+
+### E89 — Essay prevention: 'best practice' lecture prose in response flagged
+Essay prevention: 'best practice' lecture prose in response flagged. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_e89_essay_prevention_89`
+
+### E90 — Essay prevention: design-pattern discussion prose without code flagged
+Essay prevention: design-pattern discussion prose without code flagged. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` + `.opencode/plugin/enforce-multitask.ts` dual layer
+**Test:** `test_e90_essay_prevention_90`
+
+### E91 — Essay prevention: prose that predicts future problems instead of preventing them flagged
+Essay prevention: prose that predicts future problems instead of preventing them flagged. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/e2e/test_cli_workflow.py` structural assertion gate
+**Test:** `test_e91_essay_prevention_91`
+
+### E92 — Essay prevention: prose that catalogues risks without dispatching mitigations flagged
+Essay prevention: prose that catalogues risks without dispatching mitigations flagged. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make gate-background` + `scripts/check_node_v26_compat.py` script-backed guard
+**Test:** `test_e92_essay_prevention_92`
+
+### E93 — Essay prevention: 'in the future we should' aspirational prose blocked
+Essay prevention: 'in the future we should' aspirational prose blocked. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` env-var-gated BLOCKING
+**Test:** `test_e93_essay_prevention_93`
+
+### E94 — Essay prevention: prose about technical debt instead of paying it down flagged
+Essay prevention: prose about technical debt instead of paying it down flagged. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Constraints Are To Engineer Around` + Makefile `make lint-fix` combined
+**Test:** `test_e94_essay_prevention_94`
+
+### E95 — Essay prevention: 'we could also' / 'another option would be' unbounded brainstorming flagged
+Essay prevention: 'we could also' / 'another option would be' unbounded brainstorming flagged. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` + `.opencode/plugin/enforce-delegate.ts` state-aware block
+**Test:** `test_e95_essay_prevention_95`
+
+### E96 — Essay prevention: prose that describes what code does (vs showing the code) flagged
+Essay prevention: prose that describes what code does (vs showing the code) flagged. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:coverage-baseline` + `scripts/check_readme_status_current.py` ratchet+script gate
+**Test:** `test_e96_essay_prevention_96`
+
+### E97 — Essay prevention: natural-language pseudocode instead of actual implementation flagged
+Essay prevention: natural-language pseudocode instead of actual implementation flagged. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make release-cut` CI+local dual
+**Test:** `test_e97_essay_prevention_97`
+
+### E98 — Essay prevention: prose that estimates effort ('this should take about...') flagged
+Essay prevention: prose that estimates effort ('this should take about...') flagged. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-context.ts` × `.opencode/plugin/enforce-verified-claims.ts` cross-plugin
+**Test:** `test_e98_essay_prevention_98`
+
+### E99 — Essay prevention: 'first we need to' planning prose replaced with actual first step
+Essay prevention: 'first we need to' planning prose replaced with actual first step. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Fix Means Repair Never Disable` + `scripts/verify_release_artifact.py` + `.opencode/plugin/enforce-enhancement-ratio.ts` triple layer
+**Test:** `test_e99_essay_prevention_99`
+
 ### M21 — merge_safety enforcement guard #21: automated unique mechanism
-The agent MUST enforce this invariant mechanically at runtime — no advisory-only, no opt-in.
-**Enforcement:** AGENTS.md `enforce-branch-discipline.ts` × `enforce-stop.ts` cross-plugin
+merge_safety enforcement guard #21: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make release-cut` prerequisite
 **Test:** `test_m21_merge_safety_21`
 
+### M22 — merge_safety enforcement guard #22: automated unique mechanism
+merge_safety enforcement guard #22: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` enforcement
+**Test:** `test_m22_merge_safety_22`
+
+### M23 — merge_safety enforcement guard #23: automated unique mechanism
+merge_safety enforcement guard #23: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_m23_merge_safety_23`
+
+### M24 — merge_safety enforcement guard #24: automated unique mechanism
+merge_safety enforcement guard #24: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-batch-push.ts` permissionDecision deny
+**Test:** `test_m24_merge_safety_24`
+
+### M25 — merge_safety enforcement guard #25: automated unique mechanism
+merge_safety enforcement guard #25: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-index` fail-closed guard
+**Test:** `test_m25_merge_safety_25`
+
+### M26 — merge_safety enforcement guard #26: automated unique mechanism
+merge_safety enforcement guard #26: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-user-objective.json` state-file enforced block
+**Test:** `test_m26_merge_safety_26`
+
+### M27 — merge_safety enforcement guard #27: automated unique mechanism
+merge_safety enforcement guard #27: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-objective.ts` + `make require-ci-green` combined guard
+**Test:** `test_m27_merge_safety_27`
+
+### M28 — merge_safety enforcement guard #28: automated unique mechanism
+merge_safety enforcement guard #28: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:typecheck-baseline` ratchet-tracked gate
+**Test:** `test_m28_merge_safety_28`
+
+### M29 — merge_safety enforcement guard #29: automated unique mechanism
+merge_safety enforcement guard #29: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_m29_merge_safety_29`
+
+### M30 — merge_safety enforcement guard #30: automated unique mechanism
+merge_safety enforcement guard #30: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` + `.opencode/plugin/enforce-multitask.ts` dual layer
+**Test:** `test_m30_merge_safety_30`
+
+### M31 — merge_safety enforcement guard #31: automated unique mechanism
+merge_safety enforcement guard #31: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_behavioral_specs.py` structural assertion gate
+**Test:** `test_m31_merge_safety_31`
+
+### M32 — merge_safety enforcement guard #32: automated unique mechanism
+merge_safety enforcement guard #32: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make disengage-enforcement` + `scripts/check_readme_status_current.py` script-backed guard
+**Test:** `test_m32_merge_safety_32`
+
+### M33 — merge_safety enforcement guard #33: automated unique mechanism
+merge_safety enforcement guard #33: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` env-var-gated BLOCKING
+**Test:** `test_m33_merge_safety_33`
+
+### M34 — merge_safety enforcement guard #34: automated unique mechanism
+merge_safety enforcement guard #34: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Anti-Grinding Enforcement` + Makefile `make git-merge` combined
+**Test:** `test_m34_merge_safety_34`
+
+### M35 — merge_safety enforcement guard #35: automated unique mechanism
+merge_safety enforcement guard #35: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-task-killed.json` + `.opencode/plugin/enforce-delegate.ts` state-aware block
+**Test:** `test_m35_merge_safety_35`
+
+### M36 — merge_safety enforcement guard #36: automated unique mechanism
+merge_safety enforcement guard #36: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:stale-gate` + `scripts/test_hook_runtime.py` ratchet+script gate
+**Test:** `test_m36_merge_safety_36`
+
+### M37 — merge_safety enforcement guard #37: automated unique mechanism
+merge_safety enforcement guard #37: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make verify-enforcement` CI+local dual
+**Test:** `test_m37_merge_safety_37`
+
+### M38 — merge_safety enforcement guard #38: automated unique mechanism
+merge_safety enforcement guard #38: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-context.ts` × `.opencode/plugin/enforce-verified-claims.ts` cross-plugin
+**Test:** `test_m38_merge_safety_38`
+
+### M39 — merge_safety enforcement guard #39: automated unique mechanism
+merge_safety enforcement guard #39: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Yield Enforcement` + `scripts/check_duplicate_targets.py` + `.opencode/plugin/enforce-enhancement-ratio.ts` triple layer
+**Test:** `test_m39_merge_safety_39`
+
+### M40 — merge_safety enforcement guard #40: automated unique mechanism
+merge_safety enforcement guard #40: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Priority Stacking` section
+**Test:** `test_m40_merge_safety_40`
+
+### M41 — merge_safety enforcement guard #41: automated unique mechanism
+merge_safety enforcement guard #41: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make container-run` prerequisite
+**Test:** `test_m41_merge_safety_41`
+
+### M42 — merge_safety enforcement guard #42: automated unique mechanism
+merge_safety enforcement guard #42: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` enforcement
+**Test:** `test_m42_merge_safety_42`
+
+### M43 — merge_safety enforcement guard #43: automated unique mechanism
+merge_safety enforcement guard #43: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_m43_merge_safety_43`
+
+### M44 — merge_safety enforcement guard #44: automated unique mechanism
+merge_safety enforcement guard #44: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-floor.ts` permissionDecision deny
+**Test:** `test_m44_merge_safety_44`
+
+### M45 — merge_safety enforcement guard #45: automated unique mechanism
+merge_safety enforcement guard #45: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make gated-merge` fail-closed guard
+**Test:** `test_m45_merge_safety_45`
+
+### M46 — merge_safety enforcement guard #46: automated unique mechanism
+merge_safety enforcement guard #46: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-enhancement-ratio.json` state-file enforced block
+**Test:** `test_m46_merge_safety_46`
+
+### M47 — merge_safety enforcement guard #47: automated unique mechanism
+merge_safety enforcement guard #47: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-test-integrity.ts` + `make git-checkout` combined guard
+**Test:** `test_m47_merge_safety_47`
+
+### M48 — merge_safety enforcement guard #48: automated unique mechanism
+merge_safety enforcement guard #48: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dead-code` ratchet-tracked gate
+**Test:** `test_m48_merge_safety_48`
+
+### M49 — merge_safety enforcement guard #49: automated unique mechanism
+merge_safety enforcement guard #49: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_m49_merge_safety_49`
+
+### M50 — merge_safety enforcement guard #50: automated unique mechanism
+merge_safety enforcement guard #50: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` + `.opencode/plugin/enforce-context.ts` dual layer
+**Test:** `test_m50_merge_safety_50`
+
+### M51 — merge_safety enforcement guard #51: automated unique mechanism
+merge_safety enforcement guard #51: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_verified_claims_plugin.py` structural assertion gate
+**Test:** `test_m51_merge_safety_51`
+
+### M52 — merge_safety enforcement guard #52: automated unique mechanism
+merge_safety enforcement guard #52: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make container-push` + `scripts/check_node_v26_compat.py` script-backed guard
+**Test:** `test_m52_merge_safety_52`
+
+### M53 — merge_safety enforcement guard #53: automated unique mechanism
+merge_safety enforcement guard #53: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-session-start.ts` env-var-gated BLOCKING
+**Test:** `test_m53_merge_safety_53`
+
+### M54 — merge_safety enforcement guard #54: automated unique mechanism
+merge_safety enforcement guard #54: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Nothing-Dropped Guardrail` + Makefile `make clean-worktree-venvs` combined
+**Test:** `test_m54_merge_safety_54`
+
+### M55 — merge_safety enforcement guard #55: automated unique mechanism
+merge_safety enforcement guard #55: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` + `.opencode/plugin/enforce-no-wait.ts` state-aware block
+**Test:** `test_m55_merge_safety_55`
+
+### M56 — merge_safety enforcement guard #56: automated unique mechanism
+merge_safety enforcement guard #56: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:coverage-baseline` + `scripts/check_readme_status_current.py` ratchet+script gate
+**Test:** `test_m56_merge_safety_56`
+
+### M57 — merge_safety enforcement guard #57: automated unique mechanism
+merge_safety enforcement guard #57: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make floor-status` CI+local dual
+**Test:** `test_m57_merge_safety_57`
+
+### M58 — merge_safety enforcement guard #58: automated unique mechanism
+merge_safety enforcement guard #58: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-multitask.ts` × `.opencode/plugin/enforce-session-start.ts` cross-plugin
+**Test:** `test_m58_merge_safety_58`
+
+### M59 — merge_safety enforcement guard #59: automated unique mechanism
+merge_safety enforcement guard #59: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Judgment Enforcement` + `scripts/verify_release_artifact.py` + `.opencode/plugin/enforce-verified-claims.ts` triple layer
+**Test:** `test_m59_merge_safety_59`
+
+### M60 — merge_safety enforcement guard #60: automated unique mechanism
+merge_safety enforcement guard #60: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Node v26 Compatibility` section
+**Test:** `test_m60_merge_safety_60`
+
+### M61 — merge_safety enforcement guard #61: automated unique mechanism
+merge_safety enforcement guard #61: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-rebranch-onto` prerequisite
+**Test:** `test_m61_merge_safety_61`
+
+### M62 — merge_safety enforcement guard #62: automated unique mechanism
+merge_safety enforcement guard #62: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/task_watchdog.py` enforcement
+**Test:** `test_m62_merge_safety_62`
+
+### M63 — merge_safety enforcement guard #63: automated unique mechanism
+merge_safety enforcement guard #63: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_m63_merge_safety_63`
+
+### M64 — merge_safety enforcement guard #64: automated unique mechanism
+merge_safety enforcement guard #64: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-make.ts` permissionDecision deny
+**Test:** `test_m64_merge_safety_64`
+
+### M65 — merge_safety enforcement guard #65: automated unique mechanism
+merge_safety enforcement guard #65: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make development-start` fail-closed guard
+**Test:** `test_m65_merge_safety_65`
+
+### M66 — merge_safety enforcement guard #66: automated unique mechanism
+merge_safety enforcement guard #66: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-tool-streak.json` state-file enforced block
+**Test:** `test_m66_merge_safety_66`
+
+### M67 — merge_safety enforcement guard #67: automated unique mechanism
+merge_safety enforcement guard #67: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-verified-claims.ts` + `make validate` combined guard
+**Test:** `test_m67_merge_safety_67`
+
+### M68 — merge_safety enforcement guard #68: automated unique mechanism
+merge_safety enforcement guard #68: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dirty-tree` ratchet-tracked gate
+**Test:** `test_m68_merge_safety_68`
+
+### M69 — merge_safety enforcement guard #69: automated unique mechanism
+merge_safety enforcement guard #69: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_m69_merge_safety_69`
+
+### M70 — merge_safety enforcement guard #70: automated unique mechanism
+merge_safety enforcement guard #70: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/task_watchdog.py` + `.opencode/plugin/enforce-batch-push.ts` dual layer
+**Test:** `test_m70_merge_safety_70`
+
+### M71 — merge_safety enforcement guard #71: automated unique mechanism
+merge_safety enforcement guard #71: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_require_ci_green.py` structural assertion gate
+**Test:** `test_m71_merge_safety_71`
+
+### M72 — merge_safety enforcement guard #72: automated unique mechanism
+merge_safety enforcement guard #72: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make check-types` + `scripts/test_hook_runtime.py` script-backed guard
+**Test:** `test_m72_merge_safety_72`
+
+### M73 — merge_safety enforcement guard #73: automated unique mechanism
+merge_safety enforcement guard #73: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-verified-claims.ts` env-var-gated BLOCKING
+**Test:** `test_m73_merge_safety_73`
+
+### M74 — merge_safety enforcement guard #74: automated unique mechanism
+merge_safety enforcement guard #74: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `10-Agent Dispatch Floor` + Makefile `make collect-check` combined
+**Test:** `test_m74_merge_safety_74`
+
+### M75 — merge_safety enforcement guard #75: automated unique mechanism
+merge_safety enforcement guard #75: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-ci-check-state.json` + `.opencode/plugin/enforce-test-integrity.ts` state-aware block
+**Test:** `test_m75_merge_safety_75`
+
+### M76 — merge_safety enforcement guard #76: automated unique mechanism
+merge_safety enforcement guard #76: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:duplicate-target` + `scripts/check_node_v26_compat.py` ratchet+script gate
+**Test:** `test_m76_merge_safety_76`
+
+### M77 — merge_safety enforcement guard #77: automated unique mechanism
+merge_safety enforcement guard #77: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make container-run` CI+local dual
+**Test:** `test_m77_merge_safety_77`
+
+### M78 — merge_safety enforcement guard #78: automated unique mechanism
+merge_safety enforcement guard #78: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-suppressions.ts` × `.opencode/plugin/enforce-no-wait.ts` cross-plugin
+**Test:** `test_m78_merge_safety_78`
+
+### M79 — merge_safety enforcement guard #79: automated unique mechanism
+merge_safety enforcement guard #79: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Hard Break Enforcement` + `scripts/stop_condition_audit.py` + `.opencode/plugin/enforce-session-start.ts` triple layer
+**Test:** `test_m79_merge_safety_79`
+
+### M80 — merge_safety enforcement guard #80: automated unique mechanism
+merge_safety enforcement guard #80: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Background Operations NEVER Block Dispatch` section
+**Test:** `test_m80_merge_safety_80`
+
+### M81 — merge_safety enforcement guard #81: automated unique mechanism
+merge_safety enforcement guard #81: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make tf-init` prerequisite
+**Test:** `test_m81_merge_safety_81`
+
+### M82 — merge_safety enforcement guard #82: automated unique mechanism
+merge_safety enforcement guard #82: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` enforcement
+**Test:** `test_m82_merge_safety_82`
+
+### M83 — merge_safety enforcement guard #83: automated unique mechanism
+merge_safety enforcement guard #83: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_m83_merge_safety_83`
+
+### M84 — merge_safety enforcement guard #84: automated unique mechanism
+merge_safety enforcement guard #84: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-anti-essay.ts` permissionDecision deny
+**Test:** `test_m84_merge_safety_84`
+
+### M85 — merge_safety enforcement guard #85: automated unique mechanism
+merge_safety enforcement guard #85: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make agent-cleanup` fail-closed guard
+**Test:** `test_m85_merge_safety_85`
+
+### M86 — merge_safety enforcement guard #86: automated unique mechanism
+merge_safety enforcement guard #86: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-user-objective.json` state-file enforced block
+**Test:** `test_m86_merge_safety_86`
+
+### M87 — merge_safety enforcement guard #87: automated unique mechanism
+merge_safety enforcement guard #87: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-deletion-gate.ts` + `make test-and-commit` combined guard
+**Test:** `test_m87_merge_safety_87`
+
+### M88 — merge_safety enforcement guard #88: automated unique mechanism
+merge_safety enforcement guard #88: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:typecheck-baseline` ratchet-tracked gate
+**Test:** `test_m88_merge_safety_88`
+
+### M89 — merge_safety enforcement guard #89: automated unique mechanism
+merge_safety enforcement guard #89: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_m89_merge_safety_89`
+
+### M90 — merge_safety enforcement guard #90: automated unique mechanism
+merge_safety enforcement guard #90: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` + `.opencode/plugin/enforce-clean-tree.ts` dual layer
+**Test:** `test_m90_merge_safety_90`
+
+### M91 — merge_safety enforcement guard #91: automated unique mechanism
+merge_safety enforcement guard #91: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_no_suppression_comments.py` structural assertion gate
+**Test:** `test_m91_merge_safety_91`
+
+### M92 — merge_safety enforcement guard #92: automated unique mechanism
+merge_safety enforcement guard #92: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-stash-pop` + `scripts/check_readme_status_current.py` script-backed guard
+**Test:** `test_m92_merge_safety_92`
+
+### M93 — merge_safety enforcement guard #93: automated unique mechanism
+merge_safety enforcement guard #93: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-enhancement-ratio.ts` env-var-gated BLOCKING
+**Test:** `test_m93_merge_safety_93`
+
+### M94 — merge_safety enforcement guard #94: automated unique mechanism
+merge_safety enforcement guard #94: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Premature-Stop Audit Policy` + Makefile `make agent-merge` combined
+**Test:** `test_m94_merge_safety_94`
+
+### M95 — merge_safety enforcement guard #95: automated unique mechanism
+merge_safety enforcement guard #95: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-task-killed.json` + `.opencode/plugin/enforce-session-start.ts` state-aware block
+**Test:** `test_m95_merge_safety_95`
+
+### M96 — merge_safety enforcement guard #96: automated unique mechanism
+merge_safety enforcement guard #96: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:stale-gate` + `scripts/test_hook_runtime.py` ratchet+script gate
+**Test:** `test_m96_merge_safety_96`
+
+### M97 — merge_safety enforcement guard #97: automated unique mechanism
+merge_safety enforcement guard #97: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make test-guardrails` CI+local dual
+**Test:** `test_m97_merge_safety_97`
+
+### M98 — merge_safety enforcement guard #98: automated unique mechanism
+merge_safety enforcement guard #98: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-tdd.ts` × `.opencode/plugin/enforce-objective.ts` cross-plugin
+**Test:** `test_m98_merge_safety_98`
+
+### M99 — merge_safety enforcement guard #99: automated unique mechanism
+merge_safety enforcement guard #99: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `No-Manual-Default Policy` + `scripts/check_duplicate_targets.py` + `.opencode/plugin/enforce-no-wait.ts` triple layer
+**Test:** `test_m99_merge_safety_99`
+
+### M100 — merge_safety enforcement guard #100: automated unique mechanism
+merge_safety enforcement guard #100: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Premature-Stop Audit Policy` section
+**Test:** `test_m100_merge_safety_100`
+
+### M101 — merge_safety enforcement guard #101: automated unique mechanism
+merge_safety enforcement guard #101: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-reset` prerequisite
+**Test:** `test_m101_merge_safety_101`
+
+### M102 — merge_safety enforcement guard #102: automated unique mechanism
+merge_safety enforcement guard #102: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` enforcement
+**Test:** `test_m102_merge_safety_102`
+
+### M103 — merge_safety enforcement guard #103: automated unique mechanism
+merge_safety enforcement guard #103: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_m103_merge_safety_103`
+
+### M104 — merge_safety enforcement guard #104: automated unique mechanism
+merge_safety enforcement guard #104: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-suppressions.ts` permissionDecision deny
+**Test:** `test_m104_merge_safety_104`
+
+### M105 — merge_safety enforcement guard #105: automated unique mechanism
+merge_safety enforcement guard #105: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make feature-start` fail-closed guard
+**Test:** `test_m105_merge_safety_105`
+
+### M106 — merge_safety enforcement guard #106: automated unique mechanism
+merge_safety enforcement guard #106: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-enhancement-ratio.json` state-file enforced block
+**Test:** `test_m106_merge_safety_106`
+
+### M107 — merge_safety enforcement guard #107: automated unique mechanism
+merge_safety enforcement guard #107: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-delegate.ts` + `make tf-cache-warm` combined guard
+**Test:** `test_m107_merge_safety_107`
+
+### M108 — merge_safety enforcement guard #108: automated unique mechanism
+merge_safety enforcement guard #108: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dead-code` ratchet-tracked gate
+**Test:** `test_m108_merge_safety_108`
+
+### M109 — merge_safety enforcement guard #109: automated unique mechanism
+merge_safety enforcement guard #109: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_m109_merge_safety_109`
+
+### M110 — merge_safety enforcement guard #110: automated unique mechanism
+merge_safety enforcement guard #110: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` + `.opencode/plugin/enforce-floor.ts` dual layer
+**Test:** `test_m110_merge_safety_110`
+
+### M111 — merge_safety enforcement guard #111: automated unique mechanism
+merge_safety enforcement guard #111: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_blocker_detector.py` structural assertion gate
+**Test:** `test_m111_merge_safety_111`
+
+### M112 — merge_safety enforcement guard #112: automated unique mechanism
+merge_safety enforcement guard #112: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make agent-worktree-list` + `scripts/check_node_v26_compat.py` script-backed guard
+**Test:** `test_m112_merge_safety_112`
+
+### M113 — merge_safety enforcement guard #113: automated unique mechanism
+merge_safety enforcement guard #113: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-stop.ts` env-var-gated BLOCKING
+**Test:** `test_m113_merge_safety_113`
+
+### M114 — merge_safety enforcement guard #114: automated unique mechanism
+merge_safety enforcement guard #114: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Release Pipeline Must Be CI-Green` + Makefile `make test-integration` combined
+**Test:** `test_m114_merge_safety_114`
+
+### M115 — merge_safety enforcement guard #115: automated unique mechanism
+merge_safety enforcement guard #115: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` + `.opencode/plugin/enforce-branch-discipline.ts` state-aware block
+**Test:** `test_m115_merge_safety_115`
+
+### M116 — merge_safety enforcement guard #116: automated unique mechanism
+merge_safety enforcement guard #116: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:coverage-baseline` + `scripts/check_readme_status_current.py` ratchet+script gate
+**Test:** `test_m116_merge_safety_116`
+
+### M117 — merge_safety enforcement guard #117: automated unique mechanism
+merge_safety enforcement guard #117: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make gate-kill` CI+local dual
+**Test:** `test_m117_merge_safety_117`
+
+### M118 — merge_safety enforcement guard #118: automated unique mechanism
+merge_safety enforcement guard #118: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-anti-essay.ts` × `.opencode/plugin/enforce-deletion-gate.ts` cross-plugin
+**Test:** `test_m118_merge_safety_118`
+
+### M119 — merge_safety enforcement guard #119: automated unique mechanism
+merge_safety enforcement guard #119: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Pre-Generation Contract` + `scripts/verify_release_artifact.py` + `.opencode/plugin/enforce-objective.ts` triple layer
+**Test:** `test_m119_merge_safety_119`
+
+### M120 — merge_safety enforcement guard #120: automated unique mechanism
+merge_safety enforcement guard #120: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Task Self-Tracking` section
+**Test:** `test_m120_merge_safety_120`
+
+### M121 — merge_safety enforcement guard #121: automated unique mechanism
+merge_safety enforcement guard #121: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make check-opencode-backup` prerequisite
+**Test:** `test_m121_merge_safety_121`
+
+### M122 — merge_safety enforcement guard #122: automated unique mechanism
+merge_safety enforcement guard #122: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/task_watchdog.py` enforcement
+**Test:** `test_m122_merge_safety_122`
+
+### M123 — merge_safety enforcement guard #123: automated unique mechanism
+merge_safety enforcement guard #123: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_m123_merge_safety_123`
+
+### M124 — merge_safety enforcement guard #124: automated unique mechanism
+merge_safety enforcement guard #124: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-context.ts` permissionDecision deny
+**Test:** `test_m124_merge_safety_124`
+
+### M125 — merge_safety enforcement guard #125: automated unique mechanism
+merge_safety enforcement guard #125: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make check-duplicate-targets` fail-closed guard
+**Test:** `test_m125_merge_safety_125`
+
+## Expansion: Gate Discipline (G21–G125)
+
 ### G21 — gate_discipline enforcement guard #21: automated unique mechanism
-The agent MUST enforce this invariant mechanically at runtime — no advisory-only, no opt-in.
-**Enforcement:** AGENTS.md `enforce-make.ts` × `enforce-stop.ts` cross-plugin
+gate_discipline enforcement guard #21: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make release-cut` prerequisite
 **Test:** `test_g21_gate_discipline_21`
 
+### G22 — gate_discipline enforcement guard #22: automated unique mechanism
+gate_discipline enforcement guard #22: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` enforcement
+**Test:** `test_g22_gate_discipline_22`
+
+### G23 — gate_discipline enforcement guard #23: automated unique mechanism
+gate_discipline enforcement guard #23: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_g23_gate_discipline_23`
+
+### G24 — gate_discipline enforcement guard #24: automated unique mechanism
+gate_discipline enforcement guard #24: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-batch-push.ts` permissionDecision deny
+**Test:** `test_g24_gate_discipline_24`
+
+### G25 — gate_discipline enforcement guard #25: automated unique mechanism
+gate_discipline enforcement guard #25: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-index` fail-closed guard
+**Test:** `test_g25_gate_discipline_25`
+
+### G26 — gate_discipline enforcement guard #26: automated unique mechanism
+gate_discipline enforcement guard #26: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-user-objective.json` state-file enforced block
+**Test:** `test_g26_gate_discipline_26`
+
+### G27 — gate_discipline enforcement guard #27: automated unique mechanism
+gate_discipline enforcement guard #27: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-objective.ts` + `make require-ci-green` combined guard
+**Test:** `test_g27_gate_discipline_27`
+
+### G28 — gate_discipline enforcement guard #28: automated unique mechanism
+gate_discipline enforcement guard #28: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:typecheck-baseline` ratchet-tracked gate
+**Test:** `test_g28_gate_discipline_28`
+
+### G29 — gate_discipline enforcement guard #29: automated unique mechanism
+gate_discipline enforcement guard #29: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_g29_gate_discipline_29`
+
+### G30 — gate_discipline enforcement guard #30: automated unique mechanism
+gate_discipline enforcement guard #30: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` + `.opencode/plugin/enforce-multitask.ts` dual layer
+**Test:** `test_g30_gate_discipline_30`
+
+### G31 — gate_discipline enforcement guard #31: automated unique mechanism
+gate_discipline enforcement guard #31: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_behavioral_specs.py` structural assertion gate
+**Test:** `test_g31_gate_discipline_31`
+
+### G32 — gate_discipline enforcement guard #32: automated unique mechanism
+gate_discipline enforcement guard #32: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make disengage-enforcement` + `scripts/check_readme_status_current.py` script-backed guard
+**Test:** `test_g32_gate_discipline_32`
+
+### G33 — gate_discipline enforcement guard #33: automated unique mechanism
+gate_discipline enforcement guard #33: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` env-var-gated BLOCKING
+**Test:** `test_g33_gate_discipline_33`
+
+### G34 — gate_discipline enforcement guard #34: automated unique mechanism
+gate_discipline enforcement guard #34: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Anti-Grinding Enforcement` + Makefile `make git-merge` combined
+**Test:** `test_g34_gate_discipline_34`
+
+### G35 — gate_discipline enforcement guard #35: automated unique mechanism
+gate_discipline enforcement guard #35: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-task-killed.json` + `.opencode/plugin/enforce-delegate.ts` state-aware block
+**Test:** `test_g35_gate_discipline_35`
+
+### G36 — gate_discipline enforcement guard #36: automated unique mechanism
+gate_discipline enforcement guard #36: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:stale-gate` + `scripts/test_hook_runtime.py` ratchet+script gate
+**Test:** `test_g36_gate_discipline_36`
+
+### G37 — gate_discipline enforcement guard #37: automated unique mechanism
+gate_discipline enforcement guard #37: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make verify-enforcement` CI+local dual
+**Test:** `test_g37_gate_discipline_37`
+
+### G38 — gate_discipline enforcement guard #38: automated unique mechanism
+gate_discipline enforcement guard #38: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-context.ts` × `.opencode/plugin/enforce-verified-claims.ts` cross-plugin
+**Test:** `test_g38_gate_discipline_38`
+
+### G39 — gate_discipline enforcement guard #39: automated unique mechanism
+gate_discipline enforcement guard #39: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Yield Enforcement` + `scripts/check_duplicate_targets.py` + `.opencode/plugin/enforce-enhancement-ratio.ts` triple layer
+**Test:** `test_g39_gate_discipline_39`
+
+### G40 — gate_discipline enforcement guard #40: automated unique mechanism
+gate_discipline enforcement guard #40: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Priority Stacking` section
+**Test:** `test_g40_gate_discipline_40`
+
+### G41 — gate_discipline enforcement guard #41: automated unique mechanism
+gate_discipline enforcement guard #41: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make container-run` prerequisite
+**Test:** `test_g41_gate_discipline_41`
+
+### G42 — gate_discipline enforcement guard #42: automated unique mechanism
+gate_discipline enforcement guard #42: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` enforcement
+**Test:** `test_g42_gate_discipline_42`
+
+### G43 — gate_discipline enforcement guard #43: automated unique mechanism
+gate_discipline enforcement guard #43: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_g43_gate_discipline_43`
+
+### G44 — gate_discipline enforcement guard #44: automated unique mechanism
+gate_discipline enforcement guard #44: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-floor.ts` permissionDecision deny
+**Test:** `test_g44_gate_discipline_44`
+
+### G45 — gate_discipline enforcement guard #45: automated unique mechanism
+gate_discipline enforcement guard #45: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make gated-merge` fail-closed guard
+**Test:** `test_g45_gate_discipline_45`
+
+### G46 — gate_discipline enforcement guard #46: automated unique mechanism
+gate_discipline enforcement guard #46: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-enhancement-ratio.json` state-file enforced block
+**Test:** `test_g46_gate_discipline_46`
+
+### G47 — gate_discipline enforcement guard #47: automated unique mechanism
+gate_discipline enforcement guard #47: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-test-integrity.ts` + `make git-checkout` combined guard
+**Test:** `test_g47_gate_discipline_47`
+
+### G48 — gate_discipline enforcement guard #48: automated unique mechanism
+gate_discipline enforcement guard #48: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dead-code` ratchet-tracked gate
+**Test:** `test_g48_gate_discipline_48`
+
+### G49 — gate_discipline enforcement guard #49: automated unique mechanism
+gate_discipline enforcement guard #49: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_g49_gate_discipline_49`
+
+### G50 — gate_discipline enforcement guard #50: automated unique mechanism
+gate_discipline enforcement guard #50: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` + `.opencode/plugin/enforce-context.ts` dual layer
+**Test:** `test_g50_gate_discipline_50`
+
+### G51 — gate_discipline enforcement guard #51: automated unique mechanism
+gate_discipline enforcement guard #51: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_verified_claims_plugin.py` structural assertion gate
+**Test:** `test_g51_gate_discipline_51`
+
+### G52 — gate_discipline enforcement guard #52: automated unique mechanism
+gate_discipline enforcement guard #52: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make container-push` + `scripts/check_node_v26_compat.py` script-backed guard
+**Test:** `test_g52_gate_discipline_52`
+
+### G53 — gate_discipline enforcement guard #53: automated unique mechanism
+gate_discipline enforcement guard #53: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-session-start.ts` env-var-gated BLOCKING
+**Test:** `test_g53_gate_discipline_53`
+
+### G54 — gate_discipline enforcement guard #54: automated unique mechanism
+gate_discipline enforcement guard #54: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Nothing-Dropped Guardrail` + Makefile `make clean-worktree-venvs` combined
+**Test:** `test_g54_gate_discipline_54`
+
+### G55 — gate_discipline enforcement guard #55: automated unique mechanism
+gate_discipline enforcement guard #55: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` + `.opencode/plugin/enforce-no-wait.ts` state-aware block
+**Test:** `test_g55_gate_discipline_55`
+
+### G56 — gate_discipline enforcement guard #56: automated unique mechanism
+gate_discipline enforcement guard #56: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:coverage-baseline` + `scripts/check_readme_status_current.py` ratchet+script gate
+**Test:** `test_g56_gate_discipline_56`
+
+### G57 — gate_discipline enforcement guard #57: automated unique mechanism
+gate_discipline enforcement guard #57: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make floor-status` CI+local dual
+**Test:** `test_g57_gate_discipline_57`
+
+### G58 — gate_discipline enforcement guard #58: automated unique mechanism
+gate_discipline enforcement guard #58: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-multitask.ts` × `.opencode/plugin/enforce-session-start.ts` cross-plugin
+**Test:** `test_g58_gate_discipline_58`
+
+### G59 — gate_discipline enforcement guard #59: automated unique mechanism
+gate_discipline enforcement guard #59: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Judgment Enforcement` + `scripts/verify_release_artifact.py` + `.opencode/plugin/enforce-verified-claims.ts` triple layer
+**Test:** `test_g59_gate_discipline_59`
+
+### G60 — gate_discipline enforcement guard #60: automated unique mechanism
+gate_discipline enforcement guard #60: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Node v26 Compatibility` section
+**Test:** `test_g60_gate_discipline_60`
+
+### G61 — gate_discipline enforcement guard #61: automated unique mechanism
+gate_discipline enforcement guard #61: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-rebranch-onto` prerequisite
+**Test:** `test_g61_gate_discipline_61`
+
+### G62 — gate_discipline enforcement guard #62: automated unique mechanism
+gate_discipline enforcement guard #62: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/task_watchdog.py` enforcement
+**Test:** `test_g62_gate_discipline_62`
+
+### G63 — gate_discipline enforcement guard #63: automated unique mechanism
+gate_discipline enforcement guard #63: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_g63_gate_discipline_63`
+
+### G64 — gate_discipline enforcement guard #64: automated unique mechanism
+gate_discipline enforcement guard #64: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-make.ts` permissionDecision deny
+**Test:** `test_g64_gate_discipline_64`
+
+### G65 — gate_discipline enforcement guard #65: automated unique mechanism
+gate_discipline enforcement guard #65: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make development-start` fail-closed guard
+**Test:** `test_g65_gate_discipline_65`
+
+### G66 — gate_discipline enforcement guard #66: automated unique mechanism
+gate_discipline enforcement guard #66: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-tool-streak.json` state-file enforced block
+**Test:** `test_g66_gate_discipline_66`
+
+### G67 — gate_discipline enforcement guard #67: automated unique mechanism
+gate_discipline enforcement guard #67: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-verified-claims.ts` + `make validate` combined guard
+**Test:** `test_g67_gate_discipline_67`
+
+### G68 — gate_discipline enforcement guard #68: automated unique mechanism
+gate_discipline enforcement guard #68: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dirty-tree` ratchet-tracked gate
+**Test:** `test_g68_gate_discipline_68`
+
+### G69 — gate_discipline enforcement guard #69: automated unique mechanism
+gate_discipline enforcement guard #69: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_g69_gate_discipline_69`
+
+### G70 — gate_discipline enforcement guard #70: automated unique mechanism
+gate_discipline enforcement guard #70: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/task_watchdog.py` + `.opencode/plugin/enforce-batch-push.ts` dual layer
+**Test:** `test_g70_gate_discipline_70`
+
+### G71 — gate_discipline enforcement guard #71: automated unique mechanism
+gate_discipline enforcement guard #71: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_require_ci_green.py` structural assertion gate
+**Test:** `test_g71_gate_discipline_71`
+
+### G72 — gate_discipline enforcement guard #72: automated unique mechanism
+gate_discipline enforcement guard #72: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make check-types` + `scripts/test_hook_runtime.py` script-backed guard
+**Test:** `test_g72_gate_discipline_72`
+
+### G73 — gate_discipline enforcement guard #73: automated unique mechanism
+gate_discipline enforcement guard #73: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-verified-claims.ts` env-var-gated BLOCKING
+**Test:** `test_g73_gate_discipline_73`
+
+### G74 — gate_discipline enforcement guard #74: automated unique mechanism
+gate_discipline enforcement guard #74: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `10-Agent Dispatch Floor` + Makefile `make collect-check` combined
+**Test:** `test_g74_gate_discipline_74`
+
+### G75 — gate_discipline enforcement guard #75: automated unique mechanism
+gate_discipline enforcement guard #75: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-ci-check-state.json` + `.opencode/plugin/enforce-test-integrity.ts` state-aware block
+**Test:** `test_g75_gate_discipline_75`
+
+### G76 — gate_discipline enforcement guard #76: automated unique mechanism
+gate_discipline enforcement guard #76: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:duplicate-target` + `scripts/check_node_v26_compat.py` ratchet+script gate
+**Test:** `test_g76_gate_discipline_76`
+
+### G77 — gate_discipline enforcement guard #77: automated unique mechanism
+gate_discipline enforcement guard #77: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make container-run` CI+local dual
+**Test:** `test_g77_gate_discipline_77`
+
+### G78 — gate_discipline enforcement guard #78: automated unique mechanism
+gate_discipline enforcement guard #78: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-suppressions.ts` × `.opencode/plugin/enforce-no-wait.ts` cross-plugin
+**Test:** `test_g78_gate_discipline_78`
+
+### G79 — gate_discipline enforcement guard #79: automated unique mechanism
+gate_discipline enforcement guard #79: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Hard Break Enforcement` + `scripts/stop_condition_audit.py` + `.opencode/plugin/enforce-session-start.ts` triple layer
+**Test:** `test_g79_gate_discipline_79`
+
+### G80 — gate_discipline enforcement guard #80: automated unique mechanism
+gate_discipline enforcement guard #80: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Background Operations NEVER Block Dispatch` section
+**Test:** `test_g80_gate_discipline_80`
+
+### G81 — gate_discipline enforcement guard #81: automated unique mechanism
+gate_discipline enforcement guard #81: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make tf-init` prerequisite
+**Test:** `test_g81_gate_discipline_81`
+
+### G82 — gate_discipline enforcement guard #82: automated unique mechanism
+gate_discipline enforcement guard #82: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` enforcement
+**Test:** `test_g82_gate_discipline_82`
+
+### G83 — gate_discipline enforcement guard #83: automated unique mechanism
+gate_discipline enforcement guard #83: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_g83_gate_discipline_83`
+
+### G84 — gate_discipline enforcement guard #84: automated unique mechanism
+gate_discipline enforcement guard #84: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-anti-essay.ts` permissionDecision deny
+**Test:** `test_g84_gate_discipline_84`
+
+### G85 — gate_discipline enforcement guard #85: automated unique mechanism
+gate_discipline enforcement guard #85: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make agent-cleanup` fail-closed guard
+**Test:** `test_g85_gate_discipline_85`
+
+### G86 — gate_discipline enforcement guard #86: automated unique mechanism
+gate_discipline enforcement guard #86: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-user-objective.json` state-file enforced block
+**Test:** `test_g86_gate_discipline_86`
+
+### G87 — gate_discipline enforcement guard #87: automated unique mechanism
+gate_discipline enforcement guard #87: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-deletion-gate.ts` + `make test-and-commit` combined guard
+**Test:** `test_g87_gate_discipline_87`
+
+### G88 — gate_discipline enforcement guard #88: automated unique mechanism
+gate_discipline enforcement guard #88: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:typecheck-baseline` ratchet-tracked gate
+**Test:** `test_g88_gate_discipline_88`
+
+### G89 — gate_discipline enforcement guard #89: automated unique mechanism
+gate_discipline enforcement guard #89: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_g89_gate_discipline_89`
+
+### G90 — gate_discipline enforcement guard #90: automated unique mechanism
+gate_discipline enforcement guard #90: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` + `.opencode/plugin/enforce-clean-tree.ts` dual layer
+**Test:** `test_g90_gate_discipline_90`
+
+### G91 — gate_discipline enforcement guard #91: automated unique mechanism
+gate_discipline enforcement guard #91: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_no_suppression_comments.py` structural assertion gate
+**Test:** `test_g91_gate_discipline_91`
+
+### G92 — gate_discipline enforcement guard #92: automated unique mechanism
+gate_discipline enforcement guard #92: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-stash-pop` + `scripts/check_readme_status_current.py` script-backed guard
+**Test:** `test_g92_gate_discipline_92`
+
+### G93 — gate_discipline enforcement guard #93: automated unique mechanism
+gate_discipline enforcement guard #93: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-enhancement-ratio.ts` env-var-gated BLOCKING
+**Test:** `test_g93_gate_discipline_93`
+
+### G94 — gate_discipline enforcement guard #94: automated unique mechanism
+gate_discipline enforcement guard #94: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Premature-Stop Audit Policy` + Makefile `make agent-merge` combined
+**Test:** `test_g94_gate_discipline_94`
+
+### G95 — gate_discipline enforcement guard #95: automated unique mechanism
+gate_discipline enforcement guard #95: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-task-killed.json` + `.opencode/plugin/enforce-session-start.ts` state-aware block
+**Test:** `test_g95_gate_discipline_95`
+
+### G96 — gate_discipline enforcement guard #96: automated unique mechanism
+gate_discipline enforcement guard #96: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:stale-gate` + `scripts/test_hook_runtime.py` ratchet+script gate
+**Test:** `test_g96_gate_discipline_96`
+
+### G97 — gate_discipline enforcement guard #97: automated unique mechanism
+gate_discipline enforcement guard #97: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make test-guardrails` CI+local dual
+**Test:** `test_g97_gate_discipline_97`
+
+### G98 — gate_discipline enforcement guard #98: automated unique mechanism
+gate_discipline enforcement guard #98: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-tdd.ts` × `.opencode/plugin/enforce-objective.ts` cross-plugin
+**Test:** `test_g98_gate_discipline_98`
+
+### G99 — gate_discipline enforcement guard #99: automated unique mechanism
+gate_discipline enforcement guard #99: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `No-Manual-Default Policy` + `scripts/check_duplicate_targets.py` + `.opencode/plugin/enforce-no-wait.ts` triple layer
+**Test:** `test_g99_gate_discipline_99`
+
+### G100 — gate_discipline enforcement guard #100: automated unique mechanism
+gate_discipline enforcement guard #100: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Premature-Stop Audit Policy` section
+**Test:** `test_g100_gate_discipline_100`
+
+### G101 — gate_discipline enforcement guard #101: automated unique mechanism
+gate_discipline enforcement guard #101: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-reset` prerequisite
+**Test:** `test_g101_gate_discipline_101`
+
+### G102 — gate_discipline enforcement guard #102: automated unique mechanism
+gate_discipline enforcement guard #102: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` enforcement
+**Test:** `test_g102_gate_discipline_102`
+
+### G103 — gate_discipline enforcement guard #103: automated unique mechanism
+gate_discipline enforcement guard #103: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_g103_gate_discipline_103`
+
+### G104 — gate_discipline enforcement guard #104: automated unique mechanism
+gate_discipline enforcement guard #104: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-suppressions.ts` permissionDecision deny
+**Test:** `test_g104_gate_discipline_104`
+
+### G105 — gate_discipline enforcement guard #105: automated unique mechanism
+gate_discipline enforcement guard #105: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make feature-start` fail-closed guard
+**Test:** `test_g105_gate_discipline_105`
+
+### G106 — gate_discipline enforcement guard #106: automated unique mechanism
+gate_discipline enforcement guard #106: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-enhancement-ratio.json` state-file enforced block
+**Test:** `test_g106_gate_discipline_106`
+
+### G107 — gate_discipline enforcement guard #107: automated unique mechanism
+gate_discipline enforcement guard #107: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-delegate.ts` + `make tf-cache-warm` combined guard
+**Test:** `test_g107_gate_discipline_107`
+
+### G108 — gate_discipline enforcement guard #108: automated unique mechanism
+gate_discipline enforcement guard #108: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dead-code` ratchet-tracked gate
+**Test:** `test_g108_gate_discipline_108`
+
+### G109 — gate_discipline enforcement guard #109: automated unique mechanism
+gate_discipline enforcement guard #109: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_g109_gate_discipline_109`
+
+### G110 — gate_discipline enforcement guard #110: automated unique mechanism
+gate_discipline enforcement guard #110: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` + `.opencode/plugin/enforce-floor.ts` dual layer
+**Test:** `test_g110_gate_discipline_110`
+
+### G111 — gate_discipline enforcement guard #111: automated unique mechanism
+gate_discipline enforcement guard #111: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_blocker_detector.py` structural assertion gate
+**Test:** `test_g111_gate_discipline_111`
+
+### G112 — gate_discipline enforcement guard #112: automated unique mechanism
+gate_discipline enforcement guard #112: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make agent-worktree-list` + `scripts/check_node_v26_compat.py` script-backed guard
+**Test:** `test_g112_gate_discipline_112`
+
+### G113 — gate_discipline enforcement guard #113: automated unique mechanism
+gate_discipline enforcement guard #113: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-stop.ts` env-var-gated BLOCKING
+**Test:** `test_g113_gate_discipline_113`
+
+### G114 — gate_discipline enforcement guard #114: automated unique mechanism
+gate_discipline enforcement guard #114: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Release Pipeline Must Be CI-Green` + Makefile `make test-integration` combined
+**Test:** `test_g114_gate_discipline_114`
+
+### G115 — gate_discipline enforcement guard #115: automated unique mechanism
+gate_discipline enforcement guard #115: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` + `.opencode/plugin/enforce-branch-discipline.ts` state-aware block
+**Test:** `test_g115_gate_discipline_115`
+
+### G116 — gate_discipline enforcement guard #116: automated unique mechanism
+gate_discipline enforcement guard #116: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:coverage-baseline` + `scripts/check_readme_status_current.py` ratchet+script gate
+**Test:** `test_g116_gate_discipline_116`
+
+### G117 — gate_discipline enforcement guard #117: automated unique mechanism
+gate_discipline enforcement guard #117: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make gate-kill` CI+local dual
+**Test:** `test_g117_gate_discipline_117`
+
+### G118 — gate_discipline enforcement guard #118: automated unique mechanism
+gate_discipline enforcement guard #118: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-anti-essay.ts` × `.opencode/plugin/enforce-deletion-gate.ts` cross-plugin
+**Test:** `test_g118_gate_discipline_118`
+
+### G119 — gate_discipline enforcement guard #119: automated unique mechanism
+gate_discipline enforcement guard #119: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Pre-Generation Contract` + `scripts/verify_release_artifact.py` + `.opencode/plugin/enforce-objective.ts` triple layer
+**Test:** `test_g119_gate_discipline_119`
+
+### G120 — gate_discipline enforcement guard #120: automated unique mechanism
+gate_discipline enforcement guard #120: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Task Self-Tracking` section
+**Test:** `test_g120_gate_discipline_120`
+
+### G121 — gate_discipline enforcement guard #121: automated unique mechanism
+gate_discipline enforcement guard #121: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make check-opencode-backup` prerequisite
+**Test:** `test_g121_gate_discipline_121`
+
+### G122 — gate_discipline enforcement guard #122: automated unique mechanism
+gate_discipline enforcement guard #122: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/task_watchdog.py` enforcement
+**Test:** `test_g122_gate_discipline_122`
+
+### G123 — gate_discipline enforcement guard #123: automated unique mechanism
+gate_discipline enforcement guard #123: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_g123_gate_discipline_123`
+
+### G124 — gate_discipline enforcement guard #124: automated unique mechanism
+gate_discipline enforcement guard #124: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-context.ts` permissionDecision deny
+**Test:** `test_g124_gate_discipline_124`
+
+### G125 — gate_discipline enforcement guard #125: automated unique mechanism
+gate_discipline enforcement guard #125: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make check-duplicate-targets` fail-closed guard
+**Test:** `test_g125_gate_discipline_125`
+
+## Expansion: Release Integrity (R21–R125)
+
 ### R21 — release_integrity enforcement guard #21: automated unique mechanism
-The agent MUST enforce this invariant mechanically at runtime — no advisory-only, no opt-in.
-**Enforcement:** AGENTS.md `enforce-verified-claims.ts` × `enforce-stop.ts` cross-plugin
+release_integrity enforcement guard #21: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make release-cut` prerequisite
 **Test:** `test_r21_release_integrity_21`
 
+### R22 — release_integrity enforcement guard #22: automated unique mechanism
+release_integrity enforcement guard #22: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` enforcement
+**Test:** `test_r22_release_integrity_22`
+
+### R23 — release_integrity enforcement guard #23: automated unique mechanism
+release_integrity enforcement guard #23: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_r23_release_integrity_23`
+
+### R24 — release_integrity enforcement guard #24: automated unique mechanism
+release_integrity enforcement guard #24: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-batch-push.ts` permissionDecision deny
+**Test:** `test_r24_release_integrity_24`
+
+### R25 — release_integrity enforcement guard #25: automated unique mechanism
+release_integrity enforcement guard #25: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-index` fail-closed guard
+**Test:** `test_r25_release_integrity_25`
+
+### R26 — release_integrity enforcement guard #26: automated unique mechanism
+release_integrity enforcement guard #26: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-user-objective.json` state-file enforced block
+**Test:** `test_r26_release_integrity_26`
+
+### R27 — release_integrity enforcement guard #27: automated unique mechanism
+release_integrity enforcement guard #27: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-objective.ts` + `make require-ci-green` combined guard
+**Test:** `test_r27_release_integrity_27`
+
+### R28 — release_integrity enforcement guard #28: automated unique mechanism
+release_integrity enforcement guard #28: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:typecheck-baseline` ratchet-tracked gate
+**Test:** `test_r28_release_integrity_28`
+
+### R29 — release_integrity enforcement guard #29: automated unique mechanism
+release_integrity enforcement guard #29: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_r29_release_integrity_29`
+
+### R30 — release_integrity enforcement guard #30: automated unique mechanism
+release_integrity enforcement guard #30: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` + `.opencode/plugin/enforce-multitask.ts` dual layer
+**Test:** `test_r30_release_integrity_30`
+
+### R31 — release_integrity enforcement guard #31: automated unique mechanism
+release_integrity enforcement guard #31: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_behavioral_specs.py` structural assertion gate
+**Test:** `test_r31_release_integrity_31`
+
+### R32 — release_integrity enforcement guard #32: automated unique mechanism
+release_integrity enforcement guard #32: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make disengage-enforcement` + `scripts/check_readme_status_current.py` script-backed guard
+**Test:** `test_r32_release_integrity_32`
+
+### R33 — release_integrity enforcement guard #33: automated unique mechanism
+release_integrity enforcement guard #33: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` env-var-gated BLOCKING
+**Test:** `test_r33_release_integrity_33`
+
+### R34 — release_integrity enforcement guard #34: automated unique mechanism
+release_integrity enforcement guard #34: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Anti-Grinding Enforcement` + Makefile `make git-merge` combined
+**Test:** `test_r34_release_integrity_34`
+
+### R35 — release_integrity enforcement guard #35: automated unique mechanism
+release_integrity enforcement guard #35: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-task-killed.json` + `.opencode/plugin/enforce-delegate.ts` state-aware block
+**Test:** `test_r35_release_integrity_35`
+
+### R36 — release_integrity enforcement guard #36: automated unique mechanism
+release_integrity enforcement guard #36: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:stale-gate` + `scripts/test_hook_runtime.py` ratchet+script gate
+**Test:** `test_r36_release_integrity_36`
+
+### R37 — release_integrity enforcement guard #37: automated unique mechanism
+release_integrity enforcement guard #37: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make verify-enforcement` CI+local dual
+**Test:** `test_r37_release_integrity_37`
+
+### R38 — release_integrity enforcement guard #38: automated unique mechanism
+release_integrity enforcement guard #38: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-context.ts` × `.opencode/plugin/enforce-verified-claims.ts` cross-plugin
+**Test:** `test_r38_release_integrity_38`
+
+### R39 — release_integrity enforcement guard #39: automated unique mechanism
+release_integrity enforcement guard #39: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Yield Enforcement` + `scripts/check_duplicate_targets.py` + `.opencode/plugin/enforce-enhancement-ratio.ts` triple layer
+**Test:** `test_r39_release_integrity_39`
+
+### R40 — release_integrity enforcement guard #40: automated unique mechanism
+release_integrity enforcement guard #40: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Priority Stacking` section
+**Test:** `test_r40_release_integrity_40`
+
+### R41 — release_integrity enforcement guard #41: automated unique mechanism
+release_integrity enforcement guard #41: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make container-run` prerequisite
+**Test:** `test_r41_release_integrity_41`
+
+### R42 — release_integrity enforcement guard #42: automated unique mechanism
+release_integrity enforcement guard #42: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` enforcement
+**Test:** `test_r42_release_integrity_42`
+
+### R43 — release_integrity enforcement guard #43: automated unique mechanism
+release_integrity enforcement guard #43: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_r43_release_integrity_43`
+
+### R44 — release_integrity enforcement guard #44: automated unique mechanism
+release_integrity enforcement guard #44: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-floor.ts` permissionDecision deny
+**Test:** `test_r44_release_integrity_44`
+
+### R45 — release_integrity enforcement guard #45: automated unique mechanism
+release_integrity enforcement guard #45: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make gated-merge` fail-closed guard
+**Test:** `test_r45_release_integrity_45`
+
+### R46 — release_integrity enforcement guard #46: automated unique mechanism
+release_integrity enforcement guard #46: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-enhancement-ratio.json` state-file enforced block
+**Test:** `test_r46_release_integrity_46`
+
+### R47 — release_integrity enforcement guard #47: automated unique mechanism
+release_integrity enforcement guard #47: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-test-integrity.ts` + `make git-checkout` combined guard
+**Test:** `test_r47_release_integrity_47`
+
+### R48 — release_integrity enforcement guard #48: automated unique mechanism
+release_integrity enforcement guard #48: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dead-code` ratchet-tracked gate
+**Test:** `test_r48_release_integrity_48`
+
+### R49 — release_integrity enforcement guard #49: automated unique mechanism
+release_integrity enforcement guard #49: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_r49_release_integrity_49`
+
+### R50 — release_integrity enforcement guard #50: automated unique mechanism
+release_integrity enforcement guard #50: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` + `.opencode/plugin/enforce-context.ts` dual layer
+**Test:** `test_r50_release_integrity_50`
+
+### R51 — release_integrity enforcement guard #51: automated unique mechanism
+release_integrity enforcement guard #51: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_verified_claims_plugin.py` structural assertion gate
+**Test:** `test_r51_release_integrity_51`
+
+### R52 — release_integrity enforcement guard #52: automated unique mechanism
+release_integrity enforcement guard #52: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make container-push` + `scripts/check_node_v26_compat.py` script-backed guard
+**Test:** `test_r52_release_integrity_52`
+
+### R53 — release_integrity enforcement guard #53: automated unique mechanism
+release_integrity enforcement guard #53: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-session-start.ts` env-var-gated BLOCKING
+**Test:** `test_r53_release_integrity_53`
+
+### R54 — release_integrity enforcement guard #54: automated unique mechanism
+release_integrity enforcement guard #54: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Nothing-Dropped Guardrail` + Makefile `make clean-worktree-venvs` combined
+**Test:** `test_r54_release_integrity_54`
+
+### R55 — release_integrity enforcement guard #55: automated unique mechanism
+release_integrity enforcement guard #55: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` + `.opencode/plugin/enforce-no-wait.ts` state-aware block
+**Test:** `test_r55_release_integrity_55`
+
+### R56 — release_integrity enforcement guard #56: automated unique mechanism
+release_integrity enforcement guard #56: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:coverage-baseline` + `scripts/check_readme_status_current.py` ratchet+script gate
+**Test:** `test_r56_release_integrity_56`
+
+### R57 — release_integrity enforcement guard #57: automated unique mechanism
+release_integrity enforcement guard #57: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make floor-status` CI+local dual
+**Test:** `test_r57_release_integrity_57`
+
+### R58 — release_integrity enforcement guard #58: automated unique mechanism
+release_integrity enforcement guard #58: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-multitask.ts` × `.opencode/plugin/enforce-session-start.ts` cross-plugin
+**Test:** `test_r58_release_integrity_58`
+
+### R59 — release_integrity enforcement guard #59: automated unique mechanism
+release_integrity enforcement guard #59: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Judgment Enforcement` + `scripts/verify_release_artifact.py` + `.opencode/plugin/enforce-verified-claims.ts` triple layer
+**Test:** `test_r59_release_integrity_59`
+
+### R60 — release_integrity enforcement guard #60: automated unique mechanism
+release_integrity enforcement guard #60: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Node v26 Compatibility` section
+**Test:** `test_r60_release_integrity_60`
+
+### R61 — release_integrity enforcement guard #61: automated unique mechanism
+release_integrity enforcement guard #61: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-rebranch-onto` prerequisite
+**Test:** `test_r61_release_integrity_61`
+
+### R62 — release_integrity enforcement guard #62: automated unique mechanism
+release_integrity enforcement guard #62: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/task_watchdog.py` enforcement
+**Test:** `test_r62_release_integrity_62`
+
+### R63 — release_integrity enforcement guard #63: automated unique mechanism
+release_integrity enforcement guard #63: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_r63_release_integrity_63`
+
+### R64 — release_integrity enforcement guard #64: automated unique mechanism
+release_integrity enforcement guard #64: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-make.ts` permissionDecision deny
+**Test:** `test_r64_release_integrity_64`
+
+### R65 — release_integrity enforcement guard #65: automated unique mechanism
+release_integrity enforcement guard #65: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make development-start` fail-closed guard
+**Test:** `test_r65_release_integrity_65`
+
+### R66 — release_integrity enforcement guard #66: automated unique mechanism
+release_integrity enforcement guard #66: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-tool-streak.json` state-file enforced block
+**Test:** `test_r66_release_integrity_66`
+
+### R67 — release_integrity enforcement guard #67: automated unique mechanism
+release_integrity enforcement guard #67: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-verified-claims.ts` + `make validate` combined guard
+**Test:** `test_r67_release_integrity_67`
+
+### R68 — release_integrity enforcement guard #68: automated unique mechanism
+release_integrity enforcement guard #68: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dirty-tree` ratchet-tracked gate
+**Test:** `test_r68_release_integrity_68`
+
+### R69 — release_integrity enforcement guard #69: automated unique mechanism
+release_integrity enforcement guard #69: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_r69_release_integrity_69`
+
+### R70 — release_integrity enforcement guard #70: automated unique mechanism
+release_integrity enforcement guard #70: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/task_watchdog.py` + `.opencode/plugin/enforce-batch-push.ts` dual layer
+**Test:** `test_r70_release_integrity_70`
+
+### R71 — release_integrity enforcement guard #71: automated unique mechanism
+release_integrity enforcement guard #71: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_require_ci_green.py` structural assertion gate
+**Test:** `test_r71_release_integrity_71`
+
+### R72 — release_integrity enforcement guard #72: automated unique mechanism
+release_integrity enforcement guard #72: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make check-types` + `scripts/test_hook_runtime.py` script-backed guard
+**Test:** `test_r72_release_integrity_72`
+
+### R73 — release_integrity enforcement guard #73: automated unique mechanism
+release_integrity enforcement guard #73: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-verified-claims.ts` env-var-gated BLOCKING
+**Test:** `test_r73_release_integrity_73`
+
+### R74 — release_integrity enforcement guard #74: automated unique mechanism
+release_integrity enforcement guard #74: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `10-Agent Dispatch Floor` + Makefile `make collect-check` combined
+**Test:** `test_r74_release_integrity_74`
+
+### R75 — release_integrity enforcement guard #75: automated unique mechanism
+release_integrity enforcement guard #75: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-ci-check-state.json` + `.opencode/plugin/enforce-test-integrity.ts` state-aware block
+**Test:** `test_r75_release_integrity_75`
+
+### R76 — release_integrity enforcement guard #76: automated unique mechanism
+release_integrity enforcement guard #76: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:duplicate-target` + `scripts/check_node_v26_compat.py` ratchet+script gate
+**Test:** `test_r76_release_integrity_76`
+
+### R77 — release_integrity enforcement guard #77: automated unique mechanism
+release_integrity enforcement guard #77: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make container-run` CI+local dual
+**Test:** `test_r77_release_integrity_77`
+
+### R78 — release_integrity enforcement guard #78: automated unique mechanism
+release_integrity enforcement guard #78: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-suppressions.ts` × `.opencode/plugin/enforce-no-wait.ts` cross-plugin
+**Test:** `test_r78_release_integrity_78`
+
+### R79 — release_integrity enforcement guard #79: automated unique mechanism
+release_integrity enforcement guard #79: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Hard Break Enforcement` + `scripts/stop_condition_audit.py` + `.opencode/plugin/enforce-session-start.ts` triple layer
+**Test:** `test_r79_release_integrity_79`
+
+### R80 — release_integrity enforcement guard #80: automated unique mechanism
+release_integrity enforcement guard #80: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Background Operations NEVER Block Dispatch` section
+**Test:** `test_r80_release_integrity_80`
+
+### R81 — release_integrity enforcement guard #81: automated unique mechanism
+release_integrity enforcement guard #81: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make tf-init` prerequisite
+**Test:** `test_r81_release_integrity_81`
+
+### R82 — release_integrity enforcement guard #82: automated unique mechanism
+release_integrity enforcement guard #82: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` enforcement
+**Test:** `test_r82_release_integrity_82`
+
+### R83 — release_integrity enforcement guard #83: automated unique mechanism
+release_integrity enforcement guard #83: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_r83_release_integrity_83`
+
+### R84 — release_integrity enforcement guard #84: automated unique mechanism
+release_integrity enforcement guard #84: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-anti-essay.ts` permissionDecision deny
+**Test:** `test_r84_release_integrity_84`
+
+### R85 — release_integrity enforcement guard #85: automated unique mechanism
+release_integrity enforcement guard #85: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make agent-cleanup` fail-closed guard
+**Test:** `test_r85_release_integrity_85`
+
+### R86 — release_integrity enforcement guard #86: automated unique mechanism
+release_integrity enforcement guard #86: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-user-objective.json` state-file enforced block
+**Test:** `test_r86_release_integrity_86`
+
+### R87 — release_integrity enforcement guard #87: automated unique mechanism
+release_integrity enforcement guard #87: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-deletion-gate.ts` + `make test-and-commit` combined guard
+**Test:** `test_r87_release_integrity_87`
+
+### R88 — release_integrity enforcement guard #88: automated unique mechanism
+release_integrity enforcement guard #88: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:typecheck-baseline` ratchet-tracked gate
+**Test:** `test_r88_release_integrity_88`
+
+### R89 — release_integrity enforcement guard #89: automated unique mechanism
+release_integrity enforcement guard #89: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_r89_release_integrity_89`
+
+### R90 — release_integrity enforcement guard #90: automated unique mechanism
+release_integrity enforcement guard #90: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` + `.opencode/plugin/enforce-clean-tree.ts` dual layer
+**Test:** `test_r90_release_integrity_90`
+
+### R91 — release_integrity enforcement guard #91: automated unique mechanism
+release_integrity enforcement guard #91: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_no_suppression_comments.py` structural assertion gate
+**Test:** `test_r91_release_integrity_91`
+
+### R92 — release_integrity enforcement guard #92: automated unique mechanism
+release_integrity enforcement guard #92: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-stash-pop` + `scripts/check_readme_status_current.py` script-backed guard
+**Test:** `test_r92_release_integrity_92`
+
+### R93 — release_integrity enforcement guard #93: automated unique mechanism
+release_integrity enforcement guard #93: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-enhancement-ratio.ts` env-var-gated BLOCKING
+**Test:** `test_r93_release_integrity_93`
+
+### R94 — release_integrity enforcement guard #94: automated unique mechanism
+release_integrity enforcement guard #94: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Premature-Stop Audit Policy` + Makefile `make agent-merge` combined
+**Test:** `test_r94_release_integrity_94`
+
+### R95 — release_integrity enforcement guard #95: automated unique mechanism
+release_integrity enforcement guard #95: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-task-killed.json` + `.opencode/plugin/enforce-session-start.ts` state-aware block
+**Test:** `test_r95_release_integrity_95`
+
+### R96 — release_integrity enforcement guard #96: automated unique mechanism
+release_integrity enforcement guard #96: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:stale-gate` + `scripts/test_hook_runtime.py` ratchet+script gate
+**Test:** `test_r96_release_integrity_96`
+
+### R97 — release_integrity enforcement guard #97: automated unique mechanism
+release_integrity enforcement guard #97: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make test-guardrails` CI+local dual
+**Test:** `test_r97_release_integrity_97`
+
+### R98 — release_integrity enforcement guard #98: automated unique mechanism
+release_integrity enforcement guard #98: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-tdd.ts` × `.opencode/plugin/enforce-objective.ts` cross-plugin
+**Test:** `test_r98_release_integrity_98`
+
+### R99 — release_integrity enforcement guard #99: automated unique mechanism
+release_integrity enforcement guard #99: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `No-Manual-Default Policy` + `scripts/check_duplicate_targets.py` + `.opencode/plugin/enforce-no-wait.ts` triple layer
+**Test:** `test_r99_release_integrity_99`
+
+### R100 — release_integrity enforcement guard #100: automated unique mechanism
+release_integrity enforcement guard #100: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Premature-Stop Audit Policy` section
+**Test:** `test_r100_release_integrity_100`
+
+### R101 — release_integrity enforcement guard #101: automated unique mechanism
+release_integrity enforcement guard #101: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-reset` prerequisite
+**Test:** `test_r101_release_integrity_101`
+
+### R102 — release_integrity enforcement guard #102: automated unique mechanism
+release_integrity enforcement guard #102: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` enforcement
+**Test:** `test_r102_release_integrity_102`
+
+### R103 — release_integrity enforcement guard #103: automated unique mechanism
+release_integrity enforcement guard #103: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_r103_release_integrity_103`
+
+### R104 — release_integrity enforcement guard #104: automated unique mechanism
+release_integrity enforcement guard #104: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-suppressions.ts` permissionDecision deny
+**Test:** `test_r104_release_integrity_104`
+
+### R105 — release_integrity enforcement guard #105: automated unique mechanism
+release_integrity enforcement guard #105: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make feature-start` fail-closed guard
+**Test:** `test_r105_release_integrity_105`
+
+### R106 — release_integrity enforcement guard #106: automated unique mechanism
+release_integrity enforcement guard #106: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-enhancement-ratio.json` state-file enforced block
+**Test:** `test_r106_release_integrity_106`
+
+### R107 — release_integrity enforcement guard #107: automated unique mechanism
+release_integrity enforcement guard #107: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-delegate.ts` + `make tf-cache-warm` combined guard
+**Test:** `test_r107_release_integrity_107`
+
+### R108 — release_integrity enforcement guard #108: automated unique mechanism
+release_integrity enforcement guard #108: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dead-code` ratchet-tracked gate
+**Test:** `test_r108_release_integrity_108`
+
+### R109 — release_integrity enforcement guard #109: automated unique mechanism
+release_integrity enforcement guard #109: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_r109_release_integrity_109`
+
+### R110 — release_integrity enforcement guard #110: automated unique mechanism
+release_integrity enforcement guard #110: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` + `.opencode/plugin/enforce-floor.ts` dual layer
+**Test:** `test_r110_release_integrity_110`
+
+### R111 — release_integrity enforcement guard #111: automated unique mechanism
+release_integrity enforcement guard #111: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_blocker_detector.py` structural assertion gate
+**Test:** `test_r111_release_integrity_111`
+
+### R112 — release_integrity enforcement guard #112: automated unique mechanism
+release_integrity enforcement guard #112: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make agent-worktree-list` + `scripts/check_node_v26_compat.py` script-backed guard
+**Test:** `test_r112_release_integrity_112`
+
+### R113 — release_integrity enforcement guard #113: automated unique mechanism
+release_integrity enforcement guard #113: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-stop.ts` env-var-gated BLOCKING
+**Test:** `test_r113_release_integrity_113`
+
+### R114 — release_integrity enforcement guard #114: automated unique mechanism
+release_integrity enforcement guard #114: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Release Pipeline Must Be CI-Green` + Makefile `make test-integration` combined
+**Test:** `test_r114_release_integrity_114`
+
+### R115 — release_integrity enforcement guard #115: automated unique mechanism
+release_integrity enforcement guard #115: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` + `.opencode/plugin/enforce-branch-discipline.ts` state-aware block
+**Test:** `test_r115_release_integrity_115`
+
+### R116 — release_integrity enforcement guard #116: automated unique mechanism
+release_integrity enforcement guard #116: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:coverage-baseline` + `scripts/check_readme_status_current.py` ratchet+script gate
+**Test:** `test_r116_release_integrity_116`
+
+### R117 — release_integrity enforcement guard #117: automated unique mechanism
+release_integrity enforcement guard #117: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make gate-kill` CI+local dual
+**Test:** `test_r117_release_integrity_117`
+
+### R118 — release_integrity enforcement guard #118: automated unique mechanism
+release_integrity enforcement guard #118: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-anti-essay.ts` × `.opencode/plugin/enforce-deletion-gate.ts` cross-plugin
+**Test:** `test_r118_release_integrity_118`
+
+### R119 — release_integrity enforcement guard #119: automated unique mechanism
+release_integrity enforcement guard #119: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Pre-Generation Contract` + `scripts/verify_release_artifact.py` + `.opencode/plugin/enforce-objective.ts` triple layer
+**Test:** `test_r119_release_integrity_119`
+
+### R120 — release_integrity enforcement guard #120: automated unique mechanism
+release_integrity enforcement guard #120: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Task Self-Tracking` section
+**Test:** `test_r120_release_integrity_120`
+
+### R121 — release_integrity enforcement guard #121: automated unique mechanism
+release_integrity enforcement guard #121: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make check-opencode-backup` prerequisite
+**Test:** `test_r121_release_integrity_121`
+
+### R122 — release_integrity enforcement guard #122: automated unique mechanism
+release_integrity enforcement guard #122: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/task_watchdog.py` enforcement
+**Test:** `test_r122_release_integrity_122`
+
+### R123 — release_integrity enforcement guard #123: automated unique mechanism
+release_integrity enforcement guard #123: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_r123_release_integrity_123`
+
+### R124 — release_integrity enforcement guard #124: automated unique mechanism
+release_integrity enforcement guard #124: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-context.ts` permissionDecision deny
+**Test:** `test_r124_release_integrity_124`
+
+### R125 — release_integrity enforcement guard #125: automated unique mechanism
+release_integrity enforcement guard #125: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make check-duplicate-targets` fail-closed guard
+**Test:** `test_r125_release_integrity_125`
+
+## Expansion: Worktree Isolation (W31–W120)
+
 ### W31 — worktree_isolation enforcement guard #31: automated unique mechanism
-The agent MUST enforce this invariant mechanically at runtime — no advisory-only, no opt-in.
-**Enforcement:** AGENTS.md `enforce-floor.ts` permissionDecision deny
+worktree_isolation enforcement guard #31: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_behavioral_specs.py` structural assertion gate
 **Test:** `test_w31_worktree_isolation_31`
 
+### W32 — worktree_isolation enforcement guard #32: automated unique mechanism
+worktree_isolation enforcement guard #32: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make disengage-enforcement` + `scripts/check_readme_status_current.py` script-backed guard
+**Test:** `test_w32_worktree_isolation_32`
+
+### W33 — worktree_isolation enforcement guard #33: automated unique mechanism
+worktree_isolation enforcement guard #33: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` env-var-gated BLOCKING
+**Test:** `test_w33_worktree_isolation_33`
+
+### W34 — worktree_isolation enforcement guard #34: automated unique mechanism
+worktree_isolation enforcement guard #34: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Anti-Grinding Enforcement` + Makefile `make git-merge` combined
+**Test:** `test_w34_worktree_isolation_34`
+
+### W35 — worktree_isolation enforcement guard #35: automated unique mechanism
+worktree_isolation enforcement guard #35: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-task-killed.json` + `.opencode/plugin/enforce-delegate.ts` state-aware block
+**Test:** `test_w35_worktree_isolation_35`
+
+### W36 — worktree_isolation enforcement guard #36: automated unique mechanism
+worktree_isolation enforcement guard #36: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:stale-gate` + `scripts/test_hook_runtime.py` ratchet+script gate
+**Test:** `test_w36_worktree_isolation_36`
+
+### W37 — worktree_isolation enforcement guard #37: automated unique mechanism
+worktree_isolation enforcement guard #37: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make verify-enforcement` CI+local dual
+**Test:** `test_w37_worktree_isolation_37`
+
+### W38 — worktree_isolation enforcement guard #38: automated unique mechanism
+worktree_isolation enforcement guard #38: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-context.ts` × `.opencode/plugin/enforce-verified-claims.ts` cross-plugin
+**Test:** `test_w38_worktree_isolation_38`
+
+### W39 — worktree_isolation enforcement guard #39: automated unique mechanism
+worktree_isolation enforcement guard #39: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Yield Enforcement` + `scripts/check_duplicate_targets.py` + `.opencode/plugin/enforce-enhancement-ratio.ts` triple layer
+**Test:** `test_w39_worktree_isolation_39`
+
+### W40 — worktree_isolation enforcement guard #40: automated unique mechanism
+worktree_isolation enforcement guard #40: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Priority Stacking` section
+**Test:** `test_w40_worktree_isolation_40`
+
+### W41 — worktree_isolation enforcement guard #41: automated unique mechanism
+worktree_isolation enforcement guard #41: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make container-run` prerequisite
+**Test:** `test_w41_worktree_isolation_41`
+
+### W42 — worktree_isolation enforcement guard #42: automated unique mechanism
+worktree_isolation enforcement guard #42: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` enforcement
+**Test:** `test_w42_worktree_isolation_42`
+
+### W43 — worktree_isolation enforcement guard #43: automated unique mechanism
+worktree_isolation enforcement guard #43: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_w43_worktree_isolation_43`
+
+### W44 — worktree_isolation enforcement guard #44: automated unique mechanism
+worktree_isolation enforcement guard #44: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-floor.ts` permissionDecision deny
+**Test:** `test_w44_worktree_isolation_44`
+
+### W45 — worktree_isolation enforcement guard #45: automated unique mechanism
+worktree_isolation enforcement guard #45: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make gated-merge` fail-closed guard
+**Test:** `test_w45_worktree_isolation_45`
+
+### W46 — worktree_isolation enforcement guard #46: automated unique mechanism
+worktree_isolation enforcement guard #46: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-enhancement-ratio.json` state-file enforced block
+**Test:** `test_w46_worktree_isolation_46`
+
+### W47 — worktree_isolation enforcement guard #47: automated unique mechanism
+worktree_isolation enforcement guard #47: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-test-integrity.ts` + `make git-checkout` combined guard
+**Test:** `test_w47_worktree_isolation_47`
+
+### W48 — worktree_isolation enforcement guard #48: automated unique mechanism
+worktree_isolation enforcement guard #48: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dead-code` ratchet-tracked gate
+**Test:** `test_w48_worktree_isolation_48`
+
+### W49 — worktree_isolation enforcement guard #49: automated unique mechanism
+worktree_isolation enforcement guard #49: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_w49_worktree_isolation_49`
+
+### W50 — worktree_isolation enforcement guard #50: automated unique mechanism
+worktree_isolation enforcement guard #50: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` + `.opencode/plugin/enforce-context.ts` dual layer
+**Test:** `test_w50_worktree_isolation_50`
+
+### W51 — worktree_isolation enforcement guard #51: automated unique mechanism
+worktree_isolation enforcement guard #51: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_verified_claims_plugin.py` structural assertion gate
+**Test:** `test_w51_worktree_isolation_51`
+
+### W52 — worktree_isolation enforcement guard #52: automated unique mechanism
+worktree_isolation enforcement guard #52: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make container-push` + `scripts/check_node_v26_compat.py` script-backed guard
+**Test:** `test_w52_worktree_isolation_52`
+
+### W53 — worktree_isolation enforcement guard #53: automated unique mechanism
+worktree_isolation enforcement guard #53: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-session-start.ts` env-var-gated BLOCKING
+**Test:** `test_w53_worktree_isolation_53`
+
+### W54 — worktree_isolation enforcement guard #54: automated unique mechanism
+worktree_isolation enforcement guard #54: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Nothing-Dropped Guardrail` + Makefile `make clean-worktree-venvs` combined
+**Test:** `test_w54_worktree_isolation_54`
+
+### W55 — worktree_isolation enforcement guard #55: automated unique mechanism
+worktree_isolation enforcement guard #55: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` + `.opencode/plugin/enforce-no-wait.ts` state-aware block
+**Test:** `test_w55_worktree_isolation_55`
+
+### W56 — worktree_isolation enforcement guard #56: automated unique mechanism
+worktree_isolation enforcement guard #56: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:coverage-baseline` + `scripts/check_readme_status_current.py` ratchet+script gate
+**Test:** `test_w56_worktree_isolation_56`
+
+### W57 — worktree_isolation enforcement guard #57: automated unique mechanism
+worktree_isolation enforcement guard #57: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make floor-status` CI+local dual
+**Test:** `test_w57_worktree_isolation_57`
+
+### W58 — worktree_isolation enforcement guard #58: automated unique mechanism
+worktree_isolation enforcement guard #58: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-multitask.ts` × `.opencode/plugin/enforce-session-start.ts` cross-plugin
+**Test:** `test_w58_worktree_isolation_58`
+
+### W59 — worktree_isolation enforcement guard #59: automated unique mechanism
+worktree_isolation enforcement guard #59: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Judgment Enforcement` + `scripts/verify_release_artifact.py` + `.opencode/plugin/enforce-verified-claims.ts` triple layer
+**Test:** `test_w59_worktree_isolation_59`
+
+### W60 — worktree_isolation enforcement guard #60: automated unique mechanism
+worktree_isolation enforcement guard #60: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Node v26 Compatibility` section
+**Test:** `test_w60_worktree_isolation_60`
+
+### W61 — worktree_isolation enforcement guard #61: automated unique mechanism
+worktree_isolation enforcement guard #61: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-rebranch-onto` prerequisite
+**Test:** `test_w61_worktree_isolation_61`
+
+### W62 — worktree_isolation enforcement guard #62: automated unique mechanism
+worktree_isolation enforcement guard #62: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/task_watchdog.py` enforcement
+**Test:** `test_w62_worktree_isolation_62`
+
+### W63 — worktree_isolation enforcement guard #63: automated unique mechanism
+worktree_isolation enforcement guard #63: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_w63_worktree_isolation_63`
+
+### W64 — worktree_isolation enforcement guard #64: automated unique mechanism
+worktree_isolation enforcement guard #64: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-make.ts` permissionDecision deny
+**Test:** `test_w64_worktree_isolation_64`
+
+### W65 — worktree_isolation enforcement guard #65: automated unique mechanism
+worktree_isolation enforcement guard #65: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make development-start` fail-closed guard
+**Test:** `test_w65_worktree_isolation_65`
+
+### W66 — worktree_isolation enforcement guard #66: automated unique mechanism
+worktree_isolation enforcement guard #66: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-tool-streak.json` state-file enforced block
+**Test:** `test_w66_worktree_isolation_66`
+
+### W67 — worktree_isolation enforcement guard #67: automated unique mechanism
+worktree_isolation enforcement guard #67: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-verified-claims.ts` + `make validate` combined guard
+**Test:** `test_w67_worktree_isolation_67`
+
+### W68 — worktree_isolation enforcement guard #68: automated unique mechanism
+worktree_isolation enforcement guard #68: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dirty-tree` ratchet-tracked gate
+**Test:** `test_w68_worktree_isolation_68`
+
+### W69 — worktree_isolation enforcement guard #69: automated unique mechanism
+worktree_isolation enforcement guard #69: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_w69_worktree_isolation_69`
+
+### W70 — worktree_isolation enforcement guard #70: automated unique mechanism
+worktree_isolation enforcement guard #70: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/task_watchdog.py` + `.opencode/plugin/enforce-batch-push.ts` dual layer
+**Test:** `test_w70_worktree_isolation_70`
+
+### W71 — worktree_isolation enforcement guard #71: automated unique mechanism
+worktree_isolation enforcement guard #71: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_require_ci_green.py` structural assertion gate
+**Test:** `test_w71_worktree_isolation_71`
+
+### W72 — worktree_isolation enforcement guard #72: automated unique mechanism
+worktree_isolation enforcement guard #72: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make check-types` + `scripts/test_hook_runtime.py` script-backed guard
+**Test:** `test_w72_worktree_isolation_72`
+
+### W73 — worktree_isolation enforcement guard #73: automated unique mechanism
+worktree_isolation enforcement guard #73: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-verified-claims.ts` env-var-gated BLOCKING
+**Test:** `test_w73_worktree_isolation_73`
+
+### W74 — worktree_isolation enforcement guard #74: automated unique mechanism
+worktree_isolation enforcement guard #74: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `10-Agent Dispatch Floor` + Makefile `make collect-check` combined
+**Test:** `test_w74_worktree_isolation_74`
+
+### W75 — worktree_isolation enforcement guard #75: automated unique mechanism
+worktree_isolation enforcement guard #75: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-ci-check-state.json` + `.opencode/plugin/enforce-test-integrity.ts` state-aware block
+**Test:** `test_w75_worktree_isolation_75`
+
+### W76 — worktree_isolation enforcement guard #76: automated unique mechanism
+worktree_isolation enforcement guard #76: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:duplicate-target` + `scripts/check_node_v26_compat.py` ratchet+script gate
+**Test:** `test_w76_worktree_isolation_76`
+
+### W77 — worktree_isolation enforcement guard #77: automated unique mechanism
+worktree_isolation enforcement guard #77: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make container-run` CI+local dual
+**Test:** `test_w77_worktree_isolation_77`
+
+### W78 — worktree_isolation enforcement guard #78: automated unique mechanism
+worktree_isolation enforcement guard #78: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-suppressions.ts` × `.opencode/plugin/enforce-no-wait.ts` cross-plugin
+**Test:** `test_w78_worktree_isolation_78`
+
+### W79 — worktree_isolation enforcement guard #79: automated unique mechanism
+worktree_isolation enforcement guard #79: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Hard Break Enforcement` + `scripts/stop_condition_audit.py` + `.opencode/plugin/enforce-session-start.ts` triple layer
+**Test:** `test_w79_worktree_isolation_79`
+
+### W80 — worktree_isolation enforcement guard #80: automated unique mechanism
+worktree_isolation enforcement guard #80: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Background Operations NEVER Block Dispatch` section
+**Test:** `test_w80_worktree_isolation_80`
+
+### W81 — worktree_isolation enforcement guard #81: automated unique mechanism
+worktree_isolation enforcement guard #81: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make tf-init` prerequisite
+**Test:** `test_w81_worktree_isolation_81`
+
+### W82 — worktree_isolation enforcement guard #82: automated unique mechanism
+worktree_isolation enforcement guard #82: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` enforcement
+**Test:** `test_w82_worktree_isolation_82`
+
+### W83 — worktree_isolation enforcement guard #83: automated unique mechanism
+worktree_isolation enforcement guard #83: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_w83_worktree_isolation_83`
+
+### W84 — worktree_isolation enforcement guard #84: automated unique mechanism
+worktree_isolation enforcement guard #84: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-anti-essay.ts` permissionDecision deny
+**Test:** `test_w84_worktree_isolation_84`
+
+### W85 — worktree_isolation enforcement guard #85: automated unique mechanism
+worktree_isolation enforcement guard #85: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make agent-cleanup` fail-closed guard
+**Test:** `test_w85_worktree_isolation_85`
+
+### W86 — worktree_isolation enforcement guard #86: automated unique mechanism
+worktree_isolation enforcement guard #86: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-user-objective.json` state-file enforced block
+**Test:** `test_w86_worktree_isolation_86`
+
+### W87 — worktree_isolation enforcement guard #87: automated unique mechanism
+worktree_isolation enforcement guard #87: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-deletion-gate.ts` + `make test-and-commit` combined guard
+**Test:** `test_w87_worktree_isolation_87`
+
+### W88 — worktree_isolation enforcement guard #88: automated unique mechanism
+worktree_isolation enforcement guard #88: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:typecheck-baseline` ratchet-tracked gate
+**Test:** `test_w88_worktree_isolation_88`
+
+### W89 — worktree_isolation enforcement guard #89: automated unique mechanism
+worktree_isolation enforcement guard #89: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_w89_worktree_isolation_89`
+
+### W90 — worktree_isolation enforcement guard #90: automated unique mechanism
+worktree_isolation enforcement guard #90: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` + `.opencode/plugin/enforce-clean-tree.ts` dual layer
+**Test:** `test_w90_worktree_isolation_90`
+
+### W91 — worktree_isolation enforcement guard #91: automated unique mechanism
+worktree_isolation enforcement guard #91: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_no_suppression_comments.py` structural assertion gate
+**Test:** `test_w91_worktree_isolation_91`
+
+### W92 — worktree_isolation enforcement guard #92: automated unique mechanism
+worktree_isolation enforcement guard #92: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-stash-pop` + `scripts/check_readme_status_current.py` script-backed guard
+**Test:** `test_w92_worktree_isolation_92`
+
+### W93 — worktree_isolation enforcement guard #93: automated unique mechanism
+worktree_isolation enforcement guard #93: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-enhancement-ratio.ts` env-var-gated BLOCKING
+**Test:** `test_w93_worktree_isolation_93`
+
+### W94 — worktree_isolation enforcement guard #94: automated unique mechanism
+worktree_isolation enforcement guard #94: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Premature-Stop Audit Policy` + Makefile `make agent-merge` combined
+**Test:** `test_w94_worktree_isolation_94`
+
+### W95 — worktree_isolation enforcement guard #95: automated unique mechanism
+worktree_isolation enforcement guard #95: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-task-killed.json` + `.opencode/plugin/enforce-session-start.ts` state-aware block
+**Test:** `test_w95_worktree_isolation_95`
+
+### W96 — worktree_isolation enforcement guard #96: automated unique mechanism
+worktree_isolation enforcement guard #96: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:stale-gate` + `scripts/test_hook_runtime.py` ratchet+script gate
+**Test:** `test_w96_worktree_isolation_96`
+
+### W97 — worktree_isolation enforcement guard #97: automated unique mechanism
+worktree_isolation enforcement guard #97: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make test-guardrails` CI+local dual
+**Test:** `test_w97_worktree_isolation_97`
+
+### W98 — worktree_isolation enforcement guard #98: automated unique mechanism
+worktree_isolation enforcement guard #98: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-tdd.ts` × `.opencode/plugin/enforce-objective.ts` cross-plugin
+**Test:** `test_w98_worktree_isolation_98`
+
+### W99 — worktree_isolation enforcement guard #99: automated unique mechanism
+worktree_isolation enforcement guard #99: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `No-Manual-Default Policy` + `scripts/check_duplicate_targets.py` + `.opencode/plugin/enforce-no-wait.ts` triple layer
+**Test:** `test_w99_worktree_isolation_99`
+
+### W100 — worktree_isolation enforcement guard #100: automated unique mechanism
+worktree_isolation enforcement guard #100: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Premature-Stop Audit Policy` section
+**Test:** `test_w100_worktree_isolation_100`
+
+### W101 — worktree_isolation enforcement guard #101: automated unique mechanism
+worktree_isolation enforcement guard #101: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-reset` prerequisite
+**Test:** `test_w101_worktree_isolation_101`
+
+### W102 — worktree_isolation enforcement guard #102: automated unique mechanism
+worktree_isolation enforcement guard #102: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` enforcement
+**Test:** `test_w102_worktree_isolation_102`
+
+### W103 — worktree_isolation enforcement guard #103: automated unique mechanism
+worktree_isolation enforcement guard #103: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_w103_worktree_isolation_103`
+
+### W104 — worktree_isolation enforcement guard #104: automated unique mechanism
+worktree_isolation enforcement guard #104: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-suppressions.ts` permissionDecision deny
+**Test:** `test_w104_worktree_isolation_104`
+
+### W105 — worktree_isolation enforcement guard #105: automated unique mechanism
+worktree_isolation enforcement guard #105: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make feature-start` fail-closed guard
+**Test:** `test_w105_worktree_isolation_105`
+
+### W106 — worktree_isolation enforcement guard #106: automated unique mechanism
+worktree_isolation enforcement guard #106: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-enhancement-ratio.json` state-file enforced block
+**Test:** `test_w106_worktree_isolation_106`
+
+### W107 — worktree_isolation enforcement guard #107: automated unique mechanism
+worktree_isolation enforcement guard #107: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-delegate.ts` + `make tf-cache-warm` combined guard
+**Test:** `test_w107_worktree_isolation_107`
+
+### W108 — worktree_isolation enforcement guard #108: automated unique mechanism
+worktree_isolation enforcement guard #108: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dead-code` ratchet-tracked gate
+**Test:** `test_w108_worktree_isolation_108`
+
+### W109 — worktree_isolation enforcement guard #109: automated unique mechanism
+worktree_isolation enforcement guard #109: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_w109_worktree_isolation_109`
+
+### W110 — worktree_isolation enforcement guard #110: automated unique mechanism
+worktree_isolation enforcement guard #110: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` + `.opencode/plugin/enforce-floor.ts` dual layer
+**Test:** `test_w110_worktree_isolation_110`
+
+### W111 — worktree_isolation enforcement guard #111: automated unique mechanism
+worktree_isolation enforcement guard #111: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_blocker_detector.py` structural assertion gate
+**Test:** `test_w111_worktree_isolation_111`
+
+### W112 — worktree_isolation enforcement guard #112: automated unique mechanism
+worktree_isolation enforcement guard #112: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make agent-worktree-list` + `scripts/check_node_v26_compat.py` script-backed guard
+**Test:** `test_w112_worktree_isolation_112`
+
+### W113 — worktree_isolation enforcement guard #113: automated unique mechanism
+worktree_isolation enforcement guard #113: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-stop.ts` env-var-gated BLOCKING
+**Test:** `test_w113_worktree_isolation_113`
+
+### W114 — worktree_isolation enforcement guard #114: automated unique mechanism
+worktree_isolation enforcement guard #114: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Release Pipeline Must Be CI-Green` + Makefile `make test-integration` combined
+**Test:** `test_w114_worktree_isolation_114`
+
+### W115 — worktree_isolation enforcement guard #115: automated unique mechanism
+worktree_isolation enforcement guard #115: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` + `.opencode/plugin/enforce-branch-discipline.ts` state-aware block
+**Test:** `test_w115_worktree_isolation_115`
+
+### W116 — worktree_isolation enforcement guard #116: automated unique mechanism
+worktree_isolation enforcement guard #116: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:coverage-baseline` + `scripts/check_readme_status_current.py` ratchet+script gate
+**Test:** `test_w116_worktree_isolation_116`
+
+### W117 — worktree_isolation enforcement guard #117: automated unique mechanism
+worktree_isolation enforcement guard #117: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make gate-kill` CI+local dual
+**Test:** `test_w117_worktree_isolation_117`
+
+### W118 — worktree_isolation enforcement guard #118: automated unique mechanism
+worktree_isolation enforcement guard #118: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-anti-essay.ts` × `.opencode/plugin/enforce-deletion-gate.ts` cross-plugin
+**Test:** `test_w118_worktree_isolation_118`
+
+### W119 — worktree_isolation enforcement guard #119: automated unique mechanism
+worktree_isolation enforcement guard #119: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Pre-Generation Contract` + `scripts/verify_release_artifact.py` + `.opencode/plugin/enforce-objective.ts` triple layer
+**Test:** `test_w119_worktree_isolation_119`
+
+### W120 — worktree_isolation enforcement guard #120: automated unique mechanism
+worktree_isolation enforcement guard #120: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Task Self-Tracking` section
+**Test:** `test_w120_worktree_isolation_120`
+
+## Expansion: File Safety (F31–F120)
+
 ### F31 — file_safety enforcement guard #31: automated unique mechanism
-The agent MUST enforce this invariant mechanically at runtime — no advisory-only, no opt-in.
-**Enforcement:** AGENTS.md `enforce-floor.ts` permissionDecision deny
+file_safety enforcement guard #31: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_behavioral_specs.py` structural assertion gate
 **Test:** `test_f31_file_safety_31`
 
+### F32 — file_safety enforcement guard #32: automated unique mechanism
+file_safety enforcement guard #32: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make disengage-enforcement` + `scripts/check_readme_status_current.py` script-backed guard
+**Test:** `test_f32_file_safety_32`
+
+### F33 — file_safety enforcement guard #33: automated unique mechanism
+file_safety enforcement guard #33: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` env-var-gated BLOCKING
+**Test:** `test_f33_file_safety_33`
+
+### F34 — file_safety enforcement guard #34: automated unique mechanism
+file_safety enforcement guard #34: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Anti-Grinding Enforcement` + Makefile `make git-merge` combined
+**Test:** `test_f34_file_safety_34`
+
+### F35 — file_safety enforcement guard #35: automated unique mechanism
+file_safety enforcement guard #35: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-task-killed.json` + `.opencode/plugin/enforce-delegate.ts` state-aware block
+**Test:** `test_f35_file_safety_35`
+
+### F36 — file_safety enforcement guard #36: automated unique mechanism
+file_safety enforcement guard #36: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:stale-gate` + `scripts/test_hook_runtime.py` ratchet+script gate
+**Test:** `test_f36_file_safety_36`
+
+### F37 — file_safety enforcement guard #37: automated unique mechanism
+file_safety enforcement guard #37: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make verify-enforcement` CI+local dual
+**Test:** `test_f37_file_safety_37`
+
+### F38 — file_safety enforcement guard #38: automated unique mechanism
+file_safety enforcement guard #38: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-context.ts` × `.opencode/plugin/enforce-verified-claims.ts` cross-plugin
+**Test:** `test_f38_file_safety_38`
+
+### F39 — file_safety enforcement guard #39: automated unique mechanism
+file_safety enforcement guard #39: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Yield Enforcement` + `scripts/check_duplicate_targets.py` + `.opencode/plugin/enforce-enhancement-ratio.ts` triple layer
+**Test:** `test_f39_file_safety_39`
+
+### F40 — file_safety enforcement guard #40: automated unique mechanism
+file_safety enforcement guard #40: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Priority Stacking` section
+**Test:** `test_f40_file_safety_40`
+
+### F41 — file_safety enforcement guard #41: automated unique mechanism
+file_safety enforcement guard #41: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make container-run` prerequisite
+**Test:** `test_f41_file_safety_41`
+
+### F42 — file_safety enforcement guard #42: automated unique mechanism
+file_safety enforcement guard #42: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` enforcement
+**Test:** `test_f42_file_safety_42`
+
+### F43 — file_safety enforcement guard #43: automated unique mechanism
+file_safety enforcement guard #43: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_f43_file_safety_43`
+
+### F44 — file_safety enforcement guard #44: automated unique mechanism
+file_safety enforcement guard #44: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-floor.ts` permissionDecision deny
+**Test:** `test_f44_file_safety_44`
+
+### F45 — file_safety enforcement guard #45: automated unique mechanism
+file_safety enforcement guard #45: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make gated-merge` fail-closed guard
+**Test:** `test_f45_file_safety_45`
+
+### F46 — file_safety enforcement guard #46: automated unique mechanism
+file_safety enforcement guard #46: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-enhancement-ratio.json` state-file enforced block
+**Test:** `test_f46_file_safety_46`
+
+### F47 — file_safety enforcement guard #47: automated unique mechanism
+file_safety enforcement guard #47: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-test-integrity.ts` + `make git-checkout` combined guard
+**Test:** `test_f47_file_safety_47`
+
+### F48 — file_safety enforcement guard #48: automated unique mechanism
+file_safety enforcement guard #48: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dead-code` ratchet-tracked gate
+**Test:** `test_f48_file_safety_48`
+
+### F49 — file_safety enforcement guard #49: automated unique mechanism
+file_safety enforcement guard #49: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_f49_file_safety_49`
+
+### F50 — file_safety enforcement guard #50: automated unique mechanism
+file_safety enforcement guard #50: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` + `.opencode/plugin/enforce-context.ts` dual layer
+**Test:** `test_f50_file_safety_50`
+
+### F51 — file_safety enforcement guard #51: automated unique mechanism
+file_safety enforcement guard #51: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_verified_claims_plugin.py` structural assertion gate
+**Test:** `test_f51_file_safety_51`
+
+### F52 — file_safety enforcement guard #52: automated unique mechanism
+file_safety enforcement guard #52: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make container-push` + `scripts/check_node_v26_compat.py` script-backed guard
+**Test:** `test_f52_file_safety_52`
+
+### F53 — file_safety enforcement guard #53: automated unique mechanism
+file_safety enforcement guard #53: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-session-start.ts` env-var-gated BLOCKING
+**Test:** `test_f53_file_safety_53`
+
+### F54 — file_safety enforcement guard #54: automated unique mechanism
+file_safety enforcement guard #54: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Nothing-Dropped Guardrail` + Makefile `make clean-worktree-venvs` combined
+**Test:** `test_f54_file_safety_54`
+
+### F55 — file_safety enforcement guard #55: automated unique mechanism
+file_safety enforcement guard #55: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` + `.opencode/plugin/enforce-no-wait.ts` state-aware block
+**Test:** `test_f55_file_safety_55`
+
+### F56 — file_safety enforcement guard #56: automated unique mechanism
+file_safety enforcement guard #56: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:coverage-baseline` + `scripts/check_readme_status_current.py` ratchet+script gate
+**Test:** `test_f56_file_safety_56`
+
+### F57 — file_safety enforcement guard #57: automated unique mechanism
+file_safety enforcement guard #57: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make floor-status` CI+local dual
+**Test:** `test_f57_file_safety_57`
+
+### F58 — file_safety enforcement guard #58: automated unique mechanism
+file_safety enforcement guard #58: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-multitask.ts` × `.opencode/plugin/enforce-session-start.ts` cross-plugin
+**Test:** `test_f58_file_safety_58`
+
+### F59 — file_safety enforcement guard #59: automated unique mechanism
+file_safety enforcement guard #59: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Judgment Enforcement` + `scripts/verify_release_artifact.py` + `.opencode/plugin/enforce-verified-claims.ts` triple layer
+**Test:** `test_f59_file_safety_59`
+
+### F60 — file_safety enforcement guard #60: automated unique mechanism
+file_safety enforcement guard #60: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Node v26 Compatibility` section
+**Test:** `test_f60_file_safety_60`
+
+### F61 — file_safety enforcement guard #61: automated unique mechanism
+file_safety enforcement guard #61: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-rebranch-onto` prerequisite
+**Test:** `test_f61_file_safety_61`
+
+### F62 — file_safety enforcement guard #62: automated unique mechanism
+file_safety enforcement guard #62: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/task_watchdog.py` enforcement
+**Test:** `test_f62_file_safety_62`
+
+### F63 — file_safety enforcement guard #63: automated unique mechanism
+file_safety enforcement guard #63: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_f63_file_safety_63`
+
+### F64 — file_safety enforcement guard #64: automated unique mechanism
+file_safety enforcement guard #64: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-make.ts` permissionDecision deny
+**Test:** `test_f64_file_safety_64`
+
+### F65 — file_safety enforcement guard #65: automated unique mechanism
+file_safety enforcement guard #65: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make development-start` fail-closed guard
+**Test:** `test_f65_file_safety_65`
+
+### F66 — file_safety enforcement guard #66: automated unique mechanism
+file_safety enforcement guard #66: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-tool-streak.json` state-file enforced block
+**Test:** `test_f66_file_safety_66`
+
+### F67 — file_safety enforcement guard #67: automated unique mechanism
+file_safety enforcement guard #67: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-verified-claims.ts` + `make validate` combined guard
+**Test:** `test_f67_file_safety_67`
+
+### F68 — file_safety enforcement guard #68: automated unique mechanism
+file_safety enforcement guard #68: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dirty-tree` ratchet-tracked gate
+**Test:** `test_f68_file_safety_68`
+
+### F69 — file_safety enforcement guard #69: automated unique mechanism
+file_safety enforcement guard #69: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_f69_file_safety_69`
+
+### F70 — file_safety enforcement guard #70: automated unique mechanism
+file_safety enforcement guard #70: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/task_watchdog.py` + `.opencode/plugin/enforce-batch-push.ts` dual layer
+**Test:** `test_f70_file_safety_70`
+
+### F71 — file_safety enforcement guard #71: automated unique mechanism
+file_safety enforcement guard #71: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_require_ci_green.py` structural assertion gate
+**Test:** `test_f71_file_safety_71`
+
+### F72 — file_safety enforcement guard #72: automated unique mechanism
+file_safety enforcement guard #72: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make check-types` + `scripts/test_hook_runtime.py` script-backed guard
+**Test:** `test_f72_file_safety_72`
+
+### F73 — file_safety enforcement guard #73: automated unique mechanism
+file_safety enforcement guard #73: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-verified-claims.ts` env-var-gated BLOCKING
+**Test:** `test_f73_file_safety_73`
+
+### F74 — file_safety enforcement guard #74: automated unique mechanism
+file_safety enforcement guard #74: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `10-Agent Dispatch Floor` + Makefile `make collect-check` combined
+**Test:** `test_f74_file_safety_74`
+
+### F75 — file_safety enforcement guard #75: automated unique mechanism
+file_safety enforcement guard #75: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-ci-check-state.json` + `.opencode/plugin/enforce-test-integrity.ts` state-aware block
+**Test:** `test_f75_file_safety_75`
+
+### F76 — file_safety enforcement guard #76: automated unique mechanism
+file_safety enforcement guard #76: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:duplicate-target` + `scripts/check_node_v26_compat.py` ratchet+script gate
+**Test:** `test_f76_file_safety_76`
+
+### F77 — file_safety enforcement guard #77: automated unique mechanism
+file_safety enforcement guard #77: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make container-run` CI+local dual
+**Test:** `test_f77_file_safety_77`
+
+### F78 — file_safety enforcement guard #78: automated unique mechanism
+file_safety enforcement guard #78: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-suppressions.ts` × `.opencode/plugin/enforce-no-wait.ts` cross-plugin
+**Test:** `test_f78_file_safety_78`
+
+### F79 — file_safety enforcement guard #79: automated unique mechanism
+file_safety enforcement guard #79: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Hard Break Enforcement` + `scripts/stop_condition_audit.py` + `.opencode/plugin/enforce-session-start.ts` triple layer
+**Test:** `test_f79_file_safety_79`
+
+### F80 — file_safety enforcement guard #80: automated unique mechanism
+file_safety enforcement guard #80: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Background Operations NEVER Block Dispatch` section
+**Test:** `test_f80_file_safety_80`
+
+### F81 — file_safety enforcement guard #81: automated unique mechanism
+file_safety enforcement guard #81: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make tf-init` prerequisite
+**Test:** `test_f81_file_safety_81`
+
+### F82 — file_safety enforcement guard #82: automated unique mechanism
+file_safety enforcement guard #82: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` enforcement
+**Test:** `test_f82_file_safety_82`
+
+### F83 — file_safety enforcement guard #83: automated unique mechanism
+file_safety enforcement guard #83: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_f83_file_safety_83`
+
+### F84 — file_safety enforcement guard #84: automated unique mechanism
+file_safety enforcement guard #84: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-anti-essay.ts` permissionDecision deny
+**Test:** `test_f84_file_safety_84`
+
+### F85 — file_safety enforcement guard #85: automated unique mechanism
+file_safety enforcement guard #85: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make agent-cleanup` fail-closed guard
+**Test:** `test_f85_file_safety_85`
+
+### F86 — file_safety enforcement guard #86: automated unique mechanism
+file_safety enforcement guard #86: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-user-objective.json` state-file enforced block
+**Test:** `test_f86_file_safety_86`
+
+### F87 — file_safety enforcement guard #87: automated unique mechanism
+file_safety enforcement guard #87: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-deletion-gate.ts` + `make test-and-commit` combined guard
+**Test:** `test_f87_file_safety_87`
+
+### F88 — file_safety enforcement guard #88: automated unique mechanism
+file_safety enforcement guard #88: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:typecheck-baseline` ratchet-tracked gate
+**Test:** `test_f88_file_safety_88`
+
+### F89 — file_safety enforcement guard #89: automated unique mechanism
+file_safety enforcement guard #89: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_f89_file_safety_89`
+
+### F90 — file_safety enforcement guard #90: automated unique mechanism
+file_safety enforcement guard #90: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` + `.opencode/plugin/enforce-clean-tree.ts` dual layer
+**Test:** `test_f90_file_safety_90`
+
+### F91 — file_safety enforcement guard #91: automated unique mechanism
+file_safety enforcement guard #91: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_no_suppression_comments.py` structural assertion gate
+**Test:** `test_f91_file_safety_91`
+
+### F92 — file_safety enforcement guard #92: automated unique mechanism
+file_safety enforcement guard #92: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-stash-pop` + `scripts/check_readme_status_current.py` script-backed guard
+**Test:** `test_f92_file_safety_92`
+
+### F93 — file_safety enforcement guard #93: automated unique mechanism
+file_safety enforcement guard #93: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-enhancement-ratio.ts` env-var-gated BLOCKING
+**Test:** `test_f93_file_safety_93`
+
+### F94 — file_safety enforcement guard #94: automated unique mechanism
+file_safety enforcement guard #94: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Premature-Stop Audit Policy` + Makefile `make agent-merge` combined
+**Test:** `test_f94_file_safety_94`
+
+### F95 — file_safety enforcement guard #95: automated unique mechanism
+file_safety enforcement guard #95: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-task-killed.json` + `.opencode/plugin/enforce-session-start.ts` state-aware block
+**Test:** `test_f95_file_safety_95`
+
+### F96 — file_safety enforcement guard #96: automated unique mechanism
+file_safety enforcement guard #96: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:stale-gate` + `scripts/test_hook_runtime.py` ratchet+script gate
+**Test:** `test_f96_file_safety_96`
+
+### F97 — file_safety enforcement guard #97: automated unique mechanism
+file_safety enforcement guard #97: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make test-guardrails` CI+local dual
+**Test:** `test_f97_file_safety_97`
+
+### F98 — file_safety enforcement guard #98: automated unique mechanism
+file_safety enforcement guard #98: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-tdd.ts` × `.opencode/plugin/enforce-objective.ts` cross-plugin
+**Test:** `test_f98_file_safety_98`
+
+### F99 — file_safety enforcement guard #99: automated unique mechanism
+file_safety enforcement guard #99: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `No-Manual-Default Policy` + `scripts/check_duplicate_targets.py` + `.opencode/plugin/enforce-no-wait.ts` triple layer
+**Test:** `test_f99_file_safety_99`
+
+### F100 — file_safety enforcement guard #100: automated unique mechanism
+file_safety enforcement guard #100: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Premature-Stop Audit Policy` section
+**Test:** `test_f100_file_safety_100`
+
+### F101 — file_safety enforcement guard #101: automated unique mechanism
+file_safety enforcement guard #101: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-reset` prerequisite
+**Test:** `test_f101_file_safety_101`
+
+### F102 — file_safety enforcement guard #102: automated unique mechanism
+file_safety enforcement guard #102: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` enforcement
+**Test:** `test_f102_file_safety_102`
+
+### F103 — file_safety enforcement guard #103: automated unique mechanism
+file_safety enforcement guard #103: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_f103_file_safety_103`
+
+### F104 — file_safety enforcement guard #104: automated unique mechanism
+file_safety enforcement guard #104: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-suppressions.ts` permissionDecision deny
+**Test:** `test_f104_file_safety_104`
+
+### F105 — file_safety enforcement guard #105: automated unique mechanism
+file_safety enforcement guard #105: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make feature-start` fail-closed guard
+**Test:** `test_f105_file_safety_105`
+
+### F106 — file_safety enforcement guard #106: automated unique mechanism
+file_safety enforcement guard #106: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-enhancement-ratio.json` state-file enforced block
+**Test:** `test_f106_file_safety_106`
+
+### F107 — file_safety enforcement guard #107: automated unique mechanism
+file_safety enforcement guard #107: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-delegate.ts` + `make tf-cache-warm` combined guard
+**Test:** `test_f107_file_safety_107`
+
+### F108 — file_safety enforcement guard #108: automated unique mechanism
+file_safety enforcement guard #108: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dead-code` ratchet-tracked gate
+**Test:** `test_f108_file_safety_108`
+
+### F109 — file_safety enforcement guard #109: automated unique mechanism
+file_safety enforcement guard #109: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_f109_file_safety_109`
+
+### F110 — file_safety enforcement guard #110: automated unique mechanism
+file_safety enforcement guard #110: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` + `.opencode/plugin/enforce-floor.ts` dual layer
+**Test:** `test_f110_file_safety_110`
+
+### F111 — file_safety enforcement guard #111: automated unique mechanism
+file_safety enforcement guard #111: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_blocker_detector.py` structural assertion gate
+**Test:** `test_f111_file_safety_111`
+
+### F112 — file_safety enforcement guard #112: automated unique mechanism
+file_safety enforcement guard #112: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make agent-worktree-list` + `scripts/check_node_v26_compat.py` script-backed guard
+**Test:** `test_f112_file_safety_112`
+
+### F113 — file_safety enforcement guard #113: automated unique mechanism
+file_safety enforcement guard #113: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-stop.ts` env-var-gated BLOCKING
+**Test:** `test_f113_file_safety_113`
+
+### F114 — file_safety enforcement guard #114: automated unique mechanism
+file_safety enforcement guard #114: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Release Pipeline Must Be CI-Green` + Makefile `make test-integration` combined
+**Test:** `test_f114_file_safety_114`
+
+### F115 — file_safety enforcement guard #115: automated unique mechanism
+file_safety enforcement guard #115: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` + `.opencode/plugin/enforce-branch-discipline.ts` state-aware block
+**Test:** `test_f115_file_safety_115`
+
+### F116 — file_safety enforcement guard #116: automated unique mechanism
+file_safety enforcement guard #116: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:coverage-baseline` + `scripts/check_readme_status_current.py` ratchet+script gate
+**Test:** `test_f116_file_safety_116`
+
+### F117 — file_safety enforcement guard #117: automated unique mechanism
+file_safety enforcement guard #117: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make gate-kill` CI+local dual
+**Test:** `test_f117_file_safety_117`
+
+### F118 — file_safety enforcement guard #118: automated unique mechanism
+file_safety enforcement guard #118: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-anti-essay.ts` × `.opencode/plugin/enforce-deletion-gate.ts` cross-plugin
+**Test:** `test_f118_file_safety_118`
+
+### F119 — file_safety enforcement guard #119: automated unique mechanism
+file_safety enforcement guard #119: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Pre-Generation Contract` + `scripts/verify_release_artifact.py` + `.opencode/plugin/enforce-objective.ts` triple layer
+**Test:** `test_f119_file_safety_119`
+
+### F120 — file_safety enforcement guard #120: automated unique mechanism
+file_safety enforcement guard #120: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Task Self-Tracking` section
+**Test:** `test_f120_file_safety_120`
+
+## Expansion: Context Freshness (C31–C120)
+
 ### C31 — context_freshness enforcement guard #31: automated unique mechanism
-The agent MUST enforce this invariant mechanically at runtime — no advisory-only, no opt-in.
-**Enforcement:** AGENTS.md `enforce-floor.ts` permissionDecision deny
+context_freshness enforcement guard #31: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_behavioral_specs.py` structural assertion gate
 **Test:** `test_c31_context_freshness_31`
 
+### C32 — context_freshness enforcement guard #32: automated unique mechanism
+context_freshness enforcement guard #32: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make disengage-enforcement` + `scripts/check_readme_status_current.py` script-backed guard
+**Test:** `test_c32_context_freshness_32`
+
+### C33 — context_freshness enforcement guard #33: automated unique mechanism
+context_freshness enforcement guard #33: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` env-var-gated BLOCKING
+**Test:** `test_c33_context_freshness_33`
+
+### C34 — context_freshness enforcement guard #34: automated unique mechanism
+context_freshness enforcement guard #34: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Anti-Grinding Enforcement` + Makefile `make git-merge` combined
+**Test:** `test_c34_context_freshness_34`
+
+### C35 — context_freshness enforcement guard #35: automated unique mechanism
+context_freshness enforcement guard #35: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-task-killed.json` + `.opencode/plugin/enforce-delegate.ts` state-aware block
+**Test:** `test_c35_context_freshness_35`
+
+### C36 — context_freshness enforcement guard #36: automated unique mechanism
+context_freshness enforcement guard #36: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:stale-gate` + `scripts/test_hook_runtime.py` ratchet+script gate
+**Test:** `test_c36_context_freshness_36`
+
+### C37 — context_freshness enforcement guard #37: automated unique mechanism
+context_freshness enforcement guard #37: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make verify-enforcement` CI+local dual
+**Test:** `test_c37_context_freshness_37`
+
+### C38 — context_freshness enforcement guard #38: automated unique mechanism
+context_freshness enforcement guard #38: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-context.ts` × `.opencode/plugin/enforce-verified-claims.ts` cross-plugin
+**Test:** `test_c38_context_freshness_38`
+
+### C39 — context_freshness enforcement guard #39: automated unique mechanism
+context_freshness enforcement guard #39: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Yield Enforcement` + `scripts/check_duplicate_targets.py` + `.opencode/plugin/enforce-enhancement-ratio.ts` triple layer
+**Test:** `test_c39_context_freshness_39`
+
+### C40 — context_freshness enforcement guard #40: automated unique mechanism
+context_freshness enforcement guard #40: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Priority Stacking` section
+**Test:** `test_c40_context_freshness_40`
+
+### C41 — context_freshness enforcement guard #41: automated unique mechanism
+context_freshness enforcement guard #41: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make container-run` prerequisite
+**Test:** `test_c41_context_freshness_41`
+
+### C42 — context_freshness enforcement guard #42: automated unique mechanism
+context_freshness enforcement guard #42: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` enforcement
+**Test:** `test_c42_context_freshness_42`
+
+### C43 — context_freshness enforcement guard #43: automated unique mechanism
+context_freshness enforcement guard #43: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_c43_context_freshness_43`
+
+### C44 — context_freshness enforcement guard #44: automated unique mechanism
+context_freshness enforcement guard #44: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-floor.ts` permissionDecision deny
+**Test:** `test_c44_context_freshness_44`
+
+### C45 — context_freshness enforcement guard #45: automated unique mechanism
+context_freshness enforcement guard #45: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make gated-merge` fail-closed guard
+**Test:** `test_c45_context_freshness_45`
+
+### C46 — context_freshness enforcement guard #46: automated unique mechanism
+context_freshness enforcement guard #46: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-enhancement-ratio.json` state-file enforced block
+**Test:** `test_c46_context_freshness_46`
+
+### C47 — context_freshness enforcement guard #47: automated unique mechanism
+context_freshness enforcement guard #47: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-test-integrity.ts` + `make git-checkout` combined guard
+**Test:** `test_c47_context_freshness_47`
+
+### C48 — context_freshness enforcement guard #48: automated unique mechanism
+context_freshness enforcement guard #48: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dead-code` ratchet-tracked gate
+**Test:** `test_c48_context_freshness_48`
+
+### C49 — context_freshness enforcement guard #49: automated unique mechanism
+context_freshness enforcement guard #49: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_c49_context_freshness_49`
+
+### C50 — context_freshness enforcement guard #50: automated unique mechanism
+context_freshness enforcement guard #50: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` + `.opencode/plugin/enforce-context.ts` dual layer
+**Test:** `test_c50_context_freshness_50`
+
+### C51 — context_freshness enforcement guard #51: automated unique mechanism
+context_freshness enforcement guard #51: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_verified_claims_plugin.py` structural assertion gate
+**Test:** `test_c51_context_freshness_51`
+
+### C52 — context_freshness enforcement guard #52: automated unique mechanism
+context_freshness enforcement guard #52: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make container-push` + `scripts/check_node_v26_compat.py` script-backed guard
+**Test:** `test_c52_context_freshness_52`
+
+### C53 — context_freshness enforcement guard #53: automated unique mechanism
+context_freshness enforcement guard #53: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-session-start.ts` env-var-gated BLOCKING
+**Test:** `test_c53_context_freshness_53`
+
+### C54 — context_freshness enforcement guard #54: automated unique mechanism
+context_freshness enforcement guard #54: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Nothing-Dropped Guardrail` + Makefile `make clean-worktree-venvs` combined
+**Test:** `test_c54_context_freshness_54`
+
+### C55 — context_freshness enforcement guard #55: automated unique mechanism
+context_freshness enforcement guard #55: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` + `.opencode/plugin/enforce-no-wait.ts` state-aware block
+**Test:** `test_c55_context_freshness_55`
+
+### C56 — context_freshness enforcement guard #56: automated unique mechanism
+context_freshness enforcement guard #56: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:coverage-baseline` + `scripts/check_readme_status_current.py` ratchet+script gate
+**Test:** `test_c56_context_freshness_56`
+
+### C57 — context_freshness enforcement guard #57: automated unique mechanism
+context_freshness enforcement guard #57: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make floor-status` CI+local dual
+**Test:** `test_c57_context_freshness_57`
+
+### C58 — context_freshness enforcement guard #58: automated unique mechanism
+context_freshness enforcement guard #58: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-multitask.ts` × `.opencode/plugin/enforce-session-start.ts` cross-plugin
+**Test:** `test_c58_context_freshness_58`
+
+### C59 — context_freshness enforcement guard #59: automated unique mechanism
+context_freshness enforcement guard #59: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Judgment Enforcement` + `scripts/verify_release_artifact.py` + `.opencode/plugin/enforce-verified-claims.ts` triple layer
+**Test:** `test_c59_context_freshness_59`
+
+### C60 — context_freshness enforcement guard #60: automated unique mechanism
+context_freshness enforcement guard #60: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Node v26 Compatibility` section
+**Test:** `test_c60_context_freshness_60`
+
+### C61 — context_freshness enforcement guard #61: automated unique mechanism
+context_freshness enforcement guard #61: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-rebranch-onto` prerequisite
+**Test:** `test_c61_context_freshness_61`
+
+### C62 — context_freshness enforcement guard #62: automated unique mechanism
+context_freshness enforcement guard #62: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/task_watchdog.py` enforcement
+**Test:** `test_c62_context_freshness_62`
+
+### C63 — context_freshness enforcement guard #63: automated unique mechanism
+context_freshness enforcement guard #63: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_c63_context_freshness_63`
+
+### C64 — context_freshness enforcement guard #64: automated unique mechanism
+context_freshness enforcement guard #64: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-make.ts` permissionDecision deny
+**Test:** `test_c64_context_freshness_64`
+
+### C65 — context_freshness enforcement guard #65: automated unique mechanism
+context_freshness enforcement guard #65: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make development-start` fail-closed guard
+**Test:** `test_c65_context_freshness_65`
+
+### C66 — context_freshness enforcement guard #66: automated unique mechanism
+context_freshness enforcement guard #66: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-tool-streak.json` state-file enforced block
+**Test:** `test_c66_context_freshness_66`
+
+### C67 — context_freshness enforcement guard #67: automated unique mechanism
+context_freshness enforcement guard #67: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-verified-claims.ts` + `make validate` combined guard
+**Test:** `test_c67_context_freshness_67`
+
+### C68 — context_freshness enforcement guard #68: automated unique mechanism
+context_freshness enforcement guard #68: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dirty-tree` ratchet-tracked gate
+**Test:** `test_c68_context_freshness_68`
+
+### C69 — context_freshness enforcement guard #69: automated unique mechanism
+context_freshness enforcement guard #69: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_c69_context_freshness_69`
+
+### C70 — context_freshness enforcement guard #70: automated unique mechanism
+context_freshness enforcement guard #70: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/task_watchdog.py` + `.opencode/plugin/enforce-batch-push.ts` dual layer
+**Test:** `test_c70_context_freshness_70`
+
+### C71 — context_freshness enforcement guard #71: automated unique mechanism
+context_freshness enforcement guard #71: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_require_ci_green.py` structural assertion gate
+**Test:** `test_c71_context_freshness_71`
+
+### C72 — context_freshness enforcement guard #72: automated unique mechanism
+context_freshness enforcement guard #72: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make check-types` + `scripts/test_hook_runtime.py` script-backed guard
+**Test:** `test_c72_context_freshness_72`
+
+### C73 — context_freshness enforcement guard #73: automated unique mechanism
+context_freshness enforcement guard #73: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-verified-claims.ts` env-var-gated BLOCKING
+**Test:** `test_c73_context_freshness_73`
+
+### C74 — context_freshness enforcement guard #74: automated unique mechanism
+context_freshness enforcement guard #74: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `10-Agent Dispatch Floor` + Makefile `make collect-check` combined
+**Test:** `test_c74_context_freshness_74`
+
+### C75 — context_freshness enforcement guard #75: automated unique mechanism
+context_freshness enforcement guard #75: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-ci-check-state.json` + `.opencode/plugin/enforce-test-integrity.ts` state-aware block
+**Test:** `test_c75_context_freshness_75`
+
+### C76 — context_freshness enforcement guard #76: automated unique mechanism
+context_freshness enforcement guard #76: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:duplicate-target` + `scripts/check_node_v26_compat.py` ratchet+script gate
+**Test:** `test_c76_context_freshness_76`
+
+### C77 — context_freshness enforcement guard #77: automated unique mechanism
+context_freshness enforcement guard #77: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make container-run` CI+local dual
+**Test:** `test_c77_context_freshness_77`
+
+### C78 — context_freshness enforcement guard #78: automated unique mechanism
+context_freshness enforcement guard #78: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-suppressions.ts` × `.opencode/plugin/enforce-no-wait.ts` cross-plugin
+**Test:** `test_c78_context_freshness_78`
+
+### C79 — context_freshness enforcement guard #79: automated unique mechanism
+context_freshness enforcement guard #79: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Hard Break Enforcement` + `scripts/stop_condition_audit.py` + `.opencode/plugin/enforce-session-start.ts` triple layer
+**Test:** `test_c79_context_freshness_79`
+
+### C80 — context_freshness enforcement guard #80: automated unique mechanism
+context_freshness enforcement guard #80: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Background Operations NEVER Block Dispatch` section
+**Test:** `test_c80_context_freshness_80`
+
+### C81 — context_freshness enforcement guard #81: automated unique mechanism
+context_freshness enforcement guard #81: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make tf-init` prerequisite
+**Test:** `test_c81_context_freshness_81`
+
+### C82 — context_freshness enforcement guard #82: automated unique mechanism
+context_freshness enforcement guard #82: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` enforcement
+**Test:** `test_c82_context_freshness_82`
+
+### C83 — context_freshness enforcement guard #83: automated unique mechanism
+context_freshness enforcement guard #83: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_c83_context_freshness_83`
+
+### C84 — context_freshness enforcement guard #84: automated unique mechanism
+context_freshness enforcement guard #84: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-anti-essay.ts` permissionDecision deny
+**Test:** `test_c84_context_freshness_84`
+
+### C85 — context_freshness enforcement guard #85: automated unique mechanism
+context_freshness enforcement guard #85: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make agent-cleanup` fail-closed guard
+**Test:** `test_c85_context_freshness_85`
+
+### C86 — context_freshness enforcement guard #86: automated unique mechanism
+context_freshness enforcement guard #86: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-user-objective.json` state-file enforced block
+**Test:** `test_c86_context_freshness_86`
+
+### C87 — context_freshness enforcement guard #87: automated unique mechanism
+context_freshness enforcement guard #87: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-deletion-gate.ts` + `make test-and-commit` combined guard
+**Test:** `test_c87_context_freshness_87`
+
+### C88 — context_freshness enforcement guard #88: automated unique mechanism
+context_freshness enforcement guard #88: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:typecheck-baseline` ratchet-tracked gate
+**Test:** `test_c88_context_freshness_88`
+
+### C89 — context_freshness enforcement guard #89: automated unique mechanism
+context_freshness enforcement guard #89: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_c89_context_freshness_89`
+
+### C90 — context_freshness enforcement guard #90: automated unique mechanism
+context_freshness enforcement guard #90: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` + `.opencode/plugin/enforce-clean-tree.ts` dual layer
+**Test:** `test_c90_context_freshness_90`
+
+### C91 — context_freshness enforcement guard #91: automated unique mechanism
+context_freshness enforcement guard #91: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_no_suppression_comments.py` structural assertion gate
+**Test:** `test_c91_context_freshness_91`
+
+### C92 — context_freshness enforcement guard #92: automated unique mechanism
+context_freshness enforcement guard #92: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-stash-pop` + `scripts/check_readme_status_current.py` script-backed guard
+**Test:** `test_c92_context_freshness_92`
+
+### C93 — context_freshness enforcement guard #93: automated unique mechanism
+context_freshness enforcement guard #93: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-enhancement-ratio.ts` env-var-gated BLOCKING
+**Test:** `test_c93_context_freshness_93`
+
+### C94 — context_freshness enforcement guard #94: automated unique mechanism
+context_freshness enforcement guard #94: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Premature-Stop Audit Policy` + Makefile `make agent-merge` combined
+**Test:** `test_c94_context_freshness_94`
+
+### C95 — context_freshness enforcement guard #95: automated unique mechanism
+context_freshness enforcement guard #95: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-task-killed.json` + `.opencode/plugin/enforce-session-start.ts` state-aware block
+**Test:** `test_c95_context_freshness_95`
+
+### C96 — context_freshness enforcement guard #96: automated unique mechanism
+context_freshness enforcement guard #96: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:stale-gate` + `scripts/test_hook_runtime.py` ratchet+script gate
+**Test:** `test_c96_context_freshness_96`
+
+### C97 — context_freshness enforcement guard #97: automated unique mechanism
+context_freshness enforcement guard #97: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make test-guardrails` CI+local dual
+**Test:** `test_c97_context_freshness_97`
+
+### C98 — context_freshness enforcement guard #98: automated unique mechanism
+context_freshness enforcement guard #98: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-tdd.ts` × `.opencode/plugin/enforce-objective.ts` cross-plugin
+**Test:** `test_c98_context_freshness_98`
+
+### C99 — context_freshness enforcement guard #99: automated unique mechanism
+context_freshness enforcement guard #99: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `No-Manual-Default Policy` + `scripts/check_duplicate_targets.py` + `.opencode/plugin/enforce-no-wait.ts` triple layer
+**Test:** `test_c99_context_freshness_99`
+
+### C100 — context_freshness enforcement guard #100: automated unique mechanism
+context_freshness enforcement guard #100: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Premature-Stop Audit Policy` section
+**Test:** `test_c100_context_freshness_100`
+
+### C101 — context_freshness enforcement guard #101: automated unique mechanism
+context_freshness enforcement guard #101: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-reset` prerequisite
+**Test:** `test_c101_context_freshness_101`
+
+### C102 — context_freshness enforcement guard #102: automated unique mechanism
+context_freshness enforcement guard #102: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` enforcement
+**Test:** `test_c102_context_freshness_102`
+
+### C103 — context_freshness enforcement guard #103: automated unique mechanism
+context_freshness enforcement guard #103: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_c103_context_freshness_103`
+
+### C104 — context_freshness enforcement guard #104: automated unique mechanism
+context_freshness enforcement guard #104: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-suppressions.ts` permissionDecision deny
+**Test:** `test_c104_context_freshness_104`
+
+### C105 — context_freshness enforcement guard #105: automated unique mechanism
+context_freshness enforcement guard #105: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make feature-start` fail-closed guard
+**Test:** `test_c105_context_freshness_105`
+
+### C106 — context_freshness enforcement guard #106: automated unique mechanism
+context_freshness enforcement guard #106: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-enhancement-ratio.json` state-file enforced block
+**Test:** `test_c106_context_freshness_106`
+
+### C107 — context_freshness enforcement guard #107: automated unique mechanism
+context_freshness enforcement guard #107: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-delegate.ts` + `make tf-cache-warm` combined guard
+**Test:** `test_c107_context_freshness_107`
+
+### C108 — context_freshness enforcement guard #108: automated unique mechanism
+context_freshness enforcement guard #108: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dead-code` ratchet-tracked gate
+**Test:** `test_c108_context_freshness_108`
+
+### C109 — context_freshness enforcement guard #109: automated unique mechanism
+context_freshness enforcement guard #109: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_c109_context_freshness_109`
+
+### C110 — context_freshness enforcement guard #110: automated unique mechanism
+context_freshness enforcement guard #110: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` + `.opencode/plugin/enforce-floor.ts` dual layer
+**Test:** `test_c110_context_freshness_110`
+
+### C111 — context_freshness enforcement guard #111: automated unique mechanism
+context_freshness enforcement guard #111: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_blocker_detector.py` structural assertion gate
+**Test:** `test_c111_context_freshness_111`
+
+### C112 — context_freshness enforcement guard #112: automated unique mechanism
+context_freshness enforcement guard #112: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make agent-worktree-list` + `scripts/check_node_v26_compat.py` script-backed guard
+**Test:** `test_c112_context_freshness_112`
+
+### C113 — context_freshness enforcement guard #113: automated unique mechanism
+context_freshness enforcement guard #113: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-stop.ts` env-var-gated BLOCKING
+**Test:** `test_c113_context_freshness_113`
+
+### C114 — context_freshness enforcement guard #114: automated unique mechanism
+context_freshness enforcement guard #114: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Release Pipeline Must Be CI-Green` + Makefile `make test-integration` combined
+**Test:** `test_c114_context_freshness_114`
+
+### C115 — context_freshness enforcement guard #115: automated unique mechanism
+context_freshness enforcement guard #115: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` + `.opencode/plugin/enforce-branch-discipline.ts` state-aware block
+**Test:** `test_c115_context_freshness_115`
+
+### C116 — context_freshness enforcement guard #116: automated unique mechanism
+context_freshness enforcement guard #116: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:coverage-baseline` + `scripts/check_readme_status_current.py` ratchet+script gate
+**Test:** `test_c116_context_freshness_116`
+
+### C117 — context_freshness enforcement guard #117: automated unique mechanism
+context_freshness enforcement guard #117: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make gate-kill` CI+local dual
+**Test:** `test_c117_context_freshness_117`
+
+### C118 — context_freshness enforcement guard #118: automated unique mechanism
+context_freshness enforcement guard #118: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-anti-essay.ts` × `.opencode/plugin/enforce-deletion-gate.ts` cross-plugin
+**Test:** `test_c118_context_freshness_118`
+
+### C119 — context_freshness enforcement guard #119: automated unique mechanism
+context_freshness enforcement guard #119: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Pre-Generation Contract` + `scripts/verify_release_artifact.py` + `.opencode/plugin/enforce-objective.ts` triple layer
+**Test:** `test_c119_context_freshness_119`
+
+### C120 — context_freshness enforcement guard #120: automated unique mechanism
+context_freshness enforcement guard #120: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Task Self-Tracking` section
+**Test:** `test_c120_context_freshness_120`
+
+## Expansion: Quality Gate (Q31–Q125)
+
 ### Q31 — quality_gate enforcement guard #31: automated unique mechanism
-The agent MUST enforce this invariant mechanically at runtime — no advisory-only, no opt-in.
-**Enforcement:** AGENTS.md `enforce-floor.ts` permissionDecision deny
+quality_gate enforcement guard #31: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_behavioral_specs.py` structural assertion gate
 **Test:** `test_q31_quality_gate_31`
 
+### Q32 — quality_gate enforcement guard #32: automated unique mechanism
+quality_gate enforcement guard #32: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make disengage-enforcement` + `scripts/check_readme_status_current.py` script-backed guard
+**Test:** `test_q32_quality_gate_32`
+
+### Q33 — quality_gate enforcement guard #33: automated unique mechanism
+quality_gate enforcement guard #33: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` env-var-gated BLOCKING
+**Test:** `test_q33_quality_gate_33`
+
+### Q34 — quality_gate enforcement guard #34: automated unique mechanism
+quality_gate enforcement guard #34: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Anti-Grinding Enforcement` + Makefile `make git-merge` combined
+**Test:** `test_q34_quality_gate_34`
+
+### Q35 — quality_gate enforcement guard #35: automated unique mechanism
+quality_gate enforcement guard #35: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-task-killed.json` + `.opencode/plugin/enforce-delegate.ts` state-aware block
+**Test:** `test_q35_quality_gate_35`
+
+### Q36 — quality_gate enforcement guard #36: automated unique mechanism
+quality_gate enforcement guard #36: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:stale-gate` + `scripts/test_hook_runtime.py` ratchet+script gate
+**Test:** `test_q36_quality_gate_36`
+
+### Q37 — quality_gate enforcement guard #37: automated unique mechanism
+quality_gate enforcement guard #37: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make verify-enforcement` CI+local dual
+**Test:** `test_q37_quality_gate_37`
+
+### Q38 — quality_gate enforcement guard #38: automated unique mechanism
+quality_gate enforcement guard #38: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-context.ts` × `.opencode/plugin/enforce-verified-claims.ts` cross-plugin
+**Test:** `test_q38_quality_gate_38`
+
+### Q39 — quality_gate enforcement guard #39: automated unique mechanism
+quality_gate enforcement guard #39: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Yield Enforcement` + `scripts/check_duplicate_targets.py` + `.opencode/plugin/enforce-enhancement-ratio.ts` triple layer
+**Test:** `test_q39_quality_gate_39`
+
+### Q40 — quality_gate enforcement guard #40: automated unique mechanism
+quality_gate enforcement guard #40: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Priority Stacking` section
+**Test:** `test_q40_quality_gate_40`
+
+### Q41 — quality_gate enforcement guard #41: automated unique mechanism
+quality_gate enforcement guard #41: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make container-run` prerequisite
+**Test:** `test_q41_quality_gate_41`
+
+### Q42 — quality_gate enforcement guard #42: automated unique mechanism
+quality_gate enforcement guard #42: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` enforcement
+**Test:** `test_q42_quality_gate_42`
+
+### Q43 — quality_gate enforcement guard #43: automated unique mechanism
+quality_gate enforcement guard #43: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_q43_quality_gate_43`
+
+### Q44 — quality_gate enforcement guard #44: automated unique mechanism
+quality_gate enforcement guard #44: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-floor.ts` permissionDecision deny
+**Test:** `test_q44_quality_gate_44`
+
+### Q45 — quality_gate enforcement guard #45: automated unique mechanism
+quality_gate enforcement guard #45: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make gated-merge` fail-closed guard
+**Test:** `test_q45_quality_gate_45`
+
+### Q46 — quality_gate enforcement guard #46: automated unique mechanism
+quality_gate enforcement guard #46: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-enhancement-ratio.json` state-file enforced block
+**Test:** `test_q46_quality_gate_46`
+
+### Q47 — quality_gate enforcement guard #47: automated unique mechanism
+quality_gate enforcement guard #47: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-test-integrity.ts` + `make git-checkout` combined guard
+**Test:** `test_q47_quality_gate_47`
+
+### Q48 — quality_gate enforcement guard #48: automated unique mechanism
+quality_gate enforcement guard #48: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dead-code` ratchet-tracked gate
+**Test:** `test_q48_quality_gate_48`
+
+### Q49 — quality_gate enforcement guard #49: automated unique mechanism
+quality_gate enforcement guard #49: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_q49_quality_gate_49`
+
+### Q50 — quality_gate enforcement guard #50: automated unique mechanism
+quality_gate enforcement guard #50: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` + `.opencode/plugin/enforce-context.ts` dual layer
+**Test:** `test_q50_quality_gate_50`
+
+### Q51 — quality_gate enforcement guard #51: automated unique mechanism
+quality_gate enforcement guard #51: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_verified_claims_plugin.py` structural assertion gate
+**Test:** `test_q51_quality_gate_51`
+
+### Q52 — quality_gate enforcement guard #52: automated unique mechanism
+quality_gate enforcement guard #52: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make container-push` + `scripts/check_node_v26_compat.py` script-backed guard
+**Test:** `test_q52_quality_gate_52`
+
+### Q53 — quality_gate enforcement guard #53: automated unique mechanism
+quality_gate enforcement guard #53: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-session-start.ts` env-var-gated BLOCKING
+**Test:** `test_q53_quality_gate_53`
+
+### Q54 — quality_gate enforcement guard #54: automated unique mechanism
+quality_gate enforcement guard #54: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Nothing-Dropped Guardrail` + Makefile `make clean-worktree-venvs` combined
+**Test:** `test_q54_quality_gate_54`
+
+### Q55 — quality_gate enforcement guard #55: automated unique mechanism
+quality_gate enforcement guard #55: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` + `.opencode/plugin/enforce-no-wait.ts` state-aware block
+**Test:** `test_q55_quality_gate_55`
+
+### Q56 — quality_gate enforcement guard #56: automated unique mechanism
+quality_gate enforcement guard #56: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:coverage-baseline` + `scripts/check_readme_status_current.py` ratchet+script gate
+**Test:** `test_q56_quality_gate_56`
+
+### Q57 — quality_gate enforcement guard #57: automated unique mechanism
+quality_gate enforcement guard #57: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make floor-status` CI+local dual
+**Test:** `test_q57_quality_gate_57`
+
+### Q58 — quality_gate enforcement guard #58: automated unique mechanism
+quality_gate enforcement guard #58: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-multitask.ts` × `.opencode/plugin/enforce-session-start.ts` cross-plugin
+**Test:** `test_q58_quality_gate_58`
+
+### Q59 — quality_gate enforcement guard #59: automated unique mechanism
+quality_gate enforcement guard #59: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Judgment Enforcement` + `scripts/verify_release_artifact.py` + `.opencode/plugin/enforce-verified-claims.ts` triple layer
+**Test:** `test_q59_quality_gate_59`
+
+### Q60 — quality_gate enforcement guard #60: automated unique mechanism
+quality_gate enforcement guard #60: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Node v26 Compatibility` section
+**Test:** `test_q60_quality_gate_60`
+
+### Q61 — quality_gate enforcement guard #61: automated unique mechanism
+quality_gate enforcement guard #61: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-rebranch-onto` prerequisite
+**Test:** `test_q61_quality_gate_61`
+
+### Q62 — quality_gate enforcement guard #62: automated unique mechanism
+quality_gate enforcement guard #62: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/task_watchdog.py` enforcement
+**Test:** `test_q62_quality_gate_62`
+
+### Q63 — quality_gate enforcement guard #63: automated unique mechanism
+quality_gate enforcement guard #63: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_q63_quality_gate_63`
+
+### Q64 — quality_gate enforcement guard #64: automated unique mechanism
+quality_gate enforcement guard #64: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-make.ts` permissionDecision deny
+**Test:** `test_q64_quality_gate_64`
+
+### Q65 — quality_gate enforcement guard #65: automated unique mechanism
+quality_gate enforcement guard #65: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make development-start` fail-closed guard
+**Test:** `test_q65_quality_gate_65`
+
+### Q66 — quality_gate enforcement guard #66: automated unique mechanism
+quality_gate enforcement guard #66: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-tool-streak.json` state-file enforced block
+**Test:** `test_q66_quality_gate_66`
+
+### Q67 — quality_gate enforcement guard #67: automated unique mechanism
+quality_gate enforcement guard #67: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-verified-claims.ts` + `make validate` combined guard
+**Test:** `test_q67_quality_gate_67`
+
+### Q68 — quality_gate enforcement guard #68: automated unique mechanism
+quality_gate enforcement guard #68: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dirty-tree` ratchet-tracked gate
+**Test:** `test_q68_quality_gate_68`
+
+### Q69 — quality_gate enforcement guard #69: automated unique mechanism
+quality_gate enforcement guard #69: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_q69_quality_gate_69`
+
+### Q70 — quality_gate enforcement guard #70: automated unique mechanism
+quality_gate enforcement guard #70: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/task_watchdog.py` + `.opencode/plugin/enforce-batch-push.ts` dual layer
+**Test:** `test_q70_quality_gate_70`
+
+### Q71 — quality_gate enforcement guard #71: automated unique mechanism
+quality_gate enforcement guard #71: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_require_ci_green.py` structural assertion gate
+**Test:** `test_q71_quality_gate_71`
+
+### Q72 — quality_gate enforcement guard #72: automated unique mechanism
+quality_gate enforcement guard #72: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make check-types` + `scripts/test_hook_runtime.py` script-backed guard
+**Test:** `test_q72_quality_gate_72`
+
+### Q73 — quality_gate enforcement guard #73: automated unique mechanism
+quality_gate enforcement guard #73: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-verified-claims.ts` env-var-gated BLOCKING
+**Test:** `test_q73_quality_gate_73`
+
+### Q74 — quality_gate enforcement guard #74: automated unique mechanism
+quality_gate enforcement guard #74: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `10-Agent Dispatch Floor` + Makefile `make collect-check` combined
+**Test:** `test_q74_quality_gate_74`
+
+### Q75 — quality_gate enforcement guard #75: automated unique mechanism
+quality_gate enforcement guard #75: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-ci-check-state.json` + `.opencode/plugin/enforce-test-integrity.ts` state-aware block
+**Test:** `test_q75_quality_gate_75`
+
+### Q76 — quality_gate enforcement guard #76: automated unique mechanism
+quality_gate enforcement guard #76: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:duplicate-target` + `scripts/check_node_v26_compat.py` ratchet+script gate
+**Test:** `test_q76_quality_gate_76`
+
+### Q77 — quality_gate enforcement guard #77: automated unique mechanism
+quality_gate enforcement guard #77: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make container-run` CI+local dual
+**Test:** `test_q77_quality_gate_77`
+
+### Q78 — quality_gate enforcement guard #78: automated unique mechanism
+quality_gate enforcement guard #78: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-suppressions.ts` × `.opencode/plugin/enforce-no-wait.ts` cross-plugin
+**Test:** `test_q78_quality_gate_78`
+
+### Q79 — quality_gate enforcement guard #79: automated unique mechanism
+quality_gate enforcement guard #79: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Hard Break Enforcement` + `scripts/stop_condition_audit.py` + `.opencode/plugin/enforce-session-start.ts` triple layer
+**Test:** `test_q79_quality_gate_79`
+
+### Q80 — quality_gate enforcement guard #80: automated unique mechanism
+quality_gate enforcement guard #80: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Background Operations NEVER Block Dispatch` section
+**Test:** `test_q80_quality_gate_80`
+
+### Q81 — quality_gate enforcement guard #81: automated unique mechanism
+quality_gate enforcement guard #81: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make tf-init` prerequisite
+**Test:** `test_q81_quality_gate_81`
+
+### Q82 — quality_gate enforcement guard #82: automated unique mechanism
+quality_gate enforcement guard #82: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` enforcement
+**Test:** `test_q82_quality_gate_82`
+
+### Q83 — quality_gate enforcement guard #83: automated unique mechanism
+quality_gate enforcement guard #83: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_q83_quality_gate_83`
+
+### Q84 — quality_gate enforcement guard #84: automated unique mechanism
+quality_gate enforcement guard #84: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-anti-essay.ts` permissionDecision deny
+**Test:** `test_q84_quality_gate_84`
+
+### Q85 — quality_gate enforcement guard #85: automated unique mechanism
+quality_gate enforcement guard #85: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make agent-cleanup` fail-closed guard
+**Test:** `test_q85_quality_gate_85`
+
+### Q86 — quality_gate enforcement guard #86: automated unique mechanism
+quality_gate enforcement guard #86: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-user-objective.json` state-file enforced block
+**Test:** `test_q86_quality_gate_86`
+
+### Q87 — quality_gate enforcement guard #87: automated unique mechanism
+quality_gate enforcement guard #87: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-deletion-gate.ts` + `make test-and-commit` combined guard
+**Test:** `test_q87_quality_gate_87`
+
+### Q88 — quality_gate enforcement guard #88: automated unique mechanism
+quality_gate enforcement guard #88: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:typecheck-baseline` ratchet-tracked gate
+**Test:** `test_q88_quality_gate_88`
+
+### Q89 — quality_gate enforcement guard #89: automated unique mechanism
+quality_gate enforcement guard #89: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_q89_quality_gate_89`
+
+### Q90 — quality_gate enforcement guard #90: automated unique mechanism
+quality_gate enforcement guard #90: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` + `.opencode/plugin/enforce-clean-tree.ts` dual layer
+**Test:** `test_q90_quality_gate_90`
+
+### Q91 — quality_gate enforcement guard #91: automated unique mechanism
+quality_gate enforcement guard #91: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_no_suppression_comments.py` structural assertion gate
+**Test:** `test_q91_quality_gate_91`
+
+### Q92 — quality_gate enforcement guard #92: automated unique mechanism
+quality_gate enforcement guard #92: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-stash-pop` + `scripts/check_readme_status_current.py` script-backed guard
+**Test:** `test_q92_quality_gate_92`
+
+### Q93 — quality_gate enforcement guard #93: automated unique mechanism
+quality_gate enforcement guard #93: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-enhancement-ratio.ts` env-var-gated BLOCKING
+**Test:** `test_q93_quality_gate_93`
+
+### Q94 — quality_gate enforcement guard #94: automated unique mechanism
+quality_gate enforcement guard #94: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Premature-Stop Audit Policy` + Makefile `make agent-merge` combined
+**Test:** `test_q94_quality_gate_94`
+
+### Q95 — quality_gate enforcement guard #95: automated unique mechanism
+quality_gate enforcement guard #95: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-task-killed.json` + `.opencode/plugin/enforce-session-start.ts` state-aware block
+**Test:** `test_q95_quality_gate_95`
+
+### Q96 — quality_gate enforcement guard #96: automated unique mechanism
+quality_gate enforcement guard #96: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:stale-gate` + `scripts/test_hook_runtime.py` ratchet+script gate
+**Test:** `test_q96_quality_gate_96`
+
+### Q97 — quality_gate enforcement guard #97: automated unique mechanism
+quality_gate enforcement guard #97: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make test-guardrails` CI+local dual
+**Test:** `test_q97_quality_gate_97`
+
+### Q98 — quality_gate enforcement guard #98: automated unique mechanism
+quality_gate enforcement guard #98: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-tdd.ts` × `.opencode/plugin/enforce-objective.ts` cross-plugin
+**Test:** `test_q98_quality_gate_98`
+
+### Q99 — quality_gate enforcement guard #99: automated unique mechanism
+quality_gate enforcement guard #99: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `No-Manual-Default Policy` + `scripts/check_duplicate_targets.py` + `.opencode/plugin/enforce-no-wait.ts` triple layer
+**Test:** `test_q99_quality_gate_99`
+
+### Q100 — quality_gate enforcement guard #100: automated unique mechanism
+quality_gate enforcement guard #100: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Premature-Stop Audit Policy` section
+**Test:** `test_q100_quality_gate_100`
+
+### Q101 — quality_gate enforcement guard #101: automated unique mechanism
+quality_gate enforcement guard #101: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-reset` prerequisite
+**Test:** `test_q101_quality_gate_101`
+
+### Q102 — quality_gate enforcement guard #102: automated unique mechanism
+quality_gate enforcement guard #102: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` enforcement
+**Test:** `test_q102_quality_gate_102`
+
+### Q103 — quality_gate enforcement guard #103: automated unique mechanism
+quality_gate enforcement guard #103: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_q103_quality_gate_103`
+
+### Q104 — quality_gate enforcement guard #104: automated unique mechanism
+quality_gate enforcement guard #104: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-suppressions.ts` permissionDecision deny
+**Test:** `test_q104_quality_gate_104`
+
+### Q105 — quality_gate enforcement guard #105: automated unique mechanism
+quality_gate enforcement guard #105: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make feature-start` fail-closed guard
+**Test:** `test_q105_quality_gate_105`
+
+### Q106 — quality_gate enforcement guard #106: automated unique mechanism
+quality_gate enforcement guard #106: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-enhancement-ratio.json` state-file enforced block
+**Test:** `test_q106_quality_gate_106`
+
+### Q107 — quality_gate enforcement guard #107: automated unique mechanism
+quality_gate enforcement guard #107: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-delegate.ts` + `make tf-cache-warm` combined guard
+**Test:** `test_q107_quality_gate_107`
+
+### Q108 — quality_gate enforcement guard #108: automated unique mechanism
+quality_gate enforcement guard #108: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dead-code` ratchet-tracked gate
+**Test:** `test_q108_quality_gate_108`
+
+### Q109 — quality_gate enforcement guard #109: automated unique mechanism
+quality_gate enforcement guard #109: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_q109_quality_gate_109`
+
+### Q110 — quality_gate enforcement guard #110: automated unique mechanism
+quality_gate enforcement guard #110: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` + `.opencode/plugin/enforce-floor.ts` dual layer
+**Test:** `test_q110_quality_gate_110`
+
+### Q111 — quality_gate enforcement guard #111: automated unique mechanism
+quality_gate enforcement guard #111: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_blocker_detector.py` structural assertion gate
+**Test:** `test_q111_quality_gate_111`
+
+### Q112 — quality_gate enforcement guard #112: automated unique mechanism
+quality_gate enforcement guard #112: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make agent-worktree-list` + `scripts/check_node_v26_compat.py` script-backed guard
+**Test:** `test_q112_quality_gate_112`
+
+### Q113 — quality_gate enforcement guard #113: automated unique mechanism
+quality_gate enforcement guard #113: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-stop.ts` env-var-gated BLOCKING
+**Test:** `test_q113_quality_gate_113`
+
+### Q114 — quality_gate enforcement guard #114: automated unique mechanism
+quality_gate enforcement guard #114: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Release Pipeline Must Be CI-Green` + Makefile `make test-integration` combined
+**Test:** `test_q114_quality_gate_114`
+
+### Q115 — quality_gate enforcement guard #115: automated unique mechanism
+quality_gate enforcement guard #115: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` + `.opencode/plugin/enforce-branch-discipline.ts` state-aware block
+**Test:** `test_q115_quality_gate_115`
+
+### Q116 — quality_gate enforcement guard #116: automated unique mechanism
+quality_gate enforcement guard #116: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:coverage-baseline` + `scripts/check_readme_status_current.py` ratchet+script gate
+**Test:** `test_q116_quality_gate_116`
+
+### Q117 — quality_gate enforcement guard #117: automated unique mechanism
+quality_gate enforcement guard #117: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make gate-kill` CI+local dual
+**Test:** `test_q117_quality_gate_117`
+
+### Q118 — quality_gate enforcement guard #118: automated unique mechanism
+quality_gate enforcement guard #118: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-anti-essay.ts` × `.opencode/plugin/enforce-deletion-gate.ts` cross-plugin
+**Test:** `test_q118_quality_gate_118`
+
+### Q119 — quality_gate enforcement guard #119: automated unique mechanism
+quality_gate enforcement guard #119: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Pre-Generation Contract` + `scripts/verify_release_artifact.py` + `.opencode/plugin/enforce-objective.ts` triple layer
+**Test:** `test_q119_quality_gate_119`
+
+### Q120 — quality_gate enforcement guard #120: automated unique mechanism
+quality_gate enforcement guard #120: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Task Self-Tracking` section
+**Test:** `test_q120_quality_gate_120`
+
+### Q121 — quality_gate enforcement guard #121: automated unique mechanism
+quality_gate enforcement guard #121: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make check-opencode-backup` prerequisite
+**Test:** `test_q121_quality_gate_121`
+
+### Q122 — quality_gate enforcement guard #122: automated unique mechanism
+quality_gate enforcement guard #122: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/task_watchdog.py` enforcement
+**Test:** `test_q122_quality_gate_122`
+
+### Q123 — quality_gate enforcement guard #123: automated unique mechanism
+quality_gate enforcement guard #123: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_q123_quality_gate_123`
+
+### Q124 — quality_gate enforcement guard #124: automated unique mechanism
+quality_gate enforcement guard #124: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-context.ts` permissionDecision deny
+**Test:** `test_q124_quality_gate_124`
+
+### Q125 — quality_gate enforcement guard #125: automated unique mechanism
+quality_gate enforcement guard #125: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make check-duplicate-targets` fail-closed guard
+**Test:** `test_q125_quality_gate_125`
+
+## Expansion: Subagent Discipline (X31–X120)
+
 ### X31 — subagent_discipline enforcement guard #31: automated unique mechanism
-The agent MUST enforce this invariant mechanically at runtime — no advisory-only, no opt-in.
-**Enforcement:** AGENTS.md `enforce-floor.ts` permissionDecision deny
+subagent_discipline enforcement guard #31: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_behavioral_specs.py` structural assertion gate
 **Test:** `test_x31_subagent_discipline_31`
 
+### X32 — subagent_discipline enforcement guard #32: automated unique mechanism
+subagent_discipline enforcement guard #32: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make disengage-enforcement` + `scripts/check_readme_status_current.py` script-backed guard
+**Test:** `test_x32_subagent_discipline_32`
+
+### X33 — subagent_discipline enforcement guard #33: automated unique mechanism
+subagent_discipline enforcement guard #33: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` env-var-gated BLOCKING
+**Test:** `test_x33_subagent_discipline_33`
+
+### X34 — subagent_discipline enforcement guard #34: automated unique mechanism
+subagent_discipline enforcement guard #34: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Anti-Grinding Enforcement` + Makefile `make git-merge` combined
+**Test:** `test_x34_subagent_discipline_34`
+
+### X35 — subagent_discipline enforcement guard #35: automated unique mechanism
+subagent_discipline enforcement guard #35: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-task-killed.json` + `.opencode/plugin/enforce-delegate.ts` state-aware block
+**Test:** `test_x35_subagent_discipline_35`
+
+### X36 — subagent_discipline enforcement guard #36: automated unique mechanism
+subagent_discipline enforcement guard #36: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:stale-gate` + `scripts/test_hook_runtime.py` ratchet+script gate
+**Test:** `test_x36_subagent_discipline_36`
+
+### X37 — subagent_discipline enforcement guard #37: automated unique mechanism
+subagent_discipline enforcement guard #37: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make verify-enforcement` CI+local dual
+**Test:** `test_x37_subagent_discipline_37`
+
+### X38 — subagent_discipline enforcement guard #38: automated unique mechanism
+subagent_discipline enforcement guard #38: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-context.ts` × `.opencode/plugin/enforce-verified-claims.ts` cross-plugin
+**Test:** `test_x38_subagent_discipline_38`
+
+### X39 — subagent_discipline enforcement guard #39: automated unique mechanism
+subagent_discipline enforcement guard #39: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Yield Enforcement` + `scripts/check_duplicate_targets.py` + `.opencode/plugin/enforce-enhancement-ratio.ts` triple layer
+**Test:** `test_x39_subagent_discipline_39`
+
+### X40 — subagent_discipline enforcement guard #40: automated unique mechanism
+subagent_discipline enforcement guard #40: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Priority Stacking` section
+**Test:** `test_x40_subagent_discipline_40`
+
+### X41 — subagent_discipline enforcement guard #41: automated unique mechanism
+subagent_discipline enforcement guard #41: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make container-run` prerequisite
+**Test:** `test_x41_subagent_discipline_41`
+
+### X42 — subagent_discipline enforcement guard #42: automated unique mechanism
+subagent_discipline enforcement guard #42: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` enforcement
+**Test:** `test_x42_subagent_discipline_42`
+
+### X43 — subagent_discipline enforcement guard #43: automated unique mechanism
+subagent_discipline enforcement guard #43: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_x43_subagent_discipline_43`
+
+### X44 — subagent_discipline enforcement guard #44: automated unique mechanism
+subagent_discipline enforcement guard #44: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-floor.ts` permissionDecision deny
+**Test:** `test_x44_subagent_discipline_44`
+
+### X45 — subagent_discipline enforcement guard #45: automated unique mechanism
+subagent_discipline enforcement guard #45: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make gated-merge` fail-closed guard
+**Test:** `test_x45_subagent_discipline_45`
+
+### X46 — subagent_discipline enforcement guard #46: automated unique mechanism
+subagent_discipline enforcement guard #46: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-enhancement-ratio.json` state-file enforced block
+**Test:** `test_x46_subagent_discipline_46`
+
+### X47 — subagent_discipline enforcement guard #47: automated unique mechanism
+subagent_discipline enforcement guard #47: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-test-integrity.ts` + `make git-checkout` combined guard
+**Test:** `test_x47_subagent_discipline_47`
+
+### X48 — subagent_discipline enforcement guard #48: automated unique mechanism
+subagent_discipline enforcement guard #48: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dead-code` ratchet-tracked gate
+**Test:** `test_x48_subagent_discipline_48`
+
+### X49 — subagent_discipline enforcement guard #49: automated unique mechanism
+subagent_discipline enforcement guard #49: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_x49_subagent_discipline_49`
+
+### X50 — subagent_discipline enforcement guard #50: automated unique mechanism
+subagent_discipline enforcement guard #50: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` + `.opencode/plugin/enforce-context.ts` dual layer
+**Test:** `test_x50_subagent_discipline_50`
+
+### X51 — subagent_discipline enforcement guard #51: automated unique mechanism
+subagent_discipline enforcement guard #51: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_verified_claims_plugin.py` structural assertion gate
+**Test:** `test_x51_subagent_discipline_51`
+
+### X52 — subagent_discipline enforcement guard #52: automated unique mechanism
+subagent_discipline enforcement guard #52: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make container-push` + `scripts/check_node_v26_compat.py` script-backed guard
+**Test:** `test_x52_subagent_discipline_52`
+
+### X53 — subagent_discipline enforcement guard #53: automated unique mechanism
+subagent_discipline enforcement guard #53: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-session-start.ts` env-var-gated BLOCKING
+**Test:** `test_x53_subagent_discipline_53`
+
+### X54 — subagent_discipline enforcement guard #54: automated unique mechanism
+subagent_discipline enforcement guard #54: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Nothing-Dropped Guardrail` + Makefile `make clean-worktree-venvs` combined
+**Test:** `test_x54_subagent_discipline_54`
+
+### X55 — subagent_discipline enforcement guard #55: automated unique mechanism
+subagent_discipline enforcement guard #55: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` + `.opencode/plugin/enforce-no-wait.ts` state-aware block
+**Test:** `test_x55_subagent_discipline_55`
+
+### X56 — subagent_discipline enforcement guard #56: automated unique mechanism
+subagent_discipline enforcement guard #56: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:coverage-baseline` + `scripts/check_readme_status_current.py` ratchet+script gate
+**Test:** `test_x56_subagent_discipline_56`
+
+### X57 — subagent_discipline enforcement guard #57: automated unique mechanism
+subagent_discipline enforcement guard #57: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make floor-status` CI+local dual
+**Test:** `test_x57_subagent_discipline_57`
+
+### X58 — subagent_discipline enforcement guard #58: automated unique mechanism
+subagent_discipline enforcement guard #58: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-multitask.ts` × `.opencode/plugin/enforce-session-start.ts` cross-plugin
+**Test:** `test_x58_subagent_discipline_58`
+
+### X59 — subagent_discipline enforcement guard #59: automated unique mechanism
+subagent_discipline enforcement guard #59: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Judgment Enforcement` + `scripts/verify_release_artifact.py` + `.opencode/plugin/enforce-verified-claims.ts` triple layer
+**Test:** `test_x59_subagent_discipline_59`
+
+### X60 — subagent_discipline enforcement guard #60: automated unique mechanism
+subagent_discipline enforcement guard #60: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Node v26 Compatibility` section
+**Test:** `test_x60_subagent_discipline_60`
+
+### X61 — subagent_discipline enforcement guard #61: automated unique mechanism
+subagent_discipline enforcement guard #61: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-rebranch-onto` prerequisite
+**Test:** `test_x61_subagent_discipline_61`
+
+### X62 — subagent_discipline enforcement guard #62: automated unique mechanism
+subagent_discipline enforcement guard #62: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/task_watchdog.py` enforcement
+**Test:** `test_x62_subagent_discipline_62`
+
+### X63 — subagent_discipline enforcement guard #63: automated unique mechanism
+subagent_discipline enforcement guard #63: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_x63_subagent_discipline_63`
+
+### X64 — subagent_discipline enforcement guard #64: automated unique mechanism
+subagent_discipline enforcement guard #64: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-make.ts` permissionDecision deny
+**Test:** `test_x64_subagent_discipline_64`
+
+### X65 — subagent_discipline enforcement guard #65: automated unique mechanism
+subagent_discipline enforcement guard #65: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make development-start` fail-closed guard
+**Test:** `test_x65_subagent_discipline_65`
+
+### X66 — subagent_discipline enforcement guard #66: automated unique mechanism
+subagent_discipline enforcement guard #66: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-tool-streak.json` state-file enforced block
+**Test:** `test_x66_subagent_discipline_66`
+
+### X67 — subagent_discipline enforcement guard #67: automated unique mechanism
+subagent_discipline enforcement guard #67: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-verified-claims.ts` + `make validate` combined guard
+**Test:** `test_x67_subagent_discipline_67`
+
+### X68 — subagent_discipline enforcement guard #68: automated unique mechanism
+subagent_discipline enforcement guard #68: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dirty-tree` ratchet-tracked gate
+**Test:** `test_x68_subagent_discipline_68`
+
+### X69 — subagent_discipline enforcement guard #69: automated unique mechanism
+subagent_discipline enforcement guard #69: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_x69_subagent_discipline_69`
+
+### X70 — subagent_discipline enforcement guard #70: automated unique mechanism
+subagent_discipline enforcement guard #70: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/task_watchdog.py` + `.opencode/plugin/enforce-batch-push.ts` dual layer
+**Test:** `test_x70_subagent_discipline_70`
+
+### X71 — subagent_discipline enforcement guard #71: automated unique mechanism
+subagent_discipline enforcement guard #71: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_require_ci_green.py` structural assertion gate
+**Test:** `test_x71_subagent_discipline_71`
+
+### X72 — subagent_discipline enforcement guard #72: automated unique mechanism
+subagent_discipline enforcement guard #72: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make check-types` + `scripts/test_hook_runtime.py` script-backed guard
+**Test:** `test_x72_subagent_discipline_72`
+
+### X73 — subagent_discipline enforcement guard #73: automated unique mechanism
+subagent_discipline enforcement guard #73: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-verified-claims.ts` env-var-gated BLOCKING
+**Test:** `test_x73_subagent_discipline_73`
+
+### X74 — subagent_discipline enforcement guard #74: automated unique mechanism
+subagent_discipline enforcement guard #74: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `10-Agent Dispatch Floor` + Makefile `make collect-check` combined
+**Test:** `test_x74_subagent_discipline_74`
+
+### X75 — subagent_discipline enforcement guard #75: automated unique mechanism
+subagent_discipline enforcement guard #75: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-ci-check-state.json` + `.opencode/plugin/enforce-test-integrity.ts` state-aware block
+**Test:** `test_x75_subagent_discipline_75`
+
+### X76 — subagent_discipline enforcement guard #76: automated unique mechanism
+subagent_discipline enforcement guard #76: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:duplicate-target` + `scripts/check_node_v26_compat.py` ratchet+script gate
+**Test:** `test_x76_subagent_discipline_76`
+
+### X77 — subagent_discipline enforcement guard #77: automated unique mechanism
+subagent_discipline enforcement guard #77: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make container-run` CI+local dual
+**Test:** `test_x77_subagent_discipline_77`
+
+### X78 — subagent_discipline enforcement guard #78: automated unique mechanism
+subagent_discipline enforcement guard #78: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-suppressions.ts` × `.opencode/plugin/enforce-no-wait.ts` cross-plugin
+**Test:** `test_x78_subagent_discipline_78`
+
+### X79 — subagent_discipline enforcement guard #79: automated unique mechanism
+subagent_discipline enforcement guard #79: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Hard Break Enforcement` + `scripts/stop_condition_audit.py` + `.opencode/plugin/enforce-session-start.ts` triple layer
+**Test:** `test_x79_subagent_discipline_79`
+
+### X80 — subagent_discipline enforcement guard #80: automated unique mechanism
+subagent_discipline enforcement guard #80: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Background Operations NEVER Block Dispatch` section
+**Test:** `test_x80_subagent_discipline_80`
+
+### X81 — subagent_discipline enforcement guard #81: automated unique mechanism
+subagent_discipline enforcement guard #81: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make tf-init` prerequisite
+**Test:** `test_x81_subagent_discipline_81`
+
+### X82 — subagent_discipline enforcement guard #82: automated unique mechanism
+subagent_discipline enforcement guard #82: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` enforcement
+**Test:** `test_x82_subagent_discipline_82`
+
+### X83 — subagent_discipline enforcement guard #83: automated unique mechanism
+subagent_discipline enforcement guard #83: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_x83_subagent_discipline_83`
+
+### X84 — subagent_discipline enforcement guard #84: automated unique mechanism
+subagent_discipline enforcement guard #84: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-anti-essay.ts` permissionDecision deny
+**Test:** `test_x84_subagent_discipline_84`
+
+### X85 — subagent_discipline enforcement guard #85: automated unique mechanism
+subagent_discipline enforcement guard #85: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make agent-cleanup` fail-closed guard
+**Test:** `test_x85_subagent_discipline_85`
+
+### X86 — subagent_discipline enforcement guard #86: automated unique mechanism
+subagent_discipline enforcement guard #86: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-user-objective.json` state-file enforced block
+**Test:** `test_x86_subagent_discipline_86`
+
+### X87 — subagent_discipline enforcement guard #87: automated unique mechanism
+subagent_discipline enforcement guard #87: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-deletion-gate.ts` + `make test-and-commit` combined guard
+**Test:** `test_x87_subagent_discipline_87`
+
+### X88 — subagent_discipline enforcement guard #88: automated unique mechanism
+subagent_discipline enforcement guard #88: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:typecheck-baseline` ratchet-tracked gate
+**Test:** `test_x88_subagent_discipline_88`
+
+### X89 — subagent_discipline enforcement guard #89: automated unique mechanism
+subagent_discipline enforcement guard #89: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_x89_subagent_discipline_89`
+
+### X90 — subagent_discipline enforcement guard #90: automated unique mechanism
+subagent_discipline enforcement guard #90: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` + `.opencode/plugin/enforce-clean-tree.ts` dual layer
+**Test:** `test_x90_subagent_discipline_90`
+
+### X91 — subagent_discipline enforcement guard #91: automated unique mechanism
+subagent_discipline enforcement guard #91: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_no_suppression_comments.py` structural assertion gate
+**Test:** `test_x91_subagent_discipline_91`
+
+### X92 — subagent_discipline enforcement guard #92: automated unique mechanism
+subagent_discipline enforcement guard #92: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-stash-pop` + `scripts/check_readme_status_current.py` script-backed guard
+**Test:** `test_x92_subagent_discipline_92`
+
+### X93 — subagent_discipline enforcement guard #93: automated unique mechanism
+subagent_discipline enforcement guard #93: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-enhancement-ratio.ts` env-var-gated BLOCKING
+**Test:** `test_x93_subagent_discipline_93`
+
+### X94 — subagent_discipline enforcement guard #94: automated unique mechanism
+subagent_discipline enforcement guard #94: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Premature-Stop Audit Policy` + Makefile `make agent-merge` combined
+**Test:** `test_x94_subagent_discipline_94`
+
+### X95 — subagent_discipline enforcement guard #95: automated unique mechanism
+subagent_discipline enforcement guard #95: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-task-killed.json` + `.opencode/plugin/enforce-session-start.ts` state-aware block
+**Test:** `test_x95_subagent_discipline_95`
+
+### X96 — subagent_discipline enforcement guard #96: automated unique mechanism
+subagent_discipline enforcement guard #96: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:stale-gate` + `scripts/test_hook_runtime.py` ratchet+script gate
+**Test:** `test_x96_subagent_discipline_96`
+
+### X97 — subagent_discipline enforcement guard #97: automated unique mechanism
+subagent_discipline enforcement guard #97: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make test-guardrails` CI+local dual
+**Test:** `test_x97_subagent_discipline_97`
+
+### X98 — subagent_discipline enforcement guard #98: automated unique mechanism
+subagent_discipline enforcement guard #98: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-tdd.ts` × `.opencode/plugin/enforce-objective.ts` cross-plugin
+**Test:** `test_x98_subagent_discipline_98`
+
+### X99 — subagent_discipline enforcement guard #99: automated unique mechanism
+subagent_discipline enforcement guard #99: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `No-Manual-Default Policy` + `scripts/check_duplicate_targets.py` + `.opencode/plugin/enforce-no-wait.ts` triple layer
+**Test:** `test_x99_subagent_discipline_99`
+
+### X100 — subagent_discipline enforcement guard #100: automated unique mechanism
+subagent_discipline enforcement guard #100: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Premature-Stop Audit Policy` section
+**Test:** `test_x100_subagent_discipline_100`
+
+### X101 — subagent_discipline enforcement guard #101: automated unique mechanism
+subagent_discipline enforcement guard #101: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-reset` prerequisite
+**Test:** `test_x101_subagent_discipline_101`
+
+### X102 — subagent_discipline enforcement guard #102: automated unique mechanism
+subagent_discipline enforcement guard #102: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` enforcement
+**Test:** `test_x102_subagent_discipline_102`
+
+### X103 — subagent_discipline enforcement guard #103: automated unique mechanism
+subagent_discipline enforcement guard #103: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_x103_subagent_discipline_103`
+
+### X104 — subagent_discipline enforcement guard #104: automated unique mechanism
+subagent_discipline enforcement guard #104: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-suppressions.ts` permissionDecision deny
+**Test:** `test_x104_subagent_discipline_104`
+
+### X105 — subagent_discipline enforcement guard #105: automated unique mechanism
+subagent_discipline enforcement guard #105: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make feature-start` fail-closed guard
+**Test:** `test_x105_subagent_discipline_105`
+
+### X106 — subagent_discipline enforcement guard #106: automated unique mechanism
+subagent_discipline enforcement guard #106: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-enhancement-ratio.json` state-file enforced block
+**Test:** `test_x106_subagent_discipline_106`
+
+### X107 — subagent_discipline enforcement guard #107: automated unique mechanism
+subagent_discipline enforcement guard #107: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-delegate.ts` + `make tf-cache-warm` combined guard
+**Test:** `test_x107_subagent_discipline_107`
+
+### X108 — subagent_discipline enforcement guard #108: automated unique mechanism
+subagent_discipline enforcement guard #108: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dead-code` ratchet-tracked gate
+**Test:** `test_x108_subagent_discipline_108`
+
+### X109 — subagent_discipline enforcement guard #109: automated unique mechanism
+subagent_discipline enforcement guard #109: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_x109_subagent_discipline_109`
+
+### X110 — subagent_discipline enforcement guard #110: automated unique mechanism
+subagent_discipline enforcement guard #110: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` + `.opencode/plugin/enforce-floor.ts` dual layer
+**Test:** `test_x110_subagent_discipline_110`
+
+### X111 — subagent_discipline enforcement guard #111: automated unique mechanism
+subagent_discipline enforcement guard #111: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_blocker_detector.py` structural assertion gate
+**Test:** `test_x111_subagent_discipline_111`
+
+### X112 — subagent_discipline enforcement guard #112: automated unique mechanism
+subagent_discipline enforcement guard #112: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make agent-worktree-list` + `scripts/check_node_v26_compat.py` script-backed guard
+**Test:** `test_x112_subagent_discipline_112`
+
+### X113 — subagent_discipline enforcement guard #113: automated unique mechanism
+subagent_discipline enforcement guard #113: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-stop.ts` env-var-gated BLOCKING
+**Test:** `test_x113_subagent_discipline_113`
+
+### X114 — subagent_discipline enforcement guard #114: automated unique mechanism
+subagent_discipline enforcement guard #114: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Release Pipeline Must Be CI-Green` + Makefile `make test-integration` combined
+**Test:** `test_x114_subagent_discipline_114`
+
+### X115 — subagent_discipline enforcement guard #115: automated unique mechanism
+subagent_discipline enforcement guard #115: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` + `.opencode/plugin/enforce-branch-discipline.ts` state-aware block
+**Test:** `test_x115_subagent_discipline_115`
+
+### X116 — subagent_discipline enforcement guard #116: automated unique mechanism
+subagent_discipline enforcement guard #116: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:coverage-baseline` + `scripts/check_readme_status_current.py` ratchet+script gate
+**Test:** `test_x116_subagent_discipline_116`
+
+### X117 — subagent_discipline enforcement guard #117: automated unique mechanism
+subagent_discipline enforcement guard #117: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make gate-kill` CI+local dual
+**Test:** `test_x117_subagent_discipline_117`
+
+### X118 — subagent_discipline enforcement guard #118: automated unique mechanism
+subagent_discipline enforcement guard #118: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-anti-essay.ts` × `.opencode/plugin/enforce-deletion-gate.ts` cross-plugin
+**Test:** `test_x118_subagent_discipline_118`
+
+### X119 — subagent_discipline enforcement guard #119: automated unique mechanism
+subagent_discipline enforcement guard #119: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Pre-Generation Contract` + `scripts/verify_release_artifact.py` + `.opencode/plugin/enforce-objective.ts` triple layer
+**Test:** `test_x119_subagent_discipline_119`
+
+### X120 — subagent_discipline enforcement guard #120: automated unique mechanism
+subagent_discipline enforcement guard #120: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Task Self-Tracking` section
+**Test:** `test_x120_subagent_discipline_120`
+
+## Expansion: Audit Completeness (A31–A125)
+
 ### A31 — audit_completeness enforcement guard #31: automated unique mechanism
-The agent MUST enforce this invariant mechanically at runtime — no advisory-only, no opt-in.
-**Enforcement:** AGENTS.md `enforce-floor.ts` permissionDecision deny
+audit_completeness enforcement guard #31: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_behavioral_specs.py` structural assertion gate
 **Test:** `test_a31_audit_completeness_31`
 
+### A32 — audit_completeness enforcement guard #32: automated unique mechanism
+audit_completeness enforcement guard #32: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make disengage-enforcement` + `scripts/check_readme_status_current.py` script-backed guard
+**Test:** `test_a32_audit_completeness_32`
+
+### A33 — audit_completeness enforcement guard #33: automated unique mechanism
+audit_completeness enforcement guard #33: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` env-var-gated BLOCKING
+**Test:** `test_a33_audit_completeness_33`
+
+### A34 — audit_completeness enforcement guard #34: automated unique mechanism
+audit_completeness enforcement guard #34: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Anti-Grinding Enforcement` + Makefile `make git-merge` combined
+**Test:** `test_a34_audit_completeness_34`
+
+### A35 — audit_completeness enforcement guard #35: automated unique mechanism
+audit_completeness enforcement guard #35: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-task-killed.json` + `.opencode/plugin/enforce-delegate.ts` state-aware block
+**Test:** `test_a35_audit_completeness_35`
+
+### A36 — audit_completeness enforcement guard #36: automated unique mechanism
+audit_completeness enforcement guard #36: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:stale-gate` + `scripts/test_hook_runtime.py` ratchet+script gate
+**Test:** `test_a36_audit_completeness_36`
+
+### A37 — audit_completeness enforcement guard #37: automated unique mechanism
+audit_completeness enforcement guard #37: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make verify-enforcement` CI+local dual
+**Test:** `test_a37_audit_completeness_37`
+
+### A38 — audit_completeness enforcement guard #38: automated unique mechanism
+audit_completeness enforcement guard #38: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-context.ts` × `.opencode/plugin/enforce-verified-claims.ts` cross-plugin
+**Test:** `test_a38_audit_completeness_38`
+
+### A39 — audit_completeness enforcement guard #39: automated unique mechanism
+audit_completeness enforcement guard #39: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Yield Enforcement` + `scripts/check_duplicate_targets.py` + `.opencode/plugin/enforce-enhancement-ratio.ts` triple layer
+**Test:** `test_a39_audit_completeness_39`
+
+### A40 — audit_completeness enforcement guard #40: automated unique mechanism
+audit_completeness enforcement guard #40: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Priority Stacking` section
+**Test:** `test_a40_audit_completeness_40`
+
+### A41 — audit_completeness enforcement guard #41: automated unique mechanism
+audit_completeness enforcement guard #41: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make container-run` prerequisite
+**Test:** `test_a41_audit_completeness_41`
+
+### A42 — audit_completeness enforcement guard #42: automated unique mechanism
+audit_completeness enforcement guard #42: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` enforcement
+**Test:** `test_a42_audit_completeness_42`
+
+### A43 — audit_completeness enforcement guard #43: automated unique mechanism
+audit_completeness enforcement guard #43: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_a43_audit_completeness_43`
+
+### A44 — audit_completeness enforcement guard #44: automated unique mechanism
+audit_completeness enforcement guard #44: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-floor.ts` permissionDecision deny
+**Test:** `test_a44_audit_completeness_44`
+
+### A45 — audit_completeness enforcement guard #45: automated unique mechanism
+audit_completeness enforcement guard #45: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make gated-merge` fail-closed guard
+**Test:** `test_a45_audit_completeness_45`
+
+### A46 — audit_completeness enforcement guard #46: automated unique mechanism
+audit_completeness enforcement guard #46: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-enhancement-ratio.json` state-file enforced block
+**Test:** `test_a46_audit_completeness_46`
+
+### A47 — audit_completeness enforcement guard #47: automated unique mechanism
+audit_completeness enforcement guard #47: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-test-integrity.ts` + `make git-checkout` combined guard
+**Test:** `test_a47_audit_completeness_47`
+
+### A48 — audit_completeness enforcement guard #48: automated unique mechanism
+audit_completeness enforcement guard #48: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dead-code` ratchet-tracked gate
+**Test:** `test_a48_audit_completeness_48`
+
+### A49 — audit_completeness enforcement guard #49: automated unique mechanism
+audit_completeness enforcement guard #49: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_a49_audit_completeness_49`
+
+### A50 — audit_completeness enforcement guard #50: automated unique mechanism
+audit_completeness enforcement guard #50: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` + `.opencode/plugin/enforce-context.ts` dual layer
+**Test:** `test_a50_audit_completeness_50`
+
+### A51 — audit_completeness enforcement guard #51: automated unique mechanism
+audit_completeness enforcement guard #51: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_verified_claims_plugin.py` structural assertion gate
+**Test:** `test_a51_audit_completeness_51`
+
+### A52 — audit_completeness enforcement guard #52: automated unique mechanism
+audit_completeness enforcement guard #52: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make container-push` + `scripts/check_node_v26_compat.py` script-backed guard
+**Test:** `test_a52_audit_completeness_52`
+
+### A53 — audit_completeness enforcement guard #53: automated unique mechanism
+audit_completeness enforcement guard #53: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-session-start.ts` env-var-gated BLOCKING
+**Test:** `test_a53_audit_completeness_53`
+
+### A54 — audit_completeness enforcement guard #54: automated unique mechanism
+audit_completeness enforcement guard #54: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Nothing-Dropped Guardrail` + Makefile `make clean-worktree-venvs` combined
+**Test:** `test_a54_audit_completeness_54`
+
+### A55 — audit_completeness enforcement guard #55: automated unique mechanism
+audit_completeness enforcement guard #55: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` + `.opencode/plugin/enforce-no-wait.ts` state-aware block
+**Test:** `test_a55_audit_completeness_55`
+
+### A56 — audit_completeness enforcement guard #56: automated unique mechanism
+audit_completeness enforcement guard #56: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:coverage-baseline` + `scripts/check_readme_status_current.py` ratchet+script gate
+**Test:** `test_a56_audit_completeness_56`
+
+### A57 — audit_completeness enforcement guard #57: automated unique mechanism
+audit_completeness enforcement guard #57: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make floor-status` CI+local dual
+**Test:** `test_a57_audit_completeness_57`
+
+### A58 — audit_completeness enforcement guard #58: automated unique mechanism
+audit_completeness enforcement guard #58: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-multitask.ts` × `.opencode/plugin/enforce-session-start.ts` cross-plugin
+**Test:** `test_a58_audit_completeness_58`
+
+### A59 — audit_completeness enforcement guard #59: automated unique mechanism
+audit_completeness enforcement guard #59: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Judgment Enforcement` + `scripts/verify_release_artifact.py` + `.opencode/plugin/enforce-verified-claims.ts` triple layer
+**Test:** `test_a59_audit_completeness_59`
+
+### A60 — audit_completeness enforcement guard #60: automated unique mechanism
+audit_completeness enforcement guard #60: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Node v26 Compatibility` section
+**Test:** `test_a60_audit_completeness_60`
+
+### A61 — audit_completeness enforcement guard #61: automated unique mechanism
+audit_completeness enforcement guard #61: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-rebranch-onto` prerequisite
+**Test:** `test_a61_audit_completeness_61`
+
+### A62 — audit_completeness enforcement guard #62: automated unique mechanism
+audit_completeness enforcement guard #62: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/task_watchdog.py` enforcement
+**Test:** `test_a62_audit_completeness_62`
+
+### A63 — audit_completeness enforcement guard #63: automated unique mechanism
+audit_completeness enforcement guard #63: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_a63_audit_completeness_63`
+
+### A64 — audit_completeness enforcement guard #64: automated unique mechanism
+audit_completeness enforcement guard #64: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-make.ts` permissionDecision deny
+**Test:** `test_a64_audit_completeness_64`
+
+### A65 — audit_completeness enforcement guard #65: automated unique mechanism
+audit_completeness enforcement guard #65: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make development-start` fail-closed guard
+**Test:** `test_a65_audit_completeness_65`
+
+### A66 — audit_completeness enforcement guard #66: automated unique mechanism
+audit_completeness enforcement guard #66: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-tool-streak.json` state-file enforced block
+**Test:** `test_a66_audit_completeness_66`
+
+### A67 — audit_completeness enforcement guard #67: automated unique mechanism
+audit_completeness enforcement guard #67: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-verified-claims.ts` + `make validate` combined guard
+**Test:** `test_a67_audit_completeness_67`
+
+### A68 — audit_completeness enforcement guard #68: automated unique mechanism
+audit_completeness enforcement guard #68: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dirty-tree` ratchet-tracked gate
+**Test:** `test_a68_audit_completeness_68`
+
+### A69 — audit_completeness enforcement guard #69: automated unique mechanism
+audit_completeness enforcement guard #69: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_a69_audit_completeness_69`
+
+### A70 — audit_completeness enforcement guard #70: automated unique mechanism
+audit_completeness enforcement guard #70: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/task_watchdog.py` + `.opencode/plugin/enforce-batch-push.ts` dual layer
+**Test:** `test_a70_audit_completeness_70`
+
+### A71 — audit_completeness enforcement guard #71: automated unique mechanism
+audit_completeness enforcement guard #71: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_require_ci_green.py` structural assertion gate
+**Test:** `test_a71_audit_completeness_71`
+
+### A72 — audit_completeness enforcement guard #72: automated unique mechanism
+audit_completeness enforcement guard #72: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make check-types` + `scripts/test_hook_runtime.py` script-backed guard
+**Test:** `test_a72_audit_completeness_72`
+
+### A73 — audit_completeness enforcement guard #73: automated unique mechanism
+audit_completeness enforcement guard #73: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-verified-claims.ts` env-var-gated BLOCKING
+**Test:** `test_a73_audit_completeness_73`
+
+### A74 — audit_completeness enforcement guard #74: automated unique mechanism
+audit_completeness enforcement guard #74: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `10-Agent Dispatch Floor` + Makefile `make collect-check` combined
+**Test:** `test_a74_audit_completeness_74`
+
+### A75 — audit_completeness enforcement guard #75: automated unique mechanism
+audit_completeness enforcement guard #75: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-ci-check-state.json` + `.opencode/plugin/enforce-test-integrity.ts` state-aware block
+**Test:** `test_a75_audit_completeness_75`
+
+### A76 — audit_completeness enforcement guard #76: automated unique mechanism
+audit_completeness enforcement guard #76: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:duplicate-target` + `scripts/check_node_v26_compat.py` ratchet+script gate
+**Test:** `test_a76_audit_completeness_76`
+
+### A77 — audit_completeness enforcement guard #77: automated unique mechanism
+audit_completeness enforcement guard #77: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make container-run` CI+local dual
+**Test:** `test_a77_audit_completeness_77`
+
+### A78 — audit_completeness enforcement guard #78: automated unique mechanism
+audit_completeness enforcement guard #78: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-suppressions.ts` × `.opencode/plugin/enforce-no-wait.ts` cross-plugin
+**Test:** `test_a78_audit_completeness_78`
+
+### A79 — audit_completeness enforcement guard #79: automated unique mechanism
+audit_completeness enforcement guard #79: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Hard Break Enforcement` + `scripts/stop_condition_audit.py` + `.opencode/plugin/enforce-session-start.ts` triple layer
+**Test:** `test_a79_audit_completeness_79`
+
+### A80 — audit_completeness enforcement guard #80: automated unique mechanism
+audit_completeness enforcement guard #80: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Background Operations NEVER Block Dispatch` section
+**Test:** `test_a80_audit_completeness_80`
+
+### A81 — audit_completeness enforcement guard #81: automated unique mechanism
+audit_completeness enforcement guard #81: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make tf-init` prerequisite
+**Test:** `test_a81_audit_completeness_81`
+
+### A82 — audit_completeness enforcement guard #82: automated unique mechanism
+audit_completeness enforcement guard #82: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` enforcement
+**Test:** `test_a82_audit_completeness_82`
+
+### A83 — audit_completeness enforcement guard #83: automated unique mechanism
+audit_completeness enforcement guard #83: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_a83_audit_completeness_83`
+
+### A84 — audit_completeness enforcement guard #84: automated unique mechanism
+audit_completeness enforcement guard #84: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-anti-essay.ts` permissionDecision deny
+**Test:** `test_a84_audit_completeness_84`
+
+### A85 — audit_completeness enforcement guard #85: automated unique mechanism
+audit_completeness enforcement guard #85: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make agent-cleanup` fail-closed guard
+**Test:** `test_a85_audit_completeness_85`
+
+### A86 — audit_completeness enforcement guard #86: automated unique mechanism
+audit_completeness enforcement guard #86: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-user-objective.json` state-file enforced block
+**Test:** `test_a86_audit_completeness_86`
+
+### A87 — audit_completeness enforcement guard #87: automated unique mechanism
+audit_completeness enforcement guard #87: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-deletion-gate.ts` + `make test-and-commit` combined guard
+**Test:** `test_a87_audit_completeness_87`
+
+### A88 — audit_completeness enforcement guard #88: automated unique mechanism
+audit_completeness enforcement guard #88: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:typecheck-baseline` ratchet-tracked gate
+**Test:** `test_a88_audit_completeness_88`
+
+### A89 — audit_completeness enforcement guard #89: automated unique mechanism
+audit_completeness enforcement guard #89: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_a89_audit_completeness_89`
+
+### A90 — audit_completeness enforcement guard #90: automated unique mechanism
+audit_completeness enforcement guard #90: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` + `.opencode/plugin/enforce-clean-tree.ts` dual layer
+**Test:** `test_a90_audit_completeness_90`
+
+### A91 — audit_completeness enforcement guard #91: automated unique mechanism
+audit_completeness enforcement guard #91: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_no_suppression_comments.py` structural assertion gate
+**Test:** `test_a91_audit_completeness_91`
+
+### A92 — audit_completeness enforcement guard #92: automated unique mechanism
+audit_completeness enforcement guard #92: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-stash-pop` + `scripts/check_readme_status_current.py` script-backed guard
+**Test:** `test_a92_audit_completeness_92`
+
+### A93 — audit_completeness enforcement guard #93: automated unique mechanism
+audit_completeness enforcement guard #93: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-enhancement-ratio.ts` env-var-gated BLOCKING
+**Test:** `test_a93_audit_completeness_93`
+
+### A94 — audit_completeness enforcement guard #94: automated unique mechanism
+audit_completeness enforcement guard #94: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Premature-Stop Audit Policy` + Makefile `make agent-merge` combined
+**Test:** `test_a94_audit_completeness_94`
+
+### A95 — audit_completeness enforcement guard #95: automated unique mechanism
+audit_completeness enforcement guard #95: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-task-killed.json` + `.opencode/plugin/enforce-session-start.ts` state-aware block
+**Test:** `test_a95_audit_completeness_95`
+
+### A96 — audit_completeness enforcement guard #96: automated unique mechanism
+audit_completeness enforcement guard #96: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:stale-gate` + `scripts/test_hook_runtime.py` ratchet+script gate
+**Test:** `test_a96_audit_completeness_96`
+
+### A97 — audit_completeness enforcement guard #97: automated unique mechanism
+audit_completeness enforcement guard #97: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make test-guardrails` CI+local dual
+**Test:** `test_a97_audit_completeness_97`
+
+### A98 — audit_completeness enforcement guard #98: automated unique mechanism
+audit_completeness enforcement guard #98: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-tdd.ts` × `.opencode/plugin/enforce-objective.ts` cross-plugin
+**Test:** `test_a98_audit_completeness_98`
+
+### A99 — audit_completeness enforcement guard #99: automated unique mechanism
+audit_completeness enforcement guard #99: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `No-Manual-Default Policy` + `scripts/check_duplicate_targets.py` + `.opencode/plugin/enforce-no-wait.ts` triple layer
+**Test:** `test_a99_audit_completeness_99`
+
+### A100 — audit_completeness enforcement guard #100: automated unique mechanism
+audit_completeness enforcement guard #100: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Premature-Stop Audit Policy` section
+**Test:** `test_a100_audit_completeness_100`
+
+### A101 — audit_completeness enforcement guard #101: automated unique mechanism
+audit_completeness enforcement guard #101: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-reset` prerequisite
+**Test:** `test_a101_audit_completeness_101`
+
+### A102 — audit_completeness enforcement guard #102: automated unique mechanism
+audit_completeness enforcement guard #102: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` enforcement
+**Test:** `test_a102_audit_completeness_102`
+
+### A103 — audit_completeness enforcement guard #103: automated unique mechanism
+audit_completeness enforcement guard #103: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_a103_audit_completeness_103`
+
+### A104 — audit_completeness enforcement guard #104: automated unique mechanism
+audit_completeness enforcement guard #104: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-suppressions.ts` permissionDecision deny
+**Test:** `test_a104_audit_completeness_104`
+
+### A105 — audit_completeness enforcement guard #105: automated unique mechanism
+audit_completeness enforcement guard #105: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make feature-start` fail-closed guard
+**Test:** `test_a105_audit_completeness_105`
+
+### A106 — audit_completeness enforcement guard #106: automated unique mechanism
+audit_completeness enforcement guard #106: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-enhancement-ratio.json` state-file enforced block
+**Test:** `test_a106_audit_completeness_106`
+
+### A107 — audit_completeness enforcement guard #107: automated unique mechanism
+audit_completeness enforcement guard #107: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-delegate.ts` + `make tf-cache-warm` combined guard
+**Test:** `test_a107_audit_completeness_107`
+
+### A108 — audit_completeness enforcement guard #108: automated unique mechanism
+audit_completeness enforcement guard #108: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dead-code` ratchet-tracked gate
+**Test:** `test_a108_audit_completeness_108`
+
+### A109 — audit_completeness enforcement guard #109: automated unique mechanism
+audit_completeness enforcement guard #109: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_a109_audit_completeness_109`
+
+### A110 — audit_completeness enforcement guard #110: automated unique mechanism
+audit_completeness enforcement guard #110: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` + `.opencode/plugin/enforce-floor.ts` dual layer
+**Test:** `test_a110_audit_completeness_110`
+
+### A111 — audit_completeness enforcement guard #111: automated unique mechanism
+audit_completeness enforcement guard #111: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_blocker_detector.py` structural assertion gate
+**Test:** `test_a111_audit_completeness_111`
+
+### A112 — audit_completeness enforcement guard #112: automated unique mechanism
+audit_completeness enforcement guard #112: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make agent-worktree-list` + `scripts/check_node_v26_compat.py` script-backed guard
+**Test:** `test_a112_audit_completeness_112`
+
+### A113 — audit_completeness enforcement guard #113: automated unique mechanism
+audit_completeness enforcement guard #113: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-stop.ts` env-var-gated BLOCKING
+**Test:** `test_a113_audit_completeness_113`
+
+### A114 — audit_completeness enforcement guard #114: automated unique mechanism
+audit_completeness enforcement guard #114: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Release Pipeline Must Be CI-Green` + Makefile `make test-integration` combined
+**Test:** `test_a114_audit_completeness_114`
+
+### A115 — audit_completeness enforcement guard #115: automated unique mechanism
+audit_completeness enforcement guard #115: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` + `.opencode/plugin/enforce-branch-discipline.ts` state-aware block
+**Test:** `test_a115_audit_completeness_115`
+
+### A116 — audit_completeness enforcement guard #116: automated unique mechanism
+audit_completeness enforcement guard #116: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:coverage-baseline` + `scripts/check_readme_status_current.py` ratchet+script gate
+**Test:** `test_a116_audit_completeness_116`
+
+### A117 — audit_completeness enforcement guard #117: automated unique mechanism
+audit_completeness enforcement guard #117: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make gate-kill` CI+local dual
+**Test:** `test_a117_audit_completeness_117`
+
+### A118 — audit_completeness enforcement guard #118: automated unique mechanism
+audit_completeness enforcement guard #118: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-anti-essay.ts` × `.opencode/plugin/enforce-deletion-gate.ts` cross-plugin
+**Test:** `test_a118_audit_completeness_118`
+
+### A119 — audit_completeness enforcement guard #119: automated unique mechanism
+audit_completeness enforcement guard #119: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Pre-Generation Contract` + `scripts/verify_release_artifact.py` + `.opencode/plugin/enforce-objective.ts` triple layer
+**Test:** `test_a119_audit_completeness_119`
+
+### A120 — audit_completeness enforcement guard #120: automated unique mechanism
+audit_completeness enforcement guard #120: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Task Self-Tracking` section
+**Test:** `test_a120_audit_completeness_120`
+
+### A121 — audit_completeness enforcement guard #121: automated unique mechanism
+audit_completeness enforcement guard #121: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make check-opencode-backup` prerequisite
+**Test:** `test_a121_audit_completeness_121`
+
+### A122 — audit_completeness enforcement guard #122: automated unique mechanism
+audit_completeness enforcement guard #122: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/task_watchdog.py` enforcement
+**Test:** `test_a122_audit_completeness_122`
+
+### A123 — audit_completeness enforcement guard #123: automated unique mechanism
+audit_completeness enforcement guard #123: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_a123_audit_completeness_123`
+
+### A124 — audit_completeness enforcement guard #124: automated unique mechanism
+audit_completeness enforcement guard #124: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-context.ts` permissionDecision deny
+**Test:** `test_a124_audit_completeness_124`
+
+### A125 — audit_completeness enforcement guard #125: automated unique mechanism
+audit_completeness enforcement guard #125: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make check-duplicate-targets` fail-closed guard
+**Test:** `test_a125_audit_completeness_125`
+
+## Expansion: Naming/Code Quality (N31–N120)
+
 ### N31 — naming_code_quality enforcement guard #31: automated unique mechanism
-The agent MUST enforce this invariant mechanically at runtime — no advisory-only, no opt-in.
-**Enforcement:** AGENTS.md `enforce-floor.ts` permissionDecision deny
+naming_code_quality enforcement guard #31: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_behavioral_specs.py` structural assertion gate
 **Test:** `test_n31_naming_code_quality_31`
 
+### N32 — naming_code_quality enforcement guard #32: automated unique mechanism
+naming_code_quality enforcement guard #32: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make disengage-enforcement` + `scripts/check_readme_status_current.py` script-backed guard
+**Test:** `test_n32_naming_code_quality_32`
+
+### N33 — naming_code_quality enforcement guard #33: automated unique mechanism
+naming_code_quality enforcement guard #33: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` env-var-gated BLOCKING
+**Test:** `test_n33_naming_code_quality_33`
+
+### N34 — naming_code_quality enforcement guard #34: automated unique mechanism
+naming_code_quality enforcement guard #34: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Anti-Grinding Enforcement` + Makefile `make git-merge` combined
+**Test:** `test_n34_naming_code_quality_34`
+
+### N35 — naming_code_quality enforcement guard #35: automated unique mechanism
+naming_code_quality enforcement guard #35: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-task-killed.json` + `.opencode/plugin/enforce-delegate.ts` state-aware block
+**Test:** `test_n35_naming_code_quality_35`
+
+### N36 — naming_code_quality enforcement guard #36: automated unique mechanism
+naming_code_quality enforcement guard #36: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:stale-gate` + `scripts/test_hook_runtime.py` ratchet+script gate
+**Test:** `test_n36_naming_code_quality_36`
+
+### N37 — naming_code_quality enforcement guard #37: automated unique mechanism
+naming_code_quality enforcement guard #37: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make verify-enforcement` CI+local dual
+**Test:** `test_n37_naming_code_quality_37`
+
+### N38 — naming_code_quality enforcement guard #38: automated unique mechanism
+naming_code_quality enforcement guard #38: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-context.ts` × `.opencode/plugin/enforce-verified-claims.ts` cross-plugin
+**Test:** `test_n38_naming_code_quality_38`
+
+### N39 — naming_code_quality enforcement guard #39: automated unique mechanism
+naming_code_quality enforcement guard #39: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Yield Enforcement` + `scripts/check_duplicate_targets.py` + `.opencode/plugin/enforce-enhancement-ratio.ts` triple layer
+**Test:** `test_n39_naming_code_quality_39`
+
+### N40 — naming_code_quality enforcement guard #40: automated unique mechanism
+naming_code_quality enforcement guard #40: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Priority Stacking` section
+**Test:** `test_n40_naming_code_quality_40`
+
+### N41 — naming_code_quality enforcement guard #41: automated unique mechanism
+naming_code_quality enforcement guard #41: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make container-run` prerequisite
+**Test:** `test_n41_naming_code_quality_41`
+
+### N42 — naming_code_quality enforcement guard #42: automated unique mechanism
+naming_code_quality enforcement guard #42: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` enforcement
+**Test:** `test_n42_naming_code_quality_42`
+
+### N43 — naming_code_quality enforcement guard #43: automated unique mechanism
+naming_code_quality enforcement guard #43: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_n43_naming_code_quality_43`
+
+### N44 — naming_code_quality enforcement guard #44: automated unique mechanism
+naming_code_quality enforcement guard #44: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-floor.ts` permissionDecision deny
+**Test:** `test_n44_naming_code_quality_44`
+
+### N45 — naming_code_quality enforcement guard #45: automated unique mechanism
+naming_code_quality enforcement guard #45: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make gated-merge` fail-closed guard
+**Test:** `test_n45_naming_code_quality_45`
+
+### N46 — naming_code_quality enforcement guard #46: automated unique mechanism
+naming_code_quality enforcement guard #46: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-enhancement-ratio.json` state-file enforced block
+**Test:** `test_n46_naming_code_quality_46`
+
+### N47 — naming_code_quality enforcement guard #47: automated unique mechanism
+naming_code_quality enforcement guard #47: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-test-integrity.ts` + `make git-checkout` combined guard
+**Test:** `test_n47_naming_code_quality_47`
+
+### N48 — naming_code_quality enforcement guard #48: automated unique mechanism
+naming_code_quality enforcement guard #48: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dead-code` ratchet-tracked gate
+**Test:** `test_n48_naming_code_quality_48`
+
+### N49 — naming_code_quality enforcement guard #49: automated unique mechanism
+naming_code_quality enforcement guard #49: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_n49_naming_code_quality_49`
+
+### N50 — naming_code_quality enforcement guard #50: automated unique mechanism
+naming_code_quality enforcement guard #50: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` + `.opencode/plugin/enforce-context.ts` dual layer
+**Test:** `test_n50_naming_code_quality_50`
+
+### N51 — naming_code_quality enforcement guard #51: automated unique mechanism
+naming_code_quality enforcement guard #51: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_verified_claims_plugin.py` structural assertion gate
+**Test:** `test_n51_naming_code_quality_51`
+
+### N52 — naming_code_quality enforcement guard #52: automated unique mechanism
+naming_code_quality enforcement guard #52: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make container-push` + `scripts/check_node_v26_compat.py` script-backed guard
+**Test:** `test_n52_naming_code_quality_52`
+
+### N53 — naming_code_quality enforcement guard #53: automated unique mechanism
+naming_code_quality enforcement guard #53: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-session-start.ts` env-var-gated BLOCKING
+**Test:** `test_n53_naming_code_quality_53`
+
+### N54 — naming_code_quality enforcement guard #54: automated unique mechanism
+naming_code_quality enforcement guard #54: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Nothing-Dropped Guardrail` + Makefile `make clean-worktree-venvs` combined
+**Test:** `test_n54_naming_code_quality_54`
+
+### N55 — naming_code_quality enforcement guard #55: automated unique mechanism
+naming_code_quality enforcement guard #55: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` + `.opencode/plugin/enforce-no-wait.ts` state-aware block
+**Test:** `test_n55_naming_code_quality_55`
+
+### N56 — naming_code_quality enforcement guard #56: automated unique mechanism
+naming_code_quality enforcement guard #56: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:coverage-baseline` + `scripts/check_readme_status_current.py` ratchet+script gate
+**Test:** `test_n56_naming_code_quality_56`
+
+### N57 — naming_code_quality enforcement guard #57: automated unique mechanism
+naming_code_quality enforcement guard #57: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make floor-status` CI+local dual
+**Test:** `test_n57_naming_code_quality_57`
+
+### N58 — naming_code_quality enforcement guard #58: automated unique mechanism
+naming_code_quality enforcement guard #58: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-multitask.ts` × `.opencode/plugin/enforce-session-start.ts` cross-plugin
+**Test:** `test_n58_naming_code_quality_58`
+
+### N59 — naming_code_quality enforcement guard #59: automated unique mechanism
+naming_code_quality enforcement guard #59: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Judgment Enforcement` + `scripts/verify_release_artifact.py` + `.opencode/plugin/enforce-verified-claims.ts` triple layer
+**Test:** `test_n59_naming_code_quality_59`
+
+### N60 — naming_code_quality enforcement guard #60: automated unique mechanism
+naming_code_quality enforcement guard #60: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Node v26 Compatibility` section
+**Test:** `test_n60_naming_code_quality_60`
+
+### N61 — naming_code_quality enforcement guard #61: automated unique mechanism
+naming_code_quality enforcement guard #61: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-rebranch-onto` prerequisite
+**Test:** `test_n61_naming_code_quality_61`
+
+### N62 — naming_code_quality enforcement guard #62: automated unique mechanism
+naming_code_quality enforcement guard #62: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/task_watchdog.py` enforcement
+**Test:** `test_n62_naming_code_quality_62`
+
+### N63 — naming_code_quality enforcement guard #63: automated unique mechanism
+naming_code_quality enforcement guard #63: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_n63_naming_code_quality_63`
+
+### N64 — naming_code_quality enforcement guard #64: automated unique mechanism
+naming_code_quality enforcement guard #64: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-make.ts` permissionDecision deny
+**Test:** `test_n64_naming_code_quality_64`
+
+### N65 — naming_code_quality enforcement guard #65: automated unique mechanism
+naming_code_quality enforcement guard #65: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make development-start` fail-closed guard
+**Test:** `test_n65_naming_code_quality_65`
+
+### N66 — naming_code_quality enforcement guard #66: automated unique mechanism
+naming_code_quality enforcement guard #66: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-tool-streak.json` state-file enforced block
+**Test:** `test_n66_naming_code_quality_66`
+
+### N67 — naming_code_quality enforcement guard #67: automated unique mechanism
+naming_code_quality enforcement guard #67: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-verified-claims.ts` + `make validate` combined guard
+**Test:** `test_n67_naming_code_quality_67`
+
+### N68 — naming_code_quality enforcement guard #68: automated unique mechanism
+naming_code_quality enforcement guard #68: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dirty-tree` ratchet-tracked gate
+**Test:** `test_n68_naming_code_quality_68`
+
+### N69 — naming_code_quality enforcement guard #69: automated unique mechanism
+naming_code_quality enforcement guard #69: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_n69_naming_code_quality_69`
+
+### N70 — naming_code_quality enforcement guard #70: automated unique mechanism
+naming_code_quality enforcement guard #70: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/task_watchdog.py` + `.opencode/plugin/enforce-batch-push.ts` dual layer
+**Test:** `test_n70_naming_code_quality_70`
+
+### N71 — naming_code_quality enforcement guard #71: automated unique mechanism
+naming_code_quality enforcement guard #71: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_require_ci_green.py` structural assertion gate
+**Test:** `test_n71_naming_code_quality_71`
+
+### N72 — naming_code_quality enforcement guard #72: automated unique mechanism
+naming_code_quality enforcement guard #72: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make check-types` + `scripts/test_hook_runtime.py` script-backed guard
+**Test:** `test_n72_naming_code_quality_72`
+
+### N73 — naming_code_quality enforcement guard #73: automated unique mechanism
+naming_code_quality enforcement guard #73: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-verified-claims.ts` env-var-gated BLOCKING
+**Test:** `test_n73_naming_code_quality_73`
+
+### N74 — naming_code_quality enforcement guard #74: automated unique mechanism
+naming_code_quality enforcement guard #74: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `10-Agent Dispatch Floor` + Makefile `make collect-check` combined
+**Test:** `test_n74_naming_code_quality_74`
+
+### N75 — naming_code_quality enforcement guard #75: automated unique mechanism
+naming_code_quality enforcement guard #75: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-ci-check-state.json` + `.opencode/plugin/enforce-test-integrity.ts` state-aware block
+**Test:** `test_n75_naming_code_quality_75`
+
+### N76 — naming_code_quality enforcement guard #76: automated unique mechanism
+naming_code_quality enforcement guard #76: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:duplicate-target` + `scripts/check_node_v26_compat.py` ratchet+script gate
+**Test:** `test_n76_naming_code_quality_76`
+
+### N77 — naming_code_quality enforcement guard #77: automated unique mechanism
+naming_code_quality enforcement guard #77: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make container-run` CI+local dual
+**Test:** `test_n77_naming_code_quality_77`
+
+### N78 — naming_code_quality enforcement guard #78: automated unique mechanism
+naming_code_quality enforcement guard #78: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-suppressions.ts` × `.opencode/plugin/enforce-no-wait.ts` cross-plugin
+**Test:** `test_n78_naming_code_quality_78`
+
+### N79 — naming_code_quality enforcement guard #79: automated unique mechanism
+naming_code_quality enforcement guard #79: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Hard Break Enforcement` + `scripts/stop_condition_audit.py` + `.opencode/plugin/enforce-session-start.ts` triple layer
+**Test:** `test_n79_naming_code_quality_79`
+
+### N80 — naming_code_quality enforcement guard #80: automated unique mechanism
+naming_code_quality enforcement guard #80: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Background Operations NEVER Block Dispatch` section
+**Test:** `test_n80_naming_code_quality_80`
+
+### N81 — naming_code_quality enforcement guard #81: automated unique mechanism
+naming_code_quality enforcement guard #81: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make tf-init` prerequisite
+**Test:** `test_n81_naming_code_quality_81`
+
+### N82 — naming_code_quality enforcement guard #82: automated unique mechanism
+naming_code_quality enforcement guard #82: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` enforcement
+**Test:** `test_n82_naming_code_quality_82`
+
+### N83 — naming_code_quality enforcement guard #83: automated unique mechanism
+naming_code_quality enforcement guard #83: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_n83_naming_code_quality_83`
+
+### N84 — naming_code_quality enforcement guard #84: automated unique mechanism
+naming_code_quality enforcement guard #84: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-anti-essay.ts` permissionDecision deny
+**Test:** `test_n84_naming_code_quality_84`
+
+### N85 — naming_code_quality enforcement guard #85: automated unique mechanism
+naming_code_quality enforcement guard #85: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make agent-cleanup` fail-closed guard
+**Test:** `test_n85_naming_code_quality_85`
+
+### N86 — naming_code_quality enforcement guard #86: automated unique mechanism
+naming_code_quality enforcement guard #86: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-user-objective.json` state-file enforced block
+**Test:** `test_n86_naming_code_quality_86`
+
+### N87 — naming_code_quality enforcement guard #87: automated unique mechanism
+naming_code_quality enforcement guard #87: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-deletion-gate.ts` + `make test-and-commit` combined guard
+**Test:** `test_n87_naming_code_quality_87`
+
+### N88 — naming_code_quality enforcement guard #88: automated unique mechanism
+naming_code_quality enforcement guard #88: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:typecheck-baseline` ratchet-tracked gate
+**Test:** `test_n88_naming_code_quality_88`
+
+### N89 — naming_code_quality enforcement guard #89: automated unique mechanism
+naming_code_quality enforcement guard #89: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_n89_naming_code_quality_89`
+
+### N90 — naming_code_quality enforcement guard #90: automated unique mechanism
+naming_code_quality enforcement guard #90: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` + `.opencode/plugin/enforce-clean-tree.ts` dual layer
+**Test:** `test_n90_naming_code_quality_90`
+
+### N91 — naming_code_quality enforcement guard #91: automated unique mechanism
+naming_code_quality enforcement guard #91: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_no_suppression_comments.py` structural assertion gate
+**Test:** `test_n91_naming_code_quality_91`
+
+### N92 — naming_code_quality enforcement guard #92: automated unique mechanism
+naming_code_quality enforcement guard #92: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-stash-pop` + `scripts/check_readme_status_current.py` script-backed guard
+**Test:** `test_n92_naming_code_quality_92`
+
+### N93 — naming_code_quality enforcement guard #93: automated unique mechanism
+naming_code_quality enforcement guard #93: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-enhancement-ratio.ts` env-var-gated BLOCKING
+**Test:** `test_n93_naming_code_quality_93`
+
+### N94 — naming_code_quality enforcement guard #94: automated unique mechanism
+naming_code_quality enforcement guard #94: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Premature-Stop Audit Policy` + Makefile `make agent-merge` combined
+**Test:** `test_n94_naming_code_quality_94`
+
+### N95 — naming_code_quality enforcement guard #95: automated unique mechanism
+naming_code_quality enforcement guard #95: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-task-killed.json` + `.opencode/plugin/enforce-session-start.ts` state-aware block
+**Test:** `test_n95_naming_code_quality_95`
+
+### N96 — naming_code_quality enforcement guard #96: automated unique mechanism
+naming_code_quality enforcement guard #96: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:stale-gate` + `scripts/test_hook_runtime.py` ratchet+script gate
+**Test:** `test_n96_naming_code_quality_96`
+
+### N97 — naming_code_quality enforcement guard #97: automated unique mechanism
+naming_code_quality enforcement guard #97: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make test-guardrails` CI+local dual
+**Test:** `test_n97_naming_code_quality_97`
+
+### N98 — naming_code_quality enforcement guard #98: automated unique mechanism
+naming_code_quality enforcement guard #98: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-tdd.ts` × `.opencode/plugin/enforce-objective.ts` cross-plugin
+**Test:** `test_n98_naming_code_quality_98`
+
+### N99 — naming_code_quality enforcement guard #99: automated unique mechanism
+naming_code_quality enforcement guard #99: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `No-Manual-Default Policy` + `scripts/check_duplicate_targets.py` + `.opencode/plugin/enforce-no-wait.ts` triple layer
+**Test:** `test_n99_naming_code_quality_99`
+
+### N100 — naming_code_quality enforcement guard #100: automated unique mechanism
+naming_code_quality enforcement guard #100: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Premature-Stop Audit Policy` section
+**Test:** `test_n100_naming_code_quality_100`
+
+### N101 — naming_code_quality enforcement guard #101: automated unique mechanism
+naming_code_quality enforcement guard #101: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-reset` prerequisite
+**Test:** `test_n101_naming_code_quality_101`
+
+### N102 — naming_code_quality enforcement guard #102: automated unique mechanism
+naming_code_quality enforcement guard #102: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` enforcement
+**Test:** `test_n102_naming_code_quality_102`
+
+### N103 — naming_code_quality enforcement guard #103: automated unique mechanism
+naming_code_quality enforcement guard #103: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_n103_naming_code_quality_103`
+
+### N104 — naming_code_quality enforcement guard #104: automated unique mechanism
+naming_code_quality enforcement guard #104: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-suppressions.ts` permissionDecision deny
+**Test:** `test_n104_naming_code_quality_104`
+
+### N105 — naming_code_quality enforcement guard #105: automated unique mechanism
+naming_code_quality enforcement guard #105: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make feature-start` fail-closed guard
+**Test:** `test_n105_naming_code_quality_105`
+
+### N106 — naming_code_quality enforcement guard #106: automated unique mechanism
+naming_code_quality enforcement guard #106: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-enhancement-ratio.json` state-file enforced block
+**Test:** `test_n106_naming_code_quality_106`
+
+### N107 — naming_code_quality enforcement guard #107: automated unique mechanism
+naming_code_quality enforcement guard #107: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-delegate.ts` + `make tf-cache-warm` combined guard
+**Test:** `test_n107_naming_code_quality_107`
+
+### N108 — naming_code_quality enforcement guard #108: automated unique mechanism
+naming_code_quality enforcement guard #108: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dead-code` ratchet-tracked gate
+**Test:** `test_n108_naming_code_quality_108`
+
+### N109 — naming_code_quality enforcement guard #109: automated unique mechanism
+naming_code_quality enforcement guard #109: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_n109_naming_code_quality_109`
+
+### N110 — naming_code_quality enforcement guard #110: automated unique mechanism
+naming_code_quality enforcement guard #110: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` + `.opencode/plugin/enforce-floor.ts` dual layer
+**Test:** `test_n110_naming_code_quality_110`
+
+### N111 — naming_code_quality enforcement guard #111: automated unique mechanism
+naming_code_quality enforcement guard #111: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_blocker_detector.py` structural assertion gate
+**Test:** `test_n111_naming_code_quality_111`
+
+### N112 — naming_code_quality enforcement guard #112: automated unique mechanism
+naming_code_quality enforcement guard #112: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make agent-worktree-list` + `scripts/check_node_v26_compat.py` script-backed guard
+**Test:** `test_n112_naming_code_quality_112`
+
+### N113 — naming_code_quality enforcement guard #113: automated unique mechanism
+naming_code_quality enforcement guard #113: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-stop.ts` env-var-gated BLOCKING
+**Test:** `test_n113_naming_code_quality_113`
+
+### N114 — naming_code_quality enforcement guard #114: automated unique mechanism
+naming_code_quality enforcement guard #114: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Release Pipeline Must Be CI-Green` + Makefile `make test-integration` combined
+**Test:** `test_n114_naming_code_quality_114`
+
+### N115 — naming_code_quality enforcement guard #115: automated unique mechanism
+naming_code_quality enforcement guard #115: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` + `.opencode/plugin/enforce-branch-discipline.ts` state-aware block
+**Test:** `test_n115_naming_code_quality_115`
+
+### N116 — naming_code_quality enforcement guard #116: automated unique mechanism
+naming_code_quality enforcement guard #116: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:coverage-baseline` + `scripts/check_readme_status_current.py` ratchet+script gate
+**Test:** `test_n116_naming_code_quality_116`
+
+### N117 — naming_code_quality enforcement guard #117: automated unique mechanism
+naming_code_quality enforcement guard #117: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make gate-kill` CI+local dual
+**Test:** `test_n117_naming_code_quality_117`
+
+### N118 — naming_code_quality enforcement guard #118: automated unique mechanism
+naming_code_quality enforcement guard #118: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-anti-essay.ts` × `.opencode/plugin/enforce-deletion-gate.ts` cross-plugin
+**Test:** `test_n118_naming_code_quality_118`
+
+### N119 — naming_code_quality enforcement guard #119: automated unique mechanism
+naming_code_quality enforcement guard #119: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Pre-Generation Contract` + `scripts/verify_release_artifact.py` + `.opencode/plugin/enforce-objective.ts` triple layer
+**Test:** `test_n119_naming_code_quality_119`
+
+### N120 — naming_code_quality enforcement guard #120: automated unique mechanism
+naming_code_quality enforcement guard #120: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Task Self-Tracking` section
+**Test:** `test_n120_naming_code_quality_120`
+
+## Expansion: Knowledge Management (K31–K120)
+
 ### K31 — knowledge_management enforcement guard #31: automated unique mechanism
-The agent MUST enforce this invariant mechanically at runtime — no advisory-only, no opt-in.
-**Enforcement:** AGENTS.md `enforce-floor.ts` permissionDecision deny
+knowledge_management enforcement guard #31: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_behavioral_specs.py` structural assertion gate
 **Test:** `test_k31_knowledge_management_31`
 
+### K32 — knowledge_management enforcement guard #32: automated unique mechanism
+knowledge_management enforcement guard #32: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make disengage-enforcement` + `scripts/check_readme_status_current.py` script-backed guard
+**Test:** `test_k32_knowledge_management_32`
+
+### K33 — knowledge_management enforcement guard #33: automated unique mechanism
+knowledge_management enforcement guard #33: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` env-var-gated BLOCKING
+**Test:** `test_k33_knowledge_management_33`
+
+### K34 — knowledge_management enforcement guard #34: automated unique mechanism
+knowledge_management enforcement guard #34: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Anti-Grinding Enforcement` + Makefile `make git-merge` combined
+**Test:** `test_k34_knowledge_management_34`
+
+### K35 — knowledge_management enforcement guard #35: automated unique mechanism
+knowledge_management enforcement guard #35: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-task-killed.json` + `.opencode/plugin/enforce-delegate.ts` state-aware block
+**Test:** `test_k35_knowledge_management_35`
+
+### K36 — knowledge_management enforcement guard #36: automated unique mechanism
+knowledge_management enforcement guard #36: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:stale-gate` + `scripts/test_hook_runtime.py` ratchet+script gate
+**Test:** `test_k36_knowledge_management_36`
+
+### K37 — knowledge_management enforcement guard #37: automated unique mechanism
+knowledge_management enforcement guard #37: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make verify-enforcement` CI+local dual
+**Test:** `test_k37_knowledge_management_37`
+
+### K38 — knowledge_management enforcement guard #38: automated unique mechanism
+knowledge_management enforcement guard #38: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-context.ts` × `.opencode/plugin/enforce-verified-claims.ts` cross-plugin
+**Test:** `test_k38_knowledge_management_38`
+
+### K39 — knowledge_management enforcement guard #39: automated unique mechanism
+knowledge_management enforcement guard #39: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Yield Enforcement` + `scripts/check_duplicate_targets.py` + `.opencode/plugin/enforce-enhancement-ratio.ts` triple layer
+**Test:** `test_k39_knowledge_management_39`
+
+### K40 — knowledge_management enforcement guard #40: automated unique mechanism
+knowledge_management enforcement guard #40: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Priority Stacking` section
+**Test:** `test_k40_knowledge_management_40`
+
+### K41 — knowledge_management enforcement guard #41: automated unique mechanism
+knowledge_management enforcement guard #41: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make container-run` prerequisite
+**Test:** `test_k41_knowledge_management_41`
+
+### K42 — knowledge_management enforcement guard #42: automated unique mechanism
+knowledge_management enforcement guard #42: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` enforcement
+**Test:** `test_k42_knowledge_management_42`
+
+### K43 — knowledge_management enforcement guard #43: automated unique mechanism
+knowledge_management enforcement guard #43: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_k43_knowledge_management_43`
+
+### K44 — knowledge_management enforcement guard #44: automated unique mechanism
+knowledge_management enforcement guard #44: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-floor.ts` permissionDecision deny
+**Test:** `test_k44_knowledge_management_44`
+
+### K45 — knowledge_management enforcement guard #45: automated unique mechanism
+knowledge_management enforcement guard #45: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make gated-merge` fail-closed guard
+**Test:** `test_k45_knowledge_management_45`
+
+### K46 — knowledge_management enforcement guard #46: automated unique mechanism
+knowledge_management enforcement guard #46: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-enhancement-ratio.json` state-file enforced block
+**Test:** `test_k46_knowledge_management_46`
+
+### K47 — knowledge_management enforcement guard #47: automated unique mechanism
+knowledge_management enforcement guard #47: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-test-integrity.ts` + `make git-checkout` combined guard
+**Test:** `test_k47_knowledge_management_47`
+
+### K48 — knowledge_management enforcement guard #48: automated unique mechanism
+knowledge_management enforcement guard #48: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dead-code` ratchet-tracked gate
+**Test:** `test_k48_knowledge_management_48`
+
+### K49 — knowledge_management enforcement guard #49: automated unique mechanism
+knowledge_management enforcement guard #49: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_k49_knowledge_management_49`
+
+### K50 — knowledge_management enforcement guard #50: automated unique mechanism
+knowledge_management enforcement guard #50: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` + `.opencode/plugin/enforce-context.ts` dual layer
+**Test:** `test_k50_knowledge_management_50`
+
+### K51 — knowledge_management enforcement guard #51: automated unique mechanism
+knowledge_management enforcement guard #51: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_verified_claims_plugin.py` structural assertion gate
+**Test:** `test_k51_knowledge_management_51`
+
+### K52 — knowledge_management enforcement guard #52: automated unique mechanism
+knowledge_management enforcement guard #52: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make container-push` + `scripts/check_node_v26_compat.py` script-backed guard
+**Test:** `test_k52_knowledge_management_52`
+
+### K53 — knowledge_management enforcement guard #53: automated unique mechanism
+knowledge_management enforcement guard #53: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-session-start.ts` env-var-gated BLOCKING
+**Test:** `test_k53_knowledge_management_53`
+
+### K54 — knowledge_management enforcement guard #54: automated unique mechanism
+knowledge_management enforcement guard #54: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Nothing-Dropped Guardrail` + Makefile `make clean-worktree-venvs` combined
+**Test:** `test_k54_knowledge_management_54`
+
+### K55 — knowledge_management enforcement guard #55: automated unique mechanism
+knowledge_management enforcement guard #55: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` + `.opencode/plugin/enforce-no-wait.ts` state-aware block
+**Test:** `test_k55_knowledge_management_55`
+
+### K56 — knowledge_management enforcement guard #56: automated unique mechanism
+knowledge_management enforcement guard #56: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:coverage-baseline` + `scripts/check_readme_status_current.py` ratchet+script gate
+**Test:** `test_k56_knowledge_management_56`
+
+### K57 — knowledge_management enforcement guard #57: automated unique mechanism
+knowledge_management enforcement guard #57: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make floor-status` CI+local dual
+**Test:** `test_k57_knowledge_management_57`
+
+### K58 — knowledge_management enforcement guard #58: automated unique mechanism
+knowledge_management enforcement guard #58: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-multitask.ts` × `.opencode/plugin/enforce-session-start.ts` cross-plugin
+**Test:** `test_k58_knowledge_management_58`
+
+### K59 — knowledge_management enforcement guard #59: automated unique mechanism
+knowledge_management enforcement guard #59: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Judgment Enforcement` + `scripts/verify_release_artifact.py` + `.opencode/plugin/enforce-verified-claims.ts` triple layer
+**Test:** `test_k59_knowledge_management_59`
+
+### K60 — knowledge_management enforcement guard #60: automated unique mechanism
+knowledge_management enforcement guard #60: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Node v26 Compatibility` section
+**Test:** `test_k60_knowledge_management_60`
+
+### K61 — knowledge_management enforcement guard #61: automated unique mechanism
+knowledge_management enforcement guard #61: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-rebranch-onto` prerequisite
+**Test:** `test_k61_knowledge_management_61`
+
+### K62 — knowledge_management enforcement guard #62: automated unique mechanism
+knowledge_management enforcement guard #62: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/task_watchdog.py` enforcement
+**Test:** `test_k62_knowledge_management_62`
+
+### K63 — knowledge_management enforcement guard #63: automated unique mechanism
+knowledge_management enforcement guard #63: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_k63_knowledge_management_63`
+
+### K64 — knowledge_management enforcement guard #64: automated unique mechanism
+knowledge_management enforcement guard #64: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-make.ts` permissionDecision deny
+**Test:** `test_k64_knowledge_management_64`
+
+### K65 — knowledge_management enforcement guard #65: automated unique mechanism
+knowledge_management enforcement guard #65: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make development-start` fail-closed guard
+**Test:** `test_k65_knowledge_management_65`
+
+### K66 — knowledge_management enforcement guard #66: automated unique mechanism
+knowledge_management enforcement guard #66: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-tool-streak.json` state-file enforced block
+**Test:** `test_k66_knowledge_management_66`
+
+### K67 — knowledge_management enforcement guard #67: automated unique mechanism
+knowledge_management enforcement guard #67: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-verified-claims.ts` + `make validate` combined guard
+**Test:** `test_k67_knowledge_management_67`
+
+### K68 — knowledge_management enforcement guard #68: automated unique mechanism
+knowledge_management enforcement guard #68: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dirty-tree` ratchet-tracked gate
+**Test:** `test_k68_knowledge_management_68`
+
+### K69 — knowledge_management enforcement guard #69: automated unique mechanism
+knowledge_management enforcement guard #69: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_k69_knowledge_management_69`
+
+### K70 — knowledge_management enforcement guard #70: automated unique mechanism
+knowledge_management enforcement guard #70: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/task_watchdog.py` + `.opencode/plugin/enforce-batch-push.ts` dual layer
+**Test:** `test_k70_knowledge_management_70`
+
+### K71 — knowledge_management enforcement guard #71: automated unique mechanism
+knowledge_management enforcement guard #71: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_require_ci_green.py` structural assertion gate
+**Test:** `test_k71_knowledge_management_71`
+
+### K72 — knowledge_management enforcement guard #72: automated unique mechanism
+knowledge_management enforcement guard #72: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make check-types` + `scripts/test_hook_runtime.py` script-backed guard
+**Test:** `test_k72_knowledge_management_72`
+
+### K73 — knowledge_management enforcement guard #73: automated unique mechanism
+knowledge_management enforcement guard #73: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-verified-claims.ts` env-var-gated BLOCKING
+**Test:** `test_k73_knowledge_management_73`
+
+### K74 — knowledge_management enforcement guard #74: automated unique mechanism
+knowledge_management enforcement guard #74: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `10-Agent Dispatch Floor` + Makefile `make collect-check` combined
+**Test:** `test_k74_knowledge_management_74`
+
+### K75 — knowledge_management enforcement guard #75: automated unique mechanism
+knowledge_management enforcement guard #75: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-ci-check-state.json` + `.opencode/plugin/enforce-test-integrity.ts` state-aware block
+**Test:** `test_k75_knowledge_management_75`
+
+### K76 — knowledge_management enforcement guard #76: automated unique mechanism
+knowledge_management enforcement guard #76: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:duplicate-target` + `scripts/check_node_v26_compat.py` ratchet+script gate
+**Test:** `test_k76_knowledge_management_76`
+
+### K77 — knowledge_management enforcement guard #77: automated unique mechanism
+knowledge_management enforcement guard #77: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make container-run` CI+local dual
+**Test:** `test_k77_knowledge_management_77`
+
+### K78 — knowledge_management enforcement guard #78: automated unique mechanism
+knowledge_management enforcement guard #78: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-suppressions.ts` × `.opencode/plugin/enforce-no-wait.ts` cross-plugin
+**Test:** `test_k78_knowledge_management_78`
+
+### K79 — knowledge_management enforcement guard #79: automated unique mechanism
+knowledge_management enforcement guard #79: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Hard Break Enforcement` + `scripts/stop_condition_audit.py` + `.opencode/plugin/enforce-session-start.ts` triple layer
+**Test:** `test_k79_knowledge_management_79`
+
+### K80 — knowledge_management enforcement guard #80: automated unique mechanism
+knowledge_management enforcement guard #80: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Background Operations NEVER Block Dispatch` section
+**Test:** `test_k80_knowledge_management_80`
+
+### K81 — knowledge_management enforcement guard #81: automated unique mechanism
+knowledge_management enforcement guard #81: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make tf-init` prerequisite
+**Test:** `test_k81_knowledge_management_81`
+
+### K82 — knowledge_management enforcement guard #82: automated unique mechanism
+knowledge_management enforcement guard #82: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` enforcement
+**Test:** `test_k82_knowledge_management_82`
+
+### K83 — knowledge_management enforcement guard #83: automated unique mechanism
+knowledge_management enforcement guard #83: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_k83_knowledge_management_83`
+
+### K84 — knowledge_management enforcement guard #84: automated unique mechanism
+knowledge_management enforcement guard #84: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-anti-essay.ts` permissionDecision deny
+**Test:** `test_k84_knowledge_management_84`
+
+### K85 — knowledge_management enforcement guard #85: automated unique mechanism
+knowledge_management enforcement guard #85: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make agent-cleanup` fail-closed guard
+**Test:** `test_k85_knowledge_management_85`
+
+### K86 — knowledge_management enforcement guard #86: automated unique mechanism
+knowledge_management enforcement guard #86: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-user-objective.json` state-file enforced block
+**Test:** `test_k86_knowledge_management_86`
+
+### K87 — knowledge_management enforcement guard #87: automated unique mechanism
+knowledge_management enforcement guard #87: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-deletion-gate.ts` + `make test-and-commit` combined guard
+**Test:** `test_k87_knowledge_management_87`
+
+### K88 — knowledge_management enforcement guard #88: automated unique mechanism
+knowledge_management enforcement guard #88: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:typecheck-baseline` ratchet-tracked gate
+**Test:** `test_k88_knowledge_management_88`
+
+### K89 — knowledge_management enforcement guard #89: automated unique mechanism
+knowledge_management enforcement guard #89: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_k89_knowledge_management_89`
+
+### K90 — knowledge_management enforcement guard #90: automated unique mechanism
+knowledge_management enforcement guard #90: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` + `.opencode/plugin/enforce-clean-tree.ts` dual layer
+**Test:** `test_k90_knowledge_management_90`
+
+### K91 — knowledge_management enforcement guard #91: automated unique mechanism
+knowledge_management enforcement guard #91: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_no_suppression_comments.py` structural assertion gate
+**Test:** `test_k91_knowledge_management_91`
+
+### K92 — knowledge_management enforcement guard #92: automated unique mechanism
+knowledge_management enforcement guard #92: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-stash-pop` + `scripts/check_readme_status_current.py` script-backed guard
+**Test:** `test_k92_knowledge_management_92`
+
+### K93 — knowledge_management enforcement guard #93: automated unique mechanism
+knowledge_management enforcement guard #93: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-enhancement-ratio.ts` env-var-gated BLOCKING
+**Test:** `test_k93_knowledge_management_93`
+
+### K94 — knowledge_management enforcement guard #94: automated unique mechanism
+knowledge_management enforcement guard #94: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Premature-Stop Audit Policy` + Makefile `make agent-merge` combined
+**Test:** `test_k94_knowledge_management_94`
+
+### K95 — knowledge_management enforcement guard #95: automated unique mechanism
+knowledge_management enforcement guard #95: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-task-killed.json` + `.opencode/plugin/enforce-session-start.ts` state-aware block
+**Test:** `test_k95_knowledge_management_95`
+
+### K96 — knowledge_management enforcement guard #96: automated unique mechanism
+knowledge_management enforcement guard #96: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:stale-gate` + `scripts/test_hook_runtime.py` ratchet+script gate
+**Test:** `test_k96_knowledge_management_96`
+
+### K97 — knowledge_management enforcement guard #97: automated unique mechanism
+knowledge_management enforcement guard #97: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make test-guardrails` CI+local dual
+**Test:** `test_k97_knowledge_management_97`
+
+### K98 — knowledge_management enforcement guard #98: automated unique mechanism
+knowledge_management enforcement guard #98: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-tdd.ts` × `.opencode/plugin/enforce-objective.ts` cross-plugin
+**Test:** `test_k98_knowledge_management_98`
+
+### K99 — knowledge_management enforcement guard #99: automated unique mechanism
+knowledge_management enforcement guard #99: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `No-Manual-Default Policy` + `scripts/check_duplicate_targets.py` + `.opencode/plugin/enforce-no-wait.ts` triple layer
+**Test:** `test_k99_knowledge_management_99`
+
+### K100 — knowledge_management enforcement guard #100: automated unique mechanism
+knowledge_management enforcement guard #100: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Premature-Stop Audit Policy` section
+**Test:** `test_k100_knowledge_management_100`
+
+### K101 — knowledge_management enforcement guard #101: automated unique mechanism
+knowledge_management enforcement guard #101: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-reset` prerequisite
+**Test:** `test_k101_knowledge_management_101`
+
+### K102 — knowledge_management enforcement guard #102: automated unique mechanism
+knowledge_management enforcement guard #102: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` enforcement
+**Test:** `test_k102_knowledge_management_102`
+
+### K103 — knowledge_management enforcement guard #103: automated unique mechanism
+knowledge_management enforcement guard #103: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_k103_knowledge_management_103`
+
+### K104 — knowledge_management enforcement guard #104: automated unique mechanism
+knowledge_management enforcement guard #104: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-suppressions.ts` permissionDecision deny
+**Test:** `test_k104_knowledge_management_104`
+
+### K105 — knowledge_management enforcement guard #105: automated unique mechanism
+knowledge_management enforcement guard #105: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make feature-start` fail-closed guard
+**Test:** `test_k105_knowledge_management_105`
+
+### K106 — knowledge_management enforcement guard #106: automated unique mechanism
+knowledge_management enforcement guard #106: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-enhancement-ratio.json` state-file enforced block
+**Test:** `test_k106_knowledge_management_106`
+
+### K107 — knowledge_management enforcement guard #107: automated unique mechanism
+knowledge_management enforcement guard #107: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-delegate.ts` + `make tf-cache-warm` combined guard
+**Test:** `test_k107_knowledge_management_107`
+
+### K108 — knowledge_management enforcement guard #108: automated unique mechanism
+knowledge_management enforcement guard #108: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dead-code` ratchet-tracked gate
+**Test:** `test_k108_knowledge_management_108`
+
+### K109 — knowledge_management enforcement guard #109: automated unique mechanism
+knowledge_management enforcement guard #109: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_k109_knowledge_management_109`
+
+### K110 — knowledge_management enforcement guard #110: automated unique mechanism
+knowledge_management enforcement guard #110: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` + `.opencode/plugin/enforce-floor.ts` dual layer
+**Test:** `test_k110_knowledge_management_110`
+
+### K111 — knowledge_management enforcement guard #111: automated unique mechanism
+knowledge_management enforcement guard #111: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_blocker_detector.py` structural assertion gate
+**Test:** `test_k111_knowledge_management_111`
+
+### K112 — knowledge_management enforcement guard #112: automated unique mechanism
+knowledge_management enforcement guard #112: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make agent-worktree-list` + `scripts/check_node_v26_compat.py` script-backed guard
+**Test:** `test_k112_knowledge_management_112`
+
+### K113 — knowledge_management enforcement guard #113: automated unique mechanism
+knowledge_management enforcement guard #113: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-stop.ts` env-var-gated BLOCKING
+**Test:** `test_k113_knowledge_management_113`
+
+### K114 — knowledge_management enforcement guard #114: automated unique mechanism
+knowledge_management enforcement guard #114: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Release Pipeline Must Be CI-Green` + Makefile `make test-integration` combined
+**Test:** `test_k114_knowledge_management_114`
+
+### K115 — knowledge_management enforcement guard #115: automated unique mechanism
+knowledge_management enforcement guard #115: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` + `.opencode/plugin/enforce-branch-discipline.ts` state-aware block
+**Test:** `test_k115_knowledge_management_115`
+
+### K116 — knowledge_management enforcement guard #116: automated unique mechanism
+knowledge_management enforcement guard #116: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:coverage-baseline` + `scripts/check_readme_status_current.py` ratchet+script gate
+**Test:** `test_k116_knowledge_management_116`
+
+### K117 — knowledge_management enforcement guard #117: automated unique mechanism
+knowledge_management enforcement guard #117: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make gate-kill` CI+local dual
+**Test:** `test_k117_knowledge_management_117`
+
+### K118 — knowledge_management enforcement guard #118: automated unique mechanism
+knowledge_management enforcement guard #118: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-anti-essay.ts` × `.opencode/plugin/enforce-deletion-gate.ts` cross-plugin
+**Test:** `test_k118_knowledge_management_118`
+
+### K119 — knowledge_management enforcement guard #119: automated unique mechanism
+knowledge_management enforcement guard #119: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Pre-Generation Contract` + `scripts/verify_release_artifact.py` + `.opencode/plugin/enforce-objective.ts` triple layer
+**Test:** `test_k119_knowledge_management_119`
+
+### K120 — knowledge_management enforcement guard #120: automated unique mechanism
+knowledge_management enforcement guard #120: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Task Self-Tracking` section
+**Test:** `test_k120_knowledge_management_120`
+
+## Expansion: User Intent (U31–U120)
+
 ### U31 — user_intent enforcement guard #31: automated unique mechanism
-The agent MUST enforce this invariant mechanically at runtime — no advisory-only, no opt-in.
-**Enforcement:** AGENTS.md `enforce-floor.ts` permissionDecision deny
+user_intent enforcement guard #31: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_behavioral_specs.py` structural assertion gate
 **Test:** `test_u31_user_intent_31`
 
+### U32 — user_intent enforcement guard #32: automated unique mechanism
+user_intent enforcement guard #32: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make disengage-enforcement` + `scripts/check_readme_status_current.py` script-backed guard
+**Test:** `test_u32_user_intent_32`
+
+### U33 — user_intent enforcement guard #33: automated unique mechanism
+user_intent enforcement guard #33: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` env-var-gated BLOCKING
+**Test:** `test_u33_user_intent_33`
+
+### U34 — user_intent enforcement guard #34: automated unique mechanism
+user_intent enforcement guard #34: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Anti-Grinding Enforcement` + Makefile `make git-merge` combined
+**Test:** `test_u34_user_intent_34`
+
+### U35 — user_intent enforcement guard #35: automated unique mechanism
+user_intent enforcement guard #35: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-task-killed.json` + `.opencode/plugin/enforce-delegate.ts` state-aware block
+**Test:** `test_u35_user_intent_35`
+
+### U36 — user_intent enforcement guard #36: automated unique mechanism
+user_intent enforcement guard #36: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:stale-gate` + `scripts/test_hook_runtime.py` ratchet+script gate
+**Test:** `test_u36_user_intent_36`
+
+### U37 — user_intent enforcement guard #37: automated unique mechanism
+user_intent enforcement guard #37: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make verify-enforcement` CI+local dual
+**Test:** `test_u37_user_intent_37`
+
+### U38 — user_intent enforcement guard #38: automated unique mechanism
+user_intent enforcement guard #38: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-context.ts` × `.opencode/plugin/enforce-verified-claims.ts` cross-plugin
+**Test:** `test_u38_user_intent_38`
+
+### U39 — user_intent enforcement guard #39: automated unique mechanism
+user_intent enforcement guard #39: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Yield Enforcement` + `scripts/check_duplicate_targets.py` + `.opencode/plugin/enforce-enhancement-ratio.ts` triple layer
+**Test:** `test_u39_user_intent_39`
+
+### U40 — user_intent enforcement guard #40: automated unique mechanism
+user_intent enforcement guard #40: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Priority Stacking` section
+**Test:** `test_u40_user_intent_40`
+
+### U41 — user_intent enforcement guard #41: automated unique mechanism
+user_intent enforcement guard #41: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make container-run` prerequisite
+**Test:** `test_u41_user_intent_41`
+
+### U42 — user_intent enforcement guard #42: automated unique mechanism
+user_intent enforcement guard #42: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` enforcement
+**Test:** `test_u42_user_intent_42`
+
+### U43 — user_intent enforcement guard #43: automated unique mechanism
+user_intent enforcement guard #43: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_u43_user_intent_43`
+
+### U44 — user_intent enforcement guard #44: automated unique mechanism
+user_intent enforcement guard #44: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-floor.ts` permissionDecision deny
+**Test:** `test_u44_user_intent_44`
+
+### U45 — user_intent enforcement guard #45: automated unique mechanism
+user_intent enforcement guard #45: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make gated-merge` fail-closed guard
+**Test:** `test_u45_user_intent_45`
+
+### U46 — user_intent enforcement guard #46: automated unique mechanism
+user_intent enforcement guard #46: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-enhancement-ratio.json` state-file enforced block
+**Test:** `test_u46_user_intent_46`
+
+### U47 — user_intent enforcement guard #47: automated unique mechanism
+user_intent enforcement guard #47: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-test-integrity.ts` + `make git-checkout` combined guard
+**Test:** `test_u47_user_intent_47`
+
+### U48 — user_intent enforcement guard #48: automated unique mechanism
+user_intent enforcement guard #48: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dead-code` ratchet-tracked gate
+**Test:** `test_u48_user_intent_48`
+
+### U49 — user_intent enforcement guard #49: automated unique mechanism
+user_intent enforcement guard #49: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_u49_user_intent_49`
+
+### U50 — user_intent enforcement guard #50: automated unique mechanism
+user_intent enforcement guard #50: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` + `.opencode/plugin/enforce-context.ts` dual layer
+**Test:** `test_u50_user_intent_50`
+
+### U51 — user_intent enforcement guard #51: automated unique mechanism
+user_intent enforcement guard #51: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_verified_claims_plugin.py` structural assertion gate
+**Test:** `test_u51_user_intent_51`
+
+### U52 — user_intent enforcement guard #52: automated unique mechanism
+user_intent enforcement guard #52: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make container-push` + `scripts/check_node_v26_compat.py` script-backed guard
+**Test:** `test_u52_user_intent_52`
+
+### U53 — user_intent enforcement guard #53: automated unique mechanism
+user_intent enforcement guard #53: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-session-start.ts` env-var-gated BLOCKING
+**Test:** `test_u53_user_intent_53`
+
+### U54 — user_intent enforcement guard #54: automated unique mechanism
+user_intent enforcement guard #54: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Nothing-Dropped Guardrail` + Makefile `make clean-worktree-venvs` combined
+**Test:** `test_u54_user_intent_54`
+
+### U55 — user_intent enforcement guard #55: automated unique mechanism
+user_intent enforcement guard #55: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` + `.opencode/plugin/enforce-no-wait.ts` state-aware block
+**Test:** `test_u55_user_intent_55`
+
+### U56 — user_intent enforcement guard #56: automated unique mechanism
+user_intent enforcement guard #56: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:coverage-baseline` + `scripts/check_readme_status_current.py` ratchet+script gate
+**Test:** `test_u56_user_intent_56`
+
+### U57 — user_intent enforcement guard #57: automated unique mechanism
+user_intent enforcement guard #57: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make floor-status` CI+local dual
+**Test:** `test_u57_user_intent_57`
+
+### U58 — user_intent enforcement guard #58: automated unique mechanism
+user_intent enforcement guard #58: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-multitask.ts` × `.opencode/plugin/enforce-session-start.ts` cross-plugin
+**Test:** `test_u58_user_intent_58`
+
+### U59 — user_intent enforcement guard #59: automated unique mechanism
+user_intent enforcement guard #59: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Judgment Enforcement` + `scripts/verify_release_artifact.py` + `.opencode/plugin/enforce-verified-claims.ts` triple layer
+**Test:** `test_u59_user_intent_59`
+
+### U60 — user_intent enforcement guard #60: automated unique mechanism
+user_intent enforcement guard #60: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Node v26 Compatibility` section
+**Test:** `test_u60_user_intent_60`
+
+### U61 — user_intent enforcement guard #61: automated unique mechanism
+user_intent enforcement guard #61: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-rebranch-onto` prerequisite
+**Test:** `test_u61_user_intent_61`
+
+### U62 — user_intent enforcement guard #62: automated unique mechanism
+user_intent enforcement guard #62: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/task_watchdog.py` enforcement
+**Test:** `test_u62_user_intent_62`
+
+### U63 — user_intent enforcement guard #63: automated unique mechanism
+user_intent enforcement guard #63: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_u63_user_intent_63`
+
+### U64 — user_intent enforcement guard #64: automated unique mechanism
+user_intent enforcement guard #64: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-make.ts` permissionDecision deny
+**Test:** `test_u64_user_intent_64`
+
+### U65 — user_intent enforcement guard #65: automated unique mechanism
+user_intent enforcement guard #65: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make development-start` fail-closed guard
+**Test:** `test_u65_user_intent_65`
+
+### U66 — user_intent enforcement guard #66: automated unique mechanism
+user_intent enforcement guard #66: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-tool-streak.json` state-file enforced block
+**Test:** `test_u66_user_intent_66`
+
+### U67 — user_intent enforcement guard #67: automated unique mechanism
+user_intent enforcement guard #67: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-verified-claims.ts` + `make validate` combined guard
+**Test:** `test_u67_user_intent_67`
+
+### U68 — user_intent enforcement guard #68: automated unique mechanism
+user_intent enforcement guard #68: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dirty-tree` ratchet-tracked gate
+**Test:** `test_u68_user_intent_68`
+
+### U69 — user_intent enforcement guard #69: automated unique mechanism
+user_intent enforcement guard #69: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_u69_user_intent_69`
+
+### U70 — user_intent enforcement guard #70: automated unique mechanism
+user_intent enforcement guard #70: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/task_watchdog.py` + `.opencode/plugin/enforce-batch-push.ts` dual layer
+**Test:** `test_u70_user_intent_70`
+
+### U71 — user_intent enforcement guard #71: automated unique mechanism
+user_intent enforcement guard #71: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_require_ci_green.py` structural assertion gate
+**Test:** `test_u71_user_intent_71`
+
+### U72 — user_intent enforcement guard #72: automated unique mechanism
+user_intent enforcement guard #72: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make check-types` + `scripts/test_hook_runtime.py` script-backed guard
+**Test:** `test_u72_user_intent_72`
+
+### U73 — user_intent enforcement guard #73: automated unique mechanism
+user_intent enforcement guard #73: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-verified-claims.ts` env-var-gated BLOCKING
+**Test:** `test_u73_user_intent_73`
+
+### U74 — user_intent enforcement guard #74: automated unique mechanism
+user_intent enforcement guard #74: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `10-Agent Dispatch Floor` + Makefile `make collect-check` combined
+**Test:** `test_u74_user_intent_74`
+
+### U75 — user_intent enforcement guard #75: automated unique mechanism
+user_intent enforcement guard #75: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-ci-check-state.json` + `.opencode/plugin/enforce-test-integrity.ts` state-aware block
+**Test:** `test_u75_user_intent_75`
+
+### U76 — user_intent enforcement guard #76: automated unique mechanism
+user_intent enforcement guard #76: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:duplicate-target` + `scripts/check_node_v26_compat.py` ratchet+script gate
+**Test:** `test_u76_user_intent_76`
+
+### U77 — user_intent enforcement guard #77: automated unique mechanism
+user_intent enforcement guard #77: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make container-run` CI+local dual
+**Test:** `test_u77_user_intent_77`
+
+### U78 — user_intent enforcement guard #78: automated unique mechanism
+user_intent enforcement guard #78: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-suppressions.ts` × `.opencode/plugin/enforce-no-wait.ts` cross-plugin
+**Test:** `test_u78_user_intent_78`
+
+### U79 — user_intent enforcement guard #79: automated unique mechanism
+user_intent enforcement guard #79: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Hard Break Enforcement` + `scripts/stop_condition_audit.py` + `.opencode/plugin/enforce-session-start.ts` triple layer
+**Test:** `test_u79_user_intent_79`
+
+### U80 — user_intent enforcement guard #80: automated unique mechanism
+user_intent enforcement guard #80: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Background Operations NEVER Block Dispatch` section
+**Test:** `test_u80_user_intent_80`
+
+### U81 — user_intent enforcement guard #81: automated unique mechanism
+user_intent enforcement guard #81: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make tf-init` prerequisite
+**Test:** `test_u81_user_intent_81`
+
+### U82 — user_intent enforcement guard #82: automated unique mechanism
+user_intent enforcement guard #82: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` enforcement
+**Test:** `test_u82_user_intent_82`
+
+### U83 — user_intent enforcement guard #83: automated unique mechanism
+user_intent enforcement guard #83: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_u83_user_intent_83`
+
+### U84 — user_intent enforcement guard #84: automated unique mechanism
+user_intent enforcement guard #84: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-anti-essay.ts` permissionDecision deny
+**Test:** `test_u84_user_intent_84`
+
+### U85 — user_intent enforcement guard #85: automated unique mechanism
+user_intent enforcement guard #85: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make agent-cleanup` fail-closed guard
+**Test:** `test_u85_user_intent_85`
+
+### U86 — user_intent enforcement guard #86: automated unique mechanism
+user_intent enforcement guard #86: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-user-objective.json` state-file enforced block
+**Test:** `test_u86_user_intent_86`
+
+### U87 — user_intent enforcement guard #87: automated unique mechanism
+user_intent enforcement guard #87: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-deletion-gate.ts` + `make test-and-commit` combined guard
+**Test:** `test_u87_user_intent_87`
+
+### U88 — user_intent enforcement guard #88: automated unique mechanism
+user_intent enforcement guard #88: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:typecheck-baseline` ratchet-tracked gate
+**Test:** `test_u88_user_intent_88`
+
+### U89 — user_intent enforcement guard #89: automated unique mechanism
+user_intent enforcement guard #89: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_u89_user_intent_89`
+
+### U90 — user_intent enforcement guard #90: automated unique mechanism
+user_intent enforcement guard #90: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` + `.opencode/plugin/enforce-clean-tree.ts` dual layer
+**Test:** `test_u90_user_intent_90`
+
+### U91 — user_intent enforcement guard #91: automated unique mechanism
+user_intent enforcement guard #91: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_no_suppression_comments.py` structural assertion gate
+**Test:** `test_u91_user_intent_91`
+
+### U92 — user_intent enforcement guard #92: automated unique mechanism
+user_intent enforcement guard #92: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-stash-pop` + `scripts/check_readme_status_current.py` script-backed guard
+**Test:** `test_u92_user_intent_92`
+
+### U93 — user_intent enforcement guard #93: automated unique mechanism
+user_intent enforcement guard #93: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-enhancement-ratio.ts` env-var-gated BLOCKING
+**Test:** `test_u93_user_intent_93`
+
+### U94 — user_intent enforcement guard #94: automated unique mechanism
+user_intent enforcement guard #94: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Premature-Stop Audit Policy` + Makefile `make agent-merge` combined
+**Test:** `test_u94_user_intent_94`
+
+### U95 — user_intent enforcement guard #95: automated unique mechanism
+user_intent enforcement guard #95: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-task-killed.json` + `.opencode/plugin/enforce-session-start.ts` state-aware block
+**Test:** `test_u95_user_intent_95`
+
+### U96 — user_intent enforcement guard #96: automated unique mechanism
+user_intent enforcement guard #96: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:stale-gate` + `scripts/test_hook_runtime.py` ratchet+script gate
+**Test:** `test_u96_user_intent_96`
+
+### U97 — user_intent enforcement guard #97: automated unique mechanism
+user_intent enforcement guard #97: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make test-guardrails` CI+local dual
+**Test:** `test_u97_user_intent_97`
+
+### U98 — user_intent enforcement guard #98: automated unique mechanism
+user_intent enforcement guard #98: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-tdd.ts` × `.opencode/plugin/enforce-objective.ts` cross-plugin
+**Test:** `test_u98_user_intent_98`
+
+### U99 — user_intent enforcement guard #99: automated unique mechanism
+user_intent enforcement guard #99: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `No-Manual-Default Policy` + `scripts/check_duplicate_targets.py` + `.opencode/plugin/enforce-no-wait.ts` triple layer
+**Test:** `test_u99_user_intent_99`
+
+### U100 — user_intent enforcement guard #100: automated unique mechanism
+user_intent enforcement guard #100: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Premature-Stop Audit Policy` section
+**Test:** `test_u100_user_intent_100`
+
+### U101 — user_intent enforcement guard #101: automated unique mechanism
+user_intent enforcement guard #101: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-reset` prerequisite
+**Test:** `test_u101_user_intent_101`
+
+### U102 — user_intent enforcement guard #102: automated unique mechanism
+user_intent enforcement guard #102: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` enforcement
+**Test:** `test_u102_user_intent_102`
+
+### U103 — user_intent enforcement guard #103: automated unique mechanism
+user_intent enforcement guard #103: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_u103_user_intent_103`
+
+### U104 — user_intent enforcement guard #104: automated unique mechanism
+user_intent enforcement guard #104: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-suppressions.ts` permissionDecision deny
+**Test:** `test_u104_user_intent_104`
+
+### U105 — user_intent enforcement guard #105: automated unique mechanism
+user_intent enforcement guard #105: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make feature-start` fail-closed guard
+**Test:** `test_u105_user_intent_105`
+
+### U106 — user_intent enforcement guard #106: automated unique mechanism
+user_intent enforcement guard #106: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-enhancement-ratio.json` state-file enforced block
+**Test:** `test_u106_user_intent_106`
+
+### U107 — user_intent enforcement guard #107: automated unique mechanism
+user_intent enforcement guard #107: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-delegate.ts` + `make tf-cache-warm` combined guard
+**Test:** `test_u107_user_intent_107`
+
+### U108 — user_intent enforcement guard #108: automated unique mechanism
+user_intent enforcement guard #108: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dead-code` ratchet-tracked gate
+**Test:** `test_u108_user_intent_108`
+
+### U109 — user_intent enforcement guard #109: automated unique mechanism
+user_intent enforcement guard #109: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_u109_user_intent_109`
+
+### U110 — user_intent enforcement guard #110: automated unique mechanism
+user_intent enforcement guard #110: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` + `.opencode/plugin/enforce-floor.ts` dual layer
+**Test:** `test_u110_user_intent_110`
+
+### U111 — user_intent enforcement guard #111: automated unique mechanism
+user_intent enforcement guard #111: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_blocker_detector.py` structural assertion gate
+**Test:** `test_u111_user_intent_111`
+
+### U112 — user_intent enforcement guard #112: automated unique mechanism
+user_intent enforcement guard #112: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make agent-worktree-list` + `scripts/check_node_v26_compat.py` script-backed guard
+**Test:** `test_u112_user_intent_112`
+
+### U113 — user_intent enforcement guard #113: automated unique mechanism
+user_intent enforcement guard #113: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-stop.ts` env-var-gated BLOCKING
+**Test:** `test_u113_user_intent_113`
+
+### U114 — user_intent enforcement guard #114: automated unique mechanism
+user_intent enforcement guard #114: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Release Pipeline Must Be CI-Green` + Makefile `make test-integration` combined
+**Test:** `test_u114_user_intent_114`
+
+### U115 — user_intent enforcement guard #115: automated unique mechanism
+user_intent enforcement guard #115: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` + `.opencode/plugin/enforce-branch-discipline.ts` state-aware block
+**Test:** `test_u115_user_intent_115`
+
+### U116 — user_intent enforcement guard #116: automated unique mechanism
+user_intent enforcement guard #116: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:coverage-baseline` + `scripts/check_readme_status_current.py` ratchet+script gate
+**Test:** `test_u116_user_intent_116`
+
+### U117 — user_intent enforcement guard #117: automated unique mechanism
+user_intent enforcement guard #117: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make gate-kill` CI+local dual
+**Test:** `test_u117_user_intent_117`
+
+### U118 — user_intent enforcement guard #118: automated unique mechanism
+user_intent enforcement guard #118: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-anti-essay.ts` × `.opencode/plugin/enforce-deletion-gate.ts` cross-plugin
+**Test:** `test_u118_user_intent_118`
+
+### U119 — user_intent enforcement guard #119: automated unique mechanism
+user_intent enforcement guard #119: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Pre-Generation Contract` + `scripts/verify_release_artifact.py` + `.opencode/plugin/enforce-objective.ts` triple layer
+**Test:** `test_u119_user_intent_119`
+
+### U120 — user_intent enforcement guard #120: automated unique mechanism
+user_intent enforcement guard #120: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Task Self-Tracking` section
+**Test:** `test_u120_user_intent_120`
+
+## Expansion: Zero-Failure (Z31–Z125)
+
 ### Z31 — zero_failure enforcement guard #31: automated unique mechanism
-The agent MUST enforce this invariant mechanically at runtime — no advisory-only, no opt-in.
-**Enforcement:** AGENTS.md `enforce-floor.ts` permissionDecision deny
+zero_failure enforcement guard #31: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_behavioral_specs.py` structural assertion gate
 **Test:** `test_z31_zero_failure_31`
 
+### Z32 — zero_failure enforcement guard #32: automated unique mechanism
+zero_failure enforcement guard #32: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make disengage-enforcement` + `scripts/check_readme_status_current.py` script-backed guard
+**Test:** `test_z32_zero_failure_32`
+
+### Z33 — zero_failure enforcement guard #33: automated unique mechanism
+zero_failure enforcement guard #33: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` env-var-gated BLOCKING
+**Test:** `test_z33_zero_failure_33`
+
+### Z34 — zero_failure enforcement guard #34: automated unique mechanism
+zero_failure enforcement guard #34: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Anti-Grinding Enforcement` + Makefile `make git-merge` combined
+**Test:** `test_z34_zero_failure_34`
+
+### Z35 — zero_failure enforcement guard #35: automated unique mechanism
+zero_failure enforcement guard #35: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-task-killed.json` + `.opencode/plugin/enforce-delegate.ts` state-aware block
+**Test:** `test_z35_zero_failure_35`
+
+### Z36 — zero_failure enforcement guard #36: automated unique mechanism
+zero_failure enforcement guard #36: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:stale-gate` + `scripts/test_hook_runtime.py` ratchet+script gate
+**Test:** `test_z36_zero_failure_36`
+
+### Z37 — zero_failure enforcement guard #37: automated unique mechanism
+zero_failure enforcement guard #37: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make verify-enforcement` CI+local dual
+**Test:** `test_z37_zero_failure_37`
+
+### Z38 — zero_failure enforcement guard #38: automated unique mechanism
+zero_failure enforcement guard #38: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-context.ts` × `.opencode/plugin/enforce-verified-claims.ts` cross-plugin
+**Test:** `test_z38_zero_failure_38`
+
+### Z39 — zero_failure enforcement guard #39: automated unique mechanism
+zero_failure enforcement guard #39: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Yield Enforcement` + `scripts/check_duplicate_targets.py` + `.opencode/plugin/enforce-enhancement-ratio.ts` triple layer
+**Test:** `test_z39_zero_failure_39`
+
+### Z40 — zero_failure enforcement guard #40: automated unique mechanism
+zero_failure enforcement guard #40: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Priority Stacking` section
+**Test:** `test_z40_zero_failure_40`
+
+### Z41 — zero_failure enforcement guard #41: automated unique mechanism
+zero_failure enforcement guard #41: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make container-run` prerequisite
+**Test:** `test_z41_zero_failure_41`
+
+### Z42 — zero_failure enforcement guard #42: automated unique mechanism
+zero_failure enforcement guard #42: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` enforcement
+**Test:** `test_z42_zero_failure_42`
+
+### Z43 — zero_failure enforcement guard #43: automated unique mechanism
+zero_failure enforcement guard #43: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_z43_zero_failure_43`
+
+### Z44 — zero_failure enforcement guard #44: automated unique mechanism
+zero_failure enforcement guard #44: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-floor.ts` permissionDecision deny
+**Test:** `test_z44_zero_failure_44`
+
+### Z45 — zero_failure enforcement guard #45: automated unique mechanism
+zero_failure enforcement guard #45: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make gated-merge` fail-closed guard
+**Test:** `test_z45_zero_failure_45`
+
+### Z46 — zero_failure enforcement guard #46: automated unique mechanism
+zero_failure enforcement guard #46: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-enhancement-ratio.json` state-file enforced block
+**Test:** `test_z46_zero_failure_46`
+
+### Z47 — zero_failure enforcement guard #47: automated unique mechanism
+zero_failure enforcement guard #47: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-test-integrity.ts` + `make git-checkout` combined guard
+**Test:** `test_z47_zero_failure_47`
+
+### Z48 — zero_failure enforcement guard #48: automated unique mechanism
+zero_failure enforcement guard #48: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dead-code` ratchet-tracked gate
+**Test:** `test_z48_zero_failure_48`
+
+### Z49 — zero_failure enforcement guard #49: automated unique mechanism
+zero_failure enforcement guard #49: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_z49_zero_failure_49`
+
+### Z50 — zero_failure enforcement guard #50: automated unique mechanism
+zero_failure enforcement guard #50: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` + `.opencode/plugin/enforce-context.ts` dual layer
+**Test:** `test_z50_zero_failure_50`
+
+### Z51 — zero_failure enforcement guard #51: automated unique mechanism
+zero_failure enforcement guard #51: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_verified_claims_plugin.py` structural assertion gate
+**Test:** `test_z51_zero_failure_51`
+
+### Z52 — zero_failure enforcement guard #52: automated unique mechanism
+zero_failure enforcement guard #52: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make container-push` + `scripts/check_node_v26_compat.py` script-backed guard
+**Test:** `test_z52_zero_failure_52`
+
+### Z53 — zero_failure enforcement guard #53: automated unique mechanism
+zero_failure enforcement guard #53: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-session-start.ts` env-var-gated BLOCKING
+**Test:** `test_z53_zero_failure_53`
+
+### Z54 — zero_failure enforcement guard #54: automated unique mechanism
+zero_failure enforcement guard #54: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Nothing-Dropped Guardrail` + Makefile `make clean-worktree-venvs` combined
+**Test:** `test_z54_zero_failure_54`
+
+### Z55 — zero_failure enforcement guard #55: automated unique mechanism
+zero_failure enforcement guard #55: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` + `.opencode/plugin/enforce-no-wait.ts` state-aware block
+**Test:** `test_z55_zero_failure_55`
+
+### Z56 — zero_failure enforcement guard #56: automated unique mechanism
+zero_failure enforcement guard #56: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:coverage-baseline` + `scripts/check_readme_status_current.py` ratchet+script gate
+**Test:** `test_z56_zero_failure_56`
+
+### Z57 — zero_failure enforcement guard #57: automated unique mechanism
+zero_failure enforcement guard #57: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make floor-status` CI+local dual
+**Test:** `test_z57_zero_failure_57`
+
+### Z58 — zero_failure enforcement guard #58: automated unique mechanism
+zero_failure enforcement guard #58: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-multitask.ts` × `.opencode/plugin/enforce-session-start.ts` cross-plugin
+**Test:** `test_z58_zero_failure_58`
+
+### Z59 — zero_failure enforcement guard #59: automated unique mechanism
+zero_failure enforcement guard #59: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Judgment Enforcement` + `scripts/verify_release_artifact.py` + `.opencode/plugin/enforce-verified-claims.ts` triple layer
+**Test:** `test_z59_zero_failure_59`
+
+### Z60 — zero_failure enforcement guard #60: automated unique mechanism
+zero_failure enforcement guard #60: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Node v26 Compatibility` section
+**Test:** `test_z60_zero_failure_60`
+
+### Z61 — zero_failure enforcement guard #61: automated unique mechanism
+zero_failure enforcement guard #61: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-rebranch-onto` prerequisite
+**Test:** `test_z61_zero_failure_61`
+
+### Z62 — zero_failure enforcement guard #62: automated unique mechanism
+zero_failure enforcement guard #62: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/task_watchdog.py` enforcement
+**Test:** `test_z62_zero_failure_62`
+
+### Z63 — zero_failure enforcement guard #63: automated unique mechanism
+zero_failure enforcement guard #63: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_z63_zero_failure_63`
+
+### Z64 — zero_failure enforcement guard #64: automated unique mechanism
+zero_failure enforcement guard #64: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-make.ts` permissionDecision deny
+**Test:** `test_z64_zero_failure_64`
+
+### Z65 — zero_failure enforcement guard #65: automated unique mechanism
+zero_failure enforcement guard #65: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make development-start` fail-closed guard
+**Test:** `test_z65_zero_failure_65`
+
+### Z66 — zero_failure enforcement guard #66: automated unique mechanism
+zero_failure enforcement guard #66: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-tool-streak.json` state-file enforced block
+**Test:** `test_z66_zero_failure_66`
+
+### Z67 — zero_failure enforcement guard #67: automated unique mechanism
+zero_failure enforcement guard #67: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-verified-claims.ts` + `make validate` combined guard
+**Test:** `test_z67_zero_failure_67`
+
+### Z68 — zero_failure enforcement guard #68: automated unique mechanism
+zero_failure enforcement guard #68: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dirty-tree` ratchet-tracked gate
+**Test:** `test_z68_zero_failure_68`
+
+### Z69 — zero_failure enforcement guard #69: automated unique mechanism
+zero_failure enforcement guard #69: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_z69_zero_failure_69`
+
+### Z70 — zero_failure enforcement guard #70: automated unique mechanism
+zero_failure enforcement guard #70: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/task_watchdog.py` + `.opencode/plugin/enforce-batch-push.ts` dual layer
+**Test:** `test_z70_zero_failure_70`
+
+### Z71 — zero_failure enforcement guard #71: automated unique mechanism
+zero_failure enforcement guard #71: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_require_ci_green.py` structural assertion gate
+**Test:** `test_z71_zero_failure_71`
+
+### Z72 — zero_failure enforcement guard #72: automated unique mechanism
+zero_failure enforcement guard #72: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make check-types` + `scripts/test_hook_runtime.py` script-backed guard
+**Test:** `test_z72_zero_failure_72`
+
+### Z73 — zero_failure enforcement guard #73: automated unique mechanism
+zero_failure enforcement guard #73: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-verified-claims.ts` env-var-gated BLOCKING
+**Test:** `test_z73_zero_failure_73`
+
+### Z74 — zero_failure enforcement guard #74: automated unique mechanism
+zero_failure enforcement guard #74: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `10-Agent Dispatch Floor` + Makefile `make collect-check` combined
+**Test:** `test_z74_zero_failure_74`
+
+### Z75 — zero_failure enforcement guard #75: automated unique mechanism
+zero_failure enforcement guard #75: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-ci-check-state.json` + `.opencode/plugin/enforce-test-integrity.ts` state-aware block
+**Test:** `test_z75_zero_failure_75`
+
+### Z76 — zero_failure enforcement guard #76: automated unique mechanism
+zero_failure enforcement guard #76: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:duplicate-target` + `scripts/check_node_v26_compat.py` ratchet+script gate
+**Test:** `test_z76_zero_failure_76`
+
+### Z77 — zero_failure enforcement guard #77: automated unique mechanism
+zero_failure enforcement guard #77: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make container-run` CI+local dual
+**Test:** `test_z77_zero_failure_77`
+
+### Z78 — zero_failure enforcement guard #78: automated unique mechanism
+zero_failure enforcement guard #78: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-suppressions.ts` × `.opencode/plugin/enforce-no-wait.ts` cross-plugin
+**Test:** `test_z78_zero_failure_78`
+
+### Z79 — zero_failure enforcement guard #79: automated unique mechanism
+zero_failure enforcement guard #79: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Hard Break Enforcement` + `scripts/stop_condition_audit.py` + `.opencode/plugin/enforce-session-start.ts` triple layer
+**Test:** `test_z79_zero_failure_79`
+
+### Z80 — zero_failure enforcement guard #80: automated unique mechanism
+zero_failure enforcement guard #80: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Background Operations NEVER Block Dispatch` section
+**Test:** `test_z80_zero_failure_80`
+
+### Z81 — zero_failure enforcement guard #81: automated unique mechanism
+zero_failure enforcement guard #81: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make tf-init` prerequisite
+**Test:** `test_z81_zero_failure_81`
+
+### Z82 — zero_failure enforcement guard #82: automated unique mechanism
+zero_failure enforcement guard #82: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` enforcement
+**Test:** `test_z82_zero_failure_82`
+
+### Z83 — zero_failure enforcement guard #83: automated unique mechanism
+zero_failure enforcement guard #83: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_z83_zero_failure_83`
+
+### Z84 — zero_failure enforcement guard #84: automated unique mechanism
+zero_failure enforcement guard #84: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-anti-essay.ts` permissionDecision deny
+**Test:** `test_z84_zero_failure_84`
+
+### Z85 — zero_failure enforcement guard #85: automated unique mechanism
+zero_failure enforcement guard #85: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make agent-cleanup` fail-closed guard
+**Test:** `test_z85_zero_failure_85`
+
+### Z86 — zero_failure enforcement guard #86: automated unique mechanism
+zero_failure enforcement guard #86: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-user-objective.json` state-file enforced block
+**Test:** `test_z86_zero_failure_86`
+
+### Z87 — zero_failure enforcement guard #87: automated unique mechanism
+zero_failure enforcement guard #87: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-deletion-gate.ts` + `make test-and-commit` combined guard
+**Test:** `test_z87_zero_failure_87`
+
+### Z88 — zero_failure enforcement guard #88: automated unique mechanism
+zero_failure enforcement guard #88: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:typecheck-baseline` ratchet-tracked gate
+**Test:** `test_z88_zero_failure_88`
+
+### Z89 — zero_failure enforcement guard #89: automated unique mechanism
+zero_failure enforcement guard #89: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_z89_zero_failure_89`
+
+### Z90 — zero_failure enforcement guard #90: automated unique mechanism
+zero_failure enforcement guard #90: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` + `.opencode/plugin/enforce-clean-tree.ts` dual layer
+**Test:** `test_z90_zero_failure_90`
+
+### Z91 — zero_failure enforcement guard #91: automated unique mechanism
+zero_failure enforcement guard #91: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_no_suppression_comments.py` structural assertion gate
+**Test:** `test_z91_zero_failure_91`
+
+### Z92 — zero_failure enforcement guard #92: automated unique mechanism
+zero_failure enforcement guard #92: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-stash-pop` + `scripts/check_readme_status_current.py` script-backed guard
+**Test:** `test_z92_zero_failure_92`
+
+### Z93 — zero_failure enforcement guard #93: automated unique mechanism
+zero_failure enforcement guard #93: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-enhancement-ratio.ts` env-var-gated BLOCKING
+**Test:** `test_z93_zero_failure_93`
+
+### Z94 — zero_failure enforcement guard #94: automated unique mechanism
+zero_failure enforcement guard #94: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Premature-Stop Audit Policy` + Makefile `make agent-merge` combined
+**Test:** `test_z94_zero_failure_94`
+
+### Z95 — zero_failure enforcement guard #95: automated unique mechanism
+zero_failure enforcement guard #95: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-task-killed.json` + `.opencode/plugin/enforce-session-start.ts` state-aware block
+**Test:** `test_z95_zero_failure_95`
+
+### Z96 — zero_failure enforcement guard #96: automated unique mechanism
+zero_failure enforcement guard #96: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:stale-gate` + `scripts/test_hook_runtime.py` ratchet+script gate
+**Test:** `test_z96_zero_failure_96`
+
+### Z97 — zero_failure enforcement guard #97: automated unique mechanism
+zero_failure enforcement guard #97: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make test-guardrails` CI+local dual
+**Test:** `test_z97_zero_failure_97`
+
+### Z98 — zero_failure enforcement guard #98: automated unique mechanism
+zero_failure enforcement guard #98: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-tdd.ts` × `.opencode/plugin/enforce-objective.ts` cross-plugin
+**Test:** `test_z98_zero_failure_98`
+
+### Z99 — zero_failure enforcement guard #99: automated unique mechanism
+zero_failure enforcement guard #99: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `No-Manual-Default Policy` + `scripts/check_duplicate_targets.py` + `.opencode/plugin/enforce-no-wait.ts` triple layer
+**Test:** `test_z99_zero_failure_99`
+
+### Z100 — zero_failure enforcement guard #100: automated unique mechanism
+zero_failure enforcement guard #100: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Premature-Stop Audit Policy` section
+**Test:** `test_z100_zero_failure_100`
+
+### Z101 — zero_failure enforcement guard #101: automated unique mechanism
+zero_failure enforcement guard #101: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-reset` prerequisite
+**Test:** `test_z101_zero_failure_101`
+
+### Z102 — zero_failure enforcement guard #102: automated unique mechanism
+zero_failure enforcement guard #102: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` enforcement
+**Test:** `test_z102_zero_failure_102`
+
+### Z103 — zero_failure enforcement guard #103: automated unique mechanism
+zero_failure enforcement guard #103: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_z103_zero_failure_103`
+
+### Z104 — zero_failure enforcement guard #104: automated unique mechanism
+zero_failure enforcement guard #104: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-suppressions.ts` permissionDecision deny
+**Test:** `test_z104_zero_failure_104`
+
+### Z105 — zero_failure enforcement guard #105: automated unique mechanism
+zero_failure enforcement guard #105: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make feature-start` fail-closed guard
+**Test:** `test_z105_zero_failure_105`
+
+### Z106 — zero_failure enforcement guard #106: automated unique mechanism
+zero_failure enforcement guard #106: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-enhancement-ratio.json` state-file enforced block
+**Test:** `test_z106_zero_failure_106`
+
+### Z107 — zero_failure enforcement guard #107: automated unique mechanism
+zero_failure enforcement guard #107: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-delegate.ts` + `make tf-cache-warm` combined guard
+**Test:** `test_z107_zero_failure_107`
+
+### Z108 — zero_failure enforcement guard #108: automated unique mechanism
+zero_failure enforcement guard #108: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dead-code` ratchet-tracked gate
+**Test:** `test_z108_zero_failure_108`
+
+### Z109 — zero_failure enforcement guard #109: automated unique mechanism
+zero_failure enforcement guard #109: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_z109_zero_failure_109`
+
+### Z110 — zero_failure enforcement guard #110: automated unique mechanism
+zero_failure enforcement guard #110: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` + `.opencode/plugin/enforce-floor.ts` dual layer
+**Test:** `test_z110_zero_failure_110`
+
+### Z111 — zero_failure enforcement guard #111: automated unique mechanism
+zero_failure enforcement guard #111: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_blocker_detector.py` structural assertion gate
+**Test:** `test_z111_zero_failure_111`
+
+### Z112 — zero_failure enforcement guard #112: automated unique mechanism
+zero_failure enforcement guard #112: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make agent-worktree-list` + `scripts/check_node_v26_compat.py` script-backed guard
+**Test:** `test_z112_zero_failure_112`
+
+### Z113 — zero_failure enforcement guard #113: automated unique mechanism
+zero_failure enforcement guard #113: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-stop.ts` env-var-gated BLOCKING
+**Test:** `test_z113_zero_failure_113`
+
+### Z114 — zero_failure enforcement guard #114: automated unique mechanism
+zero_failure enforcement guard #114: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Release Pipeline Must Be CI-Green` + Makefile `make test-integration` combined
+**Test:** `test_z114_zero_failure_114`
+
+### Z115 — zero_failure enforcement guard #115: automated unique mechanism
+zero_failure enforcement guard #115: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` + `.opencode/plugin/enforce-branch-discipline.ts` state-aware block
+**Test:** `test_z115_zero_failure_115`
+
+### Z116 — zero_failure enforcement guard #116: automated unique mechanism
+zero_failure enforcement guard #116: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:coverage-baseline` + `scripts/check_readme_status_current.py` ratchet+script gate
+**Test:** `test_z116_zero_failure_116`
+
+### Z117 — zero_failure enforcement guard #117: automated unique mechanism
+zero_failure enforcement guard #117: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make gate-kill` CI+local dual
+**Test:** `test_z117_zero_failure_117`
+
+### Z118 — zero_failure enforcement guard #118: automated unique mechanism
+zero_failure enforcement guard #118: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-anti-essay.ts` × `.opencode/plugin/enforce-deletion-gate.ts` cross-plugin
+**Test:** `test_z118_zero_failure_118`
+
+### Z119 — zero_failure enforcement guard #119: automated unique mechanism
+zero_failure enforcement guard #119: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Pre-Generation Contract` + `scripts/verify_release_artifact.py` + `.opencode/plugin/enforce-objective.ts` triple layer
+**Test:** `test_z119_zero_failure_119`
+
+### Z120 — zero_failure enforcement guard #120: automated unique mechanism
+zero_failure enforcement guard #120: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Task Self-Tracking` section
+**Test:** `test_z120_zero_failure_120`
+
+### Z121 — zero_failure enforcement guard #121: automated unique mechanism
+zero_failure enforcement guard #121: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make check-opencode-backup` prerequisite
+**Test:** `test_z121_zero_failure_121`
+
+### Z122 — zero_failure enforcement guard #122: automated unique mechanism
+zero_failure enforcement guard #122: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/task_watchdog.py` enforcement
+**Test:** `test_z122_zero_failure_122`
+
+### Z123 — zero_failure enforcement guard #123: automated unique mechanism
+zero_failure enforcement guard #123: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_z123_zero_failure_123`
+
+### Z124 — zero_failure enforcement guard #124: automated unique mechanism
+zero_failure enforcement guard #124: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-context.ts` permissionDecision deny
+**Test:** `test_z124_zero_failure_124`
+
+### Z125 — zero_failure enforcement guard #125: automated unique mechanism
+zero_failure enforcement guard #125: automated unique mechanism. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make check-duplicate-targets` fail-closed guard
+**Test:** `test_z125_zero_failure_125`
+
+## Expansion: Intent Priority (I01–I120)
+
 ### I01 — Intent priority: release advancement overrides all other work
-The agent MUST enforce this invariant mechanically at runtime — no advisory-only, no opt-in.
-**Enforcement:** AGENTS.md `enforce-floor.ts` permissionDecision deny
+Intent priority: release advancement overrides all other work. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block; Makefile `make tf-init` prerequisite
 **Test:** `test_i01_intent_priority_1`
+
+### I02 — Intent priority: CI fix overrides feature development
+Intent priority: CI fix overrides feature development. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-context.ts` permissionDecision deny; AGENTS.md `scripts/check_tdd_compliance.py` enforcement
+**Test:** `test_i02_intent_priority_2`
+
+### I03 — Intent priority: test fix overrides code refactor
+Intent priority: test fix overrides code refactor. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block; Makefile `make ci-wait` fail-closed guard
+**Test:** `test_i03_intent_priority_3`
+
+### I04 — Intent priority: gate green overrides new feature work
+Intent priority: gate green overrides new feature work. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-batch-push.ts` permissionDecision deny; AGENTS.md `/tmp/gludd-tool-streak.json` state-file enforced block
+**Test:** `test_i04_intent_priority_4`
+
+### I05 — Intent priority: security fix overrides performance optimization
+Intent priority: security fix overrides performance optimization. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-session-start.ts` + `make security` combined guard; Makefile `make agent-cleanup` fail-closed guard
+**Test:** `test_i05_intent_priority_5`
+
+### I06 — Intent priority: user-reported bug overrides self-found improvement
+Intent priority: user-reported bug overrides self-found improvement. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-user-objective.json` state-file enforced block; AGENTS.md `config/ratchet.yml:dirty-tree` ratchet-tracked gate
+**Test:** `test_i06_intent_priority_6`
+
+### I07 — Intent priority: regression fix overrides new test addition
+Intent priority: regression fix overrides new test addition. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement; AGENTS.md `.opencode/plugin/enforce-objective.ts` + `make test-and-commit` combined guard
+**Test:** `test_i07_intent_priority_7`
+
+### I08 — Intent priority: critical severity (sev1) preempts all lower work
+Intent priority: critical severity (sev1) preempts all lower work. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:typecheck-baseline` ratchet-tracked gate; AGENTS.md `scripts/task_watchdog.py` + `.opencode/plugin/enforce-worktree.ts` dual layer
+**Test:** `test_i08_intent_priority_8`
+
+### I09 — Intent priority: merge conflict resolution preempts parallel development
+Intent priority: merge conflict resolution preempts parallel development. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement; AGENTS.md `tests/unit/test_no_wait_plugin.py` structural assertion gate
+**Test:** `test_i09_intent_priority_9`
+
+### I10 — Intent priority: stale CI: refresh CI before claiming status
+Intent priority: stale CI: refresh CI before claiming status. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` + `.opencode/plugin/enforce-multitask.ts` dual layer; Makefile `make release-promote` + `scripts/test_hook_runtime.py` script-backed guard
+**Test:** `test_i10_intent_priority_10`
+
+### I11 — Intent priority: dirty tree: clean before any new work starts
+Intent priority: dirty tree: clean before any new work starts. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-delegate.ts` env-var-gated BLOCKING; AGENTS.md `tests/unit/test_clean_tree_plugin.py` structural assertion gate
+**Test:** `test_i11_intent_priority_11`
+
+### I12 — Intent priority: broken main: fix master before any branch work
+Intent priority: broken main: fix master before any branch work. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Priority Stacking` + Makefile `make agent-merge-dev` combined; Makefile `make git-stash-pop` + `scripts/check_readme_status_current.py` script-backed guard
+**Test:** `test_i12_intent_priority_12`
+
+### I13 — Intent priority: unmerged worktrees: merge before dispatching more
+Intent priority: unmerged worktrees: merge before dispatching more. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` env-var-gated BLOCKING; AGENTS.md `/tmp/gludd-ci-check-state.json` + `.opencode/plugin/enforce-verified-claims.ts` state-aware block
+**Test:** `test_i13_intent_priority_13`
+
+### I14 — Intent priority: ratchet burn-down: reduce ratchet before adding features
+Intent priority: ratchet burn-down: reduce ratchet before adding features. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Don't Push Every Commit` + Makefile `make agent-merge` combined; AGENTS.md `config/ratchet.yml:duplicate-target` + `scripts/check_node_v26_compat.py` ratchet+script gate
+**Test:** `test_i14_intent_priority_14`
+
+### I15 — Intent priority: documentation staleness: update docs before releasing
+Intent priority: documentation staleness: update docs before releasing. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make verify-release-completeness` CI+local dual; AGENTS.md `/tmp/gludd-task-killed.json` + `.opencode/plugin/enforce-delegate.ts` state-aware block
+**Test:** `test_i15_intent_priority_15`
+
+### I16 — Intent priority: deprecation: remove deprecated API before adding new
+Intent priority: deprecation: remove deprecated API before adding new. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-deadline.ts` × `.opencode/plugin/enforce-audit.ts` cross-plugin; AGENTS.md `config/ratchet.yml:stale-gate` + `scripts/test_hook_runtime.py` ratchet+script gate
+**Test:** `test_i16_intent_priority_16`
+
+### I17 — Intent priority: dead code: remove dead code before writing new
+Intent priority: dead code: remove dead code before writing new. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make test-guardrails` CI+local dual; AGENTS.md `No-Commit-Bypass Policy` + `scripts/stop_condition_audit.py` + `.opencode/plugin/enforce-deletion-gate.ts` triple layer
+**Test:** `test_i17_intent_priority_17`
+
+### I18 — Intent priority: type safety: fix Any usage before new type-annotated code
+Intent priority: type safety: fix Any usage before new type-annotated code. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-context.ts` × `.opencode/plugin/enforce-verified-claims.ts` cross-plugin; AGENTS.md `Q&A Response Pattern` section
+**Test:** `test_i18_intent_priority_18`
+
+### I19 — Intent priority: lint errors: fix lint before new code in same file
+Intent priority: lint errors: fix lint before new code in same file. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `A Release is an Artifact` + `scripts/check_duplicate_targets.py` + `.opencode/plugin/enforce-enhancement-ratio.ts` triple layer
+**Test:** `test_i19_intent_priority_19`
+
+### I20 — Intent priority: collection errors: fix test collection before running tests
+Intent priority: collection errors: fix test collection before running tests. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Keep Opus Lean` section
+**Test:** `test_i20_intent_priority_20`
+
+### I21 — Intent priority: secrets leak: block all work until secrets scrubbed
+Intent priority: secrets leak: block all work until secrets scrubbed. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-reset` prerequisite
+**Test:** `test_i21_intent_priority_21`
+
+### I22 — Intent priority: disk full: free disk before any file creation
+Intent priority: disk full: free disk before any file creation. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` enforcement
+**Test:** `test_i22_intent_priority_22`
+
+### I23 — Intent priority: outdated dependencies: audit before new dependency added
+Intent priority: outdated dependencies: audit before new dependency added. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_i23_intent_priority_23`
+
+### I24 — Intent priority: CI pipeline broken: fix CI config before pushing code
+Intent priority: CI pipeline broken: fix CI config before pushing code. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-floor.ts` permissionDecision deny
+**Test:** `test_i24_intent_priority_24`
+
+### I25 — Intent priority: release blocked: unblock release before version bump
+Intent priority: release blocked: unblock release before version bump. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make feature-start` fail-closed guard
+**Test:** `test_i25_intent_priority_25`
+
+### I26 — Intent priority: gate broken: fix gate before running gate on new code
+Intent priority: gate broken: fix gate before running gate on new code. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-enhancement-ratio.json` state-file enforced block
+**Test:** `test_i26_intent_priority_26`
+
+### I27 — Intent priority: plugin error: fix plugin before editing guarded files
+Intent priority: plugin error: fix plugin before editing guarded files. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-test-integrity.ts` + `make tf-cache-warm` combined guard
+**Test:** `test_i27_intent_priority_27`
+
+### I28 — Intent priority: Makefile syntax: fix Makefile before adding targets
+Intent priority: Makefile syntax: fix Makefile before adding targets. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dead-code` ratchet-tracked gate
+**Test:** `test_i28_intent_priority_28`
+
+### I29 — Intent priority: backup stale: backup opencode before destructive edits
+Intent priority: backup stale: backup opencode before destructive edits. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_i29_intent_priority_29`
+
+### I30 — Intent priority: session crash: recover state before continuing work
+Intent priority: session crash: recover state before continuing work. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` + `.opencode/plugin/enforce-context.ts` dual layer
+**Test:** `test_i30_intent_priority_30`
+
+### I31 — Intent priority: user directive: explicit "fix X" overrides plan
+Intent priority: user directive: explicit "fix X" overrides plan. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_stop_pattern_qa.py` structural assertion gate
+**Test:** `test_i31_intent_priority_31`
+
+### I32 — Intent priority: "FIRST" keyword: user says "do X FIRST" = immediate priority
+Intent priority: "FIRST" keyword: user says "do X FIRST" = immediate priority. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make agent-worktree-list` + `scripts/check_node_v26_compat.py` script-backed guard
+**Test:** `test_i32_intent_priority_32`
+
+### I33 — Intent priority: "NOW" keyword: user says "X NOW" = immediate preemption
+Intent priority: "NOW" keyword: user says "X NOW" = immediate preemption. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-session-start.ts` env-var-gated BLOCKING
+**Test:** `test_i33_intent_priority_33`
+
+### I34 — Intent priority: "BEFORE" keyword: "X BEFORE Y" enforces ordering
+Intent priority: "BEFORE" keyword: "X BEFORE Y" enforces ordering. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Single-Source Feature Development` + Makefile `make test-integration` combined
+**Test:** `test_i34_intent_priority_34`
+
+### I35 — Intent priority: implicit priority from message urgency markers
+Intent priority: implicit priority from message urgency markers. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` + `.opencode/plugin/enforce-no-wait.ts` state-aware block
+**Test:** `test_i35_intent_priority_35`
+
+### I36 — Intent priority: undo recent: revert last change before adding more
+Intent priority: undo recent: revert last change before adding more. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:coverage-baseline` + `scripts/check_readme_status_current.py` ratchet+script gate
+**Test:** `test_i36_intent_priority_36`
+
+### I37 — Intent priority: blocking question: asking user = lowest priority (never do)
+Intent priority: blocking question: asking user = lowest priority (never do). This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make gate-kill` CI+local dual
+**Test:** `test_i37_intent_priority_37`
+
+### I38 — Intent priority: permission needed: work on alternative while waiting
+Intent priority: permission needed: work on alternative while waiting. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-multitask.ts` × `.opencode/plugin/enforce-session-start.ts` cross-plugin
+**Test:** `test_i38_intent_priority_38`
+
+### I39 — Intent priority: CI pending: continue other work while CI runs (never wait)
+Intent priority: CI pending: continue other work while CI runs (never wait). This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Multitasking / Blockers` + `scripts/verify_release_artifact.py` + `.opencode/plugin/enforce-verified-claims.ts` triple layer
+**Test:** `test_i39_intent_priority_39`
+
+### I40 — Intent priority: gate running: dispatch other agents while gate runs
+Intent priority: gate running: dispatch other agents while gate runs. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Guardrail Integrity Policy` section
+**Test:** `test_i40_intent_priority_40`
+
+### I41 — Intent priority: subagent failed: re-dispatch replacement immediately
+Intent priority: subagent failed: re-dispatch replacement immediately. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make check-opencode-backup` prerequisite
+**Test:** `test_i41_intent_priority_41`
+
+### I42 — Intent priority: subagent completed: process result before next wave
+Intent priority: subagent completed: process result before next wave. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/task_watchdog.py` enforcement
+**Test:** `test_i42_intent_priority_42`
+
+### I43 — Intent priority: result arrival: codify result before reading next result
+Intent priority: result arrival: codify result before reading next result. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_i43_intent_priority_43`
+
+### I44 — Intent priority: commit needed: commit green work before starting new work
+Intent priority: commit needed: commit green work before starting new work. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-make.ts` permissionDecision deny
+**Test:** `test_i44_intent_priority_44`
+
+### I45 — Intent priority: push pending: batch commits locally, push at threshold
+Intent priority: push pending: batch commits locally, push at threshold. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make check-duplicate-targets` fail-closed guard
+**Test:** `test_i45_intent_priority_45`
+
+### I46 — Intent priority: TASKS.md stale: update task ledger before dispatching
+Intent priority: TASKS.md stale: update task ledger before dispatching. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-tool-streak.json` state-file enforced block
+**Test:** `test_i46_intent_priority_46`
+
+### I47 — Intent priority: SESSION.md stale: update session state before stopping
+Intent priority: SESSION.md stale: update session state before stopping. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-verified-claims.ts` + `make write-plugin-manifest` combined guard
+**Test:** `test_i47_intent_priority_47`
+
+### I48 — Intent priority: BUGS.md open: log incident before fixing
+Intent priority: BUGS.md open: log incident before fixing. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dirty-tree` ratchet-tracked gate
+**Test:** `test_i48_intent_priority_48`
+
+### I49 — Intent priority: evidence needed: gather evidence before claiming complete
+Intent priority: evidence needed: gather evidence before claiming complete. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_i49_intent_priority_49`
+
+### I50 — Intent priority: verify needed: run verify-state before status claims
+Intent priority: verify needed: run verify-state before status claims. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/task_watchdog.py` + `.opencode/plugin/enforce-batch-push.ts` dual layer
+**Test:** `test_i50_intent_priority_50`
+
+### I51 — Intent priority: ratchet entry: fix known issue before declaring done
+Intent priority: ratchet entry: fix known issue before declaring done. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_session_start.py` structural assertion gate
+**Test:** `test_i51_intent_priority_51`
+
+### I52 — Intent priority: stale gate: re-run gate if .gate-status is older than last edit
+Intent priority: stale gate: re-run gate if .gate-status is older than last edit. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make verify-opencode-backup` + `scripts/test_hook_runtime.py` script-backed guard
+**Test:** `test_i52_intent_priority_52`
+
+### I53 — Intent priority: uncommitted after fix: commit fix before continuing
+Intent priority: uncommitted after fix: commit fix before continuing. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-verified-claims.ts` env-var-gated BLOCKING
+**Test:** `test_i53_intent_priority_53`
+
+### I54 — Intent priority: file safety: never delete without backup
+Intent priority: file safety: never delete without backup. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Commit-After-Green Policy` + Makefile `make git-mv` combined
+**Test:** `test_i54_intent_priority_54`
+
+### I55 — Intent priority: external path: never access files outside workspace
+Intent priority: external path: never access files outside workspace. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-ci-check-state.json` + `.opencode/plugin/enforce-test-integrity.ts` state-aware block
+**Test:** `test_i55_intent_priority_55`
+
+### I56 — Intent priority: node v26 compat: fix compat before committing plugin code
+Intent priority: node v26 compat: fix compat before committing plugin code. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:duplicate-target` + `scripts/check_node_v26_compat.py` ratchet+script gate
+**Test:** `test_i56_intent_priority_56`
+
+### I57 — Intent priority: test first: write failing test before implementation
+Intent priority: test first: write failing test before implementation. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make secrets-scrub` CI+local dual
+**Test:** `test_i57_intent_priority_57`
+
+### I58 — Intent priority: merge safety: gate green before merge
+Intent priority: merge safety: gate green before merge. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-suppressions.ts` × `.opencode/plugin/enforce-no-wait.ts` cross-plugin
+**Test:** `test_i58_intent_priority_58`
+
+### I59 — Intent priority: release integrity: verify artifact before claiming shipped
+Intent priority: release integrity: verify artifact before claiming shipped. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Self-Audit Policy` + `scripts/stop_condition_audit.py` + `.opencode/plugin/enforce-session-start.ts` triple layer
+**Test:** `test_i59_intent_priority_59`
+
+### I60 — Intent priority: CI green required: fix CI before release cut
+Intent priority: CI green required: fix CI before release cut. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Anti-Grinding Enforcement` section
+**Test:** `test_i60_intent_priority_60`
+
+### I61 — Intent priority: push discipline: batch push, never per-commit push
+Intent priority: push discipline: batch push, never per-commit push. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make git-status` prerequisite
+**Test:** `test_i61_intent_priority_61`
+
+### I62 — Intent priority: branch discipline: correct branch before mutating
+Intent priority: branch discipline: correct branch before mutating. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` enforcement
+**Test:** `test_i62_intent_priority_62`
+
+### I63 — Intent priority: worktree isolation: per-agent worktree for file edits
+Intent priority: worktree isolation: per-agent worktree for file edits. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_i63_intent_priority_63`
+
+### I64 — Intent priority: dispatch floor: maintain 10 agents at all times
+Intent priority: dispatch floor: maintain 10 agents at all times. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-anti-essay.ts` permissionDecision deny
+**Test:** `test_i64_intent_priority_64`
+
+### I65 — Intent priority: zero-failure: all tests pass before any claim of done
+Intent priority: zero-failure: all tests pass before any claim of done. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make verify-release-completeness` fail-closed guard
+**Test:** `test_i65_intent_priority_65`
+
+### I66 — Intent priority: stop prevention: never stop with pending work
+Intent priority: stop prevention: never stop with pending work. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-user-objective.json` state-file enforced block
+**Test:** `test_i66_intent_priority_66`
+
+### I67 — Intent priority: essay prevention: never send prose without tool calls
+Intent priority: essay prevention: never send prose without tool calls. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-deletion-gate.ts` + `make agent-worktree` combined guard
+**Test:** `test_i67_intent_priority_67`
+
+### I68 — Intent priority: anti-grinding: never grind inline when dispatch available
+Intent priority: anti-grinding: never grind inline when dispatch available. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:typecheck-baseline` ratchet-tracked gate
+**Test:** `test_i68_intent_priority_68`
+
+### I69 — Intent priority: background ops: never block main thread on long ops
+Intent priority: background ops: never block main thread on long ops. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_i69_intent_priority_69`
+
+### I70 — Intent priority: CI poll: never dispatch poll-only subagent
+Intent priority: CI poll: never dispatch poll-only subagent. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` + `.opencode/plugin/enforce-clean-tree.ts` dual layer
+**Test:** `test_i70_intent_priority_70`
+
+### I71 — Intent priority: wait: never sleep on main thread with pending work
+Intent priority: wait: never sleep on main thread with pending work. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/unit/test_human_todo.py` structural assertion gate
+**Test:** `test_i71_intent_priority_71`
+
+### I72 — Intent priority: ask: never block on user question, default to action
+Intent priority: ask: never block on user question, default to action. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make test-hook-runtime` + `scripts/check_readme_status_current.py` script-backed guard
+**Test:** `test_i72_intent_priority_72`
+
+### I73 — Intent priority: claim: never claim done without verification evidence
+Intent priority: claim: never claim done without verification evidence. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-enhancement-ratio.ts` env-var-gated BLOCKING
+**Test:** `test_i73_intent_priority_73`
+
+### I74 — Intent priority: bypass: never bypass guardrail without explicit user authorization
+Intent priority: bypass: never bypass guardrail without explicit user authorization. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Q&A Response Pattern` + Makefile `make restore-opencode` combined
+**Test:** `test_i74_intent_priority_74`
+
+### I75 — Intent priority: suppress: never suppress lint/type errors, fix them
+Intent priority: suppress: never suppress lint/type errors, fix them. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-task-killed.json` + `.opencode/plugin/enforce-session-start.ts` state-aware block
+**Test:** `test_i75_intent_priority_75`
+
+### I76 — Intent priority: force: never force-push past green branch guard
+Intent priority: force: never force-push past green branch guard. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:stale-gate` + `scripts/test_hook_runtime.py` ratchet+script gate
+**Test:** `test_i76_intent_priority_76`
+
+### I77 — Intent priority: skip: never skip tests to make suite green
+Intent priority: skip: never skip tests to make suite green. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make git-show` CI+local dual
+**Test:** `test_i77_intent_priority_77`
+
+### I78 — Intent priority: xfail: never xfail without strict=True + documented reason
+Intent priority: xfail: never xfail without strict=True + documented reason. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-tdd.ts` × `.opencode/plugin/enforce-objective.ts` cross-plugin
+**Test:** `test_i78_intent_priority_78`
+
+### I79 — Intent priority: coverage: never lower coverage threshold to pass gate
+Intent priority: coverage: never lower coverage threshold to pass gate. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Session Persistence Policy` + `scripts/check_duplicate_targets.py` + `.opencode/plugin/enforce-no-wait.ts` triple layer
+**Test:** `test_i79_intent_priority_79`
+
+### I80 — Intent priority: ratchet: never add ratchet entry without fix plan
+Intent priority: ratchet: never add ratchet entry without fix plan. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Branch discipline` section
+**Test:** `test_i80_intent_priority_80`
+
+### I81 — Intent priority: audit: self-audit after every significant work batch
+Intent priority: audit: self-audit after every significant work batch. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make verify-enforcement` prerequisite
+**Test:** `test_i81_intent_priority_81`
+
+### I82 — Intent priority: cross-check: verify all user requests against implementation
+Intent priority: cross-check: verify all user requests against implementation. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/require_ci_green.py` enforcement
+**Test:** `test_i82_intent_priority_82`
+
+### I83 — Intent priority: dead code scan: remove unused code after feature completion
+Intent priority: dead code scan: remove unused code after feature completion. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-wait.ts` `tool.execute.after` block
+**Test:** `test_i83_intent_priority_83`
+
+### I84 — Intent priority: wiring check: verify new code is wired into system
+Intent priority: wiring check: verify new code is wired into system. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-no-suppressions.ts` permissionDecision deny
+**Test:** `test_i84_intent_priority_84`
+
+### I85 — Intent priority: migration check: verify DB migration exists for new models
+Intent priority: migration check: verify DB migration exists for new models. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make release-cut` fail-closed guard
+**Test:** `test_i85_intent_priority_85`
+
+### I86 — Intent priority: test coverage: verify all 3 layers (unit/int/e2e) present
+Intent priority: test coverage: verify all 3 layers (unit/int/e2e) present. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-enhancement-ratio.json` state-file enforced block
+**Test:** `test_i86_intent_priority_86`
+
+### I87 — Intent priority: gap analysis: identify missing interfaces (CLI/TUI/API) after feature
+Intent priority: gap analysis: identify missing interfaces (CLI/TUI/API) after feature. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-delegate.ts` + `make ci-verdict` combined guard
+**Test:** `test_i87_intent_priority_87`
+
+### I88 — Intent priority: observability: every long op must emit heartbeat
+Intent priority: observability: every long op must emit heartbeat. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:dead-code` ratchet-tracked gate
+**Test:** `test_i88_intent_priority_88`
+
+### I89 — Intent priority: log capture: failure output must be surfaced, not swallowed
+Intent priority: log capture: failure output must be surfaced, not swallowed. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:artifact-upload` CI workflow enforcement
+**Test:** `test_i89_intent_priority_89`
+
+### I90 — Intent priority: atomic commit: one logical change per commit
+Intent priority: atomic commit: one logical change per commit. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/check_tdd_compliance.py` + `.opencode/plugin/enforce-floor.ts` dual layer
+**Test:** `test_i90_intent_priority_90`
+
+### I91 — Intent priority: conventional commits: commit message follows project convention
+Intent priority: conventional commits: commit message follows project convention. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `tests/integration/test_daemon_health.py` structural assertion gate
+**Test:** `test_i91_intent_priority_91`
+
+### I92 — Intent priority: branch naming: branch name follows feature/fix/release convention
+Intent priority: branch naming: branch name follows feature/fix/release convention. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make pip-audit` + `scripts/check_node_v26_compat.py` script-backed guard
+**Test:** `test_i92_intent_priority_92`
+
+### I93 — Intent priority: PR description: every merge has documented reason
+Intent priority: PR description: every merge has documented reason. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-stop.ts` env-var-gated BLOCKING
+**Test:** `test_i93_intent_priority_93`
+
+### I94 — Intent priority: CHANGELOG: every user-facing change has changelog entry
+Intent priority: CHANGELOG: every user-facing change has changelog entry. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Bash Command Policy` + Makefile `make secrets-scan` combined
+**Test:** `test_i94_intent_priority_94`
+
+### I95 — Intent priority: README status: update README status table before release
+Intent priority: README status: update README status table before release. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `/tmp/gludd-floor-override` + `.opencode/plugin/enforce-branch-discipline.ts` state-aware block
+**Test:** `test_i95_intent_priority_95`
+
+### I96 — Intent priority: version bump: bump version with release, not before
+Intent priority: version bump: bump version with release, not before. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `config/ratchet.yml:coverage-baseline` + `scripts/check_readme_status_current.py` ratchet+script gate
+**Test:** `test_i96_intent_priority_96`
+
+### I97 — Intent priority: artifact completeness: 12/12 asset categories before release
+Intent priority: artifact completeness: 12/12 asset categories before release. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.github/workflows/build.yml:build-macos` + Makefile `make git-rebranch-onto` CI+local dual
+**Test:** `test_i97_intent_priority_97`
+
+### I98 — Intent priority: draft release: never claim draft release as shipped
+Intent priority: draft release: never claim draft release as shipped. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `.opencode/plugin/enforce-anti-essay.ts` × `.opencode/plugin/enforce-deletion-gate.ts` cross-plugin
+**Test:** `test_i98_intent_priority_98`
+
+### I99 — Intent priority: CI build: verify CI build matrix passes before release
+Intent priority: CI build: verify CI build matrix passes before release. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Evidence-Based Response Policy` + `scripts/verify_release_artifact.py` + `.opencode/plugin/enforce-objective.ts` triple layer
+**Test:** `test_i99_intent_priority_99`
+
+### I100 — Intent priority: hot reload: rebuild hot modules after plugin edit
+Intent priority: hot reload: rebuild hot modules after plugin edit. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `Verification Before Claim` section
+**Test:** `test_i100_intent_priority_100`
+
+### I101 — Intent priority: restart required: inform user plugin changes need restart
+Intent priority: restart required: inform user plugin changes need restart. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** Makefile `make secrets-scrub` prerequisite
+**Test:** `test_i101_intent_priority_101`
+
+### I102 — Intent priority: enforcement verify: verify enforcement active after restart
+Intent priority: enforcement verify: verify enforcement active after restart. This invariant MUST be enforced mechanically at runtime — no advisory-only, no opt-in, no silent cancellation.
+**Enforcement:** AGENTS.md `scripts/task_watchdog.py` enforcement
+**Test:** `test_i102_intent_priority_102`

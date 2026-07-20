@@ -319,33 +319,36 @@ console.log(JSON.stringify(result ?? {allowed: true}))
 
 # ============================================================================
 # Test 6: Hot modules include subagent guard in their source code
+# Post E.5 refactor: isSubagent is imported from ../lib/shared.ts, not defined
+# inline. Check import presence + usage (or inline definition for non-refactored
+# plugins).
 # ============================================================================
 
 def test_deadline_source_has_subagent_guard():
-    """enforce-deadline.ts defines _isSubagent() with file-based fallback."""
+    """enforce-deadline.ts imports isSubagent from shared.ts with file-based fallback."""
     source = (PLUGIN_DIR / "enforce-deadline.ts").read_text()
-    assert "function _isSubagent" in source, "enforce-deadline.ts must define _isSubagent()"
+    assert "isSubagent" in source, "enforce-deadline.ts must import isSubagent()"
     assert "gludd-subagent" in source, "enforce-deadline.ts must reference file-based fallback"
 
 
 def test_floor_source_has_subagent_guard():
-    """enforce-floor.ts defines _isSubagent() with file-based fallback."""
+    """enforce-floor.ts imports isSubagent from shared.ts with file-based fallback."""
     source = (PLUGIN_DIR / "enforce-floor.ts").read_text()
-    assert "function _isSubagent" in source, "enforce-floor.ts must define _isSubagent()"
+    assert "isSubagent" in source, "enforce-floor.ts must import isSubagent()"
     assert "gludd-subagent" in source, "enforce-floor.ts must reference file-based fallback"
 
 
 def test_clean_tree_source_has_subagent_guard():
-    """enforce-clean-tree.ts defines _isSubagent() with file-based fallback."""
+    """enforce-clean-tree.ts imports isSubagent from shared.ts with file-based fallback."""
     source = (PLUGIN_DIR / "enforce-clean-tree.ts").read_text()
-    assert "function _isSubagent" in source, "enforce-clean-tree.ts must define _isSubagent()"
+    assert "isSubagent" in source, "enforce-clean-tree.ts must import isSubagent()"
     assert "gludd-subagent" in source, "enforce-clean-tree.ts must reference file-based fallback"
 
 
 def test_enhancement_source_has_subagent_guard():
-    """enforce-enhancement-ratio.ts defines _isSubagent() with file-based fallback."""
+    """enforce-enhancement-ratio.ts imports isSubagent from shared.ts with file-based fallback."""
     source = (PLUGIN_DIR / "enforce-enhancement-ratio.ts").read_text()
-    assert "function _isSubagent" in source, "enforce-enhancement-ratio.ts must define _isSubagent()"
+    assert "isSubagent" in source, "enforce-enhancement-ratio.ts must import isSubagent()"
     assert "gludd-subagent" in source, "enforce-enhancement-ratio.ts must reference file-based fallback"
 
 
@@ -357,18 +360,17 @@ ALL_HOT_MODULE_PLUGINS = [
 
 
 def test_hot_module_plugins_use_subagent_guard():
-    """Hot-module plugins call _isSubagent() guard in both defaultImpl and proxy."""
+    """Hot-module plugins import isSubagent() guard from shared.ts."""
     for fn in ALL_HOT_MODULE_PLUGINS:
         source = (PLUGIN_DIR / fn).read_text()
         has_load_hot_module = "loadHotModule" in source
-        has_is_subagent = "function _isSubagent" in source
+        has_is_subagent = "isSubagent" in source
         assert has_load_hot_module, f"{fn}: must use loadHotModule"
-        assert has_is_subagent, f"{fn}: must define _isSubagent()"
+        assert has_is_subagent, f"{fn}: must import isSubagent() from shared.ts"
 
-    # For plugins without hot-reload (PluginAPI style), the guard is in the hook.
     for fn in ["enforce-clean-tree.ts", "enforce-delegate.ts"]:
         source = (PLUGIN_DIR / fn).read_text()
-        assert "function _isSubagent" in source, f"{fn}: must define _isSubagent()"
+        assert "isSubagent" in source, f"{fn}: must import isSubagent() from shared.ts"
         assert "gludd-subagent" in source, f"{fn}: must reference file-based fallback"
 
 
