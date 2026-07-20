@@ -14,6 +14,7 @@ import os
 import sys
 import time
 from pathlib import Path
+from typing import Optional
 
 DEFAULT_STATE_FILE = ".gate-logs/force-push-track.json"
 DEFAULT_MAX_CONSECUTIVE = int(os.environ.get("GLUDD_FORCE_PUSH_MAX_BYPASS", "5"))
@@ -45,9 +46,9 @@ def _save(state: dict) -> None:
 class ForcePushTracker:
     def __init__(
         self,
-        state_file: Path | None = None,
+        state_file: Optional[Path] = None,
         max_bypasses: int = DEFAULT_MAX_CONSECUTIVE,
-        max_consecutive: int | None = None,
+        max_consecutive: Optional[int] = None,
         window_hours: float = DEFAULT_WINDOW_HOURS,
     ):
         self._state_file = state_file
