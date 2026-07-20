@@ -4526,3 +4526,18 @@ deduplicate-specs:
 # Count behavioral specs per group
 count-specs:
 	@$(UV) run python3 scripts/spec_deduplicator.py --json 2>/dev/null | $(UV) run python3 -c "import json,sys; d=json.load(sys.stdin); print(f'Total: {d[\"stats\"][\"total_specs\"]} specs, {d[\"stats\"][\"unique_bodies\"]} unique bodies'); [print(f'  {g}: {c}') for g,c in sorted(d['stats']['by_group'].items())]"
+
+# Generate specs loop: analyze enforcement quality, fix template-only specs,
+# commit batches, repeat until target count of specs with real enforcement met.
+# Usage:
+#   make generate-specs TARGET=1000           # target 1000 specs with real enforcement
+#   make generate-specs-stats                 # print stats only
+#   make generate-specs-fix TARGET=1000       # fix template enforcements
+generate-specs-stats:
+	@$(UV) run python3 scripts/spec_generator_loop.py --stats
+generate-specs-check:
+	@$(UV) run python3 scripts/spec_generator_loop.py --dry-run --fix --target $(or $(TARGET),1000)
+generate-specs-fix:
+	@$(UV) run python3 scripts/spec_generator_loop.py --fix --target $(or $(TARGET),1000)
+generate-specs:
+	@$(UV) run python3 scripts/spec_generator_loop.py --target $(or $(TARGET),1000)
