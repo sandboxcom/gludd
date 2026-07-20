@@ -944,8 +944,10 @@ const defaultImpl: HotModule = {
     if (!text || text.trim().length === 0) return output
     const trimmed = text.trim()
     const hasWorkArtifact = hasStructuredEvidence(text)
+    const lateHasWorkArtifact = hasStructuredEvidence(text)
     const hasToolCallIntent = /\b(make git-|dispatch|subagent|task)\b/i.test(text)
     void hasWorkArtifact
+    void lateHasWorkArtifact
     void hasToolCallIntent
 
     // Disengage check — if disengaged, allow through (false-positive cascade escape)
@@ -1054,7 +1056,7 @@ const defaultImpl: HotModule = {
     // ── CONSECUTIVE TEXT-ONLY RESPONSES ────────────────────────────────────
     // hasLocalWork text-only attempts are blocked here as well as by the
     // broader pending-work block below; this is the session-level repeat guard.
-    if (isTextOnly && textOnly.count >= 2 && (workState.hasPendingWork || workState.hasLocalWork) && !hasWorkArtifact) {
+    if (isTextOnly && textOnly.count >= 2 && (workState.hasPendingWork || workState.hasLocalWork) && !lateHasWorkArtifact) {
       recordBlock("consecutive-text-only")
       recordBlankedResponse("consecutive-text-only", text)
       writePersistBlock(true, "consecutive-text-only")

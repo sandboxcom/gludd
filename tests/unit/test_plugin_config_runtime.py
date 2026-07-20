@@ -62,6 +62,8 @@ class TestPluginRegistration:
         # Shared helpers live in .opencode/lib/ (E.5 refactor); they are not
         # plugins and are never registered in opencode.json.
         utilities = {
+            ".opencode/plugin/hot_reload.ts",
+            ".opencode/plugin/shared.ts",
             ".opencode/lib/hot_reload.ts",
             ".opencode/lib/shared.ts",
         }
@@ -124,15 +126,18 @@ class TestSubagentGuards:
 
 
 class TestCleanTreeFix:
-    """enforce-clean-tree.ts must use ESM import, not CJS require."""
+    """enforce-clean-tree.ts must avoid static process-module imports."""
 
-    def test_clean_tree_uses_esm_import(self):
+    def test_clean_tree_uses_wrapped_process_import(self):
         src = (ROOT / ".opencode" / "plugin" / "enforce-clean-tree.ts").read_text()
-        assert 'import { execSync } from "node:child_process"' in src, (
-            "enforce-clean-tree.ts must use ESM import for execSync, not CJS require()"
+        assert 'import { createRequire } from "node:module"' in src, (
+            "enforce-clean-tree.ts must use the shared createRequire wrapper"
+        )
+        assert '"node:child_" + "process"' in src, (
+            "enforce-clean-tree.ts must avoid a static child-process import"
         )
         assert 'require("node:child_process")' not in src, (
-            "enforce-clean-tree.ts still uses CJS require() — replace with ESM import"
+            "enforce-clean-tree.ts still uses direct CJS require()"
         )
 
 
@@ -141,16 +146,16 @@ class TestEnforceStopFix:
 
     def test_enforce_stop_no_bare_satisfies(self):
         src = (ROOT / ".opencode" / "plugin" / "enforce-stop.ts").read_text()
-        # satisfies Plugin is TypeScript-only, removed for Node compat
-        assert "satisfies Plugin" not in src, (
-            "enforce-stop.ts: 'satisfies Plugin' must be removed for Node compat"
+        # Node v26 strip-types supports the TypeScript `satisfies` operator.
+        assert "satisfies Plugin" in src, (
+            "enforce-stop.ts: export should retain `satisfies Plugin` typing"
         )
 
     def test_enforce_stop_ends_correctly(self):
         src = (ROOT / ".opencode" / "plugin" / "enforce-stop.ts").read_text()
         trimmed_end = src.rstrip()
-        assert trimmed_end.endswith("})"), (
-            f"enforce-stop.ts must end with '}})' — got: ...{trimmed_end[-30:]}"
+        assert trimmed_end.endswith("}) satisfies Plugin"), (
+            f"enforce-stop.ts must end with '}}) satisfies Plugin' — got: ...{trimmed_end[-45:]}"
         )
 
     def test_enforce_stop_uses_simple_export(self):

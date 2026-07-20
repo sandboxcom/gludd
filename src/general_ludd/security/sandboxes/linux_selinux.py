@@ -33,6 +33,16 @@ def _is_net_family(cap: Capability) -> bool:
     return cap.resource.startswith("net:")
 
 
+def _file_path_prefix(cap: Capability) -> str | None:
+    explicit = path_prefix(cap)
+    if explicit:
+        return explicit
+    if cap.resource.startswith("file:"):
+        value = cap.resource.removeprefix("file:")
+        return value or None
+    return None
+
+
 def _te_for(spec: PermissionSpec) -> str:
     agent = spec.agent_type.replace("-", "_")
     type_name = f"gludd_{agent}_t"
@@ -40,11 +50,10 @@ def _te_for(spec: PermissionSpec) -> str:
     deny: list[str] = []
     for cap in spec.capabilities:
         if _is_file_family(cap):
-            prefix = path_prefix(cap)
-            klass = "dir" if prefix and str(prefix).endswith("/") else "file"
-            allow.append(
-                f"allow {type_name} usr_t:{klass} {{ read write }};"
-            )
+            prefix = _file_path_prefix(cap)
+            if prefix and str(prefix).endswith("/"):
+                allow.append(f"allow {type_name} usr_t:dir {{ read write }};")
+            allow.append(f"allow {type_name} usr_t:file {{ read write }};")
         elif _is_net_family(cap):
             allow.append(
                 f"allow {type_name} unreserved_port_t:tcp_socket name_connect;"
@@ -73,7 +82,7 @@ def _fc_for(spec: PermissionSpec) -> str:
     lines: list[str] = []
     for cap in spec.capabilities:
         if _is_file_family(cap):
-            prefix = path_prefix(cap)
+            prefix = _file_path_prefix(cap)
             if prefix:
                 lines.append(
                     f"{prefix}(/.*)? -- gen_context(system_u:object_r:{type_name},s0)"

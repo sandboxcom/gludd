@@ -34,12 +34,22 @@ def _is_net_family(cap: Capability) -> bool:
     return cap.resource.startswith("net:")
 
 
+def _file_path_prefix(cap: Capability) -> str | None:
+    explicit = path_prefix(cap)
+    if explicit:
+        return explicit
+    if cap.resource.startswith("file:"):
+        value = cap.resource.removeprefix("file:")
+        return value or None
+    return None
+
+
 def _jail_path(spec: PermissionSpec, target: SandboxTarget) -> str:
     if target.directory:
         return target.directory
     for cap in spec.capabilities:
         if _is_file_family(cap):
-            prefix = path_prefix(cap)
+            prefix = _file_path_prefix(cap)
             if prefix:
                 return prefix.rstrip("/")
     return f"/tmp/gludd/{spec.agent_type}"
