@@ -329,7 +329,7 @@ def test_deadline_source_has_subagent_guard():
     """enforce-deadline.ts imports isSubagent from shared.ts with file-based fallback."""
     source = (PLUGIN_DIR / "enforce-deadline.ts").read_text()
     assert "isSubagent" in source, "enforce-deadline.ts must import isSubagent()"
-    assert "../lib/shared.ts" in source, "enforce-deadline.ts must import from shared.ts (file-based fallback lives there)"
+    assert "../lib/shared.ts" in source, "enforce-deadline.ts must import from lib/shared.ts"
 
 
 def test_floor_source_has_subagent_guard():
@@ -343,14 +343,14 @@ def test_clean_tree_source_has_subagent_guard():
     """enforce-clean-tree.ts imports isSubagent from shared.ts with file-based fallback."""
     source = (PLUGIN_DIR / "enforce-clean-tree.ts").read_text()
     assert "isSubagent" in source, "enforce-clean-tree.ts must import isSubagent()"
-    assert "../lib/shared.ts" in source, "enforce-clean-tree.ts must import from shared.ts (file-based fallback lives there)"
+    assert "../lib/shared.ts" in source, "enforce-clean-tree.ts must import from lib/shared.ts"
 
 
 def test_enhancement_source_has_subagent_guard():
     """enforce-enhancement-ratio.ts imports isSubagent from shared.ts with file-based fallback."""
     source = (PLUGIN_DIR / "enforce-enhancement-ratio.ts").read_text()
     assert "isSubagent" in source, "enforce-enhancement-ratio.ts must import isSubagent()"
-    assert "../lib/shared.ts" in source, "enforce-enhancement-ratio.ts must import from shared.ts (file-based fallback lives there)"
+    assert "../lib/shared.ts" in source, "enforce-enhancement-ratio.ts must import from lib/shared.ts"
 
 
 ALL_HOT_MODULE_PLUGINS = [
