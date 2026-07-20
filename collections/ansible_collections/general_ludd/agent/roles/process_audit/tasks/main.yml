@@ -173,7 +173,7 @@
 
 - name: Count CI_RED_PATTERNS entries in enforce-stop.ts
   ansible.builtin.shell:
-    cmd: "set -o pipefail && grep -c 'CI_RED_PATTERNS' {{ project_root }}/.opencode/plugin/enforce-stop.ts 2>/dev/null; grep -A 30 'const CI_RED_PATTERNS' {{ project_root }}/.opencode/plugin/enforce-stop.ts 2>/dev/null | grep -cE '/\\b' || echo 0"
+    cmd: "grep -c 'CI_RED_PATTERNS' {{ project_root }}/.opencode/plugin/enforce-stop.ts 2>/dev/null; grep -A 30 'const CI_RED_PATTERNS' {{ project_root }}/.opencode/plugin/enforce-stop.ts 2>/dev/null | grep -cE '/\\b' || echo 0"
   register: _pa_ci_red_patterns
   changed_when: false
 
