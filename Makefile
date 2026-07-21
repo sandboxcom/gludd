@@ -41,7 +41,7 @@ PYTEST_VERBOSITY ?= -v
         submodule-init submodule-update submodule-status submodule-pin \
         repo-status repo-diff repo-staged repo-log \
         feature-start feature-done test-and-commit preflight \
-        agent-worktree agent-merge agent-cleanup agent-worktree-list \
+        agent-worktree agent-worktree-base agent-merge agent-cleanup agent-worktree-list \
         agent-worktree-dev agent-merge-dev \
         development-push development-merge-to-master development-start development-status \
         git-commit-no-verify git-amend-msg \
@@ -168,6 +168,7 @@ help:
 	@echo "  feature-start MSG='...' Create and switch to feature branch"
 	@echo "  feature-done MSG='...' Test, merge to master with --no-ff"
 	@echo "  agent-worktree BRANCH=<name>  Isolated git worktree for a subagent (no shared-tree races)"
+	@echo "  agent-worktree-base BRANCH=<name> BASE=<ref>  Isolated worktree from an explicit base ref"
 	@echo "  agent-merge BRANCH=<name>     Merge a subagent worktree branch into master (--no-ff)"
 	@echo "  agent-cleanup BRANCH=<name>   Remove a subagent worktree + branch after merge"
 	@echo "  agent-worktree-list           List active git worktrees"
@@ -2872,6 +2873,17 @@ agent-worktree:
 	git worktree add "$$WORKTREE_PATH" -b "$(BRANCH)" 2>/dev/null || git worktree add "$$WORKTREE_PATH" "$(BRANCH)"; \
 	echo "WORKTREE_PATH=$$WORKTREE_PATH"; \
 	echo "Worktree ready at $$WORKTREE_PATH on branch $(BRANCH)"
+
+# Create an isolated worktree at an explicit base ref. Usage:
+#   make agent-worktree-base BRANCH=release-sync BASE=sandboxcom/master
+agent-worktree-base:
+	@[ -n "$(BRANCH)" ] && [ -n "$(BASE)" ] || { echo "Usage: make agent-worktree-base BRANCH=agent-<name> BASE=<ref>"; exit 1; }
+	@WORKTREE_PATH="/tmp/gludd-worktrees/$(BRANCH)"; \
+	mkdir -p /tmp/gludd-worktrees; \
+	git rev-parse --verify "$(BASE)^{commit}" >/dev/null 2>&1 || { echo "ERROR: BASE $(BASE) is not a valid commit"; exit 1; }; \
+	git worktree add "$$WORKTREE_PATH" -b "$(BRANCH)" "$(BASE)" 2>/dev/null || git worktree add "$$WORKTREE_PATH" "$(BRANCH)"; \
+	echo "WORKTREE_PATH=$$WORKTREE_PATH"; \
+	echo "Worktree ready at $$WORKTREE_PATH on branch $(BRANCH) from $(BASE)"
 
 # Merge a subagent's worktree branch back to master. Run on the MAIN checkout
 # (never from inside a worktree). Usage:
