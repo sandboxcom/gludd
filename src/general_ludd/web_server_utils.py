@@ -14,8 +14,8 @@ import json
 import re
 import ssl
 import textwrap
-from datetime import UTC, datetime
 from collections.abc import Callable
+from datetime import UTC, datetime
 from typing import Any, cast
 
 # ---------------------------------------------------------------------------

@@ -74,9 +74,17 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             return {"error": "pause controller not available", "paused": False}
         dispatcher = getattr(app.state, "_agent_dispatcher", None)
         hibernation = getattr(app.state, "_hibernation_controller", None)
-        handles, quiesce_status, quiesce_errors = await controller.quiesce_project(
+        quiesce_result = await controller.quiesce_project(
             req.target_id, dispatcher=dispatcher, hibernation=hibernation,
         )
+        handles: list[object]
+        if isinstance(quiesce_result, tuple):
+            quiesce_handles, quiesce_status, quiesce_errors = quiesce_result
+            handles = list(quiesce_handles)
+        else:
+            handles = quiesce_result[:]
+            quiesce_status = "clean"
+            quiesce_errors = []
         record = controller.pause(
             "project",
             req.target_id,

@@ -177,7 +177,7 @@ class PauseController:
         project_id: str,
         dispatcher: AgentDispatcher | None = None,
         hibernation: HibernationController | None = None,
-    ) -> tuple[list[HibernationHandle], str, list[str]]:
+    ) -> tuple[list[HibernationHandle], str, list[str]] | QuiesceNoopResult:
         """Quiesce in-flight agents at the dispatcher boundary before pausing.
 
         Two-phase: (1) drain/cancel in-flight tasks via the dispatcher,
@@ -192,7 +192,7 @@ class PauseController:
         these subsystems are not yet wired.
         """
         if dispatcher is None or hibernation is None:
-            return [], "clean", []
+            return QuiesceNoopResult()
         from general_ludd.agents.hibernation import AgentEnvironmentSnapshot
 
         await dispatcher.quiesce_project(project_id)
