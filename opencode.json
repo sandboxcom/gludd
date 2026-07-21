@@ -8,6 +8,7 @@
     "doom_loop": "deny"
   },
   "plugin": [
+    "./.opencode/plugin/hot_reload.ts",
     "./.opencode/plugin/enforce-session-start.ts",
     "./.opencode/plugin/enforce-make.ts",
     "./.opencode/plugin/enforce-floor.ts",

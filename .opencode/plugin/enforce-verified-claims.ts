@@ -24,7 +24,7 @@ export const DONE_WORDS = [
 ] as const
 
 export const EVIDENCE_PATTERNS = [
-  /\b[0-9a-f]*[a-f][0-9a-f]{6,39}\b/,
+  /\b(?=[0-9a-f]{7,40}\b)(?=[0-9a-f]*[a-f][0-9a-f]*\b)(?!0{7,40}\b)(?!deadbeef\b)(?!c0ffee\b)[0-9a-f]+\b/,
   /VERIFIED\s+\w+@/,
   /CI\s+(GREEN|RED|PENDING)/,
   /\d+\s+passed/,

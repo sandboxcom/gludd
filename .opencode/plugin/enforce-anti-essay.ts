@@ -111,7 +111,7 @@ const NAG_TEXT = (
 )
 
 const defaultImpl: HotModule = {
-  "text.complete": async (output) => {
+  "tool.execute.after": async (output) => {
     if (isSubagent()) return
     reportAlive("enforce-anti-essay")
     try {
@@ -166,10 +166,10 @@ const defaultImpl: HotModule = {
 
 export default (({ }) => {
   return {
-    "text.complete": async (output) => {
+    "tool.execute.after": async (output) => {
       if (isSubagent()) return
       const impl = loadHotModule("anti-essay", defaultImpl)
-      const fn = impl["text.complete"]
+      const fn = impl["tool.execute.after"]
       return fn ? await fn(output) : undefined
     },
     "tool.execute.before": async (input, output) => {

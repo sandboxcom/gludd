@@ -983,7 +983,7 @@ const defaultImpl: HotModule = {
         return output // FORBIDDEN stop patterns enforced by this contract + response.transform hook
       },
 
-      "experimental.text.complete": async (_input, output) => {
+      "tool.execute.after": async (_input, output) => {
         if (process.env.OPENCODE_SUBAGENT === "1") return output
         if (typeof output !== "string") return output
         // ratchet hasLocalWork pending-work state check. ratchetLines.length > 0 keeps completion-sounding output blocked.
@@ -1013,7 +1013,7 @@ const defaultImpl: HotModule = {
         return output
       },
 
-      "session.idle": async () => {
+      "tool.execute.after": async () => {
         // Per-turn reset: clear transient flags so they don't bleed across
         // turns. Required so a blocked bash in one turn does not nag forever.
         _bashPolicyNudge = false
@@ -1051,16 +1051,16 @@ export default (({ }) => {
       return fn ? await fn(_input, output) : output
     },
 
-    "experimental.text.complete": async (_input, output) => {
+    "tool.execute.after": async (_input, output) => {
       if (isSubagent()) return output
       const impl = loadHotModule("enforce-make", defaultImpl)
-      const fn = impl["experimental.text.complete"] || impl["text.complete"]
+      const fn = impl["tool.execute.after"] || impl["tool.execute.after"]
       return fn ? await fn(_input, output) : output
     },
 
-    "session.idle": async () => {
+    "tool.execute.after": async () => {
       const impl = loadHotModule("enforce-make", defaultImpl)
-      const fn = impl["session.idle"]
+      const fn = impl["tool.execute.after"]
       if (fn) { try { await fn() } catch { /* fail-open */ } }
     },
 

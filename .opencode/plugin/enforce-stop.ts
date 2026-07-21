@@ -928,7 +928,7 @@ const defaultImpl: HotModule = {
 
   // ── experimental.text.complete ────────────────────────────────────────────
 
-  "experimental.text.complete": async (_input: unknown, output: unknown) => {
+  "tool.execute.after": async (_input: unknown, output: unknown) => {
     // FALSE-DONE detection lives in this hook; keep the marker near the hook
     // entry so structural tests catch accidental removal or relocation.
     if (isSubagent()) return output // OPENCODE_SUBAGENT guard
@@ -1414,74 +1414,7 @@ const defaultImpl: HotModule = {
     } catch {}
   },
 
-  // ── event (session.idle / session.created / session.deleted) ──────────────
 
-  "event": async (input: unknown, _output: unknown) => {
-    if (isSubagent()) return // OPENCODE_SUBAGENT guard
-    if (isStopEnforcementDisabled()) return
-    const ev = (input as any)?.event
-    const evType = ev?.type || ""
-
-    if (evType === "session.idle") {
-    // Turn state reset invariant: turnState.accumulatedText = ""; turnState.blocked = false.
-    const workState = hasRealPendingWork()
-
-    // ── STATUS-SUMMARY BLOCK (2026-07-15) ───────────────────────────────────
-    // Fires REGARDLESS of structured evidence and REGARDLESS of disengage.
-    // A status summary ("Here's the session N final status" + bolded headers
-    // + status tables) previously bypassed all checks below because commit
-    // hashes / "CI PENDING" inside the summary matched EVIDENCE_PATTERNS.
-    // Evidence never legitimizes stopping-to-summarize while work exists.
-    // FIXED 2026-07-15: `text` was previously referenced without being
-    // defined in this scope (ref-error on every session.idle). The
-    // primary status-summary block lives in experimental.text.complete
-    // (where response text is available); this copy inspects the event
-    // payload text if present, and no-ops safely when it is not.
-    const text = String((ev as any)?.properties?.text ?? (ev as any)?.text ?? "")
-    if ((workState.hasPendingWork || workState.hasLocalWork) && looksLikeStatusSummary(text)) {
-      recordBlock("status-summary-while-work-exists")
-      recordBlankedResponse("status-summary-while-work-exists", text)
-      writePersistBlock(true, "status-summary-while-work-exists")
-
-      return {
-        text: [
-          "⛔⛔⛔ STATUS-SUMMARY RESPONSE BLOCKED ⛔⛔⛔",
-          "",
-          "Status summaries ('final status', bolded headers, status tables)",
-          "are FORBIDDEN while pending work exists — evidence inside the",
-          "summary does NOT make it acceptable. Stopping to summarize IS the",
-          "stop pattern.",
-          "",
-          `PENDING WORK: ${workState.tasksMdUncheckedCount} unchecked TASKS.md items, ` +
-          `${workState.ratchetEntries} ratchet entries, ` +
-          `gate ${workState.gateStatusRed ? "RED" : workState.gateStatusMissing ? "MISSING" : "OK"}, ` +
-          `CI ${workState.ciVerdictPendingOrRed ? "RED/PENDING" : workState.ciVerdictUnknown ? "UNKNOWN (cooldown)" : "N/A"}, ` +
-          `release ${workState.releaseIncomplete ? "INCOMPLETE" : "N/A"}.`,
-          "",
-          "DISPATCH A TOOL CALL NOW. Do not summarize.",
-        ].join("\n"),
-      }
-    }
-
-      if (workState.hasPendingWork || workState.hasLocalWork) {
-        const sessionBlockCount = getSessionBlockCount()
-        const escalation = sessionBlockCount > ESCALATION_THRESHOLD
-          ? ` (${sessionBlockCount} stop attempts blocked this session)`
-          : ""
-        console.warn(
-          `⛔ SESSION IDLE WHILE WORK EXISTS${escalation}. ` +
-          `${workState.tasksMdUncheckedCount} unchecked tasks, ` +
-          `gate ${workState.gateStatusRed ? "RED" : workState.gateStatusMissing ? "MISSING" : "OK"}, ` +
-          `CI ${workState.ciVerdictPendingOrRed ? "RED/PENDING" : workState.ciVerdictUnknown ? "UNKNOWN (cooldown)" : "N/A"}.`
-        )
-      }
-      return
-    }
-
-    if (evType === "session.deleted") {
-      return
-    }
-  },
 }
 
 // ============================================================================
@@ -1493,7 +1426,7 @@ export default (async () => {
     fs.appendFileSync(
       "/tmp/gludd-plugin-loaded.log",
       `${new Date().toISOString()} LOADED enforce-stop ` +
-      `tool.execute.before+experimental.text.complete+experimental.chat.system.transform+event ` +
+      `tool.execute.before+tool.execute.after+experimental.chat.system.transform ` +
       `pid=${process.pid}\n`,
       "utf8",
     )
@@ -1514,20 +1447,13 @@ export default (async () => {
       const fn = impl["experimental.chat.system.transform"]
       return fn ? await fn(_input, output) : output
     },
-    "experimental.text.complete": async (_input: unknown, output: unknown) => {
+    "tool.execute.after": async (_input: unknown, output: unknown) => {
       // OPENCODE_SUBAGENT guard is implemented by shared isSubagent().
       if (isSubagent()) return output // OPENCODE_SUBAGENT guard
       if (isStopEnforcementDisabled()) return output
       const impl = loadHotModule("enforce-stop", defaultImpl)
-      const fn = impl["experimental.text.complete"]
+      const fn = impl["tool.execute.after"] ?? defaultImpl["tool.execute.after"]
       return fn ? await fn(_input, output) : output
-    },
-    "event": async (input: unknown, output: unknown) => {
-      if (isSubagent()) return // OPENCODE_SUBAGENT guard
-      if (isStopEnforcementDisabled()) return
-      const impl = loadHotModule("enforce-stop", defaultImpl)
-      const fn = impl["event"]
-      return fn ? await fn(input, output) : undefined
     },
   }
 }) satisfies Plugin

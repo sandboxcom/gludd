@@ -18,3 +18,11 @@ def test_no_prompt_policy_is_a_first_read_directive() -> None:
     mechanical = text.index("Mechanical Contract")
 
     assert directive < mechanical
+
+def test_status_answers_do_not_stop_active_work() -> None:
+    text = Path("AGENTS.md").read_text(encoding="utf-8")
+
+    assert "Status questions are not completion checkpoints" in text
+    assert "answer status only as an interim progress update" in text
+    assert "continue with the next make-backed tool call in the same turn" in text
+    assert "Never use a final response as a pause while known work remains" in text

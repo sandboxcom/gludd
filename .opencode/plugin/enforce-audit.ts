@@ -66,7 +66,11 @@ export const EVIDENCE_RE =
   /\b[0-9a-f]*[a-f][0-9a-f]{6,39}\b|VERIFIED\s+\S+@[0-9a-f]+|CI\s+(GREEN|RED|PENDING)|\d+\s+passed|=== GATE:\s+PASSED\s+===/;
 
 const defaultImpl: HotModule = {
-  "text.complete": async (_output) => {
+  "tool.execute.before": async (_input) => {
+    if (isSubagent()) return;
+    reportAlive("enforce-audit");
+  },
+  "tool.execute.after": async (_output) => {
     if (isSubagent()) return;
     reportAlive("enforce-audit");
     try {
@@ -104,10 +108,16 @@ const defaultImpl: HotModule = {
 
 export default (async ({}) => {
   return {
-    "text.complete": async (output) => {
+    "tool.execute.before": async (input) => {
       if (isSubagent()) return;
       const impl = loadHotModule("audit", defaultImpl);
-      const fn = impl["text.complete"];
+      const fn = impl["tool.execute.before"];
+      return fn ? await fn(input) : undefined;
+    },
+    "tool.execute.after": async (output) => {
+      if (isSubagent()) return;
+      const impl = loadHotModule("audit", defaultImpl);
+      const fn = impl["tool.execute.after"];
       return fn ? await fn(output) : undefined;
     },
   };

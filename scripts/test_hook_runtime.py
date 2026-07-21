@@ -377,7 +377,7 @@ fs.writeFileSync('{state_file}', JSON.stringify({{
 }}))
 const mod = await import('{PLUGIN_DIR}/enforce-enhancement-ratio.ts')
 const plugin = await mod.default({{}})
-const output = await plugin['experimental.text.complete']({{text: 'hello'}})
+const output = await plugin['tool.execute.after']({{text: 'hello'}})
 const isString = typeof output === 'string'
 const hasViolation = isString && output.includes('ENHANCEMENT RATIO VIOLATION')
 console.log(JSON.stringify({{isString, hasViolation}}))
@@ -399,7 +399,7 @@ const mod = await import('{PLUGIN_DIR}/enforce-enhancement-ratio.ts')
 const plugin = await mod.default({{}})
 await plugin['tool.execute.before']({{tool: 'task', args: {{prompt: 'fix bug A'}}}}, undefined)
 await plugin['tool.execute.before']({{tool: 'task', args: {{prompt: 'enhancement: add docs'}}}}, undefined)
-    const output = await plugin['experimental.text.complete']({{text: 'hello'}})
+    const output = await plugin['tool.execute.after']({{text: 'hello'}})
     console.log(JSON.stringify({{isModified: output.text !== 'hello'}}))
 """
     result = _run_ts(code)
@@ -518,7 +518,7 @@ fs.writeFileSync('{state_file}', JSON.stringify({{
 }}))
 const mod = await import('{PLUGIN_DIR}/enforce-enhancement-ratio.ts')
 const plugin = await mod.default({{}})
-    const output = await plugin['experimental.text.complete']({{text: 'hello'}})
+    const output = await plugin['tool.execute.after']({{text: 'hello'}})
     console.log(JSON.stringify({{
         isBlocked: typeof output === 'string',
         hasViolation: typeof output === 'string' && output.includes('ENHANCEMENT RATIO VIOLATION'),
@@ -551,7 +551,7 @@ fs.writeFileSync('{state_file}', JSON.stringify({{
 }}))
 const mod = await import('{PLUGIN_DIR}/enforce-enhancement-ratio.ts')
 const plugin = await mod.default({{}})
-    const output = await plugin['experimental.text.complete']({{text: 'hello'}})
+    const output = await plugin['tool.execute.after']({{text: 'hello'}})
     console.log(JSON.stringify({{
         notBlocked: typeof output !== 'string',
         textPreserved: typeof output !== 'string' ? (output?.text ?? '') === 'hello' : false,
@@ -576,7 +576,7 @@ const mod = await import('{PLUGIN_DIR}/enforce-enhancement-ratio.ts')
 const plugin = await mod.default({{}})
 // Only 1 dispatch — wave too small for ratio check
 await plugin['tool.execute.before']({{tool: 'task', args: {{prompt: 'fix bug A'}}}}, undefined)
-    const output = await plugin['experimental.text.complete']({{text: 'hello'}})
+    const output = await plugin['tool.execute.after']({{text: 'hello'}})
     console.log(JSON.stringify({{textPreserved: output?.text === 'hello'}}))
 """
     result = _run_ts(code, env_override={"GLUDD_ENHANCEMENT_RATIO_STATE": state_file})
@@ -986,7 +986,7 @@ await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
 await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
 await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
 // text.complete must detect streak > MAX and replace output
-const output = await plugin['experimental.text.complete'](undefined, {{text: 'hello from test'}})
+const output = await plugin['tool.execute.after'](undefined, {{text: 'hello from test'}})
 const finalText = (output && output.text) ? output.text : ''
 const blocked = finalText.includes('FLOOR BREACH')
 const originalGone = !finalText.includes('hello from test')
@@ -1029,7 +1029,7 @@ const plugin = await mod.default({{}})
 // 1 dispatch in "previous message"
 await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
 // text.complete transitions _prevMessageDispatchCount = 1
-await plugin['experimental.text.complete'](undefined, {{text: 'intermediate'}})
+await plugin['tool.execute.after'](undefined, {{text: 'intermediate'}})
 // Non-dispatch call — must be denied as MESSAGE-SHAPE VIOLATION
 const result = await plugin['tool.execute.before']({{tool: 'edit'}}, undefined)
 const deny = result?.permissionDecision === 'deny'
@@ -1059,7 +1059,7 @@ def test_floor_result_grace_denies_non_dispatch():
 const mod = await import('{PLUGIN_DIR}/enforce-floor.ts')
 const plugin = await mod.default({{}})
 // Inject result-marker text to trigger grace period
-await plugin['experimental.text.complete'](undefined, {{text: 'task result: test agent completed'}})
+await plugin['tool.execute.after'](undefined, {{text: 'task result: test agent completed'}})
 // Non-dispatch non-read tool must be denied
 const result = await plugin['tool.execute.before']({{tool: 'edit'}}, undefined)
 const deny = result?.permissionDecision === 'deny'
@@ -1081,7 +1081,7 @@ def test_floor_text_complete_subagent_skip():
     code = f"""\
 const mod = await import('{PLUGIN_DIR}/enforce-floor.ts')
 const plugin = await mod.default({{}})
-const output = await plugin['experimental.text.complete'](undefined, {{text: 'subagent output text'}})
+const output = await plugin['tool.execute.after'](undefined, {{text: 'subagent output text'}})
 const textPreserved = !!(output && output.text === 'subagent output text')
 console.log(JSON.stringify({{textPreserved}}))
 """
@@ -1162,7 +1162,7 @@ await plugin['tool.execute.before']({{tool: 'workflow'}}, undefined)
 let output
 let error = null
 try {{
-  output = await plugin['experimental.text.complete'](undefined, {{text: 'Dispatching 3 subagents to fix bugs.'}})
+  output = await plugin['tool.execute.after'](undefined, {{text: 'Dispatching 3 subagents to fix bugs.'}})
 }} catch (e) {{
   error = e.message
 }}
@@ -1212,7 +1212,7 @@ def test_multitask_single_dispatch_blocked():
 const mod = await import('{PLUGIN_DIR}/enforce-multitask.ts')
 const plugin = await mod.default({{}})
 await plugin['tool.execute.before']({{tool: 'task'}})
-await plugin['experimental.text.complete'](undefined, {{text: 'intermediate'}})
+await plugin['tool.execute.after'](undefined, {{text: 'intermediate'}})
 const result = await plugin['tool.execute.before']({{tool: 'edit'}})
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
@@ -1226,9 +1226,9 @@ def test_multitask_zero_dispatch_text_blocked():
     code = f"""\
 const mod = await import('{PLUGIN_DIR}/enforce-multitask.ts')
 const plugin = await mod.default({{}})
-const r1 = await plugin['experimental.text.complete'](undefined, {{text: 'msg1'}})
+const r1 = await plugin['tool.execute.after'](undefined, {{text: 'msg1'}})
 const output = {{text: 'msg2'}}
-const r2 = await plugin['experimental.text.complete'](undefined, output)
+const r2 = await plugin['tool.execute.after'](undefined, output)
 const finalText = r2?.text ?? output.text
 console.log(JSON.stringify({{blocked: r2 !== null && r2 !== undefined && finalText !== 'msg2', finalText}}))
 """
@@ -1571,7 +1571,7 @@ def test_stop_pending_work_text_blanked():
 const mod = await import('{PLUGIN_DIR}/enforce-stop.ts')
 const plugin = await mod.default({{}})
 const output = {{text: 'Done. All tasks complete.'}}
-const result = await plugin['experimental.text.complete'](undefined, output)
+const result = await plugin['tool.execute.after'](undefined, output)
 const finalText = result?.text ?? output.text
 const blocked = finalText !== 'Done. All tasks complete.'
 console.log(JSON.stringify({{blocked, finalText: finalText.slice(0, 200)}}))
@@ -1604,7 +1604,7 @@ def test_stop_no_pending_work():
 const mod = await import('{PLUGIN_DIR}/enforce-stop.ts')
 const plugin = await mod.default({{}})
 const output = {{text: 'All good, no pending work.'}}
-const result = await plugin['experimental.text.complete'](undefined, output)
+const result = await plugin['tool.execute.after'](undefined, output)
 const finalText = result?.text ?? output.text
 console.log(JSON.stringify({{passedThrough: finalText === 'All good, no pending work.'}}))
 """
@@ -1632,7 +1632,7 @@ def test_stop_env_disabled():
 const mod = await import('{PLUGIN_DIR}/enforce-stop.ts')
 const plugin = await mod.default({{}})
 const output = {{text: 'Done.'}}
-const result = await plugin['experimental.text.complete'](undefined, output)
+const result = await plugin['tool.execute.after'](undefined, output)
 const finalText = result?.text ?? output.text
 console.log(JSON.stringify({{passedThrough: finalText === 'Done.'}}))
 """
@@ -1653,7 +1653,7 @@ def test_stop_corrupt_state():
 const mod = await import('{PLUGIN_DIR}/enforce-stop.ts')
 const plugin = await mod.default({{}})
 const output = {{text: 'corrupt state test text'}}
-const result = await plugin['experimental.text.complete'](undefined, output)
+const result = await plugin['tool.execute.after'](undefined, output)
 const finalText = result?.text ?? output.text
 console.log(JSON.stringify({{returned: true, isString: typeof finalText === 'string'}}))
 """
@@ -1688,7 +1688,7 @@ const mod = await import('{PLUGIN_DIR}/enforce-stop.ts')
 const plugin = await mod.default({{}})
 // Step 1: text with pending work → should blank and write persist block
 const output = {{text: 'Done. Everything is complete.'}}
-const r1 = await plugin['experimental.text.complete'](undefined, output)
+const r1 = await plugin['tool.execute.after'](undefined, output)
 const textBlanked = r1?.text !== 'Done. Everything is complete.'
 // Step 2: non-dispatch tool call → should be denied by persist block
 const r2 = await plugin['tool.execute.before']({{tool: 'edit', args: {{}}}}, undefined)
@@ -1758,7 +1758,7 @@ const mod = await import('{PLUGIN_DIR}/enforce-stop.ts')
 const plugin = await mod.default({{}})
 // Text should pass through (no pending work)
 const output = {{text: 'All good, no pending work.'}}
-const r1 = await plugin['experimental.text.complete'](undefined, output)
+const r1 = await plugin['tool.execute.after'](undefined, output)
 const passedThrough = (r1?.text ?? output.text) === 'All good, no pending work.'
 // Non-dispatch tool should be allowed (no persist block)
 const r2 = await plugin['tool.execute.before']({{tool: 'edit', args: {{}}}}, undefined)
@@ -1818,7 +1818,7 @@ def test_stop_task_result_passes_through_gate_red():
 const mod = await import('{PLUGIN_DIR}/enforce-stop.ts')
 const plugin = await mod.default({{}})
 const output = {{text: 'task result: test agent completed. Fixed 3 files.'}}
-const result = await plugin['experimental.text.complete'](undefined, output)
+const result = await plugin['tool.execute.after'](undefined, output)
 const finalText = result?.text ?? output.text
 const passedThrough = finalText === 'task result: test agent completed. Fixed 3 files.'
 console.log(JSON.stringify({{passedThrough}}))
@@ -1839,7 +1839,7 @@ def test_stop_permission_seeking_want_me_to_blocked():
 const mod = await import('{PLUGIN_DIR}/enforce-stop.ts')
 const plugin = await mod.default({{}})
 const output = {{text: 'Fix is ready. Want me to proceed with the other 13 plugins?'}}
-const result = await plugin['experimental.text.complete'](undefined, output)
+const result = await plugin['tool.execute.after'](undefined, output)
 const finalText = result?.text ?? output.text
 console.log(JSON.stringify({{
     blocked: finalText !== output.text,
@@ -1859,7 +1859,7 @@ def test_stop_permission_seeking_should_i_blocked():
 const mod = await import('{PLUGIN_DIR}/enforce-stop.ts')
 const plugin = await mod.default({{}})
 const output = {{text: 'Should I continue with the remaining fixes?'}}
-const result = await plugin['experimental.text.complete'](undefined, output)
+const result = await plugin['tool.execute.after'](undefined, output)
 const finalText = result?.text ?? output.text
 console.log(JSON.stringify({{
     blocked: finalText !== output.text,
@@ -1919,7 +1919,7 @@ def test_stop_status_summary_blocked_despite_evidence():
 const mod = await import('{PLUGIN_DIR}/enforce-stop.ts')
 const plugin = await mod.default({{}})
 const output = {{text: "{summary}"}}
-const result = await plugin['experimental.text.complete'](undefined, output)
+const result = await plugin['tool.execute.after'](undefined, output)
 const finalText = result?.text ?? output.text
 console.log(JSON.stringify({{
     blocked: finalText !== output.text,

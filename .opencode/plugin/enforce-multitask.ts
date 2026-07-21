@@ -380,7 +380,7 @@ export const defaultImpl: HotModule = {
       return
     }
   },
-  "experimental.text.complete": async (_input: unknown, output: unknown) => {
+  "tool.execute.after": async (_input: unknown, output: unknown) => {
     if (isSubagent()) return output
     if (!FLOOR_ENFORCE) return undefined
     const text = typeof output === "string" ? output
@@ -430,7 +430,7 @@ export default (({ }) => {
       const fn = impl["tool.execute.before"]
       return fn ? await fn(input) : undefined
   },
-  "experimental.text.complete": async (_input: unknown, output: unknown) => {
+  "tool.execute.after": async (_input: unknown, output: unknown) => {
     if (isSubagent()) return output
     if (!FLOOR_ENFORCE) return undefined
     const text = typeof output === "string" ? output

@@ -123,7 +123,7 @@ const defaultImpl: HotModule = {
     }
   },
 
-  "text.complete": async (output) => {
+  "tool.execute.after": async (output) => {
     if (isSubagent()) return;
     try {
       const objective = getPrimaryObjective();
@@ -154,10 +154,10 @@ export default (async ({}) => {
       const fn = impl["tool.execute.before"];
       return fn ? await fn(input, output) : undefined;
     },
-    "text.complete": async (output: any) => {
+    "tool.execute.after": async (output: any) => {
       if (isSubagent()) return;
       const impl = loadHotModule("objective", defaultImpl);
-      const fn = impl["text.complete"];
+      const fn = impl["tool.execute.after"];
       return fn ? await fn(output) : undefined;
     },
   };

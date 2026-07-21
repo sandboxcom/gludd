@@ -71,3 +71,8 @@ export function loadHotModule(name: string, defaults: HotModule): HotModule {
     return defaults
   }
 }
+
+
+export default (({ }) => ({
+  "tool.execute.before": async (_input: unknown) => undefined,
+})) satisfies import("@opencode-ai/plugin").Plugin
