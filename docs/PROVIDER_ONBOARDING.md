@@ -190,6 +190,34 @@ It covers 22 candidates with: OpenAI-compat endpoint URL, env var, free tier ava
 
 A smoke test verifies the credential works end-to-end against the live provider API with the minimum-cost request. It belongs in `tests/live/` (the `live/` directory is the convention for tests that hit real external APIs and are skipped in CI by default).
 
+### Provider smoke CLI
+
+Use `gludd smoke <provider> <test>` for ad hoc checks before writing or running a provider-specific live test. The command emits structured logs, metrics, and lifecycle events so failures can be pasted into issues without leaking credentials.
+
+```
+gludd smoke all config --json
+gludd smoke openrouter models --json
+gludd smoke openai chat --dry-run --include-request --json
+gludd smoke openai chat --json
+```
+
+Available tests:
+
+| Test | Network? | Cost? | Purpose |
+|---|---:|---:|---|
+| `config` | No | No | Validates every preset field and the flagship model mapping. `all config` covers every provider in `PROVIDER_PRESETS`. |
+| `models` | Yes, only when a preset has `free_models_endpoint` | Usually no completion cost | Checks catalog/discovery endpoints and records model-count and HTTP metrics. |
+| `chat` | Yes, unless `--dry-run` is set | One completion token | Sends a minimal one-token request through OpenAI-compatible providers and Anthropic. Missing credentials are reported as `skipped`, not as broken providers. |
+| `all` | Mixed | Bounded by the above | Runs `config`, `models`, and `chat` for the selected provider or for every provider when `<provider>` is `all`. |
+
+The JSON output shape is stable at the top level: `summary` contains `total`, `passed`, `skipped`, and `failed`; each entry in `results` contains `logs`, `metrics`, and `events`. Redacted request details are included only with `--include-request` or `--dry-run`.
+
+### Long-lived user/community issues reflected in the CLI
+
+- OpenRouter community/support threads repeatedly show that routing can select a more expensive or different backend than expected unless the caller pins model/provider controls. The smoke CLI therefore never uses `openrouter/auto`; it uses the preset flagship model and records the resolved model/provider path where the API returns it. Sources: [OpenRouter cost/routing control](https://openrouter.zendesk.com/hc/en-us/articles/51691947905051-Why-did-OpenRouter-route-to-an-expensive-model-or-provider-and-how-do-I-control-routing-for-cost), [OpenRouter routing guide](https://openrouter.ai/blog/insights/model-routing/), and [Cline issue #4371](https://github.com/cline/cline/issues/4371).
+- OpenAI-compatible APIs are not perfectly uniform: the OpenAI Python type surface documents `max_tokens` as deprecated in favor of `max_completion_tokens` for some models, while many OpenAI-compatible providers still expect `max_tokens`. The CLI uses `max_tokens: 1` for broad compatibility and keeps the model override explicit so operators can avoid reasoning/o-series models in smoke probes. Sources: [`openai-python` chat completion params](https://github.com/openai/openai-python/blob/main/src/openai/types/chat/completion_create_params.py) and [OpenAI's Chat Completions migration note](https://openai.com/index/gpt-4-api-general-availability/).
+- Anthropic documents `max_tokens: 1` as a valid minimal Messages API pattern, so Anthropic is handled as a direct native Messages request rather than forced through OpenAI-compatible request shape. Source: [Anthropic API primer](https://platform.claude.com/docs/en/claude_api_primer).
+
 **Pre-`PROVIDER_FLAGSHIP_MODELS` pattern** (works today):
 
 ```python

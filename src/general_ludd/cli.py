@@ -85,6 +85,12 @@ COMMANDS
     health              Check daemon health
       --daemon-url URL    Daemon URL
 
+    smoke               Run provider smoke tests
+      <provider>          Provider key, or all
+      <test>              config|models|chat|all
+      --dry-run           Prepare live request without sending it
+      --json              Emit logs, metrics, and events as JSON
+
     models              Model management commands
       search              Search HuggingFace models
         [QUERY]             Search query
@@ -374,6 +380,10 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     health_parser = sub.add_parser("health", help="Check daemon health")
     health_parser.add_argument("--daemon-url", default="http://localhost:8000")
     health_parser.set_defaults(func=_cmd_health)
+
+    from general_ludd.cli_smoke import add_smoke_subparser
+
+    smoke_parser = add_smoke_subparser(sub)
 
     models_parser = sub.add_parser("models", help="Model management commands")
     models_parser.set_defaults(func=None)
@@ -1137,6 +1147,7 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     subcommand_map = {
         "login": login_parser,
         "models": models_parser,
+        "smoke": smoke_parser,
         "mcp": mcp_parser,
         "skills": skills_parser,
         "compute": compute_parser,
