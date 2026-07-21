@@ -87,6 +87,14 @@ function getDeletionReason(): string | undefined {
   return reason && reason.trim().length > 0 ? reason.trim() : undefined;
 }
 
+function pickString(source: Record<string, unknown>, ...keys: string[]): string {
+  for (const key of keys) {
+    const value = source[key];
+    if (typeof value === "string") return value;
+  }
+  return "";
+}
+
 function _reportAlive(): void {
   reportAlive("enforce-deletion-gate");
 }
@@ -117,20 +125,24 @@ const defaultImpl: HotModule = {
       if (!argsSource) return;
       const args = argsSource as {
         filePath?: string;
+        file_path?: string;
         oldString: string;
+        old_string?: string;
         newString: string;
+        new_string?: string;
       };
-      filePath = args.filePath || "";
-      const oldLines = countLines(args.oldString);
-      const newLines = countLines(args.newString);
+      filePath = pickString(args as Record<string, unknown>, "filePath", "file_path");
+      const oldLines = countLines(pickString(args as Record<string, unknown>, "oldString", "old_string"));
+      const newLines = countLines(pickString(args as Record<string, unknown>, "newString", "new_string"));
       lines_removed = Math.max(0, oldLines - newLines);
     } else if (input.tool === "write") {
       if (!argsSource) return;
       const args = argsSource as {
         filePath?: string;
+        file_path?: string;
         content?: string;
       };
-      filePath = args.filePath || "";
+      filePath = pickString(args as Record<string, unknown>, "filePath", "file_path");
       if (!filePath) return;
       const existingLines = await readExistingFileLines(filePath);
       const newLines = countLines(args.content ?? "");

@@ -15,8 +15,8 @@ Two execution modes:
   - Daemon-level (tests 13-14): full FastAPI daemon via ``TestClient`` so
     concurrency and metrics are observable across the HTTP boundary.
 
-Determinism: all backoff sleeps are captured via a ``time.sleep`` recorder (no
-real wall-clock waits); ``random.uniform`` jitter is forced deterministic via a
+Determinism: all backoff sleeps are captured via an ``asyncio.sleep`` recorder
+(no real wall-clock waits); ``random.uniform`` jitter is forced deterministic via a
 ``TimeoutRetryPolicy`` subclass injected through the gateway module attribute.
 """
 from __future__ import annotations
@@ -199,15 +199,15 @@ def _reset_scripts() -> None:
 
 @pytest.fixture()
 def sleep_recorder(monkeypatch: pytest.MonkeyPatch) -> list[float]:
-    """Replace time.sleep with a recorder; returns the list of captured waits."""
+    """Replace gateway asyncio.sleep with a recorder; returns captured waits."""
+    import general_ludd.models.gateway as gateway_mod
+
     recorded: list[float] = []
 
-    def _fake_sleep(seconds: float) -> None:
+    async def _fake_sleep(seconds: float) -> None:
         recorded.append(float(seconds))
 
-    # call_model_with_retry does `import time as _time`; patching the attribute
-    # on the real `time` module object makes the alias resolve to the patch.
-    monkeypatch.setattr(time, "sleep", _fake_sleep)
+    monkeypatch.setattr(gateway_mod.asyncio, "sleep", _fake_sleep)
     return recorded
 
 

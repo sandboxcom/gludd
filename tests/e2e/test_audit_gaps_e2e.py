@@ -11,13 +11,15 @@ from fastapi.testclient import TestClient
 
 import general_ludd.daemon as daemon_mod
 from general_ludd.daemon import create_daemon_app
-from general_ludd.event_loop.loop import EventLoop
+from general_ludd.event_loop.loop import PHASE_ORDER, EventLoop
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
 @pytest.fixture(autouse=True)
 def _reset_daemon_state():
+    if daemon_mod._daemon_state is None:
+        daemon_mod._daemon_state = {}
     daemon_mod._daemon_state["todos"] = []
     daemon_mod._daemon_state["tick_metrics"] = {}
 
@@ -49,7 +51,7 @@ class TestDaemonDirectDispatch:
         loop = EventLoop(runner=mock_runner, todo_repo=mock_todo_repo)
         metrics = await loop.tick()
 
-        assert metrics["phases_completed"] == 18
+        assert metrics["phases_completed"] == len(PHASE_ORDER)
         assert metrics["todos_dispatched"] == 1
         mock_runner.run_playbook.assert_called_once()
         call_kwargs = mock_runner.run_playbook.call_args

@@ -275,11 +275,11 @@ console.log(JSON.stringify(result ?? {{allowed: true}}))
     )
 
 
-# ─── text.complete hook: wave finalization ───────────────────────────────────
+# ─── dispatch-only contract ──────────────────────────────────────────────────
 
 
-def test_text_complete_warns_on_fix_heavy_wave(tmp_path):
-    """text.complete warns (via console.warn or text injection) for fix-heavy wave."""
+def test_plugin_has_no_text_complete_hook(tmp_path):
+    """Ratio enforcement is dispatch-only; no text.complete hook is registered."""
     state_file = str(tmp_path / "ratio.json")
     setup = _make_state_code(state_file, [
         {"type": "fix", "prompt_head": "fix A", "ts": 1},
@@ -289,15 +289,10 @@ def test_text_complete_warns_on_fix_heavy_wave(tmp_path):
     code = setup + f"""\
 const mod = await import('{PLUGIN_PATH}')
 const plugin = await mod.default({{}})
-const out = await plugin['text.complete']({{text: 'wave summary text'}})
-console.log(JSON.stringify({{text: typeof out === 'string' ? out : (out?.text || JSON.stringify(out))}}))
+console.log(JSON.stringify({{hasTextComplete: typeof plugin['text.complete'] === 'function'}}))
 """
     result = _run_plugin(code, env_override={
         "GLUDD_ENHANCEMENT_RATIO_STATE": state_file,
-        "GLUDD_ENHANCEMENT_RATIO_HARD_DENY": "1",
     })
     assert result is not None
-    text = result.get("text", "")
-    assert "ENHANCEMENT RATIO VIOLATION" in text or "VIOLATION" in text, (
-        f"text.complete should inject violation for fix-heavy wave, got: {text[:200]}"
-    )
+    assert result["hasTextComplete"] is False
