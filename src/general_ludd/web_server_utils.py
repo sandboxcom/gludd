@@ -15,6 +15,7 @@ import re
 import ssl
 import textwrap
 from datetime import UTC, datetime
+from collections.abc import Callable
 from typing import Any, cast
 
 # ---------------------------------------------------------------------------
@@ -290,25 +291,29 @@ def validate_certificate(cert_path: str) -> dict[str, Any]:
     except ImportError:
         pass
 
-    try:
-        _ssl_mod: Any = cast(Any, ssl)._ssl
-        cert_obj: Any = _ssl_mod._test_decode_cert(cert_path)
-        if cert_obj is None:
-            cert_dict: dict[str, Any] = {}
-            for line in cert_data.decode("utf-8", errors="replace").split("\n"):
-                line = line.strip()
-                if line.startswith("Not Before:"):
-                    cert_dict["not_before"] = line.split(":", 1)[1].strip()
-                elif line.startswith("Not After :"):
-                    cert_dict["not_after"] = line.split(":", 1)[1].strip()
-                elif line.startswith("Subject:"):
-                    cert_dict["subject"] = line.split(":", 1)[1].strip()
-                elif line.startswith("Issuer:"):
-                    cert_dict["issuer"] = line.split(":", 1)[1].strip()
-            return cert_dict or {"error": "Could not parse certificate"}
-        return cast(dict[str, Any], cert_obj)
-    except Exception:
-        pass
+    decode_cert = cast(
+        "Callable[[str], dict[str, Any] | None] | None",
+        getattr(getattr(ssl, "_ssl", None), "_test_decode_cert", None),
+    )
+    if decode_cert is not None:
+        try:
+            cert_obj = decode_cert(cert_path)
+            if cert_obj is None:
+                cert_dict: dict[str, Any] = {}
+                for line in cert_data.decode("utf-8", errors="replace").split("\n"):
+                    line = line.strip()
+                    if line.startswith("Not Before:"):
+                        cert_dict["not_before"] = line.split(":", 1)[1].strip()
+                    elif line.startswith("Not After :"):
+                        cert_dict["not_after"] = line.split(":", 1)[1].strip()
+                    elif line.startswith("Subject:"):
+                        cert_dict["subject"] = line.split(":", 1)[1].strip()
+                    elif line.startswith("Issuer:"):
+                        cert_dict["issuer"] = line.split(":", 1)[1].strip()
+                return cert_dict or {"error": "Could not parse certificate"}
+            return cert_obj
+        except Exception:
+            pass
 
     try:
         cert_text = (
@@ -320,9 +325,9 @@ def validate_certificate(cert_path: str) -> dict[str, Any]:
         cert_text = cert_data.decode("utf-8", errors="replace")
 
     cert_obj_parsed: dict[str, Any] = {}
-    _ssl_mod2: Any = cast(Any, ssl)._ssl
-    for part in (_ssl_mod2._test_decode_cert(cert_path) or {}):
-        cert_obj_parsed[str(part)] = part
+    if decode_cert is not None:
+        for part in (decode_cert(cert_path) or {}):
+            cert_obj_parsed[str(part)] = part
     if not cert_obj_parsed:
         subject_match = re.search(r"Subject:\s*(.+)", str(cert_text))
         issuer_match = re.search(r"Issuer:\s*(.+)", str(cert_text))
