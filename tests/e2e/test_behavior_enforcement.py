@@ -86,6 +86,14 @@ def _assert_deny_with(r: dict, expected_phrase: str):
     )
 
 
+def _assert_text_stop_blocked(result_text: str) -> None:
+    assert (
+        "TEXT-ONLY RESPONSE BLOCKED" in result_text
+        or "CONSECUTIVE TEXT-ONLY RESPONSES BLOCKED" in result_text
+        or "CI RED/PENDING COMPLETION CLAIM BLOCKED" in result_text
+    ), f"Expected text-only pending-work block, got: {result_text[:300]!r}"
+
+
 def _setup_pending_work_dir(path: Path) -> Path:
     path.mkdir(parents=True, exist_ok=True)
     (path / "TASKS.md").write_text("- [ ] pending item\n- [x] done item\n")
@@ -137,9 +145,7 @@ console.log(JSON.stringify({{ result_text: result?.text }}))
     r = _last_json(proc.stdout)
     assert r is not None, f"No JSON in output: {proc.stdout[:500]}"
     result_text = r.get("result_text", "")
-    assert "TEXT-ONLY RESPONSE BLOCKED" in result_text, (
-        f"Expected TEXT-ONLY RESPONSE BLOCKED, got: {result_text[:300]!r}"
-    )
+    _assert_text_stop_blocked(result_text)
 
 
 # ─── 2. completion-smell-stop ────────────────────────────────────────────────
@@ -189,10 +195,7 @@ console.log(JSON.stringify({{ result_text: result?.text }}))
     r = _last_json(proc.stdout)
     assert r is not None, f"No JSON in output: {proc.stdout[:500]}"
     result_text = r.get("result_text", "")
-    assert "TEXT-ONLY RESPONSE BLOCKED" in result_text, (
-        f"Disengage must NOT bypass hasRealPendingWork block. "
-        f"Expected TEXT-ONLY RESPONSE BLOCKED, got: {result_text[:300]!r}"
-    )
+    _assert_text_stop_blocked(result_text)
 
 
 # ─── 4. thin-wave-blocked (BUG: disengage bypasses text.complete in enforce-multitask.ts) ─
@@ -214,7 +217,7 @@ const plugin = await mod.default({{}})
 await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
 await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
 await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
-const result = await plugin['text.complete'](undefined, 'Some thin wave concluding text.')
+const result = await plugin['experimental.text.complete'](undefined, {{ text: 'Some thin wave concluding text.' }})
 console.log(JSON.stringify({{ result_text: result?.text || result }}))
 """
     proc = _run_plugin(
@@ -381,8 +384,8 @@ console.log(JSON.stringify(r ?? {{allowed: true}}))
 # ─── 8. evidence-bypass-works ────────────────────────────────────────────────
 
 
-def test_text_with_evidence_passes_through_despite_pending_work(tmp_path):
-    """Text WITH commit hash + test counts -> passes through (not blanked)."""
+def test_text_with_evidence_blocked_when_pending_work_remains(tmp_path):
+    """Evidence does not bypass the no-text-only rule while work remains."""
     cwd = _setup_pending_work_dir(tmp_path)
 
     code = f"""\
@@ -398,7 +401,5 @@ console.log(JSON.stringify({{ output_text: output.text, result_text: result?.tex
     assert r is not None, f"No JSON in output: {proc.stdout[:500]}"
     out_text = r.get("output_text", "")
     res_text = r.get("result_text", "")
-    assert out_text == "Fixed the bug. 42 passed, commit abc123def456.", (
-        f"Evidence text should pass through unmodified. "
-        f"output_text={out_text!r} result_text={res_text!r}"
-    )
+    assert out_text == "", f"Expected output text to be blanked, got: {out_text!r}"
+    _assert_text_stop_blocked(res_text)

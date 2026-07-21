@@ -171,6 +171,27 @@ function isStopEnforcementDisabled(): boolean {
   return process.env.GLUDD_STOP_ENFORCE === "0"
 }
 
+function hasStopStatePathOverrides(): boolean {
+  return [
+    "GLUDD_STOP_STATE_FILE",
+    "GLUDD_BLOCK_COUNTER_FILE",
+    "GLUDD_BLOCK_REASON_FILE",
+    "GLUDD_PERSIST_STOP_BLOCK_FILE",
+    "GLUDD_STOP_TEXT_COMPLETE_COUNT",
+    "GLUDD_FORCE_DISPATCH_PATH",
+    "GLUDD_RELEASE_COMPLETENESS_FILE",
+    "GLUDD_LAST_TEST_RESULT_FILE",
+    "GLUDD_MULTITASK_STATE_FILE",
+    "GLUDD_POST_RESULTS_STATE_FILE",
+    "GLUDD_TEXT_ONLY_STATE_FILE",
+    "GLUDD_WATCHDOG_CI_FILE",
+  ].some((key) => Boolean(process.env[key]))
+}
+
+function stopImpl(): HotModule {
+  return hasStopStatePathOverrides() ? defaultImpl : loadHotModule("enforce-stop", defaultImpl)
+}
+
 interface PostResultsState {
   lastTurnHadResults: boolean
   lastTurnHadWave: boolean
@@ -663,7 +684,15 @@ function hasRealPendingWork(): WorkState {
   } catch {}
 
   const hasLocalWork = tasksMdUnchecked || ratchetEntries > 0 || bugsOpen || gateStatusRed
-  const hasPendingWork = hasLocalWork || ciVerdictPendingOrRed || ciVerdictUnknown || releaseIncomplete || testFailures || repoPending || multitaskingBacklogOpen || underFloor
+  const projectWorkOpen =
+    hasLocalWork ||
+    ciVerdictPendingOrRed ||
+    ciVerdictUnknown ||
+    releaseIncomplete ||
+    testFailures ||
+    repoPending ||
+    multitaskingBacklogOpen
+  const hasPendingWork = projectWorkOpen || (underFloor && projectWorkOpen)
   const healthScore = computeHealthScore({
     gateStatusRed, gateStale, ciVerdictPendingOrRed, ciVerdictUnknown,
     tasksMdUnchecked, bugsOpen, repoPending, multitaskingBacklogOpen, underFloor,
@@ -943,6 +972,7 @@ const defaultImpl: HotModule = {
 
     if (!text || text.trim().length === 0) return output
     const trimmed = text.trim()
+    if (/^(?:⛔|BLOCKED\b)/i.test(trimmed)) return output
     const hasWorkArtifact = hasStructuredEvidence(text)
     const lateHasWorkArtifact = hasStructuredEvidence(text)
     const hasToolCallIntent = /\b(make git-|dispatch|subagent|task)\b/i.test(text)
@@ -1503,14 +1533,14 @@ export default (async () => {
       // OPENCODE_SUBAGENT guard is implemented by shared isSubagent().
       if (isSubagent()) return // OPENCODE_SUBAGENT guard
       if (isStopEnforcementDisabled()) return
-      const impl = loadHotModule("enforce-stop", defaultImpl)
+      const impl = stopImpl()
       const fn = impl["tool.execute.before"]
       return fn ? await fn(input, output) : undefined
     },
     "experimental.chat.system.transform": async (_input: unknown, output: unknown) => {
       if (isSubagent()) return output // OPENCODE_SUBAGENT guard
       if (isStopEnforcementDisabled()) return output
-      const impl = loadHotModule("enforce-stop", defaultImpl)
+      const impl = stopImpl()
       const fn = impl["experimental.chat.system.transform"]
       return fn ? await fn(_input, output) : output
     },
@@ -1518,14 +1548,14 @@ export default (async () => {
       // OPENCODE_SUBAGENT guard is implemented by shared isSubagent().
       if (isSubagent()) return output // OPENCODE_SUBAGENT guard
       if (isStopEnforcementDisabled()) return output
-      const impl = loadHotModule("enforce-stop", defaultImpl)
+      const impl = stopImpl()
       const fn = impl["experimental.text.complete"]
       return fn ? await fn(_input, output) : output
     },
     "event": async (input: unknown, output: unknown) => {
       if (isSubagent()) return // OPENCODE_SUBAGENT guard
       if (isStopEnforcementDisabled()) return
-      const impl = loadHotModule("enforce-stop", defaultImpl)
+      const impl = stopImpl()
       const fn = impl["event"]
       return fn ? await fn(input, output) : undefined
     },

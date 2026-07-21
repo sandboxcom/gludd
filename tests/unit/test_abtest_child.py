@@ -11,8 +11,15 @@ import pytest
 from general_ludd.abtest._child import _apply_limits, _run_workload, _write_result_nonce, main
 
 
-def test_apply_limits_does_not_raise():
+def test_apply_limits_delegates_without_poisoning_pytest(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        "general_ludd.abtest._child.apply_limits",
+        lambda mem_mb, cpu_s: calls.append((mem_mb, cpu_s)),
+    )
+
     _apply_limits(256, 30)
+    assert calls == [(256, 30)]
 
 
 def test_run_workload_import_module():
@@ -73,14 +80,22 @@ def test_main_usage_error():
     assert rc == 2
 
 
-def test_main_happy_path():
+def test_main_happy_path(monkeypatch, tmp_path: Path):
+    calls = []
+    monkeypatch.setattr(
+        "general_ludd.abtest._child.apply_limits",
+        lambda mem_mb, cpu_s: calls.append((mem_mb, cpu_s)),
+    )
+    result_path = tmp_path / "test-result.json"
+
     rc = main([
         "prog",
         "/nonexistent/root",
         json.dumps({"kind": "import_module", "module": "os"}),
         "256",
         "30",
-        "/tmp/test-result.json",
+        str(result_path),
         "test-nonce",
     ])
     assert rc == 0
+    assert calls == [(256, 30)]

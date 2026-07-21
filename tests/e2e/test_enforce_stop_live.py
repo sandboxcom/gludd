@@ -50,32 +50,43 @@ def _run_plugin(
     tmp = Path(tempfile.mktemp(suffix=".ts", prefix=f"e_stop_live_{n}_"))
     tmp.write_text(ts_code)
     try:
+        state_prefix = tmp.with_suffix("")
         env = os.environ.copy()
         env["OPENCODE_SUBAGENT"] = ""
         env["GLUDD_NO_WAIT_ENFORCE"] = "1"
         env["GLUDD_STOP_TEXT_COMPLETE_COUNT"] = (
-            f"/tmp/gludd-stop-text-complete-count-e2e-live-{n}.json"
+            f"{state_prefix}-text-complete-count.json"
         )
-        env["GLUDD_STOP_STATE_FILE"] = f"/tmp/gludd-stop-state-e2e-live-{n}.json"
+        env["GLUDD_STOP_STATE_FILE"] = f"{state_prefix}-stop-state.json"
         env["GLUDD_PERSIST_STOP_BLOCK_FILE"] = (
-            f"/tmp/gludd-persist-stop-block-e2e-live-{n}.json"
+            f"{state_prefix}-persist-stop-block.json"
         )
         env["GLUDD_POST_RESULTS_STATE_FILE"] = (
-            f"/tmp/gludd-post-results-state-e2e-live-{n}.json"
+            f"{state_prefix}-post-results-state.json"
         )
         env["GLUDD_TEXT_ONLY_STATE_FILE"] = (
-            f"/tmp/gludd-text-only-state-e2e-live-{n}.json"
+            f"{state_prefix}-text-only-state.json"
         )
         env["GLUDD_STOP_TOOL_COUNTS_FILE"] = (
-            f"/tmp/gludd-stop-tool-counts-e2e-live-{n}.json"
+            f"{state_prefix}-stop-tool-counts.json"
         )
-        env["GLUDD_STREAK_FILE"] = f"/tmp/gludd-tool-streak-e2e-live-{n}.json"
+        env["GLUDD_STREAK_FILE"] = f"{state_prefix}-tool-streak.json"
         env["GLUDD_DISENGAGE_PATH"] = (
-            f"/tmp/gludd-watchdog-disengage-e2e-live-{n}.json"
+            f"{state_prefix}-watchdog-disengage.json"
         )
         env["GLUDD_BLOCK_COUNTER_FILE"] = (
-            f"/tmp/gludd-stop-block-counter-e2e-live-{n}.json"
+            f"{state_prefix}-stop-block-counter.json"
         )
+        env["GLUDD_RELEASE_COMPLETENESS_FILE"] = (
+            f"{state_prefix}-release-completeness.json"
+        )
+        env["GLUDD_LAST_TEST_RESULT_FILE"] = (
+            f"{state_prefix}-last-test-result.json"
+        )
+        env["GLUDD_MULTITASK_STATE_FILE"] = (
+            f"{state_prefix}-multitask-state.json"
+        )
+        env["GLUDD_WATCHDOG_CI_FILE"] = f"{state_prefix}-watchdog-ci.json"
         if env_override:
             env.update(env_override)
         proc = subprocess.run(
@@ -272,8 +283,7 @@ def test_subagent_context_bypasses_enforcement(tmp_path: Path):
 
 
 def test_env_disable_bypasses_enforcement(tmp_path: Path):
-    """GLUDD_STOP_ENFORCE=0 → text.complete returns undefined/null.
-    The hook returns undefined (JS), which JSON-encodes as result_text: null."""
+    """GLUDD_STOP_ENFORCE=0 → text.complete returns output unchanged."""
     (tmp_path / "TASKS.md").write_text("- [ ] pending work exists\n")
 
     result = _invoke_text_complete(
@@ -282,9 +292,9 @@ def test_env_disable_bypasses_enforcement(tmp_path: Path):
         env_override={"GLUDD_STOP_ENFORCE": "0"},
     )
     assert result is not None, "Hook should output JSON even when returning undefined"
-    assert result.get("result_text") is None, (
-        f"GLUDD_STOP_ENFORCE=0 must return undefined (null). Got: {result}"
-    )
+    assert result.get("result_text") == (
+        "This message should pass through when enforcement is disabled."
+    ), f"GLUDD_STOP_ENFORCE=0 must return output unchanged. Got: {result}"
     assert result.get("output_text") == (
         "This message should pass through when enforcement is disabled."
     ), f"Original text must pass through. Got: {result.get('output_text')!r}"

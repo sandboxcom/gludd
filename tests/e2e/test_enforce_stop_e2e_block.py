@@ -343,24 +343,24 @@ class TestTextCompleteBlocksWithRealState:
         else:
             assert "BLOCKED" in parsed.get("text", "").upper()
 
-    def test_text_with_evidence_and_no_status_summary_passes(
+    def test_text_with_evidence_and_no_status_summary_still_blocks(
         self, hook_plugin_env: HookEnv,
     ):
         """Text with structured evidence (commit hash, pass count) and NO status summary
-        phrasing must pass through when hasRealPendingWork detects work BUT
-        the text carries evidence."""
+        phrasing still blocks when hasRealPendingWork detects work."""
         _setup_real_pending_work(hook_plugin_env)
 
-        _parsed, _raw, stderr, rc = _invoke_text_complete(
+        parsed, raw, stderr, rc = _invoke_text_complete(
             hook_plugin_env,
             "commit abc1234f — 42 tests passed. CI GREEN. "
             "=== GATE: PASSED ===. Collection OK.",
         )
         assert rc == 0, stderr
         pb = _read_persist_block(hook_plugin_env)
-        assert pb is None or pb.get("blocked") is not True, (
-            f"Text with evidence must pass through. persist_block={pb}"
-        )
+        text = parsed.get("text", "") if parsed else ""
+        assert "TEXT-ONLY RESPONSE BLOCKED" in text or (
+            pb is not None and pb.get("blocked") is True
+        ), f"Text with evidence must still block when work exists. raw={raw} pb={pb}"
 
     def test_plain_text_with_real_work_blocked(
         self, hook_plugin_env: HookEnv,
@@ -613,9 +613,9 @@ class TestGuardrailsWithRealState:
             GLUDD_STOP_ENFORCE="0",
         )
         assert rc == 0, stderr
-        # When disabled, hook returns undefined → null
-        assert parsed is None, (
-            f"GLUDD_STOP_ENFORCE=0 must return undefined. Got: {parsed}"
+        assert parsed is not None, "Disabled hook must return output unchanged"
+        assert parsed.get("text") == "All done. Everything complete.", (
+            f"GLUDD_STOP_ENFORCE=0 must return output unchanged. Got: {parsed}"
         )
 
     def test_disengage_does_not_bypass_real_pending_work_block(
