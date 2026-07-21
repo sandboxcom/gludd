@@ -41,6 +41,10 @@ def _run_plugin(
     try:
         env = os.environ.copy()
         env["OPENCODE_SUBAGENT"] = ""
+        env["GLUDD_MULTITASK_FLOOR_ENFORCE"] = "1"
+        env["GLUDD_DISENGAGE_PATH"] = str(
+            Path(tempfile.mktemp(suffix=".json", prefix=f"gludd-disengage-e2e-{_ts_counter}-"))
+        )
         env["GLUDD_MULTITASK_STATE_FILE"] = str(state_file)
         if env_override:
             env.update(env_override)
@@ -821,9 +825,9 @@ await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
 await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
 await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
 await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
-const beforeDispatch = JSON.parse(fs.readFileSync('/tmp/gludd-multitask-state.json', 'utf8'))
+const beforeDispatch = JSON.parse(fs.readFileSync(process.env.GLUDD_MULTITASK_STATE_FILE, 'utf8'))
 await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
-const afterDispatch = JSON.parse(fs.readFileSync('/tmp/gludd-multitask-state.json', 'utf8'))
+const afterDispatch = JSON.parse(fs.readFileSync(process.env.GLUDD_MULTITASK_STATE_FILE, 'utf8'))
 console.log(JSON.stringify({{
   consecutiveBefore: beforeDispatch.consecutiveNonDispatch,
   consecutiveAfter: afterDispatch.consecutiveNonDispatch

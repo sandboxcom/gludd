@@ -4605,7 +4605,7 @@ list-files:
 
 search:
 	@[ -n "$(PATTERN)" ] || { echo "Usage: make search PATTERN=regex [SEARCH_PATH=path]"; exit 1; }
-	@SEARCH_ROOT="$(if $(SEARCH_PATH),$(SEARCH_PATH),$(if $(PATH),$(PATH),.))"; \
+	@SEARCH_ROOT="$(if $(SEARCH_PATH),$(SEARCH_PATH),.)"; \
 	case "$$SEARCH_ROOT" in /*|*..*) echo "Refusing path outside workspace: $$SEARCH_ROOT"; exit 1;; esac; \
 	if [ -x /opt/homebrew/bin/rg ]; then RG=/opt/homebrew/bin/rg; elif [ -x /usr/local/bin/rg ]; then RG=/usr/local/bin/rg; else RG=""; fi; \
 	if [ -n "$$RG" ]; then \
