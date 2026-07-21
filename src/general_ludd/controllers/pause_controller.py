@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import threading
 import time
+from collections.abc import Iterator
 from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, Field
@@ -63,6 +64,25 @@ class PauseRecord(BaseModel):
     agent_handles: list[object] = Field(default_factory=list)
     quiesce_status: str = "none"
     quiesce_errors: list[str] = Field(default_factory=list)
+
+
+class QuiesceNoopResult(list[object]):
+    """Backward-compatible no-op quiesce result.
+
+    Older callers treat the no-dispatcher result as a plain empty list, while
+    D.7.3 callers unpack ``handles, status, errors``.  This preserves both
+    contracts for the defensive no-subsystem path.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.status = "clean"
+        self.errors: list[str] = []
+
+    def __iter__(self) -> Iterator[object]:
+        yield self[:]
+        yield self.status
+        yield self.errors
 
 
 class PauseController:
@@ -308,6 +328,11 @@ class PauseController:
             existing = self._records.get(key)
             if existing is not None:
                 return existing
+            stored_agent_handles = (
+                agent_handles[:]
+                if isinstance(agent_handles, QuiesceNoopResult)
+                else agent_handles if agent_handles is not None else []
+            )
             record = PauseRecord(
                 kind=kind,
                 target_id=target_id,
@@ -315,7 +340,7 @@ class PauseController:
                 reason=reason,
                 resources=resources or {},
                 last_state=last_state or {},
-                agent_handles=agent_handles if agent_handles is not None else [],
+                agent_handles=stored_agent_handles,
                 quiesce_status=quiesce_status,
                 quiesce_errors=quiesce_errors if quiesce_errors is not None else [],
             )
