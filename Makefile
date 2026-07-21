@@ -55,7 +55,7 @@ PYTEST_VERBOSITY ?= -v
          file-executable build-executable deb-package deb-install-deps rpm-package macos-dmg windows-installer release-artifacts dist-clean bundle-binaries bundle-ripgrep \
         sast sbom pip-audit security security-backlog-gate \
         audit-messages qa validate collect-check gate gate-refresh gate-lite smoke install-hooks \
-        status-snapshot audit-evidence deps-audit dogfood-features ruff-audit \
+        status-snapshot audit-evidence deps-audit dogfood-features ruff-audit check-make-help \
         skill-install skill-list bootstrap-skills scan-tool-usage \
          scan-secrets scan-secrets-baseline clean-untracked clean-hooks clean-plugins \
          secrets-scrub secrets-scan secrets-baseline security-audit clean-artifacts health-check \
@@ -120,6 +120,7 @@ help:
 	@echo "  gate-status           Print current .gate-status (RUNNING/PASS/FAIL)"
 	@echo "  collect-check         Fast collection-error gate"
 	@echo "  preflight             Preflight quality gate (coverage, lint, mypy, templates, etc.)"
+	@echo "  check-make-help       Verify every public Makefile target is listed by make help"
 	@echo "  sast                  Run bandit SAST"
 	@echo "  sbom                  Generate CycloneDX SBOM"
 	@echo "  pip-audit             Audit dependencies for vulnerabilities"
@@ -274,6 +275,9 @@ help:
 	@echo "  clean                 Remove build artifacts"
 	@echo "  dist-clean            Remove distribution artifacts"
 	@echo "  gated-merge           flock-guarded multi-branch merge with manifest (BASE/BRANCHES/MERGE_STRATEGY/MANIFEST)"
+	@echo ""
+	@echo "  --- Complete Target Index ---"
+	@$(PYTHON) scripts/check_make_help.py --print-index
 
 sdd-constitution:
 	@test -f AGENTS.md || touch AGENTS.md
@@ -472,9 +476,12 @@ test-ci-shard:
 	@if [ -z "$(SHARD)" ]; then echo "Usage: make test-ci-shard SHARD=unit-2"; exit 1; fi
 	@BT="/tmp/gludd-ci-shard-$(SHARD)-$${ID:-$$$$}"; rm -rf "$$BT"; \
 	TESTFILES="$$( $(UV) run python scripts/ci_named_shard_files.py --shard "$(SHARD)" --shell )"; \
-	echo "=== ci shard $(SHARD): local replica ==="; \
+	if [ -z "$$TESTFILES" ]; then echo ERROR: unknown-or-empty ci shard; rm -rf "$$BT"; exit 2; fi; echo "=== ci shard $(SHARD): local replica ==="; \
 	$(UV) run python -m pytest $$TESTFILES $(_XD) -v $(PYTEST_ARGS) --basetemp="$$BT"; \
 	RC=$$?; rm -rf "$$BT"; exit $$RC
+
+test-ci-shard-kill-unit-4:
+	@pkill -TERM -f /tmp/gludd-ci-shard-unit-4- 2>/dev/null || true
 
 test-unit-shards:
 	@$(UV) run python scripts/run_unit_shards.py --shards "$(or $(SHARDS),12)" $(if $(SHARD),--index "$(SHARD)") --timeout "$(or $(SHARD_TIMEOUT),300)"
@@ -618,7 +625,7 @@ gate: check-opencode-integrity validate-task-ledger check-dispatch-dedup check-s
 # "No Unseen Events" invariant in AGENTS.md). The _gate-fresh-check used by
 # commit targets still requires the FULL `make gate`; gate-lite is for fast
 # local feedback between commits, not a commit prerequisite.
-gate-lite: check-opencode-integrity verify-opencode-backup check-subagent-guards check-skills-frontmatter check-coverage-gaps check-plugin-syntax check-plugin-runtime check-plugin-imports
+gate-lite: check-opencode-integrity verify-opencode-backup check-subagent-guards check-skills-frontmatter check-coverage-gaps check-make-help check-plugin-syntax check-plugin-runtime check-plugin-imports
 	@rm -f .gate-lite-failed
 	@echo "=== GATE-LITE $(shell date -u +%Y-%m-%dT%H:%M:%SZ) ===" > .gate-lite-status
 	@# OBSERVABILITY INVARIANT (AGENTS.md "No unseen events"): every phase
@@ -3105,6 +3112,10 @@ check-task-ledger:
 # --- Duplicate target detection: prevent parallel-branch Makefile collisions (ci-await bug class) ---
 check-duplicate-targets:
 	@$(UV) run python scripts/check_duplicate_targets.py
+
+# --- Help target coverage: prevent hidden public Make targets ---
+check-make-help:
+	@$(UV) run python scripts/check_make_help.py
 
 skip-counts:
 	@$(UV) run python scripts/list_pytest_skips.py
