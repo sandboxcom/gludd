@@ -39,6 +39,7 @@
 import * as fs from "node:fs"
 import * as path from "node:path"
 import { createRequire } from "node:module"
+// import { execSync from node:child_process
 import type { Plugin } from "@opencode-ai/plugin"
 import {
   isSubagent,
@@ -53,6 +54,8 @@ import {
   getProjectRoot,
 } from "../lib/shared.ts"
 import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
+
+
 
 const nodeRequire = createRequire(import.meta.url)
 

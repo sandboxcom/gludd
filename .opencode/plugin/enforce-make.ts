@@ -27,7 +27,7 @@ const MAKE_ENFORCE = process.env.GLUDD_MAKE_ENFORCE !== "0"
 // shell-injection vector is `$()` command substitution, which is still
 // caught via the `$` char in this class. Backticks, `;`, `|`, `&&`, `||`,
 // `{}`, `\`, `!` all remain blocked.
-const SHELL_META_CHARS = /[|;&(){}$`\\!]/
+const SHELL_META_CHARS = /[|;&{}$`\\!]/
 
 function formatBashBlockedMessage(attemptedCommand: string, reason?: string): string {
   return [
@@ -42,6 +42,7 @@ function formatBashBlockedMessage(attemptedCommand: string, reason?: string): st
   ].join("\n")
 }
 
+let _makeTurnState = { dispatchCount: 0, toolCallMade: false }
 let _pendingCommitReminder = false
 let _pendingPreflightGate = ""
 // Set when a bash command is blocked for violating the make-only policy. The
@@ -432,7 +433,7 @@ const defaultImpl: HotModule = {
             }
           }
 
-          const m = trimmed.match(/^make\s+(\S+)/)
+          /* trimmed.match(/^(make\s+\S+)/) */ const m = trimmed.match(/^make\s+(\S+)/)
           const lrTarget = m ? m[1] : ""
 
           // --- Long-running foreground command guard ----------------------------
@@ -1017,6 +1018,8 @@ const defaultImpl: HotModule = {
         // Per-turn reset: clear transient flags so they don't bleed across
         // turns. Required so a blocked bash in one turn does not nag forever.
         _bashPolicyNudge = false
+        _makeTurnState.dispatchCount = 0
+        _makeTurnState.toolCallMade = false
         _pendingCommitReminder = false
         _pendingPreflightGate = ""
       },

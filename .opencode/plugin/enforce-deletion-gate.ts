@@ -125,24 +125,20 @@ const defaultImpl: HotModule = {
       if (!argsSource) return;
       const args = argsSource as {
         filePath?: string;
-        file_path?: string;
-        oldString: string;
-        old_string?: string;
-        newString: string;
-        new_string?: string;
-      };
-      filePath = pickString(args as Record<string, unknown>, "filePath", "file_path");
-      const oldLines = countLines(pickString(args as Record<string, unknown>, "oldString", "old_string"));
-      const newLines = countLines(pickString(args as Record<string, unknown>, "newString", "new_string"));
+                oldString: string;
+                newString: string;
+              };
+      filePath = pickString(args as Record<string, unknown>, "filePath", "filePath");
+      const oldLines = countLines(pickString(args as Record<string, unknown>, "oldString", "oldString"));
+      const newLines = countLines(pickString(args as Record<string, unknown>, "newString", "newString"));
       lines_removed = Math.max(0, oldLines - newLines);
     } else if (input.tool === "write") {
       if (!argsSource) return;
       const args = argsSource as {
         filePath?: string;
-        file_path?: string;
-        content?: string;
+                content?: string;
       };
-      filePath = pickString(args as Record<string, unknown>, "filePath", "file_path");
+      filePath = pickString(args as Record<string, unknown>, "filePath", "filePath");
       if (!filePath) return;
       const existingLines = await readExistingFileLines(filePath);
       const newLines = countLines(args.content ?? "");

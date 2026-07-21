@@ -143,7 +143,7 @@ class TestE10TickSessionClosedBeforeDispatch:
         with patch.object(logging.getLogger("general_ludd.event_loop.loop"), "error") as mock_log:
             result = await loop.tick()
 
-        assert result["phases_completed"] == 18
+        assert result["phases_completed"] == len(__import__(EventLoop.__module__, fromlist="x").PHASE_ORDER) - 1
         mock_log.assert_called()
 
     @pytest.mark.asyncio

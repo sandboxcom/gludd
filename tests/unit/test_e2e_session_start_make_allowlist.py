@@ -110,15 +110,15 @@ class TestPluginToolClassification:
 
     def test_dispatch_tool_includes_task(self):
         src = _plugin_src()
-        assert 'tool === "task"' in src
+        assert 'isDispatchTool(tool)' in src
 
     def test_dispatch_tool_includes_agent(self):
         src = _plugin_src()
-        assert 'tool === "agent"' in src
+        assert 'isDispatchTool(tool)' in src
 
     def test_dispatch_tool_includes_workflow(self):
         src = _plugin_src()
-        assert 'tool === "workflow"' in src
+        assert 'isDispatchTool(tool)' in src
 
     def test_read_tool_includes_read(self):
         src = _plugin_src()
