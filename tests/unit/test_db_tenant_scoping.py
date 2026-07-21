@@ -258,6 +258,30 @@ class TestTenantScopingWithDB:
             reset_tenant(tok)
 
     @pytest.mark.asyncio
+    async def test_sequential_tenant_queries_do_not_reuse_stale_filter(
+        self, async_engine, session_factory, seeded
+    ):
+        """Changing tenant context must change the ORM listener's SQL criteria."""
+        from sqlalchemy import func, select
+
+        async with session_factory() as sess:
+            tok1 = set_tenant("proj-1")
+            try:
+                stmt = select(func.count()).select_from(TodoModel)
+                result = await sess.execute(stmt)
+                assert result.scalar_one() == 2
+            finally:
+                reset_tenant(tok1)
+
+            tok2 = set_tenant("proj-2")
+            try:
+                stmt = select(func.count()).select_from(TodoModel)
+                result = await sess.execute(stmt)
+                assert result.scalar_one() == 1
+            finally:
+                reset_tenant(tok2)
+
+    @pytest.mark.asyncio
     async def test_thread_pool_worker_sees_correct_tenant(
         self, async_engine, session_factory, seeded
     ):
