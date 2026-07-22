@@ -82,16 +82,75 @@ class TestGhRunList:
         monkeypatch.setattr(subprocess, "run", mock_run)
         assert _gh_run_list("master") == []
 
+
     def test_respects_branch_parameter(self, monkeypatch):
         captured = []
+
         def mock_run(*args, **kwargs):
             captured.extend(args[0])
-            return subprocess.CompletedProcess(args=[], returncode=0, stdout="[]", stderr="")
+            return subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="[]", stderr=""
+            )
+
         monkeypatch.setattr(subprocess, "run", mock_run)
         _gh_run_list("development")
         assert "--branch" in captured
         assert "development" in captured
 
+    def test_queries_each_active_status_separately(self, monkeypatch):
+        commands = []
+
+        def mock_run(cmd, **kwargs):
+            commands.append(cmd)
+            status = cmd[cmd.index("--status") + 1]
+            ids = {"in_progress": 1, "queued": 2, "waiting": 3}
+            output = json.dumps(
+                [
+                    {
+                        "databaseId": ids[status],
+                        "status": status,
+                        "conclusion": None,
+                        "createdAt": "2026-07-22T00:00:00Z",
+                    }
+                ]
+            )
+            return subprocess.CompletedProcess(
+                args=cmd, returncode=0, stdout=output, stderr=""
+            )
+
+        monkeypatch.setattr(subprocess, "run", mock_run)
+        runs = _gh_run_list("development")
+        statuses = [cmd[cmd.index("--status") + 1] for cmd in commands]
+        assert statuses == ["in_progress", "queued", "waiting"]
+        assert all("--workflow" in cmd for cmd in commands)
+        assert all("Build and Release" in cmd for cmd in commands)
+        assert {run["status"] for run in runs} == {
+            "in_progress",
+            "queued",
+            "waiting",
+        }
+
+    def test_deduplicates_runs_returned_by_multiple_status_queries(self, monkeypatch):
+        def mock_run(cmd, **kwargs):
+            status = cmd[cmd.index("--status") + 1]
+            output = json.dumps(
+                [
+                    {
+                        "databaseId": 42,
+                        "status": status,
+                        "conclusion": None,
+                        "createdAt": "2026-07-22T00:00:00Z",
+                    }
+                ]
+            )
+            return subprocess.CompletedProcess(
+                args=cmd, returncode=0, stdout=output, stderr=""
+            )
+
+        monkeypatch.setattr(subprocess, "run", mock_run)
+        runs = _gh_run_list("development")
+        assert len(runs) == 1
+        assert runs[0]["databaseId"] == 42
 
 class TestCiBusyCheck:
     def test_returns_idle_when_no_runs(self, monkeypatch):
