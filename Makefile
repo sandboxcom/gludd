@@ -93,7 +93,7 @@ PYTEST_VERBOSITY ?= -v
          subagent-init subagent-cleanup \
          chat chat-eval test-chat \
          git-tag-delete git-tag-move release-deploy append-text _no-raw-git-guard \
-         git-push-committed-head-nv ci-trigger-committed-head ci-push-committed-head check-no-prompt-prone-edit-tools
+         git-push-committed-head-nv ci-trigger-committed-head ci-push-committed-head provider-smoke check-no-prompt-prone-edit-tools
 
 help:
 	@echo "Usage: make [target]"
@@ -153,6 +153,7 @@ help:
 	@echo "  task                  Run CMD with timeout (CMD='make test-unit', GLUDD_TASK_TIMEOUT=300)"
 	@echo "  test-count            Count collected tests"
 	@echo "  test-failures         Show test failures"
+	@echo   provider-smoke        Run gludd smoke PROVIDER=aws SMOKE_TEST=ec2-a100 ARGS=--json
 	@echo "  test-and-commit       Run tests then commit if green (MSG='msg')"
 	@echo "  audit-coverage        Run coverage audit: pytest --cov + per-file threshold check"
 	@echo "  test-live-zai         Live GLM model test (requires API key)"
@@ -1467,6 +1468,11 @@ git-commit-file: _commit-lock-acquire
 	fi
 	@echo "Gate fresh and green. Committing (message file)..."
 	@git commit -F "$(FILE)"
+
+provider-smoke:
+	@test -n "$(PROVIDER)" || { echo Usage: make provider-smoke PROVIDER=aws SMOKE_TEST=ec2-a100 ARGS=--json; exit 1; }
+	@test -n "$(SMOKE_TEST)" || { echo Usage: make provider-smoke PROVIDER=aws SMOKE_TEST=ec2-a100 ARGS=--json; exit 1; }
+	@$(UV) run gludd smoke "$(PROVIDER)" "$(SMOKE_TEST)" $(ARGS)
 
 smoke:
 	@echo "=== SMOKE TEST: real daemon boot ==="
