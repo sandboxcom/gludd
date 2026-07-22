@@ -57,7 +57,7 @@ def _read_file(path: Path) -> str:
 
 def _collect_stack_main_files() -> list[Path]:
     stacks = sorted(STACKS_DIR.glob("*/main.tf"))
-    assert len(stacks) >= 16, f"expected >=16 stacks, found {len(stacks)}"
+    assert len(stacks) >= 16, f"expected >=18 stacks, found {len(stacks)}"
     return stacks
 
 
@@ -147,7 +147,7 @@ class TestTerraformWatchdogWiring:
         """Watchdog variables.tf validates all supported cloud providers."""
         vars_file = Path("infra/terraform/modules/gpu-cost-watchdog/variables.tf")
         content = _read_file(vars_file)
-        expected_clouds = ["aws", "gcp", "azure", "vsphere", "runpod", "vast", "kubernetes"]
+        expected_clouds = ["aws", "gcp", "azure", "vsphere", "runpod", "vast", "kubernetes", "qemu"]
         for cloud in expected_clouds:
             assert f'"{cloud}"' in content, \
                 f"gpu-cost-watchdog variables.tf must include {cloud} in cloud validation"
@@ -165,11 +165,11 @@ class TestTerraformWatchdogWiring:
                 resp = client.get("/healthz")
                 assert resp.status_code == 200
 
-    def test_exact_16_stacks_exist(self):
-        """There are exactly 16 stacks (8 pairs)."""
+    def test_exact_18_stacks_exist(self):
+        """There are exactly 18 stacks (9 pairs)."""
         stacks = sorted(STACKS_DIR.glob("*/main.tf"))
-        assert len(stacks) == 16, (
-            f"Expected 16 stacks, found {len(stacks)}: "
+        assert len(stacks) == 18, (
+            f"Expected 18 stacks, found {len(stacks)}: "
             + ", ".join(s.parent.name for s in stacks)
         )
 
