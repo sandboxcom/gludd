@@ -128,3 +128,16 @@ def test_committed_head_ci_path_pushes_and_dispatches_without_clean_tree_gate() 
 
     assert "git-push-committed-head-nv" in combined_line
     assert "ci-trigger-committed-head" in combined_line
+
+
+def test_committed_head_ci_path_uses_worktree_safe_key_and_fails_closed() -> None:
+    push_block = _target_block("git-push-committed-head-nv")
+    trigger_block = _target_block("ci-trigger-committed-head")
+
+    assert "/Users/shawnwilson/gludd/sandboxcom_github_rsa" in push_block
+    assert "/Users/shawnwilson/gludd/sandboxcom_github_rsa" in trigger_block
+    assert "git push --no-verify -u sandboxcom HEAD:refs/heads/" in push_block
+    assert "verify-remote BRANCH=" in push_block
+    assert "gh workflow run \"Build and Release\"" in trigger_block
+    assert push_block.count("|| exit 1") >= 3
+    assert trigger_block.count("|| exit 1") >= 1
