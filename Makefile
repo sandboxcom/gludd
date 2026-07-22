@@ -18,7 +18,9 @@ _NO_UV_SYNC_GOALS := \
     git-branch git-checkout git-merge git-merge-nc git-merge-abort git-rebase-abort \
     git-cherry-pick git-cherry-pick-list git-cherry-pick-continue git-cherry-pick-skip git-cherry-pick-abort \
     ci-remotes ci-diff-since-remote ci-head-compare ci-remote-head-guard ci-trigger \
-    git-push-committed-head-nv ci-trigger-committed-head ci-push-committed-head git-push-current-head-to-master-nv
+    git-push-committed-head-nv ci-trigger-committed-head ci-push-committed-head git-push-current-head-to-master-nv \
+    search show-lines write-text append-text replace-lines replace-text replace-all-text write-text-b64 replace-text-b64 \
+    tmp-gludd-usage tmp-gludd-clean-ci-shards
 ifneq (,$(filter $(_NO_UV_SYNC_GOALS),$(MAKECMDGOALS)))
 override UV := echo
 else
@@ -96,9 +98,9 @@ _commit-lock-acquire check-clean-tree worktree-state all-worktree-state main-wor
         verify-enforcement \
         ci-view ci-rerun ci-trigger ci-active ci-job-log \
         ci-busy-check ci-safe-push pre-push-check push-guarded ci-await \
-        git-index git-search git-stats agent-report \
+log-agent-result disk-guard disk-check check-disk disk tmp-gludd-usage tmp-gludd-clean-ci-shards \
         searx-up searx-down searx-test searx-start searx-stop searx-status searx-install \
-        log-agent-result disk-guard disk-check check-disk disk \
+log-agent-result disk-guard disk-check check-disk disk tmp-gludd-usage \
         networking-role-lint networking-role-syntax test-scapy-adapter networking-validate \
         networking-healthcheck \
         install-bats test-install check-subagent-guards verify-plugin-manifest \
@@ -298,6 +300,8 @@ help:
 	@echo "  disk-check            Check disk usage only, exit 1 if above threshold"
 	@echo "  check-disk            Pre-commit check: fails if /tmp/gludd-* >100MB or disk >90%"
 	@echo "  disk                  Print disk usage + gludd footprint"
+	@echo "  tmp-gludd-usage       Print largest /tmp/gludd-* entries sorted by size"
+	@echo "  tmp-gludd-clean-ci-shards  Remove stale generated CI shard scratch dirs"
 	@echo ""
 	@echo "  --- Recovery ---"
 	@echo "  backup-opencode       Backup .opencode/ -> .opencode.orig/ (excludes node_modules/)"
@@ -1079,7 +1083,12 @@ disk:
 	@df -h / | awk 'NR==1 || /\/$$/'
 	@echo "--- gludd scratch + worktree venv footprint ---"
 	@du -sh /tmp/gludd-* 2>/dev/null | tail -5 || true
-	@du -sh /Users/shawnwilson/gludd/.claude/worktrees/agent-*/.venv 2>/dev/null | tail -5 || true
+tmp-gludd-usage:
+	@du -sh /tmp/gludd-* 2>/dev/null | sort -h | tail -40 || true
+
+tmp-gludd-clean-ci-shards:
+	@rm -rf /tmp/gludd-ci-shard-* /tmp/gludd-unit-shard-* 2>/dev/null || true
+	@echo "Removed stale gludd CI shard scratch directories"
 
 # Remove regenerable .venv dirs from agent worktrees (source is preserved;
 # `uv sync` recreates on demand). The main disk hog when many worktree agents run.
