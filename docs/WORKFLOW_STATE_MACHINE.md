@@ -12,7 +12,7 @@ This project treats git workflow hygiene as executable state, not as an agent me
 
 ## Ansible Parity
 
-The same guard is exposed through `general_ludd.agent.gludd_git`:
+The same state machine is exposed through `general_ludd.agent.gludd_git` with `op: state`. It returns the same branch, HEAD, dirty/staged/untracked, remote-head, GHA-head, merge-topology, sibling-worktree, and preserved-branch evidence used by the local guard.
 
 ```yaml
 - name: Collect and enforce git workflow state
@@ -20,14 +20,23 @@ The same guard is exposed through `general_ludd.agent.gludd_git`:
     path: /path/to/repo
     op: state
     remote: sandboxcom
+    state_ref: fix/example
+    state_gha_head_sha: 9cf41e400491f4987cd4e1d8c5bfdc8e57cd8e3c
     state_assert_clean: true
     state_assert_no_feature_on_master: true
     state_assert_merge_ready: true
     state_assert_remote_head: true
+    state_assert_gha_matches_local: true
+    state_worktree_target_ref: HEAD
+    state_assert_no_unintegrated_worktrees: true
+    state_assert_no_unintegrated_branches: true
+    state_reconciled_preserve_head_file: config/reconciled_preserved_heads.txt
   register: git_state
 ```
 
-The `general_ludd.agent.git_automation` role exposes the same surface with `git_op: state` and stores `git_automation_state_result`.
+The `general_ludd.agent.git_automation` role exposes the same surface with `git_op: state` and stores `git_automation_state_result`. Role variables mirror the module parameters: `state_ref`, `state_remote`, `state_gha_head_sha`, `state_worktree_target_ref`, `state_preserve_branch_patterns`, `state_reconciled_preserve_heads`, `state_reconciled_preserve_head_file`, and every `state_assert_*` flag.
+
+Preserved branches are reconciled by exact HEAD SHA, not by branch name. Add only audited preserve-branch HEADs to `config/reconciled_preserved_heads.txt`; a later commit on that branch will block again until its new HEAD is reviewed.
 
 ## Guarded Failure Classes
 
@@ -36,6 +45,8 @@ The `general_ludd.agent.git_automation` role exposes the same surface with `git_
 - GHA evidence whose `head_sha` does not match the local tested commit.
 - Feature or guardrail edits directly on `master`.
 - `master` commits not contained in `development`, which forces cherry-pick repair instead of release merge.
+- Sibling worktrees with dirty or unmerged changes.
+- Preserved local branches with unreconciled unique commits.
 
 ## Community Findings
 
