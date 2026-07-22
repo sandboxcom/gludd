@@ -1088,6 +1088,25 @@ const defaultImpl: HotModule = {
       }
     }
 
+    // QA summaries must beat generic text-only repeat blocking so persist logs
+    // carry the action-specific reason instead of consecutive-text-only.
+    if (!disengaged && QA_RESPONSE_PATTERNS.test(text) && (workState.hasLocalWork || workState.ciVerdictPendingOrRed)) {
+      recordBlock("qa-response-summary-stop")
+      logFalseDoneBlock("qa-response-summary-stop", text)
+      writePersistBlock(true, "qa-response-summary-stop")
+      clearBlockedOutput(output)
+      turnState.blocked = true
+
+      return {
+        text: [
+          "QA RESPONSE SUMMARY BLOCKED",
+          "",
+          "Do not stop to summarize while work remains.",
+          "Dispatch a tool call now.",
+        ].join("\n"),
+      }
+    }
+
     // ── CONSECUTIVE TEXT-ONLY RESPONSES ────────────────────────────────────
     // hasLocalWork text-only attempts are blocked here as well as by the
     // broader pending-work block below; this is the session-level repeat guard.

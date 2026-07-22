@@ -55,6 +55,41 @@ _TEST_PREFIX_TO_PLUGIN: dict[str, str] = {
 }
 
 
+RUNTIME_DISABLE_ENV_VARS = tuple(
+    env_name for env_name in ENFORCEMENT_PLUGINS.values() if env_name is not None
+) + (
+    "GLUDD_ENHANCEMENT_RATIO_ENFORCE",
+    "GLUDD_TASK_DEADLINE_ENABLED",
+    "GLUDD_MAKE_ENFORCE",
+    "GLUDD_NO_WAIT_ENFORCE",
+    "GLUDD_DELETION_GATE_ENFORCE",
+    "GLUDD_TDD_ENFORCE",
+    "GLUDD_COMMIT_LOCK_ENFORCE",
+    "GLUDD_NO_SUPPRESSION_ENFORCE",
+)
+
+DEFAULT_RUNTIME_FILTER = " or ".join((
+    "test_floor_streak_max_plus_one_denied",
+    "test_delegate_streak_at_threshold_denied",
+    "test_deadline_task_over_timeout_blocked",
+    "test_enhancement_fix_ratio_violation_blocked",
+    "test_multitask_single_dispatch_blocked",
+    "test_stop_pending_work_text_blanked",
+    "test_clean_tree_dirty_dispatch_blocked",
+    "test_verified_claim_no_evidence_blocked",
+    "test_no_suppression_noqa_blocked",
+    "test_session_start_fresh_no_reads_mutation_denied",
+))
+
+
+def _runtime_env() -> dict[str, str]:
+    """Return an enforcement-on environment for runtime smoke checks."""
+    env = {**os.environ, "OPENCODE_SUBAGENT": "", "UV_NO_SYNC": "1"}
+    for name in RUNTIME_DISABLE_ENV_VARS:
+        env.pop(name, None)
+    return env
+
+
 def _has_blocking_pattern(source: str) -> bool:
     return any(pat.search(source) for pat in BLOCKING_PATTERNS)
 
@@ -129,14 +164,21 @@ def _attribute_failed_line(line: str) -> str | None:
 
 
 def _check_runtime() -> tuple[int, int, int, set[str]]:
-    """Run test-hook-runtime. Returns (passed, failed, total, failing_plugins)."""
+    """Run hook runtime smoke checks. Returns (passed, failed, total, failing_plugins)."""
+    runtime_cmd = ["uv", "run", "python", "scripts/test_hook_runtime.py"]
+    if os.environ.get("GLUDD_VERIFY_ENFORCEMENT_FULL_RUNTIME") != "1":
+        runtime_filter = os.environ.get(
+            "GLUDD_VERIFY_ENFORCEMENT_RUNTIME_K", DEFAULT_RUNTIME_FILTER
+        )
+        if runtime_filter:
+            runtime_cmd.extend(["-k", runtime_filter])
     try:
         result = subprocess.run(
-            ["uv", "run", "python", "scripts/test_hook_runtime.py"],
+            runtime_cmd,
             capture_output=True, text=True,
             timeout=120,
             cwd=str(ROOT),
-            env={**os.environ, "OPENCODE_SUBAGENT": "", "UV_NO_SYNC": "1"},
+            env=_runtime_env(),
         )
     except subprocess.TimeoutExpired:
         return 0, 0, 0, {"runtime-timed-out"}
