@@ -20,7 +20,7 @@ _ORNITH_EXPORT_ROOT = os.environ.get("ORNITH_EXPORT_ROOT", tempfile.gettempdir()
 _GLUDD_DATA_DIR = os.environ.get("GLUDD_DATA_DIR")
 
 
-def _append_root_aliases(roots: list[str], root) -> None:
+def _append_root_aliases(roots: list[str], root: str | Path | None) -> None:
     if not root:
         return
     for candidate in (str(root), os.path.realpath(str(root))):
