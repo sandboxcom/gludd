@@ -36,10 +36,12 @@ the test.
 
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import shutil
 import subprocess
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -49,6 +51,7 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 HARNESS = ROOT / "scripts" / "hook_plugin_harness.mjs"
 PLUGIN_DIR = ROOT / ".opencode" / "plugin"
 PLUGINS_DIR = ROOT / ".opencode" / "plugins"
+HOOK_STATE_LOCK = Path("/tmp/gludd-hook-fixture-state.lock")
 
 _MIN_NODE = (22, 6)
 
@@ -128,6 +131,10 @@ _HARNESS_ERROR_SIGNATURES = (
 #   GLUDD_SONNET_TARGET_CONFIG     enforce-delegate.ts  (config file, shadowed by
 #                                                        GLUDD_SONNET_TARGET_SHARE)
 #   GLUDD_MAIN_MODEL_FILE          enforce-delegate.ts  (main-model marker file)
+#   GLUDD_RELEASE_COMPLETENESS_FILE enforce-stop.ts (release completeness state)
+#   GLUDD_LAST_TEST_RESULT_FILE    enforce-stop.ts (last test result state)
+#   GLUDD_MULTITASK_STATE_FILE     enforce-stop.ts (multitask floor state)
+#   GLUDD_FORCE_DISPATCH_PATH      enforce-stop.ts / enforce-delegate.ts (forced dispatch state)
 # GLUDD_DISK_FREE_OVERRIDE / GLUDD_VENV_COUNT_OVERRIDE are VALUE overrides (not
 # file paths) read by enforce-delegate.ts's diskSnapshot() — setting them
 # bypasses a real `shutil.disk_usage` subprocess exec unconditionally.
@@ -146,10 +153,17 @@ STATE_FILE_ENV_VARS = [
     "GLUDD_MAIN_MODEL_FILE",
     "GLUDD_STOP_TEXT_COMPLETE_COUNT",
     "GLUDD_FLOOR_TEXT_COMPLETE_COUNT",
+    "GLUDD_RELEASE_COMPLETENESS_FILE",
+    "GLUDD_LAST_TEST_RESULT_FILE",
+    "GLUDD_MULTITASK_STATE_FILE",
+    "GLUDD_FORCE_DISPATCH_PATH",
+    "GLUDD_PERSIST_STOP_BLOCK_FILE",
     "GLUDD_BLOCK_COUNTER_FILE",
     "GLUDD_BLOCK_REASON_FILE",
+    "GLUDD_FALSE_DONE_BLOCKS_FILE",
     "GLUDD_STOP_TOOL_COUNTS_FILE",
     "GLUDD_WATCHDOG_PID_FILE",
+    "GLUDD_WATCHDOG_CI_FILE",
 ]
 
 # Absolute /tmp paths hardcoded in plugin source with NO env-var override.
@@ -164,12 +178,21 @@ HARDCODED_TMP_PATHS = [
     # 29123726253 unit-2 FileNotFoundError on /tmp/gludd-watchdog.pid).
     "/tmp/gludd-blanked-responses.json",     # enforce-stop.ts BLANKED_RESPONSE_FILE
     "/tmp/gludd-force-dispatch.json",        # enforce-stop.ts / enforce-delegate.ts
-    "/tmp/gludd-false-done-blocks.json",     # enforce-stop.ts FALSE_DONE_BLOCKS_FILE
+    "/tmp/gludd-last-test-result.json",      # enforce-stop.ts hasRealPendingWork()
+    "/tmp/gludd-release-completeness.json",  # enforce-stop.ts hasRealPendingWork()
+    "/tmp/gludd-multitask-state.json",       # enforce-stop.ts hasRealPendingWork()
+    "/tmp/gludd-watchdog-ci.json",           # enforce-stop.ts hasRealPendingWork()
     "/tmp/gludd-plugin-alive.json",          # _reportAlive() shared across plugins
     "/tmp/gludd-plugin-heartbeat-enforce-stop.json",
     "/tmp/gludd-plugin-heartbeat-enforce-delegate.json",
     "/tmp/gludd-plugin-heartbeat-enforce-session-start.json",
     "/tmp/gludd-plugin-loaded.log",
+]
+HARDCODED_WORK_STATE_INPUTS = [
+    "/tmp/gludd-last-test-result.json",
+    "/tmp/gludd-release-completeness.json",
+    "/tmp/gludd-multitask-state.json",
+    "/tmp/gludd-watchdog-ci.json",
 ]
 
 # Env vars that must NEVER leak from the ambient dev/agent shell into an
@@ -282,6 +305,17 @@ def _restore(snap: dict[str, bytes | None]) -> None:
             pass  # best-effort restore — never fail test teardown
 
 
+@contextmanager
+def _hardcoded_state_lock():
+    """Serialize tests that snapshot/restore hardcoded /tmp hook state."""
+    with HOOK_STATE_LOCK.open("a+") as lock_file:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+
 def _probe_harness() -> str | None:
     """Actually EXERCISE scripts/hook_plugin_harness.mjs once, session-scoped
     (module import time), against a known-good plugin/hook
@@ -309,21 +343,22 @@ def _probe_harness() -> str | None:
         json.dumps({"event": {"type": "session.idle"}}),
         json.dumps({}),
     ]
-    snap = _snapshot(HARDCODED_TMP_PATHS)
-    try:
+    with _hardcoded_state_lock():
+        snap = _snapshot(HARDCODED_TMP_PATHS)
         try:
-            proc = subprocess.run(
-                args,
-                cwd=str(ROOT),
-                env=_clean_base_env(),
-                capture_output=True,
-                text=True,
-                timeout=15,
-            )
-        except (OSError, subprocess.TimeoutExpired) as exc:
-            return f"harness probe invocation raised {exc!r}"
-    finally:
-        _restore(snap)
+            try:
+                proc = subprocess.run(
+                    args,
+                    cwd=str(ROOT),
+                    env=_clean_base_env(),
+                    capture_output=True,
+                    text=True,
+                    timeout=15,
+                )
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                return f"harness probe invocation raised {exc!r}"
+        finally:
+            _restore(snap)
 
     stderr = proc.stderr or ""
     if any(sig in stderr for sig in _HARNESS_ERROR_SIGNATURES):
@@ -380,24 +415,35 @@ def hook_plugin_env_impl(tmp_path: Path):
     if not HARNESS_OK:
         pytest.skip(f"hook harness unavailable in this environment: {HOOK_LIVE_SKIP_REASON}")
 
-    snap = _snapshot(HARDCODED_TMP_PATHS)
+    with _hardcoded_state_lock():
+        snap = _snapshot(HARDCODED_TMP_PATHS)
+        for p in HARDCODED_WORK_STATE_INPUTS:
+            with suppress(OSError):
+                Path(p).unlink(missing_ok=True)
 
-    env = _clean_base_env()
-    for var in STATE_FILE_ENV_VARS:
-        env[var] = str(tmp_path / f"{var.lower()}.json")
-    # Blanket disk-safety overrides — bypass the real disk_usage subprocess
-    # exec unconditionally so no test result depends on this machine's
-    # actual free disk / worktree venv count.
-    env["GLUDD_DISK_FREE_OVERRIDE"] = "999"
-    env["GLUDD_VENV_COUNT_OVERRIDE"] = "0"
-    # Deterministic sonnet-ratio target unless a test overrides it — takes
-    # precedence over GLUDD_SONNET_TARGET_CONFIG (see readTargetShare()).
-    env.setdefault("GLUDD_SONNET_TARGET_SHARE", "0.5")
+        env = _clean_base_env()
+        for var in STATE_FILE_ENV_VARS:
+            env[var] = str(tmp_path / f"{var.lower()}.json")
+        # Blanket disk-safety overrides — bypass the real disk_usage subprocess
+        # exec unconditionally so no test result depends on this machine's
+        # actual free disk / worktree venv count.
+        env["GLUDD_DISK_FREE_OVERRIDE"] = "999"
+        env["GLUDD_VENV_COUNT_OVERRIDE"] = "0"
+        # Deterministic sonnet-ratio target unless a test overrides it — takes
+        # precedence over GLUDD_SONNET_TARGET_CONFIG (see readTargetShare()).
+        env.setdefault("GLUDD_SONNET_TARGET_SHARE", "0.5")
+        env["GLUDD_PROJECT_ROOT"] = str(tmp_path)
+        env["GLUDD_HOT_MODULE_PREFIX"] = str(tmp_path / "missing-hot-module-")
+        (tmp_path / "config").mkdir(exist_ok=True)
+        (tmp_path / "TASKS.md").write_text("")
+        (tmp_path / "BUGS.md").write_text("")
+        (tmp_path / "config" / "ratchet.yml").write_text("")
+        (tmp_path / ".gate-status").write_text("lint PASS\ntypecheck PASS\ncollect PASS\ntest PASS\n")
 
-    try:
-        yield HookEnv(cwd=tmp_path, env=env)
-    finally:
-        _restore(snap)
+        try:
+            yield HookEnv(cwd=tmp_path, env=env)
+        finally:
+            _restore(snap)
 
 
 def invoke_text_complete_and_confirm_increment(

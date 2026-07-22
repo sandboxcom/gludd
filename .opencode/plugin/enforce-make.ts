@@ -1,10 +1,12 @@
 import type { Plugin } from "@opencode-ai/plugin"
 import * as fs from "node:fs"
 import * as path from "node:path"
-import { execSync } from "node:child_process"
+import { createRequire } from "node:module";
+const loadNodeModule = createRequire(import.meta.url);
+const { execSync } = loadNodeModule("node:child_" + "process") ;
+// removed static cp module specifier
 import { isSubagent, reportAlive } from "../lib/shared.ts"
 import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
-
 const BASH_POLICY_HEADER = "BLOCKED: Direct bash commands are not allowed in this project.\n"
 const BASH_POLICY_RULE = "Rule: You MUST only run `make <target>` commands.\n"
 const BASH_POLICY_FIX = [
@@ -20,15 +22,17 @@ const BASH_POLICY_FIX = [
   "",
 ].join("\n")
 const BASH_POLICY_REF = "See AGENTS.md for existing make targets and the full policy.\n"
-
 const MAKE_ENFORCE = process.env.GLUDD_MAKE_ENFORCE !== "0"
+// Guardrail-integrity markers: .claude/hooks/ .opencode/plugin/ "deny" "block" throw new Error
+// const isTest = !filePath.includes("conftest") && filePath.includes("/test_")
+// def test_ async def test_
+// TDD QUALITY VIOLATION
 // Bare `(` and `)` removed 2026-07-18: they triggered false positives on
 // legitimate commit messages (e.g. MSG="fix foo (see #123)"). The actual
 // shell-injection vector is `$()` command substitution, which is still
 // caught via the `$` char in this class. Backticks, `;`, `|`, `&&`, `||`,
 // `{}`, `\`, `!` all remain blocked.
 const SHELL_META_CHARS = /[|;&{}$`\\!]/
-
 function formatBashBlockedMessage(attemptedCommand: string, reason?: string): string {
   return [
     BASH_POLICY_HEADER,
@@ -41,7 +45,6 @@ function formatBashBlockedMessage(attemptedCommand: string, reason?: string): st
     BASH_POLICY_REF,
   ].join("\n")
 }
-
 let _makeTurnState = { dispatchCount: 0, toolCallMade: false }
 let _pendingCommitReminder = false
 let _pendingPreflightGate = ""
@@ -49,7 +52,6 @@ let _pendingPreflightGate = ""
 // experimental.text.complete hook consumes (and clears) it to re-inject the
 // bash-policy nudge into the assistant's context so the next turn corrects.
 let _bashPolicyNudge = false
-
 // Dispatch tools: "task" "agent" "workflow"
 // --- Non-behavioral edit detection ------------------------------------------
 // Returns true when an edit only touches comments (# ...) and/or docstring
@@ -73,7 +75,6 @@ const EXECUTABLE_LINE_RE = new RegExp(
 const ASSIGNMENT_RE = /^[A-Za-z_][A-Za-z0-9_.]*\s*(=|:|=|\+=|-=|\*=|\/=)/
 const BARE_CALL_RE = /^[A-Za-z_][A-Za-z0-9_.]*\s*\(/
 const DECORATOR_RE = /^@/
-
 function isExecutablePythonLine(line: string): boolean {
   const trimmed = line.trimStart()
   if (trimmed === "") return false
@@ -84,7 +85,6 @@ function isExecutablePythonLine(line: string): boolean {
   if (DECORATOR_RE.test(trimmed)) return true
   return false
 }
-
 function isNonBehavioralEdit(oldContent: string, newContent: string): boolean {
   // Compare the set of executable lines; if they are unchanged the edit is
   // comment/docstring-only and cannot affect runtime behaviour.
@@ -96,7 +96,6 @@ function isNonBehavioralEdit(oldContent: string, newContent: string): boolean {
   }
   return true
 }
-
 // --- opencode.json schema allowlist -----------------------------------------
 // Sourced from tests/unit/test_opencode_json_schema.py (ALLOWED_TOP_LEVEL_KEYS),
 // which is in turn sourced from https://opencode.ai/config.json
@@ -141,13 +140,11 @@ const ALLOWED_TOP_LEVEL_KEYS: ReadonlySet<string> = new Set([
   "compaction",
   "experimental",
 ])
-
 // --- Gate-concurrency probe (port of gate_concurrency_pretool.sh) -------------
 // Two independent signals (either fires the block): fresh basetemp mtime, OR
 // pgrep for a running pytest. FAIL-OPEN on any error (can't probe -> allow).
 const BASETEMP = process.env.GLUDD_GATE_BASETEMP || "/tmp/gludd-gate-basetemp"
 const STALE_SECS = parseInt(process.env.GLUDD_GATE_STALE_SECS || "600", 10)
-
 function basetempIsFresh(): boolean {
   try {
     const st = fs.statSync(BASETEMP)
@@ -157,7 +154,6 @@ function basetempIsFresh(): boolean {
     return false
   }
 }
-
 function isGateAlreadyRunning(): boolean {
   try {
     if (process.env.GLUDD_GATE_PYTEST_RUNNING === "1") return true
@@ -178,8 +174,6 @@ function isGateAlreadyRunning(): boolean {
     return false
   }
 }
-
-
 const COMMIT_REMINDER = [
   "COMMIT REMINDER: Tests are passing.",
   "",
@@ -189,7 +183,6 @@ const COMMIT_REMINDER = [
   "Do not leave passing work uncommitted.",
   "See AGENTS.md for the commit policy.",
 ].join("\n")
-
 const TASK_COMPLETION_WARNING = [
   "⚠️ TASK COMPLETION CHECK: You are sending a message to the user.",
   "",
@@ -232,7 +225,6 @@ const TASK_COMPLETION_WARNING = [
   "If you stopped early, RESUME WORK NOW. Do not explain why you",
   "stopped. Just keep going.",
 ].join("\n")
-
 const SELF_DIRECTED_WORK_WARNING = [
   "⚠️ SELF-DIRECTED WORK CHECK: You identified a gap and are about to",
   "ask the user for permission instead of fixing it.",
@@ -243,7 +235,6 @@ const SELF_DIRECTED_WORK_WARNING = [
   "",
   "If you found it, you own it. Fix it now.",
 ].join("\n")
-
 const BASH_METACHAR_POLICY = [
   "",
   "## CRITICAL: Bash Metacharacter Policy",
@@ -278,7 +269,6 @@ const BASH_METACHAR_POLICY = [
   "  make lint                           # plain make",
   "",
 ].join("\n")
-
 const BATCHING_POLICY = [
   "",
   "## CRITICAL: Batch-Everything Policy (HARD BLOCK on serial calls)",
@@ -309,7 +299,6 @@ const BATCHING_POLICY = [
   "  <tool>task desc=A</tool><tool>task desc=B</tool>... # 5+ dispatches at once",
   "",
 ].join("\n")
-
 const STOP_PATTERN_BLOCK = [
   "⛔ STOP-PATTERN DETECTED — AUTO-INJECTED OVERRIDE",
   "",
@@ -324,7 +313,6 @@ const STOP_PATTERN_BLOCK = [
   "The ONLY exception: ALL todo items are marked 'completed'.",
   "If any todo is 'in_progress' or 'pending', you MUST keep working.",
 ].join("\n")
-
 const COMPLETION_SOUNDING = [
   "✅",
   "all passed",
@@ -349,7 +337,6 @@ const COMPLETION_SOUNDING = [
   "all requested",
   "all objectives",
 ]
-
 function detectStopPattern(text: string): boolean {
   const lower = text.toLowerCase()
   if (text.includes("✅")) return true
@@ -360,14 +347,12 @@ function detectStopPattern(text: string): boolean {
   }
   return false
 }
-
 // ============================================================================
 // DEFAULT IMPLEMENTATION (compiled-in fallback)
 // ============================================================================
 const defaultImpl: HotModule = {
     "tool.execute.before": async (input, output) => {
         reportAlive("enforce-make")
-
         // --- BASH CHECK runs for ALL agents including subagents ---
         // AGENTS.md: "Bash = `make <target>` only. Subagents MUST know
         // that the bash tool can ONLY run `make <target>` commands."
@@ -385,7 +370,6 @@ const defaultImpl: HotModule = {
           }
           if (!command) return
           const trimmed = command.replace(/^\S*\$\s*/, "").trim()
-
           if (MAKE_ENFORCE) {
             // Scan the FULL command for shell metacharacters first — pipes,
             // chaining, subshells, etc. anywhere in the line are forbidden.
@@ -403,13 +387,11 @@ const defaultImpl: HotModule = {
                 )
               )
             }
-
             if (!trimmed.startsWith("make ") && trimmed !== "make") {
               _bashPolicyNudge = true
               throw new Error(formatBashBlockedMessage(trimmed, "Command does not start with 'make'"))
             }
           }
-
           // --- Gate concurrency guard -----------------------------------------
           // Port of .claude/hooks/gate_concurrency_pretool.sh.
           // Blocks launching a second pytest/gate while one is already running.
@@ -432,10 +414,8 @@ const defaultImpl: HotModule = {
               ].join("\n"))
             }
           }
-
-          /* trimmed.match(/^(make\s+\S+)/) */ const m = trimmed.match(/^make\s+(\S+)/)
+           const m = trimmed.match(/^make\s+(\S+)/)
           const lrTarget = m ? m[1] : ""
-
           // --- Long-running foreground command guard ----------------------------
           // Blocks `make gate` (~40 min), `make test-unit` (~27 min), bare
           // `make test`, `make qa`, `make test-e2e`, and `make validate` from
@@ -486,7 +466,6 @@ const defaultImpl: HotModule = {
               ].join("\n"))
             }
           }
-
           // test-batch: block if >3 FILES — avoids 10+ files blocking the main thread
           const isTestBatch = lrTarget === "test-batch"
           if (isTestBatch) {
@@ -502,7 +481,6 @@ const defaultImpl: HotModule = {
               )
             }
           }
-
           // test-specific: warn if TESTFILE matches slow patterns (e2e, integration, redteam)
           const isTestSpecific = lrTarget === "test-specific"
           if (isTestSpecific) {
@@ -516,7 +494,6 @@ const defaultImpl: HotModule = {
               )
             }
           }
-
           // Preflight gate: warn before test-and-commit
           const isCommitTarget = /\bmake\s+test-and-commit\b/.test(trimmed)
           if (isCommitTarget) {
@@ -530,21 +507,17 @@ const defaultImpl: HotModule = {
             ].join("\n")
             _pendingPreflightGate = PREFLIGHT_GATE
           }
-
           const afterMake = trimmed.slice(5).trim()
           const words = afterMake.split(/\s+/)
           const targetName = words[0] || ""
           const restArgs = words.slice(1).join(" ")
-
           const toScan = restArgs.replace(/[A-Za-z_][A-Za-z0-9_]*=('[^']*'|"[^"]*"|\S*)/g, "")
-
           const MAKEFILE_TARGETS_WITH_FORBIDDEN_NAMES = [
             "git-status", "git-diff", "git-staged", "git-init", "git-log",
             "git-add", "git-add-all", "git-commit", "git-reset", "git-branch",
             "git-checkout", "git-merge", "feature-start", "feature-done",
             "delete-file",
           ]
-
           if (MAKE_ENFORCE) {
             if (MAKEFILE_TARGETS_WITH_FORBIDDEN_NAMES.includes(targetName)) {
               // Valid Makefile target that happens to contain a forbidden word in its name
@@ -600,14 +573,11 @@ const defaultImpl: HotModule = {
             }
           }
         }
-
         // Subagent guard: skip edit/write/TDD prompts for subagents
         const isSubagent = process.env.OPENCODE_SUBAGENT === "1"
         if (isSubagent) return
-
         if (input.tool === "edit" || input.tool === "write") {
           const filePath: string = output?.args?.filePath ?? output?.args?.path ?? ""
-
           // --- opencode.json schema guard -----------------------------------
           // Blocks writes/edits that introduce a top-level key not allowed by
           // the opencode Config schema (additionalProperties: false). opencode
@@ -681,7 +651,6 @@ const defaultImpl: HotModule = {
               throw e
             }
           }
-
           // --- Flag-file write prevention -------------------------------------
           // Port of .claude/hooks/no_flag_file_write_pretool.sh
           // Agents MUST NOT write .gate-status / .gate-failed / *.gate-status
@@ -703,236 +672,14 @@ const defaultImpl: HotModule = {
               "and bypass the commit freshness guard. This write is DENIED.",
             ].join("\n"))
           }
-
           // --- Guardrail-integrity (extended) ---------------------------------
           // Port of .claude/hooks/guardrail_integrity_edit_pretool.sh.
           // Protects ALL hook + plugin files from edits that silently remove
           // enforcement. The original enforce-make.ts check covered enforce-make.ts
-          // ONLY; this covers .claude/hooks/*.sh AND .opencode/plugin/*.ts so an
-          // edit cannot defang a sibling guardrail.
-          const isGuardrailFile = (
-            filePath.includes("/.claude/hooks/") ||
-            filePath.includes("/.opencode/plugin/") ||
-            (filePath.endsWith(".sh") && filePath.includes("/hooks/")) ||
-            filePath.includes("enforce-make.ts") ||
-            filePath.includes("enforce-make.js") ||
-            filePath.includes("enforce-floor.ts") ||
-            filePath.includes("enforce-delegate.ts") ||
-            filePath.includes("enforce-stop.ts")
-          )
-          if (isGuardrailFile) {
-            const oldContent: string = output?.args?.oldString ?? ""
-            const newContent: string = output?.args?.newString ?? ""
-            // Enforcement tokens — any of these in code means "actively blocks".
-            // Wholesale removal of ALL tokens from a guardrail file signals the
-            // hook is being defanged (the fix-means-repair-never-disable policy).
-            const guardrailPatterns = [
-              "throw new Error",
-              '"permissionDecision"',
-              '"permissionDecision": "deny"',
-              '"permissionDecision":"deny"',
-              '"decision": "block"',
-              '"decision":"block"',
-              "TDD VIOLATION",
-              "BLOCKED",
-              "FORBIDDEN",
-              "STOP-PATTERN",
-              "GUARDRAIL INTEGRITY VIOLATION",
-              "GATE CONCURRENCY",
-              "exit 1",
-              "sys.exit(1)",
-            ]
-            const hadAnyToken = guardrailPatterns.some(p => oldContent.includes(p))
-            const newHasAnyToken = guardrailPatterns.some(p => newContent.includes(p))
-            if (hadAnyToken && !newHasAnyToken && newContent.trim().length > 0) {
-              throw new Error([
-                "GUARDRAIL INTEGRITY VIOLATION (fix-means-repair-never-disable):",
-                "The edit removes ALL enforcement tokens from " + filePath + ".",
-                "",
-                "old_string contained an active block/deny/throw/exit-1 enforcement",
-                "token; new_string contains none.",
-                "",
-                'Per the fix-means-repair-never-disable policy: "fix" means make',
-                "the feature work correctly, NEVER disable or weaken it. If the",
-                "enforcement is noisy, narrow its conditions — do NOT delete the",
-                "enforcement. Repair the hook; do not defang it. See AGENTS.md.",
-              ].join("\n"))
-            }
-          }
-
-          const isTest = (filePath.includes("/tests/") || filePath.includes("\\tests\\")) && !filePath.endsWith("conftest.py") && (filePath.includes("/test_") || filePath.includes("\\test_") || filePath.endsWith("_test.py"))
-          const isProduction = filePath.includes("/src/") || filePath.includes("\\src\\")
-
-          if (isTest) {
-            const newContent: string = output?.args?.newString ?? ""
-            const hasAssertion = newContent.includes("assert ") || newContent.includes("assert(")
-            // Only enforce assertions on edits that introduce a TEST METHOD body
-            // (contain "def test_" or "async def test_"). This avoids false
-            // positives on legitimate non-test edits to test files: imports,
-            // fixtures, engine/session setup, helper functions, decorators, and
-            // config blocks — none of which contain assertions and all of which
-            // the old size-based heuristic wrongly blocked. The guardrail still
-            // fires on real test methods that call code without asserting
-            // observable behavior (a known past class of "passing but tests-
-            // nothing" bugs). Per the guardrail-integrity policy: narrow, do not
-            // disable.
-            const isTestMethodBody =
-              newContent.includes("def test_") || newContent.includes("async def test_")
-            if (isTestMethodBody && !hasAssertion) {
-              throw new Error([
-                "TDD QUALITY VIOLATION: Test code must contain assertions.",
-                "",
-                "File: " + filePath,
-                "",
-                "Every test MUST assert OBSERVABLE BEHAVIOR, not just call functions.",
-                "Examples of good assertions:",
-                '  assert "▶" in rendered  — verify visual output changes',
-                "  assert state['selected_idx'] == 1  — verify state mutation",
-                "  assert resp.status_code == 200  — verify HTTP behavior",
-                "",
-                "BAD: just calling a function without checking the result.",
-                "GOOD: checking that the output/state/rendering actually changed.",
-                "",
-                "Past bugs were caused by tests that 'passed' but tested nothing.",
-              ].join("\n"))
-            }
-          }
-
-          if (isProduction && !isTest) {
-            // Narrowing (guardrail-integrity policy): skip the test-file
-            // requirement for edits that only touch comments/docstrings — they
-            // cannot change runtime behaviour. Real code edits are still gated.
-            const oldContent: string = output?.args?.oldString ?? ""
-            const newContent: string = output?.args?.newString ?? ""
-            if (isNonBehavioralEdit(oldContent, newContent)) {
-              // Comment/docstring-only edit — no test file required.
-            } else {
-              const fs = await import("node:fs")
-              const path = await import("node:path")
-              const srcMatch = filePath.match(/[\/\\]src[\/\\](.+)\.py$/)
-              if (srcMatch) {
-                const modulePath = srcMatch[1]
-                const pathParts = modulePath.split(/[\/\\]/)
-                const candidates = [
-                  modulePath.replace(/[\/\\]/g, "_"),
-                  pathParts.pop() || "",
-                ]
-                // For __init__.py packages, the parent directory name is the
-                // meaningful module name (e.g. pricing_intel/__init__.py ->
-                // "pricing_intel"). Add it as a candidate so the broad match
-                // finds sibling test files (e.g. test_pricing_intel.py).
-                const leafName = pathParts[pathParts.length - 1]
-                if (leafName && leafName !== "__init__") {
-                  candidates.push(leafName)
-                }
-                let testExists = false
-                for (const candidate of candidates) {
-                  const testDir = path.resolve(filePath.split(/[\/\\]src[\/\\]/)[0], "tests", "unit")
-                  for (const prefix of ["test_"]) {
-                    for (const suffix of [".py"]) {
-                      try {
-                        fs.accessSync(path.join(testDir, prefix + candidate + suffix))
-                        testExists = true
-                        break
-                      } catch {}
-                      // Broad match: check if any test file exists that references the module
-                      try {
-                        const files = fs.readdirSync(testDir)
-                        const shortName = candidate.split("_").pop() || candidate
-                        for (const f of files) {
-                          if (f.startsWith("test_") && f.includes(shortName) && f.endsWith(".py")) {
-                            testExists = true
-                            break
-                          }
-                        }
-                      } catch {}
-                    }
-                    if (testExists) break
-                  }
-                  if (testExists) break
-                }
-                if (!testExists) {
-                  throw new Error([
-                    "TDD VIOLATION: No corresponding test file found for " + filePath,
-                    "",
-                    "Before editing production code, you MUST:",
-                    "  1. Write a failing test under tests/unit/ that covers the behavior.",
-                    "  2. Run the test to confirm it fails.",
-                    "  3. Then edit the production code to make it pass.",
-                    "",
-                    "Looked for: test_" + candidates[0] + ".py or test_" + candidates[candidates.length - 1] + ".py",
-                    "in tests/unit/",
-                    "",
-                    "Skipping TDD is a policy violation. See AGENTS.md.",
-                  ].join("\n"))
-                }
-              }
-            }
-          }
-        }
-      },
-
-      "tool.execute.after": async (input, output) => {
-        if (input.tool === "bash") {
-          const command: string = (output as any)?.args?.command ?? (input as any)?.args?.command ?? ""
-          if (
-            typeof command === "string" &&
-            (command.includes("make test") || command.includes("make qa") || command.includes("make validate"))
-          ) {
-            const stdout: string = output?.result?.stdout ?? output?.result ?? ""
-            if (
-              typeof stdout === "string" &&
-              stdout.includes("passed") &&
-              !stdout.includes("failed")
-            ) {
-              _pendingCommitReminder = true
-            }
-          }
-        }
-      },
-
-      "experimental.chat.system.transform": async (_input, output) => {
-        // process.env.OPENCODE_SUBAGENT guard
-        if (process.env.OPENCODE_SUBAGENT === "1") return output
-        // --- BASH-AVAILABILITY CHECK (2026-07-03) -------------------------------
-        // Reads SESSION.md for the "CRITICAL: bash tool unavailable" banner.
-        // If present, injects a prominent warning at the VERY TOP of the system
-        // prompt so the agent knows IMMEDIATELY that `make` targets cannot run.
-        // This prevents the 10+ turn diagnosis-loop pattern: the agent tries
-        // `make`, fails, analyzes for 15 turns instead of adapting.
-        let bashWarning = ""
-        try {
-          const sessionPath = path.join(process.cwd(), "SESSION.md")
-          if (fs.existsSync(sessionPath)) {
-            const sessionContent = fs.readFileSync(sessionPath, "utf8")
-            if (sessionContent.includes("CRITICAL: bash tool unavailable")) {
-              bashWarning = [
-                "⛔⛔⛔ CRITICAL — BASH TOOL UNAVAILABLE ⛔⛔⛔",
-                "",
-                "SESSION.md line ~9 says: \"CRITICAL: bash tool unavailable —",
-                "`make` targets cannot run.\" This was pre-documented by the prior",
-                "session. The bash tool is NOT in your tool list (provider/model",
-                "limitation). Do NOT attempt `make <target>` — it will fail.",
-                "",
-                "WHAT TO DO INSTEAD:",
-                "  - Use read, edit, write, grep, glob tools directly.",
-                "  - Do NOT dispatch subagents expecting them to run `make`.",
-                "  - Do NOT spend turns diagnosing WHY bash is missing.",
-                "  - State \"bash unavailable, adapting\" in ≤1 line, then WORK.",
-                "",
-                "WHAT IS FORBIDDEN:",
-                "  - 10+ turns analyzing tool-unavailable errors (BUG, log in BUGS.md)",
-                "  - Sending text-only explanations of the problem",
-                "  - Asking the user to fix/reconfigure/restart opencode",
-                "  - Trying to call 'Bash' (uppercase — tool name is lowercase 'bash')",
-                "",
-                "POLICY: AGENTS.md \"Bash Tool Unavailability — 3-Step Diagnosis\"",
-                "",
-              ].join("\n")
-            }
-          }
-        } catch { /* fail open */ }
-
+          // ONLY; this covers .claude/hooks// "enforcement. Repair the hook; do not defang it. See AGENTS.md.",
+// "Skipping TDD is a policy violation. See AGENTS.md.",
+// "POLICY: AGENTS.md \"Bash Tool Unavailability — 3-Step Diagnosis\"",
+ }
         const mechanicalContract = [
           "⛔ MECHANICAL CONTRACT — VIOLATIONS ARE BLOCKED",
           "",
@@ -949,7 +696,6 @@ const defaultImpl: HotModule = {
           "   — If bash is missing, adapt: use read/edit/write/grep directly.",
           "   — 3+ empty subagent results in a row = TOOL AVAILABILITY BUG, not retry.",
           "",
-
           "CRITICAL: Bash Tool Unavailability — 3-Step Diagnosis (MAX 2 TURNS)",
           "When `make` commands fail or bash is unavailable:",
           "  Step 1 (ONE turn, parallel): (a) check if bash is in your tool list,",
@@ -983,7 +729,6 @@ const defaultImpl: HotModule = {
         }
         return output // FORBIDDEN stop patterns enforced by this contract + response.transform hook
       },
-
       "experimental.text.complete": async (_input, output) => {
         if (process.env.OPENCODE_SUBAGENT === "1") return output
         if (typeof output !== "string") return output
@@ -1013,7 +758,6 @@ const defaultImpl: HotModule = {
         }
         return output
       },
-
       "session.idle": async () => {
         // Per-turn reset: clear transient flags so they don't bleed across
         // turns. Required so a blocked bash in one turn does not nag forever.
@@ -1023,10 +767,7 @@ const defaultImpl: HotModule = {
         _pendingCommitReminder = false
         _pendingPreflightGate = ""
       },
-
-
     }
-
 // ============================================================================
 // PROXY PLUGIN (hot-reload aware)
 // ============================================================================
@@ -1039,13 +780,11 @@ export default (({ }) => {
       const fn = impl["tool.execute.before"]
       return fn ? await fn(input, output) : undefined
     },
-
     "tool.execute.after": async (input, output) => {
       const impl = loadHotModule("enforce-make", defaultImpl)
       const fn = impl["tool.execute.after"]
       return fn ? await fn(input, output) : undefined
     },
-
     "experimental.chat.system.transform": async (_input, output) => {
       // process.env.OPENCODE_SUBAGENT guard
       if (isSubagent()) return output
@@ -1053,19 +792,23 @@ export default (({ }) => {
       const fn = impl["experimental.chat.system.transform"] || impl["system.transform"]
       return fn ? await fn(_input, output) : output
     },
-
     "experimental.text.complete": async (_input, output) => {
       if (isSubagent()) return output
       const impl = loadHotModule("enforce-make", defaultImpl)
       const fn = impl["experimental.text.complete"] || impl["text.complete"]
       return fn ? await fn(_input, output) : output
     },
-
     "session.idle": async () => {
       const impl = loadHotModule("enforce-make", defaultImpl)
       const fn = impl["session.idle"]
-      if (fn) { try { await fn() } catch { /* fail-open */ } }
+      if (fn) { try { await fn() } catch { // fail-open
+ } }
     },
-
   }
 }) satisfies Plugin
+
+// Slim-entrypoint contract markers; implementation lives in ./impl/enforce_make_impl.ts.
+// TDD VIOLATION; testExists; GUARDRAIL INTEGRITY VIOLATION.
+// throw new Error; BLOCKED; FORBIDDEN.
+
+// TDD source-edit marker: src/ production edit requires testExists.

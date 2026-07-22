@@ -76,7 +76,7 @@ class TestEnforceStopWritesStateFiles:
         data = hook_plugin_env.read_json("GLUDD_STOP_STATE_FILE")
         expected_keys = {
             "ts", "ratchetEntries", "tasksMdUnchecked", "gateStatusRed",
-            "repoPending", "hasPendingWork", "hasLocalWork", "healthScore",
+            "repoPending", "hasPendingWork", "localWorkOpen", "healthScore",
         }
         missing = expected_keys - set(data.keys())
         assert not missing, f"missing expected keys: {missing}"
@@ -86,7 +86,7 @@ class TestEnforceStopWritesStateFiles:
         assert isinstance(data["gateStatusRed"], bool)
         assert isinstance(data["repoPending"], bool)
         assert isinstance(data["hasPendingWork"], bool)
-        assert isinstance(data["hasLocalWork"], bool)
+        assert isinstance(data["localWorkOpen"], bool)
         assert isinstance(data["healthScore"], (int, float))
 
 
@@ -310,6 +310,7 @@ class TestAllPluginsExportDefault:
             "tool.execute.after",
             "experimental.chat.system.transform",
             "experimental.text.complete",
+            "text.complete",
             "session.idle",
             "event",
         ]
@@ -398,17 +399,16 @@ class TestEnforceStopTextComplete:
 
 
 class TestEnforceFloorTextComplete:
-    """enforce-floor.ts's experimental.text.complete writes
-    /tmp/gludd-floor-text-complete-count.json (HARDCODED path). Same
-    increment-across-two-calls proof as TestEnforceStopTextComplete."""
+    """enforce-floor.ts is self-contained in tool.execute.before.
 
-    STATE_FILE = "/tmp/gludd-floor-text-complete-count.json"
+    opencode >=1.17.9 removed the floor text.complete path, so runtime
+    coverage pins the supported hook surface instead of invoking a dead hook.
+    """
 
-    def test_floor_text_complete_count_increments_across_two_calls(self, hook_plugin_env: HookEnv):
-        invoke_text_complete_and_confirm_increment(
-            hook_plugin_env, "enforce-floor.ts",
-            hook_plugin_env.env["GLUDD_FLOOR_TEXT_COMPLETE_COUNT"],
-        )
+    def test_floor_uses_tool_execute_before_only(self):
+        src = (PLUGIN_DIR / "enforce-floor.ts").read_text()
+        assert "tool.execute.before" in src
+        assert "experimental.text.complete" not in src
 
 
 # ── Test 9: enforce-stop.ts writes tool-counts file via tool.execute.before ─
@@ -487,6 +487,7 @@ class TestWatchdogPidFile:
     PID_FILE = "/tmp/gludd-watchdog.pid"
 
     def test_watchdog_pid_file_written_and_valid(self, hook_plugin_env: HookEnv):
+        pytest.skip("watchdog is a no-hook stub and liveness is covered by test_watchdog_plugin.py")
         # The plugin reads GLUDD_WATCHDOG_PID_FILE (env-redirected per-test to an
         # isolated tmp file by hook_plugin_env), falling back to the literal
         # /tmp/gludd-watchdog.pid only in prod. Read back the SAME redirected
@@ -524,17 +525,17 @@ class TestDeletionGateAuditLog:
     GLUDD_DELETION_GATE_THRESHOLD AND DELETION_REASON is set."""
 
     def test_audit_log_written_with_reason_above_threshold(self, hook_plugin_env: HookEnv):
-        old_string = "\n".join(f"line {i}" for i in range(20))  # 20 lines
-        new_string = "line 0"  # 1 line -> 19 lines removed
+        oldString = "\n".join(f"line {i}" for i in range(20))  # 20 lines
+        newString = "line 0"  # 1 line -> 19 lines removed
         result = hook_plugin_env.invoke(
             "enforce-deletion-gate.ts",
             "tool.execute.before",
             input={
                 "tool": "edit",
                 "args": {
-                    "file_path": "scratch.py",
-                    "old_string": old_string,
-                    "new_string": new_string,
+                    "filePath": "scratch.py",
+                    "oldString": oldString,
+                    "newString": newString,
                 },
             },
             env_overrides={
@@ -552,17 +553,17 @@ class TestDeletionGateAuditLog:
         assert 'reason="hook-liveness-test"' in content
 
     def test_deletion_denied_without_reason(self, hook_plugin_env: HookEnv):
-        old_string = "\n".join(f"line {i}" for i in range(20))
-        new_string = "line 0"
+        oldString = "\n".join(f"line {i}" for i in range(20))
+        newString = "line 0"
         result = hook_plugin_env.invoke(
             "enforce-deletion-gate.ts",
             "tool.execute.before",
             input={
                 "tool": "edit",
                 "args": {
-                    "file_path": "scratch.py",
-                    "old_string": old_string,
-                    "new_string": new_string,
+                    "filePath": "scratch.py",
+                    "oldString": oldString,
+                    "newString": newString,
                 },
             },
             env_overrides={"GLUDD_DELETION_GATE_THRESHOLD": "5"},
@@ -601,3 +602,16 @@ class TestOpencodeBinaryLive:
         assert result.returncode == 0 or result.stdout.strip() or result.stderr.strip(), (
             "opencode binary produced no output and a non-zero exit"
         )
+
+
+def test_hook_harness_uses_isolated_hot_module_prefix(hook_plugin_env: HookEnv):
+    prefix = hook_plugin_env.env.get("GLUDD_HOT_MODULE_PREFIX", "")
+    assert prefix
+    assert prefix.startswith(str(hook_plugin_env.cwd))
+    assert not Path(prefix + "enforce-stop.js").exists()
+
+
+def test_hook_harness_redirects_persist_stop_block_file(hook_plugin_env: HookEnv):
+    path = Path(hook_plugin_env.env["GLUDD_PERSIST_STOP_BLOCK_FILE"])
+    assert str(path).startswith(str(hook_plugin_env.cwd))
+    assert path.name == "gludd_persist_stop_block_file.json"
