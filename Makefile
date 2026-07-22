@@ -16,7 +16,7 @@ _NO_UV_SYNC_GOALS := \
     release-worktree-guard status-claim-guard workflow-state workflow-gate commit-ready gha-ready merge-ready \
     git-where repo-status git-remote-sandboxcom git-pull-sandboxcom git-fetch-sandboxcom verify-remote \
     git-branch git-checkout git-merge git-merge-nc git-merge-abort git-rebase-abort \
-    git-cherry-pick git-cherry-pick-continue git-cherry-pick-skip git-cherry-pick-abort \
+    git-cherry-pick git-cherry-pick-list git-cherry-pick-continue git-cherry-pick-skip git-cherry-pick-abort \
     ci-remotes ci-diff-since-remote ci-head-compare ci-remote-head-guard ci-trigger \
     git-push-committed-head-nv ci-trigger-committed-head ci-push-committed-head git-push-current-head-to-master-nv
 ifneq (,$(filter $(_NO_UV_SYNC_GOALS),$(MAKECMDGOALS)))
@@ -50,7 +50,7 @@ PYTEST_VERBOSITY ?= -v
         ansible-syntax ansible-lint-playbooks ansible-collection-test playbook-list \
         git-status git-init git-add git-commit git-log git-diff git-reset \
         git-branch git-checkout git-merge git-staged git-stash git-stash-pop \
-        git-merge-abort git-rebase-abort git-reset-hard git-cherry-pick \
+        git-merge-abort git-rebase-abort git-reset-hard git-cherry-pick git-cherry-pick-list \
         submodule-init submodule-update submodule-status submodule-pin \
         repo-status repo-diff repo-staged repo-log \
         feature-start feature-done test-and-commit preflight \
@@ -205,6 +205,7 @@ help:
 	@echo "  git-checkout MSG='...' Switch branch"
 	@echo "  git-merge MSG='...'   Merge branch with --no-ff"
 	@echo "  git-cherry-pick SHA=<commit> Cherry-pick a specific commit"
+	@echo "  git-cherry-pick-list SHAS='a b ...' Cherry-pick commits in order"
 	@echo "  feature-start MSG='...' Create and switch to feature branch"
 	@echo "  feature-done MSG='...' Test, merge to master with --no-ff"
 	@echo "  agent-worktree BRANCH=<name>  Isolated git worktree for a subagent (no shared-tree races)"
@@ -3026,6 +3027,14 @@ git-reset-hard:
 git-cherry-pick:
 	@if [ -z "$(SHA)" ]; then echo "Usage: make git-cherry-pick SHA=<commit>"; exit 1; fi
 	@git cherry-pick "$(SHA)"
+
+
+git-cherry-pick-list:
+	@[ -n "$(SHAS)" ] || { echo "Usage: make git-cherry-pick-list SHAS='sha1 sha2 ...'"; exit 1; }
+	@for SHA in $(SHAS); do \
+		echo "=== cherry-pick $$SHA ==="; \
+		git cherry-pick "$$SHA" || exit 1; \
+	done
 
 submodule-init:
 	@if [ ! -f .gitmodules ]; then echo "No .gitmodules file"; exit 1; fi
