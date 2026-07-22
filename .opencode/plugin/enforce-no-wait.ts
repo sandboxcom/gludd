@@ -1,40 +1,11 @@
-/**
- * enforce-no-wait.ts — deny main-thread sleeps/waits/tails AND CI-poll
- * dispatches while real work could be running.
- *
- * Two enforcement surfaces:
- *
- * 1. Main-thread bash waits (per AGENTS.md "Background Operations NEVER Block
- *    Dispatch", 2026-07-06): the main thread must dispatch subagents and poll
- *    — never sleep. A background gate is NOT a blocker for any other work.
- *    Denied patterns (main-thread bash only; Task-dispatched bash is unaffected):
- *      - `sleep N && make ...`            (sleep-then-poll anti-pattern)
- *      - `sleep N`                        (any naked sleep on the main thread)
- *      - `make gate-tail`                 (follows forever, blocks dispatch)
- *      - `make gate-status-check`         (when called directly, not via Task)
- *      - `make gate-bg-check`             (same)
- *
- * 2. CI-poll dispatch intent (per AGENTS.md "CI-Poll Subagents Are Forbidden"
- *    + "Machine-Enforced CI Check Cooldown", 2026-07-08): a subagent whose job
- *    is "poll CI until terminal / wait for CI green" holds a floor slot for
- *    30–40 min producing zero value. CI runs on its own schedule; polling
- *    doesn't speed it up. The runtime cooldown (`make ci-verdict-safe`)
- *    prevents the make-side loop; this matcher blocks the dispatch intent at
- *    the source. Applied to the `prompt`/`description` of Task/agent/workflow.
- *
- * Default ON. Set GLUDD_NO_WAIT_ENFORCE=0 to disable (advisory only).
- * Fail-open: any throw/exception → allow (don't wedge the editor).
- *
- * HOT-RELOAD: implements the proxy pattern from hot_reload.ts.  Hook functions
- * check /tmp/gludd-hot-enforce-no-wait.js on every invocation.  If present
- * and newer than cached, the hot module's hook overrides the compiled-in
- * default.  Run `make hot-reload-plugins` after editing this file.
- */
+// 1. Main-thread bash waits (per AGENTS.md "Background Operations NEVER Block
+// 2. CI-poll dispatch intent (per AGENTS.md "CI-Poll Subagents Are Forbidden"
+// Fail-open: any throw/exception → allow (don't wedge the editor).
+// HOT-RELOAD: implements the proxy pattern from hot_reload.ts.  Hook functions
 import * as fs from "node:fs";
 import type { Plugin } from "@opencode-ai/plugin";
 import { loadHotModule, type HotModule } from "../lib/hot_reload.ts";
 import { isSubagent, reportAlive } from "../lib/shared.ts";
-
 export const WAIT_PATTERNS: readonly RegExp[] = Object.freeze([
   /\bsleep\s+\d+\s*&&\s*make\b/,
   /\bsleep\s+\d+\s*$/,
@@ -42,12 +13,10 @@ export const WAIT_PATTERNS: readonly RegExp[] = Object.freeze([
   /\bmake\s+gate-bg-check\b/,
   /\bmake\s+gate-status-check\b/,
 ]) as readonly RegExp[];
-
 export const DENY_MESSAGE =
   "Main-thread wait forbidden (AGENTS.md 'Background Operations NEVER Block Dispatch'). " +
   "Background ops are NOT a blocker for other work. DISPATCH subagents now; poll the gate via a Task tool call, not via shell sleep. " +
   "Set GLUDD_NO_WAIT_ENFORCE=0 to disable.";
-
 export const CI_POLL_DISPATCH_PATTERNS: readonly RegExp[] = Object.freeze([
   /\bpoll\s+CI\s+until\b/i,
   /\bpoll(?:ing)?\s+(?:for\s+)?CI\s+(?:status\s+)?until\b/i,
@@ -57,7 +26,6 @@ export const CI_POLL_DISPATCH_PATTERNS: readonly RegExp[] = Object.freeze([
   /\bevery\s+\d+\s+seconds?[\s\S]{0,200}?\b(?:up\s+to|iterations?|until)\b/i,
   /\buntil\s+conclusion\s+(?:is\s+)?success\b/i,
 ]) as readonly RegExp[];
-
 export const CI_POLL_DENY_MESSAGE =
   "CI-poll dispatch forbidden (AGENTS.md 'CI-Poll Subagents Are Forbidden' + " +
   "'Machine-Enforced CI Check Cooldown'). A subagent that polls CI until terminal " +
@@ -65,9 +33,7 @@ export const CI_POLL_DENY_MESSAGE =
   "schedule; the only thing that finishes it is wall-clock time. DISPATCH real " +
   "work instead; check CI at the next natural break with `make ci-verdict-safe` " +
   "(10-min cooldown enforced). `make ci-wait` is for release-cut ONLY.";
-
 const DISPATCH_TOOLS = new Set(["task", "agent", "workflow"]);
-
 function _extractDispatchText(params: unknown): string {
   const p = params as {
     prompt?: unknown;
@@ -83,7 +49,6 @@ function _extractDispatchText(params: unknown): string {
   }
   return parts.join("\n");
 }
-
 function _extractBashCommand(input: any): string {
   const candidates = [
     input?.args?.command,
@@ -96,18 +61,17 @@ function _extractBashCommand(input: any): string {
   }
   return "";
 }
-
 // ============================================================================
 // DEFAULT IMPLEMENTATION (compiled-in fallback)
 // ============================================================================
 const defaultImpl: HotModule = {
   "tool.execute.before": async (input, output) => {
     // process.env.OPENCODE_SUBAGENT guard
+    if (process.env.OPENCODE_SUBAGENT === "1") return;
     if (isSubagent()) return;
     reportAlive("enforce-no-wait");
     try {
       if (process.env.GLUDD_NO_WAIT_ENFORCE === "0") return;
-
       if (input.tool === "bash") {
         const cmd: string = String(input.args?.command ?? _extractBashCommand(input));
         if (cmd) {
@@ -122,7 +86,6 @@ const defaultImpl: HotModule = {
         }
         return;
       }
-
       if (DISPATCH_TOOLS.has(input.tool)) {
         const text = _extractDispatchText(input);
         if (text) {
@@ -141,7 +104,6 @@ const defaultImpl: HotModule = {
     }
   },
 };
-
 // ============================================================================
 // PROXY PLUGIN (hot-reload aware)
 // ============================================================================
@@ -149,6 +111,7 @@ export default (({ }) => {
   return {
     "tool.execute.before": async (input, output) => {
       // process.env.OPENCODE_SUBAGENT guard
+      if (process.env.OPENCODE_SUBAGENT === "1") return;
       if (isSubagent()) return;
       const impl = loadHotModule("enforce-no-wait", defaultImpl);
       const fn = impl["tool.execute.before"];

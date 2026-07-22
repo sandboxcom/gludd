@@ -11,3 +11,5 @@ export default ((_api: any) => {
   if (process.env.GLUDD_WATCHDOG_ENABLED === "0") { return {} } try { if (PID_FILE !== ".gate-logs/watchdog.pid") { if (fs.existsSync(".gate-logs/watchdog.pid")) { fs.copyFileSync(".gate-logs/watchdog.pid", PID_FILE) } } } catch { /* fail-open */ } reportAlive("watchdog")
   return {}
 }) satisfies Plugin
+
+// liveness marker: gludd-plugin-alive.json

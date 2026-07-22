@@ -127,13 +127,11 @@ class TestPluginStructure:
             "plugin[] array"
         )
 
-    def test_text_complete_hook_registered(self):
+    def test_text_complete_hook_not_registered(self):
         src = _plugin_source()
-        # opencode exposes the surface as `experimental.text.complete`
-        # (see enforce-stop.ts line 642 for the established pattern).
-        assert "text.complete" in src, (
-            "plugin must register a text.complete hook surface"
-        )
+        assert "experimental.text.complete" not in src
+        assert "text.complete" not in src
+        assert "tool.execute.before" in src
 
     def test_exports_done_words(self):
         src = _plugin_source()

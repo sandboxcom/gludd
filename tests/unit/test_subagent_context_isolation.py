@@ -163,28 +163,39 @@ def _extract_handler_body(src: str, hook_name: str) -> tuple[int, str] | None:
 # =============================================================================
 # All enforce-*.ts plugins with tool.execute.before handlers
 PLUGINS_WITH_TOOL_BEFORE = [
-    "enforce-floor",        # style A; has guard
-    "enforce-make",         # style A; has guard
-    "enforce-delegate",     # style A; has guard
-    "enforce-multitask",    # style A; has guard
-    "enforce-stop",         # style A; has guard
-    "enforce-deadline",     # style A; has guard
-    "enforce-session-start",  # style A; has guard
-    "enforce-deletion-gate",  # style A; has guard
-    "enforce-no-suppressions",  # style A; has guard
-    "enforce-no-wait",      # style B; has guard
-    "enforce-commit-lock",  # style B; has guard
-    "enforce-clean-tree",   # style B; has guard
-    "enforce-enhancement-ratio",  # style A; has guard
+    "enforce-anti-essay",
+    "enforce-batch-push",
+    "enforce-branch-discipline",
+    "enforce-clean-tree",
+    "enforce-commit-lock",
+    "enforce-context",
+    "enforce-deadline",
+    "enforce-delegate",
+    "enforce-deletion-gate",
+    "enforce-depth",
+    "enforce-enhancement-ratio",
+    "enforce-floor",
+    "enforce-make",
+    "enforce-multitask",
+    "enforce-no-suppressions",
+    "enforce-no-wait",
+    "enforce-objective",
+    "enforce-session-start",
+    "enforce-stop",
+    "enforce-tdd",
+    "enforce-test-integrity",
+    "enforce-verified-claims",
+    "enforce-worktree",
 ]
 
 # Plugins with text.complete hooks
 PLUGINS_WITH_TEXT_COMPLETE = [
-    "enforce-floor",         # has guard
-    "enforce-make",          # has guard
-    "enforce-multitask",     # has guard
-    "enforce-stop",          # has guard
-    "enforce-verified-claims",  # has guard
+    "enforce-anti-essay",
+    "enforce-audit",
+    "enforce-make",
+    "enforce-multitask",
+    "enforce-objective",
+    "enforce-stop",
 ]
 
 
@@ -469,20 +480,10 @@ class TestTextCompleteGuards:
             f"enforce-stop.ts: text.complete guard must return (output): {guard!r}"
         )
 
-    def test_verified_claims_has_text_complete_guard(self):
-        result = _extract_handler_body(
-            _read_plugin("enforce-verified-claims"), "experimental.text.complete"
-        )
-        assert result is not None, (
-            "enforce-verified-claims.ts: experimental.text.complete hook not found"
-        )
-        _line_no, body = result
-        idx = _find_guard_idx(body)
-        assert idx is not None, (
-            "enforce-verified-claims.ts: text.complete MISSING OPENCODE_SUBAGENT guard. "
-            "Subagent results containing done-words (committed, fixed, passed, etc.) "
-            "would be blanked by the false-done claim detector."
-        )
+    def test_verified_claims_has_no_text_complete_guard_requirement(self):
+        src = _read_plugin("enforce-verified-claims")
+        assert "experimental.text.complete" not in src
+        assert "tool.execute.before" in src
 
 
 class TestSystemTransformGuards:
@@ -567,7 +568,7 @@ class TestPluginCount:
     def test_count_matches_and_all_covered(self):
         plugins = _enforce_plugins()
         actual = sorted(p.stem for p in plugins)
-        tested = set(PLUGINS_WITH_TOOL_BEFORE) | {"enforce-verified-claims"}
+        tested = set(PLUGINS_WITH_TOOL_BEFORE) | set(PLUGINS_WITH_TEXT_COMPLETE)
         untested = set(actual) - tested
         assert not untested, (
             f"enforce-*.ts NOT covered by any test list: {sorted(untested)}"
@@ -582,7 +583,7 @@ class TestPluginCount:
             src = p.read_text()
             has_obj_hook = '"tool.execute.before"' in src
             has_func_hook = "api.tool.execute.before" in src
-            has_text = '"experimental.text.complete"' in src
+            has_text = '"experimental.text.complete"' in src or '"text.complete"' in src
             has_idle = "session.idle" in src or '"event"' in src
             has_after = '"tool.execute.after"' in src or "api.tool.execute.after" in src
             assert has_obj_hook or has_func_hook or has_text or has_idle or has_after, (

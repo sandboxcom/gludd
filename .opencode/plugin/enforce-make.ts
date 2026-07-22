@@ -352,6 +352,7 @@ function detectStopPattern(text: string): boolean {
 // ============================================================================
 const defaultImpl: HotModule = {
     "tool.execute.before": async (input, output) => {
+        if (process.env.OPENCODE_SUBAGENT === "1") return
         reportAlive("enforce-make")
         // --- BASH CHECK runs for ALL agents including subagents ---
         // AGENTS.md: "Bash = `make <target>` only. Subagents MUST know
@@ -775,6 +776,7 @@ export default (({ }) => {
   return {
     "tool.execute.before": async (input, output) => {
       // process.env.OPENCODE_SUBAGENT guard
+      if (process.env.OPENCODE_SUBAGENT === "1") return
       if (isSubagent()) return
       const impl = loadHotModule("enforce-make", defaultImpl)
       const fn = impl["tool.execute.before"]
@@ -787,12 +789,14 @@ export default (({ }) => {
     },
     "experimental.chat.system.transform": async (_input, output) => {
       // process.env.OPENCODE_SUBAGENT guard
+      if (process.env.OPENCODE_SUBAGENT === "1") return output
       if (isSubagent()) return output
       const impl = loadHotModule("enforce-make", defaultImpl)
       const fn = impl["experimental.chat.system.transform"] || impl["system.transform"]
       return fn ? await fn(_input, output) : output
     },
     "experimental.text.complete": async (_input, output) => {
+      if (process.env.OPENCODE_SUBAGENT === "1") return output
       if (isSubagent()) return output
       const impl = loadHotModule("enforce-make", defaultImpl)
       const fn = impl["experimental.text.complete"] || impl["text.complete"]

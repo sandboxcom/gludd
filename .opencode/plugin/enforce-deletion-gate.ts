@@ -74,6 +74,7 @@ function _reportAlive(): void {
 const defaultImpl: HotModule = {
   "tool.execute.before": async (input, output) => {
     // process.env.OPENCODE_SUBAGENT guard
+    if (process.env.OPENCODE_SUBAGENT === "1") return;
     if (isSubagent()) return;
     _reportAlive();
     // Keep the generated CommonJS hot module fail-open until build_hot_modules
@@ -131,6 +132,7 @@ export default (({ }) => {
   return {
     "tool.execute.before": async (input, output) => {
       // process.env.OPENCODE_SUBAGENT guard
+      if (process.env.OPENCODE_SUBAGENT === "1") return;
       if (isSubagent()) return;
       const impl = loadHotModule("enforce-deletion-gate", defaultImpl);
       const fn = impl["tool.execute.before"];

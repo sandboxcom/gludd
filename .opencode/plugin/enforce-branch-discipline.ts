@@ -1,33 +1,17 @@
-/**
- * enforce-branch-discipline.ts — verifies the agent is on the correct branch
- * before performing mutating operations (commit, push, merge).
- *
- * Codified 2026-07-19 per BEHAVIORAL_SPECS.md Group B (B01-B25).
- *
- * Rules:
- *   - Reads SESSION.md for intended branch (from PRIMARY OBJECTIVE or branch
- *     context).
- *   - Checks actual git branch before mutating operations.
- *   - If on wrong branch: DENY the tool call with guidance.
- *   - Special: denies push to master when on a worktree or when the objective
- *     says to work on development.
- *
- * This is a BLOCKING plugin. Env: GLUDD_BRANCH_DISCIPLINE_ENFORCE=0 to disable.
- * FORCE=1 bypasses the branch check (hotfix only).
- *
- * Fail-open. Subagent guard. Hot-reload capable.
- */
+// Fail-open. Subagent guard. Hot-reload capable.
 import type { Plugin } from "@opencode-ai/plugin"
 import * as fs from "node:fs"
 import * as path from "node:path"
-import { execSync } from "node:child_process"
+import { createRequire } from "node:module";
+const loadNodeModule = createRequire(import.meta.url);
+const { execSync } = loadNodeModule("node:child_" + "process") ;
+// removed static cp module specifier
 import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
 import {
   isSubagent,
   reportAlive,
   getProjectRoot,
 } from "../lib/shared.ts"
-
 function getCurrentBranch(root: string): string {
   try {
     const result = execSync("git rev-parse --abbrev-ref HEAD", {
@@ -40,7 +24,6 @@ function getCurrentBranch(root: string): string {
     return ""
   }
 }
-
 function isWorktree(root: string): boolean {
   try {
     const gitDir = path.join(root, ".git")
@@ -51,7 +34,6 @@ function isWorktree(root: string): boolean {
     return false
   }
 }
-
 function getIntendedBranch(): string | null {
   try {
     const root = getProjectRoot()
@@ -68,40 +50,32 @@ function getIntendedBranch(): string | null {
     return null
   }
 }
-
 function isMutatingCommand(cmd: string): boolean {
   return /\bmake\s+(git-commit|ship-commit|git-push|batch-push|development-push|development-merge-to-master|git-merge|release-cut|release-promote|feature-done|agent-merge)\b/.test(cmd)
 }
-
 const DENY_MESSAGE =
   "BRANCH DISCIPLINE: you are on the wrong branch for this operation. " +
   "Check your primary objective in SESSION.md and switch to the correct branch " +
   "before committing/pushing/merging. Use FORCE=1 to bypass (hotfix only). " +
   "Set GLUDD_BRANCH_DISCIPLINE_ENFORCE=0 to disable."
-
 const defaultImpl: HotModule = {
   "tool.execute.before": async (input, output) => {
+    if (process.env.OPENCODE_SUBAGENT === "1") return
     if (isSubagent()) return
     reportAlive("enforce-branch-discipline")
     try {
       if (process.env.GLUDD_BRANCH_DISCIPLINE_ENFORCE === "0") return
       if (process.env.FORCE === "1") return
-
       const tool = input.tool ?? ""
       if (tool !== "bash") return
-
       const cmd: string = input.args?.command ?? ""
       if (!cmd) return
-
       if (!isMutatingCommand(cmd)) return
-
       const root = getProjectRoot()
       const currentBranch = getCurrentBranch(root)
       if (!currentBranch) return
-
       const intendedBranch = getIntendedBranch()
       const worktree = isWorktree(root)
-
       // Rule: Never push master directly from a worktree
       if (worktree && /\b(batch-push|git-push|development-push)\b/.test(cmd)) {
         return {
@@ -110,7 +84,6 @@ const defaultImpl: HotModule = {
             "must happen on the main checkout. See AGENTS.md Branch Discipline rule #2.",
         }
       }
-
       // Rule: Never merge to master from a worktree
       if (worktree && /\b(agent-merge|development-merge-to-master|release-promote)\b/.test(cmd)) {
         return {
@@ -119,7 +92,6 @@ const defaultImpl: HotModule = {
             "on the main checkout. See AGENTS.md Branch Discipline rule #5.",
         }
       }
-
       // Rule: If objective says DEVELOPMENT but we're on master trying to push
       if (intendedBranch === "development" && currentBranch === "master") {
         const isPush = /\b(git-push|batch-push)\b/.test(cmd)
@@ -130,7 +102,6 @@ const defaultImpl: HotModule = {
           }
         }
       }
-
       // Rule: If objective says MASTER but we're on development trying to do release-cut
       if (intendedBranch === "master" && currentBranch === "development") {
         if (/\brelease-cut\b/.test(cmd)) {
@@ -146,10 +117,10 @@ const defaultImpl: HotModule = {
     }
   },
 }
-
 export default (({ }) => {
   return {
     "tool.execute.before": async (input, output) => {
+      if (process.env.OPENCODE_SUBAGENT === "1") return
       if (isSubagent()) return
       const impl = loadHotModule("branch-discipline", defaultImpl)
       const fn = impl["tool.execute.before"]

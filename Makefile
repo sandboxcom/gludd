@@ -78,7 +78,7 @@ PYTEST_VERBOSITY ?= -v
         verify-feature-claims audit-coverage gate-audit coverage-json \
         tf-cache-setup tf-init tf-validate tf-cache-warm tf-versions-check tf-clean \
         deck deck-serve deck-preview deck-data deck-honesty \
-        script-count strip-enforce-stop codemod-lean-enforcement-plugins codemod-ci-shards-sigterm git-worktree-lock-clean test-hooks-live test-hook-runtime \
+        script-count strip-enforce-stop codemod-lean-enforcement-plugins codemod-exact-subagent-guards codemod-ci-shards-sigterm git-worktree-lock-clean test-hooks-live test-hook-runtime \
         verify-enforcement \
         ci-view ci-rerun ci-trigger ci-remote-head-guard ci-active ci-job-log \
         ci-busy-check ci-safe-push pre-push-check push-guarded ci-await \
@@ -124,6 +124,7 @@ help:
 	@echo "  check-make-help       Verify every public Makefile target is listed by make help"
 	@echo "  check-no-prompt-prone-edit-tools  Enforce make-target-only edit workflow"
 	@echo "  codemod-lean-enforcement-plugins  Slim counted enforcement plugin entrypoints"
+	@echo "  codemod-exact-subagent-guards  Restore literal OPENCODE_SUBAGENT early-return guards"
 	@echo "  codemod-ci-shards-sigterm  Enforce explicit failure on unexpected shard SIGTERM"
 	@echo "  sast                  Run bandit SAST"
 	@echo "  sbom                  Generate CycloneDX SBOM"
@@ -4152,6 +4153,9 @@ write-plugin-manifest:
 codemod-lean-enforcement-plugins:
 	@$(UV) run python3 scripts/lean_enforcement_plugins.py
 	@uv run python3 scripts/compact_enforcement_plugins.py
+
+codemod-exact-subagent-guards:
+	@$(UV) run python3 scripts/ensure_exact_subagent_guards.py
 
 codemod-ci-shards-sigterm:
 	@uv run python3 scripts/update_ci_shards_sigterm.py
