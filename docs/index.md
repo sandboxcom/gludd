@@ -82,11 +82,16 @@ touching any release target.** The three facts that get this wrong most often:
 ## Key Links
 
 - [README.md](../README.md) — Project overview, quick start, architecture diagram
+- [WORKFLOWS.md](WORKFLOWS.md) — Current use patterns, feature intake, custom business logic, diagrams, Terraform, and smoke-test handoff
+- [SMOKE_TESTS.md](SMOKE_TESTS.md) — Provider, model, compute, and multi-platform smoke tests with report handoff
+- [design/PROJECT_COLLECTIONS.md](design/PROJECT_COLLECTIONS.md) — Project-local collection precedence and overrides
+- [design/COLLECTION_STRUCTURE.md](design/COLLECTION_STRUCTURE.md) — Bundled collection layout and module conventions
+- [design/TERRAFORM_INFRA_STRUCTURE.md](design/TERRAFORM_INFRA_STRUCTURE.md) — Terraform modules, stacks, providers, and validation
+- [design/MODEL_SERVING_DEPLOYMENT.md](design/MODEL_SERVING_DEPLOYMENT.md) — Slurm, Terraform, and local model-serving paths
 - [CONTRIBUTING.md](../CONTRIBUTING.md) — Contribution guidelines
 - [LICENSE](../LICENSE) — MIT License
 - [GitHub Repository](https://github.com/sandboxcom/gludd)
 - [Issue Tracker](https://github.com/sandboxcom/gludd/issues)
-
 ## Documentation Structure
 
 ```

@@ -36,7 +36,7 @@ Each slide lists: **content**, **data source**, **honesty note**.
 | # | Title | Content | Data source | Honesty note |
 |---|---|---|---|---|
 | 1.1 | Title | "gludd — an autonomous, Ansible-driven, multi-model coding daemon. Alpha research software." | static | The word "alpha" is on slide 1, not buried. |
-| 1.2 | The loop | claim → dispatch → review → reconcile → repeat. Daemon (FastAPI, single gunicorn worker). | `README.md` architecture ASCII → rendered as SVG | — |
+| 1.2 | The loop | claim -> dispatch -> review -> reconcile -> repeat. Daemon (FastAPI, single gunicorn worker). | `README.md` architecture Mermaid block rendered by GitHub Markdown or reveal.js Mermaid plugin | - |
 | 1.3 | The Ansible tool boundary | Every task = an Ansible playbook composing `general_ludd.agent` modules (`gludd_facts`, `gludd_model_call`, `gludd_git`, …). Auditable, idempotent. | README "Modules" table (12 modules) | Count is live via `make collection-roles`, not hardcoded. |
 | 1.4 | Multi-model gateway + dogfood | Router → `zai_coder` w/ fallback `deepseek_coder`, `qwen_coder`. Real API calls, tenacity retry, cost accounting. Daemon can run on its own repo. | README Models table + `make deck-data` model-discovery JSON | `make dogfood` PASSES but **monkeypatches dispatch** (no real API key) — slide says so. |
 
@@ -133,7 +133,7 @@ make deck-serve       # local static serve for preview
 | Site screenshot | **a11y/visual-qa skill (Deliverable B)** Playwright capture | 5.4 | `greenfield.screenshot_path` + `greenfield.a11y_report` |
 | Model discovery | gateway discovery result JSON | 5.5 | `models.discovered[]`, `models.fallback_chain[]` |
 | Cost/weights/metrics | `/api/metrics`, `/api/traces` snapshot | 5.6 | `metrics`, `traces`, `weights` |
-| Architecture ASCII | `README.md` block | 1.2 | rendered to SVG at build |
+| Architecture Mermaid | `README.md` Mermaid block | 1.2 | rendered by GitHub Markdown or reveal.js Mermaid plugin |
 
 ### "NO DATA" discipline
 
@@ -253,3 +253,9 @@ So ~60% of the deck (all of §1–§4) is buildable from current artifacts today
   design-only until it lands.
 - Dogfood monkeypatches dispatch → §5.2 numbers are "structurally real, dispatch
   simulated"; the scorecard slide must say so.
+
+## Diagram Rendering Note - 2026-07-22
+
+Markdown docs use Mermaid fenced code blocks because GitHub renders Mermaid natively in repository Markdown, issues, pull requests, discussions, gists, and wikis. Do not add a third-party GitHub Mermaid plugin for Markdown diagrams unless GitHub native rendering fails for a documented reason. GitHub docs warn that third-party Mermaid plugins can cause rendering errors.
+
+The reveal.js deck is separate from GitHub Markdown and keeps using the existing reveal.js Mermaid plugin. Keep the source diagram in Mermaid so README, design docs, and the deck can share the same diagram vocabulary.

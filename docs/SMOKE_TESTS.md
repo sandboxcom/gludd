@@ -96,10 +96,22 @@ request is:
 
 ```text
 Please analyze the Gludd smoke report at /tmp/gludd-openrouter-smoke.json. Use
-the report analysis_prompt, trace_id, ordered trace sequence, logs, events, and
-metrics to identify the failing provider/service path and propose the focused
-code/tests/docs changes needed to fix it.
+the report analysis_prompt, trace_id, ordered trace sequence, logs, events,
+metrics, endpoint_diagnostics, and functional_scope to identify the failing
+provider/service path and propose the focused code/tests/docs changes needed to
+fix it.
 ```
+
+### Manual Handoff Checklist
+
+The report is meant to be picked up from disk by a separate agent or AI session.
+Use this flow for real provider debugging:
+
+1. Run the smoke test with `--json --output /tmp/gludd-<provider>-<test>.json`.
+2. Confirm the report has `analysis_prompt`, `trace`, `events`, `logs`, `metrics`, and `endpoint_diagnostics` when an endpoint was involved.
+3. Confirm secret-looking values are redacted.
+4. Give the saved path to the repair agent and ask it to use the embedded `analysis_prompt`.
+5. For provider support, include `run_id`, `trace_id`, provider, test, status, endpoint diagnostics, metrics, and redacted logs. Never include raw credentials.
 
 Secret-looking values are redacted before they enter logs or events. The output
 names which variables were present or missing, but never includes API keys,

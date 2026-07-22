@@ -151,7 +151,9 @@ make deck-serve
 open docs/presentation/deck/index.html
 ```
 
-Design: `docs/presentation/DESIGN_revealjs_deck.md` | Build task list: `docs/presentation/BUILD_TASK_LIST.md`
+Design: [docs/presentation/DESIGN_revealjs_deck.md](docs/presentation/DESIGN_revealjs_deck.md) and [docs/presentation/BUILD_TASK_LIST.md](docs/presentation/BUILD_TASK_LIST.md).
+
+Operational workflows: [docs/WORKFLOWS.md](docs/WORKFLOWS.md) covers current use patterns, feature intake, custom project collections, internal business logic, Terraform model-serving stacks, diagram policy, and provider smoke-test handoff. Smoke-test detail lives in [docs/SMOKE_TESTS.md](docs/SMOKE_TESTS.md).
 
 ---
 
@@ -231,39 +233,21 @@ make dogfood     # runs the event loop on the gludd repo itself
 
 ## Architecture
 
-```
-                     ┌─────────────┐
-  User ──CLI/TUI──▶  │   Daemon    │  (FastAPI + Gunicorn, single worker)
-                     │  :8000      │  PSK-authenticated API
-                     └──────┬──────┘
-                            │
-              ┌─────────────┼─────────────┐
-              ▼             ▼             ▼
-        ┌──────────┐ ┌──────────┐ ┌──────────┐
-        │ Event    │ │  Admin   │ │  Todo    │
-        │ Loop     │ │  Router  │ │  Router  │
-        └────┬─────┘ └──────────┘ └──────────┘
-             │
-    ┌────────┼────────┬──────────┬──────────┐
-    ▼        ▼        ▼          ▼          ▼
-  Claim   Dispatch  Review   Reconcile  Self-Improve
-             │
-        ┌────▼────┐
-        │ Ansible │  (general_ludd.agent collection)
-        │ Runner  │
-        └────┬────┘
-             │
-    ┌────────┼────────────────────┐
-    ▼        ▼                    ▼
-  gludd_*  Roles               Model
-  modules  (109)               Gateway
-             │                    │
-             ▼                    ▼
-      ┌─────────────────────────────────┐
-      │     SQLite (single-worker)      │
-      │  todos · returns · benchmarks   │
-      │  messages · metrics · traces    │
-      └─────────────────────────────────┘
+```mermaid
+flowchart TD
+  User[User or CI] --> CLI[gludd CLI and API clients]
+  CLI --> Daemon[FastAPI daemon<br/>single worker<br/>PSK authenticated]
+  Daemon --> Loop[Event loop<br/>claim -> dispatch -> review -> reconcile]
+  Daemon --> Routers[REST routers<br/>todos, admin, facts, files, compute]
+  Loop --> Runner[Ansible runner<br/>general_ludd.agent collection]
+  Runner --> Roles[Roles and modules<br/>project, user, bundled precedence]
+  Runner --> Gateway[Model gateway<br/>provider routing and fallback]
+  Gateway --> Providers[Model providers<br/>OpenAI, Anthropic, DeepSeek, OpenRouter, and more]
+  Loop --> Review[Separate reviewer model<br/>task decisions and audit events]
+  Loop --> Store[SQLite store<br/>todos, returns, metrics, traces, spend]
+  Daemon --> Smoke[Smoke tests<br/>provider, model, compute, connector evidence]
+  Smoke --> Reports[JSON reports<br/>logs, metrics, events, trace, analysis_prompt]
+  Daemon --> Terraform[Compute deployment<br/>Terraform stacks, Slurm, local serving]
 ```
 
 ### Event Loop

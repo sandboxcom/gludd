@@ -1,6 +1,6 @@
 # Model Serving Deployment — Design Doc
 
-**Status:** Proposed
+**Status:** Implemented design with active Slurm, local, and Terraform paths
 **Author:** infra workstream
 **Last updated:** 2026-06-28
 
@@ -92,49 +92,39 @@ Two structural reasons:
 
 ## 3. Sequence diagram — Slurm path
 
+```mermaid
+sequenceDiagram
+  autonumber
+  participant G as gludd
+  participant S as SlurmAdapter
+  participant B as sbatch script
+  participant V as vLLM or llama.cpp
+  participant A as servable.json
+
+  G->>S: submit model, gpu_count, port, artifact_dir
+  S->>B: render script with exported variables
+  S->>B: submit via sbatch
+  B-->>S: job id
+  S-->>G: job id
+  Note over B,V: Slurm schedules job onto an allocated GPU node
+  B->>V: run GPU preflight
+  V-->>B: pass or fail
+  B->>V: launch model server
+  B->>V: probe health endpoint until ready
+  V-->>B: healthy response
+  B->>A: write servable_url, model_id, port, diagnostics
+  G->>S: poll_until_servable job id
+  S->>A: read artifact from shared filesystem
+  A-->>S: servable_url and diagnostics
+  S-->>G: servable_url
+  G->>V: route inference calls to servable_url
 ```
- gludd            SlurmAdapter        sbatch script          vllm serve         artifact file
-   |                    |                    |                     |                  |
-   | submit(model_id,   |                    |                     |                  |
-   |  gpu_count, ...)   |                    |                     |                  |
-   |------------------->|                    |                     |                  |
-   |                    | render template    |                     |                  |
-   |                    | (substitute ${VAR})|                     |                  |
-   |                    |------------------->|                     |                  |
-   |                    | sbatch <script>    |                     |                  |
-   |                    |---------+---------->|                     |                  |
-   |                    |         |  job_id   |                     |                  |
-   |  job_id            |<--------+---------- |                     |                  |
-   |<-------------------|                    |                     |                  |
-   |                    |                    |                     |                  |
-   |                    |           [PENDING → RUNNING on a GPU node]                  |
-   |                    |                    |                     |                  |
-   |                    |                    | nvidia-smi preflight|                  |
-   |                    |                    |----------+--------->|                  |
-   |                    |                    |          | OK / FAIL |                 |
-   |                    |                    |<---------+---------- |                  |
-   |                    |                    | launch vllm serve   |                  |
-   |                    |                    |---------+---------->|                  |
-   |                    |                    |         | bind :PORT|                  |
-   |                    |                    |         |-----+     |                  |
-   |                    |                    | curl /health loop   |                  |
-   |                    |                    |---------+---------->|                  |
-   |                    |                    |         | 200 OK    |                  |
-   |                    |                    |<--------+---------- |                  |
-   |                    |                    | write servable.json |                  |
-   |                    |                    |--------------------+------------------>|
-   |                    |                    |                     |    {servable_url}|
-   |                    |                    |                     |                  |
-   | poll_until_servable(job_id, timeout)    |                     |                  |
-   |------------------->| squeue / sacct     |                     |                  |
-   |                    | read artifact file |                     |                  |
-   |                    |<-------------------+---------------------+------------------|
-   | servable_url       |                    |                     |                  |
-   |<-------------------|                    |                     |                  |
-   |                    |                    |                     |                  |
-   | route inference calls to servable_url   |                     |                  |
-   |----------------------------------------------------------------------->|                  |
-```
+
+Key contract: the batch script observable side effect is the `servable.json` file
+it writes to the artifact directory on the shared filesystem. gludd never SSHes
+to the compute node. It reads the artifact file from a path both sides agreed on
+before submit. This keeps the gludd daemon off the compute fabric and lets the
+scheduler pick any free GPU node.
 
 Key contract: the sbatch script's ONLY observable side effect is the
 `servable.json` file it writes to `${ARTIFACT_DIR}` on the shared filesystem.
