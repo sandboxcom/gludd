@@ -262,6 +262,16 @@ def test_workflow_state_targets_do_not_dirty_lockfile_with_uv_run() -> None:
         "git-pull-sandboxcom",
         "git-fetch-sandboxcom",
         "verify-remote",
+        "git-branch",
+        "git-checkout",
+        "git-merge",
+        "git-merge-nc",
+        "git-merge-abort",
+        "git-rebase-abort",
+        "git-cherry-pick",
+        "git-cherry-pick-continue",
+        "git-cherry-pick-skip",
+        "git-cherry-pick-abort",
         "ci-remotes",
         "ci-diff-since-remote",
         "ci-head-compare",
@@ -280,3 +290,10 @@ def test_workflow_state_targets_do_not_dirty_lockfile_with_uv_run() -> None:
         assert "python3 scripts/" not in block
         assert "UV=echo" in block
         assert "$(SYSTEM_PYTHON) scripts/" in block
+
+
+def test_ci_head_compare_reports_bidirectional_divergence() -> None:
+    block = _target_block("ci-head-compare")
+
+    assert "sandboxcom/master..HEAD" in block
+    assert "HEAD..sandboxcom/master" in block

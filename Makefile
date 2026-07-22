@@ -15,6 +15,8 @@ _NO_UV_SYNC_GOALS := \
     worktree-state all-worktree-state main-worktree-state worktree-guard main-worktree-guard \
     release-worktree-guard status-claim-guard workflow-state workflow-gate commit-ready gha-ready merge-ready \
     git-where repo-status git-remote-sandboxcom git-pull-sandboxcom git-fetch-sandboxcom verify-remote \
+    git-branch git-checkout git-merge git-merge-nc git-merge-abort git-rebase-abort \
+    git-cherry-pick git-cherry-pick-continue git-cherry-pick-skip git-cherry-pick-abort \
     ci-remotes ci-diff-since-remote ci-head-compare ci-remote-head-guard ci-trigger \
     git-push-committed-head-nv ci-trigger-committed-head ci-push-committed-head git-push-current-head-to-master-nv
 ifneq (,$(filter $(_NO_UV_SYNC_GOALS),$(MAKECMDGOALS)))
@@ -2411,11 +2413,12 @@ ci-diff-since-remote:
 ci-head-compare:
 	@echo "--- local HEAD ---"; git rev-parse HEAD
 	@echo "--- fetching sandboxcom/master ---"
-	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git fetch sandboxcom 2>&1 | tail -3
+	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git fetch sandboxcom master:refs/remotes/sandboxcom/master 2>&1 | tail -3
 	@echo "--- sandboxcom/master HEAD ---"; git rev-parse sandboxcom/master 2>&1 || echo "no sandboxcom/master ref"
 	@echo "--- commits local has that remote does NOT ---"
 	@git log --oneline sandboxcom/master..HEAD 2>&1 || echo "(cannot compute)"
-
+	@echo "--- commits remote has that local does NOT ---"
+	@git log --oneline HEAD..sandboxcom/master 2>&1 || echo "(cannot compute)"
 # Unauthenticated API attempt (works only if the repo is public).
 ci-status-anon:
 	@echo "--- unauthenticated GitHub API (works only if repo public) ---"
