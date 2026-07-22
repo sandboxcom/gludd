@@ -486,7 +486,7 @@ test-specific:
 	@BT="/tmp/gludd-testspecific-$${ID:-$$$$}"; rm -rf "$$BT"; $(UV) run python -m pytest $(TESTFILE) $(_XD) -v $(PYTEST_ARGS) --basetemp="$$BT"; RC=$$?; rm -rf "$$BT"; exit $$RC
 
 _ci-replica-clean-tree:
-	@if $(PYTHON) scripts/check_clean_tree.py >/tmp/gludd-ci-replica-clean-tree.txt 2>&1; then \
+	@if python3 scripts/check_clean_tree.py >/tmp/gludd-ci-replica-clean-tree.txt 2>&1; then \
 		cat /tmp/gludd-ci-replica-clean-tree.txt; \
 		exit 0; \
 	fi; \
