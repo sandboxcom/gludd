@@ -233,9 +233,6 @@ class RgSearch:
         ``available=True``), exit >= 2 = rg error (``available=True`` with the
         stderr surfaced in ``error``).
         """
-        resolved_root = self._validate_root(root)
-        if isinstance(resolved_root, RgResult):
-            return resolved_root
         resolved_root = self._resolve_root(root)
         if isinstance(resolved_root, RgResult):
             return resolved_root
