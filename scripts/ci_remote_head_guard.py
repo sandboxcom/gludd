@@ -9,8 +9,9 @@ import subprocess
 import sys
 from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass
+from typing import Optional
 
-RunFn = Callable[[Sequence[str], str | None], subprocess.CompletedProcess[str]]
+RunFn = Callable[[Sequence[str], Optional[str]], subprocess.CompletedProcess[str]]  # noqa: UP045
 
 
 @dataclass(frozen=True)
@@ -77,7 +78,12 @@ def _remote_head(output: str) -> str:
     return first[0] if first else ""
 
 
-def collect_state(ref: str = "", remote: str = "sandboxcom", run: RunFn = _run, cwd: str | None = None) -> RemoteHeadState:
+def collect_state(
+    ref: str = "",
+    remote: str = "sandboxcom",
+    run: RunFn = _run,
+    cwd: str | None = None,
+) -> RemoteHeadState:
     branch = _stdout(["git", "branch", "--show-current"], run, cwd) or "DETACHED"
     local_head = _stdout(["git", "rev-parse", "--verify", "HEAD"], run, cwd)
     status = _status_lines(run, cwd)
