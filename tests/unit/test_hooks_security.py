@@ -181,6 +181,7 @@ class TestNoBlockingCallInAsyncContext:
 
         def fake_ensure_future(coro):
             ensure_future_calls.append(coro)
+            coro.close()
             return MagicMock()
 
         hs = HookSystem()
@@ -274,6 +275,7 @@ class TestAsyncWebhookNonBlocking:
 
         def fake_ensure_future(coro):
             ensure_future_calls.append(coro)
+            coro.close()
             return MagicMock()
 
         hs = HookSystem()
@@ -292,6 +294,48 @@ class TestAsyncWebhookNonBlocking:
         assert len(ensure_future_calls) >= 1, (
             "ensure_future was never called in async context"
         )
+
+    def test_async_context_schedules_before_dns_resolution(self):
+        """DNS pinning must happen in the scheduled coroutine, not fire()."""
+        captured_coros: list = []
+        resolve_calls: list[str] = []
+
+        def fake_ensure_future(coro):
+            captured_coros.append(coro)
+            task = MagicMock()
+            task.add_done_callback = lambda cb: None
+            return task
+
+        def fake_resolve_and_pin(host, *, port=443, timeout=2.0):
+            resolve_calls.append(host)
+            return None
+
+        hs = HookSystem()
+        hs.register_webhook("asyncevt-dns", "http://slow.example.com", retry_count=1)
+
+        with (
+            patch(
+                "general_ludd.events.hooks.httpx.AsyncClient",
+                return_value=_make_fake_async_client(),
+            ),
+            patch("general_ludd.events.hooks.resolve_and_pin", side_effect=fake_resolve_and_pin),
+            patch("asyncio.get_running_loop", return_value=MagicMock()),
+            patch("asyncio.ensure_future", side_effect=fake_ensure_future),
+        ):
+            hs.fire("asyncevt-dns", {"event_type": "model_added", "profile": {}})
+
+        assert len(captured_coros) == 1
+        assert resolve_calls == []
+
+        with (
+            patch(
+                "general_ludd.events.hooks.httpx.AsyncClient",
+                return_value=_make_fake_async_client(),
+            ),
+            patch("general_ludd.events.hooks.resolve_and_pin", side_effect=fake_resolve_and_pin),
+        ):
+            asyncio.run(captured_coros[0])
+        assert resolve_calls == ["slow.example.com"]
 
     def test_sync_context_uses_async_client(self):
         """When there is NO running loop, async client is used via asyncio.run."""
@@ -410,12 +454,14 @@ class TestModelAddedEventCredentialStrip:
             },
         }
 
-        with patch(
-            "general_ludd.events.hooks.httpx.AsyncClient",
-            return_value=_make_fake_async_client(callback=record),
+        with (
+            patch(
+                "general_ludd.events.hooks.httpx.AsyncClient",
+                return_value=_make_fake_async_client(callback=record),
+            ),
+            patch("general_ludd.events.hooks.resolve_and_pin", return_value=None),
         ):
             hs.fire("model_added", payload)
-
         assert len(captured) == 1
         body = captured[0]
         body_str = str(body)

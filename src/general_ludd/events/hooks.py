@@ -266,19 +266,10 @@ class HookSystem:
         # H.21 — DNS-resolving SSRF re-check at delivery time.
         # _ensure_safe_webhook_url runs a literal-host check at registration,
         # but a hostname can be re-bound to an internal IP between registration
-        # and delivery (DNS rebinding). resolve_and_pin performs actual DNS
-        # resolution and vets every resolved address, catching re-binds.
-        from urllib.parse import urlsplit
-
-        if not is_safe_fetch_url(config.url):
-            raise SSRFBlockedError(
-                f"Webhook URL rejected at fire time: {config.url!r}"
-            )
-        parts = urlsplit(config.url)
-        host = parts.hostname
-        if host:
-            resolve_and_pin(host, port=(parts.port or 443), timeout=2.0)
-
+        # and delivery (DNS rebinding). The delivery coroutine performs actual
+        # DNS resolution and vets every resolved address. Keeping the check in
+        # the coroutine avoids blocking fire() when it is called from an
+        # already-running event loop.
         async def _do_post_async() -> None:
             """Retry loop using httpx.AsyncClient for native async I/O.
 
@@ -287,6 +278,17 @@ class HookSystem:
             workaround, this never consumes a thread-pool thread and cannot
             freeze the event loop.
             """
+            from urllib.parse import urlsplit
+
+            if not is_safe_fetch_url(config.url):
+                raise SSRFBlockedError(
+                    f"Webhook URL rejected at fire time: {config.url!r}"
+                )
+            parts = urlsplit(config.url)
+            host = parts.hostname
+            if host:
+                resolve_and_pin(host, port=(parts.port or 443), timeout=2.0)
+
             async with httpx.AsyncClient() as client:
                 last_exc: Exception | None = None
                 for attempt in range(retry_count):
