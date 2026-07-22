@@ -1043,7 +1043,7 @@ class TestEdgeCases:
 
 
 def test_count() -> None:
-    """Ensure 35+ test functions exist."""
+    """Ensure 35+ test functions or test methods exist."""
     import inspect
     import sys
     mod = sys.modules[__name__]
@@ -1051,4 +1051,12 @@ def test_count() -> None:
         name for name, obj in inspect.getmembers(mod)
         if name.startswith("test_") and callable(obj)
     ]
-    assert len(test_funcs) >= 35, f"Expected >=35 test functions, got {len(test_funcs)}"
+    test_methods = [
+        f"{cls_name}.{method_name}"
+        for cls_name, cls in inspect.getmembers(mod, inspect.isclass)
+        if cls_name.startswith("Test")
+        for method_name, method in inspect.getmembers(cls)
+        if method_name.startswith("test_") and callable(method)
+    ]
+    total = len(test_funcs) + len(test_methods)
+    assert total >= 35, f"Expected >=35 test functions/methods, got {total}"

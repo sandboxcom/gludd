@@ -176,11 +176,13 @@ class ChainOfCustody:
     transfer_log: list[dict[str, Any]] = field(default_factory=list)
     digital_signatures: dict[str, list[dict[str, str]]] = field(default_factory=dict)
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
-    last_modified: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    last_modified: str = ""
 
     def __post_init__(self) -> None:
         if not self.case_id:
             raise ValueError("case_id must be non-empty")
+        if not self.last_modified:
+            self.last_modified = self.created_at
 
 # ═══════════════════════════════════════════════════════════════════
 # Helpers
@@ -232,7 +234,7 @@ def add_evidence_item(
     description: str,
     location: str,
     collector: str,
-    packaging: str = "PAPER_BAG",
+    packaging: str = "",
     storage_conditions: str | None = None,
     contamination_risk: str | None = None,
     hazard_warnings: list[str] | None = None,
@@ -245,7 +247,7 @@ def add_evidence_item(
         description: Free-text description.
         location: Collection location.
         collector: Name and identifier of collecting person.
-        packaging: Packaging protocol (default PAPER_BAG).
+        packaging: Packaging protocol; auto-assigned from evidence type if omitted.
         storage_conditions: Auto-assigned from type if None.
         contamination_risk: Defaults to LOW if None.
         hazard_warnings: List of hazard warnings.
@@ -254,29 +256,34 @@ def add_evidence_item(
         The newly created EvidenceItem.
     """
     _check(coc)
+    if type not in _VT:
+        raise ValueError(f"Unknown type {type!r}. Valid: {sorted(_VT)}")
     if not description or not isinstance(description, str):
         raise ValueError("description must be a non-empty string")
     if not location or not isinstance(location, str):
         raise ValueError("location must be a non-empty string")
     if not collector or not isinstance(collector, str):
         raise ValueError("collector must be a non-empty string")
+    if not packaging:
+        packaging = EVIDENCE_TYPES[type]["default_packaging"]
     if packaging not in _VP:
-        raise ValueError(f"Unknown packaging '{packaging}'. Valid: {sorted(_VP)}")
+        raise ValueError(f"Unknown packaging {packaging!r}. Valid: {sorted(_VP)}")
     eid = _evid()
+    timestamp = _ts()
     if storage_conditions is None:
-        storage_conditions = EVIDENCE_TYPES.get(type, {}).get("default_storage", "EVIDENCE_LOCKER")
+        storage_conditions = EVIDENCE_TYPES[type]["default_storage"]
     if contamination_risk is None:
         contamination_risk = "LOW"
     if hazard_warnings is None:
         hazard_warnings = []
     evidence = EvidenceItem(
-        id=eid, type=type, description=description, collection_date=_ts(),
+        id=eid, type=type, description=description, collection_date=timestamp,
         location=location, collector=collector, packaging=packaging,
         storage_conditions=storage_conditions, contamination_risk=contamination_risk,
         hazard_warnings=list(hazard_warnings),
     )
     coc.evidence_items[eid] = evidence
-    coc.last_modified = _ts()
+    coc.last_modified = timestamp
     coc.transfer_log.append({
         "timestamp": evidence.collection_date, "event": "evidence_collected",
         "evidence_id": eid, "type": type, "collector": collector, "location": location,
