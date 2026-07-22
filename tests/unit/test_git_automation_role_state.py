@@ -45,3 +45,25 @@ def test_workflow_state_docs_list_full_collection_parity() -> None:
         "error-your-local-changes-to-the-following-files-would-be-overwritten-by-checkout",
     ]:
         assert token in doc
+
+
+
+def test_git_automation_role_exposes_gated_git_operations() -> None:
+    defaults = (ROLE / "defaults" / "main.yml").read_text(encoding="utf-8")
+    main_task = (ROLE / "tasks" / "main.yml").read_text(encoding="utf-8")
+    commit_task = (ROLE / "tasks" / "commit.yml").read_text(encoding="utf-8")
+    merge_task = (ROLE / "tasks" / "merge.yml").read_text(encoding="utf-8")
+
+    for token in [
+        "gated_commit",
+        "gated_merge",
+        "commit_files",
+        "general_ludd.agent.gludd_git",
+        "op: gated_commit",
+        "op: gated_merge",
+        "gate_cmd",
+    ]:
+        assert token in defaults + main_task + commit_task + merge_task
+
+    assert "ansible.builtin.command" not in commit_task
+    assert "ansible.builtin.command" not in merge_task

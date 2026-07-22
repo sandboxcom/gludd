@@ -26,14 +26,15 @@ DOCUMENTATION:
       description: Path to the git repository or worktree.
       type: str
       required: true
+
     op:
       description:
         - Operation to perform. C(worktree_list) is read-only; the rest mutate.
       type: str
       required: true
-choices: [commit, branch, worktree_list, worktree_create, worktree_remove, merge, push, state]
+      choices: [commit, gated_commit, branch, worktree_list, worktree_create, worktree_remove, merge, gated_merge, push, state]
     message:
-      description: Commit message (required when C(op=commit)).
+      description: Commit message (required when C(op=commit) or C(op=gated_commit)).
       type: str
     branch:
       description:
@@ -44,16 +45,26 @@ choices: [commit, branch, worktree_list, worktree_create, worktree_remove, merge
       description: Worktree path (required for C(worktree_create)/C(worktree_remove)).
       type: str
     source:
-      description: Source ref to merge from (required for C(op=merge)).
+      description: Source ref to merge from (required for C(op=merge) or C(op=gated_merge)).
       type: str
     target:
-      description: Target ref to merge into / check out first (required for C(op=merge)).
+      description: Target ref to merge into / check out first (required for C(op=merge) or C(op=gated_merge)).
       type: str
     strategy:
-      description: Merge strategy for C(op=merge).
+      description: Merge strategy for C(op=merge) and C(op=gated_merge).
       type: str
       default: "ff"
       choices: [ff, no-ff, squash]
+    files:
+      description: Paths to stage before C(op=gated_commit). Use ["."] for all tracked and untracked workspace changes.
+      type: list
+      elements: str
+      default: []
+    gate_cmd:
+      description: Command argv to run before C(op=gated_commit) commits, or after C(op=gated_merge) merges.
+      type: list
+      elements: str
+      default: []
 
     remote:
       description: Remote name for C(op=push) and C(op=state).
@@ -154,18 +165,22 @@ def main() -> None:
             op=dict(
                 type="str",
                 required=True,
-choices=[
+                choices=[
                     "commit",
+                    "gated_commit",
                     "branch",
                     "worktree_list",
                     "worktree_create",
                     "worktree_remove",
                     "merge",
+                    "gated_merge",
                     "push",
                     "state",
                 ],
             ),
             message=dict(type="str", default=None),
+            files=dict(type="list", elements="str", default=[]),
+            gate_cmd=dict(type="list", elements="str", default=[]),
             branch=dict(type="str", default=None),
             worktree_path=dict(type="str", default=None),
             source=dict(type="str", default=None),
@@ -189,10 +204,12 @@ choices=[
         ),
         required_if=[
             ("op", "commit", ["message"]),
+            ("op", "gated_commit", ["message"]),
             ("op", "branch", ["branch"]),
             ("op", "worktree_create", ["branch", "worktree_path"]),
             ("op", "worktree_remove", ["worktree_path"]),
             ("op", "merge", ["source", "target"]),
+            ("op", "gated_merge", ["source", "target"]),
             ("op", "push", ["branch"]),
         ],
         supports_check_mode=True,
@@ -210,7 +227,9 @@ choices=[
 
     git = GitAutomation(repo_path=path)
 
-
+    if op in {"gated_commit", "gated_merge"} and not module.params["gate_cmd"]:
+        module.fail_json(**error_result(f"{op} requires non-empty gate_cmd"))
+        return
 
     if op == "state":
         try:
@@ -319,6 +338,7 @@ choices=[
             )
             return
 
+
         if op == "merge":
             res = git.merge_branch(
                 path,
@@ -327,6 +347,33 @@ choices=[
                 strategy=module.params["strategy"],
             )
             module.exit_json(**ok_result({"result": asdict(res)}, changed=res.success))
+            return
+
+        if op == "gated_commit":
+            res = git.gated_commit(
+                list(module.params["files"] or []),
+                module.params["message"],
+                list(module.params["gate_cmd"] or []),
+            )
+            payload = asdict(res)
+            if not res.success:
+                module.fail_json(**error_result("gated_commit failed", result=payload))
+                return
+            module.exit_json(**ok_result({"result": payload}, changed=True))
+            return
+
+        if op == "gated_merge":
+            res = git.gated_merge(
+                module.params["source"],
+                module.params["target"],
+                list(module.params["gate_cmd"] or []),
+                strategy=module.params["strategy"],
+            )
+            payload = asdict(res)
+            if not res.success:
+                module.fail_json(**error_result("gated_merge failed", result=payload))
+                return
+            module.exit_json(**ok_result({"result": payload}, changed=True))
             return
 
         if op == "push":

@@ -36,6 +36,8 @@ The same state machine is exposed through `general_ludd.agent.gludd_git` with `o
 
 The `general_ludd.agent.git_automation` role exposes the same surface with `git_op: state` and stores `git_automation_state_result`. Role variables mirror the module parameters: `state_ref`, `state_remote`, `state_gha_head_sha`, `state_worktree_target_ref`, `state_preserve_branch_patterns`, `state_reconciled_preserve_heads`, `state_reconciled_preserve_head_file`, and every `state_assert_*` flag.
 
+The role also shares the guarded mutation primitives codified for the agent workflow. `git_op: commit` delegates to `general_ludd.agent.gludd_git` with `op: commit`; a non-empty `gate_cmd` or explicit `git_op: gated_commit` routes to `op: gated_commit` and stages `commit_files` before committing. `git_op: merge` delegates to `op: merge`; a non-empty `gate_cmd` or explicit `git_op: gated_merge` routes to `op: gated_merge`, validates the merged tree, and rolls back on gate failure. These role paths intentionally avoid direct git shell tasks so per-repo locking, non-interactive credentials, bounded subprocesses, fail-closed gate handling, and typed results stay centralized in `general_ludd.git_automation`.
+
 Preserved branches are reconciled by exact HEAD SHA, not by branch name. Add only audited preserve-branch HEADs to `config/reconciled_preserved_heads.txt`; a later commit on that branch will block again until its new HEAD is reviewed.
 
 ## Guarded Failure Classes

@@ -2,7 +2,7 @@
 # git_automation role defaults — timeouts, retry settings, and operational params
 
 # ── Git operation selector ────────────────────────────────────────────────
-# Which sub-task file to execute: clone, commit, push, merge, branch, worktree
+# Which sub-task file to execute: clone, commit, gated_commit, push, merge, gated_merge, branch, worktree, state
 git_op: ""
 
 # ── Repository path ───────────────────────────────────────────────────────
@@ -15,7 +15,9 @@ git_clone_timeout: 120
 
 # ── Commit ─────────────────────────────────────────────────────────────────
 commit_message: "auto: apply change"
-gate_cmd: []                   # e.g. ["make", "gate"] — runs before commit
+commit_files:
+  - "."
+gate_cmd: []                   # e.g. ["make", "gate"] — runs before commit or after merge
 git_gate_timeout: 60
 git_commit_timeout: 60
 

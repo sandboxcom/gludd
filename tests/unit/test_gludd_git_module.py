@@ -22,6 +22,7 @@ from typing import Any, cast
 import pytest
 
 from general_ludd.git_automation.types import (
+    GatedCommitResult,
     GitStateResult,
     MergeResult,
     PushResult,
@@ -104,6 +105,26 @@ class _FakeGit:
         self.calls.append(("push_to_remote", repo_path, remote, branch))
         return PushResult(success=True, remote=remote, branch=branch or "")
 
+    def gated_commit(self, files: list[str], message: str, gate_cmd: list[str]) -> GatedCommitResult:
+        self.calls.append(("gated_commit", files, message, gate_cmd))
+        failure = self._behaviour.get("gated_commit_failure", "")
+        return GatedCommitResult(
+            success=not bool(failure),
+            commit_sha=None if failure else "gate1234",
+            gate_returncode=1 if failure else 0,
+            message=failure or "committed",
+        )
+
+    def gated_merge(self, source: str, target: str, gate_cmd: list[str], strategy: str = "ff") -> GatedCommitResult:
+        self.calls.append(("gated_merge", source, target, gate_cmd, strategy))
+        failure = self._behaviour.get("gated_merge_failure", "")
+        return GatedCommitResult(
+            success=not bool(failure),
+            commit_sha=None if failure else "merge1234",
+            gate_returncode=1 if failure else 0,
+            message=failure or "merged",
+        )
+
     def workflow_state(self, **kwargs: Any) -> GitStateResult:
         self.calls.append(("workflow_state", kwargs))
         errors = self._behaviour.get("state_errors", [])
@@ -123,7 +144,9 @@ def _params(**overrides: Any) -> dict[str, Any]:
         "path": "/repo",
         "op": "commit",
         "message": None,
-        "branch": None,
+"message": None,
+        "files": [],
+        "gate_cmd": [],
         "worktree_path": None,
         "source": None,
         "target": None,
@@ -438,3 +461,88 @@ def test_state_op_delegates_reconciled_preserved_head_inputs(module, monkeypatch
     assert git.calls[0][1]["reconciled_preserve_heads"] == ("preservehead",)
     assert git.calls[0][1]["reconciled_preserve_head_file"] == "config/custom-preserve-heads.txt"
     assert git.calls[0][1]["assert_no_unintegrated_branches"] is True
+
+
+# --- gated commit / merge ----------------------------------------------------
+
+
+def test_gated_commit_delegates_files_and_gate_command(module, monkeypatch):
+    fake_mod, git = _run(
+        module,
+        monkeypatch,
+        _params(
+            op="gated_commit",
+            message="m",
+            files=["a.py", "b.py"],
+            gate_cmd=["make", "gate"],
+        ),
+    )
+
+    assert fake_mod.failed is None
+    assert fake_mod.exited["changed"] is True
+    assert fake_mod.exited["result"]["commit_sha"] == "gate1234"
+    assert ("gated_commit", ["a.py", "b.py"], "m", ["make", "gate"]) in git.calls
+
+
+def test_gated_commit_requires_non_empty_gate_command(module, monkeypatch):
+    fake_mod, git = _run(
+        module,
+        monkeypatch,
+        _params(op="gated_commit", message="m", files=["."]),
+    )
+
+    assert fake_mod.exited is None
+    assert fake_mod.failed["msg"] == "gated_commit requires non-empty gate_cmd"
+    assert git.calls == []
+
+
+def test_gated_commit_fails_closed_with_result_payload(module, monkeypatch):
+    fake_mod, git = _run(
+        module,
+        monkeypatch,
+        _params(op="gated_commit", message="m", files=["."], gate_cmd=["make", "gate"]),
+        gated_commit_failure="gate failed",
+    )
+
+    assert fake_mod.exited is None
+    assert fake_mod.failed["msg"] == "gated_commit failed"
+    assert fake_mod.failed["result"]["success"] is False
+    assert ("gated_commit", ["."], "m", ["make", "gate"]) in git.calls
+
+
+def test_gated_merge_delegates_gate_command_and_strategy(module, monkeypatch):
+    fake_mod, git = _run(
+        module,
+        monkeypatch,
+        _params(
+            op="gated_merge",
+            source="feature/x",
+            target="main",
+            strategy="no-ff",
+            gate_cmd=["make", "gate"],
+        ),
+    )
+
+    assert fake_mod.failed is None
+    assert fake_mod.exited["changed"] is True
+    assert fake_mod.exited["result"]["commit_sha"] == "merge1234"
+    assert ("gated_merge", "feature/x", "main", ["make", "gate"], "no-ff") in git.calls
+
+
+def test_gated_merge_fails_closed_with_result_payload(module, monkeypatch):
+    fake_mod, git = _run(
+        module,
+        monkeypatch,
+        _params(
+            op="gated_merge",
+            source="feature/x",
+            target="main",
+            gate_cmd=["make", "gate"],
+        ),
+        gated_merge_failure="gate failed",
+    )
+
+    assert fake_mod.exited is None
+    assert fake_mod.failed["msg"] == "gated_merge failed"
+    assert fake_mod.failed["result"]["success"] is False
+    assert ("gated_merge", "feature/x", "main", ["make", "gate"], "ff") in git.calls
