@@ -1605,19 +1605,19 @@ release-worktree-guard: worktree-guard main-worktree-guard
 status-claim-guard: worktree-guard main-worktree-guard
 	@python3 scripts/worktree_state_guard.py --assert-clean --claim-token
 workflow-state:
-	@$(PYTHON) scripts/workflow_state_guard.py --json
+	@python3 scripts/workflow_state_guard.py --json
 
 workflow-gate:
-	@$(PYTHON) scripts/workflow_state_guard.py --assert-clean --assert-no-feature-on-master
+	@python3 scripts/workflow_state_guard.py --assert-clean --assert-no-feature-on-master
 
 commit-ready:
-	@$(PYTHON) scripts/workflow_state_guard.py --assert-clean --assert-no-feature-on-master
+	@python3 scripts/workflow_state_guard.py --assert-clean --assert-no-feature-on-master
 
 gha-ready:
-	@GIT_SSH_COMMAND="ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new" $(PYTHON) scripts/ci_remote_head_guard.py --ref "$(REF)" --remote "$(REMOTE)"
+	@GIT_SSH_COMMAND="ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new" python3 scripts/ci_remote_head_guard.py --ref "$(REF)" --remote "$(REMOTE)"
 
 merge-ready:
-	@$(PYTHON) scripts/workflow_state_guard.py --assert-clean --assert-merge-ready
+	@python3 scripts/workflow_state_guard.py --assert-clean --assert-merge-ready
 
 # Guard: prevent disabling tests in CI pipeline. Blocks push/release if
 # test-shard has continue-on-error or is removed from release.needs.

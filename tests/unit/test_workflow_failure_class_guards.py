@@ -229,3 +229,11 @@ def test_worktree_state_guard_targets_are_path_qualified_release_gates() -> None
 
     for target in ["test-ci-shard", "test-ci-shard-summary", "test-ci-shard-slice"]:
         assert "_ci-replica-clean-tree" in _target_line(target), target
+
+
+def test_workflow_state_targets_do_not_dirty_lockfile_with_uv_run() -> None:
+    for target in ["workflow-state", "workflow-gate", "commit-ready", "gha-ready", "merge-ready"]:
+        block = _target_block(target)
+
+        assert "$(PYTHON)" not in block
+        assert "python3 scripts/" in block
