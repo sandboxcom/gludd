@@ -74,8 +74,8 @@ class TestWatchdogCoverage:
     def test_exact_stack_count(self):
         """Pin the expected number of stacks — prevents silent regression."""
         stacks = collect_stacks()
-        assert len(stacks) == 16, (
-            f"Expected 16 stacks, found {len(stacks)}: "
+        assert len(stacks) == 18, (
+            f"Expected 18 stacks, found {len(stacks)}: "
             + ", ".join(s.parent.name for s in stacks)
         )
 

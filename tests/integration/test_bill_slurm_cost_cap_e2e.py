@@ -20,9 +20,9 @@ class TestSlurmCostCapE2E:
         config = SlurmJobConfig(max_cost_usd=50.0, hourly_rate_usd=10.0)
         adapter = MagicMock(spec=SlurmAdapter)
         adapter.elapsed_seconds.return_value = 3600.0
-        adapter.status.return_value = SlurmJobInfo("job-001", SlurmJobState.COMPLETED, exit_code=0)
+        adapter.status.return_value = SlurmJobInfo("2001", SlurmJobState.COMPLETED, exit_code=0)
 
-        monitor = SlurmJobMonitor(adapter, "job-001", config)
+        monitor = SlurmJobMonitor(adapter, "2001", config)
         result = monitor._poll()
         assert result is False
         assert monitor.cost_incurred == 10.0
@@ -34,11 +34,11 @@ class TestSlurmCostCapE2E:
         adapter = MagicMock(spec=SlurmAdapter)
         adapter.elapsed_seconds.side_effect = [3600.0, 7200.0]
         adapter.status.side_effect = [
-            SlurmJobInfo("job-002", SlurmJobState.RUNNING),
-            SlurmJobInfo("job-002", SlurmJobState.RUNNING),
+            SlurmJobInfo("2002", SlurmJobState.RUNNING),
+            SlurmJobInfo("2002", SlurmJobState.RUNNING),
         ]
 
-        monitor = SlurmJobMonitor(adapter, "job-002", config)
+        monitor = SlurmJobMonitor(adapter, "2002", config)
         monitor._poll()
         assert monitor.cost_incurred == 15.0
         assert not monitor.cancelled
@@ -47,16 +47,16 @@ class TestSlurmCostCapE2E:
         assert monitor.cost_incurred == 30.0
         assert monitor.cancelled
         assert monitor.cancel_reason == SlurmJobMonitor.CANCEL_REASON_COST
-        adapter.cancel.assert_called_once_with("job-002")
+        adapter.cancel.assert_called_once_with("2002")
 
     def test_monitor_idle_detection_fires_and_cancels(self):
         config = SlurmJobConfig(idle_timeout_minutes=10.0)
         adapter = MagicMock(spec=SlurmAdapter)
         adapter.elapsed_seconds.return_value = 0.0
-        adapter.status.return_value = SlurmJobInfo("job-003", SlurmJobState.RUNNING)
+        adapter.status.return_value = SlurmJobInfo("2003", SlurmJobState.RUNNING)
 
         activity = MagicMock(return_value=False)
-        monitor = SlurmJobMonitor(adapter, "job-003", config, activity_checker=activity)
+        monitor = SlurmJobMonitor(adapter, "2003", config, activity_checker=activity)
 
         with patch("general_ludd.infra.slurm.time") as mock_time:
             mock_time.time.return_value = 100.0
@@ -67,15 +67,15 @@ class TestSlurmCostCapE2E:
             monitor._poll()
             assert monitor.cancelled
             assert monitor.cancel_reason == SlurmJobMonitor.CANCEL_REASON_IDLE
-            adapter.cancel.assert_called_once_with("job-003")
+            adapter.cancel.assert_called_once_with("2003")
 
     def test_thread_lifecycle_start_poll_stop(self):
         config = SlurmJobConfig(max_cost_usd=10.0, hourly_rate_usd=5.0)
         adapter = MagicMock(spec=SlurmAdapter)
         adapter.elapsed_seconds.return_value = 0.0
-        adapter.status.return_value = SlurmJobInfo("job-004", SlurmJobState.COMPLETED, exit_code=0)
+        adapter.status.return_value = SlurmJobInfo("2004", SlurmJobState.COMPLETED, exit_code=0)
 
-        monitor = SlurmJobMonitor(adapter, "job-004", config, poll_interval=0.01)
+        monitor = SlurmJobMonitor(adapter, "2004", config, poll_interval=0.01)
         monitor.start()
         assert monitor._thread is not None
         assert isinstance(monitor._thread, threading.Thread)
@@ -100,9 +100,9 @@ class TestSlurmCostCapE2E:
         config = SlurmJobConfig(max_cost_usd=50.0, hourly_rate_usd=10.0)
         adapter = MagicMock(spec=SlurmAdapter)
         adapter.elapsed_seconds.return_value = None
-        adapter.status.return_value = SlurmJobInfo("job-005", SlurmJobState.RUNNING)
+        adapter.status.return_value = SlurmJobInfo("2005", SlurmJobState.RUNNING)
 
-        monitor = SlurmJobMonitor(adapter, "job-005", config)
+        monitor = SlurmJobMonitor(adapter, "2005", config)
         result = monitor._poll()
         assert result is True
         assert monitor.cost_incurred == 0.0
@@ -111,10 +111,10 @@ class TestSlurmCostCapE2E:
     def test_stop_marks_thread_complete(self):
         config = SlurmJobConfig()
         adapter = MagicMock(spec=SlurmAdapter)
-        adapter.status.return_value = SlurmJobInfo("job-006", SlurmJobState.RUNNING)
+        adapter.status.return_value = SlurmJobInfo("2006", SlurmJobState.RUNNING)
         adapter.elapsed_seconds.return_value = 0.0
 
-        monitor = SlurmJobMonitor(adapter, "job-006", config, poll_interval=0.05)
+        monitor = SlurmJobMonitor(adapter, "2006", config, poll_interval=0.05)
         monitor.start()
         assert monitor._thread is not None
         monitor.stop()
@@ -124,10 +124,10 @@ class TestSlurmCostCapE2E:
     def test_start_is_idempotent(self):
         config = SlurmJobConfig()
         adapter = MagicMock(spec=SlurmAdapter)
-        adapter.status.return_value = SlurmJobInfo("job-007", SlurmJobState.COMPLETED)
+        adapter.status.return_value = SlurmJobInfo("2007", SlurmJobState.COMPLETED)
         adapter.elapsed_seconds.return_value = 0.0
 
-        monitor = SlurmJobMonitor(adapter, "job-007", config, poll_interval=0.01)
+        monitor = SlurmJobMonitor(adapter, "2007", config, poll_interval=0.01)
         monitor.start()
         t1 = monitor._thread
         monitor.start()
