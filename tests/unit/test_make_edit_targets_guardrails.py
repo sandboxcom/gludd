@@ -13,7 +13,7 @@ REPLACE_TEXT = ROOT / "scripts" / "replace_text.py"
 
 def _target_block(target: str) -> str:
     text = MAKEFILE.read_text(encoding="utf-8")
-    pattern = rf"^{re.escape(target)}:\n(?P<body>(?:\t.*\n)+)"
+    pattern = rf"^{re.escape(target)}:[^\n]*\n(?P<body>(?:\t.*\n)+)"
     match = re.search(pattern, text, re.MULTILINE)
     assert match, f"Makefile target {target} not found"
     return match.group("body")
@@ -186,3 +186,10 @@ def test_git_diff_honors_explicit_files_scope() -> None:
     body = _target_block("git-diff")
 
     assert "" in body
+
+
+def test_ship_commit_emits_observable_phase_markers() -> None:
+    body = _target_block("ship-commit")
+
+    assert "Running pre-commit collection check" in body
+    assert "Committing staged changes" in body
