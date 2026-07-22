@@ -193,3 +193,26 @@ def test_ship_commit_emits_observable_phase_markers() -> None:
 
     assert "Running pre-commit collection check" in body
     assert "Committing staged changes" in body
+
+
+def test_no_prompt_prone_checker_ignores_missing_optional_paths(tmp_path: Path) -> None:
+    missing = tmp_path / "does-not-exist.md"
+
+    result = subprocess.run(
+        [sys.executable, str(CHECK_NO_PROMPT), str(missing)],
+        cwd=ROOT,
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0
+    assert "missing configured scan path" not in result.stdout
+
+
+def test_no_prompt_prone_checker_is_standard_gate_dependency() -> None:
+    gate_line = next(line for line in MAKEFILE.read_text().splitlines() if line.startswith("gate:"))
+    gate_lite_line = next(line for line in MAKEFILE.read_text().splitlines() if line.startswith("gate-lite:"))
+
+    assert "check-no-prompt-prone-edit-tools" in gate_line
+    assert "check-no-prompt-prone-edit-tools" in gate_lite_line

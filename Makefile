@@ -164,6 +164,8 @@ help:
 	@echo "  security              Full security: sast + sbom + pip-audit"
 	@echo "  test-unit             Unit tests only"
 	@echo "  test-unit-shards      Unit tests in bounded serial shards (SHARDS=12 SHARD=1)"
+	@echo "  test-ci-shards-parallel-bg     Run selected CI shards in a detached local replica"
+	@echo "  test-ci-shards-parallel-status Poll/watch detached CI shard replica (WATCH=1)"
 	@echo "  test-integration      Integration tests"
 	@echo "  test-e2e              End-to-end tests"
 	@echo "  test-specific         Single test (TESTFILE='path::TestClass::test_name')"
@@ -572,7 +574,10 @@ test-ci-shards-parallel-bg: _ci-replica-clean-tree
 	@$(UV) run python scripts/start_ci_shards_parallel_bg.py --shards "$(SHARDS)" --pytest-args="$(PYTEST_ARGS)" --workers-per-shard "$(or $(WORKERS_PER_SHARD),1)"
 
 test-ci-shards-parallel-status:
-	@$(UV) run python scripts/ci_shards_parallel_status.py --lines "$(or $(LINES),80)"
+	@WATCH_ARGS=""; \
+	if [ "$(WATCH)" = "1" ] || [ "$(WATCH)" = "true" ]; then WATCH_ARGS="--watch --interval-seconds $(or $(INTERVAL_SECONDS),30)"; fi; \
+	if [ -n "$(MAX_POLLS)" ]; then WATCH_ARGS="$${WATCH_ARGS} --max-polls $(MAX_POLLS)"; fi; \
+	$(UV) run python scripts/ci_shards_parallel_status.py --lines "$(or $(LINES),80)" $${WATCH_ARGS}
 
 repro-caplog-secrets:
 	$(UV) run python -m pytest tests/unit/test_secrets_log_sanitization.py::test_resolve_exc_message_sanitized -n 2 --dist loadgroup -v -s
@@ -639,7 +644,7 @@ check-opencode-integrity:
 gate-fast: lint typecheck collect-check
 	@echo "=== GATE-FAST: PASS ==="
 
-gate: check-opencode-integrity validate-task-ledger check-dispatch-dedup check-subagent-guards verify-plugin-manifest check-skills-frontmatter check-coverage-gaps check-plugin-syntax check-plugin-runtime check-plugin-imports check-duplicate-targets
+gate: check-opencode-integrity validate-task-ledger check-dispatch-dedup check-subagent-guards verify-plugin-manifest check-skills-frontmatter check-coverage-gaps check-plugin-syntax check-plugin-runtime check-plugin-imports check-duplicate-targets check-no-prompt-prone-edit-tools
 	@rm -f .gate-failed
 	@echo "=== GATE $(shell date -u +%Y-%m-%dT%H:%M:%SZ) ===" > .gate-status
 	@# OBSERVABILITY INVARIANT (see AGENTS.md "No unseen events"): every gate phase
@@ -716,7 +721,7 @@ gate: check-opencode-integrity validate-task-ledger check-dispatch-dedup check-s
 # "No Unseen Events" invariant in AGENTS.md). The _gate-fresh-check used by
 # commit targets still requires the FULL `make gate`; gate-lite is for fast
 # local feedback between commits, not a commit prerequisite.
-gate-lite: check-opencode-integrity verify-opencode-backup check-subagent-guards check-skills-frontmatter check-coverage-gaps check-make-help check-plugin-syntax check-plugin-runtime check-plugin-imports
+gate-lite: check-opencode-integrity verify-opencode-backup check-subagent-guards check-skills-frontmatter check-coverage-gaps check-make-help check-plugin-syntax check-plugin-runtime check-plugin-imports check-no-prompt-prone-edit-tools
 	@rm -f .gate-lite-failed
 	@echo "=== GATE-LITE $(shell date -u +%Y-%m-%dT%H:%M:%SZ) ===" > .gate-lite-status
 	@# OBSERVABILITY INVARIANT (AGENTS.md "No unseen events"): every phase

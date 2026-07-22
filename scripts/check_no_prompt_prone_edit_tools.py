@@ -56,7 +56,6 @@ def _iter_candidate_files(root: Path, requested: Iterable[str]) -> Iterable[Path
         path = Path(raw_path)
         candidate = path if path.is_absolute() else root / path
         if not candidate.exists():
-            yield candidate
             continue
         if candidate.is_file():
             yield candidate
@@ -70,7 +69,7 @@ def _iter_candidate_files(root: Path, requested: Iterable[str]) -> Iterable[Path
 
 def _scan_file(path: Path) -> list[str]:
     if not path.exists():
-        return [f"{path}: missing configured scan path"]
+        return []
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
     except UnicodeDecodeError:

@@ -362,3 +362,12 @@ def test_ci_head_compare_reports_bidirectional_divergence() -> None:
     assert "HEAD..sandboxcom/master" in block
     assert block.count("--- commits local has that remote does NOT ---") == 1
     assert block.count("--- commits remote has that local does NOT ---") == 1
+
+
+def test_ci_shard_status_make_target_exposes_watch_heartbeat_mode() -> None:
+    block = _target_block("test-ci-shards-parallel-status")
+    makefile = _makefile()
+
+    assert "--watch --interval-seconds" in block
+    assert "--max-polls" in block
+    assert "WATCH=1" in makefile
