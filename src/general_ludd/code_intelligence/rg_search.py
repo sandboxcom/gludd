@@ -184,13 +184,8 @@ class RgSearch:
 
     # --- path confinement -----------------------------------------------
 
-    def _validate_root(self, root: str) -> str | RgResult:
-        """Return resolved root, or an error ``RgResult`` when ``root`` is unsafe.
-
-        Resolves ``root`` to an absolute path and checks it is under at least
-        one allowed root. Also checks the resolved path against the deny-list
-        in :mod:`general_ludd.security.path_canonicalizer`.
-        """
+    def _validate_root(self, root: str) -> RgResult | None:
+        """Return ``None`` when ``root`` is safe, otherwise an error ``RgResult``."""
         try:
             resolved = Path(root).resolve()
         except OSError:
@@ -204,11 +199,21 @@ class RgSearch:
             try:
                 allowed_resolved = Path(allowed_root).resolve()
                 resolved.relative_to(allowed_resolved)
-                return str(resolved)
+                return None
             except (ValueError, OSError):
                 continue
 
         return RgResult(available=False, error=f"Path outside allowed directories: {root}")
+
+    def _resolve_root(self, root: str) -> str | RgResult:
+        validation = self._validate_root(root)
+        if isinstance(validation, RgResult):
+            return validation
+        try:
+            resolved = Path(root).resolve()
+        except OSError:
+            return RgResult(available=False, error=f"Cannot resolve root: {root}")
+        return str(resolved)
 
     # --- run ------------------------------------------------------------
 
@@ -229,6 +234,9 @@ class RgSearch:
         stderr surfaced in ``error``).
         """
         resolved_root = self._validate_root(root)
+        if isinstance(resolved_root, RgResult):
+            return resolved_root
+        resolved_root = self._resolve_root(root)
         if isinstance(resolved_root, RgResult):
             return resolved_root
 
