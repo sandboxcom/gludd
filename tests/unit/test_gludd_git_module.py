@@ -302,6 +302,7 @@ def test_mutating_op_check_mode_does_not_call_git(module, monkeypatch):
 
 # --- workflow state ----------------------------------------------------------
 
+
 def test_state_op_delegates_to_workflow_state(module, monkeypatch):
     fake_mod, git = _run(
         module,
@@ -323,6 +324,49 @@ def test_state_op_delegates_to_workflow_state(module, monkeypatch):
     assert git.calls[0][1]["assert_clean"] is True
     assert git.calls[0][1]["assert_remote_head"] is True
 
+
+def test_state_op_delegates_complete_state_machine_surface(module, monkeypatch):
+    fake_mod, git = _run(
+        module,
+        monkeypatch,
+        _params(
+            op="state",
+            remote="sandboxcom",
+            state_ref="fix/full-run",
+            state_gha_head_sha="abc123def456",
+            state_worktree_target_ref="development",
+            state_preserve_branch_patterns=["main-dirty-preserve-*", "preserve-*"],
+            state_reconciled_preserve_heads=["1111111", "2222222"],
+            state_reconciled_preserve_head_file="config/custom-preserve-heads.txt",
+            state_assert_clean=True,
+            state_assert_no_feature_on_master=True,
+            state_assert_merge_ready=True,
+            state_assert_remote_head=True,
+            state_assert_gha_matches_local=True,
+            state_assert_no_unintegrated_worktrees=True,
+            state_assert_no_unintegrated_branches=True,
+        ),
+    )
+
+    assert fake_mod.failed is None
+    assert fake_mod.exited["changed"] is False
+    assert git.calls[0][0] == "workflow_state"
+    assert git.calls[0][1] == {
+        "remote": "sandboxcom",
+        "ref": "fix/full-run",
+        "gha_head_sha": "abc123def456",
+        "worktree_target_ref": "development",
+        "preserve_branch_patterns": ("main-dirty-preserve-*", "preserve-*"),
+        "reconciled_preserve_heads": ("1111111", "2222222"),
+        "reconciled_preserve_head_file": "config/custom-preserve-heads.txt",
+        "assert_clean": True,
+        "assert_no_feature_on_master": True,
+        "assert_merge_ready": True,
+        "assert_remote_head": True,
+        "assert_gha_matches_local": True,
+        "assert_no_unintegrated_worktrees": True,
+        "assert_no_unintegrated_branches": True,
+    }
 
 def test_state_op_fails_when_workflow_state_has_errors(module, monkeypatch):
     fake_mod, git = _run(
