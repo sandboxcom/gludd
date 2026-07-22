@@ -18,7 +18,9 @@ def _load_module():
     return module
 
 
-def test_tmp_size_excludes_active_worktree_source_but_counts_generated_caches(tmp_path: Path) -> None:
+def test_tmp_size_excludes_active_worktree_source_and_venv_but_counts_caches(
+    tmp_path: Path,
+) -> None:
     module = _load_module()
     scratch = tmp_path / "gludd-collect-output.txt"
     scratch.write_bytes(b"scratch-bytes")
@@ -26,10 +28,13 @@ def test_tmp_size_excludes_active_worktree_source_but_counts_generated_caches(tm
     worktree_root = tmp_path / "gludd-worktrees"
     release_worktree = worktree_root / "release-sync"
     source_dir = release_worktree / "src"
+    venv_dir = release_worktree / ".venv"
     cache_dir = release_worktree / ".pytest_cache"
     source_dir.mkdir(parents=True)
+    venv_dir.mkdir(parents=True)
     cache_dir.mkdir(parents=True)
     (source_dir / "source.py").write_bytes(b"source-should-not-count")
+    (venv_dir / "python").write_bytes(b"venv-should-not-count")
     (cache_dir / "cache.bin").write_bytes(b"cache-counts")
 
     actual = module._gludd_tmp_size_mb(tmp_root=tmp_path, worktree_root=worktree_root)

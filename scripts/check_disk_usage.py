@@ -13,7 +13,7 @@ GLUDD_TMP_LIMIT_MB = 100
 DISK_USAGE_PCT_LIMIT = 90
 TMP_ROOT = Path("/tmp")
 WORKTREE_ROOT = TMP_ROOT / "gludd-worktrees"
-WORKTREE_GENERATED_DIRS = (".venv", ".pytest_cache", ".mypy_cache", ".ruff_cache")
+WORKTREE_GENERATED_DIRS = (".pytest_cache", ".mypy_cache", ".ruff_cache")
 
 
 def _file_size_bytes(path: Path) -> int:
@@ -63,9 +63,9 @@ def _gludd_tmp_size_mb(
 ) -> float:
     """Return generated /tmp/gludd-* scratch size in MB.
 
-    Active git worktree source under /tmp/gludd-worktrees is intentionally
-    excluded. Generated venvs and tool caches inside those worktrees still
-    count against the scratch limit.
+Active git worktree source and worktree-local .venv directories under
+    /tmp/gludd-worktrees are intentionally excluded. Small generated tool
+    caches inside those worktrees still count against the scratch limit.
     """
     total = 0
     for entry in tmp_root.glob("gludd-*"):
