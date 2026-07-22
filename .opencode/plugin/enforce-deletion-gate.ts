@@ -143,7 +143,10 @@ const defaultImpl: HotModule = {
     if (lines_removed > threshold) {
       const reason = getDeletionReason();
       if (!reason) {
-        throw new Error(formatThresholdExceededMessage(lines_removed, threshold, filePath || "unknown"));
+        return {
+          permissionDecision: "deny" as const,
+          message: formatThresholdExceededMessage(lines_removed, threshold, filePath || "unknown"),
+        };
       }
 
       await appendAuditLog({

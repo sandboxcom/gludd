@@ -2789,7 +2789,7 @@ WATCHDOG_PATH = str(ROOT / ".opencode" / "plugins" / "watchdog.ts")
 
 
 def test_watchdog_plugin_loads_report_alive():
-    """watchdog plugin loads, calls reportAlive on init (writes alive file), returns {{}}."""
+    """watchdog plugin loads, calls reportAlive on init, and exposes its event hook."""
     alive_path = f"/tmp/gludd-test-alive-{os.getpid()}-1.json"
     _clean_state_files(alive_path)
     code = f"""\
@@ -2800,7 +2800,7 @@ console.log(JSON.stringify({{ ok: true, keys }}))
 """
     result = _run_ts(code, env_override={"GLUDD_ALIVE_PATH": alive_path})
     assert result["ok"] == True, f"Watchdog plugin load should not throw, got: {result}"
-    assert result["keys"] == [], f"Plugin should return empty object (no hooks), got keys: {result['keys']}"
+    assert result["keys"] == ["event"], f"Plugin should expose event hook, got keys: {result['keys']}"
     # Verify reportAlive was called on module load
     assert os.path.exists(alive_path), f"Alive file {alive_path} should exist after plugin load"
     with open(alive_path) as f:
