@@ -39,6 +39,11 @@ def test_workflow_state_docs_list_full_collection_parity() -> None:
         "state_reconciled_preserve_head_file",
         "config/reconciled_preserved_heads.txt",
         "exact HEAD SHA",
+        "op: current_branch",
+        "op: tag_release",
+        "op: checkpoint_tag",
+        "branch_op: list/create/delete",
+        "worktree_op: list/create/remove",
         "Ansible git role context",
         "GIT_TERMINAL_PROMPT=0",
         "git-module-often-marked-as-changed-even-when-nothing-changed",
@@ -67,3 +72,26 @@ def test_git_automation_role_exposes_gated_git_operations() -> None:
 
     assert "ansible.builtin.command" not in commit_task
     assert "ansible.builtin.command" not in merge_task
+
+
+def test_git_automation_role_delegates_all_git_ops_to_module() -> None:
+    task_names = ["clone", "branch", "worktree", "push"]
+
+    for task_name in task_names:
+        task = (ROLE / "tasks" / f"{task_name}.yml").read_text(encoding="utf-8")
+        assert "general_ludd.agent.gludd_git" in task, task_name
+        assert "ansible.builtin.command" not in task, task_name
+
+    clone_task = (ROLE / "tasks" / "clone.yml").read_text(encoding="utf-8")
+    branch_task = (ROLE / "tasks" / "branch.yml").read_text(encoding="utf-8")
+    worktree_task = (ROLE / "tasks" / "worktree.yml").read_text(encoding="utf-8")
+    push_task = (ROLE / "tasks" / "push.yml").read_text(encoding="utf-8")
+
+    for token in ["op: clone", "git_clone_timeout", "clone_url", "target_dir"]:
+        assert token in clone_task
+    for token in ["op: branch_list", "op: branch", "op: branch_delete"]:
+        assert token in branch_task
+    for token in ["op: worktree_list", "op: worktree_create", "op: worktree_remove"]:
+        assert token in worktree_task
+    for token in ["op: push", "push_remote", "push_branch"]:
+        assert token in push_task

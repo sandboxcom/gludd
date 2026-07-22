@@ -195,7 +195,14 @@ def _file_lock(
 
     lock_path = os.path.join(git_dir, _LOCK_FILENAME)
     deadline = time.monotonic() + timeout
-    fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o644)
+    try:
+        fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o644)
+    except FileNotFoundError:
+        # The .git directory can disappear between _git_dir() and open()
+        # during cleanup, and unit tests may mock isdir(). Keep the in-process
+        # lock rather than failing before the caller's git command runs.
+        yield
+        return
     try:
         while True:
             try:

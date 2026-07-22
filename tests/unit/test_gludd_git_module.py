@@ -22,6 +22,7 @@ from typing import Any, cast
 import pytest
 
 from general_ludd.git_automation.types import (
+    CloneResult,
     GatedCommitResult,
     GitStateResult,
     MergeResult,
@@ -83,6 +84,36 @@ class _FakeGit:
             )
         return name
 
+    def list_branches(self) -> list[str]:
+        self.calls.append(("list_branches",))
+        return ["main", "feature/x"]
+
+    def delete_branch(self, name: str) -> bool:
+        self.calls.append(("delete_branch", name))
+        return not self._behaviour.get("branch_delete_missing", False)
+
+    def current_branch(self) -> str:
+        self.calls.append(("current_branch",))
+        return self._behaviour.get("current_branch", "main")
+
+    def clone(
+        self,
+        url: str,
+        target_dir: str,
+        timeout: float = 120.0,
+        *,
+        allow_local: bool = True,
+    ) -> CloneResult:
+        self.calls.append(("clone", url, target_dir, timeout, allow_local))
+        failure = self._behaviour.get("clone_failure", "")
+        return CloneResult(
+            path=target_dir,
+            url=url,
+            success=not bool(failure),
+            already_present=bool(self._behaviour.get("clone_already_present", False)),
+            message=failure or "cloned",
+        )
+
     def list_worktrees(self, repo_path: str) -> list[WorktreeInfo]:
         self.calls.append(("list_worktrees", repo_path))
         return [WorktreeInfo(path="/wt/a", branch="main", commit="deadbeef")]
@@ -104,6 +135,22 @@ class _FakeGit:
     def push_to_remote(self, repo_path: str, remote: str = "origin", branch: str | None = None) -> PushResult:
         self.calls.append(("push_to_remote", repo_path, remote, branch))
         return PushResult(success=True, remote=remote, branch=branch or "")
+
+    def tag_release(self, tag: str) -> str:
+        self.calls.append(("tag_release", tag))
+        return tag
+
+    def tag_checkpoint(self, tag: str) -> str:
+        self.calls.append(("tag_checkpoint", tag))
+        return tag
+
+    def create_release_tag(self, repo_path: str) -> str:
+        self.calls.append(("create_release_tag", repo_path))
+        return "20260722123456"
+
+    def create_checkpoint_tag(self, repo_path: str, todo_id: str, sha: str) -> str:
+        self.calls.append(("create_checkpoint_tag", repo_path, todo_id, sha))
+        return f"agent/{todo_id}/20260722123456/{sha[:7]}"
 
     def gated_commit(self, files: list[str], message: str, gate_cmd: list[str]) -> GatedCommitResult:
         self.calls.append(("gated_commit", files, message, gate_cmd))
@@ -143,6 +190,10 @@ def _params(**overrides: Any) -> dict[str, Any]:
     params: dict[str, Any] = {
         "path": "/repo",
         "op": "commit",
+        "clone_url": None,
+        "target_dir": None,
+        "git_clone_timeout": 120,
+        "clone_allow_local": True,
         "message": None,
         "files": [],
         "gate_cmd": [],
@@ -151,6 +202,9 @@ def _params(**overrides: Any) -> dict[str, Any]:
         "source": None,
         "target": None,
         "strategy": "ff",
+        "tag": None,
+        "todo_id": None,
+        "sha": None,
         "remote": "origin",
         "state_ref": "",
         "state_gha_head_sha": "",
@@ -222,6 +276,23 @@ def test_commit_nothing_to_commit_is_unchanged(module, monkeypatch):
 
 # --- branch -----------------------------------------------------------------
 
+
+def test_current_branch_is_read_only(module, monkeypatch):
+    fake_mod, git = _run(module, monkeypatch, _params(op="current_branch"))
+    assert fake_mod.failed is None
+    assert fake_mod.exited["changed"] is False
+    assert fake_mod.exited["branch"] == "main"
+    assert ("current_branch",) in git.calls
+
+
+def test_branch_list_is_read_only(module, monkeypatch):
+    fake_mod, git = _run(module, monkeypatch, _params(op="branch_list"))
+    assert fake_mod.failed is None
+    assert fake_mod.exited["changed"] is False
+    assert fake_mod.exited["result"]["branches"] == ["main", "feature/x"]
+    assert ("list_branches",) in git.calls
+
+
 def test_branch_create_is_changed(module, monkeypatch):
     fake_mod, _git = _run(module, monkeypatch, _params(op="branch", branch="feature/x"))
     assert fake_mod.exited["changed"] is True
@@ -234,6 +305,72 @@ def test_branch_already_exists_is_unchanged(module, monkeypatch):
     )
     assert fake_mod.failed is None
     assert fake_mod.exited["changed"] is False
+
+
+def test_branch_delete_delegates(module, monkeypatch):
+    fake_mod, git = _run(module, monkeypatch, _params(op="branch_delete", branch="old/x"))
+    assert fake_mod.failed is None
+    assert fake_mod.exited["changed"] is True
+    assert fake_mod.exited["result"]["deleted"] is True
+    assert ("delete_branch", "old/x") in git.calls
+
+
+# --- clone -------------------------------------------------------------------
+
+
+def test_clone_delegates_to_git_automation(module, monkeypatch):
+    fake_mod, git = _run(
+        module,
+        monkeypatch,
+        _params(
+            op="clone",
+            clone_url="https://example.invalid/repo.git",
+            target_dir="/tmp/repo",
+            git_clone_timeout=30,
+            clone_allow_local=False,
+        ),
+    )
+    assert fake_mod.failed is None
+    assert fake_mod.exited["changed"] is True
+    assert fake_mod.exited["result"]["success"] is True
+    assert (
+        "clone",
+        "https://example.invalid/repo.git",
+        "/tmp/repo",
+        30.0,
+        False,
+    ) in git.calls
+
+
+def test_clone_existing_checkout_is_unchanged(module, monkeypatch):
+    fake_mod, _git = _run(
+        module,
+        monkeypatch,
+        _params(
+            op="clone",
+            clone_url="https://example.invalid/repo.git",
+            target_dir="/tmp/repo",
+        ),
+        clone_already_present=True,
+    )
+    assert fake_mod.failed is None
+    assert fake_mod.exited["changed"] is False
+
+
+def test_clone_failure_fails_closed_with_payload(module, monkeypatch):
+    fake_mod, _git = _run(
+        module,
+        monkeypatch,
+        _params(
+            op="clone",
+            clone_url="https://example.invalid/repo.git",
+            target_dir="/tmp/repo",
+        ),
+        clone_failure="clone failed",
+    )
+    assert fake_mod.exited is None
+    assert fake_mod.failed["msg"] == "clone failed"
+    assert fake_mod.failed["result"]["success"] is False
 
 
 # --- worktree_list (read-only, check-mode safe) -----------------------------
@@ -307,6 +444,45 @@ def test_push_delegates(module, monkeypatch):
     assert fake_mod.exited["changed"] is True
     assert fake_mod.exited["result"]["remote"] == "upstream"
     assert ("push_to_remote", "/repo", "upstream", "main") in git.calls
+
+
+def test_tag_release_delegates(module, monkeypatch):
+    fake_mod, git = _run(module, monkeypatch, _params(op="tag_release", tag="v1.0.0"))
+    assert fake_mod.failed is None
+    assert fake_mod.exited["changed"] is True
+    assert fake_mod.exited["tag"] == "v1.0.0"
+    assert ("tag_release", "v1.0.0") in git.calls
+
+
+def test_tag_checkpoint_delegates(module, monkeypatch):
+    fake_mod, git = _run(
+        module,
+        monkeypatch,
+        _params(op="tag_checkpoint", tag="agent/TODO-1/20260722123456/abcdef1"),
+    )
+    assert fake_mod.failed is None
+    assert fake_mod.exited["changed"] is True
+    assert ("tag_checkpoint", "agent/TODO-1/20260722123456/abcdef1") in git.calls
+
+
+def test_release_tag_generates_tag(module, monkeypatch):
+    fake_mod, git = _run(module, monkeypatch, _params(op="release_tag"))
+    assert fake_mod.failed is None
+    assert fake_mod.exited["changed"] is True
+    assert fake_mod.exited["tag"] == "20260722123456"
+    assert ("create_release_tag", "/repo") in git.calls
+
+
+def test_checkpoint_tag_generates_tag(module, monkeypatch):
+    fake_mod, git = _run(
+        module,
+        monkeypatch,
+        _params(op="checkpoint_tag", todo_id="TODO-1", sha="abcdef123456"),
+    )
+    assert fake_mod.failed is None
+    assert fake_mod.exited["changed"] is True
+    assert fake_mod.exited["tag"] == "agent/TODO-1/20260722123456/abcdef1"
+    assert ("create_checkpoint_tag", "/repo", "TODO-1", "abcdef123456") in git.calls
 
 
 def test_mutating_op_check_mode_does_not_call_git(module, monkeypatch):

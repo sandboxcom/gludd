@@ -330,18 +330,12 @@ class GitAutomation:
         target = path or self.repo_path
         git_dir = os.path.join(target, ".git")
         created = not os.path.isdir(git_dir)
-        subprocess.run(
-            ["git", "init"],
-            cwd=target,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
+        self._run_git("init", _cwd=target)
         for cmd in (
-            ["git", "config", "user.email", "agent@harness.local"],
-            ["git", "config", "user.name", "Agentic Harness Agent"],
+            ("config", "user.email", "agent@harness.local"),
+            ("config", "user.name", "Agentic Harness Agent"),
         ):
-            subprocess.run(cmd, cwd=target, capture_output=True, text=True, check=False)
+            self._run_git(*cmd, check=False, _cwd=target)
         return InitResult(path=target, created=created, message="initialized" if created else "already exists")
 
     def is_repo(self) -> bool:
@@ -783,6 +777,18 @@ class GitAutomation:
         self._run_git("checkout", "-b", name, "--")
         return name
 
+    def list_branches(self) -> list[str]:
+        result = self._run_git("branch", "--format=%(refname:short)")
+        return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+
+    def delete_branch(self, name: str) -> bool:
+        _reject_leading_dash(name, kind="branch name")
+        try:
+            self._run_git("branch", "-D", "--", name)
+            return True
+        except subprocess.CalledProcessError:
+            return False
+
     def commit(self, message: str, *, use_ansible: bool = False) -> str:
         """Stage all changes and commit; return the new commit SHA.
 
@@ -808,11 +814,13 @@ class GitAutomation:
         return result.stdout.strip()
 
     def tag_release(self, tag: str) -> str:
-        self._run_git("tag", "-a", tag, "-m", f"Release {tag}")
+        _reject_leading_dash(tag, kind="tag name")
+        self._run_git("tag", "-a", "-m", f"Release {tag}", "--", tag)
         return tag
 
     def tag_checkpoint(self, tag: str) -> str:
-        self._run_git("tag", tag)
+        _reject_leading_dash(tag, kind="tag name")
+        self._run_git("tag", "--", tag)
         return tag
 
     def push(self, remote: str = "origin", branch: str = "main", *, use_ansible: bool = False) -> bool:
@@ -1032,14 +1040,17 @@ class GitAutomation:
                 path=worktree_path, branch=branch_name, success=False, message=str(exc),
             )
         try:
-            subprocess.run(
-                # `-b <branch>` then `--` then the path positional: the path can
-                # never be reinterpreted as an option.
-                ["git", "worktree", "add", "-b", branch_name, "--", worktree_path, "HEAD"],
-                cwd=repo_path,
-                capture_output=True,
-                text=True,
-                check=True,
+            # `-b <branch>` then `--` then the path positional: the path can
+            # never be reinterpreted as an option.
+            self._run_git(
+                "worktree",
+                "add",
+                "-b",
+                branch_name,
+                "--",
+                worktree_path,
+                "HEAD",
+                _cwd=repo_path,
             )
             return WorktreeResult(path=worktree_path, branch=branch_name, success=True)
         except subprocess.CalledProcessError as exc:
@@ -1105,31 +1116,24 @@ class GitAutomation:
     def remove_worktree(self, repo_path: str, worktree_path: str) -> bool:
         _reject_leading_dash(worktree_path, kind="worktree path")
         try:
-            subprocess.run(
-                # `--force`: a worktree being torn down by the orchestrator
-                # legitimately contains untracked/modified content — the
-                # gludd_worktree module plants an audit marker inside the
-                # worktree, and an agent worktree typically has WIP. The
-                # caller has already decided the worktree is done; --force
-                # discards only uncommitted state (the branch is retained).
-                ["git", "worktree", "remove", "--force", "--", worktree_path],
-                cwd=repo_path,
-                capture_output=True,
-                text=True,
-                check=True,
+            # `--force`: a worktree being torn down by the orchestrator
+            # legitimately contains untracked/modified content. The caller has
+            # already decided the worktree is done; --force discards only
+            # uncommitted state (the branch is retained).
+            self._run_git(
+                "worktree",
+                "remove",
+                "--force",
+                "--",
+                worktree_path,
+                _cwd=repo_path,
             )
             return True
         except subprocess.CalledProcessError:
             return False
 
     def list_worktrees(self, repo_path: str) -> list[WorktreeInfo]:
-        result = subprocess.run(
-            ["git", "worktree", "list", "--porcelain"],
-            cwd=repo_path,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
+        result = self._run_git("worktree", "list", "--porcelain", _cwd=repo_path)
         worktrees: list[WorktreeInfo] = []
         current: dict[str, str] = {}
         for line in result.stdout.splitlines():
@@ -1373,26 +1377,16 @@ class GitAutomation:
     def create_release_tag(self, repo_path: str, fmt: str = "YYYYMMDDHHMMSS") -> str:
         now = datetime.now(tz=UTC)
         tag = now.strftime("%Y%m%d%H%M%S")
-        subprocess.run(
-            ["git", "tag", "-a", tag, "-m", f"Release {tag}"],
-            cwd=repo_path,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
+        _reject_leading_dash(tag, kind="tag name")
+        self._run_git("tag", "-a", "-m", f"Release {tag}", "--", tag, _cwd=repo_path)
         return tag
 
     def create_checkpoint_tag(self, repo_path: str, todo_id: str, sha: str) -> str:
         ts = datetime.now(tz=UTC).strftime("%Y%m%d%H%M%S")
         short_sha = sha[:7]
         tag = f"agent/{todo_id}/{ts}/{short_sha}"
-        subprocess.run(
-            ["git", "tag", tag],
-            cwd=repo_path,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
+        _reject_leading_dash(tag, kind="tag name")
+        self._run_git("tag", "--", tag, _cwd=repo_path)
         return tag
 
     def push_to_remote(self, repo_path: str, remote: str = "origin", branch: str | None = None) -> PushResult:
@@ -1409,14 +1403,15 @@ class GitAutomation:
         # env (this method takes an explicit repo_path, so it cannot route
         # through `_run_git`, which is pinned to self.repo_path).
         try:
-            result = subprocess.run(
-                args,
-                cwd=repo_path,
-                capture_output=True,
-                text=True,
-                timeout=_GIT_TIMEOUT_SECONDS,
-                env={**os.environ, **_NON_INTERACTIVE_GIT_ENV},
-            )
+            with git_repo_lock(repo_path):
+                result = subprocess.run(
+                    args,
+                    cwd=repo_path,
+                    capture_output=True,
+                    text=True,
+                    timeout=_GIT_TIMEOUT_SECONDS,
+                    env={**os.environ, **_NON_INTERACTIVE_GIT_ENV},
+                )
         except subprocess.TimeoutExpired:
             return PushResult(
                 success=False,
@@ -1432,12 +1427,15 @@ class GitAutomation:
         )
 
     def create_local_bare_mirror(self, repo_path: str, mirror_path: str) -> str:
-        subprocess.run(
-            ["git", "clone", "--bare", repo_path, mirror_path],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
+        with git_repo_lock(repo_path):
+            subprocess.run(
+                ["git", "clone", "--bare", "--", repo_path, mirror_path],
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=_GIT_TIMEOUT_SECONDS,
+                env={**os.environ, **_NON_INTERACTIVE_GIT_ENV},
+            )
         return mirror_path
 
     @staticmethod

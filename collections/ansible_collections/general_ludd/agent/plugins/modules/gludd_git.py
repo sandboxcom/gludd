@@ -32,14 +32,46 @@ DOCUMENTATION:
         - Operation to perform. C(worktree_list) is read-only; the rest mutate.
       type: str
       required: true
-      choices: [commit, gated_commit, branch, worktree_list, worktree_create, worktree_remove, merge, gated_merge, push, state]
+      choices:
+        - clone
+        - commit
+        - gated_commit
+        - current_branch
+        - branch
+        - branch_list
+        - branch_delete
+        - worktree_list
+        - worktree_create
+        - worktree_remove
+        - merge
+        - gated_merge
+        - push
+        - tag_release
+        - tag_checkpoint
+        - release_tag
+        - checkpoint_tag
+        - state
+    clone_url:
+      description: Repository URL for C(op=clone). Python preflight rejects unsafe transports before clone.
+      type: str
+    target_dir:
+      description: Destination checkout path for C(op=clone).
+      type: str
+    git_clone_timeout:
+      description: Clone timeout in seconds for C(op=clone).
+      type: int
+      default: 120
+    clone_allow_local:
+      description: Whether C(op=clone) allows C(file://) or local source URLs.
+      type: bool
+      default: true
     message:
       description: Commit message (required when C(op=commit) or C(op=gated_commit)).
       type: str
     branch:
       description:
-        - Branch name. Required for C(op=branch), C(op=worktree_create), and
-          C(op=push) (the refspec to push).
+        - Branch name. Required for C(op=branch), C(op=branch_delete),
+          C(op=worktree_create), and C(op=push) (the refspec to push).
       type: str
     worktree_path:
       description: Worktree path (required for C(worktree_create)/C(worktree_remove)).
@@ -65,6 +97,15 @@ DOCUMENTATION:
       type: list
       elements: str
       default: []
+    tag:
+      description: Tag name for C(op=tag_release) or C(op=tag_checkpoint).
+      type: str
+    todo_id:
+      description: Todo identifier for generated C(op=checkpoint_tag).
+      type: str
+    sha:
+      description: Commit SHA used in generated C(op=checkpoint_tag).
+      type: str
 
     remote:
       description: Remote name for C(op=push) and C(op=state).
@@ -130,9 +171,9 @@ RETURN:
     type: str
     returned: when op=commit and changed=true
   branch:
-    description: Branch name (op=branch).
+    description: Branch name (op=branch/current_branch).
     type: str
-    returned: when op=branch
+    returned: when op=branch/current_branch
   result:
     description: Typed result dict for worktree/merge/push ops.
     type: dict
@@ -166,18 +207,30 @@ def main() -> None:
                 type="str",
                 required=True,
                 choices=[
+                    "clone",
                     "commit",
                     "gated_commit",
+                    "current_branch",
                     "branch",
+                    "branch_list",
+                    "branch_delete",
                     "worktree_list",
                     "worktree_create",
                     "worktree_remove",
                     "merge",
                     "gated_merge",
                     "push",
+                    "tag_release",
+                    "tag_checkpoint",
+                    "release_tag",
+                    "checkpoint_tag",
                     "state",
                 ],
             ),
+            clone_url=dict(type="str", default=None),
+            target_dir=dict(type="str", default=None),
+            git_clone_timeout=dict(type="int", default=120),
+            clone_allow_local=dict(type="bool", default=True),
             message=dict(type="str", default=None),
             files=dict(type="list", elements="str", default=[]),
             gate_cmd=dict(type="list", elements="str", default=[]),
@@ -186,6 +239,9 @@ def main() -> None:
             source=dict(type="str", default=None),
             target=dict(type="str", default=None),
             strategy=dict(type="str", default="ff", choices=["ff", "no-ff", "squash"]),
+            tag=dict(type="str", default=None),
+            todo_id=dict(type="str", default=None),
+            sha=dict(type="str", default=None),
 
             remote=dict(type="str", default="origin"),
             state_ref=dict(type="str", default=""),
@@ -203,14 +259,19 @@ def main() -> None:
             state_assert_no_unintegrated_branches=dict(type="bool", default=False),
         ),
         required_if=[
+            ("op", "clone", ["clone_url", "target_dir"]),
             ("op", "commit", ["message"]),
             ("op", "gated_commit", ["message"]),
             ("op", "branch", ["branch"]),
+            ("op", "branch_delete", ["branch"]),
             ("op", "worktree_create", ["branch", "worktree_path"]),
             ("op", "worktree_remove", ["worktree_path"]),
             ("op", "merge", ["source", "target"]),
             ("op", "gated_merge", ["source", "target"]),
             ("op", "push", ["branch"]),
+            ("op", "tag_release", ["tag"]),
+            ("op", "tag_checkpoint", ["tag"]),
+            ("op", "checkpoint_tag", ["todo_id", "sha"]),
         ],
         supports_check_mode=True,
     )
@@ -229,6 +290,19 @@ def main() -> None:
 
     if op in {"gated_commit", "gated_merge"} and not module.params["gate_cmd"]:
         module.fail_json(**error_result(f"{op} requires non-empty gate_cmd"))
+        return
+
+    if op == "current_branch":
+        module.exit_json(**ok_result({"branch": git.current_branch()}, changed=False))
+        return
+
+    if op == "branch_list":
+        try:
+            branches = git.list_branches()
+        except subprocess.CalledProcessError as exc:
+            module.fail_json(**error_result(f"branch_list failed: {exc.stderr or exc}"))
+            return
+        module.exit_json(**ok_result({"result": {"branches": branches}}, changed=False))
         return
 
     if op == "state":
@@ -321,6 +395,20 @@ def main() -> None:
         return
 
     try:
+        if op == "clone":
+            res = git.clone(
+                module.params["clone_url"],
+                module.params["target_dir"],
+                timeout=float(module.params["git_clone_timeout"]),
+                allow_local=bool(module.params["clone_allow_local"]),
+            )
+            payload = asdict(res)
+            if not res.success:
+                module.fail_json(**error_result("clone failed", result=payload))
+                return
+            module.exit_json(**ok_result({"result": payload}, changed=not res.already_present))
+            return
+
         if op == "worktree_create":
             res = git.create_worktree(
                 path, module.params["branch"], module.params["worktree_path"]
@@ -334,6 +422,16 @@ def main() -> None:
                 **ok_result(
                     {"result": {"removed": removed, "path": module.params["worktree_path"]}},
                     changed=removed,
+                )
+            )
+            return
+
+        if op == "branch_delete":
+            deleted = git.delete_branch(module.params["branch"])
+            module.exit_json(
+                **ok_result(
+                    {"result": {"branch": module.params["branch"], "deleted": deleted}},
+                    changed=deleted,
                 )
             )
             return
@@ -381,6 +479,30 @@ def main() -> None:
                 path, remote=module.params["remote"], branch=module.params["branch"]
             )
             module.exit_json(**ok_result({"result": asdict(res)}, changed=res.success))
+            return
+
+        if op == "tag_release":
+            tag = git.tag_release(module.params["tag"])
+            module.exit_json(**ok_result({"tag": tag}, changed=True))
+            return
+
+        if op == "tag_checkpoint":
+            tag = git.tag_checkpoint(module.params["tag"])
+            module.exit_json(**ok_result({"tag": tag}, changed=True))
+            return
+
+        if op == "release_tag":
+            tag = git.create_release_tag(path)
+            module.exit_json(**ok_result({"tag": tag}, changed=True))
+            return
+
+        if op == "checkpoint_tag":
+            tag = git.create_checkpoint_tag(
+                path,
+                module.params["todo_id"],
+                module.params["sha"],
+            )
+            module.exit_json(**ok_result({"tag": tag}, changed=True))
             return
     except ValueError as exc:
         # Control-plane security guards (leading-dash refs, traversal paths)
