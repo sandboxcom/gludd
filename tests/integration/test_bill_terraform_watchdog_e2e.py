@@ -18,7 +18,7 @@ def _read_file(path: Path) -> str:
 
 def collect_stacks() -> list[Path]:
     stacks = sorted(STACKS_DIR.glob("*/main.tf"))
-    assert len(stacks) >= 16, f"expected >=16 stacks, found {len(stacks)}"
+    assert len(stacks) >= 18, f"expected >=18 stacks, found {len(stacks)}"
     return stacks
 
 
@@ -55,10 +55,10 @@ class TestTerraformWatchdogE2E:
 
         assert not missing, f"Stacks missing watchdog_user_data output: {missing}"
 
-    def test_exact_16_stacks_exist(self):
+    def test_exact_18_stacks_exist(self):
         stacks = collect_stacks()
-        assert len(stacks) == 16, (
-            f"Expected 16 stacks, found {len(stacks)}: "
+        assert len(stacks) == 18, (
+            f"Expected 18 stacks, found {len(stacks)}: "
             + ", ".join(s.parent.name for s in stacks)
         )
 
@@ -83,7 +83,7 @@ class TestTerraformWatchdogE2E:
     def test_watchdog_accepts_all_cloud_providers(self):
         vars_file = Path("infra/terraform/modules/gpu-cost-watchdog/variables.tf")
         content = _read_file(vars_file)
-        expected_clouds = ["aws", "gcp", "azure", "vsphere", "runpod", "vast", "kubernetes"]
+        expected_clouds = ["aws", "gcp", "azure", "vsphere", "runpod", "vast", "kubernetes", "qemu"]
         for cloud in expected_clouds:
             assert f'"{cloud}"' in content, \
                 f"gpu-cost-watchdog variables.tf must include {cloud} in cloud validation"

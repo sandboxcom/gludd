@@ -82,10 +82,15 @@ function openWorkExists(options?: { isCommitTool?: boolean }): boolean {
     const bugsMd = process.env.GLUDD_BUGS_MD || path.join(root, "BUGS.md")
     try {
       if (fs.existsSync(bugsMd)) {
+        const closedMarkers = ["resolved", "fixed", "closed", "wontfix", "duplicate"]
+        const incidentStart = /^###[ 	]+[0-9]{4}-[0-9]{2}-[0-9]{2}[ 	]+[-—]/m
         const openIncidents = fs.readFileSync(bugsMd, "utf8")
-          .split("\n")
-          .filter(l => /^###\s+\d{4}-\d{2}-\d{2}\s+[-—]/.test(l))
-          .filter(l => !/\b(resolved|fixed|closed|wontfix|duplicate)\b/i.test(l))
+          .split(/(?=^###[ 	]+[0-9]{4}-[0-9]{2}-[0-9]{2}[ 	]+[-—])/m)
+          .filter(section => incidentStart.test(section))
+          .filter(section => {
+            const lower = section.toLowerCase()
+            return !closedMarkers.some(marker => lower.includes(marker))
+          })
         if (openIncidents.length > 0) return true
       }
     } catch {}
@@ -95,7 +100,7 @@ function openWorkExists(options?: { isCommitTool?: boolean }): boolean {
         const content = fs.readFileSync(gatePath, "utf8")
         for (const line of content.split("\n")) {
           if (line.startsWith("===")) continue
-          if (/FAIL/.test(line) || /incomplete/i.test(line)) return true
+          if (/FAIL/.test(line) || /RUNNING/i.test(line) || /incomplete/i.test(line)) return true
         }
       }
     } catch {}
@@ -113,19 +118,9 @@ function openWorkExists(options?: { isCommitTool?: boolean }): boolean {
         if (state.ciVerdictPendingOrRed) return true
       }
     } catch {}
-    try {
-      if (options?.isCommitTool) {}
-      else {
-        const root = getProjectRoot()
-        const index = path.join(root, ".git", "index")
-        const headRef = path.join(root, ".git", "refs", "heads", "master")
-        if (fs.existsSync(index) && fs.existsSync(headRef)) {
-          const idxMtime = fs.statSync(index).mtimeMs
-          const refMtime = fs.statSync(headRef).mtimeMs
-          if (Math.abs(idxMtime - refMtime) > 2000) return true
-        }
-      }
-    } catch {}
+    // Git dirty state is detected with git status --porcelain below.
+    // Avoid index/ref mtime heuristics; git status refreshes the index mtime
+    // and can otherwise create false-positive pending-work reports.
     try {
       if (options?.isCommitTool) {
         const unstaged = execSync("git diff --name-only", {

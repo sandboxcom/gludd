@@ -275,7 +275,7 @@ def test_rg_search_root_confined() -> None:
     assert "allowed_roots" in content
     assert "is_denied_path" in content
     assert "return str(resolved)" in content
-    assert "resolved_root = self._validate_root(root)" in content
+    assert "resolved_root = self._resolve_root(root)" in content
     assert "self.build_argv(rg, query, resolved_root" in content
 
 
