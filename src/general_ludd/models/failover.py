@@ -149,7 +149,9 @@ class ModelFailoverChain:
             return list(self._failover_events)
 
     def should_retry(self, error: Exception) -> bool:
-        status = getattr(error, "status_code", getattr(error, "status", 0))
+        response = getattr(error, "response", None)
+        response_status = getattr(response, "status_code", 0)
+        status = getattr(error, "status_code", getattr(error, "status", response_status))
         if isinstance(status, int) and status in (429, 500, 502, 503, 504):
             return True
         error_str = str(error).lower()

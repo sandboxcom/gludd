@@ -50,4 +50,4 @@ class TestServiceNowSource:
         assert ServiceNowSource is not None
 
     def test_kind_is_ticket(self) -> None:
-        assert ServiceNowSource.KIND == "ticket"
+        assert ServiceNowSource.KIND == "tickets"

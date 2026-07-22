@@ -12,7 +12,7 @@ from general_ludd.ag16_orchestration.conversation import (
     TurnKind,
 )
 
-AgentFn = Callable[[Turn], Turn]
+AgentFn = Callable[[Turn | None], Turn]
 
 
 class ChatOrchestrator:
@@ -61,7 +61,7 @@ class ChatOrchestrator:
             if agent_fn is None:
                 continue
 
-            turn = agent_fn(self._conversation.last_turn() if self._conversation.history else None)  # type: ignore[arg-type]
+            turn = agent_fn(self._conversation.last_turn() if self._conversation.history else None)
             turn.speaker = speaker
             self._conversation.add_turn(turn)
             yield turn

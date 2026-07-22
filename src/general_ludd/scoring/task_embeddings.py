@@ -20,10 +20,10 @@ This module owns two things:
   empty (``dim == 0`` / ``embedding == "[]"``). Existing vectors are preserved
   so a re-run never recomputes paid-for embeddings.
 
-The embedder mirrors :class:`~general_ludd.skills.embeddings.SkillEmbedder`'s
-selection rule: :class:`~general_ludd.skills.embeddings.HashEmbedder` by default
-(no external deps), :class:`~general_ludd.skills.embeddings.OpenAIEmbedder` when
-``OPENAI_API_KEY`` is available, and an explicit ``embedder`` argument always
+The embedder is deterministic by default:
+:class:`~general_ludd.skills.embeddings.HashEmbedder` is used unless live task
+embeddings are explicitly enabled with ``GLUDD_TASK_EMBEDDINGS_PROVIDER=openai``
+and ``OPENAI_API_KEY`` is available. An explicit ``embedder`` argument always
 wins.
 """
 
@@ -108,13 +108,15 @@ CANONICAL_TASK_DESCRIPTIONS: dict[TaskType, str] = {
 
 
 def _select_default_embedder() -> Embedder:
-    """Pick the default embedder, mirroring SkillEmbedder's selection rule.
+    """Pick the default embedder.
 
-    HashEmbedder unless ``OPENAI_API_KEY`` is set and the OpenAIEmbedder
-    constructs successfully; any RuntimeError falls back to HashEmbedder so
-    the store is always usable offline.
+    HashEmbedder is the default even when provider credentials exist in the
+    process environment. Live OpenAI embeddings require an explicit provider
+    opt-in so unrelated tests, CI, and local shells do not silently trigger
+    network calls or paid API usage.
     """
-    if os.environ.get("OPENAI_API_KEY"):
+    provider = os.environ.get("GLUDD_TASK_EMBEDDINGS_PROVIDER", "").strip().lower()
+    if provider == "openai" and os.environ.get("OPENAI_API_KEY"):
         try:
             return OpenAIEmbedder()
         except RuntimeError:

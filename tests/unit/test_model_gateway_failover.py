@@ -216,7 +216,7 @@ class TestBudgetExhaustion:
     def test_fallback_skipped_when_budget_exceeded_precheck(self):
         gw = _make_gateway(
             profiles=[
-                _make_profile("primary", fallback_profiles=["expensive"], run_budget_usd=float("inf")),
+                _make_profile("primary", fallback_profiles=["expensive"], run_budget_usd=1_000_000.0),
                 _make_profile("expensive", run_budget_usd=1.0),
             ]
         )
@@ -241,15 +241,14 @@ class TestBudgetExhaustion:
             provider_registry=_FakeRegistry(),
         )
         _FakeChatModel.script = ["success, but expensive"]
-        resp_ok, last_exc, _attempts = gw._walk_fallbacks(
-            ["tight"],
-            [{"role": "user", "content": "hi"}],
-            from_profile_id="primary",
-            estimated_cost=0.0,
-            budget_remaining=float("inf"),
-        )
-        assert resp_ok is None
-        assert isinstance(last_exc, BudgetExceededError)
+        with pytest.raises(BudgetExceededError):
+            gw._walk_fallbacks(
+                ["tight"],
+                [{"role": "user", "content": "hi"}],
+                from_profile_id="primary",
+                estimated_cost=0.0,
+                budget_remaining=float("inf"),
+            )
 
     def test_select_cost_effective_profile_within_budget(self):
         profiles = [

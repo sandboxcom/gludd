@@ -13,7 +13,10 @@ Functions:
 
 from __future__ import annotations
 
+import json
 import math
+from dataclasses import asdict, dataclass
+from pathlib import Path
 from typing import Any
 
 K_B = 1.380649e-23
@@ -372,3 +375,66 @@ def get_ensemble(ensemble_name: str) -> dict[str, Any] | None:
         if ens["ensemble"] == ensemble_name or ens["abbreviation"] == ensemble_name:
             return ens
     return None
+
+
+@dataclass(frozen=True)
+class ThermoConfig:
+    substance: str
+    mass_kg: float
+    initial_temp_C: float
+    final_temp_C: float
+    pressure_atm: float
+
+
+_SPECIFIC_HEAT_KJ_KG_K = {
+    "water": 4.184,
+    "iron": 0.449,
+}
+
+_LATENT_HEAT_KJ_KG = {
+    "water": {"vaporization": 2256.0, "fusion": 334.0},
+    "iron": {"fusion": 247.0},
+}
+
+
+def compute_heat_transfer(config: ThermoConfig) -> dict[str, Any]:
+    cp = _SPECIFIC_HEAT_KJ_KG_K.get(config.substance.lower(), 1.0)
+    delta_t = config.final_temp_C - config.initial_temp_C
+    heat_kj = config.mass_kg * cp * delta_t
+    return {
+        "config": asdict(config),
+        "specific_heat_kJ_kg_K": cp,
+        "delta_T_C": delta_t,
+        "heat_transfer_kJ": round(heat_kj, 6),
+    }
+
+
+def compute_phase_change(config: ThermoConfig) -> dict[str, Any]:
+    substance = config.substance.lower()
+    transitions: list[dict[str, float | str]] = []
+    if substance == "water" and config.initial_temp_C < 100.0 <= config.final_temp_C:
+        transitions.append({
+            "transition": "vaporization",
+            "latent_heat_kJ": round(config.mass_kg * _LATENT_HEAT_KJ_KG["water"]["vaporization"], 6),
+        })
+    if substance == "water" and config.initial_temp_C < 0.0 <= config.final_temp_C:
+        transitions.append({
+            "transition": "fusion",
+            "latent_heat_kJ": round(config.mass_kg * _LATENT_HEAT_KJ_KG["water"]["fusion"], 6),
+        })
+    return {"substance": config.substance, "transitions": transitions}
+
+
+def compute_entropy_change(config: ThermoConfig) -> dict[str, float]:
+    heat = compute_heat_transfer(config)["heat_transfer_kJ"] * 1000.0
+    avg_temp_k = ((config.initial_temp_C + 273.15) + (config.final_temp_C + 273.15)) / 2.0
+    entropy = 0.0 if avg_temp_k <= 0 else heat / avg_temp_k
+    return {"entropy_change_J_K": round(entropy, 6)}
+
+
+def write_thermo_result(result: dict[str, Any], output_dir: str | Path) -> Path:
+    path = Path(output_dir)
+    path.mkdir(parents=True, exist_ok=True)
+    out = path / "thermo_result.json"
+    out.write_text(json.dumps(result, indent=2), encoding="utf-8")
+    return out

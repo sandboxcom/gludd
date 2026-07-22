@@ -148,8 +148,13 @@ class PipBundleBuilder:
         manifest_path = os.path.join(output_dir, "MANIFEST.json")
         Path(manifest_path).write_text(manifest.model_dump_json(indent=2))
 
-        sig_result = ManifestSigner().sign(manifest_path)
-        sig_path = sig_result.sig_path if sig_result.success else ""
+        try:
+            sig_result = ManifestSigner().sign(manifest_path)
+            sig_path = sig_result.sig_path if sig_result.success else ""
+            signature_valid = sig_result.success
+        except Exception:
+            sig_path = ""
+            signature_valid = False
 
         checksum_lines = [f"{v}  {k}" for k, v in checksums.items()]
         checksum_path = os.path.join(output_dir, "CHECKSUMS.sha256")
@@ -163,5 +168,5 @@ class PipBundleBuilder:
             checksum_path=checksum_path,
             success=True,
             sig_path=sig_path,
-            signature_valid=sig_result.success,
+            signature_valid=signature_valid,
         )

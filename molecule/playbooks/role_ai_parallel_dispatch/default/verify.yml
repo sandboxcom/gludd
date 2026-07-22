@@ -12,7 +12,7 @@
       ansible.builtin.stat:
         path: "{{ artifact }}"
       register: art
-      failed_when: "{{ not art.stat.exists }}"
+      failed_when: not art.stat.exists
 
     - name: Load JSON artifact
       ansible.builtin.slurp:

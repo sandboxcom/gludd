@@ -922,6 +922,8 @@ _SIGNING_PSK_CASES: ClassVar[list[tuple[str, str, dict[str, object] | None]]] = 
     ("POST", "/admin/signing/gitsign/config", {"project_id": "p1"}),
     ("GET", "/admin/signing/gitsign/p1", None),
 ]
+_SIGNING_ADMIN_TOKEN = "test-admin-token"
+_SIGNING_ADMIN_HEADERS = {"X-Admin-Token": _SIGNING_ADMIN_TOKEN}
 
 
 def _make_secrets_resolver() -> MagicMock:
@@ -971,6 +973,10 @@ def signing_client(signing_app: FastAPI) -> TestClient:
 
 
 class TestSigningEndpoints:
+    @pytest.fixture(autouse=True)
+    def _signing_admin_token(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("GLUDD_ADMIN_TOKEN", _SIGNING_ADMIN_TOKEN)
+
     class TestCosignGenerate:
         def test_happy_path(self) -> None:
             import general_ludd.routers.signing as signing_router
@@ -982,7 +988,7 @@ class TestSigningEndpoints:
                 signing_router, "generate_and_store_cosign_key",
                 return_value=_make_cosign_key_mock(),
             ):
-                client = TestClient(app)
+                client = TestClient(app, headers=_SIGNING_ADMIN_HEADERS)
                 resp = client.post(
                     "/admin/signing/cosign/generate",
                     json={"project_id": "p1", "key_name": "my-key"},
@@ -1000,7 +1006,7 @@ class TestSigningEndpoints:
                 signing_router, "generate_and_store_cosign_key",
                 side_effect=ValueError("invalid key name"),
             ):
-                client = TestClient(app)
+                client = TestClient(app, headers=_SIGNING_ADMIN_HEADERS)
                 resp = client.post(
                     "/admin/signing/cosign/generate",
                     json={"project_id": "p1", "key_name": "bad..name"},
@@ -1023,7 +1029,7 @@ class TestSigningEndpoints:
                 signing_router, "read_cosign_key",
                 return_value=_make_cosign_key_mock(),
             ):
-                client = TestClient(app)
+                client = TestClient(app, headers=_SIGNING_ADMIN_HEADERS)
                 resp = client.get("/admin/signing/cosign/list/p1")
             assert resp.status_code == 200
             assert len(resp.json()) == 2
@@ -1039,7 +1045,7 @@ class TestSigningEndpoints:
                 signing_router, "read_cosign_key",
                 return_value=_make_cosign_key_mock(),
             ):
-                client = TestClient(app)
+                client = TestClient(app, headers=_SIGNING_ADMIN_HEADERS)
                 resp = client.get("/admin/signing/cosign/p1/my-key")
             assert resp.status_code == 200
             assert resp.json()["key_name"] == "test-key"
@@ -1053,7 +1059,7 @@ class TestSigningEndpoints:
             with patch.object(
                 signing_router, "read_cosign_key", return_value=None,
             ):
-                client = TestClient(app)
+                client = TestClient(app, headers=_SIGNING_ADMIN_HEADERS)
                 resp = client.get("/admin/signing/cosign/p1/nonexistent")
             assert resp.status_code == 404
 
@@ -1065,7 +1071,7 @@ class TestSigningEndpoints:
             _setup_signing_state(app)
             signing_router.register(app, {})
             with patch.object(signing_router, "delete_cosign_key"):
-                client = TestClient(app)
+                client = TestClient(app, headers=_SIGNING_ADMIN_HEADERS)
                 resp = client.delete("/admin/signing/cosign/p1/my-key")
             assert resp.status_code == 200
             assert resp.json()["status"] == "deleted"
@@ -1078,7 +1084,7 @@ class TestSigningEndpoints:
             _setup_signing_state(app)
             signing_router.register(app, {})
             with patch.object(signing_router, "write_gitsign_config"):
-                client = TestClient(app)
+                client = TestClient(app, headers=_SIGNING_ADMIN_HEADERS)
                 resp = client.post(
                     "/admin/signing/gitsign/config",
                     json={"project_id": "p1", "enabled": True},
@@ -1097,7 +1103,7 @@ class TestSigningEndpoints:
                 signing_router, "read_gitsign_config",
                 return_value=_make_gitsign_config_mock(),
             ):
-                client = TestClient(app)
+                client = TestClient(app, headers=_SIGNING_ADMIN_HEADERS)
                 resp = client.get("/admin/signing/gitsign/p1")
             assert resp.status_code == 200
             data = resp.json()
@@ -1113,7 +1119,7 @@ class TestSigningEndpoints:
             with patch.object(
                 signing_router, "read_gitsign_config", return_value=None,
             ):
-                client = TestClient(app)
+                client = TestClient(app, headers=_SIGNING_ADMIN_HEADERS)
                 resp = client.get("/admin/signing/gitsign/p1")
             assert resp.status_code == 404
 
@@ -1123,7 +1129,7 @@ class TestSigningEndpoints:
 
             app = FastAPI()
             signing_router.register(app, {})
-            client = TestClient(app)
+            client = TestClient(app, headers=_SIGNING_ADMIN_HEADERS)
             resp = client.post(
                 "/admin/signing/cosign/generate",
                 json={"project_id": "p1", "key_name": "k1"},
@@ -1135,7 +1141,7 @@ class TestSigningEndpoints:
 
             app = FastAPI()
             signing_router.register(app, {})
-            client = TestClient(app)
+            client = TestClient(app, headers=_SIGNING_ADMIN_HEADERS)
             resp = client.get("/admin/signing/cosign/list/p1")
             assert resp.status_code == 503
 
@@ -1144,7 +1150,7 @@ class TestSigningEndpoints:
 
             app = FastAPI()
             signing_router.register(app, {})
-            client = TestClient(app)
+            client = TestClient(app, headers=_SIGNING_ADMIN_HEADERS)
             resp = client.get("/admin/signing/cosign/p1/k1")
             assert resp.status_code == 503
 
@@ -1153,7 +1159,7 @@ class TestSigningEndpoints:
 
             app = FastAPI()
             signing_router.register(app, {})
-            client = TestClient(app)
+            client = TestClient(app, headers=_SIGNING_ADMIN_HEADERS)
             resp = client.delete("/admin/signing/cosign/p1/k1")
             assert resp.status_code == 503
 
@@ -1162,7 +1168,7 @@ class TestSigningEndpoints:
 
             app = FastAPI()
             signing_router.register(app, {})
-            client = TestClient(app)
+            client = TestClient(app, headers=_SIGNING_ADMIN_HEADERS)
             resp = client.post(
                 "/admin/signing/gitsign/config", json={"project_id": "p1"},
             )
@@ -1173,7 +1179,7 @@ class TestSigningEndpoints:
 
             app = FastAPI()
             signing_router.register(app, {})
-            client = TestClient(app)
+            client = TestClient(app, headers=_SIGNING_ADMIN_HEADERS)
             resp = client.get("/admin/signing/gitsign/p1")
             assert resp.status_code == 503
 
@@ -1184,7 +1190,7 @@ class TestSigningEndpoints:
             resolver = MagicMock(spec=[])
             app.state._secrets_resolver = resolver
             signing_router.register(app, {})
-            client = TestClient(app)
+            client = TestClient(app, headers=_SIGNING_ADMIN_HEADERS)
             resp = client.post(
                 "/admin/signing/cosign/generate",
                 json={"project_id": "p1", "key_name": "k1"},
@@ -1238,7 +1244,10 @@ class TestSigningEndpoints:
                     method,
                     path,
                     json=body,
-                    headers={"Authorization": f"Bearer {_PSK}"},
+                    headers={
+                        "Authorization": f"Bearer {_PSK}",
+                        **_SIGNING_ADMIN_HEADERS,
+                    },
                 )
                 assert resp.status_code == 200
 

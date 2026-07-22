@@ -31,12 +31,12 @@ variable "instance_id" {
 }
 
 variable "cloud" {
-  description = "Cloud provider dispatch key. Selects the price-query + terminate code paths. One of: aws, gcp, azure, vsphere, runpod, vast."
+  description = "Cloud provider dispatch key. Selects the price-query + terminate code paths. One of: aws, gcp, azure, vsphere, runpod, vast, kubernetes, qemu."
   type        = string
   default     = "aws"
 
   validation {
-    condition     = contains(["aws", "gcp", "azure", "vsphere", "runpod", "vast", "kubernetes"], var.cloud)
-    error_message = "cloud must be one of: aws, gcp, azure, vsphere, runpod, vast, kubernetes."
+    condition     = contains(["aws", "gcp", "azure", "vsphere", "runpod", "vast", "kubernetes", "qemu"], var.cloud)
+    error_message = "cloud must be one of: aws, gcp, azure, vsphere, runpod, vast, kubernetes, qemu."
   }
 }

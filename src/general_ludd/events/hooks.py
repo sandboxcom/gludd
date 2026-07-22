@@ -270,7 +270,10 @@ class HookSystem:
         # resolution and vets every resolved address, catching re-binds.
         from urllib.parse import urlsplit
 
-        _ensure_safe_webhook_url(config.url)
+        if not is_safe_fetch_url(config.url):
+            raise SSRFBlockedError(
+                f"Webhook URL rejected at fire time: {config.url!r}"
+            )
         parts = urlsplit(config.url)
         host = parts.hostname
         if host:
@@ -284,14 +287,6 @@ class HookSystem:
             workaround, this never consumes a thread-pool thread and cannot
             freeze the event loop.
             """
-            # Defence-in-depth: re-check SSRF at fire time so a URL that was
-            # somehow mutated between registration and delivery cannot reach
-            # an internal address.
-            if not is_safe_fetch_url(config.url):
-                raise SSRFBlockedError(
-                    f"Webhook URL rejected at fire time: {config.url!r}"
-                )
-
             async with httpx.AsyncClient() as client:
                 last_exc: Exception | None = None
                 for attempt in range(retry_count):

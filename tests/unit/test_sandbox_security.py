@@ -219,10 +219,6 @@ class TestCommandLengthLimits:
             "executor-level arg count enforcement would be a future addition"
         )
 
-    @pytest.mark.xfail(
-        reason="E9: macOS ARG_MAX enforcement is a future feature — SandboxExecutor arg-count guard TBD",
-        strict=False,
-    )
     def test_command_exceeding_os_arg_max_is_rejected(self) -> None:
         executor = SandboxExecutor(timeout=5)
         padding = "A" * 2_000_000

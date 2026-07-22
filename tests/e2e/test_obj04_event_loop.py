@@ -16,6 +16,7 @@ class TestEventLoopE2E:
             "evaluate_pid_controllers",
             "refill_task_buckets",
             "run_scheduler",
+            "sdlc_gate",
             "claim_runnable_todos",
             "evaluate_rules",
             "dispatch_execute_jobs",
@@ -27,6 +28,8 @@ class TestEventLoopE2E:
             "remediate_blocked_tasks",
             "self_improve",
             "poll_issue_sources",
+            "service_discovery",
+            "reap_expired_sts_tokens",
             "emit_tick_metrics",
         ]
         assert expected == PHASE_ORDER

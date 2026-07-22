@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import io
 import subprocess
-from unittest.mock import MagicMock, mock_open, patch
+from unittest.mock import MagicMock, patch
 
 from general_ludd.runtime.manifest_signer import ManifestSigner, SignResult, VerifyResult
+
+
+def _open_mock_manifest(*_args: object, **_kwargs: object) -> io.BytesIO:
+    return io.BytesIO(b"mock manifest")
 
 
 class TestSignResult:
@@ -38,7 +43,7 @@ class TestManifestSignerInit:
 
 
 class TestSign:
-    @patch("builtins.open", mock_open(read_data=b"mock manifest"))
+    @patch("builtins.open", _open_mock_manifest)
     @patch("pathlib.Path.exists", return_value=True)
     @patch("subprocess.run")
     def test_sign_success(self, mock_run: MagicMock, _mock_exists: MagicMock) -> None:
@@ -74,7 +79,7 @@ class TestSign:
         assert result.success is False
         assert "Manifest not found" in result.errors[0]
 
-    @patch("builtins.open", mock_open(read_data=b"mock manifest"))
+    @patch("builtins.open", _open_mock_manifest)
     @patch("pathlib.Path.exists", return_value=True)
     @patch("subprocess.run")
     def test_sign_subprocess_failure(self, mock_run: MagicMock, _mock_exists: MagicMock) -> None:
@@ -86,7 +91,7 @@ class TestSign:
         assert result.success is False
         assert "ssh-keygen sign exited 1" in result.errors[0]
 
-    @patch("builtins.open", mock_open(read_data=b"mock manifest"))
+    @patch("builtins.open", _open_mock_manifest)
     @patch("pathlib.Path.exists", return_value=True)
     @patch("subprocess.run")
     def test_sign_timeout(self, mock_run: MagicMock, _mock_exists: MagicMock) -> None:
@@ -96,7 +101,7 @@ class TestSign:
         assert result.success is False
         assert "ssh-keygen sign failed" in result.errors[0]
 
-    @patch("builtins.open", mock_open(read_data=b"mock manifest"))
+    @patch("builtins.open", _open_mock_manifest)
     @patch("pathlib.Path.exists", return_value=True)
     @patch("subprocess.run")
     def test_sign_sshkgen_not_found(self, mock_run: MagicMock, _mock_exists: MagicMock) -> None:
@@ -108,7 +113,7 @@ class TestSign:
 
 
 class TestVerify:
-    @patch("builtins.open", mock_open(read_data=b"mock manifest"))
+    @patch("builtins.open", _open_mock_manifest)
     @patch("pathlib.Path.exists", return_value=True)
     @patch("subprocess.run")
     def test_verify_success(self, mock_run: MagicMock, _mock_exists: MagicMock) -> None:
@@ -157,7 +162,7 @@ class TestVerify:
         assert result.success is False
         assert "Signature file not found" in result.errors[0]
 
-    @patch("builtins.open", mock_open(read_data=b"mock manifest"))
+    @patch("builtins.open", _open_mock_manifest)
     @patch("pathlib.Path.exists", return_value=True)
     @patch("subprocess.run")
     def test_verify_subprocess_failure(self, mock_run: MagicMock, _mock_exists: MagicMock) -> None:
@@ -169,7 +174,7 @@ class TestVerify:
         assert result.success is False
         assert "ssh-keygen verify exited 3" in result.errors[0]
 
-    @patch("builtins.open", mock_open(read_data=b"mock manifest"))
+    @patch("builtins.open", _open_mock_manifest)
     @patch("pathlib.Path.exists", return_value=True)
     @patch("subprocess.run")
     def test_verify_timeout(self, mock_run: MagicMock, _mock_exists: MagicMock) -> None:
@@ -179,7 +184,7 @@ class TestVerify:
         assert result.success is False
         assert "ssh-keygen verify failed" in result.errors[0]
 
-    @patch("builtins.open", mock_open(read_data=b"mock manifest"))
+    @patch("builtins.open", _open_mock_manifest)
     @patch("pathlib.Path.exists", return_value=True)
     @patch("subprocess.run")
     def test_verify_sshkgen_not_found(self, mock_run: MagicMock, _mock_exists: MagicMock) -> None:

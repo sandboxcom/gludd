@@ -6,6 +6,18 @@
 
 ---
 
+## Current Gate Status (2026-07-20)
+<!-- gate:begin -->
+- lint PASS 0
+- env-writes PASS
+- hook-runtime FAIL
+- typecheck FAIL 32
+- collect PASS 0
+- test REQUIRED
+- smoke REQUIRED
+
+<!-- gate:end -->
+
 ## PRIMARY OBJECTIVE: GREEN CI ON DEVELOPMENT → 12/12 ARTIFACTS FOR v0.1.0-beta.2 ON MASTER
 
 ---

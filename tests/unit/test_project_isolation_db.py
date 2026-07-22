@@ -175,7 +175,7 @@ class TestTodoProjectIsolation:
         assert len(beta_remaining) == 1
         assert beta_remaining[0].todo_id == "TODO-BBBB2222"
 
-    async def test_claim_runnable_no_project_gets_all(
+    async def test_claim_runnable_no_project_skips_project_scoped_todos(
         self, async_session: AsyncSession, two_projects
     ):
         p1, p2 = two_projects
@@ -196,7 +196,7 @@ class TestTodoProjectIsolation:
 
         repo = TodoRepository(async_session)
         claimed = await repo.claim_runnable(limit=10)
-        assert len(claimed) == 2
+        assert claimed == []
 
     async def test_create_todo_with_project_id(
         self, async_session: AsyncSession, two_projects

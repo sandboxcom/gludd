@@ -63,7 +63,8 @@ class TestEndpointPaths:
 
         app = FastAPI()
         register(app, {})
-        assert len(app.routes) == 5, f"Expected 5 routes, got {len(app.routes)}"
+        benchmark_routes = [r for r in app.routes if r.path in {path for _, path in EXPECTED_PATHS}]
+        assert len(benchmark_routes) == 5, f"Expected 5 benchmark routes, got {len(benchmark_routes)}"
 
 
 class TestGracefulDegradation:

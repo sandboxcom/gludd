@@ -73,6 +73,9 @@
     loop_var: _apd_batch
     index_var: _apd_batch_idx
     label: "batch {{ _apd_batch_idx }} ({{ _apd_batch | map(attribute='name') | join(',') }})"
+  when: >-
+    join_policy != 'required'
+    or ((_apd_required_names | difference(_apd_results.keys() | list)) | length) > 0
 
 # ---- Join evaluation --------------------------------------------------------
 - name: Evaluate join policy over collected results
