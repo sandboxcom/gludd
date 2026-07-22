@@ -113,3 +113,10 @@ def test_remote_head_must_match_local_head_for_dispatch_evidence(capsys) -> None
     captured = capsys.readouterr()
     assert rc == 1
     assert "remote sandboxcom/refs/heads/development is oldhead, not local HEAD newhead" in captured.out
+
+
+def test_workflow_state_runfn_alias_is_python39_safe() -> None:
+    source = (ROOT / "scripts" / "workflow_state_guard.py").read_text(encoding="utf-8")
+
+    assert "RunFn = Callable[[Sequence[str], Optional[str]]" in source
+    assert "RunFn = Callable[[Sequence[str], str | None]" not in source
