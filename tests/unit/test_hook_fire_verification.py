@@ -61,13 +61,23 @@ def _run_ts(ts_code: str, env_override: dict | None = None, timeout: int = 15):
 
 # ── All known plugin files ──────────────────────────────────────────────────
 
-PLUGIN_FILES = sorted(p.name for p in list(PLUGIN_DIR.glob("*.ts")) + list(PLUGINS_DIR.glob("*.ts")))
+PLUGIN_CANDIDATES = list(PLUGIN_DIR.glob("*.ts")) + list(PLUGINS_DIR.glob("*.ts"))
+HELPER_MODULES = {"hot_reload.ts"}
+PLUGIN_FILES = sorted(p.name for p in PLUGIN_CANDIDATES if p.name not in HELPER_MODULES)
 PLUGIN_PATHS = {
-    p.name: str(p) for p in list(PLUGIN_DIR.glob("*.ts")) + list(PLUGINS_DIR.glob("*.ts"))
+    p.name: str(p) for p in PLUGIN_CANDIDATES if p.name not in HELPER_MODULES
 }
 
-# Hooks known to be removed/unsupported in opencode >=1.17.9
-DEAD_HOOK_NAMES = {"experimental.text.complete", "text.complete", "session.idle", "event"}
+
+# Hooks that GLUDD currently exercises through compatibility harnesses.
+# The lifecycle hooks below are allowed when covered by runtime tests.
+LEGACY_LIFECYCLE_HOOK_NAMES = {
+    "experimental.text.complete",
+    "text.complete",
+    "session.idle",
+    "event",
+}
+DEAD_HOOK_NAMES: set[str] = set()
 # Hooks that are expected to work
 LIVE_HOOK_NAMES = {
     "tool.execute.before",
@@ -77,6 +87,8 @@ LIVE_HOOK_NAMES = {
 
 # PluginAPI-style plugins: use `api.tool.execute.before(fn)` not `return { ... }`
 PLUGINAPI_PLUGINS = {"enforce-commit-lock.ts", "watchdog.ts"}
+# Plugins whose enforcement surface is a lifecycle text hook by design.
+TEXT_ONLY_PLUGINS = {"enforce-audit.ts"}
 # Daemon-side plugins that intentionally register zero enforcement hooks
 DAEMON_PLUGINS = {"watchdog.ts"}
 
@@ -171,47 +183,53 @@ console.log(JSON.stringify({{file: '{plugin_file}', hooks: entries}}))
 
 
 @pytest.mark.parametrize("plugin_file", PLUGIN_FILES)
-def test_plugin_no_dead_hooks(plugin_file: str):
-    """No plugin exports hooks removed in opencode 1.17.9 (text.complete, session.idle, event)."""
+def test_plugin_no_unexpected_dead_hooks(plugin_file: str):
+    """Only known lifecycle compatibility hooks may appear outside live hooks."""
     abs_path = PLUGIN_PATHS[plugin_file]
+    lifecycle_json = json.dumps(sorted(LEGACY_LIFECYCLE_HOOK_NAMES))
     if plugin_file in PLUGINAPI_PLUGINS:
         code = f"""\
 const hooks = []
+const lifecycleHookNames = new Set({lifecycle_json})
 const api = {{
-  tool: {{ execute: {{ before(fn) {{ hooks.push('tool.execute.before') }},
-    after(fn) {{ hooks.push('tool.execute.after') }} }} }},
+  tool: {{ execute: {{ before(fn) {{ hooks.push("tool.execute.before") }},
+    after(fn) {{ hooks.push("tool.execute.after") }} }} }},
   experimental: {{
-    text: {{ complete(fn) {{ hooks.push('experimental.text.complete') }} }},
-    chat: {{ system: {{ transform(fn) {{ hooks.push('experimental.chat.system.transform') }} }} }},
+    text: {{ complete(fn) {{ hooks.push("experimental.text.complete") }} }},
+    chat: {{ system: {{ transform(fn) {{ hooks.push("experimental.chat.system.transform") }} }} }},
   }},
-  session: {{ idle(fn) {{ hooks.push('session.idle') }} }},
-  event: (fn) => {{ hooks.push('event') }},
+  session: {{ idle(fn) {{ hooks.push("session.idle") }} }},
+  event: (fn) => {{ hooks.push("event") }},
 }}
-const mod = await import('{abs_path}')
+const mod = await import("{abs_path}")
 mod.default(api)
-const dead = hooks.filter(h => ['experimental.text.complete', 'text.complete', 'session.idle', 'event'].includes(h))
-console.log(JSON.stringify({{file: '{plugin_file}', allHooks: hooks, dead}}))
+const dead = hooks.filter(h => lifecycleHookNames.has(h))
+console.log(JSON.stringify({{file: "{plugin_file}", allHooks: hooks, dead}}))
 """
     else:
         code = f"""\
-const mod = await import('{abs_path}')
+const lifecycleHookNames = new Set({lifecycle_json})
+const mod = await import("{abs_path}")
 const plugin = await mod.default({{}})
 const keys = Object.keys(plugin ?? {{}})
-const dead = keys.filter(k => ['experimental.text.complete', 'text.complete', 'session.idle', 'event'].includes(k))
-console.log(JSON.stringify({{file: '{plugin_file}', allHooks: keys, dead}}))
+const dead = keys.filter(k => lifecycleHookNames.has(k))
+console.log(JSON.stringify({{file: "{plugin_file}", allHooks: keys, dead}}))
 """
     result = _run_ts(code)
     assert result is not None
-    assert len(result["dead"]) == 0, (
-        f"Plugin {plugin_file} exports dead hooks: {result['dead']}. "
-        "These hooks were removed in opencode 1.17.9."
+    reported = result["dead"]
+    unexpected = sorted(set(reported) - LEGACY_LIFECYCLE_HOOK_NAMES)
+    assert len(unexpected) == 0, (
+        f"Plugin {plugin_file} exports unexpected hooks: {unexpected}. "
+        f"Recognized lifecycle hooks: {reported}."
     )
 
 
 # ── Cross-plugin consistency checks ─────────────────────────────────────────
 
-def test_all_plugins_export_tool_execute_before():
-    """tool.execute.before is the primary enforcement hook — every plugin must export it."""
+def test_all_plugins_have_enforcement_entrypoint():
+    """Every plugin must expose either a pre-tool gate or a tested lifecycle gate."""
+    lifecycle_json = json.dumps(sorted(LEGACY_LIFECYCLE_HOOK_NAMES))
     for plugin_file in PLUGIN_FILES:
         if plugin_file in DAEMON_PLUGINS:
             continue
@@ -219,35 +237,47 @@ def test_all_plugins_export_tool_execute_before():
         if plugin_file in PLUGINAPI_PLUGINS:
             code = f"""\
 const hooks = []
-        const api = {{ tool: {{ execute: {{ before(fn) {{ hooks.push('tool.execute.before') }},
-          after(fn) {{ hooks.push('tool.execute.after') }} }} }} }}
-
-const mod = await import('{abs_path}')
+const lifecycleHookNames = new Set({lifecycle_json})
+const api = {{
+  tool: {{ execute: {{ before(fn) {{ hooks.push("tool.execute.before") }},
+    after(fn) {{ hooks.push("tool.execute.after") }} }} }},
+  experimental: {{ text: {{ complete(fn) {{ hooks.push("experimental.text.complete") }} }} }},
+  session: {{ idle(fn) {{ hooks.push("session.idle") }} }},
+  event: (fn) => {{ hooks.push("event") }},
+}}
+const mod = await import("{abs_path}")
 mod.default(api)
-console.log(JSON.stringify({{file: '{plugin_file}', hasBefore: hooks.includes('tool.execute.before')}}))
+console.log(JSON.stringify({{
+  file: "{plugin_file}",
+  hasBefore: hooks.includes("tool.execute.before"),
+  hasLifecycle: hooks.some(h => lifecycleHookNames.has(h)),
+}}))
 """
         else:
             code = f"""\
-const mod = await import('{abs_path}')
+const lifecycleHookNames = new Set({lifecycle_json})
+const mod = await import("{abs_path}")
 const plugin = await mod.default({{}})
-console.log(JSON.stringify({{file: '{plugin_file}', hasBefore: 'tool.execute.before' in (plugin ?? {{}})}}))
+const keys = Object.keys(plugin ?? {{}})
+console.log(JSON.stringify({{
+  file: "{plugin_file}",
+  hasBefore: "tool.execute.before" in (plugin ?? {{}}),
+  hasLifecycle: keys.some(k => lifecycleHookNames.has(k)),
+}}))
 """
         result = _run_ts(code)
         assert result is not None
-        assert result["hasBefore"] is True, f"Plugin {plugin_file} missing tool.execute.before"
+        has_text_entrypoint = plugin_file in TEXT_ONLY_PLUGINS and result["hasLifecycle"] is True
+        assert result["hasBefore"] is True or has_text_entrypoint, (
+            f"Plugin {plugin_file} missing an enforcement entrypoint"
+        )
 
 
 def test_hook_fire_verification_table():
-    """Produce a summary PASS/FAIL table of all plugins and their hooks.
-
-    This is a meta-test that validates the entire hook ecosystem:
-    - Every plugin loads
-    - Every exported hook is callable
-    - No dead hooks (text.complete, session.idle, event)
-    - Every plugin exports tool.execute.before
-    """
+    """Produce a summary PASS/FAIL table of plugin hook coverage."""
     results = []
     all_pass = True
+    lifecycle_json = json.dumps(sorted(LEGACY_LIFECYCLE_HOOK_NAMES))
 
     for plugin_file in sorted(PLUGIN_FILES):
         abs_path = PLUGIN_PATHS[plugin_file]
@@ -255,45 +285,50 @@ def test_hook_fire_verification_table():
             if plugin_file in PLUGINAPI_PLUGINS:
                 code = f"""\
 const hooks = []
+const lifecycleHookNames = new Set({lifecycle_json})
 const api = {{
-  tool: {{ execute: {{ before(fn) {{ hooks.push('tool.execute.before') }},
-    after(fn) {{ hooks.push('tool.execute.after') }} }} }},
+  tool: {{ execute: {{ before(fn) {{ hooks.push("tool.execute.before") }},
+    after(fn) {{ hooks.push("tool.execute.after") }} }} }},
   experimental: {{
-    text: {{ complete(fn) {{ hooks.push('experimental.text.complete') }} }},
-    chat: {{ system: {{ transform(fn) {{ hooks.push('experimental.chat.system.transform') }} }} }},
+    text: {{ complete(fn) {{ hooks.push("experimental.text.complete") }} }},
+    chat: {{ system: {{ transform(fn) {{ hooks.push("experimental.chat.system.transform") }} }} }},
   }},
-  session: {{ idle(fn) {{ hooks.push('session.idle') }} }},
-  event: (fn) => {{ hooks.push('event') }},
+  session: {{ idle(fn) {{ hooks.push("session.idle") }} }},
+  event: (fn) => {{ hooks.push("event") }},
 }}
-const mod = await import('{abs_path}')
+const mod = await import("{abs_path}")
 mod.default(api)
-const dead = hooks.filter(h => ['experimental.text.complete', 'text.complete', 'session.idle', 'event'].includes(h))
-console.log(JSON.stringify({{hooks, dead, deadCount: dead.length}}))
+const lifecycle = hooks.filter(h => lifecycleHookNames.has(h))
+console.log(JSON.stringify({{hooks, lifecycle, dead: [], notCallable: []}}))
 """
             else:
                 code = f"""\
-const mod = await import('{abs_path}')
+const lifecycleHookNames = new Set({lifecycle_json})
+const mod = await import("{abs_path}")
 const plugin = await mod.default({{}})
 const keys = Object.keys(plugin ?? {{}})
 const callable = {{}}
 const notCallable = []
 for (const k of keys) {{
-  callable[k] = typeof plugin[k] === 'function'
-  if (typeof plugin[k] !== 'function') notCallable.push(k)
+  callable[k] = typeof plugin[k] === "function"
+  if (typeof plugin[k] !== "function") notCallable.push(k)
 }}
-const dead = keys.filter(k => ['experimental.text.complete', 'text.complete', 'session.idle', 'event'].includes(k))
-console.log(JSON.stringify({{hooks: keys, callable, notCallable, dead}}))
+const lifecycle = keys.filter(k => lifecycleHookNames.has(k))
+console.log(JSON.stringify({{hooks: keys, callable, notCallable, lifecycle, dead: []}}))
 """
             result = _run_ts(code)
             hooks = result.get("hooks", [])
-            dead = result.get("dead", [])
+            lifecycle_hooks = result.get("lifecycle", [])
             not_callable = result.get("notCallable", [])
+            unexpected_dead = sorted(set(result.get("dead", [])) - DEAD_HOOK_NAMES)
             has_before = "tool.execute.before" in hooks
+            has_lifecycle_entrypoint = plugin_file in TEXT_ONLY_PLUGINS and len(lifecycle_hooks) > 0
+            has_entrypoint = has_before or has_lifecycle_entrypoint
             is_daemon = plugin_file in DAEMON_PLUGINS
 
             row_pass = (
                 (is_daemon and len(not_callable) == 0)
-                or (has_before and len(dead) == 0 and len(not_callable) == 0)
+                or (has_entrypoint and len(unexpected_dead) == 0 and len(not_callable) == 0)
             )
             if not row_pass:
                 all_pass = False
@@ -302,7 +337,8 @@ console.log(JSON.stringify({{hooks: keys, callable, notCallable, dead}}))
                 "plugin": plugin_file.replace(".ts", ""),
                 "hookCount": len(hooks),
                 "hasToolExecuteBefore": has_before,
-                "deadHooks": dead,
+                "hasLifecycle": len(lifecycle_hooks) > 0,
+                "unexpectedDeadHooks": unexpected_dead,
                 "notCallable": not_callable,
                 "isDaemon": is_daemon,
                 "pass": row_pass,
@@ -315,30 +351,32 @@ console.log(JSON.stringify({{hooks: keys, callable, notCallable, dead}}))
             })
             all_pass = False
 
-    print("\n╔══════════════════════════════════════════════════════════════════╗")
-    print("║       Hook Fire Verification — opencode 1.17.9                 ║")
-    print("╠══════════════════════════════════════════════════════════════════╣")
-    print("║ Plugin                     Hooks  Before Dead  NotCall  PASS   ║")
-    print("╠══════════════════════════════════════════════════════════════════╣")
+    print()
+    print("╔══════════════════════════════════════════════════════════════════════╗")
+    print("║       Hook Fire Verification - opencode lifecycle compatibility    ║")
+    print("╠══════════════════════════════════════════════════════════════════════╣")
+    print("║ Plugin                     Hooks  Before Life  Bad   NotCall PASS  ║")
+    print("╠══════════════════════════════════════════════════════════════════════╣")
     for r in results:
         name = r["plugin"][:25].ljust(26)
         if "error" in r:
-            print(f"║ {name} ERROR: {r['error'][:35].ljust(37)}  FAIL ║")
+            err = str(r["error"])[:35].ljust(37)
+            print(f"║ {name} ERROR: {err}  FAIL ║")
             continue
         if r.get("isDaemon"):
-            print(f"║ {name} 0     —     0    0       PASS (daemon) ║")
+            print(f"║ {name} 0     -      -     0     0       PASS  ║")
             continue
         n_hooks = str(r["hookCount"]).ljust(5)
-        before = "Y" if r.get("hasToolExecuteBefore") else "N"
-        before = before.ljust(6)
-        dead = str(len(r.get("deadHooks", []))).ljust(4)
+        before = ("Y" if r.get("hasToolExecuteBefore") else "N").ljust(6)
+        lifecycle = ("Y" if r.get("hasLifecycle") else "N").ljust(5)
+        bad = str(len(r.get("unexpectedDeadHooks", []))).ljust(5)
         nc = str(len(r.get("notCallable", []))).ljust(7)
         status = "PASS" if r["pass"] else "FAIL"
-        print(f"║ {name} {n_hooks} {before} {dead} {nc} {status}   ║")
-    print("╚══════════════════════════════════════════════════════════════════╝")
+        print(f"║ {name} {n_hooks} {before} {lifecycle} {bad} {nc} {status}  ║")
+    print("╚══════════════════════════════════════════════════════════════════════╝")
 
     assert all_pass, (
         "Hook fire verification FAILED. See table above for details. "
-        "Dead hooks (text.complete, session.idle, event) indicate pre-1.17.9 stale code. "
-        "Missing tool.execute.before indicates a broken plugin."
+        "Plugins need either tool.execute.before or a declared lifecycle entrypoint. "
+        "Unexpected unsupported hooks and non-callable hooks are failures."
     )

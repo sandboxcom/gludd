@@ -34,7 +34,7 @@
  *   7. Main-thread grinding (too many consecutive non-dispatch calls)
  *
  * Hot-reload capable. Subagent context skips enforcement. Dispatch tools: "task" "agent" "workflow".
- * GLUDD_STOP_ENFORCE=0 disables ALL enforcement. Disengage file: /tmp/gludd-watchdog-disengage.json.
+ * GLUDD_STOP_ENFORCE=0 only disables non-text hooks; text.complete remains unbypassable. Disengage file: /tmp/gludd-watchdog-disengage.json.
  */
 import * as fs from "node:fs"
 import * as path from "node:path"
@@ -966,7 +966,6 @@ const defaultImpl: HotModule = {
     // FALSE-DONE detection lives in this hook; keep the marker near the hook
     // entry so structural tests catch accidental removal or relocation.
     if (isSubagent()) return output // OPENCODE_SUBAGENT guard
-    if (isStopEnforcementDisabled()) return output
     incrementTextCompleteCount()
     reportAlive("enforce-stop")
     writeHeartbeat("enforce-stop")
@@ -1577,7 +1576,6 @@ export default (async () => {
     "experimental.text.complete": async (_input: unknown, output: unknown) => {
       // OPENCODE_SUBAGENT guard is implemented by shared isSubagent().
       if (isSubagent()) return output // OPENCODE_SUBAGENT guard
-      if (isStopEnforcementDisabled()) return output
       const impl = stopImpl()
       const fn = impl["experimental.text.complete"]
       return fn ? await fn(_input, output) : output

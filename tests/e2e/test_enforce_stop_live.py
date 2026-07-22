@@ -14,7 +14,7 @@ Covers:
   3. Both TASKS.md + ratchet.yml → text blocked
   4. No pending work → text passes through
   5. OPENCODE_SUBAGENT=1 → bypasses
-  6. GLUDD_STOP_ENFORCE=0 → bypasses
+  6. GLUDD_STOP_ENFORCE=0 → text.complete still blocks
   7. Status summary ("Here's the session N final status") → blocked regardless of evidence
   8. Short false-done claim ("All done.") → blocked
   9. QA response pattern ("completed in this session") → blocked
@@ -278,26 +278,25 @@ def test_subagent_context_bypasses_enforcement(tmp_path: Path):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 6: GLUDD_STOP_ENFORCE=0 → bypasses
+# 6: GLUDD_STOP_ENFORCE=0 → text.complete still blocks
 # ═══════════════════════════════════════════════════════════════════════════════
 
 
-def test_env_disable_bypasses_enforcement(tmp_path: Path):
-    """GLUDD_STOP_ENFORCE=0 → text.complete returns output unchanged."""
+def test_env_disable_does_not_bypass_text_complete(tmp_path: Path):
+    """GLUDD_STOP_ENFORCE=0 still blocks text.complete when work is pending."""
     (tmp_path / "TASKS.md").write_text("- [ ] pending work exists\n")
 
     result = _invoke_text_complete(
         tmp_path,
-        "This message should pass through when enforcement is disabled.",
+        "This message should be blocked even when enforcement is disabled.",
         env_override={"GLUDD_STOP_ENFORCE": "0"},
     )
     assert result is not None, "Hook should output JSON even when returning undefined"
-    assert result.get("result_text") == (
-        "This message should pass through when enforcement is disabled."
-    ), f"GLUDD_STOP_ENFORCE=0 must return output unchanged. Got: {result}"
-    assert result.get("output_text") == (
-        "This message should pass through when enforcement is disabled."
-    ), f"Original text must pass through. Got: {result.get('output_text')!r}"
+    text = _extract_text(result)
+    assert "BLOCKED" in text, (
+        f"GLUDD_STOP_ENFORCE=0 must not bypass text.complete. Got: {result}"
+    )
+    assert text
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
