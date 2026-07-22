@@ -2653,9 +2653,11 @@ def _build_controls_table(
     daemon_running: bool, status_msg: str,
     *, term_width: int = 60, selected_idx: int = -1,
 ) -> Table:
-    from rich.table import Table
-
-    t = Table(title="Controls", show_header=False, expand=True, title_justify="left", width=max(term_width, 1) if term_width != 80 else None)
+    t = _direct_tui_table(
+        "Controls",
+        show_header=False,
+        term_width=term_width,
+    )
     t.add_column("Key", style="yellow", width=3, no_wrap=True)
     t.add_column("Action", style="cyan", no_wrap=True, ratio=2, min_width=6)
     t.add_column("Status", style="green", no_wrap=True, ratio=1, min_width=6)
@@ -2706,9 +2708,11 @@ def _build_controls_table(
 
 
 def _build_daemon_table(daemon_running: bool, daemon_url: str, current_view: str, *, term_width: int = 60) -> Table:
-    from rich.table import Table
-
-    t = Table(title="Daemon", show_header=False, expand=True, title_justify="left", width=max(term_width, 1) if term_width != 80 else None)
+    t = _direct_tui_table(
+        "Daemon",
+        show_header=False,
+        term_width=term_width,
+    )
     t.add_column("Key", style="cyan", no_wrap=True, ratio=1, min_width=6, max_width=20)
     _available = term_width - _table_overhead(2)
     val_w = max(10, _available * 3 // 4)
@@ -2765,9 +2769,11 @@ def _build_info_table(info: dict[str, Any], *, term_width: int = 60) -> Table:
 
 
 def _build_binary_table(info: dict[str, Any], *, term_width: int = 60) -> Table:
-    from rich.table import Table
-
-    t = Table(title="Binaries", show_header=True, expand=True, title_justify="left", width=max(term_width, 1) if term_width != 80 else None)
+    t = _direct_tui_table(
+        "Binaries",
+        show_header=True,
+        term_width=term_width,
+    )
     t.add_column("Binary", style="cyan", no_wrap=True, ratio=2, min_width=6)
     t.add_column("Found", style="green", no_wrap=True, ratio=1, min_width=3)
     t.add_column("Version", style="yellow", no_wrap=True, ratio=2, min_width=4)
@@ -2920,9 +2926,11 @@ def _build_model_table(
     term_width: int = 60,
     selected_idx: int | None = None,
 ) -> Table:
-    from rich.table import Table
-
-    t = Table(title="Models", show_header=True, expand=True, title_justify="left", width=max(term_width, 1) if term_width != 80 else None)
+    t = _direct_tui_table(
+        "Models",
+        show_header=True,
+        term_width=term_width,
+    )
     t.add_column("ID", style="cyan", no_wrap=True, ratio=2, min_width=5)
     t.add_column("Engine", style="green", no_wrap=True, ratio=1, min_width=4)
     t.add_column("Model", style="yellow", no_wrap=True, ratio=3, min_width=6)
@@ -2990,9 +2998,11 @@ def _build_config_editor_table(
     *,
     term_width: int = 60,
 ) -> Table:
-    from rich.table import Table
-
-    t = Table(title="Config Editor", show_header=True, expand=True, title_justify="left", width=max(term_width, 1) if term_width != 80 else None)
+    t = _direct_tui_table(
+        "Config Editor",
+        show_header=True,
+        term_width=term_width,
+    )
     t.add_column("Option", style="cyan", no_wrap=True, ratio=3, min_width=6)
     t.add_column("Value", style="green", no_wrap=True, ratio=3, min_width=6)
     t.add_column("Help", style="dim", no_wrap=True, ratio=3, min_width=6)
@@ -3098,10 +3108,29 @@ def _build_model_status_msg(servers: list[Any], downloaded: list[Any]) -> str:
     return f"Model services: {', '.join(parts)}"
 
 
-def _build_mcp_table(servers: list[dict[str, Any]], *, term_width: int = 60) -> Table:
+def _direct_tui_table(
+    title: str,
+    *,
+    show_header: bool = True,
+    term_width: int = 60,
+) -> Table:
     from rich.table import Table
 
-    t = Table(title="MCP Servers", show_header=True, expand=True, title_justify="left", width=max(term_width, 1) if term_width != 80 else None)
+    return Table(
+        title=title,
+        show_header=show_header,
+        expand=True,
+        title_justify="left",
+        width=max(term_width, 1) if term_width != 80 else None,
+    )
+
+
+def _build_mcp_table(servers: list[dict[str, Any]], *, term_width: int = 60) -> Table:
+    t = _direct_tui_table(
+        "MCP Servers",
+        show_header=True,
+        term_width=term_width,
+    )
     t.add_column("Name", style="cyan", no_wrap=True, ratio=2, min_width=6, max_width=40)
     t.add_column("Transport", style="green", no_wrap=True, ratio=1, min_width=4, max_width=20)
     t.add_column("Status", style="yellow", no_wrap=True, ratio=1, min_width=4, max_width=20)
@@ -3120,9 +3149,11 @@ def _build_mcp_table(servers: list[dict[str, Any]], *, term_width: int = 60) -> 
 
 
 def _build_skills_table(skills: list[dict[str, Any]], *, term_width: int = 60) -> Table:
-    from rich.table import Table
-
-    t = Table(title="Skills", show_header=True, expand=True, title_justify="left", width=max(term_width, 1) if term_width != 80 else None)
+    t = _direct_tui_table(
+        "Skills",
+        show_header=True,
+        term_width=term_width,
+    )
     t.add_column("Name", style="cyan", no_wrap=True, ratio=2, min_width=6, max_width=40)
     t.add_column("Category", style="green", no_wrap=True, ratio=1, min_width=4, max_width=20)
     t.add_column("Installed", style="yellow", no_wrap=True, ratio=1, min_width=3, max_width=20)
@@ -3141,9 +3172,11 @@ def _build_skills_table(skills: list[dict[str, Any]], *, term_width: int = 60) -
 
 
 def _build_compute_table(endpoints: list[dict[str, Any]], *, term_width: int = 60) -> Table:
-    from rich.table import Table
-
-    t = Table(title="Compute Endpoints", show_header=True, expand=True, title_justify="left", width=max(term_width, 1) if term_width != 80 else None)
+    t = _direct_tui_table(
+        "Compute Endpoints",
+        show_header=True,
+        term_width=term_width,
+    )
     t.add_column("ID", style="cyan", no_wrap=True, ratio=2, min_width=6, max_width=40)
     t.add_column("Provider", style="green", no_wrap=True, ratio=1, min_width=4, max_width=20)
     t.add_column("Status", style="yellow", no_wrap=True, ratio=1, min_width=4, max_width=20)
@@ -3162,9 +3195,11 @@ def _build_compute_table(endpoints: list[dict[str, Any]], *, term_width: int = 6
 
 
 def _build_scores_table(scores: list[dict[str, Any]], *, term_width: int = 60) -> Table:
-    from rich.table import Table
-
-    t = Table(title="Benchmark Scores", show_header=True, expand=True, title_justify="left", width=max(term_width, 1) if term_width != 80 else None)
+    t = _direct_tui_table(
+        "Benchmark Scores",
+        show_header=True,
+        term_width=term_width,
+    )
     t.add_column("Prompt", style="cyan", no_wrap=True, ratio=2, min_width=6, max_width=30)
     t.add_column("Model", style="green", no_wrap=True, ratio=2, min_width=6, max_width=30)
     t.add_column("Task", style="yellow", no_wrap=True, ratio=1, min_width=4, max_width=20)
@@ -3185,9 +3220,11 @@ def _build_scores_table(scores: list[dict[str, Any]], *, term_width: int = 60) -
 
 
 def _build_leaderboard_table(entries: list[dict[str, Any]], *, term_width: int = 60) -> Table:
-    from rich.table import Table
-
-    t = Table(title="Leaderboard", show_header=True, expand=True, title_justify="left", width=max(term_width, 1) if term_width != 80 else None)
+    t = _direct_tui_table(
+        "Leaderboard",
+        show_header=True,
+        term_width=term_width,
+    )
     t.add_column("#", style="bold", no_wrap=True, ratio=1, min_width=3, max_width=20)
     t.add_column("Prompt", style="cyan", no_wrap=True, ratio=2, min_width=6, max_width=30)
     t.add_column("Model", style="green", no_wrap=True, ratio=2, min_width=6, max_width=30)
@@ -3208,9 +3245,11 @@ def _build_leaderboard_table(entries: list[dict[str, Any]], *, term_width: int =
 
 
 def _build_templates_table(templates: list[dict[str, Any]], *, term_width: int = 60) -> Table:
-    from rich.table import Table
-
-    t = Table(title="Templates", show_header=True, expand=True, title_justify="left", width=max(term_width, 1) if term_width != 80 else None)
+    t = _direct_tui_table(
+        "Templates",
+        show_header=True,
+        term_width=term_width,
+    )
     t.add_column("Name", style="cyan", no_wrap=True, ratio=2, min_width=6, max_width=30)
     t.add_column("Task Types", style="green", no_wrap=True, ratio=3, min_width=6, max_width=40)
     t.add_column("Source", style="yellow", no_wrap=True, ratio=1, min_width=4, max_width=20)
@@ -3229,9 +3268,11 @@ def _build_templates_table(templates: list[dict[str, Any]], *, term_width: int =
 
 
 def _build_playbooks_table(playbooks: list[dict[str, Any]], *, term_width: int = 60) -> Table:
-    from rich.table import Table
-
-    t = Table(title="Playbooks", show_header=True, expand=True, title_justify="left", width=max(term_width, 1) if term_width != 80 else None)
+    t = _direct_tui_table(
+        "Playbooks",
+        show_header=True,
+        term_width=term_width,
+    )
     t.add_column("Name", style="cyan", no_wrap=True, ratio=3, min_width=6, max_width=50)
     t.add_column("Tasks", style="green", no_wrap=True, ratio=1, min_width=3, max_width=20)
     t.add_column("Status", style="yellow", no_wrap=True, ratio=1, min_width=4, max_width=20)
@@ -3250,9 +3291,11 @@ def _build_playbooks_table(playbooks: list[dict[str, Any]], *, term_width: int =
 
 
 def _build_quantization_table(entries: list[dict[str, Any]], *, term_width: int = 60) -> Table:
-    from rich.table import Table
-
-    t = Table(title="Quantization", show_header=True, expand=True, title_justify="left", width=max(term_width, 1) if term_width != 80 else None)
+    t = _direct_tui_table(
+        "Quantization",
+        show_header=True,
+        term_width=term_width,
+    )
     t.add_column("Model", style="cyan", no_wrap=True, ratio=3, min_width=6, max_width=40)
     t.add_column("Precision", style="green", no_wrap=True, ratio=1, min_width=4, max_width=20)
     t.add_column("Conf", style="yellow", no_wrap=True, ratio=1, min_width=3, max_width=20)
@@ -3273,9 +3316,11 @@ def _build_quantization_table(entries: list[dict[str, Any]], *, term_width: int 
 
 
 def _build_filestore_table(files: list[dict[str, Any]], *, term_width: int = 60) -> Table:
-    from rich.table import Table
-
-    t = Table(title="Filestore", show_header=True, expand=True, title_justify="left", width=max(term_width, 1) if term_width != 80 else None)
+    t = _direct_tui_table(
+        "Filestore",
+        show_header=True,
+        term_width=term_width,
+    )
     t.add_column("Name", style="cyan", no_wrap=True, ratio=3, min_width=6, max_width=50)
     t.add_column("Size", style="green", no_wrap=True, ratio=1, min_width=4, max_width=20)
     t.add_column("Type", style="yellow", no_wrap=True, ratio=1, min_width=4, max_width=20)
@@ -3293,9 +3338,11 @@ def _build_filestore_table(files: list[dict[str, Any]], *, term_width: int = 60)
 
 
 def _build_deployments_table(deployments: list[dict[str, Any]], *, term_width: int = 60) -> Table:
-    from rich.table import Table
-
-    t = Table(title="Deployments", show_header=True, expand=True, title_justify="left", width=max(term_width, 1) if term_width != 80 else None)
+    t = _direct_tui_table(
+        "Deployments",
+        show_header=True,
+        term_width=term_width,
+    )
     t.add_column("Name", style="cyan", no_wrap=True, ratio=2, min_width=6, max_width=40)
     t.add_column("Provider", style="green", no_wrap=True, ratio=1, min_width=4, max_width=20)
     t.add_column("Status", style="yellow", no_wrap=True, ratio=1, min_width=4, max_width=20)
@@ -3314,9 +3361,11 @@ def _build_deployments_table(deployments: list[dict[str, Any]], *, term_width: i
 
 
 def _build_slurm_table(jobs: list[dict[str, Any]], *, term_width: int = 60) -> Table:
-    from rich.table import Table
-
-    t = Table(title="Slurm Jobs", show_header=True, expand=True, title_justify="left", width=max(term_width, 1) if term_width != 80 else None)
+    t = _direct_tui_table(
+        "Slurm Jobs",
+        show_header=True,
+        term_width=term_width,
+    )
     t.add_column("Job ID", style="cyan", no_wrap=True, ratio=2, min_width=6, max_width=30)
     t.add_column("State", style="green", no_wrap=True, ratio=1, min_width=4, max_width=20)
     t.add_column("Exit Code", style="yellow", no_wrap=True, ratio=1, min_width=4, max_width=15)
@@ -3341,9 +3390,11 @@ def _build_slurm_table(jobs: list[dict[str, Any]], *, term_width: int = 60) -> T
 
 
 def _build_health_table(data: dict[str, Any], *, term_width: int = 60) -> Table:
-    from rich.table import Table
-
-    t = Table(title="Health", show_header=False, expand=True, title_justify="left", width=max(term_width, 1) if term_width != 80 else None)
+    t = _direct_tui_table(
+        "Health",
+        show_header=False,
+        term_width=term_width,
+    )
     t.add_column("Key", style="cyan", no_wrap=True, ratio=1, min_width=6, max_width=20)
     t.add_column("Value", style="green", no_wrap=True, ratio=2, min_width=10, max_width=50)
     if not data:
@@ -3358,9 +3409,11 @@ def _build_health_table(data: dict[str, Any], *, term_width: int = 60) -> Table:
 
 
 def _build_selftest_table(data: dict[str, Any], *, term_width: int = 60) -> Table:
-    from rich.table import Table
-
-    t = Table(title="Selftest", show_header=True, expand=True, title_justify="left", width=max(term_width, 1) if term_width != 80 else None)
+    t = _direct_tui_table(
+        "Selftest",
+        show_header=True,
+        term_width=term_width,
+    )
     t.add_column("Scenario", style="cyan", no_wrap=True, ratio=3, min_width=6, max_width=40)
     t.add_column("Result", style="green", no_wrap=True, ratio=1, min_width=4, max_width=20)
     if not data:
@@ -3383,9 +3436,11 @@ def _build_selftest_table(data: dict[str, Any], *, term_width: int = 60) -> Tabl
 
 
 def _build_version_table(info: dict[str, Any], *, term_width: int = 60) -> Table:
-    from rich.table import Table
-
-    t = Table(title="Version", show_header=False, expand=True, title_justify="left", width=max(term_width, 1) if term_width != 80 else None)
+    t = _direct_tui_table(
+        "Version",
+        show_header=False,
+        term_width=term_width,
+    )
     t.add_column("Key", style="cyan", no_wrap=True, ratio=1, min_width=6, max_width=20)
     t.add_column("Value", style="green", no_wrap=True, ratio=2, min_width=10, max_width=50)
     rows = [
@@ -3399,9 +3454,11 @@ def _build_version_table(info: dict[str, Any], *, term_width: int = 60) -> Table
 
 
 def _build_loglevel_table(current_level: str, *, term_width: int = 60) -> Table:
-    from rich.table import Table
-
-    t = Table(title="Log Level", show_header=True, expand=True, title_justify="left", width=max(term_width, 1) if term_width != 80 else None)
+    t = _direct_tui_table(
+        "Log Level",
+        show_header=True,
+        term_width=term_width,
+    )
     t.add_column("Level", style="cyan", no_wrap=True, ratio=1, min_width=6, max_width=20)
     t.add_column("Active", style="green", no_wrap=True, ratio=1, min_width=4, max_width=10)
     for level in ("debug", "info", "warning", "error"):
@@ -3411,9 +3468,11 @@ def _build_loglevel_table(current_level: str, *, term_width: int = 60) -> Table:
 
 
 def _build_discovered_table(profiles: list[dict[str, Any]], *, term_width: int = 60) -> Table:
-    from rich.table import Table
-
-    t = Table(title="Discovered Models", show_header=True, expand=True, title_justify="left", width=max(term_width, 1) if term_width != 80 else None)
+    t = _direct_tui_table(
+        "Discovered Models",
+        show_header=True,
+        term_width=term_width,
+    )
     t.add_column("Profile ID", style="cyan", no_wrap=True, ratio=2, min_width=6, max_width=40)
     t.add_column("Display Name", style="green", no_wrap=True, ratio=2, min_width=6, max_width=30)
     t.add_column("Enabled", style="yellow", no_wrap=True, ratio=1, min_width=4, max_width=10)
@@ -3432,9 +3491,11 @@ def _build_discovered_table(profiles: list[dict[str, Any]], *, term_width: int =
 
 
 def _build_code_table(results: list[dict[str, Any]], *, term_width: int = 60) -> Table:
-    from rich.table import Table
-
-    t = Table(title="Code Intel", show_header=True, expand=True, title_justify="left", width=max(term_width, 1) if term_width != 80 else None)
+    t = _direct_tui_table(
+        "Code Intel",
+        show_header=True,
+        term_width=term_width,
+    )
     t.add_column("File", style="cyan", no_wrap=True, ratio=2, min_width=6, max_width=40)
     t.add_column("Line", style="green", no_wrap=True, ratio=1, min_width=3, max_width=8)
     t.add_column("Text", style="yellow", no_wrap=True, ratio=3, min_width=6, max_width=40)

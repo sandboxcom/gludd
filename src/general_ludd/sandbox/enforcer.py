@@ -101,17 +101,29 @@ class SandboxEnforcer:
 
         jail_path = Path(jail)
         try:
-            jail_path.mkdir(parents=True, exist_ok=True)
+            if not jail_path.exists():
+                raise SandboxNotAvailableError(
+                    f"Sandbox jail directory {jail!r} does not exist"
+                )
+            if not jail_path.is_dir():
+                raise SandboxNotAvailableError(
+                    f"Sandbox jail path {jail!r} is not a directory"
+                )
             if not os.access(jail, os.W_OK):
                 raise SandboxNotAvailableError(
                     f"Sandbox jail directory {jail!r} is not writable"
                 )
-        except OSError as exc:
-            msg = f"Sandbox jail directory {jail!r} is unusable: {exc}"
+        except (OSError, SandboxNotAvailableError) as exc:
+            msg = str(exc)
+            if not isinstance(exc, SandboxNotAvailableError):
+                msg = f"Sandbox jail directory {jail!r} is unusable: {exc}"
             if self._config.fail_open:
-                logger.warning("%s — proceeding without sandbox", msg)
+                logger.warning("%s; proceeding without sandbox", msg)
+                self._jail_path = jail_path
                 self._verified = True
                 return
+            if isinstance(exc, SandboxNotAvailableError):
+                raise
             raise SandboxNotAvailableError(msg) from exc
 
         self._jail_path = jail_path
@@ -187,7 +199,15 @@ class SandboxEnforcer:
                 "Sandbox not verified; cannot confine paths"
             )
 
-        confined = confine_path(path, self._config.jail_dir)
+        if chr(0) in path:
+            raise PathEscapeError(f"Path {path!r} contains a null byte")
+        try:
+            confined = confine_path(path, self._config.jail_dir)
+        except (OSError, ValueError) as exc:
+            raise PathEscapeError(
+                f"Path {path!r} cannot be confined to sandbox jail "
+                f"{self._config.jail_dir!r}: {exc}"
+            ) from exc
         if confined is None:
             raise PathEscapeError(
                 f"Path {path!r} escapes sandbox jail {self._config.jail_dir!r}"

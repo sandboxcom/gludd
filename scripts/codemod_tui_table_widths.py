@@ -8,6 +8,27 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 WIDTH_EXPR = "max(term_width, 1) if term_width != 80 else None"
+HELPER_NAME = "_direct_tui_table"
+NL = chr(10)
+QUOTE = chr(34)
+TITLE_JUSTIFY_LEFT = "title_justify=" + QUOTE + "left" + QUOTE
+
+HELPER = """def _direct_tui_table(
+    title: str,
+    *,
+    show_header: bool = True,
+    term_width: int = 60,
+) -> Table:
+    from rich.table import Table
+
+    return Table(
+        title=title,
+        show_header=show_header,
+        expand=True,
+        title_justify="left",
+        width=max(term_width, 1) if term_width != 80 else None,
+    )
+"""
 
 
 def _patch_shared_helper() -> bool:
@@ -41,26 +62,63 @@ def _patch_shared_helper() -> bool:
     return False
 
 
+def _format_direct_table(title: str, show_header: str) -> str:
+    return (
+        "    t = _direct_tui_table(" + NL
+        + f"        {title}," + NL
+        + f"        show_header={show_header}," + NL
+        + "        term_width=term_width," + NL
+        + "    )" + NL
+    )
+
+
+def _replace_direct_table_line(line: str) -> tuple[str, bool]:
+    stripped = line.strip()
+    if not stripped.startswith("t = Table(title="):
+        return line, False
+    if TITLE_JUSTIFY_LEFT not in stripped:
+        return line, False
+    show_marker = ", show_header="
+    expand_marker = ", expand=True"
+    title_start = len("t = Table(title=")
+    show_at = stripped.index(show_marker, title_start)
+    title = stripped[title_start:show_at]
+    header_start = show_at + len(show_marker)
+    header_end = stripped.index(expand_marker, header_start)
+    show_header = stripped[header_start:header_end]
+    return _format_direct_table(title, show_header), True
+
+
+def _ensure_direct_helper(content: str) -> str:
+    if f"def {HELPER_NAME}" in content:
+        return content
+    marker = NL + "def _build_mcp_table("
+    if marker not in content:
+        raise SystemExit("direct table insertion marker not found in cli.py")
+    return content.replace(marker, NL + HELPER + NL + marker, 1)
+
+
 def _patch_cli_direct_tables() -> int:
     path = ROOT / "src/general_ludd/cli.py"
     content = path.read_text(encoding="utf-8")
+    original = content
     content = content.replace("term_width: int = 80", "term_width: int = 60")
+    content = _ensure_direct_helper(content)
+
     changed = 0
     lines: list[str] = []
     for line in content.splitlines(keepends=True):
-        if "Table(title=" in line and "title_justify=\"left\")" in line:
-            line = line.replace(
-                "title_justify=\"left\")",
-                f"title_justify=\"left\", width={WIDTH_EXPR})",
-            )
+        replacement, did_change = _replace_direct_table_line(line)
+        if did_change:
             changed += 1
-        elif "Table(title=" in line and "width=max(term_width, 1))" in line:
-            line = line.replace("width=max(term_width, 1))", f"width={WIDTH_EXPR})")
-            changed += 1
-        lines.append(line)
-    new_content = "".join(lines)
-    if new_content != path.read_text(encoding="utf-8"):
-        path.write_text(new_content, encoding="utf-8")
+        lines.append(replacement)
+    content = "".join(lines)
+    content = content.replace(
+        "    from rich.table import Table" + NL + NL + "    t = _direct_tui_table(",
+        "    t = _direct_tui_table(",
+    )
+    if content != original:
+        path.write_text(content, encoding="utf-8")
     return changed
 
 

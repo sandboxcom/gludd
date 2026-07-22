@@ -8,13 +8,14 @@ agent runtime instead of the custom while-loop in ``tool_loop.py``.
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 from typing import TYPE_CHECKING, Any
 
 from general_ludd.budget_guard_check import budget_pre_check
 from general_ludd.mcp.registry import MCPToolRegistry
 from general_ludd.mcp.transport import MCPTransportError
-from general_ludd.sandbox.enforcer import SandboxEnforcer, SandboxNotAvailableError
+from general_ludd.sandbox.enforcer import SandboxEnforcer
 from general_ludd.security.capability_lattice import check_dispatch
 
 if TYPE_CHECKING:
@@ -25,6 +26,13 @@ logger = logging.getLogger(__name__)
 MAX_TOOL_ITERATIONS = 10
 PER_TOOL_TIMEOUT_SECONDS = 30
 MAX_TOTAL_TOKENS_DEFAULT = 100_000
+
+
+async def _maybe_await(value: Any) -> Any:
+    """Await async MCP client results and pass sync fakes through unchanged."""
+    if inspect.isawaitable(value):
+        return await value
+    return value
 
 
 class LangGraphAgentLoop:
@@ -254,13 +262,26 @@ class LangGraphAgentLoop:
 
         from langchain_core.tools import StructuredTool
 
-        mcp_tools = await self._mcp_client.list_tools()
+        mcp_tools = await _maybe_await(self._mcp_client.list_tools())
         langchain_tools: list[Any] = []
 
         for mcp_tool in mcp_tools:
             tool_name = mcp_tool.name
             tool_desc = mcp_tool.description or f"MCP tool: {tool_name}"
             server_id = self._resolve_server_id(tool_name)
+            tool_args_schema = (
+                getattr(mcp_tool, "input_schema", None)
+                or getattr(mcp_tool, "inputSchema", None)
+                or getattr(mcp_tool, "schema", None)
+            )
+            schema_dump = getattr(tool_args_schema, "model_dump", None)
+            if callable(schema_dump):
+                tool_args_schema = schema_dump()
+            if not isinstance(tool_args_schema, dict):
+                tool_args_schema = {
+                    "type": "object",
+                    "additionalProperties": True,
+                }
 
             mcp_client = self._mcp_client
             timeout = self._per_tool_timeout
@@ -276,15 +297,14 @@ class LangGraphAgentLoop:
                 _sandbox: Any = sandbox_enforcer,
                 **kwargs: Any,
             ) -> str:
+                call_kwargs = dict(kwargs)
                 if _sandbox is not None:
-                    try:
-                        _sandbox.verify_ready()
-                    except SandboxNotAvailableError as exc:
+                    if not _sandbox.is_ready:
                         return (
-                            f"Tool error: sandbox not available — "
-                            f"refusing to execute {_name!r}: {exc}"
+                            "Tool error: sandbox not available - "
+                            f"refusing to execute {_name!r}: sandbox not verified"
                         )
-                    for _key, _val in kwargs.items():
+                    for _key, _val in call_kwargs.items():
                         if isinstance(_val, str) and _key in (
                             "path", "file", "file_path", "workdir", "output",
                             "dir", "directory", "cwd", "out_path",
@@ -298,7 +318,7 @@ class LangGraphAgentLoop:
                                 )
                 if _auditor is not None:
                     verdict = _auditor.audit(
-                        _name, kwargs,
+                        _name, call_kwargs,
                         task_context="langgraph_agent",
                     )
                     if verdict is not None and not verdict.allowed:
@@ -309,29 +329,31 @@ class LangGraphAgentLoop:
                             f"Do not retry this call. Use a different approach."
                         )
                 try:
+                    pending_result = _client.call_tool(_srv_id, _name, call_kwargs)
                     result = await asyncio.wait_for(
-                        _client.call_tool(_srv_id, _name, kwargs),
+                        _maybe_await(pending_result),
                         timeout=_tmo,
                     )
                     if _auditor is not None:
-                        _auditor.record_success(_name, kwargs, result)
+                        _auditor.record_success(_name, call_kwargs, result)
                     return str(result)
                 except TimeoutError:
                     if _auditor is not None:
                         _auditor.record_error(
-                            _name, kwargs,
+                            _name, call_kwargs,
                             f"timeout after {_tmo}s",
                         )
                     return f"Tool error: {_name!r} timed out after {_tmo}s"
                 except Exception as exc:
                     if _auditor is not None:
-                        _auditor.record_error(_name, kwargs, str(exc))
+                        _auditor.record_error(_name, call_kwargs, str(exc))
                     return f"Tool error: {exc}"
 
             lc_tool = StructuredTool.from_function(
                 coroutine=_execute,
                 name=tool_name,
                 description=tool_desc,
+                args_schema=tool_args_schema,
             )
             langchain_tools.append(lc_tool)
 

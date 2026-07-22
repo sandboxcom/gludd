@@ -63,14 +63,27 @@ class ProcessExecutor:
     @staticmethod
     def _apply_limits(limits: ProcessLimits) -> None:
         import resource
+
+        def _set_limit(resource_name: str, value: tuple[int, int]) -> None:
+            resource_id = getattr(resource, resource_name, None)
+            if resource_id is None:
+                return
+            try:
+                resource.setrlimit(resource_id, value)
+            except (OSError, ValueError):
+                return
+
         if limits.memory_mb is not None:
             memory_bytes = limits.memory_mb * 1024 * 1024
-            resource.setrlimit(resource.RLIMIT_AS, (memory_bytes, memory_bytes))
+            _set_limit("RLIMIT_AS", (memory_bytes, memory_bytes))
         if limits.cpu_seconds is not None:
-            resource.setrlimit(resource.RLIMIT_CPU, (limits.cpu_seconds, limits.cpu_seconds))
+            _set_limit("RLIMIT_CPU", (limits.cpu_seconds, limits.cpu_seconds))
         if limits.max_file_size is not None:
-            resource.setrlimit(resource.RLIMIT_FSIZE, (limits.max_file_size, limits.max_file_size))
+            size = limits.max_file_size
+            _set_limit("RLIMIT_FSIZE", (size, size))
         if limits.max_open_files is not None:
-            resource.setrlimit(resource.RLIMIT_NOFILE, (limits.max_open_files, limits.max_open_files))
+            open_files = limits.max_open_files
+            _set_limit("RLIMIT_NOFILE", (open_files, open_files))
         if limits.max_processes is not None:
-            resource.setrlimit(resource.RLIMIT_NPROC, (limits.max_processes, limits.max_processes))
+            processes = limits.max_processes
+            _set_limit("RLIMIT_NPROC", (processes, processes))
