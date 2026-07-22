@@ -258,31 +258,25 @@ def test_runtime_bundle_manifest_is_unsigned() -> None:
     )
 
 
-# --- BACKLOG_FINDINGS: code_intelligence rg_search unconfined (OPEN) ---
+# --- BACKLOG_FINDINGS: code_intelligence rg_search root confinement (FIXED) ---
 
 
-def test_rg_search_root_unconfined() -> None:
-    """rg_search ``root`` parameter has no path-prefix jail (OPEN).
+def test_rg_search_root_confined() -> None:
+    """rg_search ``root`` parameter is realpath-confined before execution (FIXED).
 
-    ``build_argv`` passes the caller-supplied ``root`` directly to ``rg``
-    after ``--``, with no confinement check (no realpath-resolution, no
-    prefix-whitelist/deny-list, no chroot-equivalent). The flag allowlist
-    (_SAFE_FLAGS) restricts extra flags but does not constrain the search
-    directory.
+    ``search`` validates the caller-supplied ``root`` with `_validate_root`,
+    checks deny-listed paths, constrains it to allowed roots, and passes the
+    resolved confined path into ``build_argv`` rather than the raw root string.
+    Output bounding remains tracked separately in the hardening backlog.
     """
     rg_search_py = ROOT / "src" / "general_ludd" / "code_intelligence" / "rg_search.py"
     content = rg_search_py.read_text()
-    # Confinement primitives that would close this gap — none is present
-    for confinement_token in (
-        "realpath", "_confine", "_jail", "prefix_", "chroot",
-        "_validate_root", "_safe_root", "allowed_roots",
-    ):
-        assert confinement_token not in content, (
-            f"rg_search.py has no {confinement_token!r} — root is unconfined (OPEN)"
-        )
-    assert "_SAFE_FLAGS" in content, (
-        "_SAFE_FLAGS must exist for this test to be meaningful"
-    )
+    assert "def _validate_root" in content
+    assert "allowed_roots" in content
+    assert "is_denied_path" in content
+    assert "return str(resolved)" in content
+    assert "resolved_root = self._validate_root(root)" in content
+    assert "self.build_argv(rg, query, resolved_root" in content
 
 
 # --- NEW_FINDINGS_TRIAGE: TodoModel.version (FIXED) ---

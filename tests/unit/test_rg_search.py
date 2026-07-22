@@ -253,6 +253,44 @@ def test_search_clean_runs_are_available(monkeypatch, rc):
     assert RgSearch().search("q").available is True
 
 
+def test_search_refuses_root_outside_allowed_root(monkeypatch, tmp_path):
+    workspace = tmp_path / "workspace"
+    outside = tmp_path / "outside"
+    workspace.mkdir()
+    outside.mkdir()
+    monkeypatch.chdir(workspace)
+    monkeypatch.setattr(RgSearch, "_resolve_rg", lambda self: "/bin/rg")
+
+    def fake_run(*args, **kwargs):
+        raise AssertionError("rg must not run for an unsafe root")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    result = RgSearch().search("q", root=str(outside))
+
+    assert result.available is False
+    assert result.matches == []
+    assert result.error
+
+
+def test_search_passes_resolved_root_to_rg(monkeypatch, tmp_path):
+    workspace = tmp_path / "workspace"
+    root = workspace / "src"
+    root.mkdir(parents=True)
+    monkeypatch.chdir(workspace)
+    monkeypatch.setattr(RgSearch, "_resolve_rg", lambda self: "/bin/rg")
+    seen = {}
+
+    def fake_run(argv, *args, **kwargs):
+        seen["argv"] = argv
+        return SimpleNamespace(returncode=1, stdout="", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    result = RgSearch().search("q", root="src")
+
+    assert result.available is True
+    assert seen["argv"][-1] == str(root.resolve())
+
+
 # --- flag-injection allowlist + signal-kill return code ------------------
 
 

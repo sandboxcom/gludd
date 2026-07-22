@@ -7,35 +7,26 @@ during the 2026-07-10 audit+design pass. Each entry: the confirmed defect
 [WAVE_C_ADDENDUM_2026-07-10](WAVE_C_ADDENDUM_2026-07-10.md). Full agent write-ups
 live in the session task outputs; this doc is the durable, reviewable summary.
 
-## H-RGSEARCH — confine + bound `rg_search` (MED, LATENT)
+## H-RGSEARCH — bound `rg_search` output (MED, LATENT)
 
 **Status:** latent — `code_intelligence/rg_search.py` has **zero live callers**
 (`CodeSearch` in `search.py:14` does not call it; not wrapped as an MCP tool).
-Preemptive hardening of the primitive so a future MCP/agent wrapper inherits a
-fail-closed default.
+Root confinement is **FIXED**: `search()` now calls `_validate_root`, rejects
+deny-listed/out-of-root paths, and passes the resolved confined root to `rg`.
 
-**Defects:** (a) search root **unconfined** — `search(query, root=".")` forwards
-`root` verbatim into argv at `rg_search.py:129/199` (`argv += ["--", query, root]`);
-an absolute `/` or `../../..` root recurses anywhere the process can read.
-(b) output **unbounded** — `subprocess.run(..., capture_output=True)` at
-`rg_search.py:202-208` buffers all stdout; no `--max-count`/`--max-columns`/
-`--max-filesize`, no cap on parsed `RgMatch` count.
-Already-safe: argv-not-shell (`--` guard at :129, `_SAFE_FLAGS` allowlist
-:116-128), timeout present (:28, :209-211).
+**Remaining defect:** output is still **unbounded** — `subprocess.run(...,
+capture_output=True)` buffers all stdout; no `--max-count`/`--max-columns`/
+`--max-filesize`, no cap on parsed `RgMatch` count. Already-safe: argv-not-shell
+(`--` guard), `_SAFE_FLAGS` allowlist, timeout, root realpath confinement.
 
-**Fix:** reuse `security/sanitize.py::confine_path(candidate, root)` (:81,
-realpath-joins + `commonpath` escape check, fail-closed → `None`). Add
-`workspace_root` param to `search()`; `base = workspace_root or os.getcwd()`;
-`confined = confine_path(root, base)`; on `None` return
-`RgResult(available=False, error="search root outside workspace")`; pass the
-**resolved** `confined` into argv (closes TOCTOU). Add rg flags
-`--max-columns=4096 --max-columns-preview --max-filesize=10M`. Python-side
-backstop caps: `MAX_STDOUT_BYTES=16MiB` (truncate captured stdout),
-`MAX_MATCHES=1000` (slice parsed matches), new `RgResult.truncated: bool`.
+**Remaining fix:** add rg flags `--max-columns=4096 --max-columns-preview
+--max-filesize=10M`. Python-side backstop caps: `MAX_STDOUT_BYTES=16MiB`
+(truncate captured stdout), `MAX_MATCHES=1000` (slice parsed matches), new
+`RgResult.truncated: bool`.
 
-**Tests** (`tests/unit/test_rg_search.py`): root `/etc` and `../../..` refused;
-symlink-escape refused (realpath); in-workspace search still matches; match/byte
-caps enforced + `truncated=True`; `build_argv` contains the bound flags;
+**Tests** (`tests/unit/test_rg_search.py`): root outside cwd/allowed roots refused;
+relative in-workspace root resolves before subprocess execution; add match/byte caps
+enforced + `truncated=True`; `build_argv` contains the bound flags;
 argv-is-list/dash-guarded regression.
 
 ## H-RATELIMIT — admin API body-size cap + rate limit (MED, OPEN)

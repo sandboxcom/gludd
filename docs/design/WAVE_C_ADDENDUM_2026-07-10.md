@@ -47,11 +47,12 @@ separate ASGI body-size middleware (413), with per-path stricter overrides; conf
 `admin_rate_limit` on UserConfig. Designs already in feature_package_wiring.md §9 +
 observability_receiver.md §1.5.
 
-### rg_search root unconfined + unbounded output (MED, OPEN)
-**File:** `code_intelligence/rg_search.py`. `search(root=".")` passes `root` to argv with
-zero validation (line 199/129); no output cap. **Fix:** `workspace_root` param;
-`Path(root).resolve()` + `is_relative_to(workspace_root)` fail-closed; `MAX_MATCHES` cap
-+ `truncated` flag; `--max-filesize` on argv. (Latent — no live MCP tool wraps it yet.)
+### rg_search root confined; unbounded output remains (MED, PARTIAL)
+**File:** `code_intelligence/rg_search.py`. Root confinement is fixed: `search()`
+validates the caller root via `_validate_root`, rejects deny-listed/out-of-root
+paths, and passes the resolved confined root to `rg`. Remaining open work: output
+is still unbounded; add `MAX_MATCHES`, stdout byte caps, `truncated`, and rg
+`--max-filesize`/column bounds before exposing this primitive to live MCP/agent use.
 
 ### Runtime bundle signing self-referential (HIGH, OPEN)
 **File:** `runtime/release.py:37-98`. `MANIFEST.json`+`CHECKSUMS.sha256` are co-located

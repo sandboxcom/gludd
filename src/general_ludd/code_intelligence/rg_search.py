@@ -184,11 +184,11 @@ class RgSearch:
 
     # --- path confinement -----------------------------------------------
 
-    def _validate_root(self, root: str) -> RgResult | None:
-        """Return an error ``RgResult`` if ``root`` is outside allowed dirs, else ``None``.
+    def _validate_root(self, root: str) -> str | RgResult:
+        """Return resolved root, or an error ``RgResult`` when ``root`` is unsafe.
 
         Resolves ``root`` to an absolute path and checks it is under at least
-        one allowed root.  Also checks the resolved path against the deny-list
+        one allowed root. Also checks the resolved path against the deny-list
         in :mod:`general_ludd.security.path_canonicalizer`.
         """
         try:
@@ -204,7 +204,7 @@ class RgSearch:
             try:
                 allowed_resolved = Path(allowed_root).resolve()
                 resolved.relative_to(allowed_resolved)
-                return None
+                return str(resolved)
             except (ValueError, OSError):
                 continue
 
@@ -228,15 +228,15 @@ class RgSearch:
         ``available=True``), exit >= 2 = rg error (``available=True`` with the
         stderr surfaced in ``error``).
         """
-        root_err = self._validate_root(root)
-        if root_err is not None:
-            return root_err
+        resolved_root = self._validate_root(root)
+        if isinstance(resolved_root, RgResult):
+            return resolved_root
 
         rg = self._resolve_rg()
         if not rg:
             return RgResult(available=False, error="ripgrep (rg) not found")
 
-        argv = self.build_argv(rg, query, root, globs=globs, types=types, flags=flags)
+        argv = self.build_argv(rg, query, resolved_root, globs=globs, types=types, flags=flags)
         try:
             # argv is a fixed list (no shell); query/root are positional, not flags.
             proc = subprocess.run(

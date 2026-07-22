@@ -153,7 +153,7 @@ drift). Grouped by subsystem; severity is the auditor's call.
 - **HIGH — blocking `subprocess.run(git diff)` in async route** × N projects → event-loop DoS. **HIGH — no per-caller tenant scoping** (returns all projects' financials to any PSK holder); LocLedger unlocked + bypassed. **MED — NaN/Inf USD poisons JSON**; `points` are actually `priority`. **[OPEN — C18]**
 
 ## Code intelligence (`code_intelligence/`)
-- **MED — `rg_search` root unconfined** → arbitrary filesystem read if root/query is model-sourced; unbounded output buffering. **MED — git_intel O(n²) pair blowup**, callgraph quadratic. git_intel injection defense is sound. **[OPEN — rg_search root still unconfined; `build_argv` flag allowlist improved but no root-prefix jail]**
+- **MED — `rg_search` root confinement fixed; output buffering remains unbounded** if query/root is model-sourced. **MED — git_intel O(n²) pair blowup**, callgraph quadratic. git_intel injection defense is sound. **[PARTIAL — root now realpath-confined via `_validate_root`/`allowed_roots`; output caps remain OPEN]**
 
 ## Infra (`infra/`)
 - **MED — vSphere `allow_unverified_ssl=true`** (`terraform.py:649`) sends admin creds with TLS verify off → MITM. `allowed_cidr` default RESOLVED (loopback). LOW — Slurm REST no https enforcement (token leak over http). **[MITIGATED — compute.py:88 default `vsphere_verify_ssl: bool = True` → `allow_unverified_ssl = false` by default. Configurable but secure-by-default.]**
