@@ -119,29 +119,22 @@ const defaultImpl: HotModule = {
     let filePath = "";
     let lines_removed = 0;
 
-    const argsSource = input.args || input.tool_input;
+    const argsSource = input.args || input.tool_input || (output as any)?.args || (output as any)?.tool_input;
 
     if (input.tool === "edit") {
       if (!argsSource) return;
-      const args = argsSource as {
-        filePath?: string;
-                oldString: string;
-                newString: string;
-              };
-      filePath = pickString(args as Record<string, unknown>, "filePath", "filePath");
-      const oldLines = countLines(pickString(args as Record<string, unknown>, "oldString", "oldString"));
-      const newLines = countLines(pickString(args as Record<string, unknown>, "newString", "newString"));
+      const args = argsSource as Record<string, unknown>;
+      filePath = pickString(args, "filePath", "file_path");
+      const oldLines = countLines(pickString(args, "oldString", "old_string"));
+      const newLines = countLines(pickString(args, "newString", "new_string"));
       lines_removed = Math.max(0, oldLines - newLines);
     } else if (input.tool === "write") {
       if (!argsSource) return;
-      const args = argsSource as {
-        filePath?: string;
-                content?: string;
-      };
-      filePath = pickString(args as Record<string, unknown>, "filePath", "filePath");
+      const args = argsSource as Record<string, unknown>;
+      filePath = pickString(args, "filePath", "file_path");
       if (!filePath) return;
       const existingLines = await readExistingFileLines(filePath);
-      const newLines = countLines(args.content ?? "");
+      const newLines = countLines(pickString(args, "content"));
       lines_removed = Math.max(0, existingLines - newLines);
     } else {
       return;
@@ -150,10 +143,7 @@ const defaultImpl: HotModule = {
     if (lines_removed > threshold) {
       const reason = getDeletionReason();
       if (!reason) {
-        return {
-          permissionDecision: "deny",
-          message: formatThresholdExceededMessage(lines_removed, threshold, filePath || "unknown"),
-        };
+        throw new Error(formatThresholdExceededMessage(lines_removed, threshold, filePath || "unknown"));
       }
 
       await appendAuditLog({

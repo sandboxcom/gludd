@@ -29,6 +29,17 @@ const TARGET = Math.min(
 )
 
 const FLOOR_ENFORCE = process.env.GLUDD_FLOOR_ENFORCE !== "0"
+const TEXT_COMPLETE_COUNT_FILE = process.env.GLUDD_FLOOR_TEXT_COMPLETE_COUNT || "/tmp/gludd-floor-text-complete-count.json"
+
+function incrementTextCompleteCount(): void {
+  try {
+    let data = readJsonFile<{ count: number; ts?: number; last_fired?: number }>(TEXT_COMPLETE_COUNT_FILE, { count: 0 })
+    data.count++
+    data.ts = Date.now()
+    data.last_fired = data.ts
+    writeJsonFile(TEXT_COMPLETE_COUNT_FILE, data)
+  } catch {}
+}
 
 const STREAK_PLUGIN_NAME = "enforce-floor"
 
@@ -553,6 +564,11 @@ const defaultImpl: HotModule = {
       return
     }
   },
+  "experimental.text.complete": async (_input: unknown, output: unknown) => {
+    if (isSubagent()) return output
+    incrementTextCompleteCount()
+    return output
+  },
 }
 
 // ============================================================================
@@ -590,6 +606,11 @@ export default (({ }) => {
       const impl = loadHotModule("floor", defaultImpl)
       const fn = impl["tool.execute.before"]
       return fn ? await fn(input, output) : undefined
+    },
+    "experimental.text.complete": async (input: unknown, output: unknown) => {
+      const impl = loadHotModule("floor", defaultImpl)
+      const fn = impl["experimental.text.complete"]
+      return fn ? await fn(input, output) : output
     },
   }
 }) satisfies Plugin

@@ -34,7 +34,7 @@
  *   7. Main-thread grinding (too many consecutive non-dispatch calls)
  *
  * Hot-reload capable. Subagent context skips enforcement. Dispatch tools: "task" "agent" "workflow".
- * GLUDD_STOP_ENFORCE=0 disables ALL enforcement. Disengage file: /tmp/gludd-watchdog-disengage.json.
+* GLUDD_STOP_ENFORCE=0 does not bypass experimental.text.complete stop checks. Disengage file: /tmp/gludd-watchdog-disengage.json.
  */
 import * as fs from "node:fs"
 import * as path from "node:path"
@@ -964,7 +964,7 @@ const defaultImpl: HotModule = {
     // FALSE-DONE detection lives in this hook; keep the marker near the hook
     // entry so structural tests catch accidental removal or relocation.
     if (isSubagent()) return output // OPENCODE_SUBAGENT guard
-    if (isStopEnforcementDisabled()) return output
+    // GLUDD_STOP_ENFORCE=0 does not bypass text.complete stop checks.
     incrementTextCompleteCount()
     reportAlive("enforce-stop")
     writeHeartbeat("enforce-stop")
@@ -1086,6 +1086,31 @@ const defaultImpl: HotModule = {
       }
     }
 
+    // Check short completion claims before generic consecutive text-only blocking so
+    // operators and tests see the precise false-done reason.
+    // ── SHORT FALSE-DONE PATH: short text with completion verbatim ──────────
+    if (!disengaged && trimmed.length < 60 && responseLooksTerminal(text) && !hasStructuredEvidence(text)) {
+      recordBlock("short-false-done")
+      logFalseDoneBlock("short-false-done", text)
+      writePersistBlock(true, "short-false-done")
+
+      return {
+        text: [
+          "⛔ FALSE-DONE CLAIM BLOCKED — short completion phrase without evidence.",
+          "",
+          "PENDING WORK: " + String(workState.tasksMdUncheckedCount) + " unchecked tasks, " +
+          String(workState.ratchetEntries) + " ratchet entries, CI " +
+          (workState.ciVerdictPendingOrRed ? "RED/PENDING" : workState.ciVerdictUnknown ? "UNKNOWN (cooldown)" : "N/A") +
+          ", gate " +
+          (workState.gateStatusRed ? "RED" : workState.gateStatusMissing ? "MISSING" : "OK") +
+          ".",
+          "",
+          "You MUST dispatch a tool call. Do not claim work is done.",
+          "Run: Task tool to dispatch subagents for the pending work.",
+        ].join(String.fromCharCode(10)),
+      }
+    }
+
     // ── CONSECUTIVE TEXT-ONLY RESPONSES ────────────────────────────────────
     // hasLocalWork text-only attempts are blocked here as well as by the
     // broader pending-work block below; this is the session-level repeat guard.
@@ -1097,31 +1122,9 @@ const defaultImpl: HotModule = {
       return {
         text: [
           "CONSECUTIVE TEXT-ONLY RESPONSES BLOCKED",
-          `Text-only count: ${textOnly.count}.`,
+          "Text-only count: " + String(textOnly.count) + ".",
           "Dispatch tools or continue fixing work instead of sending another text-only response.",
-        ].join("\n"),
-      }
-    }
-
-    // Check short completion claims.
-    // ── SHORT FALSE-DONE PATH: short text with completion verbatim ──────────
-    if (!disengaged && trimmed.length < 60 && responseLooksTerminal(text) && !hasStructuredEvidence(text)) {
-      recordBlock("short-false-done")
-      logFalseDoneBlock("short-false-done", text)
-      writePersistBlock(true, "short-false-done")
-
-      return {
-        text: [
-          "⛔ FALSE-DONE CLAIM BLOCKED — short completion phrase without evidence.",
-          "",
-          `PENDING WORK: ${workState.tasksMdUncheckedCount} unchecked tasks, ` +
-          `${workState.ratchetEntries} ratchet entries, ` +
-          `CI ${workState.ciVerdictPendingOrRed ? "RED/PENDING" : workState.ciVerdictUnknown ? "UNKNOWN (cooldown)" : "N/A"}, ` +
-          `gate ${workState.gateStatusRed ? "RED" : workState.gateStatusMissing ? "MISSING" : "OK"}.`,
-          "",
-          "You MUST dispatch a tool call. Do not claim work is done.",
-          "Run: Task tool to dispatch subagents for the pending work.",
-        ].join("\n"),
+        ].join(String.fromCharCode(10)),
       }
     }
 
@@ -1550,7 +1553,7 @@ export default (async () => {
     "experimental.text.complete": async (_input: unknown, output: unknown) => {
       // OPENCODE_SUBAGENT guard is implemented by shared isSubagent().
       if (isSubagent()) return output // OPENCODE_SUBAGENT guard
-      if (isStopEnforcementDisabled()) return output
+      // GLUDD_STOP_ENFORCE=0 does not bypass text.complete stop checks.
       const impl = stopImpl()
       const fn = impl["experimental.text.complete"]
       return fn ? await fn(_input, output) : output

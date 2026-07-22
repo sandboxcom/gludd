@@ -66,7 +66,7 @@ export const EVIDENCE_RE =
   /\b[0-9a-f]*[a-f][0-9a-f]{6,39}\b|VERIFIED\s+\S+@[0-9a-f]+|CI\s+(GREEN|RED|PENDING)|\d+\s+passed|=== GATE:\s+PASSED\s+===/;
 
 const defaultImpl: HotModule = {
-  "text.complete": async (_output) => {
+  "experimental.text.complete": async (_input, _output) => {
     if (isSubagent()) return;
     reportAlive("enforce-audit");
     try {
@@ -104,11 +104,11 @@ const defaultImpl: HotModule = {
 
 export default (async ({}) => {
   return {
-    "text.complete": async (output) => {
+    "experimental.text.complete": async (input, output) => {
       if (isSubagent()) return;
       const impl = loadHotModule("audit", defaultImpl);
-      const fn = impl["text.complete"];
-      return fn ? await fn(output) : undefined;
+      const fn = impl["experimental.text.complete"];
+      return fn ? await fn(input, output) : undefined;
     },
   };
 }) satisfies Plugin;

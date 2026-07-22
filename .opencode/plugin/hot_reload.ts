@@ -1,3 +1,4 @@
+import type { Plugin } from "@opencode-ai/plugin"
 import * as fs from "node:fs"
 import { createRequire } from "node:module"
 
@@ -71,3 +72,7 @@ export function loadHotModule(name: string, defaults: HotModule): HotModule {
     return defaults
   }
 }
+
+export default (() => ({
+  "event": async () => undefined,
+})) satisfies Plugin
