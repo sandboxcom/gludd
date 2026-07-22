@@ -84,6 +84,7 @@ def test_tool_def_required_and_choices():
     schema = td["input_schema"]
     assert "path" in schema["required"]
     assert "op" in schema["required"]
+
     assert schema["properties"]["op"]["enum"] == [
         "commit",
         "branch",
@@ -92,6 +93,7 @@ def test_tool_def_required_and_choices():
         "worktree_remove",
         "merge",
         "push",
+        "state",
     ]
 
 

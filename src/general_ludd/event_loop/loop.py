@@ -10,7 +10,7 @@ import queue as _stdqueue
 import random
 import time
 from collections import OrderedDict
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
@@ -1581,6 +1581,10 @@ class EventLoop:
                 self._tick_state["claimed_todos"] = []
                 return
         project_id = self._tick_project_id
+        if project_id is None:
+            logger.warning("Claim skipped: no active project selected")
+            self._tick_state["claimed_todos"] = []
+            return
 
         # C21: compute the effective claim limit BEFORE the CAS claim so
         # todos are never marked ACTIVE beyond the system's dispatch capacity.
@@ -1616,12 +1620,9 @@ class EventLoop:
             self._tick_state["claimed_todos"] = []
             return
 
-        if project_id is not None:
-            claimed = await self._todo_repo.claim_runnable(
-                limit=effective_limit, project_id=project_id
-            )
-        else:
-            claimed = await self._todo_repo.claim_runnable(limit=effective_limit)
+        claimed = await self._todo_repo.claim_runnable(
+            limit=effective_limit, project_id=project_id
+        )
         self._tick_state["claimed_todos"] = claimed
         # ── Resource estimation: set estimated_cost_usd per claimed todo ──
         if claimed and self._active_session is not None:
@@ -1651,8 +1652,59 @@ class EventLoop:
                     exc_info=True,
                 )
 
+    async def _trim_claimed_todos_to_pid_cap(self, claimed: list[Any]) -> list[Any]:
+        pid_outputs = self._tick_state.get("pid_outputs")
+        if pid_outputs is None or not hasattr(pid_outputs, "desired_total_active_buckets"):
+            return claimed
+        try:
+            desired = max(0, int(pid_outputs.desired_total_active_buckets))
+        except (TypeError, ValueError):
+            return claimed
+        if len(claimed) <= desired:
+            return claimed
+
+        if self._active_session is None:
+            return claimed
+
+        kept = list(claimed[:desired])
+        released = list(claimed[desired:])
+        self._tick_state["claimed_todos"] = kept
+
+        from sqlalchemy import update
+
+        from general_ludd.db.models import TodoModel
+        from general_ludd.event_loop.lease import release_lease
+
+        now = datetime.now(UTC)
+        for todo in released:
+            todo_id = _safe_str(todo, "todo_id", "") or ""
+            queue_name = _safe_str(todo, "queue", "core") or "core"
+            if not todo_id:
+                continue
+            stmt = (
+                update(TodoModel)
+                .where(TodoModel.todo_id == todo_id)
+                .where(TodoModel.status == TodoStatus.ACTIVE.value)
+                .values(
+                    status=TodoStatus.QUEUED.value,
+                    updated_at=now,
+                    version=TodoModel.version + 1,
+                )
+            )
+            project_id = _safe_str(todo, "project_id", "") or self._tick_project_id
+            if project_id is not None:
+                stmt = stmt.where(TodoModel.project_id == project_id)
+            await self._active_session.execute(stmt)
+            await release_lease(self._active_session, f"{queue_name}:{todo_id}")
+            todo.status = TodoStatus.QUEUED.value
+            todo.updated_at = now
+        await self._active_session.flush()
+        logger.info("PID cap trimmed %d claimed todo(s) before dispatch", len(released))
+        return kept
+
     async def _phase_dispatch_execute_jobs(self) -> None:
         claimed = self._tick_state.get("claimed_todos", [])
+        claimed = await self._trim_claimed_todos_to_pid_cap(list(claimed))
         if self._budget_guard is not None:
             check = self._budget_guard.check_all_limits(
                 estimated_cost=self._estimated_dispatch_cost(len(claimed))
@@ -3276,7 +3328,14 @@ class EventLoop:
         todo_ids = [d.matched_todo_id for d in decisions if d.matched_todo_id]
         todo_map: dict[str, Any] = {}
         if todo_ids and self._todo_repo is not None:
-            todo_map = await self._todo_repo.get_by_ids(todo_ids, project_id=project_id)
+            fetched_todos = await self._todo_repo.get_by_ids(todo_ids, project_id=project_id)
+            if isinstance(fetched_todos, Mapping):
+                todo_map = dict(fetched_todos)
+            elif hasattr(self._todo_repo, "get_by_id"):
+                for todo_id in todo_ids:
+                    todo = await self._todo_repo.get_by_id(todo_id, project_id=project_id)
+                    if todo is not None:
+                        todo_map[todo_id] = todo
         reconciled = 0
         push_failures = 0
         for d in decisions:
@@ -3519,7 +3578,7 @@ class EventLoop:
         # apart, making deterministic collision structurally impossible.
         # The jittered sleep after still provides runtime de-sync.
         retry_count = self._push_retry_count.get(tid, 0)
-        if retry_count > 0:
+        if retry_count > 1:
             window = 2 ** min(retry_count, 6)  # cap at 64-tick window
             tick = self._total_ticks
             offset = abs(hash(tid)) % window

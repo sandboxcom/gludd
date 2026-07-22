@@ -35,9 +35,21 @@ def _find_base(project_dir: str | None) -> Path:
 
 
 def _cmd_collection_versions(args: argparse.Namespace) -> None:
-    base = _find_base(getattr(args, "project_dir", None))
-    versions = list_collection_versions(
-        base, namespace=args.namespace, collection=getattr(args, "collection", None)
+    entries = resolve_collections_paths(
+        project_root=Path(args.project_dir) if getattr(args, "project_dir", None) else None
+    )
+    versions = sorted(
+        {
+            version
+            for entry in entries
+            if entry.path.is_dir()
+            for version in list_collection_versions(
+                entry.path,
+                namespace=args.namespace,
+                collection=getattr(args, "collection", None),
+            )
+        },
+        reverse=True,
     )
     if versions:
         for v in versions:
@@ -61,10 +73,25 @@ def _cmd_collection_activate(args: argparse.Namespace) -> None:
     if version is None:
         version = None
 
-    base = _find_base(getattr(args, "project_dir", None))
-    root, _cleanup = activate_collection_version(
-        base, namespace=namespace, collection=collection, version=version
+    last_error: FileNotFoundError | None = None
+    root: Path | None = None
+    entries = resolve_collections_paths(
+        project_root=Path(args.project_dir) if getattr(args, "project_dir", None) else None
     )
+    for entry in entries:
+        if not entry.path.is_dir():
+            continue
+        try:
+            root, _cleanup = activate_collection_version(
+                entry.path, namespace=namespace, collection=collection, version=version
+            )
+            break
+        except FileNotFoundError as exc:
+            last_error = exc
+    if root is None:
+        if last_error is not None:
+            raise last_error
+        raise FileNotFoundError("No collections directory found in any tier")
     link = root / "ansible_collections" / namespace / collection
     resolved = link.resolve()
     print(f"Activated {namespace}.{collection}@{version or '(latest)'}")

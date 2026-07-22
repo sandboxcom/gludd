@@ -187,7 +187,7 @@ class TestClaimRunnableTodosNoProject:
         pm.select_project.return_value = None
         loop, _ = _make_loop(todo_repo=todo_repo, project_manager=pm)
         await loop._phase_claim_runnable_todos()
-        todo_repo.claim_runnable.assert_called_once_with(limit=10)
+        todo_repo.claim_runnable.assert_not_called()
 
 
 class TestGetRuleOverridesNonDictResult:

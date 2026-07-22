@@ -70,6 +70,10 @@ class SetOutcomeRequest(BaseModel):
     details: dict[str, object] = Field(default_factory=dict)
 
 
+class OrnithConfigUpdateRequest(BaseModel):
+    model_sha: str | None = None
+
+
 def _pair_to_dict(row: OrnithTrainingPairModel) -> dict[str, object]:
     try:
         target_files = _json.loads(row.target_files or "[]")
@@ -310,9 +314,6 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             "binary_path": status.get("binary_path", "ornith"),
             "env_ornith_enabled": os.environ.get("ORNITH_ENABLED", "").lower() in {"1", "true", "yes"},
         }
-
-    class OrnithConfigUpdateRequest(BaseModel):
-        model_sha: str | None = None
 
     @app.put("/admin/ornith/config")
     async def api_ornith_config_update(req: OrnithConfigUpdateRequest) -> dict[str, object]:

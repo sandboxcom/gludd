@@ -111,7 +111,8 @@ class TestSSRF:
 
 
 class TestHeaders:
-    def test_default_headers(self) -> None:
+    def test_default_headers(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("GITHUB_TOKEN", raising=False)
         src = GitHubActionsSource({"repo": "owner/name"})
         headers = src._headers()
         assert "Accept" in headers

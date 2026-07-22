@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import tempfile
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -269,7 +269,7 @@ class TestModelPerformanceRecording:
         mock_gateway.get_profile.return_value = mock_profile
 
         app.state.gateway = mock_gateway
-        app.state.model_perf_repo = AsyncMock()
+        app.state.model_perf_repo = MagicMock()
 
         mock_invoke.return_value = ("response text", None)
 
@@ -316,7 +316,7 @@ class TestModelPerformanceRecording:
         mock_gateway.get_profile.return_value = mock_profile
 
         app.state.gateway = mock_gateway
-        app.state.model_perf_repo = AsyncMock()
+        app.state.model_perf_repo = MagicMock()
 
         mock_invoke.side_effect = ValueError("API error")
 

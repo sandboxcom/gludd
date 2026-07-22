@@ -248,6 +248,10 @@ class MethodologyReport:
     concerns: list[str] = dc_field(default_factory=list)
     recommendations: list[str] = dc_field(default_factory=list)
 
+    @property
+    def field(self) -> ResearchField:
+        return self.research_field
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "sample_size": self.sample_size,
@@ -585,7 +589,7 @@ def assess_methodology(paper: PaperStructure, full_text: str = "") -> Methodolog
         re.search(r"\b(?:double.?blind|single.?blind|blinded)\b", text, re.IGNORECASE)
     )
     report.has_randomization = bool(
-        re.search(r"\b(?:randomi[sz](?:ed|ation)|random\s+(?:assign|allocat))",
+        re.search(r"\b(?:randomi[sz](?:ed|ation)|random(?:ly)?\s+(?:assign|allocat))",
                   text, re.IGNORECASE)
     )
 
@@ -643,9 +647,12 @@ def _infer_field(text: str) -> ResearchField:
         "tokamak": ResearchField.PLASMA_PHYSICS,
         "protein": ResearchField.BIOPHYSICS,
         "DNA": ResearchField.BIOPHYSICS,
-        "molecular dynamics": ResearchField.CHEMICAL_PHYSICS,
-        "DFT": ResearchField.CHEMICAL_PHYSICS,
         "Monte Carlo": ResearchField.COMPUTATIONAL_PHYSICS,
+        "density functional": ResearchField.COMPUTATIONAL_PHYSICS,
+        "DFT": ResearchField.COMPUTATIONAL_PHYSICS,
+        "VASP": ResearchField.COMPUTATIONAL_PHYSICS,
+        "simulation": ResearchField.COMPUTATIONAL_PHYSICS,
+        "molecular dynamics": ResearchField.CHEMICAL_PHYSICS,
     }
     text_lower = text.lower()
     for keyword, field in field_keywords.items():
@@ -784,6 +791,16 @@ def extract_data(paper: PaperStructure, full_text: str = "") -> ExtractedData:
         value = match.group(2).strip()
         if len(label) > 3 and len(label) < 80 and not label.startswith("Fig"):
             data.numerical_results.append({"parameter": label, "value": value})
+
+    was_pattern = re.compile(
+        r"\b((?:measured\s+)?[\w-]*\s*mass)\s+was\s+"
+        r"([-+]?\d+\.?\d*\s*(?:solar\s+masses|eV|GeV|TeV|kg|g|M_sun)?)",
+        re.IGNORECASE,
+    )
+    for match in was_pattern.finditer(text):
+        data.numerical_results.append(
+            {"parameter": match.group(1).strip(), "value": match.group(2).strip()}
+        )
 
     data.datasets_mentioned = list(dict.fromkeys(
         d for d in re.findall(

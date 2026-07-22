@@ -1,0 +1,22 @@
+---
+artifact_dir: /tmp/gludd-networking
+networking__artifact_dir: "/tmp/gludd-networking"
+networking__daemon_url: "http://localhost:8000"
+networking__psk: ""
+
+networking__mode: "lookup"
+networking__pcap_path: ""
+networking__protocol_stack: []
+networking__packet_fields: {}
+networking__interface: "eth0"
+networking__count: 1
+networking__timeout: 30
+networking__output_format: "json"
+networking__filter_str: ""
+networking__scan_target: ""
+networking__scan_ports: ""
+networking__scan_type: "syn"
+networking__dissector_name: ""
+networking__dissector_language: "lua"
+networking__diagnostic_scenario: ""
+networking__tool_context: ""

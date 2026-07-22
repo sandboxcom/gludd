@@ -63,6 +63,13 @@ class EncodingInfo(TypedDict):
     languages: list[str]
 
 
+UNICODE_ENCODINGS: list[EncodingInfo] = [
+    {"name": "UTF-8", "aliases": ["utf8", "utf_8", "unicode-1-1-utf-8"],
+     "category": "variable-width", "max_bytes_per_char": 4, "is_ascii_compatible": True,
+     "languages": ["Universal Unicode"]},
+]
+
+
 SINGLE_BYTE_ENCODINGS: list[EncodingInfo] = [
     {"name": "ISO-8859-1", "aliases": ["latin1", "l1", "IBM819", "CP819", "csISOLatin1"],
      "category": "single-byte", "max_bytes_per_char": 1, "is_ascii_compatible": True,
@@ -256,6 +263,6 @@ MOJIBAKE_SIGNATURES: dict[str, list[str]] = {
 
 
 ALL_ENCODINGS: list[EncodingInfo] = (
-    SINGLE_BYTE_ENCODINGS + WINDOWS_CODE_PAGES + CJK_ENCODINGS +
+    UNICODE_ENCODINGS + SINGLE_BYTE_ENCODINGS + WINDOWS_CODE_PAGES + CJK_ENCODINGS +
     CYRILLIC_ENCODINGS + IBM_CODE_PAGES
 )

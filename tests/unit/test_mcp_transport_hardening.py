@@ -7,8 +7,8 @@ The launcher must:
     operator explicitly opts in via GLUDD_MCP_ALLOW_ANY_EXEC=1;
   * reject an executable that does not resolve on PATH (and is not an existing
     absolute path);
-  * reject injection-y package specs handed to npx/uvx (leading-dash flag
-    injection, shell metacharacters).
+  * reject injection-y or floating package specs handed to npx/uvx
+    (leading-dash flag injection, shell metacharacters, unpinned versions).
 Legitimate npx/uvx/python/node MCP servers must keep working.
 """
 
@@ -108,7 +108,7 @@ class TestExecutableAllowlist:
         # Each runtime invoked in its canonical, legitimate form.
         invocations = {
             "npx": ["npx", "-y", "@scope/server@1.0.0"],
-            "uvx": ["uvx", "mcp-server-git"],
+            "uvx": ["uvx", "mcp-server-git==0.1.0"],
             "python": ["python", "-m", "srv"],
             "python3": ["python3", "-m", "srv"],
             "node": ["node", "server.js"],

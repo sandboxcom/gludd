@@ -1,6 +1,7 @@
 """End-to-end Tetris test via DeepSeek."""
 from __future__ import annotations
 
+import importlib.util
 import time
 
 import pytest
@@ -20,8 +21,12 @@ from tests.e2e.test_game_building_deepseek import (
     verify_features,
 )
 
+_HAS_LANGCHAIN_OPENAI = importlib.util.find_spec("langchain_openai") is not None
+_LIVE_SKIP_REASON = _SKIP_REASON if not _get_deepseek_key() else (
+    "langchain-openai is not installed — run make sync with provider dependencies"
+)
 
-@pytest.mark.skipif(not _get_deepseek_key(), reason=_SKIP_REASON)
+@pytest.mark.skipif(not _get_deepseek_key() or not _HAS_LANGCHAIN_OPENAI, reason=_LIVE_SKIP_REASON)
 class TestTetris:
     @pytest.fixture(scope="class")
     def gateway(self):

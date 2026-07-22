@@ -132,7 +132,7 @@ class TestC27IntegrationWithExistingGuards:
 
     def test_uvx_still_works(self):
         """uvx validation still works."""
-        _validate_launch_command(["uvx", "mcp-server-git"])
+        _validate_launch_command(["uvx", "mcp-server-git==0.1.0"])
 
     def test_python_with_only_flags_rejected(self):
         """python with only flag args and no module/script should still be rejected."""

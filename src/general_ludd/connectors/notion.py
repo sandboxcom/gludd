@@ -119,7 +119,10 @@ class NotionSource:
         self.allow_private = bool(self.config.get("allow_private", False))
         self.timeout = float(self.config.get("timeout", 30.0))
 
-        self._query_url = f"{API_BASE}/databases/{self.database_id}/query"
+        api_base = str(
+            self.config.get("api_base") or self.config.get("base_url") or API_BASE
+        ).rstrip("/")
+        self._query_url = f"{api_base}/databases/{self.database_id}/query"
         self._guard_ssrf(self._query_url)
 
     # -- internals ---------------------------------------------------------
@@ -217,11 +220,10 @@ class NotionSource:
         and ``filter`` for Notion filter objects.
         """
         spec = spec or {}
-        payload: dict[str, Any] = {"page_size": 100}
-
-        start_cursor = spec.get("start_cursor")
-        if start_cursor:
-            payload["start_cursor"] = start_cursor
+        payload: dict[str, Any] = {
+            "page_size": 100,
+            "start_cursor": spec.get("start_cursor"),
+        }
 
         if spec.get("filter"):
             payload["filter"] = spec["filter"]
@@ -234,7 +236,7 @@ class NotionSource:
                 "POST",
                 self._query_url,
                 headers=self._headers(),
-                json=payload,
+                json=dict(payload),
                 timeout=self.timeout,
             )
             status = getattr(resp, "status_code", 0)

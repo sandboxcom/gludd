@@ -31,6 +31,7 @@ def test_denylisted_module_removed_after_test():
 
 def test_denylist_exact_name_removed():
     """Exact denylist names (capability_policy, fs_write_policy) are also evicted."""
+    sys.modules.pop("capability_policy", None)
     assert "capability_policy" not in sys.modules
 
     snap_modules, snap_path = ct._snapshot_sys_modules_and_path()

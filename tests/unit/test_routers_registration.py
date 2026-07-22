@@ -65,6 +65,7 @@ EXPECTED_ROUTES: list[tuple[str, str]] = [
     ("skills", "/admin/skills/catalog/search"),
     ("slurm", "/admin/slurm/status"),
     ("stream", "/admin/stream/dispatch"),
+    ("terraform_state", "/api/terraform/state/{stack_name}"),
     ("todos", "/api/todos"),
     ("variants", "/admin/prompts/variants/report"),
     ("web_search", "/admin/web/search"),

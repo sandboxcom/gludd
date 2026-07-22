@@ -45,6 +45,6 @@ class TestRunGateIncludesCoverageFlags:
         with open("pyproject.toml", "rb") as f:
             config = tomllib.load(f)
         fail_under = config["tool"]["coverage"]["report"]["fail_under"]
-        assert fail_under == 70, (
-            f"Expected fail_under=70, got {fail_under}"
+        assert fail_under == 85, (
+            f"Expected fail_under=85, got {fail_under}"
         )

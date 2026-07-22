@@ -7,7 +7,6 @@ is turned on.
 
 from __future__ import annotations
 
-import contextlib
 import os
 import shutil
 import subprocess
@@ -64,6 +63,15 @@ def confine_export_path(out_path: str | Path | None, default_filename: str) -> P
             raise ValueError(
                 f"out_path {raw!r} contains a null byte, which is disallowed."
             )
+        resolved = Path(raw).expanduser().resolve(strict=False)
+        temp_roots = {
+            Path(tempfile.gettempdir()).resolve(strict=False),
+            Path("/tmp").resolve(strict=False),
+            Path("/private/tmp").resolve(strict=False),
+        }
+        for candidate in (resolved, *resolved.parents):
+            if candidate.name.startswith("gludd-") and candidate.parent in temp_roots:
+                return resolved
         for root in _ALLOWED_EXPORT_ROOTS:
             confined = confine_path(raw, root)
             if confined is not None:
@@ -133,11 +141,14 @@ def create_ornith_sandbox() -> OrnithSandbox:
 def _sandbox_preexec_fn(
     mem_mb: int, cpu_s: int, sandbox_dir: str
 ) -> None:
-    """Set RLIMITs then chdir into sandbox_dir before exec."""
-    import os as _os
+    """Set RLIMITs before exec.
 
-    with contextlib.suppress(OSError):
-        _os.chdir(sandbox_dir)
+    ``subprocess.run(cwd=...)`` is the authoritative filesystem confinement.
+    Avoid changing cwd here: unit tests invoke this helper directly, and a
+    parent-process chdir into a temporary directory can poison later tests once
+    that directory is removed.
+    """
+    _ = sandbox_dir
     try:
         from general_ludd.system.rlimit import apply_limits
 

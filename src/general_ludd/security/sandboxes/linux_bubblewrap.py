@@ -51,6 +51,15 @@ def _is_net_family(cap: Capability) -> bool:
     return cap.resource.startswith("net:")
 
 
+def _bubblewrap_path_prefix(cap: Capability) -> str | None:
+    explicit = path_prefix(cap)
+    if explicit:
+        return explicit
+    if cap.resource.startswith("file:/"):
+        return cap.resource.removeprefix("file:")
+    return None
+
+
 def render_argv(spec: PermissionSpec, target: SandboxTarget, cmd: list[str] | None = None) -> list[str]:
     """Render the ``bwrap`` argv for ``spec``.
 
@@ -72,7 +81,7 @@ def render_argv(spec: PermissionSpec, target: SandboxTarget, cmd: list[str] | No
     seen: set[str] = set()
     for cap in spec.capabilities:
         if _is_file_family(cap):
-            p = path_prefix(cap)
+            p = _bubblewrap_path_prefix(cap)
             if p and p not in seen:
                 argv += ["--bind", p, p]
                 seen.add(p)

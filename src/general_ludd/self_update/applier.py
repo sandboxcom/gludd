@@ -35,7 +35,15 @@ from typing import Literal, Protocol, runtime_checkable
 
 import yaml
 
+from general_ludd.security.path_canonicalizer import (
+    PROTECTED_PATH_MARKERS as _CANONICAL_PROTECTED_PATH_MARKERS,
+)
+from general_ludd.security.path_canonicalizer import (
+    is_denied_path,
+)
+
 ApplyStatus = Literal["applied", "proposed", "denied"]
+PROTECTED_PATH_MARKERS = _CANONICAL_PROTECTED_PATH_MARKERS
 
 #: Kinds whose change content is validated as YAML and then written in place.
 _YAML_KINDS: frozenset[str] = frozenset({"config", "yaml", "role"})
@@ -112,8 +120,6 @@ def _first_protected(
     where a cwd-shift could let a directory-traversal path evade the lexical
     check.  Resolution failure → fail-closed (return the path as protected).
     """
-    from general_ludd.security.path_canonicalizer import is_denied_path
-
     for path in target_paths:
         decoded = urllib.parse.unquote(path)
 

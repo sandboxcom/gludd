@@ -41,7 +41,7 @@ class TestServiceConfig:
             name="test",
             display_name="Test Service",
             auth_url="https://example.com/auth",
-            token_url="",
+            exchange_url="",
         )
         assert c.name == "test"
         assert c.scopes == []
@@ -52,10 +52,10 @@ class TestServiceConfig:
             name="full",
             display_name="Full Service",
             auth_url="https://example.com/auth",
-            token_url="https://example.com/token",
+            exchange_url="https://example.com/token",
             scopes=["read", "write"],
             client_id_env="CLIENT_ID",
-            client_secret_env="CLIENT_SECRET",
+            client_credential_env="CLIENT_SECRET",
             credential_env="MY_TOKEN",
             extra_auth_params={"prompt": "consent"},
             requires_client_registration=True,
@@ -70,7 +70,7 @@ class TestServiceConfig:
             name="test",
             display_name="Test",
             auth_url="https://example.com/auth",
-            token_url="",
+            exchange_url="",
         )
         with pytest.raises(dataclasses.FrozenInstanceError):
             cast(Any, c).name = "other"
@@ -379,7 +379,7 @@ class TestBrowserLoginFlowValidation:
             name="custom",
             display_name="Custom",
             auth_url="https://custom.example.com",
-            token_url="",
+            exchange_url="",
         )
         flow = BrowserLoginFlow.from_config(cfg)
         assert flow.service_name == "custom"

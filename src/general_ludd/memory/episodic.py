@@ -61,7 +61,7 @@ class EpisodicMemoryRecorder:
         row = await self._repo.get(agent_id, episode_id, namespace=self._namespace, project_id=project_id)
         if row is None:
             return None
-        return _dict_to_episode(json.loads(row.value))
+        return _dict_to_episode(json.loads(_row_value(row)))
 
     async def list_episodes(
         self,
@@ -77,7 +77,7 @@ class EpisodicMemoryRecorder:
         episodes = []
         for row in rows:
             try:
-                ep = _dict_to_episode(json.loads(row.value))
+                ep = _dict_to_episode(json.loads(_row_value(row)))
                 if task_type and ep.task_type != task_type:
                     continue
                 if outcome and ep.outcome != outcome:
@@ -117,6 +117,11 @@ class EpisodicMemoryRecorder:
             duration_seconds=duration_seconds,
         )
         return await self.record_episode(episode, project_id=project_id)
+
+
+def _row_value(row: Any) -> str:
+    value = getattr(row, "value", row)
+    return value if isinstance(value, str) else json.dumps(value, default=str)
 
 
 def _episode_to_dict(ep: Episode) -> dict[str, object]:

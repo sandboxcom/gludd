@@ -18,6 +18,17 @@ from general_ludd.ansible.runner import AnsibleRunnerAdapter
 from general_ludd.log_analyzer import analyze
 
 _PLAYBOOK_NAME = "log_analyzer.yml"
+_ROLE_TASKS = (
+    Path(__file__).resolve().parent.parent.parent
+    / "collections"
+    / "ansible_collections"
+    / "general_ludd"
+    / "operations"
+    / "roles"
+    / "log_analyzer"
+    / "tasks"
+    / "main.yml"
+)
 
 
 def _has_ansible() -> bool:
@@ -46,6 +57,12 @@ def _run_role(log_glob: str, output_dir: str) -> dict:
 
 
 class TestRoleInvocation:
+    def test_role_timestamp_does_not_depend_on_gathered_facts(self) -> None:
+        tasks = _ROLE_TASKS.read_text()
+        assert "ansible_date_time" not in tasks
+        assert "_log_analyzer_started_at" in tasks
+        assert "now(utc=true)" in tasks
+
     def test_role_runs_successfully(self, tmp_path: Path) -> None:
         log_dir = tmp_path / "logs"
         log_dir.mkdir()

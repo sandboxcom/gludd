@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -56,6 +57,16 @@ from general_ludd.schemas.todo import (
     Todo,
     TodoStatus,
 )
+
+_FEATURE_PROJECT_ID = "proj-full-feature-e2e"
+
+
+def _feature_project_manager() -> SimpleNamespace:
+    project = SimpleNamespace(project_id=_FEATURE_PROJECT_ID)
+    return SimpleNamespace(
+        select_project=lambda: project,
+        list_active=lambda: [project],
+    )
 
 
 class TestModelRoutingConfig:
@@ -481,6 +492,7 @@ class TestPlanArtifactInDispatch:
             title="Plan test",
             plan_artifact="## Execution Plan\nWrite tests first",
             work_type="code",
+            project_id=_FEATURE_PROJECT_ID,
         )
         todo.status = TodoStatus.QUEUED
         http_client = AsyncMock()
@@ -489,6 +501,7 @@ class TestPlanArtifactInDispatch:
             task_return_repo=AsyncMock(),
             http_client=http_client,
             config={"default_playbook": "noop.yml"},
+            project_manager=_feature_project_manager(),
         )
         loop._task_return_repo.claim_unreviewed.return_value = []
         loop._todo_repo.claim_runnable.return_value = [todo]
@@ -907,7 +920,12 @@ class TestMCPToolsInEventLoop:
     async def test_event_loop_includes_mcp_tools_in_job(self) -> None:
         registry = MCPToolRegistry()
         registry.register_tool("s1", MCPTool(name="search", description="Search"))
-        todo = Todo(title="MCP test", status="queued", work_type="code")
+        todo = Todo(
+            title="MCP test",
+            status="queued",
+            work_type="code",
+            project_id=_FEATURE_PROJECT_ID,
+        )
         http_client = AsyncMock()
         loop = EventLoop(
             todo_repo=AsyncMock(),
@@ -915,6 +933,7 @@ class TestMCPToolsInEventLoop:
             http_client=http_client,
             mcp_tool_registry=registry,
             config={"default_playbook": "noop.yml"},
+            project_manager=_feature_project_manager(),
         )
         loop._task_return_repo.claim_unreviewed.return_value = []
         loop._todo_repo.claim_runnable.return_value = [todo]

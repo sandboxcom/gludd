@@ -258,31 +258,33 @@ def test_runtime_bundle_manifest_is_unsigned() -> None:
     )
 
 
-# --- BACKLOG_FINDINGS: code_intelligence rg_search unconfined (OPEN) ---
+# --- BACKLOG_FINDINGS: code_intelligence rg_search unconfined (FIXED) ---
 
 
-def test_rg_search_root_unconfined() -> None:
-    """rg_search ``root`` parameter has no path-prefix jail (OPEN).
+def test_rg_search_root_confined() -> None:
+    """rg_search validates root against allowed roots before invoking rg."""
+    from general_ludd.code_intelligence.rg_search import RgSearch
 
-    ``build_argv`` passes the caller-supplied ``root`` directly to ``rg``
-    after ``--``, with no confinement check (no realpath-resolution, no
-    prefix-whitelist/deny-list, no chroot-equivalent). The flag allowlist
-    (_SAFE_FLAGS) restricts extra flags but does not constrain the search
-    directory.
-    """
     rg_search_py = ROOT / "src" / "general_ludd" / "code_intelligence" / "rg_search.py"
     content = rg_search_py.read_text()
-    # Confinement primitives that would close this gap — none is present
     for confinement_token in (
-        "realpath", "_confine", "_jail", "prefix_", "chroot",
-        "_validate_root", "_safe_root", "allowed_roots",
+        "_validate_root",
+        "allowed_roots",
+        "is_denied_path",
+        "relative_to",
     ):
-        assert confinement_token not in content, (
-            f"rg_search.py has no {confinement_token!r} — root is unconfined (OPEN)"
-        )
+        assert confinement_token in content
     assert "_SAFE_FLAGS" in content, (
         "_SAFE_FLAGS must exist for this test to be meaningful"
     )
+
+    result = RgSearch(rg_path="/bin/false", allowed_roots=[str(ROOT)]).search(
+        "needle",
+        root="/etc",
+    )
+    assert result.available is False
+    assert result.error is not None
+    assert "outside allowed" in result.error
 
 
 # --- NEW_FINDINGS_TRIAGE: TodoModel.version (FIXED) ---

@@ -89,6 +89,25 @@ def _real_file_reader(path: str) -> str | None:
         return None
 
 
+def _repo_file_reader(repo_root: str) -> FileReader:
+    """Build a reader confined to ``repo_root`` plus normal workspace roots."""
+    roots = [repo_root, *workspace_roots()]
+
+    def read(path: str) -> str | None:
+        confined = confine_path_multi(path, roots)
+        if confined is None:
+            return None
+        if not os.path.isfile(confined):
+            return None
+        try:
+            with open(confined, encoding="utf-8", errors="replace") as fh:
+                return fh.read()
+        except OSError:
+            return None
+
+    return read
+
+
 class BacklogAuditor:
     """Re-adjudicate claimed-complete tasks against real evidence.
 
@@ -112,7 +131,7 @@ class BacklogAuditor:
     ) -> None:
         self._root = repo_root
         self._run_tests = test_runner
-        self._read = file_reader if file_reader is not None else _real_file_reader
+        self._read = file_reader if file_reader is not None else _repo_file_reader(repo_root)
 
     # ------------------------------------------------------------------
     # Public API

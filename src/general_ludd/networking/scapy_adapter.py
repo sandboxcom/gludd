@@ -6,6 +6,7 @@ Fallback chain: tshark -> scapy -> struct parsing.
 from __future__ import annotations
 
 import contextlib
+import importlib.util
 import ipaddress
 import json
 import struct
@@ -79,9 +80,8 @@ def tshark_available() -> bool:
 
 def scapy_available() -> bool:
     try:
-        import scapy.all  # noqa: F401
-        return True
-    except ImportError:
+        return importlib.util.find_spec("scapy.all") is not None
+    except ModuleNotFoundError:
         return False
 
 

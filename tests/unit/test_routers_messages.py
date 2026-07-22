@@ -167,7 +167,7 @@ class TestRegister:
         methods: dict[str, set[str]] = {}
         for r in app.routes:
             if hasattr(r, "methods"):
-                methods[r.path] = r.methods
+                methods.setdefault(r.path, set()).update(r.methods)
         assert "POST" in methods.get("/api/messages", set())
         assert "GET" in methods.get("/api/messages", set())
         assert "POST" in methods.get("/api/messages/{message_id}/ack", set())

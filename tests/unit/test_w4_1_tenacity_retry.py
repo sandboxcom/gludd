@@ -29,7 +29,8 @@ class TestTenacityIsTheOnlyRetryPath:
 
         assert hasattr(ModelGateway, "call_model_with_retry")
 
-    def test_retry_then_succeed_uses_tenacity_internally(self) -> None:
+    @pytest.mark.asyncio
+    async def test_retry_then_succeed_uses_tenacity_internally(self) -> None:
         """Primary fails once with ReadTimeout; succeeds on retry.
         Proves tenacity path handles retry-then-succeed correctly."""
         from general_ludd.models.gateway import ModelGateway, ModelProfile
@@ -61,12 +62,13 @@ class TestTenacityIsTheOnlyRetryPath:
                 get_provider_class=MagicMock(return_value=mock_cls),
             ),
         ):
-            result = gateway.call_model_with_retry("p1", [{"role": "user", "content": "hi"}])
+            result = await gateway.call_model_with_retry("p1", [{"role": "user", "content": "hi"}])
 
         assert result.content == "tenacity-success"
         assert call_count[0] == 2, f"Expected 2 calls (1 retry), got {call_count[0]}"
 
-    def test_exhaustion_falls_over_to_fallback(self) -> None:
+    @pytest.mark.asyncio
+    async def test_exhaustion_falls_over_to_fallback(self) -> None:
         """Primary exhausts failover_after attempts → fallback profile used."""
         from general_ludd.models.gateway import ModelGateway, ModelProfile
         from general_ludd.models.timeout_detector import ModelHealthTracker
@@ -104,13 +106,14 @@ class TestTenacityIsTheOnlyRetryPath:
                 get_provider_class=get_provider_v2,
             ),
         ):
-            result = gateway.call_model_with_retry(
+            result = await gateway.call_model_with_retry(
                 "primary", [{"role": "user", "content": "hi"}]
             )
 
         assert result.content == "fallback-result"
 
-    def test_non_retryable_auth_error_raises_immediately(self) -> None:
+    @pytest.mark.asyncio
+    async def test_non_retryable_auth_error_raises_immediately(self) -> None:
         """AUTH_ERROR (401) → no retry, immediate re-raise."""
         from general_ludd.models.gateway import ModelGateway, ModelProfile
         from general_ludd.models.timeout_detector import ModelHealthTracker
@@ -141,7 +144,7 @@ class TestTenacityIsTheOnlyRetryPath:
                 get_provider_class=MagicMock(return_value=mock_cls),
             ),
         ), pytest.raises(httpx.HTTPStatusError):
-            gateway.call_model_with_retry("auth-test", [{"role": "user", "content": "hi"}])
+            await gateway.call_model_with_retry("auth-test", [{"role": "user", "content": "hi"}])
 
         assert call_count[0] == 1, (
             f"AUTH_ERROR must not be retried, but got {call_count[0]} call(s)"

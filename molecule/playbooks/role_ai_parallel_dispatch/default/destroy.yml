@@ -1,0 +1,20 @@
+---
+- name: Destroy - stop mock daemon and remove ai_parallel_dispatch artifacts
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8851', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ mock_port }}.pid"
+  tasks:
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Remove artifact dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-ai-parallel-dispatch-{{ mock_port }}"
+        state: absent
+      failed_when: false

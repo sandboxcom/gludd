@@ -193,3 +193,7 @@ class IDeviceConnector:
             return []
         except Exception:
             return []
+
+
+class LibimobiledeviceSource(IDeviceConnector):
+    """Observability source adapter for libimobiledevice diagnostics."""

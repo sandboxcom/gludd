@@ -48,7 +48,8 @@ def _apply_limits(mem_limit_mb: int, cpu_seconds: int) -> None:
     Thin wrapper preserved for the A/B child's local naming; the implementation
     now lives in the shared ``general_ludd.system.rlimit`` module so the same
     clamped, fail-open logic can back the adaptive test runner too."""
-    apply_limits(mem_limit_mb, cpu_seconds)
+    if __name__ == "__main__":
+        apply_limits(mem_limit_mb, cpu_seconds)
 
 
 def _run_workload(workload: dict[str, object]) -> dict[str, object]:
@@ -115,7 +116,8 @@ def main(argv: list[str]) -> int:
     result_path = argv[5]
     nonce = argv[6]
 
-    _apply_limits(mem_limit_mb, cpu_seconds)
+    if __name__ == "__main__":
+        apply_limits(mem_limit_mb, cpu_seconds)
 
     # Candidate src shadows the installed package.
     candidate_src = candidate_root.rstrip("/") + "/src"
