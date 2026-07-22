@@ -2871,7 +2871,9 @@ repo-commit: _commit-lock-acquire
 PUSH ?= 0
 ship-commit: _commit-lock-acquire
 	@if [ -z "$(MSG)" ]; then echo "Usage: make ship-commit MSG='message'"; exit 1; fi
+	@echo "Running pre-commit collection check..."
 	@$(MAKE) --no-print-directory collect-check
+	@echo "Committing staged changes..."
 	@git diff --cached --quiet && echo "Nothing to commit" || git commit -n -m "$(MSG)"
 	@if [ "$(PUSH)" = "1" ]; then $(MAKE) --no-print-directory batch-push; else echo "Committed locally. Use PUSH=1 to push, or make batch-push separately."; fi
 
