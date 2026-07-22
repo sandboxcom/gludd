@@ -141,3 +141,9 @@ def test_committed_head_ci_path_uses_worktree_safe_key_and_fails_closed() -> Non
     assert "gh workflow run \"Build and Release\"" in trigger_block
     assert push_block.count("|| exit 1") >= 3
     assert trigger_block.count("|| exit 1") >= 1
+
+
+def test_git_remote_targets_use_worktree_safe_ssh_key_path() -> None:
+    makefile = _makefile()
+    assert "-i sandboxcom_github_rsa" not in makefile
+    assert "/Users/shawnwilson/gludd/sandboxcom_github_rsa" in makefile
