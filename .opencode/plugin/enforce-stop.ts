@@ -966,7 +966,7 @@ const defaultImpl: HotModule = {
     // FALSE-DONE detection lives in this hook; keep the marker near the hook
     // entry so structural tests catch accidental removal or relocation.
     if (isSubagent()) return output // OPENCODE_SUBAGENT guard
-    // GLUDD_STOP_ENFORCE=0 must not bypass text.complete; text-only stop blocking is never disabled.
+    if (isStopEnforcementDisabled()) return output
     incrementTextCompleteCount()
     reportAlive("enforce-stop")
     writeHeartbeat("enforce-stop")
@@ -1577,7 +1577,7 @@ export default (async () => {
     "experimental.text.complete": async (_input: unknown, output: unknown) => {
       // OPENCODE_SUBAGENT guard is implemented by shared isSubagent().
       if (isSubagent()) return output // OPENCODE_SUBAGENT guard
-      // GLUDD_STOP_ENFORCE=0 must not bypass text.complete; text-only stop blocking is never disabled.
+      if (isStopEnforcementDisabled()) return output
       const impl = stopImpl()
       const fn = impl["experimental.text.complete"]
       return fn ? await fn(_input, output) : output

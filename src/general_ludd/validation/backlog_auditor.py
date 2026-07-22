@@ -71,13 +71,9 @@ class BacklogAuditReport:
     verdicts: list[TaskVerdict] = field(default_factory=list)
 
 
-def _real_file_reader(path: str) -> str | None:
-    """Default reader: read a file's text, or ``None`` if it does not exist.
-
-    Paths are confined to workspace roots (process CWD + system temp dir) to
-    prevent an arbitrary-file-read primitive if wired without an injected reader.
-    """
-    confined = confine_path_multi(path, workspace_roots())
+def _read_file_confined(path: str, roots: Sequence[str]) -> str | None:
+    """Read text only after resolving ``path`` inside one allowed root."""
+    confined = confine_path_multi(path, list(roots))
     if confined is None:
         return None
     if not os.path.isfile(confined):
@@ -87,6 +83,11 @@ def _real_file_reader(path: str) -> str | None:
             return fh.read()
     except OSError:
         return None
+
+
+def _real_file_reader(path: str) -> str | None:
+    """Default reader for callers that do not provide a repository root."""
+    return _read_file_confined(path, workspace_roots())
 
 
 class BacklogAuditor:
@@ -112,7 +113,11 @@ class BacklogAuditor:
     ) -> None:
         self._root = repo_root
         self._run_tests = test_runner
-        self._read = file_reader if file_reader is not None else _real_file_reader
+        if file_reader is not None:
+            self._read = file_reader
+        else:
+            roots = workspace_roots(repo_root)
+            self._read = lambda path: _read_file_confined(path, roots)
 
     # ------------------------------------------------------------------
     # Public API

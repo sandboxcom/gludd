@@ -125,10 +125,7 @@ def _row_value(row: Any) -> str:
         return row
     if isinstance(row, bytes):
         return row.decode("utf-8")
-    if isinstance(row, dict):
-        value = row.get("value")
-    else:
-        value = getattr(row, "value", None)
+    value = row.get("value") if isinstance(row, dict) else getattr(row, "value", None)
     if isinstance(value, str):
         return value
     if isinstance(value, bytes):
