@@ -21,7 +21,7 @@ export GLUDD_XDIST
 # Worker count: env GLUDD_XDIST overrides (CI sets it so the suite isn't run on a
 # single worker — a 4-vCPU runner's cpu//4=1 made the gate sit ~38min near the
 # 40min wall). Local default stays cpu//4. Accepts an int or "auto".
-_XDIST_WORKERS := $(shell GLUDD_XDIST="$(GLUDD_XDIST)" $(SYSTEM_PYTHON) -c "import os; v=os.environ.get('GLUDD_XDIST'); print(v if v else max(1, (os.cpu_count() or 1) // 4))")
+_XDIST_WORKERS := $(shell if [ -n "$(GLUDD_XDIST)" ]; then echo "$(GLUDD_XDIST)"; else n=$$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4); v=$$((n / 4)); if [ "$$v" -lt 1 ]; then v=1; fi; echo "$$v"; fi)
 ifeq ($(_XDIST_WORKERS),0)
 _XD :=
 else
