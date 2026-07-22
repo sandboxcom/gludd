@@ -61,7 +61,7 @@ class EpisodicMemoryRecorder:
         row = await self._repo.get(agent_id, episode_id, namespace=self._namespace, project_id=project_id)
         if row is None:
             return None
-        return _dict_to_episode(json.loads(row.value))
+        return _dict_to_episode(json.loads(_row_value(row)))
 
     async def list_episodes(
         self,
@@ -77,7 +77,7 @@ class EpisodicMemoryRecorder:
         episodes = []
         for row in rows:
             try:
-                ep = _dict_to_episode(json.loads(row.value))
+                ep = _dict_to_episode(json.loads(_row_value(row)))
                 if task_type and ep.task_type != task_type:
                     continue
                 if outcome and ep.outcome != outcome:
@@ -117,6 +117,23 @@ class EpisodicMemoryRecorder:
             duration_seconds=duration_seconds,
         )
         return await self.record_episode(episode, project_id=project_id)
+
+
+def _row_value(row: Any) -> str:
+    """Return serialized memory payload from repository rows or raw store values."""
+    if isinstance(row, str):
+        return row
+    if isinstance(row, bytes):
+        return row.decode("utf-8")
+    if isinstance(row, dict):
+        value = row.get("value")
+    else:
+        value = getattr(row, "value", None)
+    if isinstance(value, str):
+        return value
+    if isinstance(value, bytes):
+        return value.decode("utf-8")
+    raise TypeError(f"Unsupported memory row payload: {type(row).__name__}")
 
 
 def _episode_to_dict(ep: Episode) -> dict[str, object]:
