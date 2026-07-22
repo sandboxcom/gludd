@@ -602,21 +602,24 @@ class TestGuardrailsWithRealState:
         assert parsed is not None, "Subagent must return output object unchanged"
         assert "All done" in parsed.get("text", "")
 
-    def test_env_disable_bypasses_text_complete(
+    def test_env_disable_does_not_bypass_text_complete(
         self, hook_plugin_env: HookEnv,
     ):
         _setup_real_pending_work(hook_plugin_env)
 
-        parsed, _raw, stderr, rc = _invoke_text_complete(
+        parsed, raw, stderr, rc = _invoke_text_complete(
             hook_plugin_env,
             "All done. Everything complete.",
             GLUDD_STOP_ENFORCE="0",
         )
         assert rc == 0, stderr
-        assert parsed is not None, "Disabled hook must return output unchanged"
-        assert parsed.get("text") == "All done. Everything complete.", (
-            f"GLUDD_STOP_ENFORCE=0 must return output unchanged. Got: {parsed}"
-        )
+        pb = _read_persist_block(hook_plugin_env)
+        text = parsed.get("text", "") if parsed else raw
+        assert (
+            (pb is not None and pb.get("blocked") is True)
+            or "BLOCKED" in text.upper()
+        ), f"GLUDD_STOP_ENFORCE=0 must not bypass text.complete. parsed={parsed} pb={pb}"
+
 
     def test_disengage_does_not_bypass_real_pending_work_block(
         self, hook_plugin_env: HookEnv,

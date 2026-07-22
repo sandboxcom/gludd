@@ -14,7 +14,7 @@ _MULTIWORD_VALUE_GOALS := \
     git-commit git-commit-file git-commit-files git-merge git-reset git-restore git-tag-move \
     git-tag-push lint-files lint-fix-files release-cut release-deploy release-upload-assets \
     replace-all-text replace-lines replace-text ship-commit test-and-commit test-ci-shards-parallel \
-    test-ci-shards-parallel-bg test-files
+    test-ci-shards-parallel-bg test-files ci-shards-log-context
 _FIRST_MAKE_GOAL := $(firstword $(MAKECMDGOALS))
 _EXTRA_MAKE_GOALS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
 ifneq (,$(filter $(_FIRST_MAKE_GOAL),$(_MULTIWORD_VALUE_GOALS)))
@@ -31,7 +31,7 @@ _NO_UV_SYNC_GOALS := \
     git-where repo-status git-status git-remote-sandboxcom git-pull-sandboxcom git-fetch-sandboxcom verify-remote \
     git-branch git-checkout git-add git-merge git-merge-nc git-merge-abort git-rebase-abort \
     git-cherry-pick git-cherry-pick-list git-cherry-pick-continue git-cherry-pick-skip git-cherry-pick-abort \
-    ci-remotes ci-diff-since-remote ci-head-compare ci-remote-head-guard ci-trigger \
+    ci-remotes ci-diff-since-remote ci-head-compare ci-remote-head-guard ci-trigger ci-shards-log-context \
     git-push-committed-head-nv ci-trigger-committed-head ci-push-committed-head git-push-current-head-to-master-nv \
     search show-lines cat-file copy-file mkdir-p write-text append-text replace-lines replace-text replace-all-text write-text-b64 replace-text-b64 \
     tmp-gludd-usage tmp-gludd-worktree-usage tmp-gludd-clean-ci-shards clean-worktree-venvs clean-worktree-caches
@@ -110,7 +110,7 @@ _commit-lock-acquire check-clean-tree worktree-state all-worktree-state main-wor
         deck deck-serve deck-preview deck-data deck-honesty \
         script-count strip-enforce-stop test-hooks-live test-hook-runtime \
         verify-enforcement \
-        ci-view ci-rerun ci-trigger ci-active ci-job-log \
+ci-view ci-rerun ci-trigger ci-active ci-job-log ci-shards-log-context \
         ci-busy-check ci-safe-push pre-push-check push-guarded ci-await \
 log-agent-result disk-guard disk-check check-disk disk tmp-gludd-usage tmp-gludd-clean-ci-shards \
         tmp-gludd-worktree-usage clean-worktree-venvs clean-worktree-caches \
@@ -181,9 +181,10 @@ help:
 	@echo "  test-unit-shards      Unit tests in bounded serial shards (SHARDS=12 SHARD=1)"
 	@echo "  test-integration      Integration tests"
 	@echo "  test-e2e              End-to-end tests"
-	@echo "  test-specific         Single test (TESTFILE='path::TestClass::test_name')"
-	@echo "  test-files            Multiple tests (TESTFILES='tests/unit/a.py tests/unit/b.py')"
-	@echo "  task                  Run CMD with timeout (CMD='make test-unit', GLUDD_TASK_TIMEOUT=300)"
+	@echo "  test-specific         Single test (TESTFILE=path::TestClass::test_name)"
+	@echo "  test-files            Multiple tests (TESTFILES=tests/unit/a.py tests/unit/b.py)"
+	@echo "  ci-shards-log-context Show local shard log context (LOG=.gate-logs/ci.log PATTERN=FAILED)"
+	@echo "  task                  Run CMD with timeout (CMD=make test-unit, GLUDD_TASK_TIMEOUT=300)"
 	@echo "  test-count            Count collected tests"
 	@echo "  test-failures         Show test failures"
 	@echo   provider-smoke        Run gludd smoke PROVIDER=aws SMOKE_TEST=ec2-a100 ARGS=--json
@@ -594,6 +595,11 @@ test-ci-shards-parallel-bg: _ci-replica-clean-tree
 
 test-ci-shards-parallel-status:
 	@$(UV) run python scripts/ci_shards_parallel_status.py --lines "$(or $(LINES),80)"
+
+ci-shards-log-context:
+	@if [ -n "$(filter-out $@,$(MAKECMDGOALS))" ]; then echo "ERROR: quote PATTERN with spaces: make $@ LOG=.gate-logs/ci.log PATTERN=FAILED"; exit 2; fi
+	@[ -n "$(LOG)" ] && [ -n "$(PATTERN)" ] || { echo "Usage: make ci-shards-log-context LOG=.gate-logs/ci-shards.log PATTERN=FAILED [BEFORE=20] [AFTER=80]"; exit 1; }
+	@$(PYTHON) scripts/ci_shards_log_context.py --log "$(LOG)" --pattern "$(PATTERN)" --before "$(or $(BEFORE),20)" --after "$(or $(AFTER),80)" $(if $(MAX_MATCHES),--max-matches "$(MAX_MATCHES)")
 
 repro-caplog-secrets:
 	$(UV) run python -m pytest tests/unit/test_secrets_log_sanitization.py::test_resolve_exc_message_sanitized -n 2 --dist loadgroup -v -s
