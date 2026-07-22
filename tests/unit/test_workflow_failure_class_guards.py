@@ -269,6 +269,7 @@ def test_workflow_state_targets_do_not_dirty_lockfile_with_uv_run() -> None:
         "git-merge-abort",
         "git-rebase-abort",
         "git-cherry-pick",
+        "git-cherry-pick-list",
         "git-cherry-pick-continue",
         "git-cherry-pick-skip",
         "git-cherry-pick-abort",
@@ -281,6 +282,17 @@ def test_workflow_state_targets_do_not_dirty_lockfile_with_uv_run() -> None:
         "ci-trigger-committed-head",
         "ci-push-committed-head",
         "git-push-current-head-to-master-nv",
+        "search",
+        "show-lines",
+        "write-text",
+        "append-text",
+        "replace-lines",
+        "replace-text",
+        "replace-all-text",
+        "write-text-b64",
+        "replace-text-b64",
+        "tmp-gludd-usage",
+        "tmp-gludd-clean-ci-shards",
     ]:
         assert goal in no_uv_goals
     for target in guard_targets:
@@ -291,6 +303,16 @@ def test_workflow_state_targets_do_not_dirty_lockfile_with_uv_run() -> None:
         assert "UV=echo" in block
         assert "$(SYSTEM_PYTHON) scripts/" in block
 
+
+def test_tmp_gludd_cleanup_targets_are_scoped_to_generated_shard_dirs() -> None:
+    usage_block = _target_block("tmp-gludd-usage")
+    cleanup_block = _target_block("tmp-gludd-clean-ci-shards")
+
+    assert "sort -h | tail -40" in usage_block
+    assert "/tmp/gludd-ci-shard-*" in cleanup_block
+    assert "/tmp/gludd-unit-shard-*" in cleanup_block
+    assert "/tmp/gludd-worktrees" not in cleanup_block
+    assert "/Users/shawnwilson/gludd" not in cleanup_block
 
 def test_ci_head_compare_reports_bidirectional_divergence() -> None:
     block = _target_block("ci-head-compare")
