@@ -9,6 +9,20 @@ VERIFY_POLLS ?= 30
 GLUDD_TASK_TIMEOUT ?= 300
 GATE_POLL_INTERVAL ?= 60
 
+_MULTIWORD_VALUE_GOALS := \
+    copy-file feature-done feature-start git-add git-branch git-checkout git-cherry-pick-list \
+    git-commit git-commit-file git-commit-files git-merge git-reset git-restore git-tag-move \
+    git-tag-push lint-files lint-fix-files release-cut release-deploy release-upload-assets \
+    replace-all-text replace-lines replace-text ship-commit test-and-commit test-ci-shards-parallel \
+    test-ci-shards-parallel-bg test-files
+_FIRST_MAKE_GOAL := $(firstword $(MAKECMDGOALS))
+_EXTRA_MAKE_GOALS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
+ifneq (,$(filter $(_FIRST_MAKE_GOAL),$(_MULTIWORD_VALUE_GOALS)))
+ifneq (,$(_EXTRA_MAKE_GOALS))
+$(error Quote multi-word variable values for $(_FIRST_MAKE_GOAL); stray make goals: $(_EXTRA_MAKE_GOALS))
+endif
+endif
+
 PYTHON := python3
 override SYSTEM_PYTHON := /usr/bin/python3
 _NO_UV_SYNC_GOALS := \
@@ -569,11 +583,13 @@ test-unit-shards:
 	@/Library/Developer/CommandLineTools/usr/bin/make --no-print-directory test-ci-shard SHARD="$(SHARD)" PYTEST_ARGS="$(PYTEST_ARGS)"
 
 test-ci-shards-parallel: _ci-replica-clean-tree
-	@if [ -z "$(SHARDS)" ]; then echo "Usage: make test-ci-shards-parallel SHARDS=unit-2 unit-3 [WORKERS_PER_SHARD=1]"; exit 1; fi
+	@if [ -n "$(filter-out $@,$(MAKECMDGOALS))" ]; then echo "ERROR: quote SHARDS with spaces: make $@ SHARDS='unit-2 unit-3' [WORKERS_PER_SHARD=1]"; exit 2; fi
+	@if [ -z "$(SHARDS)" ]; then echo "Usage: make test-ci-shards-parallel SHARDS='unit-2 unit-3' [WORKERS_PER_SHARD=1]"; exit 1; fi
 	@$(UV) run python scripts/run_ci_shards_parallel.py --shards "$(SHARDS)" --pytest-args="$(PYTEST_ARGS)" --workers-per-shard "$(or $(WORKERS_PER_SHARD),1)"
 
 test-ci-shards-parallel-bg: _ci-replica-clean-tree
-	@if [ -z "$(SHARDS)" ]; then echo "Usage: make test-ci-shards-parallel-bg SHARDS=unit-2 unit-3 [WORKERS_PER_SHARD=1]"; exit 1; fi
+	@if [ -n "$(filter-out $@,$(MAKECMDGOALS))" ]; then echo "ERROR: quote SHARDS with spaces: make $@ SHARDS='unit-2 unit-3' [WORKERS_PER_SHARD=1]"; exit 2; fi
+	@if [ -z "$(SHARDS)" ]; then echo "Usage: make test-ci-shards-parallel-bg SHARDS='unit-2 unit-3' [WORKERS_PER_SHARD=1]"; exit 1; fi
 	@$(UV) run python scripts/start_ci_shards_parallel_bg.py --shards "$(SHARDS)" --pytest-args="$(PYTEST_ARGS)" --workers-per-shard "$(or $(WORKERS_PER_SHARD),1)"
 
 test-ci-shards-parallel-status:

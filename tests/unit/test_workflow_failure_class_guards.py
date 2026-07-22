@@ -186,6 +186,36 @@ def test_local_ci_replica_shards_refuse_dirty_tree_by_default() -> None:
     assert "CI-like shard validation requires a clean worktree" in guard
     assert "Commit completed work or create a clean worktree at the pushed HEAD" in guard
 
+
+def test_parallel_shard_targets_fail_before_launch_when_shards_are_unquoted() -> None:
+    for target in ["test-ci-shards-parallel", "test-ci-shards-parallel-bg"]:
+        block = _target_block(target)
+        assert "$(filter-out $@,$(MAKECMDGOALS))" in block, target
+        assert "quote SHARDS with spaces" in block, target
+        assert block.find("quote SHARDS with spaces") < block.find(
+            "run_ci_shards_parallel.py"
+        ) or block.find("quote SHARDS with spaces") < block.find(
+            "start_ci_shards_parallel_bg.py"
+        ), target
+
+
+def test_list_valued_make_targets_fail_at_parse_time_on_stray_goals() -> None:
+    makefile = _makefile()
+    assert "_MULTIWORD_VALUE_GOALS" in makefile
+    assert "_EXTRA_MAKE_GOALS" in makefile
+    assert "Quote multi-word variable values" in makefile
+
+    for target in [
+        "git-add",
+        "git-restore",
+        "git-commit",
+        "lint-files",
+        "test-files",
+        "test-ci-shards-parallel-bg",
+    ]:
+        assert target in makefile
+
+
 def test_committed_head_ci_path_checks_active_runs_before_push_and_dispatch() -> None:
     push_line = _target_line("git-push-committed-head-nv")
     trigger_line = _target_line("ci-trigger-committed-head")
