@@ -294,6 +294,7 @@ GATE_MAX_RUNTIME_SECS = int(os.environ.get("GATE_WATCHDOG_TIMEOUT", "3600"))
 _TASKS_MD = _WORKSPACE / "TASKS.md"
 _RATCHET_YML = _WORKSPACE / "config" / "ratchet.yml"
 _GATE_STATUS = _WORKSPACE / ".gate-status"
+_CI_STATUS = _WORKSPACE / ".ci-status"
 
 _UNCHECKED_PATTERN = re.compile(r"-\s+\[\s*\]|\*\s+\[\s*\]", re.IGNORECASE)
 
@@ -2445,14 +2446,15 @@ def check_and_reset() -> dict:
     #     HEAD — the commit hasn't been pushed yet, so there is no CI work to
     #     wait on. Injecting in that case creates a chicken-and-egg: the commit
     #     can never land (gate red) and CI can never start (no push). ──
+
     if ci_pending and ci_run_id is not None:
         try:
-            ci_status = Path(".ci-status")
+            ci_status = _CI_STATUS
             ci_status.parent.mkdir(parents=True, exist_ok=True)
             ci_status.write_text(
-                f"=== CI {datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')} ===\n"
+                f"=== CI {_now()} ===\n"
                 f"CI FAIL pending (run {ci_run_id})\n"
-                f"suggested_action: wait_for_ci\n"
+                "suggested_action: wait_for_ci\n"
             )
             has_pending_work = True
         except Exception:

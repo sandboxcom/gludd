@@ -20,9 +20,32 @@ from general_ludd.security.sanitize import confine_path
 _ORNITH_EXPORT_ROOT = os.environ.get("ORNITH_EXPORT_ROOT", tempfile.gettempdir())
 _GLUDD_DATA_DIR = os.environ.get("GLUDD_DATA_DIR")
 
-_ALLOWED_EXPORT_ROOTS: list[str] = [_ORNITH_EXPORT_ROOT]
-if _GLUDD_DATA_DIR:
-    _ALLOWED_EXPORT_ROOTS.append(_GLUDD_DATA_DIR)
+
+def _append_root_aliases(roots: list[str], root) -> None:
+    if not root:
+        return
+    for candidate in (str(root), os.path.realpath(str(root))):
+        if candidate and candidate not in roots:
+            roots.append(candidate)
+
+
+def _build_allowed_export_roots() -> list[str]:
+    roots: list[str] = []
+    for root in (
+        _ORNITH_EXPORT_ROOT,
+        os.environ.get("TMPDIR"),
+        os.environ.get("TEMP"),
+        os.environ.get("TMP"),
+    ):
+        _append_root_aliases(roots, root)
+    for platform_temp in ("/tmp", "/private/tmp"):
+        if Path(platform_temp).exists():
+            _append_root_aliases(roots, platform_temp)
+    _append_root_aliases(roots, _GLUDD_DATA_DIR)
+    return roots
+
+
+_ALLOWED_EXPORT_ROOTS: list[str] = _build_allowed_export_roots()
 
 ORNITH_SANDBOX_MEM_MB = int(os.environ.get("ORNITH_SANDBOX_MEM_MB", "4096"))
 ORNITH_SANDBOX_CPU_S = int(os.environ.get("ORNITH_SANDBOX_CPU_S", "300"))
