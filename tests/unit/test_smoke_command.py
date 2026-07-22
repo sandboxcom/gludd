@@ -34,8 +34,8 @@ def test_aws_ec2_a100_accepts_user_friendly_env_aliases_and_redacts_values() -> 
         "aws",
         "ec2-a100",
         env={
-            "AWS_KEY": "AKIA_TEST_VALUE",
-            "AWS_SECRET": "super-secret",
+            "AWS_KEY": "AKIA_TEST_VALUE",  # pragma: allowlist secret
+            "AWS_SECRET": "example-value",  # pragma: allowlist secret
             "AWS_DEFAULT_REGION": "us-east-1",
         },
     )
@@ -77,7 +77,7 @@ def test_live_metadata_probe_records_http_metrics_without_payload_dump() -> None
     report = run_smoke(
         "openrouter",
         "metadata",
-        env={"OPENROUTER_API_KEY": "secret-token"},
+        env={"OPENROUTER_API_KEY": "example-token"},  # pragma: allowlist secret
         live=True,
         http_get=fake_http_get,
     )
@@ -104,3 +104,41 @@ def test_cli_smoke_subcommand_parses_provider_and_test() -> None:
 def test_unknown_smoke_test_exits_with_clear_error() -> None:
     with pytest.raises(ValueError, match="unknown smoke test"):
         run_smoke("aws", "does-not-exist", env={})
+
+
+def test_cli_filters_fs_pkg_resources_runtime_warning() -> None:
+    import warnings
+
+    import general_ludd
+
+    assert general_ludd.__version__
+    assert any(
+        getattr(item[1], "pattern", "").startswith("pkg_resources is deprecated")
+        and getattr(item[3], "pattern", "") == "fs"
+        for item in warnings.filters
+    )
+
+
+def test_live_metadata_auth_rejection_is_not_provider_health_pass() -> None:
+    def fake_http_get(url: str, timeout: float) -> Any:
+        class Response:
+            status_code = 401
+            elapsed_ms = 5.0
+
+            def json(self) -> dict[str, object]:
+                return {"error": {"message": "invalid api key"}}
+
+        return Response()
+
+    report = run_smoke(
+        "openrouter",
+        "metadata",
+        env={"OPENROUTER_API_KEY": "fake-token"},  # pragma: allowlist secret
+        live=True,
+        http_get=fake_http_get,
+    )
+
+    assert report["status"] == "auth_rejected"
+    assert report["metrics"]["auth_rejected"] == 1
+    assert report["metrics"]["checks_failed"] >= 1
+    assert any(event["name"] == "auth.rejected" for event in report["events"])

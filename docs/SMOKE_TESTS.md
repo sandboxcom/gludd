@@ -20,6 +20,10 @@ metadata requests such as model-list probes. Provisioning and token-generating
 prompt calls should remain separate, explicit follow-up tests with a real spend
 ceiling.
 
+## Live Credential Policy
+
+Do not treat fabricated API keys as live provider evidence. OpenAI and Anthropic document API keys created in their consoles; their public docs do not define a universal test key that returns a successful diagnostic response. OpenRouter documents a real-key /api/v1/key inspection endpoint and management keys for admin operations, but those still require real credentials. When no documented sandbox or test credential exists, a bad-key response only proves the request reached an auth gate. Record that as auth_rejected, not as a provider-health pass.
+
 ## Commands
 
 List every registered smoke test:

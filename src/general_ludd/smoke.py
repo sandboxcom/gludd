@@ -378,7 +378,20 @@ def _run_live_metadata_probe(
     status_code = int(getattr(response, "status_code", 0) or 0)
     elapsed_ms = _elapsed_ms(response)
     recorder.event("http.response", status_code=status_code, elapsed_ms=elapsed_ms)
-    recorder.check(200 <= status_code < 500, "metadata endpoint returned a bounded response", status_code=status_code)
+    if status_code in {401, 403}:
+        recorder.report["status"] = "auth_rejected"
+        recorder.report["metrics"]["auth_rejected"] = 1
+        recorder.report["metrics"]["checks_failed"] += 1
+        recorder.event("auth.rejected", status_code=status_code)
+        recorder.log("warning", "metadata endpoint rejected credentials", status_code=status_code)
+        return
+    recorder.check(
+        200 <= status_code < 300,
+        "metadata endpoint returned a successful response",
+        status_code=status_code,
+    )
+    if not 200 <= status_code < 300:
+        return
 
     models_seen = _count_models(response)
     recorder.report["metrics"]["models_seen"] = models_seen
