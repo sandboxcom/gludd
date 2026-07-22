@@ -128,17 +128,17 @@ CLAIM_PATTERNS = [
     r"\bgoes? live\b",
 ]
 
-# EVIDENCE tokens — a cited, machine-produced measurement. Ported from plugin.
+# EVIDENCE tokens - a cited, machine-produced measurement. Ported from plugin.
 EVIDENCE_PATTERNS = [
     r"ci-verdict", r"conclusion:\s*success", r"\brun[ _]?id\b", r"\brun \d{6,}",
     r"gh release view", r"verify-release", r"verify-remote",
     r"\.gate-status", r"gate(?:-status)?:?\s*pass", r"\bgate green\b",
     r"\b[1-9]\d*\s+passed\b", r"\b[1-9]\d*\s+passing\b",
     r"\bverified\b[^.\n]{0,40}(?:[1-9]\d*\s+passed|conclusion:\s*success|run \d{6,})",
-    r"\bcommit\s+(?!0{7}|deadbeef|c0ffee)[0-9a-f]{7,40}\b",
-    r"\bsha[:= ]\s*[0-9a-f]{7,40}\b",
-    r"\bat\s+[0-9a-f]{7,40}\b", r"`[0-9a-f]{7,40}`",
-    r"VERIFIED\s+\S+@[0-9a-f]{7,40}",
+    r"\bcommit\s+(?!0{7}|deadbeef|c0ffee)[0-9a-f]*[a-f][0-9a-f]{6,39}\b",
+    r"\bsha[:= ]\s*[0-9a-f]*[a-f][0-9a-f]{6,39}\b",
+    r"\bat\s+[0-9a-f]*[a-f][0-9a-f]{6,39}\b", r"`[0-9a-f]*[a-f][0-9a-f]{6,39}`",
+    r"VERIFIED\s+\S+@[0-9a-f]*[a-f][0-9a-f]{6,39}",
     r"```(?=[^`]*?(?:[1-9]\d*\s+passed|passed in|conclusion|success))[^`]*```",
 ]
 
@@ -281,6 +281,13 @@ class TestAdversarialPatterns:
             "All-zero SHA MUST NOT satisfy the commit-SHA evidence check."
         )
 
+    def test_pure_digit_sha_adversarial(self):
+        text = "Shipped. Commit 1234567."
+        assert is_false_done(text), (
+            "A pure-digit token can be a run/build id; it MUST NOT satisfy "
+            "commit-SHA evidence."
+        )
+
     def test_bare_verified_adversarial(self):
         """The lone word `verified` is NOT evidence without adjacent measurement."""
         text = "Shipped. Verified."
@@ -411,8 +418,8 @@ class TestPluginSourceMatchesPythonPort:
 
     def test_evidence_hash_pattern_present(self):
         src = self._src()
-        assert "[0-9a-f]{7,40}" in src, (
-            "EVIDENCE_PATTERNS must include a commit-hash pattern [0-9a-f]{7,40}."
+        assert "[0-9a-f]*[a-f][0-9a-f]{6,39}" in src, (
+            "EVIDENCE_PATTERNS must require at least one hex letter in commit hashes."
         )
 
     def test_evidence_pass_count_pattern_present(self):

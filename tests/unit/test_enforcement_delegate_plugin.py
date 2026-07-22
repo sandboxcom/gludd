@@ -465,7 +465,7 @@ class TestForceDelegate:
         src = _src()
         idx = src.find("function enforceForceDelegate")
         after = src[idx:idx + 300]
-        assert "FORCE_DELEGATE_ENABLED" in after
+        assert "forceDelegateEnabled()" in after or "FORCE_DELEGATE_ENABLED" in after
         assert "return null" in after
 
     def test_force_delegate_agent_dispatch_resets_streak(self):

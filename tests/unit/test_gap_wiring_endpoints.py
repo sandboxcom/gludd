@@ -10,10 +10,11 @@ from general_ludd.daemon import create_daemon_app
 
 @pytest.fixture(autouse=True)
 def _reset_daemon_state():
+    if daemon_mod._daemon_state is None:
+        daemon_mod._daemon_state = {}
     daemon_mod._daemon_state["todos"] = []
     daemon_mod._daemon_state["tick_metrics"] = {}
     daemon_mod._daemon_state["quality_gate"] = {}
-
 
 @pytest.fixture
 def transport():

@@ -3279,27 +3279,33 @@ class EventLoop:
         if todo_ids and self._todo_repo is not None:
             bulk_get = getattr(self._todo_repo, "get_by_ids", None)
             maybe_map: Any = None
+            used_bulk = False
             if callable(bulk_get):
                 try:
-                    maybe_map = bulk_get(todo_ids, project_id=project_id)
+                    try:
+                        maybe_map = bulk_get(todo_ids, project_id=project_id)
+                    except TypeError:
+                        maybe_map = bulk_get(todo_ids)
                     if inspect.isawaitable(maybe_map):
                         maybe_map = await maybe_map
                 except TypeError:
                     maybe_map = None
             if isinstance(maybe_map, dict):
                 todo_map = maybe_map
-            missing_ids = [tid for tid in todo_ids if tid not in todo_map]
-            single_get = getattr(self._todo_repo, "get_by_id", None)
-            if missing_ids and callable(single_get):
-                for tid in missing_ids:
-                    try:
-                        todo = single_get(tid, project_id=project_id)
-                    except TypeError:
-                        todo = single_get(tid)
-                    if inspect.isawaitable(todo):
-                        todo = await todo
-                    if todo is not None:
-                        todo_map[tid] = todo
+                used_bulk = True
+            if not used_bulk:
+                missing_ids = [tid for tid in todo_ids if tid not in todo_map]
+                single_get = getattr(self._todo_repo, "get_by_id", None)
+                if missing_ids and callable(single_get):
+                    for tid in missing_ids:
+                        try:
+                            todo = single_get(tid, project_id=project_id)
+                        except TypeError:
+                            todo = single_get(tid)
+                        if inspect.isawaitable(todo):
+                            todo = await todo
+                        if todo is not None:
+                            todo_map[tid] = todo
         reconciled = 0
         push_failures = 0
         for d in decisions:

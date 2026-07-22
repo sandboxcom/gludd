@@ -110,12 +110,9 @@ class TestEnforcementDefaultsOn:
 
     def test_agent_floor_constant_is_10(self) -> None:
         src = FLOOR_PLUGIN.read_text()
-        # 2026-07-01 refactor: the FLOOR default moved from an inline
-        # `parseInt(process.env.CLAUDE_AGENT_FLOOR || "10")` to a
-        # `_tunable("/tmp/gludd-floor-override", "CLAUDE_AGENT_FLOOR", "7")`
-        # helper (same default, adds a /tmp override read). Accept either the
-        # _tunable form or the legacy parseInt form; the env-var name + "7"
-        # default are the load-bearing parts.
+        # 2026-07-11 active AGENTS.md directive: floor/ceiling/target are 10.
+        # The value can appear through _tunable or legacy parseInt wiring, but
+        # the default itself must remain 10.
         line = next(
             (
                 src_line
@@ -126,10 +123,8 @@ class TestEnforcementDefaultsOn:
             None,
         )
         assert line is not None, (
-            "CLAUDE_AGENT_FLOOR default line not found in enforce-floor.ts "
-            "(expected _tunable(..., \"CLAUDE_AGENT_FLOOR\", \"7\") or a parseInt form)"
+            "CLAUDE_AGENT_FLOOR default line not found in enforce-floor.ts"
         )
-        assert '"7"' in line, (
-            "CLAUDE_AGENT_FLOOR default must be \"7\" (per the 2026-07-11 cost-efficiency "
-            "directive setting the floor at 7). The floor must not be silently changed."
+        assert "\"10\"" in line, (
+            "CLAUDE_AGENT_FLOOR default must be 10 per the active cost-efficiency directive."
         )

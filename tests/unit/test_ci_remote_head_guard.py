@@ -109,3 +109,10 @@ def test_main_reports_blocked_state_for_missing_remote_branch(capsys) -> None:
     assert rc == 1
     assert "REMOTE-HEAD-BLOCKED" in captured.out
     assert "remote branch sandboxcom/refs/heads/feature-x does not exist" in captured.out
+
+
+def test_runtime_type_alias_uses_optional_for_system_python() -> None:
+    src = (ROOT / "scripts" / "ci_remote_head_guard.py").read_text()
+
+    assert "RunFn = Callable[[Sequence[str], Optional[str]]" in src
+    assert "cwd: Optional[str] = None" in src

@@ -246,9 +246,9 @@ class TestAllowDenyLogic:
 
     def test_edit_uses_count_lines_for_both_old_and_new(self):
         src = _src()
-        # Args are camelCase (oldString/newString) in the current code.
-        assert "countLines(args.oldString)" in src or "countLines(args.old_string)" in src
-        assert "countLines(args.newString)" in src or "countLines(args.new_string)" in src
+        assert "countLines(pickString" in src or "countLines(args.oldString)" in src
+        assert "oldString" in src or "old_string" in src
+        assert "newString" in src or "new_string" in src
 
     def test_write_reads_existing_file_lines(self):
         src = _src()

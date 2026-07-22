@@ -16,6 +16,24 @@ def _content() -> str:
     return MAKEFILE.read_text()
 
 
+def _target_block(name: str) -> str:
+    content = _content()
+    needle = chr(10) + f"{name}:"
+    start = content.find(needle)
+    if start == -1:
+        assert content.startswith(f"{name}:"), f"Makefile missing target {name!r}"
+    else:
+        start += 1
+    lines = content[start:].splitlines(keepends=True)
+    block = []
+    for line in lines:
+        is_top_level = line and not line.startswith(" ") and not line.startswith(chr(9))
+        if block and is_top_level and ":" in line and not line.startswith("."):
+            break
+        block.append(line)
+    return "".join(block)
+
+
 def test_gate_lite_target_exists():
     content = _content()
     assert "gate-lite:" in content, "Makefile missing 'gate-lite:' target"
@@ -28,15 +46,16 @@ def test_gate_lite_kill_target_exists():
 
 def test_gate_lite_writes_phase_markers_to_status():
     """gate-lite recipe emits per-phase markers into .gate-lite-status file."""
-    content = _content()
-    idx = content.find("gate-lite:")
-    assert idx != -1
-    recipe_block = content[idx:idx + 4000]
+    recipe_block = _target_block("gate-lite")
     phases = [
         ("lint", "lint"),
+        ("dead-code", "dead-code"),
+        ("tdd-compliance", "tdd-compliance"),
+        ("coverage-gaps", "coverage-gaps"),
         ("typecheck", "typecheck"),
         ("collect", "collect"),
         ("env-writes", "env-writes"),
+        ("hook-runtime", "hook-runtime"),
         ("skills-frontmatter", "skills-frontmatter"),
         ("test", "test (unit, 2 workers, fail-fast)"),
         ("smoke", "smoke"),
@@ -50,22 +69,18 @@ def test_gate_lite_writes_phase_markers_to_status():
 
 def test_gate_lite_writes_terminal_marker():
     """gate-lite recipe emits terminal PASSED/FAILED markers into .gate-lite-status."""
-    content = _content()
-    idx = content.find("gate-lite:")
-    recipe_block = content[idx:idx + 5000]
+    recipe_block = _target_block("gate-lite")
     assert "=== GATE-LITE: PASSED ===" in recipe_block, (
-        "gate-lite recipe missing terminal '=== GATE-LITE: PASSED ===' marker"
+        "gate-lite recipe missing PASSED terminal marker"
     )
     assert "=== GATE-LITE: FAILED ===" in recipe_block, (
-        "gate-lite recipe missing terminal '=== GATE-LITE: FAILED ===' marker"
+        "gate-lite recipe missing FAILED terminal marker"
     )
 
 
 def test_gate_lite_tracks_failed_file():
     """gate-lite recipe touches .gate-lite-failed on any phase failure."""
-    content = _content()
-    idx = content.find("gate-lite:")
-    recipe_block = content[idx:idx + 4000]
+    recipe_block = _target_block("gate-lite")
     assert ".gate-lite-failed" in recipe_block, (
         "gate-lite recipe missing .gate-lite-failed tracking file"
     )
@@ -73,10 +88,7 @@ def test_gate_lite_tracks_failed_file():
 
 def test_gate_lite_background_uses_nohup():
     """gate-lite-background must use nohup so the launched gate-lite survives shell exit."""
-    content = _content()
-    idx = content.find("gate-lite-background:")
-    assert idx != -1
-    recipe_block = content[idx:idx + 2000]
+    recipe_block = _target_block("gate-lite-background")
     assert "nohup" in recipe_block, (
         "gate-lite-background recipe must use nohup"
     )
@@ -84,9 +96,7 @@ def test_gate_lite_background_uses_nohup():
 
 def test_gate_lite_background_writes_pid_file():
     """gate-lite-background must write .gate-lite-background.pid for status-check."""
-    content = _content()
-    idx = content.find("gate-lite-background:")
-    recipe_block = content[idx:idx + 2000]
+    recipe_block = _target_block("gate-lite-background")
     assert ".gate-lite-background.pid" in recipe_block, (
         "gate-lite-background recipe must write .gate-lite-background.pid"
     )
