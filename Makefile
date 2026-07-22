@@ -78,7 +78,7 @@ PYTEST_VERBOSITY ?= -v
         verify-feature-claims audit-coverage gate-audit coverage-json \
         tf-cache-setup tf-init tf-validate tf-cache-warm tf-versions-check tf-clean \
         deck deck-serve deck-preview deck-data deck-honesty \
-        script-count strip-enforce-stop codemod-lean-enforcement-plugins codemod-exact-subagent-guards codemod-ci-shards-sigterm git-worktree-lock-clean test-hooks-live test-hook-runtime \
+        script-count strip-enforce-stop codemod-lean-enforcement-plugins codemod-exact-subagent-guards codemod-ci-shards-sigterm codemod-tui-table-widths git-worktree-lock-clean test-hooks-live test-hook-runtime \
         verify-enforcement \
         ci-view ci-rerun ci-trigger ci-remote-head-guard ci-active ci-job-log \
         ci-busy-check ci-safe-push pre-push-check push-guarded ci-await \
@@ -126,6 +126,7 @@ help:
 	@echo "  codemod-lean-enforcement-plugins  Slim counted enforcement plugin entrypoints"
 	@echo "  codemod-exact-subagent-guards  Restore literal OPENCODE_SUBAGENT early-return guards"
 	@echo "  codemod-ci-shards-sigterm  Enforce explicit failure on unexpected shard SIGTERM"
+	@echo "  codemod-tui-table-widths  Enforce explicit Rich table widths in TUI builders"
 	@echo "  sast                  Run bandit SAST"
 	@echo "  sbom                  Generate CycloneDX SBOM"
 	@echo "  pip-audit             Audit dependencies for vulnerabilities"
@@ -4159,6 +4160,9 @@ codemod-exact-subagent-guards:
 
 codemod-ci-shards-sigterm:
 	@uv run python3 scripts/update_ci_shards_sigterm.py
+
+codemod-tui-table-widths:
+	@uv run python3 scripts/codemod_tui_table_widths.py
 
 git-worktree-lock-clean:
 	@uv run python3 scripts/clean_worktree_index_lock.py

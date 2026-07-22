@@ -16,7 +16,7 @@ def _make_table(
     empty_msg: str = "",
     show_header: bool = True,
     selected_idx: int | None = None,
-    term_width: int = 80,
+    term_width: int = 60,
     data: list[Any] | None = None,
     row_formatter: Callable[[Any, int, int | None], tuple[str, ...]] | None = None,
 ) -> Table:
@@ -28,6 +28,7 @@ def _make_table(
         show_header=show_header,
         expand=True,
         title_justify="left",
+        width=max(term_width, 1) if term_width != 80 else None,
     )
     for name, style, ratio, min_w in columns:
         t.add_column(name, style=style, no_wrap=True, ratio=ratio, min_width=min_w)
