@@ -166,11 +166,12 @@ class SearXConnector:
                 except (ValueError, UnicodeDecodeError):
                     body = None
             return int(resp.status_code), body
+
         except httpx.TimeoutException:
             logger.warning("SearX request timed out: %s", url)
             return 0, None
-        except Exception:
-            logger.warning("SearX request failed: %s", url, exc_info=True)
+        except Exception as exc:
+            logger.warning("SearX request failed: %s (%s)", url, type(exc).__name__)
             return 0, None
 
     def search(

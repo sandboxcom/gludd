@@ -1588,9 +1588,11 @@ def _cmd_daemon(args: argparse.Namespace) -> None:
     playbooks_dir = getattr(args, "playbooks_dir", None)
 
     bind_host = args.host
-    psk = ""
+
+    psk = os.environ.get("GLUDD_PSK", "")
     if bind_host not in ("127.0.0.1", "localhost", "::1"):
-        psk = secrets.token_urlsafe(32)
+        if not psk:
+            psk = secrets.token_urlsafe(32)
         print(f"\n  Daemon binding to external interface: {bind_host}:{args.port}")
         print(f"  Pre-shared key (PSK): {psk}")
         print(f"  Clients must send: Authorization: Bearer {psk}\n")
@@ -1621,9 +1623,20 @@ def _cmd_daemon(args: argparse.Namespace) -> None:
         env=env,
     )
 
+
+    def _terminate_child(timeout: float = 5.0) -> None:
+        try:
+            proc.terminate()
+        except ProcessLookupError:
+            return
+        try:
+            proc.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait(timeout=timeout)
+
     def _forward_signal(signum: int, frame: Any) -> None:
-        proc.terminate()
-        proc.wait(timeout=5)
+        _terminate_child()
         sys.exit(128 + signum)
 
     signal.signal(signal.SIGTERM, _forward_signal)
@@ -1631,9 +1644,9 @@ def _cmd_daemon(args: argparse.Namespace) -> None:
 
     try:
         proc.wait()
-    except (KeyboardInterrupt, SystemExit):
-        proc.terminate()
-        proc.wait(timeout=5)
+    except KeyboardInterrupt:
+        _terminate_child()
+        sys.exit(130)
     sys.exit(proc.returncode)
 
 

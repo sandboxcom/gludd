@@ -1509,31 +1509,7 @@ provider-smoke:
 	@$(UV) run gludd smoke "$(PROVIDER)" "$(SMOKE_TEST)" $(ARGS)
 
 smoke:
-	@echo "=== SMOKE TEST: real daemon boot ==="
-	@PORT=$$(python3 -c "import socket; s=socket.socket(); s.bind(('',0)); print(s.getsockname()[1]); s.close()") && \
-	echo "Using port $$PORT" && \
-	trap 'kill $$PID 2>/dev/null; sleep 0.3; lsof -ti :$$PORT 2>/dev/null | xargs kill 2>/dev/null; echo "Daemon stopped (cleanup)"' EXIT && \
-	PID=$$(GLUDD_PORT=$$PORT $(UV) run python -m general_ludd.cli daemon --port $$PORT --log-level info > /tmp/gludd-smoke.log 2>&1 & echo $$!) && \
-	echo "Daemon PID: $$PID" && \
-	for i in $$(seq 1 30); do \
-		sleep 0.5; \
-		curl -sf http://localhost:$$PORT/healthz > /dev/null 2>&1 && break; \
-	done && \
-	echo "Healthz OK" && \
-	curl -sf http://localhost:$$PORT/api/status | python3 -m json.tool && \
-	curl -sf -X POST http://localhost:$$PORT/api/todos -H "Content-Type: application/json" \
-		-d '{"title":"smoke-test-todo","description":"auto-created by make smoke","queue":"intake","work_type":"code"}' \
-		| python3 -m json.tool && \
-	curl -sf http://localhost:$$PORT/api/todos | python3 -m json.tool > /dev/null && \
-	echo "Todo API OK" && \
-	! grep -i "typeerror\|traceback\|swallowed" /tmp/gludd-smoke.log > /dev/null 2>&1 && \
-	echo "No startup errors in log" && \
-	kill $$PID 2>/dev/null; \
-	sleep 0.3; \
-	lsof -ti :$$PORT 2>/dev/null | xargs kill 2>/dev/null; \
-	echo "Daemon stopped" && \
-	trap - EXIT && \
-	echo "=== SMOKE: PASSED ==="
+	@$(UV) run python scripts/smoke_daemon.py
 
 install-hooks:
 	@PIP_INDEX_URL=https://pypi.org/simple $(UV) run pre-commit install --install-hooks
