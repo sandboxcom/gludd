@@ -2405,6 +2405,11 @@ ci-view:
 ci-rerun:
 	@if [ -z "$(RUN)" ]; then echo "Usage: make ci-rerun RUN=<run-id>"; exit 1; fi
 	@gh run rerun -R sandboxcom/gludd $(RUN) 2>&1 || echo "ci-rerun-failed"
+# Guard remote CI dispatch: the local tree must be clean and sandboxcom/<branch> must equal HEAD.
+ci-remote-head-guard:
+	@REF="$(REF)"; if [ -z "$$REF" ]; then REF="$$(git branch --show-current)"; fi; \
+	REMOTE="$(REMOTE)"; if [ -z "$$REMOTE" ]; then REMOTE=sandboxcom; fi; \
+	GIT_SSH_COMMAND="ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new" $(PYTHON) scripts/ci_remote_head_guard.py --ref "$$REF" --remote "$$REMOTE"
 
 # Fresh dispatch of the Build and Release workflow on the current branch after exact-HEAD guard.
 ci-trigger: ci-remote-head-guard _require-gh
