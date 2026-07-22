@@ -956,7 +956,12 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
         help="Provision a real resource, run a model task, and tear it down",
     )
     smoke_parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
-    smoke_parser.add_argument("--output", default=None, help="Write the full JSON diagnostic bundle to this file")
+    smoke_parser.add_argument("--output", default=None, help="Write the rendered diagnostic bundle to this file")
+    smoke_parser.add_argument(
+        "--output-template",
+        default=None,
+        help="Compiled output template for smoke list/report rendering",
+    )
     smoke_parser.add_argument("--timeout", type=float, default=2.0, help="HTTP probe timeout in seconds")
     smoke_parser.add_argument("--max-cost-usd", type=float, default=10.0, help="Fail if estimated cost exceeds this")
     smoke_parser.add_argument("--base-url", default=None, help="Override endpoint base URL for this run")
@@ -1509,24 +1514,15 @@ def _cmd_config_terraform_set(args: argparse.Namespace) -> None:
 
 
 def _cmd_smoke(args: argparse.Namespace) -> None:
+    from general_ludd.output_templates import render_smoke_list, render_smoke_report
     from general_ludd.smoke import list_smoke_tests, run_smoke
 
     wants_list = bool(getattr(args, "list", False)) or getattr(args, "provider", None) in (None, "list")
+
     provider = None if getattr(args, "provider", None) == "list" else getattr(args, "provider", None)
     if wants_list:
         tests = list_smoke_tests(provider=provider)
-        if args.json:
-            print(json.dumps({"smoke_tests": tests}, indent=2, sort_keys=True))
-            return
-        print(f"{'provider':<22} {'test':<20} {'category':<14} {'cost':<8} description")
-        print("-" * 96)
-        for item in tests:
-            estimated_cost = float(str(item["estimated_cost_usd"]))
-            print(
-                f"{item['provider']!s:<22} {item['test']!s:<20} "
-                f"{item['category']!s:<14} ${estimated_cost:<7.3f} "
-                f"{item['description']}"
-            )
+        print(render_smoke_list(tests, json_output=bool(args.json), template_name=args.output_template))
         return
 
     if not args.test:
@@ -1551,26 +1547,11 @@ def _cmd_smoke(args: argparse.Namespace) -> None:
         print(str(exc), file=sys.stderr)
         sys.exit(2)
 
-    rendered_report = json.dumps(report, indent=2, sort_keys=True)
+    rendered_report = render_smoke_report(report, json_output=bool(args.json), template_name=args.output_template)
     if args.output:
         output_path = Path(str(args.output))
-        output_path.write_text(rendered_report + "\n", encoding="utf-8")
-
-    if args.json:
-        print(rendered_report)
-    else:
-        print(
-            f"smoke {report['status']} provider={report['provider']} test={report['test']} "
-            f"mode={report['mode']} run_id={report['run_id']} trace_id={report['trace_id']}"
-        )
-        if args.output:
-            print(f"diagnostic_bundle={args.output}")
-        print(
-            "metrics "
-            + " ".join(f"{key}={value}" for key, value in sorted(report["metrics"].items()))
-        )
-        for log in report["logs"]:
-            print(f"{log['level']} {log['message']} {json.dumps(log['fields'], sort_keys=True)}")
+        output_path.write_text(rendered_report + chr(10), encoding="utf-8")
+    print(rendered_report)
 
     if report["status"] != "pass":
         sys.exit(1)

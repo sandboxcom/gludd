@@ -1,0 +1,3 @@
+{% for item in trace -%}
+{{ item | tojson(indent=None) }}
+{% endfor -%}

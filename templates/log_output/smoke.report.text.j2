@@ -1,0 +1,27 @@
+smoke report
+run_id: {{ report.run_id | default("") }}
+trace_id: {{ report.trace_id | default("") }}
+provider: {{ report.provider }}
+test: {{ report.test }}
+status: {{ report.status }}
+mode: {{ report.mode | default("") }}
+coverage_depth: {{ report.coverage_depth | default("") }}
+functional_scope:{% for item in report.functional_scope | default([]) %} {{ item }}{% endfor %}
+estimated_cost_usd: {{ report.estimated_cost_usd | default(0) }}
+
+metrics:
+{% for key, value in metrics | dictsort %}  {{ key }}: {{ value }}
+{% endfor %}
+logs:
+{% for log in logs %}  {{ log.sequence | default("") }} {{ log.level }} {{ log.message }}{% if log.fields | default({}) %} {{ log.fields | tojson(indent=None) }}{% endif %}
+{% else %}  none
+{% endfor %}
+events:
+{% for event in events %}  {{ event.sequence | default("") }} {{ event.name }}{% if event.fields | default({}) %} {{ event.fields | tojson(indent=None) }}{% endif %}
+{% else %}  none
+{% endfor %}
+endpoint_diagnostics:
+{{ report.endpoint_diagnostics | default({}) | tojson }}
+model_juggle:
+{{ report.model_juggle | default({}) | tojson }}
+analysis_prompt: {{ report.analysis_prompt | default("") }}
