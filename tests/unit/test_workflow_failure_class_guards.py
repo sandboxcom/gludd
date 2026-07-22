@@ -108,34 +108,48 @@ def test_development_push_verifies_remote_sha_after_push() -> None:
     assert "git rev-parse development" in block
 
 
-def test_committed_head_ci_path_pushes_and_dispatches_without_clean_tree_gate() -> None:
+def test_committed_head_ci_path_requires_clean_state_before_push_and_dispatch() -> None:
     push_line = _target_line("git-push-committed-head-nv")
+    trigger_line = _target_line("ci-trigger-committed-head")
     push_block = _target_block("git-push-committed-head-nv")
     trigger_block = _target_block("ci-trigger-committed-head")
     combined_line = _target_line("ci-push-committed-head")
 
-    assert "check-clean-tree" not in push_line
-    assert "git diff --cached --quiet" in push_block
-    assert "_push-rate-guard" in push_block
+    assert "commit-ready" in push_line
+    assert "gha-ready" in trigger_line
+    assert "uncommitted files are not included" not in push_block
+    assert "dirty local files are not included" not in trigger_block
+    assert "Pushed clean HEAD" in push_block
+    assert "Triggered Build and Release for clean HEAD" in trigger_block
     assert "HEAD:refs/heads/" in push_block
     assert "verify-remote" in push_block
-    assert "uncommitted files are not included" in push_block
-
-    assert "git diff --cached --quiet" in trigger_block
-    assert "git ls-remote sandboxcom refs/heads/" in trigger_block
     assert "gh workflow run \"Build and Release\"" in trigger_block
-    assert "dirty local files are not included" in trigger_block
-
     assert "git-push-committed-head-nv" in combined_line
     assert "ci-trigger-committed-head" in combined_line
 
 
+def test_workflow_state_machine_targets_back_release_and_ci_paths() -> None:
+    makefile = _makefile()
+    for target in ["workflow-state", "workflow-gate", "commit-ready", "gha-ready", "merge-ready"]:
+        assert target + ":" in makefile
+
+    gha_block = _target_block("gha-ready")
+    merge_line = _target_line("development-merge-to-master")
+
+    assert "scripts/workflow_state_guard.py --json" in _target_block("workflow-state")
+    assert "--assert-clean --assert-no-feature-on-master" in _target_block("workflow-gate")
+    assert "scripts/ci_remote_head_guard.py" in gha_block
+    assert "/Users/shawnwilson/gludd/sandboxcom_github_rsa" in gha_block
+    assert "merge-ready" in merge_line
+
+
 def test_committed_head_ci_path_uses_worktree_safe_key_and_fails_closed() -> None:
     push_block = _target_block("git-push-committed-head-nv")
+    gha_block = _target_block("gha-ready")
     trigger_block = _target_block("ci-trigger-committed-head")
 
     assert "/Users/shawnwilson/gludd/sandboxcom_github_rsa" in push_block
-    assert "/Users/shawnwilson/gludd/sandboxcom_github_rsa" in trigger_block
+    assert "/Users/shawnwilson/gludd/sandboxcom_github_rsa" in gha_block
     assert "git push --no-verify -u sandboxcom HEAD:refs/heads/" in push_block
     assert "verify-remote BRANCH=" in push_block
     assert "gh workflow run \"Build and Release\"" in trigger_block

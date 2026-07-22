@@ -24,6 +24,7 @@ from general_ludd.git_automation.locking import git_repo_lock
 from general_ludd.git_automation.types import (
     CloneResult,
     GatedCommitResult,
+    GitStateResult,
     InitResult,
     MergeResult,
     PushResult,
@@ -361,6 +362,148 @@ class GitAutomation:
         except Exception:
             return "unknown"
 
+    def _git_stdout_or_empty(self, *args: str) -> str:
+        result = self._run_git(*args, check=False)
+        if result.returncode != 0:
+            return ""
+        return result.stdout.strip()
+
+    @staticmethod
+    def _state_status_lines(status_output: str) -> list[str]:
+        return [line for line in status_output.splitlines() if line.strip()]
+
+    @staticmethod
+    def _state_staged_count(lines: list[str]) -> int:
+        return sum(1 for line in lines if line[:2] != "??" and line[:1] not in {"", " "})
+
+    @staticmethod
+    def _state_untracked_count(lines: list[str]) -> int:
+        return sum(1 for line in lines if line.startswith("??"))
+
+    @staticmethod
+    def _state_remote_head(output: str) -> str:
+        rows = output.splitlines()
+        if not rows:
+            return ""
+        parts = rows[0].split()
+        return parts[0] if parts else ""
+
+    def _master_is_ancestor_of_development(
+        self,
+        master_head: str,
+        development_head: str,
+    ) -> bool | None:
+        if not master_head or not development_head:
+            return None
+        result = self._run_git(
+            "merge-base",
+            "--is-ancestor",
+            master_head,
+            development_head,
+            check=False,
+        )
+        if result.returncode == 0:
+            return True
+        if result.returncode == 1:
+            return False
+        raise subprocess.CalledProcessError(
+            result.returncode,
+            result.args,
+            output=result.stdout,
+            stderr=result.stderr,
+        )
+
+    def workflow_state(
+        self,
+        *,
+        remote: str = "sandboxcom",
+        ref: str = "",
+        gha_head_sha: str = "",
+        assert_clean: bool = False,
+        assert_no_feature_on_master: bool = False,
+        assert_merge_ready: bool = False,
+        assert_remote_head: bool = False,
+        assert_gha_matches_local: bool = False,
+    ) -> GitStateResult:
+        branch = self._git_stdout_or_empty("branch", "--show-current") or "DETACHED"
+        head = self._run_git("rev-parse", "--verify", "HEAD").stdout.strip()
+        status_result = self._run_git(
+            "status",
+            "--porcelain=v1",
+            "--untracked-files=all",
+        )
+        status = self._state_status_lines(status_result.stdout)
+        remote_name = remote or "sandboxcom"
+        remote_branch = ref or branch
+        remote_ref = f"refs/heads/{remote_branch}"
+        remote_head = self._state_remote_head(
+            self._git_stdout_or_empty("ls-remote", remote_name, remote_ref)
+        )
+        master_head = self._git_stdout_or_empty("rev-parse", "--verify", "master")
+        development_head = self._git_stdout_or_empty("rev-parse", "--verify", "development")
+        master_in_development = self._master_is_ancestor_of_development(
+            master_head,
+            development_head,
+        )
+        staged_count = self._state_staged_count(status)
+        untracked_count = self._state_untracked_count(status)
+        dirty_count = len(status)
+        errors: list[str] = []
+        if assert_clean and dirty_count:
+            errors.append(
+                f"{dirty_count} dirty path(s) make local test evidence "
+                "unreproducible in GHA"
+            )
+        if assert_no_feature_on_master and branch == "master" and dirty_count:
+            errors.append(
+                "feature or guardrail edits are present on master; "
+                "use development or a release-sync worktree"
+            )
+        if assert_merge_ready:
+            if master_in_development is None:
+                errors.append(
+                    "cannot prove master is contained in development; "
+                    "both branches must exist before release merge"
+                )
+            elif not master_in_development:
+                errors.append(
+                    "master has commits not contained in development; "
+                    "repair topology before release merge, do not cherry-pick"
+                )
+        if assert_remote_head:
+            if not remote_head:
+                errors.append(f"remote branch {remote_name}/{remote_ref} does not exist")
+            elif remote_head != head:
+                errors.append(
+                    f"remote {remote_name}/{remote_ref} is {remote_head}, "
+                    f"not local HEAD {head}"
+                )
+        if assert_gha_matches_local:
+            if not gha_head_sha:
+                errors.append(
+                    "latest GHA head SHA was not provided; "
+                    "cannot prove CI is testing this commit"
+                )
+            elif gha_head_sha != head:
+                errors.append(f"latest GHA head {gha_head_sha} does not match local HEAD {head}")
+        return GitStateResult(
+            success=not errors,
+            branch=branch,
+            head=head,
+            dirty_count=dirty_count,
+            staged_count=staged_count,
+            untracked_count=untracked_count,
+            status=status,
+            remote=remote_name,
+            remote_ref=remote_ref,
+            remote_head=remote_head,
+            master_head=master_head,
+            development_head=development_head,
+            master_is_ancestor_of_development=master_in_development,
+            gha_head_sha=gha_head_sha,
+            errors=errors,
+        )
+
     def create_branch(self, name: str, *, use_ansible: bool = False) -> str:
         _reject_leading_dash(name, kind="branch name")
         if use_ansible:
@@ -656,8 +799,8 @@ class GitAutomation:
     def _reject_escaping_path(repo_path: str, worktree_path: str) -> None:
         """Reject a worktree path that escapes the repo's parent directory.
 
-        Worktrees are expected to live beside the repo (or under it). A path
-        containing ``..`` that resolves above the repo parent is refused so a
+        Worktrees are expected to live beside the repo (or under it), or in a
+        gludd-owned temporary root. A path containing ``..`` is refused so a
         traversal value cannot plant a worktree in an arbitrary location.
         """
         # A `..` component is the traversal primitive that escapes the intended
@@ -679,9 +822,30 @@ class GitAutomation:
             root_prefix = root.rstrip(os.sep) + os.sep
             if target == root or target.startswith(root_prefix):
                 return
+        if GitAutomation._is_gludd_temp_worktree_path(target):
+            return
         raise ValueError(
             f"refusing worktree path that escapes the repo parent: {worktree_path!r}"
         )
+
+    @staticmethod
+    def _is_gludd_temp_worktree_path(path: str) -> bool:
+        real_target = os.path.realpath(path)
+        temp_roots = {
+            os.path.realpath(tempfile.gettempdir()),
+            os.path.realpath("/tmp"),
+        }
+        for root in temp_roots:
+            try:
+                if os.path.commonpath([root, real_target]) != root:
+                    continue
+            except ValueError:
+                continue
+            rel = os.path.relpath(real_target, root)
+            first_component = rel.split(os.sep, 1)[0]
+            if first_component.startswith("gludd-"):
+                return True
+        return False
 
     def remove_worktree(self, repo_path: str, worktree_path: str) -> bool:
         _reject_leading_dash(worktree_path, kind="worktree path")

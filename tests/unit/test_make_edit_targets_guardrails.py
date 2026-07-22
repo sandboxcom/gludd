@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import sys
@@ -143,3 +144,39 @@ def test_base64_edit_targets_use_make_variables_not_shell_text_env() -> None:
     assert "mktemp /tmp/gludd-old." in replace_body
     assert "mktemp /tmp/gludd-new." in replace_body
     assert "scripts/replace_text.py" in replace_body
+
+
+REPLACE_LINES = ROOT / "scripts" / "replace_lines.py"
+
+
+def test_replace_lines_accepts_tmp_gludd_path_after_private_tmp_resolution() -> None:
+    target = Path(f"/tmp/gludd-replace-lines-{os.getpid()}.txt")
+    new_file = Path(f"/tmp/gludd-replace-lines-new-{os.getpid()}.txt")
+    try:
+        target.write_text(
+            "one" + chr(10) + "two" + chr(10) + "three" + chr(10),
+            encoding="utf-8",
+        )
+        new_file.write_text(chr(9) + "TWO" + chr(10), encoding="utf-8")
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(REPLACE_LINES),
+                str(target),
+                "2",
+                "2",
+                str(new_file),
+            ],
+            cwd=ROOT,
+            check=False,
+            text=True,
+            capture_output=True,
+        )
+
+        expected = "one" + chr(10) + chr(9) + "TWO" + chr(10) + "three" + chr(10)
+        assert result.returncode == 0, result.stderr
+        assert target.read_text(encoding="utf-8") == expected
+    finally:
+        target.unlink(missing_ok=True)
+        new_file.unlink(missing_ok=True)

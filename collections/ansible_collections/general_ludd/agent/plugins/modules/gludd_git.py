@@ -32,7 +32,7 @@ DOCUMENTATION:
         - Operation to perform. C(worktree_list) is read-only; the rest mutate.
       type: str
       required: true
-      choices: [commit, branch, worktree_list, worktree_create, worktree_remove, merge, push]
+choices: [commit, branch, worktree_list, worktree_create, worktree_remove, merge, push, state]
     message:
       description: Commit message (required when C(op=commit)).
       type: str
@@ -142,7 +142,7 @@ def main() -> None:
             op=dict(
                 type="str",
                 required=True,
-                choices=[
+choices=[
                     "commit",
                     "branch",
                     "worktree_list",
@@ -150,6 +150,7 @@ def main() -> None:
                     "worktree_remove",
                     "merge",
                     "push",
+                    "state",
                 ],
             ),
             message=dict(type="str", default=None),
@@ -158,7 +159,14 @@ def main() -> None:
             source=dict(type="str", default=None),
             target=dict(type="str", default=None),
             strategy=dict(type="str", default="ff", choices=["ff", "no-ff", "squash"]),
-            remote=dict(type="str", default="origin"),
+remote=dict(type="str", default="origin"),
+            state_ref=dict(type="str", default=""),
+            state_gha_head_sha=dict(type="str", default=""),
+            state_assert_clean=dict(type="bool", default=False),
+            state_assert_no_feature_on_master=dict(type="bool", default=False),
+            state_assert_merge_ready=dict(type="bool", default=False),
+            state_assert_remote_head=dict(type="bool", default=False),
+            state_assert_gha_matches_local=dict(type="bool", default=False),
         ),
         required_if=[
             ("op", "commit", ["message"]),
@@ -174,6 +182,7 @@ def main() -> None:
     path: str = module.params["path"]
     op: str = module.params["op"]
 
+
     try:
         from general_ludd.git_automation.repo import GitAutomation  # type: ignore[import]
     except ImportError as exc:
@@ -182,6 +191,27 @@ def main() -> None:
 
     git = GitAutomation(repo_path=path)
 
+    if op == "state":
+        try:
+            state_result = git.workflow_state(
+                remote=module.params["remote"],
+                ref=module.params["state_ref"],
+                gha_head_sha=module.params["state_gha_head_sha"],
+                assert_clean=module.params["state_assert_clean"],
+                assert_no_feature_on_master=module.params["state_assert_no_feature_on_master"],
+                assert_merge_ready=module.params["state_assert_merge_ready"],
+                assert_remote_head=module.params["state_assert_remote_head"],
+                assert_gha_matches_local=module.params["state_assert_gha_matches_local"],
+            )
+        except subprocess.CalledProcessError as exc:
+            module.fail_json(**error_result(f"git state failed: {exc.stderr or exc}"))
+            return
+        payload = asdict(state_result)
+        if not state_result.success:
+            module.fail_json(**error_result("git state guard failed", result=payload))
+            return
+        module.exit_json(**ok_result({"result": payload}, changed=False))
+        return
     if op == "commit":
         message: str = module.params["message"]
         # Route the dirty-check through the library (under git_repo_lock) rather
