@@ -314,3 +314,7 @@ class WinWmiConnector:
             "labels": labels,
             "raw": {"command": f"Get-CimInstance -ClassName {wmi_class}", "data": obj},
         }
+
+
+class WindowsWmiSource(WinWmiConnector):
+    """Observability source adapter for Windows WMI/CIM telemetry."""

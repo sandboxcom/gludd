@@ -13,8 +13,9 @@ from general_ludd.daemon import create_daemon_app
 
 @pytest.fixture(autouse=True)
 def _reset_daemon_state():
-    daemon_mod._daemon_state["todos"] = []
-    daemon_mod._daemon_state["tick_metrics"] = {}
+    if daemon_mod._daemon_state is not None:
+        daemon_mod._daemon_state["todos"] = []
+        daemon_mod._daemon_state["tick_metrics"] = {}
 
 
 @pytest.fixture

@@ -562,8 +562,8 @@ def validate_saml_signature(saml_xml: str, cert_pem: str) -> bool:
     if not sig_nodes:
         return False
     sig_node = sig_nodes[0]
-    ctx = xmlsec.SignatureContext(cast(Any, None))
-    ctx.key = xmlsec.Key.from_memory(cert_pem, xmlsec.KeyFormat.CERT_PEM, cast(Any, None))
+    ctx = xmlsec.SignatureContext(None)
+    ctx.key = xmlsec.Key.from_memory(cert_pem, xmlsec.KeyFormat.CERT_PEM, None)
     try:
         ctx.verify(sig_node)
     except Exception:

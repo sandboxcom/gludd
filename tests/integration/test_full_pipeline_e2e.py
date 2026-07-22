@@ -4,6 +4,7 @@ import json
 import subprocess
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -19,6 +20,16 @@ from general_ludd.event_loop.loop import EventLoop
 from general_ludd.review.reviewer import ReturnReviewer
 from general_ludd.schemas.job import JobSpec
 from general_ludd.schemas.task_return import TaskReturn
+
+_PROJECT_ID = "proj-full-pipeline-e2e"
+
+
+def _project_manager_stub() -> SimpleNamespace:
+    project = SimpleNamespace(project_id=_PROJECT_ID)
+    return SimpleNamespace(
+        select_project=lambda: project,
+        list_active=lambda: [project],
+    )
 
 
 def _init_git_repo(path: str) -> None:
@@ -47,9 +58,8 @@ async def _create_test_infra():
         await conn.run_sync(Base.metadata.create_all)
     factory = async_sessionmaker(engine, expire_on_commit=False)
 
-    from general_ludd.daemon import _daemon_state
     from general_ludd.routers.todos import register as reg_todos
-    _daemon_state["todos"] = []
+    daemon_state: dict[str, object] = {"todos": []}
 
     app = FastAPI()
     app.state._session_factory = factory
@@ -60,7 +70,8 @@ async def _create_test_infra():
     app.state.event_loop = None
     app.state._templates_dir = None
     app.state._playbooks_dir = None
-    reg_todos(app, _daemon_state)
+    app.state._project_manager = _project_manager_stub()
+    reg_todos(app, daemon_state)
 
     transport = ASGITransport(app=app)
     client = AsyncClient(transport=transport, base_url="http://test")
@@ -79,6 +90,7 @@ class TestFullPipelineE2E:
                 "queue": "core",
                 "priority": "high",
                 "work_type": "code",
+                "project_id": _PROJECT_ID,
             },
         )
         assert resp.status_code == 201
@@ -126,7 +138,10 @@ class TestFullPipelineE2E:
             # repo_root resolves to the workspace so the gate can verify the
             # artifact ref against the file the ExecutionEngine actually wrote.
             loop = EventLoop(
-                session=factory, daemon_state={}, config={"repo_root": ws}
+                session=factory,
+                daemon_state={},
+                config={"repo_root": ws},
+                project_manager=_project_manager_stub(),
             )
 
             async def patched_dispatch(todo_item, **_kwargs):
@@ -140,6 +155,7 @@ class TestFullPipelineE2E:
                     queue="core",
                     work_type="code",
                     prompt_text=todo_item.title,
+                    project_id=todo_item.project_id,
                 )
                 result = engine_exec.execute(job)
                 if task_return_repo is not None:
@@ -151,6 +167,7 @@ class TestFullPipelineE2E:
                         "queue": result.queue,
                         "exit_code": result.exit_code,
                         "result_summary": result.result_summary,
+                        "project_id": todo_item.project_id,
                     })
                     job_session = _kwargs.get("_session_override")
                     todo_repo = (
@@ -199,6 +216,7 @@ class TestFullPipelineE2E:
                     # Persist the verifiable evidence refs so the reconcile-phase
                     # gate can re-check them and keep the decision `complete`.
                     evidence_refs=json.dumps(decision.evidence_refs),
+                    project_id=_PROJECT_ID,
                 )
                 session.add(dm)
                 await session.commit()

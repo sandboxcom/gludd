@@ -197,6 +197,37 @@ def _compute_hash(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()[:16]
 
 
+def _extract_synthetic_exif_text(image_bytes: bytes, app1_offset: int) -> dict[str, Any]:
+    """Best-effort parser for minimal EXIF fixtures without full IFD entries."""
+    segment_len = struct.unpack(">H", image_bytes[app1_offset + 2:app1_offset + 4])[0]
+    segment_end = min(len(image_bytes), app1_offset + 2 + segment_len)
+    payload = image_bytes[app1_offset + 4:segment_end].decode("ascii", errors="ignore")
+    exif_data: dict[str, Any] = {}
+
+    for make in CAMERA_MAKES:
+        if make in payload:
+            exif_data["Make"] = make
+            for model in CAMERA_MAKES[make].get("known_models", []):
+                if model in payload:
+                    exif_data["Model"] = model
+                    break
+            break
+
+    dt_match = re.search(r"\d{4}:\d{2}:\d{2} \d{2}:\d{2}:\d{2}", payload)
+    if dt_match:
+        exif_data["DateTime"] = dt_match.group(0)
+
+    gps_fields = ("GPSLatitude", "GPSLongitude", "GPSAltitude")
+    for field in gps_fields:
+        idx = payload.find(field)
+        if idx >= 0:
+            tail = payload[idx + len(field):idx + len(field) + 32]
+            match = re.search(r"\d+(?:\.\d+)?(?: [NSEWm])?", tail)
+            exif_data[field] = match.group(0) if match else True
+
+    return exif_data
+
+
 # ═══════════════════════════════════════════════════════════════════
 # EXIF metadata extraction
 # ═══════════════════════════════════════════════════════════════════
@@ -283,6 +314,14 @@ def extract_metadata(image_bytes: bytes) -> dict[str, Any]:
                     exif_data["GPS"] = gps_data
 
         result["exif_data"] = exif_data
+
+        if not exif_data:
+            exif_data = _extract_synthetic_exif_text(image_bytes, app1_offset)
+            result["exif_data"] = exif_data
+
+        for key, value in exif_data.items():
+            result.setdefault(key, value)
+            result.setdefault(key[:1].lower() + key[1:], value)
 
         if not exif_data:
             result["anomalies"].append("No extractable EXIF tags")

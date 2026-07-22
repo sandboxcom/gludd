@@ -49,34 +49,25 @@
     _apd_wait_jids: >-
       {{ _apd_required_jids if join_policy == 'required' else _apd_all_jids }}
 
-# 3) BARRIER (the await): poll async_status for every job in the batch until the
-#    wait-set is satisfied. async_status is itself looped over all job ids; the
-#    `until` condition checks the WAIT-SET (required ids for 'required', all ids
-#    otherwise, >=1 finished for 'any'). retries*delay bounds the wait.
+# 3) BARRIER (the await): poll async_status for the selected wait-set. Do not
+#    check aggregate register.results inside loop+until; Ansible only builds
+#    that aggregate after the loop completes, so such a condition burns every
+#    retry for every item.
 - name: "Barrier-join batch {{ _apd_batch_idx }} (await promises)"
   ansible.builtin.async_status:
     jid: "{{ _apd_jid }}"
-  loop: "{{ _apd_all_jids }}"
+  loop: "{{ _apd_wait_jids }}"
   loop_control:
     loop_var: _apd_jid
     label: "jid {{ _apd_jid }}"
   register: _apd_poll
-  until: >-
-    ( _apd_poll.results is defined ) and (
-      ( join_policy == 'any' and
-        (_apd_poll.results | selectattr('finished', 'defined') | selectattr('finished') | list | length) >= 1 )
-      or
-      ( join_policy != 'any' and
-        (_apd_poll.results
-           | selectattr('ansible_job_id', 'in', _apd_wait_jids)
-           | selectattr('finished', 'defined') | selectattr('finished')
-           | list | length) >= (_apd_wait_jids | length) )
-    )
+  until: _apd_poll.finished | default(false) | bool
   retries: "{{ barrier_retries | int }}"
   delay: "{{ barrier_delay | int }}"
   # Don't hard-fail the play if optional jobs never finished — the join-policy
   # assert in main.yml is the single source of truth for success/failure.
   failed_when: false
+  when: (_apd_wait_jids | length) > 0
   no_log: "{{ psk | length > 0 }}"
 
 # 4) HARVEST: poll each job individually for fresh results, then fold into

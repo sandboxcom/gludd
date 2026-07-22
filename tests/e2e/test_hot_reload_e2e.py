@@ -215,7 +215,10 @@ class TestHookSystemE2E:
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=None)
 
-        with patch("httpx.AsyncClient", return_value=mock_client):
+        with (
+            patch("general_ludd.events.hooks.resolve_and_pin", return_value=[]),
+            patch("httpx.AsyncClient", return_value=mock_client),
+        ):
             hooks.register_webhook("on_model_added", "https://example.com/hook")
             hooks.fire("on_model_added", {"model": "gpt-5"})
             mock_client.post.assert_called_once()
@@ -242,7 +245,10 @@ class TestHookSystemE2E:
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=None)
 
-        with patch("httpx.AsyncClient", return_value=mock_client):
+        with (
+            patch("general_ludd.events.hooks.resolve_and_pin", return_value=[]),
+            patch("httpx.AsyncClient", return_value=mock_client),
+        ):
             hooks.register_webhook(
                 "on_reload",
                 "https://example.com/hook",
@@ -259,7 +265,10 @@ class TestHookSystemE2E:
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=None)
 
-        with patch("httpx.AsyncClient", return_value=mock_client):
+        with (
+            patch("general_ludd.events.hooks.resolve_and_pin", return_value=[]),
+            patch("httpx.AsyncClient", return_value=mock_client),
+        ):
             hooks.register_webhook("on_x", "https://example.com/hook", retry_count=2)
             hooks.fire("on_x", {})
             assert mock_client.post.call_count == 2
@@ -299,7 +308,10 @@ class TestHookSystemE2E:
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=None)
 
-        with patch("httpx.AsyncClient", return_value=mock_client):
+        with (
+            patch("general_ludd.events.hooks.resolve_and_pin", return_value=[]),
+            patch("httpx.AsyncClient", return_value=mock_client),
+        ):
             hooks.register_webhook("on_x", "https://example.com", timeout_seconds=5)
             hooks.fire("on_x", {})
             call_kwargs = mock_client.post.call_args[1]
@@ -1234,7 +1246,10 @@ class TestHotReloadFullIntegration:
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=None)
 
-        with patch("httpx.AsyncClient", return_value=mock_client):
+        with (
+            patch("general_ludd.events.hooks.resolve_and_pin", return_value=[]),
+            patch("httpx.AsyncClient", return_value=mock_client),
+        ):
             gateway.add_profile("gpt-5", provider="openai", model="gpt-5", api_key_env="KEY")
 
             webhook_calls = [c for c in mock_client.post.call_args_list if "hooks.example.com" in str(c)]

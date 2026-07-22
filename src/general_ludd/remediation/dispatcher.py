@@ -220,11 +220,7 @@ class RemediationDispatcher:
                 "work_type": blocked.task_type or "unknown",
                 "priority": 0,
                 "project_id": blocked.project_id,
-                "parent_todo_id": (
-                    blocked.todo_id
-                    if not blocked.todo_id.startswith("HTODO:")
-                    else None
-                ),
+                "parent_todo_id": None,
                 "status": TodoStatus.QUEUED.value,
             }
         await self._todo_repo.create(todo_data)
@@ -242,6 +238,7 @@ class RemediationDispatcher:
         delay = timedelta(hours=self.config.retry_delay_hours)
         fire_at = self._clock() + delay
         new_id = _new_scheduled_todo_id()
+        original = await self._todo_repo.get_by_id(blocked.todo_id)
         todo_data = {
             "todo_id": new_id,
             "title": f"Retry: {blocked.blocker_summary[:120]}",
@@ -253,7 +250,7 @@ class RemediationDispatcher:
             "queue": "core",
             "work_type": blocked.task_type or "unknown",
             "project_id": blocked.project_id,
-            "parent_todo_id": blocked.todo_id,
+            "parent_todo_id": blocked.todo_id if original is not None else None,
             "status": TodoStatus.SCHEDULED.value,
             "scheduled_at": fire_at,
         }
@@ -289,9 +286,8 @@ class RemediationDispatcher:
             if blocked.blocker_kind == "permission_escalation"
             else "blocker"
         )
-        parent_id = (
-            blocked.todo_id if not blocked.todo_id.startswith("HTODO:") else None
-        )
+        original = await self._todo_repo.get_by_id(blocked.todo_id)
+        parent_id = blocked.todo_id if original is not None else None
         ht = await self._human_todo_repo.create(
             agent_id="remediation-system",
             title=f"[remediation] Escalation: {blocked.blocker_summary[:200]}",

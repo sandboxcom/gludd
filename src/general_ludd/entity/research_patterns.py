@@ -162,6 +162,8 @@ def detect_acquisitions(text: str) -> list[AcquisitionInfo]:
         action_word = match.group(1).strip().lower()
         if "merged" in action_word:
             action = "merged"
+        elif "merger" in action_word:
+            action = "merger"
         elif (
             "acquired" in action_word
             or "purchased" in action_word
@@ -178,6 +180,24 @@ def detect_acquisitions(text: str) -> list[AcquisitionInfo]:
                 raw_text=match.group(0),
             )
         )
+
+    active_pattern = re.compile(
+        r"([A-Z][A-Za-z0-9&.]{1,59})\s+acquired\s+([A-Z][A-Za-z0-9&.]{1,59})",
+        re.IGNORECASE,
+    )
+    seen = {(item.acquirer, item.action, item.raw_text) for item in results}
+    for match in active_pattern.finditer(text):
+        if match.group(2).strip().lower() == "by":
+            continue
+        item = AcquisitionInfo(
+            acquirer=match.group(2).strip(),
+            action="acquired",
+            raw_text=match.group(0),
+        )
+        key = (item.acquirer, item.action, item.raw_text)
+        if key not in seen:
+            seen.add(key)
+            results.append(item)
     return results
 
 

@@ -82,6 +82,29 @@ _SKIP_REASON = (
     "ZAI_API_KEY not set and .zai.key not found — "
     "set ZAI_API_KEY or place key in .zai.key to run the live self-improve z.ai test"
 )
+_ACCEPTABLE_PROVIDER_ERROR_MARKERS = (
+    "authentication",
+    "api key",
+    "expired",
+    "insufficient",
+    "limit exhausted",
+    "quota",
+    "ratelimiterror",
+    "rate limit",
+    "token",
+    "unauthorized",
+    "weekly/monthly limit",
+    "429",
+    "529",
+    "503",
+    "timeout",
+    "overloaded",
+)
+
+
+def _is_acceptable_provider_error(exc: BaseException) -> bool:
+    text = f"{type(exc).__name__}: {exc}".lower()
+    return any(marker in text for marker in _ACCEPTABLE_PROVIDER_ERROR_MARKERS)
 
 # ---------------------------------------------------------------------------
 # Gateway builder (mirrors test_pipeline_live_zai.py)
@@ -479,12 +502,20 @@ class TestSelfImproveLiveZai:
             "Output ONLY the JSON object."
         )
 
-        response = gateway.call_model(
-            "zai_self_improve",
-            messages=[{"role": "user", "content": prompt}],
-            estimated_cost=0.0,
-            budget_remaining=1.0,
-        )
+        try:
+            response = gateway.call_model(
+                "zai_self_improve",
+                messages=[{"role": "user", "content": prompt}],
+                estimated_cost=0.0,
+                budget_remaining=1.0,
+            )
+        except Exception as exc:
+            if _is_acceptable_provider_error(exc):
+                pytest.skip(
+                    "z.ai live provider rejected request after connectivity: "
+                    f"{exc}"
+                )
+            raise
 
         content = response.content
         usage = response.usage_metadata or {}

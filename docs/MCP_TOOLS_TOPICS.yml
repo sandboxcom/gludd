@@ -449,7 +449,8 @@ general_ludd.agent.gludd_embed:
       under C(ansible_facts.gludd_embed).
     - Read-only and check-mode safe — it performs no writes (C(changed=False)).
     - Similarity is computed over the same embedding layer the adaptive router uses
-      (HashEmbedder offline, OpenAIEmbedder when C(OPENAI_API_KEY) is set on the daemon).
+      (HashEmbedder by default; OpenAIEmbedder only when C(GLUDD_TASK_EMBEDDINGS_PROVIDER=openai)
+      and C(OPENAI_API_KEY) are set on the daemon).
     module: gludd_embed
     options:
       corpus:
@@ -2434,6 +2435,114 @@ general_ludd.agent.gludd_reload:
       returned: always
       type: bool
   module: gludd_reload
+general_ludd.agent.gludd_scapy:
+  DOCUMENTATION:
+    description:
+    - Wraps the C(general_ludd.networking.scapy_adapter) so networking playbooks can
+      craft, send, sniff, and analyze packets directly.
+    - Read-only actions (C(read_pcap), C(analyze_pcap), C(dissect_packet)) are check-mode
+      safe and return C(changed=False).
+    - Mutating actions (C(write_pcap), C(craft_packet), C(send_packet), C(sniff_packets))
+      require the adapter binary (C(scapy)) and return C(changed=True) on success.
+    - All actions run via the adapter's Python API (never C(shell=True)).
+    module: gludd_scapy
+    options:
+      action:
+        choices:
+        - read_pcap
+        - write_pcap
+        - craft_packet
+        - send_packet
+        - sniff_packets
+        - analyze_pcap
+        - dissect_packet
+        description: The Scapy operation to perform.
+        required: true
+        type: str
+      count:
+        default: 1
+        description: Packet count for C(sniff_packets) or repeat count for C(send_packet).
+        type: int
+      interface:
+        default: eth0
+        description: Network interface for C(send_packet) or C(sniff_packets).
+        type: str
+      output_format:
+        choices:
+        - json
+        - hex
+        default: json
+        description: Output format for C(dissect_packet) — C(json) or C(hex).
+        type: str
+      packet_fields:
+        description: Per-layer field overrides for C(craft_packet) or C(dissect_packet).
+        type: dict
+      packets:
+        description: List of packet dicts for C(craft_packet) batch construction.
+        elements: dict
+        type: list
+      pcap_path:
+        description: Filesystem path to a pcap file for read/write/analyze actions.
+        type: str
+      protocol_stack:
+        description: Ordered protocol layers for C(craft_packet), e.g. C(["Ether",
+          "IP", "TCP"]).
+        elements: str
+        type: list
+      timeout:
+        default: 30
+        description: Sniff timeout in seconds.
+        type: int
+    short_description: Packet crafting, sniffing, and pcap manipulation via Scapy
+  EXAMPLES:
+  - general_ludd.agent.gludd_scapy:
+      action: dissect_packet
+      packet_fields:
+        raw_hex: 00010203040506deadbeef00010800...
+    name: Decode a packet from hex
+    register: decoded
+  - general_ludd.agent.gludd_scapy:
+      action: craft_packet
+      packet_fields:
+        ICMP:
+          type: 8
+        IP:
+          dst: 8.8.8.8
+      protocol_stack:
+      - Ether
+      - IP
+      - ICMP
+    name: Craft an ICMP echo request
+    register: crafted
+  - general_ludd.agent.gludd_scapy:
+      action: sniff_packets
+      count: 5
+      interface: eth0
+      timeout: 10
+    name: Sniff DNS queries on eth0 for 10s
+    register: sniffed
+  - general_ludd.agent.gludd_scapy:
+      action: analyze_pcap
+      pcap_path: /tmp/capture.pcap
+    name: Read and summarize a pcap
+    register: analysis
+  RETURN:
+    result:
+      contains:
+        action:
+          description: The action that was executed.
+          type: str
+        output:
+          description: Action-specific output (packet hex/dicts, sniffed packets,
+            analysis summary).
+          type: raw
+        summary:
+          description: Human-readable summary when applicable.
+          type: str
+      description: Action-specific result payload.
+      returned: always
+      type: dict
+  module: gludd_scapy
 general_ludd.agent.gludd_schedule:
   DOCUMENTATION:
     description:

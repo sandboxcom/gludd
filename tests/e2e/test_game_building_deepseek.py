@@ -65,6 +65,7 @@ _SKIP_REASON = (
     "DEEPSEEK_API_KEY not set and .deepseek.key not found — "
     "set DEEPSEEK_API_KEY or place key in .deepseek.key to run game-building test"
 )
+_PROVIDER_SKIP_REASON = "langchain-openai is not installed — run make sync with provider dependencies"
 
 _DS_BASE_URL = "https://api.deepseek.com/v1"
 _E2E_TARGET_GAME = os.environ.get("E2E_TARGET_GAME", "").strip().lower()
@@ -82,6 +83,8 @@ def _get_deepseek_key() -> str | None:
 
 
 _DEEPSEEK_KEY = _get_deepseek_key()
+_HAS_LANGCHAIN_OPENAI = importlib.util.find_spec("langchain_openai") is not None
+_LIVE_SKIP_REASON = _SKIP_REASON if not _DEEPSEEK_KEY else _PROVIDER_SKIP_REASON
 
 
 
@@ -470,6 +473,10 @@ GAME_DEFINITIONS: dict[str, dict[str, Any]] = {
             - `tick(self) -> bool`: advance one frame; skier auto-moves down 1 row per tick;
               check collision with trees/rocks; return False if crashed, True if still skiing.
               Course scrolls: new obstacles spawn ahead, old ones removed behind.
+              The FIRST lines of tick() MUST be a terminal-state guard:
+              if state is not "playing" OR crashed/game_over/finished/won is true, return
+              immediately before changing skier_x, skier_y, score, distance_traveled, speed,
+              trees, rocks, obstacles, or any other mutable state.
             - `input(self, action: str)`: accept "left"/"right" (move skier 1 cell horizontally,
               clamped to bounds); "speed_up"/"slow_down" (change auto-scroll rate)
             - `render_state(self) -> dict`: return dict with keys: `course_w`, `course_h`,
@@ -1384,7 +1391,9 @@ def _find_player_attribute(state: dict[str, Any]) -> str | None:
 
 
 def _verify_game_skeleton(
-    mod: Any, preferred: str | None,
+    mod: Any,
+    preferred: str | None,
+    hints: list[tuple[Any, ...]] | None = None,
 ) -> tuple[list[str], Any]:
     """Shared discovery + instantiation. Returns (failures, instance_or_None)."""
     failures: list[str] = []
@@ -1393,7 +1402,7 @@ def _verify_game_skeleton(
         names = [n for n in dir(mod) if not n.startswith("_")]
         return ([f"no game class found (preferred={preferred!r}, names={names})"], None)
     try:
-        instance = _instantiate_game_generic(cls)
+        instance = _instantiate_game_generic(cls, hints=hints)
     except Exception as exc:
         return ([f"instantiation failed: {type(exc).__name__}: {exc}"], None)
     return failures, instance
@@ -1531,7 +1540,11 @@ def _verify_skifree_features(mod: Any) -> list[str]:
       - A list attribute exists for obstacles (trees/rocks), OR the state
         includes some iterable of obstacle positions.
     """
-    failures, instance = _verify_game_skeleton(mod, preferred="SkiFree")
+    failures, instance = _verify_game_skeleton(
+        mod,
+        preferred="SkiFree",
+        hints=[(40, 100), (40, 200), ()],
+    )
     if instance is None:
         return failures
     failures.extend(_check_tick_advances_state(instance))
@@ -1593,6 +1606,10 @@ def _verify_minesweeper_features(mod: Any) -> list[str]:
     if reveal is None:
         failures.append("no reveal-like method (reveal/click/open/dig) found")
     else:
+        start_fail = _invoke_start_method(instance)
+        if start_fail is not None:
+            failures.append(f"could not start game before reveal: {start_fail}")
+            return failures
         try:
             result = reveal[1](0, 0)
             if isinstance(result, str) and result not in (
@@ -3024,7 +3041,7 @@ def _call_deepseek(gateway: Any, prompt: str) -> dict[str, Any]:
 # Tests
 # ---------------------------------------------------------------------------
 
-@pytest.mark.skipif(not _DEEPSEEK_KEY, reason=_SKIP_REASON)
+@pytest.mark.skipif(not _DEEPSEEK_KEY or not _HAS_LANGCHAIN_OPENAI, reason=_LIVE_SKIP_REASON)
 class TestDeepSeekGameBuilding:
     """Build each game via DeepSeek API and verify it works headlessly."""
 
@@ -3273,7 +3290,7 @@ class TestDeepSeekGameBuilding:
 # Pipeline Gap Analysis
 # ---------------------------------------------------------------------------
 
-@pytest.mark.skipif(not _DEEPSEEK_KEY, reason=_SKIP_REASON)
+@pytest.mark.skipif(not _DEEPSEEK_KEY or not _HAS_LANGCHAIN_OPENAI, reason=_LIVE_SKIP_REASON)
 class TestGameBuildingGapAnalysis:
     """After running all game-building tests, analyze gludd's pipeline for gaps."""
 
@@ -3353,7 +3370,7 @@ class TestGameBuildingGapAnalysis:
 # Full Pipeline Tests — gludd's ExecutionEngine + EventLoop wired to DeepSeek
 # ---------------------------------------------------------------------------
 
-@pytest.mark.skipif(not _DEEPSEEK_KEY, reason=_SKIP_REASON)
+@pytest.mark.skipif(not _DEEPSEEK_KEY or not _HAS_LANGCHAIN_OPENAI, reason=_LIVE_SKIP_REASON)
 class TestDeepSeekFullPipeline:
     """DeepSeek through gludd's FULL pipeline (not a raw API call bypass).
 
@@ -3721,7 +3738,7 @@ class TestDeepSeekFullPipeline:
 # Game Persistence Tests — extended-play stress testing
 # ---------------------------------------------------------------------------
 
-@pytest.mark.skipif(not _DEEPSEEK_KEY, reason=_SKIP_REASON)
+@pytest.mark.skipif(not _DEEPSEEK_KEY or not _HAS_LANGCHAIN_OPENAI, reason=_LIVE_SKIP_REASON)
 class TestGamePersistence:
     """Extended-play stress tests: each game must survive 500 ticks/interactions.
 

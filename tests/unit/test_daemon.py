@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections import deque
 from typing import ClassVar
@@ -283,9 +284,13 @@ def _lifespan_patches(mock_loop):
     # and is directly awaitable; a bare AsyncMock instance is NOT awaitable
     # (only calling it returns a coroutine), so use a resolved Future here.
     import asyncio as _asyncio
-    _done_task = _asyncio.get_running_loop().create_future()
-    _done_task.set_result(None)
-    stack.enter_context(_patch("asyncio.create_task", return_value=_done_task))
+    def _completed_task(coro):
+        coro.close()
+        done_task = _asyncio.get_running_loop().create_future()
+        done_task.set_result(None)
+        return done_task
+
+    stack.enter_context(_patch("asyncio.create_task", side_effect=_completed_task))
     return stack
 
 
@@ -558,14 +563,24 @@ class TestExtendedSubsystemsWiring:
         mock_event_loop = MagicMock()
         mock_event_loop.run_forever = AsyncMock()
 
+        def _completed_task(coro):
+            coro.close()
+            done_task = asyncio.get_running_loop().create_future()
+            done_task.set_result(None)
+            return done_task
+
         # Stub out the async DB machinery so we don't need a real DB engine.
         # engine.dispose() is awaited during lifespan teardown → AsyncMock.
         mock_engine = MagicMock()
         mock_engine.dispose = AsyncMock()
-        mock_session = AsyncMock()
-        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session.__aexit__ = AsyncMock(return_value=False)
-        mock_session_factory = MagicMock(return_value=mock_session)
+        mock_session = MagicMock()
+        mock_session.commit = AsyncMock()
+        mock_session.rollback = AsyncMock()
+        mock_session.close = AsyncMock()
+        mock_session_cm = MagicMock()
+        mock_session_cm.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_cm.__aexit__ = AsyncMock(return_value=False)
+        mock_session_factory = MagicMock(return_value=mock_session_cm)
 
         with (
             patch("general_ludd.daemon.EventLoop", return_value=mock_event_loop),
@@ -575,6 +590,7 @@ class TestExtendedSubsystemsWiring:
             patch("general_ludd.daemon.seed_initial_queues", new_callable=AsyncMock),
             patch("general_ludd.daemon.is_sqlite_url", return_value=False),
             patch("general_ludd.daemon._restore_persisted_projects", new_callable=AsyncMock),
+            patch("asyncio.create_task", side_effect=_completed_task),
         ):
             async with _lifespan(app):
                 gateway = getattr(app.state, "_model_gateway", None)

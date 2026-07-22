@@ -120,10 +120,6 @@ class TestRecordGenerationBenchmarkRunningLoop:
 
         recorder = MagicMock(spec=["create"])
         recorder.create.side_effect = _async_create
-        recorder.create.return_value = _async_create(
-            model_profile_id="test", work_type="code",
-            input_tokens=10, output_tokens=5, success=True, scoring="generation_path",
-        )
 
         async def _runner() -> None:
             from general_ludd.models.job_invocation import _BACKGROUND_TASKS, _record_generation_benchmark

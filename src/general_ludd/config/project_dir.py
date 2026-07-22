@@ -149,7 +149,13 @@ def find_project_gludd_dir(start: Path | None = None) -> Path | None:
         p = Path(env_override)
         return p if p.is_dir() else None
 
-    current = (start or Path.cwd()).resolve()
+    if start is None:
+        try:
+            current = Path.cwd().resolve()
+        except FileNotFoundError:
+            current = Path(__file__).resolve().parents[3]
+    else:
+        current = start.resolve()
     while True:
         candidate = current / ".gludd"
         if candidate.is_dir():

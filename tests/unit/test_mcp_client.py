@@ -182,3 +182,41 @@ class TestCallToolConfusedDeputyGuard:
         result = await client.call_tool("srv", "allowed_tool", {"arg": 1})
         assert result == {"result": "ok"}
         mock_transport.call_tool.assert_awaited_once_with("allowed_tool", {"arg": 1})
+
+
+class TestMCPClientTransportLifecycle:
+    @pytest.mark.asyncio
+    async def test_start_all_accepts_transport_without_pid(self, monkeypatch):
+        from general_ludd.mcp import client as mcp_client
+        from general_ludd.mcp.client import MCPClient
+
+        class FakeTransport:
+            def __init__(self, config, secrets_mgr=None):
+                self.config = config
+                self.started = False
+
+            async def start(self):
+                self.started = True
+
+            async def stop(self):
+                self.started = False
+
+            async def list_tools(self):
+                return [MCPTool(name="fake_tool", server_id="srv")]
+
+            async def call_tool(self, tool_name, arguments):
+                return {"tool_name": tool_name, "arguments": arguments}
+
+        monkeypatch.setattr(mcp_client, "MCPStdioClient", FakeTransport)
+
+        registry = MCPToolRegistry()
+        client = MCPClient(
+            configs={"srv": MCPServerConfig(server_id="srv", command=["fake-mcp"])},
+            registry=registry,
+        )
+
+        await client.start_all()
+
+        assert "srv" in client._transports
+        assert client._started_pids == []
+        assert registry.get_tool("fake_tool", server_id="srv") is not None

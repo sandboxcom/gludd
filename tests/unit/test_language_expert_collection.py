@@ -366,6 +366,14 @@ class TestCharsetMap:
         from src.general_ludd.language.charset_map import ALL_ENCODINGS
         assert len(ALL_ENCODINGS) >= 40
 
+    def test_all_encodings_includes_utf8_entry(self) -> None:
+        from src.general_ludd.language.charset_map import ALL_ENCODINGS
+        utf8_entries = [e for e in ALL_ENCODINGS if e["name"] == "UTF-8"]
+        assert len(utf8_entries) == 1
+        assert utf8_entries[0]["category"] == "variable-width"
+        assert utf8_entries[0]["max_bytes_per_char"] == 4
+        assert "utf8" in utf8_entries[0]["aliases"]
+
 
 class TestCharsetMapBehavioral:
     """Behavioral tests for charset_map.py data structures."""

@@ -1047,8 +1047,15 @@ def test_count() -> None:
     import inspect
     import sys
     mod = sys.modules[__name__]
-    test_funcs = [
+    module_tests = [
         name for name, obj in inspect.getmembers(mod)
         if name.startswith("test_") and callable(obj)
     ]
+    class_tests = [
+        f"{cls_name}.{name}"
+        for cls_name, cls in inspect.getmembers(mod, inspect.isclass)
+        for name, obj in inspect.getmembers(cls)
+        if name.startswith("test_") and callable(obj)
+    ]
+    test_funcs = module_tests + class_tests
     assert len(test_funcs) >= 35, f"Expected >=35 test functions, got {len(test_funcs)}"

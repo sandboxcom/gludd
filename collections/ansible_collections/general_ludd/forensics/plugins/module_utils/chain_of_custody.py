@@ -176,11 +176,13 @@ class ChainOfCustody:
     transfer_log: list[dict[str, Any]] = field(default_factory=list)
     digital_signatures: dict[str, list[dict[str, str]]] = field(default_factory=dict)
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
-    last_modified: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    last_modified: str = ""
 
     def __post_init__(self) -> None:
         if not self.case_id:
             raise ValueError("case_id must be non-empty")
+        if not self.last_modified:
+            self.last_modified = self.created_at
 
 # ═══════════════════════════════════════════════════════════════════
 # Helpers
@@ -232,7 +234,7 @@ def add_evidence_item(
     description: str,
     location: str,
     collector: str,
-    packaging: str = "PAPER_BAG",
+    packaging: str | None = None,
     storage_conditions: str | None = None,
     contamination_risk: str | None = None,
     hazard_warnings: list[str] | None = None,
@@ -260,6 +262,8 @@ def add_evidence_item(
         raise ValueError("location must be a non-empty string")
     if not collector or not isinstance(collector, str):
         raise ValueError("collector must be a non-empty string")
+    if packaging is None:
+        packaging = EVIDENCE_TYPES.get(type, {}).get("default_packaging", "PAPER_BAG")
     if packaging not in _VP:
         raise ValueError(f"Unknown packaging '{packaging}'. Valid: {sorted(_VP)}")
     eid = _evid()

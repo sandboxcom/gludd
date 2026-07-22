@@ -54,12 +54,13 @@ EXPECTED_ROUTERS: tuple[str, ...] = (
     "skills",
     "slurm",
     "stream",
+    "terraform_state",
     "todos",
     "variants",
     "web_search",
     "worktree",
 )
-EXPECTED_ROUTER_COUNT = 31
+EXPECTED_ROUTER_COUNT = 32
 
 # Pre-existing (method, path) collisions known to exist across routers wired
 # by ``register_all``. The ``test_no_duplicate_route_keys`` test allows these

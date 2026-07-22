@@ -165,11 +165,11 @@ class TestTerraformWatchdogWiring:
                 resp = client.get("/healthz")
                 assert resp.status_code == 200
 
-    def test_exact_16_stacks_exist(self):
-        """There are exactly 16 stacks (8 pairs)."""
+    def test_exact_18_stacks_exist(self):
+        """There are exactly 18 stacks (9 pairs)."""
         stacks = sorted(STACKS_DIR.glob("*/main.tf"))
-        assert len(stacks) == 16, (
-            f"Expected 16 stacks, found {len(stacks)}: "
+        assert len(stacks) == 18, (
+            f"Expected 18 stacks, found {len(stacks)}: "
             + ", ".join(s.parent.name for s in stacks)
         )
 

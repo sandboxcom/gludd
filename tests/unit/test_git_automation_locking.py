@@ -153,8 +153,17 @@ class TestAsyncGitRepoLock:
     @pytest.mark.asyncio
     async def test_returns_context_manager(self) -> None:
         cm = await locking.async_git_repo_lock(".", timeout=1.0, stale_after=60.0)
-        assert hasattr(cm, "__enter__")
-        assert hasattr(cm, "__exit__")
+        try:
+            assert hasattr(cm, "__enter__")
+            assert hasattr(cm, "__exit__")
+        finally:
+            cm.__exit__(None, None, None)
+
+    @pytest.mark.asyncio
+    async def test_context_manager_releases_on_executor_thread(self) -> None:
+        cm = await locking.async_git_repo_lock(".", timeout=1.0, stale_after=60.0)
+        with cm:
+            pass
 
 
 class TestModuleExports:

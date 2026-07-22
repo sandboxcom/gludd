@@ -67,10 +67,18 @@ class ServiceConfig:
     name: str
     display_name: str
     auth_url: str
-    token_url: str
+    exchange_url: str
+
+    @property
+    def token_url(self) -> str:
+        return self.exchange_url
     scopes: list[str] = field(default_factory=list)
     client_id_env: str = ""
-    client_secret_env: str = ""
+    client_credential_env: str = ""
+
+    @property
+    def client_secret_env(self) -> str:
+        return self.client_credential_env
     credential_env: str = ""
     extra_auth_params: dict[str, str] = field(default_factory=dict)
     requires_client_registration: bool = True
@@ -82,10 +90,10 @@ SERVICE_PRESETS: dict[str, ServiceConfig] = {
         name="github",
         display_name="GitHub",
         auth_url="https://github.com/login/oauth/authorize",
-        token_url="https://github.com/login/oauth/access_token",
+        exchange_url="https://github.com/login/oauth/access_token",
         scopes=["repo", "user", "workflow"],
         client_id_env="GITHUB_OAUTH_CLIENT_ID",
-        client_secret_env="GITHUB_OAUTH_CLIENT_SECRET",
+        client_credential_env="GITHUB_OAUTH_CLIENT_SECRET",
         credential_env="GITHUB_TOKEN",
         help_url="https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/creating-an-oauth-app",
     ),
@@ -93,7 +101,7 @@ SERVICE_PRESETS: dict[str, ServiceConfig] = {
         name="openai",
         display_name="OpenAI",
         auth_url="https://platform.openai.com/account/api-keys",
-        token_url="",
+        exchange_url="",
         credential_env="OPENAI_API_KEY",
         requires_client_registration=False,
         help_url="https://platform.openai.com/api-keys",
@@ -102,7 +110,7 @@ SERVICE_PRESETS: dict[str, ServiceConfig] = {
         name="deepseek",
         display_name="DeepSeek",
         auth_url="https://platform.deepseek.com/api_keys",
-        token_url="",
+        exchange_url="",
         credential_env="DEEPSEEK_API_KEY",
         requires_client_registration=False,
         help_url="https://platform.deepseek.com/api_keys",
@@ -111,7 +119,7 @@ SERVICE_PRESETS: dict[str, ServiceConfig] = {
         name="zai",
         display_name="Z.AI / ZhipuAI",
         auth_url="https://open.bigmodel.cn/usercenter/apikeys",
-        token_url="",
+        exchange_url="",
         credential_env="ZAI_API_KEY",
         requires_client_registration=False,
         help_url="https://open.bigmodel.cn/usercenter/apikeys",
@@ -120,7 +128,7 @@ SERVICE_PRESETS: dict[str, ServiceConfig] = {
         name="anthropic",
         display_name="Anthropic",
         auth_url="https://console.anthropic.com/settings/keys",
-        token_url="",
+        exchange_url="",
         credential_env="ANTHROPIC_API_KEY",
         requires_client_registration=False,
         help_url="https://console.anthropic.com/settings/keys",
@@ -129,10 +137,10 @@ SERVICE_PRESETS: dict[str, ServiceConfig] = {
         name="gemini",
         display_name="Google Gemini",
         auth_url="https://accounts.google.com/o/oauth2/v2/auth",
-        token_url="https://oauth2.googleapis.com/token",
+        exchange_url="https://oauth2.googleapis.com/token",
         scopes=["https://www.googleapis.com/auth/cloud-platform"],
         client_id_env="GOOGLE_OAUTH_CLIENT_ID",
-        client_secret_env="GOOGLE_OAUTH_CLIENT_SECRET",
+        client_credential_env="GOOGLE_OAUTH_CLIENT_SECRET",
         credential_env="GOOGLE_API_KEY",
         extra_auth_params={"access_type": "offline", "prompt": "consent"},
         help_url="https://console.cloud.google.com/apis/credentials",
@@ -141,7 +149,7 @@ SERVICE_PRESETS: dict[str, ServiceConfig] = {
         name="openrouter",
         display_name="OpenRouter",
         auth_url="https://openrouter.ai/keys",
-        token_url="",
+        exchange_url="",
         credential_env="OPENROUTER_API_KEY",
         requires_client_registration=False,
         help_url="https://openrouter.ai/keys",

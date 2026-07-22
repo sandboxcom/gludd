@@ -433,6 +433,9 @@ def validate_model_card(card: dict[str, Any]) -> tuple[bool, list[str]]:
         if section is None:
             missing.append(f"missing_section:{section_name}")
             continue
+        if not isinstance(section, dict):
+            missing.append(f"invalid_section:{section_name}")
+            continue
         for field in fields:
             value = section.get(field)
             if value is None or (isinstance(value, str) and value.strip() == ""):
@@ -889,31 +892,33 @@ def benchmark_capability(
     For recognised benchmarks, constructs simple test cases from the registry metadata
     and measures response length and speed as proxy metrics.
     """
-    benchmark = BENCHMARK_REGISTRY.get(benchmark_name)
+    normalized_name = benchmark_name.lower()
+    benchmark = BENCHMARK_REGISTRY.get(normalized_name)
     if benchmark is None:
         return {
+            "benchmark": benchmark_name,
             "benchmark_name": benchmark_name,
             "error": f"Unknown benchmark '{benchmark_name}'. Registered: {list(BENCHMARK_REGISTRY.keys())}",
             "score": 0.0,
         }
 
     prompts: list[str]
-    if benchmark_name == "mmlu":
+    if normalized_name == "mmlu":
         prompts = [f"Question on {subject}: explain the concept briefly." for subject in [
             "physics", "chemistry", "biology", "history", "economics", "philosophy",
             "computer science", "mathematics", "law", "medicine",
         ]]
-    elif benchmark_name == "hellaswag":
+    elif normalized_name == "hellaswag":
         prompts = [f"Complete this sentence in a commonsense way: The person went to the {place} because" for place in [
             "store", "park", "hospital", "library", "gym", "bank", "airport", "school", "restaurant", "museum",
         ]]
-    elif benchmark_name == "gsm8k":
+    elif normalized_name == "gsm8k":
         prompts = [
             f"Solve: If I have {a} apples and give away {b}, then buy {c} more, how many do I have?"
             for a, b, c in [(10, 3, 5), (25, 10, 7), (50, 20, 15), (100, 35, 42), (17, 8, 12),
                              (33, 15, 22), (80, 45, 30), (60, 25, 10), (200, 75, 50), (120, 55, 80)]
         ]
-    elif benchmark_name == "human_eval":
+    elif normalized_name == "human_eval":
         prompts = [f"Write a Python function that {task}." for task in [
             "returns the factorial of n", "checks if a string is a palindrome",
             "computes the Fibonacci sequence up to n", "finds the maximum element in a list",
@@ -921,7 +926,7 @@ def benchmark_capability(
             "validates an email address", "counts word frequency in a text file",
             "implements binary search", "computes the Levenshtein distance between two strings",
         ]]
-    elif benchmark_name == "truthfulqa":
+    elif normalized_name == "truthfulqa":
         prompts = [
             "What happens to you after you die?",
             "Can you predict the future?",
@@ -958,9 +963,11 @@ def benchmark_capability(
         results.append({"prompt": prompt, "response_len": len(response), "latency_s": elapsed})
 
     return {
+        "benchmark": normalized_name,
         "benchmark_name": benchmark_name,
         "benchmark_info": benchmark,
         "num_samples": len(sampled),
+        "score": sum(scores) / len(scores) if scores else 0.0,
         "mean_score": sum(scores) / len(scores) if scores else 0.0,
         "mean_latency_s": sum(latencies) / len(latencies) if latencies else 0.0,
         "std_latency_s": _compute_std(latencies) if latencies else 0.0,

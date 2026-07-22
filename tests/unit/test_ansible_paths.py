@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import FrozenInstanceError
 from pathlib import Path
 
 import pytest
@@ -34,7 +35,7 @@ class TestCollectionsPathEntry:
 
     def test_frozen(self):
         entry = CollectionsPathEntry(source="project", path=Path("/tmp"), precedence=0)
-        with pytest.raises(TypeError):
+        with pytest.raises(FrozenInstanceError):
             entry.source = "user"  # type: ignore[misc]
 
 

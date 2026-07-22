@@ -406,13 +406,13 @@ def _cmd_language_phonetic_transcribe(args: argparse.Namespace) -> None:
             i += 1
         return code[:4]
 
+    words_out: list[dict[str, object]] = []
     phonetic_result: dict[str, object] = {
         "input_text": text,
         "method": method,
         "word_count": len(words),
-        "words": [],
+        "words": words_out,
     }
-    words_out: list[dict[str, object]] = phonetic_result["words"]  # type: ignore[assignment]
 
     for word in words:
         entry: dict[str, object] = {"word": word}

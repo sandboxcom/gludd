@@ -373,6 +373,8 @@ def compute_eigenvalues(matrix: list[list[float]]) -> list[float]:
             return [(trace + sqrt_d) / 2, (trace - sqrt_d) / 2]
         return [(trace + 0j) / 2, (trace - 0j) / 2]
     if n == 3:
+        if all(abs(matrix[i][j]) < 1e-15 for i in range(n) for j in range(n) if i != j):
+            return [matrix[i][i] for i in range(n)]
         trace = matrix[0][0] + matrix[1][1] + matrix[2][2]
         minor_a = matrix[0][0] * matrix[1][1] - matrix[0][1] * matrix[1][0]
         minor_b = matrix[0][0] * matrix[2][2] - matrix[0][2] * matrix[2][0]
@@ -795,7 +797,7 @@ def betti_numbers(simplicial_complex: list[list[tuple[int, ...]]]) -> list[int]:
         else:
             boundary_kp1 = _build_boundary_matrix(simplicial_complex[k], simplicial_complex[k + 1])
 
-        rank_ker = _nullity(boundary_k, chain_groups[k])
+        rank_ker = chain_groups[k] if k == 0 else _nullity(boundary_k, chain_groups[k])
         rank_im = _rank(boundary_kp1, chain_groups[k])
         betti.append(max(0, rank_ker - rank_im))
 
@@ -833,7 +835,7 @@ def _build_boundary_matrix(
             sign = 1 if pos % 2 == 0 else -1
             face = tuple(sorted(k_simplex[j] for j in range(len(k_simplex)) if j != pos))
             if face in domain_lookup:
-                matrix[domain_lookup[face]][col] = 1 if sign % 2 == 0 else -1
+                matrix[domain_lookup[face]][col] = sign
 
     return matrix
 

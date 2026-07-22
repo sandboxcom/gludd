@@ -33,8 +33,11 @@ import sys
 from pathlib import Path
 from typing import no_type_check
 
-_COLLECTIONS_ROOT = Path(__file__).resolve().parents[2] / "collections" / "ansible_collections"
+_COLLECTIONS_BASE = Path(__file__).resolve().parents[2] / "collections"
+_COLLECTIONS_ROOT = _COLLECTIONS_BASE / "ansible_collections"
 _PHYSICS_PLUGINS = str(_COLLECTIONS_ROOT / "general_ludd" / "physics" / "plugins")
+if str(_COLLECTIONS_BASE) not in sys.path:
+    sys.path.insert(0, str(_COLLECTIONS_BASE))
 if _PHYSICS_PLUGINS not in sys.path:
     sys.path.insert(0, _PHYSICS_PLUGINS)
 
@@ -217,6 +220,13 @@ def _run_math(args: argparse.Namespace) -> None:
     }, indent=2))
 
 
+def _latex_output_stem(args: argparse.Namespace) -> str:
+    parts = [args.document_class, args.font_size, args.title, args.author]
+    raw = "-".join(str(part).strip().lower() for part in parts if str(part).strip())
+    stem = "".join(ch if ch.isalnum() else "-" for ch in raw).strip("-")
+    return "-".join(part for part in stem.split("-") if part) or "paper"
+
+
 def _run_latex(args: argparse.Namespace) -> None:
     from ansible_collections.general_ludd.physics.plugins.module_utils.latex_expert import (
         LatexConfig,
@@ -232,9 +242,10 @@ def _run_latex(args: argparse.Namespace) -> None:
         author=args.author,
     )
     doc = generate_paper(config)
-    doc_path = write_latex_output(doc, args.output_dir)
+    output_stem = _latex_output_stem(args)
+    doc_path = write_latex_output(doc, args.output_dir, f"{output_stem}.tex")
     eqn = render_equation(args.equation, "eq:rendered")
-    eq_path = write_latex_output(eqn, args.output_dir, "equation.tex")
+    eq_path = write_latex_output(eqn, args.output_dir, f"{output_stem}-equation.tex")
     print(json.dumps({
         "status": "success",
         "doc_path": str(doc_path),
@@ -244,14 +255,6 @@ def _run_latex(args: argparse.Namespace) -> None:
 
 
 def _run_review(args: argparse.Namespace) -> None:
-    from ansible_collections.general_ludd.physics.plugins.module_utils.paper_reviewer import (
-        ReviewConfig,
-        extract_findings,
-        extract_sections,
-        score_rigor,
-        write_review_result,
-    )
-
     paper_text = args.text
     if args.file:
         paper_text = Path(args.file).read_text()
@@ -259,6 +262,14 @@ def _run_review(args: argparse.Namespace) -> None:
     if not paper_text.strip():
         print("error: no paper text provided (use --text or --file)", file=sys.stderr)
         raise SystemExit(2)
+
+    from ansible_collections.general_ludd.physics.plugins.module_utils.paper_reviewer import (
+        ReviewConfig,
+        extract_findings,
+        extract_sections,
+        score_rigor,
+        write_review_result,
+    )
 
     ReviewConfig(
         paper_title=args.title,

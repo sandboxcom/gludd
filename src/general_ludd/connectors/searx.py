@@ -129,7 +129,10 @@ class SearXConnector:
             )
 
         self.base_url = base_url
-        self.timeout = float(config.get("timeout", _DEFAULT_TIMEOUT))  # type: ignore[arg-type]
+        timeout_raw = config.get("timeout", _DEFAULT_TIMEOUT)
+        if not isinstance(timeout_raw, (str, int, float)):
+            timeout_raw = _DEFAULT_TIMEOUT
+        self.timeout = float(timeout_raw)
         self.verify_ssl = bool(config.get("verify_ssl", True))
 
         logger.info(
@@ -204,3 +207,7 @@ class SearXConnector:
             return {"ok": False, "error": f"HTTP {status}"}
         except Exception as exc:
             return {"ok": False, "error": type(exc).__name__}
+
+
+class SearXSource(SearXConnector):
+    """Observability source adapter for SearX metasearch."""

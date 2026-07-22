@@ -55,10 +55,10 @@ class TestTerraformWatchdogE2E:
 
         assert not missing, f"Stacks missing watchdog_user_data output: {missing}"
 
-    def test_exact_16_stacks_exist(self):
+    def test_exact_18_stacks_exist(self):
         stacks = collect_stacks()
-        assert len(stacks) == 16, (
-            f"Expected 16 stacks, found {len(stacks)}: "
+        assert len(stacks) == 18, (
+            f"Expected 18 stacks, found {len(stacks)}: "
             + ", ".join(s.parent.name for s in stacks)
         )
 
