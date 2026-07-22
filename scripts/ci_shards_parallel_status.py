@@ -46,7 +46,7 @@ def main() -> int:
     pid = int(state.get("pid") or 0)
     log_path = Path(str(state.get("log") or ""))
     alive = _alive(pid) if pid else False
-status = "running" if alive else "finished"
+    status = "running" if alive else "finished"
     shards = state.get("shards")
     print(
         f"CI-SHARDS-STATUS status={status} pid={pid} log={log_path} shards={shards}",

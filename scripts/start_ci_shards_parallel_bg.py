@@ -69,7 +69,7 @@ def main() -> int:
         "started_at": datetime.now(UTC).isoformat(),
         "cwd": os.getcwd(),
     }
-STATE_FILE.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    STATE_FILE.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(f"CI-SHARDS-BG pid={process.pid} log={log_path} state={STATE_FILE}", flush=True)
     command_text = payload["command_text"]
     print(f"CI-SHARDS-BG command={command_text}", flush=True)

@@ -126,7 +126,7 @@ help:
 	@echo "  lint-fix              Run ruff with auto-fix"
 	@echo "  lint-fix-files        Run ruff auto-fix on FILES only"
 	@echo "  typecheck             Run mypy"
-	@echo "  check-types           Flag `Any` usage in Python annotations (tight types)"
+	@echo "  check-types           Flag Any usage in Python annotations (tight types)"
 	@echo "  check-types-baseline  Same scan, tolerating config/type_any_baseline.txt"
 	@echo "  healthcheck           Verify imports work"
 	@echo "  qa                    Run lint + typecheck + test + healthcheck"
