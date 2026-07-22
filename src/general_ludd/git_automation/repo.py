@@ -476,14 +476,26 @@ class GitAutomation:
                 )
         return unintegrated
 
-    def _state_branch_unique_commits(self, branch: str, target_head: str) -> list[str]:
-        output = self._git_stdout_or_empty(
+    @staticmethod
+    def _state_protected_branch_names(entries: Sequence[dict[str, str]]) -> list[str]:
+        return [entry["branch"] for entry in entries if GitAutomation._state_is_protected_trunk_branch(entry["branch"])]
+
+    def _state_branch_unique_commits(
+        self,
+        branch: str,
+        target_head: str,
+        exclude_branches: Sequence[str] = (),
+    ) -> list[str]:
+        args = [
             "rev-list",
             "--cherry-pick",
             "--right-only",
             "--no-merges",
             f"{target_head}...{branch}",
-        )
+        ]
+        for excluded in exclude_branches:
+            args.extend(["--not", excluded])
+        output = self._git_stdout_or_empty(*args)
         return [line.strip() for line in output.splitlines() if line.strip()]
 
     def _state_unintegrated_branches(
@@ -498,8 +510,10 @@ class GitAutomation:
             "--format=%(refname:short) %(objectname)",
             "refs/heads",
         )
+        entries = self._state_branch_entries(ref_output)
+        protected_branches = self._state_protected_branch_names(entries)
         unintegrated: list[dict[str, object]] = []
-        for entry in self._state_branch_entries(ref_output):
+        for entry in entries:
             branch = entry["branch"]
             if (
                 branch == current_branch
@@ -507,7 +521,11 @@ class GitAutomation:
                 or not self._state_branch_matches(branch, branch_patterns)
             ):
                 continue
-            unique_commits = self._state_branch_unique_commits(branch, target_head)
+            unique_commits = self._state_branch_unique_commits(
+                branch,
+                target_head,
+                protected_branches,
+            )
             if unique_commits:
                 unintegrated.append(
                     {

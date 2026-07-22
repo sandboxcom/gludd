@@ -196,25 +196,29 @@ def _branch_entries(ref_output: str) -> list[dict[str, str]]:
     return entries
 
 
+def _protected_branch_names(entries: Sequence[dict[str, str]]) -> list[str]:
+    return [entry["branch"] for entry in entries if _is_protected_trunk_branch(entry["branch"])]
+
+
 def _branch_unique_commits(
     branch: str,
     target_head: str,
     *,
+    exclude_branches: Sequence[str] = (),
     run: RunFn,
     cwd: str | None = None,
 ) -> list[str]:
-    output = _maybe_stdout(
-        [
-            "git",
-            "rev-list",
-            "--cherry-pick",
-            "--right-only",
-            "--no-merges",
-            f"{target_head}...{branch}",
-        ],
-        run,
-        cwd,
-    )
+    argv = [
+        "git",
+        "rev-list",
+        "--cherry-pick",
+        "--right-only",
+        "--no-merges",
+        f"{target_head}...{branch}",
+    ]
+    for excluded in exclude_branches:
+        argv.extend(["--not", excluded])
+    output = _maybe_stdout(argv, run, cwd)
     return [line.strip() for line in output.splitlines() if line.strip()]
 
 
@@ -232,8 +236,10 @@ def _collect_unintegrated_branches(
         run,
         cwd,
     )
+    entries = _branch_entries(ref_output)
+    protected_branches = _protected_branch_names(entries)
     unintegrated: list[dict[str, object]] = []
-    for entry in _branch_entries(ref_output):
+    for entry in entries:
         branch = entry["branch"]
         if (
             branch == current_branch
@@ -241,7 +247,13 @@ def _collect_unintegrated_branches(
             or not _branch_matches(branch, branch_patterns)
         ):
             continue
-        unique_commits = _branch_unique_commits(branch, target_head, run=run, cwd=cwd)
+        unique_commits = _branch_unique_commits(
+            branch,
+            target_head,
+            exclude_branches=protected_branches,
+            run=run,
+            cwd=cwd,
+        )
         if unique_commits:
             unintegrated.append(
                 {

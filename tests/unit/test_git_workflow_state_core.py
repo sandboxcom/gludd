@@ -276,3 +276,55 @@ def test_workflow_state_custom_preserve_branch_patterns() -> None:
 
     assert state.success is False
     assert state.unintegrated_branches[0]["branch"] == "scratch/local"
+
+
+def test_workflow_state_preserved_branch_excludes_protected_trunk_refs() -> None:
+    newline = chr(10)
+    tab = chr(9)
+
+    def fake_run(argv: Sequence[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        args = list(argv)
+        if args == ["git", "branch", "--show-current"]:
+            return _completed(args, "fix/full-run" + newline)
+        if args == ["git", "rev-parse", "--verify", "HEAD"]:
+            return _completed(args, "fixhead" + newline)
+        if args == ["git", "status", "--porcelain=v1", "--untracked-files=all"]:
+            return _completed(args, "")
+        if args == ["git", "ls-remote", "sandboxcom", "refs/heads/fix/full-run"]:
+            return _completed(args, "fixhead" + tab + "refs/heads/fix/full-run" + newline)
+        if args == ["git", "rev-parse", "--verify", "master"]:
+            return _completed(args, "masterhead" + newline)
+        if args == ["git", "rev-parse", "--verify", "development"]:
+            return _completed(args, "devhead" + newline)
+        if args == ["git", "merge-base", "--is-ancestor", "masterhead", "devhead"]:
+            return _completed(args, "", 0)
+        if args == ["git", "for-each-ref", "--format=%(refname:short) %(objectname)", "refs/heads"]:
+            return _completed(
+                args,
+                "master masterhead" + newline
+                + "development devhead" + newline
+                + "main-dirty-preserve-20260722 preservehead" + newline,
+            )
+        if args == [
+            "git",
+            "rev-list",
+            "--cherry-pick",
+            "--right-only",
+            "--no-merges",
+            "fixhead...main-dirty-preserve-20260722",
+            "--not",
+            "master",
+            "--not",
+            "development",
+        ]:
+            return _completed(args, "preservecommit" + newline)
+        raise AssertionError(f"unexpected argv={args!r}")
+
+    with patch("general_ludd.git_automation.repo.subprocess.run", side_effect=fake_run):
+        state = GitAutomation(repo_path="/repo-fix").workflow_state(
+            assert_no_unintegrated_branches=True,
+        )
+
+    assert state.success is False
+    assert state.unintegrated_branches[0]["unique_count"] == 1
+    assert state.unintegrated_branches[0]["commits"] == ["preservecommit"]
