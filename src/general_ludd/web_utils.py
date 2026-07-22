@@ -277,8 +277,8 @@ def extract_colors_from_css(css_content: str) -> list[dict[str, str]]:
         raw = m.group(0).lower()
         if raw not in seen:
             seen.add(raw)
-            r, g, b = colorsys.hls_to_rgb(hue / 360, lightness, saturation)
-            hex_val = f"#{int(r * 255):02X}{int(g * 255):02X}{int(b * 255):02X}"
+            hsl_r, hsl_g, hsl_b = colorsys.hls_to_rgb(hue / 360, lightness, saturation)
+            hex_val = f"#{int(hsl_r * 255):02X}{int(hsl_g * 255):02X}{int(hsl_b * 255):02X}"
             results.append({
                 "name": _find_named_color(hex_val),
                 "hex": hex_val,
