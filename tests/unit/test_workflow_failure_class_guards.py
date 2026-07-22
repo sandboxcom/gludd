@@ -247,7 +247,7 @@ def test_workflow_state_targets_do_not_dirty_lockfile_with_uv_run() -> None:
         "merge-ready",
     ]
     makefile = _makefile()
-    assert "SYSTEM_PYTHON := /usr/bin/python3" in makefile
+    assert "override SYSTEM_PYTHON := /usr/bin/python3" in makefile
     assert "GLUDD_XDIST=\"$(GLUDD_XDIST)\" $(SYSTEM_PYTHON) -c" in makefile
     assert "GLUDD_XDIST=\"$(GLUDD_XDIST)\" python3 -c" not in makefile
     for target in guard_targets:
