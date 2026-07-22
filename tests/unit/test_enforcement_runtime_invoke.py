@@ -342,6 +342,17 @@ console.log(JSON.stringify(r ?? null))
     assert result.get("permissionDecision") == "deny", f"Expected deny: {result}"
 
 
+def test_no_wait_blocks_top_level_bash_command_shape():
+    """enforce-no-wait handles runtimes that pass command at the top level."""
+    code = _factory_load_code("enforce-no-wait.ts") + """\
+const r = await plugin['tool.execute.before']({tool: 'bash', command: 'make gate-tail'}, undefined)
+console.log(JSON.stringify(r ?? null))
+"""
+    result = _run_ts(code)
+    assert result is not None, "Expected deny for top-level command shape"
+    assert result.get("permissionDecision") == "deny", f"Expected deny: {result}"
+
+
 def test_deletion_gate_blocks_large_deletion():
     """10 lines deleted (> threshold of 5) = deny."""
     code = _factory_load_code("enforce-deletion-gate.ts") + """\

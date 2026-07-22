@@ -94,7 +94,7 @@ export function loadHotModule(name: string, defaults: HotModule): HotModule {
     if (hotCache[name] && hotCache[name].mtime === mtime) {
       return withJsonHookKeys(hotCache[name].module)
     }
-    const _require = createRequire(import.meta.url)
+    const _require = typeof require === "function" ? require : createRequire(import.meta.url)
     try { delete _require.cache[_require.resolve(hotPath)] } catch {}
     let mod = _require(hotPath) as HotModule
     if (Object.keys(mod).length === 0) {

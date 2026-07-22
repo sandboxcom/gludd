@@ -74,10 +74,13 @@ def _ci_cache_guard():
             pass  # best-effort restore — never fail test teardown
 
 
-def _seed_ci_cache(status: str) -> None:
-    """Write a fresh CI verdict into the live CI cache hasRealPendingWork()
-    reads. status="SUCCESS" → CI clean; anything else → ciVerdictPendingOrRed."""
-    CI_CACHE_PATH.write_text(json.dumps({
+def _seed_ci_cache(env: HookEnv, status: str) -> None:
+    """Write a fresh CI verdict into the CI cache hasRealPendingWork() reads.
+
+    The hook fixture redirects GLUDD_WATCHDOG_CI_FILE into the isolated tmp
+    cwd, so test setup must seed that path rather than the live /tmp cache.
+    """
+    env.state_path("GLUDD_WATCHDOG_CI_FILE").write_text(json.dumps({
         "last_ci_check": int(_time.time() * 1000),
         "last_ci_status": status,
         "run_id": "000000",
@@ -195,7 +198,7 @@ def _seed_pending_work(env: HookEnv, **overrides) -> None:
         "- [ ] Pending item A\n- [ ] Pending item B\n- [ ] Pending item C\n"
         "- [ ] Pending item D\n- [ ] Pending item E\n"
     )
-    _seed_ci_cache("failure")
+    _seed_ci_cache(env, "failure")
 
 
 def _seed_clean_state(env: HookEnv) -> None:
@@ -219,7 +222,7 @@ def _seed_clean_state(env: HookEnv) -> None:
     }))
     # hasRealPendingWork() reads the LIVE CI cache — seed a fresh SUCCESS
     # verdict so live CI state from the host session can't leak in.
-    _seed_ci_cache("SUCCESS")
+    _seed_ci_cache(env, "SUCCESS")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

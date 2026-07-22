@@ -753,16 +753,16 @@ class TestSpawnGateRefresh:
 
 
 class TestHookRegistration:
-    """Single hook (tool.execute.before) only — no text.complete or session.idle."""
+    """Multitask registers tool and text hooks, but no session.idle hook."""
 
     def test_tool_execute_before_registered(self):
         src = _plugin_source()
         assert '"tool.execute.before"' in src, "tool.execute.before must be registered"
 
-    def test_no_text_complete_hook(self):
+    def test_text_complete_hook_registered(self):
         src = _plugin_source()
-        assert '"experimental.text.complete"' not in src, (
-            "text.complete hook removed in 2026-07-13 rewrite"
+        assert '"experimental.text.complete"' in src, (
+            "text.complete is the canonical message-boundary signal"
         )
 
     def test_no_session_idle_hook(self):

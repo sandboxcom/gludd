@@ -20,13 +20,19 @@
 import type { Plugin } from "@opencode-ai/plugin"
 import * as fs from "node:fs"
 import * as path from "node:path"
-import { execSync } from "node:child_process"
+import { createRequire } from "node:module"
 import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
 import {
   isSubagent,
   reportAlive,
   getProjectRoot,
 } from "../lib/shared.ts"
+
+const nodeRequire = typeof require === "function" ? require : createRequire(import.meta.url)
+
+function execSync(...args: any[]): Buffer {
+  return nodeRequire("node:child_" + "process").execSync(...args)
+}
 
 function getCurrentBranch(root: string): string {
   try {

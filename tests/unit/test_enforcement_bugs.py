@@ -156,46 +156,16 @@ class TestTaskFileReadInputShape:
 class TestBugsMDOpenWorkDetection:
     """BUGS.md incident resolution should check the heading body, not just heading text."""
 
-    def test_incident_filter_only_checks_heading_line(self):
-        """BUG: The resolved/fixed filter is applied to the heading line only."""
+    def test_incident_filter_checks_full_incident_body(self):
+        """Resolved/fixed markers in an incident body are not counted as open."""
         src = _src(FLOOR_PATH)
 
-        # Find the BUGS.md detection block
-        match = re.search(
-            r"const bugsMd.*?const openIncidents.*?\.filter\(.*?\)",
-            src,
-            re.DOTALL,
-        )
-        assert match, "BUGS.md openWorkExists detection not found"
-        block = match.group(0)
-
-        # The filters run on individual lines from the heading regex match
-        # The heading regex matches line-by-line (split then filter)
-        header_filter = re.search(
-            r"\.filter\(\s*l\s*=>\s*/\^###\\s\+\\d\{4\}-\\d\{2\}-\\d\{2\}\\s\+\[-—\].*?\)",
-            block,
-            re.DOTALL,
-        )
-        assert header_filter, "Heading filter not found"
-
-        # But the second filter only checks the SAME line (l) for resolved/fixed
-        # This misses sub-header status markers. Search full src since it is a
-        # chained .filter() after the first one (outside the block capture).
-        second_filter = re.search(
-            r"\.filter\(\s*l\s*=>\s*!/\\b\(resolved\|fixed\|closed\|wontfix\|duplicate\)\\b/i",
-            src,
-            re.DOTALL,
-        )
-        assert second_filter, "Status filter not found"
-
-        # FAIL: The correct behavior is to check the incident body (the lines
-        # between this heading and the next heading) for resolution markers,
-        # not just the heading line itself.
-        raise AssertionError(
-            "BUG: BUGS.md incident resolution detection only checks heading text. "
-            "If a resolved incident lists its status on a sub-line instead of the "
-            "heading, it is falsely counted as open. The filter should scan the "
-            "incident body (between headings) for resolution markers."
+        assert "function countOpenBugIncidents" in src
+        assert "incidentSections" in src
+        assert 'current.join("\\n")' in src
+        assert r"\b(?:resolved|fixed|closed|wontfix|duplicate)\b" in src
+        assert '.filter(l => !l.includes("(resolved)"))' not in src, (
+            "BUGS.md resolution detection must not inspect heading lines only"
         )
 
 
@@ -213,8 +183,8 @@ class TestBugsMDOpenWorkDetection:
 class TestRunningGateIsPending:
     """A RUNNING gate should be detected as pending work."""
 
-    def test_running_gate_not_considered_pending(self):
-        """BUG: .gate-status RUNNING is not treated as pending work."""
+    def test_running_gate_considered_pending(self):
+        """FIXED: .gate-status RUNNING is treated as pending work."""
         src = _src(FLOOR_PATH)
 
         # Find the gate status check block
@@ -234,13 +204,11 @@ class TestRunningGateIsPending:
         assert "/FAIL/" in block or "/FAIL/i" in block, "FAIL check not found in gate block"
         assert "incomplete" in block.lower(), "incomplete check not found in gate block"
 
-        # FAIL: "RUNNING" should also be treated as pending
         has_running_check = "RUNNING" in block or "running" in block
         assert has_running_check, (
-            "BUG: openWorkExists does NOT treat a RUNNING gate as pending work. "
+            "openWorkExists must treat a RUNNING gate as pending work. "
             "A gate in progress (RUNNING status) means work is unfinished, but the "
-            "function returns false for RUNNING gates. 'RUNNING' should be added to "
-            "the set of detected pending-work states."
+            "function would otherwise return false for RUNNING gates."
         )
 
 
@@ -258,35 +226,24 @@ class TestRunningGateIsPending:
 class TestGitIndexMtimeFalsePositive:
     """Git index mtime comparison produces false-positive pending work."""
 
-    def test_index_mtime_compared_to_ref_mtime(self):
-        """BUG: index mtime drifts from ref mtime after git status refresh."""
+    def test_index_mtime_not_compared_to_ref_mtime(self):
+        """FIXED: git status --porcelain is used instead of index/ref mtime."""
         src = _src(FLOOR_PATH)
 
-        match = re.search(
+        stale_match = re.search(
             r"const idxMtime\s*=\s*fs\.statSync\(index\)\.mtimeMs\s*\n"
             r"\s*const refMtime\s*=\s*fs\.statSync\(headRef\)\.mtimeMs",
             src,
             re.DOTALL,
         )
-        assert match, "Index/ref mtime comparison not found"
-
-        # The comparison with threshold 2000ms is there
-        threshold_match = re.search(
+        assert stale_match is None, (
+            "openWorkExists must not compare .git/index mtime to refs/heads/master mtime"
+        )
+        assert re.search(
             r"Math\.abs\(idxMtime\s*-\s*refMtime\)\s*>\s*2000",
             src,
-        )
-        assert threshold_match, "Mtime threshold (2000) not found"
-
-        # FAIL: mtime-based comparison is unreliable; git status refreshes index
-        raise AssertionError(
-            "BUG: git index mtime comparison in openWorkExists produces false "
-            "positives. Running 'git status' refreshes the index, changing its "
-            "mtime, while refs/heads/master mtime only changes on commits. After "
-            "'git status' on a clean tree, the mtime difference exceeds 2000ms, "
-            "and openWorkExists falsely reports pending work. The index/ref check "
-            "should be replaced with git status --porcelain (already present in "
-            "the next try-catch block) or removed."
-        )
+        ) is None
+        assert "git status --porcelain" in src
 
 
 # ===============================================================================
@@ -299,14 +256,11 @@ class TestGitIndexMtimeFalsePositive:
 class TestDispatchTypo:
     """Console.warn message has a typo: 'DISPTACH' should be 'DISPATCH'."""
 
-    def test_disptach_typo_in_refill_warning(self):
-        """BUG: 'DISPTACH' typo in console.warn message."""
+    def test_dispatch_typo_absent_from_refill_warning(self):
+        """FIXED: refill warnings spell DISPATCH correctly."""
         src = _src(FLOOR_PATH)
 
-        assert "DISPTACH" in src, "Typo 'DISPTACH' not found in source"
-
-        # FAIL: should use "DISPATCH" not "DISPTACH"
         assert "DISPTACH" not in src, (
-            "BUG: Typo 'DISPTACH' in refill-needed console.warn message. "
-            "Should be 'DISPATCH'."
+            "Typo 'DISPTACH' must not appear in refill-needed console.warn message."
         )
+        assert "DISPATCH" in src

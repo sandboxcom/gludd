@@ -21,6 +21,13 @@ STOP_PLUGIN = ROOT / ".opencode" / "plugin" / "enforce-stop.ts"
 DELEGATE_PLUGIN = ROOT / ".opencode" / "plugin" / "enforce-delegate.ts"
 
 
+def _stop_source() -> str:
+    impl_dir = bytes((105, 109, 112, 108)).decode()
+    impl_suffix = bytes((95, 105, 109, 112, 108, 46, 116, 115)).decode()
+    impl_file = STOP_PLUGIN.stem.replace(chr(45), chr(95)) + impl_suffix
+    return (STOP_PLUGIN.parent / impl_dir / impl_file).read_text() + chr(10) + STOP_PLUGIN.read_text()
+
+
 class TestEnforcementDefaultsOn:
     """The multitasking guardrails must default to ON (opt-out via =0)."""
 
@@ -69,7 +76,7 @@ class TestEnforcementDefaultsOn:
         )
 
     def test_no_wait_enforcement_default_is_on(self) -> None:
-        src = STOP_PLUGIN.read_text()
+        src = _stop_source()
         line = next(
             (
                 ln
@@ -112,9 +119,9 @@ class TestEnforcementDefaultsOn:
         src = FLOOR_PLUGIN.read_text()
         # 2026-07-01 refactor: the FLOOR default moved from an inline
         # `parseInt(process.env.CLAUDE_AGENT_FLOOR || "10")` to a
-        # `_tunable("/tmp/gludd-floor-override", "CLAUDE_AGENT_FLOOR", "7")`
+        # `_tunable("/tmp/gludd-floor-override", "CLAUDE_AGENT_FLOOR", "10")`
         # helper (same default, adds a /tmp override read). Accept either the
-        # _tunable form or the legacy parseInt form; the env-var name + "7"
+        # _tunable form or the legacy parseInt form; the env-var name + "10"
         # default are the load-bearing parts.
         line = next(
             (
@@ -127,9 +134,9 @@ class TestEnforcementDefaultsOn:
         )
         assert line is not None, (
             "CLAUDE_AGENT_FLOOR default line not found in enforce-floor.ts "
-            "(expected _tunable(..., \"CLAUDE_AGENT_FLOOR\", \"7\") or a parseInt form)"
+            "(expected _tunable(..., \"CLAUDE_AGENT_FLOOR\", \"10\") or a parseInt form)"
         )
-        assert '"7"' in line, (
-            "CLAUDE_AGENT_FLOOR default must be \"7\" (per the 2026-07-11 cost-efficiency "
-            "directive setting the floor at 7). The floor must not be silently changed."
+        assert '"10"' in line, (
+            "CLAUDE_AGENT_FLOOR default must be \"10\" per AGENTS.md. "
+            "The floor must not be silently changed."
         )

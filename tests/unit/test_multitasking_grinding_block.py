@@ -150,6 +150,7 @@ process.env.GLUDD_PROJECT_ROOT = "{tmp_project}";
 process.env.GLUDD_MULTITASK_STATE_FILE = "{state_file}";
 // Reset any disengage / subagent markers
 process.env.OPENCODE_SUBAGENT = "";
+process.env.GLUDD_DISENGAGE_PATH = "/tmp/test-no-disengage-{pid}.json";
 
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -258,6 +259,7 @@ process.env.GLUDD_CONSECUTIVE_NON_DISPATCH_THRESHOLD = "3";
 process.env.GLUDD_PROJECT_ROOT = "{tmp_project}";
 process.env.GLUDD_MULTITASK_STATE_FILE = "{state_file}";
 process.env.OPENCODE_SUBAGENT = "";
+process.env.GLUDD_DISENGAGE_PATH = "{state_file}.disengage";
 
 import * as fs from "node:fs";
 try {{ fs.unlinkSync("{state_file}"); }} catch (e) {{}}
@@ -358,6 +360,7 @@ process.env.GLUDD_CONSECUTIVE_NON_DISPATCH_THRESHOLD = "3";
 process.env.GLUDD_PROJECT_ROOT = "{tmp_project}";
 process.env.GLUDD_MULTITASK_STATE_FILE = "{state_file}";
 process.env.OPENCODE_SUBAGENT = "";
+process.env.GLUDD_DISENGAGE_PATH = "{state_file}.disengage";
 
 import * as fs from "node:fs";
 try {{ fs.unlinkSync("{state_file}"); }} catch (e) {{}}
@@ -452,6 +455,7 @@ process.env.GLUDD_CONSECUTIVE_NON_DISPATCH_THRESHOLD = "3";
 process.env.GLUDD_PROJECT_ROOT = "{tmp_project}";
 process.env.GLUDD_MULTITASK_STATE_FILE = "{state_file}";
 process.env.OPENCODE_SUBAGENT = "";
+process.env.GLUDD_DISENGAGE_PATH = "/tmp/test-no-disengage-{pid}.json";
 
 import * as fs from "node:fs";
 try {{ fs.unlinkSync("{state_file}"); }} catch (e) {{}}
@@ -511,6 +515,7 @@ process.env.GLUDD_CONSECUTIVE_NON_DISPATCH_THRESHOLD = "2";
 process.env.GLUDD_PROJECT_ROOT = "{tmp_project}";
 process.env.GLUDD_MULTITASK_STATE_FILE = "{state_file}";
 process.env.OPENCODE_SUBAGENT = "";
+process.env.GLUDD_DISENGAGE_PATH = "/tmp/test-no-disengage-{pid}.json";
 
 import * as fs from "node:fs";
 try {{ fs.unlinkSync("{state_file}"); }} catch (e) {{}}
@@ -580,6 +585,7 @@ process.env.GLUDD_CONSECUTIVE_NON_DISPATCH_THRESHOLD = "3";
 process.env.GLUDD_PROJECT_ROOT = "{tmp_project}";
 process.env.GLUDD_MULTITASK_STATE_FILE = "{state_file}";
 process.env.OPENCODE_SUBAGENT = "";
+process.env.GLUDD_DISENGAGE_PATH = "/tmp/test-no-disengage-{pid}.json";
 
 import * as fs from "node:fs";
 try {{ fs.unlinkSync("{state_file}"); }} catch (e) {{}}

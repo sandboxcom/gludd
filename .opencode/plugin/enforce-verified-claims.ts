@@ -62,8 +62,8 @@ export const shouldBlock = (text: string): boolean => {
 
 const defaultImpl: HotModule = {
   "tool.execute.before": async (input: unknown) => {
+    if (isSubagent()) return
     try {
-      if (isSubagent()) return
       if (process.env.GLUDD_VERIFIED_CLAIMS_ENFORCE === "0") return
       const ctx = input as Record<string, unknown> | undefined
       const tool = ctx?.tool

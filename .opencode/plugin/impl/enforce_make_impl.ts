@@ -2,8 +2,8 @@ import type { Plugin } from "@opencode-ai/plugin"
 import * as fs from "node:fs"
 import * as path from "node:path"
 import { createRequire } from "node:module"
-import { isSubagent, reportAlive } from "../lib/shared.ts"
-import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
+import { isSubagent, reportAlive } from "../../lib/shared.ts"
+import { loadHotModule, type HotModule } from "../../lib/hot_reload.ts"
 
 const nodeRequire = typeof require === "function" ? require : createRequire(import.meta.url)
 

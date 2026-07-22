@@ -55,6 +55,7 @@ def _run_ts(ts_code: str, env_override: dict | None = None, timeout: int = 15):
         # Point plugins at a per-process nonexistent path unless a test
         # explicitly overrides it.
         env["GLUDD_DISENGAGE_PATH"] = f"/tmp/gludd-disengage-hermetic-{os.getpid()}.json"
+        env["GLUDD_FALSE_DONE_BLOCKS_FILE"] = f"/tmp/gludd-false-done-blocks-test-{os.getpid()}-{_tmp_counter}.json"
         if env_override:
             env.update(env_override)
         proc = subprocess.run(
@@ -113,6 +114,16 @@ const api = {{ tool: {{ execute: {{ before(fn) {{ registeredHook = fn }} }} }} }
 const mod = await import('{abs_path}')
 mod.default(api)
 const result = {call_code}
+console.log(JSON.stringify(result ?? null))
+"""
+
+
+def _plugins_dir_import_code(plugin_rel_path: str, call_code: str) -> str:
+    """Generate TS code for plugins under .opencode/plugins/."""
+    abs_path = str(ROOT / ".opencode" / "plugins" / plugin_rel_path)
+    return f"""\
+const mod = await import('{abs_path}')
+const result = await {call_code}
 console.log(JSON.stringify(result ?? null))
 """
 
@@ -272,6 +283,180 @@ console.log(JSON.stringify(result ?? {{allowed: true}}))
             os.unlink(test_file)
         except OSError:
             pass
+
+
+# ---------------------------------------------------------------------------
+# enforce-anti-essay.ts — text.complete guard coverage
+# ---------------------------------------------------------------------------
+
+
+def test_anti_essay_text_complete_allows_when_disabled():
+    code = _factory_plugin_code(
+        "enforce-anti-essay.ts",
+        "text.complete",
+        "plugin['text.complete']({text: 'done done done done done done done done done done'})",
+    )
+    result = _run_ts(code, {"GLUDD_ANTI_ESSAY_ENFORCE": "0"})
+    assert result is None
+
+
+# ---------------------------------------------------------------------------
+# enforce-audit.ts — text.complete guard coverage
+# ---------------------------------------------------------------------------
+
+
+def test_audit_text_complete_allows_when_disabled():
+    code = _factory_plugin_code(
+        "enforce-audit.ts",
+        "text.complete",
+        "plugin['text.complete']({text: 'done'})",
+    )
+    result = _run_ts(code, {"GLUDD_AUDIT_ENFORCE": "0"})
+    assert result is None
+
+
+# ---------------------------------------------------------------------------
+# enforce-batch-push.ts — push command hook coverage
+# ---------------------------------------------------------------------------
+
+
+def test_batch_push_hook_allows_non_push_command():
+    code = _factory_plugin_code(
+        "enforce-batch-push.ts",
+        "tool.execute.before",
+        "plugin['tool.execute.before']({tool: 'bash', args: {command: 'make lint'}}, undefined)",
+    )
+    result = _run_ts(code)
+    assert result is None
+
+
+# ---------------------------------------------------------------------------
+# enforce-branch-discipline.ts — mutating command hook coverage
+# ---------------------------------------------------------------------------
+
+
+def test_branch_discipline_hook_allows_non_mutating_command():
+    code = _factory_plugin_code(
+        "enforce-branch-discipline.ts",
+        "tool.execute.before",
+        "plugin['tool.execute.before']({tool: 'bash', args: {command: 'make lint'}}, undefined)",
+    )
+    result = _run_ts(code)
+    assert result is None
+
+
+# ---------------------------------------------------------------------------
+# enforce-context.ts — session context hook coverage
+# ---------------------------------------------------------------------------
+
+
+def test_context_hook_allows_when_disabled():
+    code = _factory_plugin_code(
+        "enforce-context.ts",
+        "tool.execute.before",
+        "plugin['tool.execute.before']({tool: 'read', args: {filePath: 'SESSION.md'}}, undefined)",
+    )
+    result = _run_ts(code, {"GLUDD_CONTEXT_ENFORCE": "0"})
+    assert result is None
+
+
+# ---------------------------------------------------------------------------
+# enforce-depth.ts — dispatch depth hook coverage
+# ---------------------------------------------------------------------------
+
+
+def test_depth_hook_denies_dispatch_at_max_depth():
+    code = _factory_plugin_code(
+        "enforce-depth.ts",
+        "tool.execute.before",
+        "plugin['tool.execute.before']({tool: 'task'}, undefined)",
+    )
+    result = _run_ts(
+        code,
+        {
+            "OPENCODE_DEPTH": "3",
+            "GLUDD_MAX_DEPTH": "3",
+            "GLUDD_DISENGAGE_PATH": "/tmp/gludd-depth-runtime-no-disengage.json",
+        },
+    )
+    assert result is not None
+    assert result.get("permissionDecision") == "deny"
+
+
+# ---------------------------------------------------------------------------
+# enforce-objective.ts — objective hook coverage
+# ---------------------------------------------------------------------------
+
+
+def test_objective_hook_allows_when_disabled():
+    code = _factory_plugin_code(
+        "enforce-objective.ts",
+        "tool.execute.before",
+        "plugin['tool.execute.before']({tool: 'edit', args: {filePath: 'README.md'}}, undefined)",
+    )
+    result = _run_ts(code, {"GLUDD_OBJECTIVE_ENFORCE": "0"})
+    assert result is None
+
+
+# ---------------------------------------------------------------------------
+# enforce-tdd.ts — test-first hook coverage
+# ---------------------------------------------------------------------------
+
+
+def test_tdd_hook_allows_test_file_write():
+    code = _factory_plugin_code(
+        "enforce-tdd.ts",
+        "tool.execute.before",
+        "plugin['tool.execute.before']({tool: 'write', args: {filePath: 'tests/unit/test_new_module.py', content: 'def test_x(): pass\\n'}}, undefined)",
+    )
+    result = _run_ts(code)
+    assert result is None
+
+
+# ---------------------------------------------------------------------------
+# enforce-test-integrity.ts — test-disabling hook coverage
+# ---------------------------------------------------------------------------
+
+
+def test_test_integrity_hook_denies_pytest_skip_write():
+    code = _factory_plugin_code(
+        "enforce-test-integrity.ts",
+        "tool.execute.before",
+        "plugin['tool.execute.before']({tool: 'write', args: {filePath: '/Users/shawnwilson/gludd/tests/unit/test_bad.py', content: 'import pytest\\npytest.skip(\"nope\")\\n'}}, undefined)",
+    )
+    result = _run_ts(code)
+    assert result is not None
+    assert result.get("permissionDecision") == "deny"
+
+
+# ---------------------------------------------------------------------------
+# enforce-worktree.ts — worktree command hook coverage
+# ---------------------------------------------------------------------------
+
+
+def test_worktree_hook_allows_non_blocked_command():
+    code = _factory_plugin_code(
+        "enforce-worktree.ts",
+        "tool.execute.before",
+        "plugin['tool.execute.before']({tool: 'bash', tool_input: {command: 'make lint'}}, undefined)",
+    )
+    result = _run_ts(code)
+    assert result is None
+
+
+# ---------------------------------------------------------------------------
+# watchdog.ts — plugin factory liveness coverage
+# ---------------------------------------------------------------------------
+
+
+def test_watchdog_plugin_factory_loads():
+    code = f"""\
+const mod = await import('/Users/shawnwilson/gludd/.opencode/plugins/watchdog.ts')
+const result = await mod.default({{}})
+console.log(JSON.stringify(result ?? null))
+"""
+    result = _run_ts(code)
+    assert result == {}
 
 
 def test_clean_tree_subagent_skip():
@@ -1146,13 +1331,7 @@ console.log(JSON.stringify({{
 
 
 def test_multitask_text_complete_blocks_thin_wave():
-    """text.complete MUST blank text when thisMessageDispatches in (1, MIN_DISPATCHES).
-
-    BUG: enforce-multitask.ts:314 references `s.thisMessageDispatches` but `s`
-    is never declared in the text.complete hook's scope. The module-level
-    state variable is `_state`. This test fails because the ReferenceError
-    prevents the thin-wave block from ever being reached.
-    """
+    """experimental.text.complete MUST blank text for thin dispatch waves."""
     state_file = "/tmp/gludd-multitask-state.json"
     _clean_state_files(state_file,
                        "/tmp/gludd-watchdog-disengage.json",
@@ -1164,11 +1343,14 @@ const plugin = await mod.default({{}})
 await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
 await plugin['tool.execute.before']({{tool: 'agent'}}, undefined)
 await plugin['tool.execute.before']({{tool: 'workflow'}}, undefined)
-// Call text.complete — should detect 3 < MIN_DISPATCHES=10 and blank text
+// Call experimental.text.complete — should detect 3 < MIN_DISPATCHES=10 and blank text
 let output
 let error = null
 try {{
-  output = await plugin['text.complete'](undefined, {{text: 'Dispatching 3 subagents to fix bugs.'}})
+  output = await plugin['experimental.text.complete'](
+    undefined,
+    {{text: 'Dispatching 3 subagents to fix bugs.'}},
+  )
 }} catch (e) {{
   error = e.message
 }}
@@ -1185,20 +1367,9 @@ console.log(JSON.stringify({{
         "GLUDD_MULTITASK_FLOOR_ENFORCE": "1",
     })
 
-    # BUG: s is undefined in text.complete scope -> ReferenceError
-    if result.get("threw") == True:
-        err = result.get("errorSnippet", "")
-        assert "s is not defined" in err or "ReferenceError" in err, (
-            f"Expected ReferenceError for 's is not defined', got: {result}"
-        )
-        pytest.fail(
-            "CONFIRMED BUG: enforce-multitask.ts text.complete hook line 314 "
-            "references 's.thisMessageDispatches' but 's' is never declared in "
-            "the hook scope. Should reference '_state.thisMessageDispatches'. "
-            "The thin-wave block is unreachable until the variable is fixed."
-        )
-
-    # If we get here, the hook ran without throwing (e.g. hasPendingWork false)
+    assert result.get("threw") is False, (
+        f"experimental.text.complete must run without throwing. Result: {result}"
+    )
     assert result["textWasBlocked"] == True, (
         f"Expected THIN WAVE BLOCKED but text passed through unmodified. "
         f"Hook ran without error but did not detect the thin wave. Result: {result}"

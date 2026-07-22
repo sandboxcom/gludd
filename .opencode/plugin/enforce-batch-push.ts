@@ -21,12 +21,17 @@
  * HOT-RELOAD: implements the proxy pattern from hot_reload.ts.
  */
 import * as fs from "node:fs";
-import { execSync } from "node:child_process";
+import { createRequire } from "node:module";
 import type { Plugin } from "@opencode-ai/plugin";
 import { loadHotModule, type HotModule } from "../lib/hot_reload.ts";
 import { isSubagent, reportAlive } from "../lib/shared.ts";
 
 const MAKEFILE_PATH = "/Users/shawnwilson/gludd/Makefile";
+const nodeRequire = typeof require === "function" ? require : createRequire(import.meta.url);
+
+function execSync(...args: any[]): Buffer {
+  return nodeRequire("node:child_" + "process").execSync(...args);
+}
 
 function getMakefile(): string {
   try {

@@ -5,7 +5,7 @@ import * as path from "node:path"
 import { isSubagent, reportAlive, isDisengaged, isDispatchTool, isReadTool } from "../lib/shared.ts"
 import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
 
-const nodeRequire = createRequire(import.meta.url)
+const nodeRequire = typeof require === "function" ? require : createRequire(import.meta.url)
 
 function execSync(...args: any[]): Buffer {
   return nodeRequire("node:child_" + "process").execSync(...args)
@@ -415,8 +415,8 @@ function enforceForceDelegate(
   args: Record<string, unknown> | undefined,
 ): string | null {
   try {
-    if (!forceDelegateEnabled()) return null
-    if (isDisengaged()) return null
+    const disengaged = isDisengaged()
+    if (!FORCE_DELEGATE_ENABLED && !forceDelegateEnabled()) return null
 
     const command = ((args?.command as string) || "").trim()
     const filePath = ((args?.filePath as string) || "").trim()
@@ -441,6 +441,15 @@ function enforceForceDelegate(
 
     const state = loadForceDelegateState()
     const consecutiveTargeted = state.consecutive_targeted + 1
+
+    if (disengaged) {
+      saveForceDelegateState({
+        consecutive_targeted: consecutiveTargeted,
+        consecutive_denied: state.consecutive_denied,
+      })
+      return null
+    }
+
     const live = countLiveAgents() ?? FLOOR  // fail-open: if can't tell, treat floor as satisfied
 
     if (consecutiveTargeted > FORCE_DELEGATE_GRACE && live < FLOOR) {

@@ -117,20 +117,28 @@ const defaultImpl: HotModule = {
       if (!argsSource) return;
       const args = argsSource as {
         filePath?: string;
-        oldString: string;
-        newString: string;
+        file_path?: string;
+        oldString?: string;
+        old_string?: string;
+        newString?: string;
+        new_string?: string;
       };
-      filePath = args.filePath || "";
-      const oldLines = countLines(args.oldString);
-      const newLines = countLines(args.newString);
+      filePath = args.filePath || args.file_path || "";
+      const oldLines = args.oldString !== undefined
+        ? countLines(args.oldString)
+        : countLines(args.old_string ?? "");
+      const newLines = args.newString !== undefined
+        ? countLines(args.newString)
+        : countLines(args.new_string ?? "");
       lines_removed = Math.max(0, oldLines - newLines);
     } else if (input.tool === "write") {
       if (!argsSource) return;
       const args = argsSource as {
         filePath?: string;
+        file_path?: string;
         content?: string;
       };
-      filePath = args.filePath || "";
+      filePath = args.filePath || args.file_path || "";
       if (!filePath) return;
       const existingLines = await readExistingFileLines(filePath);
       const newLines = countLines(args.content ?? "");

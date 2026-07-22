@@ -20,8 +20,9 @@ ROOT = Path(__file__).resolve().parents[2]
 # Every test in this module mutates shared global /tmp/gludd-* state files.
 # Under xdist (--dist loadgroup), concurrent workers corrupt each other's
 # setup (worker B deletes /tmp/gludd-tool-streak.json while worker A reads it).
-# Force the whole module onto a single worker to eliminate the race.
-pytestmark = pytest.mark.xdist_group("enforcement_state_files")
+# Share the same group as enforce-stop runtime tests because both touch
+# /tmp/gludd-watchdog-ci.json and /tmp/gludd-block-counter.json.
+pytestmark = pytest.mark.xdist_group("gludd-watchdog-ci-cache")
 
 ENFORCEMENT_STATE_FILES = [
     "/tmp/gludd-floor-override",

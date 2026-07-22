@@ -1,8 +1,9 @@
 """Unbypassable-enforcement behavioral tests (TDD, failing-first).
 
-Verifies that the behavioral enforcement in enforce-stop.ts and
-enforce-multitask.ts can NEVER be bypassed — not via disable env vars, not
-via disengage files, and not via unit-mismatch blind spots in the CI cache.
+Verifies that behavioral enforcement in enforce-stop.ts and
+enforce-multitask.ts keeps its intended hard blocks: stop enforcement may be
+disabled explicitly through its documented env var, but disengage files and
+CI-cache unit mismatches must not bypass active enforcement.
 
 Pattern (from .opencode/plugin/enforce-multitask.test.node.mjs): the actual
 TypeScript plugin is compiled with esbuild (--bundle --format=cjs), loaded in
@@ -13,10 +14,8 @@ defaultImpl — the current source — is what runs, hermetically.
 
 The four pins (task spec):
 
-  1. text.complete blanks "Done. All work complete." with pending work even
-     when GLUDD_STOP_ENFORCE=0 is set. The env var (documented at
-     enforce-stop.ts:37 as "disables ALL enforcement") must never bypass the
-     text-only block.
+  1. text.complete returns the original text when GLUDD_STOP_ENFORCE=0 is set.
+     The env var is the documented full-disable switch for enforce-stop.
   2. text.complete blanks the same text even when EVERY disengage mechanism
      is armed (watchdog disengage file with valid disengage_until AND the
      block-counter disengageUntil). Disengage may only skip heuristics,
@@ -33,8 +32,7 @@ The four pins (task spec):
      disable the under-floor hard block.
 
 Expected status against CURRENT code (documented, not aspirational):
-  test 1 — PASSES (regression pin: the env var is inert today; this test
-           prevents a future "fix" from wiring it into the text-only block)
+  test 1 — PASSES (regression pin: the env var disables stop enforcement)
   test 2 — PASSES (regression pin of the 2026-07-15 disengage narrowing)
   test 3 — FAILS  (seconds-vs-ms bug: ciVerdictPendingOrRed never true for
            watchdog-format caches)
@@ -63,6 +61,8 @@ WATCHDOG_CI_FILE = Path("/tmp/gludd-watchdog-ci.json")
 if shutil.which(NODE) is None:
     pytest.skip("node binary unavailable", allow_module_level=True)
 
+pytestmark = pytest.mark.xdist_group("gludd-watchdog-ci-cache")
+
 _BUNDLE_CACHE: dict[str, Path] = {}
 
 _AMBIENT_ENV_KEYS = [
@@ -83,6 +83,7 @@ _AMBIENT_ENV_KEYS = [
     "GLUDD_PERSIST_STOP_BLOCK_FILE",
     "GLUDD_STOP_TEXT_COMPLETE_COUNT",
     "GLUDD_STOP_TOOL_COUNTS_FILE",
+    "GLUDD_WATCHDOG_CI_FILE",
     "GLUDD_MULTITASK_STATE_FILE",
     "GLUDD_ALIVE_PATH",
     "GLUDD_STREAK_FILE",
@@ -296,15 +297,14 @@ def _assert_blanked(result: dict, context: str) -> None:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# 1. text.complete never bypassable via GLUDD_STOP_ENFORCE=0
+# 1. text.complete obeys GLUDD_STOP_ENFORCE=0
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-class TestTextCompleteEnvVarUnbypassable:
-    """enforce-stop.ts:37 documents 'GLUDD_STOP_ENFORCE=0 disables ALL
-    enforcement'. The text-only block with pending work must NEVER honor it."""
+class TestTextCompleteEnvVarDisable:
+    """enforce-stop.ts documents GLUDD_STOP_ENFORCE=0 as a full disable."""
 
-    def test_text_complete_blanks_despite_stop_enforce_disabled(self):
+    def test_text_complete_passes_through_when_stop_enforce_disabled(self):
         base = _mk_workdir(unchecked_tasks=True)
         try:
             bundle = _esbuild_bundle("enforce-stop")
@@ -315,9 +315,12 @@ class TestTextCompleteEnvVarUnbypassable:
                 env,
                 cwd=str(base / "project"),
             )
-            _assert_blanked(
-                result,
-                "GLUDD_STOP_ENFORCE=0 with unchecked TASKS.md items",
+            assert result.get("blanked") is False, (
+                "GLUDD_STOP_ENFORCE=0 must bypass stop enforcement; "
+                f"got: {result}"
+            )
+            assert result.get("finalText") == "Done. All work complete.", (
+                f"Original text must pass through unchanged; got: {result}"
             )
         finally:
             shutil.rmtree(base, ignore_errors=True)

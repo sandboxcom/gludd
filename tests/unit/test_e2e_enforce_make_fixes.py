@@ -341,7 +341,7 @@ def test_full_cleaning_pipeline_steps_in_order():
     assert pos_dollar != -1, "Step 2: $ strip must exist"
 
     # Step 3: make extraction
-    pos_make = source.find("trimmed.match(/^(make\\s+\\S+)/)")
+    pos_make = source.find("trimmed.match(/^make\\s+(\\S+)/)")
     assert pos_make != -1, "Step 3: make extraction must exist"
 
     # Step 4: toScan VAR=val stripping

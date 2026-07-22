@@ -34,21 +34,12 @@ KNOWN_NAG_STRINGS: list[str] = [
     "DELEGATE-FIRST",  # prepended nag when streak > threshold
     "FALSE-DONE CLAIM BLOCKED",
     "DISPATCH A TOOL CALL",
-    "TEXT BLOCKED — RATCHET HAS PENDING ENTRIES",
     "QA RESPONSE SUMMARY BLOCKED",
-    "HARD STOP — STATE-BASED BLOCK: local work pending",
+    "TEXT-ONLY RESPONSE BLOCKED",
     # enforce-floor.ts text.complete
-    "REFILL NEEDED",  # subagent pool drain nag
     # enforce-multitask.ts text.complete
     "MUST DISPATCH",  # zero-streak enforcement
-    "DISPATCH SUBAGENTS NOW",  # 0 estimated in-flight
-    # enforce-make.ts text.complete
-    "GATE IS RED — RESPONSE BLOCKED",
-    "STOP-PATTERN DETECTED — RESPONSE REPLACED",
-    "TEXT BLOCKED — PENDING WORK EXISTS",
-    "CATCH-ALL BLOCK — PENDING WORK REMAINS",
-    # enforce-enhancement-ratio.ts text.complete
-    "ENHANCEMENT RATIO VIOLATION",  # console.warn
+    "THIN WAVE BLOCKED",
 ]
 
 
@@ -65,7 +56,7 @@ _ALL_HOOK_RE = re.compile(
 
 # ── Regex to detect OPENCODE_SUBAGENT guard ─────────────────────────────────
 _SUBAGENT_GUARD_RE = re.compile(
-    r'process\.env\.OPENCODE_SUBAGENT\s*===\s*"1"',
+    r'(?:process\.env\.OPENCODE_SUBAGENT\s*===\s*"1"|isSubagent\s*\(\s*\))',
 )
 
 # ── Nag strings used in guard-integrity tests (E.13) ────────────────────────
@@ -303,7 +294,7 @@ class TestSubagentOutputClean:
         files: list[Path] = []
         for d in PLUGIN_DIRS:
             if d.is_dir():
-                files.extend(sorted(d.glob("*.ts")))
+                files.extend(sorted(d.rglob("*.ts")))
         return files
 
     def test_all_text_complete_hooks_have_subagent_guard(self):

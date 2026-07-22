@@ -194,10 +194,10 @@ def test_reload_code_module_is_serialized_by_lock(tmp_path: Path) -> None:
 
 def test_reload_lock_is_non_blocking(tmp_path: Path) -> None:
     """When a reload is in progress (lock held), a concurrent caller must get
-    a ReloadBusyError or a failed ReloadResult — not block indefinitely.
+    a bounded-timeout failed ReloadResult — not block indefinitely.
 
     We hold the lock from a test-side thread and verify the second caller
-    returns immediately with failure.
+    returns with failure inside the configured lock timeout.
     """
     _mod_path, fqmn, _mod = _install_live_module(
         tmp_path, "leaf_busy",
@@ -206,7 +206,7 @@ def test_reload_lock_is_non_blocking(tmp_path: Path) -> None:
             return 1
         """,
     )
-    reloader = HotReloader(config_dir=str(tmp_path / "config"))
+    reloader = HotReloader(config_dir=str(tmp_path / "config"), reload_timeout_s=0.2)
 
     candidate = tmp_path / "candidate_leaf_busy.py"
     candidate.write_text("def value():\n    return 7\n")
@@ -238,12 +238,11 @@ def test_reload_lock_is_non_blocking(tmp_path: Path) -> None:
         inner_completed.wait(timeout=5.0)
         t.join(timeout=1.0)
 
-        # Reload should fail — either through ReloadBusyError (wrapped as
-        # failed ReloadResult) or an explicit busy failure.
+        # An externally held lock cannot serialize to success. It should still
+        # fail within the configured timeout instead of blocking indefinitely.
         assert inner_result is not None, "second caller blocked indefinitely"
-        assert inner_result.success is False, (
-            f"second caller should fail when lock held, got {inner_result}"
-        )
+        assert inner_result.success is False
+        assert "timeout" in str(inner_result.error).lower()
     finally:
         reloader._reload_lock.release()
 

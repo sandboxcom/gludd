@@ -54,12 +54,13 @@ interface RatioState {
   session_enhancements: number
   session_fixes: number
   session_unknown: number
+  early_warned: boolean
   lastPid: number
   lastTs: number
 }
 
 function _freshState(): RatioState {
-  return { wave: [], session_enhancements: 0, session_fixes: 0, session_unknown: 0, lastPid: process.pid, lastTs: 0 }
+  return { wave: [], session_enhancements: 0, session_fixes: 0, session_unknown: 0, early_warned: false, lastPid: process.pid, lastTs: 0 }
 }
 
 function _isStale(raw: any): boolean {
@@ -78,6 +79,7 @@ function loadState(): RatioState {
         session_enhancements: typeof raw.session_enhancements === "number" ? raw.session_enhancements : 0,
         session_fixes: typeof raw.session_fixes === "number" ? raw.session_fixes : 0,
         session_unknown: typeof raw.session_unknown === "number" ? raw.session_unknown : 0,
+        early_warned: typeof raw.early_warned === "boolean" ? raw.early_warned : false,
         lastPid: typeof raw.lastPid === "number" ? raw.lastPid : process.pid,
         lastTs: typeof raw.lastTs === "number" ? raw.lastTs : Date.now(),
       }
@@ -155,6 +157,7 @@ const defaultImpl: HotModule = {
         if (fixRatio > 0.5) {
           const fixPct = (fixRatio * 100).toFixed(0)
           const enhCount = s.wave.length - fixCount
+          s.early_warned = false
           s.wave = []
           saveState(s)
 
@@ -169,6 +172,7 @@ const defaultImpl: HotModule = {
           }
         }
 
+        s.early_warned = false
         s.wave = []
       }
 

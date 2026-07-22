@@ -136,10 +136,10 @@ class TestAgentFloorEnforcement:
         content = ENFORCE_STOP.read_text()
         assert '"10"' in content, "enforce-stop.ts FLOOR must default to 10"
 
-    def test_settings_json_floor_is_five(self):
+    def test_settings_json_floor_is_ten(self):
         settings = (ROOT / ".claude" / "settings.json").read_text()
-        assert '"CLAUDE_AGENT_FLOOR": "5"' in settings, (
-            ".claude/settings.json must set CLAUDE_AGENT_FLOOR to 5"
+        assert '"CLAUDE_AGENT_FLOOR": "10"' in settings, (
+            ".claude/settings.json must set CLAUDE_AGENT_FLOOR to 10"
         )
 
 

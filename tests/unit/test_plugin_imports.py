@@ -4,10 +4,14 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "check_plugin_imports.py"
 PLUGIN_DIR = ROOT / ".opencode" / "plugin"
 TS_FILES = sorted(PLUGIN_DIR.glob("*.ts"))
+
+pytestmark = pytest.mark.xdist_group("plugin_imports")
 
 
 def test_script_exits_zero_when_all_imports_valid():

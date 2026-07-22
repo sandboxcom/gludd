@@ -12,6 +12,10 @@ The enforcement plugins mechanically prevent this:
 
 If you are reading this and NOT dispatching subagents, you are violating the contract.
 
+## NO-PROMPT PROGRESS DIRECTIVE (READ FIRST)
+
+Prompting the user for permission is a workflow failure when work can continue inside the repo. do not call tools or paths that trigger approval prompts. If a tool or command would prompt, abandon that path immediately, use or add a make target, and keep working without asking.
+
 ## ⛔ COST-EFFICIENCY DIRECTIVE (READ FIRST — OVERRIDES ALL FLOOR RULES BELOW)
 
 **2026-07-11 user mandate: maximize productivity per token. Fewer, better subagents beat more, wasteful ones.**

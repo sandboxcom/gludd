@@ -86,14 +86,14 @@ def test_env_var_true():
 # ── Test 2: File marker exists → isSubagent returns true ────────────────────
 
 def test_file_marker_true():
-    marker_create = _MARKER_TEMPLATE.format(pid=os.getpid())
     result = _run_ts(
-        f"""\
+        """\
 const fs = await import('node:fs')
-fs.writeFileSync({json.dumps(marker_create)}, '{{}}')
+const marker = `/tmp/gludd-subagent-${process.pid}.json`
+fs.writeFileSync(marker, '{}')
 const val = isSubagent()
-try {{ fs.unlinkSync({json.dumps(marker_create)}) }} catch {{}}
-console.log(JSON.stringify({{isSub: val}}))
+try { fs.unlinkSync(marker) } catch {}
+console.log(JSON.stringify({isSub: val}))
 """
     )
     assert result["isSub"] is True, f"Expected true when marker file exists, got {result}"
@@ -158,14 +158,14 @@ def test_env_var_zero_is_not_subagent():
 # ── Edge case: file marker overrides env=0 ──────────────────────────────────
 
 def test_file_marker_wins_over_env_zero():
-    marker = _MARKER_TEMPLATE.format(pid=os.getpid())
     result = _run_ts(
-        f"""\
+        """\
 const fs = await import('node:fs')
-fs.writeFileSync({json.dumps(marker)}, '{{}}')
+const marker = `/tmp/gludd-subagent-${process.pid}.json`
+fs.writeFileSync(marker, '{}')
 const val = isSubagent()
-try {{ fs.unlinkSync({json.dumps(marker)}) }} catch {{}}
-console.log(JSON.stringify({{isSub: val}}))
+try { fs.unlinkSync(marker) } catch {}
+console.log(JSON.stringify({isSub: val}))
 """,
         env_override={"OPENCODE_SUBAGENT": "0"},
     )

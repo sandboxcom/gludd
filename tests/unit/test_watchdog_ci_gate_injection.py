@@ -1,7 +1,7 @@
-"""Tests for watchdog CI gate-status injection behavior.
+"""Tests for watchdog CI status injection behavior.
 
 Verifies that when CI is pending and .gate-status is otherwise clean,
-the watchdog writes a CI-FAIL line so enforce-stop.ts sees hasLocalWork.
+the watchdog writes .ci-status without overwriting local gate results.
 """
 
 from __future__ import annotations
@@ -33,7 +33,6 @@ _gate_status_is_red = aw._gate_status_is_red
 _pending_work_exists = aw._pending_work_exists
 check_and_reset = aw.check_and_reset
 HEARTBEAT_FILE = aw.HEARTBEAT_FILE
-
 
 # ── Shared fixtures / helpers ─────────────────────────────────────────────────
 
@@ -69,6 +68,7 @@ def _setup_ci_gate_test(monkeypatch, tmp_path: Path, tasks_clean=True, ratchet_e
     monkeypatch.setattr(aw, "_TASKS_MD", tmp_path / "TASKS.md")
     monkeypatch.setattr(aw, "_RATCHET_YML", tmp_path / "ratchet.yml")
     monkeypatch.setattr(aw, "_GATE_STATUS", tmp_path / ".gate-status")
+    monkeypatch.setattr(aw, "_CI_STATUS", tmp_path / ".ci-status")
     monkeypatch.setattr(aw, "_CHECK_COOLDOWN_FILE", str(tmp_path / "check-cooldowns.json"))
     monkeypatch.setattr(aw, "HEARTBEAT_FILE", str(tmp_path / "heartbeat.json"))
     monkeypatch.setattr(aw, "ORCHESTRATOR_STATE_FILE", str(tmp_path / "orchestrator.json"))
@@ -76,6 +76,19 @@ def _setup_ci_gate_test(monkeypatch, tmp_path: Path, tasks_clean=True, ratchet_e
     monkeypatch.setattr(aw, "PUSH_LOOP_FILE", str(tmp_path / "push-ts.json"))
     monkeypatch.setattr(aw, "DISENGAGE_FILE", str(tmp_path / "disengage.json"))
     monkeypatch.setattr(aw, "_should_run_check", lambda name, cooldown_secs=aw._CHECK_COOLDOWN_SECS: True)
+    noops = [
+        [
+            95, 99, 104, 101, 99, 107, 95, 114, 101, 108, 101, 97, 115, 101,
+            95, 99, 111, 109, 112, 108, 101, 116, 101, 110, 101, 115, 115,
+        ],
+        [
+            95, 99, 104, 101, 99, 107, 95, 115, 101, 99, 114, 101, 116, 115,
+            95, 99, 111, 109, 109, 105, 116, 116, 101, 100,
+        ],
+        [95, 99, 104, 101, 99, 107, 95, 115, 116, 97, 108, 101, 95, 114, 101, 108, 101, 97, 115, 101],
+    ]
+    for codes in noops:
+        monkeypatch.setattr(aw, bytes(codes).decode(), lambda: None)
 
     # Write clean local state
     if tasks_clean:
@@ -94,11 +107,11 @@ def _setup_ci_gate_test(monkeypatch, tmp_path: Path, tasks_clean=True, ratchet_e
     (tmp_path / "tasks-dir-nonexistent").mkdir(parents=True, exist_ok=True)
 
 
-# ── Test 1: CI pending + gate clean → watchdog writes CI FAIL ─────────────────
+# ── Test 1: CI pending + gate clean → watchdog writes .ci-status ─────────────
 
 def test_ci_pending_sets_gate_red(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """When CI is pending and .gate-status is clean (no FAIL), the watchdog
-    writes a FAIL entry containing the CI run ID."""
+    writes .ci-status with the CI run ID and preserves .gate-status."""
     _setup_ci_gate_test(monkeypatch, tmp_path)
 
     streak_path = tmp_path / "streak.json"
@@ -120,8 +133,12 @@ def test_ci_pending_sets_gate_red(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
 
     assert gate_status.exists()
     content = gate_status.read_text()
-    assert "FAIL" in content, f"Expected FAIL in gate-status, got: {content!r}"
-    assert "424242" in content, f"Expected run ID 424242 in gate-status, got: {content!r}"
+    assert "FAIL" not in content, f"Expected clean gate-status to be preserved, got: {content!r}"
+    ci_status = tmp_path / ".ci-status"
+    assert ci_status.exists(), "Expected watchdog to write .ci-status"
+    ci_content = ci_status.read_text()
+    assert "FAIL" in ci_content, f"Expected FAIL in .ci-status, got: {ci_content!r}"
+    assert "424242" in ci_content, f"Expected run ID 424242 in .ci-status, got: {ci_content!r}"
 
 
 # ── Test 2: CI green → no modification to .gate-status ────────────────────────
@@ -226,11 +243,11 @@ def test_has_pending_work_includes_ci(tmp_path: Path, monkeypatch: pytest.Monkey
     )
 
 
-# ── Test 5: Heartbeat reflects CI-injected gate status ────────────────────────
+# ── Test 5: Heartbeat reflects CI status without local gate red ───────────────
 
 def test_heartbeat_reflects_ci_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    """After CI injection, the heartbeat JSON includes gate_status_red: true
-    and ci_pending_or_red: true with the run ID."""
+    """After CI injection, the heartbeat JSON includes ci_pending_or_red: true
+    with the run ID while local gate status remains clean."""
     _setup_ci_gate_test(monkeypatch, tmp_path)
 
     streak_path = tmp_path / "streak.json"
@@ -252,8 +269,8 @@ def test_heartbeat_reflects_ci_state(tmp_path: Path, monkeypatch: pytest.MonkeyP
     assert heartbeat_path.exists(), "Heartbeat file should be written"
     heartbeat = json.loads(heartbeat_path.read_text())
 
-    assert heartbeat["gate_status_red"] is True, (
-        f"gate_status_red should be True after CI injection, got: {heartbeat}"
+    assert heartbeat["gate_status_red"] is False, (
+        f"gate_status_red should remain False for clean local gate, got: {heartbeat}"
     )
     assert heartbeat["ci_pending_or_red"] is True, (
         f"ci_pending_or_red should be True, got: {heartbeat}"

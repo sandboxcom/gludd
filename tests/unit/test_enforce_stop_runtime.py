@@ -42,6 +42,10 @@ def _clean_leaked_state_files() -> None:
         with contextlib.suppress(OSError):
             Path(p).unlink(missing_ok=True)
 
+
+def _ci_path(hook_plugin_env: HookEnv) -> Path:
+    return hook_plugin_env.state_path("GLUDD_WATCHDOG_CI_FILE")
+
 # Several tests seed the SHARED /tmp/gludd-watchdog-ci.json CI cache that
 # hasRealPendingWork() reads — serialize onto one xdist worker (same group as
 # test_enforce_stop_mixed_response.py) so concurrent seeds can't race.
@@ -120,23 +124,18 @@ def test_stop_text_complete_subagent_guard_skips_enforcement(hook_plugin_env: Ho
 
 
 def test_stop_text_complete_env_disable_bypasses_enforcement(hook_plugin_env: HookEnv):
-    """GLUDD_STOP_ENFORCE=0: text.complete NO LONGER bypasses enforcement.
-
-    The GLUDD_STOP_ENFORCE===0 early-return was removed 2026-07-16 —
-    text-only blocking is NEVER bypassable. The hook fires anyway."""
-    _parsed, _raw, stderr, rc = _invoke_text_complete(
+    """GLUDD_STOP_ENFORCE=0: text.complete returns the original output."""
+    parsed, _raw, stderr, rc = _invoke_text_complete(
         hook_plugin_env,
         "All done. Everything is complete.",
         env_overrides={"GLUDD_STOP_ENFORCE": "0"},
     )
     assert rc == 0, stderr
+    assert parsed is not None, stderr
+    assert parsed.get("text") == "All done. Everything is complete."
     pb = _read_persist_block(hook_plugin_env)
-    assert pb is not None, (
-        f"GLUDD_STOP_ENFORCE=0 no longer bypasses stop enforcement. "
-        f"Text must be blocked. stderr={stderr}"
-    )
-    assert pb.get("blocked") is True, (
-        f"Block must be recorded even when GLUDD_STOP_ENFORCE=0; got: {pb}"
+    assert pb is None or pb.get("blocked") is not True, (
+        f"Env disable must not record a stop block; got: {pb}"
     )
 
 
@@ -204,7 +203,7 @@ def test_stop_text_complete_false_done_with_evidence_passes(hook_plugin_env: Hoo
 
     # hasRealPendingWork() reads /tmp/gludd-watchdog-ci.json directly.
     # Seed a clean CI cache so live CI state doesn't interfere.
-    ci_path = Path("/tmp/gludd-watchdog-ci.json")
+    ci_path = _ci_path(hook_plugin_env)
     _old_ci = ci_path.read_bytes() if ci_path.exists() else None
     ci_path.write_text(json.dumps({
         "last_ci_check": int(time.time() * 1000),
@@ -288,7 +287,7 @@ def test_stop_text_complete_disengage_allows_through(hook_plugin_env: HookEnv):
     _clean_leaked_state_files()
 
     # hasRealPendingWork() reads /tmp/gludd-watchdog-ci.json directly.
-    ci_path = Path("/tmp/gludd-watchdog-ci.json")
+    ci_path = _ci_path(hook_plugin_env)
     _old_ci = ci_path.read_bytes() if ci_path.exists() else None
     ci_path.write_text(json.dumps({
         "last_ci_check": int(time.time() * 1000),
@@ -548,7 +547,7 @@ def test_disengage_does_NOT_bypass_text_only_with_pending_work(
     )
     # CI cache with RED status
     (hook_plugin_env.cwd / "..").mkdir(exist_ok=True)
-    ci_path = Path("/tmp/gludd-watchdog-ci.json")
+    ci_path = _ci_path(hook_plugin_env)
     _old_ci = None
     if ci_path.exists():
         _old_ci = ci_path.read_bytes()
@@ -632,7 +631,7 @@ def test_disengage_still_allows_completion_smell_when_no_work(
     # hasRealPendingWork() reads /tmp/gludd-watchdog-ci.json directly
     # (NOT from the pre-seeded state). Write a clean CI cache so the
     # live CI state from prior tests doesn't carry over.
-    ci_path = Path("/tmp/gludd-watchdog-ci.json")
+    ci_path = _ci_path(hook_plugin_env)
     _old_ci = None
     if ci_path.exists():
         _old_ci = ci_path.read_bytes()

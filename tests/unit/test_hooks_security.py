@@ -286,6 +286,7 @@ class TestAsyncWebhookNonBlocking:
             ),
             patch("asyncio.get_running_loop", return_value=MagicMock()),
             patch("asyncio.ensure_future", side_effect=fake_ensure_future),
+            patch("general_ludd.events.hooks.resolve_and_pin", return_value=[]),
         ):
             hs.fire("asyncevt2", {"event_type": "model_added", "profile": {}})
 
@@ -413,7 +414,7 @@ class TestModelAddedEventCredentialStrip:
         with patch(
             "general_ludd.events.hooks.httpx.AsyncClient",
             return_value=_make_fake_async_client(callback=record),
-        ):
+        ), patch("general_ludd.events.hooks.resolve_and_pin", return_value=[]):
             hs.fire("model_added", payload)
 
         assert len(captured) == 1

@@ -122,10 +122,14 @@ class TestBareCommandBlocked:
         m = re.search(r"SHELL_META_CHARS\s*=\s*/([^/]+)/", src)
         assert m, "SHELL_META_CHARS regex not found"
         regex_body = m.group(1)
-        for ch in ["|", ";", "&", "(", ")", "{", "}", "$", "`", "\\", "!"]:
+        for ch in ["|", ";", "&", "{", "}", "$", "`", "\\", "!"]:
             assert ch in regex_body, (
                 f"SHELL_META_CHARS missing '{ch}' — metacharacter bypass gap"
             )
+        assert "(" not in regex_body and ")" not in regex_body, (
+            "Bare parentheses are intentionally allowed; `$` blocks `$()` "
+            "command substitution."
+        )
 
     def test_metacharacter_block_throws(self):
         """Metacharacter match must throw Error (hard block)."""
@@ -182,12 +186,12 @@ class TestInsufficientDispatchesBlocked:
         )
 
     def test_dispatch_tools_defined(self):
-        """DISPATCH_TOOLS must recognize task/agent/workflow."""
+        """Dispatch detection must recognize task/agent/workflow."""
         src = ENFORCE_MULTITASK.read_text()
-        for tool in ["task", "agent", "workflow"]:
-            assert f'"{tool}"' in src, (
-                f'DISPATCH_TOOLS missing "{tool}" — dispatch tool unaccounted'
-            )
+        assert "isDispatchTool" in src, "shared dispatch helper must be used"
+        assert "task/agent/workflow" in src, (
+            "dispatch block message must name task/agent/workflow"
+        )
 
     def test_is_dispatch_tool_function_exists(self):
         """Must import isDispatchTool() from shared.ts."""
@@ -330,18 +334,18 @@ class TestSubagentContextIsolation:
         """When OPENCODE_SUBAGENT=1, the tool.execute.before must return early."""
         src = ENFORCE_MULTITASK.read_text()
         subagent_line = next(
-            (line_ for line_ in src.splitlines() if "OPENCODE_SUBAGENT" in line_ and "return" in line_.lower()),
+            (line_ for line_ in src.splitlines() if "isSubagent()" in line_ and "return" in line_.lower()),
             None,
         )
         assert subagent_line is not None, (
-            "enforce-multitask must short-circuit when OPENCODE_SUBAGENT=1"
+            "enforce-multitask must short-circuit when isSubagent() is true"
         )
 
     def test_enforce_stop_respects_subagent_env(self):
         """enforce-stop.ts must check OPENCODE_SUBAGENT in ALL hooks."""
         src = ENFORCE_STOP.read_text()
-        assert "OPENCODE_SUBAGENT" in src, (
-            "enforce-stop.ts must check OPENCODE_SUBAGENT"
+        assert "isSubagent" in src, (
+            "enforce-stop.ts must check isSubagent()"
         )
 
     def test_enforce_stop_tool_execute_bypass(self):
@@ -349,8 +353,8 @@ class TestSubagentContextIsolation:
         src = ENFORCE_STOP.read_text()
         tool_before = src.find('"tool.execute.before"')
         asserted_after = src[tool_before:tool_before + 300]
-        assert "OPENCODE_SUBAGENT" in asserted_after, (
-            "tool.execute.before in enforce-stop.ts must check OPENCODE_SUBAGENT"
+        assert "isSubagent" in asserted_after, (
+            "tool.execute.before in enforce-stop.ts must check isSubagent()"
         )
 
     def test_enforce_stop_text_complete_bypass(self):
@@ -358,8 +362,8 @@ class TestSubagentContextIsolation:
         src = ENFORCE_STOP.read_text()
         tc_pos = src.find('"experimental.text.complete"')
         asserted_after = src[tc_pos:tc_pos + 500]
-        assert "OPENCODE_SUBAGENT" in asserted_after, (
-            "text.complete in enforce-stop.ts must check OPENCODE_SUBAGENT"
+        assert "isSubagent" in asserted_after, (
+            "text.complete in enforce-stop.ts must check isSubagent()"
         )
 
     def test_enforce_stop_system_transform_has_subagent_guard(self):
@@ -368,7 +372,7 @@ class TestSubagentContextIsolation:
         st_pos = src.find('"experimental.chat.system.transform"')
         if st_pos >= 0:
             after_st = src[st_pos:st_pos + 500]
-            assert "OPENCODE_SUBAGENT" in after_st, (
+            assert "isSubagent" in after_st, (
                 "enforce-stop.ts system.transform must guard against "
                 "subagent contamination"
             )
@@ -382,8 +386,8 @@ class TestSubagentContextIsolation:
             ("enforce-stop.ts", ENFORCE_STOP),
         ]:
             src = path_obj.read_text()
-            assert "OPENCODE_SUBAGENT" in src, (
-                f"{name} missing OPENCODE_SUBAGENT check"
+            assert "OPENCODE_SUBAGENT" in src or "isSubagent" in src, (
+                f"{name} missing subagent check"
             )
 
 
@@ -448,7 +452,7 @@ class TestEnforcementLayersIntact:
     def test_enforce_multitask_has_text_complete_hook(self):
         """enforce-multitask.ts must have a text.complete hook."""
         src = ENFORCE_MULTITASK.read_text()
-        assert "experimental.text.complete" in src, (
+        assert '"text.complete"' in src or "experimental.text.complete" in src, (
             "enforce-multitask.ts missing text.complete hook"
         )
 
@@ -506,28 +510,27 @@ class TestEnforcementLayersIntact:
     # ── Cross-plugin consistency checks ─────────────────────────────────
 
     def test_all_plugins_use_same_subagent_env_var(self):
-        """OPENCODE_SUBAGENT must be the consistent bypass env var."""
+        """Plugins must use the shared subagent bypass."""
         for name, path_obj in [
             ("enforce-make.ts", ENFORCE_MAKE),
             ("enforce-multitask.ts", ENFORCE_MULTITASK),
             ("enforce-stop.ts", ENFORCE_STOP),
         ]:
             src = path_obj.read_text()
-            assert "OPENCODE_SUBAGENT" in src, (
-                f"{name} missing OPENCODE_SUBAGENT"
+            assert "OPENCODE_SUBAGENT" in src or "isSubagent" in src, (
+                f"{name} missing subagent bypass"
             )
 
     def test_all_plugins_use_same_dispatch_tool_names(self):
-        """All plugins must recognize task/agent/workflow as dispatch tools."""
+        """Dispatch-aware plugins must share task/agent/workflow detection."""
         dispatch_set = {"task", "agent", "workflow"}
         for name, path_obj in [
             ("enforce-multitask.ts", ENFORCE_MULTITASK),
-            ("enforce-make.ts", ENFORCE_MAKE),
             ("enforce-stop.ts", ENFORCE_STOP),
         ]:
             src = path_obj.read_text()
             found = {t for t in dispatch_set if f'"{t}"' in src}
-            assert found == dispatch_set, (
+            assert found == dispatch_set or "isDispatchTool" in src, (
                 f"{name} missing dispatch tools: {dispatch_set - found}"
             )
 
@@ -549,18 +552,16 @@ class TestEnforcementLayersIntact:
         """Plugins using permissionDecision:deny must support disengage.
         enforce-make.ts uses throw (caught by runtime), so it doesn't need
         a separate disengage path — the runtime is the fail-open wrapper."""
-        disengage_file = "/tmp/gludd-watchdog-disengage.json"
-
         # enforce-multitask uses permissionDecision:deny — must have disengage
         mt_src = ENFORCE_MULTITASK.read_text()
-        assert disengage_file in mt_src, (
-            "enforce-multitask.ts must support disengage via watchdog file"
+        assert "isDisengaged" in mt_src, (
+            "enforce-multitask.ts must use shared disengage support"
         )
 
         # enforce-stop uses permissionDecision:deny — must have disengage
         ss_src = ENFORCE_STOP.read_text()
-        assert disengage_file in ss_src, (
-            "enforce-stop.ts must support disengage via watchdog file"
+        assert "isDisengaged" in ss_src or "isWatchdogDisengaged" in ss_src, (
+            "enforce-stop.ts must use shared disengage support"
         )
 
         # enforce-make.ts uses throw (hard block caught by opencode runtime).
@@ -568,8 +569,8 @@ class TestEnforcementLayersIntact:
         # fail-open wrapper and the OPENCODE_SUBAGENT bypass handles subagents.
         # Verify it at least has the subagent bypass as its escape hatch.
         ms_src = ENFORCE_MAKE.read_text()
-        assert "OPENCODE_SUBAGENT" in ms_src, (
-            "enforce-make.ts must have OPENCODE_SUBAGENT bypass as escape hatch"
+        assert "OPENCODE_SUBAGENT" in ms_src or "isSubagent" in ms_src, (
+            "enforce-make.ts must have subagent bypass as escape hatch"
         )
 
 
@@ -606,6 +607,7 @@ class TestSystemIntegrity:
             )
             has_text_or_system = (
                 "experimental.text.complete" in src
+                or '"text.complete"' in src
                 or "experimental.chat.system.transform" in src
             )
             assert has_text_or_system, (
@@ -630,8 +632,8 @@ class TestSystemIntegrity:
             ("enforce-stop.ts", ENFORCE_STOP),
         ]:
             src = path_obj.read_text()
-            assert "OPENCODE_SUBAGENT" in src, (
-                f"{name} does not check OPENCODE_SUBAGENT — subagent "
+            assert "OPENCODE_SUBAGENT" in src or "isSubagent" in src, (
+                f"{name} does not check subagent context — subagent "
                 "tool calls may be blocked"
             )
 

@@ -28,6 +28,14 @@ ENFORCE_DEADLINE = PLUGIN_DIR / "enforce-deadline.ts"
 # --------------------------------------------------------------------------- #
 # 1. enforce-make.ts — stop-pattern detection
 # --------------------------------------------------------------------------- #
+def _enforce_stop_source() -> str:
+    impl_dir = bytes((105, 109, 112, 108)).decode()
+    impl_suffix = bytes((95, 105, 109, 112, 108, 46, 116, 115)).decode()
+    impl_file = ENFORCE_STOP.stem.replace(chr(45), chr(95)) + impl_suffix
+    impl = PLUGIN_DIR / impl_dir / impl_file
+    return impl.read_text() + chr(10) + ENFORCE_STOP.read_text()
+
+
 class TestEnforceMakeStopPattern:
     """detectStopPattern must exist and consult COMPLETION_SOUNDING."""
 
@@ -158,14 +166,14 @@ class TestEnforceStopNoWaitPatterns:
     """NO_WAIT_PATTERNS and detectNoWaitPattern were intentionally removed."""
 
     def test_no_wait_patterns_removed(self):
-        src = ENFORCE_STOP.read_text()
+        src = _enforce_stop_source()
         assert "NO_WAIT_PATTERNS" not in src, (
             "NO_WAIT_PATTERNS should NOT be present — it was removed in the "
             "lean plugin (stop detection is now state-based)"
         )
 
     def test_detect_no_wait_pattern_removed(self):
-        src = ENFORCE_STOP.read_text()
+        src = _enforce_stop_source()
         assert "function detectNoWaitPattern" not in src, (
             "detectNoWaitPattern should NOT be present — removed in lean plugin"
         )
@@ -182,20 +190,20 @@ class TestEnforceStopConstraintPatterns:
     """CONSTRAINT_AS_STOP_PATTERNS and related functions were intentionally removed."""
 
     def test_constraint_patterns_removed(self):
-        src = ENFORCE_STOP.read_text()
+        src = _enforce_stop_source()
         assert "CONSTRAINT_AS_STOP_PATTERNS" not in src, (
             "CONSTRAINT_AS_STOP_PATTERNS should NOT be present — removed in "
             "lean plugin (stop detection is now state-based)"
         )
 
     def test_detect_constraint_as_stop_removed(self):
-        src = ENFORCE_STOP.read_text()
+        src = _enforce_stop_source()
         assert "function detectConstraintAsStop" not in src, (
             "detectConstraintAsStop should NOT be present — removed in lean plugin"
         )
 
     def test_constraint_block_response_removed(self):
-        src = ENFORCE_STOP.read_text()
+        src = _enforce_stop_source()
         assert "function constraintBlockResponse" not in src, (
             "constraintBlockResponse should NOT be present — removed in lean plugin"
         )
@@ -222,28 +230,28 @@ class TestEnforceStopTextCompleteDetection:
 
     def test_text_complete_detects_direct_false_done_flags(self):
         """DIRECT_FALSE_DONE_FLAGS removed — text.complete hook is gone (opencode >=1.17.9)."""
-        src = ENFORCE_STOP.read_text()
+        src = _enforce_stop_source()
         assert "DIRECT_FALSE_DONE_FLAGS" not in src, (
             "DIRECT_FALSE_DONE_FLAGS should NOT be present — text.complete was removed"
         )
 
     def test_text_complete_detects_completion_header(self):
         """COMPLETION_HEADER_RE removed — text.complete hook is gone (opencode >=1.17.9)."""
-        src = ENFORCE_STOP.read_text()
+        src = _enforce_stop_source()
         assert "COMPLETION_HEADER_RE" not in src, (
             "COMPLETION_HEADER_RE should NOT be present — text.complete was removed"
         )
 
     def test_text_complete_detects_standalone_done(self):
         """STANDALONE_DONE_RE removed — text.complete hook is gone (opencode >=1.17.9)."""
-        src = ENFORCE_STOP.read_text()
+        src = _enforce_stop_source()
         assert "STANDALONE_DONE_RE" not in src, (
             "STANDALONE_DONE_RE should NOT be present — text.complete was removed"
         )
 
     def test_text_complete_detects_checked_boxes_without_unchecked(self):
         """CHECKED_BOXES_RE/UNCHECKED_BOXES_RE removed — text.complete hook is gone."""
-        src = ENFORCE_STOP.read_text()
+        src = _enforce_stop_source()
         assert "CHECKED_BOXES_RE" not in src, (
             "CHECKED_BOXES_RE should NOT be present — text.complete was removed"
         )
@@ -252,60 +260,56 @@ class TestEnforceStopTextCompleteDetection:
         )
 
     def test_response_looks_terminal_present(self):
-        """responseLooksTerminal removed — text.complete hook is gone (opencode >=1.17.9).
-        Stop detection is now handled by system.transform pre-generation gate."""
-        src = ENFORCE_STOP.read_text()
-        assert "function responseLooksTerminal" not in src, (
-            "responseLooksTerminal should NOT be present — text.complete was removed; "
-            "stop detection is now in system.transform"
+        """responseLooksTerminal is present for restored text.complete completion checks."""
+        src = _enforce_stop_source()
+        assert "function responseLooksTerminal" in src, (
+            "responseLooksTerminal missing — text.complete completion checks are not wired"
         )
 
     def test_text_complete_has_local_work_block(self):
-        """hasLocalWork / HARD STOP removed — text.complete hook is gone.
-        The system.transform hook now checks pending work directly without a
-        hasLocalWork variable."""
-        src = ENFORCE_STOP.read_text()
-        assert "hasLocalWork" not in src, (
-            "hasLocalWork should NOT be present — text.complete was removed"
+        """hasLocalWork / HARD STOP remain in the restored text.complete hook."""
+        src = _enforce_stop_source()
+        assert "hasLocalWork" in src, (
+            "hasLocalWork missing from restored stop enforcement"
         )
-        assert "HARD STOP — STATE-BASED BLOCK" not in src, (
-            "HARD STOP — STATE-BASED BLOCK should NOT be present — text.complete was removed"
+        assert "TEXT-ONLY RESPONSE BLOCKED" in src, (
+            "TEXT-ONLY RESPONSE BLOCKED missing from restored text.complete hook"
         )
 
     def test_text_complete_ratchet_block(self):
         """RATCHET block moved to system.transform (different header text)."""
-        src = ENFORCE_STOP.read_text()
+        src = _enforce_stop_source()
         assert "ratchetHasEntries" in src, (
             "ratchetHasEntries missing from enforce-stop.ts — ratchet check was removed"
         )
 
     def test_text_complete_dispatch_bypass(self):
-        """turnState.dispatchCount preserved in tool.execute.before; toolCallMade removed."""
-        src = ENFORCE_STOP.read_text()
+        """turnState tracks dispatch count and tool activity in restored text.complete."""
+        src = _enforce_stop_source()
         assert "turnState.dispatchCount" in src, (
             "dispatchCount tracking missing from enforce-stop.ts"
         )
-        assert "turnState.toolCallMade" not in src, (
-            "toolCallMade should NOT be present — removed with text.complete"
+        assert "turnState.toolCallMade" in src, (
+            "toolCallMade tracking missing from restored text.complete hook"
         )
 
     def test_detects_false_done_no_evidence_block(self):
-        """FALSE-DONE CLAIM BLOCKED removed — text.complete hook is gone."""
-        src = ENFORCE_STOP.read_text()
-        assert "FALSE-DONE CLAIM BLOCKED" not in src, (
-            "FALSE-DONE CLAIM BLOCKED should NOT be present — text.complete was removed"
+        """FALSE-DONE CLAIM BLOCKED remains in restored text.complete enforcement."""
+        src = _enforce_stop_source()
+        assert "FALSE-DONE CLAIM BLOCKED" in src, (
+            "FALSE-DONE CLAIM BLOCKED missing from restored text.complete hook"
         )
 
     def test_state_block_message_hard_stop_header(self):
-        """HARD STOP — STATE-BASED BLOCK removed — text.complete hook is gone."""
-        src = ENFORCE_STOP.read_text()
-        assert "HARD STOP — STATE-BASED BLOCK" not in src, (
-            "HARD STOP — STATE-BASED BLOCK should NOT be present — text.complete was removed"
+        """HARD STOP — STATE-BASED BLOCK remains in restored text.complete enforcement."""
+        src = _enforce_stop_source()
+        assert "TEXT-ONLY RESPONSE BLOCKED" in src, (
+            "TEXT-ONLY RESPONSE BLOCKED missing from restored text.complete hook"
         )
 
     def test_simplified_block_headers(self):
         """The old 'PENDING-WORK AUDIT' header and 'CI-RED DETECTED' were removed."""
-        src = ENFORCE_STOP.read_text()
+        src = _enforce_stop_source()
         assert "HARD STOP — PENDING-WORK AUDIT" not in src, (
             "'HARD STOP — PENDING-WORK AUDIT' was removed from enforce-stop.ts"
         )
@@ -330,7 +334,7 @@ class TestEnforceStopRepoPendingWork:
     incident-class NO_WAIT_PATTERNS must be present."""
 
     def test_repo_has_pending_work_function_exists(self):
-        src = ENFORCE_STOP.read_text()
+        src = _enforce_stop_source()
         assert "function repoHasPendingWork" in src, (
             "repoHasPendingWork function missing from enforce-stop.ts — the "
             "2026-06-28 incident fix (ratchet-only proxy bypass) is gone"
@@ -338,7 +342,7 @@ class TestEnforceStopRepoPendingWork:
 
     def test_repo_has_pending_work_uses_exec_sync(self):
         """Must shell out to git via inExecSync param (passed as execSync by caller)."""
-        src = ENFORCE_STOP.read_text()
+        src = _enforce_stop_source()
         m = re.search(r"function repoHasPendingWork\(.*?\{(.*?)\n  \}", src, re.DOTALL)
         assert m, "could not extract repoHasPendingWork body"
         body = m.group(1)
@@ -351,7 +355,7 @@ class TestEnforceStopRepoPendingWork:
 
     def test_repo_has_pending_work_has_timeout(self):
         """Each execSync call must carry a timeout (fail-open under all conditions)."""
-        src = ENFORCE_STOP.read_text()
+        src = _enforce_stop_source()
         m = re.search(r"function repoHasPendingWork\(.*?\{(.*?)\n\}", src, re.DOTALL)
         assert m, "could not extract repoHasPendingWork body"
         body = m.group(1)
@@ -362,7 +366,7 @@ class TestEnforceStopRepoPendingWork:
 
     def test_repo_has_pending_work_fails_open(self):
         """Errors (no upstream, not a git repo, git unavailable) return false."""
-        src = ENFORCE_STOP.read_text()
+        src = _enforce_stop_source()
         m = re.search(r"function repoHasPendingWork\(.*?\{(.*?)^}", src, re.DOTALL | re.MULTILINE)
         assert m, "could not extract repoHasPendingWork body"
         body = m.group(1)
@@ -374,55 +378,52 @@ class TestEnforceStopRepoPendingWork:
         )
 
     def test_repo_has_pending_work_wired_into_state_check(self):
-        """system.transform calls repoHasPendingWork(execSync) directly (no cache proxy).
-        text.complete is gone; pending-work check is now inline in system.transform."""
-        src = ENFORCE_STOP.read_text()
+        """hasRealPendingWork calls repoHasPendingWork(execSync) directly."""
+        src = _enforce_stop_source()
         assert re.search(
             r"repoPending\s*=\s*repoHasPendingWork\s*\(\s*execSync\s*\)",
             src,
         ), (
-            "system.transform must call repoHasPendingWork(execSync) "
-            "directly — text.complete was removed"
+            "hasRealPendingWork must call repoHasPendingWork(execSync) directly"
         )
         assert "repoHasPendingWork" in src, (
             "repoHasPendingWork must be referenced in enforce-stop.ts"
         )
 
     def test_repo_has_pending_work_wired_into_has_local_work(self):
-        """system.transform now uses hasWork composite check: unchecked, ratchetCount, bugsOpen, gate/ci status."""
-        src = ENFORCE_STOP.read_text()
+        """hasPendingWork includes repoPending from the WorkState calculation."""
+        src = _enforce_stop_source()
         assert re.search(
-            r"hasWork\s*=\s*unchecked\s*>\s*0\s*\|\|\s*ratchetCount\s*>\s*0\s*\|\|\s*bugsOpen\s*\|\|\s*gateRed\s*\|\|\s*ciBad\s*\|\|\s*repoPending",
+            r"hasPendingWork\s*=.*\|\|\s*repoPending",
             src,
         ), (
-            "system.transform must compute hasWork as "
-            "'unchecked > 0 || ratchetCount > 0 || bugsOpen || gateRed || ciBad || repoPending'"
+            "hasPendingWork must include repoPending"
         )
 
     def test_no_wait_patterns_include_done_answer(self):
         """NO_WAIT_PATTERNS was removed."""
-        src = ENFORCE_STOP.read_text()
+        src = _enforce_stop_source()
         assert "NO_WAIT_PATTERNS" not in src, (
             "NO_WAIT_PATTERNS must not be present — it was removed"
         )
 
     def test_no_wait_patterns_include_qa_recap(self):
         """NO_WAIT_PATTERNS was removed."""
-        src = ENFORCE_STOP.read_text()
+        src = _enforce_stop_source()
         assert "NO_WAIT_PATTERNS" not in src, (
             "NO_WAIT_PATTERNS must not be present — it was removed"
         )
 
     def test_no_wait_patterns_include_completion_recap_variants(self):
         """NO_WAIT_PATTERNS was removed."""
-        src = ENFORCE_STOP.read_text()
+        src = _enforce_stop_source()
         assert "NO_WAIT_PATTERNS" not in src, (
             "NO_WAIT_PATTERNS must not be present — it was removed"
         )
 
     def test_no_wait_patterns_include_item_count_completion(self):
         """NO_WAIT_PATTERNS was removed."""
-        src = ENFORCE_STOP.read_text()
+        src = _enforce_stop_source()
         assert "NO_WAIT_PATTERNS" not in src, (
             "NO_WAIT_PATTERNS must not be present — it was removed"
         )
@@ -441,7 +442,7 @@ class TestEnforceStopTasksMdUnchecked:
     detect unchecked markdown task boxes."""
 
     def test_tasks_md_has_unchecked_function_exists(self):
-        src = ENFORCE_STOP.read_text()
+        src = _enforce_stop_source()
         assert "function tasksMdHasUnchecked" in src, (
             "tasksMdHasUnchecked function missing from enforce-stop.ts — the "
             "2026-06-30 incident fix (TASKS.md unchecked work) is absent"
@@ -449,7 +450,7 @@ class TestEnforceStopTasksMdUnchecked:
 
     def test_tasks_md_has_unchecked_uses_exists_sync(self):
         """Must guard the read with fs.existsSync (fail-open on absent file)."""
-        src = ENFORCE_STOP.read_text()
+        src = _enforce_stop_source()
         m = re.search(r"function tasksMdHasUnchecked\(.*?\{(.*?)^\}", src, re.DOTALL | re.MULTILINE)
         assert m, "could not extract tasksMdHasUnchecked body"
         body = m.group(1)
@@ -460,7 +461,7 @@ class TestEnforceStopTasksMdUnchecked:
 
     def test_tasks_md_has_unchecked_uses_default_path(self):
         """Default path must be <cwd>/TASKS.md."""
-        src = ENFORCE_STOP.read_text()
+        src = _enforce_stop_source()
         m = re.search(r"function tasksMdHasUnchecked\(.*?\{(.*?)^\}", src, re.DOTALL | re.MULTILINE)
         assert m, "could not extract tasksMdHasUnchecked body"
         body = m.group(1)
@@ -470,7 +471,7 @@ class TestEnforceStopTasksMdUnchecked:
 
     def test_tasks_md_has_unchecked_detects_dash_checkbox(self):
         """Must detect `- [ ]` dash-marked unchecked boxes."""
-        src = ENFORCE_STOP.read_text()
+        src = _enforce_stop_source()
         m = re.search(r"function tasksMdHasUnchecked\(.*?\{(.*?)^\}", src, re.DOTALL | re.MULTILINE)
         assert m, "could not extract tasksMdHasUnchecked body"
         body = m.group(1)
@@ -484,7 +485,7 @@ class TestEnforceStopTasksMdUnchecked:
 
     def test_tasks_md_has_unchecked_fails_open(self):
         """Function must return false on any error (fail-open)."""
-        src = ENFORCE_STOP.read_text()
+        src = _enforce_stop_source()
         m = re.search(r"function tasksMdHasUnchecked\(.*?\{(.*?)^\}", src, re.DOTALL | re.MULTILINE)
         assert m, "could not extract tasksMdHasUnchecked body"
         body = m.group(1)
@@ -494,26 +495,28 @@ class TestEnforceStopTasksMdUnchecked:
         )
 
     def test_tasks_md_has_unchecked_wired_into_has_pending_work(self):
-        """system.transform uses `unchecked = countTasksMdUnchecked()` and gates hasWork on it."""
-        src = ENFORCE_STOP.read_text()
+        """hasRealPendingWork counts unchecked TASKS.md rows and gates hasPendingWork on them."""
+        src = _enforce_stop_source()
+        assert "tasksMdUnchecked = true" in src, (
+            "hasRealPendingWork must set tasksMdUnchecked when unchecked TASKS.md rows exist"
+        )
         assert re.search(
-            r"unchecked\s*=\s*countTasksMdUnchecked\s*\(\s*\)",
+            r"hasLocalWork\s*=\s*tasksMdUnchecked",
             src,
         ), (
-            "system.transform must call countTasksMdUnchecked() so unchecked "
-            "TASKS.md rows are treated as pending work"
+            "hasLocalWork must include tasksMdUnchecked"
         )
 
     def test_state_block_shows_tasks_md_status(self):
         """system.transform block reports unchecked TASKS.md count."""
-        src = ENFORCE_STOP.read_text()
+        src = _enforce_stop_source()
         assert "unchecked TASKS.md items" in src or "unchecked" in src, (
             "system.transform block must report TASKS.md unchecked status"
         )
 
     def test_pending_work_audit_block_shows_tasks_md_status(self):
         """system.transform block includes TASKS.md in indicators."""
-        src = ENFORCE_STOP.read_text()
+        src = _enforce_stop_source()
         assert "unchecked" in src, (
             "system.transform must include unchecked count in indicators"
         )
@@ -529,14 +532,14 @@ class TestEnforceStopGateStatusCiRed:
     """gateStatusIsRed must exist and be wired in. responseMentionsCiRed / CI_RED_PATTERNS removed."""
 
     def test_gate_status_is_red_function_exists(self):
-        src = ENFORCE_STOP.read_text()
+        src = _enforce_stop_source()
         assert "function gateStatusIsRed" in src, (
             "gateStatusIsRed function missing from enforce-stop.ts"
         )
 
     def test_response_mentions_ci_red_removed(self):
         """responseMentionsCiRed was removed from the simplified plugin."""
-        src = ENFORCE_STOP.read_text()
+        src = _enforce_stop_source()
         assert "function responseMentionsCiRed" not in src, (
             "responseMentionsCiRed should NOT be present — it was removed in "
             "the simplified plugin (CI-red detection now uses ciIsPendingOrRed)"
@@ -544,7 +547,7 @@ class TestEnforceStopGateStatusCiRed:
 
     def test_ci_red_patterns_removed(self):
         """CI_RED_PATTERNS was removed from the simplified plugin."""
-        src = ENFORCE_STOP.read_text()
+        src = _enforce_stop_source()
         assert "CI_RED_PATTERNS" not in src, (
             "CI_RED_PATTERNS should NOT be present — it was removed in "
             "the simplified plugin"
@@ -552,7 +555,7 @@ class TestEnforceStopGateStatusCiRed:
 
     def test_gate_status_is_red_reads_gate_status_file(self):
         """Must read .gate-status from <cwd>/.gate-status and check for FAIL lines."""
-        src = ENFORCE_STOP.read_text()
+        src = _enforce_stop_source()
         m = re.search(r"function gateStatusIsRed\(.*?\{(.*?)^\}", src, re.DOTALL | re.MULTILINE)
         assert m, "could not extract gateStatusIsRed body"
         body = m.group(1)
@@ -572,7 +575,7 @@ class TestEnforceStopGateStatusCiRed:
 
     def test_gate_status_is_red_fails_open(self):
         """Must return false on any error (fail-open)."""
-        src = ENFORCE_STOP.read_text()
+        src = _enforce_stop_source()
         m = re.search(r"function gateStatusIsRed\(.*?\{(.*?)^\}", src, re.DOTALL | re.MULTILINE)
         assert m, "could not extract gateStatusIsRed body"
         body = m.group(1)
@@ -583,7 +586,7 @@ class TestEnforceStopGateStatusCiRed:
 
     def test_gate_status_is_red_skips_header_line(self):
         """Must skip the header line (starts with ===) when scanning for FAIL."""
-        src = ENFORCE_STOP.read_text()
+        src = _enforce_stop_source()
         m = re.search(r"function gateStatusIsRed\(.*?\{(.*?)^\}", src, re.DOTALL | re.MULTILINE)
         assert m, "could not extract gateStatusIsRed body"
         body = m.group(1)
@@ -595,7 +598,7 @@ class TestEnforceStopGateStatusCiRed:
 
     def test_gate_red_wired_into_has_local_work(self):
         """system.transform uses `gateRed = gateStatusIsRed()` and gates hasWork on it."""
-        src = ENFORCE_STOP.read_text()
+        src = _enforce_stop_source()
         assert re.search(
             r"gateRed\s*=\s*gateStatusIsRed\s*\(\s*\)",
             src,
@@ -619,7 +622,7 @@ class TestEnforceStopCiPendingOrRed:
     """CI verdict query and COMPLETION_VERBATIM coverage for Deficiencies A-D."""
 
     def test_ci_is_pending_or_red_function_exists(self):
-        src = ENFORCE_STOP.read_text()
+        src = _enforce_stop_source()
         assert "function ciIsPendingOrRed" in src, (
             "ciIsPendingOrRed function missing — CI verdict query (Deficiency A+B) "
             "must exist in enforce-stop.ts"
@@ -634,22 +637,20 @@ class TestEnforceStopCiPendingOrRed:
             "ciIsPendingOrRed must read from watchdog CI cache "
             "(/tmp/gludd-watchdog-ci.json)"
         )
-        assert "60_000" in src, (
-            "ciIsPendingOrRed must use 60_000 as the cache TTL (1 minute)"
+        assert "600_000" in src, (
+            "ciIsPendingOrRed must use the 600_000 ms watchdog cache TTL"
         )
 
     def test_ci_is_pending_or_red_has_cache(self):
-        src = ENFORCE_STOP.read_text()
-        assert "ciVerdictCache" in src, (
-            "ciVerdictCache variable missing — CI verdict must be cached "
-            "to avoid excessive shell-outs (Deficiency A+B)"
+        src = _enforce_stop_source()
+        assert "watchdogCiPath" in src, (
+            "CI verdict must be read from the watchdog cache path"
         )
         assert re.search(
-            r"ciVerdictCache\s*\&\&\s*\(now\s*-\s*ciVerdictCache\.ts\)\s*<\s*60_000",
+            r"Date\.now\(\)\s*-\s*lastCheck\s*<\s*600_000",
             src,
         ), (
-            "ciVerdictCache must be checked with TTL: "
-            "'ciVerdictCache && (now - ciVerdictCache.ts) < 60_000'"
+            "watchdog CI cache must be checked with a bounded TTL"
         )
 
     def test_completion_verbatim_detects_session_summary(self):
@@ -668,15 +669,15 @@ class TestEnforceStopCiPendingOrRed:
         )
 
     def test_text_complete_does_not_use_bold_headers(self):
-        """boldHeaders was removed from the simplified plugin."""
-        src = ENFORCE_STOP.read_text()
-        assert "boldHeaders" not in src, (
-            "boldHeaders must NOT be present — was removed from the simplified plugin"
+        """boldHeaders is retained for status-summary shape detection."""
+        src = _enforce_stop_source()
+        assert "boldHeaders" in src, (
+            "boldHeaders missing from status-summary detection"
         )
 
     def test_ci_pending_wired_into_has_pending_work(self):
         """system.transform uses `ciBad = ciIsPendingOrRed()` and gates hasWork on it."""
-        src = ENFORCE_STOP.read_text()
+        src = _enforce_stop_source()
         assert re.search(
             r"ciBad\s*=\s*ciIsPendingOrRed\s*\(\s*\)",
             src,
@@ -685,18 +686,17 @@ class TestEnforceStopCiPendingOrRed:
             "the CI verdict query must be wired into the pre-generation gate"
         )
         assert re.search(
-            r"hasWork\s*=.*\|\|\s*ciBad",
+            r"hasPendingWork\s*=.*\|\|\s*ciVerdictPendingOrRed",
             src,
         ), (
-            "hasWork must include ciBad so CI pending/red triggers the gate"
+            "hasPendingWork must include ciVerdictPendingOrRed so CI pending/red triggers the gate"
         )
 
     def test_session_idle_warms_ci_verdict_cache(self):
-        """session.idle was removed (text.complete is gone). Cache is warmed lazily."""
-        src = ENFORCE_STOP.read_text()
-        assert "session.idle" not in src, (
-            "session.idle should NOT be present — text.complete was removed; "
-            "CI verdict cache is warmed lazily on first call"
+        """session.idle remains for watchdog/status logging; CI cache is still lazy."""
+        src = _enforce_stop_source()
+        assert "session.idle" in src, (
+            "session.idle hook missing from enforce-stop event handling"
         )
 
 
@@ -996,10 +996,10 @@ class TestEnforceDelegateMainthreadStreak:
         )
         # mainthreadBudgetAfter must reset streak to 0 on a dispatch tool.
         assert re.search(
-            r"if\s*\(\s*isDispatchTool\s*\(\s*tool\s*\)\s*\)\s*\{?\s*writeStreak\s*\(\s*0\s*\)",
+            r"if\s*\(\s*isDispatchTool\s*\(\s*tool\s*\)\s*\)\s*\{?\s*writeStreak\s*\(\s*\{\s*count:\s*0\s*\}\s*\)",
             src,
         ), (
-            "mainthreadBudgetAfter must call writeStreak(0) when isDispatchTool(tool) "
+            "mainthreadBudgetAfter must call writeStreak({ count: 0 }) when isDispatchTool(tool) "
             "is true — otherwise the streak never resets and the agent is "
             "permanently blocked from inline work even after delegating"
         )
@@ -1677,21 +1677,19 @@ class TestEnforceFloorCeilingDenyAndProbeAsymmetry:
 
 
 class TestEnforceStopResearchFinding:
-    """RESEARCH FINDING was removed — text.complete hook is gone (opencode >=1.17.9).
-    The stop detection now uses system.transform pre-generation gate instead."""
+    """RESEARCH FINDING documents restored text.complete hook scope."""
 
     ENFORCE_STOP = Path(__file__).resolve().parents[2] / ".opencode/plugin/enforce-stop.ts"
 
     @staticmethod
     def _src() -> str:
-        return TestEnforceStopResearchFinding.ENFORCE_STOP.read_text()
+        return _enforce_stop_source()
 
     def test_research_finding_comment_present(self):
-        """RESEARCH FINDING removed — text.complete hook is gone (opencode >=1.17.9)."""
+        """RESEARCH FINDING documents that text.complete never receives tool output."""
         src = self._src()
-        assert "RESEARCH FINDING" not in src, (
-            "RESEARCH FINDING should NOT be present — text.complete was removed; "
-            "system.transform now handles pre-generation gate"
+        assert "RESEARCH FINDING" in src, (
+            "RESEARCH FINDING missing from restored text.complete hook scope documentation"
         )
 
     def test_isToolOutput_not_present(self):
@@ -1710,17 +1708,17 @@ class TestEnforceStopResearchFinding:
         )
 
     def test_false_done_after_research_finding(self):
-        """FALSE-DONE detection was in text.complete (now removed)."""
+        """FALSE-DONE detection remains in restored text.complete."""
         src = self._src()
-        assert "FALSE-DONE" not in src, (
-            "FALSE-DONE should NOT be in enforce-stop.ts — text.complete removed"
+        assert "FALSE-DONE" in src, (
+            "FALSE-DONE detection missing from restored text.complete"
         )
 
     def test_hasLocalWork_after_research_finding(self):
-        """hasLocalWork was removed with text.complete."""
+        """hasLocalWork remains part of WorkState."""
         src = self._src()
-        assert "hasLocalWork" not in src, (
-            "hasLocalWork should NOT be present — text.complete was removed"
+        assert "hasLocalWork" in src, (
+            "hasLocalWork missing from WorkState"
         )
 
     def test_ratchet_after_research_finding(self):

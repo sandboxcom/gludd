@@ -176,6 +176,13 @@ class TestCrashRecoveryRuntime:
 
         const fs = await import("node:fs");
         const STATE_FILE = "{state_path}";
+        fs.writeFileSync(STATE_FILE, JSON.stringify({{
+            started_at: Date.now() - 5000,
+            readsDone: true,
+            dispatches: 5,
+            timeGateReset: true,
+            pid: process.pid,
+        }}), "utf8");
         function loadState() {{
             const raw = JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
             const storedPid = Number(raw.pid) || 0;

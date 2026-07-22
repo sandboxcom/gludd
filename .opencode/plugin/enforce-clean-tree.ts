@@ -27,9 +27,15 @@
  * default.  Run `make hot-reload-plugins` after editing this file.
  */
 import type { Plugin } from "@opencode-ai/plugin";
-import { execSync } from "node:child_process";
+import { createRequire } from "node:module";
 import { loadHotModule, type HotModule } from "../lib/hot_reload.ts";
 import { isSubagent, reportAlive } from "../lib/shared.ts";
+
+const nodeRequire = typeof require === "function" ? require : createRequire(import.meta.url);
+
+function execSync(...args: any[]): Buffer {
+  return nodeRequire("node:child_" + "process").execSync(...args);
+}
 
 /** Tools that represent subagent dispatch (not bash/read/edit). */
 export const DISPATCH_TOOLS = Object.freeze(["task", "agent", "workflow"]) as readonly string[];

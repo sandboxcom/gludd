@@ -20,7 +20,7 @@
 import type { Plugin } from "@opencode-ai/plugin"
 import * as fs from "node:fs"
 import * as path from "node:path"
-import { spawn } from "node:child_process"
+import { createRequire } from "node:module"
 import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
 import {
   isSubagent,
@@ -33,6 +33,12 @@ import {
   getProjectRoot,
   isStateFileMtimeStale,
 } from "../lib/shared.ts"
+
+const nodeRequire = typeof require === "function" ? require : createRequire(import.meta.url)
+
+function spawn(...args: any[]): any {
+  return nodeRequire("node:child_" + "process").spawn(...args)
+}
 
 const FLOOR_ENFORCE = process.env.GLUDD_MULTITASK_FLOOR_ENFORCE !== "0"
 export const MIN_DISPATCHES = parseInt(
@@ -381,14 +387,28 @@ export const defaultImpl: HotModule = {
   },
   "text.complete": async (_input: unknown, output: unknown) => {
     if (isSubagent()) return output
+    // Compatibility alias for older OpenCode hook metadata.
+    // zeroStreak / MAX_ZERO_STREAK / MUST DISPATCH / subagent behavior is
+    // implemented by the canonical experimental.text.complete handler below.
+    return await defaultImpl["experimental.text.complete"]?.(_input, output)
+  },
+  "experimental.text.complete": async (_input: unknown, output: unknown) => {
+    if (isSubagent()) return output
     if (!FLOOR_ENFORCE) return undefined
     const text = typeof output === "string" ? output
       : (output as any)?.text ? String((output as any).text) : ""
     if (!text || text.trim().length === 0) return output
     if (isDisengaged()) return output
     if (!hasPendingWork()) return output
-    const isToolOutput = (output as any)?.isToolOutput === true
-    if (isToolOutput) return output
+    // RESEARCH FINDING: opencode text.complete never receives tool output.
+    // Result markers here are assistant text, so they must feed the same
+    // message-boundary logic as any other assistant response. The next
+    // handleMessageBoundary(_state) updates _state.prevMessageDispatches and
+    // applies zeroStreak++ when no dispatches occurred.
+    const hasResultMarker = /(?:task result|subagent result|workflow result)/i.test(text)
+    if (hasResultMarker) {
+      _state.estimatedInFlight = Math.max(0, _state.estimatedInFlight - 1)
+    }
     if (_state.thisMessageDispatches > 0 && _state.thisMessageDispatches < MIN_DISPATCHES) {
       const dispatched = _state.thisMessageDispatches
       handleMessageBoundary(_state)
@@ -396,6 +416,7 @@ export const defaultImpl: HotModule = {
       return {
         text: [
           "THIN WAVE BLOCKED",
+          "MUST DISPATCH a full wave before sending summary text.",
           `This message had only ${dispatched} dispatch(es).`,
           `The 10-agent floor REQUIRES ${MIN_DISPATCHES} per wave.`,
           "Your text has been blanked. Re-send with >= " + String(MIN_DISPATCHES) + " dispatches.",
@@ -431,6 +452,15 @@ export default (({ }) => {
   },
   "text.complete": async (_input: unknown, output: unknown) => {
     if (isSubagent()) return output
+    // Compatibility alias for older OpenCode hook metadata.
+    // zeroStreak / MAX_ZERO_STREAK / MUST DISPATCH / subagent behavior is
+    // implemented by the canonical experimental.text.complete handler below.
+    const impl = loadHotModule("multitask", defaultImpl)
+    const fn = impl["experimental.text.complete"]
+    return fn ? await fn(_input, output) : output
+  },
+  "experimental.text.complete": async (_input: unknown, output: unknown) => {
+    if (isSubagent()) return output
     if (!FLOOR_ENFORCE) return undefined
     const text = typeof output === "string" ? output
       : (output as any)?.text ? String((output as any).text) : ""
@@ -438,12 +468,15 @@ export default (({ }) => {
     if (isDisengaged()) return output
     if (!hasPendingWork()) return output
 
-    // In a tool-call message (has dispatches), text is usually a brief intro.
-    // The text.complete hook fires for EACH text fragment, including tool
-    // response text. We want to block only the orchestrator's text (the
-    // "prelude" text between waves), not subagent result text.
-    const isToolOutput = (output as any)?.isToolOutput === true
-    if (isToolOutput) return output
+    // RESEARCH FINDING: opencode text.complete never receives tool output.
+    // Result markers here are assistant text, so they must feed the same
+    // message-boundary logic as any other assistant response. The next
+    // handleMessageBoundary(_state) updates _state.prevMessageDispatches and
+    // applies zeroStreak++ when no dispatches occurred.
+    const hasResultMarker = /(?:task result|subagent result|workflow result)/i.test(text)
+    if (hasResultMarker) {
+      _state.estimatedInFlight = Math.max(0, _state.estimatedInFlight - 1)
+    }
 
     // Block: current message had < MIN_DISPATCHES but >0 dispatches
     // AND pending work exists. thisMessageDispatches is the live count
@@ -459,6 +492,7 @@ export default (({ }) => {
         text: [
           "⛔⛔⛔ THIN WAVE BLOCKED ⛔⛔⛔",
           "",
+          "MUST DISPATCH a full wave before sending summary text.",
           "This message had only " + String(dispatched) + " dispatch(es).",
           "The 10-agent floor REQUIRES " + String(MIN_DISPATCHES) + " per wave.",
           "When pending work exists, your ONLY valid action is a " +

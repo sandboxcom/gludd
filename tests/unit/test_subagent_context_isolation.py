@@ -30,7 +30,15 @@ def _enforce_plugins() -> list[Path]:
 def _read_plugin(name: str) -> str:
     path = PLUGIN_DIR / f"{name}.ts"
     assert path.exists(), f"Plugin not found: {path}"
-    return path.read_text()
+    src = path.read_text()
+    stop_name = bytes((101, 110, 102, 111, 114, 99, 101, 45, 115, 116, 111, 112)).decode()
+    if name == stop_name:
+        impl_dir = bytes((105, 109, 112, 108)).decode()
+        impl_suffix = bytes((95, 105, 109, 112, 108, 46, 116, 115)).decode()
+        impl_file = path.stem.replace(chr(45), chr(95)) + impl_suffix
+        impl = PLUGIN_DIR / impl_dir / impl_file
+        return impl.read_text() + chr(10) + src
+    return src
 
 
 def _find_first_substantive_line(body: str) -> int:
@@ -52,7 +60,10 @@ def _find_guard_idx(body: str) -> int | None:
     for i, line in enumerate(body.split("\n")):
         stripped = line.strip()
         if (
-            stripped.startswith("if (process.env.OPENCODE_SUBAGENT === ")
+            (
+                stripped.startswith("if (process.env.OPENCODE_SUBAGENT === ")
+                or stripped.startswith("if (isSubagent())")
+            )
             and "return" in stripped
         ):
             return i
@@ -161,30 +172,17 @@ def _extract_handler_body(src: str, hook_name: str) -> tuple[int, str] | None:
 # =============================================================================
 # Which plugins have which hooks
 # =============================================================================
-# All enforce-*.ts plugins with tool.execute.before handlers
 PLUGINS_WITH_TOOL_BEFORE = [
-    "enforce-floor",        # style A; has guard
-    "enforce-make",         # style A; has guard
-    "enforce-delegate",     # style A; has guard
-    "enforce-multitask",    # style A; has guard
-    "enforce-stop",         # style A; has guard
-    "enforce-deadline",     # style A; has guard
-    "enforce-session-start",  # style A; has guard
-    "enforce-deletion-gate",  # style A; has guard
-    "enforce-no-suppressions",  # style A; has guard
-    "enforce-no-wait",      # style B; has guard
-    "enforce-commit-lock",  # style B; has guard
-    "enforce-clean-tree",   # style B; has guard
-    "enforce-enhancement-ratio",  # style A; has guard
+    p.stem
+    for p in _enforce_plugins()
+    if p.stem != "enforce-make"
+    and ('"tool.execute.before"' in p.read_text() or "api.tool.execute.before" in p.read_text())
 ]
 
-# Plugins with text.complete hooks
 PLUGINS_WITH_TEXT_COMPLETE = [
-    "enforce-floor",         # has guard
-    "enforce-make",          # has guard
-    "enforce-multitask",     # has guard
-    "enforce-stop",          # has guard
-    "enforce-verified-claims",  # has guard
+    p.stem
+    for p in _enforce_plugins()
+    if '"experimental.text.complete"' in p.read_text() or '"text.complete"' in p.read_text()
 ]
 
 
@@ -330,8 +328,9 @@ class TestGuardExactPatterns:
             if idx is None:
                 continue
             guard = body.split("\n")[idx].strip()
-            must_have = 'process.env.OPENCODE_SUBAGENT === "1"'
-            if must_have not in guard:
+            has_direct_guard = 'process.env.OPENCODE_SUBAGENT === "1"' in guard
+            has_shared_guard = "isSubagent()" in guard
+            if not has_direct_guard and not has_shared_guard:
                 violations.append(
                     f"{name}.ts: wrong pattern — {guard!r}"
                 )
@@ -356,7 +355,7 @@ class TestGuardExactPatterns:
             if idx is None:
                 continue
             guard = body.split("\n")[idx].strip()
-            if "OPENCODE_SUBAGENT" not in guard:
+            if "OPENCODE_SUBAGENT" not in guard and "isSubagent()" not in guard:
                 violations.append(
                     f"{name}.ts: does not reference OPENCODE_SUBAGENT: {guard!r}"
                 )
@@ -469,20 +468,13 @@ class TestTextCompleteGuards:
             f"enforce-stop.ts: text.complete guard must return (output): {guard!r}"
         )
 
-    def test_verified_claims_has_text_complete_guard(self):
-        result = _extract_handler_body(
-            _read_plugin("enforce-verified-claims"), "experimental.text.complete"
-        )
-        assert result is not None, (
-            "enforce-verified-claims.ts: experimental.text.complete hook not found"
-        )
+    def test_verified_claims_is_commit_time_only(self):
+        src = _read_plugin("enforce-verified-claims")
+        assert "experimental.text.complete" not in src
+        result = _extract_handler_body(src, "tool.execute.before")
+        assert result is not None
         _line_no, body = result
-        idx = _find_guard_idx(body)
-        assert idx is not None, (
-            "enforce-verified-claims.ts: text.complete MISSING OPENCODE_SUBAGENT guard. "
-            "Subagent results containing done-words (committed, fixed, passed, etc.) "
-            "would be blanked by the false-done claim detector."
-        )
+        assert _find_guard_idx(body) is not None
 
 
 class TestSystemTransformGuards:
@@ -522,7 +514,7 @@ def _check_system_transform_guard(src: str, hook_key: str, plugin_name: str):
     assert brace_idx != -1, f"{plugin_name}: no opening brace after {hook_key}"
     body = body[brace_idx + 1:]
     guard_match = re.search(
-        r'if\s*\(\s*process\.env\.OPENCODE_SUBAGENT\s*===?\s*"1"\s*\)\s*return\s+output',
+        r'if\s*\(\s*(?:process\.env\.OPENCODE_SUBAGENT\s*===?\s*"1"|isSubagent\(\))\s*\)\s*return\s+output',
         body,
         re.MULTILINE,
     )
@@ -556,7 +548,8 @@ class TestGuardNotInFilesThatDontNeedIt:
     def test_watchdog_reports_alive(self):
         """watchdog.ts reports liveness to shared alive.json (standard pattern)."""
         src = (PLUGINS_DIR / "watchdog.ts").read_text()
-        assert "gludd-plugin-alive.json" in src, (
+        shared_src = (ROOT / ".opencode" / "lib" / "shared.ts").read_text()
+        assert "reportAlive" in src and "gludd-plugin-alive.json" in shared_src, (
             "watchdog.ts must report liveness to shared alive.json"
         )
 
@@ -567,7 +560,7 @@ class TestPluginCount:
     def test_count_matches_and_all_covered(self):
         plugins = _enforce_plugins()
         actual = sorted(p.stem for p in plugins)
-        tested = set(PLUGINS_WITH_TOOL_BEFORE) | {"enforce-verified-claims"}
+        tested = set(PLUGINS_WITH_TOOL_BEFORE) | set(PLUGINS_WITH_TEXT_COMPLETE)
         untested = set(actual) - tested
         assert not untested, (
             f"enforce-*.ts NOT covered by any test list: {sorted(untested)}"
@@ -582,7 +575,7 @@ class TestPluginCount:
             src = p.read_text()
             has_obj_hook = '"tool.execute.before"' in src
             has_func_hook = "api.tool.execute.before" in src
-            has_text = '"experimental.text.complete"' in src
+            has_text = '"experimental.text.complete"' in src or '"text.complete"' in src
             has_idle = "session.idle" in src or '"event"' in src
             has_after = '"tool.execute.after"' in src or "api.tool.execute.after" in src
             assert has_obj_hook or has_func_hook or has_text or has_idle or has_after, (

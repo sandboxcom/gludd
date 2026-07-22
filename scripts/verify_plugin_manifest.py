@@ -19,7 +19,7 @@ import re
 import sys
 from pathlib import Path
 
-WORKSPACE = Path(__file__).resolve().parent.parent
+WORKSPACE = Path.cwd().resolve()
 OPENCODE_JSON = WORKSPACE / "opencode.json"
 SEARCH_DIRS = [
     WORKSPACE / ".opencode" / "plugin",
@@ -53,6 +53,7 @@ UTILITY_FILES = {
     ".opencode/lib/shared.ts",
     ".opencode/plugin/hot_reload.ts",
     ".opencode/plugin/shared.ts",
+    ".opencode/plugin/watchdog.ts",
 }
 
 
@@ -100,6 +101,8 @@ def _hook_types_in_file(filepath: Path) -> set[str]:
         hooks.add("tool.execute.before")
     if re.search(r'api\.tool\.execute\.before\s*\(', src):
         hooks.add("tool.execute.before")
+    if re.search(r'export\s+async\s+function\s+tool_execute_before\s*\(', src):
+        hooks.add("tool.execute.before")
     if re.search(r'"experimental\.text\.complete"', src):
         hooks.add("experimental.text.complete")
     return hooks
@@ -129,6 +132,7 @@ def _guard_present(filepath: Path, hook_key: str) -> bool | None:
         patterns = [
             re.compile(r'"tool\.execute\.before"'),
             re.compile(r"api\.tool\.execute\.before"),
+            re.compile(r"export\s+async\s+function\s+tool_execute_before\s*\("),
         ]
     elif hook_key == "experimental.text.complete":
         patterns = [re.compile(r'"experimental\.text\.complete"')]

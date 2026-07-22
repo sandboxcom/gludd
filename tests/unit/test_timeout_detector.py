@@ -751,7 +751,8 @@ class TestGatewayTimeoutIntegration:
         assert status["consecutive_failures"] == 1
         assert status["last_failure_kind"] == "read_timeout"
 
-    def test_call_model_with_retry_succeeds_on_second_try(self) -> None:
+    @pytest.mark.asyncio
+    async def test_call_model_with_retry_succeeds_on_second_try(self) -> None:
         from general_ludd.models.gateway import ModelGateway, ModelProfile
         from general_ludd.models.timeout_detector import ModelHealthTracker
 
@@ -782,12 +783,13 @@ class TestGatewayTimeoutIntegration:
                 get_provider_class=MagicMock(return_value=mock_provider),
             ),
         ):
-            result = gateway.call_model_with_retry(
+            result = await gateway.call_model_with_retry(
                 "test-model", [{"role": "user", "content": "hi"}],
             )
             assert result.content == "success on retry"
 
-    def test_call_model_with_retry_exhausted_falls_over(self) -> None:
+    @pytest.mark.asyncio
+    async def test_call_model_with_retry_exhausted_falls_over(self) -> None:
         from general_ludd.models.gateway import ModelProfile
         from general_ludd.models.timeout_detector import ModelHealthTracker
 
@@ -834,13 +836,14 @@ class TestGatewayTimeoutIntegration:
                 get_provider_class=get_provider,
             ),
         ):
-            result = gateway.call_model_with_retry(
+            result = await gateway.call_model_with_retry(
                 "primary", [{"role": "user", "content": "hi"}],
             )
             assert result.content == "fallback response"
             assert result.model_name == "gpt-3.5-turbo"
 
-    def test_call_model_with_retry_no_fallback_raises(self) -> None:
+    @pytest.mark.asyncio
+    async def test_call_model_with_retry_no_fallback_raises(self) -> None:
         from general_ludd.models.gateway import ModelGateway, ModelProfile
         from general_ludd.models.timeout_detector import ModelHealthTracker
 
@@ -865,11 +868,12 @@ class TestGatewayTimeoutIntegration:
                 get_provider_class=MagicMock(return_value=mock_provider),
             ),
         ), pytest.raises(httpx.ReadTimeout):
-            gateway.call_model_with_retry(
+            await gateway.call_model_with_retry(
                 "test-model", [{"role": "user", "content": "hi"}],
             )
 
-    def test_unhealthy_model_skipped_by_with_retry(self) -> None:
+    @pytest.mark.asyncio
+    async def test_unhealthy_model_skipped_by_with_retry(self) -> None:
         from general_ludd.models.gateway import ModelGateway, ModelProfile
         from general_ludd.models.timeout_detector import (
             ModelHealthTracker,
@@ -917,7 +921,7 @@ class TestGatewayTimeoutIntegration:
                 get_provider_class=MagicMock(return_value=fb_provider),
             ),
         ):
-            result = gateway.call_model_with_retry(
+            result = await gateway.call_model_with_retry(
                 "primary", [{"role": "user", "content": "hi"}],
             )
             assert result.model_name == "gpt-3.5-turbo"

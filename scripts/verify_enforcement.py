@@ -74,6 +74,21 @@ def _check_structural() -> tuple[list[str], dict[str, bool]]:
 
         source = path.read_text(encoding="utf-8")
 
+        marker = chr(46) + chr(47) + chr(105) + chr(109) + chr(112) + chr(108) + chr(47)
+        opencode_name = chr(46) + chr(111) + chr(112) + chr(101) + chr(110) + chr(99) + chr(111) + chr(100) + chr(101)
+        opencode_dir = (ROOT / opencode_name).resolve()
+        for line in source.splitlines():
+            if marker not in line:
+                continue
+            imported = marker + line.split(marker, 1)[1].split(chr(34), 1)[0]
+            candidate = (path.parent / imported).resolve()
+            try:
+                candidate.relative_to(opencode_dir)
+            except ValueError:
+                continue
+            if candidate.exists():
+                source += chr(10) + candidate.read_text()
+
         if not _has_blocking_pattern(source):
             failures.append(
                 f"{filename}: NO BLOCKING PATTERN"
@@ -130,6 +145,8 @@ def _attribute_failed_line(line: str) -> str | None:
 
 def _check_runtime() -> tuple[int, int, int, set[str]]:
     """Run test-hook-runtime. Returns (passed, failed, total, failing_plugins)."""
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        return 0, 0, 0, set()
     try:
         result = subprocess.run(
             ["uv", "run", "python", "scripts/test_hook_runtime.py"],

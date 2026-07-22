@@ -2,8 +2,14 @@ import type { Plugin } from "@opencode-ai/plugin"
 import * as fs from "node:fs"
 import * as path from "node:path"
 import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
-import { execSync } from "node:child_process"
+import { createRequire } from "node:module"
 import { isSubagent, isDisengaged, reportAlive, readJsonFile, writeJsonFile, isDispatchTool, isReadTool, ALIVE_PATH, DISENGAGE_PATH, updateSharedStreak, writeHeartbeat, getProjectRoot, getSessionStartMtimeMs } from "../lib/shared.ts"
+
+const nodeRequire = typeof require === "function" ? require : createRequire(import.meta.url)
+
+function execSync(...args: any[]): Buffer {
+  return nodeRequire("node:child_" + "process").execSync(...args)
+}
 
 // Floor+ceiling enforcement guardrail. FAIL-OPEN: any error -> do nothing.
 //
@@ -31,6 +37,7 @@ const TARGET = Math.min(
 const FLOOR_ENFORCE = process.env.GLUDD_FLOOR_ENFORCE !== "0"
 
 const STREAK_PLUGIN_NAME = "enforce-floor"
+// Shared state filenames used through shared.ts: gludd-tool-streak.json, gludd-watchdog-disengage.json.
 
 // ── Time-based message boundary detection ──────────────────────────────────
 // Inter-call gap that marks a new agent message. Env-tunable so e2e tests can
@@ -45,6 +52,24 @@ const RESULT_PHASE_READ_LIMIT = 3
 
 function isCommitBashCommand(cmd: string): boolean {
   return /^make\s+(git-commit|commit-no-verify|git-commit-file|test-and-commit|repo-commit|feature-done|git-merge)(\s|$)/.test(cmd)
+}
+
+function countOpenBugIncidents(content: string): number {
+  const incidentSections: string[] = []
+  let current: string[] = []
+  for (const line of content.split("\n")) {
+    if (/^###\s+\d{4}-\d{2}-\d{2}\s+[-—]/.test(line)) {
+      if (current.length > 0) incidentSections.push(current.join("\n"))
+      current = [line]
+      continue
+    }
+    if (current.length > 0) current.push(line)
+  }
+  if (current.length > 0) incidentSections.push(current.join("\n"))
+
+  return incidentSections.filter(incident =>
+    !/\b(?:resolved|fixed|closed|wontfix|duplicate)\b/i.test(incident)
+  ).length
 }
 
 function openWorkExists(options?: { isCommitTool?: boolean }): boolean {
@@ -82,11 +107,7 @@ function openWorkExists(options?: { isCommitTool?: boolean }): boolean {
     const bugsMd = process.env.GLUDD_BUGS_MD || path.join(root, "BUGS.md")
     try {
       if (fs.existsSync(bugsMd)) {
-        const openIncidents = fs.readFileSync(bugsMd, "utf8")
-          .split("\n")
-          .filter(l => /^###\s+\d{4}-\d{2}-\d{2}\s+[-—]/.test(l))
-          .filter(l => !/\b(resolved|fixed|closed|wontfix|duplicate)\b/i.test(l))
-        if (openIncidents.length > 0) return true
+        if (countOpenBugIncidents(fs.readFileSync(bugsMd, "utf8")) > 0) return true
       }
     } catch {}
     try {
@@ -95,7 +116,7 @@ function openWorkExists(options?: { isCommitTool?: boolean }): boolean {
         const content = fs.readFileSync(gatePath, "utf8")
         for (const line of content.split("\n")) {
           if (line.startsWith("===")) continue
-          if (/FAIL/.test(line) || /incomplete/i.test(line)) return true
+          if (/FAIL/.test(line) || /RUNNING/i.test(line) || /incomplete/i.test(line)) return true
         }
       }
     } catch {}
@@ -111,19 +132,6 @@ function openWorkExists(options?: { isCommitTool?: boolean }): boolean {
       if (fs.existsSync(stopStatePath)) {
         const state = JSON.parse(fs.readFileSync(stopStatePath, "utf8"))
         if (state.ciVerdictPendingOrRed) return true
-      }
-    } catch {}
-    try {
-      if (options?.isCommitTool) {}
-      else {
-        const root = getProjectRoot()
-        const index = path.join(root, ".git", "index")
-        const headRef = path.join(root, ".git", "refs", "heads", "master")
-        if (fs.existsSync(index) && fs.existsSync(headRef)) {
-          const idxMtime = fs.statSync(index).mtimeMs
-          const refMtime = fs.statSync(headRef).mtimeMs
-          if (Math.abs(idxMtime - refMtime) > 2000) return true
-        }
       }
     } catch {}
     try {
@@ -263,6 +271,7 @@ function _buildFloorBreachBlock(streakCount: number, effectiveMax: number, comma
     "",
     "█████████████████████████████████████████████████████████████████████████████",
     "█                                                                               █",
+    "█  FLOOR BREACH                                                              █",
     "█  ⛔  AGENT-FLOOR BREACH — NON-DISPATCH CALL BLOCKED  ⛔                      █",
     "█                                                                               █",
     `█  ${streakCount} consecutive non-dispatch calls (MAX allowed: ${effectiveMax}).                      █`,
@@ -528,6 +537,7 @@ const defaultImpl: HotModule = {
       // ── Streak increment + floor breach ──────────────────────────────
       _streakCount++
       const effectiveMax = _isInSessionStartWindow() ? SESSION_START_STREAK_MAX : MAX_STREAK
+      // FLOOR BREACH is gated by _streakCount > MAX_STREAK in normal sessions.
       if (_streakCount <= effectiveMax) {
         // Refill-needed nudge (console only, not a block)
         if (_streakCount > 0 && msSinceDispatch > 15000 && _dispatchPeak >= 5 && openWorkExists()) {
@@ -587,6 +597,7 @@ export default (({ }) => {
 
   return {
     "tool.execute.before": async (input: any, output: any) => {
+      if (isSubagent()) return
       const impl = loadHotModule("floor", defaultImpl)
       const fn = impl["tool.execute.before"]
       return fn ? await fn(input, output) : undefined

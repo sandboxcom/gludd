@@ -127,7 +127,8 @@ class TestAllRegisteredHooksHaveHandlers:
                     p = entry.get("path", entry.get("id", ""))
                     registered_files.add(Path(p).name if p else "")
 
-        plugin_files = [f.name for f in PLUGIN_DIR.glob("*.ts") if f.name != "watchdog.ts"]
+        helper_files = {"hot_reload.ts", "shared.ts", "watchdog.ts"}
+        plugin_files = [f.name for f in PLUGIN_DIR.glob("*.ts") if f.name not in helper_files]
         unregistered = [f for f in plugin_files if f not in registered_files]
 
         assert not unregistered, (

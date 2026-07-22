@@ -411,8 +411,8 @@ class TestPluginSourceMatchesPythonPort:
 
     def test_evidence_hash_pattern_present(self):
         src = self._src()
-        assert "[0-9a-f]{7,40}" in src, (
-            "EVIDENCE_PATTERNS must include a commit-hash pattern [0-9a-f]{7,40}."
+        assert "[0-9a-f]*[a-f][0-9a-f]{6,39}" in src, (
+            "EVIDENCE_PATTERNS must include a commit-hash pattern that requires at least one hex letter."
         )
 
     def test_evidence_pass_count_pattern_present(self):

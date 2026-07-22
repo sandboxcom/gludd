@@ -161,6 +161,19 @@ PURE_IDLE_DIRECTIVE = "/tmp/gludd-continue.txt"
 HEARTBEAT_FILE = "/tmp/gludd-watchdog-heartbeat.json"
 HEARTBEAT_VERBOSE = os.environ.get("GLUDD_WATCHDOG_VERBOSE", "0") == "1"
 
+
+def _write_pure_idle_directive(directive: str) -> None:
+    directive_path = Path(PURE_IDLE_DIRECTIVE)
+    try:
+        existing = directive_path.read_text() if directive_path.exists() else ""
+    except Exception:
+        existing = ""
+    if existing and directive.strip() not in existing:
+        directive_path.write_text(existing.rstrip() + chr(10) + directive)
+    elif not existing:
+        directive_path.write_text(directive)
+
+
 _CHECK_COOLDOWN_FILE = "/tmp/gludd-watchdog-check-cooldowns.json"
 _CHECK_COOLDOWN_SECS = 60
 
@@ -294,6 +307,7 @@ GATE_MAX_RUNTIME_SECS = int(os.environ.get("GATE_WATCHDOG_TIMEOUT", "3600"))
 _TASKS_MD = _WORKSPACE / "TASKS.md"
 _RATCHET_YML = _WORKSPACE / "config" / "ratchet.yml"
 _GATE_STATUS = _WORKSPACE / ".gate-status"
+_CI_STATUS = _WORKSPACE / ".ci-status"
 
 _UNCHECKED_PATTERN = re.compile(r"-\s+\[\s*\]|\*\s+\[\s*\]", re.IGNORECASE)
 
@@ -1074,7 +1088,7 @@ def _check_push_stalled() -> None:
                 if lock_age > 60:
                     _log(f"PUSH STALLED: .git/push.lock exists for {lock_age:.0f}s")
                     directive = f"[{_now()}] PUSH STALLED: push.lock present >60s\n"
-                    Path(PURE_IDLE_DIRECTIVE).write_text(directive)
+                    _write_pure_idle_directive(directive)
             except Exception:
                 pass
 
@@ -1091,7 +1105,7 @@ def _check_push_stalled() -> None:
                     if elapsed > 60:
                         _log(f"PUSH STALLED: git push process running {elapsed:.0f}s")
                         directive = f"[{_now()}] PUSH STALLED: git push running >60s\n"
-                        Path(PURE_IDLE_DIRECTIVE).write_text(directive)
+                        _write_pure_idle_directive(directive)
     except Exception as e:
         _log(f"push stall check error: {e}")
     finally:
@@ -1109,7 +1123,7 @@ def _check_task_anomaly_300s() -> None:
                 task_id = d.get("task_id", "?")
                 _log(f"TASK ANOMALY: task {task_id} running >5min ({elapsed:.0f}s)")
                 directive = f"[{_now()}] TASK ANOMALY: task {task_id} running >5min\n"
-                Path(PURE_IDLE_DIRECTIVE).write_text(directive)
+                _write_pure_idle_directive(directive)
     except Exception as e:
         _log(f"task anomaly check error: {e}")
     finally:
@@ -1138,7 +1152,7 @@ def _check_ci_pending_stall() -> None:
                 if age > 1800:
                     _log(f"CI STALLED: run on {head[:8]} pending >30min (created {created})")
                     directive = f"[{_now()}] CI STALLED: pending >30min\n"
-                    Path(PURE_IDLE_DIRECTIVE).write_text(directive)
+                    _write_pure_idle_directive(directive)
     except Exception as e:
         _log(f"ci stall check error: {e}")
     finally:
@@ -2081,7 +2095,7 @@ def _write_continue_directive(
         "======================================================================\n"
     )
     try:
-        Path(PURE_IDLE_DIRECTIVE).write_text(txt)
+        _write_pure_idle_directive(txt)
         _log(f"loud directive written to {PURE_IDLE_DIRECTIVE}")
     except Exception as e:
         _log(f"ERROR writing plain-text directive: {e}")
@@ -2392,7 +2406,7 @@ def _check_under_floor_dispatch() -> None:
             f"Floor is 10. pending work exists. Dispatch {10 - dispatch_count} more subagents NOW.\n"
             f"zero_streak={zero_streak}, estimated_in_flight={estimated_in_flight}\n"
         )
-        Path(PURE_IDLE_DIRECTIVE).write_text(directive)
+        _write_pure_idle_directive(directive)
     elif pipeline_dry and zero_streak > 0:
         _log(
             f"UNDER-FLOOR DETECTED: pipeline dry — zero dispatch streak={zero_streak}, "
@@ -2403,7 +2417,7 @@ def _check_under_floor_dispatch() -> None:
             f"Estimated in flight: {estimated_in_flight}. Floor is 10. pending work exists.\n"
             f"DISPATCH A FULL WAVE OF 10 SUBAGENTS NOW.\n"
         )
-        Path(PURE_IDLE_DIRECTIVE).write_text(directive)
+        _write_pure_idle_directive(directive)
 
 
 def check_and_reset() -> dict:
@@ -2447,7 +2461,7 @@ def check_and_reset() -> dict:
     #     can never land (gate red) and CI can never start (no push). ──
     if ci_pending and ci_run_id is not None:
         try:
-            ci_status = Path(".ci-status")
+            ci_status = _CI_STATUS
             ci_status.parent.mkdir(parents=True, exist_ok=True)
             ci_status.write_text(
                 f"=== CI {datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')} ===\n"

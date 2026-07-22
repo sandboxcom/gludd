@@ -19,6 +19,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_PATH = ROOT / ".opencode" / "plugin" / "enforce-session-start.ts"
+SHARED_PATH = ROOT / ".opencode" / "lib" / "shared.ts"
 MAKEFILE_PATH = ROOT / "Makefile"
 
 # --- Target classification simulators ----------------------------------------
@@ -82,6 +83,10 @@ def _plugin_src() -> str:
     return PLUGIN_PATH.read_text()
 
 
+def _shared_src() -> str:
+    return SHARED_PATH.read_text()
+
+
 def _makefile_src() -> str:
     return MAKEFILE_PATH.read_text()
 
@@ -109,27 +114,27 @@ class TestPluginToolClassification:
         assert "function isTaskFileRead" in _plugin_src()
 
     def test_dispatch_tool_includes_task(self):
-        src = _plugin_src()
-        assert 'tool === "task"' in src
+        src = _shared_src()
+        assert '"task"' in src
 
     def test_dispatch_tool_includes_agent(self):
-        src = _plugin_src()
-        assert 'tool === "agent"' in src
+        src = _shared_src()
+        assert '"agent"' in src
 
     def test_dispatch_tool_includes_workflow(self):
-        src = _plugin_src()
-        assert 'tool === "workflow"' in src
+        src = _shared_src()
+        assert '"workflow"' in src
 
     def test_read_tool_includes_read(self):
-        src = _plugin_src()
+        src = _shared_src()
         assert '"read"' in src
 
     def test_read_tool_includes_glob(self):
-        src = _plugin_src()
+        src = _shared_src()
         assert '"glob"' in src
 
     def test_read_tool_includes_grep(self):
-        src = _plugin_src()
+        src = _shared_src()
         assert '"grep"' in src
 
     def test_bash_tool_is_not_read_nor_dispatch(self):

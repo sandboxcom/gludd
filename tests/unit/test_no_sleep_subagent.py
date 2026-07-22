@@ -30,6 +30,15 @@ ALLOWLIST = frozenset({
     "heavy_sem.py",
     "run_test_background.sh",
     "token_window_monitor.py",
+    # CI polling helpers: top-level make-driven operators, not subagent tasks.
+    "ci_annotations_poll.py",
+    "ci_await.py",
+    "ci_poll.py",
+    "ci_push_and_verify.sh",
+    # Batch generation and runtime hook harnesses deliberately throttle loops.
+    "generate_specs_expansion.py",
+    "generate_specs_to_4000.py",
+    "test_hook_runtime.py",
 })
 
 

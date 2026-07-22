@@ -9,6 +9,7 @@ PLUGINS_DIR = ROOT / ".opencode" / "plugins"
 TEST_DIR = ROOT / "tests" / "unit"
 
 PLUGIN_DIRS = [d for d in (PLUGIN_DIR, PLUGINS_DIR) if d.exists()]
+NON_PLUGIN_STEMS = frozenset({"hot_reload"})
 
 HOOK_NAMES = frozenset([
     "tool.execute.before",
@@ -21,11 +22,17 @@ HOOK_NAMES = frozenset([
 ])
 
 PLUGIN_TO_TEST = {
+    "enforce-anti-essay": ["../../scripts/test_hook_runtime.py"],
+    "enforce-audit": ["../../scripts/test_hook_runtime.py"],
+    "enforce-batch-push": ["../../scripts/test_hook_runtime.py"],
+    "enforce-branch-discipline": ["../../scripts/test_hook_runtime.py"],
     "enforce-clean-tree": ["test_clean_tree_plugin.py"],
     "enforce-commit-lock": ["test_commit_lock_plugin.py"],
+    "enforce-context": ["../../scripts/test_hook_runtime.py"],
     "enforce-deadline": ["test_enforcement_deadline_plugin.py"],
     "enforce-delegate": ["test_enforcement_delegate_plugin.py"],
     "enforce-deletion-gate": ["test_enforcement_deletion_gate_plugin.py"],
+    "enforce-depth": ["../../scripts/test_hook_runtime.py"],
     "enforce-enhancement-ratio": ["test_enhancement_ratio_plugin.py"],
     "enforce-floor": ["test_enforcement_floor_plugin.py"],
     "enforce-make": ["test_enforce_make_plugin.py", "test_enforce_make_subagent.py"],
@@ -40,7 +47,11 @@ PLUGIN_TO_TEST = {
         "test_stop_pattern_qa.py",
         "test_todo_guard_plugin.py",
     ],
+    "enforce-objective": ["../../scripts/test_hook_runtime.py"],
+    "enforce-tdd": ["../../scripts/test_hook_runtime.py"],
+    "enforce-test-integrity": ["../../scripts/test_hook_runtime.py"],
     "enforce-verified-claims": ["test_verified_claims_plugin.py"],
+    "enforce-worktree": ["../../scripts/test_hook_runtime.py"],
     "hot_reload": [
         "test_hot_reload_safe_merge.py",
         "test_hot_reload_code.py",
@@ -55,6 +66,8 @@ def _collect_plugin_files():
     files = []
     for d in PLUGIN_DIRS:
         for f in sorted(d.glob("*.ts")):
+            if f.stem in NON_PLUGIN_STEMS:
+                continue
             files.append(f)
     return files
 

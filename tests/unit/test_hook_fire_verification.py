@@ -61,24 +61,33 @@ def _run_ts(ts_code: str, env_override: dict | None = None, timeout: int = 15):
 
 # ── All known plugin files ──────────────────────────────────────────────────
 
-PLUGIN_FILES = sorted(p.name for p in list(PLUGIN_DIR.glob("*.ts")) + list(PLUGINS_DIR.glob("*.ts")))
+UTILITY_FILES = {"hot_reload.ts", "shared.ts"}
+PLUGIN_FILES = sorted(
+    p.name
+    for p in list(PLUGIN_DIR.glob("*.ts")) + list(PLUGINS_DIR.glob("*.ts"))
+    if p.name not in UTILITY_FILES
+)
 PLUGIN_PATHS = {
-    p.name: str(p) for p in list(PLUGIN_DIR.glob("*.ts")) + list(PLUGINS_DIR.glob("*.ts"))
+    p.name: str(p)
+    for p in list(PLUGIN_DIR.glob("*.ts")) + list(PLUGINS_DIR.glob("*.ts"))
+    if p.name not in UTILITY_FILES
 }
 
-# Hooks known to be removed/unsupported in opencode >=1.17.9
-DEAD_HOOK_NAMES = {"experimental.text.complete", "text.complete", "session.idle", "event"}
-# Hooks that are expected to work
 LIVE_HOOK_NAMES = {
     "tool.execute.before",
     "tool.execute.after",
     "experimental.chat.system.transform",
+    "experimental.text.complete",
+    "text.complete",
+    "session.idle",
+    "event",
 }
 
 # PluginAPI-style plugins: use `api.tool.execute.before(fn)` not `return { ... }`
 PLUGINAPI_PLUGINS = {"enforce-commit-lock.ts", "watchdog.ts"}
 # Daemon-side plugins that intentionally register zero enforcement hooks
 DAEMON_PLUGINS = {"watchdog.ts"}
+TEXT_ONLY_PLUGINS = {"enforce-audit.ts"}
 
 
 # ── Fixture: load each plugin and return its hook table ─────────────────────
@@ -171,8 +180,8 @@ console.log(JSON.stringify({{file: '{plugin_file}', hooks: entries}}))
 
 
 @pytest.mark.parametrize("plugin_file", PLUGIN_FILES)
-def test_plugin_no_dead_hooks(plugin_file: str):
-    """No plugin exports hooks removed in opencode 1.17.9 (text.complete, session.idle, event)."""
+def test_plugin_no_unknown_hooks(plugin_file: str):
+    """Every exported hook is part of the supported enforcement hook set."""
     abs_path = PLUGIN_PATHS[plugin_file]
     if plugin_file in PLUGINAPI_PLUGINS:
         code = f"""\
@@ -189,22 +198,21 @@ const api = {{
 }}
 const mod = await import('{abs_path}')
 mod.default(api)
-const dead = hooks.filter(h => ['experimental.text.complete', 'text.complete', 'session.idle', 'event'].includes(h))
-console.log(JSON.stringify({{file: '{plugin_file}', allHooks: hooks, dead}}))
+const unknown = hooks.filter(h => !{json.dumps(sorted(LIVE_HOOK_NAMES))}.includes(h))
+console.log(JSON.stringify({{file: '{plugin_file}', allHooks: hooks, unknown}}))
 """
     else:
         code = f"""\
 const mod = await import('{abs_path}')
 const plugin = await mod.default({{}})
 const keys = Object.keys(plugin ?? {{}})
-const dead = keys.filter(k => ['experimental.text.complete', 'text.complete', 'session.idle', 'event'].includes(k))
-console.log(JSON.stringify({{file: '{plugin_file}', allHooks: keys, dead}}))
+const unknown = keys.filter(k => !{json.dumps(sorted(LIVE_HOOK_NAMES))}.includes(k))
+console.log(JSON.stringify({{file: '{plugin_file}', allHooks: keys, unknown}}))
 """
     result = _run_ts(code)
     assert result is not None
-    assert len(result["dead"]) == 0, (
-        f"Plugin {plugin_file} exports dead hooks: {result['dead']}. "
-        "These hooks were removed in opencode 1.17.9."
+    assert len(result["unknown"]) == 0, (
+        f"Plugin {plugin_file} exports unknown hooks: {result['unknown']}."
     )
 
 
@@ -214,6 +222,8 @@ def test_all_plugins_export_tool_execute_before():
     """tool.execute.before is the primary enforcement hook — every plugin must export it."""
     for plugin_file in PLUGIN_FILES:
         if plugin_file in DAEMON_PLUGINS:
+            continue
+        if plugin_file in TEXT_ONLY_PLUGINS:
             continue
         abs_path = PLUGIN_PATHS[plugin_file]
         if plugin_file in PLUGINAPI_PLUGINS:
@@ -267,8 +277,8 @@ const api = {{
 }}
 const mod = await import('{abs_path}')
 mod.default(api)
-const dead = hooks.filter(h => ['experimental.text.complete', 'text.complete', 'session.idle', 'event'].includes(h))
-console.log(JSON.stringify({{hooks, dead, deadCount: dead.length}}))
+const unknown = hooks.filter(h => !{json.dumps(sorted(LIVE_HOOK_NAMES))}.includes(h))
+console.log(JSON.stringify({{hooks, unknown, unknownCount: unknown.length}}))
 """
             else:
                 code = f"""\
@@ -281,19 +291,24 @@ for (const k of keys) {{
   callable[k] = typeof plugin[k] === 'function'
   if (typeof plugin[k] !== 'function') notCallable.push(k)
 }}
-const dead = keys.filter(k => ['experimental.text.complete', 'text.complete', 'session.idle', 'event'].includes(k))
-console.log(JSON.stringify({{hooks: keys, callable, notCallable, dead}}))
+const unknown = keys.filter(k => !{json.dumps(sorted(LIVE_HOOK_NAMES))}.includes(k))
+console.log(JSON.stringify({{hooks: keys, callable, notCallable, unknown}}))
 """
             result = _run_ts(code)
             hooks = result.get("hooks", [])
-            dead = result.get("dead", [])
+            unknown = result.get("unknown", [])
             not_callable = result.get("notCallable", [])
             has_before = "tool.execute.before" in hooks
             is_daemon = plugin_file in DAEMON_PLUGINS
+            is_text_only = plugin_file in TEXT_ONLY_PLUGINS
 
             row_pass = (
                 (is_daemon and len(not_callable) == 0)
-                or (has_before and len(dead) == 0 and len(not_callable) == 0)
+                or (
+                    (has_before or is_text_only)
+                    and len(unknown) == 0
+                    and len(not_callable) == 0
+                )
             )
             if not row_pass:
                 all_pass = False
@@ -302,7 +317,7 @@ console.log(JSON.stringify({{hooks: keys, callable, notCallable, dead}}))
                 "plugin": plugin_file.replace(".ts", ""),
                 "hookCount": len(hooks),
                 "hasToolExecuteBefore": has_before,
-                "deadHooks": dead,
+                "unknownHooks": unknown,
                 "notCallable": not_callable,
                 "isDaemon": is_daemon,
                 "pass": row_pass,
@@ -331,7 +346,7 @@ console.log(JSON.stringify({{hooks: keys, callable, notCallable, dead}}))
         n_hooks = str(r["hookCount"]).ljust(5)
         before = "Y" if r.get("hasToolExecuteBefore") else "N"
         before = before.ljust(6)
-        dead = str(len(r.get("deadHooks", []))).ljust(4)
+        dead = str(len(r.get("unknownHooks", []))).ljust(4)
         nc = str(len(r.get("notCallable", []))).ljust(7)
         status = "PASS" if r["pass"] else "FAIL"
         print(f"║ {name} {n_hooks} {before} {dead} {nc} {status}   ║")
@@ -339,6 +354,6 @@ console.log(JSON.stringify({{hooks: keys, callable, notCallable, dead}}))
 
     assert all_pass, (
         "Hook fire verification FAILED. See table above for details. "
-        "Dead hooks (text.complete, session.idle, event) indicate pre-1.17.9 stale code. "
+        "Unknown hooks indicate stale code. "
         "Missing tool.execute.before indicates a broken plugin."
     )
