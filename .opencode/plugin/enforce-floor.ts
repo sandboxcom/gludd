@@ -525,7 +525,7 @@ const defaultImpl: HotModule = {
         return
       }
 
-      // ── Streak increment + floor breach ──────────────────────────────
+      // FLOOR BREACH fires when _streakCount > MAX_STREAK; session-start uses effectiveMax.
       _streakCount++
       const effectiveMax = _isInSessionStartWindow() ? SESSION_START_STREAK_MAX : MAX_STREAK
       if (_streakCount <= effectiveMax) {

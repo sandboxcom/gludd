@@ -111,7 +111,7 @@ class TestCleanOutputPassthrough:
     def test_multitask_passthrough_path_exists(self):
         """enforce-multitask: output unmodified when zeroStreak < MAX_ZERO_STREAK
         and estimatedInFlight > 0."""
-        handler = _from_marker(_src(MULTITASK_PATH), '"text.complete"')
+        handler = _from_marker(_src(MULTITASK_PATH), '"experimental.text.complete"')
         assert "zeroStreak" in handler
         assert "MAX_ZERO_STREAK" in handler
         assert "(output as any)" in handler or "typeof output" in handler
@@ -197,7 +197,7 @@ class TestMultitaskNagConditional:
     """verify MUST DISPATCH nag is conditional on zeroStreak >= MAX_ZERO_STREAK."""
 
     def test_multitask_must_dispatch_conditional(self):
-        handler = _from_marker(_src(MULTITASK_PATH), '"text.complete"')
+        handler = _from_marker(_src(MULTITASK_PATH), '"experimental.text.complete"')
         assert "zeroStreak" in handler
         assert "MUST DISPATCH" in handler or "output.text" in handler, (
             "MUST DISPATCH nag injection must exist in text.complete"
@@ -264,7 +264,7 @@ class TestNoUnconditionalNag:
         self._check_handler_not_unconditional(STOP_PATH)
 
     def test_multitask_not_unconditional(self):
-        self._check_handler_not_unconditional(MULTITASK_PATH, marker='"text.complete"')
+        self._check_handler_not_unconditional(MULTITASK_PATH, marker='"experimental.text.complete"')
         assert True  # assertions in _check_handler_not_unconditional helper
 
     def test_verified_claims_not_unconditional(self):
@@ -296,7 +296,7 @@ class TestSubagentOutputUnmodified:
     def test_multitask_subagent_passthrough(self):
         """enforce-multitask: text.complete must have subagent-bypass logic
         so MUST DISPATCH is not injected into subagent output."""
-        handler = _from_marker(_src(MULTITASK_PATH), '"text.complete"')
+        handler = _from_marker(_src(MULTITASK_PATH), '"experimental.text.complete"')
         assert "GLUDD_IS_SUBAGENT" in handler or "subagent" in handler.lower(), (
             "enforce-multitask text.complete must have subagent-bypass logic"
         )

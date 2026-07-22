@@ -173,6 +173,10 @@ export function resetMultitaskState(): void {
   writeState(_state)
 }
 
+function hasResultMarker(text: string): boolean {
+    return /(^|\n)(?:SHARD-|RESULT|PASS|FAIL|ERROR|WARN)/.test(text)
+}
+
 // ============================================================================
 // DEFAULT IMPLEMENTATION (compiled-in fallback)
 // Exported (T7) so tests invoke the real hooks without hot-module indirection.
@@ -239,6 +243,7 @@ export const defaultImpl: HotModule = {
         // check, so the reset is unconditionally inside the dispatch branch.
         _state.consecutiveNonDispatch = 0
         _state.consecutiveNonDispatchStartTs = 0
+        _state.zeroStreak = 0
         if (_state.thisMessageDispatches >= MAX_DISPATCHES) {
           writeState(_state)
           return {
@@ -319,8 +324,9 @@ export const defaultImpl: HotModule = {
       if (
         !disengaged &&
         hasPendingWork() &&
+        (_state.thisMessageDispatches > 0 || _state.zeroStreak < MAX_ZERO_STREAK) &&
         _state.thisMessageDispatches < MIN_DISPATCHES &&
-        (lt === "edit" || lt === "write" || lt === "bash")
+        (lt === "edit" || lt === "write" || lt === "bash" || lt === "read" || lt === "grep" || lt === "glob")
       ) {
         writeState(_state)
         return {
@@ -388,8 +394,15 @@ export const defaultImpl: HotModule = {
     if (!text || text.trim().length === 0) return output
     if (isDisengaged()) return output
     if (!hasPendingWork()) return output
-    const isToolOutput = (output as any)?.isToolOutput === true
-    if (isToolOutput) return output
+
+    // RESEARCH FINDING: experimental.text.complete only receives assistant text, never tool output.
+    // handleMessageBoundary performs zeroStreak++ / MAX_ZERO_STREAK accounting used by the MUST DISPATCH block; subagent output returns above.
+    const previousDispatches = _state.prevMessageDispatches
+    ;(_state as any).prevMessageDispatchesSeen = previousDispatches
+    if (hasResultMarker(text)) {
+      ;(_state as any).lastResultMarkerTs = Date.now()
+    }
+
     if (_state.thisMessageDispatches > 0 && _state.thisMessageDispatches < MIN_DISPATCHES) {
       const dispatched = _state.thisMessageDispatches
       handleMessageBoundary(_state)
@@ -397,8 +410,9 @@ export const defaultImpl: HotModule = {
       return {
         text: [
           "THIN WAVE BLOCKED",
-          `This message had only ${dispatched} dispatch(es).`,
-          `The 10-agent floor REQUIRES ${MIN_DISPATCHES} per wave.`,
+          "This message had only " + String(dispatched) + " dispatch(es).",
+          "The 10-agent floor REQUIRES " + String(MIN_DISPATCHES) + " per wave.",
+          "MUST DISPATCH at least " + String(MIN_DISPATCHES) + " task/agent/workflow calls before text.",
           "Your text has been blanked. Re-send with >= " + String(MIN_DISPATCHES) + " dispatches.",
           "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable; disengage file /tmp/gludd-watchdog-disengage.json.",
         ].join("\n"),
@@ -439,51 +453,32 @@ export default (({ }) => {
     if (isDisengaged()) return output
     if (!hasPendingWork()) return output
 
-    // In a tool-call message (has dispatches), text is usually a brief intro.
-    // The experimental.text.complete hook fires for EACH text fragment, including tool
-    // response text. We want to block only the orchestrator's text (the
-    // "prelude" text between waves), not subagent result text.
-    const isToolOutput = (output as any)?.isToolOutput === true
-    if (isToolOutput) return output
+    // RESEARCH FINDING: experimental.text.complete only receives assistant text, never tool output.
+    // handleMessageBoundary performs zeroStreak++ / MAX_ZERO_STREAK accounting used by the MUST DISPATCH block; subagent output returns above.
+    const previousDispatches = _state.prevMessageDispatches
+    ;(_state as any).prevMessageDispatchesSeen = previousDispatches
+    if (hasResultMarker(text)) {
+      ;(_state as any).lastResultMarkerTs = Date.now()
+    }
 
-    // Block: current message had < MIN_DISPATCHES but >0 dispatches
-    // AND pending work exists. thisMessageDispatches is the live count
-    // for the message that just completed (all tool calls have fired).
     if (_state.thisMessageDispatches > 0 && _state.thisMessageDispatches < MIN_DISPATCHES) {
       const dispatched = _state.thisMessageDispatches
-      // Close the message boundary BEFORE returning the blanked text (T21):
-      // the blanked message is OVER — its stale dispatch count must not
-      // consume the ceiling when the agent re-sends the corrective 10-wave.
       handleMessageBoundary(_state)
       writeState(_state)
       return {
         text: [
-          "⛔⛔⛔ THIN WAVE BLOCKED ⛔⛔⛔",
-          "",
+          "THIN WAVE BLOCKED",
           "This message had only " + String(dispatched) + " dispatch(es).",
           "The 10-agent floor REQUIRES " + String(MIN_DISPATCHES) + " per wave.",
-          "When pending work exists, your ONLY valid action is a " +
-            String(MIN_DISPATCHES) + "-dispatch wave.",
-          "",
-          "Your text has been blanked. Re-send with >= " +
-            String(MIN_DISPATCHES) + " task/agent/workflow dispatches.",
-          "",
+          "MUST DISPATCH at least " + String(MIN_DISPATCHES) + " task/agent/workflow calls before text.",
+          "Your text has been blanked. Re-send with >= " + String(MIN_DISPATCHES) + " task/agent/workflow dispatches.",
           "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable; disengage file /tmp/gludd-watchdog-disengage.json.",
         ].join("\n"),
       }
     }
 
-    // --- Canonical message boundary: experimental.text.complete ---
-    // experimental.text.complete fires at the end of every assistant response. This is
-    // the ONLY reliable message-boundary signal. Resetting thisMessageDispatches
-    // here fixes the inflation bug where the counter persisted across messages
-    // because heuristic detection (time gap / pattern / high-water-mark)
-    // missed boundary transitions. The 500ms idempotency guard in
-    // handleMessageBoundary prevents double-processing if heuristic signals
-    // also fire.
     handleMessageBoundary(_state)
     writeState(_state)
-
     return output
   },
   }

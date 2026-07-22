@@ -121,7 +121,7 @@ async function freshPlugin(projectRoot = TASKS_DIR) {
   return {
     m,
     hook: instance['tool.execute.before'],
-    tc: instance['text.complete'],
+    tc: instance['experimental.text.complete'],
   }
 }
 
@@ -135,7 +135,7 @@ async function freshWindowPlugin() {
   const m = _require(OUTFILE_WIN)
   delete process.env.GLUDD_CONSECUTIVE_NON_DISPATCH_WINDOW_MS
   const instance = await m.default({})
-  return { m, hook: instance['tool.execute.before'], tc: instance['text.complete'] }
+  return { m, hook: instance['tool.execute.before'], tc: instance['experimental.text.complete'] }
 }
 
 function mkProjectDir(name, tasksContent) {
@@ -202,11 +202,11 @@ describe('enforce-multitask', { concurrency: 1 }, () => {
   // Export surface / testability contract
   // ==========================================================================
   describe('export surface', () => {
-    it('T1: default factory returns tool.execute.before and text.complete hooks', async () => {
+    it('T1: default factory returns tool.execute.before and experimental.text.complete hooks', async () => {
       assert.strictEqual(typeof mod.default, 'function')
       const instance = await mod.default({})
       assert.strictEqual(typeof instance['tool.execute.before'], 'function')
-      assert.strictEqual(typeof instance['text.complete'], 'function')
+      assert.strictEqual(typeof instance['experimental.text.complete'], 'function')
     })
 
     it('T2: MIN_DISPATCHES === 10 (the floor)', () => {
