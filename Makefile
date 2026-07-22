@@ -92,7 +92,7 @@ PYTEST_VERBOSITY ?= -v
          test-service-discovery service-discover service-catalog \
          subagent-init subagent-cleanup \
          chat chat-eval test-chat \
-git-tag-delete git-tag-move release-deploy append-text _no-raw-git-guard \
+git-tag-delete git-tag-move release-deploy append-text write-text-b64 replace-text-b64 _no-raw-git-guard \
          git-push-committed-head-nv ci-trigger-committed-head ci-push-committed-head provider-smoke check-no-prompt-prone-edit-tools
 
 help:
@@ -108,6 +108,7 @@ help:
 	@echo "  --- Quality ---"
 	@echo "  lint                  Run ruff linter"
 	@echo "  lint-fix              Run ruff with auto-fix"
+	@echo "  lint-fix-files        Run ruff auto-fix on FILES only"
 	@echo "  typecheck             Run mypy"
 	@echo "  check-types           Flag `Any` usage in Python annotations (tight types)"
 	@echo "  check-types-baseline  Same scan, tolerating config/type_any_baseline.txt"
@@ -123,6 +124,19 @@ help:
 	@echo "  preflight             Preflight quality gate (coverage, lint, mypy, templates, etc.)"
 	@echo "  check-make-help       Verify every public Makefile target is listed by make help"
 	@echo "  codemod-lean-enforcement-plugins Extract bulky enforcement implementations from counted plugin entrypoints"
+	@echo "  check-no-prompt-prone-edit-tools  Enforce make-target-only edit workflow"
+	@echo "  write-text-b64        Write FILE from base64 TEXT_B64 without shell quoting loss"
+	@echo "  replace-text-b64      Exact old/new base64 replacement via scripts/replace_text.py"
+	@echo "  worktree-state        Emit path-qualified current git worktree state as JSON"
+	@echo "  all-worktree-state    Emit path-qualified state for every registered worktree"
+	@echo "  main-worktree-state   Emit canonical main checkout state as JSON"
+	@echo "  worktree-guard        Fail if the current worktree is dirty"
+	@echo "  main-worktree-guard   Fail if /Users/shawnwilson/gludd is dirty"
+	@echo "  release-worktree-guard  Emit release evidence only when current and main worktrees are clean"
+	@echo "  status-claim-guard    Emit clean tokens only when current and main worktrees are clean"
+	@echo "  codemod-exact-subagent-guards  Restore literal OPENCODE_SUBAGENT early-return guards"
+	@echo "  codemod-ci-shards-sigterm  Enforce explicit failure on unexpected shard SIGTERM"
+	@echo "  codemod-tui-table-widths  Enforce explicit Rich table widths in TUI builders"
 	@echo "  sast                  Run bandit SAST"
 	@echo "  sbom                  Generate CycloneDX SBOM"
 	@echo "  pip-audit             Audit dependencies for vulnerabilities"
@@ -399,6 +413,10 @@ lint:
 
 lint-fix:
 	@$(UV) run ruff check --fix --unsafe-fixes src tests
+
+lint-fix-files:
+	@[ -n "$$FILES" ] || { echo "Usage: make lint-fix-files FILES=path"; exit 1; }
+	@$(UV) run ruff check --fix $$FILES
 
 fix-logger-imports:
 	@$(UV) run python scripts/add_missing_logger_imports.py \
@@ -2746,8 +2764,51 @@ delete-file:
 	@$(RM) $(FILES)
 
 patch-test:
-	@[ -n "$(FILE)" ] || { echo "Usage: make patch-test FILE='path' MATCH='old' REPLACE='new'"; exit 1; }
-	@python3 -c "import sys; c=open('$(FILE)').read(); c=c.replace('$(MATCH)','$(REPLACE)'); open('$(FILE)','w').write(c)"
+	@[ -n "$(FILE)" ] || { echo "Usage: make patch-test FILE=path MATCH=old REPLACE=new"; exit 1; }
+	@OLD=$$(mktemp /tmp/gludd-patch-old.XXXXXX); NEW=$$(mktemp /tmp/gludd-patch-new.XXXXXX); \
+		printf "%b" "$(MATCH)" > "$$OLD"; \
+		printf "%b" "$(REPLACE)" > "$$NEW"; \
+		$(PYTHON) scripts/replace_text.py "$(FILE)" "$$OLD" "$$NEW"; RC=$$?; \
+		rm -f "$$OLD" "$$NEW"; exit $$RC
+
+copy-file:
+	@test -n "$(SRC)" || { echo "Usage: make copy-file SRC=path DST=path"; exit 1; }
+	@test -n "$(DST)" || { echo "Usage: make copy-file SRC=path DST=path"; exit 1; }
+	@case "$(SRC)" in /tmp/gludd-*) ;; /*|*..*) echo "Refusing path outside workspace: $(SRC)"; exit 1;; esac
+	@case "$(DST)" in /tmp/gludd-*) ;; /*|*..*) echo "Refusing path outside workspace: $(DST)"; exit 1;; esac
+	@cp "$(SRC)" "$(DST)"
+
+replace-text:
+	@test -n "$(FILE)" || { echo "Usage: make replace-text FILE=path OLD=/tmp/gludd-old NEW=/tmp/gludd-new"; exit 1; }
+	@test -n "$(OLD)" || { echo "Usage: make replace-text FILE=path OLD=/tmp/gludd-old NEW=/tmp/gludd-new"; exit 1; }
+	@test -n "$(NEW)" || { echo "Usage: make replace-text FILE=path OLD=/tmp/gludd-old NEW=/tmp/gludd-new"; exit 1; }
+	@case "$(FILE)" in /tmp/gludd-*) ;; /*|*..*) echo "Refusing path outside workspace: $(FILE)"; exit 1;; esac
+	@case "$(OLD)" in /tmp/gludd-*) ;; /*|*..*) echo "Refusing path outside workspace: $(OLD)"; exit 1;; esac
+	@case "$(NEW)" in /tmp/gludd-*) ;; /*|*..*) echo "Refusing path outside workspace: $(NEW)"; exit 1;; esac
+	@$(PYTHON) scripts/replace_text.py "$(FILE)" "$(OLD)" "$(NEW)"
+
+write-text:
+	@[ -n "$(FILE)" ] || { echo "Usage: make write-text FILE=path TEXT=..."; exit 1; }
+	@case "$(FILE)" in /tmp/gludd-*) ;; /*|*..*) echo "Refusing path outside workspace: $(FILE)"; exit 1;; esac
+	@printf '%b' "$$TEXT" > "$$FILE"
+
+append-text:
+	@[ -n "$(FILE)" ] || { echo "Usage: make append-text FILE=path TEXT=..."; exit 1; }
+	@case "$(FILE)" in /tmp/gludd-*) ;; /*|*..*) echo "Refusing path outside workspace: $(FILE)"; exit 1;; esac
+	@printf '%b' "$$TEXT" >> "$$FILE"
+
+write-text-b64:
+	@[ -n "$(FILE)" ] || { echo "Usage: make write-text-b64 FILE=path TEXT_B64=base64"; exit 1; }
+	@[ -n "$(TEXT_B64)" ] || { echo "Usage: make write-text-b64 FILE=path TEXT_B64=base64"; exit 1; }
+	@case "$(FILE)" in /tmp/gludd-*) ;; /*|*..*) echo "Refusing path outside workspace: $(FILE)"; exit 1;; esac
+	@TEXT_B64="$(TEXT_B64)" FILE_PATH="$(FILE)" $(PYTHON) -c "import base64, os; open(os.environ[\"FILE_PATH\"], \"wb\").write(base64.b64decode(os.environ[\"TEXT_B64\"]))"
+
+replace-text-b64:
+	@[ -n "$(FILE)" ] || { echo "Usage: make replace-text-b64 FILE=path OLD_B64=base64 NEW_B64=base64"; exit 1; }
+	@[ -n "$(OLD_B64)" ] || { echo "Usage: make replace-text-b64 FILE=path OLD_B64=base64 NEW_B64=base64"; exit 1; }
+	@[ -n "$(NEW_B64)" ] || { echo "Usage: make replace-text-b64 FILE=path OLD_B64=base64 NEW_B64=base64"; exit 1; }
+	@case "$(FILE)" in /tmp/gludd-*) ;; /*|*..*) echo "Refusing path outside workspace: $(FILE)"; exit 1;; esac
+	@OLD_TMP=$$(mktemp /tmp/gludd-old.XXXXXX); NEW_TMP=$$(mktemp /tmp/gludd-new.XXXXXX); 		OLD_B64="$(OLD_B64)" NEW_B64="$(NEW_B64)" OLD_TMP="$$OLD_TMP" NEW_TMP="$$NEW_TMP" $(PYTHON) -c "import base64, os; open(os.environ[\"OLD_TMP\"], \"wb\").write(base64.b64decode(os.environ[\"OLD_B64\"])); open(os.environ[\"NEW_TMP\"], \"wb\").write(base64.b64decode(os.environ[\"NEW_B64\"]))"; 		$(PYTHON) scripts/replace_text.py "$(FILE)" "$$OLD_TMP" "$$NEW_TMP"; RC=$$?; rm -f "$$OLD_TMP" "$$NEW_TMP"; exit $$RC
 
 fix-benchmark-mock:
 	@python3 -c "c=open('tests/unit/test_daemon_coverage_lift.py').read(); c=c.replace('class TestBenchmarkRecordWithSession:\n    @pytest.mark.asyncio\n    async def test_benchmark_record_with_session(self, app, transport):\n        mock_session = MagicMock()\n        mock_sf = MagicMock()','class TestBenchmarkRecordWithSession:\n    @pytest.mark.asyncio\n    async def test_benchmark_record_with_session(self, app, transport):\n        mock_session = MagicMock()\n        mock_session.commit = AsyncMock()\n        mock_sf = MagicMock()'); open('tests/unit/test_daemon_coverage_lift.py','w').write(c)"
@@ -4725,3 +4786,18 @@ generate-specs:
 # Usage: make expand-specs TARGET=4000
 expand-specs:
 	@$(UV) run python3 scripts/generate_specs_to_4000.py --target $(or $(TARGET),4000)
+
+# Push exactly the committed HEAD for the current branch while local unstaged/untracked work remains.
+git-push-committed-head-nv:
+	@BRANCH=$$(git branch --show-current); if [ -z "$$BRANCH" ]; then echo "Cannot push detached HEAD"; exit 1; fi; if ! git diff --cached --quiet; then echo "BLOCKED: staged changes exist; commit or unstage before pushing committed HEAD"; git diff --cached --name-only; exit 1; fi; $(MAKE) --no-print-directory ci-busy-check BRANCH=$$BRANCH || exit 1; PUSH_BRANCH=$$BRANCH $(MAKE) --no-print-directory _push-rate-guard || exit 1; HEAD=$$(git rev-parse HEAD); GIT_SSH_COMMAND="ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new" git push --no-verify -u sandboxcom HEAD:refs/heads/$$BRANCH || exit 1; $(MAKE) --no-print-directory verify-remote BRANCH=$$BRANCH SHA=$$HEAD || exit 1; echo "Pushed committed HEAD $$HEAD to sandboxcom/$$BRANCH; uncommitted files are not included."
+
+# Trigger the Build and Release workflow for the exact committed HEAD already on sandboxcom.
+ci-trigger-committed-head: _require-gh
+	@REF="$(REF)"; if [ -z "$$REF" ]; then REF=$$(git branch --show-current); fi; BRANCH=$$(git branch --show-current); if [ -z "$$BRANCH" ]; then echo "Cannot trigger CI from detached HEAD"; exit 1; fi; if [ "$$REF" != "$$BRANCH" ]; then echo "BLOCKED: REF=$$REF does not match current branch $$BRANCH"; exit 1; fi; if ! git diff --cached --quiet; then echo "BLOCKED: staged changes exist; commit or unstage before dispatching committed HEAD"; git diff --cached --name-only; exit 1; fi; $(MAKE) --no-print-directory ci-busy-check BRANCH=$$REF || exit 1; HEAD=$$(git rev-parse HEAD); REMOTE_SHA=$$(GIT_SSH_COMMAND="ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new" git ls-remote sandboxcom refs/heads/$$REF | cut -f1); if [ -z "$$REMOTE_SHA" ]; then echo "BLOCKED: remote branch sandboxcom/$$REF does not exist"; exit 1; fi; if [ "$$REMOTE_SHA" != "$$HEAD" ]; then echo "BLOCKED: sandboxcom/$$REF $$REMOTE_SHA does not match local HEAD $$HEAD; push exact HEAD first"; exit 1; fi; gh workflow run "Build and Release" -R sandboxcom/gludd --ref "$$REF" || exit 1; echo "Triggered Build and Release for committed HEAD $$HEAD on $$REF; dirty local files are not included."
+
+# Push and dispatch the exact committed HEAD without waiting for long local shards to finish.
+ci-push-committed-head: git-push-committed-head-nv ci-trigger-committed-head
+	@echo "Committed HEAD is pushed and remote CI has been dispatched; continue local shard work in parallel."
+
+check-no-prompt-prone-edit-tools:
+	@$(UV) run python scripts/check_no_prompt_prone_edit_tools.py
