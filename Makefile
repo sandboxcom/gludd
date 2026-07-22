@@ -68,7 +68,7 @@ PYTEST_VERBOSITY ?= -v
         watchdog-read watchdog-start watchdog-status watchdog-stop watchdog-log \
         task-watchdog-start task-watchdog-stop task-watchdog-status task-watchdog-log task \
         check-readme-status check-types check-types-baseline check-plugin-versions check-plugin-versions-quiet \
-        check-plugin-liveness check-plugin-health write-plugin-manifest restart-opencode disengage-enforcement reload-enforcement \
+        check-plugin-liveness check-plugin-health write-plugin-manifest codemod-lean-enforcement-plugins restart-opencode disengage-enforcement reload-enforcement \
         rearm-enforcement enforcement-status \
         hot-reload-plugins hot-reload-status hot-reload-clean \
          verify-release-artifact verify-release-completeness git-tag-rm git-tag-delete git-tag-move release-cut release-recut release-create release-delete \
@@ -121,6 +121,7 @@ help:
 	@echo "  collect-check         Fast collection-error gate"
 	@echo "  preflight             Preflight quality gate (coverage, lint, mypy, templates, etc.)"
 	@echo "  check-make-help       Verify every public Makefile target is listed by make help"
+	@echo "  codemod-lean-enforcement-plugins Extract bulky enforcement implementations from counted plugin entrypoints"
 	@echo "  sast                  Run bandit SAST"
 	@echo "  sbom                  Generate CycloneDX SBOM"
 	@echo "  pip-audit             Audit dependencies for vulnerabilities"
@@ -4047,6 +4048,9 @@ check-plugin-versions-quiet:
 write-plugin-manifest:
 	@$(UV) run python3 scripts/check_plugin_hashes.py --write-manifest
 
+codemod-lean-enforcement-plugins:
+	@$(UV) run python3 scripts/lean_enforcement_plugins.py
+
 # --- Plugin liveness check — verifies plugin hooks are structurally intact
 # and actually firing. Three layers: structural (source code), passive (counter
 # files from running plugin), active (runtime verification).
@@ -4145,6 +4149,8 @@ reload-enforcement:
 	@echo "  /tmp/gludd-mainthread-streak.json  → strength=0"
 	@rm -f /tmp/gludd-watchdog-disengage.json
 	@echo "  /tmp/gludd-watchdog-disengage.json → removed"
+	@rm -f /tmp/gludd-false-done-blocks.json
+	@echo "  /tmp/gludd-false-done-blocks.json  → removed"
 	@rm -f /tmp/gludd-enhancement-ratio.json
 	@echo "  /tmp/gludd-enhancement-ratio.json  → removed (wave cleared)"
 	@rm -f /tmp/gludd-session-start.json
