@@ -295,5 +295,8 @@ def test_workflow_state_targets_do_not_dirty_lockfile_with_uv_run() -> None:
 def test_ci_head_compare_reports_bidirectional_divergence() -> None:
     block = _target_block("ci-head-compare")
 
+    assert "--- sandboxcom/master HEAD ---" in block
     assert "sandboxcom/master..HEAD" in block
     assert "HEAD..sandboxcom/master" in block
+    assert block.count("--- commits local has that remote does NOT ---") == 1
+    assert block.count("--- commits remote has that local does NOT ---") == 1

@@ -2499,12 +2499,12 @@ ci-diff-since-remote:
 ci-head-compare:
 	@echo "--- local HEAD ---"; git rev-parse HEAD
 	@echo "--- fetching sandboxcom/master ---"
+	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git fetch sandboxcom master:refs/remotes/sandboxcom/master 2>&1 | tail -3
+	@echo "--- sandboxcom/master HEAD ---"; git rev-parse sandboxcom/master 2>&1 || echo "no sandboxcom/master ref"
 	@echo "--- commits local has that remote does NOT ---"
 	@git log --oneline sandboxcom/master..HEAD 2>&1 || echo "(cannot compute)"
 	@echo "--- commits remote has that local does NOT ---"
 	@git log --oneline HEAD..sandboxcom/master 2>&1 || echo "(cannot compute)"
-	@echo "--- commits local has that remote does NOT ---"
-	@git log --oneline sandboxcom/master..HEAD 2>&1 || echo "(cannot compute)"
 
 # Unauthenticated API attempt (works only if the repo is public).
 ci-status-anon:
