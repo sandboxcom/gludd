@@ -22,6 +22,7 @@ from typing import Any, cast
 import pytest
 
 from general_ludd.git_automation.types import (
+    GitStateResult,
     MergeResult,
     PushResult,
     WorktreeInfo,
@@ -103,6 +104,19 @@ class _FakeGit:
         self.calls.append(("push_to_remote", repo_path, remote, branch))
         return PushResult(success=True, remote=remote, branch=branch or "")
 
+    def workflow_state(self, **kwargs: Any) -> GitStateResult:
+        self.calls.append(("workflow_state", kwargs))
+        errors = self._behaviour.get("state_errors", [])
+        return GitStateResult(
+            success=not errors,
+            branch="development",
+            head="abc1234",
+            dirty_count=0,
+            remote=kwargs.get("remote", "sandboxcom"),
+            remote_ref="refs/heads/development",
+            remote_head="abc1234",
+            errors=errors,
+        )
 
 def _params(**overrides: Any) -> dict[str, Any]:
     params: dict[str, Any] = {
@@ -113,8 +127,15 @@ def _params(**overrides: Any) -> dict[str, Any]:
         "worktree_path": None,
         "source": None,
         "target": None,
-        "strategy": "ff",
+"strategy": "ff",
         "remote": "origin",
+        "state_ref": "",
+        "state_gha_head_sha": "",
+        "state_assert_clean": False,
+        "state_assert_no_feature_on_master": False,
+        "state_assert_merge_ready": False,
+        "state_assert_remote_head": False,
+        "state_assert_gha_matches_local": False,
     }
     params.update(overrides)
     return params
@@ -269,3 +290,41 @@ def test_mutating_op_check_mode_does_not_call_git(module, monkeypatch):
     assert fake_mod.exited["result"]["would_change"] is True
     # No real push happened.
     assert all(c[0] != "push_to_remote" for c in git.calls)
+
+
+# --- workflow state ----------------------------------------------------------
+
+def test_state_op_delegates_to_workflow_state(module, monkeypatch):
+    fake_mod, git = _run(
+        module,
+        monkeypatch,
+        _params(
+            op="state",
+            remote="sandboxcom",
+            state_ref="development",
+            state_assert_clean=True,
+            state_assert_remote_head=True,
+        ),
+    )
+
+    assert fake_mod.failed is None
+    assert fake_mod.exited["changed"] is False
+    assert fake_mod.exited["result"]["success"] is True
+    assert fake_mod.exited["result"]["remote"] == "sandboxcom"
+    assert git.calls[0][0] == "workflow_state"
+    assert git.calls[0][1]["assert_clean"] is True
+    assert git.calls[0][1]["assert_remote_head"] is True
+
+
+def test_state_op_fails_when_workflow_state_has_errors(module, monkeypatch):
+    fake_mod, git = _run(
+        module,
+        monkeypatch,
+        _params(op="state", state_assert_merge_ready=True),
+        state_errors=["master has commits not contained in development"],
+    )
+
+    assert fake_mod.exited is None
+    assert fake_mod.failed["msg"] == "git state guard failed"
+    assert fake_mod.failed["result"]["success"] is False
+    assert git.calls[0][0] == "workflow_state"

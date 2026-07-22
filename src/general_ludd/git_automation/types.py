@@ -61,3 +61,22 @@ class GatedCommitResult:
     commit_sha: str | None = None
     gate_returncode: int = 0
     message: str = ""
+
+
+@dataclass
+class GitStateResult:
+    success: bool
+    branch: str
+    head: str
+    dirty_count: int = 0
+    staged_count: int = 0
+    untracked_count: int = 0
+    status: list[str] = field(default_factory=list)
+    remote: str = "sandboxcom"
+    remote_ref: str = ""
+    remote_head: str = ""
+    master_head: str = ""
+    development_head: str = ""
+    master_is_ancestor_of_development: bool | None = None
+    gha_head_sha: str = ""
+    errors: list[str] = field(default_factory=list)

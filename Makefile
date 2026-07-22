@@ -45,7 +45,8 @@ PYTEST_VERBOSITY ?= -v
         agent-worktree-dev agent-merge-dev \
         development-push development-merge-to-master development-start development-status \
         git-commit-no-verify git-amend-msg \
-        _commit-lock-acquire check-clean-tree ship-commit-files \
+_commit-lock-acquire check-clean-tree worktree-state all-worktree-state main-worktree-state worktree-guard main-worktree-guard \
+        release-worktree-guard status-claim-guard workflow-state workflow-gate commit-ready gha-ready merge-ready ship-commit-files remove-workspace-file-b64 \
         molecule-version molecule-test molecule-test-all \
         collection-roles collection-modules molecule-scenarios \
         test-binary-re test-radio test-os-expert test-e2e-test-gen test-language test-language-expert test-collections \
@@ -92,7 +93,7 @@ PYTEST_VERBOSITY ?= -v
          test-service-discovery service-discover service-catalog \
          subagent-init subagent-cleanup \
          chat chat-eval test-chat \
-git-tag-delete git-tag-move release-deploy append-text write-text-b64 replace-text-b64 _no-raw-git-guard \
+git-tag-delete git-tag-move release-deploy append-text write-text-b64 replace-text-b64 mkdir-p replace-lines _no-raw-git-guard \
          git-push-committed-head-nv ci-trigger-committed-head ci-push-committed-head provider-smoke check-no-prompt-prone-edit-tools
 
 help:
@@ -127,6 +128,8 @@ help:
 	@echo "  check-no-prompt-prone-edit-tools  Enforce make-target-only edit workflow"
 	@echo "  write-text-b64        Write FILE from base64 TEXT_B64 without shell quoting loss"
 	@echo "  replace-text-b64      Exact old/new base64 replacement via scripts/replace_text.py"
+	@echo "  mkdir-p               Create an allowed workspace or /tmp/gludd-* directory"
+	@echo "  replace-lines         Replace an allowed file line range from NEW_FILE"
 	@echo "  worktree-state        Emit path-qualified current git worktree state as JSON"
 	@echo "  all-worktree-state    Emit path-qualified state for every registered worktree"
 	@echo "  main-worktree-state   Emit canonical main checkout state as JSON"
@@ -134,16 +137,16 @@ help:
 	@echo "  main-worktree-guard   Fail if /Users/shawnwilson/gludd is dirty"
 	@echo "  release-worktree-guard  Emit release evidence only when current and main worktrees are clean"
 	@echo "  status-claim-guard    Emit clean tokens only when current and main worktrees are clean"
-	@echo "  codemod-exact-subagent-guards  Restore literal OPENCODE_SUBAGENT early-return guards"
-	@echo "  codemod-ci-shards-sigterm  Enforce explicit failure on unexpected shard SIGTERM"
-	@echo "  codemod-tui-table-widths  Enforce explicit Rich table widths in TUI builders"
+	@echo "  workflow-state        Emit local/remote/GHA git state-machine evidence as JSON"
+	@echo "  workflow-gate         Fail if local workflow state is unsafe for release evidence"
+	@echo "  commit-ready          Fail if current work is not clean enough to be committed/tested"
+	@echo "  gha-ready             Fail if remote CI would not run the current committed HEAD"
+	@echo "  merge-ready           Fail if development cannot merge to master without topology repair"
+	@echo "  codemod-lean-enforcement-plugins  Slim counted enforcement plugin entrypoints"
 	@echo "  sast                  Run bandit SAST"
 	@echo "  sbom                  Generate CycloneDX SBOM"
 	@echo "  pip-audit             Audit dependencies for vulnerabilities"
 	@echo "  security              Full security: sast + sbom + pip-audit"
-	@echo ""
-	@echo "  --- Testing ---"
-	@echo "  test                  Full test suite with coverage"
 	@echo "  test-unit             Unit tests only"
 	@echo "  test-unit-shards      Unit tests in bounded serial shards (SHARDS=12 SHARD=1)"
 	@echo "  test-integration      Integration tests"
@@ -1518,6 +1521,41 @@ MAX_CANCELLED_RUNS ?= 3
 # Prevents pre-commit hook stash conflicts on the remote.
 check-clean-tree:
 	@$(PYTHON) scripts/check_clean_tree.py
+
+worktree-state:
+	@python3 scripts/worktree_state_guard.py --json
+
+all-worktree-state:
+	@python3 scripts/worktree_state_guard.py --all --json
+
+main-worktree-state:
+	@python3 scripts/worktree_state_guard.py --main --main-path /Users/shawnwilson/gludd --json
+
+worktree-guard:
+	@python3 scripts/worktree_state_guard.py --assert-clean
+
+main-worktree-guard:
+	@python3 scripts/worktree_state_guard.py --main-path /Users/shawnwilson/gludd --assert-main-clean --main-claim-token
+
+release-worktree-guard: worktree-guard main-worktree-guard
+	@python3 scripts/worktree_state_guard.py --assert-clean --claim-token
+
+status-claim-guard: worktree-guard main-worktree-guard
+	@python3 scripts/worktree_state_guard.py --assert-clean --claim-token
+workflow-state:
+	@$(PYTHON) scripts/workflow_state_guard.py --json
+
+workflow-gate:
+	@$(PYTHON) scripts/workflow_state_guard.py --assert-clean --assert-no-feature-on-master
+
+commit-ready:
+	@$(PYTHON) scripts/workflow_state_guard.py --assert-clean --assert-no-feature-on-master
+
+gha-ready:
+	@GIT_SSH_COMMAND="ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new" $(PYTHON) scripts/ci_remote_head_guard.py --ref "$(REF)" --remote "$(REMOTE)"
+
+merge-ready:
+	@$(PYTHON) scripts/workflow_state_guard.py --assert-clean --assert-merge-ready
 
 # Guard: prevent disabling tests in CI pipeline. Blocks push/release if
 # test-shard has continue-on-error or is removed from release.needs.
@@ -3051,7 +3089,7 @@ development-force-push:
 
 # Merge development into master for release prep.
 # Requires CI-green on the development tip before allowing the merge.
-development-merge-to-master:
+development-merge-to-master: merge-ready
 	@echo "Checking CI green on development tip..."
 	@$(MAKE) require-ci-green SHA=$$(git rev-parse development) || { echo "CI not green on development tip. Aborting."; exit 1; }
 	@echo "CI green confirmed. Merging development into master..."
@@ -4690,8 +4728,7 @@ search:
 
 show-lines:
 	@[ -n "$(FILE)" ] && [ -n "$(START)" ] && [ -n "$(END)" ] || { echo "Usage: make show-lines FILE=path START=n END=n"; exit 1; }
-	@case "$(FILE)" in /*|*..*) echo "Refusing path outside workspace: $(FILE)"; exit 1;; esac
-	@/usr/bin/sed -n "$(START),$(END)p" "$(FILE)"
+	@$(PYTHON) scripts/show_lines.py "$(FILE)" "$(START)" "$(END)"
 
 ps:
 	@/bin/ps -ax -o pid=,ppid=,command= | /usr/bin/grep '/Users/shawnwilson/gludd\|make search\|grep -R' | /usr/bin/grep -v '/usr/bin/grep' || echo "No matching project processes"
@@ -4787,17 +4824,50 @@ generate-specs:
 expand-specs:
 	@$(UV) run python3 scripts/generate_specs_to_4000.py --target $(or $(TARGET),4000)
 
-# Push exactly the committed HEAD for the current branch while local unstaged/untracked work remains.
-git-push-committed-head-nv:
-	@BRANCH=$$(git branch --show-current); if [ -z "$$BRANCH" ]; then echo "Cannot push detached HEAD"; exit 1; fi; if ! git diff --cached --quiet; then echo "BLOCKED: staged changes exist; commit or unstage before pushing committed HEAD"; git diff --cached --name-only; exit 1; fi; $(MAKE) --no-print-directory ci-busy-check BRANCH=$$BRANCH || exit 1; PUSH_BRANCH=$$BRANCH $(MAKE) --no-print-directory _push-rate-guard || exit 1; HEAD=$$(git rev-parse HEAD); GIT_SSH_COMMAND="ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new" git push --no-verify -u sandboxcom HEAD:refs/heads/$$BRANCH || exit 1; $(MAKE) --no-print-directory verify-remote BRANCH=$$BRANCH SHA=$$HEAD || exit 1; echo "Pushed committed HEAD $$HEAD to sandboxcom/$$BRANCH; uncommitted files are not included."
+# Push exactly the current clean HEAD for the current branch.
+git-push-committed-head-nv: commit-ready
+	@BRANCH=$$(git branch --show-current); if [ -z "$$BRANCH" ]; then echo "Cannot push detached HEAD"; exit 1; fi; $(MAKE) --no-print-directory ci-busy-check BRANCH=$$BRANCH || exit 1; PUSH_BRANCH=$$BRANCH $(MAKE) --no-print-directory _push-rate-guard || exit 1; HEAD=$$(git rev-parse HEAD); GIT_SSH_COMMAND="ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new" git push --no-verify -u sandboxcom HEAD:refs/heads/$$BRANCH || exit 1; $(MAKE) --no-print-directory verify-remote BRANCH=$$BRANCH SHA=$$HEAD || exit 1; echo "Pushed clean HEAD $$HEAD to sandboxcom/$$BRANCH."
 
-# Trigger the Build and Release workflow for the exact committed HEAD already on sandboxcom.
-ci-trigger-committed-head: _require-gh
-	@REF="$(REF)"; if [ -z "$$REF" ]; then REF=$$(git branch --show-current); fi; BRANCH=$$(git branch --show-current); if [ -z "$$BRANCH" ]; then echo "Cannot trigger CI from detached HEAD"; exit 1; fi; if [ "$$REF" != "$$BRANCH" ]; then echo "BLOCKED: REF=$$REF does not match current branch $$BRANCH"; exit 1; fi; if ! git diff --cached --quiet; then echo "BLOCKED: staged changes exist; commit or unstage before dispatching committed HEAD"; git diff --cached --name-only; exit 1; fi; $(MAKE) --no-print-directory ci-busy-check BRANCH=$$REF || exit 1; HEAD=$$(git rev-parse HEAD); REMOTE_SHA=$$(GIT_SSH_COMMAND="ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new" git ls-remote sandboxcom refs/heads/$$REF | cut -f1); if [ -z "$$REMOTE_SHA" ]; then echo "BLOCKED: remote branch sandboxcom/$$REF does not exist"; exit 1; fi; if [ "$$REMOTE_SHA" != "$$HEAD" ]; then echo "BLOCKED: sandboxcom/$$REF $$REMOTE_SHA does not match local HEAD $$HEAD; push exact HEAD first"; exit 1; fi; gh workflow run "Build and Release" -R sandboxcom/gludd --ref "$$REF" || exit 1; echo "Triggered Build and Release for committed HEAD $$HEAD on $$REF; dirty local files are not included."
+# Trigger the Build and Release workflow for the exact clean HEAD already on sandboxcom.
+ci-trigger-committed-head: gha-ready _require-gh
+	@REF="$(REF)"; if [ -z "$$REF" ]; then REF=$$(git branch --show-current); fi; $(MAKE) --no-print-directory ci-busy-check BRANCH=$$REF || exit 1; gh workflow run "Build and Release" -R sandboxcom/gludd --ref "$$REF" || exit 1; echo "Triggered Build and Release for clean HEAD on $$REF."
 
-# Push and dispatch the exact committed HEAD without waiting for long local shards to finish.
+# Push and dispatch the exact clean HEAD without allowing local/remote code drift.
 ci-push-committed-head: git-push-committed-head-nv ci-trigger-committed-head
-	@echo "Committed HEAD is pushed and remote CI has been dispatched; continue local shard work in parallel."
+	@echo "Clean HEAD is pushed and remote CI has been dispatched for the same code."
 
 check-no-prompt-prone-edit-tools:
 	@$(UV) run python scripts/check_no_prompt_prone_edit_tools.py
+
+
+git-resolve-theirs:
+	@[ -n "$(FILES)" ] || { echo "Usage: make git-resolve-theirs FILES='path'"; exit 1; }
+	@git checkout --theirs -- $(FILES) && git add $(FILES) && echo "resolved (theirs): $(FILES)"
+
+git-cherry-pick-continue:
+	@git cherry-pick --continue
+
+git-cherry-pick-skip:
+	@git cherry-pick --skip
+
+git-cherry-pick-abort:
+	@git cherry-pick --abort
+
+replace-all-text:
+	@test -n "$(FILE)" || { echo "Usage: make replace-all-text FILE=path OLD=/tmp/gludd-old NEW=/tmp/gludd-new"; exit 1; }
+	@test -n "$(OLD)" || { echo "Usage: make replace-all-text FILE=path OLD=/tmp/gludd-old NEW=/tmp/gludd-new"; exit 1; }
+	@test -n "$(NEW)" || { echo "Usage: make replace-all-text FILE=path OLD=/tmp/gludd-old NEW=/tmp/gludd-new"; exit 1; }
+	@case "$(FILE)" in /tmp/gludd-*) ;; /*|*..*) echo "Refusing path outside workspace: $(FILE)"; exit 1;; esac
+	@$(PYTHON) scripts/replace_all_text.py "$(FILE)" "$(OLD)" "$(NEW)"
+
+mkdir-p:
+	@[ -n "$(PATH_ARG)" ] || { echo "Usage: make mkdir-p PATH_ARG=path"; exit 1; }
+	@$(PYTHON) scripts/mkdir_p.py "$(PATH_ARG)"
+
+
+replace-lines:
+	@[ -n "$(FILE)" ] || { echo "Usage: make replace-lines FILE=path START=n END=n NEW_FILE=path"; exit 1; }
+	@[ -n "$(START)" ] || { echo "Usage: make replace-lines FILE=path START=n END=n NEW_FILE=path"; exit 1; }
+	@[ -n "$(END)" ] || { echo "Usage: make replace-lines FILE=path START=n END=n NEW_FILE=path"; exit 1; }
+	@[ -n "$(NEW_FILE)" ] || { echo "Usage: make replace-lines FILE=path START=n END=n NEW_FILE=path"; exit 1; }
+	@$(PYTHON) scripts/replace_lines.py "$(FILE)" "$(START)" "$(END)" "$(NEW_FILE)"

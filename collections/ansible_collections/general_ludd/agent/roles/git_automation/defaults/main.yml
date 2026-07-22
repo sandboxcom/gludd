@@ -50,3 +50,13 @@ git_retry_delay: 5             # seconds between retries
 git_non_interactive_env:
   GIT_TERMINAL_PROMPT: "0"
   GIT_ASKPASS: "echo"
+
+# ── State machine guard ─────────────────────────────────────────────────────
+state_ref: ""
+state_remote: "sandboxcom"
+state_gha_head_sha: ""
+state_assert_clean: false
+state_assert_no_feature_on_master: false
+state_assert_merge_ready: false
+state_assert_remote_head: false
+state_assert_gha_matches_local: false
