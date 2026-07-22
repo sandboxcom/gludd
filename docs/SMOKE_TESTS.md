@@ -105,6 +105,29 @@ Secret-looking values are redacted before they enter logs or events. The output
 names which variables were present or missing, but never includes API keys,
 tokens, or passwords.
 
+## Output Templates
+
+Smoke list/report/trace formatting is rendered through compiled Jinja2 templates in
+`templates/log_output/`. The templates use Ansible-style Jinja2 syntax but run in
+a restricted sandbox as data formatters only: they receive already-built report,
+metric, log, event, and trace objects and cannot call Python or Ansible code.
+
+Operators can add/remove fields, reorder output, and add conditional formatting
+without changing smoke-test code:
+
+```bash
+GLUDD_OUTPUT_TEMPLATES_DIR=/path/to/templates \
+  OPENROUTER_API_KEY=... gludd smoke openrouter model-ping --live \
+  --output-template smoke.report.text.j2 \
+  --output /tmp/gludd-openrouter-smoke.txt
+```
+
+`GLUDD_OUTPUT_TEMPLATES_DIR` prepends an operator-owned template directory ahead
+of the built-in templates. `--output-template` selects a compiled template by
+name, and `--output` writes the rendered evidence bundle to a durable file. The
+daemon compiles the default template registry at startup so repeated smoke output
+renders do not re-scan template files on every request.
+
 ## Coverage Map
 
 Model/API providers come from `general_ludd.models.provider_presets`:

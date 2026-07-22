@@ -92,6 +92,7 @@ from general_ludd.observability.langsmith_tracer import LangSmithTracer
 from general_ludd.observability.otel_bridge import OTelBridge
 from general_ludd.observability.recorder import AutoBenchmarkRecorder
 from general_ludd.observability.timing import StallWatchdog, default_tracker
+from general_ludd.output_templates import OutputTemplateRegistry
 from general_ludd.projects.manager import seed_from_config
 from general_ludd.projects.workspace import ProjectWorkspace
 from general_ludd.prompts.enhancer import PromptEnhancer
@@ -1401,6 +1402,16 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         # is caught by the outer startup try/except → degraded mode).
         await asyncio.to_thread(prompt_registry.refresh)
         app.state._prompt_registry = prompt_registry
+        output_template_dirs: list[str] = []
+        if _proj_for_prompts is not None:
+            _proj_output_tmpl_dir = Path(_proj_for_prompts) / "templates" / "log_output"
+            if _proj_output_tmpl_dir.is_dir():
+                output_template_dirs.append(str(_proj_output_tmpl_dir))
+        output_template_registry = OutputTemplateRegistry.default(extra_template_dirs=output_template_dirs)
+        output_template_summary = await asyncio.to_thread(output_template_registry.compile)
+        app.state._output_template_registry = output_template_registry
+        app.state._output_template_summary = output_template_summary
+        logger.info("Output templates compiled: %d", output_template_summary.get("count", 0))
         app.state._prompt_enhancer = PromptEnhancer()
 
         # Build budget guard from config
