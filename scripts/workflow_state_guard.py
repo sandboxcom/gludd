@@ -9,8 +9,9 @@ import subprocess
 import sys
 from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass
+from typing import Optional
 
-RunFn = Callable[[Sequence[str], str | None], subprocess.CompletedProcess[str]]
+RunFn = Callable[[Sequence[str], Optional[str]], subprocess.CompletedProcess[str]]
 
 
 @dataclass(frozen=True)
