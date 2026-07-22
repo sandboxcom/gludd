@@ -258,4 +258,5 @@ def test_workflow_state_targets_do_not_dirty_lockfile_with_uv_run() -> None:
 
         assert "$(PYTHON)" not in block
         assert "python3 scripts/" not in block
+        assert "UV=echo" in block
         assert "$(SYSTEM_PYTHON) scripts/" in block
