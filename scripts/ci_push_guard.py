@@ -26,10 +26,7 @@ def _gh_run_list(branch: str) -> list[dict]:
     cmd = [
         "gh", "run", "list",
         "--branch", branch,
-        "--status", "in_progress",
-        "--status", "queued",
-        "--status", "waiting",
-        "--limit", "1",
+        "--limit", "30",
         "--json", "status,conclusion,databaseId,headSha,createdAt",
         "-R", "sandboxcom/gludd",
     ]
@@ -38,7 +35,11 @@ def _gh_run_list(branch: str) -> list[dict]:
         if result.returncode != 0:
             print(f"CI-BUSY-CHECK: gh error: {result.stderr.strip()}", file=sys.stderr)
             return []
-        return json.loads(result.stdout) if result.stdout.strip() else []
+        runs = json.loads(result.stdout) if result.stdout.strip() else []
+        return [
+            run for run in runs
+            if run.get("status") in {"in_progress", "queued", "waiting"}
+        ]
     except FileNotFoundError:
         print("CI-BUSY-CHECK: gh CLI not available — fail-open (allow push)", file=sys.stderr)
         return []

@@ -144,3 +144,37 @@ class TestCiBusyCheck:
             ],
         )
         assert ci_busy_check("master") == 1
+
+
+def test_gh_query_fetches_recent_branch_runs_without_status_filters(monkeypatch):
+    captured_cmd = []
+
+    def mock_run(cmd, **kwargs):
+        captured_cmd.extend(cmd)
+        return subprocess.CompletedProcess(args=[], returncode=0, stdout="[]", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", mock_run)
+    _gh_run_list("development")
+
+    assert captured_cmd.count("--status") == 0
+    assert "--branch" in captured_cmd
+    assert "development" in captured_cmd
+    limit_index = captured_cmd.index("--limit")
+    assert int(captured_cmd[limit_index + 1]) >= 20
+
+
+def test_gh_run_list_filters_mixed_statuses_in_python(monkeypatch):
+    output = json.dumps([
+        {"databaseId": 1, "status": "completed", "conclusion": "failure"},
+        {"databaseId": 2, "status": "in_progress", "conclusion": None},
+        {"databaseId": 3, "status": "queued", "conclusion": None},
+        {"databaseId": 4, "status": "waiting", "conclusion": None},
+    ])
+
+    def mock_run(*args, **kwargs):
+        return subprocess.CompletedProcess(args=[], returncode=0, stdout=output, stderr="")
+
+    monkeypatch.setattr(subprocess, "run", mock_run)
+    runs = _gh_run_list("master")
+
+    assert [run["databaseId"] for run in runs] == [2, 3, 4]

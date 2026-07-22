@@ -165,3 +165,24 @@ def test_local_ci_replica_shards_refuse_dirty_tree_by_default() -> None:
     assert "PYTEST_ARGS" in guard
     assert "CI-like shard validation requires a clean worktree" in guard
     assert "Commit completed work or create a clean worktree at the pushed HEAD" in guard
+
+
+def test_committed_head_ci_path_checks_active_runs_before_push_and_dispatch() -> None:
+    push_line = _target_line("git-push-committed-head-nv")
+    trigger_line = _target_line("ci-trigger-committed-head")
+    push_block = _target_block("git-push-committed-head-nv")
+    trigger_block = _target_block("ci-trigger-committed-head")
+
+    assert "ci-busy-check" in push_line or "ci-busy-check" in push_block
+    assert "ci-busy-check" in trigger_line or "ci-busy-check" in trigger_block
+
+
+def test_ci_busy_check_defaults_to_current_branch_not_master() -> None:
+    block = _target_block("ci-busy-check")
+    dollar = chr(36)
+    legacy_default = dollar + "(or " + dollar + "(BRANCH),master)"
+    branch_arg = "scripts/ci_push_guard.py \"" + dollar + dollar + "BRANCH\""
+
+    assert legacy_default not in block
+    assert "git branch --show-current" in block
+    assert branch_arg in block
