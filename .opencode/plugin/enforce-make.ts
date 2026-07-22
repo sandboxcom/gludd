@@ -29,6 +29,29 @@ const MAKE_ENFORCE = process.env.GLUDD_MAKE_ENFORCE !== "0"
 // `{}`, `\`, `!` all remain blocked.
 const SHELL_META_CHARS = /[|;&{}$`\\!]/
 
+function isPromptProneEditTool(tool: unknown): boolean {
+  const name = typeof tool === "string" ? tool.toLowerCase() : ""
+  const patchTool = "apply" + "_patch"
+  return [
+    name === patchTool,
+    name.endsWith("." + patchTool),
+    name.includes("apply-patch"),
+  ].some(Boolean)
+}
+
+function formatPromptProneEditBlockedMessage(toolName: string): string {
+  return [
+    "BLOCKED: Prompt-prone edit tool calls are not allowed in this project.",
+    "Attempted tool: " + (toolName ? toolName : "(unknown)"),
+    "",
+    "Use reusable make edit targets instead:",
+    "  make write-text-b64 FILE=path TEXT_B64=...",
+    "  make replace-text FILE=path OLD=/tmp/gludd-old NEW=/tmp/gludd-new",
+    "  make replace-lines FILE=path START=n END=n NEW_FILE=/tmp/gludd-new",
+    "",
+    "This prevents interactive edit approval prompts from stalling work.",
+  ].join(String.fromCharCode(10))
+}
 function formatBashBlockedMessage(attemptedCommand: string, reason?: string): string {
   return [
     BASH_POLICY_HEADER,
@@ -367,6 +390,11 @@ function detectStopPattern(text: string): boolean {
 const defaultImpl: HotModule = {
     "tool.execute.before": async (input, output) => {
         reportAlive("enforce-make")
+
+        const toolName = String((input as any)?.tool ?? "")
+        if (MAKE_ENFORCE && isPromptProneEditTool(toolName)) {
+          throw new Error(formatPromptProneEditBlockedMessage(toolName))
+        }
 
         // --- BASH CHECK runs for ALL agents including subagents ---
         // AGENTS.md: "Bash = `make <target>` only. Subagents MUST know

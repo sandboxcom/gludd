@@ -307,14 +307,30 @@ def test_make_denies_metachar():
     """enforce-make blocks metacharacters."""
     code = _factory_load_code("enforce-make.ts") + """\
 try {
-  const r = await plugin['tool.execute.before']({tool: 'bash', args: {command: 'make test | grep'}}, undefined)
+  const cmd = "make test " + String.fromCharCode(124) + " grep"
+  const r = await plugin["tool.execute.before"]({tool: "bash", args: {command: cmd}}, undefined)
   console.log(JSON.stringify(r ?? {allowed: true}))
 } catch(e) {
-  console.log(JSON.stringify({permissionDecision: 'deny', message: String(e.message)}))
+  console.log(JSON.stringify({permissionDecision: "deny", message: String(e.message)}))
 }
 """
     result = _run_ts(code)
     assert result.get("permissionDecision") == "deny", f"Expected deny for pipe, got: {result}"
+
+
+def test_make_denies_prompt_prone_apply_patch_tool():
+    """enforce-make blocks prompt-prone edit tools before they can ask."""
+    code = _factory_load_code("enforce-make.ts") + """\
+try {
+  const r = await plugin["tool.execute.before"]({tool: "functions.apply_patch", args: {}}, undefined)
+  console.log(JSON.stringify(r ?? {allowed: true}))
+} catch(e) {
+  console.log(JSON.stringify({permissionDecision: "deny", message: String(e.message)}))
+}
+"""
+    result = _run_ts(code)
+    assert result.get("permissionDecision") == "deny", f"Expected deny for apply_patch, got: {result}"
+    assert "Prompt-prone edit tool" in result.get("message", "")
 
 
 def test_no_wait_blocks_sleep():
@@ -987,21 +1003,29 @@ else {
 
 
 def test_watchdog_loads_and_reports_alive():
-    """watchdog.ts loads without error, returns empty object."""
+    """watchdog.ts loads, reports alive, and exposes its event hook."""
     alive_path = "/tmp/gludd-plugin-alive.json"
     _clean_state_files(alive_path)
     try:
         code = f"""\
-const mod = await import('{PLUGINS_DIR}/watchdog.ts')
+const mod = await import("{PLUGINS_DIR}/watchdog.ts")
 const plugin = await mod.default({{}})
-console.log(JSON.stringify({{ok: true, keys: Object.keys(plugin), isObject: typeof plugin === 'object'}}))
+console.log(JSON.stringify({{
+  ok: true,
+  keys: Object.keys(plugin),
+  eventType: typeof plugin.event,
+  isObject: typeof plugin === "object",
+}}))
 """
         result = _run_ts(code)
         assert result["ok"] is True, f"watchdog load failed: {result}"
-        assert result["keys"] == [], f"watchdog should return empty object: {result}"
+        assert result["keys"] == ["event"], f"watchdog should expose event hook: {result}"
+        assert result["eventType"] == "function", f"watchdog event hook must be callable: {result}"
         assert os.path.exists(alive_path), "alive file must exist after watchdog load"
     finally:
         _clean_state_files(alive_path)
+
+
 
 
 def test_watchdog_subagent_loads():

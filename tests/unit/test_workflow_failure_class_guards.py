@@ -210,6 +210,7 @@ def test_list_valued_make_targets_fail_at_parse_time_on_stray_goals() -> None:
         "git-restore",
         "git-commit",
         "lint-files",
+        "search",
         "test-files",
         "test-ci-shards-parallel-bg",
     ]:

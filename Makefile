@@ -13,7 +13,7 @@ _MULTIWORD_VALUE_GOALS := \
     copy-file feature-done feature-start git-add git-branch git-checkout git-cherry-pick-list \
     git-commit git-commit-file git-commit-files git-merge git-reset git-restore git-tag-move \
     git-tag-push lint-files lint-fix-files release-cut release-deploy release-upload-assets \
-    replace-all-text replace-lines replace-text ship-commit test-and-commit test-ci-shards-parallel \
+    replace-all-text replace-lines replace-text search ship-commit test-and-commit test-ci-shards-parallel \
     test-ci-shards-parallel-bg test-files ci-shards-log-context
 _FIRST_MAKE_GOAL := $(firstword $(MAKECMDGOALS))
 _EXTRA_MAKE_GOALS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))

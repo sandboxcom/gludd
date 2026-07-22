@@ -57,7 +57,7 @@ import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
 
 
 
-const nodeRequire = createRequire(typeof __filename === "string" ? __filename : import.meta.url)
+const nodeRequire = createRequire(import.meta.url)
 
 function execSync(...args: any[]): Buffer {
   return nodeRequire("node:child_" + "process").execSync(...args)
