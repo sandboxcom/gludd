@@ -388,6 +388,67 @@ class GitAutomation:
         parts = rows[0].split()
         return parts[0] if parts else ""
 
+
+    @staticmethod
+    def _state_short_branch(ref: str) -> str:
+        prefix = "refs/heads/"
+        return ref[len(prefix):] if ref.startswith(prefix) else (ref or "DETACHED")
+
+    @classmethod
+    def _state_worktree_entries(cls, porcelain_output: str) -> list[dict[str, str]]:
+        entries: list[dict[str, str]] = []
+        current: dict[str, str] = {}
+        for line in porcelain_output.splitlines():
+            if not line.strip():
+                if current.get("path"):
+                    entries.append(current)
+                current = {}
+                continue
+            if line.startswith("worktree "):
+                current["path"] = line.removeprefix("worktree ")
+            elif line.startswith("HEAD "):
+                current["head"] = line.removeprefix("HEAD ")
+            elif line.startswith("branch "):
+                current["branch"] = cls._state_short_branch(line.removeprefix("branch "))
+        if current.get("path"):
+            entries.append(current)
+        return entries
+
+    def _state_unintegrated_worktrees(self, target_ref: str = "HEAD") -> list[dict[str, object]]:
+        current_path = self._run_git("rev-parse", "--show-toplevel").stdout.strip()
+        target_head = self._run_git("rev-parse", "--verify", target_ref).stdout.strip()
+        worktree_output = self._git_stdout_or_empty("worktree", "list", "--porcelain")
+        unintegrated: list[dict[str, object]] = []
+        for entry in self._state_worktree_entries(worktree_output):
+            path = entry.get("path", "")
+            if not path or path == current_path:
+                continue
+            head = entry.get("head") or self._run_git("rev-parse", "--verify", "HEAD", _cwd=path).stdout.strip()
+            status_result = self._run_git(
+                "status",
+                "--porcelain=v1",
+                "--untracked-files=all",
+                _cwd=path,
+            )
+            status = self._state_status_lines(status_result.stdout)
+            reasons: list[str] = []
+            if status:
+                reasons.append("dirty")
+            if head and target_head and self._master_is_ancestor_of_development(head, target_head) is False:
+                reasons.append("head_not_merged")
+            if reasons:
+                unintegrated.append(
+                    {
+                        "path": path,
+                        "branch": entry.get("branch", "DETACHED"),
+                        "head": head,
+                        "dirty_count": len(status),
+                        "status": status[:25],
+                        "reasons": reasons,
+                    }
+                )
+        return unintegrated
+
     def _master_is_ancestor_of_development(
         self,
         master_head: str,
@@ -413,17 +474,20 @@ class GitAutomation:
             stderr=result.stderr,
         )
 
+
     def workflow_state(
         self,
         *,
         remote: str = "sandboxcom",
         ref: str = "",
         gha_head_sha: str = "",
+        worktree_target_ref: str = "HEAD",
         assert_clean: bool = False,
         assert_no_feature_on_master: bool = False,
         assert_merge_ready: bool = False,
         assert_remote_head: bool = False,
         assert_gha_matches_local: bool = False,
+        assert_no_unintegrated_worktrees: bool = False,
     ) -> GitStateResult:
         branch = self._git_stdout_or_empty("branch", "--show-current") or "DETACHED"
         head = self._run_git("rev-parse", "--verify", "HEAD").stdout.strip()
@@ -448,6 +512,11 @@ class GitAutomation:
         staged_count = self._state_staged_count(status)
         untracked_count = self._state_untracked_count(status)
         dirty_count = len(status)
+        unintegrated_worktrees = (
+            self._state_unintegrated_worktrees(worktree_target_ref)
+            if assert_no_unintegrated_worktrees
+            else []
+        )
         errors: list[str] = []
         if assert_clean and dirty_count:
             errors.append(
@@ -486,6 +555,15 @@ class GitAutomation:
                 )
             elif gha_head_sha != head:
                 errors.append(f"latest GHA head {gha_head_sha} does not match local HEAD {head}")
+        if assert_no_unintegrated_worktrees and unintegrated_worktrees:
+            paths = ", ".join(
+                str(item.get("path", "<unknown>"))
+                for item in unintegrated_worktrees[:5]
+            )
+            errors.append(
+                f"{len(unintegrated_worktrees)} sibling worktree(s) "
+                f"contain unintegrated changes: {paths}"
+            )
         return GitStateResult(
             success=not errors,
             branch=branch,
@@ -501,6 +579,7 @@ class GitAutomation:
             development_head=development_head,
             master_is_ancestor_of_development=master_in_development,
             gha_head_sha=gha_head_sha,
+            unintegrated_worktrees=unintegrated_worktrees,
             errors=errors,
         )
 

@@ -87,3 +87,55 @@ def test_workflow_state_blocks_dirty_stale_and_cherry_pick_topology() -> None:
     assert merge_error in state.errors
     assert "remote sandboxcom/refs/heads/master is oldhead, not local HEAD newhead" in state.errors
     assert "latest GHA head oldhead does not match local HEAD newhead" in state.errors
+
+
+def test_workflow_state_blocks_unintegrated_sibling_worktree() -> None:
+    newline = chr(10)
+    tab = chr(9)
+    worktree_output = (
+        "worktree /repo" + newline
+        + "HEAD devhead" + newline
+        + "branch refs/heads/development" + newline
+        + newline
+        + "worktree /repo-fix" + newline
+        + "HEAD fixhead" + newline
+        + "branch refs/heads/fix/full-run" + newline
+        + newline
+    )
+
+    def fake_run(argv: Sequence[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        args = list(argv)
+        cwd = kwargs.get("cwd")
+        if args == ["git", "branch", "--show-current"]:
+            return _completed(args, "development" + newline)
+        if args == ["git", "rev-parse", "--verify", "HEAD"]:
+            return _completed(args, "devhead" + newline)
+        if args == ["git", "status", "--porcelain=v1", "--untracked-files=all"] and cwd == "/repo-fix":
+            return _completed(args, " M scripts/fix.py" + newline)
+        if args == ["git", "status", "--porcelain=v1", "--untracked-files=all"]:
+            return _completed(args, "")
+        if args == ["git", "ls-remote", "sandboxcom", "refs/heads/development"]:
+            return _completed(args, "devhead" + tab + "refs/heads/development" + newline)
+        if args == ["git", "rev-parse", "--verify", "master"]:
+            return _completed(args, "masterhead" + newline)
+        if args == ["git", "rev-parse", "--verify", "development"]:
+            return _completed(args, "devhead" + newline)
+        if args == ["git", "merge-base", "--is-ancestor", "masterhead", "devhead"]:
+            return _completed(args, "", 0)
+        if args == ["git", "rev-parse", "--show-toplevel"]:
+            return _completed(args, "/repo" + newline)
+        if args == ["git", "worktree", "list", "--porcelain"]:
+            return _completed(args, worktree_output)
+        if args == ["git", "merge-base", "--is-ancestor", "fixhead", "devhead"]:
+            return _completed(args, "", 1)
+        raise AssertionError(f"unexpected argv={args!r} cwd={cwd!r}")
+
+    with patch("general_ludd.git_automation.repo.subprocess.run", side_effect=fake_run):
+        state = GitAutomation(repo_path="/repo").workflow_state(
+            assert_no_unintegrated_worktrees=True,
+        )
+
+    assert state.success is False
+    assert "1 sibling worktree(s) contain unintegrated changes: /repo-fix" in state.errors
+    assert state.unintegrated_worktrees[0]["branch"] == "fix/full-run"
+    assert state.unintegrated_worktrees[0]["reasons"] == ["dirty", "head_not_merged"]

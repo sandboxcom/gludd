@@ -1,5 +1,4 @@
 #!/usr/bin/python
-# -*- coding: utf-8 -*-
 # Copyright: Agentic Harness
 # SPDX-License-Identifier: MIT
 """
@@ -159,14 +158,18 @@ choices=[
             source=dict(type="str", default=None),
             target=dict(type="str", default=None),
             strategy=dict(type="str", default="ff", choices=["ff", "no-ff", "squash"]),
-remote=dict(type="str", default="origin"),
+
+            remote=dict(type="str", default="origin"),
             state_ref=dict(type="str", default=""),
             state_gha_head_sha=dict(type="str", default=""),
+            state_worktree_target_ref=dict(type="str", default="HEAD"),
             state_assert_clean=dict(type="bool", default=False),
             state_assert_no_feature_on_master=dict(type="bool", default=False),
             state_assert_merge_ready=dict(type="bool", default=False),
             state_assert_remote_head=dict(type="bool", default=False),
             state_assert_gha_matches_local=dict(type="bool", default=False),
+
+            state_assert_no_unintegrated_worktrees=dict(type="bool", default=False),
         ),
         required_if=[
             ("op", "commit", ["message"]),
@@ -191,17 +194,20 @@ remote=dict(type="str", default="origin"),
 
     git = GitAutomation(repo_path=path)
 
+
     if op == "state":
         try:
             state_result = git.workflow_state(
                 remote=module.params["remote"],
                 ref=module.params["state_ref"],
                 gha_head_sha=module.params["state_gha_head_sha"],
+                worktree_target_ref=module.params["state_worktree_target_ref"],
                 assert_clean=module.params["state_assert_clean"],
                 assert_no_feature_on_master=module.params["state_assert_no_feature_on_master"],
                 assert_merge_ready=module.params["state_assert_merge_ready"],
                 assert_remote_head=module.params["state_assert_remote_head"],
                 assert_gha_matches_local=module.params["state_assert_gha_matches_local"],
+                assert_no_unintegrated_worktrees=module.params["state_assert_no_unintegrated_worktrees"],
             )
         except subprocess.CalledProcessError as exc:
             module.fail_json(**error_result(f"git state failed: {exc.stderr or exc}"))
@@ -254,7 +260,7 @@ remote=dict(type="str", default="origin"),
     if op == "worktree_list":
         try:
             worktrees = git.list_worktrees(path)
-        except Exception as exc:  # noqa: BLE001 - surface as a clean module failure
+        except Exception as exc:
             module.fail_json(**error_result(f"worktree_list failed: {exc}"))
             return
         module.exit_json(
@@ -315,7 +321,7 @@ remote=dict(type="str", default="origin"),
     except subprocess.CalledProcessError as exc:
         module.fail_json(**error_result(f"{op} failed: {exc.stderr or exc}"))
         return
-    except Exception as exc:  # noqa: BLE001 - surface as a clean module failure
+    except Exception as exc:
         module.fail_json(**error_result(f"{op} failed: {exc}"))
         return
 

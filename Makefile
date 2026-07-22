@@ -43,8 +43,8 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
 endif
 PYTEST_VERBOSITY ?= -v
 
-    .PHONY: \
-        init sync install-pip lint lint-fix test test-unit test-unit-shards test-specific test-files test-count test-integration test-e2e \
+.PHONY: \
+        init sync install-pip lint lint-files lint-fix test test-unit test-unit-shards test-specific test-files test-count test-integration test-e2e \
          test-guardrails test-scripts test-db test-live-zai test-tui-daemon test-batch test-bg test-bg-runner \
          test-games game-audit gen-mcp-tools gen-mcp-tool-ref mcp-docs-check \
         typecheck setup-dirs setup-venv clean healthcheck \
@@ -123,6 +123,7 @@ help:
 	@echo ""
 	@echo "  --- Quality ---"
 	@echo "  lint                  Run ruff linter"
+	@echo "  lint-files            Run ruff linter on FILES only"
 	@echo "  lint-fix              Run ruff with auto-fix"
 	@echo "  lint-fix-files        Run ruff auto-fix on FILES only"
 	@echo "  typecheck             Run mypy"
@@ -433,6 +434,10 @@ check-pytest:
 
 lint:
 	@$(UV) run ruff check src tests
+
+lint-files:
+	@[ -n "$$FILES" ] || { echo "Usage: make lint-files FILES=path"; exit 1; }
+	@$(UV) run ruff check $$FILES
 
 lint-fix:
 	@$(UV) run ruff check --fix --unsafe-fixes src tests
@@ -1138,8 +1143,7 @@ tmp-gludd-worktree-usage:
 	@du -sh /tmp/gludd-worktrees /tmp/gludd-worktrees/* /tmp/gludd-worktrees/*/.venv /tmp/gludd-worktrees/*/.pytest_cache /tmp/gludd-worktrees/*/.mypy_cache /tmp/gludd-worktrees/*/.ruff_cache 2>/dev/null | sort -h | tail -40 || true
 
 tmp-gludd-clean-ci-shards:
-	@rm -rf /tmp/gludd-ci-shard-* /tmp/gludd-unit-shard-* 2>/dev/null || true
-	@echo "Removed stale gludd CI shard scratch directories"
+	@$(SYSTEM_PYTHON) scripts/clean_ci_shard_scratch.py
 
 # Remove regenerable .venv dirs from agent worktrees (source is preserved;
 # `uv sync` recreates on demand). The main disk hog when many worktree agents run.
@@ -1624,16 +1628,16 @@ workflow-state:
 	@UV=echo $(SYSTEM_PYTHON) scripts/workflow_state_guard.py --json
 
 workflow-gate:
-	@UV=echo $(SYSTEM_PYTHON) scripts/workflow_state_guard.py --assert-clean --assert-no-feature-on-master
+	@UV=echo $(SYSTEM_PYTHON) scripts/workflow_state_guard.py --assert-clean --assert-no-feature-on-master --assert-no-unintegrated-worktrees
 
 commit-ready:
 	@UV=echo $(SYSTEM_PYTHON) scripts/workflow_state_guard.py --assert-clean --assert-no-feature-on-master
 
-gha-ready:
+gha-ready: workflow-gate
 	@UV=echo GIT_SSH_COMMAND="ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new" $(SYSTEM_PYTHON) scripts/ci_remote_head_guard.py --ref "$(REF)" --remote "$(REMOTE)"
 
 merge-ready:
-	@UV=echo $(SYSTEM_PYTHON) scripts/workflow_state_guard.py --assert-clean --assert-merge-ready
+	@UV=echo $(SYSTEM_PYTHON) scripts/workflow_state_guard.py --assert-clean --assert-merge-ready --assert-no-unintegrated-worktrees
 
 # Guard: prevent disabling tests in CI pipeline. Blocks push/release if
 # test-shard has continue-on-error or is removed from release.needs.
@@ -2356,7 +2360,7 @@ typecheck-all:
 # Usage: make typecheck-scope FILES='src/a.py src/b.py'
 typecheck-scope:
 	@if [ -z "$(FILES)" ]; then echo "Usage: make typecheck-scope FILES='src/a.py src/b.py'"; exit 2; fi
-	@$(UV) run mypy --no-incremental --no-namespace-packages $(FILES)
+	@MYPYPATH=src $(UV) run mypy --explicit-package-bases --no-incremental $(FILES)
 # Ansible/YAML lint (#36), fail-on-error (no `|| true`).
 yaml-lint:
 	@$(UV) run ansible-lint playbooks collections/ansible_collections/general_ludd/agent/roles
@@ -4937,7 +4941,7 @@ expand-specs:
 	@$(UV) run python3 scripts/generate_specs_to_4000.py --target $(or $(TARGET),4000)
 
 # Push exactly the current clean HEAD for the current branch.
-git-push-committed-head-nv: commit-ready
+git-push-committed-head-nv: commit-ready workflow-gate
 	@BRANCH=$$(git branch --show-current); if [ -z "$$BRANCH" ]; then echo "Cannot push detached HEAD"; exit 1; fi; $(MAKE) --no-print-directory ci-busy-check BRANCH=$$BRANCH || exit 1; PUSH_BRANCH=$$BRANCH $(MAKE) --no-print-directory _push-rate-guard || exit 1; HEAD=$$(git rev-parse HEAD); GIT_SSH_COMMAND="ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new" git push --no-verify -u sandboxcom HEAD:refs/heads/$$BRANCH || exit 1; $(MAKE) --no-print-directory verify-remote BRANCH=$$BRANCH SHA=$$HEAD || exit 1; echo "Pushed clean HEAD $$HEAD to sandboxcom/$$BRANCH."
 
 # Trigger the Build and Release workflow for the exact clean HEAD already on sandboxcom.

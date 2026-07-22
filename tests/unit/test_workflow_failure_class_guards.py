@@ -116,6 +116,7 @@ def test_committed_head_ci_path_requires_clean_state_before_push_and_dispatch() 
     combined_line = _target_line("ci-push-committed-head")
 
     assert "commit-ready" in push_line
+    assert "workflow-gate" in push_line
     assert "gha-ready" in trigger_line
     assert "uncommitted files are not included" not in push_block
     assert "dirty local files are not included" not in trigger_block
@@ -123,7 +124,7 @@ def test_committed_head_ci_path_requires_clean_state_before_push_and_dispatch() 
     assert "Triggered Build and Release for clean HEAD" in trigger_block
     assert "HEAD:refs/heads/" in push_block
     assert "verify-remote" in push_block
-    assert "gh workflow run \"Build and Release\"" in trigger_block
+    assert "gh workflow run " + chr(34) + "Build and Release" + chr(34) in trigger_block
     assert "git-push-committed-head-nv" in combined_line
     assert "ci-trigger-committed-head" in combined_line
 
@@ -133,13 +134,18 @@ def test_workflow_state_machine_targets_back_release_and_ci_paths() -> None:
     for target in ["workflow-state", "workflow-gate", "commit-ready", "gha-ready", "merge-ready"]:
         assert target + ":" in makefile
 
+    workflow_gate = _target_block("workflow-gate")
     gha_block = _target_block("gha-ready")
+    merge_block = _target_block("merge-ready")
     merge_line = _target_line("development-merge-to-master")
 
     assert "scripts/workflow_state_guard.py --json" in _target_block("workflow-state")
-    assert "--assert-clean --assert-no-feature-on-master" in _target_block("workflow-gate")
+    assert "--assert-clean --assert-no-feature-on-master" in workflow_gate
+    assert "--assert-no-unintegrated-worktrees" in workflow_gate
+    assert "workflow-gate" in _target_line("gha-ready")
     assert "scripts/ci_remote_head_guard.py" in gha_block
     assert "/Users/shawnwilson/gludd/sandboxcom_github_rsa" in gha_block
+    assert "--assert-no-unintegrated-worktrees" in merge_block
     assert "merge-ready" in merge_line
 
 
@@ -180,13 +186,14 @@ def test_local_ci_replica_shards_refuse_dirty_tree_by_default() -> None:
     assert "CI-like shard validation requires a clean worktree" in guard
     assert "Commit completed work or create a clean worktree at the pushed HEAD" in guard
 
-
 def test_committed_head_ci_path_checks_active_runs_before_push_and_dispatch() -> None:
     push_line = _target_line("git-push-committed-head-nv")
     trigger_line = _target_line("ci-trigger-committed-head")
     push_block = _target_block("git-push-committed-head-nv")
     trigger_block = _target_block("ci-trigger-committed-head")
 
+    assert "workflow-gate" in push_line
+    assert "gha-ready" in trigger_line
     assert "ci-busy-check" in push_line or "ci-busy-check" in push_block
     assert "ci-busy-check" in trigger_line or "ci-busy-check" in trigger_block
 
@@ -338,8 +345,10 @@ def test_tmp_gludd_cleanup_targets_are_scoped_to_generated_dirs() -> None:
     assert phony_block.count("log-agent-result disk-guard") == 1
     assert "sort -h | tail -40" in usage_block
     assert "/tmp/gludd-worktrees/*/.pytest_cache" in worktree_usage
-    assert "/tmp/gludd-ci-shard-*" in shard_cleanup
-    assert "/tmp/gludd-unit-shard-*" in shard_cleanup
+
+    assert "scripts/clean_ci_shard_scratch.py" in shard_cleanup
+    assert "rm -rf /tmp/gludd-ci-shard-*" not in shard_cleanup
+    assert "rm -rf /tmp/gludd-unit-shard-*" not in shard_cleanup
     assert "/tmp/gludd-worktrees" not in shard_cleanup
     assert "/Users/shawnwilson/gludd" not in shard_cleanup
 

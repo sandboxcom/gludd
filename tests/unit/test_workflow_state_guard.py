@@ -120,3 +120,53 @@ def test_workflow_state_runfn_alias_is_python39_safe() -> None:
 
     assert "RunFn = Callable[[Sequence[str], Optional[str]]" in source
     assert "RunFn = Callable[[Sequence[str], str | None]" not in source
+
+
+def test_unintegrated_sibling_worktree_blocks_release_ci_gate(capsys) -> None:
+    newline = chr(10)
+    tab = chr(9)
+    worktree_output = (
+        "worktree /repo" + newline
+        + "HEAD devhead" + newline
+        + "branch refs/heads/development" + newline
+        + newline
+        + "worktree /repo-fix" + newline
+        + "HEAD fixhead" + newline
+        + "branch refs/heads/fix/full-run" + newline
+        + newline
+    )
+
+    def run(argv: Sequence[str], cwd: str | None = None) -> subprocess.CompletedProcess[str]:
+        args = list(argv)
+        if args == ["git", "branch", "--show-current"]:
+            return _completed(args, "development" + newline)
+        if args == ["git", "rev-parse", "--verify", "HEAD"]:
+            return _completed(args, "devhead" + newline)
+        if args == ["git", "status", "--porcelain=v1", "--untracked-files=all"] and cwd == "/repo-fix":
+            return _completed(args, " M scripts/fix.py" + newline)
+        if args == ["git", "status", "--porcelain=v1", "--untracked-files=all"]:
+            return _completed(args, "")
+        if args == ["git", "ls-remote", "sandboxcom", "refs/heads/development"]:
+            return _completed(args, "devhead" + tab + "refs/heads/development" + newline)
+        if args == ["git", "rev-parse", "--verify", "master"]:
+            return _completed(args, "masterhead" + newline)
+        if args == ["git", "rev-parse", "--verify", "development"]:
+            return _completed(args, "devhead" + newline)
+        if args == ["git", "merge-base", "--is-ancestor", "masterhead", "devhead"]:
+            return _completed(args, "", returncode=0)
+        if args == ["git", "rev-parse", "--show-toplevel"]:
+            return _completed(args, "/repo" + newline)
+        if args == ["git", "worktree", "list", "--porcelain"]:
+            return _completed(args, worktree_output)
+        if args == ["git", "merge-base", "--is-ancestor", "fixhead", "devhead"]:
+            return _completed(args, "", returncode=1)
+        raise AssertionError(f"unexpected argv={args!r} cwd={cwd!r}")
+
+    rc = main(["--assert-no-unintegrated-worktrees"], run=run)
+
+    captured = capsys.readouterr()
+    assert rc == 1
+    assert "WORKFLOW-BLOCKED" in captured.out
+    assert "sibling worktree(s) contain unintegrated changes" in captured.out
+    assert "UNINTEGRATED: path=/repo-fix" in captured.out
+    assert "dirty,head_not_merged" in captured.out

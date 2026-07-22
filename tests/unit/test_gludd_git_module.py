@@ -127,15 +127,18 @@ def _params(**overrides: Any) -> dict[str, Any]:
         "worktree_path": None,
         "source": None,
         "target": None,
-"strategy": "ff",
+
+        "strategy": "ff",
         "remote": "origin",
         "state_ref": "",
         "state_gha_head_sha": "",
+        "state_worktree_target_ref": "HEAD",
         "state_assert_clean": False,
         "state_assert_no_feature_on_master": False,
         "state_assert_merge_ready": False,
         "state_assert_remote_head": False,
         "state_assert_gha_matches_local": False,
+        "state_assert_no_unintegrated_worktrees": False,
     }
     params.update(overrides)
     return params
@@ -328,3 +331,21 @@ def test_state_op_fails_when_workflow_state_has_errors(module, monkeypatch):
     assert fake_mod.failed["msg"] == "git state guard failed"
     assert fake_mod.failed["result"]["success"] is False
     assert git.calls[0][0] == "workflow_state"
+
+
+def test_state_op_delegates_unintegrated_worktree_guard(module, monkeypatch):
+    fake_mod, git = _run(
+        module,
+        monkeypatch,
+        _params(
+            op="state",
+            state_worktree_target_ref="development",
+            state_assert_no_unintegrated_worktrees=True,
+        ),
+    )
+
+    assert fake_mod.failed is None
+    assert fake_mod.exited["changed"] is False
+    assert git.calls[0][0] == "workflow_state"
+    assert git.calls[0][1]["worktree_target_ref"] == "development"
+    assert git.calls[0][1]["assert_no_unintegrated_worktrees"] is True
