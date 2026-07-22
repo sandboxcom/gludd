@@ -253,9 +253,20 @@ def test_workflow_state_targets_do_not_dirty_lockfile_with_uv_run() -> None:
     assert "GLUDD_XDIST=\"$(GLUDD_XDIST)\" python3 -c" not in makefile
     assert "VERSION := $(shell $(UV) run python" not in makefile
     assert "VERSION = $(shell $(UV) run python" in makefile
-    no_uv_goals = makefile.split("_NO_UV_SYNC_GOALS :=", 1)[1].splitlines()[0]
+    no_uv_goals = makefile.split("_NO_UV_SYNC_GOALS :=", 1)[1].split("ifneq", 1)[0]
     for goal in [
         *guard_targets,
+        "git-where",
+        "repo-status",
+        "git-remote-sandboxcom",
+        "git-pull-sandboxcom",
+        "git-fetch-sandboxcom",
+        "verify-remote",
+        "ci-remotes",
+        "ci-diff-since-remote",
+        "ci-head-compare",
+        "ci-remote-head-guard",
+        "ci-trigger",
         "git-push-committed-head-nv",
         "ci-trigger-committed-head",
         "ci-push-committed-head",
