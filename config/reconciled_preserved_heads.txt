@@ -1,0 +1,4 @@
+# Preserved branch HEAD SHAs that were audited and reconciled into active release work.
+# Branch names are intentionally not trusted because preserve branches can move.
+# main-dirty-preserve-20260722 reconciled via reconcile-preserved-main-20260722, merged into fix-full-run-failures-fc0b.
+a96a33ccfd077257e89676d11032da64e27ab26a

@@ -65,5 +65,7 @@ state_worktree_target_ref: "HEAD"
 state_preserve_branch_patterns:
   - "main-dirty-preserve-*"
   - "preserve-*"
+state_reconciled_preserve_heads: []
+state_reconciled_preserve_head_file: "config/reconciled_preserved_heads.txt"
 state_assert_no_unintegrated_worktrees: false
 state_assert_no_unintegrated_branches: false

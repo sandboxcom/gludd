@@ -391,7 +391,9 @@ class GitAutomation:
         return parts[0] if parts else ""
 
 
+
     _DEFAULT_PRESERVE_BRANCH_PATTERNS = ("main-dirty-preserve-*", "preserve-*")
+    _DEFAULT_RECONCILED_PRESERVE_HEAD_FILE = "config/reconciled_preserved_heads.txt"
 
     @staticmethod
     def _state_short_branch(ref: str) -> str:
@@ -480,6 +482,7 @@ class GitAutomation:
     def _state_protected_branch_names(entries: Sequence[dict[str, str]]) -> list[str]:
         return [entry["branch"] for entry in entries if GitAutomation._state_is_protected_trunk_branch(entry["branch"])]
 
+
     def _state_branch_unique_commits(
         self,
         branch: str,
@@ -498,11 +501,58 @@ class GitAutomation:
         output = self._git_stdout_or_empty(*args)
         return [line.strip() for line in output.splitlines() if line.strip()]
 
+    @staticmethod
+    def _state_reconciled_preserve_head_tokens(text: str) -> set[str]:
+        heads: set[str] = set()
+        for raw_line in text.splitlines():
+            line = raw_line.split("#", 1)[0].strip()
+            if line:
+                heads.add(line.split()[0])
+        return heads
+
+    def _state_load_reconciled_preserve_heads(
+        self,
+        head_file: str = _DEFAULT_RECONCILED_PRESERVE_HEAD_FILE,
+        explicit_heads: Sequence[str] = (),
+    ) -> set[str]:
+        heads = {head.strip() for head in explicit_heads if head.strip()}
+        if not head_file:
+            return heads
+
+        raw_path = Path(head_file)
+        candidates: list[Path] = [raw_path] if raw_path.is_absolute() else []
+        if not raw_path.is_absolute():
+            candidates.append(Path(self.repo_path) / raw_path)
+            candidates.append(Path.cwd() / raw_path)
+        seen: set[Path] = set()
+        for candidate in candidates:
+            if candidate in seen:
+                continue
+            seen.add(candidate)
+            try:
+                heads.update(self._state_reconciled_preserve_head_tokens(candidate.read_text(encoding="utf-8")))
+                return heads
+            except FileNotFoundError:
+                continue
+
+        if not raw_path.is_absolute():
+            repo_root = self._git_stdout_or_empty("rev-parse", "--show-toplevel")
+
+            repo_candidate = Path(repo_root) / raw_path if repo_root else None
+            if repo_candidate is not None and repo_candidate not in seen and repo_candidate.exists():
+                heads.update(
+                    self._state_reconciled_preserve_head_tokens(repo_candidate.read_text(encoding="utf-8"))
+                )
+        return heads
+
+
     def _state_unintegrated_branches(
         self,
         target_ref: str = "HEAD",
         branch_patterns: Sequence[str] = _DEFAULT_PRESERVE_BRANCH_PATTERNS,
+        reconciled_preserve_heads: Sequence[str] = (),
     ) -> list[dict[str, object]]:
+        reconciled_heads = {head.strip() for head in reconciled_preserve_heads if head.strip()}
         current_branch = self._git_stdout_or_empty("branch", "--show-current") or "DETACHED"
         target_head = self._run_git("rev-parse", "--verify", target_ref).stdout.strip()
         ref_output = self._git_stdout_or_empty(
@@ -515,10 +565,12 @@ class GitAutomation:
         unintegrated: list[dict[str, object]] = []
         for entry in entries:
             branch = entry["branch"]
+            head = entry["head"]
             if (
                 branch == current_branch
                 or self._state_is_protected_trunk_branch(branch)
                 or not self._state_branch_matches(branch, branch_patterns)
+                or head in reconciled_heads
             ):
                 continue
             unique_commits = self._state_branch_unique_commits(
@@ -530,7 +582,7 @@ class GitAutomation:
                 unintegrated.append(
                     {
                         "branch": branch,
-                        "head": entry["head"],
+                        "head": head,
                         "unique_count": len(unique_commits),
                         "commits": unique_commits[:25],
                         "reasons": ["preserved_branch_not_reconciled"],
@@ -564,6 +616,7 @@ class GitAutomation:
         )
 
 
+
     def workflow_state(
         self,
         *,
@@ -572,6 +625,8 @@ class GitAutomation:
         gha_head_sha: str = "",
         worktree_target_ref: str = "HEAD",
         preserve_branch_patterns: Sequence[str] = _DEFAULT_PRESERVE_BRANCH_PATTERNS,
+        reconciled_preserve_heads: Sequence[str] = (),
+        reconciled_preserve_head_file: str = _DEFAULT_RECONCILED_PRESERVE_HEAD_FILE,
         assert_clean: bool = False,
         assert_no_feature_on_master: bool = False,
         assert_merge_ready: bool = False,
@@ -609,8 +664,20 @@ class GitAutomation:
             else []
         )
         branch_patterns = tuple(preserve_branch_patterns) or self._DEFAULT_PRESERVE_BRANCH_PATTERNS
+        loaded_reconciled_heads = (
+            self._state_load_reconciled_preserve_heads(
+                reconciled_preserve_head_file,
+                reconciled_preserve_heads,
+            )
+            if assert_no_unintegrated_branches or reconciled_preserve_heads
+            else set()
+        )
         unintegrated_branches = (
-            self._state_unintegrated_branches(worktree_target_ref, branch_patterns)
+            self._state_unintegrated_branches(
+                worktree_target_ref,
+                branch_patterns,
+                tuple(loaded_reconciled_heads),
+            )
             if assert_no_unintegrated_branches
             else []
         )
@@ -683,8 +750,10 @@ class GitAutomation:
             remote_head=remote_head,
             master_head=master_head,
             development_head=development_head,
+
             master_is_ancestor_of_development=master_in_development,
             gha_head_sha=gha_head_sha,
+            reconciled_preserve_heads=sorted(loaded_reconciled_heads),
             unintegrated_worktrees=unintegrated_worktrees,
             unintegrated_branches=unintegrated_branches,
             errors=errors,

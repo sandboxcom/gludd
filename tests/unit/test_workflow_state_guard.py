@@ -348,3 +348,45 @@ def test_preserved_branch_ignores_commits_reachable_from_protected_trunks(capsys
     assert rc == 1
     assert "unique_commits=1" in captured.out
     assert "main-dirty-preserve-20260722" in captured.out
+
+
+def test_reconciled_preserved_branch_head_passes_ci_gate(capsys) -> None:
+    newline = chr(10)
+    tab = chr(9)
+
+    def run(argv: Sequence[str], cwd: str | None = None) -> subprocess.CompletedProcess[str]:
+        args = list(argv)
+        if args == ["git", "branch", "--show-current"]:
+            return _completed(args, "fix/full-run" + newline)
+        if args == ["git", "rev-parse", "--verify", "HEAD"]:
+            return _completed(args, "fixhead" + newline)
+        if args == ["git", "status", "--porcelain=v1", "--untracked-files=all"]:
+            return _completed(args, "")
+        if args == ["git", "ls-remote", "sandboxcom", "refs/heads/fix/full-run"]:
+            return _completed(args, "fixhead" + tab + "refs/heads/fix/full-run" + newline)
+        if args == ["git", "rev-parse", "--verify", "master"]:
+            return _completed(args, "masterhead" + newline)
+        if args == ["git", "rev-parse", "--verify", "development"]:
+            return _completed(args, "devhead" + newline)
+        if args == ["git", "merge-base", "--is-ancestor", "masterhead", "devhead"]:
+            return _completed(args, "", returncode=0)
+        if args == ["git", "for-each-ref", "--format=%(refname:short) %(objectname)", "refs/heads"]:
+            return _completed(args, "main-dirty-preserve-20260722 preservehead" + newline)
+        raise AssertionError(f"unexpected argv={args!r} cwd={cwd!r}")
+
+
+    rc = main(
+        [
+            "--assert-no-unintegrated-branches",
+            "--reconciled-preserve-head",
+            "preservehead",
+            "--reconciled-preserve-head-file",
+            "",
+        ],
+        run=run,
+    )
+
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert "WORKFLOW-READY" in captured.out
+    assert "unintegrated_branches=0" in captured.out

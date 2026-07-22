@@ -10,6 +10,7 @@ import subprocess
 import sys
 from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass, field
+from pathlib import Path
 from typing import Optional
 
 RunFn = Callable[[Sequence[str], Optional[str]], subprocess.CompletedProcess[str]]  # noqa: UP045
@@ -28,8 +29,10 @@ class WorkflowState:
     remote_head: str
     master_head: str
     development_head: str
+
     master_is_ancestor_of_development: bool | None
     gha_head_sha: str
+    reconciled_preserve_heads: list[str] = field(default_factory=list)
     unintegrated_worktrees: list[dict[str, object]] = field(default_factory=list)
     unintegrated_branches: list[dict[str, object]] = field(default_factory=list)
 
@@ -180,6 +183,7 @@ def _collect_unintegrated_worktrees(
             )
     return unintegrated
 DEFAULT_PRESERVE_BRANCH_PATTERNS = ("main-dirty-preserve-*", "preserve-*")
+DEFAULT_RECONCILED_PRESERVE_HEAD_FILE = "config/reconciled_preserved_heads.txt"
 
 
 def _branch_matches(branch: str, patterns: Sequence[str]) -> bool:
@@ -222,13 +226,62 @@ def _branch_unique_commits(
     return [line.strip() for line in output.splitlines() if line.strip()]
 
 
+def _reconciled_preserve_head_tokens(text: str) -> set[str]:
+    heads: set[str] = set()
+    for raw_line in text.splitlines():
+        line = raw_line.split("#", 1)[0].strip()
+        if line:
+            heads.add(line.split()[0])
+    return heads
+
+
+def _load_reconciled_preserve_heads(
+    *,
+    run: RunFn,
+    cwd: str | None = None,
+    head_file: str = DEFAULT_RECONCILED_PRESERVE_HEAD_FILE,
+    explicit_heads: Sequence[str] = (),
+) -> set[str]:
+    heads = {head.strip() for head in explicit_heads if head.strip()}
+    if not head_file:
+        return heads
+
+    raw_path = Path(head_file)
+    candidates: list[Path] = [raw_path] if raw_path.is_absolute() else []
+    if not raw_path.is_absolute():
+        if cwd:
+            candidates.append(Path(cwd) / raw_path)
+        candidates.append(Path.cwd() / raw_path)
+    seen: set[Path] = set()
+    for candidate in candidates:
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        try:
+            heads.update(_reconciled_preserve_head_tokens(candidate.read_text(encoding="utf-8")))
+            return heads
+        except FileNotFoundError:
+            continue
+
+    if not raw_path.is_absolute():
+        repo_root = _maybe_stdout(["git", "rev-parse", "--show-toplevel"], run, cwd)
+        candidate = Path(repo_root) / raw_path if repo_root else None
+        if candidate is not None and candidate not in seen and candidate.exists():
+            heads.update(
+                _reconciled_preserve_head_tokens(candidate.read_text(encoding="utf-8"))
+            )
+    return heads
+
+
 def _collect_unintegrated_branches(
     *,
     run: RunFn,
     cwd: str | None = None,
     target_ref: str = "HEAD",
     branch_patterns: Sequence[str] = DEFAULT_PRESERVE_BRANCH_PATTERNS,
+    reconciled_preserve_heads: Sequence[str] = (),
 ) -> list[dict[str, object]]:
+    reconciled_heads = {head.strip() for head in reconciled_preserve_heads if head.strip()}
     current_branch = _stdout(["git", "branch", "--show-current"], run, cwd) or "DETACHED"
     target_head = _stdout(["git", "rev-parse", "--verify", target_ref], run, cwd)
     ref_output = _maybe_stdout(
@@ -241,10 +294,12 @@ def _collect_unintegrated_branches(
     unintegrated: list[dict[str, object]] = []
     for entry in entries:
         branch = entry["branch"]
+        head = entry["head"]
         if (
             branch == current_branch
             or _is_protected_trunk_branch(branch)
             or not _branch_matches(branch, branch_patterns)
+            or head in reconciled_heads
         ):
             continue
         unique_commits = _branch_unique_commits(
@@ -258,7 +313,7 @@ def _collect_unintegrated_branches(
             unintegrated.append(
                 {
                     "branch": branch,
-                    "head": entry["head"],
+                    "head": head,
                     "unique_count": len(unique_commits),
                     "commits": unique_commits[:25],
                     "reasons": ["preserved_branch_not_reconciled"],
@@ -276,6 +331,8 @@ def collect_state(
     collect_unintegrated_branches: bool = False,
     worktree_target_ref: str = "HEAD",
     preserve_branch_patterns: Sequence[str] = DEFAULT_PRESERVE_BRANCH_PATTERNS,
+    reconciled_preserve_heads: Sequence[str] = (),
+    reconciled_preserve_head_file: str = DEFAULT_RECONCILED_PRESERVE_HEAD_FILE,
     run: RunFn = _run,
     cwd: str | None = None,
 ) -> WorkflowState:
@@ -287,6 +344,16 @@ def collect_state(
     remote_output = _maybe_stdout(["git", "ls-remote", remote, remote_ref], run, cwd)
     master_head = _maybe_stdout(["git", "rev-parse", "--verify", "master"], run, cwd)
     development_head = _maybe_stdout(["git", "rev-parse", "--verify", "development"], run, cwd)
+    loaded_reconciled_heads = (
+        _load_reconciled_preserve_heads(
+            run=run,
+            cwd=cwd,
+            head_file=reconciled_preserve_head_file,
+            explicit_heads=reconciled_preserve_heads,
+        )
+        if collect_unintegrated_branches or reconciled_preserve_heads
+        else set()
+    )
     return WorkflowState(
         branch=branch,
         head=head,
@@ -301,6 +368,7 @@ def collect_state(
         development_head=development_head,
         master_is_ancestor_of_development=_is_ancestor(master_head, development_head, run, cwd),
         gha_head_sha=gha_head_sha,
+        reconciled_preserve_heads=sorted(loaded_reconciled_heads),
         unintegrated_worktrees=(
             _collect_unintegrated_worktrees(run=run, cwd=cwd, target_ref=worktree_target_ref)
             if collect_unintegrated_worktrees
@@ -312,6 +380,7 @@ def collect_state(
                 cwd=cwd,
                 target_ref=worktree_target_ref,
                 branch_patterns=preserve_branch_patterns,
+                reconciled_preserve_heads=tuple(loaded_reconciled_heads),
             )
             if collect_unintegrated_branches
             else []
@@ -452,11 +521,23 @@ def main(argv: Sequence[str] | None = None, run: RunFn = _run) -> int:
         default="HEAD",
         help="ref sibling worktrees and preserved branches must already be merged into",
     )
+
     parser.add_argument(
         "--preserve-branch-pattern",
         action="append",
         default=[],
         help="branch glob to require cherry-equivalent reconciliation for",
+    )
+    parser.add_argument(
+        "--reconciled-preserve-head",
+        action="append",
+        default=[],
+        help="preserved branch HEAD SHA already audited and reconciled",
+    )
+    parser.add_argument(
+        "--reconciled-preserve-head-file",
+        default=DEFAULT_RECONCILED_PRESERVE_HEAD_FILE,
+        help="repo-relative file listing audited preserved branch HEAD SHAs",
     )
     parser.add_argument(
         "--assert-clean",
@@ -496,6 +577,7 @@ def main(argv: Sequence[str] | None = None, run: RunFn = _run) -> int:
     args = parser.parse_args(list(argv) if argv is not None else None)
 
     try:
+
         state = collect_state(
             remote=args.remote,
             ref=args.ref or None,
@@ -504,6 +586,8 @@ def main(argv: Sequence[str] | None = None, run: RunFn = _run) -> int:
             collect_unintegrated_branches=args.assert_no_unintegrated_branches,
             worktree_target_ref=args.worktree_target_ref,
             preserve_branch_patterns=tuple(args.preserve_branch_pattern) or DEFAULT_PRESERVE_BRANCH_PATTERNS,
+            reconciled_preserve_heads=tuple(args.reconciled_preserve_head),
+            reconciled_preserve_head_file=args.reconciled_preserve_head_file,
             run=run,
         )
         errors = workflow_errors(

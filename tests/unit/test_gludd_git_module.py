@@ -130,10 +130,13 @@ def _params(**overrides: Any) -> dict[str, Any]:
 
         "strategy": "ff",
         "remote": "origin",
+
         "state_ref": "",
         "state_gha_head_sha": "",
         "state_worktree_target_ref": "HEAD",
         "state_preserve_branch_patterns": [],
+        "state_reconciled_preserve_heads": [],
+        "state_reconciled_preserve_head_file": "config/reconciled_preserved_heads.txt",
         "state_assert_clean": False,
         "state_assert_no_feature_on_master": False,
         "state_assert_merge_ready": False,
@@ -370,4 +373,24 @@ def test_state_op_delegates_unintegrated_branch_guard(module, monkeypatch):
     assert git.calls[0][0] == "workflow_state"
     assert git.calls[0][1]["worktree_target_ref"] == "development"
     assert git.calls[0][1]["preserve_branch_patterns"] == ("main-dirty-preserve-*",)
+    assert git.calls[0][1]["assert_no_unintegrated_branches"] is True
+
+
+def test_state_op_delegates_reconciled_preserved_head_inputs(module, monkeypatch):
+    fake_mod, git = _run(
+        module,
+        monkeypatch,
+        _params(
+            op="state",
+            state_reconciled_preserve_heads=["preservehead"],
+            state_reconciled_preserve_head_file="config/custom-preserve-heads.txt",
+            state_assert_no_unintegrated_branches=True,
+        ),
+    )
+
+    assert fake_mod.failed is None
+    assert fake_mod.exited["changed"] is False
+    assert git.calls[0][0] == "workflow_state"
+    assert git.calls[0][1]["reconciled_preserve_heads"] == ("preservehead",)
+    assert git.calls[0][1]["reconciled_preserve_head_file"] == "config/custom-preserve-heads.txt"
     assert git.calls[0][1]["assert_no_unintegrated_branches"] is True

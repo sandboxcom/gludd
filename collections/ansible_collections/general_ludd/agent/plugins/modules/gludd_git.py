@@ -54,10 +54,23 @@ choices: [commit, branch, worktree_list, worktree_create, worktree_remove, merge
       type: str
       default: "ff"
       choices: [ff, no-ff, squash]
+
     remote:
-      description: Remote name for C(op=push).
+      description: Remote name for C(op=push) and C(op=state).
       type: str
       default: "origin"
+    state_reconciled_preserve_heads:
+      description:
+        - Preserved branch HEAD SHAs already audited and reconciled.
+        - Matching heads do not block C(state_assert_no_unintegrated_branches).
+      type: list
+      elements: str
+      default: []
+    state_reconciled_preserve_head_file:
+      description:
+        - Repo-relative file listing audited preserved branch HEAD SHAs.
+      type: str
+      default: "config/reconciled_preserved_heads.txt"
 
 EXAMPLES:
   - name: Commit changes in worktree
@@ -164,6 +177,8 @@ choices=[
             state_gha_head_sha=dict(type="str", default=""),
             state_worktree_target_ref=dict(type="str", default="HEAD"),
             state_preserve_branch_patterns=dict(type="list", elements="str", default=[]),
+            state_reconciled_preserve_heads=dict(type="list", elements="str", default=[]),
+            state_reconciled_preserve_head_file=dict(type="str", default="config/reconciled_preserved_heads.txt"),
             state_assert_clean=dict(type="bool", default=False),
             state_assert_no_feature_on_master=dict(type="bool", default=False),
             state_assert_merge_ready=dict(type="bool", default=False),
@@ -196,6 +211,7 @@ choices=[
     git = GitAutomation(repo_path=path)
 
 
+
     if op == "state":
         try:
             state_result = git.workflow_state(
@@ -204,10 +220,13 @@ choices=[
                 gha_head_sha=module.params["state_gha_head_sha"],
                 worktree_target_ref=module.params["state_worktree_target_ref"],
                 preserve_branch_patterns=tuple(module.params["state_preserve_branch_patterns"] or []),
+                reconciled_preserve_heads=tuple(module.params["state_reconciled_preserve_heads"] or []),
+                reconciled_preserve_head_file=module.params["state_reconciled_preserve_head_file"],
                 assert_clean=module.params["state_assert_clean"],
                 assert_no_feature_on_master=module.params["state_assert_no_feature_on_master"],
                 assert_merge_ready=module.params["state_assert_merge_ready"],
                 assert_remote_head=module.params["state_assert_remote_head"],
+
                 assert_gha_matches_local=module.params["state_assert_gha_matches_local"],
                 assert_no_unintegrated_worktrees=module.params["state_assert_no_unintegrated_worktrees"],
                 assert_no_unintegrated_branches=module.params["state_assert_no_unintegrated_branches"],

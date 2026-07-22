@@ -10,9 +10,12 @@ def test_git_automation_role_exposes_full_state_machine_guards() -> None:
     defaults = (ROLE / "defaults" / "main.yml").read_text(encoding="utf-8")
     state_task = (ROLE / "tasks" / "state.yml").read_text(encoding="utf-8")
 
+
     for name in [
         "state_worktree_target_ref",
         "state_preserve_branch_patterns",
+        "state_reconciled_preserve_heads",
+        "state_reconciled_preserve_head_file",
         "state_assert_no_unintegrated_worktrees",
         "state_assert_no_unintegrated_branches",
     ]:
