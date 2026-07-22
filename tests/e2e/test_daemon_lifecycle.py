@@ -9,6 +9,7 @@ Covers the five lifecycle phases identified in enhancement E.2:
 """
 from __future__ import annotations
 
+import asyncio
 import contextlib
 from unittest.mock import MagicMock, patch
 
@@ -29,6 +30,24 @@ def _make_db_config(tmp_path):
         f"database:\n  url: 'sqlite+aiosqlite:///{db_path}'\n"
     )
     return str(config_dir)
+
+
+def _make_pending_task():
+    loop = asyncio.new_event_loop()
+
+    async def _run_forever():
+        while True:
+            await asyncio.sleep(3600)
+
+    task = loop.create_task(_run_forever())
+    return loop, task
+
+
+def _cancel_pending_task(loop, task) -> None:
+    task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        loop.run_until_complete(task)
+    loop.close()
 
 
 def _make_db_config_with_rules(tmp_path):
@@ -104,29 +123,21 @@ class TestDaemonHealthz:
 
 class TestDaemonReadyz:
     def test_readyz_returns_ready_when_healthy(self):
-        import asyncio
-
         import general_ludd.daemon as daemon_mod
-
-        async def _run_forever():
-            while True:
-                await asyncio.sleep(3600)
 
         with patch(
             "general_ludd.ansible.runner.AnsibleRunnerAdapter",
             return_value=MagicMock(),
         ):
             app = daemon_mod.create_daemon_app(tick_interval=0.01)
-            task = asyncio.create_task(_run_forever())
+            loop, task = _make_pending_task()
             app.state._event_loop_task = task
             with TestClient(app) as client:
                 resp = client.get("/readyz")
                 assert resp.status_code == 200
                 data = resp.json()
                 assert data["status"] == "ready"
-            task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                asyncio.get_event_loop().run_until_complete(task)
+            _cancel_pending_task(loop, task)
 
     def test_readyz_returns_503_when_degraded(self):
         import general_ludd.daemon as daemon_mod
@@ -144,20 +155,14 @@ class TestDaemonReadyz:
                 assert data["status"] == "degraded"
 
     def test_readyz_returns_ready_after_degraded_flag_cleared(self):
-        import asyncio
-
         import general_ludd.daemon as daemon_mod
-
-        async def _run_forever():
-            while True:
-                await asyncio.sleep(3600)
 
         with patch(
             "general_ludd.ansible.runner.AnsibleRunnerAdapter",
             return_value=MagicMock(),
         ):
             app = daemon_mod.create_daemon_app(tick_interval=0.01)
-            task = asyncio.create_task(_run_forever())
+            loop, task = _make_pending_task()
             app.state._event_loop_task = task
             with TestClient(app) as client:
                 app.state._degraded = "temporary fault"
@@ -168,9 +173,7 @@ class TestDaemonReadyz:
                 resp = client.get("/readyz")
                 assert resp.status_code == 200
                 assert resp.json()["status"] == "ready"
-            task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                asyncio.get_event_loop().run_until_complete(task)
+            _cancel_pending_task(loop, task)
 
 
 class TestDaemonShutdown:
@@ -278,13 +281,7 @@ class TestDaemonReload:
                 assert resp.json()["status"] == "healthy"
 
     def test_readyz_returns_ready_after_reload(self, tmp_path):
-        import asyncio
-
         import general_ludd.daemon as daemon_mod
-
-        async def _run_forever():
-            while True:
-                await asyncio.sleep(3600)
 
         config_dir = _make_db_config(tmp_path)
         with patch(
@@ -294,7 +291,7 @@ class TestDaemonReload:
             app = daemon_mod.create_daemon_app(
                 tick_interval=0.01, config_dir=config_dir
             )
-            task = asyncio.create_task(_run_forever())
+            loop, task = _make_pending_task()
             app.state._event_loop_task = task
             with TestClient(app) as client:
                 resp = client.post("/admin/config/reload")
@@ -303,6 +300,4 @@ class TestDaemonReload:
                 resp = client.get("/readyz")
                 assert resp.status_code == 200
                 assert resp.json()["status"] == "ready"
-            task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                asyncio.get_event_loop().run_until_complete(task)
+            _cancel_pending_task(loop, task)

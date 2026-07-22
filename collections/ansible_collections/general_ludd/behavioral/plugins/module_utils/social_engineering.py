@@ -628,7 +628,8 @@ def analyze_persuasion_techniques(text: str) -> dict[str, Any]:
     manipulation_detected = bool(manipulation_techniques)
 
     word_count = len(text.split())
-    intensity = min(1.0, total_matches / max(word_count, 1) * 10.0) if word_count > 0 else 0.0
+    intensity = total_matches / (word_count + 10.0) if word_count > 0 else 0.0
+    intensity = min(1.0, intensity)
 
     dominant = max(techniques, key=lambda k: len(techniques[k])) if techniques else None
 
@@ -925,4 +926,3 @@ def classify_social_engineering_attack(scenario: dict[str, Any]) -> dict[str, An
         "recommended_protocols": recommended,
         "reasoning": "; ".join(reasoning_parts),
     }
-

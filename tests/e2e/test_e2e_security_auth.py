@@ -11,9 +11,11 @@ realistic URL payloads.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import os
 import tempfile
+from collections.abc import Generator
 
 import pytest
 from fastapi.testclient import TestClient
@@ -27,6 +29,24 @@ from general_ludd.security.auth import (
 )
 
 _PSK = "e2e-test-psk-secret"
+
+
+def _make_pending_task():
+    loop = asyncio.new_event_loop()
+
+    async def _run_forever():
+        while True:
+            await asyncio.sleep(3600)
+
+    task = loop.create_task(_run_forever())
+    return loop, task
+
+
+def _cancel_pending_task(loop, task) -> None:
+    task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        loop.run_until_complete(task)
+    loop.close()
 
 
 # ---------------------------------------------------------------------------
@@ -47,14 +67,21 @@ def daemon_with_psk(monkeypatch: pytest.MonkeyPatch) -> TestClient:
 
 
 @pytest.fixture
-def daemon_no_psk_fail_closed(monkeypatch: pytest.MonkeyPatch) -> TestClient:
+def daemon_no_psk_fail_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> Generator[TestClient]:
     monkeypatch.delenv("GLUDD_PSK", raising=False)
     monkeypatch.setenv("GLUDD_ALLOW_NO_AUTH", "0")
 
     from general_ludd.daemon import create_daemon_app
 
     app = create_daemon_app(tick_interval=0.0)
-    return TestClient(app)
+    loop, task = _make_pending_task()
+    app.state._event_loop_task = task
+    try:
+        yield TestClient(app)
+    finally:
+        _cancel_pending_task(loop, task)
 
 
 @pytest.fixture
@@ -88,6 +115,29 @@ def _wrong_auth_header() -> dict[str, str]:
     return {"Authorization": "Bearer wrong-key"}
 
 
+async def _readyz_idle_task() -> None:
+    while True:
+        await asyncio.sleep(3600)
+
+
+def _attach_readyz_task(
+    client: TestClient,
+) -> tuple[asyncio.AbstractEventLoop, asyncio.Task[None]]:
+    loop = asyncio.new_event_loop()
+    task = loop.create_task(_readyz_idle_task())
+    client.app.state._event_loop_task = task
+    return loop, task
+
+
+def _cancel_readyz_task(
+    loop: asyncio.AbstractEventLoop, task: asyncio.Task[None]
+) -> None:
+    task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        loop.run_until_complete(task)
+    loop.close()
+
+
 # ---------------------------------------------------------------------------
 # Daemon PSK middleware — happy path
 # ---------------------------------------------------------------------------
@@ -101,19 +151,11 @@ class TestPSKAuthHappyPath:
         assert data["status"] in {"healthy", "degraded"}
 
     def test_public_readyz_no_auth_needed(self, daemon_with_psk: TestClient):
-        import asyncio
-
-        async def _run_forever():
-            while True:
-                await asyncio.sleep(3600)
-
-        task = asyncio.create_task(_run_forever())
+        loop, task = _make_pending_task()
         daemon_with_psk.app.state._event_loop_task = task
         resp = daemon_with_psk.get("/readyz")
         assert resp.status_code == 200
-        task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            asyncio.get_event_loop().run_until_complete(task)
+        _cancel_pending_task(loop, task)
 
     def test_public_get_api_status_no_auth(self, daemon_with_psk: TestClient):
         resp = daemon_with_psk.get("/api/status")

@@ -1,8 +1,10 @@
-"""E2e test for watchdog.ts: event-driven watchdog lifecycle.
+"""E2e test for watchdog.ts: watchdog plugin liveness shim.
 
 Invokes the actual TypeScript plugin via node --experimental-strip-types
-in isolated temp dirs, verifying heartbeat, PID cleanup, env disable,
-subagent-context firing, and fail-open behavior.
+in isolated temp dirs, verifying the plugin reports liveness without
+registering an event hook. The real watchdog daemon now runs out of process;
+the OpenCode event hook was removed because OpenCode 1.17.9 crashes on
+unknown hook types.
 """
 
 from __future__ import annotations
@@ -52,12 +54,11 @@ def _run_watchdog(
 
 
 def _code(event_type: str) -> str:
-    """Generate TS code that loads plugin and fires the given event type."""
+    """Generate TS code that loads plugin and reports the current hook shape."""
     return f"""\
 const mod = await import('{PLUGIN_PATH}')
 const plugin = await mod.default({{}})
-await plugin.event({{event: {{type: "{event_type}"}}}})
-console.log("OK")
+console.log(JSON.stringify({{eventType: "{event_type}", hasEvent: typeof plugin.event === "function"}}))
 """
 
 
@@ -65,7 +66,7 @@ console.log("OK")
 
 
 def test_session_created_fires_heartbeat(tmp_path):
-    """Heartbeat is written to alive file on session.created."""
+    """Heartbeat is written when the watchdog plugin factory loads."""
     alive_file = tmp_path / "alive.json"
     gates_dir = tmp_path / ".gate-logs"
     gates_dir.mkdir()
@@ -87,16 +88,16 @@ def test_session_created_fires_heartbeat(tmp_path):
     assert "watchdog" in data, f"watchdog key missing: {data}"
     assert "last_seen" in data["watchdog"], f"last_seen missing: {data['watchdog']}"
 
-    # PID sync: literal .gate-logs/watchdog.pid → PID_FILE override
-    assert pid_file.exists(), "PID_FILE should exist after literal→override sync"
-    assert pid_file.read_text().strip() == "12345"
+    # The OpenCode plugin is a liveness shim only; PID sync lives in the
+    # background watchdog daemon.
+    assert not pid_file.exists(), "Plugin factory must not perform PID sync"
 
 
 # ─── session.deleted → PID cleanup ──────────────────────────────────────────
 
 
-def test_session_deleted_cleans_pid_files(tmp_path):
-    """session.deleted removes PID_FILE and TASK_PID_FILE."""
+def test_session_deleted_event_hook_is_not_registered(tmp_path):
+    """The plugin no longer registers an event hook or cleans PID files."""
     gates_dir = tmp_path / ".gate-logs"
     gates_dir.mkdir(exist_ok=True)
 
@@ -111,12 +112,8 @@ def test_session_deleted_cleans_pid_files(tmp_path):
         cwd=str(tmp_path),
     )
 
-    assert not pid_file.exists(), (
-        f"PID_FILE {pid_file} should be unlinked after session.deleted"
-    )
-    assert not task_file.exists(), (
-        f"TASK_PID_FILE {task_file} should be unlinked after session.deleted"
-    )
+    assert pid_file.exists(), "PID_FILE cleanup belongs to the watchdog daemon"
+    assert task_file.exists(), "TASK_PID_FILE cleanup belongs to the watchdog daemon"
 
 
 # ─── Subagent context: watchdog fires everywhere ────────────────────────────
@@ -145,8 +142,8 @@ def test_subagent_context_still_fires_heartbeat(tmp_path):
 # ─── Env disable: GLUDD_WATCHDOG_ENABLED=0 ──────────────────────────────────
 
 
-def test_env_disable_skips_event_handler(tmp_path):
-    """GLUDD_WATCHDOG_ENABLED=0 skips heartbeat and all event logic."""
+def test_env_disable_does_not_disable_liveness_shim(tmp_path):
+    """The liveness shim still reports alive; daemon enablement is separate."""
     alive_file = tmp_path / "alive.json"
     pid_file = tmp_path / "wd.pid"
     pid_file.write_text("99999")
@@ -161,13 +158,9 @@ def test_env_disable_skips_event_handler(tmp_path):
         cwd=str(tmp_path),
     )
 
-    # Heartbeat should NOT have been written
-    assert not alive_file.exists(), (
-        "Heartbeat must NOT fire when GLUDD_WATCHDOG_ENABLED=0"
-    )
-    # PID files should NOT have been cleaned up
+    assert alive_file.exists(), "Plugin liveness heartbeat should still fire"
     assert pid_file.exists(), (
-        "PID file must survive when watchdog is disabled"
+        "PID file must survive because no event cleanup hook is registered"
     )
 
 
@@ -175,7 +168,7 @@ def test_env_disable_skips_event_handler(tmp_path):
 
 
 def test_server_connected_fires_heartbeat(tmp_path):
-    """server.connected is another trigger for watchdog startup."""
+    """Factory load reports liveness regardless of the named event."""
     alive_file = tmp_path / "alive.json"
 
     _run_watchdog(
@@ -193,7 +186,7 @@ def test_server_connected_fires_heartbeat(tmp_path):
 
 
 def test_corrupt_pid_fails_open(tmp_path):
-    """Non-numeric PID content must not crash the plugin (fail-open)."""
+    """Non-numeric PID content is ignored by the liveness shim."""
     gates_dir = tmp_path / ".gate-logs"
     gates_dir.mkdir(exist_ok=True)
 
@@ -211,9 +204,8 @@ def test_corrupt_pid_fails_open(tmp_path):
     assert proc.returncode == 0, (
         f"Corrupt PID must not crash; exit {proc.returncode}\n{proc.stderr[:300]}"
     )
-    # Files should still be cleaned up despite bad PID content
-    assert not pid_file.exists(), "Corrupt PID_FILE should still be unlinked"
-    assert not task_file.exists(), "Corrupt TASK_PID_FILE should still be unlinked"
+    assert pid_file.exists(), "PID_FILE cleanup belongs to the watchdog daemon"
+    assert task_file.exists(), "TASK_PID_FILE cleanup belongs to the watchdog daemon"
 
 
 # ─── Heartbeat idempotent across repeated events ────────────────────────────
@@ -249,7 +241,7 @@ def test_heartbeat_updates_on_repeated_events(tmp_path):
 
 
 def test_unknown_event_type_does_not_crash(tmp_path):
-    """An event type the watchdog doesn't handle should still fire heartbeat."""
+    """Unknown event names are harmless because no event hook is registered."""
     alive_file = tmp_path / "alive.json"
 
     proc = _run_watchdog(

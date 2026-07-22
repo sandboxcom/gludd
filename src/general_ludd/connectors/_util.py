@@ -20,7 +20,10 @@ def parse_timestamp(value: object) -> float | None:
     try:
         dt = datetime.fromisoformat(text)
     except ValueError:
-        return None
+        try:
+            dt = datetime.strptime(text, "%b %d %Y %H:%M:%S")
+        except ValueError:
+            return None
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=UTC)
     return dt.timestamp()

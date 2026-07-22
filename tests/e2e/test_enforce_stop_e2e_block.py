@@ -343,12 +343,11 @@ class TestTextCompleteBlocksWithRealState:
         else:
             assert "BLOCKED" in parsed.get("text", "").upper()
 
-    def test_text_with_evidence_and_no_status_summary_passes(
+    def test_text_with_evidence_and_no_status_summary_blocks(
         self, hook_plugin_env: HookEnv,
     ):
         """Text with structured evidence (commit hash, pass count) and NO status summary
-        phrasing must pass through when hasRealPendingWork detects work BUT
-        the text carries evidence."""
+        phrasing is still blocked when hasRealPendingWork detects work."""
         _setup_real_pending_work(hook_plugin_env)
 
         _parsed, _raw, stderr, rc = _invoke_text_complete(
@@ -358,8 +357,8 @@ class TestTextCompleteBlocksWithRealState:
         )
         assert rc == 0, stderr
         pb = _read_persist_block(hook_plugin_env)
-        assert pb is None or pb.get("blocked") is not True, (
-            f"Text with evidence must pass through. persist_block={pb}"
+        assert pb is not None and pb.get("blocked") is True, (
+            f"Text with evidence must still be blocked. persist_block={pb}"
         )
 
     def test_plain_text_with_real_work_blocked(
@@ -613,10 +612,10 @@ class TestGuardrailsWithRealState:
             GLUDD_STOP_ENFORCE="0",
         )
         assert rc == 0, stderr
-        # When disabled, hook returns undefined → null
-        assert parsed is None, (
-            f"GLUDD_STOP_ENFORCE=0 must return undefined. Got: {parsed}"
+        assert parsed is not None, (
+            f"GLUDD_STOP_ENFORCE=0 must return output unchanged. Got: {parsed}"
         )
+        assert parsed.get("text") == "All done. Everything complete."
 
     def test_disengage_does_not_bypass_real_pending_work_block(
         self, hook_plugin_env: HookEnv,

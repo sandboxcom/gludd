@@ -101,12 +101,17 @@ class SandboxEnforcer:
 
         jail_path = Path(jail)
         try:
-            jail_path.mkdir(parents=True, exist_ok=True)
+            if not self._config.jail_dir:
+                jail_path.mkdir(parents=True, exist_ok=True)
+            elif not jail_path.is_dir():
+                raise SandboxNotAvailableError(
+                    f"Sandbox jail directory {jail!r} does not exist"
+                )
             if not os.access(jail, os.W_OK):
                 raise SandboxNotAvailableError(
                     f"Sandbox jail directory {jail!r} is not writable"
                 )
-        except OSError as exc:
+        except (OSError, SandboxNotAvailableError) as exc:
             msg = f"Sandbox jail directory {jail!r} is unusable: {exc}"
             if self._config.fail_open:
                 logger.warning("%s — proceeding without sandbox", msg)
@@ -187,7 +192,12 @@ class SandboxEnforcer:
                 "Sandbox not verified; cannot confine paths"
             )
 
-        confined = confine_path(path, self._config.jail_dir)
+        try:
+            confined = confine_path(path, self._config.jail_dir)
+        except ValueError as exc:
+            raise PathEscapeError(
+                f"Path {path!r} escapes sandbox jail {self._config.jail_dir!r}"
+            ) from exc
         if confined is None:
             raise PathEscapeError(
                 f"Path {path!r} escapes sandbox jail {self._config.jail_dir!r}"

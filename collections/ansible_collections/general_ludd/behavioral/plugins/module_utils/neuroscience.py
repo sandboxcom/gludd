@@ -556,6 +556,10 @@ HEURISTICS: dict[str, dict[str, Any]] = {
         "discovered_by": "Gigerenzer (2007) — simple heuristic underlying expert ball-catching",
         "mechanism": "Maintain constant optical angle to the target; no complex trajectory computation needed",
         "domain": "Embodied cognition — how expert athletes solve complex physical problems with simple rules",
+        "examples": [
+            "An outfielder running so a fly ball stays at a constant visual angle",
+            "A dog intercepting a thrown frisbee without calculating its full trajectory",
+        ],
     },
     "social_circle_heuristic": {
         "description": "Allocate trust and cooperation based on social distance — reciprocate with close ties, be wary of distant ties",
@@ -960,7 +964,7 @@ def analyze_cognitive_bias(text: str | None) -> dict[str, Any]:
 
     scores: dict[str, float] = {}
     for bias_name, markers in bias_markers.items():
-        hits = sum(1 for m in markers if m in text_lower)
+        hits = sum(text_lower.count(m) for m in markers)
         score = min(1.0, hits / max(1, len(markers)) * (1.5 if hits > 1 else 1.0))
         scores[bias_name] = score
 

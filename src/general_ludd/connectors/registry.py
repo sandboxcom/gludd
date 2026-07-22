@@ -374,16 +374,17 @@ def _validate_source_class(factory: Any) -> None:
             f"expected a Source class (with health()/query())"
         )
 
-    missing: list[str] = []
-    for method_name in _REQUIRED_SOURCE_METHODS:
-        attr = getattr(factory, method_name, None)
-        if not callable(attr):
-            missing.append(method_name)
-    if missing:
-        raise TypeError(
-            f"connector class {_qualname(factory)} is missing required "
-            f"Source method(s): {', '.join(missing)}"
-        )
+    if isinstance(factory, type):
+        missing: list[str] = []
+        for method_name in _REQUIRED_SOURCE_METHODS:
+            attr = getattr(factory, method_name, None)
+            if not callable(attr):
+                missing.append(method_name)
+        if missing:
+            raise TypeError(
+                f"connector class {_qualname(factory)} is missing required "
+                f"Source method(s): {', '.join(missing)}"
+            )
 
 
 def _qualname(obj: Any) -> str:

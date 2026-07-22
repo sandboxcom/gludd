@@ -8,13 +8,14 @@ agent runtime instead of the custom while-loop in ``tool_loop.py``.
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 from typing import TYPE_CHECKING, Any
 
 from general_ludd.budget_guard_check import budget_pre_check
 from general_ludd.mcp.registry import MCPToolRegistry
 from general_ludd.mcp.transport import MCPTransportError
-from general_ludd.sandbox.enforcer import SandboxEnforcer, SandboxNotAvailableError
+from general_ludd.sandbox.enforcer import SandboxEnforcer
 from general_ludd.security.capability_lattice import check_dispatch
 
 if TYPE_CHECKING:
@@ -253,8 +254,27 @@ class LangGraphAgentLoop:
             return []
 
         from langchain_core.tools import StructuredTool
+        from pydantic import BaseModel, ConfigDict
 
-        mcp_tools = await self._mcp_client.list_tools()
+        class GenericToolInput(BaseModel):
+            model_config = ConfigDict(extra="allow")
+
+            path: str | None = None
+            file: str | None = None
+            file_path: str | None = None
+            workdir: str | None = None
+            output: str | None = None
+            dir: str | None = None
+            directory: str | None = None
+            cwd: str | None = None
+            out_path: str | None = None
+            message: str | None = None
+
+        mcp_tools_result = self._mcp_client.list_tools()
+        if inspect.isawaitable(mcp_tools_result):
+            mcp_tools = await mcp_tools_result
+        else:
+            mcp_tools = mcp_tools_result
         langchain_tools: list[Any] = []
 
         for mcp_tool in mcp_tools:
@@ -267,24 +287,40 @@ class LangGraphAgentLoop:
             auditor = self._auditor
             sandbox_enforcer = self._sandbox_enforcer
 
-            async def _execute(
-                _name: str = tool_name,
-                _srv_id: str = server_id,
-                _client: Any = mcp_client,
-                _tmo: float = timeout,
-                _auditor: Any = auditor,
-                _sandbox: Any = sandbox_enforcer,
-                **kwargs: Any,
+            def _make_execute(
+                _name: str,
+                _srv_id: str,
+                _client: Any,
+                _tmo: float,
+                _auditor: Any,
+                _sandbox: Any,
+            ) -> Any:
+                async def _execute(**kwargs: Any) -> str:
+                    return await _execute_tool(
+                        _name, _srv_id, _client, _tmo, _auditor, _sandbox, kwargs
+                    )
+                return _execute
+
+            async def _execute_tool(
+                _name: str,
+                _srv_id: str,
+                _client: Any,
+                _tmo: float,
+                _auditor: Any,
+                _sandbox: Any,
+                kwargs: dict[str, Any],
             ) -> str:
                 if _sandbox is not None:
-                    try:
-                        _sandbox.verify_ready()
-                    except SandboxNotAvailableError as exc:
+                    if not _sandbox.is_ready:
                         return (
                             f"Tool error: sandbox not available — "
-                            f"refusing to execute {_name!r}: {exc}"
+                            f"refusing to execute {_name!r}: sandbox not verified"
                         )
-                    for _key, _val in kwargs.items():
+                    tool_items = list(kwargs.items())
+                    for nested in kwargs.values():
+                        if isinstance(nested, dict):
+                            tool_items.extend(nested.items())
+                    for _key, _val in tool_items:
                         if isinstance(_val, str) and _key in (
                             "path", "file", "file_path", "workdir", "output",
                             "dir", "directory", "cwd", "out_path",
@@ -309,10 +345,11 @@ class LangGraphAgentLoop:
                             f"Do not retry this call. Use a different approach."
                         )
                 try:
-                    result = await asyncio.wait_for(
-                        _client.call_tool(_srv_id, _name, kwargs),
-                        timeout=_tmo,
-                    )
+                    call_result = _client.call_tool(_srv_id, _name, kwargs)
+                    if inspect.isawaitable(call_result):
+                        result = await asyncio.wait_for(call_result, timeout=_tmo)
+                    else:
+                        result = call_result
                     if _auditor is not None:
                         _auditor.record_success(_name, kwargs, result)
                     return str(result)
@@ -329,9 +366,12 @@ class LangGraphAgentLoop:
                     return f"Tool error: {exc}"
 
             lc_tool = StructuredTool.from_function(
-                coroutine=_execute,
+                coroutine=_make_execute(
+                    tool_name, server_id, mcp_client, timeout, auditor, sandbox_enforcer
+                ),
                 name=tool_name,
                 description=tool_desc,
+                args_schema=GenericToolInput,
             )
             langchain_tools.append(lc_tool)
 

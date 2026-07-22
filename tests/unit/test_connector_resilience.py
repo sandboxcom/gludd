@@ -34,8 +34,8 @@ class FakeSource:
     def __init__(self, name: str, kind: str, health_result=None, query_result=None):
         self.name = name
         self.KIND = kind
-        self._health = health_result or {"ok": True}
-        self._query = query_result or []
+        self._health = {"ok": True} if health_result is None else health_result
+        self._query = [] if query_result is None else query_result
 
     def health(self) -> dict[str, object]:
         return self._health

@@ -95,7 +95,7 @@ def extract_media_queries(css_content: str) -> list[dict[str, Any]]:
     cleaned = _strip_css_comments(css_content)
     queries: list[dict[str, Any]] = []
     for match in re.finditer(
-        r"@media\s+([^{(]+)\{(.*?)\}(?=\s*[@}]|\s*\Z)",
+        r"@media\s+([^{]+)\{(.*?)\}(?=\s*[@}]|\s*\Z)",
         cleaned,
         re.DOTALL,
     ):
@@ -105,6 +105,7 @@ def extract_media_queries(css_content: str) -> list[dict[str, Any]]:
         breakpoint_val = _extract_breakpoint_value(condition)
         queries.append({
             "condition": condition,
+            "feature": condition,
             "breakpoint": breakpoint_val,
             "rules": rules,
         })
@@ -265,6 +266,19 @@ def extract_colors_from_css(css_content: str) -> list[dict[str, str]]:
         if raw not in seen:
             seen.add(raw)
             hex_val = f"#{r:02X}{g:02X}{b:02X}"
+            results.append({
+                "name": _find_named_color(hex_val),
+                "hex": hex_val,
+                "value": raw,
+            })
+
+    for m in _COLOR_HSL.finditer(cleaned):
+        h, s, light = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        raw = m.group(0).lower()
+        if raw not in seen:
+            seen.add(raw)
+            r_f, g_f, b_f = colorsys.hls_to_rgb((h % 360) / 360, light / 100, s / 100)
+            hex_val = _rgb_to_hex((r_f, g_f, b_f))
             results.append({
                 "name": _find_named_color(hex_val),
                 "hex": hex_val,
@@ -652,6 +666,8 @@ def validate_heading_hierarchy(html_content: str) -> list[str]:
     levels = [int(h[1]) for h in headings]
     if levels[0] != 1:
         issues.append(f"Document starts with <h{levels[0]}>, expected <h1>")
+    if levels.count(1) > 1:
+        issues.append("Multiple <h1> headings found")
     for i in range(len(levels) - 1):
         if levels[i + 1] > levels[i] + 1:
             issues.append(
@@ -670,9 +686,19 @@ _ARIA_ATTR_RE = re.compile(r"\baria-(\w[\w-]*)\b", re.IGNORECASE)
 _ARIA_ROLE_RE = re.compile(r'\brole\s*=\s*"([^"]+)"', re.IGNORECASE)
 
 
-def check_aria_attributes(html_content: str) -> list[dict[str, Any]]:
+def check_aria_attributes(html_content: str) -> list[Any]:
     """Check for missing required ARIA attributes on element roles."""
-    issues: list[dict[str, Any]] = []
+    issues: list[Any] = []
+    for m_button in re.finditer(r"<button\b([^>]*)>(.*?)</button>", html_content, re.IGNORECASE | re.DOTALL):
+        attrs = m_button.group(1)
+        label_text = re.sub(r"<[^>]+>", "", m_button.group(2)).strip()
+        has_label = re.search(r"\b(?:aria-label|aria-labelledby|title)\s*=", attrs, re.IGNORECASE)
+        if not label_text and not has_label:
+            issues.append("Button missing accessible label")
+    for m_img in re.finditer(r"<img\b([^>]*)>", html_content, re.IGNORECASE):
+        attrs = m_img.group(1)
+        if not re.search(r"\balt\s*=", attrs, re.IGNORECASE):
+            issues.append("Image missing alt text")
     for m_role in _ARIA_ROLE_RE.finditer(html_content):
         role = m_role.group(1).lower()
         if role not in _ARIA_REQUIRED:
@@ -686,11 +712,7 @@ def check_aria_attributes(html_content: str) -> list[dict[str, Any]]:
         )
         missing = [a for a in req_attrs if a.replace("aria-", "") not in present]
         if missing:
-            issues.append({
-                "role": role,
-                "position": pos,
-                "missing_attributes": missing,
-            })
+            issues.append(f"Role {role} missing required ARIA attributes: {', '.join(missing)}")
     return issues
 
 
@@ -715,6 +737,9 @@ def calculate_readability(text: str) -> dict[str, Any]:
     )
 
     return {
+        "score": max(0, min(100, flesch_ease)),
+        "grade": max(grade_level, 0),
+        "level": max(grade_level, 0),
         "grade_level": max(grade_level, 0),
         "reading_ease": max(0, min(100, flesch_ease)),
         "words": word_count,
@@ -730,7 +755,7 @@ def calculate_readability(text: str) -> dict[str, Any]:
 def generate_spacing_tokens(base: int = 4, steps: int = 12) -> dict[str, str]:
     """Generate spacing design tokens (0.25 to 12) based on base multiplier."""
     tokens: dict[str, str] = {}
-    for i in range(steps + 1):
+    for i in range(steps):
         val = i * base
         tokens[f"space-{i}"] = f"{val / 16}rem"
     return tokens

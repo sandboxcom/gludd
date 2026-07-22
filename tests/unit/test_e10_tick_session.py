@@ -135,7 +135,7 @@ class TestE10TickSessionClosedBeforeDispatch:
         import logging
         from unittest.mock import patch
 
-        from general_ludd.event_loop.loop import EventLoop
+        from general_ludd.event_loop.loop import PHASE_ORDER, EventLoop
 
         loop = EventLoop(daemon_state={})
         loop._phase_claim_runnable_todos = MagicMock(side_effect=ValueError("boom"))  # type: ignore[method-assign]
@@ -143,7 +143,7 @@ class TestE10TickSessionClosedBeforeDispatch:
         with patch.object(logging.getLogger("general_ludd.event_loop.loop"), "error") as mock_log:
             result = await loop.tick()
 
-        assert result["phases_completed"] == 18
+        assert result["phases_completed"] == len(PHASE_ORDER) - 1
         mock_log.assert_called()
 
     @pytest.mark.asyncio

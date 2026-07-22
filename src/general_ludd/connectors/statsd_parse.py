@@ -128,6 +128,12 @@ class StatsdParseSource:
             "value": value,
             "labels": labels,
             "raw": raw,
+            # Compatibility aliases for callers that consume parsed StatsD
+            # fields directly instead of the normalized connector envelope.
+            "name": name_part,
+            "type": mtype,
+            "sample_rate": labels.get("sample_rate"),
+            "tags": {k: v for k, v in labels.items() if k not in {"sample_rate", "delta", "set_value"}},
         }
 
     def query(self, spec: dict[str, Any]) -> list[dict[str, Any]]:

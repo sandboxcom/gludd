@@ -1,7 +1,7 @@
 """E2e test for enforce-verified-claims.ts: done-claims without evidence blocked.
 
 Invokes the actual TypeScript plugin via node --experimental-strip-types.
-Tests shouldBlock function and experimental.text.complete hook surface.
+Tests shouldBlock function and commit-message tool.execute.before hook surface.
 """
 
 from __future__ import annotations
@@ -162,51 +162,68 @@ console.log(JSON.stringify({{shouldBlock: mod.shouldBlock("the gate is green")}}
     assert result["shouldBlock"] is True, f"Expected block, got: {result}"
 
 
-# ─── text.complete: done-word without evidence → output blocked ──────────────
+# ─── tool.execute.before: commit msg without evidence → blocked ──────────────
 
 
-def test_text_complete_blocks_done_without_evidence():
+def test_tool_execute_blocks_done_without_evidence():
     code = f"""\
 const mod = await import('{PLUGIN_PATH}')
 const plugin = await mod.default({{}})
-const output = {{ text: "commit landed" }}
-const result = await plugin['experimental.text.complete'](undefined, output)
-console.log(JSON.stringify({{ text: output.text, hasReturn: result !== undefined }}))
+let blocked = false
+let message = ""
+try {{
+  await plugin['tool.execute.before']({{tool: "bash", args: {{command: "make git-commit MSG='commit landed'"}}}})
+}} catch (e) {{
+  blocked = true
+  message = e.message
+}}
+console.log(JSON.stringify({{ blocked, message }}))
 """
     result = _run_plugin(code)
     assert result is not None
-    assert "BLOCKED" in result.get("text", ""), (
+    assert result.get("blocked") is True
+    assert "BLOCKED" in result.get("message", ""), (
         f"Expected BLOCK_MESSAGE, got: {result}"
     )
 
 
-def test_text_complete_allows_done_with_evidence():
+def test_tool_execute_allows_done_with_evidence():
     code = f"""\
 const mod = await import('{PLUGIN_PATH}')
 const plugin = await mod.default({{}})
-const output = {{ text: "commit landed abc1234" }}
-const result = await plugin['experimental.text.complete'](undefined, output)
-console.log(JSON.stringify({{ text: output.text }}))
+let blocked = false
+try {{
+  const command = "make git-commit MSG='commit landed abc1234'"
+  await plugin['tool.execute.before']({{tool: "bash", args: {{command}}}})
+}} catch (e) {{
+  blocked = true
+}}
+console.log(JSON.stringify({{ blocked }}))
 """
     result = _run_plugin(code)
     assert result is not None
-    assert result.get("text") == "commit landed abc1234", (
-        f"Text should be unchanged, got: {result}"
+    assert result.get("blocked") is False, (
+        f"Evidence-backed commit message should be allowed, got: {result}"
     )
 
 
-def test_text_complete_allows_innocent_text():
+def test_tool_execute_allows_innocent_commit_message():
     code = f"""\
 const mod = await import('{PLUGIN_PATH}')
 const plugin = await mod.default({{}})
-const output = {{ text: "continuing work on the next feature" }}
-const result = await plugin['experimental.text.complete'](undefined, output)
-console.log(JSON.stringify({{ text: output.text }}))
+let blocked = false
+try {{
+  const command = "make git-commit MSG='continue next feature'"
+  await plugin['tool.execute.before']({{tool: "bash", args: {{command}}}})
+}} catch (e) {{
+  blocked = true
+}}
+console.log(JSON.stringify({{ blocked }}))
 """
     result = _run_plugin(code)
     assert result is not None
-    assert result.get("text") == "continuing work on the next feature", (
-        f"Text should be unchanged, got: {result}"
+    assert result.get("blocked") is False, (
+        f"Innocent commit message should be allowed, got: {result}"
     )
 
 
@@ -217,13 +234,17 @@ def test_subagent_skips_enforcement():
     code = f"""\
 const mod = await import('{PLUGIN_PATH}')
 const plugin = await mod.default({{}})
-const output = {{ text: "commit landed" }}
-const result = await plugin['experimental.text.complete'](undefined, output)
-console.log(JSON.stringify({{ text: output.text, hasReturn: result !== undefined }}))
+let blocked = false
+try {{
+  await plugin['tool.execute.before']({{tool: "bash", args: {{command: "make git-commit MSG='commit landed'"}}}})
+}} catch (e) {{
+  blocked = true
+}}
+console.log(JSON.stringify({{ blocked }}))
 """
     result = _run_plugin(code, env_override={"OPENCODE_SUBAGENT": "1"})
     assert result is not None
-    assert result.get("text") == "commit landed", (
+    assert result.get("blocked") is False, (
         f"Subagent should skip enforcement, got: {result}"
     )
 
@@ -235,13 +256,17 @@ def test_env_var_disables_enforcement():
     code = f"""\
 const mod = await import('{PLUGIN_PATH}')
 const plugin = await mod.default({{}})
-const output = {{ text: "commit landed" }}
-const result = await plugin['experimental.text.complete'](undefined, output)
-console.log(JSON.stringify({{ text: output.text, hasReturn: result !== undefined }}))
+let blocked = false
+try {{
+  await plugin['tool.execute.before']({{tool: "bash", args: {{command: "make git-commit MSG='commit landed'"}}}})
+}} catch (e) {{
+  blocked = true
+}}
+console.log(JSON.stringify({{ blocked }}))
 """
     result = _run_plugin(code, env_override={"GLUDD_VERIFIED_CLAIMS_ENFORCE": "0"})
     assert result is not None
-    assert result.get("text") == "commit landed", (
+    assert result.get("blocked") is False, (
         f"Env disable should allow unverified claim, got: {result}"
     )
 
@@ -249,33 +274,41 @@ console.log(JSON.stringify({{ text: output.text, hasReturn: result !== undefined
 # ─── System directives are never blocked ─────────────────────────────────────
 
 
-def test_system_directive_bypasses_block():
+def test_non_commit_tool_bypasses_block():
     code = f"""\
 const mod = await import('{PLUGIN_PATH}')
 const plugin = await mod.default({{}})
-const output = {{ text: "HARD STOP — commit landed. Do not block this." }}
-const result = await plugin['experimental.text.complete'](undefined, output)
-console.log(JSON.stringify({{ text: output.text }}))
+let blocked = false
+try {{
+  await plugin['tool.execute.before']({{tool: "bash", args: {{command: "make test"}}}})
+}} catch (e) {{
+  blocked = true
+}}
+console.log(JSON.stringify({{ blocked }}))
 """
     result = _run_plugin(code)
     assert result is not None
-    assert "HARD STOP" in result.get("text", ""), (
-        f"System directive must not be blocked, got: {result}"
+    assert result.get("blocked") is False, (
+        f"Non-commit make target must not be blocked, got: {result}"
     )
 
 
-def test_block_message_directive_bypasses_block():
+def test_non_bash_tool_bypasses_block():
     code = f"""\
 const mod = await import('{PLUGIN_PATH}')
 const plugin = await mod.default({{}})
-const output = {{ text: "BLOCKED: commit landed" }}
-const result = await plugin['experimental.text.complete'](undefined, output)
-console.log(JSON.stringify({{ text: output.text }}))
+let blocked = false
+try {{
+  await plugin['tool.execute.before']({{tool: "read", args: {{path: "TASKS.md"}}}})
+}} catch (e) {{
+  blocked = true
+}}
+console.log(JSON.stringify({{ blocked }}))
 """
     result = _run_plugin(code)
     assert result is not None
-    assert "BLOCKED:" in result.get("text", ""), (
-        f"BLOCKED: prefix must not be double-blocked, got: {result}"
+    assert result.get("blocked") is False, (
+        f"Non-bash tool must not be blocked, got: {result}"
     )
 
 
@@ -292,17 +325,21 @@ console.log(JSON.stringify({{shouldBlock: mod.shouldBlock("")}}))
     assert result["shouldBlock"] is False, f"Empty text must not block, got: {result}"
 
 
-def test_text_complete_empty_output_allowed():
+def test_empty_commit_message_allowed():
     code = f"""\
 const mod = await import('{PLUGIN_PATH}')
 const plugin = await mod.default({{}})
-const output = {{ text: "" }}
-const result = await plugin['experimental.text.complete'](undefined, output)
-console.log(JSON.stringify({{ text: output.text }}))
+let blocked = false
+try {{
+  await plugin['tool.execute.before']({{tool: "bash", args: {{command: "make git-commit MSG=''"}}}})
+}} catch (e) {{
+  blocked = true
+}}
+console.log(JSON.stringify({{ blocked }}))
 """
     result = _run_plugin(code)
     assert result is not None
-    assert result.get("text") == "", f"Empty text must be unchanged, got: {result}"
+    assert result.get("blocked") is False, f"Empty commit message must be allowed, got: {result}"
 
 
 # ─── NOT_DONE_PHRASES scrubber ──────────────────────────────────────────────

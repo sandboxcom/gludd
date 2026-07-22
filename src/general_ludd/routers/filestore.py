@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import os
 
 from fastapi import FastAPI, Request
@@ -24,7 +25,8 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         safe_path = sanitize_path(path.lstrip("/")) or ""
         store = FileStore()
         entries = store.list_dir(safe_path)
-        return {"path": safe_path, "entries": entries, "count": len(entries)}
+        response_path = safe_path or "/"
+        return {"path": response_path, "entries": entries, "count": len(entries)}
 
     @app.get("/admin/filestore/read")
     async def admin_filestore_read(path: str = "") -> dict[str, object]:
@@ -48,7 +50,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         store = FileStore()
         body = await request.json()
         raw_path = body.get("path", "")
-        safe_path = sanitize_path(raw_path)
+        safe_path = sanitize_path(str(raw_path).lstrip("/"))
         if safe_path is None:
             return {"error": "Invalid path", "success": False}
         content = body.get("content", "")
@@ -68,7 +70,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
 
     @app.delete("/admin/filestore/remove")
     async def admin_filestore_remove(path: str = "") -> dict[str, object]:
-        safe_path = sanitize_path(path)
+        safe_path = sanitize_path(path.lstrip("/"))
         if safe_path is None:
             return {"error": "Invalid path", "success": False}
         store = FileStore()
@@ -79,8 +81,13 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
 
     @app.post("/admin/filestore/bootstrap")
     async def admin_filestore_bootstrap(
+        request: Request,
         binary: str = "openbao",
     ) -> dict[str, object]:
+        with contextlib.suppress(Exception):
+            body = await request.json()
+            if isinstance(body, dict):
+                binary = str(body.get("binary", binary))
         store = FileStore()
         boot = BinaryBootstrapper(store=store)
         if binary == "openbao":

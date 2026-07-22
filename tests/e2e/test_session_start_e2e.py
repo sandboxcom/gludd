@@ -47,7 +47,7 @@ def _make_state_file(state: dict | None = None) -> str:
     """Create a temp state file. If state is None, writes a corrupt file."""
     global _state_counter
     _state_counter += 1
-    fpath = f"/tmp/gludd-session-e2e-{_state_counter}.json"
+    fpath = f"/tmp/gludd-session-e2e-{os.getpid()}-{_state_counter}.json"
     if state is None:
         Path(fpath).write_text("NOT VALID JSON {{{")
     else:
@@ -68,7 +68,7 @@ def _fresh_state(started_at_ms: float | None = None) -> dict:
 def _primed_state() -> dict:
     """Return a primed session state dict."""
     return {
-        "started_at": int(time.time() * 1000) - 600_000,
+        "started_at": int(time.time() * 1000) - 60_000,
         "readsDone": True,
         "dispatches": 10,
         "timeGateReset": True,
@@ -303,12 +303,12 @@ def test_primed_state_allows_mutation(tmp_path):
     )
 
 
-def test_primed_with_low_effective_min_allows_mutation(tmp_path):
-    """With EFFECTIVE_MIN=1, readsTrue + dispatches=1 allows edit."""
+def test_primed_with_hard_floor_allows_mutation(tmp_path):
+    """The hard floor is 10 dispatches even when env vars are lower."""
     small_state = {
-        "started_at": int(time.time() * 1000) - 600_000,
+        "started_at": int(time.time() * 1000) - 60_000,
         "readsDone": True,
-        "dispatches": 1,
+        "dispatches": 10,
         "timeGateReset": True,
     }
     state_path = _make_state_file(small_state)
@@ -428,8 +428,8 @@ def test_deny_message_includes_state_info(tmp_path):
 # ─── Stale session: outside fresh window, mutations allowed ──────────────
 
 
-def test_stale_session_with_timegate_reset_allows_mutation(tmp_path):
-    """Session older than FRESH_SECS + timeGateReset → mutation allowed."""
+def test_stale_session_with_timegate_reset_is_recovered_and_blocks(tmp_path):
+    """Session older than stale threshold is reset before mutation checks."""
     old_state = {
         "started_at": int(time.time() * 1000) - 700_000,
         "readsDone": False,
@@ -447,8 +447,8 @@ def test_stale_session_with_timegate_reset_allows_mutation(tmp_path):
         cwd=str(tmp_path),
     )
     assert ok, f"stderr: {stderr[:400]}"
-    assert "ALLOWED" in stdout, (
-        f"Stale session must allow mutation, got: {stdout[:200]}"
+    assert "BLOCKED" in stdout, (
+        f"Stale session must reset and block mutation, got: {stdout[:200]}"
     )
 
 

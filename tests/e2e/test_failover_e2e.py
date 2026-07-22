@@ -21,6 +21,7 @@ real wall-clock waits); ``random.uniform`` jitter is forced deterministic via a
 """
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import threading
 import time
@@ -205,9 +206,13 @@ def sleep_recorder(monkeypatch: pytest.MonkeyPatch) -> list[float]:
     def _fake_sleep(seconds: float) -> None:
         recorded.append(float(seconds))
 
+    async def _fake_async_sleep(seconds: float) -> None:
+        recorded.append(float(seconds))
+
     # call_model_with_retry does `import time as _time`; patching the attribute
     # on the real `time` module object makes the alias resolve to the patch.
     monkeypatch.setattr(time, "sleep", _fake_sleep)
+    monkeypatch.setattr(asyncio, "sleep", _fake_async_sleep)
     return recorded
 
 

@@ -112,9 +112,15 @@ def _env_stop(tmp_path: Path) -> dict:
         "GLUDD_STOP_STATE_FILE": str(tmp_path / "state.json"),
         "GLUDD_STREAK_FILE": str(tmp_path / "streak.json"),
         "GLUDD_PERSIST_STOP_BLOCK_FILE": str(tmp_path / "persist.json"),
+        "GLUDD_POST_RESULTS_STATE_FILE": str(tmp_path / "postresults.json"),
         "GLUDD_STOP_TOOL_COUNTS_FILE": str(tmp_path / "counts.json"),
         "GLUDD_BLOCK_COUNTER_FILE": str(tmp_path / "blockcnt.json"),
         "GLUDD_BLOCK_REASON_FILE": str(tmp_path / "blockreason.json"),
+        "GLUDD_TEXT_ONLY_STATE_FILE": str(tmp_path / "textonly.json"),
+        "GLUDD_WATCHDOG_CI_FILE": str(tmp_path / "watchdog-ci.json"),
+        "GLUDD_RELEASE_COMPLETENESS_FILE": str(tmp_path / "release.json"),
+        "GLUDD_LAST_TEST_RESULT_FILE": str(tmp_path / "last-test.json"),
+        "GLUDD_MULTITASK_STATE_FILE": str(tmp_path / "multitask.json"),
     }
 
 
@@ -381,8 +387,8 @@ console.log(JSON.stringify(r ?? {{allowed: true}}))
 # ─── 8. evidence-bypass-works ────────────────────────────────────────────────
 
 
-def test_text_with_evidence_passes_through_despite_pending_work(tmp_path):
-    """Text WITH commit hash + test counts -> passes through (not blanked)."""
+def test_text_with_evidence_blocked_when_pending_work(tmp_path):
+    """Text WITH commit hash + test counts is still blocked with pending work."""
     cwd = _setup_pending_work_dir(tmp_path)
 
     code = f"""\
@@ -396,9 +402,7 @@ console.log(JSON.stringify({{ output_text: output.text, result_text: result?.tex
     assert proc.returncode == 0, f"Node exited {proc.returncode}: {proc.stderr[:500]}"
     r = _last_json(proc.stdout)
     assert r is not None, f"No JSON in output: {proc.stdout[:500]}"
-    out_text = r.get("output_text", "")
     res_text = r.get("result_text", "")
-    assert out_text == "Fixed the bug. 42 passed, commit abc123def456.", (
-        f"Evidence text should pass through unmodified. "
-        f"output_text={out_text!r} result_text={res_text!r}"
+    assert "BLOCKED" in res_text, (
+        f"Evidence must not bypass pending-work block. Got: {res_text[:300]!r}"
     )

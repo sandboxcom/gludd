@@ -99,7 +99,7 @@ class TestMigrationChainSingleHead:
     def test_single_head(self):
         script = self._script_dir()
         heads = script.get_heads()
-        assert "035" in heads, f"expected head to include '035', got {heads}"
+        assert "036" in heads, f"expected head to include '036', got {heads}"
         assert len(heads) == 1, f"expected single head, got {heads}"
 
     def test_ornith_014_migrations_are_distinct(self):
@@ -125,6 +125,11 @@ class TestMigrationChainSingleHead:
         mod = _load_migration_by_filename("015_add_model_performance_tables.py")
         assert mod.revision == "015"
         assert mod.down_revision == "014a"
+
+    def test_036_links_to_035(self):
+        mod = _load_migration_by_filename("036_add_todos_priority_range_check.py")
+        assert mod.revision == "036"
+        assert mod.down_revision == "035"
 
 
 class TestMigration016EscalationRemediation:

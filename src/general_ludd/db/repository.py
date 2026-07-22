@@ -261,6 +261,14 @@ class TodoRepository:
                 )
 
     async def create(self, todo_data: dict[str, Any]) -> TodoModel:
+        # Direct repository callers may still use public API priority labels.
+        # Keep _validate_create_data() strict for validation tests, but normalize
+        # known labels at the write boundary before integer range enforcement.
+        if isinstance(todo_data.get("priority"), str):
+            label = todo_data["priority"].lower()
+            if label in _PRIORITY_LABELS:
+                todo_data = {**todo_data, "priority": _PRIORITY_LABELS[label]}
+
         # D-28: validate before mass-assignment so callers cannot forge primary
         # keys, skip version accounting, or store oversized blobs.
         self._validate_create_data(todo_data)

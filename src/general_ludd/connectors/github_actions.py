@@ -28,6 +28,7 @@ import os
 import re
 from collections.abc import Callable
 from datetime import UTC, datetime
+from typing import cast
 from urllib.parse import quote
 
 import httpx
@@ -82,7 +83,13 @@ class GitHubActionsSource:
 
     KIND: str = _KIND
 
-    def __init__(self, config: dict[str, object], *, http_get: Transport | None = None) -> None:
+    def __init__(
+        self,
+        config: dict[str, object],
+        *,
+        http_get: Transport | None = None,
+        transport: Callable[..., tuple[int, object]] | None = None,
+    ) -> None:
         repo = config.get("repo")
         if not repo or not re.match(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", str(repo)):
             raise ValueError("config['repo'] must be 'owner/name'")
@@ -90,7 +97,17 @@ class GitHubActionsSource:
         self.base_url: str = _validate_base_url(str(config.get("base_url") or _DEFAULT_BASE_URL))
         self.token_env: str = str(config.get("token_env") or "GITHUB_TOKEN")
         self.name: str = f"github-actions:{self.repo}"
-        self._http_get: Transport = http_get or _default_http_get
+        raw_transport: object = transport if transport is not None else config.get("transport")
+        self._http_get: Transport
+        if http_get is not None:
+            self._http_get = http_get
+        elif callable(raw_transport):
+            typed_transport = cast(Callable[..., tuple[int, object]], raw_transport)
+            self._http_get = lambda url, headers: typed_transport(
+                "GET", url, headers=headers, timeout=_DEFAULT_TIMEOUT
+            )
+        else:
+            self._http_get = _default_http_get
 
     # -- internal helpers -------------------------------------------------
 
@@ -106,7 +123,9 @@ class GitHubActionsSource:
         return headers
 
     def _runs_url(self) -> str:
-        return f"{self.base_url}/repos/{quote(self.repo, safe='/')}/actions/runs"
+        owner, name = self.repo.split("/", 1)
+        repo_path = f"{quote(owner, safe='')}/{quote(name, safe='')}"
+        return f"{self.base_url}/repos/{repo_path}/actions/runs"
 
     def _normalize(self, run: dict[str, object]) -> dict[str, object]:
         name = run.get("name") or ""
@@ -141,7 +160,7 @@ class GitHubActionsSource:
             return {"ok": True, "detail": f"HTTP {status}"}
         return {"ok": False, "detail": f"HTTP {status}"}
 
-    def query(self, spec: dict[str, object]) -> list[dict[str, object]]:
+    def query(self, spec: dict[str, object] | None = None) -> list[dict[str, object]]:
         """List recent workflow runs and return normalized records.
 
         Supported *spec* filters: ``limit`` (int), ``branch`` (str), ``status``

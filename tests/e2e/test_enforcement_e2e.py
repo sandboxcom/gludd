@@ -31,20 +31,30 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 
 PLUGIN_REGISTRATION_ORDER = [
+    "enforce-session-start.ts",
     "enforce-make.ts",
     "enforce-floor.ts",
     "enforce-delegate.ts",
+    "enforce-multitask.ts",
     "enforce-stop.ts",
-    "enforce-session-start.ts",
     "enforce-deadline.ts",
-    "enforce-deletion-gate.ts",
+    "enforce-enhancement-ratio.ts",
+    "enforce-clean-tree.ts",
+    "enforce-commit-lock.ts",
+    "enforce-verified-claims.ts",
     "enforce-no-suppressions.ts",
     "enforce-no-wait.ts",
-    "enforce-commit-lock.ts",
-    "enforce-clean-tree.ts",
-    "enforce-verified-claims.ts",
-    "enforce-multitask.ts",
-    "enforce-enhancement-ratio.ts",
+    "enforce-deletion-gate.ts",
+    "enforce-batch-push.ts",
+    "enforce-depth.ts",
+    "enforce-tdd.ts",
+    "enforce-objective.ts",
+    "enforce-anti-essay.ts",
+    "enforce-branch-discipline.ts",
+    "enforce-test-integrity.ts",
+    "enforce-worktree.ts",
+    "enforce-audit.ts",
+    "enforce-context.ts",
 ]
 
 _STATE_FILES = [
@@ -362,7 +372,7 @@ class TestFullEnforcementChain:
     def test_dispatch_resets_streak(self, chain):
         """A dispatch resets all streaks so next edit is allowed."""
         chain.reset_dispatch()
-        for _ in range(3):
+        for _ in range(4):
             chain.execute_before("edit")
         # Now at denied state; dispatch to reset
         chain.reset_dispatch()
@@ -591,7 +601,7 @@ class TestDenyMessageStructure:
 
     def test_streak_deny_structured(self, chain):
         chain.reset_dispatch()
-        for _ in range(3):
+        for _ in range(4):
             r = chain.execute_before("write")
         assert "permissionDecision" in r
         assert "message" in r

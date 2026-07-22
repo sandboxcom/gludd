@@ -300,13 +300,11 @@ class TestPathTraversalGuard:
         from general_ludd.connectors.github_actions import GitHubActionsSource
 
         transport = _RecordingTransport()
-        src = GitHubActionsSource(
-            {"base_url": "https://api.github.com", "repo": "owner/../../evil", "token_env": "GITHUB_TOKEN"},
-            transport=transport,
-        )
-        src.query()
-        url = transport.calls[-1][1]
-        assert "/../" not in url
+        with pytest.raises(ValueError):
+            GitHubActionsSource(
+                {"base_url": "https://api.github.com", "repo": "owner/../../evil", "token_env": "GITHUB_TOKEN"},
+                transport=transport,
+            )
 
     def test_argo_workflows_namespace_traversal_encoded(self, monkeypatch):
         monkeypatch.setenv("ARGO_TOKEN", "tok")

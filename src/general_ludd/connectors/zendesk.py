@@ -19,8 +19,11 @@ Security posture:
 from __future__ import annotations
 
 import base64
+import contextlib
+import ipaddress
 import logging
 import os
+import re
 from typing import Any, Protocol, runtime_checkable
 from urllib.parse import urlsplit
 
@@ -122,11 +125,34 @@ class ZendeskSource:
         self.max_items = int(self.config.get("max_items", 100))
         self.timeout = float(self.config.get("timeout", 30.0))
 
+        self._guard_subdomain(self.subdomain)
         self._base_url = f"https://{self.subdomain}.zendesk.com"
         self._guard_ssrf(self._base_url)
         self._org_host = (urlsplit(self._base_url).hostname or "").lower()
 
     # -- internals ---------------------------------------------------------
+
+    def _guard_subdomain(self, subdomain: str) -> None:
+        if not self.allow_private:
+            lowered = subdomain.lower().rstrip(".")
+            blocked = lowered in {"localhost", "metadata", "instance-data"}
+            with contextlib.suppress(ValueError):
+                ip = ipaddress.ip_address(lowered)
+                blocked = (
+                    blocked
+                    or ip.is_loopback
+                    or ip.is_private
+                    or ip.is_link_local
+                )
+            if blocked:
+                raise ValueError(
+                    f"zendesk: refusing private/loopback subdomain {subdomain!r} "
+                    "(set allow_private=True to override)"
+                )
+        if not self.allow_private and not re.match(r"^[A-Za-z0-9-]+$", subdomain):
+            raise ValueError(
+                f"zendesk: unsupported URL scheme or invalid subdomain: {subdomain!r}"
+            )
 
     def _guard_ssrf(self, url: str) -> None:
         parsed = urlsplit(url)

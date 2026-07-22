@@ -197,7 +197,7 @@ class SourceRegistry:
 
     def register(self, source: Source) -> None:
         """Add (or replace) a source, keyed by its ``.name``."""
-        self._sources[source.name] = source
+        self._sources[getattr(source, "name", "<unknown>")] = source
 
     def get(self, name: str) -> Source | None:
         """Return the source registered under ``name``, or ``None``."""
@@ -463,7 +463,7 @@ def _is_configured(source: Source) -> bool:
 
     has_env_attrs = False
     for attr_name in dir(source):
-        if not attr_name.endswith("_env"):
+        if not attr_name.lower().endswith("_env"):
             continue
         value = getattr(source, attr_name, None)
         if not isinstance(value, str) or not value:
@@ -556,7 +556,7 @@ def run_healthcheck(
     if not finished:
         return HealthResult(
             status="unhealthy",
-            detail=f"healthcheck timed out after {timeout:.1f}s",
+            detail=f"healthcheck timeout: timed out after {timeout:.1f}s",
             source=getattr(source, "name", "?"),
         )
 
