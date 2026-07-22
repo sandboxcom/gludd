@@ -2,7 +2,7 @@
 
 ## NO-PROMPT PROGRESS DIRECTIVE (READ FIRST)
 
-When a user grants task-level permission, do not call tools or paths that trigger approval prompts. If a command or edit path prompts, abandon that path immediately, use or add a make target, and keep working without asking unless progress is impossible because required facts are unavailable.
+When a user grants task-level permission, do not call tools or paths that trigger approval prompts. If a command or edit path prompts, abandon that path immediately, use or add a make target, and keep working without asking; permission to edit files must never be requested again once task-level permission exists. Only ask when progress is impossible because required external facts are unavailable.
 
 ## ⛔ ANTI-LOOP DIRECTIVE (READ FIRST)
 

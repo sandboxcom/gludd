@@ -221,11 +221,16 @@ class EntityGraph:
         edges_raw: object = data.get("edges", [])
         for edge_data in edges_raw if isinstance(edges_raw, list) else []:
             assert isinstance(edge_data, dict)
-            edge_dict: dict[str, object] = {}
-            for key in ("source_id", "target_id", "assoc_type", "weight", "description", "metadata"):
-                if key in edge_data:
-                    edge_dict[key] = edge_data[key]
-            graph.add_edge(Association(**edge_dict))  # type: ignore[arg-type]
+            weight_raw = edge_data.get("weight", 1.0)
+            description_raw = edge_data.get("description")
+            graph.add_edge(Association(
+                source_id=str(edge_data.get("source_id", "")),
+                target_id=str(edge_data.get("target_id", "")),
+                assoc_type=str(edge_data.get("assoc_type", "other")),
+                weight=float(weight_raw) if isinstance(weight_raw, (int, float, str)) else 1.0,
+                description=str(description_raw) if description_raw is not None else None,
+                metadata=edge_data.get("metadata", {}),
+            ))
         return graph
 
     @classmethod

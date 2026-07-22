@@ -220,7 +220,9 @@ class ChatSession:
                         attempt + 1, max_retries + 1, delay, exc,
                     )
                     await asyncio.sleep(delay)
-        raise last_exc  # type: ignore[misc]
+        if last_exc is not None:
+            raise last_exc
+        raise RuntimeError("request failed without a captured retry exception")
 
     async def run_once(self, prompt: str) -> str:
         prompt = self._truncate_input(prompt)

@@ -129,7 +129,8 @@ class SearXConnector:
             )
 
         self.base_url = base_url
-        self.timeout = float(config.get("timeout", _DEFAULT_TIMEOUT))  # type: ignore[arg-type]
+        timeout_raw = config.get("timeout", _DEFAULT_TIMEOUT)
+        self.timeout = float(timeout_raw) if isinstance(timeout_raw, (int, float, str)) else _DEFAULT_TIMEOUT
         self.verify_ssl = bool(config.get("verify_ssl", True))
 
         logger.info(

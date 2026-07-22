@@ -30,6 +30,17 @@ ALLOWLIST = frozenset({
     "heavy_sem.py",
     "run_test_background.sh",
     "token_window_monitor.py",
+    # CI/watch scripts — deliberate long-running pollers with visible progress/heartbeats.
+    "ci_annotations_poll.py",
+    "ci_await.py",
+    "ci_poll.py",
+    "ci_push_and_verify.sh",
+    "ci_shards_parallel_status.py",
+    "run_ci_shards_parallel.py",
+    "test_hook_runtime.py",
+    # Spec generation utilities — long-running batch loops with throttled sleeps.
+    "generate_specs_expansion.py",
+    "generate_specs_to_4000.py",
 })
 
 
