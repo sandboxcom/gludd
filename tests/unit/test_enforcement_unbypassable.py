@@ -46,6 +46,7 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -133,8 +134,12 @@ def _esbuild_bundle(plugin_name: str) -> Path:
         errors.append(f"{cmd[0]}: rc={proc.returncode} {proc.stderr[:200]}")
     if not compiled:
         pytest.skip(f"esbuild unavailable/failed: {errors}")
-
     bundle_src = out.read_text()
+    bundle_src = re.sub(
+        r'var (import_meta\d*) = \{\};',
+        r'var \1 = { url: require("node:url").pathToFileURL(__filename).href };',
+        bundle_src,
+    )
     bundle_src = bundle_src.replace(
         "/tmp/gludd-hot-", f"/tmp/gludd-hot-unbypass-absent-{os.getpid()}-",
     )
