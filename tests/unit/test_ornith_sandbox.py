@@ -33,6 +33,14 @@ class TestConfineExportPath:
             result = confine_export_path(f"{td}/my-export.jsonl", "fallback.jsonl")
             assert result == Path(td) / "my-export.jsonl"
 
+    def test_gludd_namespaced_tmp_export_resolves(self):
+        with tempfile.TemporaryDirectory(
+            prefix="gludd-ornith-export-", dir="/tmp"
+        ) as td:
+            out_path = Path(td) / "dataset.jsonl"
+            result = confine_export_path(out_path, "fallback.jsonl")
+            assert result == out_path.resolve()
+
     def test_path_outside_allowed_roots_raises_valueerror(self):
         with patch(
             "general_ludd.ornith.sandbox._ALLOWED_EXPORT_ROOTS", ["/tmp"]

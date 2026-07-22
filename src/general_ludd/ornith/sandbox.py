@@ -19,6 +19,7 @@ from general_ludd.security.sanitize import confine_path
 
 _ORNITH_EXPORT_ROOT = os.environ.get("ORNITH_EXPORT_ROOT", tempfile.gettempdir())
 _GLUDD_DATA_DIR = os.environ.get("GLUDD_DATA_DIR")
+_GLUDD_TMP_EXPORT_PREFIXES = ("/tmp/gludd-", "/private/tmp/gludd-")
 
 _ALLOWED_EXPORT_ROOTS: list[str] = [_ORNITH_EXPORT_ROOT]
 if _GLUDD_DATA_DIR:
@@ -26,6 +27,18 @@ if _GLUDD_DATA_DIR:
 
 ORNITH_SANDBOX_MEM_MB = int(os.environ.get("ORNITH_SANDBOX_MEM_MB", "4096"))
 ORNITH_SANDBOX_CPU_S = int(os.environ.get("ORNITH_SANDBOX_CPU_S", "300"))
+
+
+def _confine_gludd_tmp_export(raw: str) -> Path | None:
+    """Allow pytest/runtime exports only inside gludd-namespaced temp roots."""
+    try:
+        real_candidate = os.path.realpath(raw)
+    except ValueError:
+        return None
+    for prefix in _GLUDD_TMP_EXPORT_PREFIXES:
+        if real_candidate.startswith(prefix):
+            return Path(real_candidate)
+    return None
 
 
 def confine_export_path(out_path: str | Path | None, default_filename: str) -> Path:
@@ -45,9 +58,12 @@ def confine_export_path(out_path: str | Path | None, default_filename: str) -> P
             confined = confine_path(raw, root)
             if confined is not None:
                 return Path(confined)
+        temp_confined = _confine_gludd_tmp_export(raw)
+        if temp_confined is not None:
+            return temp_confined
         raise ValueError(
             f"out_path {raw!r} is not within an allowed export root. "
-            f"Allowed: {_ALLOWED_EXPORT_ROOTS}"
+            f"Allowed: {_ALLOWED_EXPORT_ROOTS} plus gludd-namespaced temp roots"
         )
     return Path(_ORNITH_EXPORT_ROOT) / default_filename
 
