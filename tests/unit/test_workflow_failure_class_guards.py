@@ -204,9 +204,18 @@ def test_ci_busy_check_defaults_to_current_branch_not_master() -> None:
 
 def test_worktree_state_guard_targets_are_path_qualified_release_gates() -> None:
     makefile = _makefile()
-    script = ROOT / "scripts" / "worktree_state_guard.py"
-    assert script.exists(), "worktree_state_guard.py must ship with Makefile guard targets"
-    script_text = script.read_text()
+    required_scripts = [
+        "worktree_state_guard.py",
+        "run_ci_shard_summary.py",
+        "run_ci_shards_parallel.py",
+        "start_ci_shards_parallel_bg.py",
+        "ci_shards_parallel_status.py",
+    ]
+    for script_name in required_scripts:
+        script = ROOT / "scripts" / script_name
+        assert script.exists(), f"{script_name} must ship with Makefile guard targets"
+
+    script_text = (ROOT / "scripts" / "worktree_state_guard.py").read_text()
     assert "def current_state" in script_text
     assert "def main_worktree_state" in script_text
     for target in [
