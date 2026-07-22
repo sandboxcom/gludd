@@ -144,16 +144,14 @@ def _params(**overrides: Any) -> dict[str, Any]:
         "path": "/repo",
         "op": "commit",
         "message": None,
-"message": None,
         "files": [],
         "gate_cmd": [],
+        "branch": None,
         "worktree_path": None,
         "source": None,
         "target": None,
-
         "strategy": "ff",
         "remote": "origin",
-
         "state_ref": "",
         "state_gha_head_sha": "",
         "state_worktree_target_ref": "HEAD",
