@@ -10,6 +10,9 @@ Examples:
 AWS_KEY=... AWS_SECRET=... gludd smoke aws ec2-a100 --json
 OPENROUTER_API_KEY=... gludd smoke openrouter metadata --live --json
 VLLM_BASE_URL=http://127.0.0.1:8000/v1 gludd smoke vllm metadata --live --json
+OPENROUTER_API_KEY=... GROQ_API_KEY=... gludd smoke multi-provider model-juggle --live --json
+VLLM_BASE_URL=http://127.0.0.1:8000/v1 LLAMACPP_BASE_URL=http://127.0.0.1:8080/v1 \
+  GLUDD_SMOKE_LOCAL_MODEL=tinyllama gludd smoke multi-platform model-juggle --live --json
 SLURM_REST_URL=https://slurm.example.edu SLURM_REST_TOKEN=... gludd smoke slurm metadata --json
 ```
 
@@ -54,15 +57,17 @@ CLOUDFLARE_API_TOKEN=... gludd smoke cloudflare metadata \
   --live --json
 ```
 
-Limit acceptable spend:
+Limit acceptable spend. The default ceiling for smoke tests is USD 10.00; lower it
+for metadata-only checks or leave the default in place for bounded manual
+provisioned runs:
 
 ```bash
-OPENAI_API_KEY=... gludd smoke openai model-ping --max-cost-usd 0.001 --json
+OPENAI_API_KEY=... gludd smoke openai model-ping --max-cost-usd 10.00 --json
 ```
 
-Dry-run `model-ping` reports `estimated_cost_usd: 0.0`; live model-ping preflight
-uses the registered tiny-call estimate and fails before any live action if it
-exceeds `--max-cost-usd`.
+Dry-run `model-ping` reports `estimated_cost_usd: 0.0`; live model-ping and
+provisioned compute smokes fail before any live action if their estimate exceeds
+`--max-cost-usd`.
 
 ## Evidence Output
 
@@ -74,6 +79,27 @@ The report includes:
 - `metrics`: checks, failures, HTTP request count, model count, duration
 - `events`: structured start, credential, HTTP, skip, and completion events
 - `logs`: redacted diagnostic messages and fields
+- `trace`: ordered log/event entries with `sequence` and `trace_id`
+- `coverage_depth` and `functional_scope`: what the smoke actually exercised
+- `analysis_prompt`: the prompt to use when handing the JSON bundle back for repair
+- `model_juggle`: ordered multi-provider/platform plan and per-leg results for model juggling smokes
+
+For manual provider debugging, write a durable bundle and share the file path:
+
+```bash
+OPENROUTER_API_KEY=... gludd smoke openrouter model-ping --live --json --output /tmp/gludd-openrouter-smoke.json
+```
+
+When a run fails, send the saved JSON path and ask for analysis using the bundled
+`analysis_prompt`. Do not paste API keys or provider secrets. A useful repair
+request is:
+
+```text
+Please analyze the Gludd smoke report at /tmp/gludd-openrouter-smoke.json. Use
+the report analysis_prompt, trace_id, ordered trace sequence, logs, events, and
+metrics to identify the failing provider/service path and propose the focused
+code/tests/docs changes needed to fix it.
+```
 
 Secret-looking values are redacted before they enter logs or events. The output
 names which variables were present or missing, but never includes API keys,
@@ -94,15 +120,37 @@ Each model/API provider gets:
 - `metadata`: optional live metadata GET, usually `/models`
 - `model-ping`: low-cost prompt-call preflight; dry-run by default
 
+Multi-model orchestration smokes:
+
+- `multi-provider model-juggle`: plans OpenRouter, OpenAI, Groq, DeepSeek,
+  Together, Fireworks, Mistral, and Cohere model calls. With `--live`, it runs
+  every configured provider key and fails unless at least two provider legs are
+  configured and every configured leg returns completion content.
+- `multi-platform model-juggle`: plans model API providers plus `vllm`,
+  `llamacpp`, and `ollama` serving platforms. With `--live`, it runs every
+  configured API key or local base URL and records per-leg endpoint, model,
+  status code, completion status, and elapsed time under `model_juggle.results`.
+
 Compute providers come from `general_ludd.infra.providers`:
 
 - `aws`, `azure`, `gcp`, `runpod`, `vast-ai`, `lambda-labs`, `modal`
 - `coreweave`, `digital-ocean`, `oracle`, `vmware`, `kubernetes`
 - `together-ai`, `fireworks-ai`, `huggingface`, `replicate`
 
-Each compute provider gets `credential-check` and one `gpu-<type>` preflight per
-GPU price entry in the compute registry. AWS also exposes `ec2-a100` as a
-user-friendly alias for the A100 EC2 preflight.
+Each compute provider gets `credential-check` and one `gpu-<type>` smoke per GPU
+price entry in the compute registry. Without `--provisioned`, these run as
+dry-run preflights. With `--provisioned`, gludd uses the existing
+`DeploymentManager` lifecycle to provision the resource, run a one-token
+OpenAI-compatible model task against the returned endpoint, probe `/health`,
+`/v1/models`, and `/metrics`, and call destroy in a `finally` cleanup path. The
+JSON bundle includes `endpoint_diagnostics.expected` with the tunables gludd sent
+into deployment, including provider, GPU type/count, engine (`vllm` or
+`llamacpp`), model, region, cost ceiling, network CIDR, decoding options, and
+workload/deployment profile. The smoke fails if the provisioned endpoint does
+not return the expected model id or Prometheus process/engine metrics, so a saved
+bundle can prove whether vLLM/llama.cpp process, model, and serving metrics made
+it back to gludd. AWS also exposes `ec2-a100` as a user-friendly alias for the
+A100 EC2 smoke.
 
 Local/cluster model backends:
 
@@ -148,9 +196,21 @@ failure classes below without leaking credentials.
   common slurmrestd issues such as invalid tokens, wrong API version, connection
   refusal, and socket binding problems. Smoke output should include endpoint,
   auth mode, HTTP status, and daemon-log pointers, not token values.
-- vLLM: upstream maintainers recommend the OpenAI-compatible server for
-  production use; smoke tests should target `/v1/models` and OpenAI-compatible
-  chat paths rather than the demonstration API server.
+- Multi-provider routing: OpenRouter documents free-tier 429 rate limits and
+  recommends reading rate-limit headers, exponential backoff, and circuit
+  breakers. Its failover guidance separates provider outages/rate limits from
+  model fallback problems. Multi-provider smokes preserve per-leg provider,
+  model, status code, elapsed time, and completion status so routing failures can
+  be isolated. Sources: https://openrouter.zendesk.com/hc/en-us/articles/39501163636379-OpenRouter-Rate-Limits-What-You-Need-to-Know and https://openrouter.ai/blog/insights/reliability-failover/.
+- vLLM: upstream docs and forum answers describe the OpenAI-compatible server as
+  exposing Prometheus metrics at `/metrics`, including `vllm:` queue/cache/token
+  metrics. Provisioned smoke tests require those names when engine is `vllm`.
+  Sources: https://docs.vllm.ai/en/v0.18.0/design/metrics/ and https://discuss.vllm.ai/t/vllm-engine-metrics/810/15.
+- llama.cpp: `llama-server` exposes `/health`, `/models`, and `/metrics`, but
+  the Prometheus endpoint requires the server to be started with `--metrics` and
+  reports `llamacpp:` metric names. Provisioned smoke tests surface missing
+  metrics as endpoint diagnostics rather than hiding the issue. Source:
+  https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md.
 
 ## Operational Pattern
 
