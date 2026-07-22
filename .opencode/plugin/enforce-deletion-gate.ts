@@ -73,7 +73,7 @@ async function appendAuditLog(entry: DeletionAuditEntry): Promise<void> {
 
 function getDeletionThreshold(): number {
   const envThreshold = process.env.GLUDD_DELETION_GATE_THRESHOLD;
-    if (envThreshold !== undefined) {
+  if (envThreshold !== undefined) {
     const parsed = parseInt(envThreshold, 10);
     if (!Number.isNaN(parsed)) {
       return parsed;
@@ -123,18 +123,18 @@ const defaultImpl: HotModule = {
 
     if (input.tool === "edit") {
       if (!argsSource) return;
-      const args = argsSource as Record<string, unknown>;
-      filePath = pickString(args, "filePath", "file_path");
-      const oldLines = countLines(pickString(args, "oldString", "old_string"));
-      const newLines = countLines(pickString(args, "newString", "new_string"));
+      const args = argsSource as Record<string, string>;
+      filePath = args.filePath || "";
+      const oldLines = countLines(args.oldString);
+      const newLines = countLines(args.newString);
       lines_removed = Math.max(0, oldLines - newLines);
     } else if (input.tool === "write") {
       if (!argsSource) return;
-      const args = argsSource as Record<string, unknown>;
-      filePath = pickString(args, "filePath", "file_path");
+      const args = argsSource as Record<string, string>;
+      filePath = args.filePath || "";
       if (!filePath) return;
       const existingLines = await readExistingFileLines(filePath);
-      const newLines = countLines(pickString(args, "content"));
+      const newLines = countLines(args.content);
       lines_removed = Math.max(0, existingLines - newLines);
     } else {
       return;
