@@ -108,7 +108,7 @@ class TestExecutableAllowlist:
         # Each runtime invoked in its canonical, legitimate form.
         invocations = {
             "npx": ["npx", "-y", "@scope/server@1.0.0"],
-            "uvx": ["uvx", "mcp-server-git"],
+            "uvx": ["uvx", "mcp-server-git==0.1.0"],
             "python": ["python", "-m", "srv"],
             "python3": ["python3", "-m", "srv"],
             "node": ["node", "server.js"],
