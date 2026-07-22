@@ -147,3 +147,21 @@ def test_git_remote_targets_use_worktree_safe_ssh_key_path() -> None:
     makefile = _makefile()
     assert "-i sandboxcom_github_rsa" not in makefile
     assert "/Users/shawnwilson/gludd/sandboxcom_github_rsa" in makefile
+
+
+def test_local_ci_replica_shards_refuse_dirty_tree_by_default() -> None:
+    for target in [
+        "test-ci-shard",
+        "test-ci-shard-summary",
+        "test-ci-shard-slice",
+        "test-ci-shards-parallel",
+        "test-ci-shards-parallel-bg",
+    ]:
+        assert "_ci-replica-clean-tree" in _target_line(target), target
+
+    guard = _target_block("_ci-replica-clean-tree")
+    assert "scripts/check_clean_tree.py" in guard
+    assert "ALLOW_DIRTY_FOCUSED_REPRO" in guard
+    assert "PYTEST_ARGS" in guard
+    assert "CI-like shard validation requires a clean worktree" in guard
+    assert "Commit completed work or create a clean worktree at the pushed HEAD" in guard

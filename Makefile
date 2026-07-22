@@ -485,11 +485,26 @@ test-specific:
 	@if [ -z "$(TESTFILE)" ]; then echo "Usage: make test-specific TESTFILE='tests/unit/test_foo.py::TestClass::test_method'"; exit 1; fi
 	@BT="/tmp/gludd-testspecific-$${ID:-$$$$}"; rm -rf "$$BT"; $(UV) run python -m pytest $(TESTFILE) $(_XD) -v $(PYTEST_ARGS) --basetemp="$$BT"; RC=$$?; rm -rf "$$BT"; exit $$RC
 
+_ci-replica-clean-tree:
+	@if $(PYTHON) scripts/check_clean_tree.py >/tmp/gludd-ci-replica-clean-tree.txt 2>&1; then \
+		cat /tmp/gludd-ci-replica-clean-tree.txt; \
+		exit 0; \
+	fi; \
+	if [ "$(ALLOW_DIRTY_FOCUSED_REPRO)" = "1" ] && [ -n "$(PYTEST_ARGS)" ]; then \
+		cat /tmp/gludd-ci-replica-clean-tree.txt; \
+		echo "ALLOW_DIRTY_FOCUSED_REPRO=1: dirty focused repro allowed; CI-like result is not release evidence"; \
+		exit 0; \
+	fi; \
+	cat /tmp/gludd-ci-replica-clean-tree.txt; \
+	echo "BLOCKED: CI-like shard validation requires a clean worktree."; \
+	echo "Commit completed work or create a clean worktree at the pushed HEAD."; \
+	exit 1
+
 test-files:
 	@if [ -z "$(TESTFILES)" ]; then echo "Usage: make test-files TESTFILES='tests/unit/test_a.py tests/unit/test_b.py'"; exit 1; fi
 	@BT="/tmp/gludd-testfiles-$${ID:-$$$$}"; rm -rf "$$BT"; $(UV) run python -m pytest $(TESTFILES) $(_XD) -v $(PYTEST_ARGS) --basetemp="$$BT"; RC=$$?; rm -rf "$$BT"; exit $$RC
 
-test-ci-shard:
+test-ci-shard: _ci-replica-clean-tree
 	@if [ -z "$(SHARD)" ]; then echo "Usage: make test-ci-shard SHARD=unit-2"; exit 1; fi
 	@BT="/tmp/gludd-ci-shard-$(SHARD)-$${ID:-$$$$}"; rm -rf "$$BT"; \
 	TESTFILES="$$( $(UV) run python scripts/ci_named_shard_files.py --shard "$(SHARD)" --shell )"; \
@@ -497,7 +512,7 @@ test-ci-shard:
 	$(UV) run python -m pytest $$TESTFILES $(_XD) -v $(PYTEST_ARGS) --basetemp="$$BT"; \
 	RC=$$?; chmod -R u+rwx "$$BT" 2>/dev/null || true; rm -rf "$$BT"; exit $$RC
 
-test-ci-shard-summary:
+test-ci-shard-summary: _ci-replica-clean-tree
 	@if [ -z "$(SHARD)" ]; then echo "Usage: make test-ci-shard-summary SHARD=unit-2"; exit 1; fi
 	@exec $(UV) run python scripts/run_ci_shard_summary.py --shard "$(SHARD)" --pytest-args="$(PYTEST_ARGS)"
 
@@ -505,7 +520,7 @@ test-ci-shard-files:
 	@if [ -z "$(SHARD)" ]; then echo "Usage: make test-ci-shard-files SHARD=unit-2"; exit 1; fi
 	@$(UV) run python scripts/ci_named_shard_files.py --shard "$(SHARD)"
 
-test-ci-shard-slice:
+test-ci-shard-slice: _ci-replica-clean-tree
 	@if [ -z "$(SHARD)" ]; then echo "Usage: make test-ci-shard-slice SHARD=unit-2 [FROM=path] [AFTER=path] [TO=path] [BEFORE=path]"; exit 1; fi
 	@BT="/tmp/gludd-ci-shard-slice-$(SHARD)-${ID:-$$}"; rm -rf "$$BT"; \
 	TESTFILES="$$($(UV) run python scripts/ci_named_shard_files.py --shard "$(SHARD)" $(if $(FROM),--from "$(FROM)") $(if $(AFTER),--after "$(AFTER)") $(if $(TO),--to "$(TO)") $(if $(BEFORE),--before "$(BEFORE)") --shell)"; \
@@ -520,11 +535,11 @@ test-unit-shards:
 	@if [ -z "$(SHARD)" ]; then echo "Usage: make test-unit-shards SHARD=unit-1a|unit-1b|unit-1d|unit-2|unit-3|other"; exit 1; fi
 	@$(MAKE) --no-print-directory test-ci-shard SHARD="$(SHARD)" PYTEST_ARGS="$(PYTEST_ARGS)"
 
-test-ci-shards-parallel:
+test-ci-shards-parallel: _ci-replica-clean-tree
 	@if [ -z "$(SHARDS)" ]; then echo "Usage: make test-ci-shards-parallel SHARDS=\"unit-2 unit-3\" [WORKERS_PER_SHARD=1]"; exit 1; fi
 	@$(UV) run python scripts/run_ci_shards_parallel.py --shards "$(SHARDS)" --pytest-args="$(PYTEST_ARGS)" --workers-per-shard "$(or $(WORKERS_PER_SHARD),1)"
 
-test-ci-shards-parallel-bg:
+test-ci-shards-parallel-bg: _ci-replica-clean-tree
 	@if [ -z "$(SHARDS)" ]; then echo "Usage: make test-ci-shards-parallel-bg SHARDS=\"unit-2 unit-3\" [WORKERS_PER_SHARD=1]"; exit 1; fi
 	@$(UV) run python scripts/start_ci_shards_parallel_bg.py --shards "$(SHARDS)" --pytest-args="$(PYTEST_ARGS)" --workers-per-shard "$(or $(WORKERS_PER_SHARD),1)"
 
