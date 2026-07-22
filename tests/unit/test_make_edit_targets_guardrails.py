@@ -180,3 +180,9 @@ def test_replace_lines_accepts_tmp_gludd_path_after_private_tmp_resolution() -> 
     finally:
         target.unlink(missing_ok=True)
         new_file.unlink(missing_ok=True)
+
+
+def test_git_diff_honors_explicit_files_scope() -> None:
+    body = _target_block("git-diff")
+
+    assert "" in body

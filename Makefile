@@ -1187,7 +1187,7 @@ repo-status:
 	@git status --short || echo "Not a git repo"
 
 git-diff:
-	@git diff --stat || echo "No diff"
+	@git diff --stat HEAD $(if $(FILES),-- $(FILES),) || echo "No diff"
 
 # Full-patch diff (git-diff is stats-only). Optional FILES scope.
 # Usage: make git-diff-full [FILES='path ...']
