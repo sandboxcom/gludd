@@ -292,7 +292,10 @@ def test_workflow_state_targets_do_not_dirty_lockfile_with_uv_run() -> None:
         "write-text-b64",
         "replace-text-b64",
         "tmp-gludd-usage",
+        "tmp-gludd-worktree-usage",
         "tmp-gludd-clean-ci-shards",
+        "clean-worktree-venvs",
+        "clean-worktree-caches",
     ]:
         assert goal in no_uv_goals
     for target in guard_targets:
@@ -304,15 +307,33 @@ def test_workflow_state_targets_do_not_dirty_lockfile_with_uv_run() -> None:
         assert "$(SYSTEM_PYTHON) scripts/" in block
 
 
-def test_tmp_gludd_cleanup_targets_are_scoped_to_generated_shard_dirs() -> None:
+def test_tmp_gludd_cleanup_targets_are_scoped_to_generated_dirs() -> None:
+    makefile = _makefile()
+    phony_block = makefile.split(".PHONY:", 1)[1].split("help:", 1)[0]
     usage_block = _target_block("tmp-gludd-usage")
-    cleanup_block = _target_block("tmp-gludd-clean-ci-shards")
+    worktree_usage = _target_block("tmp-gludd-worktree-usage")
+    shard_cleanup = _target_block("tmp-gludd-clean-ci-shards")
+    venv_cleanup = _target_block("clean-worktree-venvs")
+    cache_cleanup = _target_block("clean-worktree-caches")
 
+    assert phony_block.count("log-agent-result disk-guard") == 1
     assert "sort -h | tail -40" in usage_block
-    assert "/tmp/gludd-ci-shard-*" in cleanup_block
-    assert "/tmp/gludd-unit-shard-*" in cleanup_block
-    assert "/tmp/gludd-worktrees" not in cleanup_block
-    assert "/Users/shawnwilson/gludd" not in cleanup_block
+    assert "/tmp/gludd-worktrees/*/.pytest_cache" in worktree_usage
+    assert "/tmp/gludd-ci-shard-*" in shard_cleanup
+    assert "/tmp/gludd-unit-shard-*" in shard_cleanup
+    assert "/tmp/gludd-worktrees" not in shard_cleanup
+    assert "/Users/shawnwilson/gludd" not in shard_cleanup
+
+    assert "/tmp/gludd-worktrees/*/.venv" in venv_cleanup
+    assert "/Users/shawnwilson/gludd/.claude/worktrees/agent-*/.venv" in venv_cleanup
+    assert "/tmp/gludd-worktrees/* " not in venv_cleanup
+
+    assert "clean-worktree-caches: clean-worktree-venvs" in cache_cleanup
+    assert "/tmp/gludd-worktrees/*/.pytest_cache" in cache_cleanup
+    assert "/tmp/gludd-worktrees/*/.mypy_cache" in cache_cleanup
+    assert "/tmp/gludd-worktrees/*/.ruff_cache" in cache_cleanup
+    assert "/tmp/gludd-worktrees/* " not in cache_cleanup
+
 
 def test_ci_head_compare_reports_bidirectional_divergence() -> None:
     block = _target_block("ci-head-compare")
