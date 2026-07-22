@@ -6,7 +6,6 @@ import argparse
 from collections.abc import Iterable
 from pathlib import Path
 
-
 DEFAULT_PATHS = (
     "AGENTS.md",
     "CONTRIBUTING.md",
