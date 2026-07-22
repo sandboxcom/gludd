@@ -58,3 +58,13 @@ Long-lived Git community threads consistently describe cherry-pick as a copy of 
 - https://stackoverflow.com/questions/53972594/what-is-the-difference-between-a-git-merge-and-git-cherry-pick-for-a-specific-co
 
 The project rule is therefore: cherry-pick is emergency recovery, not the release path. If `merge-ready` fails, repair topology first.
+
+
+### Ansible git role context
+
+The Ansible collection deliberately delegates workflow checks to `general_ludd.git_automation` instead of relying on plain `ansible.builtin.git` state alone. Ansible documents `GIT_TERMINAL_PROMPT=0` / `GIT_ASKPASS` as the way to avoid authentication hangs on missing credentials, which matches the gludd non-interactive git environment: https://docs.ansible.com/projects/ansible/latest/collections/ansible/builtin/git_module.html
+
+Long-lived Ansible forum threads also show why gludd keeps explicit state evidence. Operators have reported git tasks marked changed even when `before` and `after` SHAs match (`remote_url_changed: true`), and checkout/submodule flows can fail on unexpected local dirty state. These are exactly the classes guarded by `state_assert_clean`, `state_assert_remote_head`, `state_assert_gha_matches_local`, `state_assert_no_unintegrated_worktrees`, and `state_assert_no_unintegrated_branches`:
+
+- https://forum.ansible.com/t/git-module-often-marked-as-changed-even-when-nothing-changed/31555
+- https://forum.ansible.com/t/error-your-local-changes-to-the-following-files-would-be-overwritten-by-checkout/20465

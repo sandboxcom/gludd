@@ -39,5 +39,9 @@ def test_workflow_state_docs_list_full_collection_parity() -> None:
         "state_reconciled_preserve_head_file",
         "config/reconciled_preserved_heads.txt",
         "exact HEAD SHA",
+        "Ansible git role context",
+        "GIT_TERMINAL_PROMPT=0",
+        "git-module-often-marked-as-changed-even-when-nothing-changed",
+        "error-your-local-changes-to-the-following-files-would-be-overwritten-by-checkout",
     ]:
         assert token in doc
