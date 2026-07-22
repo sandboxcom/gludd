@@ -228,6 +228,32 @@ class TestFindHungProcesses:
         pids = [p["pid"] for p in procs]
         assert gate_pid not in pids
 
+    def test_excludes_ci_shard_supervisors_and_pytest_children(self):
+        """CI shard runners have their own supervisor; task_watchdog must not SIGTERM them."""
+        ps_output = chr(10).join((
+            "  PID  PPID ELAPSED COMMAND",
+            "66665     1 06:00 python scripts/start_ci_shards_parallel_bg.py --shards unit-3",
+            "66666     1 06:00 python scripts/run_ci_shards_parallel.py --pytest-args --maxfail=1",
+            "66667     1 06:00 make --no-print-directory test-ci-shards-parallel SHARDS=unit-3",
+            "77776     1 06:00 make --no-print-directory test-ci-shard-summary SHARD=unit-3 PYTEST_ARGS=--maxfail=1",
+            "77777     1 06:00 python scripts/run_ci_shard_summary.py --pytest-args --maxfail=1",
+            "77778     1 06:00 python -m pytest tests/unit --basetemp=/tmp/gludd-ci-shard-summary-unit-3-abcd",
+            "88888     1 06:00 python -m pytest tests/unit/test_other.py",
+            "",
+        ))
+        with patch("scripts.task_watchdog.subprocess.run") as mock_run:
+            mock_run.return_value = mock_run.return_value.__class__(
+                stdout=ps_output, returncode=0)
+            procs = find_hung_processes(timeout_secs=300)
+        pids = [p["pid"] for p in procs]
+        assert 66665 not in pids
+        assert 66666 not in pids
+        assert 66667 not in pids
+        assert 77776 not in pids
+        assert 77777 not in pids
+        assert 77778 not in pids
+        assert 88888 in pids
+
 
 # ---------------------------------------------------------------------------
 # run_once (integration of the above)
@@ -297,3 +323,39 @@ class TestRunOnce:
         )
         assert result["stale"] == 0
         assert result["killed"] == 0
+
+    def test_stale_task_is_pruned_after_handling(self, tmp_path: Path):
+        now_ms = time.time() * 1000
+        deadlines_file = tmp_path / "deadlines.json"
+        deadlines_file.write_text(json.dumps({"stale-task": now_ms - 400_000}))
+
+        with patch("scripts.task_watchdog.find_hung_processes") as mock_find:
+            mock_find.return_value = []
+            result = run_once(
+                deadlines_file=str(deadlines_file),
+                stale_file=str(tmp_path / "stale.json"),
+                killed_file=str(tmp_path / "killed.json"),
+                timeout_ms=300_000,
+            )
+
+        assert result["stale"] == 1
+        assert result["killed"] == 0
+        assert json.loads(deadlines_file.read_text()) == {}
+
+    def test_expired_deadline_is_pruned_without_killing_new_work(self, tmp_path: Path):
+        now_ms = time.time() * 1000
+        deadlines_file = tmp_path / "deadlines.json"
+        deadlines_file.write_text(json.dumps({"expired-task": now_ms - 2_000_000}))
+
+        with patch("scripts.task_watchdog.find_hung_processes") as mock_find:
+            result = run_once(
+                deadlines_file=str(deadlines_file),
+                stale_file=str(tmp_path / "stale.json"),
+                killed_file=str(tmp_path / "killed.json"),
+                timeout_ms=300_000,
+            )
+
+        mock_find.assert_not_called()
+        assert result["stale"] == 0
+        assert result["killed"] == 0
+        assert json.loads(deadlines_file.read_text()) == {}

@@ -58,6 +58,10 @@ WATCHDOG_LOG = os.environ.get(
 TIMEOUT_MS = int(os.environ.get("GLUDD_TASK_TIMEOUT_MS", "300000"))
 TIMEOUT_SECS = TIMEOUT_MS / 1000.0
 POLL_SECS = int(os.environ.get("GLUDD_TASK_WATCHDOG_POLL", "5"))
+STALE_DEADLINE_GRACE_MULTIPLIER = float(
+    os.environ.get("GLUDD_TASK_STALE_DEADLINE_GRACE_MULTIPLIER", "4")
+)
+MAX_STALE_DEADLINE_MS = TIMEOUT_MS * STALE_DEADLINE_GRACE_MULTIPLIER
 
 GATE_PID_FILE = Path(os.environ.get("GLUDD_WORKSPACE", os.getcwd())) / ".gate-background.pid"
 
@@ -80,6 +84,13 @@ EXCLUDE_PATTERNS = [
     re.compile(r"task_watchdog\.py"),
     re.compile(r"agent_watchdog\.py"),
     re.compile(r"gate-background"),
+    # CI shard supervisors and their pytest children manage their own lifecycle.
+    re.compile(r"start_ci_shards_parallel_bg\.py"),
+    re.compile(r"run_ci_shards_parallel\.py"),
+    re.compile(r"run_ci_shard_summary\.py"),
+    re.compile(r"test-ci-shards-parallel"),
+    re.compile(r"test-ci-shard-summary"),
+    re.compile(r"gludd-ci-shard-summary-"),
     re.compile(r"watchdog"),
 ]
 
@@ -147,6 +158,36 @@ def find_stale_tasks(
                 "timeout_ms": timeout_ms,
             })
     return stale
+
+
+def find_expired_deadline_ids(
+    deadlines: dict[str, float],
+    timeout_ms: float = TIMEOUT_MS,
+    now_ms: float | None = None,
+    max_stale_ms: float | None = None,
+) -> set[str]:
+    """Return deadline IDs too old to safely map to current processes."""
+    if now_ms is None:
+        now_ms = time.time() * 1000.0
+    if max_stale_ms is None:
+        max_stale_ms = max(timeout_ms, MAX_STALE_DEADLINE_MS)
+    return {
+        tid
+        for tid, start_ms in deadlines.items()
+        if start_ms > 0 and now_ms - start_ms > max_stale_ms
+    }
+
+
+def prune_deadlines(path: str, task_ids: set[str] | list[str]) -> None:
+    """Remove handled task IDs from the deadline state file."""
+    if not task_ids:
+        return
+    try:
+        current = load_deadlines(path)
+        remaining = {tid: start for tid, start in current.items() if tid not in task_ids}
+        Path(path).write_text(json.dumps(remaining), encoding="utf-8")
+    except Exception as exc:
+        _log(f"DEADLINE PRUNE ERROR: {exc}")
 
 
 def load_stale_ids(path: str = STALE_FILE) -> set[str]:
@@ -337,10 +378,27 @@ def run_once(
             return {"stale": 0, "killed": 0}
 
         now_ms = time.time() * 1000.0
+        expired_ids = find_expired_deadline_ids(
+            deadlines,
+            timeout_ms=timeout_ms,
+            now_ms=now_ms,
+        )
+        if expired_ids:
+            prune_deadlines(deadlines_file, expired_ids)
+            deadlines = {
+                task_id: start_ms
+                for task_id, start_ms in deadlines.items()
+                if task_id not in expired_ids
+            }
+            _log(f"PRUNED EXPIRED DEADLINES: {len(expired_ids)} stale task ID(s)")
+            if not deadlines:
+                return {"stale": 0, "killed": 0}
+
         stale = find_stale_tasks(deadlines, timeout_ms=timeout_ms, now_ms=now_ms)
 
         if not stale:
             return {"stale": 0, "killed": 0}
+        stale_task_ids = [entry["task_id"] for entry in stale]
 
         _log(f"STALE TASKS: {len(stale)} task(s) over {timeout_ms/1000:.0f}s timeout")
 
@@ -371,6 +429,7 @@ def run_once(
                     f"elapsed={proc['etime_secs']:.0f}s"
                 )
 
+        prune_deadlines(deadlines_file, stale_task_ids)
         return {"stale": len(stale), "killed": killed}
 
     except Exception as exc:

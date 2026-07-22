@@ -1450,3 +1450,48 @@ def test_check_and_reset_includes_under_floor_check(tmp_path: Path, monkeypatch:
     )
     content = directive_path.read_text()
     assert "UNDER-FLOOR DETECTED" in content
+
+
+def test_agent_watchdog_skips_ci_shard_tasks_when_stalled(monkeypatch) -> None:
+    killed: list[tuple[str, int | None]] = []
+    logs: list[str] = []
+    now = time.time()
+    tasks = [
+        {"name": "make test-ci-shards-parallel SHARDS=unit-3", "started": now - 999, "pid": 101},
+        {"name": "python scripts/start_ci_shards_parallel_bg.py --shards unit-3", "started": now - 999, "pid": 102},
+        {"name": "python scripts/run_ci_shards_parallel.py --shards unit-3", "started": now - 999, "pid": 103},
+        {"name": "make test-ci-shard-summary SHARD=unit-3", "started": now - 999, "pid": 104},
+        {"name": "python scripts/run_ci_shard_summary.py --shard unit-3", "started": now - 999, "pid": 105},
+        {
+            "name": "python -m pytest --basetemp=/tmp/gludd-ci-shard-summary-unit-3-abcd",
+            "started": now - 999,
+            "pid": 106,
+        },
+    ]
+    monkeypatch.setattr(aw, "_read_task_state", lambda: tasks)
+    monkeypatch.setattr(aw, "_read_previous_state", lambda: [])
+    monkeypatch.setattr(aw, "_write_task_state", lambda data: None)
+    monkeypatch.setattr(aw, "_read_task_timings", lambda: {})
+    monkeypatch.setattr(aw, "_kill_stalled_task", lambda name, pid: killed.append((name, pid)))
+    monkeypatch.setattr(aw, "_log", logs.append)
+
+    aw.check_task_timings()
+
+    assert killed == []
+    assert not any("STALLED TASK KILLED" in line for line in logs)
+
+
+def test_agent_watchdog_still_kills_unrelated_stale_task(monkeypatch) -> None:
+    killed: list[tuple[str, int | None]] = []
+    now = time.time()
+    tasks = [{"name": "python -m pytest tests/unit/test_other.py", "started": now - 999, "pid": 201}]
+    monkeypatch.setattr(aw, "_read_task_state", lambda: tasks)
+    monkeypatch.setattr(aw, "_read_previous_state", lambda: [])
+    monkeypatch.setattr(aw, "_write_task_state", lambda data: None)
+    monkeypatch.setattr(aw, "_read_task_timings", lambda: {})
+    monkeypatch.setattr(aw, "_kill_stalled_task", lambda name, pid: killed.append((name, pid)))
+    monkeypatch.setattr(aw, "_log", lambda message: None)
+
+    aw.check_task_timings()
+
+    assert killed == [("python -m pytest tests/unit/test_other.py", 201)]

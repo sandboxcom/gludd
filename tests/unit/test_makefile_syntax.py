@@ -211,5 +211,23 @@ def test_no_duplicate_targets():
         pytest.fail("\n".join(msg_lines))
 
 
+def test_makefile_script_references_exist():
+    """Makefile recipes must not reference missing repo scripts."""
+    content = MAKEFILE.read_text()
+    repo_root = MAKEFILE.parent
+    refs = sorted(set(re.findall(r"scripts/[A-Za-z0-9_./-]+\.py", content)))
+    missing = [ref for ref in refs if not (repo_root / ref).exists()]
+    assert not missing, (
+        "Makefile references missing script(s): " + ", ".join(missing)
+    )
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))
+
+
+def test_test_ci_shard_restores_basetemp_permissions_before_cleanup():
+    content = MAKEFILE.read_text()
+    assert "chmod -R u+rwx" in content, (
+        "test-ci-shard must restore basetemp permissions before cleanup"
+    )

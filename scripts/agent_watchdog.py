@@ -269,6 +269,14 @@ MAX_HISTORY_PER_TYPE = 5
 TASK_STALL_TIMEOUT = 120
 TASK_STATE_FILE = "/tmp/gludd-task-state.json"
 TASK_STATE_SNAPSHOT = "/tmp/gludd-task-state-snapshot.json"
+CI_SHARD_TASK_EXCLUDE_PATTERNS = (
+    re.compile(r"start_ci_shards_parallel_bg\.py"),
+    re.compile(r"run_ci_shards_parallel\.py"),
+    re.compile(r"run_ci_shard_summary\.py"),
+    re.compile(r"test-ci-shards-parallel"),
+    re.compile(r"test-ci-shard-summary"),
+    re.compile(r"gludd-ci-shard-summary-"),
+)
 
 CI_CACHE_FILE = "/tmp/gludd-watchdog-ci.json"
 DURATIONS_FILE = "/tmp/gludd-watchdog-durations.json"
@@ -1225,6 +1233,10 @@ def _write_task_timings(data: dict) -> None:
     Path(TASK_TIMING_FILE).write_text(json.dumps(data))
 
 
+def _is_ci_shard_task_name(task_name: str) -> bool:
+    return any(pattern.search(task_name) for pattern in CI_SHARD_TASK_EXCLUDE_PATTERNS)
+
+
 def _read_task_state() -> list:
     try:
         p = Path(TASK_STATE_FILE)
@@ -1322,6 +1334,8 @@ def check_task_timings() -> None:
         if started <= 0:
             continue
         elapsed = now - started
+        if _is_ci_shard_task_name(str(name)):
+            continue
 
         if elapsed > TASK_STALL_TIMEOUT:
             _kill_stalled_task(name, pid)

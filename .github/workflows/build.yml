@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - development
+      - master
     tags: ["v*"]
   pull_request:
     branches: [master, main]
