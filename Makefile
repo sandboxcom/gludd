@@ -11,7 +11,12 @@ GATE_POLL_INTERVAL ?= 60
 
 PYTHON := python3
 override SYSTEM_PYTHON := /usr/bin/python3
+_NO_UV_SYNC_GOALS := worktree-state all-worktree-state main-worktree-state worktree-guard main-worktree-guard release-worktree-guard status-claim-guard workflow-state workflow-gate commit-ready gha-ready merge-ready git-push-committed-head-nv ci-trigger-committed-head ci-push-committed-head git-push-current-head-to-master-nv
+ifneq (,$(filter $(_NO_UV_SYNC_GOALS),$(MAKECMDGOALS)))
+override UV := echo
+else
 UV := uv
+endif
 PROJECT_SRC := src/general_ludd
 TESTS_DIR := tests
 # Export xdist worker-count overrides so command-line NPROC=/GLUDD_XDIST= reach
