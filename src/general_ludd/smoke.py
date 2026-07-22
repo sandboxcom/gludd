@@ -86,7 +86,11 @@ _CREDENTIAL_ALIASES: dict[str, tuple[tuple[str, ...], ...]] = {
     "gcp": (("GOOGLE_APPLICATION_CREDENTIALS", "GCP_CREDENTIALS_JSON", "GOOGLE_CREDENTIALS"),),
     "azure": (("AZURE_SUBSCRIPTION_ID",),),
     "runpod": (("RUNPOD_API_KEY",),),
+    "vast": (("VAST_API_KEY", "VAST_AI_API_KEY"),),
+    "vast_ai": (("VAST_AI_API_KEY", "VAST_API_KEY"),),
+    "qemu": tuple(),
     "kubernetes": (("KUBECONFIG",),),
+    "vsphere": (("VSPHERE_USER",), ("VSPHERE_PASSWORD",), ("VSPHERE_SERVER",)),
     "vmware": (("VSPHERE_USER",), ("VSPHERE_PASSWORD",), ("VSPHERE_SERVER",)),
 }
 
@@ -422,7 +426,12 @@ def _build_registry() -> list[SmokeSpec]:
                     ),
                     required_env=required,
                     coverage_depth="provisioned",
-                    functional_scope=("credential_presence", "terraform_deploy", "model_task", "teardown"),
+                    functional_scope=(
+                        "credential_presence",
+                        "terraform_deploy",
+                        "model_task",
+                        "teardown",
+                    ),
                     estimated_cost_usd=float(info.pricing.get(gpu, 0.0) or 0.0),
                 )
             )
@@ -438,11 +447,38 @@ def _build_registry() -> list[SmokeSpec]:
                     ),
                     required_env=_credential_groups("aws"),
                     coverage_depth="provisioned",
-                    functional_scope=("credential_presence", "terraform_deploy", "model_task", "teardown"),
+                    functional_scope=(
+                        "credential_presence",
+                        "terraform_deploy",
+                        "model_task",
+                        "teardown",
+                    ),
                     estimated_cost_usd=float(info.pricing.get("a100_80", 0.0) or 0.0),
                 )
             )
 
+    existing_compute = {spec.provider for spec in specs if spec.category == "compute"}
+    for provider, display_name in (
+        ("qemu", "Local QEMU"),
+        ("vast", "Vast.ai"),
+        ("vsphere", "VMware vSphere"),
+    ):
+        if provider in existing_compute:
+            continue
+        specs.append(
+            SmokeSpec(
+                provider=provider,
+                test="credential-check",
+                category="compute",
+                description=(
+                    f"Validate {display_name} compute-provider configuration "
+                    "without provisioning resources."
+                ),
+                required_env=_credential_groups(provider),
+                coverage_depth="configuration",
+                functional_scope=("credential_presence", "provider_alias"),
+            )
+        )
     for provider, env_vars in _LOCAL_BACKEND_SMOKES.items():
         specs.extend(
             [

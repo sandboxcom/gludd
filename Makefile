@@ -517,19 +517,62 @@ test-files:
 	@if [ -z "$(TESTFILES)" ]; then echo "Usage: make test-files TESTFILES='tests/unit/test_a.py tests/unit/test_b.py'"; exit 1; fi
 	@BT="/tmp/gludd-testfiles-$${ID:-$$$$}"; rm -rf "$$BT"; $(UV) run python -m pytest $(TESTFILES) $(_XD) -v $(PYTEST_ARGS) --basetemp="$$BT"; RC=$$?; rm -rf "$$BT"; exit $$RC
 
-test-ci-shard:
+_ci-replica-clean-tree:
+	@if python3 scripts/worktree_state_guard.py --assert-clean --claim-token >/tmp/gludd-ci-replica-clean-tree.txt 2>&1; then \
+		cat /tmp/gludd-ci-replica-clean-tree.txt; \
+		exit 0; \
+	fi; \
+	if [ "$(ALLOW_DIRTY_FOCUSED_REPRO)" = "1" ] && [ -n "$(PYTEST_ARGS)" ]; then \
+		cat /tmp/gludd-ci-replica-clean-tree.txt; \
+		echo "ALLOW_DIRTY_FOCUSED_REPRO=1: dirty focused repro allowed; CI-like result is not release evidence"; \
+		exit 0; \
+	fi; \
+	cat /tmp/gludd-ci-replica-clean-tree.txt; \
+	echo "BLOCKED: CI-like shard validation requires a clean worktree."; \
+	echo "Commit completed work or create a clean worktree at the pushed HEAD."; \
+	exit 1
+
+test-ci-shard: _ci-replica-clean-tree
 	@if [ -z "$(SHARD)" ]; then echo "Usage: make test-ci-shard SHARD=unit-2"; exit 1; fi
 	@BT="/tmp/gludd-ci-shard-$(SHARD)-$${ID:-$$$$}"; rm -rf "$$BT"; \
 	TESTFILES="$$( $(UV) run python scripts/ci_named_shard_files.py --shard "$(SHARD)" --shell )"; \
 	if [ -z "$$TESTFILES" ]; then echo ERROR: unknown-or-empty ci shard; rm -rf "$$BT"; exit 2; fi; echo "=== ci shard $(SHARD): local replica ==="; \
 	$(UV) run python -m pytest $$TESTFILES $(_XD) -v $(PYTEST_ARGS) --basetemp="$$BT"; \
-	RC=$$?; rm -rf "$$BT"; exit $$RC
+	RC=$$?; chmod -R u+rwx "$$BT" 2>/dev/null || true; rm -rf "$$BT"; exit $$RC
+
+test-ci-shard-summary: _ci-replica-clean-tree
+	@if [ -z "$(SHARD)" ]; then echo "Usage: make test-ci-shard-summary SHARD=unit-2"; exit 1; fi
+	@exec $(UV) run python scripts/run_ci_shard_summary.py --shard "$(SHARD)" --pytest-args="$(PYTEST_ARGS)"
+
+test-ci-shard-files:
+	@if [ -z "$(SHARD)" ]; then echo "Usage: make test-ci-shard-files SHARD=unit-2"; exit 1; fi
+	@$(UV) run python scripts/ci_named_shard_files.py --shard "$(SHARD)"
+
+test-ci-shard-slice: _ci-replica-clean-tree
+	@if [ -z "$(SHARD)" ]; then echo "Usage: make test-ci-shard-slice SHARD=unit-2 [FROM=path] [AFTER=path] [TO=path] [BEFORE=path]"; exit 1; fi
+	@BT="/tmp/gludd-ci-shard-slice-$(SHARD)-$${ID:-$$$$}"; rm -rf "$$BT"; \
+	TESTFILES="$$($(UV) run python scripts/ci_named_shard_files.py --shard "$(SHARD)" $(if $(FROM),--from "$(FROM)") $(if $(AFTER),--after "$(AFTER)") $(if $(TO),--to "$(TO)") $(if $(BEFORE),--before "$(BEFORE)") --shell)"; \
+	if [ -z "$$TESTFILES" ]; then echo ERROR: unknown-or-empty ci shard slice; rm -rf "$$BT"; exit 2; fi; echo "=== ci shard $(SHARD): local slice ==="; \
+	$(UV) run python -m pytest $$TESTFILES $(_XD) -v $(PYTEST_ARGS) --basetemp="$$BT"; \
+	RC=$$?; chmod -R u+rwx "$$BT" 2>/dev/null || true; rm -rf "$$BT"; exit $$RC
 
 test-ci-shard-kill-unit-4:
 	@pkill -TERM -f /tmp/gludd-ci-shard-unit-4- 2>/dev/null || true
 
 test-unit-shards:
-	@$(UV) run python scripts/run_unit_shards.py --shards "$(or $(SHARDS),12)" $(if $(SHARD),--index "$(SHARD)") --timeout "$(or $(SHARD_TIMEOUT),300)"
+	@if [ -z "$(SHARD)" ]; then echo "Usage: make test-unit-shards SHARD=unit-1a|unit-1b|unit-1d|unit-2|unit-3|other"; exit 1; fi
+	@/Library/Developer/CommandLineTools/usr/bin/make --no-print-directory test-ci-shard SHARD="$(SHARD)" PYTEST_ARGS="$(PYTEST_ARGS)"
+
+test-ci-shards-parallel: _ci-replica-clean-tree
+	@if [ -z "$(SHARDS)" ]; then echo "Usage: make test-ci-shards-parallel SHARDS=unit-2 unit-3 [WORKERS_PER_SHARD=1]"; exit 1; fi
+	@$(UV) run python scripts/run_ci_shards_parallel.py --shards "$(SHARDS)" --pytest-args="$(PYTEST_ARGS)" --workers-per-shard "$(or $(WORKERS_PER_SHARD),1)"
+
+test-ci-shards-parallel-bg: _ci-replica-clean-tree
+	@if [ -z "$(SHARDS)" ]; then echo "Usage: make test-ci-shards-parallel-bg SHARDS=unit-2 unit-3 [WORKERS_PER_SHARD=1]"; exit 1; fi
+	@$(UV) run python scripts/start_ci_shards_parallel_bg.py --shards "$(SHARDS)" --pytest-args="$(PYTEST_ARGS)" --workers-per-shard "$(or $(WORKERS_PER_SHARD),1)"
+
+test-ci-shards-parallel-status:
+	@$(UV) run python scripts/ci_shards_parallel_status.py --lines "$(or $(LINES),80)"
 
 repro-caplog-secrets:
 	$(UV) run python -m pytest tests/unit/test_secrets_log_sanitization.py::test_resolve_exc_message_sanitized -n 2 --dist loadgroup -v -s
@@ -562,6 +605,9 @@ test-failures:
 	@$(UV) run python -m pytest tests/ $(_XD) -q 2>&1 | tee /tmp/gludd-test-output.txt; EXIT=$$?; \
 	grep -E "^(FAILED|ERROR)" /tmp/gludd-test-output.txt; \
 	exit $$EXIT
+
+check-makefile-structure:
+	@$(UV) run python -m pytest tests/unit/test_makefile_syntax.py -q -n 0
 
 collect-check:
 	@$(UV) run python -m pytest tests/ --co -q > /tmp/gludd-collect-output.txt 2>&1; EXIT=$$?; \
@@ -1540,7 +1586,7 @@ clean-untracked:
 
 git-remote-sandboxcom:
 	@chmod 600 sandboxcom_github_rsa
-	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git remote add sandboxcom git@github.com:sandboxcom/gludd.git 2>/dev/null || true
+	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git remote add sandboxcom git@github.com:sandboxcom/gludd.git 2>/dev/null || true
 	@echo "Remote sandboxcom configured"
 
 # -- Push gate: prevent CI thrash (cancelled runs, push storms, excessive pushes) --
@@ -1635,22 +1681,22 @@ force-push:
 	@GLUDD_FORCE_PUSH=1 $(MAKE) git-push-sandboxcom
 
 master-force-push:
-	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push --force --no-verify -u sandboxcom master
+	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push --force --no-verify -u sandboxcom master
 	@$(MAKE) verify-remote BRANCH=master SHA=$$(git rev-parse master)
 	@echo "Master branch force-pushed and verified"
 
 git-push-sandboxcom: check-clean-tree _test-disabled-guard _push-rate-guard
-	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push -u sandboxcom master
+	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push -u sandboxcom master
 	@echo "Pushed to sandboxcom/gludd"
 
 push-dev: check-clean-tree ci-busy-check
-	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push sandboxcom development
+	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push sandboxcom development
 	@echo "Pushed development to sandboxcom/gludd"
 	@$(PYTHON) scripts/ci_check_cooldown.py deploy
 	@python3 -c "import json,time;from pathlib import Path;p=Path('/tmp/gludd-watchdog-push-timestamps.json');d=json.loads(p.read_text()) if p.exists() else [];d.append(time.time());p.write_text(json.dumps(d[-50:]))" 2>/dev/null || true
 
 push-dev-nv: check-clean-tree _push-rate-guard
-	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push --no-verify sandboxcom development
+	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push --no-verify sandboxcom development
 	@echo "Pushed development to sandboxcom/gludd (--no-verify)"
 	@python3 -c "import json,time;from pathlib import Path;p=Path('/tmp/gludd-watchdog-push-timestamps.json');d=json.loads(p.read_text()) if p.exists() else [];d.append(time.time());p.write_text(json.dumps(d[-50:]))" 2>/dev/null || true
 
@@ -1659,45 +1705,53 @@ push-dev-nv: check-clean-tree _push-rate-guard
 # and CI is the gate. The _push-rate-guard (CI-pending / cooldown / thrash)
 # is STILL enforced. Mirrors commit-no-verify for the push side.
 git-push-sandboxcom-nv: check-clean-tree _push-rate-guard
-	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push --no-verify -u sandboxcom master
+	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push --no-verify -u sandboxcom master
 	@echo "Pushed to sandboxcom/gludd (--no-verify)"
 	@python3 -c "import json,time;from pathlib import Path;p=Path('/tmp/gludd-watchdog-push-timestamps.json');d=json.loads(p.read_text()) if p.exists() else [];d.append(time.time());p.write_text(json.dumps(d[-50:]))" 2>/dev/null || true
 
 # Push only the committed HEAD for the current branch. This is for CI candidate
 # runs from a dirty integration checkout; uncommitted files are not included.
-git-push-current-head-nv: _push-rate-guard
+git-push-current-head-nv: check-clean-tree _push-rate-guard
 	@BRANCH=$$(git branch --show-current); \
 	if [ -z "$$BRANCH" ]; then echo "Cannot push detached HEAD"; exit 1; fi; \
-	GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push --no-verify -u sandboxcom HEAD:$$BRANCH
+	GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push --no-verify -u sandboxcom HEAD:$$BRANCH
 	@echo "Pushed committed HEAD to sandboxcom/gludd"
 	@python3 -c "import json,time;from pathlib import Path;p=Path('/tmp/gludd-watchdog-push-timestamps.json');d=json.loads(p.read_text()) if p.exists() else [];d.append(time.time());p.write_text(json.dumps(d[-50:]))" 2>/dev/null || true
 
-git-push-current-head-to-master-nv: _push-rate-guard
+git-push-current-head-to-master-nv: check-clean-tree _push-rate-guard
 	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push --no-verify sandboxcom HEAD:master
 	@echo "Pushed committed HEAD to sandboxcom/gludd master"
 	@python3 -c "import json,time;from pathlib import Path;p=Path('/tmp/gludd-watchdog-push-timestamps.json');d=json.loads(p.read_text()) if p.exists() else [];d.append(time.time());p.write_text(json.dumps(d[-50:]))" 2>/dev/null || true
 
-# Batch push using the no-verify variant. COMMIT_THRESHOLD=1 forces a push.
+# Batch push using the no-verify variant. COMMIT_THRESHOLD=1 is blocked to avoid CI thrash.
 batch-push-nv: check-clean-tree
 	@COUNT=$$(git log --oneline @{u}..HEAD 2>/dev/null | wc -l | tr -d ' '); \
 	THRESHOLD=$${COMMIT_THRESHOLD:-5}; \
+	if [ "$$THRESHOLD" = "1" ]; then \
+		echo "BLOCKED: COMMIT_THRESHOLD=1 bypass is disabled; commit locally and batch pushes."; \
+		exit 1; \
+	fi; \
 	if [ "$$COUNT" -lt "$$THRESHOLD" ] && [ "$$GLUDD_FORCE_PUSH" != "1" ]; then \
 		echo "NOT PUSHING: only $$COUNT unpushed commit(s) (threshold=$$THRESHOLD)."; \
-		echo "Batch locally. Use GLUDD_FORCE_PUSH=1 or COMMIT_THRESHOLD=1 to override."; \
+		echo "Batch locally. Use GLUDD_FORCE_PUSH=1 after enough local commits; COMMIT_THRESHOLD=1 is blocked."; \
 		exit 0; \
 	fi; \
 	echo "$$COUNT unpushed commits, threshold met. Pushing (--no-verify)..."; \
 	$(MAKE) git-push-sandboxcom-nv
 
 # Batch push: only push after substantial local work (default 5+ unpushed commits).
-# Override: COMMIT_THRESHOLD=1 or GLUDD_FORCE_PUSH=1.
+# Override: GLUDD_FORCE_PUSH=1. COMMIT_THRESHOLD=1 is blocked.
 # This is the RECOMMENDED push target. Use instead of git-push-sandboxcom directly.
 batch-push: check-clean-tree
 	@COUNT=$$(git log --oneline @{u}..HEAD 2>/dev/null | wc -l | tr -d ' '); \
 	THRESHOLD=$${COMMIT_THRESHOLD:-5}; \
+	if [ "$$THRESHOLD" = "1" ]; then \
+		echo "BLOCKED: COMMIT_THRESHOLD=1 bypass is disabled; commit locally and batch pushes."; \
+		exit 1; \
+	fi; \
 	if [ "$$COUNT" -lt "$$THRESHOLD" ] && [ "$$GLUDD_FORCE_PUSH" != "1" ]; then \
 		echo "NOT PUSHING: only $$COUNT unpushed commit(s) (threshold=$$THRESHOLD)."; \
-		echo "Batch locally. Use GLUDD_FORCE_PUSH=1 or COMMIT_THRESHOLD=1 to override."; \
+		echo "Batch locally. Use GLUDD_FORCE_PUSH=1 after enough local commits; COMMIT_THRESHOLD=1 is blocked."; \
 		exit 0; \
 	fi; \
 	echo "$$COUNT unpushed commits, threshold met. Pushing..."; \
@@ -1705,13 +1759,13 @@ batch-push: check-clean-tree
 
 # CI-aware push that waits for CI to go green before returning
 # Same as git-push-sandboxcom but waits for CI completion after push
-ci-push: check-clean-tree _push-rate-guard
-	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push -u sandboxcom master
+ci-push: pre-push-check _push-rate-guard
+	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push -u sandboxcom master
 	@echo "Pushed to sandboxcom/gludd. Waiting for CI..."; \
 	$(MAKE) ci-wait
 
 # CI push then poll until green (single script)
-ci-push-and-verify: _require-gh
+ci-push-and-verify: pre-push-check _require-gh
 	@bash scripts/ci_push_and_verify.sh
 
 # Verify existing CI on HEAD (dry-run, no push)
@@ -1747,16 +1801,16 @@ ci-await:
 	@$(PYTHON) scripts/ci_await.py $(or $(BRANCH),master) $(or $(TIMEOUT),3600)
 
 git-pull-sandboxcom:
-	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git pull --rebase sandboxcom master
+	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git pull --rebase sandboxcom master
 	@echo "Pulled and rebased from sandboxcom/gludd"
 
 git-fetch-sandboxcom:
-	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git fetch sandboxcom
+	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git fetch sandboxcom
 	@echo "Fetched from sandboxcom/gludd"
 
 verify-remote:
 	@SHA=$(or $(SHA),$$(git rev-parse HEAD)); BR=$(or $(BRANCH),master); \
-	REMOTE=$$(GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git ls-remote sandboxcom refs/heads/$$BR | awk '{print $$1}'); \
+	REMOTE=$$(GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git ls-remote sandboxcom refs/heads/$$BR | awk '{print $$1}'); \
 	echo "remote=$$REMOTE expected=$$SHA"; \
 	REMOTE_SHORT=$$(echo $$REMOTE | cut -c1-$${#SHA}); \
 	if [ "$$SHA" = "$$REMOTE_SHORT" ]; then echo "VERIFIED $$BR@$$SHA"; else echo "REMOTE MISMATCH: remote=$$REMOTE expected=$$SHA" && exit 1; fi
@@ -1767,7 +1821,7 @@ verify-remote:
 git-tag-push:
 	@[ -n "$(TAG)" ] || { echo "Usage: make git-tag-push TAG=v0.1.0-alpha.N [COMMIT=<sha>] [MSG='...']"; exit 1; }
 	@git tag -a "$(TAG)" $(if $(COMMIT),$(COMMIT)) -m "$(if $(MSG),$(MSG),$(TAG))"
-	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push sandboxcom "$(TAG)"
+	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push sandboxcom "$(TAG)"
 	@echo "Pushed tag $(TAG) to sandboxcom/gludd (triggers release job)"
 
 # --- CI observability (W16) ---
@@ -1884,7 +1938,7 @@ verify-state:
 	@echo "Branch: $$(git branch --show-current)"
 	@echo ""
 	@echo "--- Remote ---"
-	@REMOTE=$$(GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git ls-remote sandboxcom refs/heads/master 2>/dev/null | cut -f1); \
+	@REMOTE=$$(GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git ls-remote sandboxcom refs/heads/master 2>/dev/null | cut -f1); \
 	if [ -z "$$REMOTE" ]; then echo "UNREACHABLE"; \
 	elif [ "$$REMOTE" = "$$(git rev-parse HEAD)" ]; then echo "SYNCED: $$REMOTE"; \
 	else echo "DIVERGED: local=$$(git rev-parse --short HEAD) remote=$$(echo $$REMOTE | cut -c1-12)"; \
@@ -1953,7 +2007,7 @@ git-tag-move:
 #   make git-tag-rm TAG=v0.1.0-alpha.1
 git-tag-rm:
 	@[ -n "$(TAG)" ] || { echo "Usage: make git-tag-rm TAG=v0.1.0-alpha.1"; exit 1; }
-	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push sandboxcom :refs/tags/$(TAG) 2>/dev/null || true
+	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push sandboxcom :refs/tags/$(TAG) 2>/dev/null || true
 	@git tag -d "$(TAG)" 2>/dev/null || true
 	@echo "Deleted tag $(TAG) locally and on sandboxcom"
 
@@ -1969,8 +2023,8 @@ release-recut:
 	@git tag -l "$(TAG)" | grep -q "$(TAG)" || { echo "ERROR: local tag $(TAG) not found"; exit 1; }
 	@$(MAKE) -s require-ci-green SHA=$$(git rev-parse "$(TAG)^{commit}")
 	@echo "Re-cutting release tag $(TAG)..."
-	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push sandboxcom :refs/tags/$(TAG) 2>/dev/null || true
-	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push sandboxcom "$(TAG)"
+	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push sandboxcom :refs/tags/$(TAG) 2>/dev/null || true
+	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push sandboxcom "$(TAG)"
 	@echo "Tag re-pushed. Polling for artifact publication ($(VERIFY_POLLS) polls)..."
 	@i=0; while [ $$i -lt $(VERIFY_POLLS) ]; do \
 		if $(MAKE) -s verify-release-artifact TAG=$(TAG) 2>/dev/null; then \
@@ -2008,10 +2062,10 @@ release-cut:
 	echo "WARNING: release artifact not found after 10 minutes — a cold tag-triggered full-matrix build can take 30-60 min; poll again with make verify-release-completeness TAG=$(TAG) (poll timeout means STILL BUILDING, not failure)"; exit 1
 
 # Auto-deployment target: merge dev->master (if needed), push master, create/push
-# tag, wait for CI. Simplifies the three-step deploy cycle into one command.
-# Usage: make release-deploy TAG=v0.1.0-beta.2 MSG='beta.2 release'
+# tag, wait for CI, and verify the full artifact matrix before declaring done.
+# Usage: make release-deploy TAG=v0.1.0-beta.2 MSG=release-notes
 release-deploy: _no-raw-git-guard
-	@[ -n "$(TAG)" ] || { echo "Usage: make release-deploy TAG=v0.1.0-beta.N MSG='release notes'"; exit 1; }
+	@[ -n "$(TAG)" ] || { echo "Usage: make release-deploy TAG=v0.1.0-beta.N MSG=release-notes"; exit 1; }
 	@DEV_AHEAD=$$(git rev-list --count master..development 2>/dev/null || echo 0); \
 	if [ "$$DEV_AHEAD" -gt 0 ]; then \
 		echo "=== Development has $$DEV_AHEAD commits not on master. Merging... ==="; \
@@ -2024,7 +2078,16 @@ release-deploy: _no-raw-git-guard
 	@echo "=== Creating and pushing tag $(TAG) ==="
 	@$(MAKE) -s git-tag-push TAG=$(TAG) MSG="$(MSG)"
 	@echo "=== Tag pushed. Waiting for CI on master ==="
-	@$(MAKE) -s ci-await BRANCH=master || true
+	@$(MAKE) -s ci-await BRANCH=master
+	@echo "=== Verifying release completeness for $(TAG) ==="
+	@i=0; while [ $$i -lt $(VERIFY_POLLS) ]; do \
+		if $(MAKE) -s verify-release-artifact TAG=$(TAG) 2>/dev/null; then \
+			echo "Release artifact present after $$i polls; checking completeness..."; \
+			$(MAKE) -s verify-release-completeness TAG=$(TAG); exit $$?; \
+		fi; \
+		sleep 10; i=$$((i+1)); \
+	done; \
+	echo "Release completeness not verified after $(VERIFY_POLLS) polls for $(TAG)"; exit 1
 	@echo "=== Deploy complete for $(TAG) ==="
 
 # Delete a GitHub Release and its associated git tags (local + remote).
@@ -2033,7 +2096,7 @@ release-delete:
 	@[ -n "$(TAG)" ] || { echo "Usage: make release-delete TAG=v0.1.0-alpha.1"; exit 1; }
 	@gh release delete "$(TAG)" -R sandboxcom/gludd --yes 2>/dev/null || echo "(release not found on GitHub)"
 	@git tag -d "$(TAG)" 2>/dev/null || echo "(tag not found locally)"
-	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push sandboxcom :refs/tags/"$(TAG)" 2>/dev/null || echo "(tag not found on remote)"
+	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push sandboxcom :refs/tags/"$(TAG)" 2>/dev/null || echo "(tag not found on remote)"
 
 # Manual fallback: build the single local binary and publish a DRAFT GitHub
 # Release. This path cannot produce the full artifact matrix (only CI can), so
@@ -2343,9 +2406,10 @@ ci-rerun:
 	@if [ -z "$(RUN)" ]; then echo "Usage: make ci-rerun RUN=<run-id>"; exit 1; fi
 	@gh run rerun -R sandboxcom/gludd $(RUN) 2>&1 || echo "ci-rerun-failed"
 
-# Fresh dispatch of the Build and Release workflow on master (workflow_dispatch).
-ci-trigger:
-	@gh workflow run "Build and Release" -R sandboxcom/gludd --ref master 2>&1 || echo "ci-trigger-failed"
+# Fresh dispatch of the Build and Release workflow on the current branch after exact-HEAD guard.
+ci-trigger: ci-remote-head-guard _require-gh
+	@REF="$(REF)"; if [ -z "$$REF" ]; then REF=$$(git branch --show-current); fi; \
+	gh workflow run "Build and Release" -R sandboxcom/gludd --ref "$$REF" 2>&1 || echo "ci-trigger-failed"
 
 # List currently in-progress/queued runs for the Build and Release workflow —
 # so we know whether a new run is already active on a SHA before re-triggering.
@@ -2357,7 +2421,7 @@ ci-active:
 # Usage: make ci-busy-check BRANCH=development
 # Exits 1 if CI is busy, 0 if safe to push. FORCE=1 bypasses (hotfix only).
 ci-busy-check: _require-gh
-	@$(PYTHON) scripts/ci_push_guard.py $(or $(BRANCH),master)
+	@BRANCH="$(BRANCH)"; if [ -z "$$BRANCH" ]; then BRANCH=$$(git branch --show-current); fi; if [ -z "$$BRANCH" ]; then echo "Cannot check CI from detached HEAD; pass BRANCH=..."; exit 1; fi; $(PYTHON) scripts/ci_push_guard.py "$$BRANCH"
 
 # ci-safe-push: check CI idle on target branch, then push. Blocks if CI busy.
 # Usage: make ci-safe-push BRANCH=development
@@ -2420,7 +2484,7 @@ ci-pyver-list:
 
 ci-ssh-test:
 	@chmod 600 sandboxcom_github_rsa 2>/dev/null || true
-	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' ssh -T -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new git@github.com 2>&1 | head -5 || true
+	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' ssh -T -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new git@github.com 2>&1 | head -5 || true
 
 ci-remotes:
 	@git remote -v 2>&1 || true
@@ -3117,15 +3181,15 @@ agent-merge-dev:
 	echo "Merged $(BRANCH) into development"
 
 # Push the development branch to the sandboxcom remote.
-development-push:
+development-push: check-clean-tree ci-busy-check
 	@$(MAKE) ci-busy-check BRANCH=development
-	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push --no-verify -u sandboxcom development
+	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push --no-verify -u sandboxcom development
 	@$(MAKE) verify-remote BRANCH=development SHA=$$(git rev-parse development)
 	@echo "Development branch pushed and verified"
 
 # Force-push the development branch (when rebase rewrites history).
 development-force-push:
-	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push --force --no-verify -u sandboxcom development
+	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push --force --no-verify -u sandboxcom development
 	@$(MAKE) verify-remote BRANCH=development SHA=$$(git rev-parse development)
 	@echo "Development branch force-pushed and verified"
 
@@ -3299,7 +3363,7 @@ skip-counts-changed:
 _no-raw-git-guard:
 	@if grep -n 'git push' Makefile | grep -v 'GIT_SSH_COMMAND'; then \
 		echo "ERROR: raw git push detected in Makefile without GIT_SSH_COMMAND prefix."; \
-		echo "All git pushes MUST use GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa ...'"; \
+		echo "All git pushes MUST use GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa ...'"; \
 		echo "See AGENTS.md \"Critical: Bash Command Policy\" and \"No-Manual-Default Policy\""; \
 		exit 1; \
 	fi
