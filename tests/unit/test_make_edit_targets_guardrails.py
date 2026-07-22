@@ -51,3 +51,18 @@ def test_copy_file_target_guards_source_and_destination_paths() -> None:
     assert "/tmp/gludd-*" in block
     assert block.count("/*|*..*") >= 2
     assert block.count("Refusing path outside workspace") >= 2
+
+
+def test_base64_remove_target_handles_shell_hostile_paths() -> None:
+    text = _makefile()
+    help_block = _target_block("help")
+    block = _target_block("remove-workspace-file-b64")
+    assert "remove-workspace-file-b64:" in text
+    assert "  remove-workspace-file-b64" in help_block
+    assert "PATH_B64" in block
+    assert "base64.b64decode" in block
+    assert "Refusing path outside workspace" in block
+    assert "is_absolute()" in block
+    assert "sys.exit(1)" in block
+    assert "raise SystemExit" not in block
+    assert "unlink()" in block

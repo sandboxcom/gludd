@@ -45,7 +45,7 @@ PYTEST_VERBOSITY ?= -v
         agent-worktree-dev agent-merge-dev \
         development-push development-merge-to-master development-start development-status \
         git-commit-no-verify git-amend-msg \
-        _commit-lock-acquire check-clean-tree ship-commit-files \
+        _commit-lock-acquire check-clean-tree ship-commit-files remove-workspace-file-b64 \
         molecule-version molecule-test molecule-test-all \
         collection-roles collection-modules molecule-scenarios \
         test-binary-re test-radio test-os-expert test-e2e-test-gen test-language test-language-expert test-collections \
@@ -287,6 +287,7 @@ help:
 	@echo "  replace-text          Replace one exact text block using OLD and NEW files"
 	@echo "  write-text            Write TEXT to FILE through make"
 	@echo "  append-text           Append TEXT to FILE through make"
+	@echo "  remove-workspace-file-b64  Remove workspace file from base64 path"
 	@echo ""
 	@echo "  --- Complete Target Index ---"
 	@$(PYTHON) scripts/check_make_help.py --print-index
@@ -4747,6 +4748,10 @@ remove-workspace-file:
 	@case "$(FILE)" in /*|*..*) echo "Refusing path outside workspace: $(FILE)"; exit 1;; esac
 	@[ -f "$(FILE)" ] || { echo "Not a file: $(FILE)"; exit 1; }
 	@/bin/rm -f -- "$(FILE)"
+
+remove-workspace-file-b64:
+	@[ -n "$(PATH_B64)" ] || { echo "Usage: make remove-workspace-file-b64 PATH_B64=base64-relative-path"; exit 1; }
+	@PATH_B64="$(PATH_B64)" $(PYTHON) -c 'import base64, os, sys; from pathlib import Path; rel = base64.b64decode(os.environ["PATH_B64"]).decode("utf-8"); p = Path(rel); bad = p.is_absolute() or ".." in p.parts; (print(f"Refusing path outside workspace: {rel}") or sys.exit(1)) if bad else None; (print(f"Not a file: {rel}") or sys.exit(1)) if not p.is_file() else None; p.unlink()'
 
 molecule-reset:
 	@[ -n "$(SCENARIO)" ] || { echo "Usage: make molecule-reset SCENARIO=name"; exit 1; }
