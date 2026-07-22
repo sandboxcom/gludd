@@ -92,7 +92,7 @@ PYTEST_VERBOSITY ?= -v
          test-service-discovery service-discover service-catalog \
          subagent-init subagent-cleanup \
          chat chat-eval test-chat \
-         git-tag-delete git-tag-move release-deploy append-text _no-raw-git-guard \
+         git-tag-delete git-tag-move release-deploy append-text write-text-b64 replace-text-b64 _no-raw-git-guard \
          git-push-committed-head-nv ci-trigger-committed-head ci-push-committed-head provider-smoke check-no-prompt-prone-edit-tools
 
 help:
@@ -108,6 +108,7 @@ help:
 	@echo "  --- Quality ---"
 	@echo "  lint                  Run ruff linter"
 	@echo "  lint-fix              Run ruff with auto-fix"
+	@echo "  lint-fix-files        Run ruff auto-fix on FILES only"
 	@echo "  typecheck             Run mypy"
 	@echo "  check-types           Flag Any usage in Python annotations (tight types)"
 	@echo "  check-types-baseline  Same scan, tolerating config/type_any_baseline.txt"
@@ -123,6 +124,8 @@ help:
 	@echo "  preflight             Preflight quality gate (coverage, lint, mypy, templates, etc.)"
 	@echo "  check-make-help       Verify every public Makefile target is listed by make help"
 	@echo "  check-no-prompt-prone-edit-tools  Enforce make-target-only edit workflow"
+	@echo "  write-text-b64        Write FILE from base64 TEXT_B64 without shell quoting loss"
+	@echo "  replace-text-b64      Exact old/new base64 replacement via scripts/replace_text.py"
 	@echo "  worktree-state        Emit path-qualified current git worktree state as JSON"
 	@echo "  all-worktree-state    Emit path-qualified state for every registered worktree"
 	@echo "  main-worktree-state   Emit canonical main checkout state as JSON"
@@ -420,6 +423,10 @@ lint:
 
 lint-fix:
 	@$(UV) run ruff check --fix --unsafe-fixes src tests
+
+lint-fix-files:
+	@[ -n "$$FILES" ] || { echo "Usage: make lint-fix-files FILES=path"; exit 1; }
+	@$(UV) run ruff check --fix $$FILES
 
 fix-logger-imports:
 	@$(UV) run python scripts/add_missing_logger_imports.py \
@@ -2860,8 +2867,12 @@ delete-file:
 	@$(RM) $(FILES)
 
 patch-test:
-	@[ -n "$(FILE)" ] || { echo "Usage: make patch-test FILE='path' MATCH='old' REPLACE='new'"; exit 1; }
-	@python3 -c "import sys; c=open('$(FILE)').read(); c=c.replace('$(MATCH)','$(REPLACE)'); open('$(FILE)','w').write(c)"
+	@[ -n "$(FILE)" ] || { echo "Usage: make patch-test FILE=path MATCH=old REPLACE=new"; exit 1; }
+	@OLD=$$(mktemp /tmp/gludd-patch-old.XXXXXX); NEW=$$(mktemp /tmp/gludd-patch-new.XXXXXX); \
+		printf "%b" "$(MATCH)" > "$$OLD"; \
+		printf "%b" "$(REPLACE)" > "$$NEW"; \
+		$(PYTHON) scripts/replace_text.py "$(FILE)" "$$OLD" "$$NEW"; RC=$$?; \
+		rm -f "$$OLD" "$$NEW"; exit $$RC
 
 copy-file:
 	@test -n "$(SRC)" || { echo "Usage: make copy-file SRC=path DST=path"; exit 1; }
@@ -2888,6 +2899,19 @@ append-text:
 	@[ -n "$(FILE)" ] || { echo "Usage: make append-text FILE=path TEXT=..."; exit 1; }
 	@case "$(FILE)" in /tmp/gludd-*) ;; /*|*..*) echo "Refusing path outside workspace: $(FILE)"; exit 1;; esac
 	@printf '%b' "$$TEXT" >> "$$FILE"
+
+write-text-b64:
+	@[ -n "$(FILE)" ] || { echo "Usage: make write-text-b64 FILE=path TEXT_B64=base64"; exit 1; }
+	@[ -n "$(TEXT_B64)" ] || { echo "Usage: make write-text-b64 FILE=path TEXT_B64=base64"; exit 1; }
+	@case "$(FILE)" in /tmp/gludd-*) ;; /*|*..*) echo "Refusing path outside workspace: $(FILE)"; exit 1;; esac
+	@TEXT_B64="$(TEXT_B64)" FILE_PATH="$(FILE)" $(PYTHON) -c "import base64, os; open(os.environ[\"FILE_PATH\"], \"wb\").write(base64.b64decode(os.environ[\"TEXT_B64\"]))"
+
+replace-text-b64:
+	@[ -n "$(FILE)" ] || { echo "Usage: make replace-text-b64 FILE=path OLD_B64=base64 NEW_B64=base64"; exit 1; }
+	@[ -n "$(OLD_B64)" ] || { echo "Usage: make replace-text-b64 FILE=path OLD_B64=base64 NEW_B64=base64"; exit 1; }
+	@[ -n "$(NEW_B64)" ] || { echo "Usage: make replace-text-b64 FILE=path OLD_B64=base64 NEW_B64=base64"; exit 1; }
+	@case "$(FILE)" in /tmp/gludd-*) ;; /*|*..*) echo "Refusing path outside workspace: $(FILE)"; exit 1;; esac
+	@OLD_TMP=$$(mktemp /tmp/gludd-old.XXXXXX); NEW_TMP=$$(mktemp /tmp/gludd-new.XXXXXX); 		OLD_B64="$(OLD_B64)" NEW_B64="$(NEW_B64)" OLD_TMP="$$OLD_TMP" NEW_TMP="$$NEW_TMP" $(PYTHON) -c "import base64, os; open(os.environ[\"OLD_TMP\"], \"wb\").write(base64.b64decode(os.environ[\"OLD_B64\"])); open(os.environ[\"NEW_TMP\"], \"wb\").write(base64.b64decode(os.environ[\"NEW_B64\"]))"; 		$(PYTHON) scripts/replace_text.py "$(FILE)" "$$OLD_TMP" "$$NEW_TMP"; RC=$$?; rm -f "$$OLD_TMP" "$$NEW_TMP"; exit $$RC
 
 fix-benchmark-mock:
 	@python3 -c "c=open('tests/unit/test_daemon_coverage_lift.py').read(); c=c.replace('class TestBenchmarkRecordWithSession:\n    @pytest.mark.asyncio\n    async def test_benchmark_record_with_session(self, app, transport):\n        mock_session = MagicMock()\n        mock_sf = MagicMock()','class TestBenchmarkRecordWithSession:\n    @pytest.mark.asyncio\n    async def test_benchmark_record_with_session(self, app, transport):\n        mock_session = MagicMock()\n        mock_session.commit = AsyncMock()\n        mock_sf = MagicMock()'); open('tests/unit/test_daemon_coverage_lift.py','w').write(c)"
@@ -4900,3 +4924,4 @@ ci-push-committed-head: git-push-committed-head-nv ci-trigger-committed-head
 
 check-no-prompt-prone-edit-tools:
 	@$(UV) run python scripts/check_no_prompt_prone_edit_tools.py
+
