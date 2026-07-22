@@ -20,7 +20,7 @@ _NO_UV_SYNC_GOALS := \
     ci-remotes ci-diff-since-remote ci-head-compare ci-remote-head-guard ci-trigger \
     git-push-committed-head-nv ci-trigger-committed-head ci-push-committed-head git-push-current-head-to-master-nv \
     search show-lines write-text append-text replace-lines replace-text replace-all-text write-text-b64 replace-text-b64 \
-    tmp-gludd-usage tmp-gludd-clean-ci-shards
+    tmp-gludd-usage tmp-gludd-worktree-usage tmp-gludd-clean-ci-shards clean-worktree-venvs clean-worktree-caches
 ifneq (,$(filter $(_NO_UV_SYNC_GOALS),$(MAKECMDGOALS)))
 override UV := echo
 else
@@ -99,8 +99,8 @@ _commit-lock-acquire check-clean-tree worktree-state all-worktree-state main-wor
         ci-view ci-rerun ci-trigger ci-active ci-job-log \
         ci-busy-check ci-safe-push pre-push-check push-guarded ci-await \
 log-agent-result disk-guard disk-check check-disk disk tmp-gludd-usage tmp-gludd-clean-ci-shards \
+        tmp-gludd-worktree-usage clean-worktree-venvs clean-worktree-caches \
         searx-up searx-down searx-test searx-start searx-stop searx-status searx-install \
-log-agent-result disk-guard disk-check check-disk disk tmp-gludd-usage \
         networking-role-lint networking-role-syntax test-scapy-adapter networking-validate \
         networking-healthcheck \
         install-bats test-install check-subagent-guards verify-plugin-manifest \
@@ -301,7 +301,9 @@ help:
 	@echo "  check-disk            Pre-commit check: fails if /tmp/gludd-* >100MB or disk >90%"
 	@echo "  disk                  Print disk usage + gludd footprint"
 	@echo "  tmp-gludd-usage       Print largest /tmp/gludd-* entries sorted by size"
+	@echo "  tmp-gludd-worktree-usage  Print largest generated entries under /tmp/gludd-worktrees"
 	@echo "  tmp-gludd-clean-ci-shards  Remove stale generated CI shard scratch dirs"
+	@echo "  clean-worktree-caches  Remove generated venv/test/tool caches from worktrees"
 	@echo ""
 	@echo "  --- Recovery ---"
 	@echo "  backup-opencode       Backup .opencode/ -> .opencode.orig/ (excludes node_modules/)"
@@ -1086,6 +1088,9 @@ disk:
 tmp-gludd-usage:
 	@du -sh /tmp/gludd-* 2>/dev/null | sort -h | tail -40 || true
 
+tmp-gludd-worktree-usage:
+	@du -sh /tmp/gludd-worktrees /tmp/gludd-worktrees/* /tmp/gludd-worktrees/*/.venv /tmp/gludd-worktrees/*/.pytest_cache /tmp/gludd-worktrees/*/.mypy_cache /tmp/gludd-worktrees/*/.ruff_cache 2>/dev/null | sort -h | tail -40 || true
+
 tmp-gludd-clean-ci-shards:
 	@rm -rf /tmp/gludd-ci-shard-* /tmp/gludd-unit-shard-* 2>/dev/null || true
 	@echo "Removed stale gludd CI shard scratch directories"
@@ -1094,8 +1099,13 @@ tmp-gludd-clean-ci-shards:
 # `uv sync` recreates on demand). The main disk hog when many worktree agents run.
 clean-worktree-venvs:
 	@rm -rf /Users/shawnwilson/gludd/.claude/worktrees/agent-*/.venv 2>/dev/null || true
+	@rm -rf /tmp/gludd-worktrees/*/.venv 2>/dev/null || true
 	@echo "clean-worktree-venvs done"
 
+clean-worktree-caches: clean-worktree-venvs
+	@rm -rf /Users/shawnwilson/gludd/.claude/worktrees/agent-*/.pytest_cache /Users/shawnwilson/gludd/.claude/worktrees/agent-*/.mypy_cache /Users/shawnwilson/gludd/.claude/worktrees/agent-*/.ruff_cache 2>/dev/null || true
+	@rm -rf /tmp/gludd-worktrees/*/.pytest_cache /tmp/gludd-worktrees/*/.mypy_cache /tmp/gludd-worktrees/*/.ruff_cache 2>/dev/null || true
+	@echo "clean-worktree-caches done"
 molecule-clean:
 	@echo "Removing stray molecule/<scenario> runtime dirs (any dir directly under molecule/ that is NOT playbooks, roles, internal_tools, mock_daemon, library)..."
 	@for d in molecule/*/; do \
