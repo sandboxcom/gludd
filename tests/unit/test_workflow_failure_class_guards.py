@@ -106,3 +106,25 @@ def test_development_push_verifies_remote_sha_after_push() -> None:
     block = _target_block("development-push")
     assert "verify-remote BRANCH=development" in block
     assert "git rev-parse development" in block
+
+
+def test_committed_head_ci_path_pushes_and_dispatches_without_clean_tree_gate() -> None:
+    push_line = _target_line("git-push-committed-head-nv")
+    push_block = _target_block("git-push-committed-head-nv")
+    trigger_block = _target_block("ci-trigger-committed-head")
+    combined_line = _target_line("ci-push-committed-head")
+
+    assert "check-clean-tree" not in push_line
+    assert "git diff --cached --quiet" in push_block
+    assert "_push-rate-guard" in push_block
+    assert "HEAD:refs/heads/" in push_block
+    assert "verify-remote" in push_block
+    assert "uncommitted files are not included" in push_block
+
+    assert "git diff --cached --quiet" in trigger_block
+    assert "git ls-remote sandboxcom refs/heads/" in trigger_block
+    assert "gh workflow run \"Build and Release\"" in trigger_block
+    assert "dirty local files are not included" in trigger_block
+
+    assert "git-push-committed-head-nv" in combined_line
+    assert "ci-trigger-committed-head" in combined_line

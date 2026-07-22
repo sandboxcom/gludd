@@ -92,7 +92,8 @@ PYTEST_VERBOSITY ?= -v
          test-service-discovery service-discover service-catalog \
          subagent-init subagent-cleanup \
          chat chat-eval test-chat \
-         git-tag-delete git-tag-move release-deploy append-text _no-raw-git-guard
+         git-tag-delete git-tag-move release-deploy append-text _no-raw-git-guard \
+         git-push-committed-head-nv ci-trigger-committed-head ci-push-committed-head check-no-prompt-prone-edit-tools
 
 help:
 	@echo "Usage: make [target]"
@@ -121,6 +122,7 @@ help:
 	@echo "  collect-check         Fast collection-error gate"
 	@echo "  preflight             Preflight quality gate (coverage, lint, mypy, templates, etc.)"
 	@echo "  check-make-help       Verify every public Makefile target is listed by make help"
+	@echo "  check-no-prompt-prone-edit-tools  Enforce make-target-only edit workflow"
 	@echo "  codemod-lean-enforcement-plugins  Slim counted enforcement plugin entrypoints"
 	@echo "  codemod-ci-shards-sigterm  Enforce explicit failure on unexpected shard SIGTERM"
 	@echo "  sast                  Run bandit SAST"
@@ -595,7 +597,7 @@ check-opencode-integrity:
 gate-fast: lint typecheck collect-check
 	@echo "=== GATE-FAST: PASS ==="
 
-gate: check-opencode-integrity validate-task-ledger check-dispatch-dedup check-subagent-guards verify-plugin-manifest check-skills-frontmatter check-coverage-gaps check-plugin-syntax check-plugin-runtime check-plugin-imports check-duplicate-targets
+gate: check-opencode-integrity validate-task-ledger check-dispatch-dedup check-subagent-guards verify-plugin-manifest check-skills-frontmatter check-coverage-gaps check-no-prompt-prone-edit-tools check-plugin-syntax check-plugin-runtime check-plugin-imports check-duplicate-targets
 	@rm -f .gate-failed
 	@echo "=== GATE $(shell date -u +%Y-%m-%dT%H:%M:%SZ) ===" > .gate-status
 	@# OBSERVABILITY INVARIANT (see AGENTS.md "No unseen events"): every gate phase
@@ -4826,3 +4828,18 @@ generate-specs:
 # Usage: make expand-specs TARGET=4000
 expand-specs:
 	@$(UV) run python3 scripts/generate_specs_to_4000.py --target $(or $(TARGET),4000)
+
+# Push exactly the committed HEAD for the current branch while local unstaged/untracked work remains.
+git-push-committed-head-nv:
+	@BRANCH=$$(git branch --show-current); if [ -z "$$BRANCH" ]; then echo "Cannot push detached HEAD"; exit 1; fi; if ! git diff --cached --quiet; then echo "BLOCKED: staged changes exist; commit or unstage before pushing committed HEAD"; git diff --cached --name-only; exit 1; fi; PUSH_BRANCH=$$BRANCH $(MAKE) --no-print-directory _push-rate-guard; HEAD=$$(git rev-parse HEAD); GIT_SSH_COMMAND="ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new" git push --no-verify -u sandboxcom HEAD:refs/heads/$$BRANCH; $(MAKE) --no-print-directory verify-remote BRANCH=$$BRANCH SHA=$$HEAD; echo "Pushed committed HEAD $$HEAD to sandboxcom/$$BRANCH; uncommitted files are not included."
+
+# Trigger the Build and Release workflow for the exact committed HEAD already on sandboxcom.
+ci-trigger-committed-head: _require-gh
+	@REF="$(REF)"; if [ -z "$$REF" ]; then REF=$$(git branch --show-current); fi; BRANCH=$$(git branch --show-current); if [ -z "$$BRANCH" ]; then echo "Cannot trigger CI from detached HEAD"; exit 1; fi; if [ "$$REF" != "$$BRANCH" ]; then echo "BLOCKED: REF=$$REF does not match current branch $$BRANCH"; exit 1; fi; if ! git diff --cached --quiet; then echo "BLOCKED: staged changes exist; commit or unstage before dispatching committed HEAD"; git diff --cached --name-only; exit 1; fi; HEAD=$$(git rev-parse HEAD); REMOTE_SHA=$$(GIT_SSH_COMMAND="ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new" git ls-remote sandboxcom refs/heads/$$REF | cut -f1); if [ -z "$$REMOTE_SHA" ]; then echo "BLOCKED: remote branch sandboxcom/$$REF does not exist"; exit 1; fi; if [ "$$REMOTE_SHA" != "$$HEAD" ]; then echo "BLOCKED: sandboxcom/$$REF $$REMOTE_SHA does not match local HEAD $$HEAD; push exact HEAD first"; exit 1; fi; gh workflow run "Build and Release" -R sandboxcom/gludd --ref "$$REF"; echo "Triggered Build and Release for committed HEAD $$HEAD on $$REF; dirty local files are not included."
+
+# Push and dispatch the exact committed HEAD without waiting for long local shards to finish.
+ci-push-committed-head: git-push-committed-head-nv ci-trigger-committed-head
+	@echo "Committed HEAD is pushed and remote CI has been dispatched; continue local shard work in parallel."
+
+check-no-prompt-prone-edit-tools:
+	@$(UV) run python scripts/check_no_prompt_prone_edit_tools.py
