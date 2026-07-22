@@ -14,6 +14,8 @@ cannot fail with ``EPERM`` trying to widen a limit.
 
 from __future__ import annotations
 
+import sys
+
 
 def apply_limits(mem_mb: int, cpu_s: int) -> None:
     """Apply address-space (``RLIMIT_AS``) and CPU-time (``RLIMIT_CPU``) limits.
@@ -31,7 +33,11 @@ def apply_limits(mem_mb: int, cpu_s: int) -> None:
     except ImportError:
         return
 
-    if mem_mb > 0 and hasattr(resource, "RLIMIT_AS"):
+    if (
+        mem_mb > 0
+        and hasattr(resource, "RLIMIT_AS")
+        and not (sys.platform == "darwin" and getattr(resource, "__name__", "") == "resource")
+    ):
         nbytes = mem_mb * 1024 * 1024
         try:
             _soft, hard = resource.getrlimit(resource.RLIMIT_AS)

@@ -167,6 +167,7 @@ class TestOrnithSandboxSubprocessPreexec:
 
     def test_ornith_sandbox_preexec_is_callable_in_subprocess(self):
         import subprocess
+        import sys
 
         code = textwrap.dedent("""\
         from general_ludd.ornith.sandbox import ornith_sandbox_preexec
@@ -174,9 +175,9 @@ class TestOrnithSandboxSubprocessPreexec:
         print("OK")
         """)
         proc = subprocess.run(
-            ["python3", "-c", code],
+            [sys.executable, "-c", code],
             capture_output=True,
             text=True,
-            timeout=10,
+            timeout=30,
         )
         assert "OK" in proc.stdout

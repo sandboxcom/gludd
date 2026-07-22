@@ -78,7 +78,8 @@ class ManifestSigner:
             errors.append(f"ssh-keygen sign exited {result.returncode}: {stderr}")
             return SignResult(success=False, sig_path=sig_path, errors=errors)
 
-        Path(sig_path).write_bytes(result.stdout)
+        signature = result.stdout.encode("utf-8") if isinstance(result.stdout, str) else result.stdout
+        Path(sig_path).write_bytes(signature)
         return SignResult(success=True, sig_path=sig_path, errors=errors)
 
     def verify(self, manifest_path: str, sig_path: str) -> VerifyResult:
