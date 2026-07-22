@@ -52,3 +52,9 @@ def test_langsmith_kept():
     deps = _load_deps()
     assert "langsmith" in deps, "langsmith should be kept in deps"
     assert _has_imports("langsmith"), "langsmith imports should exist in src/"
+
+
+def test_httpx2_removed():
+    deps = _load_deps()
+    assert "httpx2" not in deps, "httpx2 should not be declared unless src imports it"
+    assert not _has_imports("httpx2"), "no httpx2 imports should exist in src/"
