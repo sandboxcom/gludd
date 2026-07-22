@@ -10,7 +10,7 @@ GLUDD_TASK_TIMEOUT ?= 300
 GATE_POLL_INTERVAL ?= 60
 
 PYTHON := python3
-SYSTEM_PYTHON ?= /usr/bin/python3
+SYSTEM_PYTHON := /usr/bin/python3
 UV := uv
 PROJECT_SRC := src/general_ludd
 TESTS_DIR := tests
