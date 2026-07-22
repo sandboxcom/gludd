@@ -97,6 +97,7 @@ class StatsdParseSource:
             raise StatsdParseError(f"unknown metric type {mtype!r}: {raw!r}")
 
         labels: dict[str, Any] = {}
+        tags: dict[str, str] = {}
         for extra in fields[2:]:
             if extra.startswith("@"):
                 rate_txt = extra[1:]
@@ -105,7 +106,9 @@ class StatsdParseSource:
                 except ValueError as exc:
                     raise StatsdParseError(f"bad sample rate {extra!r}: {raw!r}") from exc
             elif extra.startswith("#"):
-                labels.update(self._parse_tags(extra))
+                parsed_tags = self._parse_tags(extra)
+                tags.update(parsed_tags)
+                labels.update(parsed_tags)
 
         value: float | None
         if mtype == "s":
@@ -124,9 +127,13 @@ class StatsdParseSource:
             "source": self.name,
             "kind": self.KIND,
             "level_or_status": mtype,
+            "type": mtype,
             "message": name_part,
+            "name": name_part,
             "value": value,
             "labels": labels,
+            "sample_rate": labels.get("sample_rate", 1.0),
+            "tags": tags,
             "raw": raw,
         }
 

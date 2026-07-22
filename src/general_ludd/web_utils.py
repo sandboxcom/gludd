@@ -94,17 +94,16 @@ def extract_media_queries(css_content: str) -> list[dict[str, Any]]:
     """Extract media queries with their breakpoints and contained rules."""
     cleaned = _strip_css_comments(css_content)
     queries: list[dict[str, Any]] = []
-    for match in re.finditer(
-        r"@media\s+([^{(]+)\{(.*?)\}(?=\s*[@}]|\s*\Z)",
-        cleaned,
-        re.DOTALL,
-    ):
+    for match in re.finditer(r"@media\s+([^{}]+)\{", cleaned, re.IGNORECASE):
         condition = match.group(1).strip()
-        body = match.group(2)
+        body_start = match.end()
+        body_end = _find_matching_css_brace(cleaned, body_start - 1)
+        body = cleaned[body_start:body_end] if body_end is not None else ""
         rules = parse_css(body)
         breakpoint_val = _extract_breakpoint_value(condition)
         queries.append({
             "condition": condition,
+            "feature": condition,
             "breakpoint": breakpoint_val,
             "rules": rules,
         })
@@ -265,6 +264,21 @@ def extract_colors_from_css(css_content: str) -> list[dict[str, str]]:
         if raw not in seen:
             seen.add(raw)
             hex_val = f"#{r:02X}{g:02X}{b:02X}"
+            results.append({
+                "name": _find_named_color(hex_val),
+                "hex": hex_val,
+                "value": raw,
+            })
+
+    for m in _COLOR_HSL.finditer(cleaned):
+        hue = int(m.group(1)) % 360
+        saturation = int(m.group(2)) / 100
+        lightness = int(m.group(3)) / 100
+        raw = m.group(0).lower()
+        if raw not in seen:
+            seen.add(raw)
+            r, g, b = colorsys.hls_to_rgb(hue / 360, lightness, saturation)
+            hex_val = f"#{int(r * 255):02X}{int(g * 255):02X}{int(b * 255):02X}"
             results.append({
                 "name": _find_named_color(hex_val),
                 "hex": hex_val,
@@ -652,6 +666,8 @@ def validate_heading_hierarchy(html_content: str) -> list[str]:
     levels = [int(h[1]) for h in headings]
     if levels[0] != 1:
         issues.append(f"Document starts with <h{levels[0]}>, expected <h1>")
+    if levels.count(1) > 1:
+        issues.append("Multiple h1 headings found")
     for i in range(len(levels) - 1):
         if levels[i + 1] > levels[i] + 1:
             issues.append(
@@ -670,9 +686,24 @@ _ARIA_ATTR_RE = re.compile(r"\baria-(\w[\w-]*)\b", re.IGNORECASE)
 _ARIA_ROLE_RE = re.compile(r'\brole\s*=\s*"([^"]+)"', re.IGNORECASE)
 
 
-def check_aria_attributes(html_content: str) -> list[dict[str, Any]]:
-    """Check for missing required ARIA attributes on element roles."""
-    issues: list[dict[str, Any]] = []
+def check_aria_attributes(html_content: str) -> list[str]:
+    """Check common ARIA and accessible-name requirements."""
+    issues: list[str] = []
+
+    for button in re.finditer(r"<button([^>]*)>(.*?)</button>", html_content, re.IGNORECASE | re.DOTALL):
+        attrs = button.group(1)
+        text = re.sub(r"<[^>]+>", "", button.group(2)).strip()
+        has_name = bool(text) or bool(
+            re.search(r"(?:^|\s)(aria-label|aria-labelledby|title)\s*=", attrs, re.IGNORECASE)
+        )
+        if not has_name:
+            issues.append("Button is missing an accessible label")
+
+    for img in re.finditer(r"<img([^>]*)>", html_content, re.IGNORECASE):
+        attrs = img.group(1)
+        if not re.search(r"(?:^|\s)alt\s*=", attrs, re.IGNORECASE):
+            issues.append("img element is missing alt text")
+
     for m_role in _ARIA_ROLE_RE.finditer(html_content):
         role = m_role.group(1).lower()
         if role not in _ARIA_REQUIRED:
@@ -686,11 +717,8 @@ def check_aria_attributes(html_content: str) -> list[dict[str, Any]]:
         )
         missing = [a for a in req_attrs if a.replace("aria-", "") not in present]
         if missing:
-            issues.append({
-                "role": role,
-                "position": pos,
-                "missing_attributes": missing,
-            })
+            missing_text = ", ".join(missing)
+            issues.append(f"Role {role} is missing required ARIA attributes: {missing_text}")
     return issues
 
 
@@ -699,7 +727,15 @@ def calculate_readability(text: str) -> dict[str, Any]:
     words = [w for w in re.findall(r"[a-zA-Z]+", text) if len(w) > 1]
     word_count = len(words)
     if word_count == 0:
-        return {"grade_level": 0, "reading_ease": 100, "words": 0, "sentences": 0}
+        return {
+            "grade_level": 0,
+            "grade": 0,
+            "level": 0,
+            "reading_ease": 100,
+            "score": 100,
+            "words": 0,
+            "sentences": 0,
+        }
 
     sentences = [s.strip() for s in re.split(r"[.!?]+", text) if s.strip()]
     sentence_count = max(len(sentences), 1)
@@ -714,9 +750,14 @@ def calculate_readability(text: str) -> dict[str, Any]:
         0.39 * words_per_sentence + 11.8 * syllables_per_word - 15.59, 2,
     )
 
+    normalized_grade = max(grade_level, 0)
+    normalized_score = max(0, min(100, flesch_ease))
     return {
-        "grade_level": max(grade_level, 0),
-        "reading_ease": max(0, min(100, flesch_ease)),
+        "grade_level": normalized_grade,
+        "grade": normalized_grade,
+        "level": normalized_grade,
+        "reading_ease": normalized_score,
+        "score": normalized_score,
         "words": word_count,
         "sentences": sentence_count,
     }
@@ -728,9 +769,9 @@ def calculate_readability(text: str) -> dict[str, Any]:
 
 
 def generate_spacing_tokens(base: int = 4, steps: int = 12) -> dict[str, str]:
-    """Generate spacing design tokens (0.25 to 12) based on base multiplier."""
+    """Generate spacing design tokens with exactly steps entries including zero."""
     tokens: dict[str, str] = {}
-    for i in range(steps + 1):
+    for i in range(max(steps, 0)):
         val = i * base
         tokens[f"space-{i}"] = f"{val / 16}rem"
     return tokens
@@ -832,6 +873,19 @@ def tokens_to_json(tokens: dict[str, Any]) -> str:
 
 def _strip_css_comments(css: str) -> str:
     return re.sub(r"/\*.*?\*/", "", css, flags=re.DOTALL)
+
+
+def _find_matching_css_brace(css: str, open_brace: int) -> int | None:
+    depth = 0
+    for index in range(open_brace, len(css)):
+        char = css[index]
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return index
+    return None
 
 
 def _extract_breakpoint_value(condition: str) -> int | None:
