@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from general_ludd.event_loop.lease import reclaim_expired_leases
-from general_ludd.event_loop.loop import EventLoop, _compute_todo_estimate
+from general_ludd.event_loop.loop import PHASE_ORDER, EventLoop, _compute_todo_estimate
 from general_ludd.schemas.task_decision import TaskDecision
 from general_ludd.schemas.task_return import TaskReturn, TaskReturnStatus
 from general_ludd.schemas.todo import Todo, TodoStatus
@@ -532,10 +532,7 @@ class TestEventLoop:
         assert "phases_completed" in result
         assert "tick_duration_ms" in result
         assert isinstance(result["tick_duration_ms"], float)
-        # 18 phases per PHASE_ORDER in loop.py (load_config_snapshot through remediate_blocked_tasks
-        # plus emit_tick_metrics counted at end of tick). C21: count may shift as phases are
-        # added/removed — verify it matches actual count with a range check.
-        assert 15 <= result["phases_completed"] <= 20
+        assert result["phases_completed"] == len(PHASE_ORDER)
 
     @pytest.mark.asyncio
     async def test_run_forever_can_be_stopped(self):

@@ -372,3 +372,78 @@ def get_ensemble(ensemble_name: str) -> dict[str, Any] | None:
         if ens["ensemble"] == ensemble_name or ens["abbreviation"] == ensemble_name:
             return ens
     return None
+
+
+# Role-level compatibility API used by the thermodynamics_engineer Ansible role.
+from dataclasses import asdict, dataclass
+import json
+from pathlib import Path
+
+
+_SPECIFIC_HEAT_KJ_KG_K = {
+    "water": 4.184,
+    "ethanol": 2.44,
+    "iron": 0.449,
+    "aluminum": 0.897,
+    "copper": 0.385,
+    "air": 1.005,
+    "helium": 5.193,
+    "nitrogen": 1.04,
+}
+
+
+@dataclass(frozen=True)
+class ThermoConfig:
+    substance: str = "water"
+    mass_kg: float = 1.0
+    initial_temp_C: float = 25.0
+    final_temp_C: float = 100.0
+    pressure_atm: float = 1.0
+
+
+def compute_heat_transfer(config: ThermoConfig) -> dict[str, object]:
+    if config.mass_kg < 0:
+        raise ValueError("mass_kg must be non-negative")
+    cp = _SPECIFIC_HEAT_KJ_KG_K.get(config.substance, 1.0)
+    delta_t = config.final_temp_C - config.initial_temp_C
+    heat_kj = config.mass_kg * cp * delta_t
+    return {
+        "config": asdict(config),
+        "specific_heat_kJ_kg_K": cp,
+        "delta_T_C": delta_t,
+        "heat_transfer_kJ": heat_kj,
+    }
+
+
+def compute_phase_change(config: ThermoConfig) -> dict[str, object]:
+    latent_kj_kg = 2256.0 if config.substance == "water" else 0.0
+    crosses_water_boiling = (
+        config.substance == "water"
+        and config.initial_temp_C < 100.0 <= config.final_temp_C
+    )
+    latent_heat_kj = config.mass_kg * latent_kj_kg if crosses_water_boiling else 0.0
+    return {
+        "substance": config.substance,
+        "phase_change_detected": crosses_water_boiling,
+        "latent_heat_kJ": latent_heat_kj,
+    }
+
+
+def compute_entropy_change(config: ThermoConfig) -> dict[str, object]:
+    if config.initial_temp_C <= -273.15 or config.final_temp_C <= -273.15:
+        raise ValueError("temperatures must be above absolute zero")
+    heat = compute_heat_transfer(config)
+    avg_temp_k = ((config.initial_temp_C + config.final_temp_C) / 2.0) + 273.15
+    entropy_j_k = float(heat["heat_transfer_kJ"]) * 1000.0 / avg_temp_k
+    return {
+        "substance": config.substance,
+        "entropy_change_J_K": entropy_j_k,
+    }
+
+
+def write_thermo_result(result: dict[str, object], output_dir: str) -> Path:
+    path = Path(output_dir)
+    path.mkdir(parents=True, exist_ok=True)
+    out = path / "thermo_result.json"
+    out.write_text(json.dumps(result, indent=2, sort_keys=True), encoding="utf-8")
+    return out

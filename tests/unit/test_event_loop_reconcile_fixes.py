@@ -168,9 +168,11 @@ async def test_f3_push_failure_is_surfaced_not_swallowed(tmp_path):
         "failed push was marked as done — would never retry (F3)"
     )
 
-    # Next tick must RETRY the push (work not marked done).
+    # D10 backoff means the retry occurs on the next eligible tick, not
+    # necessarily the immediate next call. Advance to the deterministic slot.
+    loop._total_ticks = (-abs(hash("TODO-003"))) % 2
     await loop._phase_reconcile_completed_decisions()
-    assert attempts["n"] == 2, "failed push was not retried on the next tick (F3)"
+    assert attempts["n"] == 2, "failed push was not retried on the next eligible tick (F3)"
 
 
 @pytest.mark.asyncio

@@ -33,10 +33,9 @@ import sys
 from pathlib import Path
 from typing import no_type_check
 
-_COLLECTIONS_ROOT = Path(__file__).resolve().parents[2] / "collections" / "ansible_collections"
-_PHYSICS_PLUGINS = str(_COLLECTIONS_ROOT / "general_ludd" / "physics" / "plugins")
-if _PHYSICS_PLUGINS not in sys.path:
-    sys.path.insert(0, _PHYSICS_PLUGINS)
+_COLLECTIONS_ROOT = Path(__file__).resolve().parents[2] / "collections"
+if str(_COLLECTIONS_ROOT) not in sys.path:
+    sys.path.insert(0, str(_COLLECTIONS_ROOT))
 
 
 def _run_quantum(args: argparse.Namespace) -> None:

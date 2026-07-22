@@ -199,6 +199,8 @@ def _seed_pending_work(env: HookEnv, **overrides) -> None:
 
 
 def _seed_clean_state(env: HookEnv) -> None:
+    (env.cwd / "persist-stop-block.json").unlink(missing_ok=True)
+    (env.cwd / "TASKS.md").unlink(missing_ok=True)
     state_path = env.state_path("GLUDD_STOP_STATE_FILE")
     state_path.write_text(json.dumps({
         "ts": int(_time.time() * 1000),

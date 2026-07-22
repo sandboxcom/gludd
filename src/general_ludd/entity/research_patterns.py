@@ -160,7 +160,9 @@ def detect_acquisitions(text: str) -> list[AcquisitionInfo]:
     results: list[AcquisitionInfo] = []
     for match in ACQUISITION_PATTERN.finditer(text):
         action_word = match.group(1).strip().lower()
-        if "merged" in action_word:
+        if "merger" in action_word:
+            action = "merger"
+        elif "merged" in action_word:
             action = "merged"
         elif (
             "acquired" in action_word

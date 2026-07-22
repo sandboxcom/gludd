@@ -35,6 +35,8 @@ from typing import Literal, Protocol, runtime_checkable
 
 import yaml
 
+from general_ludd.security.path_canonicalizer import PROTECTED_PATH_MARKERS as PROTECTED_PATH_MARKERS
+
 ApplyStatus = Literal["applied", "proposed", "denied"]
 
 #: Kinds whose change content is validated as YAML and then written in place.

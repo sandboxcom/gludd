@@ -57,7 +57,9 @@ import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
 
 
 
-const nodeRequire = createRequire(import.meta.url)
+const nodeRequire = createRequire(
+  typeof __filename !== "undefined" ? __filename : import.meta.url,
+)
 
 function execSync(...args: any[]): Buffer {
   return nodeRequire("node:child_" + "process").execSync(...args)
@@ -964,7 +966,7 @@ const defaultImpl: HotModule = {
     // FALSE-DONE detection lives in this hook; keep the marker near the hook
     // entry so structural tests catch accidental removal or relocation.
     if (isSubagent()) return output // OPENCODE_SUBAGENT guard
-    if (isStopEnforcementDisabled()) return output
+    // GLUDD_STOP_ENFORCE=0 must not bypass text.complete; text-only stop blocking is never disabled.
     incrementTextCompleteCount()
     reportAlive("enforce-stop")
     writeHeartbeat("enforce-stop")
@@ -1089,7 +1091,13 @@ const defaultImpl: HotModule = {
     // ── CONSECUTIVE TEXT-ONLY RESPONSES ────────────────────────────────────
     // hasLocalWork text-only attempts are blocked here as well as by the
     // broader pending-work block below; this is the session-level repeat guard.
-    if (isTextOnly && textOnly.count >= 2 && (workState.hasPendingWork || workState.hasLocalWork) && !lateHasWorkArtifact) {
+    if (
+      isTextOnly &&
+      textOnly.count >= 2 &&
+      (workState.hasPendingWork || workState.hasLocalWork) &&
+      !lateHasWorkArtifact &&
+      !(trimmed.length < 60 && responseLooksTerminal(text) && !hasStructuredEvidence(text))
+    ) {
       recordBlock("consecutive-text-only")
       recordBlankedResponse("consecutive-text-only", text)
       writePersistBlock(true, "consecutive-text-only")
@@ -1550,7 +1558,7 @@ export default (async () => {
     "experimental.text.complete": async (_input: unknown, output: unknown) => {
       // OPENCODE_SUBAGENT guard is implemented by shared isSubagent().
       if (isSubagent()) return output // OPENCODE_SUBAGENT guard
-      if (isStopEnforcementDisabled()) return output
+      // GLUDD_STOP_ENFORCE=0 must not bypass text.complete; text-only stop blocking is never disabled.
       const impl = stopImpl()
       const fn = impl["experimental.text.complete"]
       return fn ? await fn(_input, output) : output
