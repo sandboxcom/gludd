@@ -494,7 +494,7 @@ class GitAutomation:
             f"{target_head}...{branch}",
         ]
         for excluded in exclude_branches:
-            args.extend(["--not", excluded])
+            args.append(f"^{excluded}")
         output = self._git_stdout_or_empty(*args)
         return [line.strip() for line in output.splitlines() if line.strip()]
 

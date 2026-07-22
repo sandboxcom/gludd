@@ -217,7 +217,7 @@ def _branch_unique_commits(
         f"{target_head}...{branch}",
     ]
     for excluded in exclude_branches:
-        argv.extend(["--not", excluded])
+        argv.append(f"^{excluded}")
     output = _maybe_stdout(argv, run, cwd)
     return [line.strip() for line in output.splitlines() if line.strip()]
 

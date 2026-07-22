@@ -336,10 +336,8 @@ def test_preserved_branch_ignores_commits_reachable_from_protected_trunks(capsys
             "--right-only",
             "--no-merges",
             "fixhead...main-dirty-preserve-20260722",
-            "--not",
-            "master",
-            "--not",
-            "development",
+            "^master",
+            "^development",
         ]:
             return _completed(args, "preservecommit" + newline)
         raise AssertionError(f"unexpected argv={args!r} cwd={cwd!r}")

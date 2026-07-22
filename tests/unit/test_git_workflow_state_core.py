@@ -312,10 +312,8 @@ def test_workflow_state_preserved_branch_excludes_protected_trunk_refs() -> None
             "--right-only",
             "--no-merges",
             "fixhead...main-dirty-preserve-20260722",
-            "--not",
-            "master",
-            "--not",
-            "development",
+            "^master",
+            "^development",
         ]:
             return _completed(args, "preservecommit" + newline)
         raise AssertionError(f"unexpected argv={args!r}")
