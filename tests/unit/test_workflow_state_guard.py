@@ -170,3 +170,133 @@ def test_unintegrated_sibling_worktree_blocks_release_ci_gate(capsys) -> None:
     assert "sibling worktree(s) contain unintegrated changes" in captured.out
     assert "UNINTEGRATED: path=/repo-fix" in captured.out
     assert "dirty,head_not_merged" in captured.out
+
+
+def test_clean_trunk_sibling_does_not_block_feature_branch_ci_push(capsys) -> None:
+    newline = chr(10)
+    tab = chr(9)
+    worktree_output = (
+        "worktree /repo-fix" + newline
+        + "HEAD fixhead" + newline
+        + "branch refs/heads/fix/full-run" + newline
+        + newline
+        + "worktree /repo" + newline
+        + "HEAD masterhead" + newline
+        + "branch refs/heads/master" + newline
+        + newline
+    )
+
+    def run(argv: Sequence[str], cwd: str | None = None) -> subprocess.CompletedProcess[str]:
+        args = list(argv)
+        if args == ["git", "branch", "--show-current"]:
+            return _completed(args, "fix/full-run" + newline)
+        if args == ["git", "rev-parse", "--verify", "HEAD"]:
+            return _completed(args, "fixhead" + newline)
+        if args == ["git", "status", "--porcelain=v1", "--untracked-files=all"]:
+            return _completed(args, "")
+        if args == ["git", "status", "--porcelain=v1", "--untracked-files=all"] and cwd == "/repo":
+            return _completed(args, "")
+        if args == ["git", "ls-remote", "sandboxcom", "refs/heads/fix/full-run"]:
+            return _completed(args, "fixhead" + tab + "refs/heads/fix/full-run" + newline)
+        if args == ["git", "rev-parse", "--verify", "master"]:
+            return _completed(args, "masterhead" + newline)
+        if args == ["git", "rev-parse", "--verify", "development"]:
+            return _completed(args, "devhead" + newline)
+        if args == ["git", "merge-base", "--is-ancestor", "masterhead", "devhead"]:
+            return _completed(args, "", returncode=0)
+        if args == ["git", "rev-parse", "--show-toplevel"]:
+            return _completed(args, "/repo-fix" + newline)
+        if args == ["git", "worktree", "list", "--porcelain"]:
+            return _completed(args, worktree_output)
+        if args == ["git", "merge-base", "--is-ancestor", "masterhead", "fixhead"]:
+            return _completed(args, "", returncode=1)
+        raise AssertionError(f"unexpected argv={args!r} cwd={cwd!r}")
+
+    rc = main(["--assert-no-unintegrated-worktrees"], run=run)
+
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert "WORKFLOW-READY" in captured.out
+    assert "unintegrated_worktrees=0" in captured.out
+
+
+def test_preserved_branch_with_unique_patches_blocks_ci_gate(capsys) -> None:
+    newline = chr(10)
+    tab = chr(9)
+
+    def run(argv: Sequence[str], cwd: str | None = None) -> subprocess.CompletedProcess[str]:
+        args = list(argv)
+        if args == ["git", "branch", "--show-current"]:
+            return _completed(args, "fix/full-run" + newline)
+        if args == ["git", "rev-parse", "--verify", "HEAD"]:
+            return _completed(args, "fixhead" + newline)
+        if args == ["git", "status", "--porcelain=v1", "--untracked-files=all"]:
+            return _completed(args, "")
+        if args == ["git", "ls-remote", "sandboxcom", "refs/heads/fix/full-run"]:
+            return _completed(args, "fixhead" + tab + "refs/heads/fix/full-run" + newline)
+        if args == ["git", "rev-parse", "--verify", "master"]:
+            return _completed(args, "masterhead" + newline)
+        if args == ["git", "rev-parse", "--verify", "development"]:
+            return _completed(args, "devhead" + newline)
+        if args == ["git", "merge-base", "--is-ancestor", "masterhead", "devhead"]:
+            return _completed(args, "", returncode=0)
+        if args == ["git", "for-each-ref", "--format=%(refname:short) %(objectname)", "refs/heads"]:
+            return _completed(args, "main-dirty-preserve-20260722 preservehead" + newline)
+        if args == [
+            "git",
+            "rev-list",
+            "--cherry-pick",
+            "--right-only",
+            "--no-merges",
+            "fixhead...main-dirty-preserve-20260722",
+        ]:
+            return _completed(args, "preservecommit" + newline)
+        raise AssertionError(f"unexpected argv={args!r} cwd={cwd!r}")
+
+    rc = main(["--assert-no-unintegrated-branches"], run=run)
+
+    captured = capsys.readouterr()
+    assert rc == 1
+    assert "preserved branch(es) contain unreconciled patches" in captured.out
+    assert "UNINTEGRATED-BRANCH: branch=main-dirty-preserve-20260722" in captured.out
+
+
+def test_preserved_branch_with_cherry_equivalent_patches_passes_ci_gate(capsys) -> None:
+    newline = chr(10)
+    tab = chr(9)
+
+    def run(argv: Sequence[str], cwd: str | None = None) -> subprocess.CompletedProcess[str]:
+        args = list(argv)
+        if args == ["git", "branch", "--show-current"]:
+            return _completed(args, "fix/full-run" + newline)
+        if args == ["git", "rev-parse", "--verify", "HEAD"]:
+            return _completed(args, "fixhead" + newline)
+        if args == ["git", "status", "--porcelain=v1", "--untracked-files=all"]:
+            return _completed(args, "")
+        if args == ["git", "ls-remote", "sandboxcom", "refs/heads/fix/full-run"]:
+            return _completed(args, "fixhead" + tab + "refs/heads/fix/full-run" + newline)
+        if args == ["git", "rev-parse", "--verify", "master"]:
+            return _completed(args, "masterhead" + newline)
+        if args == ["git", "rev-parse", "--verify", "development"]:
+            return _completed(args, "devhead" + newline)
+        if args == ["git", "merge-base", "--is-ancestor", "masterhead", "devhead"]:
+            return _completed(args, "", returncode=0)
+        if args == ["git", "for-each-ref", "--format=%(refname:short) %(objectname)", "refs/heads"]:
+            return _completed(args, "main-dirty-preserve-20260722 preservehead" + newline)
+        if args == [
+            "git",
+            "rev-list",
+            "--cherry-pick",
+            "--right-only",
+            "--no-merges",
+            "fixhead...main-dirty-preserve-20260722",
+        ]:
+            return _completed(args, "")
+        raise AssertionError(f"unexpected argv={args!r} cwd={cwd!r}")
+
+    rc = main(["--assert-no-unintegrated-branches"], run=run)
+
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert "WORKFLOW-READY" in captured.out
+    assert "unintegrated_branches=0" in captured.out

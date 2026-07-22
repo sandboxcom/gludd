@@ -7,11 +7,15 @@
     remote: '{{ state_remote | default(push_remote | default("sandboxcom")) }}'
     state_ref: '{{ state_ref | default("") }}'
     state_gha_head_sha: '{{ state_gha_head_sha | default("") }}'
+    state_worktree_target_ref: '{{ state_worktree_target_ref | default("HEAD") }}'
+    state_preserve_branch_patterns: "{{ state_preserve_branch_patterns | default(['main-dirty-preserve-*', 'preserve-*']) }}"
     state_assert_clean: "{{ state_assert_clean | default(false) }}"
     state_assert_no_feature_on_master: "{{ state_assert_no_feature_on_master | default(false) }}"
     state_assert_merge_ready: "{{ state_assert_merge_ready | default(false) }}"
     state_assert_remote_head: "{{ state_assert_remote_head | default(false) }}"
     state_assert_gha_matches_local: "{{ state_assert_gha_matches_local | default(false) }}"
+    state_assert_no_unintegrated_worktrees: "{{ state_assert_no_unintegrated_worktrees | default(false) }}"
+    state_assert_no_unintegrated_branches: "{{ state_assert_no_unintegrated_branches | default(false) }}"
   register: _git_automation_state_module
 
 - name: "Expose git workflow state-machine result"

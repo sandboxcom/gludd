@@ -163,13 +163,14 @@ choices=[
             state_ref=dict(type="str", default=""),
             state_gha_head_sha=dict(type="str", default=""),
             state_worktree_target_ref=dict(type="str", default="HEAD"),
+            state_preserve_branch_patterns=dict(type="list", elements="str", default=[]),
             state_assert_clean=dict(type="bool", default=False),
             state_assert_no_feature_on_master=dict(type="bool", default=False),
             state_assert_merge_ready=dict(type="bool", default=False),
             state_assert_remote_head=dict(type="bool", default=False),
             state_assert_gha_matches_local=dict(type="bool", default=False),
-
             state_assert_no_unintegrated_worktrees=dict(type="bool", default=False),
+            state_assert_no_unintegrated_branches=dict(type="bool", default=False),
         ),
         required_if=[
             ("op", "commit", ["message"]),
@@ -202,12 +203,14 @@ choices=[
                 ref=module.params["state_ref"],
                 gha_head_sha=module.params["state_gha_head_sha"],
                 worktree_target_ref=module.params["state_worktree_target_ref"],
+                preserve_branch_patterns=tuple(module.params["state_preserve_branch_patterns"] or []),
                 assert_clean=module.params["state_assert_clean"],
                 assert_no_feature_on_master=module.params["state_assert_no_feature_on_master"],
                 assert_merge_ready=module.params["state_assert_merge_ready"],
                 assert_remote_head=module.params["state_assert_remote_head"],
                 assert_gha_matches_local=module.params["state_assert_gha_matches_local"],
                 assert_no_unintegrated_worktrees=module.params["state_assert_no_unintegrated_worktrees"],
+                assert_no_unintegrated_branches=module.params["state_assert_no_unintegrated_branches"],
             )
         except subprocess.CalledProcessError as exc:
             module.fail_json(**error_result(f"git state failed: {exc.stderr or exc}"))

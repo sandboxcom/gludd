@@ -1628,7 +1628,7 @@ workflow-state:
 	@UV=echo $(SYSTEM_PYTHON) scripts/workflow_state_guard.py --json
 
 workflow-gate:
-	@UV=echo $(SYSTEM_PYTHON) scripts/workflow_state_guard.py --assert-clean --assert-no-feature-on-master --assert-no-unintegrated-worktrees
+	@UV=echo $(SYSTEM_PYTHON) scripts/workflow_state_guard.py --assert-clean --assert-no-feature-on-master --assert-no-unintegrated-worktrees --assert-no-unintegrated-branches
 
 commit-ready:
 	@UV=echo $(SYSTEM_PYTHON) scripts/workflow_state_guard.py --assert-clean --assert-no-feature-on-master
@@ -1637,8 +1637,7 @@ gha-ready: workflow-gate
 	@UV=echo GIT_SSH_COMMAND="ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new" $(SYSTEM_PYTHON) scripts/ci_remote_head_guard.py --ref "$(REF)" --remote "$(REMOTE)"
 
 merge-ready:
-	@UV=echo $(SYSTEM_PYTHON) scripts/workflow_state_guard.py --assert-clean --assert-merge-ready --assert-no-unintegrated-worktrees
-
+	@UV=echo $(SYSTEM_PYTHON) scripts/workflow_state_guard.py --assert-clean --assert-merge-ready --assert-no-unintegrated-worktrees --assert-no-unintegrated-branches
 # Guard: prevent disabling tests in CI pipeline. Blocks push/release if
 # test-shard has continue-on-error or is removed from release.needs.
 _test-disabled-guard:

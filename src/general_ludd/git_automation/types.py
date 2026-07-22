@@ -81,4 +81,5 @@ class GitStateResult:
 
     gha_head_sha: str = ""
     unintegrated_worktrees: list[dict[str, object]] = field(default_factory=list)
+    unintegrated_branches: list[dict[str, object]] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)

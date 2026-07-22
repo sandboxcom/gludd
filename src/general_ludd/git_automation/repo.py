@@ -8,6 +8,7 @@ directly.  SSRF validation and path-safety checks ALWAYS run in Python
 
 from __future__ import annotations
 
+import fnmatch
 import json
 import logging
 import os
@@ -15,6 +16,7 @@ import re
 import subprocess
 import tempfile
 import uuid
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -389,10 +391,29 @@ class GitAutomation:
         return parts[0] if parts else ""
 
 
+    _DEFAULT_PRESERVE_BRANCH_PATTERNS = ("main-dirty-preserve-*", "preserve-*")
+
     @staticmethod
     def _state_short_branch(ref: str) -> str:
         prefix = "refs/heads/"
         return ref[len(prefix):] if ref.startswith(prefix) else (ref or "DETACHED")
+
+    @staticmethod
+    def _state_is_protected_trunk_branch(branch: str) -> bool:
+        return branch in {"development", "main", "master"}
+
+    @staticmethod
+    def _state_branch_matches(branch: str, patterns: Sequence[str]) -> bool:
+        return any(fnmatch.fnmatchcase(branch, pattern) for pattern in patterns)
+
+    @staticmethod
+    def _state_branch_entries(ref_output: str) -> list[dict[str, str]]:
+        entries: list[dict[str, str]] = []
+        for line in ref_output.splitlines():
+            parts = line.strip().split(maxsplit=1)
+            if len(parts) == 2:
+                entries.append({"branch": parts[0], "head": parts[1]})
+        return entries
 
     @classmethod
     def _state_worktree_entries(cls, porcelain_output: str) -> list[dict[str, str]]:
@@ -423,6 +444,7 @@ class GitAutomation:
             path = entry.get("path", "")
             if not path or path == current_path:
                 continue
+            branch = entry.get("branch", "DETACHED")
             head = entry.get("head") or self._run_git("rev-parse", "--verify", "HEAD", _cwd=path).stdout.strip()
             status_result = self._run_git(
                 "status",
@@ -434,17 +456,66 @@ class GitAutomation:
             reasons: list[str] = []
             if status:
                 reasons.append("dirty")
-            if head and target_head and self._master_is_ancestor_of_development(head, target_head) is False:
+            if (
+                head
+                and target_head
+                and self._master_is_ancestor_of_development(head, target_head) is False
+                and not self._state_is_protected_trunk_branch(branch)
+            ):
                 reasons.append("head_not_merged")
             if reasons:
                 unintegrated.append(
                     {
                         "path": path,
-                        "branch": entry.get("branch", "DETACHED"),
+                        "branch": branch,
                         "head": head,
                         "dirty_count": len(status),
                         "status": status[:25],
                         "reasons": reasons,
+                    }
+                )
+        return unintegrated
+
+    def _state_branch_unique_commits(self, branch: str, target_head: str) -> list[str]:
+        output = self._git_stdout_or_empty(
+            "rev-list",
+            "--cherry-pick",
+            "--right-only",
+            "--no-merges",
+            f"{target_head}...{branch}",
+        )
+        return [line.strip() for line in output.splitlines() if line.strip()]
+
+    def _state_unintegrated_branches(
+        self,
+        target_ref: str = "HEAD",
+        branch_patterns: Sequence[str] = _DEFAULT_PRESERVE_BRANCH_PATTERNS,
+    ) -> list[dict[str, object]]:
+        current_branch = self._git_stdout_or_empty("branch", "--show-current") or "DETACHED"
+        target_head = self._run_git("rev-parse", "--verify", target_ref).stdout.strip()
+        ref_output = self._git_stdout_or_empty(
+            "for-each-ref",
+            "--format=%(refname:short) %(objectname)",
+            "refs/heads",
+        )
+        unintegrated: list[dict[str, object]] = []
+        for entry in self._state_branch_entries(ref_output):
+            branch = entry["branch"]
+            if (
+                branch == current_branch
+                or self._state_is_protected_trunk_branch(branch)
+                or not self._state_branch_matches(branch, branch_patterns)
+            ):
+                continue
+            unique_commits = self._state_branch_unique_commits(branch, target_head)
+            if unique_commits:
+                unintegrated.append(
+                    {
+                        "branch": branch,
+                        "head": entry["head"],
+                        "unique_count": len(unique_commits),
+                        "commits": unique_commits[:25],
+                        "reasons": ["preserved_branch_not_reconciled"],
                     }
                 )
         return unintegrated
@@ -482,12 +553,14 @@ class GitAutomation:
         ref: str = "",
         gha_head_sha: str = "",
         worktree_target_ref: str = "HEAD",
+        preserve_branch_patterns: Sequence[str] = _DEFAULT_PRESERVE_BRANCH_PATTERNS,
         assert_clean: bool = False,
         assert_no_feature_on_master: bool = False,
         assert_merge_ready: bool = False,
         assert_remote_head: bool = False,
         assert_gha_matches_local: bool = False,
         assert_no_unintegrated_worktrees: bool = False,
+        assert_no_unintegrated_branches: bool = False,
     ) -> GitStateResult:
         branch = self._git_stdout_or_empty("branch", "--show-current") or "DETACHED"
         head = self._run_git("rev-parse", "--verify", "HEAD").stdout.strip()
@@ -515,6 +588,12 @@ class GitAutomation:
         unintegrated_worktrees = (
             self._state_unintegrated_worktrees(worktree_target_ref)
             if assert_no_unintegrated_worktrees
+            else []
+        )
+        branch_patterns = tuple(preserve_branch_patterns) or self._DEFAULT_PRESERVE_BRANCH_PATTERNS
+        unintegrated_branches = (
+            self._state_unintegrated_branches(worktree_target_ref, branch_patterns)
+            if assert_no_unintegrated_branches
             else []
         )
         errors: list[str] = []
@@ -564,6 +643,15 @@ class GitAutomation:
                 f"{len(unintegrated_worktrees)} sibling worktree(s) "
                 f"contain unintegrated changes: {paths}"
             )
+        if assert_no_unintegrated_branches and unintegrated_branches:
+            branches = ", ".join(
+                str(item.get("branch", "<unknown>"))
+                for item in unintegrated_branches[:5]
+            )
+            errors.append(
+                f"{len(unintegrated_branches)} preserved branch(es) "
+                f"contain unreconciled patches: {branches}"
+            )
         return GitStateResult(
             success=not errors,
             branch=branch,
@@ -580,6 +668,7 @@ class GitAutomation:
             master_is_ancestor_of_development=master_in_development,
             gha_head_sha=gha_head_sha,
             unintegrated_worktrees=unintegrated_worktrees,
+            unintegrated_branches=unintegrated_branches,
             errors=errors,
         )
 
