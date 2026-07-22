@@ -80,7 +80,7 @@ class AnsibleTemplater:
         try:
             parsed = env.parse(template)
             missing = meta.find_undeclared_variables(parsed) - set(safe_vars)
-            if missing - {"missing_var"}:
+            if missing:
                 raise TemplateRenderError("template rejected: UndefinedError")
             compiled = env.from_string(template)
             return compiled.render(safe_vars)
