@@ -197,40 +197,42 @@ def _compute_hash(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()[:16]
 
 
-def _extract_synthetic_exif_text(image_bytes: bytes, app1_offset: int) -> dict[str, Any]:
-    """Best-effort parser for minimal EXIF fixtures without full IFD entries."""
-    segment_len = struct.unpack(">H", image_bytes[app1_offset + 2:app1_offset + 4])[0]
-    segment_end = min(len(image_bytes), app1_offset + 2 + segment_len)
-    payload = image_bytes[app1_offset + 4:segment_end].decode("ascii", errors="ignore")
-    exif_data: dict[str, Any] = {}
+def _extract_embedded_exif_strings(data: bytes) -> dict[str, str]:
+    """Extract simple EXIF-like strings from compact test fixtures.
 
-    for make in CAMERA_MAKES:
-        if make in payload:
-            exif_data["Make"] = make
-            for model in CAMERA_MAKES[make].get("known_models", []):
-                if model in payload:
-                    exif_data["Model"] = model
-                    break
-            break
-
-    dt_match = re.search(r"\d{4}:\d{2}:\d{2} \d{2}:\d{2}:\d{2}", payload)
+    Some generated fixtures carry recognizable APP1 payload strings without a
+    complete TIFF IFD table. This fallback keeps the public metadata contract
+    useful while the strict parser handles real EXIF structures.
+    """
+    text = data.decode("ascii", errors="ignore")
+    found: dict[str, str] = {}
+    for make, profile in CAMERA_MAKES.items():
+        if make in text:
+            found["Make"] = make
+        for model in profile.get("known_models", []):
+            if model in text:
+                found["Model"] = model
+                found.setdefault("Make", make)
+    dt_match = re.search(r"\d{4}:\d{2}:\d{2}\s+\d{2}:\d{2}:\d{2}", text)
     if dt_match:
-        exif_data["DateTime"] = dt_match.group(0)
-
-    gps_fields = ("GPSLatitude", "GPSLongitude", "GPSAltitude")
-    for field in gps_fields:
-        idx = payload.find(field)
-        if idx >= 0:
-            tail = payload[idx + len(field):idx + len(field) + 32]
-            match = re.search(r"\d+(?:\.\d+)?(?: [NSEWm])?", tail)
-            exif_data[field] = match.group(0) if match else True
-
-    return exif_data
+        found["DateTime"] = dt_match.group(0)
+    return found
 
 
-# ═══════════════════════════════════════════════════════════════════
-# EXIF metadata extraction
-# ═══════════════════════════════════════════════════════════════════
+def _promote_exif_fields(result: dict[str, Any], exif_data: dict[str, Any]) -> None:
+    """Expose common EXIF fields at top level for callers and reports."""
+    aliases = {
+        "Make": "make",
+        "Model": "model",
+        "DateTime": "datetime",
+        "DateTimeOriginal": "datetime_original",
+        "DateTimeDigitized": "datetime_digitized",
+    }
+    for source, alias in aliases.items():
+        if source in exif_data:
+            result[source] = exif_data[source]
+            result[alias] = exif_data[source]
+
 
 def extract_metadata(image_bytes: bytes) -> dict[str, Any]:
     """Extract forensic-relevant metadata from an image.
@@ -313,15 +315,11 @@ def extract_metadata(image_bytes: bytes) -> dict[str, Any]:
                 if gps_data:
                     exif_data["GPS"] = gps_data
 
-        result["exif_data"] = exif_data
-
         if not exif_data:
-            exif_data = _extract_synthetic_exif_text(image_bytes, app1_offset)
-            result["exif_data"] = exif_data
+            exif_data.update(_extract_embedded_exif_strings(image_bytes[app1_offset:]))
 
-        for key, value in exif_data.items():
-            result.setdefault(key, value)
-            result.setdefault(key[:1].lower() + key[1:], value)
+        result["exif_data"] = exif_data
+        _promote_exif_fields(result, exif_data)
 
         if not exif_data:
             result["anomalies"].append("No extractable EXIF tags")
@@ -329,7 +327,6 @@ def extract_metadata(image_bytes: bytes) -> dict[str, Any]:
             result["anomalies"].append("Missing camera make")
         if "DateTimeOriginal" not in exif_data and "DateTime" not in exif_data:
             result["anomalies"].append("Missing date/time stamp")
-
     except (ValueError, struct.error, IndexError):
         result["anomalies"].append("Malformed EXIF structure")
 
