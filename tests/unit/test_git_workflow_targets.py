@@ -124,3 +124,23 @@ class TestGitWorkflowTargetRecipeContent:
         assert not missing, (
             f"AGENTS.md-documented targets missing from Makefile: {missing}"
         )
+
+
+
+
+def test_git_cherry_pick_list_batches_shas_in_order() -> None:
+    makefile = _makefile_src()
+    match = re.search(
+        r"""^git-cherry-pick-list:
+(.*?)(?=
+[a-zA-Z_-]+:|\Z)""",
+        makefile,
+        re.DOTALL | re.MULTILINE,
+    )
+    assert match, "git-cherry-pick-list target missing from Makefile"
+    recipe = match.group(1)
+
+    assert "$(SHAS)" in recipe
+    assert "for SHA in $(SHAS)" in recipe
+    assert "git cherry-pick \"$$SHA\"" in recipe
+    assert "git-cherry-pick-list" in makefile.split(".PHONY:", 1)[1]
