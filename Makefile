@@ -10,6 +10,7 @@ GLUDD_TASK_TIMEOUT ?= 300
 GATE_POLL_INTERVAL ?= 60
 
 PYTHON := python3
+SYSTEM_PYTHON ?= /usr/bin/python3
 UV := uv
 PROJECT_SRC := src/general_ludd
 TESTS_DIR := tests
@@ -1521,41 +1522,40 @@ MAX_CANCELLED_RUNS ?= 3
 # Prevents pre-commit hook stash conflicts on the remote.
 check-clean-tree:
 	@$(PYTHON) scripts/check_clean_tree.py
-
 worktree-state:
-	@python3 scripts/worktree_state_guard.py --json
+	@$(SYSTEM_PYTHON) scripts/worktree_state_guard.py --json
 
 all-worktree-state:
-	@python3 scripts/worktree_state_guard.py --all --json
+	@$(SYSTEM_PYTHON) scripts/worktree_state_guard.py --all --json
 
 main-worktree-state:
-	@python3 scripts/worktree_state_guard.py --main --main-path /Users/shawnwilson/gludd --json
+	@$(SYSTEM_PYTHON) scripts/worktree_state_guard.py --main --main-path /Users/shawnwilson/gludd --json
 
 worktree-guard:
-	@python3 scripts/worktree_state_guard.py --assert-clean
+	@$(SYSTEM_PYTHON) scripts/worktree_state_guard.py --assert-clean
 
 main-worktree-guard:
-	@python3 scripts/worktree_state_guard.py --main-path /Users/shawnwilson/gludd --assert-main-clean --main-claim-token
+	@$(SYSTEM_PYTHON) scripts/worktree_state_guard.py --main-path /Users/shawnwilson/gludd --assert-main-clean --main-claim-token
 
 release-worktree-guard: worktree-guard main-worktree-guard
-	@python3 scripts/worktree_state_guard.py --assert-clean --claim-token
+	@$(SYSTEM_PYTHON) scripts/worktree_state_guard.py --assert-clean --claim-token
 
 status-claim-guard: worktree-guard main-worktree-guard
-	@python3 scripts/worktree_state_guard.py --assert-clean --claim-token
+	@$(SYSTEM_PYTHON) scripts/worktree_state_guard.py --assert-clean --claim-token
 workflow-state:
-	@python3 scripts/workflow_state_guard.py --json
+	@$(SYSTEM_PYTHON) scripts/workflow_state_guard.py --json
 
 workflow-gate:
-	@python3 scripts/workflow_state_guard.py --assert-clean --assert-no-feature-on-master
+	@$(SYSTEM_PYTHON) scripts/workflow_state_guard.py --assert-clean --assert-no-feature-on-master
 
 commit-ready:
-	@python3 scripts/workflow_state_guard.py --assert-clean --assert-no-feature-on-master
+	@$(SYSTEM_PYTHON) scripts/workflow_state_guard.py --assert-clean --assert-no-feature-on-master
 
 gha-ready:
-	@GIT_SSH_COMMAND="ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new" python3 scripts/ci_remote_head_guard.py --ref "$(REF)" --remote "$(REMOTE)"
+	@GIT_SSH_COMMAND="ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new" $(SYSTEM_PYTHON) scripts/ci_remote_head_guard.py --ref "$(REF)" --remote "$(REMOTE)"
 
 merge-ready:
-	@python3 scripts/workflow_state_guard.py --assert-clean --assert-merge-ready
+	@$(SYSTEM_PYTHON) scripts/workflow_state_guard.py --assert-clean --assert-merge-ready
 
 # Guard: prevent disabling tests in CI pipeline. Blocks push/release if
 # test-shard has continue-on-error or is removed from release.needs.

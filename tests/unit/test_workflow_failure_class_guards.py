@@ -232,8 +232,25 @@ def test_worktree_state_guard_targets_are_path_qualified_release_gates() -> None
 
 
 def test_workflow_state_targets_do_not_dirty_lockfile_with_uv_run() -> None:
-    for target in ["workflow-state", "workflow-gate", "commit-ready", "gha-ready", "merge-ready"]:
+    guard_targets = [
+        "worktree-state",
+        "all-worktree-state",
+        "main-worktree-state",
+        "worktree-guard",
+        "main-worktree-guard",
+        "release-worktree-guard",
+        "status-claim-guard",
+        "workflow-state",
+        "workflow-gate",
+        "commit-ready",
+        "gha-ready",
+        "merge-ready",
+    ]
+
+    assert "SYSTEM_PYTHON ?= /usr/bin/python3" in _makefile()
+    for target in guard_targets:
         block = _target_block(target)
 
         assert "$(PYTHON)" not in block
-        assert "python3 scripts/" in block
+        assert "python3 scripts/" not in block
+        assert "$(SYSTEM_PYTHON) scripts/" in block
