@@ -29,7 +29,7 @@ endif
 PYTEST_VERBOSITY ?= -v
 
     .PHONY: \
-        init sync install-pip lint lint-fix test test-unit test-unit-shards test-specific test-files test-count test-integration test-e2e \
+        init sync install-pip lint lint-fix test test-unit test-unit-shards test-specific test-files test-ci-shards-parallel test-ci-shards-parallel-bg test-ci-shards-parallel-status wait-seconds test-count test-integration test-e2e \
          test-guardrails test-scripts test-db test-live-zai test-tui-daemon test-batch test-bg test-bg-runner \
          test-games game-audit gen-mcp-tools gen-mcp-tool-ref mcp-docs-check \
         typecheck setup-dirs setup-venv clean healthcheck \
@@ -45,7 +45,7 @@ PYTEST_VERBOSITY ?= -v
         agent-worktree-dev agent-merge-dev \
         development-push development-merge-to-master development-start development-status \
         git-commit-no-verify git-amend-msg \
-        _commit-lock-acquire check-clean-tree ship-commit-files \
+        _commit-lock-acquire check-clean-tree worktree-state worktree-guard release-worktree-guard status-claim-guard ship-commit-files remove-workspace-file-b64 \
         molecule-version molecule-test molecule-test-all \
         collection-roles collection-modules molecule-scenarios \
         test-binary-re test-radio test-os-expert test-e2e-test-gen test-language test-language-expert test-collections \
@@ -68,7 +68,7 @@ PYTEST_VERBOSITY ?= -v
         watchdog-read watchdog-start watchdog-status watchdog-stop watchdog-log \
         task-watchdog-start task-watchdog-stop task-watchdog-status task-watchdog-log task \
         check-readme-status check-types check-types-baseline check-plugin-versions check-plugin-versions-quiet \
-        check-plugin-liveness check-plugin-health write-plugin-manifest codemod-lean-enforcement-plugins restart-opencode disengage-enforcement reload-enforcement \
+        check-plugin-liveness check-plugin-health write-plugin-manifest restart-opencode disengage-enforcement reload-enforcement \
         rearm-enforcement enforcement-status \
         hot-reload-plugins hot-reload-status hot-reload-clean \
          verify-release-artifact verify-release-completeness git-tag-rm git-tag-delete git-tag-move release-cut release-recut release-create release-delete \
@@ -78,9 +78,9 @@ PYTEST_VERBOSITY ?= -v
         verify-feature-claims audit-coverage gate-audit coverage-json \
         tf-cache-setup tf-init tf-validate tf-cache-warm tf-versions-check tf-clean \
         deck deck-serve deck-preview deck-data deck-honesty \
-        script-count strip-enforce-stop test-hooks-live test-hook-runtime \
+        script-count strip-enforce-stop codemod-lean-enforcement-plugins codemod-exact-subagent-guards codemod-ci-shards-sigterm codemod-tui-table-widths git-worktree-lock-clean test-hooks-live test-hook-runtime \
         verify-enforcement \
-        ci-view ci-rerun ci-trigger ci-active ci-job-log \
+        ci-view ci-rerun ci-trigger ci-remote-head-guard ci-active ci-job-log \
         ci-busy-check ci-safe-push pre-push-check push-guarded ci-await \
         git-index git-search git-stats agent-report \
         searx-up searx-down searx-test searx-start searx-stop searx-status searx-install \
@@ -92,7 +92,8 @@ PYTEST_VERBOSITY ?= -v
          test-service-discovery service-discover service-catalog \
          subagent-init subagent-cleanup \
          chat chat-eval test-chat \
-         git-tag-delete git-tag-move release-deploy _no-raw-git-guard
+         git-tag-delete git-tag-move release-deploy append-text _no-raw-git-guard \
+         git-push-committed-head-nv ci-trigger-committed-head ci-push-committed-head check-no-prompt-prone-edit-tools
 
 help:
 	@echo "Usage: make [target]"
@@ -108,7 +109,7 @@ help:
 	@echo "  lint                  Run ruff linter"
 	@echo "  lint-fix              Run ruff with auto-fix"
 	@echo "  typecheck             Run mypy"
-	@echo "  check-types           Flag `Any` usage in Python annotations (tight types)"
+	@echo "  check-types           Flag Any usage in Python annotations (tight types)"
 	@echo "  check-types-baseline  Same scan, tolerating config/type_any_baseline.txt"
 	@echo "  healthcheck           Verify imports work"
 	@echo "  qa                    Run lint + typecheck + test + healthcheck"
@@ -121,7 +122,15 @@ help:
 	@echo "  collect-check         Fast collection-error gate"
 	@echo "  preflight             Preflight quality gate (coverage, lint, mypy, templates, etc.)"
 	@echo "  check-make-help       Verify every public Makefile target is listed by make help"
-	@echo "  codemod-lean-enforcement-plugins Extract bulky enforcement implementations from counted plugin entrypoints"
+	@echo "  check-no-prompt-prone-edit-tools  Enforce make-target-only edit workflow"
+	@echo "  worktree-state        Emit path-qualified git worktree state as JSON"
+	@echo "  worktree-guard        Fail if the current worktree is dirty"
+	@echo "  release-worktree-guard  Emit release evidence only from a clean worktree"
+	@echo "  status-claim-guard    Emit a WORKTREE-CLEAN token for clean-state claims"
+	@echo "  codemod-lean-enforcement-plugins  Slim counted enforcement plugin entrypoints"
+	@echo "  codemod-exact-subagent-guards  Restore literal OPENCODE_SUBAGENT early-return guards"
+	@echo "  codemod-ci-shards-sigterm  Enforce explicit failure on unexpected shard SIGTERM"
+	@echo "  codemod-tui-table-widths  Enforce explicit Rich table widths in TUI builders"
 	@echo "  sast                  Run bandit SAST"
 	@echo "  sbom                  Generate CycloneDX SBOM"
 	@echo "  pip-audit             Audit dependencies for vulnerabilities"
@@ -131,6 +140,9 @@ help:
 	@echo "  test                  Full test suite with coverage"
 	@echo "  test-unit             Unit tests only"
 	@echo "  test-unit-shards      Unit tests in bounded serial shards (SHARDS=12 SHARD=1)"
+	@echo "  test-ci-shards-parallel  Run named CI shards concurrently without killing siblings"
+	@echo "  test-ci-shards-parallel-bg  Start named CI shards concurrently in a detached supervisor"
+	@echo "  test-ci-shards-parallel-status  Show detached CI shard supervisor status and tail"
 	@echo "  test-integration      Integration tests"
 	@echo "  test-e2e              End-to-end tests"
 	@echo "  test-specific         Single test (TESTFILE='path::TestClass::test_name')"
@@ -245,6 +257,7 @@ help:
 	@echo "  ci-diagnose            Fetch CI failure annotations and group by root cause"
 	@echo "  ci-cooldown-status     Show remaining cooldown seconds"
 	@echo "  ci-view RUN=<id>       Show CI run details (jobs, steps, failures)"
+	@echo "  ci-remote-head-guard  Verify remote CI ref matches clean local HEAD"
 	@echo "  ci-active              List active/in-flight CI runs"
 	@echo "  ci-greenness           CI reliability ratio (green / total completed)"
 	@echo ""
@@ -274,9 +287,15 @@ help:
 	@echo ""
 	@echo "  --- Other ---"
 	@echo "  smoke                 Quick daemon boot health check"
+	@echo "  wait-seconds WAIT=30  Sleep for a bounded polling interval"
 	@echo "  clean                 Remove build artifacts"
 	@echo "  dist-clean            Remove distribution artifacts"
 	@echo "  gated-merge           flock-guarded multi-branch merge with manifest (BASE/BRANCHES/MERGE_STRATEGY/MANIFEST)"
+	@echo ""
+	@echo "  replace-text          Replace one exact text block using OLD and NEW files"
+	@echo "  write-text            Write TEXT to FILE through make"
+	@echo "  append-text           Append TEXT to FILE through make"
+	@echo "  remove-workspace-file-b64  Remove workspace file from base64 path"
 	@echo ""
 	@echo "  --- Complete Target Index ---"
 	@$(PYTHON) scripts/check_make_help.py --print-index
@@ -437,11 +456,11 @@ ruff-audit:
 	@$(UV) run python scripts/ruff_plugins/return_type_checker.py
 
 typecheck:
-	@$(UV) run mypy -p general_ludd
+	@$(UV) run mypy --no-warn-unused-configs -p general_ludd
 
 test:
 	@if [ -n "$(TESTFILE)" ]; then \
-		BT="/tmp/gludd-test-$${ID:-$$$$}"; rm -rf "$$BT"; $(UV) run python -m pytest $(TESTFILE) $(PYTEST_VERBOSITY) $(PYTEST_ARGS) --basetemp="$$BT"; RC=$$?; rm -rf "$$BT"; exit $$RC; \
+	RC=$$?; chmod -R u+rwx "$$BT" 2>/dev/null || true; rm -rf "$$BT"; exit $$RC
 	else \
 		BT="/tmp/gludd-test-$${ID:-$$$$}"; rm -rf "$$BT"; $(UV) run python -m pytest tests/ --cov=general_ludd --cov-report=term-missing --cov-report=xml $(_XD) $(PYTEST_VERBOSITY) $(PYTEST_ARGS) --basetemp="$$BT"; RC=$$?; rm -rf "$$BT"; exit $$RC; \
 	fi
@@ -470,23 +489,69 @@ test-specific:
 	@if [ -z "$(TESTFILE)" ]; then echo "Usage: make test-specific TESTFILE='tests/unit/test_foo.py::TestClass::test_method'"; exit 1; fi
 	@BT="/tmp/gludd-testspecific-$${ID:-$$$$}"; rm -rf "$$BT"; $(UV) run python -m pytest $(TESTFILE) $(_XD) -v $(PYTEST_ARGS) --basetemp="$$BT"; RC=$$?; rm -rf "$$BT"; exit $$RC
 
+_ci-replica-clean-tree:
+	@if python3 scripts/worktree_state_guard.py --assert-clean --claim-token >/tmp/gludd-ci-replica-clean-tree.txt 2>&1; then \
+		cat /tmp/gludd-ci-replica-clean-tree.txt; \
+		exit 0; \
+	fi; \
+	if [ "$(ALLOW_DIRTY_FOCUSED_REPRO)" = "1" ] && [ -n "$(PYTEST_ARGS)" ]; then \
+		cat /tmp/gludd-ci-replica-clean-tree.txt; \
+		echo "ALLOW_DIRTY_FOCUSED_REPRO=1: dirty focused repro allowed; CI-like result is not release evidence"; \
+		exit 0; \
+	fi; \
+	cat /tmp/gludd-ci-replica-clean-tree.txt; \
+	echo "BLOCKED: CI-like shard validation requires a clean worktree."; \
+	echo "Commit completed work or create a clean worktree at the pushed HEAD."; \
+	exit 1
+
 test-files:
 	@if [ -z "$(TESTFILES)" ]; then echo "Usage: make test-files TESTFILES='tests/unit/test_a.py tests/unit/test_b.py'"; exit 1; fi
 	@BT="/tmp/gludd-testfiles-$${ID:-$$$$}"; rm -rf "$$BT"; $(UV) run python -m pytest $(TESTFILES) $(_XD) -v $(PYTEST_ARGS) --basetemp="$$BT"; RC=$$?; rm -rf "$$BT"; exit $$RC
 
-test-ci-shard:
+test-ci-shard: _ci-replica-clean-tree
 	@if [ -z "$(SHARD)" ]; then echo "Usage: make test-ci-shard SHARD=unit-2"; exit 1; fi
 	@BT="/tmp/gludd-ci-shard-$(SHARD)-$${ID:-$$$$}"; rm -rf "$$BT"; \
 	TESTFILES="$$( $(UV) run python scripts/ci_named_shard_files.py --shard "$(SHARD)" --shell )"; \
 	if [ -z "$$TESTFILES" ]; then echo ERROR: unknown-or-empty ci shard; rm -rf "$$BT"; exit 2; fi; echo "=== ci shard $(SHARD): local replica ==="; \
 	$(UV) run python -m pytest $$TESTFILES $(_XD) -v $(PYTEST_ARGS) --basetemp="$$BT"; \
-	RC=$$?; rm -rf "$$BT"; exit $$RC
+	RC=$$?; chmod -R u+rwx "$$BT" 2>/dev/null || true; rm -rf "$$BT"; exit $$RC
+
+test-ci-shard-summary: _ci-replica-clean-tree
+	@if [ -z "$(SHARD)" ]; then echo "Usage: make test-ci-shard-summary SHARD=unit-2"; exit 1; fi
+	@exec $(UV) run python scripts/run_ci_shard_summary.py --shard "$(SHARD)" --pytest-args="$(PYTEST_ARGS)"
+
+test-ci-shard-files:
+	@if [ -z "$(SHARD)" ]; then echo "Usage: make test-ci-shard-files SHARD=unit-2"; exit 1; fi
+	@$(UV) run python scripts/ci_named_shard_files.py --shard "$(SHARD)"
+
+test-ci-shard-slice: _ci-replica-clean-tree
+	@if [ -z "$(SHARD)" ]; then echo "Usage: make test-ci-shard-slice SHARD=unit-2 [FROM=path] [AFTER=path] [TO=path] [BEFORE=path]"; exit 1; fi
+	@BT="/tmp/gludd-ci-shard-slice-$(SHARD)-${ID:-$$}"; rm -rf "$$BT"; \
+	TESTFILES="$$($(UV) run python scripts/ci_named_shard_files.py --shard "$(SHARD)" $(if $(FROM),--from "$(FROM)") $(if $(AFTER),--after "$(AFTER)") $(if $(TO),--to "$(TO)") $(if $(BEFORE),--before "$(BEFORE)") --shell)"; \
+	if [ -z "$$TESTFILES" ]; then echo ERROR: unknown-or-empty ci shard slice; rm -rf "$$BT"; exit 2; fi; echo "=== ci shard $(SHARD): local slice ==="; \
+	$(UV) run python -m pytest $$TESTFILES $(_XD) -v $(PYTEST_ARGS) --basetemp="$$BT"; \
+	RC=$$?; chmod -R u+rwx "$$BT" 2>/dev/null || true; rm -rf "$$BT"; exit $$RC
 
 test-ci-shard-kill-unit-4:
 	@pkill -TERM -f /tmp/gludd-ci-shard-unit-4- 2>/dev/null || true
 
 test-unit-shards:
-	@$(UV) run python scripts/run_unit_shards.py --shards "$(or $(SHARDS),12)" $(if $(SHARD),--index "$(SHARD)") --timeout "$(or $(SHARD_TIMEOUT),300)"
+	@if [ -z "$(SHARD)" ]; then echo "Usage: make test-unit-shards SHARD=unit-1a|unit-1b|unit-1d|unit-2|unit-3|other"; exit 1; fi
+	@$(MAKE) --no-print-directory test-ci-shard SHARD="$(SHARD)" PYTEST_ARGS="$(PYTEST_ARGS)"
+
+test-ci-shards-parallel: _ci-replica-clean-tree
+	@if [ -z "$(SHARDS)" ]; then echo "Usage: make test-ci-shards-parallel SHARDS=\"unit-2 unit-3\" [WORKERS_PER_SHARD=1]"; exit 1; fi
+	@$(UV) run python scripts/run_ci_shards_parallel.py --shards "$(SHARDS)" --pytest-args="$(PYTEST_ARGS)" --workers-per-shard "$(or $(WORKERS_PER_SHARD),1)"
+
+test-ci-shards-parallel-bg: _ci-replica-clean-tree
+	@if [ -z "$(SHARDS)" ]; then echo "Usage: make test-ci-shards-parallel-bg SHARDS=\"unit-2 unit-3\" [WORKERS_PER_SHARD=1]"; exit 1; fi
+	@$(UV) run python scripts/start_ci_shards_parallel_bg.py --shards "$(SHARDS)" --pytest-args="$(PYTEST_ARGS)" --workers-per-shard "$(or $(WORKERS_PER_SHARD),1)"
+
+test-ci-shards-parallel-status:
+	@$(UV) run python scripts/ci_shards_parallel_status.py --lines "$(or $(LINES),80)"
+
+wait-seconds:
+	@$(PYTHON) -c "import time; time.sleep(float(\"$(or $(WAIT),30)\"))"
 
 repro-caplog-secrets:
 	$(UV) run python -m pytest tests/unit/test_secrets_log_sanitization.py::test_resolve_exc_message_sanitized -n 2 --dist loadgroup -v -s
@@ -520,6 +585,9 @@ test-failures:
 	grep -E "^(FAILED|ERROR)" /tmp/gludd-test-output.txt; \
 	exit $$EXIT
 
+check-makefile-structure:
+	@$(UV) run python -m pytest tests/unit/test_makefile_syntax.py -q -n 0
+
 collect-check:
 	@$(UV) run python -m pytest tests/ --co -q > /tmp/gludd-collect-output.txt 2>&1; EXIT=$$?; \
 	if [ $$EXIT -ne 0 ]; then \
@@ -550,7 +618,7 @@ check-opencode-integrity:
 gate-fast: lint typecheck collect-check
 	@echo "=== GATE-FAST: PASS ==="
 
-gate: check-opencode-integrity validate-task-ledger check-dispatch-dedup check-subagent-guards verify-plugin-manifest check-skills-frontmatter check-coverage-gaps check-plugin-syntax check-plugin-runtime check-plugin-imports check-duplicate-targets
+gate: check-opencode-integrity validate-task-ledger check-dispatch-dedup check-subagent-guards verify-plugin-manifest check-skills-frontmatter check-coverage-gaps check-no-prompt-prone-edit-tools check-plugin-syntax check-plugin-runtime check-plugin-imports check-duplicate-targets
 	@rm -f .gate-failed
 	@echo "=== GATE $(shell date -u +%Y-%m-%dT%H:%M:%SZ) ===" > .gate-status
 	@# OBSERVABILITY INVARIANT (see AGENTS.md "No unseen events"): every gate phase
@@ -617,7 +685,7 @@ gate: check-opencode-integrity validate-task-ledger check-dispatch-dedup check-s
 		echo "=== GATE: PASSED ===" >> .gate-status; \
 	fi
 
-# gate-lite: LOCAL validation without the full xdist test phase that OOMs on
+# gate-lite - LOCAL validation without the full xdist test phase that OOMs on
 # this machine under 8-worker xdist. Runs the same lint/typecheck/collect/smoke
 # phases as `gate` plus env-writes + skills-frontmatter checks, but replaces the
 # full-suite test phase with a 2-worker TARGETED pytest over tests/unit only
@@ -666,6 +734,9 @@ gate-lite: check-opencode-integrity verify-opencode-backup check-subagent-guards
 	@echo "=== GATE-LITE PHASE: skills-frontmatter ==="
 	@printf "skills-frontmatter " >> .gate-lite-status
 	@$(MAKE) --no-print-directory check-skills-frontmatter > /dev/null 2>&1 && echo "PASS" >> .gate-lite-status || (echo "FAIL" >> .gate-lite-status && touch .gate-lite-failed)
+	@echo "=== GATE-LITE PHASE: smoke ==="
+	@printf "smoke " >> .gate-lite-status
+	@$(MAKE) --no-print-directory smoke > /tmp/gludd-gate-lite-smoke.log 2>&1 && echo "PASS" >> .gate-lite-status || (echo "FAIL" >> .gate-lite-status && touch .gate-lite-failed && echo "[gate-lite] smoke FAILED — tail:" && tail -20 /tmp/gludd-gate-lite-smoke.log)
 	@echo "=== GATE-LITE PHASE: test (unit, 2 workers, fail-fast) ==="
 	@printf "test " >> .gate-lite-status
 	@# 2 workers (not 8) avoids the local OOM; -x fails fast; unique basetemp
@@ -681,9 +752,6 @@ gate-lite: check-opencode-integrity verify-opencode-backup check-subagent-guards
 		tail -30 /tmp/gludd-gate-lite-test.log; \
 	fi; \
 	rm -rf "$$BT"
-	@echo "=== GATE-LITE PHASE: smoke ==="
-	@printf "smoke " >> .gate-lite-status
-	@$(MAKE) --no-print-directory smoke > /tmp/gludd-gate-lite-smoke.log 2>&1 && echo "PASS" >> .gate-lite-status || (echo "FAIL" >> .gate-lite-status && touch .gate-lite-failed && echo "[gate-lite] smoke FAILED — tail:" && tail -20 /tmp/gludd-gate-lite-smoke.log)
 	@echo "---" >> .gate-lite-status
 	@echo "epoch $$(date +%s)" >> .gate-lite-status
 	@cat .gate-lite-status
@@ -1474,12 +1542,11 @@ clean-plugins:
 	@echo "No plugin clean operations needed"
 
 clean-untracked:
-	@rm -f scripts/scan-secrets.py
-	@echo "Cleaned up reinvention-of-wheel files"
+	@echo "No stale generated helper files to clean"
 
 git-remote-sandboxcom:
 	@chmod 600 sandboxcom_github_rsa
-	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git remote add sandboxcom git@github.com:sandboxcom/gludd.git 2>/dev/null || true
+	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git remote add sandboxcom git@github.com:sandboxcom/gludd.git 2>/dev/null || true
 	@echo "Remote sandboxcom configured"
 
 # -- Push gate: prevent CI thrash (cancelled runs, push storms, excessive pushes) --
@@ -1493,6 +1560,18 @@ MAX_CANCELLED_RUNS ?= 3
 # Prevents pre-commit hook stash conflicts on the remote.
 check-clean-tree:
 	@$(PYTHON) scripts/check_clean_tree.py
+
+worktree-state:
+	@python3 scripts/worktree_state_guard.py --json
+
+worktree-guard:
+	@python3 scripts/worktree_state_guard.py --assert-clean
+
+release-worktree-guard: worktree-guard
+	@python3 scripts/worktree_state_guard.py --assert-clean --claim-token
+
+status-claim-guard:
+	@python3 scripts/worktree_state_guard.py --assert-clean --claim-token
 
 # Guard: prevent disabling tests in CI pipeline. Blocks push/release if
 # test-shard has continue-on-error or is removed from release.needs.
@@ -1540,22 +1619,22 @@ force-push:
 	@GLUDD_FORCE_PUSH=1 $(MAKE) git-push-sandboxcom
 
 master-force-push:
-	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push --force --no-verify -u sandboxcom master
+	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push --force --no-verify -u sandboxcom master
 	@$(MAKE) verify-remote BRANCH=master SHA=$$(git rev-parse master)
 	@echo "Master branch force-pushed and verified"
 
 git-push-sandboxcom: check-clean-tree _test-disabled-guard _push-rate-guard
-	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push -u sandboxcom master
+	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push -u sandboxcom master
 	@echo "Pushed to sandboxcom/gludd"
 
 push-dev: check-clean-tree ci-busy-check
-	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push sandboxcom development
+	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push sandboxcom development
 	@echo "Pushed development to sandboxcom/gludd"
 	@$(PYTHON) scripts/ci_check_cooldown.py deploy
 	@python3 -c "import json,time;from pathlib import Path;p=Path('/tmp/gludd-watchdog-push-timestamps.json');d=json.loads(p.read_text()) if p.exists() else [];d.append(time.time());p.write_text(json.dumps(d[-50:]))" 2>/dev/null || true
 
 push-dev-nv: check-clean-tree _push-rate-guard
-	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push --no-verify sandboxcom development
+	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push --no-verify sandboxcom development
 	@echo "Pushed development to sandboxcom/gludd (--no-verify)"
 	@python3 -c "import json,time;from pathlib import Path;p=Path('/tmp/gludd-watchdog-push-timestamps.json');d=json.loads(p.read_text()) if p.exists() else [];d.append(time.time());p.write_text(json.dumps(d[-50:]))" 2>/dev/null || true
 
@@ -1564,40 +1643,53 @@ push-dev-nv: check-clean-tree _push-rate-guard
 # and CI is the gate. The _push-rate-guard (CI-pending / cooldown / thrash)
 # is STILL enforced. Mirrors commit-no-verify for the push side.
 git-push-sandboxcom-nv: check-clean-tree _push-rate-guard
-	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push --no-verify -u sandboxcom master
+	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push --no-verify -u sandboxcom master
 	@echo "Pushed to sandboxcom/gludd (--no-verify)"
 	@python3 -c "import json,time;from pathlib import Path;p=Path('/tmp/gludd-watchdog-push-timestamps.json');d=json.loads(p.read_text()) if p.exists() else [];d.append(time.time());p.write_text(json.dumps(d[-50:]))" 2>/dev/null || true
 
 # Push only the committed HEAD for the current branch. This is for CI candidate
 # runs from a dirty integration checkout; uncommitted files are not included.
-git-push-current-head-nv: _push-rate-guard
+git-push-current-head-nv: check-clean-tree _push-rate-guard
 	@BRANCH=$$(git branch --show-current); \
 	if [ -z "$$BRANCH" ]; then echo "Cannot push detached HEAD"; exit 1; fi; \
-	GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push --no-verify -u sandboxcom HEAD:$$BRANCH
+	GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push --no-verify -u sandboxcom HEAD:$$BRANCH
 	@echo "Pushed committed HEAD to sandboxcom/gludd"
 	@python3 -c "import json,time;from pathlib import Path;p=Path('/tmp/gludd-watchdog-push-timestamps.json');d=json.loads(p.read_text()) if p.exists() else [];d.append(time.time());p.write_text(json.dumps(d[-50:]))" 2>/dev/null || true
 
-# Batch push using the no-verify variant. COMMIT_THRESHOLD=1 forces a push.
+git-push-current-head-to-master-nv: check-clean-tree _push-rate-guard
+	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push --no-verify sandboxcom HEAD:master
+	@echo "Pushed committed HEAD to sandboxcom/gludd master"
+	@python3 -c "import json,time;from pathlib import Path;p=Path('/tmp/gludd-watchdog-push-timestamps.json');d=json.loads(p.read_text()) if p.exists() else [];d.append(time.time());p.write_text(json.dumps(d[-50:]))" 2>/dev/null || true
+
+# Batch push using the no-verify variant. COMMIT_THRESHOLD=1 is blocked to avoid CI thrash.
 batch-push-nv: check-clean-tree
 	@COUNT=$$(git log --oneline @{u}..HEAD 2>/dev/null | wc -l | tr -d ' '); \
 	THRESHOLD=$${COMMIT_THRESHOLD:-5}; \
+	if [ "$$THRESHOLD" = "1" ]; then \
+		echo "BLOCKED: COMMIT_THRESHOLD=1 bypass is disabled; commit locally and batch pushes."; \
+		exit 1; \
+	fi; \
 	if [ "$$COUNT" -lt "$$THRESHOLD" ] && [ "$$GLUDD_FORCE_PUSH" != "1" ]; then \
 		echo "NOT PUSHING: only $$COUNT unpushed commit(s) (threshold=$$THRESHOLD)."; \
-		echo "Batch locally. Use GLUDD_FORCE_PUSH=1 or COMMIT_THRESHOLD=1 to override."; \
+		echo "Batch locally. Use GLUDD_FORCE_PUSH=1 after enough local commits; COMMIT_THRESHOLD=1 is blocked."; \
 		exit 0; \
 	fi; \
 	echo "$$COUNT unpushed commits, threshold met. Pushing (--no-verify)..."; \
 	$(MAKE) git-push-sandboxcom-nv
 
 # Batch push: only push after substantial local work (default 5+ unpushed commits).
-# Override: COMMIT_THRESHOLD=1 or GLUDD_FORCE_PUSH=1.
+# Override: GLUDD_FORCE_PUSH=1. COMMIT_THRESHOLD=1 is blocked.
 # This is the RECOMMENDED push target. Use instead of git-push-sandboxcom directly.
 batch-push: check-clean-tree
 	@COUNT=$$(git log --oneline @{u}..HEAD 2>/dev/null | wc -l | tr -d ' '); \
 	THRESHOLD=$${COMMIT_THRESHOLD:-5}; \
+	if [ "$$THRESHOLD" = "1" ]; then \
+		echo "BLOCKED: COMMIT_THRESHOLD=1 bypass is disabled; commit locally and batch pushes."; \
+		exit 1; \
+	fi; \
 	if [ "$$COUNT" -lt "$$THRESHOLD" ] && [ "$$GLUDD_FORCE_PUSH" != "1" ]; then \
 		echo "NOT PUSHING: only $$COUNT unpushed commit(s) (threshold=$$THRESHOLD)."; \
-		echo "Batch locally. Use GLUDD_FORCE_PUSH=1 or COMMIT_THRESHOLD=1 to override."; \
+		echo "Batch locally. Use GLUDD_FORCE_PUSH=1 after enough local commits; COMMIT_THRESHOLD=1 is blocked."; \
 		exit 0; \
 	fi; \
 	echo "$$COUNT unpushed commits, threshold met. Pushing..."; \
@@ -1605,13 +1697,13 @@ batch-push: check-clean-tree
 
 # CI-aware push that waits for CI to go green before returning
 # Same as git-push-sandboxcom but waits for CI completion after push
-ci-push: check-clean-tree _push-rate-guard
-	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push -u sandboxcom master
+ci-push: pre-push-check _push-rate-guard
+	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push -u sandboxcom master
 	@echo "Pushed to sandboxcom/gludd. Waiting for CI..."; \
 	$(MAKE) ci-wait
 
 # CI push then poll until green (single script)
-ci-push-and-verify: _require-gh
+ci-push-and-verify: pre-push-check _require-gh
 	@bash scripts/ci_push_and_verify.sh
 
 # Verify existing CI on HEAD (dry-run, no push)
@@ -1647,16 +1739,16 @@ ci-await:
 	@$(PYTHON) scripts/ci_await.py $(or $(BRANCH),master) $(or $(TIMEOUT),3600)
 
 git-pull-sandboxcom:
-	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git pull --rebase sandboxcom master
+	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git pull --rebase sandboxcom master
 	@echo "Pulled and rebased from sandboxcom/gludd"
 
 git-fetch-sandboxcom:
-	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git fetch sandboxcom
+	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git fetch sandboxcom
 	@echo "Fetched from sandboxcom/gludd"
 
 verify-remote:
 	@SHA=$(or $(SHA),$$(git rev-parse HEAD)); BR=$(or $(BRANCH),master); \
-	REMOTE=$$(GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git ls-remote sandboxcom refs/heads/$$BR | awk '{print $$1}'); \
+	REMOTE=$$(GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git ls-remote sandboxcom refs/heads/$$BR | awk '{print $$1}'); \
 	echo "remote=$$REMOTE expected=$$SHA"; \
 	REMOTE_SHORT=$$(echo $$REMOTE | cut -c1-$${#SHA}); \
 	if [ "$$SHA" = "$$REMOTE_SHORT" ]; then echo "VERIFIED $$BR@$$SHA"; else echo "REMOTE MISMATCH: remote=$$REMOTE expected=$$SHA" && exit 1; fi
@@ -1667,7 +1759,7 @@ verify-remote:
 git-tag-push:
 	@[ -n "$(TAG)" ] || { echo "Usage: make git-tag-push TAG=v0.1.0-alpha.N [COMMIT=<sha>] [MSG='...']"; exit 1; }
 	@git tag -a "$(TAG)" $(if $(COMMIT),$(COMMIT)) -m "$(if $(MSG),$(MSG),$(TAG))"
-	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push sandboxcom "$(TAG)"
+	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push sandboxcom "$(TAG)"
 	@echo "Pushed tag $(TAG) to sandboxcom/gludd (triggers release job)"
 
 # --- CI observability (W16) ---
@@ -1784,7 +1876,7 @@ verify-state:
 	@echo "Branch: $$(git branch --show-current)"
 	@echo ""
 	@echo "--- Remote ---"
-	@REMOTE=$$(GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git ls-remote sandboxcom refs/heads/master 2>/dev/null | cut -f1); \
+	@REMOTE=$$(GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git ls-remote sandboxcom refs/heads/master 2>/dev/null | cut -f1); \
 	if [ -z "$$REMOTE" ]; then echo "UNREACHABLE"; \
 	elif [ "$$REMOTE" = "$$(git rev-parse HEAD)" ]; then echo "SYNCED: $$REMOTE"; \
 	else echo "DIVERGED: local=$$(git rev-parse --short HEAD) remote=$$(echo $$REMOTE | cut -c1-12)"; \
@@ -1853,7 +1945,7 @@ git-tag-move:
 #   make git-tag-rm TAG=v0.1.0-alpha.1
 git-tag-rm:
 	@[ -n "$(TAG)" ] || { echo "Usage: make git-tag-rm TAG=v0.1.0-alpha.1"; exit 1; }
-	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push sandboxcom :refs/tags/$(TAG) 2>/dev/null || true
+	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push sandboxcom :refs/tags/$(TAG) 2>/dev/null || true
 	@git tag -d "$(TAG)" 2>/dev/null || true
 	@echo "Deleted tag $(TAG) locally and on sandboxcom"
 
@@ -1869,8 +1961,8 @@ release-recut:
 	@git tag -l "$(TAG)" | grep -q "$(TAG)" || { echo "ERROR: local tag $(TAG) not found"; exit 1; }
 	@$(MAKE) -s require-ci-green SHA=$$(git rev-parse "$(TAG)^{commit}")
 	@echo "Re-cutting release tag $(TAG)..."
-	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push sandboxcom :refs/tags/$(TAG) 2>/dev/null || true
-	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push sandboxcom "$(TAG)"
+	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push sandboxcom :refs/tags/$(TAG) 2>/dev/null || true
+	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push sandboxcom "$(TAG)"
 	@echo "Tag re-pushed. Polling for artifact publication ($(VERIFY_POLLS) polls)..."
 	@i=0; while [ $$i -lt $(VERIFY_POLLS) ]; do \
 		if $(MAKE) -s verify-release-artifact TAG=$(TAG) 2>/dev/null; then \
@@ -1924,7 +2016,16 @@ release-deploy: _no-raw-git-guard
 	@echo "=== Creating and pushing tag $(TAG) ==="
 	@$(MAKE) -s git-tag-push TAG=$(TAG) MSG="$(MSG)"
 	@echo "=== Tag pushed. Waiting for CI on master ==="
-	@$(MAKE) -s ci-await BRANCH=master || true
+	@$(MAKE) -s ci-await BRANCH=master
+	@echo "=== Verifying release completeness for $(TAG) ==="
+	@i=0; while [ $$i -lt $(VERIFY_POLLS) ]; do \
+		if $(MAKE) -s verify-release-artifact TAG=$(TAG) 2>/dev/null; then \
+			echo "Release artifact present after $$i polls; checking completeness..."; \
+			$(MAKE) -s verify-release-completeness TAG=$(TAG); exit $$?; \
+		fi; \
+		sleep 10; i=$$((i+1)); \
+	done; \
+	echo "Release completeness not verified after $(VERIFY_POLLS) polls for $(TAG)"; exit 1
 	@echo "=== Deploy complete for $(TAG) ==="
 
 # Delete a GitHub Release and its associated git tags (local + remote).
@@ -1933,7 +2034,7 @@ release-delete:
 	@[ -n "$(TAG)" ] || { echo "Usage: make release-delete TAG=v0.1.0-alpha.1"; exit 1; }
 	@gh release delete "$(TAG)" -R sandboxcom/gludd --yes 2>/dev/null || echo "(release not found on GitHub)"
 	@git tag -d "$(TAG)" 2>/dev/null || echo "(tag not found locally)"
-	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push sandboxcom :refs/tags/"$(TAG)" 2>/dev/null || echo "(tag not found on remote)"
+	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push sandboxcom :refs/tags/"$(TAG)" 2>/dev/null || echo "(tag not found on remote)"
 
 # Manual fallback: build the single local binary and publish a DRAFT GitHub
 # Release. This path cannot produce the full artifact matrix (only CI can), so
@@ -2243,9 +2344,16 @@ ci-rerun:
 	@if [ -z "$(RUN)" ]; then echo "Usage: make ci-rerun RUN=<run-id>"; exit 1; fi
 	@gh run rerun -R sandboxcom/gludd $(RUN) 2>&1 || echo "ci-rerun-failed"
 
-# Fresh dispatch of the Build and Release workflow on master (workflow_dispatch).
-ci-trigger:
-	@gh workflow run "Build and Release" -R sandboxcom/gludd --ref master 2>&1 || echo "ci-trigger-failed"
+# Guard remote CI dispatch: the local tree must be clean and sandboxcom/<branch> must equal HEAD.
+ci-remote-head-guard:
+	@REF="$(REF)"; if [ -z "$$REF" ]; then REF="$$(git branch --show-current)"; fi; \
+	REMOTE="$(REMOTE)"; if [ -z "$$REMOTE" ]; then REMOTE=sandboxcom; fi; \
+	GIT_SSH_COMMAND="ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new" $(PYTHON) scripts/ci_remote_head_guard.py --ref "$$REF" --remote "$$REMOTE"
+
+# Fresh dispatch of the Build and Release workflow on the current branch after exact-HEAD guard.
+ci-trigger: ci-remote-head-guard _require-gh
+	@REF="$(REF)"; if [ -z "$$REF" ]; then REF="$$(git branch --show-current)"; fi; \
+	gh workflow run "Build and Release" -R sandboxcom/gludd --ref "$$REF" 2>&1 || echo "ci-trigger-failed"
 
 # List currently in-progress/queued runs for the Build and Release workflow —
 # so we know whether a new run is already active on a SHA before re-triggering.
@@ -2257,7 +2365,7 @@ ci-active:
 # Usage: make ci-busy-check BRANCH=development
 # Exits 1 if CI is busy, 0 if safe to push. FORCE=1 bypasses (hotfix only).
 ci-busy-check: _require-gh
-	@$(PYTHON) scripts/ci_push_guard.py $(or $(BRANCH),master)
+	@BRANCH="$(BRANCH)"; if [ -z "$$BRANCH" ]; then BRANCH=$$(git branch --show-current); fi; if [ -z "$$BRANCH" ]; then echo "Cannot check CI from detached HEAD; pass BRANCH=..."; exit 1; fi; $(PYTHON) scripts/ci_push_guard.py "$$BRANCH"
 
 # ci-safe-push: check CI idle on target branch, then push. Blocks if CI busy.
 # Usage: make ci-safe-push BRANCH=development
@@ -2320,7 +2428,7 @@ ci-pyver-list:
 
 ci-ssh-test:
 	@chmod 600 sandboxcom_github_rsa 2>/dev/null || true
-	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' ssh -T -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new git@github.com 2>&1 | head -5 || true
+	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' ssh -T -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new git@github.com 2>&1 | head -5 || true
 
 ci-remotes:
 	@git remote -v 2>&1 || true
@@ -2333,7 +2441,7 @@ ci-diff-since-remote:
 ci-head-compare:
 	@echo "--- local HEAD ---"; git rev-parse HEAD
 	@echo "--- fetching sandboxcom/master ---"
-	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git fetch sandboxcom 2>&1 | tail -3
+	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git fetch sandboxcom 2>&1 | tail -3
 	@echo "--- sandboxcom/master HEAD ---"; git rev-parse sandboxcom/master 2>&1 || echo "no sandboxcom/master ref"
 	@echo "--- commits local has that remote does NOT ---"
 	@git log --oneline sandboxcom/master..HEAD 2>&1 || echo "(cannot compute)"
@@ -2737,6 +2845,32 @@ patch-test:
 	@[ -n "$(FILE)" ] || { echo "Usage: make patch-test FILE='path' MATCH='old' REPLACE='new'"; exit 1; }
 	@python3 -c "import sys; c=open('$(FILE)').read(); c=c.replace('$(MATCH)','$(REPLACE)'); open('$(FILE)','w').write(c)"
 
+copy-file:
+	@test -n "$(SRC)" || { echo "Usage: make copy-file SRC=path DST=path"; exit 1; }
+	@test -n "$(DST)" || { echo "Usage: make copy-file SRC=path DST=path"; exit 1; }
+	@case "$(SRC)" in /tmp/gludd-*) ;; /*|*..*) echo "Refusing path outside workspace: $(SRC)"; exit 1;; esac
+	@case "$(DST)" in /tmp/gludd-*) ;; /*|*..*) echo "Refusing path outside workspace: $(DST)"; exit 1;; esac
+	@cp "$(SRC)" "$(DST)"
+
+replace-text:
+	@test -n "$(FILE)" || { echo "Usage: make replace-text FILE=path OLD=/tmp/gludd-old NEW=/tmp/gludd-new"; exit 1; }
+	@test -n "$(OLD)" || { echo "Usage: make replace-text FILE=path OLD=/tmp/gludd-old NEW=/tmp/gludd-new"; exit 1; }
+	@test -n "$(NEW)" || { echo "Usage: make replace-text FILE=path OLD=/tmp/gludd-old NEW=/tmp/gludd-new"; exit 1; }
+	@case "$(FILE)" in /tmp/gludd-*) ;; /*|*..*) echo "Refusing path outside workspace: $(FILE)"; exit 1;; esac
+	@case "$(OLD)" in /tmp/gludd-*) ;; /*|*..*) echo "Refusing path outside workspace: $(OLD)"; exit 1;; esac
+	@case "$(NEW)" in /tmp/gludd-*) ;; /*|*..*) echo "Refusing path outside workspace: $(NEW)"; exit 1;; esac
+	@$(PYTHON) scripts/replace_text.py "$(FILE)" "$(OLD)" "$(NEW)"
+
+write-text:
+	@[ -n "$(FILE)" ] || { echo "Usage: make write-text FILE=path TEXT=..."; exit 1; }
+	@case "$(FILE)" in /tmp/gludd-*) ;; /*|*..*) echo "Refusing path outside workspace: $(FILE)"; exit 1;; esac
+	@printf '%b' "$$TEXT" > "$$FILE"
+
+append-text:
+	@[ -n "$(FILE)" ] || { echo "Usage: make append-text FILE=path TEXT=..."; exit 1; }
+	@case "$(FILE)" in /tmp/gludd-*) ;; /*|*..*) echo "Refusing path outside workspace: $(FILE)"; exit 1;; esac
+	@printf '%b' "$$TEXT" >> "$$FILE"
+
 fix-benchmark-mock:
 	@python3 -c "c=open('tests/unit/test_daemon_coverage_lift.py').read(); c=c.replace('class TestBenchmarkRecordWithSession:\n    @pytest.mark.asyncio\n    async def test_benchmark_record_with_session(self, app, transport):\n        mock_session = MagicMock()\n        mock_sf = MagicMock()','class TestBenchmarkRecordWithSession:\n    @pytest.mark.asyncio\n    async def test_benchmark_record_with_session(self, app, transport):\n        mock_session = MagicMock()\n        mock_session.commit = AsyncMock()\n        mock_sf = MagicMock()'); open('tests/unit/test_daemon_coverage_lift.py','w').write(c)"
 	@echo "Fixed benchmark mock"
@@ -2963,15 +3097,15 @@ agent-merge-dev:
 	echo "Merged $(BRANCH) into development"
 
 # Push the development branch to the sandboxcom remote.
-development-push:
+development-push: check-clean-tree
 	@$(MAKE) ci-busy-check BRANCH=development
-	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push --no-verify -u sandboxcom development
+	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push --no-verify -u sandboxcom development
 	@$(MAKE) verify-remote BRANCH=development SHA=$$(git rev-parse development)
 	@echo "Development branch pushed and verified"
 
 # Force-push the development branch (when rebase rewrites history).
 development-force-push:
-	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push --force --no-verify -u sandboxcom development
+	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push --force --no-verify -u sandboxcom development
 	@$(MAKE) verify-remote BRANCH=development SHA=$$(git rev-parse development)
 	@echo "Development branch force-pushed and verified"
 
@@ -3145,7 +3279,7 @@ skip-counts-changed:
 _no-raw-git-guard:
 	@if grep -n 'git push' Makefile | grep -v 'GIT_SSH_COMMAND'; then \
 		echo "ERROR: raw git push detected in Makefile without GIT_SSH_COMMAND prefix."; \
-		echo "All git pushes MUST use GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa ...'"; \
+		echo "All git pushes MUST use GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa ...'"; \
 		echo "See AGENTS.md \"Critical: Bash Command Policy\" and \"No-Manual-Default Policy\""; \
 		exit 1; \
 	fi
@@ -4050,6 +4184,22 @@ write-plugin-manifest:
 
 codemod-lean-enforcement-plugins:
 	@$(UV) run python3 scripts/lean_enforcement_plugins.py
+	@uv run python3 scripts/compact_enforcement_plugins.py
+
+codemod-exact-subagent-guards:
+	@$(UV) run python3 scripts/ensure_exact_subagent_guards.py
+
+codemod-ci-shards-sigterm:
+	@uv run python3 scripts/update_ci_shards_sigterm.py
+
+codemod-tui-table-widths:
+	@uv run python3 scripts/codemod_tui_table_widths.py
+
+git-worktree-lock-clean:
+	@uv run python3 scripts/clean_worktree_index_lock.py
+
+fix-event-loop-metric-guards:
+	@uv run python3 scripts/fix_event_loop_metric_guards.py
 
 # --- Plugin liveness check — verifies plugin hooks are structurally intact
 # and actually firing. Three layers: structural (source code), passive (counter
@@ -4606,7 +4756,7 @@ list-files:
 
 search:
 	@[ -n "$(PATTERN)" ] || { echo "Usage: make search PATTERN=regex [SEARCH_PATH=path]"; exit 1; }
-	@SEARCH_ROOT="$(if $(SEARCH_PATH),$(SEARCH_PATH),$(if $(PATH),$(PATH),.))"; \
+	@SEARCH_ROOT="$(if $(SEARCH_PATH),$(SEARCH_PATH),.)"; \
 	case "$$SEARCH_ROOT" in /*|*..*) echo "Refusing path outside workspace: $$SEARCH_ROOT"; exit 1;; esac; \
 	if [ -x /opt/homebrew/bin/rg ]; then RG=/opt/homebrew/bin/rg; elif [ -x /usr/local/bin/rg ]; then RG=/usr/local/bin/rg; else RG=""; fi; \
 	if [ -n "$$RG" ]; then \
@@ -4639,6 +4789,10 @@ remove-workspace-file:
 	@case "$(FILE)" in /*|*..*) echo "Refusing path outside workspace: $(FILE)"; exit 1;; esac
 	@[ -f "$(FILE)" ] || { echo "Not a file: $(FILE)"; exit 1; }
 	@/bin/rm -f -- "$(FILE)"
+
+remove-workspace-file-b64:
+	@[ -n "$(PATH_B64)" ] || { echo "Usage: make remove-workspace-file-b64 PATH_B64=base64-relative-path"; exit 1; }
+	@PATH_B64="$(PATH_B64)" $(PYTHON) -c 'import base64, os, sys; from pathlib import Path; rel = base64.b64decode(os.environ["PATH_B64"]).decode("utf-8"); p = Path(rel); bad = p.is_absolute() or ".." in p.parts; (print(f"Refusing path outside workspace: {rel}") or sys.exit(1)) if bad else None; (print(f"Not a file: {rel}") or sys.exit(1)) if not p.is_file() else None; p.unlink()'
 
 molecule-reset:
 	@[ -n "$(SCENARIO)" ] || { echo "Usage: make molecule-reset SCENARIO=name"; exit 1; }
@@ -4713,3 +4867,18 @@ generate-specs:
 # Usage: make expand-specs TARGET=4000
 expand-specs:
 	@$(UV) run python3 scripts/generate_specs_to_4000.py --target $(or $(TARGET),4000)
+
+# Push exactly the committed HEAD for the current branch while local unstaged/untracked work remains.
+git-push-committed-head-nv:
+	@BRANCH=$$(git branch --show-current); if [ -z "$$BRANCH" ]; then echo "Cannot push detached HEAD"; exit 1; fi; if ! git diff --cached --quiet; then echo "BLOCKED: staged changes exist; commit or unstage before pushing committed HEAD"; git diff --cached --name-only; exit 1; fi; $(MAKE) --no-print-directory ci-busy-check BRANCH=$$BRANCH || exit 1; PUSH_BRANCH=$$BRANCH $(MAKE) --no-print-directory _push-rate-guard || exit 1; HEAD=$$(git rev-parse HEAD); GIT_SSH_COMMAND="ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new" git push --no-verify -u sandboxcom HEAD:refs/heads/$$BRANCH || exit 1; $(MAKE) --no-print-directory verify-remote BRANCH=$$BRANCH SHA=$$HEAD || exit 1; echo "Pushed committed HEAD $$HEAD to sandboxcom/$$BRANCH; uncommitted files are not included."
+
+# Trigger the Build and Release workflow for the exact committed HEAD already on sandboxcom.
+ci-trigger-committed-head: _require-gh
+	@REF="$(REF)"; if [ -z "$$REF" ]; then REF=$$(git branch --show-current); fi; BRANCH=$$(git branch --show-current); if [ -z "$$BRANCH" ]; then echo "Cannot trigger CI from detached HEAD"; exit 1; fi; if [ "$$REF" != "$$BRANCH" ]; then echo "BLOCKED: REF=$$REF does not match current branch $$BRANCH"; exit 1; fi; if ! git diff --cached --quiet; then echo "BLOCKED: staged changes exist; commit or unstage before dispatching committed HEAD"; git diff --cached --name-only; exit 1; fi; $(MAKE) --no-print-directory ci-busy-check BRANCH=$$REF || exit 1; HEAD=$$(git rev-parse HEAD); REMOTE_SHA=$$(GIT_SSH_COMMAND="ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new" git ls-remote sandboxcom refs/heads/$$REF | cut -f1); if [ -z "$$REMOTE_SHA" ]; then echo "BLOCKED: remote branch sandboxcom/$$REF does not exist"; exit 1; fi; if [ "$$REMOTE_SHA" != "$$HEAD" ]; then echo "BLOCKED: sandboxcom/$$REF $$REMOTE_SHA does not match local HEAD $$HEAD; push exact HEAD first"; exit 1; fi; gh workflow run "Build and Release" -R sandboxcom/gludd --ref "$$REF" || exit 1; echo "Triggered Build and Release for committed HEAD $$HEAD on $$REF; dirty local files are not included."
+
+# Push and dispatch the exact committed HEAD without waiting for long local shards to finish.
+ci-push-committed-head: git-push-committed-head-nv ci-trigger-committed-head
+	@echo "Committed HEAD is pushed and remote CI has been dispatched; continue local shard work in parallel."
+
+check-no-prompt-prone-edit-tools:
+	@$(UV) run python scripts/check_no_prompt_prone_edit_tools.py
