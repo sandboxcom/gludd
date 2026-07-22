@@ -253,6 +253,15 @@ def test_workflow_state_targets_do_not_dirty_lockfile_with_uv_run() -> None:
     assert "GLUDD_XDIST=\"$(GLUDD_XDIST)\" python3 -c" not in makefile
     assert "VERSION := $(shell $(UV) run python" not in makefile
     assert "VERSION = $(shell $(UV) run python" in makefile
+    no_uv_goals = makefile.split("_NO_UV_SYNC_GOALS :=", 1)[1].splitlines()[0]
+    for goal in [
+        *guard_targets,
+        "git-push-committed-head-nv",
+        "ci-trigger-committed-head",
+        "ci-push-committed-head",
+        "git-push-current-head-to-master-nv",
+    ]:
+        assert goal in no_uv_goals
     for target in guard_targets:
         block = _target_block(target)
 
