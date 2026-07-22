@@ -45,7 +45,7 @@ PYTEST_VERBOSITY ?= -v
         agent-worktree-dev agent-merge-dev \
         development-push development-merge-to-master development-start development-status \
         git-commit-no-verify git-amend-msg \
-        _commit-lock-acquire check-clean-tree ship-commit-files remove-workspace-file-b64 \
+        _commit-lock-acquire check-clean-tree worktree-state worktree-guard release-worktree-guard status-claim-guard ship-commit-files remove-workspace-file-b64 \
         molecule-version molecule-test molecule-test-all \
         collection-roles collection-modules molecule-scenarios \
         test-binary-re test-radio test-os-expert test-e2e-test-gen test-language test-language-expert test-collections \
@@ -123,6 +123,10 @@ help:
 	@echo "  preflight             Preflight quality gate (coverage, lint, mypy, templates, etc.)"
 	@echo "  check-make-help       Verify every public Makefile target is listed by make help"
 	@echo "  check-no-prompt-prone-edit-tools  Enforce make-target-only edit workflow"
+	@echo "  worktree-state        Emit path-qualified git worktree state as JSON"
+	@echo "  worktree-guard        Fail if the current worktree is dirty"
+	@echo "  release-worktree-guard  Emit release evidence only from a clean worktree"
+	@echo "  status-claim-guard    Emit a WORKTREE-CLEAN token for clean-state claims"
 	@echo "  codemod-lean-enforcement-plugins  Slim counted enforcement plugin entrypoints"
 	@echo "  codemod-exact-subagent-guards  Restore literal OPENCODE_SUBAGENT early-return guards"
 	@echo "  codemod-ci-shards-sigterm  Enforce explicit failure on unexpected shard SIGTERM"
@@ -486,7 +490,7 @@ test-specific:
 	@BT="/tmp/gludd-testspecific-$${ID:-$$$$}"; rm -rf "$$BT"; $(UV) run python -m pytest $(TESTFILE) $(_XD) -v $(PYTEST_ARGS) --basetemp="$$BT"; RC=$$?; rm -rf "$$BT"; exit $$RC
 
 _ci-replica-clean-tree:
-	@if python3 scripts/check_clean_tree.py >/tmp/gludd-ci-replica-clean-tree.txt 2>&1; then \
+	@if python3 scripts/worktree_state_guard.py --assert-clean --claim-token >/tmp/gludd-ci-replica-clean-tree.txt 2>&1; then \
 		cat /tmp/gludd-ci-replica-clean-tree.txt; \
 		exit 0; \
 	fi; \
@@ -1556,6 +1560,18 @@ MAX_CANCELLED_RUNS ?= 3
 # Prevents pre-commit hook stash conflicts on the remote.
 check-clean-tree:
 	@$(PYTHON) scripts/check_clean_tree.py
+
+worktree-state:
+	@python3 scripts/worktree_state_guard.py --json
+
+worktree-guard:
+	@python3 scripts/worktree_state_guard.py --assert-clean
+
+release-worktree-guard: worktree-guard
+	@python3 scripts/worktree_state_guard.py --assert-clean --claim-token
+
+status-claim-guard:
+	@python3 scripts/worktree_state_guard.py --assert-clean --claim-token
 
 # Guard: prevent disabling tests in CI pipeline. Blocks push/release if
 # test-shard has continue-on-error or is removed from release.needs.

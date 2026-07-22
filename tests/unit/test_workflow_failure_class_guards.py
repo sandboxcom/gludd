@@ -160,7 +160,7 @@ def test_local_ci_replica_shards_refuse_dirty_tree_by_default() -> None:
         assert "_ci-replica-clean-tree" in _target_line(target), target
 
     guard = _target_block("_ci-replica-clean-tree")
-    assert "scripts/check_clean_tree.py" in guard
+    assert "scripts/worktree_state_guard.py --assert-clean --claim-token" in guard
     assert "ALLOW_DIRTY_FOCUSED_REPRO" in guard
     assert "PYTEST_ARGS" in guard
     assert "CI-like shard validation requires a clean worktree" in guard
@@ -186,3 +186,16 @@ def test_ci_busy_check_defaults_to_current_branch_not_master() -> None:
     assert legacy_default not in block
     assert "git branch --show-current" in block
     assert branch_arg in block
+
+
+def test_worktree_state_guard_targets_are_path_qualified_release_gates() -> None:
+    makefile = _makefile()
+    for target in ["worktree-state", "worktree-guard", "release-worktree-guard", "status-claim-guard"]:
+        assert target + ":" in makefile
+
+    guard = _target_block("_ci-replica-clean-tree")
+    assert "scripts/worktree_state_guard.py --assert-clean --claim-token" in guard
+    assert "WORKTREE-CLEAN" in guard or "worktree_state_guard.py" in guard
+
+    for target in ["test-ci-shard", "test-ci-shard-summary", "test-ci-shard-slice"]:
+        assert "_ci-replica-clean-tree" in _target_line(target), target
