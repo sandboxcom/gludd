@@ -12,6 +12,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass
 from typing import Optional
 
+DEFAULT_MAIN_PATH = "/Users/shawnwilson/gludd"
 RunFn = Callable[[Sequence[str], Optional[str]], subprocess.CompletedProcess[str]]
 
 
@@ -81,6 +82,31 @@ def current_state(run: RunFn = _run, cwd: Optional[str] = None) -> WorktreeState
     )
 
 
+def parse_worktree_paths(porcelain_output: str) -> list[str]:
+    paths: list[str] = []
+    for line in porcelain_output.splitlines():
+        if line.startswith("worktree "):
+            paths.append(line.removeprefix("worktree "))
+    return paths
+
+
+def list_worktree_paths(run: RunFn = _run) -> list[str]:
+    output = _git_stdout(["git", "worktree", "list", "--porcelain"], run)
+    return parse_worktree_paths(output)
+
+
+def all_worktree_states(run: RunFn = _run) -> list[WorktreeState]:
+    return [current_state(run=run, cwd=path) for path in list_worktree_paths(run=run)]
+
+
+def main_worktree_state(main_path: str = DEFAULT_MAIN_PATH, run: RunFn = _run) -> WorktreeState:
+    paths = list_worktree_paths(run=run)
+    if main_path not in paths:
+        joined = ", ".join(paths) if paths else "none"
+        raise RuntimeError(f"main worktree not registered: {main_path}; registered={joined}")
+    return current_state(run=run, cwd=main_path)
+
+
 def format_claim_token(state: WorktreeState, checked_at: Optional[int] = None) -> str:
     if not state.is_clean:
         raise ValueError("cannot create WORKTREE-CLEAN token for dirty state")
@@ -92,7 +118,29 @@ def format_claim_token(state: WorktreeState, checked_at: Optional[int] = None) -
     )
 
 
-def _print_state(state: WorktreeState, checked_at: int, *, as_json: bool) -> None:
+def format_main_claim_token(state: WorktreeState, checked_at: Optional[int] = None) -> str:
+    if not state.is_clean:
+        raise ValueError("cannot create MAIN-WORKTREE-CLEAN token for dirty state")
+    checked = int(time.time()) if checked_at is None else checked_at
+    return (
+        "MAIN-WORKTREE-CLEAN "
+        f"path={state.path} branch={state.branch} head={state.head} "
+        f"dirty=0 checked_at={checked}"
+    )
+
+
+def _state_prefix(state: WorktreeState, clean_prefix: str, dirty_prefix: str) -> str:
+    return clean_prefix if state.is_clean else dirty_prefix
+
+
+def _print_state(
+    state: WorktreeState,
+    checked_at: int,
+    *,
+    as_json: bool,
+    clean_prefix: str = "WORKTREE-CLEAN",
+    dirty_prefix: str = "WORKTREE-DIRTY",
+) -> None:
     if as_json:
         payload = asdict(state)
         payload["checked_at"] = checked_at
@@ -101,7 +149,7 @@ def _print_state(state: WorktreeState, checked_at: int, *, as_json: bool) -> Non
         print()
         return
 
-    prefix = "WORKTREE-CLEAN" if state.is_clean else "WORKTREE-DIRTY"
+    prefix = _state_prefix(state, clean_prefix, dirty_prefix)
     print(
         f"{prefix} path={state.path} branch={state.branch} head={state.head} "
         f"dirty={state.dirty_count} staged={state.staged_count} "
@@ -113,15 +161,59 @@ def _print_state(state: WorktreeState, checked_at: int, *, as_json: bool) -> Non
         print(f"  ... {len(state.status) - 50} more changed path(s)")
 
 
+def _print_inventory(states: Sequence[WorktreeState], checked_at: int, *, as_json: bool) -> None:
+    if as_json:
+        payload = []
+        for state in states:
+            item = asdict(state)
+            item["checked_at"] = checked_at
+            item["is_clean"] = state.is_clean
+            payload.append(item)
+        json.dump(payload, sys.stdout, sort_keys=True)
+        print()
+        return
+
+    for state in states:
+        _print_state(state, checked_at, as_json=False)
+
+
 def main(argv: Optional[Sequence[str]] = None, run: RunFn = _run) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--json", action="store_true", help="emit machine-readable state")
+    parser.add_argument("--all", action="store_true", help="emit every registered worktree state")
+    parser.add_argument("--main", action="store_true", help="emit the canonical main checkout state")
     parser.add_argument("--assert-clean", action="store_true", help="fail if the current worktree is dirty")
     parser.add_argument("--claim-token", action="store_true", help="print a WORKTREE-CLEAN evidence token")
+    parser.add_argument("--main-path", default=DEFAULT_MAIN_PATH, help="canonical main checkout path")
+    parser.add_argument("--assert-main-clean", action="store_true", help="fail if the canonical main checkout is dirty")
+    parser.add_argument("--main-claim-token", action="store_true", help="print a MAIN-WORKTREE-CLEAN evidence token")
     args = parser.parse_args(list(argv) if argv is not None else None)
 
     checked_at = int(time.time())
     try:
+        if args.all:
+            states = all_worktree_states(run=run)
+            _print_inventory(states, checked_at, as_json=args.json)
+            return 1 if args.assert_clean and any(not state.is_clean for state in states) else 0
+
+        if args.main or args.assert_main_clean or args.main_claim_token:
+            state = main_worktree_state(args.main_path, run=run)
+            _print_state(
+                state,
+                checked_at,
+                as_json=args.json,
+                clean_prefix="MAIN-WORKTREE-CLEAN",
+                dirty_prefix="MAIN-WORKTREE-DIRTY",
+            )
+            if args.assert_main_clean and not state.is_clean:
+                return 1
+            if args.main_claim_token:
+                try:
+                    print(format_main_claim_token(state, checked_at=checked_at))
+                except ValueError:
+                    return 1
+            return 0
+
         state = current_state(run=run)
     except RuntimeError as exc:
         print(f"WORKTREE-UNKNOWN error={exc}")

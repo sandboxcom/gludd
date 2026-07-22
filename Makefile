@@ -45,7 +45,7 @@ PYTEST_VERBOSITY ?= -v
         agent-worktree-dev agent-merge-dev \
         development-push development-merge-to-master development-start development-status \
         git-commit-no-verify git-amend-msg \
-        _commit-lock-acquire check-clean-tree worktree-state worktree-guard release-worktree-guard status-claim-guard ship-commit-files remove-workspace-file-b64 \
+        _commit-lock-acquire check-clean-tree worktree-state all-worktree-state main-worktree-state worktree-guard main-worktree-guard release-worktree-guard status-claim-guard ship-commit-files remove-workspace-file-b64 \
         molecule-version molecule-test molecule-test-all \
         collection-roles collection-modules molecule-scenarios \
         test-binary-re test-radio test-os-expert test-e2e-test-gen test-language test-language-expert test-collections \
@@ -123,10 +123,13 @@ help:
 	@echo "  preflight             Preflight quality gate (coverage, lint, mypy, templates, etc.)"
 	@echo "  check-make-help       Verify every public Makefile target is listed by make help"
 	@echo "  check-no-prompt-prone-edit-tools  Enforce make-target-only edit workflow"
-	@echo "  worktree-state        Emit path-qualified git worktree state as JSON"
+	@echo "  worktree-state        Emit path-qualified current git worktree state as JSON"
+	@echo "  all-worktree-state    Emit path-qualified state for every registered worktree"
+	@echo "  main-worktree-state   Emit canonical main checkout state as JSON"
 	@echo "  worktree-guard        Fail if the current worktree is dirty"
-	@echo "  release-worktree-guard  Emit release evidence only from a clean worktree"
-	@echo "  status-claim-guard    Emit a WORKTREE-CLEAN token for clean-state claims"
+	@echo "  main-worktree-guard   Fail if /Users/shawnwilson/gludd is dirty"
+	@echo "  release-worktree-guard  Emit release evidence only when current and main worktrees are clean"
+	@echo "  status-claim-guard    Emit clean tokens only when current and main worktrees are clean"
 	@echo "  codemod-lean-enforcement-plugins  Slim counted enforcement plugin entrypoints"
 	@echo "  codemod-exact-subagent-guards  Restore literal OPENCODE_SUBAGENT early-return guards"
 	@echo "  codemod-ci-shards-sigterm  Enforce explicit failure on unexpected shard SIGTERM"
@@ -1564,13 +1567,22 @@ check-clean-tree:
 worktree-state:
 	@python3 scripts/worktree_state_guard.py --json
 
+all-worktree-state:
+	@python3 scripts/worktree_state_guard.py --all --json
+
+main-worktree-state:
+	@python3 scripts/worktree_state_guard.py --main --main-path /Users/shawnwilson/gludd --json
+
 worktree-guard:
 	@python3 scripts/worktree_state_guard.py --assert-clean
 
-release-worktree-guard: worktree-guard
+main-worktree-guard:
+	@python3 scripts/worktree_state_guard.py --main-path /Users/shawnwilson/gludd --assert-main-clean --main-claim-token
+
+release-worktree-guard: worktree-guard main-worktree-guard
 	@python3 scripts/worktree_state_guard.py --assert-clean --claim-token
 
-status-claim-guard:
+status-claim-guard: worktree-guard main-worktree-guard
 	@python3 scripts/worktree_state_guard.py --assert-clean --claim-token
 
 # Guard: prevent disabling tests in CI pipeline. Blocks push/release if

@@ -190,12 +190,28 @@ def test_ci_busy_check_defaults_to_current_branch_not_master() -> None:
 
 def test_worktree_state_guard_targets_are_path_qualified_release_gates() -> None:
     makefile = _makefile()
-    for target in ["worktree-state", "worktree-guard", "release-worktree-guard", "status-claim-guard"]:
+    for target in [
+        "worktree-state",
+        "all-worktree-state",
+        "main-worktree-state",
+        "worktree-guard",
+        "main-worktree-guard",
+        "release-worktree-guard",
+        "status-claim-guard",
+    ]:
         assert target + ":" in makefile
 
     guard = _target_block("_ci-replica-clean-tree")
     assert "scripts/worktree_state_guard.py --assert-clean --claim-token" in guard
     assert "WORKTREE-CLEAN" in guard or "worktree_state_guard.py" in guard
+
+    main_guard = _target_block("main-worktree-guard")
+    assert "--main-path /Users/shawnwilson/gludd --assert-main-clean --main-claim-token" in main_guard
+
+    for target in ["release-worktree-guard", "status-claim-guard"]:
+        line = _target_line(target)
+        assert "worktree-guard" in line
+        assert "main-worktree-guard" in line
 
     for target in ["test-ci-shard", "test-ci-shard-summary", "test-ci-shard-slice"]:
         assert "_ci-replica-clean-tree" in _target_line(target), target
