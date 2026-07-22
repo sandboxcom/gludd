@@ -537,3 +537,15 @@ class TestHotLoading:
             main()
             args = mock_cmd.call_args[0][0]
             assert args.endpoint_id == "my-endpoint"
+
+
+def test_cli_smoke_parser_accepts_multi_model_juggle() -> None:
+    from general_ludd.cli import build_parser
+
+    parser, subcommands = build_parser()
+    args = parser.parse_args(["smoke", "multi-provider", "model-juggle", "--json"])
+
+    assert "smoke" in subcommands
+    assert args.provider == "multi-provider"
+    assert args.test == "model-juggle"
+    assert args.json is True
