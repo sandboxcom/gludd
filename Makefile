@@ -138,6 +138,8 @@ help:
 	@echo "  gate-status           Print current .gate-status (RUNNING/PASS/FAIL)"
 	@echo "  collect-check         Fast collection-error gate"
 	@echo "  test-nodeids          Print bounded pytest node-id slice (START/LIMIT/TESTPATH)"
+	@echo "  test-xdist-trace      Run pytest with durable xdist worker/node/resource trace"
+	@echo "  test-xdist-trace-summary  Summarize /tmp/gludd-xdist-progress.log unfinished tests"
 	@echo "  preflight             Preflight quality gate (coverage, lint, mypy, templates, etc.)"
 	@echo "  check-make-help       Verify every public Makefile target is listed by make help"
 	@echo "  codemod-lean-enforcement-plugins Extract bulky enforcement implementations from counted plugin entrypoints"
@@ -602,6 +604,12 @@ test-count:
 	@$(UV) run python -m pytest tests/ --co -q 2>&1 | tail -3
 test-nodeids:
 	@$(UV) run python scripts/collect_nodeids.py --start $(or $(START),1) --limit $(or $(LIMIT),120) $(or $(TESTPATH),tests/)
+
+test-xdist-trace:
+	@$(UV) run python scripts/run_xdist_trace.py --log "$(or $(LOG),/tmp/gludd-xdist-progress.log)" --basetemp "/tmp/gludd-xdist-trace-$${ID:-$$$$}" -- $(or $(TESTPATH),tests/) $(_XD) -q --max-worker-restart=0 -p scripts.xdist_trace_plugin $(PYTEST_ARGS)
+
+test-xdist-trace-summary:
+	@$(UV) run python scripts/summarize_xdist_trace.py $(or $(LOG),/tmp/gludd-xdist-progress.log)
 
 test-count-e2e:
 	@find tests/e2e -name 'test_*.py' | wc -l | xargs echo "e2e test files:"

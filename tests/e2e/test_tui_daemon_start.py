@@ -164,11 +164,15 @@ def _wait_for_tui_text(master_fd: int, needles: tuple[str, ...], timeout: float 
     return text
 
 def test_daemon_process_tree_pids_includes_orphan_gunicorn_workers(monkeypatch) -> None:
-    stdout = (
-        "100 1 /Users/shawnwilson/gludd/.venv/bin/python /Users/shawnwilson/gludd/.venv/bin/gunicorn general_ludd.daemon:create_daemon_app() --bind 127.0.0.1:8000\n"
-        "101 100 /Users/shawnwilson/gludd/.venv/bin/python /Users/shawnwilson/gludd/.venv/bin/gunicorn worker\n"
-        "202 1 unrelated process\n"
-    )
+    stdout = chr(10).join(
+        [
+            "100 1 /Users/shawnwilson/gludd/.venv/bin/python /Users/shawnwilson/gludd/.venv/bin/gunicorn "
+            "general_ludd.daemon:create_daemon_app() --bind 127.0.0.1:8000",
+            "101 100 /Users/shawnwilson/gludd/.venv/bin/python "
+            "/Users/shawnwilson/gludd/.venv/bin/gunicorn worker",
+            "202 1 unrelated process",
+        ]
+    ) + chr(10)
 
     def fake_run(*args, **kwargs):
         return subprocess.CompletedProcess(args=args, returncode=0, stdout=stdout, stderr="")
