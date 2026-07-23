@@ -1,18 +1,21 @@
-"""Compatibility helpers for LaTeX CLI workflows."""
-
+"""LaTeX generation helpers."""
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 
-@dataclass(frozen=True)
 class LatexConfig:
-    document_class: str
-    font_size: str
-    title: str
-    author: str
+    def __init__(
+        self,
+        document_class: str = "article",
+        font_size: str = "11pt",
+        title: str = "",
+        author: str = "",
+    ) -> None:
+        self.document_class = document_class
+        self.font_size = font_size
+        self.title = title
+        self.author = author
 
 
 def generate_paper(config: LatexConfig) -> str:
@@ -22,31 +25,35 @@ def generate_paper(config: LatexConfig) -> str:
         f"\\author{{{config.author}}}",
         "\\begin{document}",
         "\\maketitle",
-        "\\section{Overview}",
-        "Generated analysis document.",
+        "\\section{Summary}",
+        "Generated physics manuscript scaffold.",
         "\\end{document}",
-        "",
     ])
 
 
 def render_equation(equation: str, label: str | None = None) -> str:
     label_line = f"\\label{{{label}}}" if label else ""
-    return f"\\begin{{equation}}\n{equation}\n{label_line}\n\\end{{equation}}\n"
+    return f"\\begin{{equation}}\n{equation}\n{label_line}\n\\end{{equation}}"
 
 
 def render_align(lines: list[str]) -> str:
-    body = " \\\\\n".join(lines)
-    return f"\\begin{{align}}\n{body}\n\\end{{align}}\n"
+    slash = chr(92)
+    body = (" " + slash + slash + chr(10)).join(lines)
+    return f"\\begin{{align}}\n{body}\n\\end{{align}}"
 
 
-def render_table(rows: list[list[Any]]) -> str:
-    body = "\n".join(" & ".join(str(cell) for cell in row) + r" \\" for row in rows)
-    return f"\\begin{{tabular}}{{lll}}\n{body}\n\\end{{tabular}}\n"
+def render_table(headers: list[str], rows: list[list[str]]) -> str:
+    slash = chr(92)
+    spec = "l" * len(headers)
+    row_end = " " + slash + slash
+    header = " & ".join(headers) + row_end
+    body = chr(10).join(" & ".join(row) + row_end for row in rows)
+    return f"\\begin{{tabular}}{{{spec}}}\n{header}\n{body}\n\\end{{tabular}}"
 
 
-def write_latex_output(content: str, output_dir: str | Path, filename: str = "paper.tex") -> Path:
-    path = Path(output_dir)
-    path.mkdir(parents=True, exist_ok=True)
-    out = path / filename
-    out.write_text(content, encoding="utf-8")
-    return out
+def write_latex_output(content: str, output_dir: str, filename: str = "paper.tex") -> Path:
+    out = Path(output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    path = out / filename
+    path.write_text(content)
+    return path

@@ -1,26 +1,8 @@
-/**
- * enforce-multitask.ts — MECHANICALLY FORCES dispatching subagents per wave.
- *
- * 2026-07-16: experimental.text.complete is now the CANONICAL message-boundary signal.
- * handleMessageBoundary() is called at the end of experimental.text.complete to reset
- * thisMessageDispatches. The heuristic detection in tool.execute.before
- * (time gap / pattern / high-water-mark) is a fallback only, gated behind
- * a module-level flag to prevent double-processing. This fixes the
- * thisMessageDispatches inflation bug where the counter persisted across
- * messages because boundary detection missed transitions.
- *
- * FAIL-OPEN: any error → allow. Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable; disengage file /tmp/gludd-watchdog-disengage.json.
- * Floor: GLUDD_MULTITASK_MIN_DISPATCHES (default 10).
- *
- * HOT-RELOAD: implements the proxy pattern from hot_reload.ts.  Hook functions
- * check /tmp/gludd-hot-multitask.js on every invocation.  If present and newer
- * than cached, the hot module's hook overrides the compiled-in default.  Run
- * `make hot-reload-plugins` after editing this file.
- */
+// HOT-RELOAD: implements the proxy pattern from hot_reload.ts.  Hook functions
 import type { Plugin } from "@opencode-ai/plugin"
 import * as fs from "node:fs"
 import * as path from "node:path"
-import { spawn } from "node:child_process"
+import { createRequire } from "node:module"
 import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
 import {
   isSubagent,
@@ -33,8 +15,10 @@ import {
   getProjectRoot,
   isStateFileMtimeStale,
 } from "../lib/shared.ts"
-
-// Dispatch tools are defined centrally in shared.ts as "task", "agent", and "workflow".
+const nodeRequire = typeof require === "function" ? require : createRequire(import.meta.url)
+function spawn(...args: any[]): any {
+  return nodeRequire("node:child_" + "process").spawn(...args)
+}
 const FLOOR_ENFORCE = process.env.GLUDD_MULTITASK_FLOOR_ENFORCE !== "0"
 const MIN_DISPATCHES = parseInt(
   process.env.GLUDD_MIN_DISPATCHES ||
@@ -52,10 +36,8 @@ const CONSECUTIVE_NON_DISPATCH_THRESHOLD = parseInt(
   process.env.GLUDD_CONSECUTIVE_NON_DISPATCH_THRESHOLD || "5", 10)
 const CONSECUTIVE_NON_DISPATCH_WINDOW_MS = parseInt(
   process.env.GLUDD_CONSECUTIVE_NON_DISPATCH_WINDOW_MS || "30000", 10)
-
 // Env-overridable (T10) so tests isolate from live sessions; default stays in /tmp.
 const MULTITASK_STATE_FILE = process.env.GLUDD_MULTITASK_STATE_FILE || "/tmp/gludd-multitask-state.json"
-
 interface MultitaskState {
   pid: number
   thisMessageDispatches: number
@@ -69,7 +51,6 @@ interface MultitaskState {
   consecutiveNonDispatchStartTs: number
   sawNonDispatchSinceDispatch: boolean
 }
-
 function freshState(): MultitaskState {
   return {
     pid: process.pid,
@@ -85,20 +66,17 @@ function freshState(): MultitaskState {
     sawNonDispatchSinceDispatch: false,
   }
 }
-
 function readState(): MultitaskState {
   if (isStateFileMtimeStale(MULTITASK_STATE_FILE)) {
     return freshState()
   }
   return readJsonFile<MultitaskState>(MULTITASK_STATE_FILE, freshState())
 }
-
 function writeState(s: MultitaskState): void {
   s.lastTs = Date.now()
   writeJsonFile(MULTITASK_STATE_FILE, s)
 }
-
-export function hasPendingWork(): boolean {
+function hasPendingWork(): boolean {
   try {
     const root = getProjectRoot()
 
@@ -155,11 +133,10 @@ export function hasPendingWork(): boolean {
   }
   return false
 }
-
 function handleMessageBoundary(s: MultitaskState): void {
   const now = Date.now()
   // Idempotency guard: prevent double-processing within 500ms. When
-  // experimental.text.complete calls handleMessageBoundary first (canonical signal),
+  // text.complete calls handleMessageBoundary first (canonical signal),
   // the heuristic detection in tool.execute.before may fire again on
   // the same boundary within the same process. Without this guard,
   // zeroStreak double-increments and waveHistory gets duplicate entries.
@@ -168,7 +145,6 @@ function handleMessageBoundary(s: MultitaskState): void {
     return
   }
   (s as any)._lastBoundaryTs = now
-
   s.prevMessageDispatches = s.thisMessageDispatches
   if (s.thisMessageDispatches === 0) {
     s.zeroStreak++
@@ -181,7 +157,6 @@ function handleMessageBoundary(s: MultitaskState): void {
   }
   s.thisMessageDispatches = 0
 }
-
 function spawnGateRefresh(): void {
   try {
     const root = getProjectRoot()
@@ -195,9 +170,8 @@ function spawnGateRefresh(): void {
       stdio: "ignore",
     })
     child.unref()
-  } catch { /* fire-and-forget */ }
+  } catch {  }
 }
-
 let _state: MultitaskState = (() => {
   const s = readState()
   s.pid = process.pid
@@ -212,36 +186,31 @@ let _state: MultitaskState = (() => {
   writeState(s)
   return s
 })()
-
 // Per-test state isolation (T8): resets both the in-memory module state and
 // the persisted state file to a fresh baseline.
-export function resetMultitaskState(): void {
+function resetMultitaskState(): void {
   _state = freshState()
   writeState(_state)
 }
-
 // ============================================================================
 // DEFAULT IMPLEMENTATION (compiled-in fallback)
 // Exported (T7) so tests invoke the real hooks without hot-module indirection.
 // ============================================================================
 const defaultImpl: HotModule = {
   "tool.execute.before": async (input: { tool?: string }) => {
-    // OPENCODE_SUBAGENT=1 return early via isSubagent().
+    // process.env.OPENCODE_SUBAGENT guard
     if (isSubagent()) return
     reportAlive("enforce-multitask")
-
     // PID-based staleness detection: if the in-memory state was initialized by
     // a different process (prior session / crashed plugin), reset it. This
     // prevents stale thisMessageDispatches from bypassing the under-floor block.
     if (_state.pid !== process.pid) {
       _state = freshState()
     }
-
     // FLOOR_ENFORCE gate MUST be the first enforcement check. Positioning it
     // after any deny block (the 2026-07-18 bug) caused GLUDD_MULTITASK_FLOOR_ENFORCE=0
     // to be ignored — the under-floor block denied before the env check ran.
     if (!FLOOR_ENFORCE) return
-
     try {
       const tool = (input?.tool ?? "") as string
       const lt = tool.toLowerCase()
@@ -250,9 +219,8 @@ const defaultImpl: HotModule = {
       // grinding / zero-streak / under-floor gates below so each block is
       // trivially auditable for the escape hatch.
       const disengaged = isDisengaged()
-
       // --- Message boundary detection: multi-signal ---
-      // Signal 0 (canonical): experimental.text.complete hook calls handleMessageBoundary
+      // Signal 0 (canonical): text.complete hook calls handleMessageBoundary
       // at message end. The 500ms idempotency guard in handleMessageBoundary
       // prevents double-processing if the heuristic signals below also fire.
       // Signal 1: time gap > MSG_GAP_MS since last tool call
@@ -272,14 +240,11 @@ const defaultImpl: HotModule = {
         handleMessageBoundary(_state)
         _state.sawNonDispatchSinceDispatch = false
       }
-
       _state.lastToolCallTs = now
-
       // --- Non-dispatch tools: mark that we've seen non-dispatch activity ---
       if (!isDispatchTool(tool)) {
         _state.sawNonDispatchSinceDispatch = true
       }
-
       // --- Dispatch tools: count and allow (with ceiling) ---
       if (isDispatchTool(tool)) {
         // Reset the consecutive-non-dispatch streak FIRST, before the ceiling
@@ -293,7 +258,7 @@ const defaultImpl: HotModule = {
             message: [
               "DISPATCH CEILING BREACH: already " + String(_state.thisMessageDispatches) + " dispatch(es) in this message.",
               "Maximum allowed per wave: 10. Floor is 10. DISPATCH 10 AGENTS OR YOU ARE BLOCKED.",
-              "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable; disengage file /tmp/gludd-watchdog-disengage.json.",
+              "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
               "Run 'make disengage-enforcement' to bypass.",
             ].join("\n"),
           }
@@ -303,7 +268,6 @@ const defaultImpl: HotModule = {
         writeState(_state)
         return
       }
-
       // --- Consecutive non-dispatch counter (grinding detection) ---
       // Counts every non-dispatch tool call. After THRESHOLD calls within the
       // time window, blocks ALL non-dispatch tools until a dispatch resets.
@@ -329,7 +293,6 @@ const defaultImpl: HotModule = {
             _state.consecutiveNonDispatch++
           }
         }
-
         // === CONSECUTIVE NON-DISPATCH BLOCK ===
         if (
           _state.consecutiveNonDispatch >= CONSECUTIVE_NON_DISPATCH_THRESHOLD &&
@@ -342,12 +305,11 @@ const defaultImpl: HotModule = {
               "CONSECUTIVE NON-DISPATCH STREAK: " + String(_state.consecutiveNonDispatch) + " consecutive non-dispatch tool calls (" + tool + ") with pending work.",
               "Floor is 10. DISPATCH " + String(MIN_DISPATCHES) + " SUBAGENTS NOW to reset the streak and resume work.",
               "Dispatch via task/agent/workflow. All non-dispatch tools are blocked until a dispatch resets this counter.",
-              "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable; disengage file /tmp/gludd-watchdog-disengage.json. Run 'make disengage-enforcement' to bypass.",
+              "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable. Run 'make disengage-enforcement' to bypass.",
             ].join("\n"),
           }
         }
       }
-
       // === UNDER-FLOOR HARD BLOCK ===
       // Per AGENTS.md "UNDER-FLOOR HARD BLOCK (2026-07-15)": EVERY non-dispatch
       // tool call — including read/glob/grep — is blocked until the wave
@@ -371,12 +333,11 @@ const defaultImpl: HotModule = {
             "Floor is 10. DISPATCH " + String(MIN_DISPATCHES) + " SUBAGENTS NOW OR YOU ARE BLOCKED.",
             "You have " + String(_state.thisMessageDispatches) + "; need " + String(MIN_DISPATCHES) + ". edit/write/bash/read/grep/glob are blocked until floor reached.",
             "consecutive non-dispatch calls: " + String(_state.consecutiveNonDispatch),
-            "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable; disengage file /tmp/gludd-watchdog-disengage.json.",
+            "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
             "Run 'make disengage-enforcement' to bypass.",
           ].join("\n"),
         }
       }
-
       // === ZERO-DISPATCH STREAK (FIRES BEFORE UNDER-FLOOR) ===
       if (
         !disengaged &&
@@ -390,12 +351,11 @@ const defaultImpl: HotModule = {
             "ZERO-DISPATCH STREAK: " + String(MAX_ZERO_STREAK) + " consecutive responses with 0 subagent dispatches.",
             "Floor is 10. This block is UNCONDITIONAL. DISPATCH 10 AGENTS NOW.",
             "REQUIRED: Next response MUST contain \u226510 task/agent/workflow dispatches.",
-            "No pending-work gate. No tool-type bypass. Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable; disengage file /tmp/gludd-watchdog-disengage.json.",
+            "No pending-work gate. No tool-type bypass. Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
             "Run 'make disengage-enforcement' to bypass.",
           ].join("\n"),
         }
       }
-
       // === SANITY CHECK: verify dispatch count before blocking ===
       // If the counter exceeds sane bounds after boundary detection,
       // the count is unreliable — log a warning and force-reset.
@@ -415,11 +375,17 @@ const defaultImpl: HotModule = {
         writeState(_state)
         return
       }
-
       writeState(_state)
     } catch {
       return
     }
+  },
+  "text.complete": async (_input: unknown, output: unknown) => {
+    if (isSubagent()) return output
+    // Compatibility alias for older OpenCode hook metadata.
+    // zeroStreak / MAX_ZERO_STREAK / MUST DISPATCH / subagent behavior is
+    // implemented by the canonical experimental.text.complete handler below.
+    return await defaultImpl["experimental.text.complete"]?.(_input, output)
   },
   "experimental.text.complete": async (_input: unknown, output: unknown) => {
     if (isSubagent()) return output
@@ -429,8 +395,15 @@ const defaultImpl: HotModule = {
     if (!text || text.trim().length === 0) return output
     if (isDisengaged()) return output
     if (!hasPendingWork()) return output
-    const isToolOutput = (output as any)?.isToolOutput === true
-    if (isToolOutput) return output
+    // RESEARCH FINDING: opencode text.complete never receives tool output.
+    // Result markers here are assistant text, so they must feed the same
+    // message-boundary logic as any other assistant response. The next
+    // handleMessageBoundary(_state) updates _state.prevMessageDispatches and
+    // applies zeroStreak++ when no dispatches occurred.
+    const hasResultMarker = /(?:task result|subagent result|workflow result)/i.test(text)
+    if (hasResultMarker) {
+      _state.estimatedInFlight = Math.max(0, _state.estimatedInFlight - 1)
+    }
     if (_state.thisMessageDispatches > 0 && _state.thisMessageDispatches < MIN_DISPATCHES) {
       const dispatched = _state.thisMessageDispatches
       handleMessageBoundary(_state)
@@ -438,10 +411,11 @@ const defaultImpl: HotModule = {
       return {
         text: [
           "THIN WAVE BLOCKED",
+          "MUST DISPATCH a full wave before sending summary text.",
           `This message had only ${dispatched} dispatch(es).`,
           `The 10-agent floor REQUIRES ${MIN_DISPATCHES} per wave.`,
           "Your text has been blanked. Re-send with >= " + String(MIN_DISPATCHES) + " dispatches.",
-          "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable; disengage file /tmp/gludd-watchdog-disengage.json.",
+          "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
         ].join("\n"),
       }
     }
@@ -450,7 +424,6 @@ const defaultImpl: HotModule = {
     return output
   },
 }
-
 // ============================================================================
 // PROXY PLUGIN (hot-reload aware)
 // ============================================================================
@@ -461,16 +434,21 @@ export default (({ }) => {
       "/tmp/gludd-plugin-loaded.log",
       `${new Date().toISOString()} LOADED enforce-multitask pid=${process.pid}\n`, "utf8",
     )
-  } catch { /* fail-open */ }
-
+  } catch { // fail-open
+ }
   return {
     "tool.execute.before": async (input: { tool?: string }) => {
-      // OPENCODE_SUBAGENT=1 return early via isSubagent().
+      // process.env.OPENCODE_SUBAGENT guard
       if (isSubagent()) return
       const impl = loadHotModule("multitask", defaultImpl)
       const fn = impl["tool.execute.before"]
       return fn ? await fn(input) : undefined
   },
+  // NOTE: opencode 1.17.9 rejects the bare "text.complete" hook key in the
+  // Plugin return object (crashes Plugin.add with TypeError evaluating
+  // 'N.event'). Only "experimental.text.complete" is valid. The alias in
+  // defaultImpl is retained for hot-reload back-compat but must NOT appear
+  // in the proxy's returned Hooks object.
   "experimental.text.complete": async (_input: unknown, output: unknown) => {
     if (isSubagent()) return output
     if (!FLOOR_ENFORCE) return undefined
@@ -479,14 +457,15 @@ export default (({ }) => {
     if (!text || text.trim().length === 0) return output
     if (isDisengaged()) return output
     if (!hasPendingWork()) return output
-
-    // In a tool-call message (has dispatches), text is usually a brief intro.
-    // The experimental.text.complete hook fires for EACH text fragment, including tool
-    // response text. We want to block only the orchestrator's text (the
-    // "prelude" text between waves), not subagent result text.
-    const isToolOutput = (output as any)?.isToolOutput === true
-    if (isToolOutput) return output
-
+    // RESEARCH FINDING: opencode text.complete never receives tool output.
+    // Result markers here are assistant text, so they must feed the same
+    // message-boundary logic as any other assistant response. The next
+    // handleMessageBoundary(_state) updates _state.prevMessageDispatches and
+    // applies zeroStreak++ when no dispatches occurred.
+    const hasResultMarker = /(?:task result|subagent result|workflow result)/i.test(text)
+    if (hasResultMarker) {
+      _state.estimatedInFlight = Math.max(0, _state.estimatedInFlight - 1)
+    }
     // Block: current message had < MIN_DISPATCHES but >0 dispatches
     // AND pending work exists. thisMessageDispatches is the live count
     // for the message that just completed (all tool calls have fired).
@@ -501,6 +480,7 @@ export default (({ }) => {
         text: [
           "⛔⛔⛔ THIN WAVE BLOCKED ⛔⛔⛔",
           "",
+          "MUST DISPATCH a full wave before sending summary text.",
           "This message had only " + String(dispatched) + " dispatch(es).",
           "The 10-agent floor REQUIRES " + String(MIN_DISPATCHES) + " per wave.",
           "When pending work exists, your ONLY valid action is a " +
@@ -509,13 +489,12 @@ export default (({ }) => {
           "Your text has been blanked. Re-send with >= " +
             String(MIN_DISPATCHES) + " task/agent/workflow dispatches.",
           "",
-          "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable; disengage file /tmp/gludd-watchdog-disengage.json.",
+          "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
         ].join("\n"),
       }
     }
-
-    // --- Canonical message boundary: experimental.text.complete ---
-    // experimental.text.complete fires at the end of every assistant response. This is
+    // --- Canonical message boundary: text.complete ---
+    // text.complete fires at the end of every assistant response. This is
     // the ONLY reliable message-boundary signal. Resetting thisMessageDispatches
     // here fixes the inflation bug where the counter persisted across messages
     // because heuristic detection (time gap / pattern / high-water-mark)
@@ -524,7 +503,6 @@ export default (({ }) => {
     // also fire.
     handleMessageBoundary(_state)
     writeState(_state)
-
     return output
   },
   }

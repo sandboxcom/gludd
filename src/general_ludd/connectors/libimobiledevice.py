@@ -195,5 +195,4 @@ class IDeviceConnector:
             return []
 
 
-class LibimobiledeviceSource(IDeviceConnector):
-    """Observability source adapter for libimobiledevice diagnostics."""
+IDeviceSource = IDeviceConnector

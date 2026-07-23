@@ -80,6 +80,26 @@ gludd's resolver puts the tier paths on `ANSIBLE_COLLECTIONS_PATH` at
 adapter init and on every project switch; ansible-core does the rest. This
 is standard ansible-collections behaviour — gludd does not customise it.
 
+## Custom business logic workflow
+
+Project-local collections are the preferred place for internal automation that should not ship in the bundled gludd collection. Use them for company deployment wrappers, internal service catalog lookups, policy evidence formatting, remediation roles, and private Terraform helper material.
+
+Use this decision rule:
+
+- Use a custom namespace and collection when adding net-new project-only behavior.
+- Use `general_ludd.agent` in the project tier only when intentionally shadowing a bundled role or module.
+- Keep reusable, project-agnostic behavior in the bundled collection and cover it with repo tests.
+- Keep private or organization-specific behavior in the project collection and cover it with the project test suite.
+
+Suggested workflow:
+
+1. Scaffold the project collection with `gludd project init --namespace <ns> --collection <name>`.
+2. Put private roles under `roles/`, modules under `plugins/modules/`, shared helpers under `plugins/module_utils/`, and Terraform conventions under `plugins/terraform/`.
+3. Call new behavior by FQCN from project playbooks.
+4. Shadow bundled behavior only by using the same FQCN in the project tier.
+5. Run `gludd project paths --json` to confirm the project tier resolves before user and bundled tiers.
+6. Capture smoke-test or playbook output when debugging project-specific behavior so a repair agent can see the exact role, module, variables, events, and logs.
+
 ## Initialisation
 
 `gludd project init --namespace <ns> [--collection <name>] [--force]` scaffolds

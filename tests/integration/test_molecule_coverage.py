@@ -143,6 +143,7 @@ _NOT_YET_COVERED_ROLES: set[str] = {
     "git_automation",
     "git_commit_push",
     "gludd_update",
+    "log_prompt_evaluator",
     "guardrail_pattern",
     "log_prompt_evaluator",
     "manage_processes",

@@ -4,13 +4,10 @@ import * as fs from "node:fs"
 import * as path from "node:path"
 import { isSubagent, reportAlive, isDisengaged, isDispatchTool, isReadTool } from "../lib/shared.ts"
 import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
-
-const nodeRequire = createRequire(import.meta.url)
-
+const nodeRequire = typeof require === "function" ? require : createRequire(import.meta.url)
 function execSync(...args: any[]): Buffer {
   return nodeRequire("node:child_" + "process").execSync(...args)
 }
-
 // enforce-delegate.ts — opencode-native port of the Claude orchestration hooks
 // that govern SUBAGENT DISPATCH and MAIN-THREAD DELEGATION discipline.
 //
@@ -27,29 +24,24 @@ function execSync(...args: any[]): Buffer {
 //
 // IMPORTANT — this plugin is SEPARATE from enforce-make.ts so a bug here cannot
 // break the make-only Bash enforcement. Keep the files split.
-
 // ============================================================================
 // CONFIG (mirrors the claude env var names so the same knobs work in opencode)
 // ============================================================================
 const FLOOR = parseInt(process.env.CLAUDE_AGENT_FLOOR || "10", 10)
 const TARGET = parseInt(process.env.CLAUDE_AGENT_TARGET || "6", 10)
-
 const MODEL_UTIL_STATE = process.env.GLUDD_MODEL_UTIL_STATE || "/tmp/gludd-model-util.json"
 const MODEL_UTIL_WINDOW = parseInt(process.env.GLUDD_MODEL_UTIL_WINDOW || "20", 10)
 const MODEL_UTIL_ENFORCE = (process.env.GLUDD_MODEL_UTIL_ENFORCE || "1") !== "0"
 const SONNET_TARGET_CONFIG = process.env.GLUDD_SONNET_TARGET_CONFIG
   || path.join(process.cwd(), ".claude", "sonnet_ratio_target")
 const SONNET_TARGET_DEFAULT = 0.91  // 10:1 sonnet:non-sonnet
-
 const FORCE_DELEGATE_ENABLED = (process.env.GLUDD_FORCE_DELEGATE || "0") === "1"
 const FORCE_DELEGATE_GRACE = parseInt(process.env.GLUDD_FORCE_DELEGATE_GRACE || "3", 10)
 const FORCE_DELEGATE_MAXBLOCK = parseInt(process.env.GLUDD_FORCE_DELEGATE_MAXBLOCK || "4", 10)
 const FORCE_DELEGATE_STATE = process.env.GLUDD_FORCE_DELEGATE_STATE || "/tmp/gludd-force-delegate.json"
-
 function forceDelegateEnabled(): boolean {
   return (process.env.GLUDD_FORCE_DELEGATE || "0") === "1"
 }
-
 // MAINTHREAD STREAK (2026-06-29 strengthening): consecutive main-thread mutating
 // tool calls with no intervening dispatch. After MAINTHREAD_THRESHOLD (default
 // 2) consecutive calls, the 3rd is HARD-DENIED. Default ON; disable with
@@ -71,7 +63,6 @@ function forceDelegateEnabled(): boolean {
 const MAINTHREAD_STREAK_ENABLED = (process.env.GLUDD_MAINTHREAD_STREAK_ENFORCE || "1") !== "0"
 const MAINTHREAD_STREAK_FILE = process.env.GLUDD_MAINTHREAD_STREAK_FILE || "/tmp/gludd-mainthread-streak.json"
 const MAINTHREAD_THRESHOLD = parseInt(process.env.GLUDD_MAINTHREAD_THRESHOLD || "2", 10)
-
 // READ-GRINDING detection (2026-07-09 — multitasking audit P1 fix).
 // Investigation tools (grep/glob/file-view) don't count toward the
 // edit/write/bash streak, but they DO count toward a SEPARATE counter with
@@ -85,17 +76,13 @@ const READ_GRIND_ADVISORY_COUNT = parseInt(process.env.GLUDD_READ_GRIND_ADVISORY
 const READ_GRIND_ADVISORY_MS = parseInt(process.env.GLUDD_READ_GRIND_ADVISORY_MS || "30000", 10)
 const READ_GRIND_DENY_COUNT = parseInt(process.env.GLUDD_READ_GRIND_DENY_COUNT || "10", 10)
 const READ_GRIND_DENY_MS = parseInt(process.env.GLUDD_READ_GRIND_DENY_MS || "60000", 10)
-
 const DISK_DANGER_GB = parseFloat(process.env.GLUDD_DISK_DANGER_GB || "2.5")
 const DISK_HARD_FLOOR_GB = parseFloat(process.env.GLUDD_DISK_HARD_FLOOR_GB || "1.0")
 const WORKTREE_CAP = parseInt(process.env.GLUDD_WORKTREE_CAP || "6", 10)
 const WORKTREE_MIN_FREE_GB = parseFloat(process.env.GLUDD_MIN_FREE_GB || "5.0")
-
-
 // ============================================================================
 // HELPERS
 // ============================================================================
-
 // Live-agent ground-truth probe (shared with enforce-floor.ts and the claude
 // shell hooks). Uses scripts/agent_liveness.py so all layers agree on the
 // live count.
@@ -110,7 +97,6 @@ const WORKTREE_MIN_FREE_GB = parseFloat(process.env.GLUDD_MIN_FREE_GB || "5.0")
 // successful probe. The threshold is logged loudly when breached.
 let _probeFailCount = 0
 const PROBE_FAIL_THRESHOLD = parseInt(process.env.GLUDD_PROBE_FAIL_THRESHOLD || "3", 10)
-
 function countLiveAgents(): number | null {
   if (process.env.GLUDD_LIVE_AGENTS_COUNT) {
     const n = parseInt(process.env.GLUDD_LIVE_AGENTS_COUNT, 10)
@@ -149,7 +135,6 @@ function countLiveAgents(): number | null {
     return recordFailure("exec threw: " + String(e).substring(0, 120))
   }
 }
-
 // ============================================================================
 // MODEL UTILIZATION (port of model_utilization_pretool.sh)
 // Holds sonnet:non-sonnet dispatch ratio at/above target_share (default 0.91).
@@ -163,15 +148,14 @@ function loadModelHistory(): string[] {
     return Array.isArray(data.history) ? data.history : []
   } catch { return [] }
 }
-
 function saveModelHistory(history: string[]): void {
   try {
     const tmp = MODEL_UTIL_STATE + ".tmp"
     fs.writeFileSync(tmp, JSON.stringify({ history }))
     fs.renameSync(tmp, MODEL_UTIL_STATE)
-  } catch { /* fail open */ }
+  } catch { // fail open
+ }
 }
-
 function readTargetShare(): number {
   if (process.env.GLUDD_SONNET_TARGET_SHARE) {
     const v = parseFloat(process.env.GLUDD_SONNET_TARGET_SHARE)
@@ -185,7 +169,6 @@ function readTargetShare(): number {
     return SONNET_TARGET_DEFAULT
   }
 }
-
 // Main-model detection — when the parent/main thread is NOT an expensive
 // (opus-class) model, there is no cost asymmetry to optimize: every subagent
 // inherits the parent, and the harness may not expose model:"sonnet" on the
@@ -193,28 +176,25 @@ function readTargetShare(): number {
 const MAIN_MODEL_FILE = process.env.GLUDD_MAIN_MODEL_FILE
   || path.join(process.cwd(), ".claude", "main_model")
 const EXPENSIVE_MAIN_MARKERS = ["opus", "claude-3-opus", "claude-opus", "o1", "o3", "gpt-4", "gpt-4o"]
-
 function detectMainModel(): string {
   const env = (process.env.GLUDD_MAIN_MODEL || process.env.OPENCODE_MODEL || "").trim().toLowerCase()
   if (env) return env
   try {
     const v = fs.readFileSync(MAIN_MODEL_FILE, "utf8").trim().toLowerCase()
     if (v) return v
-  } catch { /* not present */ }
+  } catch {  }
   try {
     const cfg = JSON.parse(fs.readFileSync(path.join(process.cwd(), "opencode.json"), "utf8"))
     const m = (cfg.model || cfg.defaultModel || "").toString().trim().toLowerCase()
     if (m) return m
-  } catch { /* not present / no model field */ }
+  } catch {  }
   return ""
 }
-
 function mainModelIsExpensive(): boolean {
   const m = detectMainModel()
   if (!m) return true  // fail-safe: unknown -> preserve old behavior (enforce)
   return EXPENSIVE_MAIN_MARKERS.some(e => m.includes(e))
 }
-
 // Only an EXPLICIT model:"sonnet" counts as sonnet. Absent/empty model inherits
 // the parent (expensive) and is treated as non-sonnet — the operator must set
 // model:"sonnet" explicitly to earn headroom.
@@ -223,13 +203,11 @@ function isSonnetDispatch(args: Record<string, unknown> | undefined): boolean {
   const m = (args.model as string) || ""
   return m.trim() === "sonnet"
 }
-
 function enforceModelUtilization(args: Record<string, unknown> | undefined): string | null {
   try {
     const model = isSonnetDispatch(args) ? "sonnet" : "non-sonnet"
     const history = loadModelHistory()
     const target = readTargetShare()
-
     // Sonnet is always allowed — record and return.
     if (model === "sonnet") {
       history.push("sonnet")
@@ -237,7 +215,6 @@ function enforceModelUtilization(args: Record<string, unknown> | undefined): str
       saveModelHistory(history)
       return null
     }
-
     // Non-sonnet dispatch on a NON-EXPENSIVE main thread (e.g. glm-5.2): there
     // is no cost asymmetry to optimize — every subagent inherits the parent, and
     // the harness may not expose model:"sonnet" on the Task tool at all. Enforcing
@@ -249,7 +226,6 @@ function enforceModelUtilization(args: Record<string, unknown> | undefined): str
       saveModelHistory(history)
       return null
     }
-
     // Non-sonnet dispatch. Grace: <3 samples = allow.
     if (history.length < 3) {
       history.push(model)
@@ -257,13 +233,11 @@ function enforceModelUtilization(args: Record<string, unknown> | undefined): str
       saveModelHistory(history)
       return null
     }
-
     // Compute PROJECTED share if we allow this non-sonnet dispatch.
     const projected = history.concat([model])
     if (projected.length > MODEL_UTIL_WINDOW) projected.splice(0, projected.length - MODEL_UTIL_WINDOW)
     const projSonnet = projected.filter(m => m === "sonnet").length
     const projShare = projSonnet / projected.length
-
     if (projShare < target && MODEL_UTIL_ENFORCE) {
       const targetPct = Math.round(target * 100)
       const projPct = Math.round(projShare * 100)
@@ -277,7 +251,6 @@ function enforceModelUtilization(args: Record<string, unknown> | undefined): str
         `~${headroomNeeded} more sonnet dispatch(es) will restore headroom.`,
       ].join(" ")
     }
-
     // Headroom exists — record and allow.
     history.push(model)
     if (history.length > MODEL_UTIL_WINDOW) history.splice(0, history.length - MODEL_UTIL_WINDOW)
@@ -287,7 +260,6 @@ function enforceModelUtilization(args: Record<string, unknown> | undefined): str
     return null  // fail open
   }
 }
-
 // ============================================================================
 // DISK DISCIPLINE (port of disk_discipline_pretool.sh + worktree_disk_guard_pretool.sh)
 // Fires ONLY on task dispatches with isolation:"worktree". Two thresholds:
@@ -316,17 +288,14 @@ function diskSnapshot(): { freeGb: number, venvCount: number } {
     return { freeGb: 999, venvCount: 0 }
   }
 }
-
 function enforceDiskDiscipline(args: Record<string, unknown> | undefined): string | null {
   try {
     if (!args) return null
     const iso = (args.isolation as string) || ""
     if (iso !== "worktree") return null  // only fires on worktree isolation
-
     const { freeGb, venvCount } = diskSnapshot()
     const hardBlocks: string[] = []
     const advisory: string[] = []
-
     // Hard-deny conditions (return non-null -> caller throws -> dispatch BLOCKED)
     if (freeGb < DISK_HARD_FLOOR_GB) {
       hardBlocks.push(
@@ -342,7 +311,6 @@ function enforceDiskDiscipline(args: Record<string, unknown> | undefined): strin
         `before dispatching more. Do NOT dispatch a large batch.`
       )
     }
-
     if (venvCount >= WORKTREE_CAP) {
       advisory.push(
         `WORKTREE-CAP WARNING: ${venvCount} existing worktree .venvs found (cap=${WORKTREE_CAP}, ` +
@@ -350,7 +318,6 @@ function enforceDiskDiscipline(args: Record<string, unknown> | undefined): strin
         `worktrees. Prefer non-isolated agents for read-only work.`
       )
     }
-
     if (freeGb < WORKTREE_MIN_FREE_GB) {
       hardBlocks.push(
         `worktree venv disk near cap — disk free ${freeGb.toFixed(1)}GB < minimum ` +
@@ -358,18 +325,15 @@ function enforceDiskDiscipline(args: Record<string, unknown> | undefined): strin
         `Free space first: make clean-worktree-venvs or make clean-tmp.`
       )
     }
-
     // Advisory warnings are logged only — they must NOT block dispatch.
     if (advisory.length > 0) {
       console.warn("[enforce-delegate] disk advisory: " + advisory.join(" | "))
     }
-
     return hardBlocks.length === 0 ? null : hardBlocks.join(" | ")
   } catch {
     return null  // fail open
   }
 }
-
 // ============================================================================
 // FORCE-DELEGATE (port of force_delegate_pretool.sh)
 // Opt-in grind guard (GLUDD_FORCE_DELEGATE=1). Denies targeted mutations when
@@ -378,9 +342,7 @@ function enforceDiskDiscipline(args: Record<string, unknown> | undefined): strin
 // Returns: null = allow, string = block reason.
 // ============================================================================
 const READONLY_MAKE_RE = /^make\s+(git-(status|log|diff|staged|branch|ls-tracked|history-file|remote-sandboxcom|fetch-sandboxcom|ls-remote-sandboxcom|tracked-keys)|ci-(status|verdict|poll|greenness|head-compare|jobs-anon|status-anon|run-detail|artifacts|log|remotes|joblog-anon|checkrun-anno|annotations-anon|wait-anon|watch|watch-head|pyver-list|auth|ssh-test|faillog)|disk$|disk-guard|floor-status|floor-plan|lint$|lint-all|typecheck$|typecheck-all|test-count|test-unit|test-iso|test-xdist|collect-check|healthcheck|ps-gludd|ps-pytest|gate-status|help$|branches-unmerged|repo-status|repo-diff|repo-staged|repo-log|verify-remote|ci-head-compare|ci-greenness|audit-messages|scan-secrets$|sast|sbom|pip-audit|security$|test-no-wait-hook|test-model-ratio-hook|test-force-delegate-hook|test-hooks|test-stop-hooks|test-guardrails|test-scripts|test-db|test-live-zai|test-tui-daemon|test-liveness-workflow|status-snapshot|deps-audit|plan|collection-roles|collection-modules|molecule-scenarios|molecule-version|release-view|verify-release-artifact|verify-release-completeness|ci-diff-since-remote|git-divergence)(\s|$)/
-
 const MUTATING_MAKE_RE = /^make\s+(git-(commit|add$|add-all|merge$|push|tag|revert|rm$|reset$|cherry|stash|cherry-pick|cherry-continue|cherry-abort|ff-only|merge-nc)|commit$|commit-no-verify|commit-bootstrap|ship$|ship-ff|ship-async|release-cut|feature-done|feature-start|wt-sync|wt-apply|wt-import|wt-prune|wt-sync-all|gate$|gate-async|test-and-commit|bootstrap$|install-hooks$|clean$|clean-tmp|clean-hooks|clean-untracked|clean-worktree-venvs|untrack$|git-push-sandboxcom|git-push-branch$|git-push-branch-nv|git-pull-sandboxcom|git-stash-rebase-pop|git-add|gated-merge|write-gate-safe-hook)(\s|$)/
-
 function isMemoryPath(p: string): boolean {
   if (!p) return false
   const expanded = (process.env.HOME || "") + "/.claude/projects/"
@@ -389,7 +351,6 @@ function isMemoryPath(p: string): boolean {
   if (p.includes("/.claude/projects/") && p.includes("/memory/")) return true
   return false
 }
-
 function loadForceDelegateState(): { consecutive_targeted: number, consecutive_denied: number } {
   try {
     const s = JSON.parse(fs.readFileSync(FORCE_DELEGATE_STATE, "utf8"))
@@ -401,48 +362,48 @@ function loadForceDelegateState(): { consecutive_targeted: number, consecutive_d
     return { consecutive_targeted: 0, consecutive_denied: 0 }
   }
 }
-
 function saveForceDelegateState(s: { consecutive_targeted: number, consecutive_denied: number }): void {
   try {
     const tmp = FORCE_DELEGATE_STATE + ".tmp"
     fs.writeFileSync(tmp, JSON.stringify(s))
     fs.renameSync(tmp, FORCE_DELEGATE_STATE)
-  } catch { /* fail open */ }
+  } catch { // fail open
+ }
 }
-
 function enforceForceDelegate(
   tool: string,
   args: Record<string, unknown> | undefined,
 ): string | null {
   try {
-    if (!forceDelegateEnabled()) return null
-    if (isDisengaged()) return null
-
+    const disengaged = isDisengaged()
+    if (!FORCE_DELEGATE_ENABLED && !forceDelegateEnabled()) return null
     const command = ((args?.command as string) || "").trim()
     const filePath = ((args?.filePath as string) || "").trim()
-
     if (isDispatchTool(tool)) {
       saveForceDelegateState({ consecutive_targeted: 0, consecutive_denied: 0 })
       return null
     }
-
     const isAllowlisted = (
       ["read", "glob", "grep", "skill", "todowrite", "todoread", "webfetch", "websearch", "question", "task", "workflow"].includes(tool) ||
       (tool === "bash" && READONLY_MAKE_RE.test(command)) ||
       ((tool === "write" || tool === "edit") && isMemoryPath(filePath))
     )
     if (isAllowlisted) return null
-
     const isTargeted = (
       ((tool === "edit" || tool === "write") && !isMemoryPath(filePath)) ||
       (tool === "bash" && MUTATING_MAKE_RE.test(command))
     )
     if (!isTargeted) return null
-
     const state = loadForceDelegateState()
     const consecutiveTargeted = state.consecutive_targeted + 1
+    if (disengaged) {
+      saveForceDelegateState({
+        consecutive_targeted: consecutiveTargeted,
+        consecutive_denied: state.consecutive_denied,
+      })
+      return null
+    }
     const live = countLiveAgents() ?? FLOOR  // fail-open: if can't tell, treat floor as satisfied
-
     if (consecutiveTargeted > FORCE_DELEGATE_GRACE && live < FLOOR) {
       const consecutiveDenied = state.consecutive_denied + 1
       if (consecutiveDenied > FORCE_DELEGATE_MAXBLOCK) {
@@ -459,30 +420,25 @@ function enforceForceDelegate(
         `${FORCE_DELEGATE_MAXBLOCK} consecutive denials to avoid wedging.)`,
       ].join(" ")
     }
-
     saveForceDelegateState({ consecutive_targeted: consecutiveTargeted, consecutive_denied: state.consecutive_denied })
     return null
   } catch {
     return null  // fail open
   }
 }
-
 // ============================================================================
 // FORCE-DISPATCH HELPER — writes /tmp/gludd-force-dispatch.json with specific
 // task dispatch commands extracted from TASKS.md, config/ratchet.yml, and
 // .gate-status.  Called when the main-thread streak blocks a mutation, so the
 // agent sees EXACTLY what to dispatch on instead of a generic "delegate" nudge.
 // ============================================================================
-
 const FORCE_DISPATCH_FILE = process.env.GLUDD_FORCE_DISPATCH_PATH || "/tmp/gludd-force-dispatch.json"
-
 interface DispatchItem {
   index: number
   task_item: string
   tool: string
   command: string
 }
-
 function buildForceDispatchCommands(): DispatchItem[] {
   const cmds: DispatchItem[] = []
   let idx = 1
@@ -501,7 +457,7 @@ function buildForceDispatchCommands(): DispatchItem[] {
         }
       }
     }
-  } catch { /* best-effort */ }
+  } catch {  }
   try {
     const ratchet = path.join(process.cwd(), "config", "ratchet.yml")
     if (fs.existsSync(ratchet)) {
@@ -518,7 +474,7 @@ function buildForceDispatchCommands(): DispatchItem[] {
         })
       }
     }
-  } catch { /* best-effort */ }
+  } catch {  }
   try {
     const gs = path.join(process.cwd(), ".gate-status")
     if (fs.existsSync(gs)) {
@@ -532,10 +488,9 @@ function buildForceDispatchCommands(): DispatchItem[] {
         })
       }
     }
-  } catch { /* best-effort */ }
+  } catch {  }
   return cmds
 }
-
 function writeForceDispatchSignal(cmds: DispatchItem[]): void {
   try {
     fs.writeFileSync(FORCE_DISPATCH_FILE, JSON.stringify({
@@ -545,13 +500,13 @@ function writeForceDispatchSignal(cmds: DispatchItem[]): void {
       reason: "mainthread_streak_block",
       ts: Date.now(),
     }))
-  } catch { /* fail open */ }
+  } catch { // fail open
+ }
 }
 interface MainthreadStreakState {
   count: number
   ts: number
 }
-
 function readStreak(): MainthreadStreakState {
   try {
     const raw = fs.readFileSync(MAINTHREAD_STREAK_FILE, "utf8").trim()
@@ -571,7 +526,6 @@ function readStreak(): MainthreadStreakState {
     return { count: 0, ts: 0 }
   }
 }
-
 function writeStreak(partial: Partial<MainthreadStreakState>): void {
   try {
     const current = readStreak()
@@ -579,9 +533,9 @@ function writeStreak(partial: Partial<MainthreadStreakState>): void {
     const tmp = MAINTHREAD_STREAK_FILE + ".tmp"
     fs.writeFileSync(tmp, JSON.stringify(merged))
     fs.renameSync(tmp, MAINTHREAD_STREAK_FILE)
-  } catch { /* fail open */ }
+  } catch { // fail open
+ }
 }
-
 // ---------------------------------------------------------------------------
 // Read-grind state helpers (separate from the edit-streak file above).
 // Tracks consecutive investigation-tool calls + the timestamp of the last
@@ -589,7 +543,6 @@ function writeStreak(partial: Partial<MainthreadStreakState>): void {
 // a grinding spree.
 // ---------------------------------------------------------------------------
 const READ_GRIND_STALE_MS = parseFloat(process.env.GLUDD_READ_GRIND_STALE_MS || "60000")
-
 function loadReadGrindState(): { count: number; lastDispatchTs: number } {
   try {
     const obj = JSON.parse(fs.readFileSync(READ_GRIND_FILE, "utf8"))
@@ -603,25 +556,22 @@ function loadReadGrindState(): { count: number; lastDispatchTs: number } {
     return { count: 0, lastDispatchTs: Date.now() }
   }
 }
-
 function saveReadGrindState(count: number, lastDispatchTs: number): void {
   try {
     const tmp = READ_GRIND_FILE + ".tmp"
     fs.writeFileSync(tmp, JSON.stringify({ count, lastDispatchTs, ts: Date.now() }))
     fs.renameSync(tmp, READ_GRIND_FILE)
-  } catch { /* fail open */ }
+  } catch { // fail open
+ }
 }
-
 function isMainthreadTool(tool: string): boolean {
   // Only mutation tools gated here — investigation tools tracked separately.
   return ["edit", "write", "bash"].includes(tool)
 }
-
 function mainthreadBudgetBefore(tool: string): string | null {
   try {
     if (!MAINTHREAD_STREAK_ENABLED) return null
     if (isDisengaged()) return null
-
     // Read-grind check (separate from the edit-streak below): investigation
     // tools don't count toward the edit/write/bash streak, but they DO count
     // toward a SEPARATE counter with time-based detection. Both conditions
@@ -645,27 +595,22 @@ function mainthreadBudgetBefore(tool: string): string | null {
       }
       return null
     }
-
     if (!isMainthreadTool(tool)) return null
-
     const fullState = readStreak()
     const streak = fullState.count
     if (streak < MAINTHREAD_THRESHOLD) return null
     const live = countLiveAgents()
     if (live === null) return null
     if (live >= TARGET) return null
-
     // Re-arm to fire again after a few more inline calls (periodic, not every call).
     const rearm = Math.max(0, MAINTHREAD_THRESHOLD - 3)
     writeStreak({ count: rearm })
-
     // Write force-dispatch signal with specific tasks so the agent sees
     // EXACTLY what to dispatch — not a generic "delegate" nudge.
     const cmds = buildForceDispatchCommands()
     if (cmds.length > 0) {
       writeForceDispatchSignal(cmds)
     }
-
     const cmdDetail = cmds.slice(0, 5).map(c => `  ${c.index}. ${c.task_item}`).join("\n")
     return [
       `MAIN-THREAD STREAK BLOCK: ${streak} consecutive main-thread mutating tool`,
@@ -684,7 +629,6 @@ function mainthreadBudgetBefore(tool: string): string | null {
     return null
   }
 }
-
 function mainthreadBudgetAfter(tool: string): void {
   try {
     if (isDispatchTool(tool)) {
@@ -698,9 +642,9 @@ function mainthreadBudgetAfter(tool: string): void {
       const rs = loadReadGrindState()
       saveReadGrindState(rs.count + 1, rs.lastDispatchTs)
     }
-  } catch { /* fail open */ }
+  } catch { // fail open
+ }
 }
-
 // ============================================================================
 // PLUGIN HELPERS
 // ============================================================================
@@ -710,9 +654,9 @@ function _writeHeartbeat(): void {
   try {
     const hb = JSON.stringify({ plugin: "enforce-delegate", ts: Date.now(), pid: process.pid })
     fs.writeFileSync("/tmp/gludd-plugin-heartbeat-enforce-delegate.json", hb)
-  } catch { /* fail-open */ }
+  } catch { // fail-open
+ }
 }
-
 // ============================================================================
 // DEFAULT IMPLEMENTATION (compiled-in fallback)
 // ============================================================================
@@ -724,31 +668,25 @@ const defaultImpl = {
     _writeHeartbeat()
     const tool = input.tool
     const args = output?.args ?? input?.args
-
     // task/agent/workflow dispatch — model utilization + disk discipline
     if (isDispatchTool(tool)) {
       const modelMsg = enforceModelUtilization(args)
       if (modelMsg) throw new Error(modelMsg)
-
       const diskMsg = enforceDiskDiscipline(args)
       if (diskMsg) throw new Error(diskMsg)
     }
-
     // all tools — force-delegate + mainthread budget
     // (Each of these is FAIL-OPEN internally; they return null on any error.)
     const forceMsg = enforceForceDelegate(tool, args)
     if (forceMsg) throw new Error(forceMsg)
-
     const budgetMsg = mainthreadBudgetBefore(tool)
     if (budgetMsg) throw new Error(budgetMsg)
   },
-
   "tool.execute.after": async (input, _output) => {
     // mainthread budget streak counter — never throws
     mainthreadBudgetAfter(input.tool)
   },
 }
-
 // ============================================================================
 // PROXY PLUGIN (hot-reload aware)
 // ============================================================================
@@ -763,7 +701,8 @@ export default (({ }) => {
       `pid=${process.pid}\n`,
       "utf8",
     )
-  } catch { /* fail-open */ }
+  } catch { // fail-open
+ }
   return {
     "tool.execute.before": async (input, output) => {
       // process.env.OPENCODE_SUBAGENT guard

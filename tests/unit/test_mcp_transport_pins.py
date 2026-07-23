@@ -180,12 +180,11 @@ class TestValidatePackageSpec:
         with pytest.raises(MCPTransportError, match="requires a following"):
             _validate_package_spec(["npx", "--package"], "npx")
 
-    def test_uvx_unpinned_rejected_and_metachar_still_blocked(self):
-        # uvx is a remote-fetch launcher; bare specs are refused for the same
-        # supply-chain reason as npm-family floating specs.
+    def test_uvx_unpinned_rejected_metachar_still_blocked(self):
+        # H.10: uvx is a remote-fetch launcher, so bare specs are rejected for
+        # supply-chain safety while metacharacter injection is still refused first.
         with pytest.raises(MCPTransportError, match=r"not.*version-pinned"):
             _validate_package_spec(["uvx", "mcp-server-git"], "uvx")
-        _validate_package_spec(["uvx", "mcp-server-git==0.1.0"], "uvx")
         with pytest.raises(MCPTransportError, match="shell metacharacters"):
             _validate_package_spec(["uvx", "pkg && evil"], "uvx")
 

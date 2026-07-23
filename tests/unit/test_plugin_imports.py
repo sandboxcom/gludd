@@ -101,3 +101,14 @@ def test_invalid_file_detected():
             target.unlink()
     finally:
         Path(bad_path).unlink()
+
+
+def test_lean_wrapper_impl_files_exist_and_use_impl_relative_imports():
+    for name in ("enforce_stop_impl.ts", "enforce_make_impl.ts"):
+        path = PLUGIN_DIR / "impl" / name
+        assert path.exists(), f"{name} missing; lean wrappers cannot load"
+        text = path.read_text()
+        assert "export default" in text
+        assert "../../lib/shared.ts" in text
+        assert "from \"../lib/shared.ts\"" not in text
+        assert "from \"../lib/hot_reload.ts\"" not in text

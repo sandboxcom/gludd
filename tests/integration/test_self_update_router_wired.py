@@ -40,11 +40,21 @@ from general_ludd.self_update.model import (
 
 @pytest.fixture(autouse=True)
 def _reset_daemon_state() -> None:
-    daemon_mod._daemon_state["todos"] = []
-    daemon_mod._daemon_state["tick_metrics"] = {}
+    original_state = daemon_mod._daemon_state
+
+    def reset_current_state() -> None:
+        if daemon_mod._daemon_state is None:
+            daemon_mod._daemon_state = {"todos": [], "tick_metrics": {}, "quality_gate": {}}
+            return
+        daemon_mod._daemon_state["todos"] = []
+        daemon_mod._daemon_state["tick_metrics"] = {}
+        daemon_mod._daemon_state.setdefault("quality_gate", {})
+
+    reset_current_state()
     yield
-    daemon_mod._daemon_state["todos"] = []
-    daemon_mod._daemon_state["tick_metrics"] = {}
+    reset_current_state()
+    if original_state is None:
+        daemon_mod._daemon_state = None
 
 
 def _make_db_config(tmp_path: pytest.Path) -> tuple[str, str]:

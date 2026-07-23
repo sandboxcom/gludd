@@ -45,6 +45,7 @@ _NON_SOURCE_MODULES = frozenset(
             "_util",
             "_errors",
             "_protocols",
+            "_util",
             "exc_sanitizer",
         )
     }

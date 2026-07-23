@@ -6,9 +6,9 @@ directory:
 
 1. Has no ``export default`` (e.g. a pure constants module), OR
 2. Has a default export that is not a function, OR
-3. Has named ``export const`` / ``export let`` / ``export var`` declarations
-   (opencode's ``getLegacyPlugins()`` iterates ``Object.values(mod)`` and
-   rejects any export that is not a function or ``{server: fn}``),
+3. Has named ``export const`` / ``export function`` declarations (opencode's
+   ``getLegacyPlugins()`` iterates ``Object.values(mod)`` and rejects any
+   export that is not a function or ``{server: fn}``),
 
 ...opencode crashes at boot with::
 
@@ -28,10 +28,8 @@ What this test proves
 - Every ``.ts`` file at the TOP LEVEL of ``.opencode/plugin/`` has an
   ``export default`` declaration.
 - No ``.ts`` file at the top level has ``export const`` / ``export let`` /
-  ``export var`` / ``export class`` / ``export enum`` / ``export interface``
-  (non-function named exports crash the legacy loader). ``export function``
-  and ``export async function`` are ALLOWED — functions pass the loader's
-  ``typeof`` check.
+  ``export var`` / ``export function`` (named exports crash the legacy
+  loader).
 - No ``_exports.ts`` files exist anywhere under ``.opencode/plugin/``.
 - Every ``.ts`` file listed in ``opencode.json`` resolves to a file on disk
   whose Node dynamic-import default is a function.
@@ -62,13 +60,10 @@ HOOK_CHECKER = ROOT / "scripts" / "check_plugin_hooks.py"
 # test_exports/ files were removed entirely).
 TOP_LEVEL_TS = sorted(PLUGIN_DIR.glob("*.ts")) if PLUGIN_DIR.is_dir() else []
 
-# Patterns that indicate a named export that crashes opencode's legacy loader.
-# ``export function`` and ``export async function`` are ALLOWED — functions
-# are valid exports that pass the loader's ``typeof`` check. Only non-function
-# named exports (const, let, var, class, enum, interface) crash.
+# Patterns that indicate a named export (crashes opencode's legacy loader).
 NAMED_EXPORT_RE = re.compile(
-    r"^\s*export\s+(?!default\b|type\b|function\b|async\b)"
-    r"(?:const|let|var|class|enum|interface)\s+\w+",
+    r"^\s*export\s+(?!default\b|type\b)"
+    r"(?:const|let|var|function|class|enum|interface)\s+\w+",
     re.MULTILINE,
 )
 
@@ -94,21 +89,18 @@ def test_top_level_plugin_ts_has_export_default(ts_file: Path) -> None:
 
 @pytest.mark.parametrize("ts_file", TOP_LEVEL_TS, ids=lambda p: p.name)
 def test_top_level_plugin_ts_no_named_exports(ts_file: Path) -> None:
-    """No top-level .ts in .opencode/plugin/ may have non-function named exports.
+    """No top-level .ts in .opencode/plugin/ may have named exports.
 
     opencode's getLegacyPlugins() iterates ``Object.values(mod)`` and rejects
     any export that is not a function. ``export const X = 42`` crashes with
-    "Plugin export is not a function".  ``export function`` is safe — functions
-    pass the ``typeof`` check.
+    "Plugin export is not a function".
     """
     content = ts_file.read_text()
     matches = NAMED_EXPORT_RE.findall(content)
     assert not matches, (
-        f"{ts_file.name} has non-function named exports "
-        f"(export const/let/var/class/enum/interface). "
+        f"{ts_file.name} has named exports (export const/let/var/function). "
         f"opencode's legacy loader rejects non-function exports. "
-        f"Move non-function named exports to a companion file OUTSIDE "
-        f".opencode/plugin/. "
+        f"Move named exports to a companion file OUTSIDE .opencode/plugin/. "
         f"Found {len(matches)} named export(s)."
     )
 

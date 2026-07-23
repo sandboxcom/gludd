@@ -754,6 +754,15 @@ class TestOneProjectPerTick:
             "claim and review phases must share the single per-tick project; "
             f"got {seen_projects} (W3.14 cross-project incoherence)"
         )
+    @pytest.mark.asyncio
+    async def test_projectless_tick_claims_unscoped_todos(self):
+        loop, mocks = _make_loop(project_manager=None)
+        mocks["todo_repo"].claim_runnable.return_value = []
+
+        await loop._phase_claim_runnable_todos()
+
+        mocks["todo_repo"].claim_runnable.assert_awaited_once_with(limit=10, project_id=None)
+        assert loop._tick_state["claimed_todos"] == []
 
 
 class TestSpendLimiterCharges:

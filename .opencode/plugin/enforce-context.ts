@@ -1,43 +1,19 @@
-/**
- * enforce-context.ts — on session start, verify SESSION.md is not stale,
- * enforcing the Knowledge/Context discipline (spec group K).
- *
- * Per AGENTS.md "Session Persistence Policy": SESSION.md must be read at
- * session start to restore context and must never be left stale. A stale
- * SESSION.md means the agent is working without knowledge of prior state.
- *
- * Mechanism:
- *   - `tool.execute.before`: on the first tool call after a new session,
- *     check SESSION.md mtime. If the file is older than the STALE_SECONDS
- *     threshold (default 86400 = 24h), inject a warning via the tool
- *     result. This is advisory on the first call, not a hard block —
- *     the agent should read SESSION.md and continue.
- *   - Fail-open: missing SESSION.md or stat failure → allow.
- *
- * Env knobs:
- *   GLUDD_CONTEXT_ENFORCE=0          — disable (no-op)
- *   GLUDD_CONTEXT_STALE_SECONDS=86400 — override staleness threshold
- *
- * Default ON. Fail-open: any throw/exception → allow.
- *
- * HOT-RELOAD: implements the proxy pattern from hot_reload.ts.
- */
+// Per AGENTS.md "Session Persistence Policy": SESSION.md must be read at
+// - Fail-open: missing SESSION.md or stat failure → allow.
+// Default ON. Fail-open: any throw/exception → allow.
+// HOT-RELOAD: implements the proxy pattern from hot_reload.ts.
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { Plugin } from "@opencode-ai/plugin";
 import { loadHotModule, type HotModule } from "../lib/hot_reload.ts";
 import { isSubagent, reportAlive, readJsonFile, writeJsonFile, getProjectRoot } from "../lib/shared.ts";
-
 const STATE_FILE = "/tmp/gludd-context-check.json";
 const DEFAULT_STALE_SECONDS = 86400;
-
 const PROJECT_ROOT = getProjectRoot();
-
 interface ContextCheckState {
   lastCheckedEpoch: number;
   sessionPid: number;
 }
-
 function getStaleSeconds(): number {
   const val = process.env.GLUDD_CONTEXT_STALE_SECONDS;
   if (val) {
@@ -46,49 +22,41 @@ function getStaleSeconds(): number {
   }
   return DEFAULT_STALE_SECONDS;
 }
-
-export function getSessionMdMtime(): number | null {
+function getSessionMdMtime(): number | null {
   try {
     const p = path.join(PROJECT_ROOT, "SESSION.md");
     if (fs.existsSync(p)) return Math.floor(fs.statSync(p).mtimeMs / 1000);
   } catch {}
   return null;
 }
-
-export function isStale(mtimeSec: number, thresholdSec: number): boolean {
+function isStale(mtimeSec: number, thresholdSec: number): boolean {
   const now = Math.floor(Date.now() / 1000);
   return now - mtimeSec > thresholdSec;
 }
-
-export function shouldCheck(state: ContextCheckState): boolean {
+function shouldCheck(state: ContextCheckState): boolean {
   const now = Math.floor(Date.now() / 1000);
   // Check on PID change (new session) or if never checked
   if (state.sessionPid !== process.pid) return true;
   // Re-check every 6 hours even in same session
   return now - state.lastCheckedEpoch > 21600;
 }
-
 function loadState(): ContextCheckState {
   return readJsonFile<ContextCheckState>(STATE_FILE, {
     lastCheckedEpoch: 0,
     sessionPid: 0,
   });
 }
-
 function saveState(s: ContextCheckState): void {
   writeJsonFile(STATE_FILE, s);
 }
-
 const defaultImpl: HotModule = {
   "tool.execute.before": async (_input, _output) => {
     if (isSubagent()) return;
     reportAlive("enforce-context");
     try {
       if (process.env.GLUDD_CONTEXT_ENFORCE === "0") return;
-
       const state = loadState();
       if (!shouldCheck(state)) return;
-
       const staleSec = getStaleSeconds();
       const mtime = getSessionMdMtime();
       if (mtime !== null && isStale(mtime, staleSec)) {
@@ -102,14 +70,12 @@ const defaultImpl: HotModule = {
             `Set GLUDD_CONTEXT_ENFORCE=0 to disable.`,
         };
       }
-
       saveState({ lastCheckedEpoch: Math.floor(Date.now() / 1000), sessionPid: process.pid });
     } catch {
       // Fail-open
     }
   },
 };
-
 export default (async ({}) => {
   return {
     "tool.execute.before": async (input, output) => {

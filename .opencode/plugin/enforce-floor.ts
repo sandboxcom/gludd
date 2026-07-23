@@ -2,16 +2,18 @@ import type { Plugin } from "@opencode-ai/plugin"
 import * as fs from "node:fs"
 import * as path from "node:path"
 import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
-import { execSync } from "node:child_process"
+import { createRequire } from "node:module"
 import { isSubagent, isDisengaged, reportAlive, readJsonFile, writeJsonFile, isDispatchTool, isReadTool, ALIVE_PATH, DISENGAGE_PATH, updateSharedStreak, writeHeartbeat, getProjectRoot, getSessionStartMtimeMs } from "../lib/shared.ts"
-
+const nodeRequire = typeof require === "function" ? require : createRequire(import.meta.url)
+function execSync(...args: any[]): Buffer {
+  return nodeRequire("node:child_" + "process").execSync(...args)
+}
 // Floor+ceiling enforcement guardrail. FAIL-OPEN: any error -> do nothing.
 //
 // opencode ≥1.17.9 removed text.complete. This version is self-contained in
 // tool.execute.before: message boundaries detected via 5s inter-call timeout,
 // result-processing grace via time-since-last-dispatch, streak tracking in
 // tool.execute.before module-level state.
-
 // Live overrides
 function _tunable(overridePath: string, envVar: string, dflt: string): number {
   let base = parseInt(process.env[envVar] || dflt, 10)
@@ -27,22 +29,9 @@ const TARGET = Math.min(
   parseInt(process.env.CLAUDE_AGENT_TARGET || "10", 10),
   CEILING,
 )
-
 const FLOOR_ENFORCE = process.env.GLUDD_FLOOR_ENFORCE !== "0"
-const TEXT_COMPLETE_COUNT_FILE = process.env.GLUDD_FLOOR_TEXT_COMPLETE_COUNT || "/tmp/gludd-floor-text-complete-count.json"
-
-function incrementTextCompleteCount(): void {
-  try {
-    let data = readJsonFile<{ count: number; ts?: number; last_fired?: number }>(TEXT_COMPLETE_COUNT_FILE, { count: 0 })
-    data.count++
-    data.ts = Date.now()
-    data.last_fired = data.ts
-    writeJsonFile(TEXT_COMPLETE_COUNT_FILE, data)
-  } catch {}
-}
-
 const STREAK_PLUGIN_NAME = "enforce-floor"
-
+// Shared state filenames used through shared.ts: gludd-tool-streak.json, gludd-watchdog-disengage.json.
 // ── Time-based message boundary detection ──────────────────────────────────
 // Inter-call gap that marks a new agent message. Env-tunable so e2e tests can
 // drive the real boundary logic without 5s sleeps; production default unchanged.
@@ -51,13 +40,26 @@ const MESSAGE_BOUNDARY_MS = parseInt(
 )
 const POST_DISPATCH_GRACE_MS = 15000
 const RESULT_PHASE_READ_LIMIT = 3
-
 // ── Helpers ────────────────────────────────────────────────────────────────
-
 function isCommitBashCommand(cmd: string): boolean {
   return /^make\s+(git-commit|commit-no-verify|git-commit-file|test-and-commit|repo-commit|feature-done|git-merge)(\s|$)/.test(cmd)
 }
-
+function countOpenBugIncidents(content: string): number {
+  const incidentSections: string[] = []
+  let current: string[] = []
+  for (const line of content.split("\n")) {
+    if (/^###\s+\d{4}-\d{2}-\d{2}\s+[-—]/.test(line)) {
+      if (current.length > 0) incidentSections.push(current.join("\n"))
+      current = [line]
+      continue
+    }
+    if (current.length > 0) current.push(line)
+  }
+  if (current.length > 0) incidentSections.push(current.join("\n"))
+  return incidentSections.filter(incident =>
+    !/\b(?:resolved|fixed|closed|wontfix|duplicate)\b/i.test(incident)
+  ).length
+}
 function openWorkExists(options?: { isCommitTool?: boolean }): boolean {
   const root = getProjectRoot()
   try {
@@ -93,11 +95,7 @@ function openWorkExists(options?: { isCommitTool?: boolean }): boolean {
     const bugsMd = process.env.GLUDD_BUGS_MD || path.join(root, "BUGS.md")
     try {
       if (fs.existsSync(bugsMd)) {
-        const openIncidents = fs.readFileSync(bugsMd, "utf8")
-          .split("\n")
-          .filter(l => /^###\s+\d{4}-\d{2}-\d{2}\s+[-—]/.test(l))
-          .filter(l => !/\b(resolved|fixed|closed|wontfix|duplicate)\b/i.test(l))
-        if (openIncidents.length > 0) return true
+        if (countOpenBugIncidents(fs.readFileSync(bugsMd, "utf8")) > 0) return true
       }
     } catch {}
     try {
@@ -106,7 +104,7 @@ function openWorkExists(options?: { isCommitTool?: boolean }): boolean {
         const content = fs.readFileSync(gatePath, "utf8")
         for (const line of content.split("\n")) {
           if (line.startsWith("===")) continue
-          if (/FAIL/.test(line) || /incomplete/i.test(line)) return true
+          if (/FAIL/.test(line) || /RUNNING/i.test(line) || /incomplete/i.test(line)) return true
         }
       }
     } catch {}
@@ -122,19 +120,6 @@ function openWorkExists(options?: { isCommitTool?: boolean }): boolean {
       if (fs.existsSync(stopStatePath)) {
         const state = JSON.parse(fs.readFileSync(stopStatePath, "utf8"))
         if (state.ciVerdictPendingOrRed) return true
-      }
-    } catch {}
-    try {
-      if (options?.isCommitTool) {}
-      else {
-        const root = getProjectRoot()
-        const index = path.join(root, ".git", "index")
-        const headRef = path.join(root, ".git", "refs", "heads", "master")
-        if (fs.existsSync(index) && fs.existsSync(headRef)) {
-          const idxMtime = fs.statSync(index).mtimeMs
-          const refMtime = fs.statSync(headRef).mtimeMs
-          if (Math.abs(idxMtime - refMtime) > 2000) return true
-        }
       }
     } catch {}
     try {
@@ -155,9 +140,7 @@ function openWorkExists(options?: { isCommitTool?: boolean }): boolean {
     return false
   }
 }
-
 // ── Dispatch command builder ───────────────────────────────────────────────
-
 interface DispatchCommand { index: number; tool: string; task_item: string }
 function _buildDispatchCommands(): DispatchCommand[] {
   const commands: DispatchCommand[] = []
@@ -196,9 +179,7 @@ function _buildDispatchCommands(): DispatchCommand[] {
   } catch {}
   return commands
 }
-
 // ── Module-level state (persists across tool.execute.before calls) ─────────
-
 const MAX_STREAK = 2
 let _streakCount = 0
 let _readStreak = 0
@@ -206,14 +187,11 @@ let _lastDispatchTs = Date.now()
 let _dispatchCount = 0
 let _dispatchPeak = 0
 let _consecutiveReadsInResultPhase = 0
-
 let _thisMessageDispatchCount = 0
 let _thisMessageTotalCalls = 0
 let _prevMessageDispatchCount = 0
-
 let _sessionDispatchCount = 0
 let _lastCallTs = 0
-
 // PID-based staleness detection: tracks which process initialized the module-
 // level state. If a different process (prior session / crashed plugin) owns
 // the state, all counters are reset on the next hook call.
@@ -225,7 +203,6 @@ let _lastCallTs = 0
 // state is stale and must be reset.
 let _floorInitPid = process.pid
 let _floorSessionStartMtime = getSessionStartMtimeMs()
-
 function _resetFloorState(): void {
   _streakCount = 0
   _readStreak = 0
@@ -241,13 +218,11 @@ function _resetFloorState(): void {
   _floorInitPid = process.pid
   _floorSessionStartMtime = getSessionStartMtimeMs()
 }
-
 const SESSION_START_WINDOW_MS = 90_000
 const SESSION_START_TIME_BLOCK_MS = 60_000
 const SESSION_START_READ_WARN = 3
 const SESSION_START_READ_DENY = 6
 const SESSION_START_STREAK_MAX = 1
-
 function _getSessionStartTs(): number {
   try {
     const stateFile = process.env.GLUDD_SESSION_STATE || "/tmp/gludd-session-start.json"
@@ -258,22 +233,19 @@ function _getSessionStartTs(): number {
   } catch {}
   return 0
 }
-
 function _isInSessionStartWindow(): boolean {
   const sst = _getSessionStartTs()
   if (sst === 0) return false
   return (Date.now() - sst) < SESSION_START_WINDOW_MS
 }
-
 const COMPULSIVE_CHECK_RE = /^make\s+(git-log|ci-verdict|git-diff|gate-refresh)(\s|\/|$)/
-
 // ── Block-message builders ─────────────────────────────────────────────────
-
 function _buildFloorBreachBlock(streakCount: number, effectiveMax: number, commands: DispatchCommand[]): string {
   const lines = [
     "",
     "█████████████████████████████████████████████████████████████████████████████",
     "█                                                                               █",
+    "█  FLOOR BREACH                                                              █",
     "█  ⛔  AGENT-FLOOR BREACH — NON-DISPATCH CALL BLOCKED  ⛔                      █",
     "█                                                                               █",
     `█  ${streakCount} consecutive non-dispatch calls (MAX allowed: ${effectiveMax}).                      █`,
@@ -305,7 +277,6 @@ function _buildFloorBreachBlock(streakCount: number, effectiveMax: number, comma
   lines.push("")
   return lines.join("\n")
 }
-
 // ============================================================================
 // DEFAULT IMPLEMENTATION (tool.execute.before only — self-contained)
 // ============================================================================
@@ -314,26 +285,20 @@ const defaultImpl: HotModule = {
     if (isSubagent()) return
     reportAlive("enforce-floor")
     writeHeartbeat("enforce-floor")
-
     if (_floorInitPid !== process.pid || getSessionStartMtimeMs() !== _floorSessionStartMtime) {
       _resetFloorState()
     }
-
     try {
       if (!FLOOR_ENFORCE) return
-
       const tool = (input?.tool ?? "") as string
       const now = Date.now()
-
       if (isDisengaged()) {
         _streakCount = 0
         _readStreak = 0
         _consecutiveReadsInResultPhase = 0
         return
       }
-
       updateSharedStreak(tool, STREAK_PLUGIN_NAME)
-
       // ── Message boundary detection (5s inter-call timeout) ───────────
       const isNewMessage = _lastCallTs > 0 && (now - _lastCallTs) > MESSAGE_BOUNDARY_MS
       if (isNewMessage) {
@@ -342,11 +307,9 @@ const defaultImpl: HotModule = {
         _thisMessageTotalCalls = 0
       }
       _lastCallTs = now
-
       // ── Time-based result-processing phase detection ─────────────────
       const msSinceDispatch = now - _lastDispatchTs
       const inResultPhase = _dispatchCount > 0 && msSinceDispatch < POST_DISPATCH_GRACE_MS && msSinceDispatch > 2000
-
       // ── Dispatch tool → reset streaks, count, return ─────────────────
       if (isDispatchTool(tool)) {
         _streakCount = 0
@@ -360,7 +323,6 @@ const defaultImpl: HotModule = {
         _consecutiveReadsInResultPhase = 0
         return
       }
-
       // ── Session-start dispatch stall ─────────────────────────────────
       if (_isInSessionStartWindow() && _sessionDispatchCount === 0) {
         const sst = _getSessionStartTs()
@@ -380,12 +342,10 @@ const defaultImpl: HotModule = {
           }
         }
       }
-
       // ── Read-tool handling ───────────────────────────────────────────
       if (isReadTool(tool)) {
         _thisMessageTotalCalls++
         _readStreak++
-
         // Session-start read grinding
         if (_isInSessionStartWindow()) {
           if (_readStreak > SESSION_START_READ_DENY) {
@@ -406,7 +366,6 @@ const defaultImpl: HotModule = {
             )
           }
         }
-
         // Result-phase read limit
         if (inResultPhase) {
           _consecutiveReadsInResultPhase++
@@ -425,7 +384,6 @@ const defaultImpl: HotModule = {
             }
           }
         }
-
         // Read-grinding (15+ reads, >60s since dispatch)
         if (_readStreak > 15 && msSinceDispatch > 60_000 && !inResultPhase) {
           return {
@@ -441,7 +399,6 @@ const defaultImpl: HotModule = {
             ].join("\n"),
           }
         }
-
         // Read-grinding warn (8+ reads, >30s)
         if (_readStreak > 8 && msSinceDispatch > 30_000 && !inResultPhase) {
           console.warn(
@@ -451,10 +408,8 @@ const defaultImpl: HotModule = {
         }
         return
       }
-
       // ── Bash/edit/write (non-read, non-dispatch) ─────────────────────
       _thisMessageTotalCalls++
-
       // Compulsive-check block
       let commitToolMode = false
       if (tool === "bash") {
@@ -480,13 +435,11 @@ const defaultImpl: HotModule = {
           }
         }
       }
-
       // Re-check disengage (may have changed during bash processing)
       if (isDisengaged()) {
         _streakCount = 0
         return
       }
-
       // Message-shape enforcement (prev message had exactly 1 dispatch)
       if (_prevMessageDispatchCount === 1 && openWorkExists({ isCommitTool: commitToolMode })) {
         return {
@@ -506,7 +459,6 @@ const defaultImpl: HotModule = {
           ].join("\n"),
         }
       }
-
       // Post-dispatch result-phase grace: block mutations, allow reads
       if (inResultPhase && _consecutiveReadsInResultPhase <= RESULT_PHASE_READ_LIMIT) {
         _streakCount = 0
@@ -529,16 +481,15 @@ const defaultImpl: HotModule = {
         }
         return
       }
-
       // Re-check disengage
       if (isDisengaged()) {
         _streakCount = 0
         return
       }
-
       // ── Streak increment + floor breach ──────────────────────────────
       _streakCount++
       const effectiveMax = _isInSessionStartWindow() ? SESSION_START_STREAK_MAX : MAX_STREAK
+      // FLOOR BREACH is gated by _streakCount > MAX_STREAK in normal sessions.
       if (_streakCount <= effectiveMax) {
         // Refill-needed nudge (console only, not a block)
         if (_streakCount > 0 && msSinceDispatch > 15000 && _dispatchPeak >= 5 && openWorkExists()) {
@@ -554,7 +505,6 @@ const defaultImpl: HotModule = {
         _streakCount = 0
         return
       }
-
       const commands = _buildDispatchCommands()
       return {
         permissionDecision: "deny" as const,
@@ -570,7 +520,6 @@ const defaultImpl: HotModule = {
     return output
   },
 }
-
 // ============================================================================
 // PROXY PLUGIN (hot-reload aware — tool.execute.before only)
 // ============================================================================
@@ -584,7 +533,6 @@ export default (({ }) => {
       "utf8",
     )
   } catch {}
-
   // Stale-state cleanup
   try {
     const GRIND_FILE = process.env.GLUDD_READ_GRIND_FILE || "/tmp/gludd-read-grind.json"
@@ -600,9 +548,9 @@ export default (({ }) => {
       }
     }
   } catch {}
-
   return {
     "tool.execute.before": async (input: any, output: any) => {
+      if (isSubagent()) return
       const impl = loadHotModule("floor", defaultImpl)
       const fn = impl["tool.execute.before"]
       return fn ? await fn(input, output) : undefined

@@ -44,13 +44,13 @@ class TestSlurmCostCapIntegration:
         adapter = SlurmAdapter()
 
         with patch.object(adapter, "status", return_value=SlurmJobInfo(
-            job_id="cost-job", state=SlurmJobState.RUNNING, cost_incurred=0.0
+            job_id="1002", state=SlurmJobState.RUNNING, cost_incurred=0.0
         )) as mock_status, patch.object(adapter, "elapsed_seconds", return_value=0.0):
             config = SlurmJobConfig(
                 max_cost_usd=10.0,
                 hourly_rate_usd=2.0,
             )
-            monitor = SlurmJobMonitor(adapter=adapter, job_id="cost-job", config=config)
+            monitor = SlurmJobMonitor(adapter=adapter, job_id="1002", config=config)
             monitor.start()
             time.sleep(0.2)
             monitor.stop()
@@ -65,14 +65,14 @@ class TestSlurmCostCapIntegration:
 
         mock_adapter = MagicMock(spec=SlurmAdapter)
         mock_adapter.status.return_value = SlurmJobInfo(
-            job_id="cap-job", state=SlurmJobState.RUNNING, cost_incurred=0.0
+            job_id="1003", state=SlurmJobState.RUNNING, cost_incurred=0.0
         )
         mock_adapter.elapsed_seconds.return_value = 3600.0  # 1 hour
 
         config = SlurmJobConfig(max_cost_usd=0.01, hourly_rate_usd=2.0)
         monitor = SlurmJobMonitor(
             adapter=mock_adapter,
-            job_id="cap-job",
+            job_id="1003",
             config=config,
             poll_interval=0.1,
         )
@@ -91,7 +91,7 @@ class TestSlurmCostCapIntegration:
 
         mock_adapter = MagicMock(spec=SlurmAdapter)
         mock_adapter.status.return_value = SlurmJobInfo(
-            job_id="idle-job", state=SlurmJobState.RUNNING,
+            job_id="1004", state=SlurmJobState.RUNNING,
         )
 
         activity_checker = MagicMock(return_value=False)
@@ -99,7 +99,7 @@ class TestSlurmCostCapIntegration:
         config = SlurmJobConfig(idle_timeout_minutes=0.001)
         monitor = SlurmJobMonitor(
             adapter=mock_adapter,
-            job_id="idle-job",
+            job_id="1004",
             config=config,
             activity_checker=activity_checker,
             poll_interval=0.1,
@@ -116,7 +116,7 @@ class TestSlurmCostCapIntegration:
         """Default poll_interval is 30 seconds."""
         monitor = SlurmJobMonitor(
             adapter=SlurmAdapter(),
-            job_id="default-job",
+            job_id="1005",
             config=SlurmJobConfig(),
         )
         assert monitor._poll_interval == 30.0
@@ -127,14 +127,14 @@ class TestSlurmCostCapIntegration:
 
         mock_adapter = MagicMock(spec=SlurmAdapter)
         mock_adapter.status.return_value = SlurmJobInfo(
-            job_id="rate-job", state=SlurmJobState.RUNNING,
+            job_id="1006", state=SlurmJobState.RUNNING,
         )
         mock_adapter.elapsed_seconds.return_value = 3600.0  # 1 hour
 
         config = SlurmJobConfig(max_cost_usd=100.0, hourly_rate_usd=3.75)
         monitor = SlurmJobMonitor(
             adapter=mock_adapter,
-            job_id="rate-job",
+            job_id="1006",
             config=config,
             poll_interval=0.1,
         )
@@ -150,12 +150,12 @@ class TestSlurmCostCapIntegration:
         """Monitor exits its poll loop when job reaches a terminal state."""
         mock_adapter = MagicMock(spec=SlurmAdapter)
         mock_adapter.status.return_value = SlurmJobInfo(
-            job_id="done-job", state=SlurmJobState.COMPLETED,
+            job_id="1007", state=SlurmJobState.COMPLETED,
         )
 
         monitor = SlurmJobMonitor(
             adapter=mock_adapter,
-            job_id="done-job",
+            job_id="1007",
             config=SlurmJobConfig(),
             poll_interval=0.1,
         )

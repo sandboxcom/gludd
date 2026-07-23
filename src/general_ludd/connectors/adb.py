@@ -193,5 +193,4 @@ class AdbConnector:
             return []
 
 
-class AdbSource(AdbConnector):
-    """Observability source adapter for Android Debug Bridge diagnostics."""
+AdbSource = AdbConnector

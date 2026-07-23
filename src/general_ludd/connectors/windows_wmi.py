@@ -316,5 +316,4 @@ class WinWmiConnector:
         }
 
 
-class WindowsWmiSource(WinWmiConnector):
-    """Observability source adapter for Windows WMI/CIM telemetry."""
+WinWmiSource = WinWmiConnector

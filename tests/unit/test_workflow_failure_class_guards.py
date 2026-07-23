@@ -368,6 +368,7 @@ def test_tmp_gludd_cleanup_targets_are_scoped_to_generated_dirs() -> None:
     makefile = _makefile()
     phony_block = makefile.split(".PHONY:", 1)[1].split("help:", 1)[0]
     usage_block = _target_block("tmp-gludd-usage")
+    tmp_cleanup = _target_block("clean-tmp")
     worktree_usage = _target_block("tmp-gludd-worktree-usage")
     shard_cleanup = _target_block("tmp-gludd-clean-ci-shards")
     venv_cleanup = _target_block("clean-worktree-venvs")
@@ -375,6 +376,8 @@ def test_tmp_gludd_cleanup_targets_are_scoped_to_generated_dirs() -> None:
 
     assert phony_block.count("log-agent-result disk-guard") == 1
     assert "sort -h | tail -40" in usage_block
+    assert "scripts/clean_tmp.py" in tmp_cleanup
+    assert "rm -rf" not in tmp_cleanup
     assert "/tmp/gludd-worktrees/*/.pytest_cache" in worktree_usage
 
     assert "scripts/clean_ci_shard_scratch.py" in shard_cleanup
@@ -402,3 +405,47 @@ def test_ci_head_compare_reports_bidirectional_divergence() -> None:
     assert "HEAD..sandboxcom/master" in block
     assert block.count("--- commits local has that remote does NOT ---") == 1
     assert block.count("--- commits remote has that local does NOT ---") == 1
+
+
+def test_secrets_scan_targets_do_not_dirty_committed_baseline() -> None:
+    for target in ("scan-secrets", "secrets-scan"):
+        block = _target_block(target)
+        assert "$$(mktemp /tmp/gludd-secrets-baseline." in block
+        assert "cp .secrets.baseline \"$$TMP\"" in block
+        assert "$(UV) run detect-secrets scan --baseline \"$$TMP\"" in block
+        assert "--baseline .secrets.baseline" not in block
+
+
+def test_git_show_file_to_is_scoped_to_safe_restore_outputs() -> None:
+    block = _target_block("git-show-file-to")
+    assert "git show" in block
+    assert ":$(FILE)" in block
+    assert "> \"$(OUT)\"" in block
+    assert ".opencode/plugin/impl/*" in block
+    assert "Refusing unsafe FILE" in block
+    assert "Refusing unsafe OUT" in block
+
+
+def test_test_failures_preserves_pytest_exit_status_through_tee() -> None:
+    block = _target_block("test-failures")
+    assert "RC_FILE=$" + "$" + "(mktemp /tmp/gludd-test-failures-rc." in block
+    assert "echo $$? " + chr(62) + " \"$$RC_FILE\"" in block
+    assert "EXIT=$" + "$" + "(cat \"$$RC_FILE\")" in block
+    assert chr(124) + " tee /tmp/gludd-test-output.txt" in block
+    assert "EXIT=$$?" + chr(59) not in block
+
+
+def test_search_target_allows_scoped_tmp_gludd_logs_only() -> None:
+    block = _target_block("search")
+    assert "/tmp/gludd-*)" in block
+    assert "/*" + chr(124) + "*..*)" in block
+    assert "Refusing path outside workspace" in block
+
+
+def test_kill_stale_reaps_orphaned_workspace_gunicorn_daemon_tree() -> None:
+    block = _target_block("kill-stale")
+    assert r"/Users/shawnwilson/gludd/\.venv/bin/gunicorn general_ludd\.daemon:create_daemon_app" in block
+    assert "KILLED stale orphan daemon tree" in block
+    assert "pgrep -P \"$$pid\"" in block
+    assert "active non-daemon" in block
+    assert "childless gludd scratch only" not in block

@@ -11,7 +11,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass
 from typing import Optional
 
-RunFn = Callable[[Sequence[str], Optional[str]], subprocess.CompletedProcess[str]]  # noqa: UP045
+RunFn = Callable[[Sequence[str], Optional[str]], subprocess.CompletedProcess[str]]
 
 
 @dataclass(frozen=True)
@@ -39,7 +39,7 @@ class GuardError(RuntimeError):
     pass
 
 
-def _run(argv: Sequence[str], cwd: str | None = None) -> subprocess.CompletedProcess[str]:
+def _run(argv: Sequence[str], cwd: Optional[str] = None) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         list(argv),
         cwd=cwd,
@@ -49,7 +49,7 @@ def _run(argv: Sequence[str], cwd: str | None = None) -> subprocess.CompletedPro
     )
 
 
-def _stdout(argv: Sequence[str], run: RunFn, cwd: str | None = None) -> str:
+def _stdout(argv: Sequence[str], run: RunFn, cwd: Optional[str] = None) -> str:
     result = run(argv, cwd)
     if result.returncode != 0:
         detail = (result.stderr or result.stdout or "command failed").strip()
@@ -57,7 +57,7 @@ def _stdout(argv: Sequence[str], run: RunFn, cwd: str | None = None) -> str:
     return result.stdout.strip()
 
 
-def _status_lines(run: RunFn, cwd: str | None = None) -> list[str]:
+def _status_lines(run: RunFn, cwd: Optional[str] = None) -> list[str]:
     result = run(["git", "status", "--porcelain=v1", "--untracked-files=all"], cwd)
     if result.returncode != 0:
         detail = (result.stderr or result.stdout or "git status failed").strip()
@@ -78,12 +78,7 @@ def _remote_head(output: str) -> str:
     return first[0] if first else ""
 
 
-def collect_state(
-    ref: str = "",
-    remote: str = "sandboxcom",
-    run: RunFn = _run,
-    cwd: str | None = None,
-) -> RemoteHeadState:
+def collect_state(ref: str = "", remote: str = "sandboxcom", run: RunFn = _run, cwd: Optional[str] = None) -> RemoteHeadState:
     branch = _stdout(["git", "branch", "--show-current"], run, cwd) or "DETACHED"
     local_head = _stdout(["git", "rev-parse", "--verify", "HEAD"], run, cwd)
     status = _status_lines(run, cwd)
@@ -150,7 +145,7 @@ def print_state(state: RemoteHeadState, errors: Sequence[str], *, as_json: bool)
 
 
 
-def main(argv: Sequence[str] | None = None, run: RunFn = _run) -> int:
+def main(argv: Optional[Sequence[str]] = None, run: RunFn = _run) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--ref", default="", help="branch ref to verify on the remote; defaults to current branch")
     parser.add_argument("--remote", default="sandboxcom", help="git remote name")

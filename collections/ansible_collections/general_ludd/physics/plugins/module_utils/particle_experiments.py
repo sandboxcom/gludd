@@ -1,25 +1,43 @@
-"""Knowledge tables for major particle experiments, detectors, and surveys."""
-
+"""Particle experiment reference data and lightweight analysis helpers."""
 from __future__ import annotations
 
-from copy import deepcopy
+import json
+from pathlib import Path
 from typing import Any
+
+
+class ParticleConfig:
+    def __init__(
+        self,
+        beam_energy_GeV: float = 13.6,
+        target: str = "proton",
+        beam: str = "proton",
+        detector: str = "generic_4pi",
+        luminosity_inv_fb: float = 139.0,
+        analysis_channel: str = "inclusive",
+    ) -> None:
+        self.beam_energy_GeV = beam_energy_GeV
+        self.target = target
+        self.beam = beam
+        self.detector = detector
+        self.luminosity_inv_fb = luminosity_inv_fb
+        self.analysis_channel = analysis_channel
 
 
 ACCELERATORS: dict[str, dict[str, Any]] = {
     "LHC": {
         "full_name": "Large Hadron Collider",
-        "type": "proton-proton and heavy-ion collider",
-        "location": "CERN, Geneva, Switzerland",
+        "type": "proton proton and heavy-ion collider",
+        "location": "CERN, Geneva",
         "status": "operational",
         "beam_energies": {"pp": 6.8, "PbPb": 2.68},
         "experiments": ["ATLAS", "CMS", "LHCb", "ALICE"],
-        "key_discoveries": ["Higgs boson"],
+        "key_discoveries": ["Higgs boson discovery"],
     },
     "HL_LHC": {
-        "full_name": "High-Luminosity Large Hadron Collider",
-        "type": "proton collider upgrade",
-        "location": "CERN, Geneva, Switzerland",
+        "full_name": "High-Luminosity LHC",
+        "type": "proton luminosity upgrade",
+        "location": "CERN, Geneva",
         "status": "under_construction",
         "beam_energies": {"pp": 7.0},
         "experiments": ["ATLAS", "CMS"],
@@ -27,8 +45,8 @@ ACCELERATORS: dict[str, dict[str, Any]] = {
     },
     "Tevatron": {
         "full_name": "Tevatron",
-        "type": "proton-antiproton collider",
-        "location": "Fermilab, Illinois, United States",
+        "type": "proton antiproton collider",
+        "location": "Fermilab",
         "status": "decommissioned",
         "beam_energies": {"ppbar": 0.98},
         "experiments": ["CDF", "D0"],
@@ -37,35 +55,16 @@ ACCELERATORS: dict[str, dict[str, Any]] = {
     "RHIC": {
         "full_name": "Relativistic Heavy Ion Collider",
         "type": "heavy-ion and polarized proton collider",
-        "location": "Brookhaven National Laboratory, New York, United States",
+        "location": "Brookhaven National Laboratory",
         "status": "operational",
         "beam_energies": {"AuAu": 0.1, "pp": 0.255},
-        "experiments": ["STAR", "sPHENIX"],
-        "key_discoveries": ["quark-gluon plasma signatures"],
-    },
-    "SuperKEKB": {
-        "full_name": "SuperKEKB",
-        "type": "electron-positron collider",
-        "location": "KEK, Tsukuba, Japan",
-        "status": "operational",
-        "beam_energies": {"e+": 4.0, "e-": 7.0},
-        "experiments": ["Belle II"],
-        "key_discoveries": [],
-        "integrated_luminosity_target": 50.0,
-    },
-    "KEKB": {
-        "full_name": "KEKB",
-        "type": "electron-positron collider",
-        "location": "KEK, Tsukuba, Japan",
-        "status": "decommissioned",
-        "beam_energies": {"e+": 3.5, "e-": 8.0},
-        "experiments": ["Belle"],
-        "key_discoveries": ["CP violation in B mesons"],
+        "experiments": ["STAR", "PHENIX"],
+        "key_discoveries": ["quark gluon plasma"],
     },
     "ILC": {
         "full_name": "International Linear Collider",
-        "type": "electron-positron linear collider",
-        "location": "proposed",
+        "type": "electron positron linear collider",
+        "location": "site proposed",
         "status": "proposed",
         "beam_energies": {"ee": 0.25},
         "experiments": [],
@@ -73,17 +72,17 @@ ACCELERATORS: dict[str, dict[str, Any]] = {
     },
     "CLIC": {
         "full_name": "Compact Linear Collider",
-        "type": "electron-positron linear collider",
+        "type": "electron positron linear collider",
         "location": "CERN design study",
         "status": "proposed",
-        "beam_energies": {"ee": 0.38},
+        "beam_energies": {"ee": 3.0},
         "experiments": [],
         "key_discoveries": [],
     },
     "EIC": {
-        "full_name": "Electron-Ion Collider",
-        "type": "electron-proton and electron-ion collider",
-        "location": "Brookhaven National Laboratory, New York, United States",
+        "full_name": "Electron Ion Collider",
+        "type": "electron ion collider",
+        "location": "Brookhaven National Laboratory",
         "status": "under_construction",
         "beam_energies": {"ep": 0.14},
         "experiments": ["ePIC"],
@@ -91,260 +90,264 @@ ACCELERATORS: dict[str, dict[str, Any]] = {
     },
     "FCC": {
         "full_name": "Future Circular Collider",
-        "type": "proton-proton and electron-positron collider",
+        "type": "proton and electron collider",
         "location": "CERN feasibility study",
         "status": "feasibility_study",
-        "beam_energies": {"pp": 50.0, "ee": 0.1825},
+        "beam_energies": {"pp": 50.0},
         "experiments": [],
+        "key_discoveries": [],
+    },
+    "SuperKEKB": {
+        "full_name": "SuperKEKB",
+        "type": "electron positron flavor factory",
+        "location": "KEK, Tsukuba",
+        "status": "operational",
+        "beam_energies": {"ee": 0.011},
+        "integrated_luminosity_target": 50,
+        "experiments": ["Belle II"],
+        "key_discoveries": [],
+    },
+    "KEKB": {
+        "full_name": "KEKB",
+        "type": "electron positron flavor factory",
+        "location": "KEK, Tsukuba",
+        "status": "decommissioned",
+        "beam_energies": {"ee": 0.01058},
+        "experiments": ["Belle"],
         "key_discoveries": [],
     },
     "muon_collider": {
         "full_name": "Muon Collider",
-        "type": "muon-antimuon collider",
+        "type": "muon collider",
         "location": "concept study",
         "status": "concept_study",
-        "beam_energy_tev": [3.0, 10.0],
-        "beam_energies": {"mumu": 5.0},
+        "beam_energy_tev": [3, 10],
+        "beam_energies": {"mumu": 10.0},
         "experiments": [],
         "key_discoveries": [],
     },
 }
 
-
 DETECTORS: dict[str, dict[str, Any]] = {
     "ATLAS": {
-        "name": "ATLAS",
-        "full_name": "ATLAS Experiment",
+        "full_name": "ATLAS detector",
         "collider": "LHC",
         "type": "general purpose",
-        "subdetectors": {
-            "inner_tracker": "silicon pixel, strip, and transition-radiation tracking",
-            "calorimeters": "liquid-argon electromagnetic and tile hadronic calorimeters",
-            "muon_spectrometer": "air-core toroids and precision muon chambers",
-        },
-        "magnet_system": {"solenoid": "2 T", "toroid": "0.5 T"},
-        "physics_program": ["Higgs", "Standard Model", "BSM searches"],
-        "notable_results": ["Higgs boson discovery"],
+        "subdetectors": ["inner_tracker", "calorimeters", "muon_spectrometer"],
+        "magnet_system": {"solenoid": "2 T"},
+        "physics_program": ["Higgs", "SUSY", "exotics"],
+        "notable_results": ["Higgs boson observation"],
     },
     "CMS": {
-        "name": "CMS",
         "full_name": "Compact Muon Solenoid",
+        "name": "CMS",
         "collider": "LHC",
         "type": "general purpose",
-        "subdetectors": {
-            "inner_tracker": "silicon pixel and strip tracking",
-            "calorimeters": "crystal electromagnetic and brass-scintillator hadronic calorimeters",
-            "muon_spectrometer": "drift tubes, cathode strip chambers, and RPCs",
-        },
+        "subdetectors": ["tracker", "ecal", "hcal", "muon"],
         "magnet_system": {"solenoid": "3.8 T"},
-        "physics_program": ["Higgs", "top quark", "heavy ions", "BSM searches"],
-        "notable_results": ["Higgs boson discovery"],
+        "physics_program": ["Higgs", "top", "heavy ions"],
+        "notable_results": ["Higgs boson observation"],
     },
-    "LHCb": {
-        "name": "LHCb",
-        "full_name": "Large Hadron Collider beauty experiment",
+"LHCb": {
+        "full_name": "LHCb",
         "collider": "LHC",
-        "type": "forward flavor physics",
-        "subdetectors": {"vertex_locator": "VELO", "ring_imaging_cherenkov": "RICH"},
-        "magnet_system": {"dipole": "4 Tm"},
-        "physics_program": ["CP violation", "rare decays", "heavy flavor"],
-        "notable_results": ["pentaquark candidates"],
+        "type": "flavor physics",
+        "physics_program": ["b physics"],
     },
     "ALICE": {
-        "name": "ALICE",
-        "full_name": "A Large Ion Collider Experiment",
+        "full_name": "ALICE",
         "collider": "LHC",
         "type": "heavy-ion dedicated",
-        "subdetectors": {"tracking": "ITS and TPC", "pid": "TOF and RICH"},
-        "magnet_system": {"solenoid": "0.5 T"},
-        "physics_program": ["quark-gluon plasma", "heavy-ion collisions"],
-        "notable_results": ["collective flow in small systems"],
+        "physics_program": ["heavy ions"],
     },
     "Belle_II": {
-        "name": "Belle II",
-        "full_name": "Belle II Experiment",
+        "full_name": "Belle II",
         "collider": "SuperKEKB",
-        "type": "flavor factory detector",
-        "subdetectors": {"vertex": "PXD and SVD", "calorimeter": "CsI(Tl)"},
-        "magnet_system": {"solenoid": "1.5 T"},
-        "physics_program": ["B physics", "tau physics", "dark sector"],
-        "notable_results": [],
+        "type": "flavor factory",
+        "physics_program": ["B physics"],
     },
     "CDF": {
-        "name": "CDF",
         "full_name": "Collider Detector at Fermilab",
         "collider": "Tevatron",
         "type": "general purpose",
-        "subdetectors": {"tracking": "central outer tracker"},
-        "magnet_system": {"solenoid": "1.4 T"},
-        "physics_program": ["top quark", "electroweak", "QCD"],
-        "notable_results": ["top quark discovery"],
+        "physics_program": ["top"],
     },
     "D0": {
-        "name": "D0",
-        "full_name": "DZero Experiment",
+        "full_name": "DZero",
         "collider": "Tevatron",
         "type": "general purpose",
-        "subdetectors": {"calorimeter": "uranium-liquid argon calorimeter"},
-        "magnet_system": {"solenoid": "2 T"},
-        "physics_program": ["top quark", "electroweak", "QCD"],
-        "notable_results": ["top quark discovery"],
+        "physics_program": ["top"],
     },
     "STAR": {
-        "name": "STAR",
-        "full_name": "Solenoidal Tracker at RHIC",
+        "full_name": "STAR",
         "collider": "RHIC",
-        "type": "heavy-ion and spin physics",
-        "subdetectors": {"tracking": "time projection chamber"},
-        "magnet_system": {"solenoid": "0.5 T"},
-        "physics_program": ["QGP", "spin structure", "beam energy scan"],
-        "notable_results": ["strongly coupled QGP"],
+        "type": "heavy-ion",
+        "physics_program": ["QGP"],
     },
 }
-
 
 SKY_SURVEYS: dict[str, dict[str, Any]] = {
     "SDSS": {
         "full_name": "Sloan Digital Sky Survey",
         "coverage_type": "northern",
-        "dec_range": (-10.0, 85.0),
         "wavebands": ["u", "g", "r", "i", "z"],
-        "limiting_magnitude": "r~22.5",
-        "science_goals": ["galaxy evolution", "large-scale structure", "quasars"],
+        "limiting_magnitude": "22",
+        "science_goals": ["galaxy evolution"],
         "data_release": "DR18",
     },
     "Pan_STARRS": {
-        "full_name": "Panoramic Survey Telescope and Rapid Response System",
+        "full_name": "Pan-STARRS",
         "coverage_type": "northern",
-        "dec_range": (-30.0, 90.0),
         "wavebands": ["g", "r", "i", "z", "y"],
-        "limiting_magnitude": "r~23.3",
-        "science_goals": ["transients", "solar system", "Milky Way"],
+        "limiting_magnitude": "23",
+        "science_goals": ["transients"],
         "data_release": "DR2",
     },
     "DES": {
         "full_name": "Dark Energy Survey",
         "coverage_type": "southern",
-        "dec_range": (-65.0, 5.0),
         "wavebands": ["g", "r", "i", "z", "Y"],
-        "limiting_magnitude": "i~24",
-        "science_goals": ["dark energy", "weak lensing", "galaxy clusters"],
+        "limiting_magnitude": "24",
+        "science_goals": ["dark energy"],
         "data_release": "DR2",
     },
     "LSST": {
         "full_name": "Legacy Survey of Space and Time",
         "coverage_type": "southern",
-        "dec_range": (-90.0, 15.0),
         "wavebands": ["u", "g", "r", "i", "z", "y"],
-        "limiting_magnitude": "r~24.5 single visit",
-        "science_goals": ["dark energy", "time domain", "solar system", "Milky Way"],
-        "data_rate": "15-20 TB/night",
-        "data_release": "Data Preview / operations releases",
+        "limiting_magnitude": "24.5",
+        "science_goals": ["transients", "dark energy"],
+        "data_release": "Data Preview",
+        "data_rate": "20 TB/night",
     },
     "Gaia": {
         "full_name": "Gaia",
         "coverage_type": "all_sky",
-        "dec_range": (-90.0, 90.0),
         "wavebands": ["G", "BP", "RP"],
-        "limiting_magnitude": "G~21",
-        "science_goals": ["astrometry", "Milky Way structure", "stellar physics"],
-        "astrometric_precision": "microarcsec precision for bright stars",
+        "limiting_magnitude": "21",
+        "science_goals": ["Milky Way astrometry"],
         "data_release": "DR3",
+        "astrometric_precision": "microarcsec",
     },
     "Euclid": {
         "full_name": "Euclid",
         "coverage_type": "extragalactic",
-        "dec_range": (-75.0, 75.0),
-        "wavebands": ["VIS", "Y", "J", "H"],
-        "limiting_magnitude": "VIS~24.5",
-        "science_goals": ["dark energy and dark matter mapping", "weak lensing"],
-        "data_release": "Q1 data release",
+        "wavebands": ["VIS", "NISP"],
+        "limiting_magnitude": "24",
+        "science_goals": ["dark energy and dark matter"],
+        "data_release": "2025 quick release",
     },
     "JWST": {
         "full_name": "James Webb Space Telescope",
-        "coverage_type": "pointed",
-        "dec_range": (-90.0, 90.0),
-        "wavebands": ["near-infrared", "mid-infrared"],
-        "limiting_magnitude": "program dependent",
-        "telescope": "6.5 m infrared space telescope",
+        "coverage_type": "targeted",
+        "wavebands": ["infrared"],
+        "limiting_magnitude": "deep",
+        "telescope": "infrared space telescope",
     },
 }
 
 
+def _copy(value: dict[str, Any]) -> dict[str, Any]:
+    return json.loads(json.dumps(value))
+
+
 def get_experiment_info(name: str) -> dict[str, Any] | None:
-    """Return accelerator, detector, or survey metadata by name."""
     for table in (ACCELERATORS, DETECTORS, SKY_SURVEYS):
         if name in table:
-            return deepcopy(table[name])
+            return _copy(table[name])
     return None
 
 
 def get_detector_capabilities(name: str) -> dict[str, Any] | None:
-    """Return detector capabilities by detector name."""
     detector = DETECTORS.get(name)
-    return deepcopy(detector) if detector is not None else None
+    return _copy(detector) if detector is not None else None
 
 
 def search_sky_survey(ra_deg: float, dec_deg: float) -> list[dict[str, Any]]:
-    """List surveys with declination coverage for the supplied coordinates."""
     _ = ra_deg % 360.0
     results: list[dict[str, Any]] = []
     for name, survey in SKY_SURVEYS.items():
-        dec_min, dec_max = survey.get("dec_range", (-90.0, 90.0))
-        if float(dec_min) <= dec_deg <= float(dec_max):
-            results.append(
-                {
-                    "survey": name,
-                    "has_coverage": True,
-                    "wavebands": list(survey.get("wavebands", [])),
-                    "limiting_magnitude": survey.get("limiting_magnitude"),
-                }
-            )
+        coverage = survey["coverage_type"].lower()
+        covered = (
+            coverage == "all_sky"
+            or (coverage == "northern" and dec_deg >= -10.0)
+            or (coverage == "southern" and dec_deg <= 15.0)
+            or (coverage == "extragalactic" and abs(dec_deg) <= 70.0)
+        )
+        if covered:
+            results.append({
+                "survey": name,
+                "wavebands": list(survey["wavebands"]),
+                "limiting_magnitude": survey["limiting_magnitude"],
+                "has_coverage": True,
+            })
     return results
 
 
-def list_accelerators_by_type(accelerator_type: str) -> list[str]:
-    """Return accelerator names whose type includes the requested text."""
-    needle = accelerator_type.lower()
+def list_accelerators_by_type(kind: str) -> list[str]:
+    needle = kind.lower()
     return [name for name, data in ACCELERATORS.items() if needle in data["type"].lower()]
 
 
 def list_accelerators_by_status(status: str) -> list[str]:
-    """Return accelerator names with the exact requested status."""
     needle = status.lower()
     return [name for name, data in ACCELERATORS.items() if data["status"].lower() == needle]
 
 
 def list_detectors_by_collider() -> dict[str, list[str]]:
-    """Group detector names by collider."""
     grouped: dict[str, list[str]] = {}
-    for name, detector in DETECTORS.items():
-        grouped.setdefault(detector["collider"], []).append(name)
+    for name, data in DETECTORS.items():
+        grouped.setdefault(data["collider"], []).append(name)
     return grouped
 
 
 def get_running_status(name: str) -> dict[str, Any] | None:
-    """Return the operating status for an accelerator by name."""
     accelerator = ACCELERATORS.get(name)
     if accelerator is None:
         return None
-    return {"name": name, "status": accelerator["status"], "location": accelerator["location"]}
+    return {"name": name, "status": accelerator["status"]}
 
 
-def list_sky_surveys_by_coverage(coverage_type: str) -> list[str]:
-    """Return sky surveys with the requested coverage category."""
-    needle = coverage_type.lower()
-    return [
-        name
-        for name, survey in SKY_SURVEYS.items()
-        if str(survey.get("coverage_type", "")).lower() == needle
-    ]
+def list_sky_surveys_by_coverage(coverage: str) -> list[str]:
+    needle = coverage.lower()
+    return [name for name, data in SKY_SURVEYS.items() if data["coverage_type"].lower() == needle]
 
 
 def get_survey_data_release(name: str) -> str | None:
-    """Return the latest data-release label when this table tracks one."""
     survey = SKY_SURVEYS.get(name)
     if survey is None:
         return None
-    release = survey.get("data_release")
-    return str(release) if release is not None else None
+    return survey.get("data_release")
+
+
+def compute_cross_section(config: ParticleConfig) -> dict[str, Any]:
+    base_pb = max(config.beam_energy_GeV, 0.1) * 0.42
+    if "gamma" in config.analysis_channel.lower():
+        base_pb *= 0.12
+    expected = base_pb * config.luminosity_inv_fb * 1000.0
+    return {
+        "beam": config.beam,
+        "target": config.target,
+        "detector": config.detector,
+        "analysis_channel": config.analysis_channel,
+        "cross_section_pb": round(base_pb, 6),
+        "expected_events": round(expected, 3),
+    }
+
+
+def analyze_decay_chain(particle: str, lifetime_s: float, branching_ratios: dict[str, float]) -> dict[str, Any]:
+    dominant = max(branching_ratios, key=branching_ratios.get) if branching_ratios else "unknown"
+    return {
+        "particle": particle,
+        "lifetime_s": lifetime_s,
+        "branching_ratios": branching_ratios,
+        "dominant_channel": dominant,
+    }
+
+
+def write_particle_result(result: dict[str, Any], output_dir: str) -> Path:
+    out = Path(output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    path = out / "particle_result.json"
+    path.write_text(json.dumps(result, indent=2))
+    return path

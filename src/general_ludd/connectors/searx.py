@@ -210,5 +210,4 @@ class SearXConnector:
             return {"ok": False, "error": type(exc).__name__}
 
 
-class SearXSource(SearXConnector):
-    """Observability source adapter for SearX metasearch."""
+SearXSource = SearXConnector

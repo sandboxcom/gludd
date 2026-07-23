@@ -381,5 +381,4 @@ class WindowsDefenderConnector:
         return results
 
 
-class WindowsDefenderSource(WindowsDefenderConnector):
-    """Observability source adapter for Windows Defender telemetry."""
+WindowsDefenderSource = WindowsDefenderConnector

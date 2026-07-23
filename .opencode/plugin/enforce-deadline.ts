@@ -2,7 +2,6 @@ import type { Plugin } from "@opencode-ai/plugin"
 import * as fs from "node:fs"
 import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
 import { isSubagent, reportAlive } from "../lib/shared.ts"
-
 // enforce-deadline.ts — subagent task wall-clock timeout enforcement.
 //
 // PROBLEM: AGENTS.md says "Each subagent task must complete in under 5 minutes"
@@ -46,7 +45,6 @@ import { isSubagent, reportAlive } from "../lib/shared.ts"
 // check /tmp/gludd-hot-deadline.js on every invocation.  If present and newer
 // than cached, the hot module's hook overrides the compiled-in default.  Run
 // `make hot-reload-plugins` after editing this file to generate the hot module.
-
 // ============================================================================
 // CONFIG
 // ============================================================================
@@ -57,34 +55,32 @@ const STALE_FILE = process.env.GLUDD_TASK_STALE_FILE || "/tmp/gludd-task-stale.j
 const DEADLINE_ENABLED = (process.env.GLUDD_TASK_DEADLINE_ENABLED || "1") !== "0"
 const DEADLINE_ENFORCE = process.env.GLUDD_TASK_DEADLINE_ENFORCE !== "0"
 const BLOCK = DEADLINE_ENFORCE && (process.env.GLUDD_TASK_DEADLINE_BLOCK || "1") !== "0"
-
 // ============================================================================
 // NOISE-CONTROL STATE
 // ============================================================================
 const warnedIds = new Set<string>()
-
 function appendWarning(line: string): void {
   try {
     fs.appendFileSync(WARNINGS_LOG, line + "\n")
-  } catch { /* fail open */ }
+  } catch { // fail open
+ }
 }
-
 function recordStaleTask(taskId: string, startMs: number, elapsedMs: number): void {
   try {
     let entries: any[] = []
     try {
       const raw = JSON.parse(fs.readFileSync(STALE_FILE, "utf8"))
       if (Array.isArray(raw)) entries = raw
-    } catch { /* missing or corrupt — start fresh */ }
+    } catch {  }
     if (!entries.some((e: any) => e && e.task_id === taskId)) {
       entries.push({ task_id: taskId, start_ms: startMs, elapsed_ms: Math.round(elapsedMs), stale_at: Date.now() })
       const tmp = STALE_FILE + ".tmp"
       fs.writeFileSync(tmp, JSON.stringify(entries))
       fs.renameSync(tmp, STALE_FILE)
     }
-  } catch { /* fail open */ }
+  } catch { // fail open
+ }
 }
-
 // ============================================================================
 // STATE FILE
 // ============================================================================
@@ -98,7 +94,6 @@ function loadDeadlines(): Record<string, number> {
     return {}
   }
 }
-
 function sweepStaleEntries(d: Record<string, number>): void {
   const now = Date.now()
   const maxAge = TASK_TIMEOUT_MS * 3
@@ -117,18 +112,18 @@ function sweepStaleEntries(d: Record<string, number>): void {
       const tmp = DEADLINE_STATE + ".tmp"
       fs.writeFileSync(tmp, JSON.stringify(d))
       fs.renameSync(tmp, DEADLINE_STATE)
-    } catch { /* fail open */ }
+    } catch { // fail open
+ }
   }
 }
-
 function saveDeadlines(d: Record<string, number>): void {
   try {
     const tmp = DEADLINE_STATE + ".tmp"
     fs.writeFileSync(tmp, JSON.stringify(d))
     fs.renameSync(tmp, DEADLINE_STATE)
-  } catch { /* fail open */ }
+  } catch { // fail open
+ }
 }
-
 function extractTaskId(args: unknown): string | null {
   try {
     if (!args || typeof args !== "object") return null
@@ -148,11 +143,9 @@ function extractTaskId(args: unknown): string | null {
     return null
   } catch { return null }
 }
-
 function isDispatchTool(tool: string): boolean {
   return tool === "task" || tool === "agent" || tool === "workflow"
 }
-
 // ============================================================================
 // DEFAULT IMPLEMENTATION (compiled-in fallback)
 // ============================================================================
@@ -164,7 +157,6 @@ const defaultImpl: HotModule = {
     if (!DEADLINE_ENABLED) return
     const tool = input.tool
     const args = output?.args
-
     try {
       if (isDispatchTool(tool)) {
         const id = extractTaskId(args) || `auto-${Date.now()}`
@@ -172,7 +164,6 @@ const defaultImpl: HotModule = {
         d[id] = Date.now()
         saveDeadlines(d)
       }
-
       const d = loadDeadlines()
       const now = Date.now()
       let firstBreachedId: string | null = null
@@ -208,9 +199,9 @@ const defaultImpl: HotModule = {
           message: `TASK DEADLINE EXCEEDED: task ${firstBreachedId} has been running for ${elapsedSec}s (limit ${limitSec}s). Dispatch replacement or run in foreground.`
         }
       }
-    } catch { /* fail open */ }
+    } catch { // fail open
+ }
   },
-
   "tool.execute.after": async (input: any, _output: any) => {
     if (!DEADLINE_ENABLED) return
     if (!isDispatchTool(input.tool)) return
@@ -223,10 +214,10 @@ const defaultImpl: HotModule = {
         saveDeadlines(d)
       }
       warnedIds.delete(id)
-    } catch { /* fail open */ }
+    } catch { // fail open
+ }
   },
 }
-
 // ============================================================================
 // PROXY PLUGIN (hot-reload aware)
 // ============================================================================
@@ -239,7 +230,6 @@ export default (({ }) => {
       const fn = impl["tool.execute.before"]
       return fn ? await fn(input, output) : undefined
     },
-
     "tool.execute.after": async (input: any, _output: any) => {
       const impl = loadHotModule("deadline", defaultImpl)
       const fn = impl["tool.execute.after"]

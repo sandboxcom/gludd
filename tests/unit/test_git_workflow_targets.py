@@ -1,7 +1,7 @@
 """TDD structural tests for git workflow recovery/safety Makefile targets.
 
 Targets added 2026-07-19: git-cherry-pick, git-merge-abort, git-rebase-abort,
-git-reset-hard. These prevent the "botched merge with no recovery command"
+git-rebase-continue, git-rebase-skip, git-reset-hard. These prevent the
 class of failure — the agent must be able to abort a bad merge/rebase with a
 single make target instead of running bare git commands or being stuck.
 """
@@ -30,6 +30,16 @@ class TestGitWorkflowTargetExistence:
             "git-rebase-abort target missing from Makefile"
         )
 
+    def test_git_rebase_continue_exists(self):
+        assert re.search(r"^git-rebase-continue:", _makefile_src(), re.MULTILINE), (
+            "git-rebase-continue target missing from Makefile"
+        )
+
+    def test_git_rebase_skip_exists(self):
+        assert re.search(r"^git-rebase-skip:", _makefile_src(), re.MULTILINE), (
+            "git-rebase-skip target missing from Makefile"
+        )
+
     def test_git_reset_hard_exists(self):
         assert re.search(r"^git-reset-hard:", _makefile_src(), re.MULTILINE), (
             "git-reset-hard target missing from Makefile"
@@ -44,7 +54,7 @@ class TestGitWorkflowTargetExistence:
 class TestGitWorkflowTargetsInPhony:
     """All new targets must be in .PHONY."""
 
-    def test_all_four_in_phony(self):
+    def test_recovery_targets_in_phony(self):
         makefile = _makefile_src()
         # Find the MAIN .PHONY block (near the top, contains git- targets)
         for m in re.finditer(r"\.PHONY:.*?(?=\n\n\S|\n[a-z_-]+:|\Z)", makefile, re.DOTALL):
@@ -53,8 +63,14 @@ class TestGitWorkflowTargetsInPhony:
                 break
         else:
             raise AssertionError("Main .PHONY block (containing git-status) not found")
-        for target in ("git-merge-abort", "git-rebase-abort",
-                       "git-reset-hard", "git-cherry-pick"):
+        for target in (
+            "git-merge-abort",
+            "git-rebase-abort",
+            "git-rebase-continue",
+            "git-rebase-skip",
+            "git-reset-hard",
+            "git-cherry-pick",
+        ):
             assert target in phony_text, f"{target} not in .PHONY list"
 
 
@@ -80,6 +96,20 @@ class TestGitWorkflowTargetRecipeContent:
         assert recipe, "git-rebase-abort recipe not found"
         assert "git rebase --abort" in recipe, (
             "git-rebase-abort must use 'git rebase --abort'"
+        )
+
+    def test_rebase_continue_uses_git_rebase_continue(self):
+        recipe = self._recipe("git-rebase-continue")
+        assert recipe, "git-rebase-continue recipe not found"
+        assert "git rebase --continue" in recipe, (
+            "git-rebase-continue must use 'git rebase --continue'"
+        )
+
+    def test_rebase_skip_uses_git_rebase_skip(self):
+        recipe = self._recipe("git-rebase-skip")
+        assert recipe, "git-rebase-skip recipe not found"
+        assert "git rebase --skip" in recipe, (
+            "git-rebase-skip must use 'git rebase --skip'"
         )
 
     def test_reset_hard_requires_msg(self):

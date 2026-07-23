@@ -59,7 +59,8 @@ class TestSAST:
         assert len(high_issues) == 0, f"High-severity SAST issues found: {[r['test_id'] for r in high_issues]}"
 
     KNOWN_FALSE_POSITIVE_LINES: ClassVar[dict[str, set[int]]] = {
-        "src/general_ludd/auth/browser_login.py": {84, 95, 104, 113, 122, 131, 143},
+        "src/general_ludd/auth/browser_login.py": {85, 96, 105, 114, 123, 132, 144},
+        "src/general_ludd/smoke.py": {1343},
     }
 
     def test_no_hardcoded_secrets(self) -> None:

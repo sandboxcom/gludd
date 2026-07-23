@@ -18,8 +18,14 @@ from fastapi.testclient import TestClient
 
 from general_ludd.routers.signing import _COSIGN_OUTPUT_ALLOWED_ROOT, _validate_output_dir, register
 
-_ADMIN_TOKEN = "test-admin-token"
+_ADMIN_TOKEN = "unit-test-signing-admin"
 _ADMIN_HEADERS = {"X-Admin-Token": _ADMIN_TOKEN}
+
+
+@pytest.fixture(autouse=True)
+def _signing_admin_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GLUDD_ADMIN_TOKEN", _ADMIN_TOKEN)
+
 
 # ---------------------------------------------------------------------------
 # Unit tests for _validate_output_dir (pure logic, no HTTP)

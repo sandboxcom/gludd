@@ -1,21 +1,4 @@
-/**
- * enforce-anti-essay.ts — detects and blocks essay-length text responses
- * when pending work exists.
- *
- * Codified 2026-07-19 per BEHAVIORAL_SPECS.md Group E (E01-E20).
- *
- * Rules:
- *   - When pending work exists AND response is text-only (>50 words, no
- *     tool calls, no commit hashes), inject a "RESUME WORK" nag.
- *   - When the response carries bolded section headers (What changed, Why,
- *     What's left) AND pending work exists, blank the text.
- *   - When the response is a "Here's what was done" status summary AND
- *     work is pending, block it.
- *
- * This is a BLOCKING plugin. Env: GLUDD_ANTI_ESSAY_ENFORCE=0 to disable.
- *
- * Fail-open. Subagent guard. Hot-reload capable.
- */
+// Fail-open. Subagent guard. Hot-reload capable.
 import type { Plugin } from "@opencode-ai/plugin"
 import * as fs from "node:fs"
 import * as path from "node:path"
@@ -26,17 +9,14 @@ import {
   readJsonFile,
   getProjectRoot,
 } from "../lib/shared.ts"
-
 const ESSAY_WORD_THRESHOLD = parseInt(
   process.env.GLUDD_ESSAY_WORD_THRESHOLD || "50",
   10,
 )
-
 const ESSAY_PARAGRAPH_THRESHOLD = parseInt(
   process.env.GLUDD_ESSAY_PARAGRAPH_THRESHOLD || "3",
   10,
 )
-
 function hasPendingWork(): boolean {
   const root = getProjectRoot()
   try {
@@ -58,33 +38,26 @@ function hasPendingWork(): boolean {
   }
   return false
 }
-
 function wordCount(text: string): number {
   return text.split(/\s+/).filter(w => w.length > 0).length
 }
-
 function paragraphCount(text: string): number {
   return text.split(/\n\s*\n/).filter(p => p.trim().length > 0).length
 }
-
 function hasCommitHash(text: string): boolean {
   return /[0-9a-f]{7,40}/.test(text)
 }
-
 function hasTestCount(text: string): boolean {
   return /\d+\s+(passed|tests?|pass(?:ing)?)/i.test(text)
 }
-
 function hasCiVerdict(text: string): boolean {
   return /conclusion:\s*(?:success|failure)/i.test(text) ||
     /CI\s+(?:GREEN|RED)/.test(text)
 }
-
 function hasBoldedHeaders(text: string): boolean {
   const headerPattern = /\*\*(?:What (?:changed|worked|was done|happened|is left|next)|Why|How|Status|Summary|Remaining|Next steps?)\*\*/gi
   return headerPattern.test(text)
 }
-
 function hasStatusSummary(text: string): boolean {
   const summaryPatterns = [
     /here'?s\s+(?:what|a)\s+(?:was\s+)?(?:done|changed|completed|the\s+status)/i,
@@ -97,11 +70,9 @@ function hasStatusSummary(text: string): boolean {
   ]
   return summaryPatterns.some(r => r.test(text))
 }
-
 function hasEvidence(text: string): boolean {
   return hasCommitHash(text) || hasTestCount(text) || hasCiVerdict(text)
 }
-
 const NAG_TEXT = (
   "\n███  ANTI-ESSAY GUARD: pending work exists.  ███\n" +
   "This response looks like an essay/status report.  If work remains, " +
@@ -109,7 +80,6 @@ const NAG_TEXT = (
   "Explanations and summaries when work is pending are a policy violation.\n" +
   "Set GLUDD_ANTI_ESSAY_ENFORCE=0 to disable this guard.\n"
 )
-
 const defaultImpl: HotModule = {
   "experimental.text.complete": async (output) => {
     if (isSubagent()) return
@@ -117,29 +87,23 @@ const defaultImpl: HotModule = {
     try {
       if (process.env.GLUDD_ANTI_ESSAY_ENFORCE === "0") return
       if (!hasPendingWork()) return
-
       const text = typeof output === "object" && output !== null && "text" in output
         ? String((output as Record<string, unknown>).text)
         : typeof output === "string" ? output : ""
-
       if (!text) return
-
       const words = wordCount(text)
       const paragraphs = paragraphCount(text)
       const hasBold = hasBoldedHeaders(text)
       const isSummary = hasStatusSummary(text)
       const evidence = hasEvidence(text)
-
       const isEssay = (words > ESSAY_WORD_THRESHOLD || paragraphs > ESSAY_PARAGRAPH_THRESHOLD)
       const isBlockedPattern = hasBold || isSummary
-
       if (isBlockedPattern && !evidence) {
         return {
           ...(output as Record<string, unknown>),
           text: NAG_TEXT,
         }
       }
-
       if (isEssay && !evidence && !isBlockedPattern) {
         return {
           ...(output as Record<string, unknown>),
@@ -150,7 +114,6 @@ const defaultImpl: HotModule = {
       // fail-open
     }
   },
-
   "tool.execute.before": async (input, _output) => {
     if (isSubagent()) return
     reportAlive("enforce-anti-essay")
@@ -163,14 +126,15 @@ const defaultImpl: HotModule = {
     }
   },
 }
-
 export default (({ }) => {
   return {
-    "experimental.text.complete": async (output) => {
-      if (isSubagent()) return
+    // opencode 1.17.9 only registers "experimental.text.complete" — bare
+    // "text.complete" is rejected by Plugin.add and crashes opencode at boot.
+    "experimental.text.complete": async (_input, output) => {
+      if (isSubagent()) return output
       const impl = loadHotModule("anti-essay", defaultImpl)
-      const fn = impl["experimental.text.complete"]
-      return fn ? await fn(output) : undefined
+      const fn = impl["text.complete"] || impl["experimental.text.complete"]
+      return fn ? await fn(output) : output
     },
     "tool.execute.before": async (input, output) => {
       if (isSubagent()) return

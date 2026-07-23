@@ -181,8 +181,11 @@ def test_has_durable_key_false_on_unwritable_secrets(monkeypatch: pytest.MonkeyP
         def _mint_key(self) -> bytes:
             raise OSError("permission denied")
 
-    store = _DeniedStore(base_dir=tmp_path)
-    assert store.has_durable_key is False
+    try:
+        store = _DeniedStore(base_dir=tmp_path)
+        assert store.has_durable_key is False
+    finally:
+        os.chmod(secrets_dir, 0o700)
 
 
 # --- base_dir property ---
@@ -203,14 +206,20 @@ def test_degraded_mode_removes_stale_mac(monkeypatch: pytest.MonkeyPatch, tmp_pa
     (tmp_path / "pause_state.json.mac").write_text("stale", encoding="utf-8")
 
     class _DegradedStore(PauseStore):
-        def _load_or_create_key(self) -> bytes | None:
-            return None
+        def _prior_signing_evidence(self) -> bool:
+            return False
 
-    store = _DegradedStore(base_dir=tmp_path)
-    store.save([{"id": 1}])
-    loaded = store.load()
-    assert loaded == [{"id": 1}]
-    assert not (tmp_path / "pause_state.json.mac").exists()
+        def _mint_key(self) -> bytes:
+            raise OSError("permission denied")
+
+    try:
+        store = _DegradedStore(base_dir=tmp_path)
+        store.save([{"id": 1}])
+        loaded = store.load()
+        assert loaded == [{"id": 1}]
+        assert not (tmp_path / "pause_state.json.mac").exists()
+    finally:
+        os.chmod(secrets_dir, 0o700)
 
 
 # --- atomic write produces valid state file ---

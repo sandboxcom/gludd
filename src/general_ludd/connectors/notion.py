@@ -116,13 +116,15 @@ class NotionSource:
             self.config.get("notion_version", "2022-06-28")
         ).strip()
 
+        api_base = str(self.config.get("api_base", API_BASE)).strip().rstrip("/")
+        if not api_base:
+            raise ValueError("notion: api_base must not be empty")
+        self.api_base = api_base
+
         self.allow_private = bool(self.config.get("allow_private", False))
         self.timeout = float(self.config.get("timeout", 30.0))
 
-        api_base = str(
-            self.config.get("api_base") or self.config.get("base_url") or API_BASE
-        ).rstrip("/")
-        self._query_url = f"{api_base}/databases/{self.database_id}/query"
+        self._query_url = f"{self.api_base}/databases/{self.database_id}/query"
         self._guard_ssrf(self._query_url)
 
     # -- internals ---------------------------------------------------------

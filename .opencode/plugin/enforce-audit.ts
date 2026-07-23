@@ -1,56 +1,32 @@
-/**
- * enforce-audit.ts — on session end (text.complete), verify that
- * TASKS.md items are ticked with evidence (commit hash, test count).
- * Enforces the Self-Audit policy from spec group A.
- *
- * Per AGENTS.md "Completion = Green Gate + TASKS.md Evidence": a task
- * may be called complete ONLY when TASKS.md has the item ticked with
- * evidence. Unchecked items without evidence are flagged.
- *
- * Mechanism:
- *   - `text.complete`: scans TASKS.md for unchecked items (`- [ ]`).
- *     If unchecked items exist and the outgoing text contains done-words
- *     without evidence, injects a warning directive.
- *   - Also checks ratchet.yml for known-unfixed work.
- *   - Fail-open on any file-read error.
- *
- * Env knobs:
- *   GLUDD_AUDIT_ENFORCE=0  — disable (no-op)
- *
- * Default ON. Fail-open: any throw/exception → allow.
- *
- * HOT-RELOAD: implements the proxy pattern from hot_reload.ts.
- */
+// Per AGENTS.md "Completion = Green Gate + TASKS.md Evidence": a task
+// - Fail-open on any file-read error.
+// Default ON. Fail-open: any throw/exception → allow.
+// HOT-RELOAD: implements the proxy pattern from hot_reload.ts.
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { Plugin } from "@opencode-ai/plugin";
 import { loadHotModule, type HotModule } from "../lib/hot_reload.ts";
 import { isSubagent, reportAlive, getProjectRoot } from "../lib/shared.ts";
-
 // Real path from project root cache (gracefully degrades to "").
 const PROJECT_ROOT = getProjectRoot();
-
-export function readTasksMd(): string {
+function readTasksMd(): string {
   try {
     const p = path.join(PROJECT_ROOT, "TASKS.md");
     if (fs.existsSync(p)) return fs.readFileSync(p, "utf8");
   } catch {}
   return "";
 }
-
-export function readRatchetYml(): string {
+function readRatchetYml(): string {
   try {
     const p = path.join(PROJECT_ROOT, "config", "ratchet.yml");
     if (fs.existsSync(p)) return fs.readFileSync(p, "utf8");
   } catch {}
   return "";
 }
-
-export function hasUncheckedTasks(md: string): boolean {
+function hasUncheckedTasks(md: string): boolean {
   return /^\s*-\s+\[ \]/.test(md);
 }
-
-export function hasRatchetEntries(yml: string): boolean {
+function hasRatchetEntries(yml: string): boolean {
   const trimmed = yml.trim();
   if (!trimmed) return false;
   const entries = trimmed.split("\n").filter(
@@ -58,33 +34,26 @@ export function hasRatchetEntries(yml: string): boolean {
   );
   return entries.length > 1;
 }
-
 const DONE_WORDS_RE =
   /\b(landed|committed|pushed|fixed|passing|shipped|done|complete|green|resolved|deployed|verified|passed|working)\b/i;
-
 const EVIDENCE_RE =
   /\b[0-9a-f]*[a-f][0-9a-f]{6,39}\b|VERIFIED\s+\S+@[0-9a-f]+|CI\s+(GREEN|RED|PENDING)|\d+\s+passed|=== GATE:\s+PASSED\s+===/;
-
 const defaultImpl: HotModule = {
   "experimental.text.complete": async (_input, _output) => {
     if (isSubagent()) return;
     reportAlive("enforce-audit");
     try {
       if (process.env.GLUDD_AUDIT_ENFORCE === "0") return;
-
       const tasks = readTasksMd();
       const ratchet = readRatchetYml();
       const unchecked = hasUncheckedTasks(tasks);
       const ratchetSet = hasRatchetEntries(ratchet);
-
       if (!unchecked && !ratchetSet) return;
-
       // Check the current output text for done-words without evidence
       const out = _output as { text?: string };
       const text = out?.text ?? "";
       const hasDoneWord = DONE_WORDS_RE.test(text);
       const hasEvidence = EVIDENCE_RE.test(text);
-
       if (hasDoneWord && !hasEvidence) {
         const uncheckedCount = (tasks.match(/^[ \t]*-[ \t]+\[[^\]]\]/gm) || []).length;
         throw new Error(
@@ -101,14 +70,15 @@ const defaultImpl: HotModule = {
     }
   },
 };
-
 export default (async ({}) => {
   return {
-    "experimental.text.complete": async (input, output) => {
-      if (isSubagent()) return;
+    // opencode 1.17.9 only registers "experimental.text.complete" — bare
+    // "text.complete" is rejected by Plugin.add and crashes opencode at boot.
+    "experimental.text.complete": async (_input, output) => {
+      if (isSubagent()) return output;
       const impl = loadHotModule("audit", defaultImpl);
-      const fn = impl["experimental.text.complete"];
-      return fn ? await fn(input, output) : undefined;
+      const fn = impl["text.complete"] || impl["experimental.text.complete"];
+      return fn ? await fn(output) : output;
     },
   };
 }) satisfies Plugin;
