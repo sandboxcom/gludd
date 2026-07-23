@@ -61,7 +61,7 @@ make typecheck       # current mypy error count (gate enforces ≤ MYPY_MAX, see
 Known-failing tests are tracked as strict xfail entries in `config/ratchet.yml` (the file
 may only shrink). The gate passes only when `make test` exits 0.
 
-**Status as of v0.1.0-beta.1 — 2026-07-19**
+**Status as of v0.1.0-beta.2 — 2026-07-23**
 
 Version: `v0.1.0-beta.2` — release binaries (Linux x86_64, macOS arm64, Windows x86_64, and
 more) are built as CI artifacts on every push to master, but a GitHub Release is only cut
@@ -96,7 +96,7 @@ Completed features are documented in CHANGELOG.md. Only in-progress items are tr
 
 | Item | Status |
 |---|---|
-| CI pipeline green | 0% — all recent runs failed |
+| CI pipeline green | 100% — run 30052335868 PASS |
 | 6 game mechanics checks | 50% — 6/12 games fully verified |
 | Type annotations (no Any) | 76% — 420/1770 return types still missing |
 | Reveal.js presentation | 100% — deck built, deployed to GitHub Pages |
