@@ -176,6 +176,40 @@ function buildPlugin(name) {
   out += `function writeJsonFile(filePath, data) {\n`;
   out += `  try { _fs.writeFileSync(filePath, JSON.stringify(data), "utf8"); } catch (e) {}\n`;
   out += `}\n`;
+  out += `function getProjectRoot() {
+  return process.env.GLUDD_PROJECT_ROOT || process.cwd();
+}
+`;
+  out += `function getSessionStartMtimeMs() {
+  try { return require("fs").statSync("/tmp/gludd-session-start.json").mtimeMs; } catch { return 0; }
+}
+`;
+  out += `function isStateFileMtimeStale(stateFilePath) {
+  try {
+    var sessionMtime = getSessionStartMtimeMs();
+    if (sessionMtime === 0) return false;
+    if (!_fs.existsSync(stateFilePath)) return false;
+    return _fs.statSync(stateFilePath).mtimeMs < sessionMtime;
+  } catch(e) { return false; }
+}
+`;
+  out += `function readSharedStreak() {
+  try { return JSON.parse(require("fs").readFileSync("/tmp/gludd-shared-streak.json","utf8")); } catch { return {count:0}; }
+}
+`;
+  out += `function writeSharedStreak(data) {
+  try { require("fs").writeFileSync("/tmp/gludd-shared-streak.json", JSON.stringify(data)); } catch {}
+}
+`;
+  out += `function updateSharedStreak(plugin, options) {
+  const s = readSharedStreak();
+  s.count = (s.count || 0) + 1;
+  s.plugin = plugin;
+  s.max = options?.max || 5;
+  writeSharedStreak(s);
+  return s;
+}
+`;
   out += `// === end shared stubs ===\n\n`;
 
   // Include everything from the js output EXCEPT the export default block.
@@ -193,6 +227,12 @@ function buildPlugin(name) {
   out += "// === module-level declarations ===\n";
   out += moduleBody.trim() + "\n";
   out += "// === end module-level declarations ===\n\n";
+
+  // If the module does not already declare DISPATCH_TOOLS, alias it from _DISPATCH_TOOLS
+  if (!/\b(const|var|let)\s+DISPATCH_TOOLS\b/.test(moduleBody)) {
+    out += `var DISPATCH_TOOLS = _DISPATCH_TOOLS;
+`;
+  }
 
   for (const [hookName, body] of Object.entries(methods)) {
     const fnBody = body.trim();
@@ -224,9 +264,16 @@ function buildPlugin(name) {
   }
   if (parseOk) {
     const hookNames = Object.keys(methods);
-    const probe = spawnSync("node", ["-e",
-      `const m = require(${JSON.stringify(outPath)}); process.stdout.write(JSON.stringify(Object.keys(m)));`,
-    ], { timeout: 10000, encoding: "utf8" });
+    let probe;
+    try {
+      probe = spawnSync("node", ["-e",
+        `const m = require(${JSON.stringify(outPath)}); process.stdout.write(JSON.stringify(Object.keys(m)));`,
+      ], { timeout: 10000, encoding: "utf8" });
+    } catch (e) {
+      console.log(`  WARN ${name}: require() probe crashed (${e.message}) — kept; loadHotModule will fail-open to compiled-in defaultImpl`);
+      console.log(`  BUILT ${name} → ${outPath} (${Object.keys(methods).length} hooks)`);
+      return true;
+    }
     if (probe.status !== 0) {
       const errLine = (probe.stderr || "").split("\n").find(l => l.trim()) || "unknown error";
       console.log(`  WARN ${name}: generated module failed to require (${errLine.trim()}) — kept; loadHotModule will fail-open to compiled-in defaultImpl`);
