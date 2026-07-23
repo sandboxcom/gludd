@@ -362,8 +362,7 @@ class KubernetesSource:
             logger.warning("kubernetes config error in query", exc_info=True)
             return [self._error(str(exc))]
         except Exception:
-            logger.warning("kubernetes query failed", exc_info=True)
-            sanitize_exc_for_query(exc)
+            logger.exception("kubernetes query failed")
             return [self._error("query failed")]
 
     # -- logs -------------------------------------------------------------- #

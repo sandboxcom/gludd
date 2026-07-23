@@ -37,7 +37,7 @@ class TestApplyLimits:
     def test_large_memory_no_error(self, monkeypatch):
         calls = self._patch_apply_limits(monkeypatch)
 
-        _apply_limits(16384, 300)
+        applied_limits = _apply_limits(16384, 300)
         assert applied_limits == [(16384, 300)]
 
         assert calls == [(16384, 300)]

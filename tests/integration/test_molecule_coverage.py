@@ -145,7 +145,6 @@ _NOT_YET_COVERED_ROLES: set[str] = {
     "gludd_update",
     "log_prompt_evaluator",
     "guardrail_pattern",
-    "log_prompt_evaluator",
     "manage_processes",
     "networking",
     "multitasking_backlog_check",
