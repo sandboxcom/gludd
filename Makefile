@@ -652,10 +652,39 @@ check-opencode-ready:
 check-opencode-integrity:
 	@$(UV) run python3 scripts/check_opencode_integrity.py
 
+check-plugin-hooks:
+	@$(PYTHON) scripts/check_plugin_hooks.py
+
+# Codified live boot smoke: launches `opencode serve`, waits for the
+# listening line, scans the boot log for the plugin-crash signatures
+# (N.event / H.config / H.dispose / failed to load plugin / Plugin.add).
+# This is the bash-level codification of the manual verification ran
+# 2026-07-23 — fast (<=8s), no pytest overhead, fails closed if opencode
+# isn't on PATH or crashes before listening.
+opencode-boot-smoke:
+	@echo "=== SMOKE: opencode serve boot with full plugin suite ==="
+	@$(PYTHON) scripts/opencode_boot_smoke.py
+
+# Diagnostic: capture the FULL opencode TUI boot output to a log file.
+# Use this when ``opencode`` crashes at startup and you need the error.
+# Output: .gludd/opencode-tui-diagnostic.log
+opencode-tui-diagnostic:
+	@mkdir -p .gludd
+	@echo "=== Capturing opencode TUI boot output (10s timeout) ==="
+	@opencode --print-logs --log-level DEBUG > .gludd/opencode-tui-diagnostic.log 2>&1 &
+	@PID=$$!; sleep 10; kill -TERM $$PID 2>/dev/null; wait $$PID 2>/dev/null; \
+	echo "=== Output saved to .gludd/opencode-tui-diagnostic.log ===" ; \
+	echo "=== Last 40 lines: ===" ; \
+	tail -40 .gludd/opencode-tui-diagnostic.log || true
+
+test-opencode-boot-e2e:
+	@echo "=== E2E: opencode boot with full plugin suite ==="
+	@BT="/tmp/gludd-oc-boot-$$$${ID:-$$$$}"; /bin/rm -rf "$$BT"; $(UV) run python -m pytest tests/e2e/test_opencode_boot_e2e.py $(_XD) -v --basetemp="$$BT" --timeout=60; RC=$$?; /bin/rm -rf "$$BT"; exit $$RC
+
 gate-fast: lint typecheck collect-check
 	@echo "=== GATE-FAST: PASS ==="
 
-gate: check-opencode-integrity validate-task-ledger check-dispatch-dedup check-subagent-guards verify-plugin-manifest check-skills-frontmatter check-coverage-gaps check-plugin-syntax check-plugin-runtime check-plugin-imports check-duplicate-targets
+gate: check-opencode-integrity check-plugin-hooks opencode-boot-smoke validate-task-ledger check-dispatch-dedup check-subagent-guards verify-plugin-manifest check-skills-frontmatter check-coverage-gaps check-plugin-syntax check-plugin-runtime check-plugin-imports check-node-v26-compat check-duplicate-targets
 	@rm -f .gate-failed
 	@echo "=== GATE $(shell date -u +%Y-%m-%dT%H:%M:%SZ) ===" > .gate-status
 	@# OBSERVABILITY INVARIANT (see AGENTS.md "No unseen events"): every gate phase
@@ -1297,6 +1326,10 @@ git-rm:
 git-rm-cached:
 	@[ -n "$(FILES)" ] || { echo "Usage: make git-rm-cached FILES='path ...'"; exit 1; }
 	@git rm --cached $(FILES) && echo "untracked: $(FILES)"
+
+git-rm-force:
+	@[ -n "$(FILES)" ] || { echo "Usage: make git-rm-force FILES='path ...'"; exit 1; }
+	@git rm -rf $(FILES) && echo "git-force-removed: $(FILES)"
 
 git-mv:
 	@[ -n "$(FROM)" ] && [ -n "$(TO)" ] || { echo "Usage: make git-mv FROM='old' TO='new'"; exit 1; }
@@ -4843,6 +4876,26 @@ restore-opencode:
 	@echo "Clearing corrupted opencode cache ..."
 	@rm -rf ~/.cache/opencode && echo "  ~/.cache/opencode cleared"
 	@echo ".opencode/ restored. Restart opencode for changes to take effect."
+
+# Fix opencode startup crash caused by global config conflicts.
+# Root cause: ~/.config/opencode/ has an OLD enforce-multitask.ts that
+# conflicts with the project version, plus a permission:{*:allow} override.
+# This script backs up + fixes the global config (never deletes files).
+# See: scripts/fix_opencode_crash.py
+fix-opencode-crash:
+	@$(PYTHON) scripts/fix_opencode_crash.py
+
+# Diagnose which plugins crash Node load (runs each .ts through node --experimental-strip-types)
+diag-plugin-load:
+	@$(PYTHON) scripts/diagnose_plugin_load.py
+
+# Diagnose plugin load by importing ALL plugins in one node process (reproduces opencode startup)
+diag-plugin-load-all:
+	@$(PYTHON) scripts/diagnose_plugin_load_all.py
+
+# Simulate opencode startup: load every plugin from opencode.json, call factory, verify hooks
+diag-opencode-startup:
+	@$(PYTHON) scripts/diagnose_opencode_startup.py
 
 # ── untested-module discovery ────────────────────────────────────────────────
 find-untested:

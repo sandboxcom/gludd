@@ -403,15 +403,11 @@ export default (({ }) => {
       const fn = impl["tool.execute.before"]
       return fn ? await fn(input) : undefined
   },
-  "text.complete": async (_input: unknown, output: unknown) => {
-    if (isSubagent()) return output
-    // Compatibility alias for older OpenCode hook metadata.
-    // zeroStreak / MAX_ZERO_STREAK / MUST DISPATCH / subagent behavior is
-    // implemented by the canonical experimental.text.complete handler below.
-    const impl = loadHotModule("multitask", defaultImpl)
-    const fn = impl["experimental.text.complete"]
-    return fn ? await fn(_input, output) : output
-  },
+  // NOTE: opencode 1.17.9 rejects the bare "text.complete" hook key in the
+  // Plugin return object (crashes Plugin.add with TypeError evaluating
+  // 'N.event'). Only "experimental.text.complete" is valid. The alias in
+  // defaultImpl is retained for hot-reload back-compat but must NOT appear
+  // in the proxy's returned Hooks object.
   "experimental.text.complete": async (_input: unknown, output: unknown) => {
     if (isSubagent()) return output
     if (!FLOOR_ENFORCE) return undefined

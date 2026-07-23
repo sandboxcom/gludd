@@ -34,6 +34,7 @@ import { execSync } from 'node:child_process'
 
 const PROJECT_ROOT = process.cwd()
 const OUTFILE = '/tmp/gludd-test-enforce-tdd.js'
+const EXPORTS_OUTFILE = '/tmp/gludd-test-enforce-tdd-exports.js'
 const ALIVE_PATH = '/tmp/gludd-plugin-alive.json'
 
 // Park any hot module that would shadow the code under test.
@@ -73,6 +74,27 @@ function compileWithEsbuild(outfile) {
   return false
 }
 
+function compileExportsWithEsbuild(outfile) {
+  const env = { ...process.env, npm_config_userconfig: '/dev/null' }
+  const args = `.opencode/plugin/test_exports/enforce-tdd_exports.ts --bundle --platform=node --target=node18 --format=cjs --outfile=${outfile}`
+  try {
+    execSync(`node_modules/.bin/esbuild ${args}`,
+      { cwd: PROJECT_ROOT, encoding: 'utf8', stdio: 'pipe' })
+    return true
+  } catch {}
+  try {
+    execSync(`esbuild ${args}`,
+      { cwd: PROJECT_ROOT, encoding: 'utf8', stdio: 'pipe' })
+    return true
+  } catch {}
+  try {
+    execSync(`npx --yes esbuild ${args}`,
+      { cwd: PROJECT_ROOT, encoding: 'utf8', stdio: 'pipe', env })
+    return true
+  } catch {}
+  return false
+}
+
 if (!compileWithEsbuild(OUTFILE)) {
   console.error('esbuild compilation failed')
   process.exit(1)
@@ -81,6 +103,12 @@ assert.ok(fs.existsSync(OUTFILE), 'esbuild produced output file')
 
 const _require = createRequire(import.meta.url)
 const mod = _require(OUTFILE)
+
+if (!compileExportsWithEsbuild(EXPORTS_OUTFILE)) {
+  console.error('Failed to compile enforce-tdd_exports.ts')
+  process.exit(1)
+}
+const exportsMod = _require(EXPORTS_OUTFILE)
 
 // --- temp project tree for filesystem-backed tests -------------------------
 
@@ -162,15 +190,15 @@ describe('enforce-tdd', { concurrency: 1 }, () => {
     })
 
     it('T2: exports shouldAllowEdit + candidateTestPaths', () => {
-      assert.strictEqual(typeof mod.shouldAllowEdit, 'function',
-        'shouldAllowEdit must be a named export for test pinning')
-      assert.strictEqual(typeof mod.candidateTestPaths, 'function',
-        'candidateTestPaths must be a named export')
-      assert.strictEqual(typeof mod.isAllowlisted, 'function')
-      assert.strictEqual(typeof mod.isImplementationFile, 'function')
-      assert.ok(Array.isArray(mod.ALLOWLIST_PATTERNS))
-      assert.ok(mod.ALLOWLIST_PATTERNS.length >= 5,
-        `expected >=5 allowlist patterns, got ${mod.ALLOWLIST_PATTERNS.length}`)
+      assert.strictEqual(typeof exportsMod.shouldAllowEdit, 'function',
+        'shouldAllowEdit must be exported from companion for test pinning')
+      assert.strictEqual(typeof exportsMod.candidateTestPaths, 'function',
+        'candidateTestPaths must be exported from companion')
+      assert.strictEqual(typeof exportsMod.isAllowlisted, 'function')
+      assert.strictEqual(typeof exportsMod.isImplementationFile, 'function')
+      assert.ok(Array.isArray(exportsMod.ALLOWLIST_PATTERNS))
+      assert.ok(exportsMod.ALLOWLIST_PATTERNS.length >= 5,
+        `expected >=5 allowlist patterns, got ${exportsMod.ALLOWLIST_PATTERNS.length}`)
     })
   })
 
@@ -368,7 +396,7 @@ describe('enforce-tdd', { concurrency: 1 }, () => {
   describe('CANDIDATE PATH PARITY', () => {
     it('T14: candidateTestPaths matches check_tdd_compliance.py logic', () => {
       // src/general_ludd/daemon.py → two candidates
-      const c1 = mod.candidateTestPaths(
+      const c1 = exportsMod.candidateTestPaths(
         path.join(TMP_ROOT, 'src/general_ludd/daemon.py'), TMP_ROOT)
       assert.ok(c1.length >= 2, `expected >=2 candidates, got ${c1.length}`)
       assert.ok(c1[0].endsWith('test_general_ludd_daemon.py'),
@@ -377,7 +405,7 @@ describe('enforce-tdd', { concurrency: 1 }, () => {
         `leaf candidate wrong: ${c1[1]}`)
 
       // nested module src/general_ludd/foo/bar.py
-      const c2 = mod.candidateTestPaths(
+      const c2 = exportsMod.candidateTestPaths(
         path.join(TMP_ROOT, 'src/general_ludd/foo/bar.py'), TMP_ROOT)
       assert.ok(c2.some(c => c.endsWith('test_general_ludd_foo_bar.py')),
         `nested full-stem wrong: ${JSON.stringify(c2)}`)

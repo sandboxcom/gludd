@@ -111,11 +111,13 @@ export default (async ({}) => {
       const fn = impl["tool.execute.before"];
       return fn ? await fn(input, output) : undefined;
     },
-    "text.complete": async (output: any) => {
-      if (isSubagent()) return;
+    // opencode 1.17.9 only registers "experimental.text.complete" — bare
+    // "text.complete" is rejected by Plugin.add and crashes opencode at boot.
+    "experimental.text.complete": async (_input: any, output: any) => {
+      if (isSubagent()) return output;
       const impl = loadHotModule("objective", defaultImpl);
-      const fn = impl["text.complete"];
-      return fn ? await fn(output) : undefined;
+      const fn = impl["text.complete"] || impl["experimental.text.complete"];
+      return fn ? await fn(output) : output;
     },
   };
 }) satisfies Plugin;

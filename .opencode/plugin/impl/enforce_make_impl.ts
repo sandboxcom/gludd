@@ -1061,10 +1061,20 @@ export default (({ }) => {
       return fn ? await fn(_input, output) : output
     },
 
-    "session.idle": async () => {
-      const impl = loadHotModule("enforce-make", defaultImpl)
-      const fn = impl["session.idle"]
-      if (fn) { try { await fn() } catch { /* fail-open */ } }
+    "event": async (input: { event: { type: string } }) => {
+      // opencode 1.17.9 exposes lifecycle/idle signals via the `event` hook
+      // (event.event.type === "session.idle"). The previous direct
+      // "session.idle" hook key was rejected by the Plugin.add registry and
+      // crashed opencode at boot (TypeError: undefined is not an object
+      // evaluating 'N.event'). See AGENTS.md "Codify Improvements".
+      try {
+        const evType = input?.event?.type
+        if (evType === "session.idle") {
+          const impl = loadHotModule("enforce-make", defaultImpl)
+          const fn = (impl as Record<string, ((...args: unknown[]) => Promise<void>) | undefined>)>["session.idle"]
+          if (fn) { await fn() }
+        }
+      } catch { /* fail-open */ }
     },
 
   }

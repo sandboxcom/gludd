@@ -19,6 +19,7 @@ import { execSync } from 'node:child_process'
 
 const PROJECT_ROOT = process.cwd()
 const OUTFILE = '/tmp/gludd-test-enforce-depth.js'
+const EXPORTS_OUTFILE = '/tmp/gludd-test-enforce-depth-exports.js'
 const ALIVE_PATH = '/tmp/gludd-plugin-alive.json'
 
 // Park any hot module that would shadow the code under test.
@@ -60,6 +61,27 @@ function compileWithEsbuild(outfile) {
   return false
 }
 
+function compileExportsWithEsbuild(outfile) {
+  const env = { ...process.env, npm_config_userconfig: '/dev/null' }
+  const args = `.opencode/plugin/test_exports/enforce-depth_exports.ts --bundle --platform=node --target=node18 --format=cjs --outfile=${outfile}`
+  try {
+    execSync(`node_modules/.bin/esbuild ${args}`,
+      { cwd: PROJECT_ROOT, encoding: 'utf8', stdio: 'pipe' })
+    return true
+  } catch {}
+  try {
+    execSync(`esbuild ${args}`,
+      { cwd: PROJECT_ROOT, encoding: 'utf8', stdio: 'pipe' })
+    return true
+  } catch {}
+  try {
+    execSync(`npx --yes esbuild ${args}`,
+      { cwd: PROJECT_ROOT, encoding: 'utf8', stdio: 'pipe', env })
+    return true
+  } catch {}
+  return false
+}
+
 if (!compileWithEsbuild(OUTFILE)) {
   console.error('esbuild compilation failed')
   process.exit(1)
@@ -68,6 +90,13 @@ assert.ok(fs.existsSync(OUTFILE), 'esbuild produced output file')
 
 const _require = createRequire(import.meta.url)
 const mod = _require(OUTFILE)
+
+// Compile companion exports for constant/function checks
+if (!compileExportsWithEsbuild(EXPORTS_OUTFILE)) {
+  console.error('Failed to compile enforce-depth_exports.ts with esbuild')
+  process.exit(1)
+}
+const exportsMod = _require(EXPORTS_OUTFILE)
 
 // --- per-test isolation helpers -------------------------------------------
 
@@ -123,12 +152,12 @@ describe('enforce-depth', { concurrency: 1 }, () => {
     })
 
     it('T2: MAX_DEPTH === 3', () => {
-      assert.strictEqual(mod.MAX_DEPTH, 3)
+      assert.strictEqual(exportsMod.MAX_DEPTH, 3)
     })
 
     it('T3: exports defaultImpl for testability', () => {
       assert.strictEqual(
-        typeof mod.defaultImpl, 'object',
+        typeof exportsMod.defaultImpl, 'object',
         'defaultImpl must be exported so tests can invoke real hook directly',
       )
     })

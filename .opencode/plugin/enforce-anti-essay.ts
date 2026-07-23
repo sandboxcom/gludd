@@ -128,11 +128,13 @@ const defaultImpl: HotModule = {
 }
 export default (({ }) => {
   return {
-    "text.complete": async (output) => {
-      if (isSubagent()) return
+    // opencode 1.17.9 only registers "experimental.text.complete" — bare
+    // "text.complete" is rejected by Plugin.add and crashes opencode at boot.
+    "experimental.text.complete": async (_input, output) => {
+      if (isSubagent()) return output
       const impl = loadHotModule("anti-essay", defaultImpl)
-      const fn = impl["text.complete"]
-      return fn ? await fn(output) : undefined
+      const fn = impl["text.complete"] || impl["experimental.text.complete"]
+      return fn ? await fn(output) : output
     },
     "tool.execute.before": async (input, output) => {
       if (isSubagent()) return
