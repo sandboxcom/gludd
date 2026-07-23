@@ -9,7 +9,7 @@ from pathlib import Path
 def _repo_root():
     """Find repo root: walk up 2 levels from script, with CWD fallback."""
     script_dir = Path(__file__).resolve().parent
-    repo = script_dir.parents[1]
+    repo = script_dir.parent
     if not (repo / 'Makefile').exists():
         repo = script_dir.parents[2] if len(script_dir.parents) > 2 else Path(os.getcwd())
         if not (repo / 'Makefile').exists():
@@ -61,7 +61,7 @@ def extract_target_definition(makefile_path, target_name):
             end = i + 1
             while end < len(lines):
                 nxt = lines[end]
-                if (nxt.startswith('\t') or nxt.startswith('@')
+                if (nxt.startswith('\t') or nxt.startswith('	@')
                     or nxt.startswith('if') or nxt.startswith('else')
                     or nxt.startswith('endif') or nxt.strip() == ''):
                     if nxt.strip() == '' and end > i + 1:

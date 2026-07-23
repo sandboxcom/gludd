@@ -123,7 +123,7 @@ log-agent-result disk-guard disk-check check-disk disk tmp-gludd-usage tmp-gludd
          subagent-init subagent-cleanup \
          chat chat-eval test-chat \
 git-tag-delete git-tag-move release-deploy append-text write-text-b64 replace-text-b64 mkdir-p replace-lines _no-raw-git-guard \
-         git-push-committed-head-nv ci-trigger-committed-head ci-push-committed-head provider-smoke check-no-prompt-prone-edit-tools
+         git-push-committed-head-nv ci-trigger-committed-head ci-push-committed-head provider-smoke check-no-prompt-prone-edit-tools add-target edit-target edit-makefile-target validate-makefile
 
 help:
 	@echo "Usage: make [target]"
@@ -136,6 +136,7 @@ help:
 	@echo "  install-bats          Install bats-core via Homebrew"
 	@echo ""
 	@echo "  --- Quality ---"
+	@echo "  gate-check              Run gate check"
 	@echo "  lint                  Run ruff linter"
 	@echo "  lint-files            Run ruff linter on FILES only"
 	@echo "  lint-fix              Run ruff with auto-fix"
@@ -146,6 +147,10 @@ help:
 	@echo "  healthcheck           Verify imports work"
 	@echo "  qa                    Run lint + typecheck + test + healthcheck"
 	@echo "  validate              Full validation (lint + typecheck + test + ansible + healthcheck)"
+	@echo "  add-target            Add a new Makefile target with auto-categorization"
+	@echo "  edit-target           Edit an existing Makefile target recipe"
+	@echo "  edit-makefile-target  Edit a Makefile target definition via a file"
+	@echo "  validate-makefile     Validate Makefile targets for duplicates"
 	@echo "  gate                  Full gate: lint + typecheck + collect-check + test"
 	@echo "  gate-lite             Local validation (lint+typecheck+collect+smoke+unit@2w); no OOM"
 	@echo "  gate-audit            Gate + coverage audit (85% per-file threshold)"
@@ -336,6 +341,17 @@ help:
 	@echo ""
 	@echo "  --- Complete Target Index ---"
 	@$(PYTHON) scripts/check_make_help.py --print-index
+	@echo "  --- New Targets ---"
+	@echo "  target-two              Second test target"
+	@echo "  target-one              First test target"
+	@echo "  my-target               Duplicate target"
+	@echo "  my-secret-scanner       Scan for secrets"
+	@echo "  zzyx-test               A test target with no keyword match"
+	@echo "  debug-test-target       Debug test"
+	@echo "  foo-test                Test"
+	@echo ""
+	@echo "  test-temp-target        Temp test target"
+	@echo ""
 
 sdd-constitution:
 	@test -f AGENTS.md || touch AGENTS.md
@@ -2321,6 +2337,10 @@ ci-greenness:
 
 # --- enabler targets for parallel verification + wider quality gates ---
 # Chat CLI
+# Run gate check
+gate-check:
+	@echo "gate-check: Run gate check"
+
 chat:
 	@$(UV) run python -m general_ludd.cli chat $(if $(MODEL),--model $(MODEL)) $(if $(API_BASE),--api-base $(API_BASE)) $(if $(API_KEY),--api-key $(API_KEY))
 
@@ -3388,6 +3408,28 @@ check-duplicate-targets:
 # --- Help target coverage: prevent hidden public Make targets ---
 check-make-help:
 	@$(UV) run python scripts/check_make_help.py
+
+# --- Makefile management targets ---
+add-target:
+	@[ -n "$$NAME" ] || { echo "Usage: make add-target NAME=name DESCRIPTION='description' [SECTION=section]"; exit 1; }
+	@[ -n "$$DESCRIPTION" ] || { echo "Usage: make add-target NAME=name DESCRIPTION='description' [SECTION=section]"; exit 1; }
+	@$(UV) run python scripts/edit_makefile_target.py add --name "$$NAME" --description "$$DESCRIPTION" $${SECTION:+--section "$$SECTION"}
+
+edit-target:
+	@[ -n "$$NAME" ] || { echo "Usage: make edit-target NAME=name"; exit 1; }
+	@$(UV) run python scripts/edit_makefile_target.py extract --name "$$NAME"
+
+edit-makefile-target:
+	@[ -n "$$CMD" ] || { echo "Usage: make edit-makefile-target CMD=extract|add|validate|replace NAME=name [DESCRIPTION='desc'] [SECTION=section] [FILE=path]"; exit 1; }
+	@$(UV) run python scripts/edit_makefile_target.py $$CMD $${NAME:+--name "$$NAME"} $${DESCRIPTION:+--description "$$DESCRIPTION"} $${SECTION:+--section "$$SECTION"} $${FILE:+--file "$$FILE"}
+
+validate-makefile:
+	@echo "=== check-duplicate-targets ==="
+	@$(MAKE) check-duplicate-targets
+	@echo ""
+	@echo "=== make -n help ==="
+	@$(MAKE) -n help > /dev/null && echo "VALIDATE OK: make -n help" || { echo "VALIDATE FAIL: make -n help"; exit 1; }
+
 
 skip-counts:
 	@$(UV) run python scripts/list_pytest_skips.py
@@ -5017,3 +5059,44 @@ replace-lines:
 	@[ -n "$(END)" ] || { echo "Usage: make replace-lines FILE=path START=n END=n NEW_FILE=path"; exit 1; }
 	@[ -n "$(NEW_FILE)" ] || { echo "Usage: make replace-lines FILE=path START=n END=n NEW_FILE=path"; exit 1; }
 	@$(PYTHON) scripts/replace_lines.py "$(FILE)" "$(START)" "$(END)" "$(NEW_FILE)"
+
+# --- New Targets (auto-categorized add-target) ---
+
+# Second test target
+target-two:
+	@echo "target-two: Second test target"
+
+
+# First test target
+target-one:
+	@echo "target-one: First test target"
+
+
+# Duplicate target
+my-target:
+	@echo "my-target: Duplicate target"
+
+
+# Scan for secrets
+my-secret-scanner:
+	@echo "my-secret-scanner: Scan for secrets"
+
+
+# A test target with no keyword match
+zzyx-test:
+	@echo "zzyx-test: A test target with no keyword match"
+
+
+# Debug test
+debug-test-target:
+	@echo "debug-test-target: Debug test"
+
+
+# Test
+foo-test:
+	@echo "foo-test: Test"
+
+# Temp test target
+test-temp-target:
+	@echo "test-temp-target: Temp test target"
+

@@ -36,64 +36,7 @@ const PLUGINS = [
 ];
 
 function tsToJs(content) {
-  return content
-    .replace(/import type \{ Plugin \} from "@opencode-ai\/plugin"/g, "// @opencode-ai/plugin (stripped)")
-    .replace(/import \* as (\w+) from "node:(\w+)"/g, 'var $1 = require("node:$2");')
-    .replace(/import \* as (\w+) from "(\w+)"/g, 'var $1 = require("$2");')
-    .replace(/import\s*\{[^}]*\}\s*from\s*"[^"]+";?/g, "// import (stripped)")
-    .replace(/export type \w+\s*=\s*[^;]+;/g, "")
-    .replace(/export interface \w+\s*\{[^}]*\}/g, "")
-    .replace(/export const /g, "var ")
-    .replace(/export function /g, "function ")
-    .replace(/export \{ [^}]+\};?\s*/g, "")
-    .replace(/"[\w.]+"\s*:\s*;\s*/g, "")
-    .replace(/satisfies Plugin/g, "")
-    .replace(/as const/g, "")
-    .replace(/:\s*Record<[^>]+>/g, "")
-    .replace(/:\s*Map<[^>]+>/g, "")
-    .replace(/:\s*Promise<[^>]+>/g, "")
-    .replace(/:\s*\{\s*\[key:\s*\w+\]\s*:\s*\w+\s*\}/g, "")
-    .replace(/\bas\s+Record<[^>]+>/g, "")
-    .replace(/\bas\s+string(\[\])?\b/g, "")
-    .replace(/\bas\s+number(\[\])?\b/g, "")
-    .replace(/\bas\s+boolean\b/g, "")
-    .replace(/\bas\s+any(\[\])?\b/g, "")
-    .replace(/\bas\s+void\b/g, "")
-    .replace(/\bas\s+never\b/g, "")
-    .replace(/\bas\s+unknown(\[\])?\b/g, "")
-    .replace(/\bas\s+readonly\s+\w+(\[\])?\b/g, "")
-    .replace(/\bas\s+\{[^}]+\}(\s*\|\s*\w+(\[\])?)?/g, "")
-    .replace(/:\s*\w+\s*=\s*new\s+Set</g, " = new Set")
-    .replace(/:\s*\w+\s*=\s*new\s+Map</g, " = new Map")
-    .replace(/:\s*\w+\s*=\s*\{\s*\}/g, " = {}")
-    .replace(/:\s*\w+\s*=\s*\[\]/g, " = []")
-    .replace(/:\s*\w+\s*=\s*"/g, ' = "')
-    .replace(/:\s*\w+\s*=\s*'/g, " = '")
-    .replace(/:\s*\w+\s*=\s*\d+/g, " = 0")
-    .replace(/:\s*\w+\s*=\s*true/g, " = true")
-    .replace(/:\s*\w+\s*=\s*false/g, " = false")
-    .replace(/:\s*\w+\s*=\s*null/g, " = null")
-    .replace(/const (\w+): ([^=]+)=/g, "var $1 =")
-    .replace(/let (\w+): ([^=]+)=/g, "var $1 =")
-    .replace(/var (\w+)\s*:\s*[^=\n]+?=/g, "var $1 =")
-    .replace(/function (\w+)\(([^)]*)\): ([^{]+)\{/g, "function $1($2) {")
-    .replace(/;\s*\w+(?:\[\])?\s*:\s*(string|number|boolean|any|void|never|unknown|object)(\[\])?\s*;/g, ";")
-    .replace(/,\s*(\w+(?:\[\])?)\s*:\s*(string|number|boolean|any|void|never|unknown|object)(\[\])?\s*,/g, ",$1,")
-    .replace(/:\s+(string|number|boolean|any|void|never|unknown|object)(\[\])?\s*;/g, ";")
-    .replace(/:\s+(string|number|boolean|any|void|never|unknown|object)(\[\])?\s*,/g, ",")
-    .replace(/:\s+(string|number|boolean|any|void|never|unknown|object)(\[\])?\s*\)/g, ")")
-    .replace(/: (string|number|boolean|any|void|never)\b/g, "")
-    .replace(/\s+\|\s*\w+(\[\])?\b/g, "")
-    .replace(/(?<!&)&(?!&)\s*\{[^}]*\}\s*/g, "")
-    .replace(/(?<!&)&(?!&)\s*\w+(<[^>]*>)?(\[\])?\s*/g, "")
-    .replace(/:\s*\{[^}]*\}\s*/g, " ")
-    .replace(/\bas\s+[A-Z]\w*(\[\])?\b/g, "")
-    .replace(/<\s*[A-Z]\w*\s*>/g, "")
-    .replace(/(\w+):\s+(?!true\b|false\b|null\b|undefined\b|\d)(\w+)(\[\])?(?=\s*[,)])/g, "$1")
-    .replace(/(\w+):\s*\{[^{}]*\}(?:\s*[&|]\s*(?:\w+(?:<[^>]*>)?))*(?=\s*[,)])/g, "$1")
-    .replace(/catch \{/g, "catch (e) {")
-    .replace(/catch\s*\n\s*\{/g, "catch (e) {")
-  ;
+  return require("./ts_to_js.js").tsToJs(content);
 }
 
 function extractDefaultImplMethods(content) {
@@ -107,7 +50,7 @@ function extractDefaultImplMethods(content) {
   // Find the end of defaultImpl by locating the next structural marker
   // (the "PROXY" comment or "export default" that always follows defaultImpl)
   const afterDefault = content.substring(objStart);
-  const proxyMarker = afterDefault.search(/(?:PROXY|export default)\b/);
+  const proxyMarker = afterDefault.search(/(?:var stdin_default|export)\b/);
   if (proxyMarker < 0) return methods;
 
   // Walk backward from the proxy marker to find the closing }; of defaultImpl
@@ -238,17 +181,15 @@ function buildPlugin(name) {
   // Include everything from the js output EXCEPT the export default block.
   // This gives hooks access to all module-level vars/functions/consts.
   // The defaultImpl object is harmless (it's just a module-level var at this point).
-  const exportIdx = js.lastIndexOf("export default");
+  let exportIdx = js.lastIndexOf('export {');
+  if (exportIdx < 0) exportIdx = js.lastIndexOf('export default');
   let moduleBody = js;
   if (exportIdx >= 0) {
     moduleBody = js.substring(0, exportIdx);
   }
-  // Remove import-stripped comments and interface blocks that survive tsToJs
+  // Clean up any leftover import-comment lines from tsToJs
   moduleBody = moduleBody
-    .replace(/^\/\/ import [^\n]*\n/gm, "")
-    .replace(/interface \w+\s*\{[^}]*\}/g, "")
-    .replace(/:\s*readonly\s+RegExp\[\]\s*/g, " ")
-    .replace(/: [^=\n,;()]+?(?=\s*=(?![>=]))/g, "");
+    .replace(/^\/\/.*import.*stripped.*\n/gm, "");
   out += "// === module-level declarations ===\n";
   out += moduleBody.trim() + "\n";
   out += "// === end module-level declarations ===\n\n";
