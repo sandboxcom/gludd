@@ -973,7 +973,7 @@ import * as fs from 'node:fs'
 const mod = await import('{PLUGIN_PATH}')
 const plugin = await mod.default({{}})
 {dispatches}
-const state = JSON.parse(fs.readFileSync('/tmp/gludd-multitask-state.json', 'utf8'))
+const state = JSON.parse(fs.readFileSync(process.env.GLUDD_MULTITASK_STATE_FILE, "utf8"))
 const r = await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
 console.log(JSON.stringify({{...r, zeroStreakBefore: state.zeroStreak}}))
 """

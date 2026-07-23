@@ -73,7 +73,7 @@ async function appendAuditLog(entry: DeletionAuditEntry): Promise<void> {
 
 function getDeletionThreshold(): number {
   const envThreshold = process.env.GLUDD_DELETION_GATE_THRESHOLD;
-    if (envThreshold !== undefined) {
+  if (envThreshold !== undefined) {
     const parsed = parseInt(envThreshold, 10);
     if (!Number.isNaN(parsed)) {
       return parsed;
@@ -123,25 +123,18 @@ const defaultImpl: HotModule = {
 
     if (input.tool === "edit") {
       if (!argsSource) return;
-      const args = argsSource as {
-        filePath?: string;
-                oldString: string;
-                newString: string;
-              };
-      filePath = pickString(args as Record<string, unknown>, "filePath", "filePath");
-      const oldLines = countLines(pickString(args as Record<string, unknown>, "oldString", "oldString"));
-      const newLines = countLines(pickString(args as Record<string, unknown>, "newString", "newString"));
+      const args = argsSource as Record<string, unknown>;
+      filePath = pickString(args, "filePath", "file_path", "path");
+      const oldLines = countLines(pickString(args, "oldString", "old_string", "old"));
+      const newLines = countLines(pickString(args, "newString", "new_string", "new"));
       lines_removed = Math.max(0, oldLines - newLines);
     } else if (input.tool === "write") {
       if (!argsSource) return;
-      const args = argsSource as {
-        filePath?: string;
-                content?: string;
-      };
-      filePath = pickString(args as Record<string, unknown>, "filePath", "filePath");
+      const args = argsSource as Record<string, unknown>;
+      filePath = pickString(args, "filePath", "file_path", "path");
       if (!filePath) return;
       const existingLines = await readExistingFileLines(filePath);
-      const newLines = countLines(args.content ?? "");
+      const newLines = countLines(pickString(args, "content", "newString", "new_string"));
       lines_removed = Math.max(0, existingLines - newLines);
     } else {
       return;

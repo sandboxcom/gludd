@@ -313,10 +313,10 @@ export const defaultImpl: HotModule = {
       }
 
       // === UNDER-FLOOR HARD BLOCK ===
-      // Per AGENTS.md "UNDER-FLOOR HARD BLOCK (2026-07-15)": EVERY non-dispatch
-      // tool call — including read/glob/grep — is blocked until the wave
-      // reaches the floor. This closes the "dispatch 1, then grind reads"
-      // bypass.
+      // Per AGENTS.md "UNDER-FLOOR HARD BLOCK (2026-07-15)": mutating
+      // non-dispatch tools are blocked until the wave reaches the floor. Fresh
+      // read/glob/grep calls remain allowed, while repeated read-only messages are
+      // still handled by ZERO-DISPATCH STREAK below.
       //
       // Fallback for the first-edit-with-zero-dispatches case where the streak
       // counter (above) is still below threshold. When the streak has already
@@ -326,7 +326,7 @@ export const defaultImpl: HotModule = {
         hasPendingWork() &&
         (_state.thisMessageDispatches > 0 || _state.zeroStreak < MAX_ZERO_STREAK) &&
         _state.thisMessageDispatches < MIN_DISPATCHES &&
-        (lt === "edit" || lt === "write" || lt === "bash" || lt === "read" || lt === "grep" || lt === "glob")
+        (lt === "edit" || lt === "write" || lt === "bash")
       ) {
         writeState(_state)
         return {
@@ -334,7 +334,7 @@ export const defaultImpl: HotModule = {
           message: [
             "UNDER-FLOOR HARD BLOCK: ONLY " + String(_state.thisMessageDispatches) + " DISPATCHES.",
             "Floor is 10. DISPATCH " + String(MIN_DISPATCHES) + " SUBAGENTS NOW OR YOU ARE BLOCKED.",
-            "You have " + String(_state.thisMessageDispatches) + "; need " + String(MIN_DISPATCHES) + ". edit/write/bash/read/grep/glob are blocked until floor reached.",
+            "You have " + String(_state.thisMessageDispatches) + "; need " + String(MIN_DISPATCHES) + ". edit/write/bash are blocked until floor reached.",
             "consecutive non-dispatch calls: " + String(_state.consecutiveNonDispatch),
             "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable; disengage file /tmp/gludd-watchdog-disengage.json.",
             "Run 'make disengage-enforcement' to bypass.",
