@@ -302,6 +302,7 @@ help:
 	@echo "  molecule-test         Run molecule tests"
 	@echo ""
 	@echo "  --- CI ---"
+	@echo "  ci-run-summary          show CI run job statuses as concise table from gh run view JSON"
 	@echo "  ci-await BRANCH=<b> [TIMEOUT=<s>]  Poll CI for branch until terminal (green/red/timeout)"
 	@echo "  ci-verdict-safe        Cooldown-enforced CI check (prefer over bare ci-verdict)"
 	@echo "  ci-dashboard           One-shot compact CI run listing"
@@ -1934,7 +1935,7 @@ git-tag-push:
 	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push sandboxcom "$(TAG)"
 	@echo "Pushed tag $(TAG) to sandboxcom/gludd (triggers release job)"
 
-# --- CI observability (W16) ---
+
 repo-visibility:
 	@gh api /repos/sandboxcom/gludd --jq '.private' 2>&1 || echo "gh-api-failed"
 
