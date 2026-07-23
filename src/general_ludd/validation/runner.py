@@ -133,9 +133,10 @@ class ValidationRunner:
     ) -> None:
         self.todo_id = todo_id
         self._expected_worktree_root = expected_worktree_root
-        self.worktree_path = _validate_worktree_path(
+        _validate_worktree_path(
             worktree_path, expected_root=expected_worktree_root
         )
+        self.worktree_path = worktree_path
         self.test_commands = test_commands
         self.enforce_runner_allowlist = enforce_runner_allowlist
         self.runner_allowlist = runner_allowlist
