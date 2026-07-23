@@ -384,3 +384,28 @@ def test_git_show_file_to_is_scoped_to_safe_restore_outputs() -> None:
     assert ".opencode/plugin/impl/*" in block
     assert "Refusing unsafe FILE" in block
     assert "Refusing unsafe OUT" in block
+
+
+def test_test_failures_preserves_pytest_exit_status_through_tee() -> None:
+    block = _target_block("test-failures")
+    assert "RC_FILE=$" + "$" + "(mktemp /tmp/gludd-test-failures-rc." in block
+    assert "echo $$? " + chr(62) + " \"$$RC_FILE\"" in block
+    assert "EXIT=$" + "$" + "(cat \"$$RC_FILE\")" in block
+    assert chr(124) + " tee /tmp/gludd-test-output.txt" in block
+    assert "EXIT=$$?" + chr(59) not in block
+
+
+def test_search_target_allows_scoped_tmp_gludd_logs_only() -> None:
+    block = _target_block("search")
+    assert "/tmp/gludd-*)" in block
+    assert "/*" + chr(124) + "*..*)" in block
+    assert "Refusing path outside workspace" in block
+
+
+def test_kill_stale_reaps_orphaned_workspace_gunicorn_daemon_tree() -> None:
+    block = _target_block("kill-stale")
+    assert r"/Users/shawnwilson/gludd/\.venv/bin/gunicorn general_ludd\.daemon:create_daemon_app" in block
+    assert "KILLED stale orphan daemon tree" in block
+    assert "pgrep -P \"$$pid\"" in block
+    assert "active non-daemon" in block
+    assert "childless gludd scratch only" not in block

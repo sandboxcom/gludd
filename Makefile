@@ -605,8 +605,10 @@ test-count-e2e:
 	@find tests/e2e -name 'test_*.py' -exec grep -c 'def test_' {} + | awk -F: '{sum+=$$2} END {print "e2e test functions:", sum}'
 
 test-failures:
-	@$(UV) run python -m pytest tests/ $(_XD) -q 2>&1 | tee /tmp/gludd-test-output.txt; EXIT=$$?; \
-	grep -E "^(FAILED|ERROR)" /tmp/gludd-test-output.txt; \
+	@RC_FILE=$$(mktemp /tmp/gludd-test-failures-rc.XXXXXX); \
+	{ $(UV) run python -m pytest tests/ $(_XD) -q 2>&1; echo $$? > "$$RC_FILE"; } | tee /tmp/gludd-test-output.txt; \
+	EXIT=$$(cat "$$RC_FILE"); rm -f "$$RC_FILE"; \
+	grep -E "^(FAILED|ERROR)" /tmp/gludd-test-output.txt || true; \
 	exit $$EXIT
 
 check-makefile-structure:
@@ -812,7 +814,7 @@ ps-gludd:
 		if [ "$$ppid" = "1" ]; then state=ORPHAN; else state=active; fi; \
 		printf '%-8s %-8s %-10s %-7s %s\n' "$$pid" "$$ppid" "$$etime" "$$state" "$$(echo "$$rest" | cut -c1-86)"; \
 	done; \
-	echo "--- ORPHAN(ppid=1)=stale, parent died; active=live parent. kill-stale removes ORPHANs only ---"
+	echo "--- ORPHAN(ppid=1)=stale. kill-stale removes stale scratch processes and workspace daemon trees only ---"
 
 # Kill stray pytest/gate processes (e.g. xdist workers orphaned by a killed run).
 # NOTE: blunt instrument — see kill-stale for self-tree-protecting cleanup.
@@ -826,30 +828,38 @@ kill-stray:
 	echo "killed stray pytest/gate/secret-scan workers (if any)"
 
 # Reap ONLY genuinely-stale gludd processes — never the active one. A process is
-# killed iff ALL of:
-#   (1) it matches a known gludd scratch pattern (molecule mock_daemon, a python
-#       running out of a .claude/worktrees/agent-* venv, a stray cli tui, an
-#       orphaned pytest/gate-basetemp/ansible run), AND
-#   (2) its parent is PID 1 — it was REPARENTED because the make/agent/gate that
-#       spawned it died (a live-parented process is still part of an active run), AND
-#   (3) it has NO living child processes — so an orphaned-but-alive daemon that is
-#       still recycling workers (e.g. the gunicorn daemon) is treated as ACTIVE and
-#       KEPT, exactly the "don't kill the active one" guarantee.
+# killed iff it matches a known gludd scratch pattern and its parent is PID 1,
+# meaning the make/agent/gate that spawned it died. Orphaned workspace gunicorn
+# daemon parents are stale even when their worker children are still alive; the
+# whole daemon tree is reaped so old listeners cannot contaminate full-suite runs.
+# Non-daemon orphans with live children are still kept as active unless they match
+# the explicit workspace gunicorn daemon pattern below.
 # This make invocation's own process + its parent are always excluded, so running
 # `make kill-stale` can never kill the shell/agent driving it. See `make ps-gludd`
 # for the read-only census this acts on.
 kill-stale:
 	@SELF=$$$$; PARENT=$$(ps -o ppid= -p $$SELF 2>/dev/null | tr -d ' '); \
 	PARENTS=$$(ps -axo ppid= | tr -s ' ' '\n' | grep -E '^[0-9]+$$' | sort -u); \
-	echo "[kill-stale] self=$$SELF parent=$$PARENT — reaping orphaned childless gludd scratch only"; \
+	echo "[kill-stale] self=$$SELF parent=$$PARENT — reaping orphaned gludd scratch and daemon trees"; \
 	ps -axo pid=,ppid=,command= | \
-	grep -E 'molecule/mock_daemon|\.claude/worktrees/agent-[^ ]*/\.venv/bin/python|general_ludd\.cli tui|gludd-gate-basetemp|pytest tests/|ansible-playbook' | \
+	grep -E "molecule/mock_daemon|\.claude/worktrees/agent-[^ ]*/\.venv/bin/python|general_ludd\.cli tui|gludd-gate-basetemp|pytest tests/|ansible-playbook|/Users/shawnwilson/gludd/\.venv/bin/gunicorn general_ludd\.daemon:create_daemon_app" | \
 	grep -v -E 'grep |kill-stale|ps-gludd' | \
 	while read -r pid ppid rest; do \
 		cmd=$$(echo "$$rest" | cut -c1-70); \
 		{ [ "$$pid" = "$$SELF" ] || [ "$$pid" = "$$PARENT" ]; } && { echo "  KEEP (self/parent): $$pid"; continue; }; \
 		if [ "$$ppid" != "1" ]; then echo "  KEEP (live parent $$ppid = active run): $$pid $$cmd"; continue; fi; \
-		if echo "$$PARENTS" | grep -qx "$$pid"; then echo "  KEEP (orphan WITH live children = active daemon): $$pid $$cmd"; continue; fi; \
+		case "$$rest" in \
+			*"/Users/shawnwilson/gludd/.venv/bin/gunicorn general_ludd.daemon:create_daemon_app()"*) \
+				CHILDREN=$$(/usr/bin/pgrep -P "$$pid" 2>/dev/null || true); \
+				for child in $$CHILDREN; do kill -TERM "$$child" 2>/dev/null; done; \
+				kill -TERM "$$pid" 2>/dev/null; sleep 0.5; \
+				for child in $$CHILDREN; do kill -KILL "$$child" 2>/dev/null; done; \
+				kill -KILL "$$pid" 2>/dev/null; \
+				echo "  KILLED stale orphan daemon tree: $$pid $$cmd"; \
+				continue; \
+				;; \
+		esac; \
+		if echo "$$PARENTS" | grep -qx "$$pid"; then echo "  KEEP (orphan WITH live children = active non-daemon): $$pid $$cmd"; continue; fi; \
 		kill -TERM "$$pid" 2>/dev/null; sleep 0.2; kill -KILL "$$pid" 2>/dev/null; \
 		echo "  KILLED stale orphan: $$pid $$cmd"; \
 	done; \
@@ -4849,7 +4859,7 @@ list-files:
 search:
 	@[ -n "$(PATTERN)" ] || { echo "Usage: make search PATTERN=regex [SEARCH_PATH=path]"; exit 1; }
 	@SEARCH_ROOT="$(if $(SEARCH_PATH),$(SEARCH_PATH),.)"; \
-	case "$$SEARCH_ROOT" in /*|*..*) echo "Refusing path outside workspace: $$SEARCH_ROOT"; exit 1;; esac; \
+	case "$$SEARCH_ROOT" in /tmp/gludd-*) ;; /*|*..*) echo "Refusing path outside workspace: $$SEARCH_ROOT"; exit 1;; esac; \
 	if [ -x /opt/homebrew/bin/rg ]; then RG=/opt/homebrew/bin/rg; elif [ -x /usr/local/bin/rg ]; then RG=/usr/local/bin/rg; else RG=""; fi; \
 	if [ -n "$$RG" ]; then \
 		"$$RG" -n --glob '!.git/**' --glob '!.venv/**' --glob '!.mypy_cache/**' --glob '!.pytest_cache/**' --glob '!.gate-logs/**' -- "$(PATTERN)" "$$SEARCH_ROOT"; \
