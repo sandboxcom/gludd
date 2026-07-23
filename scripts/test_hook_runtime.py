@@ -199,7 +199,7 @@ def test_clean_tree_build_deny_message():
     """buildDenyMessage includes count and DENY_MESSAGE_PREFIX."""
     code = f"""\
 const mod = await import('{PLUGIN_DIR}/enforce-clean-tree.ts')
-console.log(JSON.stringify({{msg: mod.buildDenyMessage(5), prefix: mod.DENY_MESSAGE_PREFIX}}))
+console.log(JSON.stringify({{msg: mod.buildDenyMessage(5), prefix: mod.getDenyMessagePrefix()}}))
 """
     result = _run_ts(code)
     assert "5" in result["msg"]
@@ -211,7 +211,7 @@ def test_clean_tree_dispatch_tools_defined():
     """DISPATCH_TOOLS array contains task, agent, workflow."""
     code = f"""\
 const mod = await import('{PLUGIN_DIR}/enforce-clean-tree.ts')
-console.log(JSON.stringify(mod.DISPATCH_TOOLS))
+console.log(JSON.stringify(mod.getDispatchTools()))
 """
     result = _run_ts(code)
     assert "task" in result
@@ -234,7 +234,7 @@ console.log("GIT_STATUS[" + gs.length + "]=" + JSON.stringify(gs).slice(0,200))
 const dt = mod.isTreeDirty()
 console.log("IS_DIRTY=" + dt)
 const toolName = 'task'
-const isDispatch = mod.DISPATCH_TOOLS.includes(toolName)
+const isDispatch = mod.getDispatchTools().includes(toolName)
 console.log("IS_DISPATCH=" + isDispatch)
 const plugin = await mod.default({{}})
 const result = await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
@@ -1884,18 +1884,19 @@ console.log(JSON.stringify({{
 
 
 def test_stop_permission_seeking_export_matches():
-    """PERMISSION_SEEKING_RE is exported and matches the right phrases."""
+    """getPermissionSeekingRe() is exported and matches the right phrases."""
     code = f"""\
 const mod = await import('{PLUGIN_DIR}/enforce-stop.ts')
+const re = mod.getPermissionSeekingRe()
 console.log(JSON.stringify({{
-    hasExport: typeof mod.PERMISSION_SEEKING_RE !== 'undefined',
-    match1: mod.PERMISSION_SEEKING_RE.test('Want me to proceed?'),
-    match2: mod.PERMISSION_SEEKING_RE.test('want me to dispatch a subagent'),
-    match3: mod.PERMISSION_SEEKING_RE.test('Should I continue with fixing?'),
-    match4: mod.PERMISSION_SEEKING_RE.test('shall I proceed?'),
-    match5: mod.PERMISSION_SEEKING_RE.test('Proceed?'),
-    noMatch1: mod.PERMISSION_SEEKING_RE.test('The fix is ready'),
-    noMatch2: mod.PERMISSION_SEEKING_RE.test('I will proceed with the next task'),
+    hasExport: typeof mod.getPermissionSeekingRe === 'function',
+    match1: re.test('Want me to proceed?'),
+    match2: re.test('want me to dispatch a subagent'),
+    match3: re.test('Should I continue with fixing?'),
+    match4: re.test('shall I proceed?'),
+    match5: re.test('Proceed?'),
+    noMatch1: re.test('The fix is ready'),
+    noMatch2: re.test('I will proceed with the next task'),
 }}))
 """
     result = _run_ts(code)
@@ -1944,19 +1945,20 @@ console.log(JSON.stringify({{
 
 
 def test_stop_status_summary_export_matches():
-    """STATUS_SUMMARY_RE + looksLikeStatusSummary are exported and detect the pattern."""
+    """getStatusSummaryRe() + looksLikeStatusSummary are exported and detect the pattern."""
     code = f"""\
 const mod = await import('{PLUGIN_DIR}/enforce-stop.ts')
+const re = mod.getStatusSummaryRe()
 const structural = "**What changed**\\n- [x] item one\\n- [x] item two\\n**Remaining**\\n| A | B |\\n| - | - |\\n"
 console.log(JSON.stringify({{
-    hasRe: typeof mod.STATUS_SUMMARY_RE !== 'undefined',
+    hasRe: typeof mod.getStatusSummaryRe === 'function',
     hasFn: typeof mod.looksLikeStatusSummary === 'function',
-    match1: mod.STATUS_SUMMARY_RE.test("Here's the session 37 final status"),
-    match2: mod.STATUS_SUMMARY_RE.test("Session 12 wrap-up"),
-    match3: mod.STATUS_SUMMARY_RE.test("Final status report:"),
+    match1: re.test("Here's the session 37 final status"),
+    match2: re.test("Session 12 wrap-up"),
+    match3: re.test("Final status report:"),
     structural: mod.looksLikeStatusSummary(structural),
     noMatch1: mod.looksLikeStatusSummary("Reading the config file now."),
-    noMatch2: mod.STATUS_SUMMARY_RE.test("The function returns early."),
+    noMatch2: re.test("The function returns early."),
 }}))
 """
     result = _run_ts(code)
@@ -2896,8 +2898,8 @@ def test_commit_lock_allowed_no_lock():
 let registeredBefore = null
 const api = {{ tool: {{ execute: {{ before(fn) {{ registeredBefore = fn }}, after(fn) {{}} }} }} }}
 const mod = await import('{PLUGIN_DIR}/enforce-commit-lock.ts')
-mod.default(api)
-const result = registeredBefore({{tool: 'bash', command: 'make ship-commit MSG=test'}})
+await mod.default(api)
+const result = await registeredBefore({{tool: 'bash', command: 'make ship-commit MSG=test'}})
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
     result = _run_ts(code, env_override={"GLUDD_COMMIT_LOCK_PATH": lock_path})
@@ -2915,8 +2917,8 @@ def test_commit_lock_fresh_lock_denies():
 let registeredBefore = null
 const api = {{ tool: {{ execute: {{ before(fn) {{ registeredBefore = fn }}, after(fn) {{}} }} }} }}
 const mod = await import('{PLUGIN_DIR}/enforce-commit-lock.ts')
-mod.default(api)
-const result = registeredBefore({{tool: 'bash', command: 'make git-commit MSG=test'}})
+await mod.default(api)
+const result = await registeredBefore({{tool: 'bash', command: 'make git-commit MSG=test'}})
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
     result = _run_ts(code, env_override={"GLUDD_COMMIT_LOCK_PATH": lock_path})
@@ -2938,8 +2940,8 @@ def test_commit_lock_stale_break_allows():
 let registeredBefore = null
 const api = {{ tool: {{ execute: {{ before(fn) {{ registeredBefore = fn }}, after(fn) {{}} }} }} }}
 const mod = await import('{PLUGIN_DIR}/enforce-commit-lock.ts')
-mod.default(api)
-const result = registeredBefore({{tool: 'bash', command: 'make repo-commit MSG=test'}})
+await mod.default(api)
+const result = await registeredBefore({{tool: 'bash', command: 'make repo-commit MSG=test'}})
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
     result = _run_ts(code, env_override={"GLUDD_COMMIT_LOCK_PATH": lock_path})
@@ -2955,8 +2957,8 @@ def test_commit_lock_non_commit_allowed():
 let registeredBefore = null
 const api = {{ tool: {{ execute: {{ before(fn) {{ registeredBefore = fn }}, after(fn) {{}} }} }} }}
 const mod = await import('{PLUGIN_DIR}/enforce-commit-lock.ts')
-mod.default(api)
-const result = registeredBefore({{tool: 'bash', command: 'make test-unit'}})
+await mod.default(api)
+const result = await registeredBefore({{tool: 'bash', command: 'make test-unit'}})
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
     result = _run_ts(code, env_override={"GLUDD_COMMIT_LOCK_PATH": lock_path})
@@ -2974,8 +2976,8 @@ def test_commit_lock_subagent_guard():
 let registeredBefore = null
 const api = {{ tool: {{ execute: {{ before(fn) {{ registeredBefore = fn }}, after(fn) {{}} }} }} }}
 const mod = await import('{PLUGIN_DIR}/enforce-commit-lock.ts')
-mod.default(api)
-const result = registeredBefore({{tool: 'bash', command: 'make ship-commit MSG=test'}})
+await mod.default(api)
+const result = await registeredBefore({{tool: 'bash', command: 'make ship-commit MSG=test'}})
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
     result = _run_ts(code, env_override={
@@ -2996,8 +2998,8 @@ def test_commit_lock_env_disable():
 let registeredBefore = null
 const api = {{ tool: {{ execute: {{ before(fn) {{ registeredBefore = fn }}, after(fn) {{}} }} }} }}
 const mod = await import('{PLUGIN_DIR}/enforce-commit-lock.ts')
-mod.default(api)
-const result = registeredBefore({{tool: 'bash', command: 'make ship-commit MSG=test'}})
+await mod.default(api)
+const result = await registeredBefore({{tool: 'bash', command: 'make ship-commit MSG=test'}})
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
     result = _run_ts(code, env_override={
@@ -3018,10 +3020,10 @@ let registeredBefore = null
 let registeredAfter = null
 const api = {{ tool: {{ execute: {{ before(fn) {{ registeredBefore = fn }}, after(fn) {{ registeredAfter = fn }} }} }} }}
 const mod = await import('{PLUGIN_DIR}/enforce-commit-lock.ts')
-mod.default(api)
-const beforeResult = registeredBefore({{tool: 'bash', command: 'make ship-commit MSG=test'}})
+await mod.default(api)
+const beforeResult = await registeredBefore({{tool: 'bash', command: 'make ship-commit MSG=test'}})
 const lockBefore = fs.existsSync('{lock_path}')
-registeredAfter({{tool: 'bash', command: 'make ship-commit MSG=test'}})
+await registeredAfter({{tool: 'bash', command: 'make ship-commit MSG=test'}})
 const lockAfter = fs.existsSync('{lock_path}')
 console.log(JSON.stringify({{beforeOk: beforeResult === undefined, lockBefore, lockAfter: !lockAfter}}))
 """

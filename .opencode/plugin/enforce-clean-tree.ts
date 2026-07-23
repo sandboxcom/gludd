@@ -10,10 +10,14 @@ const nodeRequire = typeof require === "function" ? require : createRequire(impo
 function execSync(...args: any[]): Buffer {
   return nodeRequire("node:child_" + "process").execSync(...args);
 }
-const DISPATCH_TOOLS = Object.freeze(["task", "agent", "workflow"]) as readonly string[];
-const DENY_MESSAGE_PREFIX = "DIRTY TREE";
+export function getDispatchTools(): readonly string[] {
+  return ["task", "agent", "workflow"];
+}
+export function getDenyMessagePrefix(): string {
+  return "DIRTY TREE";
+}
 // Empty = clean tree (or git unavailable — fail-open).
-function getGitStatus(): string {
+export function getGitStatus(): string {
   try {
     return execSync("git status --porcelain", {
       stdio: ["pipe", "pipe", "pipe"],
@@ -22,17 +26,17 @@ function getGitStatus(): string {
     return "";
   }
 }
-function isTreeDirty(): boolean {
+export function isTreeDirty(): boolean {
   return getGitStatus().length > 0;
 }
-function countDirtyFiles(status: string): number {
+export function countDirtyFiles(status: string): number {
   if (!status.trim()) return 0;
   return status
     .trim()
     .split("\n")
     .filter((l) => l.trim()).length;
 }
-function buildDenyMessage(count: number): string {
+export function buildDenyMessage(count: number): string {
   return (
     `DIRTY TREE: ${count} uncommitted file(s). Commit or stash before dispatching new work. ` +
     `Run \`make git-status\` to see the files, then \`make git-add FILES='...' && make ship-commit MSG='...'\` to commit. ` +
@@ -51,7 +55,7 @@ const defaultImpl: HotModule = {
     try {
       if (process.env.GLUDD_CLEAN_TREE_ENFORCE === "0") return;
       const tool = input.tool ?? "";
-      if (!DISPATCH_TOOLS.includes(tool)) return;
+      if (!getDispatchTools().includes(tool)) return;
       const status = getGitStatus();
       if (status.length > 0) {
         const count = countDirtyFiles(status);

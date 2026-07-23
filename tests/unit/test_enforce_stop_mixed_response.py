@@ -92,19 +92,15 @@ def _src() -> str:
 
 
 def _extract_status_summary_re() -> re.Pattern:
-    """Extract STATUS_SUMMARY_RE regex from enforce-stop.ts."""
+    """Extract status-summary regex from getStatusSummaryRe() in enforce-stop.ts."""
     src = _src()
-    m = re.search(r"STATUS_SUMMARY_RE\s*=\s*new\s+RegExp\s*\(([\s\S]*?),", src)
+    m = re.search(r"getStatusSummaryRe[\s\S]*?return\s+new\s+RegExp\s*\(([\s\S]*?),", src)
     if m:
         body = m.group(1).replace("\n", "").replace(" ", "")
         parts = re.findall(r'"([^"]*)"', body)
         body = "|".join(parts)
     else:
-        m = re.search(r"STATUS_SUMMARY_RE\s*=\s*/([^/\n]+)/([a-z]*)", src)
-        if m:
-            body = m.group(1)
-        else:
-            raise AssertionError("STATUS_SUMMARY_RE not found in enforce-stop.ts")
+        raise AssertionError("getStatusSummaryRe() not found in enforce-stop.ts")
     flags = re.IGNORECASE | re.MULTILINE
     return re.compile(body, flags)
 
@@ -255,8 +251,8 @@ class TestStatusSummaryRegexDetection:
 
     def test_status_summary_re_exists_in_plugin(self):
         src = _src()
-        assert "STATUS_SUMMARY_RE" in src, (
-            "STATUS_SUMMARY_RE must be defined in enforce-stop.ts — "
+        assert "getStatusSummaryRe" in src, (
+            "getStatusSummaryRe() must be defined in enforce-stop.ts — "
             "commits 0c816e34/ea0a419e added it."
         )
 

@@ -58,7 +58,7 @@ function releaseLock(): void {
     // ignore — file may not exist
   }
 }
-async function beforeHook(input: { tool: string }): Promise<void> {
+async function beforeHook(input: { tool: string }): Promise<{permissionDecision: string, message: string} | undefined> {
   if (isSubagent()) return
   reportAlive("enforce-commit-lock")
   _heldByThisCall = false
@@ -80,8 +80,7 @@ async function beforeHook(input: { tool: string }): Promise<void> {
         return
       }
     }
-    ;(input as { permissionDecision?: string }).permissionDecision = "deny"
-    ;(input as { message?: string }).message = DENY_MESSAGE
+    return { permissionDecision: "deny", message: DENY_MESSAGE }
   } catch {
     // Fail-open: never wedge the editor on a plugin error.
   }
@@ -103,7 +102,7 @@ export default async function commitLockPlugin(
   _input: unknown,
   _options?: unknown,
 ): Promise<{
-  "tool.execute.before": (input: { tool: string }, output: unknown) => Promise<void>
+  "tool.execute.before": (input: { tool: string }, output: unknown) => Promise<{permissionDecision: string, message: string} | undefined>
   "tool.execute.after": (input: { tool: string }, output: unknown) => Promise<void>
 }> {
   const hooks = {

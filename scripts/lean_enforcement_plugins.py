@@ -20,15 +20,19 @@ export const COMPLETION_VERBATIM = /\b(?:all done|all tasks complete|ready for r
 const COMPLETION_WORDS_RE = /\b(?:committed|done|completed|passed|working|green)\b/
 const COMPLETION_SMELL_RE = /\b(?:complete|done|finished|ready|passed|green|RED|beta|alpha)\b/i
 export const STOP_PATTERN_PHRASES = /\b(?:shall\\s+i|should\\s+i|want\\s+me\\s+to)\b/i
-export const PERMISSION_SEEKING_RE = /(?:want me to|should i|shall i|^proceed\\?)/im
+export function getPermissionSeekingRe(): RegExp {
+  return /(?:want me to|should i|shall i|^proceed\\?)/im
+}
 const QA_RESPONSE_PATTERNS = /(?:completed in this session|summary|done|changed|left|remains)/i
-export const STATUS_SUMMARY_RE = new RegExp([
-  "here.{0,4}s the (?:session\\\\s+\\\\d+\\\\s+)?(?:final\\\\s+)?status",
-  "session\\\\s+\\\\d+\\\\s+(?:final\\\\s+)?(?:status|summary|wrap[- ]?up|recap)",
-  "final (?:status|summary|state)(?:\\\\s+(?:report|summary))?\\\\b",
-  "^\\\\s*#{1,4}\\\\s+.{0,40}(?:status|summary|recap)\\\\s*$",
-  "status (?:report|summary|update)\\\\s*:",
-].join("|"), "im")
+export function getStatusSummaryRe(): RegExp {
+  return new RegExp([
+    "here.{0,4}s the (?:session\\\\s+\\\\d+\\\\s+)?(?:final\\\\s+)?status",
+    "session\\\\s+\\\\d+\\\\s+(?:final\\\\s+)?(?:status|summary|wrap[- ]?up|recap)",
+    "final (?:status|summary|state)(?:\\\\s+(?:report|summary))?\\\\b",
+    "^\\\\s*#{1,4}\\\\s+.{0,40}(?:status|summary|recap)\\\\s*$",
+    "status (?:report|summary|update)\\\\s*:",
+  ].join("|"), "im")
+}
 export function looksLikeStatusSummary(text: string): boolean {
   return implLooksLikeStatusSummary(text)
 }
