@@ -9,7 +9,7 @@
 
 - name: Create artifact directory
   ansible.builtin.file:
-    path: "{{ artifact_dir }}"
+    path: "{{ log_analyzer_output_dir | default(artifact_dir) }}"
     state: directory
     mode: "0755"
 
@@ -17,7 +17,7 @@
   ansible.builtin.copy:
     content: |
       === log_analyzer chain-of-thought log ===
-      started: {{ ansible_date_time.iso8601 }}
+      started: {{ now(utc=true).isoformat() }}
       analysis_window_hours: {{ analysis_window_hours }}
       log_source_dirs: {{ log_source_dirs }}
       ===
@@ -241,7 +241,7 @@
   ansible.builtin.lineinfile:
     path: "{{ log_analyzer_cot_log }}"
     line: |
-      === TASK: error_clustering @ {{ ansible_date_time.iso8601 }} ===
+      === TASK: error_clustering @ {{ now(utc=true).isoformat() }} ===
       MODEL: {{ model_profile_error_cluster | default('default') }}
       PROMPT: {{ _log_corpus_summary[:2000] | replace('\n', '\\n') }}
       RESPONSE: {{ _error_cluster_result.text | default('(error/no response)') | replace('\n', '\\n') }}
@@ -284,7 +284,7 @@
   ansible.builtin.lineinfile:
     path: "{{ log_analyzer_cot_log }}"
     line: |
-      === TASK: anomaly_detection @ {{ ansible_date_time.iso8601 }} ===
+      === TASK: anomaly_detection @ {{ now(utc=true).isoformat() }} ===
       MODEL: {{ model_profile_anomaly | default('default') }}
       PROMPT: {{ _log_corpus_summary[:2000] | replace('\n', '\\n') }}
       RESPONSE: {{ _anomaly_result.text | default('(error/no response)') | replace('\n', '\\n') }}
@@ -327,7 +327,7 @@
   ansible.builtin.lineinfile:
     path: "{{ log_analyzer_cot_log }}"
     line: |
-      === TASK: agent_behavior @ {{ ansible_date_time.iso8601 }} ===
+      === TASK: agent_behavior @ {{ now(utc=true).isoformat() }} ===
       MODEL: {{ model_profile_behavior | default('default') }}
       PROMPT: {{ _log_corpus_summary[:2000] | replace('\n', '\\n') }}
       RESPONSE: {{ _behavior_result.text | default('(error/no response)') | replace('\n', '\\n') }}
@@ -369,7 +369,7 @@
   ansible.builtin.lineinfile:
     path: "{{ log_analyzer_cot_log }}"
     line: |
-      === TASK: perf_regression @ {{ ansible_date_time.iso8601 }} ===
+      === TASK: perf_regression @ {{ now(utc=true).isoformat() }} ===
       MODEL: {{ model_profile_perf_regression | default('default') }}
       PROMPT: {{ _log_corpus_summary[:2000] | replace('\n', '\\n') }}
       RESPONSE: {{ _perf_result.text | default('(error/no response)') | replace('\n', '\\n') }}
@@ -414,7 +414,7 @@
   ansible.builtin.lineinfile:
     path: "{{ log_analyzer_cot_log }}"
     line: |
-      === TASK: root_cause @ {{ ansible_date_time.iso8601 }} ===
+      === TASK: root_cause @ {{ now(utc=true).isoformat() }} ===
       MODEL: {{ model_profile_root_cause | default('default') }}
       PROMPT: clusters={{ (_error_cluster_result.text | default('none'))[:500] }}
       RESPONSE: {{ _root_cause_result.text | default('(error/no response)') | replace('\n', '\\n') }}
@@ -475,7 +475,7 @@
       {{ {
         'role': 'log_analyzer',
         'status': 'completed',
-        'generated_at': ansible_date_time.iso8601,
+        'generated_at': now(utc=true).isoformat(),
         'analysis_window_hours': analysis_window_hours,
         'sources': {
           'daemon': _daemon_log_count,
@@ -504,7 +504,7 @@
     content: |
       # Log Analysis Report
 
-      **Generated:** {{ ansible_date_time.iso8601 }}
+      **Generated:** {{ now(utc=true).isoformat() }}
       **Analysis window:** {{ analysis_window_hours }}h
       **Total log files:** {{ _total_log_count }} ({{ _total_log_bytes }} bytes)
       **Model analysis:** {% if enable_model_call | bool and not ansible_check_mode %}enabled{% else %}disabled (set `enable_model_call: true`){% endif %}

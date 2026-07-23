@@ -39,16 +39,16 @@ class TestNetworkingRoleImport:
     def test_role_defaults_load(self) -> None:
         defaults_path = (
             Path(__file__).resolve().parent.parent.parent
-            / "collections/ansible_collections/general_ludd/agent/roles/networking/defaults/main.yml"
+            / "collections/ansible_collections/general_ludd/networking/roles/networking/defaults/main.yml"
         )
         assert defaults_path.exists()
         defaults = yaml.safe_load(defaults_path.read_text())
-        assert "artifact_dir" in defaults
+        assert "networking__artifact_dir" in defaults
 
     def test_role_tasks_exist(self) -> None:
         tasks_path = (
             Path(__file__).resolve().parent.parent.parent
-            / "collections/ansible_collections/general_ludd/agent/roles/networking/tasks/main.yml"
+            / "collections/ansible_collections/general_ludd/networking/roles/networking/tasks/main.yml"
         )
         assert tasks_path.exists()
         tasks = yaml.safe_load(tasks_path.read_text())
@@ -58,7 +58,7 @@ class TestNetworkingRoleImport:
     def test_role_meta_has_name(self) -> None:
         meta_path = (
             Path(__file__).resolve().parent.parent.parent
-            / "collections/ansible_collections/general_ludd/agent/roles/networking/meta/main.yml"
+            / "collections/ansible_collections/general_ludd/networking/roles/networking/meta/main.yml"
         )
         assert meta_path.exists()
         meta = yaml.safe_load(meta_path.read_text())

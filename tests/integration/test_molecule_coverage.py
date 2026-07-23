@@ -97,6 +97,7 @@ _NOT_YET_COVERED_MODULES: set[str] = {
     "gludd_open_code",  # TODO: add molecule scenario
     "gludd_ornith",  # TODO: add molecule scenario
     "gludd_proc_monitor",
+    "gludd_scapy",
     "gludd_slurm_deploy",
     "gludd_stream",
 }
@@ -133,15 +134,16 @@ _NOT_YET_COVERED_ROLES: set[str] = {
     "credit_audit",
     "delegate_discipline_check",
     "deletion_gate",
-    "deploy_model_server_slurm",
-    "enforce_disengage",
+        "enforce_disengage",
     "enforcement_gate",
     "enforcement_verify",
     "feature_evidence_audit",
     "game_build_audit",
     "generate_status_table",
+    "git_automation",
     "git_commit_push",
     "gludd_update",
+    "log_prompt_evaluator",
     "guardrail_pattern",
     "manage_processes",
     "multitasking_backlog_check",

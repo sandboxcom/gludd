@@ -63,6 +63,28 @@ class EncodingInfo(TypedDict):
     languages: list[str]
 
 
+UTF_ENCODINGS: list[EncodingInfo] = [
+    {"name": "UTF-8", "aliases": ["utf8", "utf_8", "unicode-1-1-utf-8"],
+     "category": "variable-width", "max_bytes_per_char": 4, "is_ascii_compatible": True,
+     "languages": ["Universal"]},
+    {"name": "UTF-16-BE", "aliases": ["utf-16be", "utf16be"],
+     "category": "variable-width", "max_bytes_per_char": 4, "is_ascii_compatible": False,
+     "languages": ["Universal"]},
+    {"name": "UTF-16-LE", "aliases": ["utf-16le", "utf16le"],
+     "category": "variable-width", "max_bytes_per_char": 4, "is_ascii_compatible": False,
+     "languages": ["Universal"]},
+    {"name": "UTF-32-BE", "aliases": ["utf-32be", "utf32be"],
+     "category": "fixed-width", "max_bytes_per_char": 4, "is_ascii_compatible": False,
+     "languages": ["Universal"]},
+    {"name": "UTF-32-LE", "aliases": ["utf-32le", "utf32le"],
+     "category": "fixed-width", "max_bytes_per_char": 4, "is_ascii_compatible": False,
+     "languages": ["Universal"]},
+    {"name": "UTF-7", "aliases": ["utf7"],
+     "category": "stateful", "max_bytes_per_char": 5, "is_ascii_compatible": True,
+     "languages": ["Universal"]},
+]
+
+
 SINGLE_BYTE_ENCODINGS: list[EncodingInfo] = [
     {"name": "ISO-8859-1", "aliases": ["latin1", "l1", "IBM819", "CP819", "csISOLatin1"],
      "category": "single-byte", "max_bytes_per_char": 1, "is_ascii_compatible": True,
@@ -233,8 +255,8 @@ CHARDET_CONFIDENCE_THRESHOLDS: dict[str, float] = {
 
 MOJIBAKE_SIGNATURES: dict[str, list[str]] = {
     "UTF-8 viewed as ISO-8859-1": [
-        "\u00c2\u00a9", "\u00c3\u00a9", "\u00c2\u00ae",
-        "\u00c3\u00bc", "\u00c3\u00b6", "\u00e2\u0080\u0099",
+        "\u00c3\u00a9", "\u00c3\u00a1", "\u00c3\u00b3",
+        "\u00c3\u00ba", "\u00c3\u00b1", "\u00c2\u00bf",
     ],
     "ISO-8859-1 viewed as UTF-8": [
         "\ufffd", "\ufffd\ufffd",
@@ -256,6 +278,6 @@ MOJIBAKE_SIGNATURES: dict[str, list[str]] = {
 
 
 ALL_ENCODINGS: list[EncodingInfo] = (
-    SINGLE_BYTE_ENCODINGS + WINDOWS_CODE_PAGES + CJK_ENCODINGS +
-    CYRILLIC_ENCODINGS + IBM_CODE_PAGES
+    UTF_ENCODINGS + SINGLE_BYTE_ENCODINGS + WINDOWS_CODE_PAGES +
+    CJK_ENCODINGS + CYRILLIC_ENCODINGS + IBM_CODE_PAGES
 )
