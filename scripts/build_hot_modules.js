@@ -50,7 +50,7 @@ function extractDefaultImplMethods(content) {
   // Find the end of defaultImpl by locating the next structural marker
   // (the "PROXY" comment or "export default" that always follows defaultImpl)
   const afterDefault = content.substring(objStart);
-  const proxyMarker = afterDefault.search(/(?:var stdin_default|export)\b/);
+  const proxyMarker = afterDefault.search(/var stdin_default\b/);
   if (proxyMarker < 0) return methods;
 
   // Walk backward from the proxy marker to find the closing }; of defaultImpl
@@ -156,9 +156,9 @@ function buildPlugin(name) {
   out += `var execSync = _childProcess.execSync;\n`;
   out += `var _spawn = _childProcess.spawn;\n`;
   out += `function spawn(cmd, args, opts) { return _spawn(cmd, args, opts); }\n`;
-  out += `var DISPATCH_TOOLS = ["task", "agent", "workflow"];\n`;
+  out += `var _DISPATCH_TOOLS = ["task", "agent", "workflow"];\n`;
   out += `var READ_TOOLS = ["read", "grep", "glob"];\n`;
-  out += `function isDispatchTool(tool) { return DISPATCH_TOOLS.includes(tool); }\n`;
+  out += `function isDispatchTool(tool) { return _DISPATCH_TOOLS.includes(tool); }\n`;
   out += `function isReadTool(tool) { return READ_TOOLS.includes(tool); }\n`;
   out += `function isDisengaged() {\n`;
   out += `  try {\n`;
@@ -199,9 +199,9 @@ function buildPlugin(name) {
     // Map ...args parameters to input/output for body references
     const mapped = fnBody.replace(
       /^\{/,
-      "{ var input = args[0] || {}; var output = args[1]; "
+      "{ var input = callArgs[0] || {}; var output = callArgs[1]; "
     );
-    out += `exports["${hookName}"] = async function(...args) ${mapped};\n\n`;
+    out += `exports["${hookName}"] = async function(...callArgs) ${mapped};\n\n`;
     console.log(`    hook: ${hookName} (${fnBody.length} bytes)`);
   }
 
