@@ -1,11 +1,5 @@
 """Unit tests for scripts/edit_makefile_target.py"""
 from __future__ import annotations
-import sys
-import subprocess
-import os
-from pathlib import Path
-
-import pytest
 
 from scripts.edit_makefile_target import (
     categorize_section,
