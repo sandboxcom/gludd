@@ -17,12 +17,29 @@ from general_ludd.abtest._child import (
 
 
 class TestApplyLimits:
-    def test_callable_no_args_fail_open(self):
+    @staticmethod
+    def _patch_apply_limits(monkeypatch):
+        calls = []
+
+        def fake_apply_limits(mem_mb: int, cpu_s: int) -> None:
+            calls.append((mem_mb, cpu_s))
+
+        monkeypatch.setattr("general_ludd.abtest._child.apply_limits", fake_apply_limits)
+        return calls
+
+    def test_callable_no_args_fail_open(self, monkeypatch):
+        calls = self._patch_apply_limits(monkeypatch)
+
         _apply_limits(512, 30)
 
-    def test_large_memory_no_error(self):
+        assert calls == [(512, 30)]
+
+    def test_large_memory_no_error(self, monkeypatch):
+        calls = self._patch_apply_limits(monkeypatch)
+
         _apply_limits(16384, 300)
 
+        assert calls == [(16384, 300)]
 
 class TestRunWorkload:
     def test_import_module_workload(self):
