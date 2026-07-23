@@ -109,3 +109,10 @@ def test_main_reports_blocked_state_for_missing_remote_branch(capsys) -> None:
     assert rc == 1
     assert "REMOTE-HEAD-BLOCKED" in captured.out
     assert "remote branch sandboxcom/refs/heads/feature-x does not exist" in captured.out
+
+
+def test_guard_script_uses_system_python_compatible_optional_annotations() -> None:
+    script = (ROOT / "scripts" / "ci_remote_head_guard.py").read_text()
+
+    assert " | None" not in script
+    assert "from typing import Optional" in script
