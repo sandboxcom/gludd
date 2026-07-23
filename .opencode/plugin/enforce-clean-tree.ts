@@ -34,10 +34,10 @@ import { loadHotModule, type HotModule } from "../lib/hot_reload.ts";
 import { isSubagent, reportAlive } from "../lib/shared.ts";
 
 /** Tools that represent subagent dispatch (not bash/read/edit). */
-const DISPATCH_TOOLS = Object.freeze(["task", "agent", "workflow"]) as readonly string[];
+export const DISPATCH_TOOLS = Object.freeze(["task", "agent", "workflow"]) as readonly string[];
 
 /** Prefix for the deny message (extracted for test assertions). */
-const DENY_MESSAGE_PREFIX = "DIRTY TREE";
+export const DENY_MESSAGE_PREFIX = "DIRTY TREE";
 
 /**
  * Returns the git porcelain status output, or empty string on error.

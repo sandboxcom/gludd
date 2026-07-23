@@ -109,7 +109,7 @@ const QA_RESPONSE_PATTERNS = /(?:completed in this session|done since the (?:cra
 const SUBAGENT_TEXT_MARKERS = /(?:task_id|task_result|agent\s+result|subagent\s+result|task\s+completed|generated|completed successfully|exit code)/i
 
 const STOP_PATTERN_PHRASES = /\b(?:shall\s+i\s+continue|should\s+i\s+proceed|want\s+me\s+to\b[^?!.]*)/i
-const PERMISSION_SEEKING_RE = /(?:want me to\s+(?:proceed|continue|dispatch|write|fix|move|start|do|run|create|add|update|implement|handle|begin|work|go ahead)|should i\s+(?:proceed|continue|fix|dispatch|start|move|go ahead)|shall i\s+(?:proceed|continue|fix|start)|^proceed\?$)/im
+export const PERMISSION_SEEKING_RE = /(?:want me to\s+(?:proceed|continue|dispatch|write|fix|move|start|do|run|create|add|update|implement|handle|begin|work|go ahead)|should i\s+(?:proceed|continue|fix|dispatch|start|move|go ahead)|shall i\s+(?:proceed|continue|fix|start)|^proceed\?$)/im
 
 // ── STATUS-SUMMARY detection (2026-07-15) ───────────────────────────────────
 // ROOT CAUSE: a status summary containing commit hashes or "CI: PENDING"
@@ -117,7 +117,7 @@ const PERMISSION_SEEKING_RE = /(?:want me to\s+(?:proceed|continue|dispatch|writ
 // !hasStructuredEvidence() was bypassed. Evidence proves a claim true;
 // it does NOT make stopping-to-summarize acceptable. These patterns are
 // blocked REGARDLESS of evidence when pending work exists.
-const STATUS_SUMMARY_RE = new RegExp(
+export const STATUS_SUMMARY_RE = new RegExp(
   [
     "here.{0,4}s the (?:session\\s+\\d+\\s+)?(?:final\\s+)?status",
     "session\\s+\\d+\\s+(?:final\\s+)?(?:status|summary|wrap[- ]?up|recap)",
