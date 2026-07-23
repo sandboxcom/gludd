@@ -330,6 +330,7 @@ def test_tmp_gludd_cleanup_targets_are_scoped_to_generated_dirs() -> None:
     makefile = _makefile()
     phony_block = makefile.split(".PHONY:", 1)[1].split("help:", 1)[0]
     usage_block = _target_block("tmp-gludd-usage")
+    tmp_cleanup = _target_block("clean-tmp")
     worktree_usage = _target_block("tmp-gludd-worktree-usage")
     shard_cleanup = _target_block("tmp-gludd-clean-ci-shards")
     venv_cleanup = _target_block("clean-worktree-venvs")
@@ -337,6 +338,8 @@ def test_tmp_gludd_cleanup_targets_are_scoped_to_generated_dirs() -> None:
 
     assert phony_block.count("log-agent-result disk-guard") == 1
     assert "sort -h | tail -40" in usage_block
+    assert "scripts/clean_tmp.py" in tmp_cleanup
+    assert "rm -rf" not in tmp_cleanup
     assert "/tmp/gludd-worktrees/*/.pytest_cache" in worktree_usage
     assert "/tmp/gludd-ci-shard-*" in shard_cleanup
     assert "/tmp/gludd-unit-shard-*" in shard_cleanup

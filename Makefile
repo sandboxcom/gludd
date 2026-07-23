@@ -1107,8 +1107,7 @@ crash-recovery:
 	@echo "=== CRASH RECOVERY COMPLETE ==="
 
 clean-tmp:
-	@rm -rf /tmp/gludd-iso-* /tmp/gludd-gate-basetemp /tmp/gludd-winfix*-gate.log /tmp/gludd-test-gate.txt /tmp/gludd-stop-state.json /tmp/pytest-of-* 2>/dev/null || true
-	@echo "clean-tmp done"
+	@python3 scripts/clean_tmp.py
 
 clean-pycache-test-chat-history:
 	@find /Users/shawnwilson/gludd -name "__pycache__" -path "*test_chat_history*" -exec rm -rf {} + 2>/dev/null || true

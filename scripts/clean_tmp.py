@@ -1,175 +1,119 @@
-#!/usr/bin/env python3
-"""Clean massive /tmp/gludd-* disk usage.
+"""Clean scoped gludd and pytest temporary directories."""
 
-Truncates large log files, deletes stale state files, keeps active ones.
-"""
+from __future__ import annotations
 
-import glob
+import contextlib
 import os
 import shutil
-import sys
-import time
+import stat
+from pathlib import Path
 
-TMP = "/tmp"
-STALE_AGE_SEC = 3600
-
-ACTIVE_KEEP = {
-    "gludd-floor-override",
-    "gludd-tool-streak.json",
-    "gludd-watchdog-heartbeat.json",
-    "gludd-watchdog-disengage.json",
-    "gludd-watchdog-ci.json",
-    "gludd-enhancement-ratio.json",
-    "gludd-ci-check-state.json",
-    "gludd-task-deadlines.json",
-    "gludd-task-killed.json",
-    "gludd-mainthread-streak.json",
-    "gludd-block-counter.json",
-    "gludd-orchestrator-state.json",
-    "gludd-health-score.json",
-    "gludd-auto-reset.log",
-    "gludd-continue.txt",
-    "gludd-force-dispatch.json",
-    "gludd-false-done-blocks.json",
-    "gludd-false-done-maxout.json",
-    "gludd-continue-directive.json",
+TMP_GLOBS = (
+    "gludd-iso-*",
+    "gludd-winfix*-gate.log",
+    "gludd-test-gate.txt",
     "gludd-stop-state.json",
-}
+)
+TMP_EXACT = (
+    Path("/tmp/gludd-gate-basetemp"),
+)
 
-def _size(path: str) -> int:
-    try:
-        return os.path.getsize(path) if os.path.isfile(path) else 0
-    except OSError:
-        return 0
 
-def format_bytes(n: int) -> str:
-    if n < 1024:
-        return f"{n}B"
-    elif n < 1024 * 1024:
-        return f"{n / 1024:.1f}KB"
-    else:
-        return f"{n / (1024 * 1024):.1f}MB"
+def _resolve(path: Path) -> Path:
+    return path.resolve(strict=False)
+
+
+def _allowed_roots() -> list[Path]:
+    roots = [_resolve(Path("/tmp"))]
+    home = os.environ.get("HOME")
+    if home:
+        roots.append(_resolve(Path(home) / "tmp"))
+    return roots
+
+
+def _within_allowed_root(path: Path) -> bool:
+    resolved = _resolve(path)
+    return any(resolved == root or root in resolved.parents for root in _allowed_roots())
+
+
+def _pytest_roots() -> list[Path]:
+    roots = [Path("/tmp")]
+    tmpdir = os.environ.get("TMPDIR")
+    if tmpdir:
+        roots.append(Path(tmpdir))
+    home = os.environ.get("HOME")
+    if home:
+        roots.append(Path(home) / "tmp")
+    return roots
+
+
+def _candidates() -> list[Path]:
+    found: list[Path] = []
+    for path in TMP_EXACT:
+        found.append(path)
+    for pattern in TMP_GLOBS:
+        found.extend(Path("/tmp").glob(pattern))
+    for root in _pytest_roots():
+        if _within_allowed_root(root):
+            found.extend(root.glob("pytest-of-*"))
+    return found
+
+
+def _make_writable_tree(path: Path) -> None:
+    with contextlib.suppress(OSError):
+        os.chmod(path, stat.S_IRWXU)
+    for root, dirs, files in os.walk(path):
+        root_path = Path(root)
+        with contextlib.suppress(OSError):
+            os.chmod(root_path, stat.S_IRWXU)
+        for name in dirs:
+            with contextlib.suppress(OSError):
+                os.chmod(root_path / name, stat.S_IRWXU)
+        for name in files:
+            with contextlib.suppress(OSError):
+                os.chmod(root_path / name, stat.S_IRUSR | stat.S_IWUSR)
+
+
+def _retry_with_chmod(func, path_str: str, _exc_info) -> None:
+    path = Path(path_str)
+    with contextlib.suppress(OSError):
+        os.chmod(path, stat.S_IRWXU)
+    func(path_str)
+
+
+def _remove(path: Path) -> None:
+    if path.is_symlink() or path.is_file():
+        path.unlink(missing_ok=True)
+        return
+    if path.is_dir():
+        _make_writable_tree(path)
+        shutil.rmtree(path, onerror=_retry_with_chmod)
+
 
 def main() -> int:
-    freed = 0
-    deleted_count = 0
-    truncated_count = 0
-
-    # ── Truncate large log files (>1MB) ────────────────────────────────────
-    truncate_files = [
-        "gludd-task-deadlines.warnings.log",
-        "gludd-watchdog.log",
-        "gludd-task-watchdog.log",
-        "gludd-secrets-fresh.json",
-    ]
-    for fn in truncate_files:
-        fp = os.path.join(TMP, fn)
-        if os.path.isfile(fp):
-            sz = _size(fp)
-            if sz > 1024 * 1024:
-                os.truncate(fp, 0)
-                freed += sz
-                truncated_count += 1
-                print(f"  truncated {fp} ({format_bytes(sz)})")
-
-    # ── Delete live-count files except cache.json ──────────────────────────
-    for fp in glob.glob(os.path.join(TMP, "gludd-live-count-*.json")):
-        if os.path.basename(fp) == "gludd-live-count-cache.json":
+    removed = 0
+    skipped = 0
+    failed = 0
+    seen: set[Path] = set()
+    for candidate in _candidates():
+        resolved = _resolve(candidate)
+        if resolved in seen:
             continue
-        freed += _size(fp)
-        os.remove(fp)
-        deleted_count += 1
-
-    # ── Delete stale patterns ──────────────────────────────────────────────
-    patterns = [
-        "gludd-gate-test-lock-*",
-        "gludd-ship-gate-rc.*",
-        "gludd-test-tasks-*",
-        "gludd-task-stale-*.json",
-    ]
-    for pat in patterns:
-        for fp in glob.glob(os.path.join(TMP, pat)):
-            freed += _size(fp)
-            os.remove(fp)
-            deleted_count += 1
-
-    # ── Delete old todowrite-state files for stale PIDs ────────────────────
-    todowrite_files = glob.glob(os.path.join(TMP, "gludd-todowrite-state-*.json"))
-    if todowrite_files:
-        for fp in todowrite_files:
-            freed += _size(fp)
-            os.remove(fp)
-            deleted_count += 1
-
-    # ── Delete old session-start files, keep most recent ───────────────────
-    session_files = sorted(glob.glob(os.path.join(TMP, "gludd-session-start-*.json")))
-    if len(session_files) > 1:
-        for fp in session_files[:-1]:
-            freed += _size(fp)
-            os.remove(fp)
-            deleted_count += 1
-
-    # ── Delete stale enhancement-ratio wave files ──────────────────────────
-    for fp in glob.glob(os.path.join(TMP, "gludd-enhancement-ratio-wave-*.json")):
-        freed += _size(fp)
-        os.remove(fp)
-        deleted_count += 1
-
-    # ── Delete stale task state files ──────────────────────────────────────
-    for pat in ["gludd-task-state-snapshot.json", "gludd-task-state.json",
-                "gludd-task-history.json", "gludd-task-timings.json",
-                "gludd-task-anomalies.json", "gludd-stalled-tasks.txt",
-                "gludd-watchdog-anomaly-count.json",
-                "gludd-watchdog-durations.json",
-                "gludd-watchdog-timing.json",
-                "gludd-watchdog-last-activity.json",
-                "gludd-watchdog-last-flag.json",
-                "gludd-watchdog-check-cooldowns.json",
-                "gludd-watchdog-liveness-backoff.json",
-                "gludd-watchdog-push-timestamps.json",
-                "gludd-watchdog-stop-count.json",
-                "gludd-push-in-progress",
-    ]:
-        fp = os.path.join(TMP, pat)
-        if os.path.isfile(fp):
-            freed += _size(fp)
-            os.remove(fp)
-            deleted_count += 1
-
-    # ── Delete stale test artifacts older than STALE_AGE_SEC ───────────────
-    # Catches molecule logs, mock JSON, stream fixtures, etc. that accumulate
-    # from test runs but aren't covered by the specific patterns above.
-    cutoff = time.time() - STALE_AGE_SEC
-    keep_prefixes = tuple(ACTIVE_KEEP)
-    for entry in glob.glob(os.path.join(TMP, "gludd-*")):
-        basename = os.path.basename(entry)
-        if basename in ACTIVE_KEEP:
+        seen.add(resolved)
+        if not _within_allowed_root(candidate):
+            skipped += 1
             continue
-        if basename.startswith(keep_prefixes):
+        if not candidate.exists() and not candidate.is_symlink():
             continue
         try:
-            if os.path.getmtime(entry) < cutoff:
-                if os.path.isdir(entry):
-                    shutil.rmtree(entry)
-                    deleted_count += 1
-                else:
-                    # Covers regular files AND non-regular filesystem entries
-                    # (sockets, fifos, broken symlinks) that leak from test
-                    # runs. os.path.isfile() returns False for sockets, which
-                    # previously left stale gludd-test-fc-*.sock files behind.
-                    freed += _size(entry)
-                    os.remove(entry)
-                    deleted_count += 1
-        except OSError:
-            pass
+            _remove(candidate)
+            removed += 1
+        except OSError as exc:
+            failed += 1
+            print(f"clean-tmp failed path={candidate} error={exc}")
+    print(f"clean-tmp removed={removed} skipped={skipped} failed={failed}")
+    return 1 if failed else 0
 
-    # ── Summary ────────────────────────────────────────────────────────────
-    print(f"  truncated: {truncated_count} file(s)")
-    print(f"  deleted:   {deleted_count} file(s)")
-    print(f"  freed:     {format_bytes(freed)}")
-    if freed == 0 and deleted_count == 0 and truncated_count == 0:
-        print("  (no stale files found)")
-    return 0
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())
