@@ -4408,7 +4408,11 @@ subagent-cleanup:
 	@echo "subagent-cleanup: removed /tmp/gludd-subagent-$$$$.json"
 
 check-hot-reload-fresh:
-	@$(UV) run python3 scripts/check_hot_reload_fresh.py
+	@if [ "$${CI:-}" = "true" ]; then \
+		echo "CI environment — skipping hot-reload freshness check (modules in /tmp/ don't persist across steps)"; \
+	else \
+		$(UV) run python3 scripts/check_hot_reload_fresh.py; \
+	fi
 
 # --- Restart opencode for plugin changes to take effect ---
 # TypeScript plugin changes are compiled once at opencode startup — edits to
