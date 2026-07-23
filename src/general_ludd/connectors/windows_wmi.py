@@ -314,3 +314,6 @@ class WinWmiConnector:
             "labels": labels,
             "raw": {"command": f"Get-CimInstance -ClassName {wmi_class}", "data": obj},
         }
+
+
+WinWmiSource = WinWmiConnector

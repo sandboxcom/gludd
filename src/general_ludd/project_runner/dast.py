@@ -18,6 +18,7 @@ import ipaddress
 import json
 import logging
 import os
+import shlex
 import shutil
 import signal
 import subprocess
@@ -388,9 +389,11 @@ def _start_app(
     start_command: str,
 ) -> subprocess.Popen[str]:
     logger.info("starting target app on port %d: %s", port, start_command)
+    argv = shlex.split(start_command)
+    if not argv:
+        raise ValueError("start_command must not be empty")
     proc = subprocess.Popen(
-        start_command,
-        shell=True,
+        argv,
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,

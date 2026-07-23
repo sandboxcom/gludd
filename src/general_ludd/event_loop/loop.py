@@ -40,7 +40,7 @@ from general_ludd.db.repository import (
 )
 from general_ludd.db.tenant import reset_tenant as _reset_tenant
 from general_ludd.db.tenant import set_tenant as _set_tenant
-from general_ludd.event_loop.lease import reclaim_expired_leases
+from general_ludd.event_loop.lease import reclaim_expired_leases, release_lease
 from general_ludd.execution.graph_checkpointer import TickCheckpointer
 from general_ludd.execution.human_gate import HumanGate
 from general_ludd.execution.situation_store import BadCallSituationStore
@@ -1651,8 +1651,46 @@ class EventLoop:
                     exc_info=True,
                 )
 
+    async def _trim_claimed_to_pid_cap(self, claimed: list[Any]) -> list[Any]:
+        pid_outputs = self._tick_state.get("pid_outputs")
+        desired = getattr(pid_outputs, "desired_total_active_buckets", None)
+        if not isinstance(desired, int) or len(claimed) <= desired:
+            return claimed
+        if self._active_session is None or self._todo_repo is None:
+            return claimed
+
+        keep_count = max(0, desired)
+        kept = list(claimed[:keep_count])
+        released = list(claimed[keep_count:])
+        for todo in released:
+            queue = _safe_str(todo, "queue", "core") or "core"
+            todo_id = _safe_str(todo, "todo_id", "") or ""
+            version = getattr(todo, "version", None)
+            if todo_id and isinstance(version, int):
+                try:
+                    await self._todo_repo.transition(todo_id, TodoStatus.QUEUED, version)
+                except Exception as exc:
+                    logger.warning(
+                        "PID cap release failed to requeue todo %s: %s",
+                        todo_id,
+                        exc,
+                    )
+                    continue
+            if todo_id:
+                try:
+                    await release_lease(self._active_session, f"{queue}:{todo_id}")
+                except Exception as exc:
+                    logger.warning(
+                        "PID cap release failed to delete lease for todo %s: %s",
+                        todo_id,
+                        exc,
+                    )
+        self._tick_state["claimed_todos"] = kept
+        return kept
+
     async def _phase_dispatch_execute_jobs(self) -> None:
-        claimed = self._tick_state.get("claimed_todos", [])
+        claimed = list(self._tick_state.get("claimed_todos", []))
+        claimed = await self._trim_claimed_to_pid_cap(claimed)
         if self._budget_guard is not None:
             check = self._budget_guard.check_all_limits(
                 estimated_cost=self._estimated_dispatch_cost(len(claimed))

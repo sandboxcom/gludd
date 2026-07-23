@@ -283,7 +283,7 @@ def test_pagination_has_more_without_cursor_stops(token: str) -> None:
 def test_ssrf_rejects_private(bad: str) -> None:
     with pytest.raises(ValueError, match=r"private|loopback"):
         NotionSource(
-            {"database_id": DATABASE_ID, "token_env": TOKEN_ENV},
+            {"database_id": DATABASE_ID, "token_env": TOKEN_ENV, "api_base": bad},
             transport=lambda *a, **k: None,
         )
 

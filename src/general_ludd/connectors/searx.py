@@ -204,3 +204,6 @@ class SearXConnector:
             return {"ok": False, "error": f"HTTP {status}"}
         except Exception as exc:
             return {"ok": False, "error": type(exc).__name__}
+
+
+SearXSource = SearXConnector

@@ -51,7 +51,6 @@ from urllib.parse import quote, urlencode, urlsplit
 import httpx
 
 from general_ludd.connectors._protocols import HttpResponse
-from general_ludd.connectors.exc_sanitizer import sanitize_exc_for_query
 from general_ludd.security.ssrf import BLOCKED_HOST_NAMES, BLOCKED_METADATA_IPS, host_is_blocked
 
 logger = logging.getLogger(__name__)
@@ -357,7 +356,7 @@ class KubernetesSource:
             return [self._error(f"unknown mode {mode!r} (expected 'logs' or 'events')")]
         except _ConfigError as exc:
             logger.warning("kubernetes config error in query", exc_info=True)
-            return [self._error(sanitize_exc_for_query(exc))]
+            return [self._error(str(exc))]
         except Exception:
             logger.warning("kubernetes query failed", exc_info=True)
             return [self._error("query failed")]

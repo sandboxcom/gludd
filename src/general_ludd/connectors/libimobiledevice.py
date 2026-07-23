@@ -193,3 +193,6 @@ class IDeviceConnector:
             return []
         except Exception:
             return []
+
+
+IDeviceSource = IDeviceConnector

@@ -379,3 +379,6 @@ class WindowsDefenderConnector:
                 )
             )
         return results
+
+
+WindowsDefenderSource = WindowsDefenderConnector

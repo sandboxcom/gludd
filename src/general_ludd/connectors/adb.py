@@ -194,3 +194,6 @@ class AdbConnector:
             return []
         except Exception:
             return []
+
+
+AdbSource = AdbConnector
