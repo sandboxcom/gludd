@@ -318,6 +318,7 @@ help:
 	@echo "  searx-test            Health-check the SearXNG JSON API"
 	@echo ""
 	@echo "  --- Disk ---"
+	@echo "  fix-hooks-tmp           temp fix target"
 	@echo "  disk-guard            Check disk usage + clean caches if above threshold (default 95%)"
 	@echo "  disk-check            Check disk usage only, exit 1 if above threshold"
 	@echo "  check-disk            Pre-commit check: fails if /tmp/gludd-* >100MB or disk >90%"
@@ -3382,6 +3383,10 @@ clean-enhancement-ratio:
 	@echo "Enhancement-ratio state cleared."
 
 # --- Plugin manifest verification — opencode.json ↔ disk ↔ guard coverage ---
+# temp fix target
+fix-hooks-tmp:
+	@echo "fix-hooks-tmp: temp fix target"
+
 verify-plugin-manifest:
 	@$(PYTHON) scripts/verify_plugin_manifest.py
 
@@ -5100,3 +5105,48 @@ foo-test:
 test-temp-target:
 	@echo "test-temp-target: Temp test target"
 
+
+# Run the worktree health gate. Exits non-zero on any violation
+# (stale >24h, unmerged, missing from remote, prunable).
+# Usage: make worktree-health-check
+worktree-health-check:
+	@python3 scripts/check_worktree_health.py
+
+# Bulk merge: iterate all worktrees, attempt to merge each branch into
+# development via --no-ff, report conflicts, clean up successful merges.
+# Usage: make worktree-merge-all
+worktree-merge-all:
+	@echo "=== Bulk merging worktrees into development ==="; \
+	in_main=false; wt=""; br=""; hd=""; \
+	count=0; merged=0; conflicts=0; \
+	git worktree list --porcelain | while IFS= read -r line; do \
+		case "$$line" in \
+			worktree\ *) wt="$${line#worktree }"; \
+				if [ "$$wt" = "/Users/shawnwilson/gludd" ]; then in_main=true; else in_main=false; fi ;; \
+			branch\ *)  br="$${line#branch }" ;; \
+			HEAD\ *)    hd="$${line#HEAD }" ;; \
+			"") \
+				if [ "$$in_main" = false ] && [ -n "$$br" ]; then \
+					count=$$((count + 1)); \
+					echo "--- [$$count] $$br ($$wt) ---"; \
+					if git merge-base --is-ancestor "$$br" development 2>/dev/null; then \
+						echo "  Already merged into development — cleaning up"; \
+						$(MAKE) agent-cleanup BRANCH="$$br"; \
+						merged=$$((merged + 1)); \
+					elif git merge --no-ff "$$br" -m "merge: $$br worktree work into development" 2>/dev/null; then \
+						echo "  Merged $$br into development"; \
+						$(MAKE) agent-cleanup BRANCH="$$br"; \
+						merged=$$((merged + 1)); \
+					else \
+						echo "  CONFLICT: $$br — manual resolution required"; \
+						git merge --abort 2>/dev/null || true; \
+						conflicts=$$((conflicts + 1)); \
+					fi; \
+				fi; \
+				wt=""; br=""; hd=""; \
+				;; \
+		esac; \
+	done; \
+	git worktree prune; \
+	echo; \
+	echo "=== Worktree merge complete: $${count:-0} total, $${merged:-0} merged, $${conflicts:-0} conflicts ==="

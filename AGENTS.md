@@ -2507,6 +2507,35 @@ shared tree" failure mode. Tests:
 `tests/unit/test_agent_worktree_targets.py`. Make targets: `agent-worktree`,
 `agent-merge`, `agent-cleanup`, `agent-worktree-list`.
 
+### Git Worktree Lifecycle — Merge or Clean Up
+
+**Every worktree MUST be merged into development and then cleaned up. An abandoned worktree with unmerged commits is lost work, and stale worktrees consume disk and confuse `git worktree list` output. Clean up after every merge, and never leave worktrees lingering past the session.**
+
+#### Rules
+
+1. **Every worktree branch MUST be merged into development before cleanup.** Worktrees with unmerged commits represent abandoned features. Run `make agent-merge-dev BRANCH=<name>` to merge, then IMMEDIATELY run `make agent-cleanup BRANCH=<name>` to remove the worktree + branch.
+2. **`make agent-worktree-list` shows active worktrees.** Any worktree older than 24 hours with commits not merged into development is a policy violation — the work was abandoned.
+3. **Merge-then-cleanup is one atomic unit.** After `make agent-merge-dev BRANCH=<name>`, immediately run `make agent-cleanup BRANCH=<name>`. Never leave a merged branch with its worktree still on disk.
+4. **A session MUST end with zero active worktrees.** `make agent-worktree-list` at session end must show only the main checkout (`/Users/shawnwilson/gludd`). Lingering worktrees are unmerged or abandoned work — both are bugs.
+5. **`make worktree-health-check`** — the mechanical gate (runs `scripts/check_worktree_health.py`):
+   a. Lists all worktrees (excludes the main checkout)
+   b. Flags any worktree older than 24h whose branch commits are not reachable from `development`
+   c. Flags any worktree whose branch does not exist on the remote (`sandboxcom`)
+   d. Exits non-zero on any violation — the agent MUST resolve before the gate goes green
+6. **`make worktree-merge-all`** — bulk merge: iterates all worktrees, attempts to merge each branch into `development` via `--no-ff`, reports any conflict branches that need manual resolution, then cleans up successfully merged worktrees.
+
+#### Enforcement (3 layers)
+
+- **Script:** `scripts/check_worktree_health.py` — mechanically checks age, merge status, and remote tracking.
+- **Make:** `make worktree-health-check` + `make worktree-merge-all` — callable targets.
+- **Prompt:** this section — proactive instruction. An `agent-worktree-list` showing more than just the main checkout at session end is a premature-stop equivalent — the agent abandoned worktree branches.
+
+#### Why this matters
+
+Multiple sessions accumulated 18+ stale worktrees (some dating back weeks) because branches were created, work was committed on them, and they were never merged or cleaned up. The per-worktree ~320 MB venv × 18 worktrees = ~5.7 GB of abandoned disk. And the unmerged commits on those branches are lost features — every prunable worktree is evidence of an abandoned coding session. The health check gate makes this structurally impossible: the agent cannot end a session with stale worktrees alive, and the age threshold catches abandonment within 24 hours.
+
+
+
 #### ⚠️ KNOWN GAP: git locking is broken inside worktrees (read before running a wide worktree wave)
 
 **Verified 2026-07-14**, `src/general_ludd/git_automation/locking.py:120-131`
