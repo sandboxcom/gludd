@@ -18,7 +18,6 @@ These tests are the mechanical fix.
 
 import json
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
@@ -210,7 +209,7 @@ class TestHookInvocation:
         failures = data.get("failures", [])
         hook_failures = [f for f in failures if "CRASH" in f.get("message", "")]
         assert len(hook_failures) == 0, (
-            f"Hook invocation crashes:\n"
+            "Hook invocation crashes:\n"
             + "\n".join(f"  [{f['test']}] {f['message']}" for f in hook_failures)
         )
 
@@ -303,7 +302,7 @@ class TestAutoDiscoveredSafety:
         failures = data.get("failures", [])
         auto_failures = [f for f in failures if "auto-discovered" in f.get("test", "")]
         assert len(auto_failures) == 0, (
-            f"Auto-discovered files that fail as plugins:\n"
+            "Auto-discovered files that fail as plugins:\n"
             + "\n".join(f"  [{f['test']}] {f['message']}" for f in auto_failures)
         )
 

@@ -103,7 +103,7 @@ class TestOpencodeBinaryBoot:
                         found.append(f"  {sig}: {line.strip()[:200]}")
                         break
         assert len(found) == 0, (
-            f"Crash signatures in opencode output:\n" + "\n".join(found)
+            "Crash signatures in opencode output:\n" + "\n".join(found)
         )
 
     def test_no_unexpected_server_error(self):
@@ -117,7 +117,7 @@ class TestOpencodeBinaryBoot:
 
     def test_pure_mode_works(self):
         """--pure mode (no external plugins) must work as baseline."""
-        exit_code, stdout, stderr = _run_opencode_pure()
+        _exit_code, stdout, stderr = _run_opencode_pure()
         combined = stdout + stderr
 
         # Pure mode should have no plugin load failures
@@ -149,7 +149,7 @@ class TestOpencodeBinaryBoot:
 
         # At minimum, init count should be reasonable
         assert len(init_matches) > 0, "No init count found in opencode output"
-        init_count = int(init_matches[0])
+        int(init_matches[0])
 
         # Not all need to load (some may be NPM packages), but failures should be 0
         assert failure_count == 0, (
