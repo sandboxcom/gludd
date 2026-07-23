@@ -23,7 +23,7 @@ const DENY_MESSAGE =
   "subagent at a time, or use `make ship-commit-files FILES='...'` for atomic staging. " +
   "Set GLUDD_COMMIT_LOCK_ENFORCE=0 to disable.";
 let _heldByThisCall = false;
-function isCommitCommand(cmd: string): boolean {
+export function isCommitCommand(cmd: string): boolean {
   for (const target of COMMIT_TARGETS) {
     const escaped = target.replace(/[-]/g, "\\-");
     // Match `make <target>` followed by whitespace or end-of-string.
@@ -58,6 +58,47 @@ function releaseLock(): void {
     // ignore — file may not exist
   }
 }
+async function beforeHook(input: { tool: string }): Promise<void> {
+  if (isSubagent()) return
+  reportAlive("enforce-commit-lock")
+  _heldByThisCall = false
+  try {
+    if (process.env.GLUDD_COMMIT_LOCK_ENFORCE === "0") return
+    if (input.tool !== "bash") return
+    const params = input as { tool: string; command?: string }
+    const cmd: string = params.command ?? ""
+    if (!isCommitCommand(cmd)) return
+    if (tryAcquire()) {
+      _heldByThisCall = true
+      return
+    }
+    const age = lockAge()
+    if (age > STALE_THRESHOLD_MS) {
+      releaseLock()
+      if (tryAcquire()) {
+        _heldByThisCall = true
+        return
+      }
+    }
+    ;(input as { permissionDecision?: string }).permissionDecision = "deny"
+    ;(input as { message?: string }).message = DENY_MESSAGE
+  } catch {
+    // Fail-open: never wedge the editor on a plugin error.
+  }
+}
+
+async function afterHook(input: { tool: string }): Promise<void> {
+  try {
+    if (process.env.GLUDD_COMMIT_LOCK_ENFORCE === "0") return
+    if (!_heldByThisCall) return
+    if (input.tool !== "bash") return
+    releaseLock()
+    _heldByThisCall = false
+  } catch {
+    // Fail-open
+  }
+}
+
 export default async function commitLockPlugin(
   _input: unknown,
   _options?: unknown,
@@ -65,45 +106,18 @@ export default async function commitLockPlugin(
   "tool.execute.before": (input: { tool: string }, output: unknown) => Promise<void>
   "tool.execute.after": (input: { tool: string }, output: unknown) => Promise<void>
 }> {
-  return {
-    "tool.execute.before": async (input: { tool: string }) => {
-      if (isSubagent()) return
-      reportAlive("enforce-commit-lock")
-      _heldByThisCall = false
-      try {
-        if (process.env.GLUDD_COMMIT_LOCK_ENFORCE === "0") return
-        if (input.tool !== "bash") return
-        const params = input as { tool: string; command?: string }
-        const cmd: string = params.command ?? ""
-        if (!isCommitCommand(cmd)) return
-        if (tryAcquire()) {
-          _heldByThisCall = true
-          return
-        }
-        const age = lockAge()
-        if (age > STALE_THRESHOLD_MS) {
-          releaseLock()
-          if (tryAcquire()) {
-            _heldByThisCall = true
-            return
-          }
-        }
-        ;(input as { permissionDecision?: string }).permissionDecision = "deny"
-        ;(input as { message?: string }).message = DENY_MESSAGE
-      } catch {
-        // Fail-open: never wedge the editor on a plugin error.
-      }
-    },
-    "tool.execute.after": async (input: { tool: string }) => {
-      try {
-        if (process.env.GLUDD_COMMIT_LOCK_ENFORCE === "0") return
-        if (!_heldByThisCall) return
-        if (input.tool !== "bash") return
-        releaseLock()
-        _heldByThisCall = false
-      } catch {
-        // Fail-open
-      }
-    },
+  const hooks = {
+    "tool.execute.before": beforeHook,
+    "tool.execute.after": afterHook,
   }
+
+  const input = _input as any
+  if (input?.tool?.execute?.before) {
+    input.tool.execute.before(beforeHook)
+  }
+  if (input?.tool?.execute?.after) {
+    input.tool.execute.after(afterHook)
+  }
+
+  return hooks
 }

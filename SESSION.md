@@ -6,11 +6,11 @@
 
 ---
 
-## Current Gate Status (2026-07-22)
+## Current Gate Status (2026-07-23)
 <!-- gate:begin -->
 - lint PASS 0
 - env-writes PASS
-- hook-runtime PASS
+- hook-runtime FAIL (29 failures — named export stripping, commit 0e45db90)
 - typecheck PASS 0
 - collect PASS 0
 - test REQUIRED
@@ -20,7 +20,7 @@
 
 ---
 
-## PRIMARY OBJECTIVE: GREEN CI ON DEVELOPMENT → 12/12 ARTIFACTS FOR v0.1.0-beta.2 ON MASTER
+## PRIMARY OBJECTIVE: FIX HOOK-RUNTIME → GREEN LOCAL GATE → GREEN CI ON MASTER → 12/12 ARTIFACTS FOR v0.1.0-beta.1
 
 ---
 
@@ -73,6 +73,48 @@
 6. Tick `[x]` on TASKS.md A.4 with artifact URL + CI run id as evidence
 
 - **Last Updated: 2026-07-18 — Session 50.** HEAD `d90fa882` on `development` (pushed + VERIFIED). 7 commits this session: 1 cleanup + 5 bug fixes + 1 docs. 6 pre-release bugs found and fixed (all enforcement-plugins test-side; 0 src/ regressions). Gate running; CI triggered. A.4 (beta.2 release) blocked on CI GREEN.
+
+---
+
+## SESSION 51 — 2026-07-23
+
+- **HEAD: `8165a6db`** on `master` branch
+- **Version: 0.1.0-beta.5** (pyproject.toml; A.4 will cut as `v0.1.0-beta.1` tag with all 12 artifacts)
+- **Push status: NOT PUSHED** — recent commits not yet verified on sandboxcom
+- **CI: NOT YET CHECKED** — master branch has new commits, CI verdict unknown
+- **Gate: NOT RUN** — full local gate not run on HEAD
+- **Working tree: DIRTY** — `.opencode/plugin-hashes.json`, `.opencode/plugin/enforce-{clean-tree,no-suppressions,verified-claims}.ts`, `.opencode/skills/background-test-runner/SKILL.md` modified
+- **hook-runtime: 29 FAILURES** — caused by named export stripping at commit `0e45db90`; being actively fixed
+- **Primary objective:** User mandate: get v0.1.0-beta.1 deployed with all 12 verified artifacts (current beta.1 release has only 1/12)
+
+### Commits this session (2 on master: `0e45db90..8165a6db`)
+
+| Hash | Message | Category |
+|------|---------|----------|
+| `8165a6db` | fix: remove _exports.ts and hot_reload.ts from plugin dir causing opencode boot crash — 54 guard tests added | fix |
+| `0e45db90` | fix: remove named exports from plugins to fix opencode crash | fix |
+
+### Pre-release blockers (in priority order)
+
+| Blocker | Status |
+|---------|--------|
+| hook-runtime 29 failures (named export stripping, commit 0e45db90) | IN PROGRESS — fixing on master |
+| Local gate must be green (lint 0, typecheck ≤ baseline, collect 0, tests pass) | NOT YET RUN |
+| CI must be green on master HEAD | NOT YET CHECKED |
+| v0.1.0-beta.1 release must have all 12 artifacts (currently 1/12) | PENDING release-cut |
+| `verify-release-completeness TAG=v0.1.0-beta.1` must PASS | PENDING |
+
+### Next Steps
+
+1. [ ] Fix hook-runtime 29 failures — restore plugin exports compatible with opencode runtime
+2. [ ] Run local gate (`make gate-background`) — must be fully green
+3. [ ] Push master commits + verify remote
+4. [ ] CI green on master HEAD
+5. [ ] Cut v0.1.0-beta.1 release with all 12 artifacts: `make release-cut TAG=v0.1.0-beta.1 MSG='beta.1 release — full 12-artifact build'`
+6. [ ] `make verify-release-completeness TAG=v0.1.0-beta.1` — confirm all 12 asset categories
+
+### Last Updated
+- **2026-07-23 — Session 51.** On `master` branch, HEAD `8165a6db`. 2 commits this session (0e45db90 + 8165a6db). hook-runtime 29 failures from named export stripping being fixed. User mandate: v0.1.0-beta.1 with all 12 artifacts. A.4 in_progress (CI + local pipeline green for beta.1 release).
 
 ---
 

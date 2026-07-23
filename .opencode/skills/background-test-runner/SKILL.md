@@ -1,10 +1,8 @@
 ---
-{
-  "name": "background-test-runner",
-  "description": "Launch long-lived tests in the background and poll their status, so no task thread is ever blocked waiting for a test.",
-  "tags": ["testing", "background", "parallel", "pipeline"],
-  "category": "engineering"
-}
+name: background-test-runner
+description: Launch long-lived tests in the background and poll their status, so no task thread is ever blocked waiting for a test.
+metadata:
+  category: engineering
 ---
 
 # Background Test Runner
