@@ -374,3 +374,13 @@ def test_secrets_scan_targets_do_not_dirty_committed_baseline() -> None:
         assert "cp .secrets.baseline \"$$TMP\"" in block
         assert "$(UV) run detect-secrets scan --baseline \"$$TMP\"" in block
         assert "--baseline .secrets.baseline" not in block
+
+
+def test_git_show_file_to_is_scoped_to_safe_restore_outputs() -> None:
+    block = _target_block("git-show-file-to")
+    assert "git show" in block
+    assert ":$(FILE)" in block
+    assert "> \"$(OUT)\"" in block
+    assert ".opencode/plugin/impl/*" in block
+    assert "Refusing unsafe FILE" in block
+    assert "Refusing unsafe OUT" in block

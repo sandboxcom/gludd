@@ -1188,6 +1188,15 @@ git-show-full:
 	@test -n "$(SHA)" || (echo "Usage: make git-show-full SHA=<sha>"; exit 1)
 	git show $(SHA)
 
+git-show-file-to:
+	@test -n "$(SHA)" || { echo "Usage: make git-show-file-to SHA=<sha> FILE=path OUT=path"; exit 1; }
+	@test -n "$(FILE)" || { echo "Usage: make git-show-file-to SHA=<sha> FILE=path OUT=path"; exit 1; }
+	@test -n "$(OUT)" || { echo "Usage: make git-show-file-to SHA=<sha> FILE=path OUT=path"; exit 1; }
+	@case "$(FILE)" in /*|*..*) echo "Refusing unsafe FILE: $(FILE)"; exit 1;; esac
+	@case "$(OUT)" in /tmp/gludd-*|.opencode/plugin/impl/*) ;; /*|*..*) echo "Refusing unsafe OUT: $(OUT)"; exit 1;; esac
+	@mkdir -p "$$(dirname "$(OUT)")"
+	@git show "$(SHA):$(FILE)" > "$(OUT)"
+
 git-show-name-only:
 	@test -n "$(SHA)" || (echo "Usage: make git-show-name-only SHA=<sha>"; exit 1)
 	git show --name-only $(SHA)
