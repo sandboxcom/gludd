@@ -123,8 +123,14 @@ def test_build_tfvars_routes_all_string_values_through_escape_helper() -> None:
             continue
         _key, _, rhs = line.partition(" = ")
         rhs = rhs.strip()
-        # numeric values are emitted bare
-        if rhs.isdigit():
+        # Numeric and boolean values are emitted as bare HCL literals.
+        if rhs in {"true", "false"}:
+            continue
+        try:
+            float(rhs)
+        except ValueError:
+            pass
+        else:
             continue
         assert rhs.startswith('"') and rhs.endswith('"'), (
             f"tfvars value not quoted: {line!r}"

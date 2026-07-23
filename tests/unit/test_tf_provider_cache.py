@@ -29,6 +29,8 @@ def test_versions_tf_is_the_canonical_contract() -> None:
         "hashicorp/kubernetes": "~> 2.31",
         "hashicorp/vsphere": "~> 2.8",
         "runpod/runpod": "~> 1.0",
+        "dmacvicar/libvirt": "~> 0.7",
+        "jvzq/qemu": "~> 0.1",
     }
     assert contract == expected
 

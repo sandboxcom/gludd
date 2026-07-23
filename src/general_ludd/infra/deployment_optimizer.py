@@ -595,7 +595,7 @@ def recommend_config(
     gpu_memory_utilization: float | None = None,
     max_num_seqs: int | None = None,
     desired_max_len: int | None = None,
-    workload_type: WorkloadType | None = None,
+    workload_type: WorkloadType | str | None = None,
 ) -> dict[str, object]:
     """Recommend a serving config dict for ``engine`` in {vllm, llamacpp}.
 
@@ -611,13 +611,25 @@ def recommend_config(
     if engine not in ("vllm", "llamacpp"):
         raise ValueError(f"unsupported engine {engine!r}")
 
-    if workload_type is not None and workload_type not in WorkloadType:
-        raise ValueError(f"unknown workload_type {workload_type!r}")
+    normalized_workload_type: WorkloadType | None
+    if workload_type is None:
+        normalized_workload_type = None
+    elif isinstance(workload_type, WorkloadType):
+        normalized_workload_type = workload_type
+    else:
+        try:
+            normalized_workload_type = WorkloadType(str(workload_type))
+        except ValueError as exc:
+            raise ValueError(f"unknown workload_type {workload_type!r}") from exc
 
     d = _RecommendDefaults()
 
     # Workload profile overrides the defaults BEFORE the base config is built.
-    profile = WORKLOAD_PROFILES.get(workload_type) if workload_type is not None else None
+    profile = (
+        WORKLOAD_PROFILES.get(normalized_workload_type)
+        if normalized_workload_type is not None
+        else None
+    )
 
     # Track which knobs were explicitly passed by the caller — they must win
     # over the workload profile even during the post-hoc apply() merge.
