@@ -126,7 +126,7 @@ def _boot_serve(port: int, timeout: float = 20.0) -> tuple[subprocess.Popen, str
     Returns as soon as the listening line prints or after ``timeout`` seconds.
     """
     env = os.environ.copy()
-    env["OPENCODE_SERVER_PASSWORD"] = "test-only"
+    env["OPENCODE_SERVER_PASSWORD"] = "test-only"  # pragma: allowlist secret
     proc = subprocess.Popen(
         [
             "opencode", "serve",
