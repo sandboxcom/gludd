@@ -1616,9 +1616,6 @@ class EventLoop:
             self._tick_state["claimed_todos"] = []
             return
 
-        if project_id is None:
-            self._tick_state["claimed_todos"] = []
-            return
         claimed = await self._todo_repo.claim_runnable(
             limit=effective_limit, project_id=project_id
         )
