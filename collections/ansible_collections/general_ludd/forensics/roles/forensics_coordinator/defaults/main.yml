@@ -1,0 +1,11 @@
+---
+forensics_enabled: true
+forensics_case_id: ""
+forensics_evidence_dir: ""
+forensics_analyst_types:
+  - fingerprint
+  - dna
+  - trace_evidence
+  - photo_forensics
+forensics_output_dir: "{{ playbook_dir }}/output/forensics"
+forensics_pipeline_enabled: true

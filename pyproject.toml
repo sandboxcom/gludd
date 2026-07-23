@@ -14,7 +14,7 @@ dependencies = [
     "uvicorn-worker>=0.3.0",
     "gunicorn>=23.0.0",
     "httpx>=0.28.0",
-    "pydantic>=2.10.0",
+        "pydantic>=2.10.0",
     "pydantic-settings>=2.14.2",
     "sqlalchemy>=2.0.0",
     "cryptography>=48.0.1",
@@ -134,7 +134,11 @@ disallow_untyped_defs = true
 exclude = ["scripts/", "tests/unit/test_injection_patterns.py", "tests/unit/test_sql_injection_patterns.py", "tests/unit/test_ci_push_guard.py", "abtest/"]
 
 [[tool.mypy.overrides]]
-module = ["pygments", "pygments.*", "ansible.*", "hvac.*", "psycopg.*", "yaml.*", "tree_sitter.*", "tree_sitter_python.*", "huggingface_hub.*", "diskcache.*", "watchdog.*", "croniter.*", "jsonschema", "googleapiclient.*", "google.*", "azure.*", "ansible_runner", "scapy", "scapy.*", "xmlsec", "lxml", "lxml.etree", "lxml.*", "pyVim", "pyVim.*", "pyVmomi", "pyVmomi.*", "openai", "openai.*"]
+module = ["pygments", "pygments.*", "ansible.*", "ansible_collections.*", "hvac.*", "psycopg.*", "yaml.*", "tree_sitter.*", "tree_sitter_python.*", "huggingface_hub.*", "diskcache.*", "watchdog.*", "croniter.*", "jsonschema", "googleapiclient.*", "google.*", "azure.*", "ansible_runner", "xmlsec", "lxml", "lxml.etree", "pyVim.*", "pyVmomi", "openai"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "scapy.*"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
@@ -148,6 +152,13 @@ disable_error_code = ["misc"]
 [[tool.mypy.overrides]]
 module = "general_ludd.observability.metrics_exporter"
 disable_error_code = ["type-arg"]
+
+[[tool.mypy.overrides]]
+module = ["tests", "tests.*"]
+disallow_untyped_defs = false
+disallow_untyped_calls = false
+disallow_incomplete_defs = false
+check_untyped_defs = false
 
 
 [tool.pytest.ini_options]
@@ -163,6 +174,11 @@ markers = [
     "requires_slurm: skip unless SLURM_AVAILABLE=1 is set in env or sbatch is on PATH",
     "requires_postgres: skip unless POSTGRES_AVAILABLE=1 is set in env or port 5432 is open",
     "hook_live: exercises a real opencode CLI against the .opencode/plugin/*.ts hooks; excluded from the default run (`-m \"not hook_live\"` in addopts) — run via `make test-hooks-live` or `-m hook_live`",
+]
+filterwarnings = [
+    "ignore:pkg_resources is deprecated as an API:UserWarning:fs",
+    "ignore:Deprecated call to `pkg_resources\\.declare_namespace\\('fs.*:DeprecationWarning:fs",
+    "ignore:Deprecated call to `pkg_resources\\.declare_namespace\\('fs.*:DeprecationWarning:pkg_resources",
 ]
 
 [tool.coverage.run]

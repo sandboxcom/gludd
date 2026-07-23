@@ -48,6 +48,7 @@ import os
 import threading
 import time
 from collections.abc import Iterator
+from types import TracebackType
 
 logger = logging.getLogger(__name__)
 
@@ -194,7 +195,14 @@ def _file_lock(
 
     lock_path = os.path.join(git_dir, _LOCK_FILENAME)
     deadline = time.monotonic() + timeout
-    fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o644)
+    try:
+        fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o644)
+    except FileNotFoundError:
+        # The .git directory can disappear between _git_dir() and open()
+        # during cleanup, and unit tests may mock isdir(). Keep the in-process
+        # lock rather than failing before the caller's git command runs.
+        yield
+        return
     try:
         while True:
             try:
@@ -300,8 +308,40 @@ async def async_git_repo_lock(
     :func:`git_repo_lock` directly.
     """
     import asyncio
+    import concurrent.futures
+
+    class _EnteredAsyncGitRepoLock(contextlib.AbstractContextManager[None]):
+        def __init__(self, cm: contextlib.AbstractContextManager[None], executor: concurrent.futures.Executor) -> None:
+            self._cm = cm
+            self._executor = executor
+            self._entered = False
+            self._closed = False
+
+        def __enter__(self) -> None:
+            self._entered = True
+            return None
+
+        def __exit__(
+            self,
+            exc_type: type[BaseException] | None,
+            exc: BaseException | None,
+            tb: TracebackType | None,
+        ) -> bool | None:
+            if self._closed:
+                return None
+            self._closed = True
+            future = self._executor.submit(self._cm.__exit__, exc_type, exc, tb)
+            try:
+                return future.result()
+            finally:
+                self._executor.shutdown(wait=True)
 
     cm = git_repo_lock(repo_path, timeout=timeout, stale_after=stale_after)
     loop = asyncio.get_running_loop()
-    await loop.run_in_executor(None, cm.__enter__)
-    return cm
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="gludd-git-lock")
+    try:
+        await loop.run_in_executor(executor, cm.__enter__)
+    except BaseException:
+        executor.shutdown(wait=True)
+        raise
+    return _EnteredAsyncGitRepoLock(cm, executor)

@@ -1,5 +1,4 @@
 #!/usr/bin/python
-# -*- coding: utf-8 -*-
 # Copyright: Agentic Harness
 # SPDX-License-Identifier: MIT
 """
@@ -27,38 +26,103 @@ DOCUMENTATION:
       description: Path to the git repository or worktree.
       type: str
       required: true
+
     op:
       description:
         - Operation to perform. C(worktree_list) is read-only; the rest mutate.
       type: str
       required: true
-      choices: [commit, branch, worktree_list, worktree_create, worktree_remove, merge, push]
+      choices:
+        - clone
+        - commit
+        - gated_commit
+        - current_branch
+        - branch
+        - branch_list
+        - branch_delete
+        - worktree_list
+        - worktree_create
+        - worktree_remove
+        - merge
+        - gated_merge
+        - push
+        - tag_release
+        - tag_checkpoint
+        - release_tag
+        - checkpoint_tag
+        - state
+    clone_url:
+      description: Repository URL for C(op=clone). Python preflight rejects unsafe transports before clone.
+      type: str
+    target_dir:
+      description: Destination checkout path for C(op=clone).
+      type: str
+    git_clone_timeout:
+      description: Clone timeout in seconds for C(op=clone).
+      type: int
+      default: 120
+    clone_allow_local:
+      description: Whether C(op=clone) allows C(file://) or local source URLs.
+      type: bool
+      default: true
     message:
-      description: Commit message (required when C(op=commit)).
+      description: Commit message (required when C(op=commit) or C(op=gated_commit)).
       type: str
     branch:
       description:
-        - Branch name. Required for C(op=branch), C(op=worktree_create), and
-          C(op=push) (the refspec to push).
+        - Branch name. Required for C(op=branch), C(op=branch_delete),
+          C(op=worktree_create), and C(op=push) (the refspec to push).
       type: str
     worktree_path:
       description: Worktree path (required for C(worktree_create)/C(worktree_remove)).
       type: str
     source:
-      description: Source ref to merge from (required for C(op=merge)).
+      description: Source ref to merge from (required for C(op=merge) or C(op=gated_merge)).
       type: str
     target:
-      description: Target ref to merge into / check out first (required for C(op=merge)).
+      description: Target ref to merge into / check out first (required for C(op=merge) or C(op=gated_merge)).
       type: str
     strategy:
-      description: Merge strategy for C(op=merge).
+      description: Merge strategy for C(op=merge) and C(op=gated_merge).
       type: str
       default: "ff"
       choices: [ff, no-ff, squash]
+    files:
+      description: Paths to stage before C(op=gated_commit). Use ["."] for all tracked and untracked workspace changes.
+      type: list
+      elements: str
+      default: []
+    gate_cmd:
+      description: Command argv to run before C(op=gated_commit) commits, or after C(op=gated_merge) merges.
+      type: list
+      elements: str
+      default: []
+    tag:
+      description: Tag name for C(op=tag_release) or C(op=tag_checkpoint).
+      type: str
+    todo_id:
+      description: Todo identifier for generated C(op=checkpoint_tag).
+      type: str
+    sha:
+      description: Commit SHA used in generated C(op=checkpoint_tag).
+      type: str
+
     remote:
-      description: Remote name for C(op=push).
+      description: Remote name for C(op=push) and C(op=state).
       type: str
       default: "origin"
+    state_reconciled_preserve_heads:
+      description:
+        - Preserved branch HEAD SHAs already audited and reconciled.
+        - Matching heads do not block C(state_assert_no_unintegrated_branches).
+      type: list
+      elements: str
+      default: []
+    state_reconciled_preserve_head_file:
+      description:
+        - Repo-relative file listing audited preserved branch HEAD SHAs.
+      type: str
+      default: "config/reconciled_preserved_heads.txt"
 
 EXAMPLES:
   - name: Commit changes in worktree
@@ -107,9 +171,9 @@ RETURN:
     type: str
     returned: when op=commit and changed=true
   branch:
-    description: Branch name (op=branch).
+    description: Branch name (op=branch/current_branch).
     type: str
-    returned: when op=branch
+    returned: when op=branch/current_branch
   result:
     description: Typed result dict for worktree/merge/push ops.
     type: dict
@@ -143,36 +207,78 @@ def main() -> None:
                 type="str",
                 required=True,
                 choices=[
+                    "clone",
                     "commit",
+                    "gated_commit",
+                    "current_branch",
                     "branch",
+                    "branch_list",
+                    "branch_delete",
                     "worktree_list",
                     "worktree_create",
                     "worktree_remove",
                     "merge",
+                    "gated_merge",
                     "push",
+                    "tag_release",
+                    "tag_checkpoint",
+                    "release_tag",
+                    "checkpoint_tag",
+                    "state",
                 ],
             ),
+            clone_url=dict(type="str", default=None),
+            target_dir=dict(type="str", default=None),
+            git_clone_timeout=dict(type="int", default=120),
+            clone_allow_local=dict(type="bool", default=True),
             message=dict(type="str", default=None),
+            files=dict(type="list", elements="str", default=[]),
+            gate_cmd=dict(type="list", elements="str", default=[]),
             branch=dict(type="str", default=None),
             worktree_path=dict(type="str", default=None),
             source=dict(type="str", default=None),
             target=dict(type="str", default=None),
             strategy=dict(type="str", default="ff", choices=["ff", "no-ff", "squash"]),
+            tag=dict(type="str", default=None),
+            todo_id=dict(type="str", default=None),
+            sha=dict(type="str", default=None),
+
             remote=dict(type="str", default="origin"),
+            state_ref=dict(type="str", default=""),
+            state_gha_head_sha=dict(type="str", default=""),
+            state_worktree_target_ref=dict(type="str", default="HEAD"),
+            state_preserve_branch_patterns=dict(type="list", elements="str", default=[]),
+            state_reconciled_preserve_heads=dict(type="list", elements="str", default=[]),
+            state_reconciled_preserve_head_file=dict(type="str", default="config/reconciled_preserved_heads.txt"),
+            state_assert_clean=dict(type="bool", default=False),
+            state_assert_no_feature_on_master=dict(type="bool", default=False),
+            state_assert_merge_ready=dict(type="bool", default=False),
+            state_assert_remote_head=dict(type="bool", default=False),
+            state_assert_gha_matches_local=dict(type="bool", default=False),
+            state_assert_no_unintegrated_worktrees=dict(type="bool", default=False),
+            state_assert_no_unintegrated_branches=dict(type="bool", default=False),
         ),
         required_if=[
+            ("op", "clone", ["clone_url", "target_dir"]),
             ("op", "commit", ["message"]),
+            ("op", "gated_commit", ["message"]),
             ("op", "branch", ["branch"]),
+            ("op", "branch_delete", ["branch"]),
             ("op", "worktree_create", ["branch", "worktree_path"]),
             ("op", "worktree_remove", ["worktree_path"]),
             ("op", "merge", ["source", "target"]),
+            ("op", "gated_merge", ["source", "target"]),
             ("op", "push", ["branch"]),
+            ("op", "tag_release", ["tag"]),
+            ("op", "tag_checkpoint", ["tag"]),
+            ("op", "checkpoint_tag", ["todo_id", "sha"]),
         ],
         supports_check_mode=True,
     )
 
     path: str = module.params["path"]
     op: str = module.params["op"]
+
 
     try:
         from general_ludd.git_automation.repo import GitAutomation  # type: ignore[import]
@@ -182,6 +288,51 @@ def main() -> None:
 
     git = GitAutomation(repo_path=path)
 
+    if op in {"gated_commit", "gated_merge"} and not module.params["gate_cmd"]:
+        module.fail_json(**error_result(f"{op} requires non-empty gate_cmd"))
+        return
+
+    if op == "current_branch":
+        module.exit_json(**ok_result({"branch": git.current_branch()}, changed=False))
+        return
+
+    if op == "branch_list":
+        try:
+            branches = git.list_branches()
+        except subprocess.CalledProcessError as exc:
+            module.fail_json(**error_result(f"branch_list failed: {exc.stderr or exc}"))
+            return
+        module.exit_json(**ok_result({"result": {"branches": branches}}, changed=False))
+        return
+
+    if op == "state":
+        try:
+            state_result = git.workflow_state(
+                remote=module.params["remote"],
+                ref=module.params["state_ref"],
+                gha_head_sha=module.params["state_gha_head_sha"],
+                worktree_target_ref=module.params["state_worktree_target_ref"],
+                preserve_branch_patterns=tuple(module.params["state_preserve_branch_patterns"] or []),
+                reconciled_preserve_heads=tuple(module.params["state_reconciled_preserve_heads"] or []),
+                reconciled_preserve_head_file=module.params["state_reconciled_preserve_head_file"],
+                assert_clean=module.params["state_assert_clean"],
+                assert_no_feature_on_master=module.params["state_assert_no_feature_on_master"],
+                assert_merge_ready=module.params["state_assert_merge_ready"],
+                assert_remote_head=module.params["state_assert_remote_head"],
+
+                assert_gha_matches_local=module.params["state_assert_gha_matches_local"],
+                assert_no_unintegrated_worktrees=module.params["state_assert_no_unintegrated_worktrees"],
+                assert_no_unintegrated_branches=module.params["state_assert_no_unintegrated_branches"],
+            )
+        except subprocess.CalledProcessError as exc:
+            module.fail_json(**error_result(f"git state failed: {exc.stderr or exc}"))
+            return
+        payload = asdict(state_result)
+        if not state_result.success:
+            module.fail_json(**error_result("git state guard failed", result=payload))
+            return
+        module.exit_json(**ok_result({"result": payload}, changed=False))
+        return
     if op == "commit":
         message: str = module.params["message"]
         # Route the dirty-check through the library (under git_repo_lock) rather
@@ -224,7 +375,7 @@ def main() -> None:
     if op == "worktree_list":
         try:
             worktrees = git.list_worktrees(path)
-        except Exception as exc:  # noqa: BLE001 - surface as a clean module failure
+        except Exception as exc:
             module.fail_json(**error_result(f"worktree_list failed: {exc}"))
             return
         module.exit_json(
@@ -244,6 +395,20 @@ def main() -> None:
         return
 
     try:
+        if op == "clone":
+            res = git.clone(
+                module.params["clone_url"],
+                module.params["target_dir"],
+                timeout=float(module.params["git_clone_timeout"]),
+                allow_local=bool(module.params["clone_allow_local"]),
+            )
+            payload = asdict(res)
+            if not res.success:
+                module.fail_json(**error_result("clone failed", result=payload))
+                return
+            module.exit_json(**ok_result({"result": payload}, changed=not res.already_present))
+            return
+
         if op == "worktree_create":
             res = git.create_worktree(
                 path, module.params["branch"], module.params["worktree_path"]
@@ -261,6 +426,17 @@ def main() -> None:
             )
             return
 
+        if op == "branch_delete":
+            deleted = git.delete_branch(module.params["branch"])
+            module.exit_json(
+                **ok_result(
+                    {"result": {"branch": module.params["branch"], "deleted": deleted}},
+                    changed=deleted,
+                )
+            )
+            return
+
+
         if op == "merge":
             res = git.merge_branch(
                 path,
@@ -271,11 +447,62 @@ def main() -> None:
             module.exit_json(**ok_result({"result": asdict(res)}, changed=res.success))
             return
 
+        if op == "gated_commit":
+            res = git.gated_commit(
+                list(module.params["files"] or []),
+                module.params["message"],
+                list(module.params["gate_cmd"] or []),
+            )
+            payload = asdict(res)
+            if not res.success:
+                module.fail_json(**error_result("gated_commit failed", result=payload))
+                return
+            module.exit_json(**ok_result({"result": payload}, changed=True))
+            return
+
+        if op == "gated_merge":
+            res = git.gated_merge(
+                module.params["source"],
+                module.params["target"],
+                list(module.params["gate_cmd"] or []),
+                strategy=module.params["strategy"],
+            )
+            payload = asdict(res)
+            if not res.success:
+                module.fail_json(**error_result("gated_merge failed", result=payload))
+                return
+            module.exit_json(**ok_result({"result": payload}, changed=True))
+            return
+
         if op == "push":
             res = git.push_to_remote(
                 path, remote=module.params["remote"], branch=module.params["branch"]
             )
             module.exit_json(**ok_result({"result": asdict(res)}, changed=res.success))
+            return
+
+        if op == "tag_release":
+            tag = git.tag_release(module.params["tag"])
+            module.exit_json(**ok_result({"tag": tag}, changed=True))
+            return
+
+        if op == "tag_checkpoint":
+            tag = git.tag_checkpoint(module.params["tag"])
+            module.exit_json(**ok_result({"tag": tag}, changed=True))
+            return
+
+        if op == "release_tag":
+            tag = git.create_release_tag(path)
+            module.exit_json(**ok_result({"tag": tag}, changed=True))
+            return
+
+        if op == "checkpoint_tag":
+            tag = git.create_checkpoint_tag(
+                path,
+                module.params["todo_id"],
+                module.params["sha"],
+            )
+            module.exit_json(**ok_result({"tag": tag}, changed=True))
             return
     except ValueError as exc:
         # Control-plane security guards (leading-dash refs, traversal paths)
@@ -285,7 +512,7 @@ def main() -> None:
     except subprocess.CalledProcessError as exc:
         module.fail_json(**error_result(f"{op} failed: {exc.stderr or exc}"))
         return
-    except Exception as exc:  # noqa: BLE001 - surface as a clean module failure
+    except Exception as exc:
         module.fail_json(**error_result(f"{op} failed: {exc}"))
         return
 

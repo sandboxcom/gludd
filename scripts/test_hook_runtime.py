@@ -1146,13 +1146,7 @@ console.log(JSON.stringify({{
 
 
 def test_multitask_text_complete_blocks_thin_wave():
-    """text.complete MUST blank text when thisMessageDispatches in (1, MIN_DISPATCHES).
-
-    BUG: enforce-multitask.ts:314 references `s.thisMessageDispatches` but `s`
-    is never declared in the text.complete hook's scope. The module-level
-    state variable is `_state`. This test fails because the ReferenceError
-    prevents the thin-wave block from ever being reached.
-    """
+    """experimental.text.complete MUST blank text for thin dispatch waves."""
     state_file = "/tmp/gludd-multitask-state.json"
     _clean_state_files(state_file,
                        "/tmp/gludd-watchdog-disengage.json",
@@ -1164,11 +1158,11 @@ const plugin = await mod.default({{}})
 await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
 await plugin['tool.execute.before']({{tool: 'agent'}}, undefined)
 await plugin['tool.execute.before']({{tool: 'workflow'}}, undefined)
-// Call text.complete — should detect 3 < MIN_DISPATCHES=10 and blank text
+// Call experimental.text.complete — should detect 3 < MIN_DISPATCHES=10 and blank text
 let output
 let error = null
 try {{
-  output = await plugin['text.complete'](undefined, {{text: 'Dispatching 3 subagents to fix bugs.'}})
+  output = await plugin['experimental.text.complete'](undefined, {{text: 'Dispatching 3 subagents to fix bugs.'}})
 }} catch (e) {{
   error = e.message
 }}
@@ -1185,20 +1179,9 @@ console.log(JSON.stringify({{
         "GLUDD_MULTITASK_FLOOR_ENFORCE": "1",
     })
 
-    # BUG: s is undefined in text.complete scope -> ReferenceError
-    if result.get("threw") == True:
-        err = result.get("errorSnippet", "")
-        assert "s is not defined" in err or "ReferenceError" in err, (
-            f"Expected ReferenceError for 's is not defined', got: {result}"
-        )
-        pytest.fail(
-            "CONFIRMED BUG: enforce-multitask.ts text.complete hook line 314 "
-            "references 's.thisMessageDispatches' but 's' is never declared in "
-            "the hook scope. Should reference '_state.thisMessageDispatches'. "
-            "The thin-wave block is unreachable until the variable is fixed."
-        )
-
-    # If we get here, the hook ran without throwing (e.g. hasPendingWork false)
+    assert result.get("threw") is False, (
+        f"experimental.text.complete must run without throwing. Result: {result}"
+    )
     assert result["textWasBlocked"] == True, (
         f"Expected THIN WAVE BLOCKED but text passed through unmodified. "
         f"Hook ran without error but did not detect the thin wave. Result: {result}"
@@ -2806,7 +2789,7 @@ WATCHDOG_PATH = str(ROOT / ".opencode" / "plugins" / "watchdog.ts")
 
 
 def test_watchdog_plugin_loads_report_alive():
-    """watchdog plugin loads, calls reportAlive on init (writes alive file), returns {{}}."""
+    """watchdog plugin loads, calls reportAlive on init, and exposes its event hook."""
     alive_path = f"/tmp/gludd-test-alive-{os.getpid()}-1.json"
     _clean_state_files(alive_path)
     code = f"""\
@@ -2817,7 +2800,7 @@ console.log(JSON.stringify({{ ok: true, keys }}))
 """
     result = _run_ts(code, env_override={"GLUDD_ALIVE_PATH": alive_path})
     assert result["ok"] == True, f"Watchdog plugin load should not throw, got: {result}"
-    assert result["keys"] == [], f"Plugin should return empty object (no hooks), got keys: {result['keys']}"
+    assert result["keys"] == ["event"], f"Plugin should expose event hook, got keys: {result['keys']}"
     # Verify reportAlive was called on module load
     assert os.path.exists(alive_path), f"Alive file {alive_path} should exist after plugin load"
     with open(alive_path) as f:

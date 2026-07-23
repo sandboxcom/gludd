@@ -665,4 +665,3 @@ def test_disengage_still_allows_completion_smell_when_no_work(
         ci_path.write_bytes(_old_ci)
     elif ci_path.exists():
         ci_path.unlink()
-

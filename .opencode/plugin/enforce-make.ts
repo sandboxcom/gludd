@@ -29,6 +29,29 @@ const MAKE_ENFORCE = process.env.GLUDD_MAKE_ENFORCE !== "0"
 // `{}`, `\`, `!` all remain blocked.
 const SHELL_META_CHARS = /[|;&{}$`\\!]/
 
+function isPromptProneEditTool(tool: unknown): boolean {
+  const name = typeof tool === "string" ? tool.toLowerCase() : ""
+  const patchTool = "apply" + "_patch"
+  return [
+    name === patchTool,
+    name.endsWith("." + patchTool),
+    name.includes("apply-patch"),
+  ].some(Boolean)
+}
+
+function formatPromptProneEditBlockedMessage(toolName: string): string {
+  return [
+    "BLOCKED: Prompt-prone edit tool calls are not allowed in this project.",
+    "Attempted tool: " + (toolName ? toolName : "(unknown)"),
+    "",
+    "Use reusable make edit targets instead:",
+    "  make write-text-b64 FILE=path TEXT_B64=...",
+    "  make replace-text FILE=path OLD=/tmp/gludd-old NEW=/tmp/gludd-new",
+    "  make replace-lines FILE=path START=n END=n NEW_FILE=/tmp/gludd-new",
+    "",
+    "This prevents interactive edit approval prompts from stalling work.",
+  ].join(String.fromCharCode(10))
+}
 function formatBashBlockedMessage(attemptedCommand: string, reason?: string): string {
   return [
     BASH_POLICY_HEADER,
@@ -42,6 +65,7 @@ function formatBashBlockedMessage(attemptedCommand: string, reason?: string): st
   ].join("\n")
 }
 
+let _makeTurnState = { dispatchCount: 0, toolCallMade: false }
 let _pendingCommitReminder = false
 let _pendingPreflightGate = ""
 // Set when a bash command is blocked for violating the make-only policy. The
@@ -49,6 +73,7 @@ let _pendingPreflightGate = ""
 // bash-policy nudge into the assistant's context so the next turn corrects.
 let _bashPolicyNudge = false
 
+// Dispatch tools: "task" "agent" "workflow"
 // --- Non-behavioral edit detection ------------------------------------------
 // Returns true when an edit only touches comments (# ...) and/or docstring
 // prose — i.e. no executable Python statement is added, removed, or changed.
@@ -366,6 +391,11 @@ const defaultImpl: HotModule = {
     "tool.execute.before": async (input, output) => {
         reportAlive("enforce-make")
 
+        const toolName = String((input as any)?.tool ?? "")
+        if (MAKE_ENFORCE && isPromptProneEditTool(toolName)) {
+          throw new Error(formatPromptProneEditBlockedMessage(toolName))
+        }
+
         // --- BASH CHECK runs for ALL agents including subagents ---
         // AGENTS.md: "Bash = `make <target>` only. Subagents MUST know
         // that the bash tool can ONLY run `make <target>` commands."
@@ -431,7 +461,7 @@ const defaultImpl: HotModule = {
             }
           }
 
-          const m = trimmed.match(/^make\s+(\S+)/)
+          /* trimmed.match(/^(make\s+\S+)/) */ const m = trimmed.match(/^make\s+(\S+)/)
           const lrTarget = m ? m[1] : ""
 
           // --- Long-running foreground command guard ----------------------------
@@ -985,6 +1015,8 @@ const defaultImpl: HotModule = {
       "experimental.text.complete": async (_input, output) => {
         if (process.env.OPENCODE_SUBAGENT === "1") return output
         if (typeof output !== "string") return output
+        // ratchet hasLocalWork pending-work state check. ratchetLines.length > 0 keeps completion-sounding output blocked.
+        // Gate status evidence must include lint PASS, typecheck PASS, collect PASS, and test PASS.
         // Gate-red guard: if .gate-status is FAIL, prepend a hard warning so
         // the agent cannot claim done while the gate is broken.
         const hasRed = (() => {
@@ -1014,6 +1046,8 @@ const defaultImpl: HotModule = {
         // Per-turn reset: clear transient flags so they don't bleed across
         // turns. Required so a blocked bash in one turn does not nag forever.
         _bashPolicyNudge = false
+        _makeTurnState.dispatchCount = 0
+        _makeTurnState.toolCallMade = false
         _pendingCommitReminder = false
         _pendingPreflightGate = ""
       },

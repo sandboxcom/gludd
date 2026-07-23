@@ -1,0 +1,33 @@
+---
+document_classes:
+  - article
+  - report
+  - book
+  - beamer
+  - letter
+font_sizes:
+  - 10pt
+  - 11pt
+  - 12pt
+output_formats:
+  - pdf
+  - dvi
+  - ps
+package_categories:
+  math:
+    - amsmath
+    - amssymb
+    - amsthm
+    - mathtools
+  graphics:
+    - graphicx
+    - tikz
+    - pgfplots
+  formatting:
+    - geometry
+    - fancyhdr
+    - setspace
+  references:
+    - hyperref
+    - cleveref
+    - biblatex

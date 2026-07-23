@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import signal
+import subprocess
 from unittest.mock import MagicMock, patch
 
 import yaml
@@ -34,6 +35,71 @@ class TestCmdDaemonSignalForwarding:
             new_handler = signal.getsignal(signal.SIGTERM)
             assert new_handler != old_handler or mock_proc.terminate.called
         assert mock_proc.terminate.call_count >= 0
+
+
+    def test_cmd_daemon_preserves_existing_psk_for_loopback(self):
+        import argparse
+        from contextlib import suppress
+
+        from general_ludd.cli import _cmd_daemon
+
+        captured = {}
+        mock_proc = MagicMock()
+        mock_proc.wait.return_value = 0
+        mock_proc.returncode = 0
+
+        def fake_popen(*args, **kwargs):
+            captured["env"] = kwargs["env"]
+            return mock_proc
+
+        with patch("subprocess.Popen", side_effect=fake_popen), \
+             patch.dict(os.environ, {"GLUDD_PSK": "configured-token"}, clear=False):
+            args = argparse.Namespace(
+                host="127.0.0.1", port=9999, workers=1,
+                log_level="info", config_dir=None, templates_dir=None,
+                playbooks_dir=None, tick_interval=1.0,
+            )
+            with suppress(SystemExit):
+                _cmd_daemon(args)
+
+        assert captured["env"]["GLUDD_PSK"] == "configured-token"
+
+    def test_sigterm_handler_kills_child_when_terminate_wait_times_out(self):
+        import argparse
+        from contextlib import suppress
+
+        from general_ludd.cli import _cmd_daemon
+
+        handlers = {}
+
+        def capture_signal(signum, handler):
+            handlers[signum] = handler
+
+        mock_proc = MagicMock()
+        mock_proc.pid = 12345
+        mock_proc.wait.return_value = 0
+        mock_proc.returncode = 0
+        with patch("subprocess.Popen", return_value=mock_proc), \
+             patch("signal.signal", side_effect=capture_signal), \
+             patch("general_ludd.cli._build_daemon_env", return_value={"GLUDD_PSK": ""}), \
+             patch.dict(os.environ, {}, clear=False):
+            args = argparse.Namespace(
+                host="127.0.0.1", port=9999, workers=1,
+                log_level="info", config_dir=None, templates_dir=None,
+                playbooks_dir=None, tick_interval=1.0,
+            )
+            with suppress(SystemExit):
+                _cmd_daemon(args)
+
+        mock_proc.wait.side_effect = [
+            subprocess.TimeoutExpired(cmd="gunicorn", timeout=5),
+            0,
+        ]
+        with suppress(SystemExit):
+            handlers[signal.SIGTERM](signal.SIGTERM, None)
+
+        assert mock_proc.terminate.call_count >= 1
+        assert mock_proc.kill.call_count == 1
 
     def test_cmd_daemon_kills_child_on_signal(self):
         import argparse

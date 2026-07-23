@@ -2,7 +2,7 @@
 # git_automation role defaults — timeouts, retry settings, and operational params
 
 # ── Git operation selector ────────────────────────────────────────────────
-# Which sub-task file to execute: clone, commit, push, merge, branch, worktree
+# Which sub-task file to execute: clone, commit, gated_commit, push, merge, gated_merge, branch, worktree, state
 git_op: ""
 
 # ── Repository path ───────────────────────────────────────────────────────
@@ -15,7 +15,9 @@ git_clone_timeout: 120
 
 # ── Commit ─────────────────────────────────────────────────────────────────
 commit_message: "auto: apply change"
-gate_cmd: []                   # e.g. ["make", "gate"] — runs before commit
+commit_files:
+  - "."
+gate_cmd: []                   # e.g. ["make", "gate"] — runs before commit or after merge
 git_gate_timeout: 60
 git_commit_timeout: 60
 
@@ -50,3 +52,22 @@ git_retry_delay: 5             # seconds between retries
 git_non_interactive_env:
   GIT_TERMINAL_PROMPT: "0"
   GIT_ASKPASS: "echo"
+
+# ── State machine guard ─────────────────────────────────────────────────────
+state_ref: ""
+state_remote: "sandboxcom"
+state_gha_head_sha: ""
+state_assert_clean: false
+state_assert_no_feature_on_master: false
+state_assert_merge_ready: false
+state_assert_remote_head: false
+state_assert_gha_matches_local: false
+
+state_worktree_target_ref: "HEAD"
+state_preserve_branch_patterns:
+  - "main-dirty-preserve-*"
+  - "preserve-*"
+state_reconciled_preserve_heads: []
+state_reconciled_preserve_head_file: "config/reconciled_preserved_heads.txt"
+state_assert_no_unintegrated_worktrees: false
+state_assert_no_unintegrated_branches: false

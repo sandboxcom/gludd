@@ -1,0 +1,18 @@
+---
+galaxy_info:
+  role_name: particle_experiment_analyst
+  author: Agentic Harness Agent
+  description: >
+    Analyze high-energy particle collision data. Computes cross-sections from
+    beam parameters, analyzes decay chains and branching ratios, and estimates
+    event yields from integrated luminosity.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

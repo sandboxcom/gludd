@@ -28,7 +28,7 @@ _PLAYBOOK_YML = """---
 - name: Test task_splitter role
   hosts: localhost
   connection: local
-  gather_facts: true
+  gather_facts: false
   roles:
     - role: general_ludd.agent.task_splitter
 """

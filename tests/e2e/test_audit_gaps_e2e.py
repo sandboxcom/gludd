@@ -11,13 +11,15 @@ from fastapi.testclient import TestClient
 
 import general_ludd.daemon as daemon_mod
 from general_ludd.daemon import create_daemon_app
-from general_ludd.event_loop.loop import EventLoop
+from general_ludd.event_loop.loop import PHASE_ORDER, EventLoop
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
 @pytest.fixture(autouse=True)
 def _reset_daemon_state():
+    if daemon_mod._daemon_state is None:
+        daemon_mod._daemon_state = {}
     daemon_mod._daemon_state["todos"] = []
     daemon_mod._daemon_state["tick_metrics"] = {}
 
@@ -46,11 +48,22 @@ class TestDaemonDirectDispatch:
         mock_todo_repo = AsyncMock()
         mock_todo_repo.claim_runnable.return_value = [mock_todo]
 
-        loop = EventLoop(runner=mock_runner, todo_repo=mock_todo_repo)
+        mock_project = MagicMock()
+        mock_project.project_id = "project-test"
+        mock_project_manager = MagicMock()
+        mock_project_manager.select_project.return_value = mock_project
+
+        loop = EventLoop(
+            runner=mock_runner,
+            todo_repo=mock_todo_repo,
+            project_manager=mock_project_manager,
+        )
         metrics = await loop.tick()
 
-        assert metrics["phases_completed"] == 18
+        assert metrics["phases_completed"] == len(PHASE_ORDER)
         assert metrics["todos_dispatched"] == 1
+        mock_todo_repo.claim_runnable.assert_awaited_once()
+        assert mock_todo_repo.claim_runnable.await_args.kwargs["project_id"] == "project-test"
         mock_runner.run_playbook.assert_called_once()
         call_kwargs = mock_runner.run_playbook.call_args
         assert call_kwargs[1]["playbook_name"] in ("noop.yml", "validate_task.yml")

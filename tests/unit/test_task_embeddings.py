@@ -7,6 +7,7 @@ from general_ludd.scoring.task_embeddings import (
     _select_default_embedder,
     _task_type_value,
 )
+from general_ludd.skills.embeddings import HashEmbedder
 
 
 class TestCanonicalTaskDescriptions:
@@ -41,6 +42,29 @@ class TestSelectDefaultEmbedder:
         embedder = _select_default_embedder()
         assert embedder is not None
         assert hasattr(embedder, "embed")
+
+    def test_openai_key_alone_does_not_change_default(self, monkeypatch) -> None:
+        monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+        monkeypatch.delenv("GLUDD_TASK_EMBEDDINGS_PROVIDER", raising=False)
+
+        embedder = _select_default_embedder()
+
+        assert isinstance(embedder, HashEmbedder)
+
+    def test_openai_embedder_requires_explicit_provider(self, monkeypatch) -> None:
+        import general_ludd.scoring.task_embeddings as task_embeddings
+
+        class FakeOpenAIEmbedder:
+            def embed(self, text: str) -> list[float]:
+                return [1.0]
+
+        monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+        monkeypatch.setenv("GLUDD_TASK_EMBEDDINGS_PROVIDER", "openai")
+        monkeypatch.setattr(task_embeddings, "OpenAIEmbedder", FakeOpenAIEmbedder)
+
+        embedder = _select_default_embedder()
+
+        assert isinstance(embedder, FakeOpenAIEmbedder)
 
 
 class TestIsEmptyVector:

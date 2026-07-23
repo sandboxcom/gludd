@@ -84,6 +84,19 @@ function _extractDispatchText(params: unknown): string {
   return parts.join("\n");
 }
 
+function _extractBashCommand(input: any): string {
+  const candidates = [
+    input?.args?.command,
+    input?.command,
+    input?.tool_input?.command,
+    input?.input?.command,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === "string") return candidate;
+  }
+  return "";
+}
+
 // ============================================================================
 // DEFAULT IMPLEMENTATION (compiled-in fallback)
 // ============================================================================
@@ -96,7 +109,7 @@ const defaultImpl: HotModule = {
       if (process.env.GLUDD_NO_WAIT_ENFORCE === "0") return;
 
       if (input.tool === "bash") {
-        const cmd: string = input.args?.command ?? "";
+        const cmd: string = String(input.args?.command ?? _extractBashCommand(input));
         if (cmd) {
           for (const pattern of WAIT_PATTERNS) {
             if (pattern.test(cmd)) {

@@ -1,0 +1,31 @@
+---
+reaction_types:
+  - acetylation
+  - esterification
+  - hydrolysis
+  - oxidation
+  - reduction
+  - grignard
+  - diels_alder
+  - aldol_condensation
+solvent_options:
+  - acetic_anhydride
+  - ethanol
+  - methanol
+  - dichloromethane
+  - thf
+  - acetone
+  - toluene
+catalyst_options:
+  - sulfuric_acid
+  - hydrochloric_acid
+  - sodium_hydroxide
+  - palladium_on_carbon
+  - pt_alumina
+known_molecules:
+  - aspirin
+  - paracetamol
+  - ibuprofen
+  - caffeine
+  - vanillin
+  - benzocaine

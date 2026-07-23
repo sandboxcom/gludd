@@ -21,10 +21,13 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
 
     @app.get("/admin/filestore/list")
     async def admin_filestore_list(path: str = "/") -> dict[str, object]:
-        safe_path = sanitize_path(path.lstrip("/")) or ""
+        raw_path = path.lstrip("/")
+        safe_path = "" if raw_path == "" else sanitize_path(raw_path)
+        if safe_path is None:
+            return {"error": "Invalid path", "entries": [], "count": 0}
         store = FileStore()
         entries = store.list_dir(safe_path)
-        return {"path": safe_path, "entries": entries, "count": len(entries)}
+        return {"path": safe_path or "/", "entries": entries, "count": len(entries)}
 
     @app.get("/admin/filestore/read")
     async def admin_filestore_read(path: str = "") -> dict[str, object]:
@@ -48,7 +51,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         store = FileStore()
         body = await request.json()
         raw_path = body.get("path", "")
-        safe_path = sanitize_path(raw_path)
+        safe_path = sanitize_path(str(raw_path).lstrip("/"))
         if safe_path is None:
             return {"error": "Invalid path", "success": False}
         content = body.get("content", "")
@@ -68,7 +71,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
 
     @app.delete("/admin/filestore/remove")
     async def admin_filestore_remove(path: str = "") -> dict[str, object]:
-        safe_path = sanitize_path(path)
+        safe_path = sanitize_path(path.lstrip("/"))
         if safe_path is None:
             return {"error": "Invalid path", "success": False}
         store = FileStore()
@@ -79,8 +82,15 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
 
     @app.post("/admin/filestore/bootstrap")
     async def admin_filestore_bootstrap(
+        request: Request,
         binary: str = "openbao",
     ) -> dict[str, object]:
+        try:
+            body = await request.json()
+        except Exception:
+            body = None
+        if isinstance(body, dict) and body.get("binary"):
+            binary = str(body["binary"])
         store = FileStore()
         boot = BinaryBootstrapper(store=store)
         if binary == "openbao":

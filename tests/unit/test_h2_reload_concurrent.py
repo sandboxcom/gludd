@@ -11,12 +11,13 @@ from __future__ import annotations
 
 import threading
 import time
-from threading import Lock
 from typing import Any
 
 import pytest
 
 from general_ludd.reload.hot_reloader import HotReloader, ReloadResult, ReloadScope
+
+_LOCK_TYPE = type(threading.Lock())
 
 
 class _DummyReloader(HotReloader):
@@ -123,7 +124,7 @@ def test_lock_prevents_registry_corruption(reloader_factory: Any) -> None:
 
 def test_lock_is_non_reentrant(shared_lock: threading.Lock) -> None:
     """threading.Lock (not RLock) — prevents deadlock from nested reload."""
-    assert type(shared_lock) is Lock, (
+    assert type(shared_lock) is _LOCK_TYPE, (
         f"Expected threading.Lock, got {type(shared_lock)}"
     )
     assert "RLock" not in type(shared_lock).__name__, (
@@ -255,7 +256,7 @@ def test_lock_released_after_exception(reloader_factory: Any) -> None:
 def test_default_lock_created_when_none_passed() -> None:
     """When reload_lock is None, HotReloader creates its own threading.Lock."""
     r = HotReloader(config_dir="/tmp")
-    assert isinstance(r._reload_lock, threading.Lock)
+    assert isinstance(r._reload_lock, _LOCK_TYPE)
     # Default lock should not be shared with another instance
     r2 = HotReloader(config_dir="/tmp")
     assert r._reload_lock is not r2._reload_lock, (

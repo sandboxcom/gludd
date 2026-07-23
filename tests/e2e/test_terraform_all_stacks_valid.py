@@ -40,6 +40,14 @@ def _infra_binary() -> str | None:
     return None
 
 
+@pytest.fixture(scope="session")
+def infra_binary() -> str:
+    binary = _infra_binary()
+    if binary is None:
+        pytest.skip("terraform/tofu not on PATH")
+    return binary
+
+
 def _strip_comments(text: str) -> str:
     return re.sub(r"//.*", "", text)  # strip single-line comments
 

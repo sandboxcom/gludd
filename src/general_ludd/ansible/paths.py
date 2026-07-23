@@ -33,7 +33,7 @@ from __future__ import annotations
 import os
 import re
 import tempfile
-from dataclasses import dataclass, field
+from dataclasses import FrozenInstanceError, dataclass, field
 from pathlib import Path
 
 _BUNDLED_COLLECTIONS_ROOT_DEFAULT = (
@@ -50,7 +50,7 @@ def _bundled_collections_root() -> Path:
     return _BUNDLED_COLLECTIONS_ROOT_DEFAULT
 
 
-@dataclass(frozen=True)
+@dataclass
 class CollectionsPathEntry:
     """One tier in the 3-tier collections search path.
 
@@ -63,6 +63,11 @@ class CollectionsPathEntry:
     source: str
     path: Path
     precedence: int
+
+    def __setattr__(self, name: str, value: object) -> None:
+        if name in self.__dict__:
+            raise FrozenInstanceError(f"cannot assign to field {name!r}")
+        super().__setattr__(name, value)
 
 
 def _user_collections_root() -> Path:
@@ -191,7 +196,7 @@ def find_resource(
 _VERSION_DIR_RE = re.compile(r"^(.+)@(.+)$")
 
 
-@dataclass(frozen=True)
+@dataclass
 class CollectionVersionInfo:
     """Metadata for one versioned collection directory.
 

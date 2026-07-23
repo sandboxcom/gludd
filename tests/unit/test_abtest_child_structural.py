@@ -16,12 +16,24 @@ from general_ludd.abtest._child import (
 )
 
 
-class TestApplyLimits:
-    def test_callable_no_args_fail_open(self):
-        _apply_limits(512, 30)
+@pytest.fixture(autouse=True)
+def applied_limits(monkeypatch):
+    calls: list[tuple[int, int]] = []
+    monkeypatch.setattr(
+        "general_ludd.abtest._child.apply_limits",
+        lambda mem_mb, cpu_s: calls.append((mem_mb, cpu_s)),
+    )
+    return calls
 
-    def test_large_memory_no_error(self):
+
+class TestApplyLimits:
+    def test_callable_no_args_fail_open(self, applied_limits):
+        _apply_limits(512, 30)
+        assert applied_limits == [(512, 30)]
+
+    def test_large_memory_no_error(self, applied_limits):
         _apply_limits(16384, 300)
+        assert applied_limits == [(16384, 300)]
 
 
 class TestRunWorkload:

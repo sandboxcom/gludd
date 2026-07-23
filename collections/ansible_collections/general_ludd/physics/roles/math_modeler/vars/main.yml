@@ -1,0 +1,22 @@
+---
+model_types:
+  - ode_first_order
+  - ode_second_order
+  - linear_regression
+  - polynomial_fit
+  - exponential_fit
+  - fourier_series
+  - monte_carlo
+  - optimization
+statistics_operations:
+  - mean
+  - median
+  - std_dev
+  - variance
+  - correlation
+  - regression
+solver_methods:
+  - euler
+  - runge_kutta_4
+  - analytical
+  - least_squares

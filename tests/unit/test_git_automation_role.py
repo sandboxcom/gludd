@@ -34,6 +34,7 @@ class TestGitAutomationRoleStructure:
         path = ROLE_ROOT / subdir
         assert path.is_dir(), f"Missing subdirectory: {path}"
 
+
     @pytest.mark.parametrize(
         "task_file",
         [
@@ -44,6 +45,7 @@ class TestGitAutomationRoleStructure:
             "merge.yml",
             "branch.yml",
             "worktree.yml",
+            "state.yml",
         ],
     )
     def test_required_task_files_exist(self, task_file: str) -> None:
@@ -64,6 +66,7 @@ class TestTaskFilesAreValidYaml:
 
     @pytest.mark.parametrize(
         "task_file",
+
         [
             "main.yml",
             "clone.yml",
@@ -72,6 +75,7 @@ class TestTaskFilesAreValidYaml:
             "merge.yml",
             "branch.yml",
             "worktree.yml",
+            "state.yml",
         ],
     )
     def test_task_file_is_valid_yaml(self, task_file: str) -> None:
@@ -99,6 +103,7 @@ class TestTaskFilesAreValidYaml:
 class TestMainYmlImportsAllSubTasks:
     """Verify main.yml includes all six sub-task files."""
 
+
     REQUIRED_INCLUDES: ClassVar[set[str]] = {
         "clone.yml",
         "commit.yml",
@@ -106,6 +111,7 @@ class TestMainYmlImportsAllSubTasks:
         "merge.yml",
         "branch.yml",
         "worktree.yml",
+        "state.yml",
     }
 
     def test_main_includes_all_sub_tasks(self) -> None:
@@ -152,13 +158,15 @@ class TestMetaRoleInfo:
 class TestDefaultsHaveRequiredParams:
     """Verify defaults/main.yml has the expected parameter namespace."""
 
+
     REQUIRED_DEFAULTS: ClassVar[list[str]] = [
         "git_op",
         "repo_path",
         "clone_url",
         "target_dir",
         "git_clone_timeout",
-        "commit_message",
+"commit_message",
+        "commit_files",
         "gate_cmd",
         "push_branch",
         "push_remote",
@@ -171,6 +179,13 @@ class TestDefaultsHaveRequiredParams:
         "worktree_op",
         "worktree_branch",
         "worktree_path_param",
+        "state_ref",
+        "state_remote",
+        "state_assert_clean",
+        "state_assert_no_feature_on_master",
+        "state_assert_merge_ready",
+        "state_assert_remote_head",
+        "state_assert_gha_matches_local",
         "git_retry_count",
     ]
 
@@ -195,12 +210,14 @@ class TestTaskFilesReferenceCorrectVariables:
     @pytest.mark.parametrize(
         "task_file,expected_vars",
         [
+
             ("clone.yml", ["clone_url", "target_dir", "git_clone_timeout"]),
             ("commit.yml", ["repo_path", "commit_message", "gate_cmd"]),
             ("push.yml", ["repo_path", "push_branch", "push_remote"]),
             ("merge.yml", ["repo_path", "merge_source", "merge_target", "merge_strategy"]),
             ("branch.yml", ["repo_path", "branch_op", "branch_name"]),
             ("worktree.yml", ["repo_path", "worktree_op", "worktree_branch", "worktree_path_param"]),
+            ("state.yml", ["repo_path", "state_ref", "state_remote", "state_assert_clean"]),
         ],
     )
     def test_task_file_references_expected_vars(self, task_file: str, expected_vars: list[str]) -> None:

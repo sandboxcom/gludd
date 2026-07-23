@@ -20,7 +20,6 @@ from __future__ import annotations
 import argparse
 import ast
 import json
-import re
 import sys
 from collections.abc import Iterable
 from dataclasses import dataclass, field
@@ -122,13 +121,38 @@ def _extract_symbols(file_path: Path, repo_root: Path) -> list[Symbol]:
     return symbols
 
 
+def _referenced_names(file_path: Path, name_set: set[str]) -> set[str]:
+    try:
+        source = file_path.read_text(encoding="utf-8")
+        tree = ast.parse(source)
+    except (SyntaxError, UnicodeDecodeError, OSError):
+        return set()
+
+    found: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and node.id in name_set:
+            found.add(node.id)
+        elif isinstance(node, ast.Attribute) and node.attr in name_set:
+            found.add(node.attr)
+        elif isinstance(node, ast.alias):
+            root_name = node.name.rsplit(".", 1)[-1]
+            if root_name in name_set:
+                found.add(root_name)
+            if node.asname in name_set:
+                found.add(node.asname)
+        elif isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            if node.name in name_set:
+                found.add(node.name)
+    return found
+
+
 def _build_ref_map(
     symbols: list[Symbol], files: list[Path], repo_root: Path
 ) -> dict[str, set[str]]:
-    """For each symbol name, find which src files reference it (excluding its own file).
+    """For each symbol name, find which files reference it.
 
-    Reads each file ONCE and checks against all symbols, rather than reading all
-    files for every symbol.
+    Parses each file once and indexes Python identifiers instead of running a
+    repo-wide regex with every symbol name alternated into it.
     """
     name_set = {s.name for s in symbols}
     def_files: dict[str, str] = {s.name: s.file for s in symbols}
@@ -137,19 +161,9 @@ def _build_ref_map(
     if not name_set:
         return refs
 
-    pattern = re.compile(
-        r"\b(" + "|".join(re.escape(n) for n in sorted(name_set, key=len, reverse=True)) + r")\b"
-    )
-
     for f in files:
         rel = str(f.relative_to(repo_root))
-        try:
-            text = f.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
-            continue
-
-        for match in pattern.finditer(text):
-            name = match.group(0)
+        for name in _referenced_names(f, name_set):
             if def_files.get(name) != rel:
                 refs[name].add(rel)
 

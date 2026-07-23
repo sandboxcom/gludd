@@ -276,7 +276,9 @@ class TestTDDVerdicts:
 
 def pytest_skip(reason: str):
     import pytest
-    pytest.skip(reason)
+    if reason:
+        pytest.skip(reason)
+    raise AssertionError("missing skip reason")
 
 
 # --------------------------------------------------------------------------- #

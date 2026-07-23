@@ -58,3 +58,31 @@ def test_push_to_remote_passes_timeout_env_and_cwd(monkeypatch) -> None:
     env = captured.get("env") or {}
     assert env.get("GIT_TERMINAL_PROMPT") == "0"
     assert env.get("GIT_ASKPASS") == "echo"
+
+
+def test_push_to_remote_holds_repo_lock(monkeypatch) -> None:
+    git = GitAutomation(repo_path="/tmp/whatever")
+    events: list[str] = []
+
+    class _FakeLock:
+        def __enter__(self):
+            events.append("enter")
+
+        def __exit__(self, *args):
+            events.append("exit")
+
+    class _CompletedProcess:
+        returncode = 0
+        stderr = ""
+        stdout = "Everything up-to-date"
+
+    def _capture(*args, **kwargs):
+        events.append("run")
+        return _CompletedProcess()
+
+    monkeypatch.setattr(repo_mod, "git_repo_lock", lambda path: _FakeLock())
+    monkeypatch.setattr(repo_mod.subprocess, "run", _capture)
+
+    result = git.push_to_remote("/tmp/repo", "origin", "main")
+    assert result.success is True
+    assert events == ["enter", "run", "exit"]

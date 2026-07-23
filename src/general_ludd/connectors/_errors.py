@@ -44,9 +44,9 @@ def sanitize_str(text: str) -> str:
     Returns a best-effort safe copy.  Callers that need the original value
     for logging MUST log BEFORE calling this function.
     """
+    text = _URL_PATTERN.sub("[REDACTED-URL]", text)
     text = _PATH_PATTERN.sub("[REDACTED-PATH]", text)
     text = _TOKEN_PATTERN.sub(lambda m: m.group(1) + "[REDACTED]", text)
-    text = _URL_PATTERN.sub("[REDACTED-URL]", text)
     return text
 
 

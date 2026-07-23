@@ -17,3 +17,8 @@ output "serve_command" {
   description = "The llama.cpp docker run command deployed to the VM."
   value       = module.llamacpp_server.serve_command
 }
+
+output "watchdog_user_data" {
+  description = "Cloud-init fragment from the gpu-cost-watchdog module."
+  value       = module.gpu_cost_watchdog.user_data
+}

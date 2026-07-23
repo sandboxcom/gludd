@@ -52,6 +52,35 @@ def test_apply_limits_sets_both_limits(monkeypatch: pytest.MonkeyPatch) -> None:
     assert cpu_limit == (7, 7)
 
 
+def test_apply_limits_cpu_budget_is_relative_to_current_process_time(monkeypatch: pytest.MonkeyPatch) -> None:
+    recorder: list[tuple[str, tuple[int, int]]] = []
+
+    def getrlimit(which: int) -> tuple[int, int]:
+        return (-1, -1)
+
+    def setrlimit(which: int, limits: tuple[int, int]) -> None:
+        recorder.append((str(which), limits))
+
+    def getrusage(which: int) -> types.SimpleNamespace:
+        assert which == "SELF"
+        return types.SimpleNamespace(ru_utime=41.2, ru_stime=1.1)
+
+    fake = types.SimpleNamespace(
+        RLIMIT_CPU="CPU",
+        RLIMIT_AS="AS",
+        RLIM_INFINITY=-1,
+        RUSAGE_SELF="SELF",
+        getrlimit=getrlimit,
+        setrlimit=setrlimit,
+        getrusage=getrusage,
+    )
+    monkeypatch.setitem(sys.modules, "resource", fake)
+
+    rlimit.apply_limits(0, 7)
+
+    assert recorder == [("CPU", (50, 50))]
+
+
 def test_apply_limits_clamps_to_hard_limit(monkeypatch: pytest.MonkeyPatch) -> None:
     """Requested cap above the inherited hard limit is clamped down (no EPERM)."""
     recorder: list[tuple[str, tuple[int, int]]] = []

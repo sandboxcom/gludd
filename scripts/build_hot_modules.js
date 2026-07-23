@@ -7,9 +7,16 @@ const { spawnSync } = require("node:child_process");
 
 const PLUGIN_DIR = path.resolve(__dirname, "..", ".opencode", "plugin");
 const OUT_DIR = "/tmp";
+const HOT_PREFIX = process.env.GLUDD_HOT_MODULE_PREFIX || path.join(OUT_DIR, "gludd-hot-");
 
 const PLUGINS = [
+  "enforce-anti-essay",
+  "enforce-audit",
+  "enforce-batch-push",
+  "enforce-branch-discipline",
   "enforce-deadline",
+  "enforce-context",
+  "enforce-depth",
   "enforce-enhancement-ratio",
   "enforce-floor",
   "enforce-delegate",
@@ -22,6 +29,10 @@ const PLUGINS = [
   "enforce-verified-claims",
   "enforce-clean-tree",
   "enforce-deletion-gate",
+  "enforce-objective",
+  "enforce-tdd",
+  "enforce-test-integrity",
+  "enforce-worktree",
 ];
 
 function tsToJs(content) {
@@ -140,7 +151,7 @@ function extractDefaultImplMethods(content) {
 
 function buildPlugin(name) {
   const srcPath = path.join(PLUGIN_DIR, `${name}.ts`);
-  const outPath = path.join(OUT_DIR, `gludd-hot-${name}.js`);
+  const outPath = `${HOT_PREFIX}${name}.js`;
 
   if (!fs.existsSync(srcPath)) {
     console.log(`  SKIP ${name}: source not found`);
@@ -300,14 +311,16 @@ function buildPlugin(name) {
 function status() {
   console.log("=== hot-reload module status ===\n");
   try {
+    const base = path.dirname(HOT_PREFIX);
+    const prefix = path.basename(HOT_PREFIX);
     const files = fs.readdirSync(OUT_DIR)
-      .filter(f => f.startsWith("gludd-hot-"))
+      .filter(f => f.startsWith(prefix))
       .sort();
     if (files.length === 0) {
       console.log("  (none built)");
     } else {
       for (const f of files) {
-        const p = path.join(OUT_DIR, f);
+        const p = path.join(base, f);
         const stat = fs.statSync(p);
         const age = Math.round((Date.now() - stat.mtimeMs) / 1000);
         const ageStr = age < 120 ? `${age}s ago` : `${Math.round(age / 60)}m ago`;

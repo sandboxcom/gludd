@@ -33,14 +33,26 @@ STALE_SECONDS = 24 * 3600
 def _primary_ids(stripped: str) -> list[str]:
     """Extract the primary task ID(s) from a checkbox line.
 
-    Returns the first ID match after the checkbox marker as the primary ID.
+    Returns contiguous ID matches immediately after the checkbox marker as
+    primary IDs.
     Secondary IDs in evidence text are NOT extracted to avoid false
     re-dispatch/duplicate flags when items reference each other.
     """
-    primary = PRIMARY_ID_PATTERN.search(stripped)
-    if primary:
-        return [primary.group(1)]
-    return []
+    marker = re.match(r"^-\s*\[[ x]\]\s+(?P<body>.*)$", stripped)
+    if marker is None:
+        return []
+    body = marker.group("body")
+    ids: list[str] = []
+    pos = 0
+    while pos < len(body):
+        while pos < len(body) and body[pos].isspace():
+            pos += 1
+        match = ID_PATTERN.match(body, pos)
+        if match is None:
+            break
+        ids.append(match.group(1))
+        pos = match.end()
+    return ids
 
 
 def _all_ids(stripped: str) -> list[str]:

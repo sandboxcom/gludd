@@ -29,22 +29,33 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
+pytestmark = pytest.mark.xdist_group("enforcement_state_files")
 
 PLUGIN_REGISTRATION_ORDER = [
+    "enforce-session-start.ts",
     "enforce-make.ts",
     "enforce-floor.ts",
     "enforce-delegate.ts",
+    "enforce-multitask.ts",
     "enforce-stop.ts",
-    "enforce-session-start.ts",
     "enforce-deadline.ts",
-    "enforce-deletion-gate.ts",
+    "enforce-enhancement-ratio.ts",
+    "enforce-clean-tree.ts",
+    "enforce-commit-lock.ts",
+    "enforce-verified-claims.ts",
     "enforce-no-suppressions.ts",
     "enforce-no-wait.ts",
-    "enforce-commit-lock.ts",
-    "enforce-clean-tree.ts",
-    "enforce-verified-claims.ts",
-    "enforce-multitask.ts",
-    "enforce-enhancement-ratio.ts",
+    "enforce-deletion-gate.ts",
+    "enforce-batch-push.ts",
+    "enforce-depth.ts",
+    "enforce-tdd.ts",
+    "enforce-objective.ts",
+    "enforce-anti-essay.ts",
+    "enforce-branch-discipline.ts",
+    "enforce-test-integrity.ts",
+    "enforce-worktree.ts",
+    "enforce-audit.ts",
+    "enforce-context.ts",
 ]
 
 _STATE_FILES = [

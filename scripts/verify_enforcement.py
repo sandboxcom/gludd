@@ -25,6 +25,9 @@ ENFORCEMENT_PLUGINS: dict[str, str] = {
     "enforce-verified-claims.ts": "GLUDD_VERIFIED_CLAIMS_ENFORCE",
     "enforce-no-suppressions.ts": None,  # hard-coded ON
     "enforce-session-start.ts": "GLUDD_SESSION_START_ENFORCE",
+    "enforce-worktree.ts": "GLUDD_WORKTREE_ENFORCE",
+    "enforce-audit.ts": "GLUDD_AUDIT_ENFORCE",
+    "enforce-context.ts": "GLUDD_CONTEXT_ENFORCE",
 }
 
 BLOCKING_PATTERNS = [

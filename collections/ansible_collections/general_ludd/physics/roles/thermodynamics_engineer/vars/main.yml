@@ -1,0 +1,26 @@
+---
+substance_options:
+  - water
+  - ethanol
+  - iron
+  - aluminum
+  - copper
+  - air
+  - helium
+  - nitrogen
+process_types:
+  - isothermal
+  - adiabatic
+  - isobaric
+  - isochoric
+thermodynamic_laws:
+  - zeroth
+  - first
+  - second
+  - third
+engine_cycles:
+  - carnot
+  - otto
+  - diesel
+  - rankine
+  - brayton

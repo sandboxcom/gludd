@@ -163,12 +163,13 @@ class TestResolverForProjectHelper:
         gateway = _make_gateway({}, resolver)
         assert gateway._resolver_for_project("proj-a") is resolver
 
-    def test_malformed_project_id_fails_closed_to_base(self) -> None:
+    def test_malformed_project_id_fails_closed_without_base_fallback(self) -> None:
         # A project_id containing '/' or '..' makes ProjectSecrets.__init__ raise
-        # ValueError; the gateway must fall back to the base rather than crash.
+        # ValueError; the gateway must refuse shared-base fallback rather than
+        # silently widen access.
         resolver = _ProjectAwareResolver(_FakeBase())
         gateway = _make_gateway({}, resolver)
-        assert gateway._resolver_for_project("proj/../other") is resolver
+        assert gateway._resolver_for_project("proj/../other") is None
 
 
 @pytest.mark.parametrize("param", ["project_id"])

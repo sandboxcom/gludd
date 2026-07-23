@@ -29,6 +29,10 @@ PLUGIN_DIR = ROOT / ".opencode" / "plugin"
 HOT_RELOAD_TS = PLUGIN_DIR / "hot_reload.ts"
 BUILD_SCRIPT = ROOT / "scripts" / "build_hot_modules.js"
 MAKEFILE = ROOT / "Makefile"
+HOT_PROXY_PREFIX = f"/tmp/gludd-hot-{os.getpid()}-hot-reload-proxy-"
+HOT_PROXY_REAL_PREFIX = f"/tmp/gludd-hot-{os.getpid()}-hot-reload-proxy-real-"
+
+pytestmark = pytest.mark.xdist_group("hot_reload_proxy")
 
 # All enforce-*.ts plugins that exist on disk
 _ALL_PLUGINS = sorted(
@@ -108,7 +112,7 @@ class TestHotModuleBuild:
 
     @staticmethod
     def _cleanup() -> None:
-        for f in Path("/tmp").glob("gludd-hot-*.js"):
+        for f in Path("/tmp").glob(f"{Path(HOT_PROXY_PREFIX).name}*.js"):
             with contextlib.suppress(OSError):
                 f.unlink()
 
@@ -133,12 +137,13 @@ class TestHotModuleBuild:
             result = subprocess.run(
                 ["node", str(BUILD_SCRIPT)],
                 cwd=str(ROOT), capture_output=True, text=True, timeout=30,
+                env={**os.environ, "GLUDD_HOT_MODULE_PREFIX": HOT_PROXY_PREFIX},
             )
             assert result.returncode == 0, (
                 f"build_hot_modules.js failed (exit {result.returncode}):\n"
                 f"stderr: {result.stderr[:500]}"
             )
-            built = sorted(Path("/tmp").glob("gludd-hot-*.js"))
+            built = sorted(Path("/tmp").glob(f"{Path(HOT_PROXY_PREFIX).name}*.js"))
             assert len(built) > 0, "No hot modules produced"
             for f in built:
                 size = f.stat().st_size
@@ -165,10 +170,11 @@ class TestHotModuleBuild:
             subprocess.run(
                 ["node", str(BUILD_SCRIPT)],
                 cwd=str(ROOT), capture_output=True, text=True, timeout=30,
+                env={**os.environ, "GLUDD_HOT_MODULE_PREFIX": HOT_PROXY_PREFIX},
                 check=True,
             )
             failures = []
-            for f in sorted(Path("/tmp").glob("gludd-hot-*.js")):
+            for f in sorted(Path("/tmp").glob(f"{Path(HOT_PROXY_PREFIX).name}*.js")):
                 proc = subprocess.run(
                     ["node", "--check", str(f)],
                     capture_output=True, text=True, timeout=10,
@@ -193,7 +199,7 @@ class TestHotModuleBuild:
 class TestHotModuleOverridesDefault:
     """When a hot module exists, loadHotModule returns it instead of defaults."""
 
-    HOT_PREFIX = "/tmp/gludd-hot-"
+    HOT_PREFIX = HOT_PROXY_PREFIX
 
     @staticmethod
     def _call_load_hot_module(name: str, ts_defaults: str) -> dict | None:
@@ -211,6 +217,7 @@ class TestHotModuleOverridesDefault:
         try:
             env = os.environ.copy()
             env["OPENCODE_SUBAGENT"] = ""
+            env["GLUDD_HOT_MODULE_PREFIX"] = TestHotModuleOverridesDefault.HOT_PREFIX
             proc = subprocess.run(
                 ["node", "--experimental-strip-types", str(tmp)],
                 capture_output=True, text=True, timeout=15,
@@ -229,7 +236,7 @@ class TestHotModuleOverridesDefault:
     @staticmethod
     def _write_hot_module(name: str, key: str, value_js: str) -> str:
         """Write a hot module file with exports["key"] = value;"""
-        p = f"/tmp/gludd-hot-{name}.js"
+        p = f"{TestHotModuleOverridesDefault.HOT_PREFIX}{name}.js"
         with open(p, "w") as f:
             f.write(f'exports["{key}"] = {value_js};\n')
         time.sleep(0.05)
@@ -239,7 +246,7 @@ class TestHotModuleOverridesDefault:
     def _cleanup(*names: str) -> None:
         for n in names:
             with contextlib.suppress(FileNotFoundError):
-                os.remove(f"/tmp/gludd-hot-{n}.js")
+                os.remove(f"{TestHotModuleOverridesDefault.HOT_PREFIX}{n}.js")
         with contextlib.suppress(FileNotFoundError):
             os.remove("/tmp/_test_hot_reload_proxy.ts")
 
@@ -274,7 +281,7 @@ class TestHotModuleOverridesDefault:
     def test_fallback_when_hot_module_is_corrupt(self):
         name = "test-corrupt-fallback"
         try:
-            with open(f"/tmp/gludd-hot-{name}.js", "w") as f:
+            with open(f"{self.HOT_PREFIX}{name}.js", "w") as f:
                 f.write("{{{[[[ this is not valid JS at all --- ")
             result = self._call_load_hot_module(
                 name,
@@ -333,7 +340,7 @@ class TestRealPluginHotModules:
 
     @staticmethod
     def _cleanup_all() -> None:
-        for f in Path("/tmp").glob("gludd-hot-*.js"):
+        for f in Path("/tmp").glob(f"{Path(HOT_PROXY_REAL_PREFIX).name}*.js"):
             with contextlib.suppress(OSError):
                 f.unlink()
 
@@ -343,11 +350,12 @@ class TestRealPluginHotModules:
             build = subprocess.run(
                 ["node", str(BUILD_SCRIPT)],
                 cwd=str(ROOT), capture_output=True, text=True, timeout=30,
+                env={**os.environ, "GLUDD_HOT_MODULE_PREFIX": HOT_PROXY_REAL_PREFIX},
             )
             assert build.returncode == 0, (
                 f"Build failed (exit {build.returncode}):\n{build.stderr[:500]}"
             )
-            hot_files = sorted(Path("/tmp").glob("gludd-hot-*.js"))
+            hot_files = sorted(Path("/tmp").glob(f"{Path(HOT_PROXY_REAL_PREFIX).name}*.js"))
             assert len(hot_files) > 0, "No hot modules produced"
             for f in hot_files:
                 content = f.read_text()

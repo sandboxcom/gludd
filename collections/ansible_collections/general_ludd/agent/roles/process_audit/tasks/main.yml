@@ -78,11 +78,11 @@
   ansible.builtin.set_fact:
     _pa_stale_state_files: >-
       {{ [
-        _pa_stop_state.stat.exists and ((ansible_date_time.epoch | int) - (_pa_stop_state.stat.mtime | int) > process_audit_state_file_max_age_seconds | int),
-        _pa_false_done_state.stat.exists and ((ansible_date_time.epoch | int) - (_pa_false_done_state.stat.mtime | int) > process_audit_state_file_max_age_seconds | int),
-        _pa_session_start_state.stat.exists and ((ansible_date_time.epoch | int) - (_pa_session_start_state.stat.mtime | int) > process_audit_state_file_max_age_seconds | int),
-        _pa_force_delegate_state.stat.exists and ((ansible_date_time.epoch | int) - (_pa_force_delegate_state.stat.mtime | int) > process_audit_state_file_max_age_seconds | int),
-        _pa_mainthread_streak.stat.exists and ((ansible_date_time.epoch | int) - (_pa_mainthread_streak.stat.mtime | int) > process_audit_state_file_max_age_seconds | int)
+        _pa_stop_state.stat.exists and ((ansible_facts.date_time.epoch | int) - (_pa_stop_state.stat.mtime | int) > process_audit_state_file_max_age_seconds | int),
+        _pa_false_done_state.stat.exists and ((ansible_facts.date_time.epoch | int) - (_pa_false_done_state.stat.mtime | int) > process_audit_state_file_max_age_seconds | int),
+        _pa_session_start_state.stat.exists and ((ansible_facts.date_time.epoch | int) - (_pa_session_start_state.stat.mtime | int) > process_audit_state_file_max_age_seconds | int),
+        _pa_force_delegate_state.stat.exists and ((ansible_facts.date_time.epoch | int) - (_pa_force_delegate_state.stat.mtime | int) > process_audit_state_file_max_age_seconds | int),
+        _pa_mainthread_streak.stat.exists and ((ansible_facts.date_time.epoch | int) - (_pa_mainthread_streak.stat.mtime | int) > process_audit_state_file_max_age_seconds | int)
       ] | select | list | length }}
 
 - name: Count how many state files exist
@@ -166,7 +166,7 @@
 
 - name: Count CI_RED_PATTERNS entries in enforce-stop.ts
   ansible.builtin.shell:
-    cmd: "set -o pipefail && grep -c 'CI_RED_PATTERNS' {{ project_root }}/.opencode/plugin/enforce-stop.ts 2>/dev/null; grep -A 30 'const CI_RED_PATTERNS' {{ project_root }}/.opencode/plugin/enforce-stop.ts 2>/dev/null | grep -cE '/\\b' || echo 0"
+    cmd: "grep -c 'CI_RED_PATTERNS' {{ project_root }}/.opencode/plugin/enforce-stop.ts 2>/dev/null; grep -A 30 'const CI_RED_PATTERNS' {{ project_root }}/.opencode/plugin/enforce-stop.ts 2>/dev/null | grep -cE '/\\b' || echo 0"
   register: _pa_ci_red_patterns
   changed_when: false
 

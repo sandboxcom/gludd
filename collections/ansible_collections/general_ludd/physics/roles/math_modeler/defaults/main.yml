@@ -1,0 +1,9 @@
+---
+math_model_type: "ode_first_order"
+math_equation: "dy/dt = -k * y"
+math_initial_y0: 1.0
+math_param_k: 0.5
+math_time_start: 0.0
+math_time_end: 10.0
+math_time_steps: 100
+math_output_dir: /tmp/gludd-math

@@ -327,13 +327,13 @@ class TestFailOpen:
         enforcer.verify_ready()
         assert enforcer.is_ready
 
-    def test_verify_ready_creates_missing_jail_dir_fail_closed(self, tmp_path: Path) -> None:
+    def test_verify_ready_refuses_explicit_missing_jail_dir_fail_closed(self, tmp_path: Path) -> None:
         jail = tmp_path / "created-by-verify"
         assert not jail.exists()
         enforcer = SandboxEnforcer(SandboxConfig(jail_dir=str(jail)))
-        enforcer.verify_ready()
-        assert jail.exists()
-        assert enforcer.is_ready
+        with pytest.raises(SandboxNotAvailableError, match="does not exist"):
+            enforcer.verify_ready()
+        assert not enforcer.is_ready
 
     def test_confine_path_unverified_passthrough_fail_open(self, tmp_path: Path) -> None:
         enforcer = SandboxEnforcer(SandboxConfig(
@@ -441,12 +441,13 @@ class TestAutoJail:
         enforcer.verify_ready()
         assert enforcer.jail_dir == str(jail)
 
-    def test_jail_dir_created_if_missing(self, tmp_path: Path) -> None:
+    def test_explicit_missing_jail_dir_not_auto_created(self, tmp_path: Path) -> None:
         jail = tmp_path / "new-jail"
         enforcer = SandboxEnforcer(SandboxConfig(jail_dir=str(jail)))
         assert not jail.exists()
-        enforcer.verify_ready()
-        assert jail.exists()
+        with pytest.raises(SandboxNotAvailableError, match="does not exist"):
+            enforcer.verify_ready()
+        assert not jail.exists()
 
     def test_jail_dir_mkdtemp_and_is_ready(self) -> None:
         enforcer = SandboxEnforcer(SandboxConfig())

@@ -29,6 +29,9 @@ from general_ludd.security.path_canonicalizer import (
     PROTECTED_FILE_STEMS,
     is_denied_path,
 )
+from general_ludd.security.path_canonicalizer import (
+    PROTECTED_PATH_SEGMENTS as _CANONICAL_PROTECTED_PATH_SEGMENTS,
+)
 
 # ---------------------------------------------------------------------------
 # Capability vocabulary
@@ -37,6 +40,7 @@ from general_ludd.security.path_canonicalizer import (
 #: Path component that marks the agent's own Ansible source tree.  A write whose
 #: resolved path contains this component is a *self-modification*.
 COLLECTIONS_COMPONENT = "collections"
+PROTECTED_PATH_SEGMENTS = _CANONICAL_PROTECTED_PATH_SEGMENTS
 
 
 class CapabilityError(Exception):

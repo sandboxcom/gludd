@@ -25,6 +25,8 @@ DISABLE_PATTERNS: frozenset[str] = frozenset({
     "# noqa",
     "pass # todo",
     "delete",
+    "deleting",
+    "deletion",
     "deactivate",
     "turn off",
     "workaround",

@@ -1,0 +1,45 @@
+---
+- name: Converge - test Jinja2 template compilation and prompt rendering
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    templates_dir: "{{ lookup('env', 'PWD') }}/templates/prompts"
+    venv_python: "{{ lookup('env', 'VIRTUAL_ENV') | default('/usr', true) }}/bin/python3"
+    files_dir: "{{ lookup('env', 'MOLECULE_SCENARIO_DIRECTORY') | default(playbook_dir, true) }}"
+  tasks:
+    - name: Discover all Jinja2 templates
+      ansible.builtin.find:
+        paths: "{{ templates_dir }}"
+        patterns: "*.j2"
+        recurse: true
+      register: template_files
+
+    - name: Verify at least base template exists
+      ansible.builtin.assert:
+        that:
+          - template_files.files | length >= 2
+        fail_msg: "Expected at least 2 Jinja2 templates (base + one per type)"
+        success_msg: "Template files found: {{ template_files.files | length }}"
+
+    - name: Verify implementation template includes base
+      ansible.builtin.shell:
+        cmd: |
+          grep -q "include.*base_harness_aware" "{{ templates_dir }}/implementation.md.j2" && echo "OK"
+      register: include_check
+      changed_when: false
+      failed_when: "'OK' not in include_check.stdout"
+
+    - name: Compile all Jinja2 templates with Python
+      ansible.builtin.command:
+        cmd: "{{ venv_python }} {{ files_dir }}/default/files/compile_templates.py {{ templates_dir }}"
+      register: template_compile
+      changed_when: false
+      failed_when: template_compile.rc != 0
+
+    - name: Render all templates with test context
+      ansible.builtin.command:
+        cmd: "{{ venv_python }} {{ files_dir }}/default/files/render_templates.py {{ templates_dir }}"
+      register: template_render
+      changed_when: false
+      failed_when: template_render.rc != 0

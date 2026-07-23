@@ -1,0 +1,95 @@
+---
+# trace_evidence_examiner role — analyze and compare trace evidence
+#
+# Invokes the trace_evidence_examiner module_utils functions to:
+#   1. Validate role parameters and evidence type
+#   2. Compare sample data against reference data
+#   3. Compute match result and confidence
+#   4. Write the JSON verdict artifact to the output directory
+
+- name: Validate trace evidence type
+  ansible.builtin.assert:
+    that:
+      - trace_evidence_type in ["fiber", "hair", "glass", "paint", "soil", "gsr", "toolmark", "footwear", "tire"]
+    fail_msg: "trace_evidence_type must be one of: fiber, hair, glass, paint, soil, gsr, toolmark, footwear, tire. Got: {{ trace_evidence_type }}"
+  when: trace_evidence_enabled | bool
+
+- name: Validate sample and reference data provided
+  ansible.builtin.assert:
+    that:
+      - trace_evidence_sample_data | length > 0
+      - trace_evidence_reference_data | length > 0
+    fail_msg: "Both trace_evidence_sample_data and trace_evidence_reference_data must be non-empty dicts"
+  when: trace_evidence_enabled | bool
+
+- name: Ensure output directory
+  ansible.builtin.file:
+    path: "{{ trace_evidence_output_dir }}"
+    state: directory
+    mode: "0755"
+  when: trace_evidence_enabled | bool
+
+- name: Run trace evidence analysis
+  block:
+    - name: Examine evidence via trace_evidence_examiner module_utils
+      ansible.builtin.script:
+        cmd: |
+          import json, sys
+          sys.path.insert(0, "{{ playbook_dir }}/../../..")
+          from ansible_collections.general_ludd.forensics.plugins.module_utils.trace_evidence_examiner import (
+              examine_trace_evidence, write_verdict
+          )
+          sample = json.loads('''{{ trace_evidence_sample_data | to_json }}''')
+          reference = json.loads('''{{ trace_evidence_reference_data | to_json }}''')
+          result = examine_trace_evidence(
+              evidence_type="{{ trace_evidence_type }}",
+              sample_data=sample,
+              reference_data=reference,
+          )
+          path = write_verdict(result, "{{ trace_evidence_output_dir }}")
+          print(json.dumps({
+              "status": "success",
+              "path": str(path),
+              "evidence_type": "{{ trace_evidence_type }}",
+              "match_result": result["match_result"],
+              "confidence": result["confidence"],
+          }))
+        executable: python3
+      register: trace_evidence_result
+      failed_when: false
+      changed_when: false
+      when: trace_evidence_enabled | bool
+
+    - name: Parse trace evidence result
+      ansible.builtin.set_fact:
+        trace_evidence_output: "{{ trace_evidence_result.stdout | from_json }}"
+      when:
+        - trace_evidence_enabled | bool
+        - trace_evidence_result.rc == 0
+
+    - name: Register verdict fact
+      ansible.builtin.set_fact:
+        trace_evidence_verdict:
+          evidence_type: "{{ trace_evidence_output.evidence_type }}"
+          findings: "{{ trace_evidence_output.match_result }}"
+          match_result: "{{ trace_evidence_output.match_result }}"
+          confidence: "{{ trace_evidence_output.confidence }}"
+          output_path: "{{ trace_evidence_output.path }}"
+      when:
+        - trace_evidence_enabled | bool
+        - trace_evidence_result.rc == 0
+
+  rescue:
+    - name: Write failure verdict artifact
+      ansible.builtin.copy:
+        content: |
+          {{ {'role': 'trace_evidence_examiner', 'status': 'failed',
+              'evidence_type': trace_evidence_type,
+              'error': trace_evidence_result.stderr | default('unknown error')} | to_nice_json }}
+        dest: "{{ trace_evidence_output_dir }}/trace_evidence_verdict.json"
+        mode: "0644"
+      failed_when: false
+
+    - name: Fail the play after rescue cleanup
+      ansible.builtin.fail:
+        msg: "trace_evidence_examiner failed — see artifact for details"

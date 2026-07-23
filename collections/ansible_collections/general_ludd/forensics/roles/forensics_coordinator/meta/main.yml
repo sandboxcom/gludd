@@ -1,0 +1,19 @@
+---
+galaxy_info:
+  role_name: forensics_coordinator
+  author: Agentic Harness Agent
+  description: >
+    Orchestrate multi-analyst forensic investigation workflows.
+    Dispatches fingerprint, DNA, trace evidence, and photo forensics
+    analysts with shared case context. Initializes chain of custody
+    and assembles a coordinator report from all verdicts.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

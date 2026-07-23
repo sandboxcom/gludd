@@ -14,6 +14,9 @@ cannot fail with ``EPERM`` trying to widen a limit.
 
 from __future__ import annotations
 
+import math
+import sys
+
 
 def apply_limits(mem_mb: int, cpu_s: int) -> None:
     """Apply address-space (``RLIMIT_AS``) and CPU-time (``RLIMIT_CPU``) limits.
@@ -31,7 +34,11 @@ def apply_limits(mem_mb: int, cpu_s: int) -> None:
     except ImportError:
         return
 
-    if mem_mb > 0 and hasattr(resource, "RLIMIT_AS"):
+    if (
+        mem_mb > 0
+        and hasattr(resource, "RLIMIT_AS")
+        and not (sys.platform == "darwin" and getattr(resource, "__name__", "") == "resource")
+    ):
         nbytes = mem_mb * 1024 * 1024
         try:
             _soft, hard = resource.getrlimit(resource.RLIMIT_AS)
@@ -46,7 +53,15 @@ def apply_limits(mem_mb: int, cpu_s: int) -> None:
     if cpu_s > 0 and hasattr(resource, "RLIMIT_CPU"):
         try:
             _soft, hard = resource.getrlimit(resource.RLIMIT_CPU)
-            capped = cpu_s if hard == resource.RLIM_INFINITY else min(cpu_s, hard)
-            resource.setrlimit(resource.RLIMIT_CPU, (capped, capped))
+            current_cpu_s = 0
+            if hasattr(resource, "getrusage") and hasattr(resource, "RUSAGE_SELF"):
+                usage = resource.getrusage(resource.RUSAGE_SELF)
+                user_s = float(getattr(usage, "ru_utime", 0.0))
+                system_s = float(getattr(usage, "ru_stime", 0.0))
+                current_cpu_s = math.ceil(user_s + system_s)
+            requested = current_cpu_s + cpu_s
+            capped = requested if hard == resource.RLIM_INFINITY else min(requested, hard)
+            if capped > current_cpu_s:
+                resource.setrlimit(resource.RLIMIT_CPU, (capped, capped))
         except (ValueError, OSError):
             pass

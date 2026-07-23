@@ -1,5 +1,6 @@
 ---
-# merge.yml — merge branches with conflict handling and rollback
+# merge.yml — merge through the guarded gludd_git module.
+# A non-empty gate_cmd or git_op=gated_merge uses GitAutomation.gated_merge.
 
 - name: "Assert merge parameters"
   ansible.builtin.assert:
@@ -9,109 +10,48 @@
       - merge_target | string | length > 0
     fail_msg: "repo_path, merge_source, and merge_target are required for merge operation"
 
-- name: "Capture pre-merge HEAD SHA"
-  ansible.builtin.command:
-    cmd: git rev-parse HEAD
-    chdir: "{{ repo_path }}"
-  register: _merge_pre_sha
-  changed_when: false
+- name: "Assert gated merge has a gate command"
+  ansible.builtin.assert:
+    that:
+      - gate_cmd | default([]) | length > 0
+    fail_msg: "gate_cmd is required when git_op=gated_merge"
+  when: git_op == "gated_merge"
 
-- name: "Checkout target branch"
-  ansible.builtin.command:
-    cmd: "git checkout {{ merge_target | quote }} --"
-    chdir: "{{ repo_path }}"
-  register: _merge_checkout
-  failed_when: _merge_checkout.rc != 0
-  changed_when: true
-
-- name: "Merge source into target"
-  ansible.builtin.command:
-    cmd: >-
-      git merge
-      {%- if merge_strategy | default('ff') == 'ff' -%} --ff-only
-      {%- elif merge_strategy == 'no-ff' -%} --no-ff -m {{ ('Merge ' ~ merge_source ~ ' into ' ~ merge_target) | quote }}
-      {%- elif merge_strategy == 'squash' -%} --squash
-      {%- endif -%}
-      -- {{ merge_source | quote }}
-    chdir: "{{ repo_path }}"
-  register: _merge_result
-  failed_when: false
-  changed_when: true
-  timeout: "{{ git_merge_timeout | default(60) }}"
-
-- name: "Handle merge conflict"
-  block:
-    - name: "Abort merge on conflict"
-      ansible.builtin.command:
-        cmd: git merge --abort
-        chdir: "{{ repo_path }}"
-      failed_when: false
-      changed_when: true
-
-    - name: "Reset to pre-merge HEAD"
-      ansible.builtin.command:
-        cmd: "git reset --hard {{ _merge_pre_sha.stdout | trim }}"
-        chdir: "{{ repo_path }}"
-      failed_when: false
-      changed_when: true
-
-    - name: "Set merge failure result"
-      ansible.builtin.set_fact:
-        git_automation_merge_result:
-          success: false
-          strategy: "{{ merge_strategy | default('ff') }}"
-          message: "CONFLICT: {{ _merge_result.stderr | default('merge failed') }}"
-          conflicts:
-            - "{{ merge_source }}"
+- name: "Merge branch through gludd_git"
+  general_ludd.agent.gludd_git:
+    path: "{{ repo_path }}"
+    op: merge
+    source: "{{ merge_source }}"
+    target: "{{ merge_target }}"
+    strategy: "{{ merge_strategy }}"
+  register: _git_automation_merge_module
   when:
-    - _merge_result.rc | default(1) != 0
+    - git_op == "merge"
+    - gate_cmd | default([]) | length == 0
 
-- name: "Commit squash merge if applicable"
+- name: "Gated merge branch through gludd_git"
+  general_ludd.agent.gludd_git:
+    path: "{{ repo_path }}"
+    op: gated_merge
+    source: "{{ merge_source }}"
+    target: "{{ merge_target }}"
+    strategy: "{{ merge_strategy }}"
+    gate_cmd: "{{ gate_cmd | default([]) }}"
+  register: _git_automation_gated_merge_module
   when:
-    - merge_strategy | default('ff') == 'squash'
-    - _merge_result.rc | default(1) == 0
-  block:
-    - name: "Commit squashed changes"
-      ansible.builtin.command:
-        cmd: "git commit -m {{ ('Merge ' ~ merge_source ~ ' into ' ~ merge_target ~ ' (squash)') | quote }}"
-        chdir: "{{ repo_path }}"
-      register: _merge_squash_commit
-      failed_when: false
-      changed_when: true
+    - git_op == "gated_merge" or gate_cmd | default([]) | length > 0
 
-    - name: "Rollback squash on commit failure"
-      when: _merge_squash_commit.rc | default(0) != 0
-      block:
-        - name: "Reset to pre-merge HEAD (squash rollback)"
-          ansible.builtin.command:
-            cmd: "git reset --hard {{ _merge_pre_sha.stdout | trim }}"
-            chdir: "{{ repo_path }}"
-          failed_when: false
-          changed_when: true
-
-        - name: "Set squash failure result"
-          ansible.builtin.set_fact:
-            git_automation_merge_result:
-              success: false
-              strategy: squash
-              message: "squash commit failed: {{ _merge_squash_commit.stderr | default('') }}"
-              conflicts: []
-
-- name: "Get post-merge HEAD SHA on success"
-  ansible.builtin.command:
-    cmd: git rev-parse HEAD
-    chdir: "{{ repo_path }}"
-  register: _merge_post_sha
-  changed_when: false
-  when: _merge_result.rc | default(1) == 0
-
-- name: "Set merge success result"
+- name: "Set merge result fact"
   ansible.builtin.set_fact:
-    git_automation_merge_result:
-      success: "{{ _merge_result.rc | default(1) == 0 }}"
-      strategy: "{{ merge_strategy | default('ff') }}"
-      message: "merged {{ merge_source }} into {{ merge_target }}"
-      sha: "{{ _merge_post_sha.stdout | default('') | trim }}"
+    git_automation_merge_result: "{{ _git_automation_merge_module.result }}"
   when:
-    - _merge_result.rc | default(1) == 0
-    - git_automation_merge_result.success | default(false) is not defined or (merge_strategy | default('ff') != 'squash')
+    - _git_automation_merge_module is defined
+    - not (_git_automation_merge_module.skipped | default(false))
+
+- name: "Set gated merge result fact"
+  ansible.builtin.set_fact:
+    git_automation_merge_result: "{{ _git_automation_gated_merge_module.result }}"
+    git_automation_gated_merge_result: "{{ _git_automation_gated_merge_module.result }}"
+  when:
+    - _git_automation_gated_merge_module is defined
+    - not (_git_automation_gated_merge_module.skipped | default(false))

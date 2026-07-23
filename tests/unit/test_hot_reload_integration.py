@@ -15,11 +15,15 @@ import subprocess
 import time
 from pathlib import Path
 
+import pytest
+
 HOT_RELOAD_TS = (
     Path(__file__).resolve().parents[2] / ".opencode" / "lib" / "hot_reload.ts"
 )
 assert HOT_RELOAD_TS.exists(), f"hot_reload.ts not found at {HOT_RELOAD_TS}"
-HOT_PREFIX = "/tmp/gludd-hot-"
+HOT_PREFIX = f"/tmp/gludd-hot-{os.getpid()}-hot-reload-integration-"
+
+pytestmark = pytest.mark.xdist_group("hot_reload_integration")
 
 _import_path = json.dumps(str(HOT_RELOAD_TS))
 
@@ -35,6 +39,7 @@ def _invoke(name: str, defaults_ts: str) -> dict | None:
     Path(wrapper).write_text(ts)
     env = os.environ.copy()
     env["OPENCODE_SUBAGENT"] = ""
+    env["GLUDD_HOT_MODULE_PREFIX"] = HOT_PREFIX
     r = subprocess.run(
         ["node", "--experimental-strip-types", wrapper],
         capture_output=True, text=True, timeout=15,

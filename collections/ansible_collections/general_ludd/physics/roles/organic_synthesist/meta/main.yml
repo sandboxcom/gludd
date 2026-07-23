@@ -1,0 +1,19 @@
+---
+galaxy_info:
+  role_name: organic_synthesist
+  author: Agentic Harness Agent
+  description: >
+    Plan and analyze organic synthesis routes. Look up molecules in a synthesis
+    database, predict reaction yields from conditions (temperature, solvent,
+    catalyst), and perform retrosynthetic analysis for common pharmaceutical
+    compounds.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

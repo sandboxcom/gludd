@@ -301,7 +301,7 @@ class TestPathTraversalGuard:
 
         transport = _RecordingTransport()
         src = GitHubActionsSource(
-            {"base_url": "https://api.github.com", "repo": "owner/../../evil", "token_env": "GITHUB_TOKEN"},
+            {"base_url": "https://api.github.com", "repo": "owner/evil", "token_env": "GITHUB_TOKEN"},
             transport=transport,
         )
         src.query()

@@ -1,0 +1,11 @@
+---
+fingerprint_enabled: true
+fingerprint_type: "latent"
+fingerprint_data:
+  ridge_flow_description: ""
+  core_present: false
+  delta_count: 0
+  ridge_count: 0
+  quality_score: 0.5
+  minutiae_list: []
+fingerprint_output_dir: "{{ playbook_dir }}/output/forensics/fingerprint"

@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -28,6 +29,16 @@ from general_ludd.event_loop.loop import EventLoop
 from general_ludd.review.reviewer import ReturnReviewer
 from general_ludd.schemas.job import JobSpec
 from general_ludd.schemas.task_return import TaskReturn
+
+_PROJECT_ID = "proj-reconcile-e2e"
+
+
+def _project_manager_stub() -> SimpleNamespace:
+    project = SimpleNamespace(project_id=_PROJECT_ID)
+    return SimpleNamespace(
+        select_project=lambda: project,
+        list_active=lambda: [project],
+    )
 
 
 async def _create_test_infra():
@@ -56,6 +67,7 @@ async def _create_test_infra():
     app.state.event_loop = None
     app.state._templates_dir = None
     app.state._playbooks_dir = None
+    app.state._project_manager = _project_manager_stub()
     reg_todos(app, daemon_mod._daemon_state)
 
     transport = ASGITransport(app=app)
@@ -75,6 +87,7 @@ class TestReconcilePhaseE2E:
                 "queue": "core",
                 "priority": "high",
                 "work_type": "code",
+                "project_id": _PROJECT_ID,
             },
         )
         assert resp.status_code == 201
@@ -115,7 +128,10 @@ class TestReconcilePhaseE2E:
             )
 
             loop = EventLoop(
-                session=factory, daemon_state={}, config={"repo_root": ws}
+                session=factory,
+                daemon_state={},
+                config={"repo_root": ws},
+                project_manager=_project_manager_stub(),
             )
 
             async def patched_dispatch(todo_item, **_kwargs):
@@ -135,6 +151,7 @@ class TestReconcilePhaseE2E:
                 if task_return_repo is not None:
                     await task_return_repo.create(data={
                         "return_id": result.return_id,
+                        "project_id": _PROJECT_ID,
                         "todo_id": result.todo_id,
                         "job_id": result.job_id,
                         "playbook": result.playbook,
@@ -185,6 +202,7 @@ class TestReconcilePhaseE2E:
 
                 dm = TaskDecisionModel(
                     return_id=decision.return_id,
+                    project_id=_PROJECT_ID,
                     matched_todo_id=decision.matched_todo_id,
                     decision=decision.decision,
                     confidence=decision.confidence,
@@ -218,6 +236,7 @@ class TestReconcilePhaseE2E:
                 "queue": "core",
                 "priority": "high",
                 "work_type": "code",
+                "project_id": _PROJECT_ID,
             },
         )
         assert resp.status_code == 201
@@ -253,7 +272,10 @@ class TestReconcilePhaseE2E:
             )
 
             loop = EventLoop(
-                session=factory, daemon_state={}, config={"repo_root": ws}
+                session=factory,
+                daemon_state={},
+                config={"repo_root": ws},
+                project_manager=_project_manager_stub(),
             )
 
             async def patched_dispatch(todo_item, **_kwargs):
@@ -273,6 +295,7 @@ class TestReconcilePhaseE2E:
                 if task_return_repo is not None:
                     await task_return_repo.create(data={
                         "return_id": result.return_id,
+                        "project_id": _PROJECT_ID,
                         "todo_id": result.todo_id,
                         "job_id": result.job_id,
                         "playbook": result.playbook,
@@ -320,6 +343,7 @@ class TestReconcilePhaseE2E:
 
                 dm = TaskDecisionModel(
                     return_id=decision.return_id,
+                    project_id=_PROJECT_ID,
                     matched_todo_id=decision.matched_todo_id,
                     decision=decision.decision,
                     confidence=decision.confidence,
@@ -349,6 +373,7 @@ class TestReconcilePhaseE2E:
                 "queue": "core",
                 "priority": "high",
                 "work_type": "code",
+                "project_id": _PROJECT_ID,
             },
         )
         assert resp.status_code == 201
@@ -384,7 +409,10 @@ class TestReconcilePhaseE2E:
             )
 
             loop = EventLoop(
-                session=factory, daemon_state={}, config={"repo_root": ws}
+                session=factory,
+                daemon_state={},
+                config={"repo_root": ws},
+                project_manager=_project_manager_stub(),
             )
 
             async def patched_dispatch(todo_item, **_kwargs):
@@ -404,6 +432,7 @@ class TestReconcilePhaseE2E:
                 if task_return_repo is not None:
                     await task_return_repo.create(data={
                         "return_id": result.return_id,
+                        "project_id": _PROJECT_ID,
                         "todo_id": result.todo_id,
                         "job_id": result.job_id,
                         "playbook": result.playbook,
@@ -450,6 +479,7 @@ class TestReconcilePhaseE2E:
 
                 dm = TaskDecisionModel(
                     return_id=decision.return_id,
+                    project_id=_PROJECT_ID,
                     matched_todo_id=decision.matched_todo_id,
                     decision=decision.decision,
                     confidence=decision.confidence,

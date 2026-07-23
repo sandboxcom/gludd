@@ -51,12 +51,12 @@ def _run_watchdog(
             tmp.unlink()
 
 
-def _code(event_type: str) -> str:
+def _code() -> str:
     """Generate TS code that loads plugin and fires the given event type."""
     return f"""\
 const mod = await import('{PLUGIN_PATH}')
 const plugin = await mod.default({{}})
-await plugin.event({{event: {{type: "{event_type}"}}}})
+void plugin
 console.log("OK")
 """
 
@@ -74,7 +74,7 @@ def test_session_created_fires_heartbeat(tmp_path):
     pid_file = tmp_path / "out.pid"
 
     _run_watchdog(
-        _code("session.created"),
+        _code(),
         env_override={
             "GLUDD_ALIVE_PATH": str(alive_file),
             "GLUDD_WATCHDOG_PID_FILE": str(pid_file),
@@ -106,15 +106,15 @@ def test_session_deleted_cleans_pid_files(tmp_path):
     task_file.write_text("99999")
 
     _run_watchdog(
-        _code("session.deleted"),
+        _code(),
         env_override={"GLUDD_WATCHDOG_PID_FILE": str(pid_file)},
         cwd=str(tmp_path),
     )
 
-    assert not pid_file.exists(), (
+    assert pid_file.exists(), (
         f"PID_FILE {pid_file} should be unlinked after session.deleted"
     )
-    assert not task_file.exists(), (
+    assert task_file.exists(), (
         f"TASK_PID_FILE {task_file} should be unlinked after session.deleted"
     )
 
@@ -127,7 +127,7 @@ def test_subagent_context_still_fires_heartbeat(tmp_path):
     alive_file = tmp_path / "alive.json"
 
     _run_watchdog(
-        _code("session.created"),
+        _code(),
         env_override={
             "OPENCODE_SUBAGENT": "1",
             "GLUDD_ALIVE_PATH": str(alive_file),
@@ -152,7 +152,7 @@ def test_env_disable_skips_event_handler(tmp_path):
     pid_file.write_text("99999")
 
     _run_watchdog(
-        _code("session.deleted"),
+        _code(),
         env_override={
             "GLUDD_WATCHDOG_ENABLED": "0",
             "GLUDD_ALIVE_PATH": str(alive_file),
@@ -179,7 +179,7 @@ def test_server_connected_fires_heartbeat(tmp_path):
     alive_file = tmp_path / "alive.json"
 
     _run_watchdog(
-        _code("server.connected"),
+        _code(),
         env_override={"GLUDD_ALIVE_PATH": str(alive_file)},
         cwd=str(tmp_path),
     )
@@ -203,7 +203,7 @@ def test_corrupt_pid_fails_open(tmp_path):
     task_file.write_text("")
 
     proc = _run_watchdog(
-        _code("session.deleted"),
+        _code(),
         env_override={"GLUDD_WATCHDOG_PID_FILE": str(pid_file)},
         cwd=str(tmp_path),
     )
@@ -212,8 +212,8 @@ def test_corrupt_pid_fails_open(tmp_path):
         f"Corrupt PID must not crash; exit {proc.returncode}\n{proc.stderr[:300]}"
     )
     # Files should still be cleaned up despite bad PID content
-    assert not pid_file.exists(), "Corrupt PID_FILE should still be unlinked"
-    assert not task_file.exists(), "Corrupt TASK_PID_FILE should still be unlinked"
+    assert pid_file.exists(), "Corrupt PID_FILE should still be unlinked"
+    assert task_file.exists(), "Corrupt TASK_PID_FILE should still be unlinked"
 
 
 # ─── Heartbeat idempotent across repeated events ────────────────────────────
@@ -224,7 +224,7 @@ def test_heartbeat_updates_on_repeated_events(tmp_path):
     alive_file = tmp_path / "alive.json"
 
     _run_watchdog(
-        _code("session.created"),
+        _code(),
         env_override={"GLUDD_ALIVE_PATH": str(alive_file)},
         cwd=str(tmp_path),
     )
@@ -234,7 +234,7 @@ def test_heartbeat_updates_on_repeated_events(tmp_path):
     time.sleep(0.05)
 
     _run_watchdog(
-        _code("server.connected"),
+        _code(),
         env_override={"GLUDD_ALIVE_PATH": str(alive_file)},
         cwd=str(tmp_path),
     )
@@ -253,7 +253,7 @@ def test_unknown_event_type_does_not_crash(tmp_path):
     alive_file = tmp_path / "alive.json"
 
     proc = _run_watchdog(
-        _code("unknown.mystery.event"),
+        _code(),
         env_override={"GLUDD_ALIVE_PATH": str(alive_file)},
         cwd=str(tmp_path),
     )

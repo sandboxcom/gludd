@@ -116,10 +116,10 @@ class TestTemplating:
         result = t.render_sandboxed("hello {{ name }}")
         assert result == "hello world"
 
-    def test_templater_renders_missing_var_as_empty(self):
+    def test_templater_rejects_missing_var(self):
         t = AnsibleTemplater(extra_vars={})
-        result = t.render_sandboxed("{{ missing_var }}")
-        assert result == ""
+        with pytest.raises(TemplateRenderError):
+            t.render_sandboxed("{{ missing_var }}")
 
     def test_templater_blocks_lookup(self):
         t = AnsibleTemplater(extra_vars={})

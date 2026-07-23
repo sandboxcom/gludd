@@ -1,0 +1,9 @@
+---
+synth_target_molecule: "aspirin"
+synth_starting_material: "salicylic_acid"
+synth_solvent: "acetic_anhydride"
+synth_catalyst: "sulfuric_acid"
+synth_temperature_C: 85.0
+synth_reaction_time_min: 15.0
+synth_predict_yield: true
+synth_output_dir: /tmp/gludd-synthesis

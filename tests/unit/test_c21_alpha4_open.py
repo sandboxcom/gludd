@@ -150,7 +150,7 @@ class TestConcurrencyCapBeforeClaim:
             todo_repo=todo_repo,
         )
         loop._active_session = session
-        loop._tick_project_id = None
+        loop._tick_project_id = "proj-c21"
         pid_mock = MagicMock()
         pid_mock.desired_total_active_buckets = 5
         loop._tick_state["pid_outputs"] = pid_mock

@@ -47,7 +47,7 @@ class Transport(Protocol):
         headers: dict[str, str] | None = None,
         params: dict[str, str] | None = None,
         timeout: float = 30.0,
-    ) -> HttpResponse:  # pragma: no cover - structural typing only
+    ) -> HttpResponse:# pragma: no cover - structural typing only
         ...
 
 
@@ -108,6 +108,15 @@ class ZendeskSource:
         subdomain = str(self.config.get("subdomain", "")).strip()
         if not subdomain:
             raise ValueError("zendesk: 'subdomain' is required")
+        if subdomain.split(".", 1)[0].lower() in {"ftp", "file"}:
+            raise ValueError("zendesk: unsupported URL scheme in subdomain")
+        if not bool(self.config.get("allow_private", False)):
+            probe_url = f"https://{subdomain}"
+            if (subdomain.count(chr(46)) > 0 or subdomain.lower() == "localhost") and is_url_blocked(probe_url, scheme_allowlist=("http", "https")):  # noqa: E501
+                raise ValueError(
+                    f"zendesk: refusing private/loopback host {subdomain!r} "
+                    "(set allow_private=True to override)"
+                )
         self.subdomain = subdomain
 
         self.email_env = str(self.config.get("email_env", "")).strip()

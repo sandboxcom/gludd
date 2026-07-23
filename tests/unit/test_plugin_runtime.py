@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import shutil
 import subprocess
 import tempfile
@@ -10,112 +9,70 @@ ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "check_plugin_runtime.py"
 
 
+def _run_runtime_check_with_plugin(source: str) -> subprocess.CompletedProcess[str]:
+    with tempfile.TemporaryDirectory(prefix="plugin_runtime_test_") as tmpdir:
+        plugin = Path(tmpdir) / "bad_plugin.ts"
+        plugin.write_text(source)
+        return subprocess.run(
+            ["python", str(SCRIPT), str(tmpdir)],
+            capture_output=True, text=True, timeout=60, cwd=str(ROOT),
+        )
+
+
 def test_check_plugin_runtime_runs_without_crashing():
-    """The script should not raise unhandled exceptions; exit 0 or 1 is valid."""
+    """The script should load all checked plugins cleanly."""
     result = subprocess.run(
         ["python", str(SCRIPT)],
         capture_output=True, text=True, timeout=120, cwd=str(ROOT),
     )
-    assert result.returncode in (0, 1), (
-        f"check_plugin_runtime exited {result.returncode} (expected 0 or 1)\n"
-        f"stdout: {result.stdout}\n"
-        f"stderr: {result.stderr}"
-    )
-    assert (
-        "runtime check skipped" in result.stdout
-        or "runtime load + import checks OK" in result.stdout
-        or "runtime/import check(s) failed" in result.stdout
-    )
+    message = chr(10).join([
+        f"check_plugin_runtime exited {result.returncode}",
+        f"stdout: {result.stdout}",
+        f"stderr: {result.stderr}",
+    ])
+    assert result.returncode == 0, message
+    assert "runtime load + import checks OK" in result.stdout
+
+
 
 
 def test_dangerous_child_process_detected():
     """A .ts file with import child_process should be flagged."""
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".ts", dir="/tmp", prefix="childproc_plugin_", delete=False
-    ) as f:
-        f.write("import { exec } from 'child_process';\n")
-        f.write("export function foo() { return 1; }\n")
-        bad_path = f.name
-
-    try:
-        plugin_dir = ROOT / ".opencode" / "plugin"
-        target = plugin_dir / "zzz_childproc_test.ts"
-        os.symlink(bad_path, str(target))
-
-        try:
-            result = subprocess.run(
-                ["python", str(SCRIPT)],
-                capture_output=True, text=True, timeout=60, cwd=str(ROOT),
-            )
-            assert result.returncode == 1, (
-                f"Expected exit 1 for child_process import, got {result.returncode}\n"
-                f"stdout: {result.stdout}"
-            )
-            assert "child_process" in result.stdout
-        finally:
-            os.unlink(target)
-    finally:
-        os.unlink(bad_path)
+    result = _run_runtime_check_with_plugin(
+        "import { exec } from 'child_process';\n"
+        "export function foo() { return 1; }\n"
+    )
+    assert result.returncode == 1, (
+        f"Expected exit 1 for child_process import, got {result.returncode}\n"
+        f"stdout: {result.stdout}"
+    )
+    assert "child_process" in result.stdout
 
 
 def test_bare_fs_import_detected():
     """A .ts file importing from 'fs' (not 'node:fs') should be flagged."""
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".ts", dir="/tmp", prefix="barefs_plugin_", delete=False
-    ) as f:
-        f.write('import { readFileSync } from "fs";\n')
-        f.write("export function foo() { return 1; }\n")
-        bad_path = f.name
-
-    try:
-        plugin_dir = ROOT / ".opencode" / "plugin"
-        target = plugin_dir / "zzz_barefs_test.ts"
-        os.symlink(bad_path, str(target))
-
-        try:
-            result = subprocess.run(
-                ["python", str(SCRIPT)],
-                capture_output=True, text=True, timeout=60, cwd=str(ROOT),
-            )
-            assert result.returncode == 1, (
-                f"Expected exit 1 for bare 'fs' import, got {result.returncode}\n"
-                f"stdout: {result.stdout}"
-            )
-            assert "bare 'fs'" in result.stdout or "fs" in result.stdout
-        finally:
-            os.unlink(target)
-    finally:
-        os.unlink(bad_path)
+    result = _run_runtime_check_with_plugin(
+        'import { readFileSync } from "fs";\n'
+        "export function foo() { return 1; }\n"
+    )
+    assert result.returncode == 1, (
+        f"Expected exit 1 for bare 'fs' import, got {result.returncode}\n"
+        f"stdout: {result.stdout}"
+    )
+    assert "bare 'fs'" in result.stdout or "fs" in result.stdout
 
 
 def test_wrong_package_detected():
     """A .ts file importing from '@opencode/plugin' should be flagged."""
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".ts", dir="/tmp", prefix="wrongpkg_plugin_", delete=False
-    ) as f:
-        f.write('import { something } from "@opencode/plugin";\n')
-        f.write("export function foo() { return 1; }\n")
-        bad_path = f.name
-
-    try:
-        plugin_dir = ROOT / ".opencode" / "plugin"
-        target = plugin_dir / "zzz_wrongpkg_test.ts"
-        os.symlink(bad_path, str(target))
-
-        try:
-            result = subprocess.run(
-                ["python", str(SCRIPT)],
-                capture_output=True, text=True, timeout=60, cwd=str(ROOT),
-            )
-            assert result.returncode == 1, (
-                f"Expected exit 1 for wrong package, got {result.returncode}\n"
-                f"stdout: {result.stdout}"
-            )
-            assert "wrong package" in result.stdout or "@opencode/plugin" in result.stdout
-        finally:
-            os.unlink(target)
-    finally:
-        os.unlink(bad_path)
+    result = _run_runtime_check_with_plugin(
+        'import { something } from "@opencode/plugin";\n'
+        "export function foo() { return 1; }\n"
+    )
+    assert result.returncode == 1, (
+        f"Expected exit 1 for wrong package, got {result.returncode}\n"
+        f"stdout: {result.stdout}"
+    )
+    assert "wrong package" in result.stdout or "@opencode/plugin" in result.stdout
 
 
 def test_make_target_exists():
@@ -140,34 +97,17 @@ def test_make_target_exists():
 
 def test_strip_types_load_failure_detected():
     """Plugin that fails under node --experimental-strip-types should exit 1."""
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".ts", dir="/tmp", prefix="striptypes_fail_", delete=False
-    ) as f:
-        f.write('import * as nonexistent from "nonexistent-module-xyzzy-99913";\n')
-        f.write("export default async () => ({});\n")
-        bad_path = f.name
-
-    try:
-        plugin_dir = ROOT / ".opencode" / "plugin"
-        target = plugin_dir / "zzz_striptypes_test.ts"
-        os.symlink(bad_path, str(target))
-
-        try:
-            result = subprocess.run(
-                ["python", str(SCRIPT)],
-                capture_output=True, text=True, timeout=60, cwd=str(ROOT),
-            )
-            assert result.returncode == 1, (
-                f"Expected exit 1 for strip-types load failure, got {result.returncode}\n"
-                f"stdout: {result.stdout}"
-            )
-            assert "RUNTIME LOAD FAILED" in result.stdout, (
-                f"Expected 'RUNTIME LOAD FAILED' in output:\n{result.stdout}"
-            )
-        finally:
-            os.unlink(target)
-    finally:
-        os.unlink(bad_path)
+    result = _run_runtime_check_with_plugin(
+        'import * as nonexistent from "nonexistent-module-xyzzy-99913";\n'
+        "export default async () => ({});\n"
+    )
+    assert result.returncode == 1, (
+        f"Expected exit 1 for strip-types load failure, got {result.returncode}\n"
+        f"stdout: {result.stdout}"
+    )
+    assert "RUNTIME LOAD FAILED" in result.stdout, (
+        f"Expected 'RUNTIME LOAD FAILED' in output:\n{result.stdout}"
+    )
 
 
 def test_all_clean_plugins_exit_zero():

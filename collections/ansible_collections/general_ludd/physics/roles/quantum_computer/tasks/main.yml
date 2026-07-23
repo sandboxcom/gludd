@@ -1,0 +1,62 @@
+---
+# quantum_computer role — solve the Schrodinger equation and compute eigenstates
+#
+# Invokes the quantum_computer module_utils functions to:
+#   1. Configure the quantum problem from role variables
+#   2. Solve the Schrodinger equation numerically
+#   3. Compute eigenstates, eigenvalues, and wavefunctions
+#   4. Write the result artifact to the output directory
+
+- name: Create output directory
+  ansible.builtin.file:
+    path: "{{ quantum_output_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Solve Schrodinger equation
+  block:
+    - name: Compute eigenstates via quantum_computer module_utils
+      ansible.builtin.script:
+        cmd: |
+          import json, sys
+          sys.path.insert(0, "{{ playbook_dir }}/../../..")
+          from ansible_collections.general_ludd.physics.plugins.module_utils.quantum_computer import (
+              QuantumConfig, solve_schrodinger, write_quantum_result
+          )
+          config = QuantumConfig(
+              problem="{{ quantum_problem }}",
+              well_width_nm={{ quantum_well_width_nm }},
+              particle="{{ quantum_particle }}",
+              potential="{{ quantum_potential }}",
+              dimensions={{ quantum_dimensions }},
+              num_states={{ quantum_num_states }},
+              solver="{{ quantum_solver }}",
+          )
+          result = solve_schrodinger(config)
+          path = write_quantum_result(result, "{{ quantum_output_dir }}")
+          print(json.dumps({"status": "success", "path": str(path),
+                            "n_states": len(result["energies_eV"]),
+                            "ground_state_eV": round(result["energies_eV"][0], 6)}))
+        executable: python3
+      register: quantum_result
+      failed_when: false
+      changed_when: false
+
+    - name: Parse quantum result
+      ansible.builtin.set_fact:
+        quantum_output: "{{ quantum_result.stdout | from_json }}"
+      when: quantum_result.rc == 0
+
+  rescue:
+    - name: Write failure result artifact
+      ansible.builtin.copy:
+        content: |
+          {{ {'role': 'quantum_computer', 'status': 'failed',
+              'error': quantum_result.stderr | default('unknown error')} | to_nice_json }}
+        dest: "{{ quantum_output_dir }}/quantum_result.json"
+        mode: "0644"
+      failed_when: false
+
+    - name: Fail the play after rescue cleanup
+      ansible.builtin.fail:
+        msg: "quantum_computer failed — see artifact for details"

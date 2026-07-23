@@ -2,6 +2,10 @@
 
 import os
 import re
+import shutil
+import tempfile
+import uuid
+from pathlib import Path
 
 import pytest
 
@@ -144,6 +148,38 @@ class TestWorktrees:
         assert isinstance(trees, list)
         assert len(trees) >= 2
         assert all(isinstance(t, WorktreeInfo) for t in trees)
+
+    def test_create_worktree_allows_gludd_temp_root(self, repo_with_commit):
+        git, repo_path, _tmp_path = repo_with_commit
+        temp_root = Path(tempfile.gettempdir()) / f"gludd-worktree-{uuid.uuid4().hex}"
+        temp_root.mkdir()
+        worktree_path = str(temp_root / "wt")
+        try:
+            result = git.create_worktree(
+                repo_path=repo_path,
+                branch_name="feature-gludd-temp",
+                worktree_path=worktree_path,
+            )
+            assert result.success is True, result.message
+            assert os.path.isdir(worktree_path)
+        finally:
+            git.remove_worktree(repo_path=repo_path, worktree_path=worktree_path)
+            shutil.rmtree(temp_root, ignore_errors=True)
+
+    def test_create_worktree_rejects_non_gludd_temp_root(self, repo_with_commit):
+        git, repo_path, _tmp_path = repo_with_commit
+        worktree_path = str(
+            Path(tempfile.gettempdir()) / f"not-gludd-{uuid.uuid4().hex}" / "wt"
+        )
+
+        result = git.create_worktree(
+            repo_path=repo_path,
+            branch_name="feature-arbitrary-temp",
+            worktree_path=worktree_path,
+        )
+
+        assert result.success is False
+        assert "escapes the repo parent" in result.message
 
 
 class TestMergeBranch:

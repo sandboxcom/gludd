@@ -25,7 +25,7 @@ class HttpResponse(Protocol):
     this in place of their local definition.
     """
 
-    status_code: int
+    status_code: int = 0
 
     @property
     def text(self) -> str:

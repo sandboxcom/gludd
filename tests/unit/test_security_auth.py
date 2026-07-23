@@ -30,7 +30,7 @@ class TestAuthPosture:
 
     def test_frozen(self) -> None:
         ap = AuthPosture(psk="key", require_auth=False, no_auth=True, surface="daemon")
-        with pytest.raises(TypeError):
+        with pytest.raises((TypeError, AttributeError)):
             ap.psk = "new"  # type: ignore[misc]
 
 

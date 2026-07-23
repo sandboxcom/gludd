@@ -69,16 +69,35 @@ class TestRepoPriorityLowerBound:
         assert data["priority"] == 1
 
 
+class TestRepoPriorityLabels:
+    """Known priority labels are normalized for direct repository callers."""
+
+    @pytest.mark.parametrize(
+        ("label", "expected"),
+        [
+            ("low", 0),
+            ("medium", 1),
+            ("high", 2),
+            ("critical", 3),
+            (" HIGH ", 2),
+        ],
+    )
+    def test_accept_known_labels(self, label, expected):
+        data = {"title": "x", "priority": label}
+        TodoRepository._validate_create_data(data)
+        assert data["priority"] == expected
+
+
 class TestRepoPriorityNonInteger:
-    """Non-integer priority values are rejected with ValueError."""
+    """Unknown non-integer priority values are rejected with ValueError."""
 
     def test_reject_float(self):
         data = {"title": "x", "priority": 3.14}
         with pytest.raises(ValueError, match="priority must be an integer"):
             TodoRepository._validate_create_data(data)
 
-    def test_reject_string(self):
-        data = {"title": "x", "priority": "high"}
+    def test_reject_unknown_string(self):
+        data = {"title": "x", "priority": "urgent"}
         with pytest.raises(ValueError, match="priority must be an integer"):
             TodoRepository._validate_create_data(data)
 

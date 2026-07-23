@@ -96,6 +96,7 @@ VALID_TRANSITIONS: dict[TodoStatus, set[TodoStatus]] = {
 
 _MAX_PRIORITY: int = 1000
 _MIN_PRIORITY: int = 0
+_PRIORITY_LABELS: dict[str, int] = {"low": 0, "medium": 1, "high": 2, "critical": 3}
 
 
 # Fields that callers are permitted to set via TodoRepository.create().
@@ -246,6 +247,11 @@ class TodoRepository:
             )
         for key, value in todo_data.items():
             if key == "priority":
+                if isinstance(value, str):
+                    label = value.strip().lower()
+                    if label in _PRIORITY_LABELS:
+                        todo_data[key] = _PRIORITY_LABELS[label]
+                        continue
                 if not isinstance(value, int) or isinstance(value, bool):
                     raise ValueError(f"create() rejected: priority must be an integer, got {type(value).__name__}")
                 if value < _MIN_PRIORITY:

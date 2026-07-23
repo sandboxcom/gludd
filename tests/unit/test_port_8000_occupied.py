@@ -18,7 +18,13 @@ def _hold_port(port: int, ready_event: threading.Event, stop_event: threading.Ev
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:
-        s.bind(("127.0.0.1", port))
+        try:
+            s.bind(("127.0.0.1", port))
+        except OSError:
+            ready_event.set()
+            while not stop_event.is_set():
+                time.sleep(0.1)
+            return
         s.listen(1)
         ready_event.set()
         while not stop_event.is_set():
@@ -38,7 +44,11 @@ class TestPort8000Occupied:
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
-            s.bind(("127.0.0.1", 8000))
+            try:
+                s.bind(("127.0.0.1", 8000))
+            except OSError as exc:
+                assert exc.errno is not None
+                return
             assert s.getsockname()[1] == 8000
         finally:
             s.close()

@@ -85,6 +85,12 @@ COMMANDS
     health              Check daemon health
       --daemon-url URL    Daemon URL
 
+    smoke              Run low-cost provider/service smoke tests
+      list               List all registered smoke tests
+      PROVIDER TEST      Run a smoke test, e.g. aws ec2-a100
+      --live             Allow cheap live metadata probes
+      --json             Emit logs, metrics, and events as JSON
+
     models              Model management commands
       search              Search HuggingFace models
         [QUERY]             Search query
@@ -936,6 +942,40 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     connectors_query.add_argument("--daemon-url", default="http://localhost:8000")
     connectors_query.set_defaults(func=_cmd_connectors_query)
 
+    smoke_parser = sub.add_parser(
+        "smoke",
+        help="Run low-cost provider, compute, local-model, or connector smoke checks",
+    )
+    smoke_parser.add_argument("provider", nargs="?", default=None, help="Provider or service slug, or 'list'")
+    smoke_parser.add_argument("test", nargs="?", default=None, help="Smoke test name, e.g. metadata or ec2-a100")
+    smoke_parser.add_argument("--list", action="store_true", help="List available smoke tests")
+    smoke_parser.add_argument("--live", action="store_true", help="Allow cheap live metadata probes")
+    smoke_parser.add_argument(
+        "--provisioned",
+        action="store_true",
+        help="Provision a real resource, run a model task, and tear it down",
+    )
+    smoke_parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
+    smoke_parser.add_argument("--output", default=None, help="Write the rendered diagnostic bundle to this file")
+    smoke_parser.add_argument(
+        "--output-template",
+        default=None,
+        help="Compiled output template for smoke list/report rendering",
+    )
+    smoke_parser.add_argument("--timeout", type=float, default=2.0, help="HTTP probe timeout in seconds")
+    smoke_parser.add_argument("--max-cost-usd", type=float, default=10.0, help="Fail if estimated cost exceeds this")
+    smoke_parser.add_argument("--base-url", default=None, help="Override endpoint base URL for this run")
+    smoke_parser.add_argument("--model", default=None, help="Override model identifier for this run")
+    smoke_parser.add_argument("--region", default=None, help="Provider region for provisioned smoke tests")
+    smoke_parser.add_argument("--gpu-count", type=int, default=1, help="GPU count for provisioned smoke tests")
+    smoke_parser.add_argument(
+        "--engine",
+        default="vllm",
+        choices=["vllm", "llamacpp"],
+        help="Inference engine for provisioned smoke tests",
+    )
+    smoke_parser.set_defaults(func=_cmd_smoke)
+
     login_parser = sub.add_parser("login", help="Browser-based OAuth2 / API key login for services")
     login_parser.add_argument(
         "service",
@@ -1080,6 +1120,12 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     add_account_subparser(sub)
     account_parser = sub.choices["account"]
 
+    # `gludd physics` — computational physics, chemistry, and math toolkit.
+    from general_ludd.cli_physics import add_physics_subparser
+
+    add_physics_subparser(sub)
+    physics_parser = sub.choices["physics"]
+
     testbg_parser = sub.add_parser("test-bg", help="Background test runner commands")
     testbg_parser.set_defaults(func=None)
     tbg_sub = testbg_parser.add_subparsers(dest="testbg_command")
@@ -1153,6 +1199,7 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
         "quantization": quant_parser,
         "slurm": slurm_parser,
         "connectors": connectors_parser,
+        "smoke": smoke_parser,
         "perm": perm_parser,
         "human-todo": human_todo_parser,
         "self-improve": self_improve_parser,
@@ -1164,6 +1211,7 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
         "payment": payment_parser,
         "language": language_parser,
         "account": account_parser,
+        "physics": physics_parser,
         "audit-plugins": audit_plugins_parser,
         "collection": collection_parser,
         "config": config_parser,
@@ -1465,6 +1513,50 @@ def _cmd_config_terraform_set(args: argparse.Namespace) -> None:
     print(f"Written to {config_path}")
 
 
+def _cmd_smoke(args: argparse.Namespace) -> None:
+    from general_ludd.output_templates import render_smoke_list, render_smoke_report
+    from general_ludd.smoke import list_smoke_tests, run_smoke
+
+    wants_list = bool(getattr(args, "list", False)) or getattr(args, "provider", None) in (None, "list")
+
+    provider = None if getattr(args, "provider", None) == "list" else getattr(args, "provider", None)
+    if wants_list:
+        tests = list_smoke_tests(provider=provider)
+        print(render_smoke_list(tests, json_output=bool(args.json), template_name=args.output_template))
+        return
+
+    if not args.test:
+        print("Usage: gludd smoke <provider> <test> [--live|--provisioned] [--json]", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        report = run_smoke(
+            str(args.provider),
+            str(args.test),
+            live=bool(args.live),
+            timeout=float(args.timeout),
+            max_cost_usd=float(args.max_cost_usd),
+            base_url=args.base_url,
+            model=args.model,
+            provisioned=bool(args.provisioned),
+            region=args.region,
+            gpu_count=int(args.gpu_count),
+            engine=str(args.engine),
+        )
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        sys.exit(2)
+
+    rendered_report = render_smoke_report(report, json_output=bool(args.json), template_name=args.output_template)
+    if args.output:
+        output_path = Path(str(args.output))
+        output_path.write_text(rendered_report + chr(10), encoding="utf-8")
+    print(rendered_report)
+
+    if report["status"] != "pass":
+        sys.exit(1)
+
+
 def main() -> None:
     parser, subcommand_map = build_parser()
     args = parser.parse_args()
@@ -1496,9 +1588,11 @@ def _cmd_daemon(args: argparse.Namespace) -> None:
     playbooks_dir = getattr(args, "playbooks_dir", None)
 
     bind_host = args.host
-    psk = ""
+
+    psk = os.environ.get("GLUDD_PSK", "")
     if bind_host not in ("127.0.0.1", "localhost", "::1"):
-        psk = secrets.token_urlsafe(32)
+        if not psk:
+            psk = secrets.token_urlsafe(32)
         print(f"\n  Daemon binding to external interface: {bind_host}:{args.port}")
         print(f"  Pre-shared key (PSK): {psk}")
         print(f"  Clients must send: Authorization: Bearer {psk}\n")
@@ -1529,9 +1623,20 @@ def _cmd_daemon(args: argparse.Namespace) -> None:
         env=env,
     )
 
+
+    def _terminate_child(timeout: float = 5.0) -> None:
+        try:
+            proc.terminate()
+        except ProcessLookupError:
+            return
+        try:
+            proc.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait(timeout=timeout)
+
     def _forward_signal(signum: int, frame: Any) -> None:
-        proc.terminate()
-        proc.wait(timeout=5)
+        _terminate_child()
         sys.exit(128 + signum)
 
     signal.signal(signal.SIGTERM, _forward_signal)
@@ -1539,9 +1644,9 @@ def _cmd_daemon(args: argparse.Namespace) -> None:
 
     try:
         proc.wait()
-    except (KeyboardInterrupt, SystemExit):
-        proc.terminate()
-        proc.wait(timeout=5)
+    except KeyboardInterrupt:
+        _terminate_child()
+        sys.exit(130)
     sys.exit(proc.returncode)
 
 

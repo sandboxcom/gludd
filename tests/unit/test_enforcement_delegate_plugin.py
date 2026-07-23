@@ -36,10 +36,9 @@ class TestPluginRegistration:
     def test_exports_satisfies_plugin_type(self):
         assert "satisfies Plugin" in _src()
 
-    def test_export_is_async_factory(self):
+    def test_uses_agent_liveness_py(self):
         src = _src()
-        assert "export default" in src
-        assert "async" in src
+        assert "agent_liveness.py" in src
 
     def test_returns_both_hooks(self):
         src = _src()
@@ -331,7 +330,7 @@ class TestReadOnlyToolExemption:
     def test_read_tool_classification_exists(self):
         # Post E.5 refactor read classification is the shared isReadTool import.
         src = _src()
-        assert "function isReadTool" in src or "isReadTool" in src
+        assert "isReadTool" in src, "Plugin must import isReadTool from shared.ts"
 
     def test_read_tool_includes_read_grep_glob(self):
         # The read/grep/glob set now lives in shared.ts READ_TOOLS.
@@ -412,7 +411,7 @@ class TestDisengage:
 
     def test_disengage_function_exists(self):
         src = _src()
-        assert "function isDisengaged" in src or "isDisengaged" in src
+        assert "isDisengaged" in src, "Plugin must import isDisengaged from shared.ts"
 
     def test_disengage_checks_file_exists(self):
         src = _src()
@@ -612,7 +611,7 @@ class TestHeartbeat:
 
     def test_report_alive_function_exists(self):
         src = _src()
-        assert "function _reportAlive" in src or "reportAlive" in src
+        assert "reportAlive" in src, "Plugin must import reportAlive from shared.ts"
 
     def test_report_alive_writes_to_alive_file(self):
         # The alive-file write is in shared.ts reportAlive(); imported here.
@@ -621,7 +620,7 @@ class TestHeartbeat:
 
     def test_write_heartbeat_function_exists(self):
         src = _src()
-        assert "function _writeHeartbeat" in src or "writeHeartbeat" in src
+        assert "_writeHeartbeat" in src, "Plugin must define _writeHeartbeat wrapper"
 
     def test_per_plugin_heartbeat_file(self):
         src = _src()

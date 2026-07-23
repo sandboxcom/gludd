@@ -1,5 +1,5 @@
 ---
-# branch.yml — create, delete, and list branches
+# branch.yml — branch operations through the guarded gludd_git module.
 
 - name: "Assert parameters for branch operation"
   ansible.builtin.assert:
@@ -8,21 +8,19 @@
       - branch_op | string | length > 0
     fail_msg: "repo_path and branch_op are required"
 
-- name: "List branches"
+- name: "List branches through gludd_git"
+  general_ludd.agent.gludd_git:
+    path: "{{ repo_path }}"
+    op: branch_list
+  register: _branch_list
   when: branch_op == 'list'
-  block:
-    - name: "Get all branches"
-      ansible.builtin.command:
-        cmd: git branch --format='%(refname:short)'
-        chdir: "{{ repo_path }}"
-      register: _branch_list
-      changed_when: false
 
-    - name: "Set branch list result"
-      ansible.builtin.set_fact:
-        git_automation_branch_result:
-          op: list
-          branches: "{{ _branch_list.stdout_lines | default([]) }}"
+- name: "Set branch list result"
+  ansible.builtin.set_fact:
+    git_automation_branch_result:
+      op: list
+      branches: "{{ _branch_list.result.branches | default([]) }}"
+  when: branch_op == 'list'
 
 - name: "Create branch"
   when: branch_op == 'create'
@@ -34,29 +32,19 @@
           - not branch_name.startswith('-')
         fail_msg: "branch_name must be set and not start with '-'"
 
-    - name: "Check if branch already exists"
-      ansible.builtin.command:
-        cmd: "git branch --format='%(refname:short)'"
-        chdir: "{{ repo_path }}"
-      register: _branch_check
-      changed_when: false
-
-    - name: "End play — branch already exists"
-      ansible.builtin.meta: end_play
-      when: branch_name in (_branch_check.stdout_lines | default([]))
-
-    - name: "Create and switch to branch"
-      ansible.builtin.command:
-        cmd: "git checkout -b {{ branch_name | quote }} --"
-        chdir: "{{ repo_path }}"
-      changed_when: true
+    - name: "Create branch through gludd_git"
+      general_ludd.agent.gludd_git:
+        path: "{{ repo_path }}"
+        op: branch
+        branch: "{{ branch_name }}"
+      register: _branch_create
 
     - name: "Set branch create result"
       ansible.builtin.set_fact:
         git_automation_branch_result:
           op: create
-          name: "{{ branch_name }}"
-          created: true
+          name: "{{ _branch_create.branch | default(branch_name) }}"
+          created: "{{ _branch_create.changed | default(false) | bool }}"
 
 - name: "Delete branch"
   when: branch_op == 'delete'
@@ -68,17 +56,16 @@
           - not branch_name.startswith('-')
         fail_msg: "branch_name must be set and not start with '-'"
 
-    - name: "Delete branch"
-      ansible.builtin.command:
-        cmd: "git branch -D {{ branch_name | quote }}"
-        chdir: "{{ repo_path }}"
+    - name: "Delete branch through gludd_git"
+      general_ludd.agent.gludd_git:
+        path: "{{ repo_path }}"
+        op: branch_delete
+        branch: "{{ branch_name }}"
       register: _branch_delete
-      failed_when: false
-      changed_when: true
 
     - name: "Set branch delete result"
       ansible.builtin.set_fact:
         git_automation_branch_result:
           op: delete
           name: "{{ branch_name }}"
-          deleted: "{{ _branch_delete.rc | default(1) == 0 }}"
+          deleted: "{{ _branch_delete.result.deleted | default(false) | bool }}"

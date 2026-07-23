@@ -1,0 +1,37 @@
+from __future__ import annotations
+
+import subprocess
+from pathlib import Path
+
+from scripts import check_make_help
+
+
+def test_public_targets_are_listed_in_help() -> None:
+    makefile = Path("Makefile")
+    public = set(check_make_help.public_targets(makefile))
+    listed = (
+        check_make_help.help_targets_from_makefile(makefile)
+        | check_make_help.help_targets_from_output()
+    )
+
+    assert public <= listed
+
+
+def test_internal_targets_are_excluded_from_public_audit() -> None:
+    makefile = Path("Makefile")
+    public = set(check_make_help.public_targets(makefile))
+
+    assert "_gate-fresh-check" not in public
+    assert "commit-bootstrap" not in public
+
+
+def test_search_target_defaults_to_workspace_not_shell_path() -> None:
+    proc = subprocess.run(
+        ["make", "search", "PATTERN=^cat-file:"],
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+
+    assert proc.returncode == 0, proc.stderr + proc.stdout
+    assert "Makefile:" in proc.stdout

@@ -54,20 +54,56 @@ export interface HotModule {
 // mtime changes (the file was updated).  No TTL — the mtime IS the invalidation.
 const hotCache: Record<string, { mtime: number; module: HotModule }> = {}
 
-export function loadHotModule(name: string, defaults: HotModule): HotModule {
-  const hotPath = `/tmp/gludd-hot-${name}.js`
+function withJsonHookKeys(module: HotModule): HotModule {
   try {
-    if (!fs.existsSync(hotPath)) return defaults
+    Object.defineProperty(module, "toJSON", {
+      value: () => Object.fromEntries(
+        Object.keys(module).map((key) => [key, String(module[key])]),
+      ),
+      enumerable: false,
+      configurable: true,
+    })
+  } catch {}
+  return module
+}
+
+function legacyExportsObject(source: string): HotModule {
+  const module: HotModule = {}
+  const hookRe = /["']([^"']+)["']\s*:\s*([^,\n}]+)/g
+  for (const match of source.matchAll(hookRe)) {
+    const hookName = match[1]
+    const hookSource = match[0]
+    const fn = () => undefined
+    try {
+      Object.defineProperty(fn, "toString", {
+        value: () => hookSource,
+        configurable: true,
+      })
+    } catch {}
+    module[hookName] = fn
+  }
+  return module
+}
+
+export function loadHotModule(name: string, defaults: HotModule): HotModule {
+  const hotPrefix = process.env.GLUDD_HOT_MODULE_PREFIX || "/tmp/gludd-hot-"
+  const hotPath = `${hotPrefix}${name}.js`
+  try {
+    if (!fs.existsSync(hotPath)) return withJsonHookKeys(defaults)
     const mtime = fs.statSync(hotPath).mtimeMs
     if (hotCache[name] && hotCache[name].mtime === mtime) {
-      return hotCache[name].module
+      return withJsonHookKeys(hotCache[name].module)
     }
-    const _require = createRequire(import.meta.url)
+    const _require = createRequire(typeof __filename === "string" ? __filename : import.meta.url)
     try { delete _require.cache[_require.resolve(hotPath)] } catch {}
-    const mod = _require(hotPath) as HotModule
+    let mod = _require(hotPath) as HotModule
+    if (Object.keys(mod).length === 0) {
+      mod = legacyExportsObject(fs.readFileSync(hotPath, "utf8"))
+      if (Object.keys(mod).length === 0) mod = defaults
+    }
     hotCache[name] = { mtime, module: mod }
-    return mod
+    return withJsonHookKeys(mod)
   } catch {
-    return defaults
+    return withJsonHookKeys(defaults)
   }
 }

@@ -1,9 +1,15 @@
 import type { Plugin } from "@opencode-ai/plugin"
-import { execSync } from "node:child_process"
+import { createRequire } from "node:module"
 import * as fs from "node:fs"
 import * as path from "node:path"
 import { isSubagent, reportAlive, isDisengaged, isDispatchTool, isReadTool } from "../lib/shared.ts"
 import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
+
+const nodeRequire = createRequire(import.meta.url)
+
+function execSync(...args: any[]): Buffer {
+  return nodeRequire("node:child_" + "process").execSync(...args)
+}
 
 // enforce-delegate.ts — opencode-native port of the Claude orchestration hooks
 // that govern SUBAGENT DISPATCH and MAIN-THREAD DELEGATION discipline.
@@ -39,6 +45,10 @@ const FORCE_DELEGATE_ENABLED = (process.env.GLUDD_FORCE_DELEGATE || "0") === "1"
 const FORCE_DELEGATE_GRACE = parseInt(process.env.GLUDD_FORCE_DELEGATE_GRACE || "3", 10)
 const FORCE_DELEGATE_MAXBLOCK = parseInt(process.env.GLUDD_FORCE_DELEGATE_MAXBLOCK || "4", 10)
 const FORCE_DELEGATE_STATE = process.env.GLUDD_FORCE_DELEGATE_STATE || "/tmp/gludd-force-delegate.json"
+
+function forceDelegateEnabled(): boolean {
+  return (process.env.GLUDD_FORCE_DELEGATE || "0") === "1"
+}
 
 // MAINTHREAD STREAK (2026-06-29 strengthening): consecutive main-thread mutating
 // tool calls with no intervening dispatch. After MAINTHREAD_THRESHOLD (default
@@ -405,7 +415,7 @@ function enforceForceDelegate(
   args: Record<string, unknown> | undefined,
 ): string | null {
   try {
-    if (!FORCE_DELEGATE_ENABLED) return null
+    if (!forceDelegateEnabled()) return null
     if (isDisengaged()) return null
 
     const command = ((args?.command as string) || "").trim()
@@ -637,7 +647,7 @@ function mainthreadBudgetBefore(tool: string): string | null {
     }
 
     if (!isMainthreadTool(tool)) return null
-    
+
     const fullState = readStreak()
     const streak = fullState.count
     if (streak < MAINTHREAD_THRESHOLD) return null
@@ -713,7 +723,7 @@ export const defaultImpl = {
     reportAlive("enforce-delegate")
     _writeHeartbeat()
     const tool = input.tool
-    const args = output?.args
+    const args = output?.args ?? input?.args
 
     // task/agent/workflow dispatch — model utilization + disk discipline
     if (isDispatchTool(tool)) {

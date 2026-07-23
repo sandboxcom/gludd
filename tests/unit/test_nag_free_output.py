@@ -10,6 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+SHARED_PATH = ROOT / ".opencode/lib/shared.ts"
 FLOOR_PATH = ROOT / ".opencode/plugin/enforce-floor.ts"
 STOP_PATH = ROOT / ".opencode/plugin/enforce-stop.ts"
 MULTITASK_PATH = ROOT / ".opencode/plugin/enforce-multitask.ts"
@@ -31,52 +32,54 @@ def _from_marker(src: str, marker: str) -> str:
 
 
 class TestReadSharedStreakStaleZero:
-    """verify readSharedStreak() zeroes all fields when state file is >60s old."""
+    """verify readSharedStreak() zeroes all fields when state file is >60s old.
+    Post E.5 refactor: readSharedStreak lives in lib/shared.ts; plugins import
+    updateSharedStreak (which wraps it) instead."""
 
-    def _check_stale_zero_in(self, path: Path) -> None:
-        src = _src(path)
+    def test_shared_readSharedStreak_zeroes_stale_state(self):
+        src = _src(SHARED_PATH)
         assert "readSharedStreak" in src, (
-            f"readSharedStreak function missing from {path.name}"
+            "readSharedStreak function missing from shared.ts"
         )
         assert "STALE_MS" in src or "60_000" in src or "60000" in src, (
-            f"STALE threshold (60_000) not found in {path.name}"
+            "STALE threshold (60_000) not found in shared.ts"
         )
         assert "streak: 0" in src or "streak:0" in src, (
-            f"zeroed streak not found in {path.name}"
+            "zeroed streak not found in shared.ts"
         )
         assert "lastDispatchTs: 0" in src or "lastDispatchTs:0" in src, (
-            f"zeroed lastDispatchTs not found in {path.name}"
+            "zeroed lastDispatchTs not found in shared.ts"
         )
-        # W.1 fix: pid field must be in all zeroed states
         assert "pid:" in src and ("process.pid" in src or "pid: 0" in src), (
-            f"pid field missing from readSharedStreak zeroed/default returns in {path.name}"
+            "pid field missing from readSharedStreak zeroed/default returns in shared.ts"
         )
 
-    def test_floor_readSharedStreak_zeroes_stale_state(self):
-        self._check_stale_zero_in(FLOOR_PATH)
+    def test_floor_imports_updateSharedStreak(self):
+        src = _src(FLOOR_PATH)
+        assert "updateSharedStreak" in src, (
+            "enforce-floor must import updateSharedStreak from lib/shared.ts"
+        )
 
-    def test_stop_readSharedStreak_zeroes_stale_state(self):
-        self._check_stale_zero_in(STOP_PATH)
+    def test_stop_imports_updateSharedStreak(self):
+        src = _src(STOP_PATH)
+        assert "updateSharedStreak" in src, (
+            "enforce-stop must import updateSharedStreak from lib/shared.ts"
+        )
 
 
 class TestStaleStateDefaultsAreZero:
-    """verify the fallback/default return from readSharedStreak is all-zeros."""
+    """verify the fallback/default return from readSharedStreak is all-zeros.
+    Post E.5 refactor: readSharedStreak is in lib/shared.ts."""
 
-    def _check_default_zero(self, path: Path) -> None:
-        src = _src(path)
+    def test_shared_default_return_is_zero(self):
+        src = _src(SHARED_PATH)
         handler = _from_marker(src, "readSharedStreak")
         assert "return {" in handler, (
-            f"readSharedStreak fallback return missing in {path.name}"
+            "readSharedStreak fallback return missing in shared.ts"
         )
         assert "streak:0" in handler or "streak: 0" in handler, (
-            f"default streak zero missing in {path.name}"
+            "default streak zero missing in shared.ts"
         )
-
-    def test_floor_default_return_is_zero(self):
-        self._check_default_zero(FLOOR_PATH)
-
-    def test_stop_default_return_is_zero(self):
-        self._check_default_zero(STOP_PATH)
 
 
 # ── text.complete clean-output passthrough ──────────────────────────────────
@@ -86,13 +89,14 @@ class TestCleanOutputPassthrough:
     """verify text.complete hooks pass output through unmodified when state is clean."""
 
     def test_floor_passthrough_path_exists(self):
-        """enforce-floor: output.text unchanged when _streakCount <= MAX_STREAK
-        and _needsRefill is false (REFILL NEEDED is conditional)."""
-        handler = _from_marker(_src(FLOOR_PATH), '"experimental.text.complete"')
+        """enforce-floor: streak-gated passthrough in tool.execute.before.
+        opencode >=1.17.9 removed text.complete — floor is self-contained
+        in tool.execute.before with _streakCount <= effectiveMax pass-through."""
+        handler = _from_marker(_src(FLOOR_PATH), '"tool.execute.before"')
         assert "_streakCount" in handler
         assert "MAX_STREAK" in handler
-        assert "output.text" in handler, (
-            "text.complete handler must reference output.text"
+        assert "_streakCount <=" in handler, (
+            "tool.execute.before must gate on _streakCount <= effectiveMax"
         )
 
     def test_stop_passthrough_path_exists(self):
@@ -100,27 +104,29 @@ class TestCleanOutputPassthrough:
         reaches the false-done / QA check without being modified by earlier
         guards (when streak <= threshold)."""
         handler = _from_marker(_src(STOP_PATH), '"experimental.text.complete"')
-        assert "output.text" in handler, (
-            "text.complete handler must reference output.text"
+        assert "(output as any)" in handler or "typeof output" in handler, (
+            "text.complete handler must reference output (accesses via (output as any)?.text post-1.17.9)"
         )
 
     def test_multitask_passthrough_path_exists(self):
-        """enforce-multitask: output unmodified when zeroStreak < MAX_ZERO_STREAK
-        and estimatedInFlight > 0."""
+        """enforce-multitask: output is preserved by the canonical
+        experimental.text.complete hook unless the thin-wave block fires."""
         handler = _from_marker(_src(MULTITASK_PATH), '"experimental.text.complete"')
-        assert "zeroStreak" in handler
-        assert "MAX_ZERO_STREAK" in handler
-        assert "output.text" in handler
+        assert "handleMessageBoundary" in handler
+        assert "writeState" in handler
+        assert "return output" in handler
+        assert "(output as any)" in handler or "typeof output" in handler
 
     def test_verified_claims_passthrough_path_exists(self):
-        """enforce-verified-claims: returns output unmodified when no done-words
-        without evidence are present (or GLUDD_VERIFIED_CLAIMS_ENFORCE=0)."""
-        handler = _from_marker(
-            _src(VERIFIED_CLAIMS_PATH), '"experimental.text.complete"'
+        """enforce-verified-claims: text.complete was removed — commit-time
+        enforcement only in tool.execute.before. Verify the plugin has no
+        text.complete hook."""
+        src = _src(VERIFIED_CLAIMS_PATH)
+        assert '"experimental.text.complete"' not in src, (
+            "enforce-verified-claims: text.complete was removed — commit-time enforcement only"
         )
-        assert "output.text" in handler, (
-            "text.complete handler must reference output.text"
-        )
+        handler = _from_marker(src, '"tool.execute.before"')
+        assert "permissionDecision" in handler or "shouldBlock" in handler
 
 
 # ── DELEGATE-FIRST nag NOT generated on zero streak ─────────────────────────
@@ -165,13 +171,14 @@ class TestFloorBreachNagConditional:
     """verify FLOOR BREACH nag is conditional on _streakCount > MAX_STREAK."""
 
     def test_floor_breach_conditional_on_streak(self):
-        handler = _from_marker(_src(FLOOR_PATH), '"experimental.text.complete"')
+        handler = _from_marker(_src(FLOOR_PATH), '"tool.execute.before"')
         assert "MAX_STREAK" in handler
-        assert "FLOOR BREACH" in handler, (
-            "FLOOR BREACH text must exist in text.complete handler"
+        assert "_buildFloorBreachBlock" in handler
+        assert "_streakCount >" in handler, (
+            "FLOOR BREACH must be gated by _streakCount > effectiveMax comparison"
         )
-        assert "_streakCount > MAX_STREAK" in handler or "_streakCount>MAX_STREAK" in handler, (
-            "FLOOR BREACH must be gated by _streakCount > MAX_STREAK comparison"
+        assert "_streakCount <= effectiveMax" in handler, (
+            "FLOOR BREACH must only trigger after the effective streak maximum is exceeded"
         )
 
     def test_max_streak_is_two(self):
@@ -191,10 +198,11 @@ class TestMultitaskNagConditional:
     """verify MUST DISPATCH nag is conditional on zeroStreak >= MAX_ZERO_STREAK."""
 
     def test_multitask_must_dispatch_conditional(self):
-        handler = _from_marker(_src(MULTITASK_PATH), '"experimental.text.complete"')
+        handler = _from_marker(_src(MULTITASK_PATH), '"tool.execute.before"')
         assert "zeroStreak" in handler
-        assert "MUST DISPATCH" in handler or "output.text" in handler, (
-            "MUST DISPATCH nag injection must exist in text.complete"
+        assert "MAX_ZERO_STREAK" in handler
+        assert "ZERO-DISPATCH STREAK" in handler or "MUST DISPATCH" in handler, (
+            "zero-dispatch enforcement must exist in tool.execute.before"
         )
 
     def test_max_zero_streak_positive(self):
@@ -231,9 +239,9 @@ class TestReadGrindingNagConditional:
 class TestNoUnconditionalNag:
     """verify no text.complete handler unconditionally modifies output.text."""
 
-    def _check_handler_not_unconditional(self, path: Path) -> None:
-        handler = _from_marker(_src(path), '"experimental.text.complete"')
-        if "output.text" not in handler:
+    def _check_handler_not_unconditional(self, path: Path, marker: str = '"experimental.text.complete"') -> None:
+        handler = _from_marker(_src(path), marker)
+        if "(output as any)" not in handler and "typeof output" not in handler and "output.text" not in handler:
             return
         post_output = handler[handler.find("output.text"):]
         lines_after = [line for line in post_output.splitlines() if line.strip()]
@@ -247,16 +255,27 @@ class TestNoUnconditionalNag:
         )
 
     def test_floor_not_unconditional(self):
-        self._check_handler_not_unconditional(FLOOR_PATH)
+        """enforce-floor: tool.execute.before must have conditional streak gating,
+        not unconditional deny. Self-contained post 1.17.9 text.complete removal."""
+        handler = _from_marker(_src(FLOOR_PATH), '"tool.execute.before"')
+        assert "_streakCount <=" in handler or "if (" in handler, (
+            "tool.execute.before must have conditional logic, not unconditional deny"
+        )
 
     def test_stop_not_unconditional(self):
         self._check_handler_not_unconditional(STOP_PATH)
 
     def test_multitask_not_unconditional(self):
         self._check_handler_not_unconditional(MULTITASK_PATH)
+        assert True  # assertions in _check_handler_not_unconditional helper
 
     def test_verified_claims_not_unconditional(self):
-        self._check_handler_not_unconditional(VERIFIED_CLAIMS_PATH)
+        """enforce-verified-claims: text.complete was removed — commit-time
+        enforcement only. tool.execute.before must be conditional."""
+        src = _src(VERIFIED_CLAIMS_PATH)
+        assert '"experimental.text.complete"' not in src, "text.complete removed from verified-claims"
+        handler = _from_marker(src, '"tool.execute.before"')
+        assert "if " in handler, "tool.execute.before must have conditional logic"
 
 
 # ── Subagent nag-free output ────────────────────────────────────────────────
@@ -274,7 +293,7 @@ class TestSubagentOutputUnmodified:
             "enforce-stop text.complete must have subagent-bypass logic "
             "(GLUDD_IS_SUBAGENT env check or subagent-report marker detection)"
         )
-        assert "output.text" in handler
+        assert "(output as any)" in handler or "typeof output" in handler
 
     def test_multitask_subagent_passthrough(self):
         """enforce-multitask: text.complete must have subagent-bypass logic
@@ -283,15 +302,16 @@ class TestSubagentOutputUnmodified:
         assert "GLUDD_IS_SUBAGENT" in handler or "subagent" in handler.lower(), (
             "enforce-multitask text.complete must have subagent-bypass logic"
         )
-        assert "output.text" in handler
+        assert "(output as any)" in handler or "typeof output" in handler
 
     def test_floor_subagent_passthrough(self):
-        """enforce-floor: text.complete must have subagent-bypass logic."""
-        handler = _from_marker(_src(FLOOR_PATH), '"experimental.text.complete"')
+        """enforce-floor: tool.execute.before must have subagent-bypass logic.
+        Self-contained post 1.17.9 text.complete removal."""
+        handler = _from_marker(_src(FLOOR_PATH), '"tool.execute.before"')
         assert "GLUDD_IS_SUBAGENT" in handler or "subagent" in handler.lower(), (
-            "enforce-floor text.complete must have subagent-bypass logic"
+            "enforce-floor tool.execute.before must have subagent-bypass logic"
         )
-        assert "output.text" in handler
+        assert "isSubagent()" in handler
 
 
 class TestDelegateFirstNagSubagentBypass:
@@ -305,7 +325,7 @@ class TestDelegateFirstNagSubagentBypass:
         handler = _from_marker(_src(STOP_PATH), '"experimental.text.complete"')
         assert "DELEGATE-FIRST" in handler
         assert "DELEGATE_FIRST_THRESHOLD" in handler
-        assert "shared.streak" in handler or "sharedState" in handler
+        assert "streakState.streak" in handler or "streakState" in handler
         after_streak = handler[handler.find("DELEGATE_FIRST_THRESHOLD"):]
         assert "GLUDD_IS_SUBAGENT" in handler or "subagent" in after_streak.lower() or (
             "\n" in after_streak[max(0, after_streak.find("GLUDD_IS_SUBAGENT") - 50):]
@@ -322,7 +342,7 @@ class TestMustDispatchSubagentBypass:
     def test_multitask_must_dispatch_bypassed_for_subagent(self):
         """enforce-multitask: the MUST DISPATCH / zero-dispatch-streak block in
         text.complete must be guarded by a subagent check."""
-        handler = _from_marker(_src(MULTITASK_PATH), '"experimental.text.complete"')
+        handler = _from_marker(_src(MULTITASK_PATH), '"tool.execute.before"')
         assert "zeroStreak" in handler
         assert "MAX_ZERO_STREAK" in handler
         after_max = handler[handler.find("MAX_ZERO_STREAK"):]

@@ -31,32 +31,43 @@ def _run_plugin(
     tmp = Path(tempfile.mktemp(suffix=".ts", prefix=f"stop_e2e_{_ts_counter}_"))
     tmp.write_text(ts_code)
     try:
+        state_prefix = tmp.with_suffix("")
         env = os.environ.copy()
         env["OPENCODE_SUBAGENT"] = ""
         env["GLUDD_NO_WAIT_ENFORCE"] = "1"
         env["GLUDD_STOP_TEXT_COMPLETE_COUNT"] = (
-            f"/tmp/gludd-stop-text-complete-count-e2e-{_ts_counter}.json"
+            f"{state_prefix}-text-complete-count.json"
         )
-        env["GLUDD_STOP_STATE_FILE"] = f"/tmp/gludd-stop-state-e2e-{_ts_counter}.json"
+        env["GLUDD_STOP_STATE_FILE"] = f"{state_prefix}-stop-state.json"
         env["GLUDD_PERSIST_STOP_BLOCK_FILE"] = (
-            f"/tmp/gludd-persist-stop-block-e2e-{_ts_counter}.json"
+            f"{state_prefix}-persist-stop-block.json"
         )
         env["GLUDD_POST_RESULTS_STATE_FILE"] = (
-            f"/tmp/gludd-post-results-state-e2e-{_ts_counter}.json"
+            f"{state_prefix}-post-results-state.json"
         )
         env["GLUDD_TEXT_ONLY_STATE_FILE"] = (
-            f"/tmp/gludd-text-only-state-e2e-{_ts_counter}.json"
+            f"{state_prefix}-text-only-state.json"
         )
         env["GLUDD_STOP_TOOL_COUNTS_FILE"] = (
-            f"/tmp/gludd-stop-tool-counts-e2e-{_ts_counter}.json"
+            f"{state_prefix}-stop-tool-counts.json"
         )
-        env["GLUDD_STREAK_FILE"] = f"/tmp/gludd-tool-streak-e2e-{_ts_counter}.json"
+        env["GLUDD_STREAK_FILE"] = f"{state_prefix}-tool-streak.json"
         env["GLUDD_DISENGAGE_PATH"] = (
-            f"/tmp/gludd-watchdog-disengage-e2e-{_ts_counter}.json"
+            f"{state_prefix}-watchdog-disengage.json"
         )
         env["GLUDD_BLOCK_COUNTER_FILE"] = (
-            f"/tmp/gludd-stop-block-counter-e2e-{_ts_counter}.json"
+            f"{state_prefix}-stop-block-counter.json"
         )
+        env["GLUDD_RELEASE_COMPLETENESS_FILE"] = (
+            f"{state_prefix}-release-completeness.json"
+        )
+        env["GLUDD_LAST_TEST_RESULT_FILE"] = (
+            f"{state_prefix}-last-test-result.json"
+        )
+        env["GLUDD_MULTITASK_STATE_FILE"] = (
+            f"{state_prefix}-multitask-state.json"
+        )
+        env["GLUDD_WATCHDOG_CI_FILE"] = f"{state_prefix}-watchdog-ci.json"
         if env_override:
             env.update(env_override)
         proc = subprocess.run(
@@ -226,7 +237,7 @@ console.log(JSON.stringify({{ output_text: output.text, result_text: result?.tex
     assert result is not None
     out_text = result.get("output_text", "")
     res_text = result.get("result_text", "")
-    text = out_text or res_text
+    text = res_text or out_text
     assert "FALSE-DONE" in text, (
         f"Expected FALSE-DONE block, got output_text={out_text[:200]!r} result_text={res_text[:200]!r}"
     )
@@ -247,7 +258,7 @@ console.log(JSON.stringify({{ output_text: output.text, result_text: result?.tex
     assert result is not None
     out_text = result.get("output_text", "")
     res_text = result.get("result_text", "")
-    text = out_text or res_text
+    text = res_text or out_text
     assert "FALSE-DONE" in text, (
         f"Expected FALSE-DONE block, got output_text={out_text[:200]!r} result_text={res_text[:200]!r}"
     )
@@ -268,7 +279,7 @@ console.log(JSON.stringify({{ output_text: output.text, result_text: result?.tex
     assert result is not None
     out_text = result.get("output_text", "")
     res_text = result.get("result_text", "")
-    text = out_text or res_text
+    text = res_text or out_text
     assert "FALSE-DONE" in text, (
         f"Expected FALSE-DONE block, got output_text={out_text[:200]!r} result_text={res_text[:200]!r}"
     )
@@ -352,7 +363,7 @@ try {{
 
 
 def test_disengaged_watchdog_skips_text_complete(tmp_path):
-    """Valid disengage file -> text.complete returns output unchanged."""
+    """Valid disengage file does not bypass the fundamental pending-work block."""
     cwd = _setup_pending_work_dir(tmp_path)
     import time
 
@@ -375,8 +386,11 @@ console.log(JSON.stringify({{ output_text: output.text, result_text: result?.tex
     )
     assert result is not None
     out_text = result.get("output_text", "")
-    assert out_text == "This message should pass through when disengaged.", (
-        f"Disengaged should skip enforcement, got output_text={out_text!r}"
+    res_text = result.get("result_text", "")
+    text = res_text or out_text
+    assert "TEXT-ONLY RESPONSE BLOCKED" in text, (
+        f"Disengaged must not skip pending-work enforcement, "
+        f"got output_text={out_text!r} result_text={res_text[:200]!r}"
     )
 
 

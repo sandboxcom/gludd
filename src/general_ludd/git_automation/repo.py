@@ -8,6 +8,7 @@ directly.  SSRF validation and path-safety checks ALWAYS run in Python
 
 from __future__ import annotations
 
+import fnmatch
 import json
 import logging
 import os
@@ -15,6 +16,7 @@ import re
 import subprocess
 import tempfile
 import uuid
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -24,6 +26,7 @@ from general_ludd.git_automation.locking import git_repo_lock
 from general_ludd.git_automation.types import (
     CloneResult,
     GatedCommitResult,
+    GitStateResult,
     InitResult,
     MergeResult,
     PushResult,
@@ -327,18 +330,12 @@ class GitAutomation:
         target = path or self.repo_path
         git_dir = os.path.join(target, ".git")
         created = not os.path.isdir(git_dir)
-        subprocess.run(
-            ["git", "init"],
-            cwd=target,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
+        self._run_git("init", _cwd=target)
         for cmd in (
-            ["git", "config", "user.email", "agent@harness.local"],
-            ["git", "config", "user.name", "Agentic Harness Agent"],
+            ("config", "user.email", "agent@harness.local"),
+            ("config", "user.name", "Agentic Harness Agent"),
         ):
-            subprocess.run(cmd, cwd=target, capture_output=True, text=True, check=False)
+            self._run_git(*cmd, check=False, _cwd=target)
         return InitResult(path=target, created=created, message="initialized" if created else "already exists")
 
     def is_repo(self) -> bool:
@@ -360,6 +357,401 @@ class GitAutomation:
             return result.stdout.strip()
         except Exception:
             return "unknown"
+
+    def _git_stdout_or_empty(self, *args: str) -> str:
+        result = self._run_git(*args, check=False)
+        if result.returncode != 0:
+            return ""
+        return result.stdout.strip()
+
+    @staticmethod
+    def _state_status_lines(status_output: str) -> list[str]:
+        return [line for line in status_output.splitlines() if line.strip()]
+
+    @staticmethod
+    def _state_staged_count(lines: list[str]) -> int:
+        return sum(1 for line in lines if line[:2] != "??" and line[:1] not in {"", " "})
+
+    @staticmethod
+    def _state_untracked_count(lines: list[str]) -> int:
+        return sum(1 for line in lines if line.startswith("??"))
+
+    @staticmethod
+    def _state_remote_head(output: str) -> str:
+        rows = output.splitlines()
+        if not rows:
+            return ""
+        parts = rows[0].split()
+        return parts[0] if parts else ""
+
+
+
+    _DEFAULT_PRESERVE_BRANCH_PATTERNS = ("main-dirty-preserve-*", "preserve-*")
+    _DEFAULT_RECONCILED_PRESERVE_HEAD_FILE = "config/reconciled_preserved_heads.txt"
+
+    @staticmethod
+    def _state_short_branch(ref: str) -> str:
+        prefix = "refs/heads/"
+        return ref[len(prefix):] if ref.startswith(prefix) else (ref or "DETACHED")
+
+    @staticmethod
+    def _state_is_protected_trunk_branch(branch: str) -> bool:
+        return branch in {"development", "main", "master"}
+
+    @staticmethod
+    def _state_branch_matches(branch: str, patterns: Sequence[str]) -> bool:
+        return any(fnmatch.fnmatchcase(branch, pattern) for pattern in patterns)
+
+    @staticmethod
+    def _state_branch_entries(ref_output: str) -> list[dict[str, str]]:
+        entries: list[dict[str, str]] = []
+        for line in ref_output.splitlines():
+            parts = line.strip().split(maxsplit=1)
+            if len(parts) == 2:
+                entries.append({"branch": parts[0], "head": parts[1]})
+        return entries
+
+    @classmethod
+    def _state_worktree_entries(cls, porcelain_output: str) -> list[dict[str, str]]:
+        entries: list[dict[str, str]] = []
+        current: dict[str, str] = {}
+        for line in porcelain_output.splitlines():
+            if not line.strip():
+                if current.get("path"):
+                    entries.append(current)
+                current = {}
+                continue
+            if line.startswith("worktree "):
+                current["path"] = line.removeprefix("worktree ")
+            elif line.startswith("HEAD "):
+                current["head"] = line.removeprefix("HEAD ")
+            elif line.startswith("branch "):
+                current["branch"] = cls._state_short_branch(line.removeprefix("branch "))
+        if current.get("path"):
+            entries.append(current)
+        return entries
+
+    def _state_unintegrated_worktrees(self, target_ref: str = "HEAD") -> list[dict[str, object]]:
+        current_path = self._run_git("rev-parse", "--show-toplevel").stdout.strip()
+        target_head = self._run_git("rev-parse", "--verify", target_ref).stdout.strip()
+        worktree_output = self._git_stdout_or_empty("worktree", "list", "--porcelain")
+        unintegrated: list[dict[str, object]] = []
+        for entry in self._state_worktree_entries(worktree_output):
+            path = entry.get("path", "")
+            if not path or path == current_path:
+                continue
+            branch = entry.get("branch", "DETACHED")
+            head = entry.get("head") or self._run_git("rev-parse", "--verify", "HEAD", _cwd=path).stdout.strip()
+            status_result = self._run_git(
+                "status",
+                "--porcelain=v1",
+                "--untracked-files=all",
+                _cwd=path,
+            )
+            status = self._state_status_lines(status_result.stdout)
+            reasons: list[str] = []
+            if status:
+                reasons.append("dirty")
+            if (
+                head
+                and target_head
+                and self._master_is_ancestor_of_development(head, target_head) is False
+                and not self._state_is_protected_trunk_branch(branch)
+            ):
+                reasons.append("head_not_merged")
+            if reasons:
+                unintegrated.append(
+                    {
+                        "path": path,
+                        "branch": branch,
+                        "head": head,
+                        "dirty_count": len(status),
+                        "status": status[:25],
+                        "reasons": reasons,
+                    }
+                )
+        return unintegrated
+
+    @staticmethod
+    def _state_protected_branch_names(entries: Sequence[dict[str, str]]) -> list[str]:
+        return [entry["branch"] for entry in entries if GitAutomation._state_is_protected_trunk_branch(entry["branch"])]
+
+
+    def _state_branch_unique_commits(
+        self,
+        branch: str,
+        target_head: str,
+        exclude_branches: Sequence[str] = (),
+    ) -> list[str]:
+        args = [
+            "rev-list",
+            "--cherry-pick",
+            "--right-only",
+            "--no-merges",
+            f"{target_head}...{branch}",
+        ]
+        for excluded in exclude_branches:
+            args.append(f"^{excluded}")
+        output = self._git_stdout_or_empty(*args)
+        return [line.strip() for line in output.splitlines() if line.strip()]
+
+    @staticmethod
+    def _state_reconciled_preserve_head_tokens(text: str) -> set[str]:
+        heads: set[str] = set()
+        for raw_line in text.splitlines():
+            line = raw_line.split("#", 1)[0].strip()
+            if line:
+                heads.add(line.split()[0])
+        return heads
+
+    def _state_load_reconciled_preserve_heads(
+        self,
+        head_file: str = _DEFAULT_RECONCILED_PRESERVE_HEAD_FILE,
+        explicit_heads: Sequence[str] = (),
+    ) -> set[str]:
+        heads = {head.strip() for head in explicit_heads if head.strip()}
+        if not head_file:
+            return heads
+
+        raw_path = Path(head_file)
+        candidates: list[Path] = [raw_path] if raw_path.is_absolute() else []
+        if not raw_path.is_absolute():
+            candidates.append(Path(self.repo_path) / raw_path)
+            candidates.append(Path.cwd() / raw_path)
+        seen: set[Path] = set()
+        for candidate in candidates:
+            if candidate in seen:
+                continue
+            seen.add(candidate)
+            try:
+                heads.update(self._state_reconciled_preserve_head_tokens(candidate.read_text(encoding="utf-8")))
+                return heads
+            except FileNotFoundError:
+                continue
+
+        if not raw_path.is_absolute():
+            repo_root = self._git_stdout_or_empty("rev-parse", "--show-toplevel")
+
+            repo_candidate = Path(repo_root) / raw_path if repo_root else None
+            if repo_candidate is not None and repo_candidate not in seen and repo_candidate.exists():
+                heads.update(
+                    self._state_reconciled_preserve_head_tokens(repo_candidate.read_text(encoding="utf-8"))
+                )
+        return heads
+
+
+    def _state_unintegrated_branches(
+        self,
+        target_ref: str = "HEAD",
+        branch_patterns: Sequence[str] = _DEFAULT_PRESERVE_BRANCH_PATTERNS,
+        reconciled_preserve_heads: Sequence[str] = (),
+    ) -> list[dict[str, object]]:
+        reconciled_heads = {head.strip() for head in reconciled_preserve_heads if head.strip()}
+        current_branch = self._git_stdout_or_empty("branch", "--show-current") or "DETACHED"
+        target_head = self._run_git("rev-parse", "--verify", target_ref).stdout.strip()
+        ref_output = self._git_stdout_or_empty(
+            "for-each-ref",
+            "--format=%(refname:short) %(objectname)",
+            "refs/heads",
+        )
+        entries = self._state_branch_entries(ref_output)
+        protected_branches = self._state_protected_branch_names(entries)
+        unintegrated: list[dict[str, object]] = []
+        for entry in entries:
+            branch = entry["branch"]
+            head = entry["head"]
+            if (
+                branch == current_branch
+                or self._state_is_protected_trunk_branch(branch)
+                or not self._state_branch_matches(branch, branch_patterns)
+                or head in reconciled_heads
+            ):
+                continue
+            unique_commits = self._state_branch_unique_commits(
+                branch,
+                target_head,
+                protected_branches,
+            )
+            if unique_commits:
+                unintegrated.append(
+                    {
+                        "branch": branch,
+                        "head": head,
+                        "unique_count": len(unique_commits),
+                        "commits": unique_commits[:25],
+                        "reasons": ["preserved_branch_not_reconciled"],
+                    }
+                )
+        return unintegrated
+
+    def _master_is_ancestor_of_development(
+        self,
+        master_head: str,
+        development_head: str,
+    ) -> bool | None:
+        if not master_head or not development_head:
+            return None
+        result = self._run_git(
+            "merge-base",
+            "--is-ancestor",
+            master_head,
+            development_head,
+            check=False,
+        )
+        if result.returncode == 0:
+            return True
+        if result.returncode == 1:
+            return False
+        raise subprocess.CalledProcessError(
+            result.returncode,
+            result.args,
+            output=result.stdout,
+            stderr=result.stderr,
+        )
+
+
+
+    def workflow_state(
+        self,
+        *,
+        remote: str = "sandboxcom",
+        ref: str = "",
+        gha_head_sha: str = "",
+        worktree_target_ref: str = "HEAD",
+        preserve_branch_patterns: Sequence[str] = _DEFAULT_PRESERVE_BRANCH_PATTERNS,
+        reconciled_preserve_heads: Sequence[str] = (),
+        reconciled_preserve_head_file: str = _DEFAULT_RECONCILED_PRESERVE_HEAD_FILE,
+        assert_clean: bool = False,
+        assert_no_feature_on_master: bool = False,
+        assert_merge_ready: bool = False,
+        assert_remote_head: bool = False,
+        assert_gha_matches_local: bool = False,
+        assert_no_unintegrated_worktrees: bool = False,
+        assert_no_unintegrated_branches: bool = False,
+    ) -> GitStateResult:
+        branch = self._git_stdout_or_empty("branch", "--show-current") or "DETACHED"
+        head = self._run_git("rev-parse", "--verify", "HEAD").stdout.strip()
+        status_result = self._run_git(
+            "status",
+            "--porcelain=v1",
+            "--untracked-files=all",
+        )
+        status = self._state_status_lines(status_result.stdout)
+        remote_name = remote or "sandboxcom"
+        remote_branch = ref or branch
+        remote_ref = f"refs/heads/{remote_branch}"
+        remote_head = self._state_remote_head(
+            self._git_stdout_or_empty("ls-remote", remote_name, remote_ref)
+        )
+        master_head = self._git_stdout_or_empty("rev-parse", "--verify", "master")
+        development_head = self._git_stdout_or_empty("rev-parse", "--verify", "development")
+        master_in_development = self._master_is_ancestor_of_development(
+            master_head,
+            development_head,
+        )
+        staged_count = self._state_staged_count(status)
+        untracked_count = self._state_untracked_count(status)
+        dirty_count = len(status)
+        unintegrated_worktrees = (
+            self._state_unintegrated_worktrees(worktree_target_ref)
+            if assert_no_unintegrated_worktrees
+            else []
+        )
+        branch_patterns = tuple(preserve_branch_patterns) or self._DEFAULT_PRESERVE_BRANCH_PATTERNS
+        loaded_reconciled_heads = (
+            self._state_load_reconciled_preserve_heads(
+                reconciled_preserve_head_file,
+                reconciled_preserve_heads,
+            )
+            if assert_no_unintegrated_branches or reconciled_preserve_heads
+            else set()
+        )
+        unintegrated_branches = (
+            self._state_unintegrated_branches(
+                worktree_target_ref,
+                branch_patterns,
+                tuple(loaded_reconciled_heads),
+            )
+            if assert_no_unintegrated_branches
+            else []
+        )
+        errors: list[str] = []
+        if assert_clean and dirty_count:
+            errors.append(
+                f"{dirty_count} dirty path(s) make local test evidence "
+                "unreproducible in GHA"
+            )
+        if assert_no_feature_on_master and branch == "master" and dirty_count:
+            errors.append(
+                "feature or guardrail edits are present on master; "
+                "use development or a release-sync worktree"
+            )
+        if assert_merge_ready:
+            if master_in_development is None:
+                errors.append(
+                    "cannot prove master is contained in development; "
+                    "both branches must exist before release merge"
+                )
+            elif not master_in_development:
+                errors.append(
+                    "master has commits not contained in development; "
+                    "repair topology before release merge, do not cherry-pick"
+                )
+        if assert_remote_head:
+            if not remote_head:
+                errors.append(f"remote branch {remote_name}/{remote_ref} does not exist")
+            elif remote_head != head:
+                errors.append(
+                    f"remote {remote_name}/{remote_ref} is {remote_head}, "
+                    f"not local HEAD {head}"
+                )
+        if assert_gha_matches_local:
+            if not gha_head_sha:
+                errors.append(
+                    "latest GHA head SHA was not provided; "
+                    "cannot prove CI is testing this commit"
+                )
+            elif gha_head_sha != head:
+                errors.append(f"latest GHA head {gha_head_sha} does not match local HEAD {head}")
+        if assert_no_unintegrated_worktrees and unintegrated_worktrees:
+            paths = ", ".join(
+                str(item.get("path", "<unknown>"))
+                for item in unintegrated_worktrees[:5]
+            )
+            errors.append(
+                f"{len(unintegrated_worktrees)} sibling worktree(s) "
+                f"contain unintegrated changes: {paths}"
+            )
+        if assert_no_unintegrated_branches and unintegrated_branches:
+            branches = ", ".join(
+                str(item.get("branch", "<unknown>"))
+                for item in unintegrated_branches[:5]
+            )
+            errors.append(
+                f"{len(unintegrated_branches)} preserved branch(es) "
+                f"contain unreconciled patches: {branches}"
+            )
+        return GitStateResult(
+            success=not errors,
+            branch=branch,
+            head=head,
+            dirty_count=dirty_count,
+            staged_count=staged_count,
+            untracked_count=untracked_count,
+            status=status,
+            remote=remote_name,
+            remote_ref=remote_ref,
+            remote_head=remote_head,
+            master_head=master_head,
+            development_head=development_head,
+
+            master_is_ancestor_of_development=master_in_development,
+            gha_head_sha=gha_head_sha,
+            reconciled_preserve_heads=sorted(loaded_reconciled_heads),
+            unintegrated_worktrees=unintegrated_worktrees,
+            unintegrated_branches=unintegrated_branches,
+            errors=errors,
+        )
 
     def create_branch(self, name: str, *, use_ansible: bool = False) -> str:
         _reject_leading_dash(name, kind="branch name")
@@ -384,6 +776,18 @@ class GitAutomation:
         # `--` ends option parsing so the name is unambiguously the new branch.
         self._run_git("checkout", "-b", name, "--")
         return name
+
+    def list_branches(self) -> list[str]:
+        result = self._run_git("branch", "--format=%(refname:short)")
+        return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+
+    def delete_branch(self, name: str) -> bool:
+        _reject_leading_dash(name, kind="branch name")
+        try:
+            self._run_git("branch", "-D", "--", name)
+            return True
+        except subprocess.CalledProcessError:
+            return False
 
     def commit(self, message: str, *, use_ansible: bool = False) -> str:
         """Stage all changes and commit; return the new commit SHA.
@@ -410,11 +814,13 @@ class GitAutomation:
         return result.stdout.strip()
 
     def tag_release(self, tag: str) -> str:
-        self._run_git("tag", "-a", tag, "-m", f"Release {tag}")
+        _reject_leading_dash(tag, kind="tag name")
+        self._run_git("tag", "-a", "-m", f"Release {tag}", "--", tag)
         return tag
 
     def tag_checkpoint(self, tag: str) -> str:
-        self._run_git("tag", tag)
+        _reject_leading_dash(tag, kind="tag name")
+        self._run_git("tag", "--", tag)
         return tag
 
     def push(self, remote: str = "origin", branch: str = "main", *, use_ansible: bool = False) -> bool:
@@ -634,14 +1040,17 @@ class GitAutomation:
                 path=worktree_path, branch=branch_name, success=False, message=str(exc),
             )
         try:
-            subprocess.run(
-                # `-b <branch>` then `--` then the path positional: the path can
-                # never be reinterpreted as an option.
-                ["git", "worktree", "add", "-b", branch_name, "--", worktree_path, "HEAD"],
-                cwd=repo_path,
-                capture_output=True,
-                text=True,
-                check=True,
+            # `-b <branch>` then `--` then the path positional: the path can
+            # never be reinterpreted as an option.
+            self._run_git(
+                "worktree",
+                "add",
+                "-b",
+                branch_name,
+                "--",
+                worktree_path,
+                "HEAD",
+                _cwd=repo_path,
             )
             return WorktreeResult(path=worktree_path, branch=branch_name, success=True)
         except subprocess.CalledProcessError as exc:
@@ -656,8 +1065,8 @@ class GitAutomation:
     def _reject_escaping_path(repo_path: str, worktree_path: str) -> None:
         """Reject a worktree path that escapes the repo's parent directory.
 
-        Worktrees are expected to live beside the repo (or under it). A path
-        containing ``..`` that resolves above the repo parent is refused so a
+        Worktrees are expected to live beside the repo (or under it), or in a
+        gludd-owned temporary root. A path containing ``..`` is refused so a
         traversal value cannot plant a worktree in an arbitrary location.
         """
         # A `..` component is the traversal primitive that escapes the intended
@@ -679,38 +1088,52 @@ class GitAutomation:
             root_prefix = root.rstrip(os.sep) + os.sep
             if target == root or target.startswith(root_prefix):
                 return
+        if GitAutomation._is_gludd_temp_worktree_path(target):
+            return
         raise ValueError(
             f"refusing worktree path that escapes the repo parent: {worktree_path!r}"
         )
 
+    @staticmethod
+    def _is_gludd_temp_worktree_path(path: str) -> bool:
+        real_target = os.path.realpath(path)
+        temp_roots = {
+            os.path.realpath(tempfile.gettempdir()),
+            os.path.realpath("/tmp"),
+        }
+        for root in temp_roots:
+            try:
+                if os.path.commonpath([root, real_target]) != root:
+                    continue
+            except ValueError:
+                continue
+            rel = os.path.relpath(real_target, root)
+            first_component = rel.split(os.sep, 1)[0]
+            if first_component.startswith("gludd-"):
+                return True
+        return False
+
     def remove_worktree(self, repo_path: str, worktree_path: str) -> bool:
         _reject_leading_dash(worktree_path, kind="worktree path")
         try:
-            subprocess.run(
-                # `--force`: a worktree being torn down by the orchestrator
-                # legitimately contains untracked/modified content — the
-                # gludd_worktree module plants an audit marker inside the
-                # worktree, and an agent worktree typically has WIP. The
-                # caller has already decided the worktree is done; --force
-                # discards only uncommitted state (the branch is retained).
-                ["git", "worktree", "remove", "--force", "--", worktree_path],
-                cwd=repo_path,
-                capture_output=True,
-                text=True,
-                check=True,
+            # `--force`: a worktree being torn down by the orchestrator
+            # legitimately contains untracked/modified content. The caller has
+            # already decided the worktree is done; --force discards only
+            # uncommitted state (the branch is retained).
+            self._run_git(
+                "worktree",
+                "remove",
+                "--force",
+                "--",
+                worktree_path,
+                _cwd=repo_path,
             )
             return True
         except subprocess.CalledProcessError:
             return False
 
     def list_worktrees(self, repo_path: str) -> list[WorktreeInfo]:
-        result = subprocess.run(
-            ["git", "worktree", "list", "--porcelain"],
-            cwd=repo_path,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
+        result = self._run_git("worktree", "list", "--porcelain", _cwd=repo_path)
         worktrees: list[WorktreeInfo] = []
         current: dict[str, str] = {}
         for line in result.stdout.splitlines():
@@ -954,26 +1377,16 @@ class GitAutomation:
     def create_release_tag(self, repo_path: str, fmt: str = "YYYYMMDDHHMMSS") -> str:
         now = datetime.now(tz=UTC)
         tag = now.strftime("%Y%m%d%H%M%S")
-        subprocess.run(
-            ["git", "tag", "-a", tag, "-m", f"Release {tag}"],
-            cwd=repo_path,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
+        _reject_leading_dash(tag, kind="tag name")
+        self._run_git("tag", "-a", "-m", f"Release {tag}", "--", tag, _cwd=repo_path)
         return tag
 
     def create_checkpoint_tag(self, repo_path: str, todo_id: str, sha: str) -> str:
         ts = datetime.now(tz=UTC).strftime("%Y%m%d%H%M%S")
         short_sha = sha[:7]
         tag = f"agent/{todo_id}/{ts}/{short_sha}"
-        subprocess.run(
-            ["git", "tag", tag],
-            cwd=repo_path,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
+        _reject_leading_dash(tag, kind="tag name")
+        self._run_git("tag", "--", tag, _cwd=repo_path)
         return tag
 
     def push_to_remote(self, repo_path: str, remote: str = "origin", branch: str | None = None) -> PushResult:
@@ -990,14 +1403,15 @@ class GitAutomation:
         # env (this method takes an explicit repo_path, so it cannot route
         # through `_run_git`, which is pinned to self.repo_path).
         try:
-            result = subprocess.run(
-                args,
-                cwd=repo_path,
-                capture_output=True,
-                text=True,
-                timeout=_GIT_TIMEOUT_SECONDS,
-                env={**os.environ, **_NON_INTERACTIVE_GIT_ENV},
-            )
+            with git_repo_lock(repo_path):
+                result = subprocess.run(
+                    args,
+                    cwd=repo_path,
+                    capture_output=True,
+                    text=True,
+                    timeout=_GIT_TIMEOUT_SECONDS,
+                    env={**os.environ, **_NON_INTERACTIVE_GIT_ENV},
+                )
         except subprocess.TimeoutExpired:
             return PushResult(
                 success=False,
@@ -1013,12 +1427,15 @@ class GitAutomation:
         )
 
     def create_local_bare_mirror(self, repo_path: str, mirror_path: str) -> str:
-        subprocess.run(
-            ["git", "clone", "--bare", repo_path, mirror_path],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
+        with git_repo_lock(repo_path):
+            subprocess.run(
+                ["git", "clone", "--bare", "--", repo_path, mirror_path],
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=_GIT_TIMEOUT_SECONDS,
+                env={**os.environ, **_NON_INTERACTIVE_GIT_ENV},
+            )
         return mirror_path
 
     @staticmethod

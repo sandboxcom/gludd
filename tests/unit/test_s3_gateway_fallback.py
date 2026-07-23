@@ -1,7 +1,7 @@
 """S.3: gateway.py call_model_with_fallback health gate + budget threading.
 
 Covers four gaps in _walk_fallbacks:
-1. Fallback skips over-budget provider (BudgetExceededError doesn't abort chain)
+1. Fallback aborts on over-budget provider (BudgetExceededError is fail-closed)
 2. Budget pre-check before each fallback attempt
 3. Health check timeout doesn't block indefinitely
 4. Budget params flow to call_model for each fallback hop
@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import time
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from general_ludd.models.gateway import (
     BudgetExceededError,
@@ -81,9 +83,9 @@ def _fake_resp(content: str) -> MagicMock:
 
 
 class TestFallbackSkipsOverBudgetProvider:
-    """When a fallback exceeds budget, skip it and try the next one."""
+    """When a fallback exceeds budget, stop instead of trying to spend more."""
 
-    def test_budget_exceeded_on_fallback_skips_to_next(self):
+    def test_budget_exceeded_on_fallback_propagates(self):
         pri = _profile("pri", fallback=["over", "ok"])
         over_budget = _profile("over", budget=200.0)
         ok_fb = _profile("ok", budget=200.0)
@@ -95,19 +97,17 @@ class TestFallbackSkipsOverBudgetProvider:
                 raise BudgetExceededError("over budget for over")
             return _fake_resp(f"from {profile_id}")
 
-        with patch.object(gw, "call_model", side_effect=fake_try) as spy:
-            result = gw._walk_fallbacks(
+        with patch.object(gw, "call_model", side_effect=fake_try) as spy, \
+             pytest.raises(BudgetExceededError, match="over budget for over"):
+            gw._walk_fallbacks(
                 ["over", "ok"], _MSG,
                 estimated_cost=5.0,
                 budget_remaining=50.0,
             )
 
-        resp, _exc, _attempts = result
-        assert resp is not None
-        assert resp.content == "from ok"
         attempted = [c.args[0] for c in spy.call_args_list]
         assert "over" in attempted
-        assert "ok" in attempted
+        assert "ok" not in attempted
 
     def test_all_fallbacks_over_budget_returns_none(self):
         pri = _profile("pri", fallback=["fb1", "fb2"])

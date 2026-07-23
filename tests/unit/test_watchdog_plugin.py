@@ -1,19 +1,20 @@
 """Behavioral-invariant tests for watchdog.ts.
 
 The watchdog plugin lives at .opencode/plugins/watchdog.ts (the only plugin in
-the `plugins/` dir — all others are in `plugin/`). It is an event-only plugin
-that auto-launches the background watchdog daemon on session/server start and
-cleans up PID files on session deletion. It also emits a periodic heartbeat
-(_reportAlive) so the plugin liveness checker can confirm it is still executing.
+the `plugins/` dir — all others are in `plugin/`). As of 2026-07-19 it is a
+minimal stub: all event hooks were removed because opencode 1.17.9 crashes on
+unknown hook types. It imports reportAlive from shared.ts (E.5 refactor) and
+calls it at load time to prove the plugin is alive. The actual _reportAlive
+logic lives in .opencode/lib/shared.ts.
 
 Test categories:
   1. File existence + opencode.json registration
   2. Key constants and env-var overrides
-  3. Fail-open behavior (try/catch count, per-function wrapping)
+  3. Plugin shape (export type, hook registry — stub)
   4. SUBAGENT guard (intentionally absent for this plugin)
-  5. Plugin shape (export type, hook registry, hook types)
-  6. Session lifecycle hooks (created, connected, deleted)
-  7. _reportAlive heartbeat mechanics
+  5. Import correctness (shared.ts refactor)
+  6. No leftover event handler / session lifecycle code
+  7. reportAlive stub mechanics (import + call)
 """
 
 from __future__ import annotations
@@ -92,86 +93,59 @@ class TestWatchdogConstants:
             "TASK_PID_FILE must point to .gate-logs/task-watchdog.pid"
         )
 
-    def test_alive_file_path(self):
+    def test_alive_path_in_shared_import(self):
+        """Post E.5 refactor: reportAlive lives in shared.ts, not watchdog.ts."""
         src = _src()
-        assert "/tmp/gludd-plugin-alive.json" in src, (
-            "_reportAlive must write to /tmp/gludd-plugin-alive.json"
+        assert "reportAlive" in src, (
+            "watchdog.ts must import reportAlive from ../lib/shared.ts"
         )
 
 
 # ---------------------------------------------------------------------------
-# 3. Fail-open behavior
+# 3. Plugin shape (stub — no event hooks, no async, no tool hooks)
 # ---------------------------------------------------------------------------
 
 
-class TestFailOpen:
-    def test_report_alive_wrapped_in_try_catch(self):
+class TestPluginShape:
+    def test_export_is_default_factory(self):
         src = _src()
-        idx = src.find("function _reportAlive")
-        assert idx > 0, "_reportAlive function not found"
-        after = src[idx:]
-        assert "try {" in after, "_reportAlive body must have try block"
-        assert "catch" in after, "_reportAlive must have catch for fail-open"
+        assert "export default" in src, "must have default export"
 
-    def test_report_alive_inner_try_catch_for_existing_file(self):
-        """Reading the existing alive JSON is also try/catch wrapped."""
+    def test_satisfies_plugin_type(self):
         src = _src()
-        idx = src.find("function _reportAlive")
-        after = src[idx:idx + 500] if idx > 0 else src
-        assert after.count("try {") >= 2, (
-            "_reportAlive must have nested try for reading existing JSON"
+        assert "satisfies Plugin" in src, (
+            "must use 'satisfies Plugin' type assertion"
         )
 
-    def test_session_deleted_wrapped_in_try_catch(self):
+    def test_factory_receives_api_proxy(self):
         src = _src()
-        idx = src.find('"session.deleted"')
-        assert idx > 0, "session.deleted handler not found"
-        after = src[idx:]
-        assert "try {" in after, "session.deleted must have try block"
-
-    def test_session_deleted_pid_cleanup_nested_try_catch(self):
-        """Each file operation in session.deleted is individually try/catch wrapped."""
-        src = _src()
-        idx = src.find('"session.deleted"')
-        after = src[idx:idx + 500] if idx > 0 else src
-        assert after.count("try {") >= 3, (
-            "session.deleted must wrap each file op in its own try/catch"
+        assert "_api" in src, (
+            "factory must receive API proxy (stub, no $ shell needed)"
         )
 
-    def test_total_catch_blocks(self):
+    def test_no_event_hooks(self):
+        """Post opencode 1.17.9: event hooks removed (crash on unknown hook type)."""
         src = _src()
-        catch_count = len(re.findall(r"\bcatch\b", src))
-        assert catch_count >= 7, (
-            f"expected >=7 catch blocks for fail-open, found {catch_count}"
+        assert "event:" not in src, (
+            "watchdog.ts must NOT register any event hooks (opencode 1.17.9 compat)"
         )
 
-    def test_no_bare_throw(self):
+    def test_no_tool_hooks(self):
         src = _src()
-        assert "throw new Error" not in src and "throw " not in src, (
-            "watchdog.ts must never throw — it is a background service, not an enforcer"
+        assert '"tool.execute.before"' not in src, (
+            "must NOT register tool hooks — watchdog is not an enforcer"
+        )
+        assert '"tool.execute.after"' not in src, (
+            "must NOT register tool.execute.after"
         )
 
-    def test_every_make_watchdog_auto_wrapped_in_catch(self):
-        """Both `make watchdog-auto` invocations are try/catch wrapped."""
+    def test_returns_empty_object(self):
         src = _src()
-        calls = len(re.findall(r"make watchdog-auto", src))
-        assert calls >= 2, (
-            f"expected >=2 'make watchdog-auto' references, found {calls}"
-        )
-        # Each call site must be inside a try block
-        lines = src.split("\n")
-        in_try = 0
-        found_calls = 0
-        for line in lines:
-            if "try {" in line:
-                in_try += 1
-            if "make watchdog-auto" in line and in_try > 0:
-                found_calls += 1
-            if "} catch" in line:
-                in_try = max(0, in_try - 1)
-        assert found_calls >= 2, (
-            f"At least 2 'make watchdog-auto' calls must be inside try blocks; "
-            f"found {found_calls} call(s) in try context"
+        idx = src.find("return {")
+        assert idx > 0, "must have return statement"
+        returns = src[idx:idx + 50]
+        assert "return {}" in returns, (
+            "watchdog stub must return empty object (no hooks registered)"
         )
 
 
@@ -204,209 +178,7 @@ class TestSubagentGuardIntentionallyAbsent:
 
 
 # ---------------------------------------------------------------------------
-# 5. Plugin shape (export type, hook registry)
-# ---------------------------------------------------------------------------
-
-
-class TestPluginShape:
-    def test_export_is_default_async_factory(self):
-        src = _src()
-        assert "export default" in src, "must have default export"
-        assert "async" in src, "factory must be async"
-
-    def test_satisfies_plugin_type(self):
-        src = _src()
-        assert "satisfies Plugin" in src, (
-            "must use 'satisfies Plugin' type assertion"
-        )
-
-    def test_factory_receives_dollar_shell_proxy(self):
-        src = _src()
-        assert "({ $" in src or "({$" in src, (
-            "factory must destructure $ shell proxy for `make watchdog-auto`"
-        )
-
-    def test_registers_event_hook_only(self):
-        """watchdog is an event-only plugin — no tool.execute hooks."""
-        src = _src()
-        assert "event:" in src, "must register event hook"
-        assert '"tool.execute.before"' not in src, (
-            "must NOT register tool.execute.before — watchdog is not an enforcer"
-        )
-        assert '"tool.execute.after"' not in src, (
-            "must NOT register tool.execute.after"
-        )
-
-    def test_event_handler_is_async(self):
-        src = _src()
-        idx = src.find("event: async")
-        assert idx > 0, "event handler must be async"
-
-    def test_returns_only_event_hook(self):
-        src = _src()
-        idx = src.find("return {")
-        assert idx > 0, "must have return statement"
-        returns = src[idx:idx + 100] if idx > 0 else src
-        assert returns.count(",") == 0, (
-            "return block must have exactly one hook (event) — no extra hooks"
-        )
-
-
-# ---------------------------------------------------------------------------
-# 6. Session lifecycle hooks
-# ---------------------------------------------------------------------------
-
-
-class TestSessionLifecycle:
-    def test_handles_session_created(self):
-        src = _src()
-        assert '"session.created"' in src, (
-            "must listen for session.created event"
-        )
-
-    def test_handles_server_connected(self):
-        src = _src()
-        assert '"server.connected"' in src, (
-            "must listen for server.connected event"
-        )
-
-    def test_handles_session_deleted(self):
-        src = _src()
-        assert '"session.deleted"' in src, (
-            "must listen for session.deleted event"
-        )
-
-    def test_session_created_triggers_watchdog_auto(self):
-        src = _src()
-        idx = src.find("session.created")
-        assert idx > 0
-        after = src[idx:idx + 200]
-        assert "make watchdog-auto" in after, (
-            "session.created must trigger `make watchdog-auto`"
-        )
-
-    def test_server_connected_triggers_watchdog_auto(self):
-        src = _src()
-        idx = src.find("server.connected")
-        assert idx > 0
-        after = src[idx:idx + 200]
-        assert "make watchdog-auto" in after, (
-            "server.connected must trigger `make watchdog-auto`"
-        )
-
-    def test_session_deleted_kills_pid_via_sigterm(self):
-        src = _src()
-        idx = src.find("session.deleted")
-        assert idx > 0
-        after = src[idx:idx + 500]
-        assert "SIGTERM" in after, (
-            "session.deleted must kill PID files via SIGTERM"
-        )
-
-    def test_session_deleted_unlinks_pid_files(self):
-        src = _src()
-        idx = src.find("session.deleted")
-        assert idx > 0
-        after = src[idx:idx + 500]
-        assert "unlinkSync" in after, (
-            "session.deleted must remove PID files via unlinkSync"
-        )
-
-    def test_session_deleted_cleans_both_pid_files(self):
-        src = _src()
-        idx = src.find("session.deleted")
-        assert idx > 0
-        after = src[idx:idx + 500]
-        assert "PID_FILE" in after, "session.deleted must reference PID_FILE"
-        assert "TASK_PID_FILE" in after, "session.deleted must reference TASK_PID_FILE"
-
-    def test_session_created_syncs_literal_pid_to_env_override(self):
-        """session.created copies .gate-logs/watchdog.pid to PID_FILE when they differ.
-
-        This handles test-mode isolation where PID_FILE is redirected via env var
-        but `make watchdog-auto` writes to the literal path.
-        """
-        src = _src()
-        idx = src.find("session.created")
-        assert idx > 0
-        after = src[idx:idx + 400]
-        assert "literalPid" in after, (
-            "session.created must sync literal PID path to env-override PID_FILE"
-        )
-        assert "existsSync(literalPid)" in after or "existsSync" in after, (
-            "session.created must check if literal PID file exists before syncing"
-        )
-
-    def test_calls_report_alive_on_every_event(self):
-        src = _src()
-        idx = src.find("event: async")
-        assert idx > 0
-        after = src[idx:idx + 150]
-        assert "_reportAlive()" in after, (
-            "_reportAlive must be called on every event (before dispatch)"
-        )
-
-
-# ---------------------------------------------------------------------------
-# 7. _reportAlive heartbeat mechanics
-# ---------------------------------------------------------------------------
-
-
-class TestReportAlive:
-    def test_report_alive_function_exists(self):
-        src = _src()
-        assert "function _reportAlive" in src, (
-            "_reportAlive function must be defined"
-        )
-
-    def test_report_alive_writes_json_with_last_seen(self):
-        src = _src()
-        idx = src.find("function _reportAlive")
-        assert idx > 0
-        after = src[idx:idx + 400]
-        assert "last_seen" in after, (
-            "_reportAlive must write 'last_seen' field"
-        )
-        assert "Date.now()" in after, (
-            "_reportAlive must timestamp with Date.now()"
-        )
-
-    def test_report_alive_under_watchdog_key(self):
-        src = _src()
-        idx = src.find("function _reportAlive")
-        assert idx > 0
-        after = src[idx:idx + 400]
-        assert '"watchdog"' in after, (
-            "_reportAlive must nest data under 'watchdog' key"
-        )
-
-    def test_report_alive_merges_existing_json(self):
-        src = _src()
-        idx = src.find("function _reportAlive")
-        assert idx > 0
-        after = src[idx:idx + 400]
-        assert "Object.assign" in after, (
-            "_reportAlive must merge existing alive.json data via Object.assign"
-        )
-
-    def test_report_alive_guards_against_absent_existing_file(self):
-        src = _src()
-        idx = src.find("function _reportAlive")
-        assert idx > 0
-        after = src[idx:idx + 400]
-        assert "existsSync" in after, (
-            "_reportAlive must guard read with existsSync"
-        )
-
-    def test_report_alive_writes_to_tmp(self):
-        src = _src()
-        assert "writeFileSync" in src, (
-            "_reportAlive must use writeFileSync to persist heartbeat"
-        )
-
-
-# ---------------------------------------------------------------------------
-# 8. Imports
+# 5. Imports — shared.ts refactor correctness
 # ---------------------------------------------------------------------------
 
 
@@ -423,12 +195,90 @@ class TestImports:
             "must import node:fs for file operations"
         )
 
-    def test_no_unused_imports(self):
+    def test_imports_report_alive_from_shared(self):
+        src = _src()
+        assert 'import { reportAlive } from "../lib/shared.ts"' in src, (
+            "must import reportAlive from ../lib/shared.ts (E.5 refactor)"
+        )
+
+    def test_has_exactly_3_imports(self):
         src = _src()
         import_lines = [
             line for line in src.split("\n")
             if line.strip().startswith("import ")
         ]
-        assert len(import_lines) == 2, (
-            f"expected 2 imports (Plugin + node:fs), found {len(import_lines)}"
+        assert len(import_lines) == 3, (
+            f"expected 3 imports (Plugin + node:fs + shared/reportAlive), "
+            f"found {len(import_lines)}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# 6. No leftover event handler / session lifecycle code
+# ---------------------------------------------------------------------------
+
+
+class TestNoLegacyCode:
+    """Event hooks were removed for opencode 1.17.9 compatibility.
+    The watchdog daemon process runs via `make watchdog-auto` outside opencode,
+    and reportAlive keeps the heartbeat alive via shared.ts.
+    """
+
+    def test_no_session_created(self):
+        src = _src()
+        assert '"session.created"' not in src
+
+    def test_no_server_connected(self):
+        src = _src()
+        assert '"server.connected"' not in src
+
+    def test_no_session_deleted(self):
+        src = _src()
+        assert '"session.deleted"' not in src
+
+    def test_no_legacy_report_alive_definition(self):
+        src = _src()
+        assert "function _reportAlive" not in src, (
+            "_reportAlive was moved to shared.ts (E.5 refactor)"
+        )
+
+    def test_no_write_file_sync(self):
+        """writeFileSync lives in shared.ts reportAlive, not here."""
+        src = _src()
+        assert "writeFileSync" not in src
+
+    def test_no_unlink_sync(self):
+        src = _src()
+        assert "unlinkSync" not in src
+
+    def test_no_sigterm(self):
+        src = _src()
+        assert "SIGTERM" not in src
+
+
+# ---------------------------------------------------------------------------
+# 7. reportAlive stub mechanics
+# ---------------------------------------------------------------------------
+
+
+class TestReportAlive:
+    def test_calls_report_alive_at_load_time(self):
+        src = _src()
+        assert 'reportAlive("watchdog")' in src, (
+            "Must call reportAlive('watchdog') at plugin load time to prove "
+            "the plugin is alive."
+        )
+
+    def test_report_alive_call_not_in_async_context(self):
+        """Stub factory is synchronous — reportAlive is called directly."""
+        src = _src()
+        idx = src.find("export default")
+        after = src[idx:idx + 200] if idx > 0 else src
+        assert "reportAlive" in after
+
+    def test_no_local_report_alive_definition(self):
+        """reportAlive is imported, not defined locally."""
+        src = _src()
+        assert "function reportAlive" not in src, (
+            "reportAlive must be imported from shared.ts, not defined locally"
         )

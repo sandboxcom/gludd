@@ -236,25 +236,72 @@ console.log(JSON.stringify(results));
                 os.unlink(script_path)
 
     def test_consecutive_non_dispatch_blocked_at_threshold(self):
-        """Third consecutive non-dispatch call (edit) is denied with CONSECUTIVE NON-DISPATCH STREAK.
+        """Third consecutive non-read non-dispatch call (bash) is denied.
 
         Setup: MIN_DISPATCHES=2, THRESHOLD=3, pending work in TASKS.md.
+        read/grep/glob are excluded from the streak counter (isReadTool guard).
+        Uses edit → write → bash to build the streak.
+
         1. Dispatch 2 subagents → floor satisfied.
-        2. Call read → allowed.
-        3. Call grep → allowed.
-        4. Call edit → DENIED with CONSECUTIVE NON-DISPATCH STREAK message.
+        2. Call edit → counter=1, allowed.
+        3. Call write → counter=2, allowed.
+        4. Call bash → counter=3 ≥ threshold → DENIED with CONSECUTIVE NON-DISPATCH STREAK.
         """
-        script, tmp_project, _state_file, script_path = self._make_base_script(
-            min_dispatch=2, threshold=3,
-        )
+        tmp_project = self._create_temp_project("# Tasks\n\n- [ ] Unchecked test task\n")
+        pid = os.getpid()
+        state_file = f"/tmp/test-multitask-grind-thresh-{pid}.json"
+        script_path = f"/tmp/test_grind_thresh_{pid}.mjs"
+
+        script = f"""process.env.GLUDD_MULTITASK_FLOOR_ENFORCE = "1";
+process.env.GLUDD_MULTITASK_MIN_DISPATCHES = "2";
+process.env.GLUDD_CONSECUTIVE_NON_DISPATCH_THRESHOLD = "3";
+process.env.GLUDD_PROJECT_ROOT = "{tmp_project}";
+process.env.GLUDD_MULTITASK_STATE_FILE = "{state_file}";
+process.env.OPENCODE_SUBAGENT = "";
+
+import * as fs from "node:fs";
+try {{ fs.unlinkSync("{state_file}"); }} catch (e) {{}}
+
+const mod = await import("{PLUGIN}");
+const hook = mod.defaultImpl["tool.execute.before"];
+mod.resetMultitaskState();
+
+async function run() {{
+    var results = [];
+
+    // Dispatch 2 to satisfy floor
+    var r0 = await hook({{ tool: "task" }});
+    results.push({{ step: "dispatch-1-task", result: r0 || {{ allow: true }} }});
+
+    var r0b = await hook({{ tool: "agent" }});
+    results.push({{ step: "dispatch-2-agent", result: r0b || {{ allow: true }} }});
+
+    // Non-read non-dispatch calls (edit, write, bash — never read/grep/glob)
+    var r1 = await hook({{ tool: "edit" }});
+    results.push({{ step: "nondispatch-1-edit", result: r1 || {{ allow: true }} }});
+
+    var r2 = await hook({{ tool: "write" }});
+    results.push({{ step: "nondispatch-2-write", result: r2 || {{ allow: true }} }});
+
+    var r3 = await hook({{ tool: "bash" }});
+    results.push({{ step: "nondispatch-3-bash", result: r3 || {{ allow: true }} }});
+
+    return results;
+}}
+
+var results = await run();
+try {{ fs.rmSync("{tmp_project}", {{ recursive: true, force: true }}); }} catch (e) {{}}
+try {{ fs.unlinkSync("{state_file}"); }} catch (e) {{}}
+console.log(JSON.stringify(results));
+"""
+        with open(script_path, "w") as f:
+            f.write(script)
         self.SCRIPTS.append(script_path)
 
         results = self._run_script(script, script_path)
 
-        # Should have 5 results (2 dispatches + 3 non-dispatches)
         assert len(results) >= 5, f"Expected at least 5 results, got {len(results)}: {results}"
 
-        # Dispatches should be allowed
         d1 = results[0]
         assert "dispatch-1-task" in d1["step"], f"Bad step name: {d1}"
         assert (d1["result"].get("allow") is True) or (d1["result"] is None), (
@@ -267,33 +314,26 @@ console.log(JSON.stringify(results));
             f"dispatch 2 (agent) should be allowed, got: {d2}"
         )
 
-        # First non-dispatch (read) should be allowed
         nd1 = results[2]
-        assert "nondispatch-1-read" in nd1["step"], f"Bad step name: {nd1}"
         assert (nd1["result"].get("allow") is True) or (nd1["result"] is None), (
-            f"non-dispatch 1 (read) should be allowed, got: {nd1}"
+            f"non-dispatch 1 (edit) should be allowed, got: {nd1}"
         )
 
-        # Second non-dispatch (grep) should be allowed
         nd2 = results[3]
-        assert "nondispatch-2-grep" in nd2["step"], f"Bad step name: {nd2}"
         assert (nd2["result"].get("allow") is True) or (nd2["result"] is None), (
-            f"non-dispatch 2 (grep) should be allowed, got: {nd2}"
+            f"non-dispatch 2 (write) should be allowed, got: {nd2}"
         )
 
-        # Third non-dispatch (edit) MUST be denied with CONSECUTIVE NON-DISPATCH STREAK
         nd3 = results[4]
-        assert "nondispatch-3-edit" in nd3["step"], f"Bad step name: {nd3}"
         nd3_result = nd3["result"]
         assert nd3_result.get("permissionDecision") == "deny", (
-            f"non-dispatch 3 (edit) MUST be denied, got: {nd3}"
+            f"non-dispatch 3 (bash) MUST be denied, got: {nd3}"
         )
         msg = nd3_result.get("message", "")
         assert "CONSECUTIVE NON-DISPATCH STREAK" in msg, (
             f"Deny message must contain 'CONSECUTIVE NON-DISPATCH STREAK', got: {msg[:200]}"
         )
 
-        # Cleanup project dir
         with __import__("contextlib").suppress(OSError):
             import shutil
             shutil.rmtree(tmp_project, ignore_errors=True)
@@ -301,15 +341,17 @@ console.log(JSON.stringify(results));
     def test_consecutive_counter_resets_after_dispatch(self):
         """After hitting threshold, dispatching a subagent resets the counter.
 
-        1. Accumulate non-dispatch calls (read, grep) → counter at 2.
-        2. Dispatch a subagent → counter resets to 0.
-        3. Make 3 more non-dispatch calls → 3rd should be denied again.
+        1. Accumulate 2 non-dispatch calls (edit, write) → counter at 2.
+        2. Dispatch a subagent → counter resets to 0 (but message boundary
+           fires because this is a dispatch-after-non-dispatch pattern, so
+           thisMessageDispatches also resets).
+        3. Dispatch a second subagent → floor re-satisfied (thisMessageDispatches=2).
+        4. Make 3 more non-dispatch calls (edit, write, bash) → 3rd is DENIED
+           with CONSECUTIVE NON-DISPATCH STREAK.
         """
         _script, tmp_project, state_file, script_path = self._make_base_script(
             min_dispatch=2, threshold=3,
         )
-        # Override the script to test reset behavior
-        os.getpid()
         reset_script = f"""process.env.GLUDD_MULTITASK_FLOOR_ENFORCE = "1";
 process.env.GLUDD_MULTITASK_MIN_DISPATCHES = "2";
 process.env.GLUDD_CONSECUTIVE_NON_DISPATCH_THRESHOLD = "3";
@@ -331,23 +373,29 @@ async function run() {{
     await hook({{ tool: "task" }});
     await hook({{ tool: "agent" }});
 
-    // Accumulate 2 non-dispatch calls (counter → 2)
-    await hook({{ tool: "read" }});
-    await hook({{ tool: "grep" }});
+    // Accumulate 2 non-read non-dispatch calls (counter → 2)
+    await hook({{ tool: "edit" }});
+    await hook({{ tool: "write" }});
 
-    // Dispatch a subagent — should reset counter to 0
-    var resetDispatch = await hook({{ tool: "task" }});
-    results.push({{ step: "reset-dispatch", counterReset: true, result: resetDispatch || {{ allow: true }} }});
+    // Dispatch a subagent — resets counter to 0. Pattern-change boundary
+    // also fires (dispatch after non-dispatch), resetting thisMessageDispatches.
+    await hook({{ tool: "task" }});
 
-    // Now make 3 new non-dispatch calls
-    var r1 = await hook({{ tool: "read" }});
-    results.push({{ step: "post-reset-read-1", result: r1 || {{ allow: true }} }});
+    // Re-satisfy the floor: need a second dispatch so thisMessageDispatches
+    // reaches MIN_DISPATCHES again. Without this, the next non-dispatch call
+    // would hit UNDER-FLOOR instead of the streak.
+    var refillDispatch = await hook({{ tool: "agent" }});
+    results.push({{ step: "refill-dispatch", result: refillDispatch || {{ allow: true }} }});
 
-    var r2 = await hook({{ tool: "grep" }});
-    results.push({{ step: "post-reset-grep-2", result: r2 || {{ allow: true }} }});
+    // Now make 3 new non-read non-dispatch calls
+    var r1 = await hook({{ tool: "edit" }});
+    results.push({{ step: "post-reset-edit-1", result: r1 || {{ allow: true }} }});
 
-    var r3 = await hook({{ tool: "edit" }});
-    results.push({{ step: "post-reset-edit-3", result: r3 || {{ allow: true }} }});
+    var r2 = await hook({{ tool: "write" }});
+    results.push({{ step: "post-reset-write-2", result: r2 || {{ allow: true }} }});
+
+    var r3 = await hook({{ tool: "bash" }});
+    results.push({{ step: "post-reset-bash-3", result: r3 || {{ allow: true }} }});
 
     return results;
 }}
@@ -365,26 +413,23 @@ console.log(JSON.stringify(results));
 
         assert len(results) >= 4, f"Expected at least 4 results, got {len(results)}: {results}"
 
-        # Dispatch after accumulation should reset counter (should be allowed)
-        reset = results[0]
-        assert reset["step"] == "reset-dispatch"
-        assert (reset["result"].get("allow") is True) or (reset["result"] is None), (
-            f"Reset dispatch should be allowed, got: {reset}"
+        refill = results[0]
+        assert refill["step"] == "refill-dispatch"
+        assert (refill["result"].get("allow") is True) or (refill["result"] is None), (
+            f"Refill dispatch should be allowed, got: {refill}"
         )
 
-        # First 2 post-reset non-dispatch calls allowed
         assert (results[1]["result"].get("allow") is True) or (results[1]["result"] is None), (
-            f"post-reset read 1 should be allowed, got: {results[1]}"
+            f"post-reset edit 1 should be allowed, got: {results[1]}"
         )
         assert (results[2]["result"].get("allow") is True) or (results[2]["result"] is None), (
-            f"post-reset grep 2 should be allowed, got: {results[2]}"
+            f"post-reset write 2 should be allowed, got: {results[2]}"
         )
 
-        # Third post-reset non-dispatch call MUST be denied
         nd3 = results[3]
         nd3_result = nd3["result"]
         assert nd3_result.get("permissionDecision") == "deny", (
-            f"post-reset edit 3 MUST be denied, got: {nd3}"
+            f"post-reset bash 3 MUST be denied, got: {nd3}"
         )
         assert "CONSECUTIVE NON-DISPATCH STREAK" in nd3_result.get("message", ""), (
             f"Deny must contain 'CONSECUTIVE NON-DISPATCH STREAK', got: {nd3_result.get('message', '')[:200]}"
@@ -452,26 +497,67 @@ console.log(JSON.stringify(results));
             shutil.rmtree(tmp_project, ignore_errors=True)
 
     def test_threshold_env_override_takes_effect(self):
-        """Setting CONSECUTIVE_NON_DISPATCH_THRESHOLD=2 should block on the 2nd call."""
-        script, tmp_project, _state_file, script_path = self._make_base_script(
-            min_dispatch=2, threshold=2,  # lower threshold
-        )
+        """Setting CONSECUTIVE_NON_DISPATCH_THRESHOLD=2 blocks on the 2nd
+        non-read non-dispatch call. Uses edit→write (not read/grep) since
+        read tools are excluded from the counter."""
+        tmp_project = self._create_temp_project("# Tasks\n\n- [ ] Unchecked test task\n")
+        pid = os.getpid()
+        state_file = f"/tmp/test-multitask-grind-t2-{pid}.json"
+        script_path = f"/tmp/test_grind_t2_{pid}.mjs"
+
+        script = f"""process.env.GLUDD_MULTITASK_FLOOR_ENFORCE = "1";
+process.env.GLUDD_MULTITASK_MIN_DISPATCHES = "2";
+process.env.GLUDD_CONSECUTIVE_NON_DISPATCH_THRESHOLD = "2";
+process.env.GLUDD_PROJECT_ROOT = "{tmp_project}";
+process.env.GLUDD_MULTITASK_STATE_FILE = "{state_file}";
+process.env.OPENCODE_SUBAGENT = "";
+
+import * as fs from "node:fs";
+try {{ fs.unlinkSync("{state_file}"); }} catch (e) {{}}
+
+const mod = await import("{PLUGIN}");
+const hook = mod.defaultImpl["tool.execute.before"];
+mod.resetMultitaskState();
+
+async function run() {{
+    var results = [];
+
+    // Dispatch 2 to satisfy floor
+    await hook({{ tool: "task" }});
+    await hook({{ tool: "agent" }});
+
+    // Non-read non-dispatch calls (edit, write, bash — never read/grep/glob)
+    var r1 = await hook({{ tool: "edit" }});
+    results.push({{ step: "nondispatch-1-edit", result: r1 || {{ allow: true }} }});
+
+    var r2 = await hook({{ tool: "write" }});
+    results.push({{ step: "nondispatch-2-write", result: r2 || {{ allow: true }} }});
+
+    return results;
+}}
+
+var results = await run();
+try {{ fs.rmSync("{tmp_project}", {{ recursive: true, force: true }}); }} catch (e) {{}}
+try {{ fs.unlinkSync("{state_file}"); }} catch (e) {{}}
+console.log(JSON.stringify(results));
+"""
+        with open(script_path, "w") as f:
+            f.write(script)
         self.SCRIPTS.append(script_path)
 
         results = self._run_script(script, script_path)
 
-        assert len(results) >= 5, f"Expected at least 5 results, got {len(results)}"
+        assert len(results) >= 2, f"Expected at least 2 results, got {len(results)}"
 
-        # With threshold=2: read (1st) allowed, grep (2nd) DENIED
-        nd1 = results[2]
+        nd1 = results[0]
         assert (nd1["result"].get("allow") is True) or (nd1["result"] is None), (
-            f"non-dispatch 1 (read) should be allowed, got: {nd1}"
+            f"non-dispatch 1 (edit) should be allowed, got: {nd1}"
         )
 
-        nd2 = results[3]
+        nd2 = results[1]
         nd2_result = nd2["result"]
         assert nd2_result.get("permissionDecision") == "deny", (
-            f"non-dispatch 2 (grep) MUST be denied at threshold=2, got: {nd2}"
+            f"non-dispatch 2 (write) MUST be denied at threshold=2, got: {nd2}"
         )
         assert "CONSECUTIVE NON-DISPATCH STREAK" in nd2_result.get("message", ""), (
             "Deny must contain 'CONSECUTIVE NON-DISPATCH STREAK'"

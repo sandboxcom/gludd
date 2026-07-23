@@ -28,6 +28,7 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
+pytestmark = pytest.mark.xdist_group("enforcement_plugin_state_files")
 
 STATE_FILES = [
     "/tmp/gludd-mainthread-streak.json",
@@ -758,7 +759,9 @@ class TestPluginSourceContract:
 
     def test_tool_streak_file_in_floor_source(self):
         src = (ROOT / ".opencode/plugin/enforce-floor.ts").read_text()
-        assert "gludd-tool-streak.json" in src
+        shared = (ROOT / ".opencode/lib/shared.ts").read_text()
+        assert "updateSharedStreak" in src
+        assert "gludd-tool-streak.json" in shared
 
     def test_multitask_state_file_in_multitask_source(self):
         src = (ROOT / ".opencode/plugin/enforce-multitask.ts").read_text()
@@ -770,7 +773,9 @@ class TestPluginSourceContract:
 
     def test_disengage_file_in_floor_source(self):
         src = (ROOT / ".opencode/plugin/enforce-floor.ts").read_text()
-        assert "gludd-watchdog-disengage.json" in src
+        shared = (ROOT / ".opencode/lib/shared.ts").read_text()
+        assert "isDisengaged" in src
+        assert "gludd-watchdog-disengage.json" in shared
 
     def test_delegate_first_threshold_correct(self):
         src = (ROOT / ".opencode/plugin/enforce-stop.ts").read_text()

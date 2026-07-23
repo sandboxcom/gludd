@@ -29,10 +29,11 @@ async def test_app():
             await conn.run_sync(Base.metadata.create_all)
         factory = async_sessionmaker(engine, expire_on_commit=False)
 
-        from general_ludd.daemon import _daemon_state
-        _daemon_state["todos"] = []
-        _daemon_state["tick_metrics"] = {}
-        _daemon_state["quality_gate"] = {}
+        daemon_state: dict[str, object] = {
+            "todos": [],
+            "tick_metrics": {},
+            "quality_gate": {},
+        }
 
         app = FastAPI()
         app.state._session_factory = factory
@@ -45,7 +46,7 @@ async def test_app():
         app.state._templates_dir = None
         app.state._playbooks_dir = None
 
-        register(app, _daemon_state)
+        register(app, daemon_state)
         yield app, engine, factory
     finally:
         await engine.dispose()

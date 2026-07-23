@@ -1,4 +1,7 @@
 {
+  "legacy_floor_literal": {
+    "CLAUDE_AGENT_FLOOR": "5"
+  },
   "env": {
     "CLAUDE_AGENT_FLOOR": "10",
     "CLAUDE_AGENT_CEILING": "16",

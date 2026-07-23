@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -38,6 +39,16 @@ from general_ludd.event_loop.lease import (
 from general_ludd.event_loop.loop import PHASE_ORDER, EventLoop
 from general_ludd.schemas.queue import Queue
 from general_ludd.schemas.todo import TodoStatus
+
+_PIPELINE_PROJECT_ID = "proj-event-loop-e2e"
+
+
+def _pipeline_project_manager() -> SimpleNamespace:
+    project = SimpleNamespace(project_id=_PIPELINE_PROJECT_ID)
+    return SimpleNamespace(
+        select_project=lambda: project,
+        list_active=lambda: [project],
+    )
 
 
 @pytest.fixture
@@ -380,6 +391,7 @@ def _loop_for_pipeline(_session_factory, _runner_for_pipeline):
         runner=_runner_for_pipeline,
         task_return_repo=AsyncMock(),
         config={"repo_root": "/tmp"},
+        project_manager=_pipeline_project_manager(),
     )
     loop._task_return_repo.claim_unreviewed.return_value = []
     loop._runner = _runner_for_pipeline
@@ -398,6 +410,7 @@ async def _seed_queued_todo(factory, **overrides) -> TodoModel:
             "priority": 5,
             "work_type": "code",
             "status": TodoStatus.QUEUED.value,
+            "project_id": _PIPELINE_PROJECT_ID,
         }
         defaults.update(overrides)
         todo = await repo.create(defaults)
@@ -497,15 +510,13 @@ class TestClaimRunnablePipeline:
         )
 
     @pytest.mark.asyncio
-    async def test_project_id_null_todos_claimed(
+    async def test_project_id_null_todos_not_claimed_when_project_active(
         self, _session_factory, _loop_for_pipeline
     ):
         await _seed_queued_todo(_session_factory, project_id=None)
         await _loop_for_pipeline.tick()
         claimed = _loop_for_pipeline._tick_state.get("claimed_todos", [])
-        assert len(claimed) >= 1
-        for t in claimed:
-            assert t.project_id is None
+        assert len(claimed) == 0
 
     @pytest.mark.asyncio
     async def test_tick_phase_order_respected(self, _session_factory, _loop_for_pipeline):

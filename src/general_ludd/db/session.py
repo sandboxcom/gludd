@@ -244,23 +244,29 @@ def json_dumps(obj: Any) -> str:
 # cross-tenant paths).
 
 
-def _tenant_criteria(orm_class: type) -> Any:
-    from sqlalchemy import true
+@event.listens_for(Session, "do_orm_execute")
+def _add_tenant_filter(execute_state: Any) -> None:
+    if not execute_state.is_select or execute_state.is_column_load:
+        return
+    from sqlalchemy import bindparam, true
 
     from general_ludd.db.tenant import get_tenant
 
     tenant = get_tenant()
     if tenant is None:
-        return true()
-    if not hasattr(orm_class, "project_id"):
-        return true()
-    return orm_class.project_id == tenant
-
-
-@event.listens_for(Session, "do_orm_execute")
-def _add_tenant_filter(execute_state: Any) -> None:
-    if not execute_state.is_select or execute_state.is_column_load:
         return
+
+    tenant_param: Any = bindparam("gludd_tenant_project_id", tenant)
+
+    def _tenant_criteria(orm_class: type) -> Any:
+        if not hasattr(orm_class, "project_id"):
+            return true()
+        return orm_class.project_id == tenant_param
+
     execute_state.statement = execute_state.statement.options(
-        with_loader_criteria(Base, _tenant_criteria, include_aliases=True)
+        with_loader_criteria(
+            Base,
+            _tenant_criteria,
+            include_aliases=True,
+        )
     )

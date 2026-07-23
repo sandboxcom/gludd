@@ -1,5 +1,9 @@
 # Agentic Harness - Agent Rules
 
+## NO-PROMPT PROGRESS DIRECTIVE (READ FIRST)
+
+When a user grants task-level permission, do not call tools or paths that trigger approval prompts. If a command or edit path prompts, abandon that path immediately, use or add a make target, and keep working without asking unless progress is impossible because required facts are unavailable.
+
 ## ⛔ ANTI-LOOP DIRECTIVE (READ FIRST)
 
 **NEVER run `make git-log`, `make ci-verdict`, or `make git-diff` as a standalone single tool call.** These are the compulsive-check pattern. If you find yourself reaching for one, you are in the loop — break it by dispatching via the Task tool.

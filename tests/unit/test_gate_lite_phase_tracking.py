@@ -5,6 +5,7 @@ in .gate-lite-status, the .gate-lite-failed tracking file, and the kill target.
 Mirrors test_gate_background_targets.py.
 """
 
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).parent.parent.parent
@@ -14,6 +15,18 @@ MAKEFILE = ROOT / "Makefile"
 def _content() -> str:
     assert MAKEFILE.exists(), "Makefile must exist"
     return MAKEFILE.read_text()
+
+
+def _target_block(content: str, target: str) -> str:
+    match = re.search(rf"^{re.escape(target)}:", content, re.MULTILINE)
+    assert match is not None
+    idx = match.start()
+    following = content[match.end():]
+    end = len(content)
+    for next_match in re.finditer(r"\n[A-Za-z0-9_.-]+:", following):
+        end = match.end() + next_match.start()
+        break
+    return content[idx:end]
 
 
 def test_gate_lite_target_exists():
@@ -29,9 +42,7 @@ def test_gate_lite_kill_target_exists():
 def test_gate_lite_writes_phase_markers_to_status():
     """gate-lite recipe emits per-phase markers into .gate-lite-status file."""
     content = _content()
-    idx = content.find("gate-lite:")
-    assert idx != -1
-    recipe_block = content[idx:idx + 4000]
+    recipe_block = _target_block(content, "gate-lite")
     phases = [
         ("lint", "lint"),
         ("typecheck", "typecheck"),
@@ -51,8 +62,7 @@ def test_gate_lite_writes_phase_markers_to_status():
 def test_gate_lite_writes_terminal_marker():
     """gate-lite recipe emits terminal PASSED/FAILED markers into .gate-lite-status."""
     content = _content()
-    idx = content.find("gate-lite:")
-    recipe_block = content[idx:idx + 5000]
+    recipe_block = _target_block(content, "gate-lite")
     assert "=== GATE-LITE: PASSED ===" in recipe_block, (
         "gate-lite recipe missing terminal '=== GATE-LITE: PASSED ===' marker"
     )
@@ -64,8 +74,7 @@ def test_gate_lite_writes_terminal_marker():
 def test_gate_lite_tracks_failed_file():
     """gate-lite recipe touches .gate-lite-failed on any phase failure."""
     content = _content()
-    idx = content.find("gate-lite:")
-    recipe_block = content[idx:idx + 4000]
+    recipe_block = _target_block(content, "gate-lite")
     assert ".gate-lite-failed" in recipe_block, (
         "gate-lite recipe missing .gate-lite-failed tracking file"
     )

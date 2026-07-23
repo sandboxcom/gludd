@@ -13,8 +13,7 @@ class TestHttpResponseProtocol:
         assert hasattr(HttpResponse, "status_code")
 
     def test_protocol_has_text_property(self) -> None:
-        protocol_annotations = HttpResponse.__annotations__
-        assert "text" in protocol_annotations
+        assert isinstance(HttpResponse.text, property)
 
     def test_protocol_has_json_method(self) -> None:
         assert hasattr(HttpResponse, "json")

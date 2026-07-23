@@ -18,6 +18,9 @@ from fastapi.testclient import TestClient
 
 from general_ludd.routers.signing import _COSIGN_OUTPUT_ALLOWED_ROOT, _validate_output_dir, register
 
+_ADMIN_TOKEN = "test-admin-token"
+_ADMIN_HEADERS = {"X-Admin-Token": _ADMIN_TOKEN}
+
 # ---------------------------------------------------------------------------
 # Unit tests for _validate_output_dir (pure logic, no HTTP)
 # ---------------------------------------------------------------------------
@@ -92,9 +95,13 @@ def _make_app() -> tuple[FastAPI, MagicMock]:
 class TestCosignGenerateOutputDirConfinement:
     """/admin/signing/cosign/generate must reject output_dir outside the allowed root."""
 
+    @pytest.fixture(autouse=True)
+    def _admin_auth(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("GLUDD_ADMIN_TOKEN", _ADMIN_TOKEN)
+
     def _client(self) -> tuple[TestClient, MagicMock]:
         app, resolver = _make_app()
-        return TestClient(app, raise_server_exceptions=True), resolver
+        return TestClient(app, headers=_ADMIN_HEADERS, raise_server_exceptions=True), resolver
 
     def test_etc_output_dir_returns_400(self) -> None:
         client, _ = self._client()
@@ -136,7 +143,7 @@ class TestCosignGenerateOutputDirConfinement:
             "general_ludd.routers.signing.generate_and_store_cosign_key",
             return_value=mock_key,
         ) as mock_gen:
-            client = TestClient(app, raise_server_exceptions=True)
+            client = TestClient(app, headers=_ADMIN_HEADERS, raise_server_exceptions=True)
             resp = client.post(
                 "/admin/signing/cosign/generate",
                 json={"project_id": "test", "key_name": "k"},
@@ -161,7 +168,7 @@ class TestCosignGenerateOutputDirConfinement:
             "general_ludd.routers.signing.generate_and_store_cosign_key",
             return_value=mock_key,
         ) as mock_gen:
-            client = TestClient(app, raise_server_exceptions=True)
+            client = TestClient(app, headers=_ADMIN_HEADERS, raise_server_exceptions=True)
             resp = client.post(
                 "/admin/signing/cosign/generate",
                 json={"project_id": "test", "key_name": "k", "output_dir": safe_dir},

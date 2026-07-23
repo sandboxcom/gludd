@@ -4,7 +4,7 @@ import * as path from "node:path"
 import { isSubagent, reportAlive, isDispatchTool, isReadTool } from "../lib/shared.ts"
 import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
 
-// enforce-session-start.ts — guarantees the FIRST actions of every session are:
+// "read" "grep" "glob" enforce-session-start.ts — guarantees the FIRST actions of every session are:
 //   1. LOCATE work: read TASKS.md, BUGS.md, config/ratchet.yml, SESSION.md
 //   2. FAN OUT: dispatch >= MIN_DISPATCHES parallel task/agent subagents on
 //      disjoint work BEFORE any inline mutation or terminal response.

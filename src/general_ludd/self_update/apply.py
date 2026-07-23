@@ -42,8 +42,15 @@ from general_ludd.security.capability_lattice import (
     check_self_modification,
     is_protected_path,
 )
-from general_ludd.security.path_canonicalizer import is_denied_path
+from general_ludd.security.path_canonicalizer import (
+    _HARD_DENY_SEGMENTS as _CANONICAL_HARD_DENY_SEGMENTS,
+)
+from general_ludd.security.path_canonicalizer import (
+    is_denied_path,
+)
 from general_ludd.self_update.model import ApplyTier, ChangeKind, SelfUpdatePlan, SelfUpdateRequest
+
+_HARD_DENY_SEGMENTS = _CANONICAL_HARD_DENY_SEGMENTS
 
 
 class ApplyOutcome:

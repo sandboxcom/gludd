@@ -27,6 +27,7 @@
       gpg --list-secret-keys --with-colons {{ gpg_user_id | default(ansible_user_id) }}
       | grep '^sec' | head -1
   args:
+    executable: /bin/bash
     warn: false
   register: gpg_key_check
   changed_when: false
@@ -46,6 +47,7 @@
       %commit
       EOF
   args:
+    executable: /bin/bash
     creates: "{{ lookup('env', 'HOME') }}/.gnupg/pubring.kbx"
   when: (gpg_key_check.stdout | default('')) == ''
   no_log: true

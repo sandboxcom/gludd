@@ -208,6 +208,31 @@ class TestSearXSearch:
         assert results == []
 
 
+    def test_search_connection_failure_logs_without_traceback(self, caplog: Any) -> None:
+        conn = SearXConnector({"base_url": "https://searx.example.com"})
+
+        class Client:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return None
+
+            def get(self, url, params=None):
+                raise httpx.ConnectError("refused")
+
+        with mock.patch("httpx.Client", return_value=Client()), caplog.at_level("WARNING"):
+            results = conn.search("connection failure")
+
+        records = [
+            record
+            for record in caplog.records
+            if "SearX request failed" in record.message
+        ]
+        assert results == []
+        assert records
+        assert records[0].exc_info is None
+
 class TestSearXHealth:
     def test_health_ok(self) -> None:
         conn = SearXConnector({"base_url": "https://searx.example.com"})

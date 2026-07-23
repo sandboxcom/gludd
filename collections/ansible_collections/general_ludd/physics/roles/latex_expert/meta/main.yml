@@ -1,0 +1,19 @@
+---
+galaxy_info:
+  role_name: latex_expert
+  author: Agentic Harness Agent
+  description: >
+    Render LaTeX equations, generate formatted tables, and create complete
+    research paper documents from templates. Supports equation rendering
+    (single and aligned), table formatting, and full-document generation
+    with configurable document classes and packages.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

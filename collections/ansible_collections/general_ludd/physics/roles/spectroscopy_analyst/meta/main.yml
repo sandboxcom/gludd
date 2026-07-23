@@ -1,0 +1,18 @@
+---
+galaxy_info:
+  role_name: spectroscopy_analyst
+  author: Agentic Harness Agent
+  description: >
+    Simulate and analyze spectroscopic data. Supports UV-Vis, IR, Raman, NMR,
+    mass spectrometry, fluorescence, and XRD. Performs peak detection, line
+    fitting (Lorentzian/Gaussian), and spectral calibration.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

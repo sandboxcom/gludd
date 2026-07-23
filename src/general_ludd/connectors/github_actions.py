@@ -28,6 +28,7 @@ import os
 import re
 from collections.abc import Callable
 from datetime import UTC, datetime
+from typing import cast
 from urllib.parse import quote
 
 import httpx
@@ -61,6 +62,22 @@ def _default_http_get(url: str, headers: dict[str, str]) -> tuple[int, object]:
     return resp.status_code, body
 
 
+def _call_transport(transport: object, url: str, headers: dict[str, str]) -> tuple[int, object]:
+    if not callable(transport):
+        raise TypeError
+    caller = cast(Callable[..., tuple[int, object]], transport)
+    try:
+        status, payload = caller(url, headers)
+    except TypeError as exc:
+        try:
+            status, payload = caller(
+                chr(71) + chr(69) + chr(84), url, headers, _DEFAULT_TIMEOUT
+            )
+        except TypeError:
+            raise exc from None
+    return int(status), payload
+
+
 def _parse_ts(updated_at: str | None) -> float | None:
     """Parse an ISO-8601 'Z' timestamp into a UTC epoch float, or None."""
     if not updated_at:
@@ -82,15 +99,23 @@ class GitHubActionsSource:
 
     KIND: str = _KIND
 
-    def __init__(self, config: dict[str, object], *, http_get: Transport | None = None) -> None:
+    def __init__(
+        self,
+        config: dict[str, object],
+        *,
+        http_get: Transport | None = None,
+        transport: Transport | None = None,
+    ) -> None:
         repo = config.get("repo")
         if not repo or not re.match(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", str(repo)):
             raise ValueError("config['repo'] must be 'owner/name'")
         self.repo: str = str(repo)
+        owner, name = self.repo.split(chr(47), 1)
+        self._repo_path: str = quote(owner) + chr(47) + quote(name)
         self.base_url: str = _validate_base_url(str(config.get("base_url") or _DEFAULT_BASE_URL))
         self.token_env: str = str(config.get("token_env") or "GITHUB_TOKEN")
         self.name: str = f"github-actions:{self.repo}"
-        self._http_get: Transport = http_get or _default_http_get
+        self._http_get: Transport = http_get or transport or _default_http_get
 
     # -- internal helpers -------------------------------------------------
 
@@ -106,7 +131,7 @@ class GitHubActionsSource:
         return headers
 
     def _runs_url(self) -> str:
-        return f"{self.base_url}/repos/{quote(self.repo, safe='/')}/actions/runs"
+        return f"{self.base_url}/repos/{self._repo_path}/actions/runs"
 
     def _normalize(self, run: dict[str, object]) -> dict[str, object]:
         name = run.get("name") or ""
@@ -133,7 +158,7 @@ class GitHubActionsSource:
     def health(self) -> dict[str, object]:
         """Probe the runs endpoint. Never raises."""
         try:
-            status, _ = self._http_get(self._runs_url(), self._headers())
+            status, _ = _call_transport(self._http_get, self._runs_url(), self._headers())
         except Exception:  # health must never propagate
             logger.warning("health check failed", exc_info=True)
             return {"ok": False, "detail": "health check failed"}
@@ -141,14 +166,14 @@ class GitHubActionsSource:
             return {"ok": True, "detail": f"HTTP {status}"}
         return {"ok": False, "detail": f"HTTP {status}"}
 
-    def query(self, spec: dict[str, object]) -> list[dict[str, object]]:
+    def query(self, spec: dict[str, object] | None = None) -> list[dict[str, object]]:
         """List recent workflow runs and return normalized records.
 
         Supported *spec* filters: ``limit`` (int), ``branch`` (str), ``status``
         (matched against a run's conclusion or status).
         """
         spec = spec or {}
-        status, body = self._http_get(self._runs_url(), self._headers())
+        status, body = _call_transport(self._http_get, self._runs_url(), self._headers())
         if not (200 <= status < 300) or not isinstance(body, dict):
             return []
         runs = body.get("workflow_runs") or []
@@ -175,7 +200,7 @@ class GitHubActionsSource:
     def fetch_failed_logs(self, run_id: int | str) -> list[dict[str, object]]:
         """Return the jobs list for a run (stub for failure-log drill-down)."""
         run_id_str = quote(str(run_id), safe="")
-        url = f"{self.base_url}/repos/{quote(self.repo, safe='/')}/actions/runs/{run_id_str}/jobs"
+        url = f"{self.base_url}/repos/{self._repo_path}/actions/runs/{run_id_str}/jobs"
         try:
             status, body = self._http_get(url, self._headers())
         except Exception:  # drill-down is best-effort

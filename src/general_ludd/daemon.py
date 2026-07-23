@@ -92,6 +92,7 @@ from general_ludd.observability.langsmith_tracer import LangSmithTracer
 from general_ludd.observability.otel_bridge import OTelBridge
 from general_ludd.observability.recorder import AutoBenchmarkRecorder
 from general_ludd.observability.timing import StallWatchdog, default_tracker
+from general_ludd.output_templates import OutputTemplateRegistry
 from general_ludd.projects.manager import seed_from_config
 from general_ludd.projects.workspace import ProjectWorkspace
 from general_ludd.prompts.enhancer import PromptEnhancer
@@ -290,13 +291,12 @@ class LangGraphModelCallError(Exception):
         self.__cause__ = original_error
 
 
-# Back-compat default. ``create_daemon_app()`` builds a FRESH per-app dict
 # Per-app daemon state: each app owns a fresh dict so todos / tick_metrics /
 # quality_gate cannot bleed across FastAPI instances in one process. The
 # authoritative store is ``app.state.daemon_state`` (set by the factory).
 # This module-level name exists ONLY as a migration shim for legacy callers
-# (scripts/dogfood.py, test fixtures); it starts as ``None`` and is rebound
-# to the most recently created app's dict by ``create_daemon_app()``.
+# (scripts/dogfood.py, test fixtures); it starts unset and is rebound to the
+# most recently created app's dict by ``create_daemon_app()``.
 # New code MUST NOT access this global — use explicit injection instead.
 _daemon_state: Any = None
 
@@ -1402,6 +1402,16 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         # is caught by the outer startup try/except → degraded mode).
         await asyncio.to_thread(prompt_registry.refresh)
         app.state._prompt_registry = prompt_registry
+        output_template_dirs: list[str] = []
+        if _proj_for_prompts is not None:
+            _proj_output_tmpl_dir = Path(_proj_for_prompts) / "templates" / "log_output"
+            if _proj_output_tmpl_dir.is_dir():
+                output_template_dirs.append(str(_proj_output_tmpl_dir))
+        output_template_registry = OutputTemplateRegistry.default(extra_template_dirs=output_template_dirs)
+        output_template_summary = await asyncio.to_thread(output_template_registry.compile)
+        app.state._output_template_registry = output_template_registry
+        app.state._output_template_summary = output_template_summary
+        logger.info("Output templates compiled: %d", output_template_summary.get("count", 0))
         app.state._prompt_enhancer = PromptEnhancer()
 
         # Build budget guard from config
@@ -2265,7 +2275,8 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                                 task.task_id,
                                 float(getattr(result, "cost_estimate", 0.0) or 0.0),
                             )
-                        return result.content
+                        content = result.content
+                        return content if isinstance(content, str) else str(content)
                     except Exception as exc:
                         logger.warning("Gateway executor failed for %s: %s", task.task_id, exc)
                         # The call never produced a cost, so release both reservations

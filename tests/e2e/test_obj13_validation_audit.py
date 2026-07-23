@@ -19,7 +19,7 @@ class TestValidationRunnerImportAndInit:
             expected_worktree_root="/tmp",
         )
         assert runner.todo_id == "TODO-001"
-        assert runner.worktree_path == "/tmp/worktree"
+        assert os.path.realpath(runner.worktree_path) == os.path.realpath("/tmp/worktree")
         assert runner.test_commands == ["echo ok"]
 
     def test_default_fields(self):

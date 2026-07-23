@@ -13,8 +13,6 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-import pytest
-
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_PATH = ROOT / ".opencode" / "plugin" / "enforce-multitask.ts"
 
@@ -38,10 +36,16 @@ def _run_plugin(
     global _ts_counter
     _ts_counter += 1
     tmp = Path(tempfile.mktemp(suffix=".ts", prefix=f"multitask_e2e_{_ts_counter}_"))
+    state_file = Path(tempfile.mktemp(suffix=".json", prefix=f"gludd-multitask-e2e-{_ts_counter}-"))
     tmp.write_text(ts_code)
     try:
         env = os.environ.copy()
         env["OPENCODE_SUBAGENT"] = ""
+        env["GLUDD_MULTITASK_FLOOR_ENFORCE"] = "1"
+        env["GLUDD_DISENGAGE_PATH"] = str(
+            Path(tempfile.mktemp(suffix=".json", prefix=f"gludd-disengage-e2e-{_ts_counter}-"))
+        )
+        env["GLUDD_MULTITASK_STATE_FILE"] = str(state_file)
         if env_override:
             env.update(env_override)
         proc = subprocess.run(
@@ -57,6 +61,8 @@ def _run_plugin(
     finally:
         with contextlib.suppress(OSError):
             tmp.unlink()
+        with contextlib.suppress(OSError):
+            state_file.unlink()
 
 
 def _last_json(stdout: str) -> dict | None:
@@ -405,7 +411,7 @@ await plugin['tool.execute.before']({{tool: 'read'}}, undefined)
 await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
 await plugin['tool.execute.before']({{tool: 'read'}}, undefined)
 await plugin['tool.execute.before']({{tool: 'edit'}}, undefined)
-const state = JSON.parse(fs.readFileSync('/tmp/gludd-multitask-state.json', 'utf8'))
+const state = JSON.parse(fs.readFileSync(process.env.GLUDD_MULTITASK_STATE_FILE, 'utf8'))
 console.log(JSON.stringify({{
     zeroStreak: state.zeroStreak,
     thisMessageDispatches: state.thisMessageDispatches,
@@ -421,11 +427,6 @@ console.log(JSON.stringify({{
     assert r["thisMessageDispatches"] == 0
 
 
-@pytest.mark.xfail(
-    reason="BUG: rapid calls within MSG_GAP_MS never trigger message boundary, "
-           "so enforcement never fires.  Remove xfail when the plugin detects "
-           "rapid inline grinding without relying on the time gap."
-)
 def test_rapid_grinding_should_block_write_with_pending_work(tmp_path):
     """3 rapid write calls with pending work. SHOULD be blocked by enforcement.
     Currently all are allowed — proving the bug."""
@@ -477,11 +478,6 @@ console.log(JSON.stringify(r ?? {{allowed: true}}))
     assert "UNDER-FLOOR HARD BLOCK" in r.get("message", "")
 
 
-@pytest.mark.xfail(
-    reason="BUG: first call bypasses because lastToolCallTs=0 and "
-           "prevMessageDispatches=0.  Should detect 'first call with "
-           "pending work and no dispatch.' Remove xfail when fixed."
-)
 def test_first_call_bypass_no_prior_dispatch_with_pending_work(tmp_path):
     """First tool call is Write with pending work. Currently allowed because
     lastToolCallTs=0 (no boundary) and prevMessageDispatches=0 (no floor breach).
@@ -829,9 +825,9 @@ await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
 await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
 await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
 await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
-const beforeDispatch = JSON.parse(fs.readFileSync('/tmp/gludd-multitask-state.json', 'utf8'))
+const beforeDispatch = JSON.parse(fs.readFileSync(process.env.GLUDD_MULTITASK_STATE_FILE, 'utf8'))
 await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
-const afterDispatch = JSON.parse(fs.readFileSync('/tmp/gludd-multitask-state.json', 'utf8'))
+const afterDispatch = JSON.parse(fs.readFileSync(process.env.GLUDD_MULTITASK_STATE_FILE, 'utf8'))
 console.log(JSON.stringify({{
   consecutiveBefore: beforeDispatch.consecutiveNonDispatch,
   consecutiveAfter: afterDispatch.consecutiveNonDispatch

@@ -30,6 +30,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_DIR = ROOT / ".opencode" / "plugin"
+LIB_DIR = ROOT / ".opencode" / "lib"
 
 _tmp_counter = 0
 
@@ -319,34 +320,37 @@ console.log(JSON.stringify(result ?? {allowed: true}))
 
 # ============================================================================
 # Test 6: Hot modules include subagent guard in their source code
+# Post E.5 refactor: isSubagent is imported from ../lib/shared.ts, not defined
+# inline. Check import presence + usage (or inline definition for non-refactored
+# plugins).
 # ============================================================================
 
 def test_deadline_source_has_subagent_guard():
-    """enforce-deadline.ts defines _isSubagent() with file-based fallback."""
+    """enforce-deadline.ts imports isSubagent from shared.ts with file-based fallback."""
     source = (PLUGIN_DIR / "enforce-deadline.ts").read_text()
-    assert "function _isSubagent" in source, "enforce-deadline.ts must define _isSubagent()"
-    assert "gludd-subagent" in source, "enforce-deadline.ts must reference file-based fallback"
+    assert "isSubagent" in source, "enforce-deadline.ts must import isSubagent()"
+    assert "../lib/shared.ts" in source, "enforce-deadline.ts must import from lib/shared.ts"
 
 
 def test_floor_source_has_subagent_guard():
-    """enforce-floor.ts defines _isSubagent() with file-based fallback."""
+    """enforce-floor.ts imports isSubagent from shared.ts with file-based fallback."""
     source = (PLUGIN_DIR / "enforce-floor.ts").read_text()
-    assert "function _isSubagent" in source, "enforce-floor.ts must define _isSubagent()"
-    assert "gludd-subagent" in source, "enforce-floor.ts must reference file-based fallback"
+    assert "isSubagent" in source, "enforce-floor.ts must import isSubagent()"
+    assert "../lib/shared.ts" in source, "enforce-floor.ts must import from shared.ts (file-based fallback lives there)"
 
 
 def test_clean_tree_source_has_subagent_guard():
-    """enforce-clean-tree.ts defines _isSubagent() with file-based fallback."""
+    """enforce-clean-tree.ts imports isSubagent from shared.ts with file-based fallback."""
     source = (PLUGIN_DIR / "enforce-clean-tree.ts").read_text()
-    assert "function _isSubagent" in source, "enforce-clean-tree.ts must define _isSubagent()"
-    assert "gludd-subagent" in source, "enforce-clean-tree.ts must reference file-based fallback"
+    assert "isSubagent" in source, "enforce-clean-tree.ts must import isSubagent()"
+    assert "../lib/shared.ts" in source, "enforce-clean-tree.ts must import from lib/shared.ts"
 
 
 def test_enhancement_source_has_subagent_guard():
-    """enforce-enhancement-ratio.ts defines _isSubagent() with file-based fallback."""
+    """enforce-enhancement-ratio.ts imports isSubagent from shared.ts with file-based fallback."""
     source = (PLUGIN_DIR / "enforce-enhancement-ratio.ts").read_text()
-    assert "function _isSubagent" in source, "enforce-enhancement-ratio.ts must define _isSubagent()"
-    assert "gludd-subagent" in source, "enforce-enhancement-ratio.ts must reference file-based fallback"
+    assert "isSubagent" in source, "enforce-enhancement-ratio.ts must import isSubagent()"
+    assert "../lib/shared.ts" in source, "enforce-enhancement-ratio.ts must import from lib/shared.ts"
 
 
 ALL_HOT_MODULE_PLUGINS = [
@@ -357,19 +361,18 @@ ALL_HOT_MODULE_PLUGINS = [
 
 
 def test_hot_module_plugins_use_subagent_guard():
-    """Hot-module plugins call _isSubagent() guard in both defaultImpl and proxy."""
+    """Hot-module plugins import isSubagent() guard from shared.ts."""
     for fn in ALL_HOT_MODULE_PLUGINS:
         source = (PLUGIN_DIR / fn).read_text()
         has_load_hot_module = "loadHotModule" in source
-        has_is_subagent = "function _isSubagent" in source
+        has_is_subagent = "isSubagent" in source
         assert has_load_hot_module, f"{fn}: must use loadHotModule"
-        assert has_is_subagent, f"{fn}: must define _isSubagent()"
+        assert has_is_subagent, f"{fn}: must import isSubagent() from shared.ts"
 
-    # For plugins without hot-reload (PluginAPI style), the guard is in the hook.
     for fn in ["enforce-clean-tree.ts", "enforce-delegate.ts"]:
         source = (PLUGIN_DIR / fn).read_text()
-        assert "function _isSubagent" in source, f"{fn}: must define _isSubagent()"
-        assert "gludd-subagent" in source, f"{fn}: must reference file-based fallback"
+        assert "isSubagent" in source, f"{fn}: must import isSubagent() from shared.ts"
+        assert "../lib/shared.ts" in source, f"{fn}: must import from shared.ts (file-based fallback lives there)"
 
 
 # ============================================================================
@@ -384,7 +387,7 @@ const hotPath = '/tmp/gludd-hot-test-subagent.js'
 const corruptCode = 'THIS IS NOT VALID JAVASCRIPT {{{{{{}}}}}};;;'
 fs.writeFileSync(hotPath, corruptCode)
 
-const mod = await import('{PLUGIN_DIR}/hot_reload.ts')
+const mod = await import('{LIB_DIR}/hot_reload.ts')
 const defaults = {{ "tool.execute.before": async () => "default called" }}
 const result = mod.loadHotModule('test-subagent', defaults)
 const fn = result['tool.execute.before']
@@ -406,7 +409,7 @@ def test_broken_hot_module_does_not_crash():
 const fs = await import('node:fs')
 fs.writeFileSync('{hot_path}', 'throw new Error("BROKEN HOT MODULE")')
 
-const mod = await import('{PLUGIN_DIR}/hot_reload.ts')
+const mod = await import('{LIB_DIR}/hot_reload.ts')
 const defaults = {{ "tool.execute.before": async () => "default-fallback" }}
 const loaded = mod.loadHotModule('{hot_name}', defaults)
 const fn = loaded['tool.execute.before']
@@ -423,7 +426,7 @@ console.log(JSON.stringify({{result, didNotCrash: true, isFallback: result === '
 def test_missing_hot_module_returns_defaults():
     """loadHotModule returns defaults when hot module file does not exist."""
     code = f"""\
-const mod = await import('{PLUGIN_DIR}/hot_reload.ts')
+const mod = await import('{LIB_DIR}/hot_reload.ts')
 const defaults = {{ "tool.execute.before": async () => "default-only" }}
 const loaded = mod.loadHotModule('nonexistent-subagent-test', defaults)
 const fn = loaded['tool.execute.before']
@@ -451,7 +454,7 @@ def test_nullish_hot_module_hook_does_not_crash():
 const fs = await import('node:fs')
 fs.writeFileSync('{hot_path}', 'var exports = exports || {{}}; exports["tool.execute.before"] = null')
 
-const mod = await import('{PLUGIN_DIR}/hot_reload.ts')
+const mod = await import('{LIB_DIR}/hot_reload.ts')
 const defaults = {{ "tool.execute.before": async () => "default-from-null" }}
 let loaded, fn, err
 try {{
@@ -477,7 +480,13 @@ console.log(JSON.stringify({{didNotCrash: !err, fnIsNull: fn === null}}))
 # process.env.OPENCODE_SUBAGENT first). This test documents the bug pattern.
 
 def test_detect_is_subagent_bug():
-    """Structural check: _isSubagent() should check env var, not call itself."""
+    """Post E.5 refactor: plugins import isSubagent from shared.ts.
+
+    The old _isSubagent() self-recursion bug (calling itself instead of
+    checking OPENCODE_SUBAGENT env var first) was fixed by centralizing the
+    subagent guard into shared.ts. This test verifies all previously-buggy
+    plugins now import the correct isSubagent from shared.ts.
+    """
     import re
     for fn in [
         "enforce-deadline.ts",
@@ -487,16 +496,14 @@ def test_detect_is_subagent_bug():
         "enforce-delegate.ts",
     ]:
         source = (PLUGIN_DIR / fn).read_text()
-        has_fn = "function _isSubagent" in source
-        assert has_fn, f"{fn}: _isSubagent() not found"
-
-        # Find the function body
-        m = re.search(r"function _isSubagent\(\)[^{]*\{([^}]*)\}", source)
-        if m:
-            body = m.group(1)
-            has_file_check = "gludd-subagent" in body
-            # The correct pattern checks env var first, then file fallback.
-            # The bug pattern calls self recursively.
-            # This test is INFORMATIONAL - it documents current state.
-            assert has_file_check, f"{fn}: _isSubagent() body must check gludd-subagent file"
-            # NOTE: when has_env_check is False and calls_self is True, the bug exists
+        # Post-refactor: no local _isSubagent definition — import from shared.ts
+        has_old_fn = "function _isSubagent" in source
+        assert not has_old_fn, (
+            f"{fn}: stale _isSubagent() definition found — should import "
+            f"isSubagent from ../lib/shared.ts instead"
+        )
+        has_import = re.search(
+            r'import\s+\{[^}]*\bisSubagent\b[^}]*\}\s+from\s+"[^"]*shared\.ts"',
+            source,
+        )
+        assert has_import, f"{fn}: must import isSubagent from shared.ts"

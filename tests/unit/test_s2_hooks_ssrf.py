@@ -98,6 +98,9 @@ class TestFollowRedirectsFalse:
         with patch(
             "general_ludd.events.hooks.httpx.AsyncClient",
             return_value=FakeClient(),
+        ), patch(
+            "general_ludd.events.hooks.resolve_and_pin",
+            return_value=None,
         ):
             hs.fire("job.complete", {"result": "ok"})
 

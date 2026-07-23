@@ -14,7 +14,7 @@ class TestCrossConversationStoreInit:
 
     def test_init_with_explicit_store(self) -> None:
         store = CrossConversationStore(store=None)
-        assert store._store is None
+        assert store.available is True
 
     def test_store_key_generation(self) -> None:
         result = CrossConversationStore._store_key(("ns1", "ns2"), "mykey")

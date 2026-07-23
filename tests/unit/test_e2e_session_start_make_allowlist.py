@@ -100,25 +100,25 @@ class TestPluginToolClassification:
     """enforce-session-start.ts must classify dispatch, read, and bash tools."""
 
     def test_has_is_dispatch_tool(self):
-        assert "function isDispatchTool" in _plugin_src()
+        assert "isDispatchTool" in _plugin_src(), "enforce-session-start.ts must import isDispatchTool from shared.ts"
 
     def test_has_is_read_tool(self):
-        assert "function isReadTool" in _plugin_src()
+        assert "isReadTool" in _plugin_src(), "enforce-session-start.ts must import isReadTool from shared.ts"
 
     def test_has_is_task_file_read(self):
         assert "function isTaskFileRead" in _plugin_src()
 
     def test_dispatch_tool_includes_task(self):
         src = _plugin_src()
-        assert 'tool === "task"' in src
+        assert 'isDispatchTool(tool)' in src
 
     def test_dispatch_tool_includes_agent(self):
         src = _plugin_src()
-        assert 'tool === "agent"' in src
+        assert 'isDispatchTool(tool)' in src
 
     def test_dispatch_tool_includes_workflow(self):
         src = _plugin_src()
-        assert 'tool === "workflow"' in src
+        assert 'isDispatchTool(tool)' in src
 
     def test_read_tool_includes_read(self):
         src = _plugin_src()
@@ -134,14 +134,15 @@ class TestPluginToolClassification:
 
     def test_bash_tool_is_not_read_nor_dispatch(self):
         """Bash tool is neither a read nor a dispatch tool — it needs its own
-        classification for make-target allowlisting."""
-        src = _plugin_src()
-        is_read_idx = src.find("function isReadTool")
-        is_dispatch_idx = src.find("function isDispatchTool")
-        assert is_read_idx > 0
-        assert is_dispatch_idx > 0
-        after_read = src[is_read_idx:is_read_idx + 200]
-        after_dispatch = src[is_dispatch_idx:is_dispatch_idx + 200]
+        classification for make-target allowlisting. Post E.5 refactor the
+        READ_TOOLS and DISPATCH_TOOLS sets live in shared.ts."""
+        shared_src = (ROOT / ".opencode" / "lib" / "shared.ts").read_text()
+        is_read_idx = shared_src.find("export function isReadTool")
+        is_dispatch_idx = shared_src.find("export function isDispatchTool")
+        assert is_read_idx > 0, "shared.ts must export isReadTool"
+        assert is_dispatch_idx > 0, "shared.ts must export isDispatchTool"
+        after_read = shared_src[is_read_idx:is_read_idx + 200]
+        after_dispatch = shared_src[is_dispatch_idx:is_dispatch_idx + 200]
         assert '"bash"' not in after_read, "bash should not be classified as read tool"
         assert '"bash"' not in after_dispatch, "bash should not be classified as dispatch tool"
 

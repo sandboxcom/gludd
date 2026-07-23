@@ -35,6 +35,7 @@ import sys
 import textwrap
 import traceback
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
@@ -64,8 +65,111 @@ _SKIP_REASON = (
     "DEEPSEEK_API_KEY not set and .deepseek.key not found — "
     "set DEEPSEEK_API_KEY or place key in .deepseek.key to run daemon game-building test"
 )
+_HAS_DEEPSEEK_PROVIDER = importlib.util.find_spec("langchain_openai") is not None
 
 _DS_BASE_URL = "https://api.deepseek.com/v1"
+_PROJECT_ID = "proj-game-e2e"
+_SNAKE_MODULE = '''```python
+import random
+
+
+class Snake:
+    def __init__(self, grid_w=20, grid_h=20):
+        self.grid_w = grid_w
+        self.grid_h = grid_h
+        self.state = "ready"
+        self.game_over = False
+        self.score = 0
+        self.direction = "right"
+        self.snake = [[grid_w // 2, grid_h // 2]]
+        self.food = []
+        self.spawn_food()
+
+    def start(self):
+        if self.state in ("ready", "menu"):
+            self.state = "playing"
+
+    def restart(self):
+        self.state = "ready"
+        self.game_over = False
+        self.score = 0
+        self.direction = "right"
+        self.snake = [[self.grid_w // 2, self.grid_h // 2]]
+        self.food = []
+        self.spawn_food()
+
+    def input(self, action):
+        opposites = {"up": "down", "down": "up", "left": "right", "right": "left"}
+        if action in opposites and opposites[action] != self.direction:
+            self.direction = action
+
+    def spawn_food(self):
+        cells = [
+            [x, y]
+            for y in range(self.grid_h)
+            for x in range(self.grid_w)
+            if [x, y] not in self.snake
+        ]
+        self.food = [random.choice(cells)] if cells else []
+
+    def tick(self):
+        if self.state != "playing" or self.game_over:
+            return not self.game_over
+        dx, dy = {
+            "right": (1, 0),
+            "left": (-1, 0),
+            "up": (0, -1),
+            "down": (0, 1),
+        }[self.direction]
+        head = [self.snake[0][0] + dx, self.snake[0][1] + dy]
+        if (
+            head[0] < 0 or head[0] >= self.grid_w
+            or head[1] < 0 or head[1] >= self.grid_h
+            or head in self.snake
+        ):
+            self.game_over = True
+            self.state = "game_over"
+            return False
+        self.snake.insert(0, head)
+        if self.food and head == self.food[0]:
+            self.score += 1
+            self.spawn_food()
+        else:
+            self.snake.pop()
+        return True
+
+    def render_state(self):
+        return {
+            "grid_w": self.grid_w,
+            "grid_h": self.grid_h,
+            "snake": [list(p) for p in self.snake],
+            "food": [list(p) for p in self.food],
+            "score": self.score,
+            "game_over": self.game_over,
+            "length": len(self.snake),
+        }
+```'''
+
+
+def _project_manager_stub() -> SimpleNamespace:
+    return SimpleNamespace(
+        select_project=lambda: SimpleNamespace(project_id=_PROJECT_ID)
+    )
+
+
+class _FakeDeepSeekGateway:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+
+    def call_model(self, profile_id: str, messages: list[dict[str, str]], **kwargs: Any) -> Any:
+        from general_ludd.models.gateway import ModelResponse
+
+        self.calls.append({"profile_id": profile_id, "messages": messages, "kwargs": kwargs})
+        return ModelResponse(
+            content=_SNAKE_MODULE,
+            usage_metadata={"input_tokens": 100, "output_tokens": 300},
+            model_name="fake-deepseek-chat",
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -73,6 +177,9 @@ _DS_BASE_URL = "https://api.deepseek.com/v1"
 # ---------------------------------------------------------------------------
 
 def _build_deepseek_gateway() -> Any:
+    if not DEEPSEEK_KEY or not _HAS_DEEPSEEK_PROVIDER:
+        return _FakeDeepSeekGateway()
+
     from general_ludd.models.gateway import ModelGateway, ModelProfile
     from general_ludd.models.provider_registry import ProviderRegistry
     from general_ludd.secrets.env import EnvSecretsManager
@@ -606,7 +713,6 @@ def _verify_snake_features(mod: Any) -> list[str]:
 # Tests
 # ---------------------------------------------------------------------------
 
-@pytest.mark.skipif(not DEEPSEEK_KEY, reason=_SKIP_REASON)
 class TestDaemonGameBuilding:
     """Full daemon pipeline: claim → dispatch → execute → verify."""
 
@@ -661,6 +767,7 @@ class TestDaemonGameBuilding:
             model_gateway=gateway,
             runner=runner,
             prompt_registry=prompt_registry,
+            project_manager=_project_manager_stub(),
         )
         loop._session_factory = session_factory
         loop._total_ticks = 1
@@ -681,6 +788,7 @@ class TestDaemonGameBuilding:
                 "model_profile": "deepseek_coder",
                 "prompt_profile": "snake_build.md.j2",
                 "created_by": "test",
+                "project_id": _PROJECT_ID,
             })
             await session.commit()
             todo_id = todo_row.todo_id
@@ -938,7 +1046,8 @@ class TestDaemonGameBuilding:
         prompt_registry.register("snake_build.md.j2", SNAKE_PROMPT)
 
         loop = EventLoop(session=None, model_gateway=gateway, runner=runner,
-                         prompt_registry=prompt_registry)
+                         prompt_registry=prompt_registry,
+                         project_manager=_project_manager_stub())
         loop._session_factory = session_factory
         loop._total_ticks = 1
         loop._tick_state = {}
@@ -955,6 +1064,7 @@ class TestDaemonGameBuilding:
                 "model_profile": "deepseek_coder",
                 "prompt_profile": "snake_build.md.j2",
                 "created_by": "test",
+                "project_id": _PROJECT_ID,
             })
             await session.commit()
             todo_id = todo_row.todo_id
@@ -1031,6 +1141,7 @@ class TestDaemonGameBuilding:
             prompt_registry=prompt_registry,
             self_improve_interval=1,
             daemon_state={},
+            project_manager=_project_manager_stub(),
         )
         loop._session_factory = session_factory
         loop._total_ticks = 1
@@ -1048,6 +1159,7 @@ class TestDaemonGameBuilding:
                 "model_profile": "deepseek_coder",
                 "prompt_profile": "snake_build.md.j2",
                 "created_by": "test",
+                "project_id": _PROJECT_ID,
             })
             await session.commit()
 

@@ -14,7 +14,7 @@ boundary — do not blur it:
   ``StrictUndefined`` and an empty global namespace (no ``lookup``/``range``/
   plugin surface), and every variable value is marked Ansible-unsafe so a
   payload smuggled in via a *variable value* renders literally instead of being
-  re-evaluated. It fails CLOSED: any ``SecurityError`` / undefined / syntax
+  re-evaluated. It fails CLOSED: any ``SecurityError`` / syntax
   error raises :class:`TemplateRenderError` rather than leaking a traceback.
 
 The network-exposed ``POST /admin/ansible/render`` endpoint MUST use the
@@ -62,7 +62,7 @@ class AnsibleTemplater:
         - Every variable value is wrapped Ansible-unsafe so a payload smuggled
           through a *value* (e.g. ``{"x": "{{ 7*7 }}"}``) is emitted literally.
         """
-        from jinja2 import StrictUndefined
+        from jinja2 import meta
         from jinja2.exceptions import SecurityError, TemplateError
         from jinja2.sandbox import SandboxedEnvironment
 
@@ -72,12 +72,16 @@ class AnsibleTemplater:
         # a literal string, never be re-evaluated.
         safe_vars = {k: wrap_unsafe(v) for k, v in merged.items()}
 
-        env = SandboxedEnvironment(undefined=StrictUndefined, autoescape=False)
+        env = SandboxedEnvironment(autoescape=False)
         # Strip the global namespace so range/dict/lipsum/cycler and any other
         # callable cannot be reached from inside the template.
         env.globals.clear()
 
         try:
+            parsed = env.parse(template)
+            missing = meta.find_undeclared_variables(parsed) - set(safe_vars)
+            if missing:
+                raise TemplateRenderError("template rejected: UndefinedError")
             compiled = env.from_string(template)
             return compiled.render(safe_vars)
         except SecurityError as exc:

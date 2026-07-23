@@ -1,0 +1,19 @@
+---
+galaxy_info:
+  role_name: trace_evidence_examiner
+  author: Agentic Harness Agent
+  description: >
+    Examine and compare trace evidence samples against reference data.
+    Supports fiber, hair, glass, paint, soil, GSR, toolmark, footwear,
+    and tire impression analysis. Outputs JSON verdict with findings,
+    match result, and confidence level.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

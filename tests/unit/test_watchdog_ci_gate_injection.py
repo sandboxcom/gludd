@@ -68,60 +68,79 @@ def _setup_ci_gate_test(monkeypatch, tmp_path: Path, tasks_clean=True, ratchet_e
     monkeypatch.setattr(aw, "GATE_PID_FILE", tmp_path / "gate-pid-nonexistent")
     monkeypatch.setattr(aw, "_TASKS_MD", tmp_path / "TASKS.md")
     monkeypatch.setattr(aw, "_RATCHET_YML", tmp_path / "ratchet.yml")
+
     monkeypatch.setattr(aw, "_GATE_STATUS", tmp_path / ".gate-status")
+    monkeypatch.setattr(aw, "_CI_STATUS", tmp_path / ".ci-status")
     monkeypatch.setattr(aw, "_CHECK_COOLDOWN_FILE", str(tmp_path / "check-cooldowns.json"))
     monkeypatch.setattr(aw, "HEARTBEAT_FILE", str(tmp_path / "heartbeat.json"))
     monkeypatch.setattr(aw, "ORCHESTRATOR_STATE_FILE", str(tmp_path / "orchestrator.json"))
     monkeypatch.setattr(aw, "HEALTH_SCORE_FILE", str(tmp_path / "health.json"))
     monkeypatch.setattr(aw, "PUSH_LOOP_FILE", str(tmp_path / "push-ts.json"))
     monkeypatch.setattr(aw, "DISENGAGE_FILE", str(tmp_path / "disengage.json"))
-    monkeypatch.setattr(aw, "_should_run_check", lambda name, cooldown_secs=aw._CHECK_COOLDOWN_SECS: True)
+    monkeypatch.setattr(aw, "_should_run_check", lambda name, cooldown_secs=aw._CHECK_COOLDOWN_SECS: False)
+    monkeypatch.setattr(aw, "_check_ci_stall", lambda: None)
+    monkeypatch.setattr(aw, "_check_push_health", lambda: None)
+    monkeypatch.setattr(aw, "check_task_timings", lambda: None)
+    monkeypatch.setattr(aw, "_check_timing_anomalies", lambda: [])
+    monkeypatch.setattr(aw, "_detect_stalled_push", lambda: None)
+    monkeypatch.setattr(aw, "_detect_ci_loop", lambda: False)
+    monkeypatch.setattr(aw, "_detect_ci_true_stall", lambda: False)
+    monkeypatch.setattr(aw, "_check_under_floor_dispatch", lambda: None)
+    monkeypatch.setattr(aw, "_check_ci_red_after_tag_push", lambda: None)
+    monkeypatch.setattr(aw, "_check_release_completeness", lambda: None)
+    monkeypatch.setattr(aw, "_check_secrets_committed", lambda: None)
+    monkeypatch.setattr(aw, "_check_stale_release", lambda: None)
+
 
     # Write clean local state
     if tasks_clean:
-        (tmp_path / "TASKS.md").write_text("- [x] all done\n")
+        (tmp_path / "TASKS.md").write_text("- [x] all done" + chr(10))
     else:
-        (tmp_path / "TASKS.md").write_text("- [ ] pending task\n")
+        (tmp_path / "TASKS.md").write_text("- [ ] pending task" + chr(10))
 
     if ratchet_empty:
-        (tmp_path / "ratchet.yml").write_text("# empty\n")
+        (tmp_path / "ratchet.yml").write_text("# empty" + chr(10))
     else:
-        (tmp_path / "ratchet.yml").write_text("entry: value\n")
+        (tmp_path / "ratchet.yml").write_text("entry: value" + chr(10))
 
     (tmp_path / "todos.json").write_text("[]")
-    (tmp_path / "stop-count.json").write_text('{"count":0}')
+    (tmp_path / "stop-count.json").write_text("{\"count\":0}")
     (tmp_path / "push-flag-nonexistent").write_text("")
     (tmp_path / "tasks-dir-nonexistent").mkdir(parents=True, exist_ok=True)
 
+# ── Test 1: CI pending + gate clean → watchdog writes CI status ───────────────
 
-# ── Test 1: CI pending + gate clean → watchdog writes CI FAIL ─────────────────
-
-def test_ci_pending_sets_gate_red(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    """When CI is pending and .gate-status is clean (no FAIL), the watchdog
-    writes a FAIL entry containing the CI run ID."""
+def test_ci_pending_sets_ci_status_without_rewriting_gate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """When CI is pending and .gate-status is clean, the watchdog writes
+    .ci-status with the CI run ID and leaves local gate evidence intact."""
     _setup_ci_gate_test(monkeypatch, tmp_path)
 
     streak_path = tmp_path / "streak.json"
-    streak_path.write_text('{"count": 0, "last_tool": "write"}')
+    streak_path.write_text("{\"count\": 0, \"last_tool\": \"write\"}")
     streak_path.touch()
 
     gate_status = tmp_path / ".gate-status"
-    # Gate is clean — no FAIL lines
-    gate_status.write_text("lint PASS 0\ntypecheck PASS 0\ncollect PASS 0\n=== GATE: PASSED ===\n")
+    original_gate = chr(10).join([
+        "lint PASS 0",
+        "typecheck PASS 0",
+        "collect PASS 0",
+        "=== GATE: PASSED ===",
+        "",
+    ])
+    gate_status.write_text(original_gate)
 
     monkeypatch.setattr(aw, "_ci_is_pending_or_red", lambda: (True, "424242"))
 
-    # Watchdog writes activity so mtime age is computed from activity file
     activity_path = tmp_path / "watchdog-activity.json"
     activity_path.write_text(json.dumps({"last_activity_ts": time.time()}))
     monkeypatch.setattr(aw, "WATCHDOG_ACTIVITY_FILE", str(activity_path))
 
     check_and_reset()
 
-    assert gate_status.exists()
-    content = gate_status.read_text()
-    assert "FAIL" in content, f"Expected FAIL in gate-status, got: {content!r}"
-    assert "424242" in content, f"Expected run ID 424242 in gate-status, got: {content!r}"
+    assert gate_status.read_text() == original_gate
+    ci_content = (tmp_path / ".ci-status").read_text()
+    assert "CI FAIL pending" in ci_content, f"Expected CI FAIL in ci-status, got: {ci_content!r}"
+    assert "424242" in ci_content, f"Expected run ID 424242 in ci-status, got: {ci_content!r}"
 
 
 # ── Test 2: CI green → no modification to .gate-status ────────────────────────
@@ -191,33 +210,27 @@ def test_gate_already_red_not_overwritten(tmp_path: Path, monkeypatch: pytest.Mo
     )
 
 
-# ── Test 4: _has_pending_work() includes CI state ─────────────────────────────
+
+# ── Test 4: _has_pending_work() tracks local gate state ───────────────────────
 
 def test_has_pending_work_includes_ci(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    """_pending_work_exists() returns True when CI is pending, even if
-    tasks/ratchet/gate are all clean."""
+    """_pending_work_exists checks local state; CI is handled by check_and_reset."""
     monkeypatch.setattr(aw, "_TASKS_MD", tmp_path / "TASKS.md")
     monkeypatch.setattr(aw, "_RATCHET_YML", tmp_path / "ratchet.yml")
     monkeypatch.setattr(aw, "_GATE_STATUS", tmp_path / ".gate-status")
 
-    (tmp_path / "TASKS.md").write_text("- [x] all done\n")
-    (tmp_path / "ratchet.yml").write_text("# empty\n")
-    (tmp_path / ".gate-status").write_text("lint PASS 0\ntypecheck PASS 0\n")
+    (tmp_path / "TASKS.md").write_text("- [x] all done" + chr(10))
+    (tmp_path / "ratchet.yml").write_text("# empty" + chr(10))
+    (tmp_path / ".gate-status").write_text(chr(10).join(["lint PASS 0", "typecheck PASS 0", ""]))
 
-    # _pending_work_exists only checks local state — CI is checked separately
-    # in check_and_reset. Verify that when all local is clean, it returns False.
     assert _pending_work_exists() is False, (
-        "_pending_work_exists() should be False when local is clean "
-        "(CI is handled separately)"
+        "_pending_work_exists() should be False when local state is clean"
     )
-
-    # Now verify that the _gate_status_is_red helper works correctly
     assert _gate_status_is_red() is False, (
         "_gate_status_is_red() should be False when gate is clean"
     )
 
-    # Add a FAIL line and verify it returns True
-    (tmp_path / ".gate-status").write_text("lint PASS 0\ntypecheck FAIL 2\n")
+    (tmp_path / ".gate-status").write_text(chr(10).join(["lint PASS 0", "typecheck FAIL 2", ""]))
     assert _gate_status_is_red() is True, (
         "_gate_status_is_red() should be True when gate has FAIL line"
     )
@@ -226,19 +239,19 @@ def test_has_pending_work_includes_ci(tmp_path: Path, monkeypatch: pytest.Monkey
     )
 
 
-# ── Test 5: Heartbeat reflects CI-injected gate status ────────────────────────
+# ── Test 5: Heartbeat reflects CI-status injection ───────────────────────────
 
 def test_heartbeat_reflects_ci_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    """After CI injection, the heartbeat JSON includes gate_status_red: true
-    and ci_pending_or_red: true with the run ID."""
+    """After CI injection, heartbeat JSON records CI pending/red and keeps
+    gate_status_red false because local gate evidence was not overwritten."""
     _setup_ci_gate_test(monkeypatch, tmp_path)
 
     streak_path = tmp_path / "streak.json"
-    streak_path.write_text('{"count": 0, "last_tool": "write"}')
+    streak_path.write_text("{\"count\": 0, \"last_tool\": \"write\"}")
     streak_path.touch()
 
     gate_status = tmp_path / ".gate-status"
-    gate_status.write_text("lint PASS 0\ntypecheck PASS 0\n=== GATE: PASSED ===\n")
+    gate_status.write_text(chr(10).join(["lint PASS 0", "typecheck PASS 0", "=== GATE: PASSED ===", ""]))
 
     monkeypatch.setattr(aw, "_ci_is_pending_or_red", lambda: (True, "424242"))
 
@@ -252,19 +265,20 @@ def test_heartbeat_reflects_ci_state(tmp_path: Path, monkeypatch: pytest.MonkeyP
     assert heartbeat_path.exists(), "Heartbeat file should be written"
     heartbeat = json.loads(heartbeat_path.read_text())
 
-    assert heartbeat["gate_status_red"] is True, (
-        f"gate_status_red should be True after CI injection, got: {heartbeat}"
+    assert heartbeat["gate_status_red"] is False, (
+        f"gate_status_red should stay False when only CI is pending, got: {heartbeat}"
     )
     assert heartbeat["ci_pending_or_red"] is True, (
         f"ci_pending_or_red should be True, got: {heartbeat}"
     )
-    assert heartbeat["ci_run_id"] == "424242", (
-        f"ci_run_id should be '424242', got: {heartbeat['ci_run_id']!r}"
+
+    actual_ci_run_id = heartbeat["ci_run_id"]
+    assert actual_ci_run_id == "424242", (
+        f"ci_run_id should be 424242, got: {actual_ci_run_id!r}"
     )
     assert heartbeat["has_pending_work"] is True, (
         f"has_pending_work should be True after CI injection, got: {heartbeat}"
     )
-
 
 # ── Test 6: CI "pending" with NO run ID (unpushed commit) → do NOT inject ─────
 

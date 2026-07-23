@@ -611,7 +611,7 @@ def recommend_config(
     if engine not in ("vllm", "llamacpp"):
         raise ValueError(f"unsupported engine {engine!r}")
 
-    if workload_type is not None and workload_type not in WorkloadType:
+    if workload_type is not None and not isinstance(workload_type, WorkloadType):
         raise ValueError(f"unknown workload_type {workload_type!r}")
 
     d = _RecommendDefaults()

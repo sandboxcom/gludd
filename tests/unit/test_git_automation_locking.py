@@ -104,6 +104,13 @@ class TestFileLock:
                     assert locking._file_lock_depth.get(key) == 2
             assert locking._file_lock_depth.get(key, 0) == 0
 
+    def test_missing_git_dir_during_open_uses_inprocess_only(self) -> None:
+        key = "missing-during-open"
+        locking._file_lock_depth.pop(key, None)
+        with patch.object(locking.os, "open", side_effect=FileNotFoundError), \
+                locking._file_lock("/tmp/gludd-missing-git-dir", key, timeout=1.0, stale_after=60.0):
+            assert locking._file_lock_depth.get(key, 0) == 0
+
     def test_times_out_on_contended_lock(self) -> None:
         if not locking._HAVE_FCNTL:
             pytest.skip("fcntl not available on this platform")
@@ -153,8 +160,17 @@ class TestAsyncGitRepoLock:
     @pytest.mark.asyncio
     async def test_returns_context_manager(self) -> None:
         cm = await locking.async_git_repo_lock(".", timeout=1.0, stale_after=60.0)
-        assert hasattr(cm, "__enter__")
-        assert hasattr(cm, "__exit__")
+        try:
+            assert hasattr(cm, "__enter__")
+            assert hasattr(cm, "__exit__")
+        finally:
+            cm.__exit__(None, None, None)
+
+    @pytest.mark.asyncio
+    async def test_context_manager_releases_on_executor_thread(self) -> None:
+        cm = await locking.async_git_repo_lock(".", timeout=1.0, stale_after=60.0)
+        with cm:
+            pass
 
 
 class TestModuleExports:
