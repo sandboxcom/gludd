@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import cast
 
 import yaml
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from general_ludd.security.permissions import (
@@ -364,47 +364,45 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         events = audit.query(agent_id=agent_id, since=since, capability=capability)
         return {"events": events}
 
-    @app.get("/admin/perm/spec/{agent_type}")
-    async def admin_perm_spec_get(agent_type: str) -> object:
-        import yaml
-
-        from general_ludd.security.permissions import default_spec
-        perms = _perms_dir(app)
-        path = perms / f"{agent_type}.yml"
-        if not path.exists():
-            spec = default_spec(agent_type)
-            spec_yaml = yaml.safe_dump(
-                {
-                    "version": spec.version,
-                    "agent_type": spec.agent_type,
-                    "parent_agent_id": spec.parent_agent_id,
-                    "max_sts_ttl_seconds": spec.max_sts_ttl_seconds,
-                    "max_subagent_permissions": spec.max_subagent_permissions,
-                    "capabilities": [
-                        {
-                            "resource": c.resource,
-                            "actions": list(c.actions),
-                            "constraints": dict(c.constraints),
-                        }
-                        for c in spec.capabilities
-                    ],
-                    "denied": [
-                        {
-                            "resource": c.resource,
-                            "actions": list(c.actions),
-                            "constraints": dict(c.constraints),
-                        }
-                        for c in spec.denied
-                    ],
-                },
-                sort_keys=False,
-            )
+    @app.api_route("/admin/perm/spec/{agent_type}", methods=["GET", "PUT"])
+    async def admin_perm_spec(agent_type: str, request: Request) -> object:
+        if request.method == "GET":
+            from general_ludd.security.permissions import default_spec
+            perms = _perms_dir(app)
+            path = perms / f"{agent_type}.yml"
+            if not path.exists():
+                spec = default_spec(agent_type)
+                spec_yaml = yaml.safe_dump(
+                    {
+                        "version": spec.version,
+                        "agent_type": spec.agent_type,
+                        "parent_agent_id": spec.parent_agent_id,
+                        "max_sts_ttl_seconds": spec.max_sts_ttl_seconds,
+                        "max_subagent_permissions": spec.max_subagent_permissions,
+                        "capabilities": [
+                            {
+                                "resource": c.resource,
+                                "actions": list(c.actions),
+                                "constraints": dict(c.constraints),
+                            }
+                            for c in spec.capabilities
+                        ],
+                        "denied": [
+                            {
+                                "resource": c.resource,
+                                "actions": list(c.actions),
+                                "constraints": dict(c.constraints),
+                            }
+                            for c in spec.denied
+                        ],
+                    },
+                    sort_keys=False,
+                )
+                return {"agent_type": agent_type, "spec_yaml": spec_yaml}
+            spec_yaml = path.read_text()
             return {"agent_type": agent_type, "spec_yaml": spec_yaml}
-        spec_yaml = path.read_text()
-        return {"agent_type": agent_type, "spec_yaml": spec_yaml}
 
-    @app.put("/admin/perm/spec/{agent_type}")
-    async def admin_perm_spec_put(agent_type: str, req: dict[str, object]) -> object:
+        req = await request.json()
         spec_yaml = cast(str, req.get("spec_yaml"))
         if not spec_yaml:
             return JSONResponse(status_code=400, content={"error": "spec_yaml is required"})

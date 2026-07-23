@@ -18,7 +18,8 @@ import collections
 import logging
 from typing import cast
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -86,34 +87,40 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
 
     messages = cast(collections.deque[dict[str, object]], _daemon_state["messages"])
 
-    @app.post("/api/messages", status_code=201)
-    async def api_send_message(req: SendMessageRequest) -> dict[str, object]:
-        data = req.model_dump()
-        factory = _get_session_factory(app)
-        if factory is not None:
-            async with factory() as session:
-                repo = AgentMessageRepository(session)
-                row = await repo.send(data)
-                await session.commit()
-                return _msg_to_dict(row)
-        # Degraded fallback: in-memory.
-        import uuid
-        from datetime import UTC, datetime
-
-        mem = dict(data)
-        mem["id"] = f"MSG-{uuid.uuid4().hex[:12].upper()}"
-        mem["created_at"] = datetime.now(UTC)
-        mem["read_at"] = None
-        messages.append(mem)
-        return {**mem, "created_at": str(mem["created_at"]), "read_at": None}
-
-    @app.get("/api/messages")
-    async def api_inbox(
-        recipient: str,
+    @app.api_route("/api/messages", methods=["GET", "POST"])
+    async def api_messages(
+        request: Request,
+        recipient: str | None = None,
         unread: bool = True,
         include_broadcast: bool = True,
         project_id: str | None = None,
-    ) -> dict[str, object]:
+    ) -> object:
+        if request.method == "POST":
+            payload = await request.json()
+            req = SendMessageRequest.model_validate(payload)
+            data = req.model_dump()
+            factory = _get_session_factory(app)
+            if factory is not None:
+                async with factory() as session:
+                    repo = AgentMessageRepository(session)
+                    row = await repo.send(data)
+                    await session.commit()
+                    return JSONResponse(status_code=201, content=_msg_to_dict(row))
+            import uuid
+            from datetime import UTC, datetime
+
+            mem = dict(data)
+            mem["id"] = f"MSG-{uuid.uuid4().hex[:12].upper()}"
+            mem["created_at"] = datetime.now(UTC)
+            mem["read_at"] = None
+            messages.append(mem)
+            return JSONResponse(
+                status_code=201,
+                content={**mem, "created_at": str(mem["created_at"]), "read_at": None},
+            )
+
+        if recipient is None:
+            raise HTTPException(status_code=422, detail="recipient is required")
         factory = _get_session_factory(app)
         if factory is not None:
             async with factory() as session:
@@ -126,16 +133,12 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                 )
                 results = [_msg_to_dict(m) for m in msgs]
                 return {"messages": results, "count": len(results), "recipient": recipient}
-        # Degraded fallback: in-memory.
         results = []
         for m in messages:
             target = m.get("recipient")
             if target == recipient or (include_broadcast and target == "broadcast"):
                 if unread and m.get("read_at") is not None:
                     continue
-                # Tenant isolation: mirror the primary path's project scoping
-                # (repo.inbox(project_id=...)). Without this the degraded
-                # in-memory fallback would leak messages across projects.
                 if project_id is not None and m.get("project_id") != project_id:
                     continue
                 results.append({**m, "created_at": str(m.get("created_at"))})

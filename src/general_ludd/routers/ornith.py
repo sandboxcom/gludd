@@ -33,7 +33,7 @@ import os
 from datetime import UTC, datetime
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -68,6 +68,10 @@ class RecordPairRequest(BaseModel):
 class SetOutcomeRequest(BaseModel):
     status: str
     details: dict[str, object] = Field(default_factory=dict)
+
+
+class OrnithConfigUpdateRequest(BaseModel):
+    model_sha: str | None = None
 
 
 def _pair_to_dict(row: OrnithTrainingPairModel) -> dict[str, object]:
@@ -301,8 +305,15 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         history = getattr(app.state, "_ornith_history", [])
         return {"cycles": history[:max(1, min(limit, 100))], "count": len(history[:limit])}
 
-    @app.get("/admin/ornith/config")
-    async def api_ornith_config_get() -> dict[str, object]:
+    @app.api_route("/admin/ornith/config", methods=["GET", "PUT"])
+    async def api_ornith_config(request: Request) -> dict[str, object]:
+        if request.method == "PUT":
+            payload = await request.json()
+            req = OrnithConfigUpdateRequest.model_validate(payload)
+            if req.model_sha is not None:
+                status = getattr(app.state, "_ornith_status", {})
+                status["model_sha"] = req.model_sha
+                app.state._ornith_status = status
         status = getattr(app.state, "_ornith_status", {})
         return {
             "ornith_enabled": bool(getattr(app.state, "_ornith_mcp_proc", None)),
@@ -310,14 +321,3 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             "binary_path": status.get("binary_path", "ornith"),
             "env_ornith_enabled": os.environ.get("ORNITH_ENABLED", "").lower() in {"1", "true", "yes"},
         }
-
-    class OrnithConfigUpdateRequest(BaseModel):
-        model_sha: str | None = None
-
-    @app.put("/admin/ornith/config")
-    async def api_ornith_config_update(req: OrnithConfigUpdateRequest) -> dict[str, object]:
-        if req.model_sha is not None:
-            status = getattr(app.state, "_ornith_status", {})
-            status["model_sha"] = req.model_sha
-            app.state._ornith_status = status
-        return await api_ornith_config_get()

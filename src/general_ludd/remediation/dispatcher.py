@@ -220,11 +220,7 @@ class RemediationDispatcher:
                 "work_type": blocked.task_type or "unknown",
                 "priority": 0,
                 "project_id": blocked.project_id,
-                "parent_todo_id": (
-                    blocked.todo_id
-                    if not blocked.todo_id.startswith("HTODO:")
-                    else None
-                ),
+                "parent_todo_id": None,
                 "status": TodoStatus.QUEUED.value,
             }
         await self._todo_repo.create(todo_data)
@@ -242,6 +238,13 @@ class RemediationDispatcher:
         delay = timedelta(hours=self.config.retry_delay_hours)
         fire_at = self._clock() + delay
         new_id = _new_scheduled_todo_id()
+        parent_id = None
+        try:
+            parent = await self._todo_repo.get_by_id(blocked.todo_id)
+        except Exception:
+            parent = None
+        if parent is not None:
+            parent_id = blocked.todo_id
         todo_data = {
             "todo_id": new_id,
             "title": f"Retry: {blocked.blocker_summary[:120]}",
@@ -253,12 +256,11 @@ class RemediationDispatcher:
             "queue": "core",
             "work_type": blocked.task_type or "unknown",
             "project_id": blocked.project_id,
-            "parent_todo_id": blocked.todo_id,
+            "parent_todo_id": parent_id,
             "status": TodoStatus.SCHEDULED.value,
             "scheduled_at": fire_at,
         }
-        # Prefer the scheduler's helper if present; otherwise the repo create
-        # is enough — the event-loop TodoScheduler promotes SCHEDULED→QUEUED.
+        # Prefer the scheduler helper when present; otherwise the repo create is enough.
         if self._scheduler is not None and hasattr(self._scheduler, "schedule_one_shot"):
             await self._scheduler.schedule_one_shot(todo_data, fire_at)
         else:
@@ -289,9 +291,14 @@ class RemediationDispatcher:
             if blocked.blocker_kind == "permission_escalation"
             else "blocker"
         )
-        parent_id = (
-            blocked.todo_id if not blocked.todo_id.startswith("HTODO:") else None
-        )
+        parent_id = None
+        if not blocked.todo_id.startswith("HTODO:"):
+            try:
+                parent = await self._todo_repo.get_by_id(blocked.todo_id)
+            except Exception:
+                parent = None
+            if parent is not None:
+                parent_id = blocked.todo_id
         ht = await self._human_todo_repo.create(
             agent_id="remediation-system",
             title=f"[remediation] Escalation: {blocked.blocker_summary[:200]}",

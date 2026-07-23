@@ -19,9 +19,14 @@ class RunRecorder:
 
     def __init__(self, store: FileStore | None = None) -> None:
         self._store = store if store is not None else FileStore(root_path=".gludd/replays")
+        self._started_runs: set[str] = set()
 
     def record(self, run_id: str, event: dict[str, Any]) -> None:
         events_dir = f"runs/{run_id}/events"
+        if run_id not in self._started_runs:
+            if self._store.exists(events_dir):
+                self._store.remove(events_dir)
+            self._started_runs.add(run_id)
         seq = self._next_seq(events_dir)
         path = f"{events_dir}/{seq}.json"
         self._store.write_text(path, json.dumps(event))
