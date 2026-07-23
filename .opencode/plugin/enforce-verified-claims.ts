@@ -4,12 +4,12 @@ import type { Plugin } from "@opencode-ai/plugin"
 import type { HotModule } from "../lib/hot_reload.ts"
 import { loadHotModule } from "../lib/hot_reload.ts"
 import { isSubagent, reportAlive } from "../lib/shared.ts"
-export const DONE_WORDS = [
+const DONE_WORDS = [
   "landed", "committed", "pushed", "fixed", "passing",
   "shipped", "done", "complete", "green", "resolved",
   "deployed", "verified", "passed", "working",
 ] as const
-export const EVIDENCE_PATTERNS = [
+const EVIDENCE_PATTERNS = [
   /\b[0-9a-f]*[a-f][0-9a-f]{6,39}\b/,
   /VERIFIED\s+\w+@/,
   /CI\s+(GREEN|RED|PENDING)/,
@@ -19,16 +19,16 @@ export const EVIDENCE_PATTERNS = [
   /All checks passed/,
   /Success: no issues found/,
 ] as const
-export const NOT_DONE_PHRASES = [
+const NOT_DONE_PHRASES = [
   /\bworking\s+on\b/,
 ] as const
-export const BLOCK_MESSAGE = [
+const BLOCK_MESSAGE = [
   "BLOCKED: response contains done-claims without verification evidence.",
   "Run make git-status, make git-log, make ci-verdict-safe, or make test-iso",
   "and paste the output before claiming work is done.",
   "See AGENTS.md 'Evidence-Based Response Policy' and 'Done Claims Require Observable Verification Evidence'.",
 ].join("\n")
-export const shouldBlock = (text: string): boolean => {
+const shouldBlock = (text: string): boolean => {
   if (!text || text.trim().length === 0) return false
   let lower = text.toLowerCase()
   for (const phrase of NOT_DONE_PHRASES) {

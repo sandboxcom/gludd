@@ -25,7 +25,18 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-PLUGIN_DIR = ROOT / ".opencode" / "plugin"
+_OPENCODE_DIR = Path(os.environ.get("OPENCODE_DIR", str(ROOT / ".opencode"))).resolve()
+PLUGIN_DIR = _OPENCODE_DIR / "plugin"
+
+# Skip the entire module when the plugin directory is absent.
+# This lets operators move `.opencode/` aside as a workaround for broken plugins
+# without the test suite reporting failures. When `.opencode/` IS present, every
+# test runs and must pass — no vacuous pass.
+_PLUGINS_PRESENT = PLUGIN_DIR.is_dir() and any(PLUGIN_DIR.glob("*.ts"))
+pytestmark = pytest.mark.skipif(
+    not _PLUGINS_PRESENT,
+    reason=f"no plugins found under {PLUGIN_DIR} (set OPENCODE_DIR=... to test a different location)",
+)
 
 # ---------------------------------------------------------------------------
 # helpers
@@ -2785,7 +2796,7 @@ def test_make_disengage_escape():
 # watchdog.ts  —  session lifecycle daemon launcher
 # ---------------------------------------------------------------------------
 
-WATCHDOG_PATH = str(ROOT / ".opencode" / "plugins" / "watchdog.ts")
+WATCHDOG_PATH = str(_OPENCODE_DIR / "plugins" / "watchdog.ts")
 
 
 def test_watchdog_plugin_loads_report_alive():

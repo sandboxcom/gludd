@@ -5,29 +5,29 @@
 import type { Plugin } from "@opencode-ai/plugin";
 import { loadHotModule, type HotModule } from "../lib/hot_reload.ts";
 import { isSubagent, reportAlive } from "../lib/shared.ts";
-export const SUPPRESSION_PATTERNS: RegExp[] = [
+const SUPPRESSION_PATTERNS: RegExp[] = [
   /#\s*noqa/,
   /#\s*type:\s*ignore/,
   /#\s*pylint:/,
   /#\s*fmt:\s*(?:off|skip|on)/,
   /#\s*isort:\s*skip/,
 ];
-export const ALLOWLIST_PATHS: string[] = [
+const ALLOWLIST_PATHS: string[] = [
   "src/general_ludd/security/fix_not_disable.py",
   "tests/unit/test_type_safety_guardrails.py",
 ];
-export const DENY_MESSAGE =
+const DENY_MESSAGE =
   "Lint-suppression comments forbidden. Fix the underlying issue. " +
   "See AGENTS.md Guardrail Integrity Policy.";
-export function isSuppressionComment(text: string): boolean {
+function isSuppressionComment(text: string): boolean {
   if (typeof text !== "string" || text.length === 0) return false;
   return SUPPRESSION_PATTERNS.some(re => re.test(text));
 }
-export function isAllowlistedPath(filePath: string): boolean {
+function isAllowlistedPath(filePath: string): boolean {
   if (typeof filePath !== "string" || filePath.length === 0) return false;
   return ALLOWLIST_PATHS.some(allowed => filePath.includes(allowed));
 }
-export function shouldAllowEdit(
+function shouldAllowEdit(
   filePath: string,
   content: string,
 ): { allow: boolean; reason?: string } {

@@ -4,7 +4,7 @@ import type { Plugin } from "@opencode-ai/plugin"
 import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
 import { isSubagent, reportAlive, isDisengaged } from "../lib/shared.ts"
 const ENFORCE = process.env.GLUDD_DEPTH_ENFORCE !== "0"
-export const MAX_DEPTH = parseInt(process.env.GLUDD_MAX_DEPTH || "3", 10)
+const MAX_DEPTH = parseInt(process.env.GLUDD_MAX_DEPTH || "3", 10)
 function currentDepth(): number {
   return parseInt(process.env.OPENCODE_DEPTH || "0", 10)
 }
@@ -12,7 +12,7 @@ function isDispatchTool(tool: string): boolean {
   const lt = tool.toLowerCase()
   return lt === "task" || lt === "agent" || lt === "workflow"
 }
-export const defaultImpl: HotModule = {
+const defaultImpl: HotModule = {
   "tool.execute.before": async (input: { tool?: string }) => {
     if (isSubagent()) return
     reportAlive("enforce-depth")

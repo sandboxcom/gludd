@@ -11,7 +11,7 @@ const nodeRequire = typeof require === "function" ? require : createRequire(impo
 function execSync(...args: any[]): Buffer {
   return nodeRequire("node:child_" + "process").execSync(...args);
 }
-export const WORKTREE_BLOCKED_PATTERNS = [
+const WORKTREE_BLOCKED_PATTERNS = [
   /\bmake\s+git-push/,
   /\bmake\s+batch-push/,
   /\bmake\s+development-push/,
@@ -24,7 +24,7 @@ export const WORKTREE_BLOCKED_PATTERNS = [
   /\bmake\s+agent-merge/,
   /\bmake\s+agent-merge-dev/,
 ] as readonly RegExp[];
-export function isInsideWorktree(): boolean {
+function isInsideWorktree(): boolean {
   try {
     const result = execSync("git rev-parse --git-dir", {
       stdio: ["pipe", "pipe", "pipe"],
@@ -35,7 +35,7 @@ export function isInsideWorktree(): boolean {
     return false;
   }
 }
-export function isBlockedCommand(cmd: string): boolean {
+function isBlockedCommand(cmd: string): boolean {
   return WORKTREE_BLOCKED_PATTERNS.some((re) => re.test(cmd));
 }
 const defaultImpl: HotModule = {

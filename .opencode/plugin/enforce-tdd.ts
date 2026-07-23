@@ -10,7 +10,7 @@ import { isSubagent, reportAlive, getProjectRoot } from "../lib/shared.ts";
 // ── Allowlist ──────────────────────────────────────────────────────────────
 // MUST match scripts/check_tdd_compliance.py ALLOWLIST. Type definitions,
 // package markers, and protocols don't need behavioral tests.
-export const ALLOWLIST_PATTERNS: RegExp[] = [
+const ALLOWLIST_PATTERNS: RegExp[] = [
   /__init__\.py$/,
   /__pycache__\//,
   /\.pyi$/,
@@ -22,13 +22,13 @@ export const ALLOWLIST_PATTERNS: RegExp[] = [
 // Path-prefix scope: only src/ implementation code is gated.
 const SRC_PREFIX = "src/general_ludd/";
 const TESTS_PREFIX = "tests/";
-export const DENY_MESSAGE =
+const DENY_MESSAGE =
   "TDD VIOLATION: write the test FIRST. Create the test file (one of the " +
   "candidates below) BEFORE editing this src/ file. See AGENTS.md " +
   "\"CRITICAL: TDD Policy\". Workflow: (1) write tests/unit/test_<module>.py, " +
   "(2) run it, confirm it fails (red), (3) THEN edit the implementation.";
 // ── Path helpers (mirror check_tdd_compliance.py exactly) ──────────────────
-export function candidateTestPaths(srcFile: string, projectRoot: string): string[] {
+function candidateTestPaths(srcFile: string, projectRoot: string): string[] {
   // Normalize to forward slashes.
   const normalized = srcFile.replace(/\\/g, "/");
   // Strip everything up to and including "src/".
@@ -56,22 +56,22 @@ export function candidateTestPaths(srcFile: string, projectRoot: string): string
   }
   return candidates;
 }
-export function isAllowlisted(filePath: string): boolean {
+function isAllowlisted(filePath: string): boolean {
   const normalized = filePath.replace(/\\/g, "/");
   return ALLOWLIST_PATTERNS.some(re => re.test(normalized));
 }
-export function isImplementationFile(filePath: string): boolean {
+function isImplementationFile(filePath: string): boolean {
   if (typeof filePath !== "string" || filePath.length === 0) return false;
   const normalized = filePath.replace(/\\/g, "/");
   if (normalized.includes(TESTS_PREFIX)) return false;
   return normalized.includes(SRC_PREFIX) && normalized.endsWith(".py");
 }
-export interface TddVerdict {
+interface TddVerdict {
   allow: boolean;
   reason?: string;
   candidates?: string[];
 }
-export function shouldAllowEdit(
+function shouldAllowEdit(
   filePath: string,
   projectRoot: string,
 ): TddVerdict {

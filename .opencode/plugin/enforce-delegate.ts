@@ -660,7 +660,7 @@ function _writeHeartbeat(): void {
 // ============================================================================
 // DEFAULT IMPLEMENTATION (compiled-in fallback)
 // ============================================================================
-export const defaultImpl = {
+const defaultImpl = {
   "tool.execute.before": async (input, output) => {
     // process.env.OPENCODE_SUBAGENT guard
     if (isSubagent()) return

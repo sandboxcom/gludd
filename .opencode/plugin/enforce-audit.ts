@@ -9,24 +9,24 @@ import { loadHotModule, type HotModule } from "../lib/hot_reload.ts";
 import { isSubagent, reportAlive, getProjectRoot } from "../lib/shared.ts";
 // Real path from project root cache (gracefully degrades to "").
 const PROJECT_ROOT = getProjectRoot();
-export function readTasksMd(): string {
+function readTasksMd(): string {
   try {
     const p = path.join(PROJECT_ROOT, "TASKS.md");
     if (fs.existsSync(p)) return fs.readFileSync(p, "utf8");
   } catch {}
   return "";
 }
-export function readRatchetYml(): string {
+function readRatchetYml(): string {
   try {
     const p = path.join(PROJECT_ROOT, "config", "ratchet.yml");
     if (fs.existsSync(p)) return fs.readFileSync(p, "utf8");
   } catch {}
   return "";
 }
-export function hasUncheckedTasks(md: string): boolean {
+function hasUncheckedTasks(md: string): boolean {
   return /^\s*-\s+\[ \]/.test(md);
 }
-export function hasRatchetEntries(yml: string): boolean {
+function hasRatchetEntries(yml: string): boolean {
   const trimmed = yml.trim();
   if (!trimmed) return false;
   const entries = trimmed.split("\n").filter(
@@ -34,9 +34,9 @@ export function hasRatchetEntries(yml: string): boolean {
   );
   return entries.length > 1;
 }
-export const DONE_WORDS_RE =
+const DONE_WORDS_RE =
   /\b(landed|committed|pushed|fixed|passing|shipped|done|complete|green|resolved|deployed|verified|passed|working)\b/i;
-export const EVIDENCE_RE =
+const EVIDENCE_RE =
   /\b[0-9a-f]*[a-f][0-9a-f]{6,39}\b|VERIFIED\s+\S+@[0-9a-f]+|CI\s+(GREEN|RED|PENDING)|\d+\s+passed|=== GATE:\s+PASSED\s+===/;
 const defaultImpl: HotModule = {
   "text.complete": async (_output) => {

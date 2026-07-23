@@ -1,10 +1,10 @@
 import type { Plugin } from "@opencode-ai/plugin"
 import { isSubagent } from "../lib/shared.ts"
 import impl from "./impl/enforce_make_impl.ts"
-export const BASH_POLICY_HEADER = "BLOCKED: Direct bash commands are not allowed in this project.\n"
-export const BASH_POLICY_RULE = "Rule: You MUST only run `make <target>` commands.\n"
-export const BASH_POLICY_FIX = ["Add or update a Makefile target, then run `make <target>`."]
-export function formatBashBlockedMessage(attemptedCommand: string, reason?: string): string {
+const BASH_POLICY_HEADER = "BLOCKED: Direct bash commands are not allowed in this project.\n"
+const BASH_POLICY_RULE = "Rule: You MUST only run `make <target>` commands.\n"
+const BASH_POLICY_FIX = ["Add or update a Makefile target, then run `make <target>`."]
+function formatBashBlockedMessage(attemptedCommand: string, reason?: string): string {
   return [BASH_POLICY_HEADER, attemptedCommand, reason || "", BASH_POLICY_RULE, ...BASH_POLICY_FIX].join("\n")
 }
 const COMPLETION_SOUNDING = [

@@ -7,10 +7,10 @@ import * as path from "node:path";
 import type { Plugin } from "@opencode-ai/plugin";
 import { loadHotModule, type HotModule } from "../lib/hot_reload.ts";
 import { isSubagent, reportAlive, readJsonFile, writeJsonFile, getProjectRoot } from "../lib/shared.ts";
-export const STATE_FILE = "/tmp/gludd-context-check.json";
-export const DEFAULT_STALE_SECONDS = 86400;
-export const PROJECT_ROOT = getProjectRoot();
-export interface ContextCheckState {
+const STATE_FILE = "/tmp/gludd-context-check.json";
+const DEFAULT_STALE_SECONDS = 86400;
+const PROJECT_ROOT = getProjectRoot();
+interface ContextCheckState {
   lastCheckedEpoch: number;
   sessionPid: number;
 }
@@ -22,18 +22,18 @@ function getStaleSeconds(): number {
   }
   return DEFAULT_STALE_SECONDS;
 }
-export function getSessionMdMtime(): number | null {
+function getSessionMdMtime(): number | null {
   try {
     const p = path.join(PROJECT_ROOT, "SESSION.md");
     if (fs.existsSync(p)) return Math.floor(fs.statSync(p).mtimeMs / 1000);
   } catch {}
   return null;
 }
-export function isStale(mtimeSec: number, thresholdSec: number): boolean {
+function isStale(mtimeSec: number, thresholdSec: number): boolean {
   const now = Math.floor(Date.now() / 1000);
   return now - mtimeSec > thresholdSec;
 }
-export function shouldCheck(state: ContextCheckState): boolean {
+function shouldCheck(state: ContextCheckState): boolean {
   const now = Math.floor(Date.now() / 1000);
   // Check on PID change (new session) or if never checked
   if (state.sessionPid !== process.pid) return true;

@@ -4,8 +4,8 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { loadHotModule, type HotModule } from "../lib/hot_reload.ts";
 import { isSubagent, reportAlive, getProjectRoot } from "../lib/shared.ts";
-export const NAG_PREFIX = "███  NO PRIMARY OBJECTIVE SET";
-export function getPrimaryObjective(): string {
+const NAG_PREFIX = "███  NO PRIMARY OBJECTIVE SET";
+function getPrimaryObjective(): string {
   try {
     const root = getProjectRoot();
     const sessionPath = path.join(root, "SESSION.md");
@@ -17,7 +17,7 @@ export function getPrimaryObjective(): string {
     return "";
   }
 }
-export function isCiGreenFromCache(): boolean {
+function isCiGreenFromCache(): boolean {
   try {
     const p = "/tmp/gludd-watchdog-ci.json";
     if (!fs.existsSync(p)) return false;
@@ -29,7 +29,7 @@ export function isCiGreenFromCache(): boolean {
     return false;
   }
 }
-export function isObjectiveMet(): boolean {
+function isObjectiveMet(): boolean {
   const obj = getPrimaryObjective();
   if (!obj) return true;
   if (/\bCI\s*GREEN\b|\bGREEN\s*CI\b/i.test(obj)) {
