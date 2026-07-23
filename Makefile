@@ -108,7 +108,7 @@ _commit-lock-acquire check-clean-tree worktree-state all-worktree-state main-wor
         verify-feature-claims audit-coverage gate-audit coverage-json \
         tf-cache-setup tf-init tf-validate tf-cache-warm tf-versions-check tf-clean \
         deck deck-serve deck-preview deck-data deck-honesty \
-        script-count strip-enforce-stop test-hooks-live test-hook-runtime \
+        script-count strip-enforce-stop test-hooks-live test-hook-runtime test-opencode-e2e \
         verify-enforcement \
 ci-view ci-rerun ci-trigger ci-active ci-job-log ci-shards-log-context \
         ci-busy-check ci-safe-push pre-push-check push-guarded ci-await \
@@ -181,6 +181,7 @@ help:
 	@echo "  test-unit-shards      Unit tests in bounded serial shards (SHARDS=12 SHARD=1)"
 	@echo "  test-integration      Integration tests"
 	@echo "  test-e2e              End-to-end tests"
+	@echo "  test-opencode-e2e     .opencode/ plugin load+invocation tests"
 	@echo "  test-specific         Single test (TESTFILE=path::TestClass::test_name)"
 	@echo "  test-files            Multiple tests (TESTFILES=tests/unit/a.py tests/unit/b.py)"
 	@echo "  ci-shards-log-context Show local shard log context (LOG=.gate-logs/ci.log PATTERN=FAILED)"
@@ -666,7 +667,7 @@ check-opencode-integrity:
 gate-fast: lint typecheck collect-check
 	@echo "=== GATE-FAST: PASS ==="
 
-gate: check-opencode-integrity validate-task-ledger check-dispatch-dedup check-subagent-guards verify-plugin-manifest check-skills-frontmatter check-coverage-gaps check-plugin-syntax check-plugin-runtime check-plugin-imports check-duplicate-targets check-no-prompt-prone-edit-tools
+gate: check-opencode-integrity validate-task-ledger check-dispatch-dedup check-subagent-guards verify-plugin-manifest check-skills-frontmatter check-coverage-gaps check-plugin-syntax check-plugin-runtime check-plugin-imports check-duplicate-targets check-no-prompt-prone-edit-tools test-opencode-e2e
 	@rm -f .gate-failed
 	@echo "=== GATE $(shell date -u +%Y-%m-%dT%H:%M:%SZ) ===" > .gate-status
 	@# OBSERVABILITY INVARIANT (see AGENTS.md "No unseen events"): every gate phase
@@ -689,6 +690,7 @@ gate: check-opencode-integrity validate-task-ledger check-dispatch-dedup check-s
 	@printf "hook-runtime " >> .gate-status
 	@mkdir -p .gate-logs
 	@$(MAKE) --no-print-directory test-hook-runtime > .gate-logs/hook-runtime.log 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed && tail -30 .gate-logs/hook-runtime.log)
+	$(MAKE) --no-print-directory test-opencode-e2e > .gate-logs/opencode-e2e.log 2>&1 \&\& echo "PASS" >> .gate-status || \(echo "FAIL" >> .gate-status \&\& touch .gate-failed \&\& tail -30 .gate-logs/opencode-e2e.log\); \
 	@echo "=== GATE PHASE: verify-enforcement ==="
 	@printf "verify-enforcement " >> .gate-status
 	@$(MAKE) --no-print-directory verify-enforcement > /dev/null 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed)
@@ -778,6 +780,7 @@ gate-lite: check-opencode-integrity verify-opencode-backup check-subagent-guards
 	@$(MAKE) --no-print-directory check-test-env-writes > /dev/null 2>&1 && echo "PASS" >> .gate-lite-status || (echo "FAIL" >> .gate-lite-status && touch .gate-lite-failed)
 	@echo "=== GATE-LITE PHASE: hook-runtime ==="
 	@printf "hook-runtime " >> .gate-lite-status
+	@$(MAKE) --no-print-directory test-opencode-e2e > /dev/null 2>&1 && echo "PASS" >> .gate-lite-status || (echo "FAIL" >> .gate-lite-status && touch .gate-lite-failed)
 	@$(MAKE) --no-print-directory test-hook-runtime > /dev/null 2>&1 && echo "PASS" >> .gate-lite-status || (echo "FAIL" >> .gate-lite-status && touch .gate-lite-failed)
 	@echo "=== GATE-LITE PHASE: skills-frontmatter ==="
 	@printf "skills-frontmatter " >> .gate-lite-status
@@ -993,6 +996,13 @@ strip-enforce-stop:
 test-hook-runtime:
 	@$(UV) run python scripts/test_hook_runtime.py -v
 
+
+# E2E verification: loads every .opencode/ plugin via Node.js, calls factories,
+# invokes hooks, verifies no crashes. Catches auto-discovered non-plugin files
+# (Session 51 _exports.ts incident), old-API/new-API mismatches, and CRASH-level
+# hook failures that structural tests miss.
+test-opencode-e2e:
+	@$(UV) run python -m pytest tests/e2e/test_opencode_plugin_load.py -v
 bisect-ts-parse:
 	@$(PYTHON) scripts/bisect_ts_parse.py
 
