@@ -37,6 +37,7 @@ dependencies = [
     "tree-sitter-python>=0.23.0",
     "huggingface-hub>=0.28.0",
     "langgraph>=0.2.0",
+    "langchain-openai>=0.3.0",
     "langsmith>=0.8.18",
     "watchdog>=6.0.0",
     "fs>=2.4.0",
