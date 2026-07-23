@@ -10,6 +10,47 @@
 
 ---
 
+## SESSION 51 — 2026-07-23
+
+- **HEAD: `f9fb3fd2`** on `development` branch (pushed to sandboxcom)
+- **Version: 0.1.0-beta.5** (pyproject.toml; A.4 will cut as `v0.1.0-beta.2` tag)
+- **Push status: PUSHED** — development@f9fb3fd2 + master@453f6afa both on sandboxcom
+- **CI: PENDING** — run 30023849020 in_progress on development@f9fb3fd2
+- **Gate: NOT RUN** — full gate not re-run on HEAD
+- **Working tree: CLEAN**
+- **Release readiness:** 2 molecule CI failure fixes applied (process_audit enforce-todos removal + project_root). openbao_break_glass_backup failure still unresolved (likely flaky). New guardrail scripts for _exports.ts crash prevention committed.
+
+### Crash resolved
+
+- **Root cause:** `_exports.ts` companion files inside `.opencode/plugin/` were auto-discovered by opencode as plugins, crashing at boot with `TypeError: undefined is not an object (evaluating 'N.event')` (EXC_BREAKPOINT/SIGTRAP in JSC Worker thread). Fixed in remote commits (0e45db90, 8165a6db).
+- **Prevention:** New guardrail scripts (`scripts/check_plugin_hooks.py`, `tests/unit/test_plugin_dir_hygiene.py`) codified 2026-07-23 to prevent recurrence.
+
+### Commits this session (3: `fefeeac9..f9fb3fd2`)
+
+| Hash | Message | Category |
+|------|---------|----------|
+| `f9fb3fd2` | chore: refresh secrets baseline | cleanup |
+| `10a3d2ab` | fix: remove enforce-todos.ts refs from process_audit role + add project_root | fix |
+| `fefeeac9` | guardrail: add _exports.ts crash prevention scripts | guardrail |
+
+### Remaining open items
+
+| Item | Status |
+|------|--------|
+| A.4 — Cut v0.1.0-beta.2 release | BLOCKED on CI GREEN for `f9fb3fd2` |
+| openbao_break_glass_backup molecule failure | UNRESOLVED (may be flaky/env) |
+
+### Next
+
+1. Wait for CI green on run 30023849020 (development@f9fb3fd2)
+2. If openbao_break_glass_backup still fails, investigate log
+3. `make release-cut TAG=v0.1.0-beta.2 MSG='beta.2 release'`
+4. `make verify-release-completeness TAG=v0.1.0-beta.2`
+
+- **Last Updated: 2026-07-23 — Session 51.** HEAD `f9fb3fd2` on `development` (pushed). 3 commits: 1 guardrail + 1 fix + 1 cleanup. CI PENDING (run 30023849020). A.4 (beta.2 release) blocked on CI GREEN.
+
+---
+
 ## SESSION 50 — 2026-07-18
 
 - **HEAD: `d90fa882`** on `development` branch (pushed + VERIFIED on sandboxcom)
