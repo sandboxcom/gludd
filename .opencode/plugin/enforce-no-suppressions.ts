@@ -19,15 +19,15 @@ const ALLOWLIST_PATHS: string[] = [
 const DENY_MESSAGE =
   "Lint-suppression comments forbidden. Fix the underlying issue. " +
   "See AGENTS.md Guardrail Integrity Policy.";
-function isSuppressionComment(text: string): boolean {
+export function isSuppressionComment(text: string): boolean {
   if (typeof text !== "string" || text.length === 0) return false;
   return SUPPRESSION_PATTERNS.some(re => re.test(text));
 }
-function isAllowlistedPath(filePath: string): boolean {
+export function isAllowlistedPath(filePath: string): boolean {
   if (typeof filePath !== "string" || filePath.length === 0) return false;
   return ALLOWLIST_PATHS.some(allowed => filePath.includes(allowed));
 }
-function shouldAllowEdit(
+export function shouldAllowEdit(
   filePath: string,
   content: string,
 ): { allow: boolean; reason?: string } {

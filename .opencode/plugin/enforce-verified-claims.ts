@@ -28,7 +28,7 @@ const BLOCK_MESSAGE = [
   "and paste the output before claiming work is done.",
   "See AGENTS.md 'Evidence-Based Response Policy' and 'Done Claims Require Observable Verification Evidence'.",
 ].join("\n")
-const shouldBlock = (text: string): boolean => {
+export const shouldBlock = (text: string): boolean => {
   if (!text || text.trim().length === 0) return false
   let lower = text.toLowerCase()
   for (const phrase of NOT_DONE_PHRASES) {
