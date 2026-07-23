@@ -180,6 +180,16 @@ class TestComputePrice:
         assert result.sku == "p4d.24xlarge-spot"
         assert result.spot is True
 
+    def test_spot_suffix_preferred_over_exact_ondemand(self) -> None:
+        ondemand = _make_compute_price("p4d.24xlarge", usd=32.77, spot=False)
+        spot_price = _make_compute_price("p4d.24xlarge-spot", usd=9.83, spot=True)
+        src = _FakeSource("aws", compute=[ondemand, spot_price])
+        cat = PricingCatalog(sources=[src])
+        result = cat.compute_price("aws", "p4d.24xlarge", spot=True)
+        assert result is not None
+        assert result.sku == "p4d.24xlarge-spot"
+        assert result.spot is True
+
     def test_all_compute_prices(self) -> None:
         src = _FakeSource("runpod", compute=[_make_compute_price("A"), _make_compute_price("B")])
         cat = PricingCatalog(sources=[src])

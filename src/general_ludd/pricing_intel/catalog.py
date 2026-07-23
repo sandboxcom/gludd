@@ -230,16 +230,22 @@ class PricingCatalog:
             on-demand and spot exist for the same SKU base name, returns on-demand.
         """
         prices = self._fetch_compute_prices_for(provider, refresh=refresh)
-        # Exact match first
+        if spot:
+            spot_sku = sku if sku.endswith("-spot") else f"{sku}-spot"
+            for candidate_sku in (spot_sku, sku):
+                for price in prices:
+                    if price.sku == candidate_sku and price.spot:
+                        return price
+            return None
+
+        # Exact match for on-demand/default lookup. Keep direct spot SKU lookups working
+        # for callers that pass the provider-specific spot SKU explicitly.
+        for price in prices:
+            if price.sku == sku and not price.spot:
+                return price
         for price in prices:
             if price.sku == sku:
                 return price
-        # Prefix match for spot suffix convention (e.g. "p4d.24xlarge" vs "p4d.24xlarge-spot")
-        if spot:
-            spot_sku = sku if sku.endswith("-spot") else f"{sku}-spot"
-            for price in prices:
-                if price.sku == spot_sku and price.spot:
-                    return price
         return None
 
     def all_compute_prices(
