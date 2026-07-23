@@ -164,7 +164,7 @@ const EVIDENCE_PATTERNS = [
   /headSha.*matched/,
 ]
 
-const COMPLETION_SMELL_RE = /\b(?:complete|done|finished|ready|landed|shipped|pushed|committed|fixed|passed|passing|working|green|resolved|deployed|verified|wrapped|all done|all set|all good|all tasks|continuing|no more|nothing more|RED|beta|alpha)\b/i
+const COMPLETION_SMELL_RE = /\b(?:complete|done|finished|ready|landed|shipped|pushed|committed|fixed|passed|passing|working|green|resolved|deployed|verified|wrapped|all done|all set|all good|all tasks|continuing|no more|nothing more|beta|alpha)\b/i
 
 const DELEGATE_FIRST_THRESHOLD = 8
 const GRINDING_HARD_DENY_THRESHOLD = 12
@@ -607,6 +607,7 @@ function hasRealPendingWork(): WorkState {
   let ciVerdictUnknown = false
   try {
     const ciCachePath = watchdogCiPath()
+    let cacheIsFresh = false
     if (fs.existsSync(ciCachePath)) {
       const ciData = JSON.parse(fs.readFileSync(ciCachePath, "utf8"))
       const rawLastCheck: number = ciData.last_ci_check || 0
@@ -615,7 +616,8 @@ function hasRealPendingWork(): WorkState {
       // treat it as seconds and convert to ms.
       const lastCheck: number = rawLastCheck < 1e11 ? rawLastCheck * 1000 : rawLastCheck
       const lastStatus = ciData.last_ci_status || ""
-      if (now - lastCheck < 600_000 && lastStatus) {
+      cacheIsFresh = (now - lastCheck) < 600_000
+      if (cacheIsFresh && lastStatus) {
         if (ciCooldownMasked(ciData)) {
           // ci-verdict-safe exit 3: check REFUSED. CI state is UNKNOWN — the
           // real run may already be GREEN or RED. Never claim PENDING/RED
@@ -623,6 +625,27 @@ function hasRealPendingWork(): WorkState {
           ciVerdictUnknown = true
         } else {
           ciVerdictPendingOrRed = lastStatus !== "SUCCESS"
+        }
+      }
+    }
+    // INLINE CI FALLBACK: when the watchdog cache is stale or missing, run
+    // make ci-verdict directly (5s timeout) to detect RED CI. This closes the
+    // gap where CI is objectively RED but the stale cache causes the plugin
+    // to report no CI state, allowing an agent to stop while CI is broken.
+    if (!cacheIsFresh) {
+      try {
+        const result = execSync("make ci-verdict BRANCH=development", {
+          cwd: root, encoding: "utf8", timeout: 5000,
+          stdio: ["pipe", "pipe", "pipe"],
+        }) as string
+        if (/conclusion[\s=:'"]+failure/i.test(result)) {
+          ciVerdictPendingOrRed = true
+        }
+      } catch (e: any) {
+        // ci-verdict exits non-zero on RED — capture stdout/stderr
+        const output = (e?.stdout || e?.stderr || "").toString()
+        if (/conclusion[\s=:'"]+failure/i.test(output)) {
+          ciVerdictPendingOrRed = true
         }
       }
     }
