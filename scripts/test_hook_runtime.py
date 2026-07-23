@@ -2782,6 +2782,61 @@ def test_make_disengage_escape():
 
 
 # ---------------------------------------------------------------------------
+# enforce-make.ts  —  bash command blocking (runtime tests: bare commands)
+# ---------------------------------------------------------------------------
+
+
+def test_make_allows_make_lint():
+    """bash 'make lint' → ALLOWED (starts with 'make')."""
+    result = _enforce_make_bash_test("make lint")
+    assert result is not None
+    assert result.get("allowed") == True, f"make lint should be allowed, got: {result}"
+
+
+def test_make_denies_python3():
+    """bash 'python3 -c "print(1)"' → DENIED (bare command)."""
+    result = _enforce_make_bash_test('python3 -c "print(1)"')
+    assert result is not None
+    assert result.get("permissionDecision") == "deny", f"python3 should be denied, got: {result}"
+
+
+def test_make_denies_gh():
+    """bash 'gh --version' → DENIED (non-make binary)."""
+    result = _enforce_make_bash_test("gh --version")
+    assert result is not None
+    assert result.get("permissionDecision") == "deny", f"gh should be denied, got: {result}"
+
+
+def test_make_denies_cat():
+    """bash 'cat file.txt' → DENIED (non-make command)."""
+    result = _enforce_make_bash_test("cat file.txt")
+    assert result is not None
+    assert result.get("permissionDecision") == "deny", f"cat should be denied, got: {result}"
+
+
+def test_make_denies_git_status():
+    """bash 'git status' → DENIED (non-make command)."""
+    result = _enforce_make_bash_test("git status")
+    assert result is not None
+    assert result.get("permissionDecision") == "deny", f"git status should be denied, got: {result}"
+
+
+def test_make_denies_pipe_in_make_args():
+    """bash 'make test | grep FAILED' → DENIED (metacharacter pipe)."""
+    result = _enforce_make_bash_test("make test | grep FAILED")
+    assert result is not None
+    assert result.get("permissionDecision") == "deny", f"pipe should be denied, got: {result}"
+    assert "BLOCKED" in result.get("message", "")
+
+
+def test_make_denies_and_in_make_args():
+    """bash 'make test && make lint' → DENIED (metacharacter &&)."""
+    result = _enforce_make_bash_test("make test && make lint")
+    assert result is not None
+    assert result.get("permissionDecision") == "deny", f"&& should be denied, got: {result}"
+
+
+# ---------------------------------------------------------------------------
 # watchdog.ts  —  session lifecycle daemon launcher
 # ---------------------------------------------------------------------------
 
