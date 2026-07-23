@@ -3,8 +3,7 @@ import * as fs from "node:fs"
 import * as path from "node:path"
 import { isSubagent, reportAlive, isDispatchTool, isReadTool } from "../lib/shared.ts"
 import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
-
-// "read" "grep" "glob" enforce-session-start.ts — guarantees the FIRST actions of every session are:
+// enforce-session-start.ts — guarantees the FIRST actions of every session are:
 //   1. LOCATE work: read TASKS.md, BUGS.md, config/ratchet.yml, SESSION.md
 //   2. FAN OUT: dispatch >= MIN_DISPATCHES parallel task/agent subagents on
 //      disjoint work BEFORE any inline mutation or terminal response.
@@ -27,9 +26,7 @@ import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
 // HOT-RELOAD: implements the proxy pattern from hot_reload.ts. Hook functions
 // check /tmp/gludd-hot-enforce-session-start.js on every invocation. Run
 // `make hot-reload-plugins` after editing this file.
-
 // --- Config -----------------------------------------------------------------
-
 // Minimum parallel dispatches before inline mutations are allowed in a fresh
 // session. Hardcoded to 10 per user mandate — exactly 10 subagents per wave.
 // Override via GLUDD_SESSION_START_MIN_DISPATCHES.
@@ -38,24 +35,20 @@ const MIN_DISPATCHES = parseInt(
   10,
 )
 const EFFECTIVE_MIN = 10
-
 // Hard-deny mode (mirrors GLUDD_FLOOR_ENFORCE / GLUDD_NO_WAIT_ENFORCE).
 // Default is ON (hard deny on premature mutations). Set
 // GLUDD_SESSION_START_ENFORCE=0 to fall back to advisory (directive-only)
 // mode — useful for Q&A-only sessions.
 const ENFORCE = process.env.GLUDD_SESSION_START_ENFORCE !== "0"
-
 // Per-cwd state file. Overridable for tests.
 const STATE_FILE =
   process.env.GLUDD_SESSION_STATE || "/tmp/gludd-session-start.json"
-
 // A session is "fresh" for this many seconds after the first tool call. After
 // that the gate turns off (the agent may have legitimately onboarded).
 const FRESH_SECS = parseInt(
   process.env.GLUDD_SESSION_START_FRESH_SECS || "600",
   10,
 )
-
 // Gap 8: TASKS.md staleness check — if the session has been active for >5 min
 // and TASKS.md hasn't been read, inject a nag directive.  Configurable via
 // GLUDD_TASKS_STALE_MINUTES (default 5).
@@ -63,9 +56,7 @@ const TASKS_STALE_MINUTES = parseInt(
   process.env.GLUDD_TASKS_STALE_MINUTES || "5",
   10,
 )
-
 let _lastTasksReadMtime = 0
-
 // Time-based gate constants. After DISPATCH_NOW_SECS with 0 dispatches, a
 // "DISPATCH NOW" warning is emitted. After HARD_DENY_SECS with 0 dispatches,
 // non-dispatch, non-read tools are denied. Both gates reset on first dispatch.
@@ -73,10 +64,8 @@ const DISPATCH_NOW_SECS = parseInt(
   process.env.GLUDD_SESSION_START_DISPATCH_NOW_SECS || "60", 10)
 const HARD_DENY_SECS = parseInt(
   process.env.GLUDD_SESSION_START_HARD_DENY_SECS || "120", 10)
-
 // Throttle warning emission (at most once per 30s) to avoid spam.
 let _lastTimeGateWarningTs = 0
-
 // Per-module-instance latch (Fix B). Once the primed condition has been
 // observed — `readsDone && dispatches >= EFFECTIVE_MIN` — this instance
 // skips ALL state-file I/O on subsequent tool calls. That eliminates the
@@ -88,11 +77,8 @@ let _lastTimeGateWarningTs = 0
 //   false = loaded, primed condition not yet met — keep tracking
 //   true  = primed — gate is latched open for this instance forever
 let sessionPrimed: boolean | null = null
-
 const TASK_FILES = ["TASKS.md", "BUGS.md", "config/ratchet.yml", "SESSION.md"]
-
 // --- System prompt banner ---------------------------------------------------
-
 function buildSessionDirective(): string {
   const nowSecs = parseInt(process.env.GLUDD_SESSION_START_DISPATCH_NOW_SECS || "60", 10)
   const denySecs = parseInt(process.env.GLUDD_SESSION_START_HARD_DENY_SECS || "120", 10)
@@ -120,9 +106,7 @@ function buildSessionDirective(): string {
     "========================================================",
   ].join("\n")
 }
-
 // --- State helpers ----------------------------------------------------------
-
 interface SessionState {
   started_at: number
   readsDone: boolean
@@ -130,7 +114,6 @@ interface SessionState {
   timeGateReset: boolean
   pid: number
 }
-
 function loadState(): SessionState {
   try {
     if (!fs.existsSync(STATE_FILE)) {
@@ -186,7 +169,6 @@ function loadState(): SessionState {
     }
   }
 }
-
 function _logSaveStateError(e: unknown): void {
   try {
     fs.appendFileSync(
@@ -195,9 +177,8 @@ function _logSaveStateError(e: unknown): void {
       `${String(e instanceof Error ? e.message : e)}\n`,
       "utf8",
     )
-  } catch { /* double-fail: give up */ }
+  } catch {  }
 }
-
 function saveState(state: SessionState): void {
   // Always stamp with current PID for crash-recovery detection.
   state.pid = process.pid
@@ -214,11 +195,9 @@ function saveState(state: SessionState): void {
     _logSaveStateError(e)
   }
 }
-
 function sessionIsFresh(s: SessionState): boolean {
   return (Date.now() - s.started_at) / 1000 < FRESH_SECS
 }
-
 // Returns true once the primed condition has been met AND latches the
 // module-level `sessionPrimed` flag so future calls skip state I/O.
 function updatePrimedLatch(state: SessionState): boolean {
@@ -230,7 +209,6 @@ function updatePrimedLatch(state: SessionState): boolean {
   if (sessionPrimed === null) sessionPrimed = false
   return false
 }
-
 const READ_ONLY_MAKE_TARGETS: ReadonlySet<string> = new Set([
   "git-status", "git-diff", "git-log", "git-staged", "git-show",
   "verify-state", "verify-remote",
@@ -250,7 +228,6 @@ const READ_ONLY_MAKE_TARGETS: ReadonlySet<string> = new Set([
   "development-status",
   "repo-status", "repo-diff", "repo-log", "repo-staged",
 ])
-
 function isReadOnlyMakeTarget(tool: string, input: unknown): boolean {
   if (tool !== "bash") return false
   const inp = input as Record<string, unknown> | null
@@ -260,7 +237,6 @@ function isReadOnlyMakeTarget(tool: string, input: unknown): boolean {
   if (!m) return false
   return READ_ONLY_MAKE_TARGETS.has(m[1])
 }
-
 function isTaskFileRead(tool: string, input: unknown, output?: unknown): boolean {
   if (!isReadTool(tool)) return false
   try {
@@ -286,16 +262,14 @@ function isTaskFileRead(tool: string, input: unknown, output?: unknown): boolean
     return false
   }
 }
-
 // --- Heartbeat helper -------------------------------------------------------
-
 function _writeHeartbeat(): void {
   try {
     const hb = JSON.stringify({ plugin: "enforce-session-start", ts: Date.now(), pid: process.pid })
     fs.writeFileSync("/tmp/gludd-plugin-heartbeat-enforce-session-start.json", hb)
-  } catch { /* fail-open */ }
+  } catch { // fail-open
+ }
 }
-
 // ============================================================================
 // DEFAULT IMPLEMENTATION (compiled-in fallback)
 // ============================================================================
@@ -339,7 +313,6 @@ const defaultImpl: HotModule = {
       return output
     }
   },
-
   "tool.execute.before": async (
     input: { tool?: string } & Record<string, unknown>,
     _output: unknown,
@@ -351,17 +324,13 @@ const defaultImpl: HotModule = {
     let denyMessage: string | null = null
     try {
       const tool = String((input as { tool?: string }).tool ?? "")
-
       const state = loadState()
-
       try {
         fs.appendFileSync("/tmp/gludd-session-debug.log",
           JSON.stringify({tool, sessionPrimed, readsDone: state?.readsDone, dispatches: state?.dispatches, ts: Date.now(), pid: process.pid}) + "\n"
         )
       } catch {}
-
       if (sessionPrimed === true) return
-
       if (isDispatchTool(tool)) {
         state.dispatches += 1
         if (!state.timeGateReset) {
@@ -371,7 +340,6 @@ const defaultImpl: HotModule = {
         updatePrimedLatch(state)
         return
       }
-
       if (isTaskFileRead(tool, input, _output)) {
         if (!state.readsDone) {
           state.readsDone = true
@@ -383,21 +351,18 @@ const defaultImpl: HotModule = {
             const tasksPath = path.join(process.cwd(), "TASKS.md")
             _lastTasksReadMtime = fs.statSync(tasksPath).mtimeMs
           }
-        } catch { /* ignore */ }
+        } catch {  }
         updatePrimedLatch(state)
         return
       }
-
       if (isReadTool(tool)) {
         updatePrimedLatch(state)
         return
       }
-
       if (isReadOnlyMakeTarget(tool, input)) {
         updatePrimedLatch(state)
         return
       }
-
       if (!state.timeGateReset && state.dispatches === 0) {
         const elapsedSecs = (Date.now() - state.started_at) / 1000
         if (elapsedSecs >= HARD_DENY_SECS) {
@@ -422,9 +387,7 @@ const defaultImpl: HotModule = {
           }
         }
       }
-
       if (updatePrimedLatch(state)) return
-
       if (sessionIsFresh(state)) {
         const msg = [
           `[SESSION START PROTOCOL] readsDone=${state.readsDone},`,
@@ -452,7 +415,6 @@ const defaultImpl: HotModule = {
     if (denyMessage) throw new Error(denyMessage)
   },
 }
-
 // ============================================================================
 // PROXY PLUGIN (hot-reload aware)
 // ============================================================================
@@ -466,7 +428,8 @@ export default (({ }) => {
       `pid=${process.pid}\n`,
       "utf8",
     )
-  } catch { /* fail-open */ }
+  } catch { // fail-open
+ }
   return {
     "experimental.chat.system.transform": async (
       _input: unknown,
@@ -478,7 +441,6 @@ export default (({ }) => {
       const fn = impl["experimental.chat.system.transform"] || impl["system.transform"]
       return fn ? await fn(_input, output) : output
     },
-
     "tool.execute.before": async (
       input: { tool?: string } & Record<string, unknown>,
       _output: unknown,

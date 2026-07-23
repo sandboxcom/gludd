@@ -1,21 +1,4 @@
-/**
- * enforce-test-integrity.ts — blocks test-disabling patterns in CI config
- * and source code.
- *
- * Codified 2026-07-19 per BEHAVIORAL_SPECS.md Group T (T01-T30).
- *
- * Rules:
- *   - Denies edits that add `continue-on-error: true` to CI workflow files.
- *   - Denies edits that add `@pytest.mark.skip`, `@pytest.mark.xfail`
- *     (without strict=True), or `pytest.skip()` to test files — unless
- *     accompanied by a test that verifies the skip behavior.
- *   - Denies edits that lower coverage thresholds in pyproject.toml.
- *   - Denies edits that remove or disable test shards in CI config.
- *
- * This is a BLOCKING plugin. Env: GLUDD_TEST_INTEGRITY_ENFORCE=0 to disable.
- *
- * Fail-open. Subagent guard. Hot-reload capable.
- */
+// Fail-open. Subagent guard. Hot-reload capable.
 import type { Plugin } from "@opencode-ai/plugin"
 import * as fs from "node:fs"
 import * as path from "node:path"
@@ -25,10 +8,8 @@ import {
   reportAlive,
   getProjectRoot,
 } from "../lib/shared.ts"
-
 const CI_WORKFLOW_FILE = ".github/workflows/build.yml"
 const PYPROJECT_FILE = "pyproject.toml"
-
 const TEST_DISABLE_PATTERNS: readonly RegExp[] = Object.freeze([
   /@pytest\.mark\.skip\b(?!\s*\([^)]*reason\s*=)/,
   /@pytest\.mark\.xfail\b(?!\s*\([^)]*strict\s*=\s*True)/,
@@ -37,29 +18,23 @@ const TEST_DISABLE_PATTERNS: readonly RegExp[] = Object.freeze([
   /fail_under\s*=\s*\d+/,
   /--fail-under\s+\d+/,
 ]) as readonly RegExp[]
-
 const ALLOWLIST_PATHS = Object.freeze([
   "tests/unit/test_behavioral_specs.py",
   "tests/unit/test_tdd_allowlist_parity.py",
   "tests/unit/test_type_safety_guardrails.py",
 ])
-
 function isTestFile(p: string): boolean {
   return p.includes("/tests/") && p.endsWith(".py")
 }
-
 function isCiWorkflow(p: string): boolean {
   return p.endsWith(CI_WORKFLOW_FILE) || p.endsWith("build.yml")
 }
-
 function isPyproject(p: string): boolean {
   return p.endsWith(PYPROJECT_FILE) || p.endsWith("pyproject.toml")
 }
-
 function isAllowlisted(p: string): boolean {
   return ALLOWLIST_PATHS.some(a => p.endsWith(a))
 }
-
 function wouldAddDisablePattern(
   _oldContent: string,
   newContent: string,
@@ -91,23 +66,18 @@ function wouldAddDisablePattern(
   }
   return { detected: false, pattern: "" }
 }
-
 const DENY_MESSAGE_PREFIX =
   "TEST INTEGRITY: test-disabling pattern detected. Fix the issue, do not disable the test. "
-
 const defaultImpl: HotModule = {
   "tool.execute.before": async (input, _output) => {
     if (isSubagent()) return
     reportAlive("enforce-test-integrity")
     try {
       if (process.env.GLUDD_TEST_INTEGRITY_ENFORCE === "0") return
-
       const tool = input.tool ?? ""
       if (tool !== "edit" && tool !== "write") return
-
       let filePath = ""
       let content = ""
-
       if (tool === "edit") {
         filePath = input.args?.filePath ?? ""
         content = input.args?.newString ?? ""
@@ -116,12 +86,9 @@ const defaultImpl: HotModule = {
         filePath = input.args?.filePath ?? ""
         content = input.args?.content ?? ""
       }
-
       if (!filePath || !content) return
-
       const relevant = isTestFile(filePath) || isCiWorkflow(filePath) || isPyproject(filePath)
       if (!relevant) return
-
       const { detected, pattern } = wouldAddDisablePattern("", content, filePath)
       if (detected) {
         return {
@@ -136,7 +103,6 @@ const defaultImpl: HotModule = {
     }
   },
 }
-
 export default (({ }) => {
   return {
     "tool.execute.before": async (input, output) => {

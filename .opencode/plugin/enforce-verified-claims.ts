@@ -1,28 +1,14 @@
-/**
- * enforce-verified-claims.ts — commit-time enforcement only.
- *
- * text.complete was removed: the hook fires before text batching, not on
- * actual claim content, so it cannot reliably verify claims. The remaining
- * enforcement lives in tool.execute.before (commit-message checks) and
- * the exported constants (pinned by test_verified_claims_plugin.py).
- *
- * Default ON. Set GLUDD_VERIFIED_CLAIMS_ENFORCE=0 to disable.
- * Fail-open: any throw/exception → allow (never wedge the editor).
- *
- * HOT-RELOAD: proxy pattern from hot_reload.ts. Run `make hot-reload-plugins`
- * after editing this file.
- */
+// Fail-open: any throw/exception → allow (never wedge the editor).
+// HOT-RELOAD: proxy pattern from hot_reload.ts. Run `make hot-reload-plugins`
 import type { Plugin } from "@opencode-ai/plugin"
 import type { HotModule } from "../lib/hot_reload.ts"
 import { loadHotModule } from "../lib/hot_reload.ts"
 import { isSubagent, reportAlive } from "../lib/shared.ts"
-
 export const DONE_WORDS = [
   "landed", "committed", "pushed", "fixed", "passing",
   "shipped", "done", "complete", "green", "resolved",
   "deployed", "verified", "passed", "working",
 ] as const
-
 export const EVIDENCE_PATTERNS = [
   /\b[0-9a-f]*[a-f][0-9a-f]{6,39}\b/,
   /VERIFIED\s+\w+@/,
@@ -33,18 +19,15 @@ export const EVIDENCE_PATTERNS = [
   /All checks passed/,
   /Success: no issues found/,
 ] as const
-
 export const NOT_DONE_PHRASES = [
   /\bworking\s+on\b/,
 ] as const
-
 export const BLOCK_MESSAGE = [
   "BLOCKED: response contains done-claims without verification evidence.",
   "Run make git-status, make git-log, make ci-verdict-safe, or make test-iso",
   "and paste the output before claiming work is done.",
   "See AGENTS.md 'Evidence-Based Response Policy' and 'Done Claims Require Observable Verification Evidence'.",
 ].join("\n")
-
 export const shouldBlock = (text: string): boolean => {
   if (!text || text.trim().length === 0) return false
   let lower = text.toLowerCase()
@@ -59,7 +42,6 @@ export const shouldBlock = (text: string): boolean => {
   if (!found) return false
   return !EVIDENCE_PATTERNS.some((p) => p.test(text))
 }
-
 const defaultImpl: HotModule = {
   "tool.execute.before": async (input: unknown) => {
     try {
@@ -81,7 +63,6 @@ const defaultImpl: HotModule = {
     }
   },
 }
-
 export default (() => {
   return {
     "tool.execute.before": async (input: unknown) => {
