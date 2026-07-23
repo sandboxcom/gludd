@@ -2704,12 +2704,12 @@ ci-version-sim:
 		echo "Restored pyproject.toml + __init__.py"
 
 scan-secrets:
-	@$(UV) run detect-secrets scan --baseline .secrets.baseline $(ARGS)
+	@TMP=$$(mktemp /tmp/gludd-secrets-baseline.XXXXXX); cp .secrets.baseline "$$TMP"; echo "[scan-secrets] scanning temporary baseline copy $$TMP"; $(UV) run detect-secrets scan --baseline "$$TMP" $(ARGS); RC=$$?; rm -f "$$TMP"; exit $$RC
 
 # ── Secrets management targets ──
 # secrets-scan: scan for secrets without modifying files (checks against baseline)
 secrets-scan:
-	@$(UV) run detect-secrets scan --baseline .secrets.baseline $(ARGS)
+	@TMP=$$(mktemp /tmp/gludd-secrets-baseline.XXXXXX); cp .secrets.baseline "$$TMP"; echo "[secrets-scan] scanning temporary baseline copy $$TMP"; $(UV) run detect-secrets scan --baseline "$$TMP" $(ARGS); RC=$$?; rm -f "$$TMP"; exit $$RC
 
 # secrets-scrub: find and scrub secrets from the codebase (interactive audit)
 secrets-scrub:
