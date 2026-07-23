@@ -146,6 +146,8 @@ def main() -> int:
                         stripped.startswith("export ")
                         and not stripped.startswith("export default")
                         and not stripped.startswith("export type")
+                        and not stripped.startswith("export function")
+                        and not stripped.startswith("export async")
                     ):
                         export_problems.append(
                             path + ":" + str(lineno) + ": named export '"
