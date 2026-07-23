@@ -15,7 +15,7 @@ _NO_UV_SYNC_GOALS := \
     worktree-state all-worktree-state main-worktree-state worktree-guard main-worktree-guard \
     release-worktree-guard status-claim-guard workflow-state workflow-gate commit-ready gha-ready merge-ready \
     git-where repo-status git-status git-remote-sandboxcom git-pull-sandboxcom git-fetch-sandboxcom verify-remote \
-    git-branch git-checkout git-add git-merge git-merge-nc git-merge-abort git-rebase-abort \
+    git-branch git-checkout git-add git-merge git-merge-nc git-merge-abort git-rebase-abort git-rebase-continue git-rebase-skip \
     git-cherry-pick git-cherry-pick-list git-cherry-pick-continue git-cherry-pick-skip git-cherry-pick-abort \
     ci-remotes ci-diff-since-remote ci-head-compare ci-remote-head-guard ci-trigger \
     git-push-committed-head-nv ci-trigger-committed-head ci-push-committed-head git-push-current-head-to-master-nv \
@@ -52,7 +52,7 @@ PYTEST_VERBOSITY ?= -v
         ansible-syntax ansible-lint-playbooks ansible-collection-test playbook-list \
         git-status git-init git-add git-commit git-log git-diff git-reset \
         git-branch git-checkout git-merge git-staged git-stash git-stash-pop \
-        git-merge-abort git-rebase-abort git-reset-hard git-cherry-pick git-cherry-pick-list \
+        git-merge-abort git-rebase-abort git-rebase-continue git-rebase-skip git-reset-hard git-cherry-pick git-cherry-pick-list \
         submodule-init submodule-update submodule-status submodule-pin \
         repo-status repo-diff repo-staged repo-log \
         feature-start feature-done test-and-commit preflight \
@@ -199,6 +199,9 @@ help:
 	@echo "  git-branch MSG='...'  Create branch"
 	@echo "  git-checkout MSG='...' Switch branch"
 	@echo "  git-merge MSG='...'   Merge branch with --no-ff"
+	@echo "  git-rebase-abort      Abort an in-progress rebase"
+	@echo "  git-rebase-continue   Continue after resolving rebase conflicts"
+	@echo "  git-rebase-skip       Skip duplicate/current rebase commit"
 	@echo "  git-cherry-pick SHA=<commit> Cherry-pick a specific commit"
 	@echo "  git-cherry-pick-list SHAS='a b ...' Cherry-pick commits in order"
 	@echo "  feature-start MSG='...' Create and switch to feature branch"
@@ -2997,7 +3000,7 @@ git-restore:
 		echo "Usage: make git-restore FILES='path/to/file ...' (discards working-tree changes, restoring to HEAD)"; \
 		exit 1; \
 	fi
-	@git checkout -- $(FILES)
+	@git restore -- $(FILES)
 	@echo "Restored to HEAD: $(FILES)"
 
 git-branch:
@@ -3019,6 +3022,14 @@ git-merge-abort:
 git-rebase-abort:
 	@git rebase --abort
 	@echo "Rebase aborted."
+
+git-rebase-continue:
+	@git rebase --continue
+	@echo "Rebase continued."
+
+git-rebase-skip:
+	@git rebase --skip
+	@echo "Rebase skipped current commit."
 
 git-reset-hard:
 	@if [ -z "$(MSG)" ]; then echo "Usage: make git-reset-hard MSG='ref' (DESTRUCTIVE — discards all uncommitted changes)"; exit 1; fi
