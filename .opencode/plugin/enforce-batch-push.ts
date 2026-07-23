@@ -66,13 +66,13 @@ function isCiPending(branch: string): boolean {
   }
 }
 
-export const PUSH_PATTERNS: readonly RegExp[] = Object.freeze([
+const PUSH_PATTERNS: readonly RegExp[] = Object.freeze([
   /\bmake\s+git-push-sandboxcom\b/,
   /\bmake\s+development-push\b/,
   /\bmake\s+batch-push\b/,
 ]) as readonly RegExp[];
 
-export const DENY_MESSAGE =
+const DENY_MESSAGE =
   "CI-BUSY: a CI run is in_progress on the target branch. " +
   "Pushing now would cancel the running CI, producing zero validation. " +
   "Wait for CI to complete (use `make ci-verdict` to check), then push. " +

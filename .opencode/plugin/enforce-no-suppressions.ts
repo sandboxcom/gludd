@@ -22,7 +22,7 @@ import type { Plugin } from "@opencode-ai/plugin";
 import { loadHotModule, type HotModule } from "../lib/hot_reload.ts";
 import { isSubagent, reportAlive } from "../lib/shared.ts";
 
-export const SUPPRESSION_PATTERNS: RegExp[] = [
+const SUPPRESSION_PATTERNS: RegExp[] = [
   /#\s*noqa/,
   /#\s*type:\s*ignore/,
   /#\s*pylint:/,
@@ -30,12 +30,12 @@ export const SUPPRESSION_PATTERNS: RegExp[] = [
   /#\s*isort:\s*skip/,
 ];
 
-export const ALLOWLIST_PATHS: string[] = [
+const ALLOWLIST_PATHS: string[] = [
   "src/general_ludd/security/fix_not_disable.py",
   "tests/unit/test_type_safety_guardrails.py",
 ];
 
-export const DENY_MESSAGE =
+const DENY_MESSAGE =
   "Lint-suppression comments forbidden. Fix the underlying issue. " +
   "See AGENTS.md Guardrail Integrity Policy.";
 

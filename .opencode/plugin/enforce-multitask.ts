@@ -36,25 +36,25 @@ import {
 
 // Dispatch tools are defined centrally in shared.ts as "task", "agent", and "workflow".
 const FLOOR_ENFORCE = process.env.GLUDD_MULTITASK_FLOOR_ENFORCE !== "0"
-export const MIN_DISPATCHES = parseInt(
+const MIN_DISPATCHES = parseInt(
   process.env.GLUDD_MIN_DISPATCHES ||
   process.env.GLUDD_MULTITASK_MIN_DISPATCHES ||
   "10",
   10,
 )
-export const MAX_DISPATCHES = parseInt(process.env.GLUDD_MULTITASK_MAX_DISPATCHES || "10", 10)
-export const MAX_ZERO_STREAK = 2
-export const WAVE_HISTORY_SIZE = 10
+const MAX_DISPATCHES = parseInt(process.env.GLUDD_MULTITASK_MAX_DISPATCHES || "10", 10)
+const MAX_ZERO_STREAK = 2
+const WAVE_HISTORY_SIZE = 10
 // Inter-call gap that marks a new agent message. Env-tunable so e2e tests can
 // drive the real boundary logic without 5s sleeps; production default unchanged.
 const MSG_GAP_MS = parseInt(process.env.GLUDD_MSG_GAP_MS || "5000", 10)
-export const CONSECUTIVE_NON_DISPATCH_THRESHOLD = parseInt(
+const CONSECUTIVE_NON_DISPATCH_THRESHOLD = parseInt(
   process.env.GLUDD_CONSECUTIVE_NON_DISPATCH_THRESHOLD || "5", 10)
-export const CONSECUTIVE_NON_DISPATCH_WINDOW_MS = parseInt(
+const CONSECUTIVE_NON_DISPATCH_WINDOW_MS = parseInt(
   process.env.GLUDD_CONSECUTIVE_NON_DISPATCH_WINDOW_MS || "30000", 10)
 
 // Env-overridable (T10) so tests isolate from live sessions; default stays in /tmp.
-export const MULTITASK_STATE_FILE = process.env.GLUDD_MULTITASK_STATE_FILE || "/tmp/gludd-multitask-state.json"
+const MULTITASK_STATE_FILE = process.env.GLUDD_MULTITASK_STATE_FILE || "/tmp/gludd-multitask-state.json"
 
 interface MultitaskState {
   pid: number
@@ -224,7 +224,7 @@ export function resetMultitaskState(): void {
 // DEFAULT IMPLEMENTATION (compiled-in fallback)
 // Exported (T7) so tests invoke the real hooks without hot-module indirection.
 // ============================================================================
-export const defaultImpl: HotModule = {
+const defaultImpl: HotModule = {
   "tool.execute.before": async (input: { tool?: string }) => {
     // OPENCODE_SUBAGENT=1 return early via isSubagent().
     if (isSubagent()) return

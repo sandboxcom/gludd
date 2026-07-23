@@ -27,7 +27,7 @@ import type { Plugin } from "@opencode-ai/plugin";
 import { loadHotModule, type HotModule } from "../lib/hot_reload.ts";
 import { isSubagent, reportAlive } from "../lib/shared.ts";
 
-export const WORKTREE_BLOCKED_PATTERNS = [
+const WORKTREE_BLOCKED_PATTERNS = [
   /\bmake\s+git-push/,
   /\bmake\s+batch-push/,
   /\bmake\s+development-push/,

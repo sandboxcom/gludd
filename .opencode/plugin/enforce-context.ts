@@ -28,12 +28,12 @@ import type { Plugin } from "@opencode-ai/plugin";
 import { loadHotModule, type HotModule } from "../lib/hot_reload.ts";
 import { isSubagent, reportAlive, readJsonFile, writeJsonFile, getProjectRoot } from "../lib/shared.ts";
 
-export const STATE_FILE = "/tmp/gludd-context-check.json";
-export const DEFAULT_STALE_SECONDS = 86400;
+const STATE_FILE = "/tmp/gludd-context-check.json";
+const DEFAULT_STALE_SECONDS = 86400;
 
-export const PROJECT_ROOT = getProjectRoot();
+const PROJECT_ROOT = getProjectRoot();
 
-export interface ContextCheckState {
+interface ContextCheckState {
   lastCheckedEpoch: number;
   sessionPid: number;
 }

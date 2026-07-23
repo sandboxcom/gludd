@@ -35,7 +35,7 @@ import type { Plugin } from "@opencode-ai/plugin";
 import { loadHotModule, type HotModule } from "../lib/hot_reload.ts";
 import { isSubagent, reportAlive } from "../lib/shared.ts";
 
-export const WAIT_PATTERNS: readonly RegExp[] = Object.freeze([
+const WAIT_PATTERNS: readonly RegExp[] = Object.freeze([
   /\bsleep\s+\d+\s*&&\s*make\b/,
   /\bsleep\s+\d+\s*$/,
   /\bmake\s+gate-tail\b/,
@@ -43,12 +43,12 @@ export const WAIT_PATTERNS: readonly RegExp[] = Object.freeze([
   /\bmake\s+gate-status-check\b/,
 ]) as readonly RegExp[];
 
-export const DENY_MESSAGE =
+const DENY_MESSAGE =
   "Main-thread wait forbidden (AGENTS.md 'Background Operations NEVER Block Dispatch'). " +
   "Background ops are NOT a blocker for other work. DISPATCH subagents now; poll the gate via a Task tool call, not via shell sleep. " +
   "Set GLUDD_NO_WAIT_ENFORCE=0 to disable.";
 
-export const CI_POLL_DISPATCH_PATTERNS: readonly RegExp[] = Object.freeze([
+const CI_POLL_DISPATCH_PATTERNS: readonly RegExp[] = Object.freeze([
   /\bpoll\s+CI\s+until\b/i,
   /\bpoll(?:ing)?\s+(?:for\s+)?CI\s+(?:status\s+)?until\b/i,
   /\bwait\s+for\s+CI\s+(?:to\s+)?(?:turn\s+|go\s+|become\s+)?green\b/i,
@@ -58,7 +58,7 @@ export const CI_POLL_DISPATCH_PATTERNS: readonly RegExp[] = Object.freeze([
   /\buntil\s+conclusion\s+(?:is\s+)?success\b/i,
 ]) as readonly RegExp[];
 
-export const CI_POLL_DENY_MESSAGE =
+const CI_POLL_DENY_MESSAGE =
   "CI-poll dispatch forbidden (AGENTS.md 'CI-Poll Subagents Are Forbidden' + " +
   "'Machine-Enforced CI Check Cooldown'). A subagent that polls CI until terminal " +
   "burns a floor slot for 30+ minutes producing zero value. CI runs on its own " +

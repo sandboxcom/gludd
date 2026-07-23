@@ -45,7 +45,7 @@ import { isSubagent, reportAlive, getProjectRoot } from "../lib/shared.ts";
 // ── Allowlist ──────────────────────────────────────────────────────────────
 // MUST match scripts/check_tdd_compliance.py ALLOWLIST. Type definitions,
 // package markers, and protocols don't need behavioral tests.
-export const ALLOWLIST_PATTERNS: RegExp[] = [
+const ALLOWLIST_PATTERNS: RegExp[] = [
   /__init__\.py$/,
   /__pycache__\//,
   /\.pyi$/,
@@ -59,7 +59,7 @@ export const ALLOWLIST_PATTERNS: RegExp[] = [
 const SRC_PREFIX = "src/general_ludd/";
 const TESTS_PREFIX = "tests/";
 
-export const DENY_MESSAGE =
+const DENY_MESSAGE =
   "TDD VIOLATION: write the test FIRST. Create the test file (one of the " +
   "candidates below) BEFORE editing this src/ file. See AGENTS.md " +
   "\"CRITICAL: TDD Policy\". Workflow: (1) write tests/unit/test_<module>.py, " +
@@ -124,7 +124,7 @@ export function isImplementationFile(filePath: string): boolean {
   return normalized.includes(SRC_PREFIX) && normalized.endsWith(".py");
 }
 
-export interface TddVerdict {
+interface TddVerdict {
   allow: boolean;
   reason?: string;
   candidates?: string[];

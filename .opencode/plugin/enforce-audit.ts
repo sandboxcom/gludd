@@ -59,10 +59,10 @@ export function hasRatchetEntries(yml: string): boolean {
   return entries.length > 1;
 }
 
-export const DONE_WORDS_RE =
+const DONE_WORDS_RE =
   /\b(landed|committed|pushed|fixed|passing|shipped|done|complete|green|resolved|deployed|verified|passed|working)\b/i;
 
-export const EVIDENCE_RE =
+const EVIDENCE_RE =
   /\b[0-9a-f]*[a-f][0-9a-f]{6,39}\b|VERIFIED\s+\S+@[0-9a-f]+|CI\s+(GREEN|RED|PENDING)|\d+\s+passed|=== GATE:\s+PASSED\s+===/;
 
 const defaultImpl: HotModule = {

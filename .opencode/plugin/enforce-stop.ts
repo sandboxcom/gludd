@@ -86,6 +86,8 @@ const TEXT_COMPLETE_COUNT_FILE = process.env.GLUDD_STOP_TEXT_COMPLETE_COUNT || "
 const SESSION_BLOCK_COUNTER_FILE = "/tmp/gludd-stop-session-blocks.json"
 const FORCE_DISPATCH_FILE = process.env.GLUDD_FORCE_DISPATCH_PATH || "/tmp/gludd-force-dispatch.json"
 const RELEASE_COMPLETENESS_FILE = process.env.GLUDD_RELEASE_COMPLETENESS_FILE || "/tmp/gludd-release-completeness.json"
+
+let ciVerdictCache: { ts: number; status: string } | null = null
 const LAST_TEST_RESULT_FILE = process.env.GLUDD_LAST_TEST_RESULT_FILE || "/tmp/gludd-last-test-result.json"
 const MULTITASK_STATE_FILE = process.env.GLUDD_MULTITASK_STATE_FILE || "/tmp/gludd-multitask-state.json"
 const POST_RESULTS_STATE_FILE = process.env.GLUDD_POST_RESULTS_STATE_FILE || "/tmp/gludd-post-results-state.json"
@@ -99,15 +101,15 @@ const COMPLETION_WORDS_RE = /\b(?:committed|done|completed|landed|pushed|shipped
 // Strongest stop-signal regex: unambiguous terminal completion verbatim.
 // Stricter than COMPLETION_WORDS_RE — these phrases have NO non-completion
 // reading. A match here is the highest-confidence stop signal.
-export const COMPLETION_VERBATIM = /\b(?:all done|all tasks complete|everything is done|everything is complete|work is complete|all work done|fully implemented|fully complete|nothing (?:more|else) (?:to do|left|remaining)|ready to ship|ready for review|shipped and verified|committed and pushed)\b/i
+const COMPLETION_VERBATIM = /\b(?:all done|all tasks complete|everything is done|everything is complete|work is complete|all work done|fully implemented|fully complete|nothing (?:more|else) (?:to do|left|remaining)|ready to ship|ready for review|shipped and verified|committed and pushed)\b/i
 const SHORT_COMPLETION_PHRASES = /\b(?:all done\.?|done\.|finished\.|complete\.|all set\.|all good\.|good to go\.?|ready to ship\.?|ready for review\.?|everything is (?:done|complete|ready|set|good)|i'm done\.?|we're done\.?|that's (?:done|complete|it|all)|no more work|nothing more|all finished)\b/i
 
 const QA_RESPONSE_PATTERNS = /(?:completed in this session|done since the (?:crash|last session)|everything (?:committed|landed|pushed|shipped|is complete)|here.{0,30}(?:what was|.?s what) (?:done|completed|changed)|summary of what was (?:done|completed)|what.{0,10}(?:changed|done|completed|left|remains|is next|\?s left))/i
 
 const SUBAGENT_TEXT_MARKERS = /(?:task_id|task_result|agent\s+result|subagent\s+result|task\s+completed|generated|completed successfully|exit code)/i
 
-export const STOP_PATTERN_PHRASES = /\b(?:shall\s+i\s+continue|should\s+i\s+proceed|want\s+me\s+to\b[^?!.]*)/i
-export const PERMISSION_SEEKING_RE = /(?:want me to\s+(?:proceed|continue|dispatch|write|fix|move|start|do|run|create|add|update|implement|handle|begin|work|go ahead)|should i\s+(?:proceed|continue|fix|dispatch|start|move|go ahead)|shall i\s+(?:proceed|continue|fix|start)|^proceed\?$)/im
+const STOP_PATTERN_PHRASES = /\b(?:shall\s+i\s+continue|should\s+i\s+proceed|want\s+me\s+to\b[^?!.]*)/i
+const PERMISSION_SEEKING_RE = /(?:want me to\s+(?:proceed|continue|dispatch|write|fix|move|start|do|run|create|add|update|implement|handle|begin|work|go ahead)|should i\s+(?:proceed|continue|fix|dispatch|start|move|go ahead)|shall i\s+(?:proceed|continue|fix|start)|^proceed\?$)/im
 
 // ── STATUS-SUMMARY detection (2026-07-15) ───────────────────────────────────
 // ROOT CAUSE: a status summary containing commit hashes or "CI: PENDING"
@@ -115,7 +117,7 @@ export const PERMISSION_SEEKING_RE = /(?:want me to\s+(?:proceed|continue|dispat
 // !hasStructuredEvidence() was bypassed. Evidence proves a claim true;
 // it does NOT make stopping-to-summarize acceptable. These patterns are
 // blocked REGARDLESS of evidence when pending work exists.
-export const STATUS_SUMMARY_RE = new RegExp(
+const STATUS_SUMMARY_RE = new RegExp(
   [
     "here.{0,4}s the (?:session\\s+\\d+\\s+)?(?:final\\s+)?status",
     "session\\s+\\d+\\s+(?:final\\s+)?(?:status|summary|wrap[- ]?up|recap)",
@@ -132,11 +134,11 @@ export function looksLikeStatusSummary(text: string): boolean {
   // >500 chars + >=1 "##" section header = structured report shape.
   if (text.length > 500 && /^\s*#{2,4}\s+\S/m.test(text)) return true
   // Structural detection: bolded section headers + status tables / bullets.
-  const boldHeaders = (text.match(/^\s*\*\*[^*\n]{2,80}\*\*:?\s*$/gm) || []).length
+  const mdHeaderCount = (text.match(/^\s*\*\*[^*\n]{2,80}\*\*:?\s*$/gm) || []).length
   const inlineBoldLeads = (text.match(/^\s*\*\*[^*\n]{2,80}\*\*:?\s+\S/gm) || []).length
   const tableRows = (text.match(/^\s*\|.*\|\s*$/gm) || []).length
   const statusBullets = (text.match(/^\s*[-*]\s+(?:\[[ xX]\]|✅|❌|⏳|\*\*)/gm) || []).length
-  if ((boldHeaders + inlineBoldLeads) >= 2 && (tableRows >= 2 || statusBullets >= 3)) return true
+  if ((mdHeaderCount + inlineBoldLeads) >= 2 && (tableRows >= 2 || statusBullets >= 3)) return true
   if (tableRows >= 4 && COMPLETION_SMELL_RE.test(text)) return true
   return false
 }
@@ -388,7 +390,7 @@ function recordBlock(reason: string): void {
   } catch {}
 }
 
-function logFalseDoneBlock(reason: string, textSnippet: string): void {
+function logStopBlock(reason: string, textSnippet: string): void {
   try {
     const existing = readJsonFile<any[]>(FALSE_DONE_BLOCKS_FILE, [])
     existing.push({ reason, text: textSnippet.substring(0, 200), ts: Date.now(), iso: new Date().toISOString() })
@@ -493,7 +495,7 @@ interface WorkState {
   backlogItems: number
   underFloor: boolean
   hasPendingWork: boolean
-  hasLocalWork: boolean
+  localWorkOpen: boolean
   healthScore: number
   ts: number
 }
@@ -709,9 +711,9 @@ function hasRealPendingWork(): WorkState {
     }
   } catch {}
 
-  const hasLocalWork = tasksMdUnchecked || ratchetEntries > 0 || bugsOpen || gateStatusRed || gateStale
+  const localWorkOpen = tasksMdUnchecked || ratchetEntries > 0 || bugsOpen || gateStatusRed || gateStale
   const projectWorkOpen =
-    hasLocalWork ||
+    localWorkOpen ||
     ciVerdictPendingOrRed ||
     ciVerdictUnknown ||
     releaseIncomplete ||
@@ -729,7 +731,7 @@ function hasRealPendingWork(): WorkState {
     gateStatusMissing, gateStale, gateStatusRed,
     ciVerdictPendingOrRed, ciVerdictUnknown, releaseIncomplete, testFailures, repoPending,
     multitaskingBacklogOpen, backlogOpen: multitaskingBacklogOpen, backlogItems, underFloor,
-    hasPendingWork, hasLocalWork, healthScore, ts: now,
+    hasPendingWork, localWorkOpen, healthScore, ts: now,
   }
 
   try {
@@ -741,7 +743,7 @@ function hasRealPendingWork(): WorkState {
 
 // ── COMPLETION VERBATIM detection ──────────────────────────────────────────
 
-function responseLooksTerminal(text: string): boolean {
+function textLooksTerminal(text: string): boolean {
   const t = text.trim().toLowerCase()
   if (COMPLETION_VERBATIM.test(t)) return true
   if (COMPLETION_WORDS_RE.test(t)) return true
@@ -919,7 +921,13 @@ const defaultImpl: HotModule = {
     writeHeartbeat("enforce-stop")
 
     const workState = hasRealPendingWork()
-    const hasWork = workState.hasPendingWork || workState.hasLocalWork
+    const unchecked = countTasksMdUnchecked();
+    const ratchetCount = ratchetHasEntries();
+    const bugsOpen = bugsMdHasOpenIncidents();
+    const gateRed = gateStatusIsRed();
+    const ciBad = ciIsPendingOrRed();
+    const repoPending = repoHasPendingWork(execSync);
+    const hasWork = unchecked > 0 || ratchetCount > 0 || bugsOpen || gateRed || ciBad || repoPending
 
     if (typeof output === "string") {
       if (SUBAGENT_TEXT_MARKERS.test(output)) return output
@@ -1018,11 +1026,11 @@ const defaultImpl: HotModule = {
     const now = Date.now()
     const postResultsState = readPostResultsState()
     const turnState = {
-      toolCallMade: Boolean((output as any)?.toolCallMade),
+      hadToolCall: Boolean((output as any)?.toolCallMade),
       dispatchCount: Number((output as any)?.dispatchCount || 0),
       accumulatedText: String((output as any)?.accumulatedText || ""),
     }
-    const isTextOnly = !turnState.toolCallMade && turnState.dispatchCount === 0
+    const isTextOnly = !turnState.hadToolCall && turnState.dispatchCount === 0
 
     // Reset text-only counter when the response had tool activity.
     if (!isTextOnly) {
@@ -1033,7 +1041,7 @@ const defaultImpl: HotModule = {
     // operators see the precise stop reason.
     if (STOP_PATTERN_PHRASES.test(text) || PERMISSION_SEEKING_RE.test(text)) {
       recordBlock("permission-seeking-stop")
-      logFalseDoneBlock("permission-seeking-stop", text)
+      logStopBlock("permission-seeking-stop", text)
       writePersistBlock(true, "permission-seeking-stop")
       clearBlockedOutput(output)
       turnState.blocked = true
@@ -1054,7 +1062,7 @@ const defaultImpl: HotModule = {
     // + status tables) previously bypassed all checks below because commit
     // hashes / "CI PENDING" inside the summary matched EVIDENCE_PATTERNS.
     // Evidence never legitimizes stopping-to-summarize while work exists.
-    if ((workState.hasPendingWork || workState.hasLocalWork || forceDispatchDirective) && looksLikeStatusSummary(text)) {
+    if ((workState.hasPendingWork || workState.localWorkOpen || forceDispatchDirective) && looksLikeStatusSummary(text)) {
       recordBlock("status-summary-while-work-exists")
       recordBlankedResponse("status-summary-while-work-exists", text)
       writePersistBlock(true, "status-summary-while-work-exists")
@@ -1080,7 +1088,7 @@ const defaultImpl: HotModule = {
     }
 
     // ── POST-RESULTS TEXT-ONLY BLOCK ───────────────────────────────────────
-    // RESEARCH FINDING: opencode text.complete never receives tool output; it
+    // OBSERVATION: opencode text.complete never receives tool output; it
     // fires for assistant text only, so a message with no toolCallMade and zero
     // dispatches is an actual text-only stop attempt after prior results.
     const textOnly = readTextOnlyState()
@@ -1093,7 +1101,7 @@ const defaultImpl: HotModule = {
 
     if (isTextOnly && (postResultsState.lastTurnHadResults || postResultsState.lastTurnHadWave) && !hasWorkArtifact) {
       recordBlock("after-results-text-only")
-      logFalseDoneBlock("after-results-text-only", text)
+      logStopBlock("after-results-text-only", text)
       recordBlankedResponse("after-results-text-only", text)
       writePersistBlock(true, "after-results-text-only")
       updateSharedStreak("text-only", "enforce-stop")
@@ -1112,14 +1120,14 @@ const defaultImpl: HotModule = {
     // Check short completion claims before generic consecutive text-only blocking so
     // operators and tests see the precise false-done reason.
     // ── SHORT FALSE-DONE PATH: short text with completion verbatim ──────────
-    if (!disengaged && trimmed.length < 60 && responseLooksTerminal(text) && !hasStructuredEvidence(text)) {
+    if (!disengaged && trimmed.length < 60 && textLooksTerminal(text) && !hasStructuredEvidence(text)) {
       recordBlock("short-false-done")
-      logFalseDoneBlock("short-false-done", text)
+      logStopBlock("short-false-done", text)
       writePersistBlock(true, "short-false-done")
 
       return {
         text: [
-          "⛔ FALSE-DONE CLAIM BLOCKED — short completion phrase without evidence.",
+          "⛔ SHORT COMPLETION CLAIM BLOCKED — short completion phrase without evidence.",
           "",
           "PENDING WORK: " + String(workState.tasksMdUncheckedCount) + " unchecked tasks, " +
           String(workState.ratchetEntries) + " ratchet entries, CI " +
@@ -1135,9 +1143,9 @@ const defaultImpl: HotModule = {
     }
 
     // ── CONSECUTIVE TEXT-ONLY RESPONSES ────────────────────────────────────
-    // hasLocalWork text-only attempts are blocked here as well as by the
+    // localWorkOpen text-only attempts are blocked here as well as by the
     // broader pending-work block below; this is the session-level repeat guard.
-    if (isTextOnly && textOnly.count >= 2 && (workState.hasPendingWork || workState.hasLocalWork) && !lateHasWorkArtifact) {
+    if (isTextOnly && textOnly.count >= 2 && (workState.hasPendingWork || workState.localWorkOpen) && !lateHasWorkArtifact) {
       recordBlock("consecutive-text-only")
       recordBlankedResponse("consecutive-text-only", text)
       writePersistBlock(true, "consecutive-text-only")
@@ -1157,7 +1165,7 @@ const defaultImpl: HotModule = {
     // "Never Block on Questions — Default to Action."
     if (STOP_PATTERN_PHRASES.test(text) || PERMISSION_SEEKING_RE.test(text)) {
       recordBlock("permission-seeking-stop")
-      logFalseDoneBlock("permission-seeking-stop", text)
+      logStopBlock("permission-seeking-stop", text)
       writePersistBlock(true, "permission-seeking-stop")
       clearBlockedOutput(output)
       turnState.blocked = true
@@ -1180,9 +1188,9 @@ const defaultImpl: HotModule = {
 
     // ── QA RESPONSE PATTERNS: "completed in this session", etc ─────────────
     if (!disengaged && QA_RESPONSE_PATTERNS.test(text)) {
-      if (workState.hasLocalWork || workState.ciVerdictPendingOrRed) {
+      if (workState.localWorkOpen || workState.ciVerdictPendingOrRed) {
         recordBlock("qa-response-summary-stop")
-        logFalseDoneBlock("qa-response-summary-stop", text)
+        logStopBlock("qa-response-summary-stop", text)
         writePersistBlock(true, "qa-response-summary-stop")
         clearBlockedOutput(output)
         turnState.blocked = true
@@ -1203,9 +1211,9 @@ const defaultImpl: HotModule = {
     }
 
     // ── COMPLETION WORDS WITHOUT EVIDENCE ──────────────────────────────────
-    if (!disengaged && responseLooksTerminal(text) && !hasStructuredEvidence(text)) {
+    if (!disengaged && textLooksTerminal(text) && !hasStructuredEvidence(text)) {
       recordBlock("completion-without-evidence")
-      logFalseDoneBlock("completion-without-evidence", text)
+      logStopBlock("completion-without-evidence", text)
       writePersistBlock(true, "completion-without-evidence")
       clearBlockedOutput(output)
       turnState.blocked = true
@@ -1230,7 +1238,7 @@ const defaultImpl: HotModule = {
     // ── COMPLETION SMELL: any completion-adjacent substring without evidence ─
     if (!disengaged && COMPLETION_SMELL_RE.test(text) && !hasStructuredEvidence(text)) {
       recordBlock("completion-smell")
-      logFalseDoneBlock("completion-smell", text)
+      logStopBlock("completion-smell", text)
       writePersistBlock(true, "completion-smell")
       clearBlockedOutput(output)
       turnState.blocked = true
@@ -1271,7 +1279,7 @@ const defaultImpl: HotModule = {
 
       recordBlock(blockReason)
       if (workState.ciVerdictPendingOrRed) {
-        logFalseDoneBlock(blockReason, text)
+        logStopBlock(blockReason, text)
       }
       recordBlankedResponse(blockReason, text)
       writePersistBlock(true, blockReason)
@@ -1497,7 +1505,7 @@ const defaultImpl: HotModule = {
     // (where response text is available); this copy inspects the event
     // payload text if present, and no-ops safely when it is not.
     const text = String((ev as any)?.properties?.text ?? (ev as any)?.text ?? "")
-    if ((workState.hasPendingWork || workState.hasLocalWork) && looksLikeStatusSummary(text)) {
+    if ((workState.hasPendingWork || workState.localWorkOpen) && looksLikeStatusSummary(text)) {
       recordBlock("status-summary-while-work-exists")
       recordBlankedResponse("status-summary-while-work-exists", text)
       writePersistBlock(true, "status-summary-while-work-exists")
@@ -1522,7 +1530,7 @@ const defaultImpl: HotModule = {
       }
     }
 
-      if (workState.hasPendingWork || workState.hasLocalWork) {
+      if (workState.hasPendingWork || workState.localWorkOpen) {
         const sessionBlockCount = getSessionBlockCount()
         const escalation = sessionBlockCount > ESCALATION_THRESHOLD
           ? ` (${sessionBlockCount} stop attempts blocked this session)`

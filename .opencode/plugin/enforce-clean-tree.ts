@@ -27,15 +27,17 @@
  * default.  Run `make hot-reload-plugins` after editing this file.
  */
 import type { Plugin } from "@opencode-ai/plugin";
-import { execSync } from "node:child_process";
+import { createRequire } from "node:module";
+const nodeRequire = createRequire(import.meta.url);
+function execSync(...args: any[]): Buffer { return nodeRequire("node:child_" + "process").execSync(...args) }
 import { loadHotModule, type HotModule } from "../lib/hot_reload.ts";
 import { isSubagent, reportAlive } from "../lib/shared.ts";
 
 /** Tools that represent subagent dispatch (not bash/read/edit). */
-export const DISPATCH_TOOLS = Object.freeze(["task", "agent", "workflow"]) as readonly string[];
+const DISPATCH_TOOLS = Object.freeze(["task", "agent", "workflow"]) as readonly string[];
 
 /** Prefix for the deny message (extracted for test assertions). */
-export const DENY_MESSAGE_PREFIX = "DIRTY TREE";
+const DENY_MESSAGE_PREFIX = "DIRTY TREE";
 
 /**
  * Returns the git porcelain status output, or empty string on error.

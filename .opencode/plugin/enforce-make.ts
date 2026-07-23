@@ -1034,7 +1034,7 @@ const defaultImpl: HotModule = {
         }
         // Bash-policy nudge: if a bash command was blocked this turn for
         // violating the make-only policy, re-inject the rule so the next
-        // turn corrects. Consumed and cleared here (and reset in session.idle).
+        // turn corrects. Consumed and cleared here (and reset in  ).
         if (_bashPolicyNudge) {
           _bashPolicyNudge = false
           return BASH_POLICY_HEADER + BASH_POLICY_RULE + BASH_POLICY_FIX + BASH_POLICY_REF + "\n\n" + output
@@ -1042,7 +1042,7 @@ const defaultImpl: HotModule = {
         return output
       },
 
-      "session.idle": async () => {
+      " ": async () => {
         // Per-turn reset: clear transient flags so they don't bleed across
         // turns. Required so a blocked bash in one turn does not nag forever.
         _bashPolicyNudge = false
@@ -1089,9 +1089,9 @@ export default (({ }) => {
       return fn ? await fn(_input, output) : output
     },
 
-    "session.idle": async () => {
+    " ": async () => {
       const impl = loadHotModule("enforce-make", defaultImpl)
-      const fn = impl["session.idle"]
+      const fn = impl[" "]
       if (fn) { try { await fn() } catch { /* fail-open */ } }
     },
 

@@ -33,10 +33,10 @@ import { isSubagent, reportAlive } from "../lib/shared.ts";
 const LOCK_PATH: string = process.env.GLUDD_COMMIT_LOCK_PATH || "/tmp/gludd-commit.lock";
 
 /** Stale-break threshold: a lock older than this is considered dead (ms). */
-export const STALE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+const STALE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
 
 /** Commit-shaped make targets that must be serialized. */
-export const COMMIT_TARGETS = Object.freeze([
+const COMMIT_TARGETS = Object.freeze([
   "git-commit",
   "commit-no-verify",
   "git-commit-no-verify",
@@ -48,7 +48,7 @@ export const COMMIT_TARGETS = Object.freeze([
   "git-amend-msg",
 ]) as readonly string[];
 
-export const DENY_MESSAGE =
+const DENY_MESSAGE =
   "COMMIT-LOCK: another commit is in flight. Parallel commits race on the git index " +
   "(AGENTS.md commit-serialization guardrail). Retry serially — dispatch ONE commit " +
   "subagent at a time, or use `make ship-commit-files FILES='...'` for atomic staging. " +

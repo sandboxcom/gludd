@@ -111,7 +111,7 @@ const NAG_TEXT = (
 )
 
 const defaultImpl: HotModule = {
-  "text.complete": async (output) => {
+  "experimental.text.complete": async (output) => {
     if (isSubagent()) return
     reportAlive("enforce-anti-essay")
     try {
@@ -157,7 +157,7 @@ const defaultImpl: HotModule = {
     try {
       if (process.env.GLUDD_ANTI_ESSAY_ENFORCE === "0") return
       // tool.execute.before only watches — doesn't block tool calls.
-      // The text.complete hook is the primary enforcement surface.
+      // The experimental.text.complete hook is the primary enforcement surface.
     } catch {
       // fail-open
     }
@@ -166,10 +166,10 @@ const defaultImpl: HotModule = {
 
 export default (({ }) => {
   return {
-    "text.complete": async (output) => {
+    "experimental.text.complete": async (output) => {
       if (isSubagent()) return
       const impl = loadHotModule("anti-essay", defaultImpl)
-      const fn = impl["text.complete"]
+      const fn = impl["experimental.text.complete"]
       return fn ? await fn(output) : undefined
     },
     "tool.execute.before": async (input, output) => {

@@ -30,7 +30,7 @@ import { loadHotModule, type HotModule } from "../lib/hot_reload.ts";
 import { isSubagent, reportAlive, getProjectRoot } from "../lib/shared.ts";
 
 /** Prefix for objective nag injection. */
-export const NAG_PREFIX = "███  NO PRIMARY OBJECTIVE SET";
+const NAG_PREFIX = "███  NO PRIMARY OBJECTIVE SET";
 
 /** Extract the PRIMARY OBJECTIVE from SESSION.md. Returns "" if missing. */
 export function getPrimaryObjective(): string {
@@ -123,7 +123,7 @@ const defaultImpl: HotModule = {
     }
   },
 
-  "text.complete": async (output) => {
+  "experimental.text.complete": async (output) => {
     if (isSubagent()) return;
     try {
       const objective = getPrimaryObjective();
@@ -154,10 +154,10 @@ export default (async ({}) => {
       const fn = impl["tool.execute.before"];
       return fn ? await fn(input, output) : undefined;
     },
-    "text.complete": async (output: any) => {
+    "experimental.text.complete": async (output: any) => {
       if (isSubagent()) return;
       const impl = loadHotModule("objective", defaultImpl);
-      const fn = impl["text.complete"];
+      const fn = impl["experimental.text.complete"];
       return fn ? await fn(output) : undefined;
     },
   };
