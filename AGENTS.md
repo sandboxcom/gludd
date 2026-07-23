@@ -2962,6 +2962,15 @@ This is codified at all three levels:
 3. **`scripts/test_no_wait_hook.py`** — proves the constraint patterns block
    in enforce mode.
 
+
+## CRITICAL: All Bugs Are Your Bugs — No Pre-Existing Exceptions
+
+1. **Every bug in this repository is your responsibility to fix.** There is no such thing as a "pre-existing" or "someone else's" bug. Distinguishing "my changes" from "pre-existing" is a stop-pattern cop-out.
+2. **When CI is red, fix ALL failures** regardless of when or by whom they were introduced. Never classify, categorize, or excuse test failures.
+3. **The only acceptable response to a failing test or broken CI is to fix it.** Never report it, never label it as pre-existing, never defer it.
+4. **"It was already broken when I got here" is FORBIDDEN** — same category as "the gate was already red" (see No-Commit-Bypass Policy).
+5. **The repository is your full responsibility.** Every red test, every lint error, every typecheck failure, every CI failure is a task to complete — not a status to report.
+
 ## Disk Discipline
 
 **The agent MUST NOT fill the disk. /tmp/gludd-* files accumulate across sessions and must be cleaned.**
