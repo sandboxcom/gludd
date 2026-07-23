@@ -187,7 +187,8 @@ class TestClaimRunnableTodosNoProject:
         pm.select_project.return_value = None
         loop, _ = _make_loop(todo_repo=todo_repo, project_manager=pm)
         await loop._phase_claim_runnable_todos()
-        todo_repo.claim_runnable.assert_called_once_with(limit=10)
+        todo_repo.claim_runnable.assert_not_called()
+        assert loop._tick_state["claimed_todos"] == []
 
 
 class TestGetRuleOverridesNonDictResult:
@@ -269,7 +270,7 @@ class TestReconcileCompletedDecisionsSkips:
         result_mock = MagicMock()
         result_mock.scalars().all.return_value = [decision_row]
         mocks["session"].execute.return_value = result_mock
-        mocks["todo_repo"].get_by_id.return_value = todo_model
+        mocks["todo_repo"].get_by_ids.return_value = {"TODO-S2": todo_model}
         await loop._phase_reconcile_completed_decisions()
         mocks["todo_repo"].transition.assert_not_called()
 

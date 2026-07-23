@@ -1616,12 +1616,12 @@ class EventLoop:
             self._tick_state["claimed_todos"] = []
             return
 
-        if project_id is not None:
-            claimed = await self._todo_repo.claim_runnable(
-                limit=effective_limit, project_id=project_id
-            )
-        else:
-            claimed = await self._todo_repo.claim_runnable(limit=effective_limit)
+        if project_id is None:
+            self._tick_state["claimed_todos"] = []
+            return
+        claimed = await self._todo_repo.claim_runnable(
+            limit=effective_limit, project_id=project_id
+        )
         self._tick_state["claimed_todos"] = claimed
         # ── Resource estimation: set estimated_cost_usd per claimed todo ──
         if claimed and self._active_session is not None:
