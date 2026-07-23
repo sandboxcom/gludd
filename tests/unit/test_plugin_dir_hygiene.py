@@ -264,3 +264,154 @@ let failures = [];
         "(would crash opencode):\n"
         + "\n".join(f"  {f}" for f in failures)
     )
+
+
+# ---------------------------------------------------------------------------
+# Named-export guardrail — catches the 2026-07-23 _exports.ts crash class
+# ---------------------------------------------------------------------------
+#
+# opencode's getLegacyPlugins() iterates Object.values(mod) and rejects any
+# export that is not a function.  ``export const FOO = /regex/`` crashes with
+# "Plugin export is not a function".  This class is the proactive guardrail:
+# every named export from an auto-discovered .ts file MUST be a function.
+#
+# Also verifies getter functions follow ``getCamelCase()`` naming so no raw
+# constants are smuggled through as arrow-function wrappers.
+
+
+class TestNamedExportsAreFunctions:
+    """Named exports in auto-discovered plugin files must be functions.
+
+    opencode's ``getLegacyPlugins()`` iterates ``Object.values(mod)`` and
+    rejects any export that is not a function.  A ``export const FOO = /regex/``
+    (or string, number, array, plain object) crashes with
+    "Plugin export is not a function".
+
+    This is the proactive guardrail for the 2026-07-23 incident (BUGS.md #2026-07-23)
+    where ``_exports.ts`` companion files with only raw-constant named exports
+    landed in ``.opencode/plugin/`` and crashed opencode at every boot.
+    """
+
+    # Matches ``export const/let/var NAME = rhs...`` on a single line.
+    CONST_EXPORT_RE = re.compile(
+        r"^\s*export\s+(?:const|let|var)\s+(\w+)\s*=\s*(.*)$",
+        re.MULTILINE,
+    )
+
+    # Matches ``export [async] function NAME`` on a single line.
+    FUNCTION_EXPORT_RE = re.compile(
+        r"^\s*export\s+(?:async\s+)?function\s+(\w+)",
+        re.MULTILINE,
+    )
+
+    GETTER_RE = re.compile(r"^get[A-Z]\w*$")
+
+    # ------------------------------------------------------------------
+    # helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _is_function_rhs(rhs_line: str) -> bool:
+        """Return True if *rhs_line* looks like an arrow fn or function expr."""
+        stripped = rhs_line.strip()
+        if not stripped:
+            return False
+        return "=>" in stripped or "function" in stripped
+
+    # ------------------------------------------------------------------
+    # tests
+    # ------------------------------------------------------------------
+
+    def test_named_exports_are_all_functions(self) -> None:
+        """Every ``export const/let/var NAME = ...`` must assign a function.
+
+        Raw-constant exports (strings, regexes, numbers, arrays, plain objects)
+        crash opencode's ``getLegacyPlugins()`` loader with
+        "Plugin export is not a function" or
+        "TypeError: undefined is not an object (evaluating 'N.event')".
+        """
+        violations: list[str] = []
+        for ts_file in TOP_LEVEL_TS:
+            content = ts_file.read_text()
+            for match in self.CONST_EXPORT_RE.finditer(content):
+                name = match.group(1)
+                rhs = match.group(2)
+                if not self._is_function_rhs(rhs):
+                    violations.append(
+                        f"{ts_file.name}  line {content[:match.start()].count(chr(10)) + 1}: "
+                        f"export const/let/var {name} = {rhs.strip()[:60]}"
+                    )
+        assert not violations, (
+            "Non-function const exports in .opencode/plugin/ would crash "
+            "opencode's getLegacyPlugins() loader (2026-07-23 BUGS.md incident).\n"
+            "Move raw constants to a file outside .opencode/plugin/, "
+            "or wrap them in a getter function.\n\n"
+            + "\n".join(f"  {v}" for v in violations)
+        )
+
+    def test_all_plugin_files_have_default_export(self) -> None:
+        """Every auto-discovered .ts file in .opencode/plugin/ must have ``export default``.
+
+        Files without a default export crash opencode's auto-discovery loader
+        because the framework calls the default export as a plugin.
+        """
+        if not TOP_LEVEL_TS:
+            pytest.skip("no top-level .ts files in .opencode/plugin/")
+        missing: list[str] = []
+        for ts_file in TOP_LEVEL_TS:
+            if "export default" not in ts_file.read_text():
+                missing.append(ts_file.name)
+        assert not missing, (
+            "Files without 'export default' crash opencode's auto-discovery:\n"
+            + "\n".join(f"  {m}" for m in sorted(missing))
+        )
+
+    def test_getter_functions_cover_named_exports(self) -> None:
+        """Getter-function named exports follow ``getCamelCase()`` and no raw
+        constants are exported from auto-discovered files.
+
+        Rule: any ``export function get*`` must be named ``get[A-Z]\\w*``
+        (CamelCase getter).  A bare ``export function get`` or
+        ``export function get_snake`` is a convention violation that suggests
+        a raw constant is being smuggled.
+
+        Additionally enforces that no non-function const exports exist
+        (same check as ``test_named_exports_are_all_functions`` — duplicated
+        here so this test is independently runnable as a pre-commit gate).
+        """
+        bad_getters: list[str] = []
+        non_function_consts: list[str] = []
+        for ts_file in TOP_LEVEL_TS:
+            content = ts_file.read_text()
+            # --- getter naming ---
+            for match in self.FUNCTION_EXPORT_RE.finditer(content):
+                name = match.group(1)
+                if name.startswith("get") and not self.GETTER_RE.match(name):
+                    bad_getters.append(
+                        f"{ts_file.name}: export function {name}  "
+                        f"(expected getCamelCase, got {name!r})"
+                    )
+            # --- non-function consts (same check as test_named_exports_are_all_functions) ---
+            for match in self.CONST_EXPORT_RE.finditer(content):
+                name = match.group(1)
+                rhs = match.group(2)
+                if not self._is_function_rhs(rhs):
+                    non_function_consts.append(
+                        f"{ts_file.name}  line {content[:match.start()].count(chr(10)) + 1}: "
+                        f"export const {name} = {rhs.strip()[:60]}"
+                    )
+
+        errors: list[str] = []
+        if bad_getters:
+            errors.append(
+                "Getter-function exports must follow getCamelCase() naming "
+                "(get[A-Z]\\w*):\n"
+                + "\n".join(f"  {b}" for b in bad_getters)
+            )
+        if non_function_consts:
+            errors.append(
+                "Non-function const exports would crash opencode's "
+                "getLegacyPlugins() loader (2026-07-23 BUGS.md incident):\n"
+                + "\n".join(f"  {c}" for c in non_function_consts)
+            )
+        assert not errors, "\n\n".join(errors)
