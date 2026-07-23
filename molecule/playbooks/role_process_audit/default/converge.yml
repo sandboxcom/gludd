@@ -18,3 +18,4 @@
         psk: ""
         artifact_dir: "/tmp/gludd-process-audit-8846"
         process_audit_fail_on_overfitted: false
+        project_root: "{{ lookup('env', 'PWD') }}"
