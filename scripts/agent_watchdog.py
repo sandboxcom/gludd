@@ -44,7 +44,7 @@ import signal
 import subprocess
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 try:
@@ -299,7 +299,7 @@ _UNCHECKED_PATTERN = re.compile(r"-\s+\[\s*\]|\*\s+\[\s*\]", re.IGNORECASE)
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def _log(msg: str) -> None:
@@ -1134,7 +1134,7 @@ def _check_ci_pending_stall() -> None:
             created = data.get("createdAt")
             if created:
                 created_dt = datetime.fromisoformat(created.replace("Z", "+00:00"))
-                age = (datetime.now(timezone.utc) - created_dt).total_seconds()
+                age = (datetime.now(UTC) - created_dt).total_seconds()
                 if age > 1800:
                     _log(f"CI STALLED: run on {head[:8]} pending >30min (created {created})")
                     directive = f"[{_now()}] CI STALLED: pending >30min\n"
@@ -2433,27 +2433,26 @@ def check_and_reset() -> dict:
     has_pending_work = tasks_unchecked or ratchet_count > 0 or gate_red or ci_pending
     has_any_work = has_pending_work or ci_pending
 
-    # ── CI-status injection: when CI is pending/red, write to .ci-status.
-    #     The enforce-stop.ts plugin reads BOTH .gate-status (for local checks)
-    #     and .ci-status (for CI status). Writes to .gate-status directly were
-    #     destructive — they overwrote lint/typecheck/test PASS lines with just
-    #     "CI FAIL pending → GATE: FAILED", causing enforce-stop to blank ALL
-    #     text including subagent task_results. The separation fixes that.
-    #
-    #     ONLY inject when a concrete run_id exists (a real CI run for a pushed
-    #     commit). When run_id is None, ci-verdict found NO run for the local
-    #     HEAD — the commit hasn't been pushed yet, so there is no CI work to
-    #     wait on. Injecting in that case creates a chicken-and-egg: the commit
-    #     can never land (gate red) and CI can never start (no push). ──
+    # CI-status injection: record concrete pending/red CI runs without erasing local gate evidence.
     if ci_pending and ci_run_id is not None:
         try:
-            ci_status = Path(".ci-status")
+            stamp = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+            newline = chr(10)
+            ci_line = f"CI FAIL pending (run {ci_run_id}) at {stamp}" + newline
+            ci_status = _WORKSPACE / ".ci-status"
             ci_status.parent.mkdir(parents=True, exist_ok=True)
             ci_status.write_text(
-                f"=== CI {datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')} ===\n"
-                f"CI FAIL pending (run {ci_run_id})\n"
-                f"suggested_action: wait_for_ci\n"
+                f"=== CI {stamp} ===" + newline
+                + f"CI FAIL pending (run {ci_run_id})" + newline
+                + "suggested_action: wait_for_ci" + newline
             )
+            if not gate_red:
+                gate_text = _GATE_STATUS.read_text(encoding="utf-8") if _GATE_STATUS.exists() else ""
+                if ci_line not in gate_text:
+                    separator = "" if not gate_text or gate_text.endswith(newline) else newline
+                    _GATE_STATUS.parent.mkdir(parents=True, exist_ok=True)
+                    _GATE_STATUS.write_text(f"{gate_text}{separator}{ci_line}", encoding="utf-8")
+                gate_red = True
             has_pending_work = True
         except Exception:
             pass
@@ -2614,9 +2613,7 @@ def check_and_reset() -> dict:
 
     # ── ALWAYS: Max out false-done block counter to unjam agent ──────────
     # Item 11: Smart false-done maxout — only when CI-only pending + agent active
-    if ci_pending and not has_pending_work and mtime_age is not None and mtime_age < PURE_IDLE_SECS:
-        _max_out_false_done()
-    elif has_pending_work:
+    if (ci_pending and not has_pending_work and mtime_age is not None and mtime_age < PURE_IDLE_SECS) or has_pending_work:
         _max_out_false_done()
     # else: leave false-done blocks alone (agent may be genuinely stopped)
         # ── Pure idle detection (ANY idle >PURE_IDLE_SECS, regardless of pending work) ──
@@ -2926,7 +2923,7 @@ def _check_ci_red_after_tag_push() -> dict | None:
         conclusion = data.get("conclusion", "")
         status = data.get("status", "")
 
-        if conclusion == "failure" or status == "completed" and conclusion != "success":
+        if conclusion == "failure" or (status == "completed" and conclusion != "success"):
             _log(f"CI RED AFTER TAG PUSH: tag={latest_tag} sha={tag_sha[:8]} conclusion={conclusion}")
             return {
                 "ci_red_after_tag": True,
