@@ -80,6 +80,30 @@ const DISK_DANGER_GB = parseFloat(process.env.GLUDD_DISK_DANGER_GB || "2.5")
 const DISK_HARD_FLOOR_GB = parseFloat(process.env.GLUDD_DISK_HARD_FLOOR_GB || "1.0")
 const WORKTREE_CAP = parseInt(process.env.GLUDD_WORKTREE_CAP || "6", 10)
 const WORKTREE_MIN_FREE_GB = parseFloat(process.env.GLUDD_MIN_FREE_GB || "5.0")
+// GIT SHIPPING ALLOWLIST (RP.13 fix): git operations (commit, push, tag,
+// merge) are terminal shipping actions, not inline grinding. They must NOT
+// increment the streak counter. Without this, git-add followed by git-commit
+// triggers MAINTHREAD_THRESHOLD=2 and blocks the commit — forcing
+// make disengage-enforcement which disables ALL guardrails.
+const GIT_SHIPPING_TARGETS: ReadonlySet<string> = new Set([
+  "git-add", "git-add-all", "git-commit", "git-commit-file",
+  "ship-commit", "commit-no-verify", "repo-commit",
+  "git-push-sandboxcom", "batch-push",
+  "git-tag-push", "git-tag-move", "git-tag-rm",
+  "release-cut", "release-delete", "release-recut", "release-create",
+  "git-merge", "git-checkout", "git-branch",
+  "git-stash", "git-stash-pop", "git-reset",
+  "git-rm", "git-mv", "git-show", "git-restore",
+  "git-remote-sandboxcom", "git-log", "git-status",
+  "git-diff", "git-staged", "feature-start", "feature-done",
+  "verify-remote", "verify-state", "verify-enforcement",
+  "release-view", "release-artifacts",
+])
+function isGitShippingTarget(command: string): boolean {
+  const m = command.match(/(?:^|\s)make\s+(\S+)/)
+  if (!m) return false
+  return GIT_SHIPPING_TARGETS.has(m[1])
+}
 // ============================================================================
 // HELPERS
 // ============================================================================
@@ -568,10 +592,13 @@ function isMainthreadTool(tool: string): boolean {
   // Only mutation tools gated here — investigation tools tracked separately.
   return ["edit", "write", "bash"].includes(tool)
 }
-function mainthreadBudgetBefore(tool: string): string | null {
+function mainthreadBudgetBefore(tool: string, command: string): string | null {
   try {
     if (!MAINTHREAD_STREAK_ENABLED) return null
     if (isDisengaged()) return null
+    // Git shipping operations (commit, push, tag) are NEVER blocked.
+    // They are terminal actions that complete work, not grinding.
+    if (tool === "bash" && isGitShippingTarget(command)) return null
     // Read-grind check (separate from the edit-streak below): investigation
     // tools don't count toward the edit/write/bash streak, but they DO count
     // toward a SEPARATE counter with time-based detection. Both conditions
@@ -629,9 +656,13 @@ function mainthreadBudgetBefore(tool: string): string | null {
     return null
   }
 }
-function mainthreadBudgetAfter(tool: string): void {
+function mainthreadBudgetAfter(tool: string, command: string): void {
   try {
     if (isDispatchTool(tool)) {
+      writeStreak({ count: 0 })
+      saveReadGrindState(0, Date.now())
+    } else if (tool === "bash" && isGitShippingTarget(command)) {
+      // Git shipping operations reset the streak — they complete a unit of work.
       writeStreak({ count: 0 })
       saveReadGrindState(0, Date.now())
     } else if (isMainthreadTool(tool)) {
@@ -668,6 +699,7 @@ const defaultImpl = {
     _writeHeartbeat()
     const tool = input.tool
     const args = output?.args ?? input?.args
+    const command = String(args?.command ?? input?.command ?? "")
     // task/agent/workflow dispatch — model utilization + disk discipline
     if (isDispatchTool(tool)) {
       const modelMsg = enforceModelUtilization(args)
@@ -679,12 +711,14 @@ const defaultImpl = {
     // (Each of these is FAIL-OPEN internally; they return null on any error.)
     const forceMsg = enforceForceDelegate(tool, args)
     if (forceMsg) throw new Error(forceMsg)
-    const budgetMsg = mainthreadBudgetBefore(tool)
+    const budgetMsg = mainthreadBudgetBefore(tool, command)
     if (budgetMsg) throw new Error(budgetMsg)
   },
   "tool.execute.after": async (input, _output) => {
     // mainthread budget streak counter — never throws
-    mainthreadBudgetAfter(input.tool)
+    const args = _output?.args ?? input?.args
+    const command = String(args?.command ?? input?.command ?? "")
+    mainthreadBudgetAfter(input.tool, command)
   },
 }
 // ============================================================================
