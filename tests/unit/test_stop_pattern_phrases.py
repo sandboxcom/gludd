@@ -36,10 +36,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).parent.parent.parent
 PLUGIN = ROOT / ".opencode" / "plugin" / "enforce-stop.ts"
+_IMPL = ROOT / ".opencode" / "plugin" / "impl" / "enforce_stop_impl.ts"
 
 
 def _src() -> str:
-    return PLUGIN.read_text()
+    s = PLUGIN.read_text()
+    if _IMPL.exists():
+        s += "\n" + _IMPL.read_text()
+    return s
 
 
 class TestStopPatternPhrasesDefined:
