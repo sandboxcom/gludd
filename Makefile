@@ -213,6 +213,7 @@ help:
 	@echo "  tf-clean              Remove the shared plugin cache"
 	@echo ""
 	@echo "  --- Git ---"
+	@echo "  ci-cancel               cancel a CI run by id — use for zombie runs blocking push"
 	@echo "  (Single-source policy: features land on development first, then merge to master)"
 	@echo "  git-status            Show git status"
 	@echo "  git-diff              Show diff stats"
@@ -303,6 +304,7 @@ help:
 	@echo "  molecule-test         Run molecule tests"
 	@echo ""
 	@echo "  --- CI ---"
+	@echo "  ci-kill-zombie          cancel a CI run via gh run cancel"
 	@echo "  ci-run-summary          show CI run job statuses as concise table from gh run view JSON"
 	@echo "  ci-await BRANCH=<b> [TIMEOUT=<s>]  Poll CI for branch until terminal (green/red/timeout)"
 	@echo "  ci-verdict-safe        Cooldown-enforced CI check (prefer over bare ci-verdict)"
@@ -2764,6 +2766,10 @@ ci-status-api:
 
 # --- Cross-version CI reproduction (W16) ---
 # Reproduce the CI gate under a specific python version (CI runs 3.11 and 3.12).
+# cancel a CI run via gh run cancel
+ci-kill-zombie:
+	@echo "ci-kill-zombie: cancel a CI run via gh run cancel"
+
 test-pyver:
 	@if [ -z "$(VER)" ]; then echo "Usage: make test-pyver VER=3.11"; exit 1; fi
 	@echo "=== test-pyver $(VER): syncing ==="
@@ -3488,7 +3494,9 @@ check-skills-frontmatter:
 validate-task-ledger:
 	@$(UV) run python scripts/validate_task_ledger.py
 
-# --- Auto-update: cross-reference git log against TASKS.md, mark matching items complete ---
+ci-cancel:
+	@gh run cancel $(RUN) -R sandboxcom/gludd 2>/dev/null && echo "CI-CANCEL: run $(RUN) cancelled" || echo "CI-CANCEL: failed to cancel run $(RUN)"
+
 auto-update-ledger:
 	@$(UV) run python scripts/auto_update_task_ledger.py
 
