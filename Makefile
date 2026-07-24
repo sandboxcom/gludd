@@ -356,6 +356,7 @@ help:
 	@echo "  --- Complete Target Index ---"
 	@$(PYTHON) scripts/check_make_help.py --print-index
 	@echo "  --- New Targets ---"
+	@echo "  tasks-list              show Current Session tasks from TASKS.md"
 	@echo "  sync-task-ledger        sync current task status to TASKS.md — must be run after any status change"
 	@echo "  gate-local              fast local gate: lint + typecheck + collect + hook-runtime + fast structural tests"
 	@echo "  bump-version            bump version in all files (pyproject.toml, __init__.py, README) at once"
@@ -5340,3 +5341,7 @@ sync-task-ledger:
 # fast local gate: lint + typecheck + collect + hook-runtime + fast structural tests
 gate-local:
 	@echo "gate-local: fast local gate: lint + typecheck + collect + hook-runtime + fast structural tests"
+
+tasks-list:
+	@uv run python -c "import sys; c=open('TASKS.md').read(); idx=c.find('## Current Session'); print(c[idx:] if idx>=0 else 'ERROR: No Current Session section')"
+
