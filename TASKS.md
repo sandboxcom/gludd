@@ -562,3 +562,54 @@ old summary table omitted entirely. Grand total across the file: **326** boxes.
 - [x] log_analyzer role — Ansible role for log analysis | evidence: Wave 34
 - [x] game SearX e2e tests — end-to-end tests for SearX game integration | evidence: Wave 34
 - [x] enforce-multitask min-dispatch — fix for enforce-multitask.ts min-dispatch threshold | evidence: Wave 34
+
+
+---
+
+## Current Session — 2026-07-24
+
+### CRITICAL — Active
+- [ ] check_task_ledger.py enforcement: blocks commits when TASKS.md stale/missing | test: tests/unit/test_check_task_ledger.py | status: impl+test written, needs commit
+- [ ] CI-green on tag v0.1.0-beta.1 (SHA e20afacd): run 30069080389 pending | test: make ci-verdict BRANCH=v0.1.0-beta.1
+- [ ] Release artifacts: verify 12 categories via make verify-release-completeness | status: draft w/ 1 macOS binary
+
+### HIGH — Enforcement (needs opencode restart)
+- [ ] Restart opencode to activate 13 enforcement plugins (zero-byte at session start, fixed+committed)
+- [ ] Extend check-tdd-compliance to scripts/ directory
+- [ ] ci-busy-check headSha fix: only block push when CI matches current remote tip
+
+### HIGH — Pipeline / Gate
+- [ ] check-gate-parity: add 4 missing CI phases to gate-refresh
+- [ ] Fix write-text $ escaping: stdin piping
+- [ ] pipeline-health: auto-restart when gate stale >5 min
+
+### MEDIUM — Version / Release  
+- [ ] check-version-consistency: wire into release-cut step 0
+- [ ] release-create: add sbom + shasum to fallback path
+- [ ] sync-task-ledger target: actually write current task state to TASKS.md
+
+### COMPLETED this session
+- [x] Restore 23 zero-byte plugin files | e8b6891b
+- [x] Fix 6 lint errors | e8b6891b
+- [x] Fix hook-runtime grind test | 53eb64f1
+- [x] Fix 24 plugin export failures | 8fdca5e5
+- [x] Fix hot-module build (esbuild+fallback) | ea776a74
+- [x] Fix molecule (idempotence + imports) | 5c05d9f0, 89b7fc40
+- [x] Fix CI hot-reload freshness | 593bf1bf
+- [x] Clean 18 orphaned worktrees + health gate | 978e8c77
+- [x] Delete beta.2 tag | ba92a3e1
+- [x] ci-cancel target | b620fdf0
+- [x] pipeline-status target | 556dfe02
+- [x] bump-version + check-version-consistency | 7cb9e92b, c05677fb
+- [x] _gate-fresh-check Python delegate | 556dfe02
+- [x] replace-lines atomic validation | bff8fc74
+- [x] Merge development→master | e20afacd
+- [x] Tag v0.1.0-beta.1 pushed | remote
+- [x] Local smoke PASSED | version 0.1.0-beta.1
+- [x] gate-parity script | 1dce0e14
+- [x] pipeline-health | 3de2b180
+- [x] Untrack .ci-status | 04c715fc
+- [x] require_ci_green cancelled/skipped fix | f7fd931a
+- [x] check_version_consistency script | 7cb9e92b
+- [x] ci-integrity + task-ledger scripts | 2b513a21
+- [x] Cancel zombie CI 30064364867

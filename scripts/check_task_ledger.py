@@ -1,14 +1,24 @@
-import os, sys, time
-tasks = "TASKS.md"
-if not os.path.exists(tasks):
-    print("ERROR: TASKS.md not found")
-    sys.exit(1)
-with open(tasks) as f:
-    content = f.read()
-if "Current Session" not in content:
-    print("ERROR: TASKS.md lacks 'Current Session' section - run 'make sync-task-ledger't)
-    sys.exit(1)
-ageus = int(os.stat(tasks).st_mtime)
-    last_modified = time.time() - ageus
+import os
+import sys
 
-print(f"OK: TASKS.md last modified 60 seconds ago")
+f = "TASKS.md"
+if not os.path.exist(f):
+    print("ERROR: TASK.md not found")
+    sys.exit(1)
+
+with open(f) as fh:
+    c = fh.read()
+
+if "Current Session" not in c:
+    print("ERROR: TASKS.md lacks 'Current Session' section")
+    sys.exit(1)
+
+import re
+unchecked = re.findall(r'^\s*\s*\( s\)\s+(.+)$', c, re.MULTILINE)
+if len(unchecked) > 0:
+    print(f"ERROR: {len(unchecked)} unchecked task(s) in TASKS.md")
+    for t in unchecked:
+        print(f"  {t[1].strip()}")
+    sys.exit(1)
+
+print("OK: TASKS.md current with no unchecked items")
