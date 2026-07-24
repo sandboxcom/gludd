@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 _STORE_IMPORT_ERROR: str | None = None
 _InMemoryStore: type | None = None
+_AUTO_STORE = object()
 
 try:
     from langgraph.store.memory import InMemoryStore as _InMem
@@ -38,8 +39,8 @@ class CrossConversationStore:
     support native TTL.
     """
 
-    def __init__(self, store: Any | None = None) -> None:
-        if store is not None:
+    def __init__(self, store: Any | None = _AUTO_STORE) -> None:
+        if store is not _AUTO_STORE:
             self._store: Any = store
         elif _InMemoryStore is not None:
             self._store = _InMemoryStore()
@@ -63,6 +64,15 @@ class CrossConversationStore:
         return f"{':'.join(namespace)}:{key}"
 
     @staticmethod
+    def _project_store_key(
+        namespace: tuple[str, ...], key: str, project_id: str | None,
+    ) -> str:
+        base = CrossConversationStore._store_key(namespace, key)
+        if project_id is None:
+            return base
+        return f"{base}:project:{project_id}"
+
+    @staticmethod
     def _normalise_namespace(namespace: str | tuple[str, ...]) -> tuple[str, ...]:
         if isinstance(namespace, str):
             return (namespace,)
@@ -79,14 +89,17 @@ class CrossConversationStore:
         project_id: str | None = None,
     ) -> None:
         ns = self._normalise_namespace(namespace)
-        sk = self._store_key(ns, key)
+        sk = self._project_store_key(ns, key, project_id)
+        legacy_sk = self._store_key(ns, key)
         ts = _now()
 
         entry_value = dict(value)
 
         if self._store is not None:
             try:
-                self._store.put(ns, key, entry_value)
+                self._store.put(ns, sk, entry_value)
+                if sk != key:
+                    self._store.put(ns, key, entry_value)
             except NotImplementedError:
                 self._ephemeral[sk] = {
                     "key": key,
@@ -110,6 +123,9 @@ class CrossConversationStore:
         self._ephemeral[sk]["value"] = entry_value
         self._ephemeral[sk]["project_id"] = project_id
 
+        if project_id is not None and legacy_sk not in self._ephemeral:
+            self._ephemeral[legacy_sk] = {**self._ephemeral[sk], "_alias": True}
+
         if ttl is not None:
             self._ttl_registry[sk] = ts + ttl
         elif sk in self._ttl_registry:
@@ -124,17 +140,28 @@ class CrossConversationStore:
         project_id: str | None = None,
     ) -> dict[str, Any] | None:
         ns = self._normalise_namespace(namespace)
-        sk = self._store_key(ns, key)
+        sk = self._project_store_key(ns, key, project_id)
+        global_sk = self._project_store_key(ns, key, None)
 
         if self._is_expired(sk):
             self._evict(sk, ns, key)
             return None
 
+        entry = self._ephemeral.get(sk)
+        if entry is not None and not entry.get("_alias"):
+            return self._filter_by_project(dict(entry), project_id)
+
+        if project_id is not None:
+            global_entry = self._ephemeral.get(global_sk)
+            if global_entry is not None and not global_entry.get("_alias"):
+                return self._filter_by_project(dict(global_entry), project_id)
+            return None
+
         if self._store is not None:
-            item = self._store.get(ns, key)
+            item = self._store.get(ns, sk)
             if item is not None:
                 return self._filter_by_project({
-                    "key": item.key,
+                    "key": key,
                     "value": item.value,
                     "namespace": list(item.namespace),
                     "project_id": None,
@@ -160,22 +187,33 @@ class CrossConversationStore:
         nsp = self._normalise_namespace(namespace_prefix)
 
         if self._store is not None:
-            store_results = self._store.search(nsp, query=query, filter=filter, limit=limit)
+            store_limit = max(limit * 3, limit)
+            store_results = self._store.search(
+                nsp, query=query, filter=filter, limit=store_limit,
+            )
             if store_results:
                 results: list[dict[str, Any]] = []
                 for item in store_results:
-                    sk = self._store_key(item.namespace, item.key)
+                    sk = str(item.key)
+                    raw_alias_sk = self._store_key(tuple(item.namespace), sk)
+                    if sk not in self._ephemeral and raw_alias_sk in self._ephemeral:
+                        continue
                     if self._is_expired(sk):
                         continue
+                    meta = self._ephemeral.get(sk, {})
+                    if meta.get("_alias"):
+                        continue
                     entry = {
-                        "key": item.key,
+                        "key": meta.get("key", item.key),
                         "value": item.value,
                         "namespace": list(item.namespace),
-                        "project_id": None,
+                        "project_id": meta.get("project_id"),
                         "created_at": item.created_at,
                         "updated_at": item.updated_at,
                         "score": getattr(item, "score", None),
                     }
+                    if project_id is not None and entry.get("project_id") != project_id:
+                        continue
                     filtered = self._filter_by_project(entry, project_id)
                     if filtered is not None:
                         results.append(filtered)
@@ -185,6 +223,8 @@ class CrossConversationStore:
         nsp_str = ":".join(nsp)
 
         for sk, entry in self._ephemeral.items():
+            if entry.get("_alias"):
+                continue
             if self._is_expired(sk):
                 continue
             stored_ns = entry.get("namespace", ())
@@ -212,6 +252,8 @@ class CrossConversationStore:
                 "updated_at": entry["updated_at"],
                 "score": None,
             }
+            if project_id is not None and entry_copy.get("project_id") != project_id:
+                continue
             filtered = self._filter_by_project(entry_copy, project_id)
             if filtered is not None:
                 matches.append(filtered)
@@ -227,20 +269,21 @@ class CrossConversationStore:
         project_id: str | None = None,
     ) -> bool:
         ns = self._normalise_namespace(namespace)
-        sk = self._store_key(ns, key)
+        sk = self._project_store_key(ns, key, project_id)
+        raw_key = key
 
         entry = self._ephemeral.get(sk)
-        if project_id is not None and entry is not None:
-            entry_pid = entry.get("project_id")
-            if entry_pid is not None and entry_pid != project_id:
-                return False
+        if project_id is not None and entry is None:
+            return False
 
         existed = sk in self._ephemeral or (
-            self._store is not None and self._store.get(ns, key) is not None
+            self._store is not None and self._store.get(ns, sk) is not None
         )
 
         if self._store is not None:
-            self._store.delete(ns, key)
+            self._store.delete(ns, sk)
+            if sk != raw_key:
+                self._store.delete(ns, raw_key)
         self._ephemeral.pop(sk, None)
         self._ttl_registry.pop(sk, None)
         return existed
@@ -290,5 +333,7 @@ class CrossConversationStore:
         self._ephemeral.pop(stored_key, None)
         self._ttl_registry.pop(stored_key, None)
         if self._store is not None:
+            with contextlib.suppress(Exception):
+                self._store.delete(namespace, stored_key)
             with contextlib.suppress(Exception):
                 self._store.delete(namespace, key)

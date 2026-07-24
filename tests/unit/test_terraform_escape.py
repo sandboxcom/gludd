@@ -132,6 +132,11 @@ def test_build_tfvars_routes_all_string_values_through_escape_helper() -> None:
             pass
         else:
             continue
+        try:
+            float(rhs)
+            continue
+        except ValueError:
+            pass
         assert rhs.startswith('"') and rhs.endswith('"'), (
             f"tfvars value not quoted: {line!r}"
         )

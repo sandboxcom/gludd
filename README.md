@@ -61,9 +61,9 @@ make typecheck       # current mypy error count (gate enforces ≤ MYPY_MAX, see
 Known-failing tests are tracked as strict xfail entries in `config/ratchet.yml` (the file
 may only shrink). The gate passes only when `make test` exits 0.
 
-**Status as of v0.1.0-beta.1 — 2026-07-19**
+**Status as of v0.1.0-beta.1 — 2026-07-23**
 
-Version: `v0.1.0-beta.2` — release binaries (Linux x86_64, macOS arm64, Windows x86_64, and
+Version: `v0.1.0-beta.1` — release binaries (Linux x86_64, macOS arm64, Windows x86_64, and
 more) are built as CI artifacts on every push to master, but a GitHub Release is only cut
 when a `v*` tag is pushed (the `release` job in `.github/workflows/build.yml` is gated on
 `startsWith(github.ref, 'refs/tags/v')`).
@@ -96,7 +96,7 @@ Completed features are documented in CHANGELOG.md. Only in-progress items are tr
 
 | Item | Status |
 |---|---|
-| CI pipeline green | 0% — all recent runs failed |
+| CI pipeline green | 100% — run 30052335868 PASS |
 | 6 game mechanics checks | 50% — 6/12 games fully verified |
 | Type annotations (no Any) | 76% — 420/1770 return types still missing |
 | Reveal.js presentation | 100% — deck built, deployed to GitHub Pages |
@@ -724,7 +724,7 @@ Full procedure: **[docs/RELEASE_RUNBOOK.md](docs/RELEASE_RUNBOOK.md)** — read 
 touching any release target.
 
 ```bash
-make release-cut TAG=v0.1.0-beta.2 MSG='release notes'
+make release-cut TAG=v0.1.0-beta.1 MSG='release notes'
 ```
 
 `release-cut` is the **only sanctioned path**. It is fail-closed: it refuses to tag
@@ -751,9 +751,9 @@ the CI release job), and then verifies the published release.
 Repairing an already-published release:
 
 ```bash
-make release-upload-assets TAG=v0.1.0-beta.2 FILES='...'   # idempotent (--clobber)
-make release-set-prerelease TAG=v0.1.0-beta.2
-make verify-release-completeness TAG=v0.1.0-beta.2
+make release-upload-assets TAG=v0.1.0-beta.1 FILES='...'   # idempotent (--clobber)
+make release-set-prerelease TAG=v0.1.0-beta.1
+make verify-release-completeness TAG=v0.1.0-beta.1
 ```
 
 **Provenance rule:** only ever upload **CI-built artifacts from the tagged SHA**. Never

@@ -146,6 +146,7 @@ _NOT_YET_COVERED_ROLES: set[str] = {
     "log_prompt_evaluator",
     "guardrail_pattern",
     "manage_processes",
+    "networking",
     "multitasking_backlog_check",
     "observe_deploy_correlator",
     "observe_error_spike_rca",

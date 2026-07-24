@@ -24,6 +24,15 @@ module "llamacpp_server" {
   timeout_minutes = var.timeout_minutes
 }
 
+module "gpu_cost_watchdog" {
+  source = "../../modules/gpu-cost-watchdog"
+
+  max_cost_usd    = var.max_cost_usd
+  timeout_minutes = var.timeout_minutes
+  region          = var.region
+  cloud           = "qemu"
+}
+
 module "qemu_vm" {
   source = "../../modules/qemu-vm"
 
@@ -36,5 +45,5 @@ module "qemu_vm" {
   network_name          = var.network_name
   host_port             = var.host_port
   ssh_public_key        = var.ssh_public_key
-  cloud_init_user_data  = module.llamacpp_server.user_data
+  cloud_init_user_data  = "${module.gpu_cost_watchdog.user_data}\n${module.llamacpp_server.user_data}"
 }

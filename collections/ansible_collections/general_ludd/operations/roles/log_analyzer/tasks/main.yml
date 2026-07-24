@@ -7,6 +7,10 @@
 # regression, and root cause suggestion. Produces JSON + markdown reports and
 # a chain-of-thought log. REPORT-ONLY: never mutates the repo.
 
+- name: Set log analyzer timestamp
+  ansible.builtin.set_fact:
+    _log_analyzer_started_at: "{{ now(utc=true).strftime('%Y-%m-%dT%H:%M:%SZ') }}"
+
 - name: Create artifact directory
   ansible.builtin.file:
     path: "{{ log_analyzer_output_dir | default(artifact_dir) }}"

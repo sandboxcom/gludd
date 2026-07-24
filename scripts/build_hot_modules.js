@@ -36,64 +36,7 @@ const PLUGINS = [
 ];
 
 function tsToJs(content) {
-  return content
-    .replace(/import type \{ Plugin \} from "@opencode-ai\/plugin"/g, "// @opencode-ai/plugin (stripped)")
-    .replace(/import \* as (\w+) from "node:(\w+)"/g, 'var $1 = require("node:$2");')
-    .replace(/import \* as (\w+) from "(\w+)"/g, 'var $1 = require("$2");')
-    .replace(/import\s*\{[^}]*\}\s*from\s*"[^"]+";?/g, "// import (stripped)")
-    .replace(/export type \w+\s*=\s*[^;]+;/g, "")
-    .replace(/export interface \w+\s*\{[^}]*\}/g, "")
-    .replace(/export const /g, "var ")
-    .replace(/export function /g, "function ")
-    .replace(/export \{ [^}]+\};?\s*/g, "")
-    .replace(/"[\w.]+"\s*:\s*;\s*/g, "")
-    .replace(/satisfies Plugin/g, "")
-    .replace(/as const/g, "")
-    .replace(/:\s*Record<[^>]+>/g, "")
-    .replace(/:\s*Map<[^>]+>/g, "")
-    .replace(/:\s*Promise<[^>]+>/g, "")
-    .replace(/:\s*\{\s*\[key:\s*\w+\]\s*:\s*\w+\s*\}/g, "")
-    .replace(/\bas\s+Record<[^>]+>/g, "")
-    .replace(/\bas\s+string(\[\])?\b/g, "")
-    .replace(/\bas\s+number(\[\])?\b/g, "")
-    .replace(/\bas\s+boolean\b/g, "")
-    .replace(/\bas\s+any(\[\])?\b/g, "")
-    .replace(/\bas\s+void\b/g, "")
-    .replace(/\bas\s+never\b/g, "")
-    .replace(/\bas\s+unknown(\[\])?\b/g, "")
-    .replace(/\bas\s+readonly\s+\w+(\[\])?\b/g, "")
-    .replace(/\bas\s+\{[^}]+\}(\s*\|\s*\w+(\[\])?)?/g, "")
-    .replace(/:\s*\w+\s*=\s*new\s+Set</g, " = new Set")
-    .replace(/:\s*\w+\s*=\s*new\s+Map</g, " = new Map")
-    .replace(/:\s*\w+\s*=\s*\{\s*\}/g, " = {}")
-    .replace(/:\s*\w+\s*=\s*\[\]/g, " = []")
-    .replace(/:\s*\w+\s*=\s*"/g, ' = "')
-    .replace(/:\s*\w+\s*=\s*'/g, " = '")
-    .replace(/:\s*\w+\s*=\s*\d+/g, " = 0")
-    .replace(/:\s*\w+\s*=\s*true/g, " = true")
-    .replace(/:\s*\w+\s*=\s*false/g, " = false")
-    .replace(/:\s*\w+\s*=\s*null/g, " = null")
-    .replace(/const (\w+): ([^=]+)=/g, "var $1 =")
-    .replace(/let (\w+): ([^=]+)=/g, "var $1 =")
-    .replace(/var (\w+)\s*:\s*[^=\n]+?=/g, "var $1 =")
-    .replace(/function (\w+)\(([^)]*)\): ([^{]+)\{/g, "function $1($2) {")
-    .replace(/;\s*\w+(?:\[\])?\s*:\s*(string|number|boolean|any|void|never|unknown|object)(\[\])?\s*;/g, ";")
-    .replace(/,\s*(\w+(?:\[\])?)\s*:\s*(string|number|boolean|any|void|never|unknown|object)(\[\])?\s*,/g, ",$1,")
-    .replace(/:\s+(string|number|boolean|any|void|never|unknown|object)(\[\])?\s*;/g, ";")
-    .replace(/:\s+(string|number|boolean|any|void|never|unknown|object)(\[\])?\s*,/g, ",")
-    .replace(/:\s+(string|number|boolean|any|void|never|unknown|object)(\[\])?\s*\)/g, ")")
-    .replace(/: (string|number|boolean|any|void|never)\b/g, "")
-    .replace(/\s+\|\s*\w+(\[\])?\b/g, "")
-    .replace(/(?<!&)&(?!&)\s*\{[^}]*\}\s*/g, "")
-    .replace(/(?<!&)&(?!&)\s*\w+(<[^>]*>)?(\[\])?\s*/g, "")
-    .replace(/:\s*\{[^}]*\}\s*/g, " ")
-    .replace(/\bas\s+[A-Z]\w*(\[\])?\b/g, "")
-    .replace(/<\s*[A-Z]\w*\s*>/g, "")
-    .replace(/(\w+):\s+(?!true\b|false\b|null\b|undefined\b|\d)(\w+)(\[\])?(?=\s*[,)])/g, "$1")
-    .replace(/(\w+):\s*\{[^{}]*\}(?:\s*[&|]\s*(?:\w+(?:<[^>]*>)?))*(?=\s*[,)])/g, "$1")
-    .replace(/catch \{/g, "catch (e) {")
-    .replace(/catch\s*\n\s*\{/g, "catch (e) {")
-  ;
+  return require("./ts_to_js.js").tsToJs(content);
 }
 
 function extractDefaultImplMethods(content) {
@@ -107,7 +50,7 @@ function extractDefaultImplMethods(content) {
   // Find the end of defaultImpl by locating the next structural marker
   // (the "PROXY" comment or "export default" that always follows defaultImpl)
   const afterDefault = content.substring(objStart);
-  const proxyMarker = afterDefault.search(/(?:PROXY|export default)\b/);
+  const proxyMarker = afterDefault.search(/var stdin_default\b/);
   if (proxyMarker < 0) return methods;
 
   // Walk backward from the proxy marker to find the closing }; of defaultImpl
@@ -213,9 +156,9 @@ function buildPlugin(name) {
   out += `var execSync = _childProcess.execSync;\n`;
   out += `var _spawn = _childProcess.spawn;\n`;
   out += `function spawn(cmd, args, opts) { return _spawn(cmd, args, opts); }\n`;
-  out += `var DISPATCH_TOOLS = ["task", "agent", "workflow"];\n`;
+  out += `var _DISPATCH_TOOLS = ["task", "agent", "workflow"];\n`;
   out += `var READ_TOOLS = ["read", "grep", "glob"];\n`;
-  out += `function isDispatchTool(tool) { return DISPATCH_TOOLS.includes(tool); }\n`;
+  out += `function isDispatchTool(tool) { return _DISPATCH_TOOLS.includes(tool); }\n`;
   out += `function isReadTool(tool) { return READ_TOOLS.includes(tool); }\n`;
   out += `function isDisengaged() {\n`;
   out += `  try {\n`;
@@ -233,34 +176,72 @@ function buildPlugin(name) {
   out += `function writeJsonFile(filePath, data) {\n`;
   out += `  try { _fs.writeFileSync(filePath, JSON.stringify(data), "utf8"); } catch (e) {}\n`;
   out += `}\n`;
+  out += `function getProjectRoot() {
+  return process.env.GLUDD_PROJECT_ROOT || process.cwd();
+}
+`;
+  out += `function getSessionStartMtimeMs() {
+  try { return require("fs").statSync("/tmp/gludd-session-start.json").mtimeMs; } catch { return 0; }
+}
+`;
+  out += `function isStateFileMtimeStale(stateFilePath) {
+  try {
+    var sessionMtime = getSessionStartMtimeMs();
+    if (sessionMtime === 0) return false;
+    if (!_fs.existsSync(stateFilePath)) return false;
+    return _fs.statSync(stateFilePath).mtimeMs < sessionMtime;
+  } catch(e) { return false; }
+}
+`;
+  out += `function readSharedStreak() {
+  try { return JSON.parse(require("fs").readFileSync("/tmp/gludd-shared-streak.json","utf8")); } catch { return {count:0}; }
+}
+`;
+  out += `function writeSharedStreak(data) {
+  try { require("fs").writeFileSync("/tmp/gludd-shared-streak.json", JSON.stringify(data)); } catch {}
+}
+`;
+  out += `function updateSharedStreak(plugin, options) {
+  const s = readSharedStreak();
+  s.count = (s.count || 0) + 1;
+  s.plugin = plugin;
+  s.max = options?.max || 5;
+  writeSharedStreak(s);
+  return s;
+}
+`;
   out += `// === end shared stubs ===\n\n`;
 
   // Include everything from the js output EXCEPT the export default block.
   // This gives hooks access to all module-level vars/functions/consts.
   // The defaultImpl object is harmless (it's just a module-level var at this point).
-  const exportIdx = js.lastIndexOf("export default");
+  let exportIdx = js.lastIndexOf('export {');
+  if (exportIdx < 0) exportIdx = js.lastIndexOf('export default');
   let moduleBody = js;
   if (exportIdx >= 0) {
     moduleBody = js.substring(0, exportIdx);
   }
-  // Remove import-stripped comments and interface blocks that survive tsToJs
+  // Clean up any leftover import-comment lines from tsToJs
   moduleBody = moduleBody
-    .replace(/^\/\/ import [^\n]*\n/gm, "")
-    .replace(/interface \w+\s*\{[^}]*\}/g, "")
-    .replace(/:\s*readonly\s+RegExp\[\]\s*/g, " ")
-    .replace(/: [^=\n,;()]+?(?=\s*=(?![>=]))/g, "");
+    .replace(/^\/\/.*import.*stripped.*\n/gm, "");
   out += "// === module-level declarations ===\n";
   out += moduleBody.trim() + "\n";
   out += "// === end module-level declarations ===\n\n";
+
+  // If the module does not already declare DISPATCH_TOOLS, alias it from _DISPATCH_TOOLS
+  if (!/\b(const|var|let)\s+DISPATCH_TOOLS\b/.test(moduleBody)) {
+    out += `var DISPATCH_TOOLS = _DISPATCH_TOOLS;
+`;
+  }
 
   for (const [hookName, body] of Object.entries(methods)) {
     const fnBody = body.trim();
     // Map ...args parameters to input/output for body references
     const mapped = fnBody.replace(
       /^\{/,
-      "{ var input = args[0] || {}; var output = args[1]; "
+      "{ var input = callArgs[0] || {}; var output = callArgs[1]; "
     );
-    out += `exports["${hookName}"] = async function(...args) ${mapped};\n\n`;
+    out += `exports["${hookName}"] = async function(...callArgs) ${mapped};\n\n`;
     console.log(`    hook: ${hookName} (${fnBody.length} bytes)`);
   }
 
@@ -283,9 +264,16 @@ function buildPlugin(name) {
   }
   if (parseOk) {
     const hookNames = Object.keys(methods);
-    const probe = spawnSync("node", ["-e",
-      `const m = require(${JSON.stringify(outPath)}); process.stdout.write(JSON.stringify(Object.keys(m)));`,
-    ], { timeout: 10000, encoding: "utf8" });
+    let probe;
+    try {
+      probe = spawnSync("node", ["-e",
+        `const m = require(${JSON.stringify(outPath)}); process.stdout.write(JSON.stringify(Object.keys(m)));`,
+      ], { timeout: 10000, encoding: "utf8" });
+    } catch (e) {
+      console.log(`  WARN ${name}: require() probe crashed (${e.message}) — kept; loadHotModule will fail-open to compiled-in defaultImpl`);
+      console.log(`  BUILT ${name} → ${outPath} (${Object.keys(methods).length} hooks)`);
+      return true;
+    }
     if (probe.status !== 0) {
       const errLine = (probe.stderr || "").split("\n").find(l => l.trim()) || "unknown error";
       console.log(`  WARN ${name}: generated module failed to require (${errLine.trim()}) — kept; loadHotModule will fail-open to compiled-in defaultImpl`);

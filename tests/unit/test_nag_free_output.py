@@ -109,11 +109,12 @@ class TestCleanOutputPassthrough:
         )
 
     def test_multitask_passthrough_path_exists(self):
-        """enforce-multitask: output unmodified when zeroStreak < MAX_ZERO_STREAK
-        and estimatedInFlight > 0."""
-        handler = _from_marker(_src(MULTITASK_PATH), '"text.complete"')
-        assert "zeroStreak" in handler
-        assert "MAX_ZERO_STREAK" in handler
+        """enforce-multitask: output is preserved by the canonical
+        experimental.text.complete hook unless the thin-wave block fires."""
+        handler = _from_marker(_src(MULTITASK_PATH), '"experimental.text.complete"')
+        assert "handleMessageBoundary" in handler
+        assert "writeState" in handler
+        assert "return output" in handler
         assert "(output as any)" in handler or "typeof output" in handler
 
     def test_verified_claims_passthrough_path_exists(self):
@@ -172,12 +173,12 @@ class TestFloorBreachNagConditional:
     def test_floor_breach_conditional_on_streak(self):
         handler = _from_marker(_src(FLOOR_PATH), '"tool.execute.before"')
         assert "MAX_STREAK" in handler
-        assert "FLOOR BREACH" in handler
+        assert "_buildFloorBreachBlock" in handler
         assert "_streakCount >" in handler, (
             "FLOOR BREACH must be gated by _streakCount > effectiveMax comparison"
         )
-        assert "_streakCount > MAX_STREAK" in handler or "_streakCount>MAX_STREAK" in handler, (
-            "FLOOR BREACH must be gated by _streakCount > MAX_STREAK comparison"
+        assert "_streakCount <= effectiveMax" in handler, (
+            "FLOOR BREACH must only trigger after the effective streak maximum is exceeded"
         )
 
     def test_max_streak_is_two(self):
@@ -197,10 +198,11 @@ class TestMultitaskNagConditional:
     """verify MUST DISPATCH nag is conditional on zeroStreak >= MAX_ZERO_STREAK."""
 
     def test_multitask_must_dispatch_conditional(self):
-        handler = _from_marker(_src(MULTITASK_PATH), '"text.complete"')
+        handler = _from_marker(_src(MULTITASK_PATH), '"tool.execute.before"')
         assert "zeroStreak" in handler
-        assert "MUST DISPATCH" in handler or "output.text" in handler, (
-            "MUST DISPATCH nag injection must exist in text.complete"
+        assert "MAX_ZERO_STREAK" in handler
+        assert "ZERO-DISPATCH STREAK" in handler or "MUST DISPATCH" in handler, (
+            "zero-dispatch enforcement must exist in tool.execute.before"
         )
 
     def test_max_zero_streak_positive(self):
@@ -264,7 +266,7 @@ class TestNoUnconditionalNag:
         self._check_handler_not_unconditional(STOP_PATH)
 
     def test_multitask_not_unconditional(self):
-        self._check_handler_not_unconditional(MULTITASK_PATH, marker='"text.complete"')
+        self._check_handler_not_unconditional(MULTITASK_PATH)
         assert True  # assertions in _check_handler_not_unconditional helper
 
     def test_verified_claims_not_unconditional(self):
@@ -296,7 +298,7 @@ class TestSubagentOutputUnmodified:
     def test_multitask_subagent_passthrough(self):
         """enforce-multitask: text.complete must have subagent-bypass logic
         so MUST DISPATCH is not injected into subagent output."""
-        handler = _from_marker(_src(MULTITASK_PATH), '"text.complete"')
+        handler = _from_marker(_src(MULTITASK_PATH), '"experimental.text.complete"')
         assert "GLUDD_IS_SUBAGENT" in handler or "subagent" in handler.lower(), (
             "enforce-multitask text.complete must have subagent-bypass logic"
         )
@@ -340,7 +342,7 @@ class TestMustDispatchSubagentBypass:
     def test_multitask_must_dispatch_bypassed_for_subagent(self):
         """enforce-multitask: the MUST DISPATCH / zero-dispatch-streak block in
         text.complete must be guarded by a subagent check."""
-        handler = _from_marker(_src(MULTITASK_PATH), '"experimental.text.complete"')
+        handler = _from_marker(_src(MULTITASK_PATH), '"tool.execute.before"')
         assert "zeroStreak" in handler
         assert "MAX_ZERO_STREAK" in handler
         after_max = handler[handler.find("MAX_ZERO_STREAK"):]

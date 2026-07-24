@@ -78,5 +78,10 @@ class GitStateResult:
     master_head: str = ""
     development_head: str = ""
     master_is_ancestor_of_development: bool | None = None
+
+
     gha_head_sha: str = ""
+    reconciled_preserve_heads: list[str] = field(default_factory=list)
+    unintegrated_worktrees: list[dict[str, object]] = field(default_factory=list)
+    unintegrated_branches: list[dict[str, object]] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)

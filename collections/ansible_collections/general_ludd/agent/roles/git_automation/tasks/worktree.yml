@@ -1,5 +1,5 @@
 ---
-# worktree.yml — git worktree operations: create, remove, list
+# worktree.yml — git worktree operations through the guarded gludd_git module.
 
 - name: "Assert parameters for worktree operation"
   ansible.builtin.assert:
@@ -8,21 +8,19 @@
       - worktree_op | string | length > 0
     fail_msg: "repo_path and worktree_op are required"
 
-- name: "List worktrees"
+- name: "List worktrees through gludd_git"
+  general_ludd.agent.gludd_git:
+    path: "{{ repo_path }}"
+    op: worktree_list
+  register: _wt_list
   when: worktree_op == 'list'
-  block:
-    - name: "Get worktree list (porcelain)"
-      ansible.builtin.command:
-        cmd: git worktree list --porcelain
-        chdir: "{{ repo_path }}"
-      register: _wt_list
-      changed_when: false
 
-    - name: "Parse porcelain worktree list"
-      ansible.builtin.set_fact:
-        git_automation_worktree_result:
-          op: list
-          worktrees: "{{ _wt_list.stdout | default('') }}"
+- name: "Set worktree list result"
+  ansible.builtin.set_fact:
+    git_automation_worktree_result:
+      op: list
+      worktrees: "{{ _wt_list.result.worktrees | default([]) }}"
+  when: worktree_op == 'list'
 
 - name: "Create worktree"
   when: worktree_op == 'create'
@@ -37,31 +35,17 @@
           - "'..' not in worktree_path_param.split('/')"
         fail_msg: "worktree_branch and worktree_path_param required, no leading '-' or '..'"
 
-    - name: "Check if worktree path already exists"
-      ansible.builtin.stat:
-        path: "{{ worktree_path_param }}"
-      register: _wt_existing
-
-    - name: "End play — worktree already exists (idempotent)"
-      ansible.builtin.meta: end_play
-      when: _wt_existing.stat.exists | default(false) | bool
-
-    - name: "Create worktree"
-      ansible.builtin.command:
-        cmd: "git worktree add -b {{ worktree_branch | quote }} -- {{ worktree_path_param | quote }} HEAD"
-        chdir: "{{ repo_path }}"
+    - name: "Create worktree through gludd_git"
+      general_ludd.agent.gludd_git:
+        path: "{{ repo_path }}"
+        op: worktree_create
+        branch: "{{ worktree_branch }}"
+        worktree_path: "{{ worktree_path_param }}"
       register: _wt_create
-      changed_when: true
-      timeout: "{{ git_worktree_timeout | default(120) }}"
 
     - name: "Set worktree create result"
       ansible.builtin.set_fact:
-        git_automation_worktree_result:
-          op: create
-          success: "{{ _wt_create.rc | default(1) == 0 }}"
-          path: "{{ worktree_path_param }}"
-          branch: "{{ worktree_branch }}"
-          message: "{{ _wt_create.stderr | default('') if _wt_create.rc | default(1) != 0 else 'created' }}"
+        git_automation_worktree_result: "{{ _wt_create.result }}"
 
 - name: "Remove worktree"
   when: worktree_op == 'remove'
@@ -73,17 +57,16 @@
           - not worktree_path_param.startswith('-')
         fail_msg: "worktree_path_param required for worktree remove, no leading '-'"
 
-    - name: "Remove worktree with force"
-      ansible.builtin.command:
-        cmd: "git worktree remove --force -- {{ worktree_path_param | quote }}"
-        chdir: "{{ repo_path }}"
+    - name: "Remove worktree through gludd_git"
+      general_ludd.agent.gludd_git:
+        path: "{{ repo_path }}"
+        op: worktree_remove
+        worktree_path: "{{ worktree_path_param }}"
       register: _wt_remove
-      failed_when: false
-      changed_when: true
 
     - name: "Set worktree remove result"
       ansible.builtin.set_fact:
         git_automation_worktree_result:
           op: remove
-          success: "{{ _wt_remove.rc | default(1) == 0 }}"
+          success: "{{ _wt_remove.result.removed | default(false) | bool }}"
           path: "{{ worktree_path_param }}"

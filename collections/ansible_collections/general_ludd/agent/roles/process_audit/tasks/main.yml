@@ -122,12 +122,6 @@
   register: _pa_delegate_lines
   changed_when: false
 
-- name: Count enforce-todos.ts lines
-  ansible.builtin.shell:
-    cmd: "wc -l < {{ project_root }}/.opencode/plugin/enforce-todos.ts || echo 0"
-  register: _pa_todos_lines
-  changed_when: false
-
 - name: Count enforce-session-start.ts lines
   ansible.builtin.shell:
     cmd: "wc -l < {{ project_root }}/.opencode/plugin/enforce-session-start.ts || echo 0"
@@ -146,7 +140,6 @@
     _pa_plugin_lines_stop: "{{ _pa_stop_lines.stdout | trim | int }}"
     _pa_plugin_lines_floor: "{{ _pa_floor_lines.stdout | trim | int }}"
     _pa_plugin_lines_delegate: "{{ _pa_delegate_lines.stdout | trim | int }}"
-    _pa_plugin_lines_todos: "{{ _pa_todos_lines.stdout | trim | int }}"
     _pa_plugin_lines_session_start: "{{ _pa_session_start_lines.stdout | trim | int }}"
     _pa_plugin_lines_deadline: "{{ _pa_deadline_lines.stdout | trim | int }}"
 
@@ -154,7 +147,7 @@
   ansible.builtin.set_fact:
     _pa_plugin_total_lines: >-
       {{ _pa_plugin_lines_make + _pa_plugin_lines_stop +
-         _pa_plugin_lines_floor + _pa_plugin_lines_delegate + _pa_plugin_lines_todos +
+         _pa_plugin_lines_floor + _pa_plugin_lines_delegate +
          _pa_plugin_lines_session_start + _pa_plugin_lines_deadline }}
 
 # ── Step 6: Count pattern list sizes ─────────────────────────────────────
@@ -257,7 +250,6 @@
       | enforce-stop | {{ _pa_plugin_lines_stop }} |
       | enforce-floor | {{ _pa_plugin_lines_floor }} |
       | enforce-delegate | {{ _pa_plugin_lines_delegate }} |
-      | enforce-todos | {{ _pa_plugin_lines_todos }} |
       | enforce-session-start | {{ _pa_plugin_lines_session_start }} |
       | enforce-deadline | {{ _pa_plugin_lines_deadline }} |
       | **Total** | **{{ _pa_plugin_total_lines }}** |

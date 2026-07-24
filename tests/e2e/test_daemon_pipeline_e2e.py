@@ -6,6 +6,7 @@ runner, and the tick cycle completes with the expected metrics and state.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -16,6 +17,8 @@ from general_ludd.db.models import Base, TodoModel
 from general_ludd.db.repository import TodoRepository
 from general_ludd.event_loop.loop import PHASE_ORDER, EventLoop
 from general_ludd.schemas.todo import TodoStatus
+
+_PROJECT_ID = "proj-pipeline"
 
 
 @pytest.fixture
@@ -60,6 +63,7 @@ async def _seed_todo(factory, **overrides) -> TodoModel:
             "priority": 7,
             "work_type": "code",
             "status": TodoStatus.QUEUED.value,
+            "project_id": _PROJECT_ID,
         }
         defaults.update(overrides)
         todo = await repo.create(defaults)
@@ -68,11 +72,16 @@ async def _seed_todo(factory, **overrides) -> TodoModel:
 
 
 def _make_loop(factory, runner):
+    project_manager = MagicMock()
+    project_manager.select_project.return_value = SimpleNamespace(
+        project_id=_PROJECT_ID
+    )
     loop = EventLoop(
         session=factory,
         runner=runner,
         task_return_repo=MagicMock(),
         config={"repo_root": "/tmp"},
+        project_manager=project_manager,
     )
     loop._task_return_repo.claim_unreviewed = MagicMock(return_value=[])
     loop._runner = runner

@@ -129,7 +129,10 @@ class SearXConnector:
             )
 
         self.base_url = base_url
-        self.timeout = float(config.get("timeout", _DEFAULT_TIMEOUT))  # type: ignore[arg-type]
+        timeout_raw = config.get("timeout", _DEFAULT_TIMEOUT)
+        if not isinstance(timeout_raw, (str, int, float)):
+            timeout_raw = _DEFAULT_TIMEOUT
+        self.timeout = float(timeout_raw)
         self.verify_ssl = bool(config.get("verify_ssl", True))
 
         logger.info(
@@ -163,11 +166,12 @@ class SearXConnector:
                 except (ValueError, UnicodeDecodeError):
                     body = None
             return int(resp.status_code), body
+
         except httpx.TimeoutException:
             logger.warning("SearX request timed out: %s", url)
             return 0, None
-        except Exception:
-            logger.warning("SearX request failed: %s", url, exc_info=True)
+        except Exception as exc:
+            logger.warning("SearX request failed: %s (%s)", url, type(exc).__name__)
             return 0, None
 
     def search(

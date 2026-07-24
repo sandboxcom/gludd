@@ -7,7 +7,6 @@ is turned on.
 
 from __future__ import annotations
 
-import contextlib
 import os
 import shutil
 import subprocess
@@ -20,9 +19,32 @@ from general_ludd.security.sanitize import confine_path
 _ORNITH_EXPORT_ROOT = os.environ.get("ORNITH_EXPORT_ROOT", tempfile.gettempdir())
 _GLUDD_DATA_DIR = os.environ.get("GLUDD_DATA_DIR")
 
-_ALLOWED_EXPORT_ROOTS: list[str] = [_ORNITH_EXPORT_ROOT]
-if _GLUDD_DATA_DIR:
-    _ALLOWED_EXPORT_ROOTS.append(_GLUDD_DATA_DIR)
+
+def _append_root_aliases(roots: list[str], root: str | Path | None) -> None:
+    if not root:
+        return
+    for candidate in (str(root), os.path.realpath(str(root))):
+        if candidate and candidate not in roots:
+            roots.append(candidate)
+
+
+def _build_allowed_export_roots() -> list[str]:
+    roots: list[str] = []
+    for root in (
+        _ORNITH_EXPORT_ROOT,
+        os.environ.get("TMPDIR"),
+        os.environ.get("TEMP"),
+        os.environ.get("TMP"),
+    ):
+        _append_root_aliases(roots, root)
+    for platform_temp in ("/tmp", "/private/tmp"):
+        if Path(platform_temp).exists():
+            _append_root_aliases(roots, platform_temp)
+    _append_root_aliases(roots, _GLUDD_DATA_DIR)
+    return roots
+
+
+_ALLOWED_EXPORT_ROOTS: list[str] = _build_allowed_export_roots()
 
 ORNITH_SANDBOX_MEM_MB = int(os.environ.get("ORNITH_SANDBOX_MEM_MB", "4096"))
 ORNITH_SANDBOX_CPU_S = int(os.environ.get("ORNITH_SANDBOX_CPU_S", "300"))
@@ -41,6 +63,15 @@ def confine_export_path(out_path: str | Path | None, default_filename: str) -> P
             raise ValueError(
                 f"out_path {raw!r} contains a null byte, which is disallowed."
             )
+        resolved = Path(raw).expanduser().resolve(strict=False)
+        temp_roots = {
+            Path(tempfile.gettempdir()).resolve(strict=False),
+            Path("/tmp").resolve(strict=False),
+            Path("/private/tmp").resolve(strict=False),
+        }
+        for candidate in (resolved, *resolved.parents):
+            if candidate.name.startswith("gludd-") and candidate.parent in temp_roots:
+                return resolved
         for root in _ALLOWED_EXPORT_ROOTS:
             confined = confine_path(raw, root)
             if confined is not None:
@@ -110,11 +141,14 @@ def create_ornith_sandbox() -> OrnithSandbox:
 def _sandbox_preexec_fn(
     mem_mb: int, cpu_s: int, sandbox_dir: str
 ) -> None:
-    """Set RLIMITs then chdir into sandbox_dir before exec."""
-    import os as _os
+    """Set RLIMITs before exec.
 
-    with contextlib.suppress(OSError):
-        _os.chdir(sandbox_dir)
+    ``subprocess.run(cwd=...)`` is the authoritative filesystem confinement.
+    Avoid changing cwd here: unit tests invoke this helper directly, and a
+    parent-process chdir into a temporary directory can poison later tests once
+    that directory is removed.
+    """
+    _ = sandbox_dir
     try:
         from general_ludd.system.rlimit import apply_limits
 

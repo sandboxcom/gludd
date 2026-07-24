@@ -46,7 +46,7 @@ async function appendAuditLog(entry: DeletionAuditEntry): Promise<void> {
 }
 function getDeletionThreshold(): number {
   const envThreshold = process.env.GLUDD_DELETION_GATE_THRESHOLD;
-    if (envThreshold !== undefined) {
+  if (envThreshold !== undefined) {
     const parsed = parseInt(envThreshold, 10);
     if (!Number.isNaN(parsed)) {
       return parsed;
@@ -106,7 +106,7 @@ const defaultImpl: HotModule = {
       filePath = args.filePath || args.file_path || "";
       if (!filePath) return;
       const existingLines = await readExistingFileLines(filePath);
-      const newLines = countLines(args.content ?? "");
+      const newLines = countLines(args.content);
       lines_removed = Math.max(0, existingLines - newLines);
     } else {
       return;
@@ -115,7 +115,7 @@ const defaultImpl: HotModule = {
       const reason = getDeletionReason();
       if (!reason) {
         return {
-          permissionDecision: "deny",
+          permissionDecision: "deny" as const,
           message: formatThresholdExceededMessage(lines_removed, threshold, filePath || "unknown"),
         };
       }

@@ -1375,6 +1375,13 @@ def _sanitize_url(url: str) -> str:
         parsed = httpx.URL(url)
     except Exception:
         return "<invalid-url>"
-    if parsed.password or parsed.username:
-        return str(parsed.copy_with(username="", password=""))
-    return str(parsed)
+    rendered = str(parsed)
+    if not parsed.username and not parsed.password:
+        return rendered
+    prefix, scheme_separator, rest = rendered.partition("//")
+    if not scheme_separator:
+        return rendered
+    _, separator, host_and_path = rest.partition("@")
+    if not separator:
+        return rendered
+    return f"{prefix}{scheme_separator}{host_and_path}"

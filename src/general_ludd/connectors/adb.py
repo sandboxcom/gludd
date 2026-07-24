@@ -100,8 +100,7 @@ class AdbConnector:
                 line = line.strip()
                 if line.startswith("[") and "]: [" in line:
                     k, v = line[1:].split("]: [", 1)
-                    v = v.rstrip("]")
-                    out[k.strip()] = v.strip()
+                    out[k.strip()] = v.rstrip("]").strip()
             return out
         except Exception:
             return {}
@@ -127,16 +126,14 @@ class AdbConnector:
                     continue
                 parts = stripped.split(None, 6)
                 if len(parts) >= 7:
-                    tag = parts[5]
-                    if tag.endswith(":"):
-                        tag = tag[:-1]
+                    tag = parts[5][:-1] if parts[5].endswith(":") else parts[5]
                     with contextlib.suppress(ValueError, IndexError):
                         entries.append({
                             "pid": int(parts[2]),
                             "tid": int(parts[3]),
                             "level": parts[4],
                             "tag": tag,
-                            "message": parts[6] if len(parts) > 6 else "",
+                            "message": parts[6],
                         })
             return entries
         except Exception:

@@ -77,7 +77,8 @@ class OrchestrationPlanner:
 
     When a FileClaimRegistry is supplied, live in-flight file claims are
     sourced as blocking resources via ``plan_with_live_claims()`` so that
-    work items touching claimed files defer until the claims are released.
+    work items touching claimed files defer until the claims are released
+    (issue #31).
     """
 
     _VIRTUAL_CLAIM_HOLDER_ID = "__live_file_claims__"

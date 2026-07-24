@@ -514,6 +514,11 @@ const defaultImpl: HotModule = {
       return
     }
   },
+  "experimental.text.complete": async (_input: unknown, output: unknown) => {
+    if (isSubagent()) return output
+    incrementTextCompleteCount()
+    return output
+  },
 }
 // ============================================================================
 // PROXY PLUGIN (hot-reload aware — tool.execute.before only)
@@ -549,6 +554,11 @@ export default (({ }) => {
       const impl = loadHotModule("floor", defaultImpl)
       const fn = impl["tool.execute.before"]
       return fn ? await fn(input, output) : undefined
+    },
+    "experimental.text.complete": async (input: unknown, output: unknown) => {
+      const impl = loadHotModule("floor", defaultImpl)
+      const fn = impl["experimental.text.complete"]
+      return fn ? await fn(input, output) : output
     },
   }
 }) satisfies Plugin

@@ -57,6 +57,7 @@ class TestClaimPhaseSkipsWhenNoRunnableTodos:
         loop, mocks = _make_loop()
         mocks["todo_repo"].claim_runnable.return_value = []
         loop._active_session = mocks["session"]
+        loop._tick_project_id = "proj-test"
 
         await loop._phase_claim_runnable_todos()
 

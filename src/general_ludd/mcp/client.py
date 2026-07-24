@@ -103,7 +103,7 @@ class MCPClient:
                 for tool in tools:
                     self._registry.register_tool(server_id, tool)
                 self._transports[server_id] = transport
-                tpid = transport.pid
+                tpid = getattr(transport, "pid", None)
                 if tpid is not None:
                     self._started_pids.append(tpid)
 

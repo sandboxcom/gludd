@@ -121,6 +121,26 @@ class TestCreateBranch:
         assert mock_run.call_args_list[1].kwargs["env"]["GIT_TERMINAL_PROMPT"] == "0"
         assert mock_run.call_args_list[1].kwargs["env"]["GIT_ASKPASS"] == "echo"
 
+    @patch(
+        "general_ludd.git_automation.repo.subprocess.run",
+        return_value=_ok(stdout="main\nfeature-x\n"),
+    )
+    def test_list_branches(self, mock_run: MagicMock):
+        assert GitAutomation(".").list_branches() == ["main", "feature-x"]
+        assert mock_run.call_args.args[0] == ["git", "branch", "--format=%(refname:short)"]
+
+    @patch("general_ludd.git_automation.repo.subprocess.run", return_value=_ok())
+    def test_delete_branch(self, mock_run: MagicMock):
+        assert GitAutomation(".").delete_branch("feature-x") is True
+        assert mock_run.call_args.args[0] == ["git", "branch", "-D", "--", "feature-x"]
+
+    def test_delete_branch_rejects_leading_dash(self):
+        try:
+            GitAutomation(".").delete_branch("--delete")
+            raise AssertionError("expected ValueError")
+        except ValueError as exc:
+            assert "begins with '-'" in str(exc)
+
 
 class TestCommit:
     @patch(
@@ -139,12 +159,27 @@ class TestTagRelease:
         assert result == "v1.0"
         mock_run.assert_called_once()
         call = mock_run.call_args
-        assert call.args[0] == ["git", "tag", "-a", "v1.0", "-m", "Release v1.0"]
+        assert call.args[0] == [
+            "git",
+            "tag",
+            "-a",
+            "-m",
+            "Release v1.0",
+            "--",
+            "v1.0",
+        ]
         assert call.kwargs["cwd"] == "."
         assert call.kwargs["check"] is True
         # Fix 1: bounded timeout + non-interactive env on every _run_git call.
         assert call.kwargs["timeout"] == 60.0
         assert call.kwargs["env"]["GIT_TERMINAL_PROMPT"] == "0"
+
+    def test_tag_release_rejects_leading_dash(self):
+        try:
+            GitAutomation(".").tag_release("-d")
+            raise AssertionError("expected ValueError")
+        except ValueError as exc:
+            assert "begins with '-'" in str(exc)
 
 
 class TestTagCheckpoint:
@@ -154,12 +189,19 @@ class TestTagCheckpoint:
         assert result == "checkpoint-1"
         mock_run.assert_called_once()
         call = mock_run.call_args
-        assert call.args[0] == ["git", "tag", "checkpoint-1"]
+        assert call.args[0] == ["git", "tag", "--", "checkpoint-1"]
         assert call.kwargs["cwd"] == "."
         assert call.kwargs["check"] is True
         # Fix 1: bounded timeout + non-interactive env on every _run_git call.
         assert call.kwargs["timeout"] == 60.0
         assert call.kwargs["env"]["GIT_TERMINAL_PROMPT"] == "0"
+
+    def test_tag_checkpoint_rejects_leading_dash(self):
+        try:
+            GitAutomation(".").tag_checkpoint("-d")
+            raise AssertionError("expected ValueError")
+        except ValueError as exc:
+            assert "begins with '-'" in str(exc)
 
 
 class TestPush:
@@ -450,11 +492,14 @@ class TestCreateLocalBareMirror:
         result = GitAutomation(".").create_local_bare_mirror("/repo", "/mirror")
         assert result == "/mirror"
         mock_run.assert_called_once_with(
-            ["git", "clone", "--bare", "/repo", "/mirror"],
+            ["git", "clone", "--bare", "--", "/repo", "/mirror"],
             capture_output=True,
             text=True,
             check=True,
+            timeout=60.0,
+            env=mock_run.call_args.kwargs["env"],
         )
+        assert mock_run.call_args.kwargs["env"]["GIT_TERMINAL_PROMPT"] == "0"
 
 
 class TestIsForcePush:

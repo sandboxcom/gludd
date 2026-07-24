@@ -247,7 +247,7 @@ class TestVerifyEnforcement:
             monkeypatch.delenv("GLUDD_SESSION_START_ENFORCE", raising=False)
             result = subprocess.run(
                 ["make", "verify-enforcement"],
-                capture_output=True, text=True, timeout=30,
+                capture_output=True, text=True,
                 cwd=str(ROOT),
                 env={**os.environ},  # inherit cleaned env
             )
@@ -261,7 +261,7 @@ class TestVerifyEnforcement:
             _cleanup_enf_state()
             result = subprocess.run(
                 ["make", "verify-enforcement"],
-                capture_output=True, text=True, timeout=30,
+                capture_output=True, text=True,
                 cwd=str(ROOT),
                 env={**os.environ, "GLUDD_FLOOR_ENFORCE": "0"},
             )

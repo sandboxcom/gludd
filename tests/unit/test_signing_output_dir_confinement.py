@@ -101,6 +101,10 @@ def _make_app() -> tuple[FastAPI, MagicMock]:
 class TestCosignGenerateOutputDirConfinement:
     """/admin/signing/cosign/generate must reject output_dir outside the allowed root."""
 
+    @pytest.fixture(autouse=True)
+    def _admin_auth(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("GLUDD_ADMIN_TOKEN", _ADMIN_TOKEN)
+
     def _client(self) -> tuple[TestClient, MagicMock]:
         app, resolver = _make_app()
         return TestClient(app, headers=_ADMIN_HEADERS, raise_server_exceptions=True), resolver

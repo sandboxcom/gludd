@@ -56,6 +56,7 @@ def _review_tr() -> MagicMock:
     tr.playbook = "noop.yml"
     tr.queue = "model"
     tr.work_type = "review"
+    tr.project_id = None
     tr.exit_code = 0
     tr.result_summary = "all good"
     return tr

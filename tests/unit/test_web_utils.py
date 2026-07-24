@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 
 from general_ludd.web_utils import (
     analyze_layout,
@@ -155,6 +156,13 @@ class TestExtractColorsFromCss:
         css = "body { color: hsl(0, 100%, 50%); }"
         colors = extract_colors_from_css(css)
         assert len(colors) >= 1
+
+    def test_hsl_to_hex_produces_valid_hex(self):
+        css = "body { color: hsl(240, 100%, 50%); }"
+        colors = extract_colors_from_css(css)
+        for c in colors:
+            if "hex" in c:
+                assert re.match(r"^#[0-9A-Fa-f]{6}$", c["hex"])
 
     def test_no_colors(self):
         css = "body { display: block; }"

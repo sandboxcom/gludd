@@ -39,7 +39,7 @@ const DONE_WORDS_RE =
 const EVIDENCE_RE =
   /\b[0-9a-f]*[a-f][0-9a-f]{6,39}\b|VERIFIED\s+\S+@[0-9a-f]+|CI\s+(GREEN|RED|PENDING)|\d+\s+passed|=== GATE:\s+PASSED\s+===/;
 const defaultImpl: HotModule = {
-  "text.complete": async (_output) => {
+  "experimental.text.complete": async (_input, _output) => {
     if (isSubagent()) return;
     reportAlive("enforce-audit");
     try {

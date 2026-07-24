@@ -43,6 +43,7 @@
         daemon_url: "{{ daemon_url }}"
       check_mode: true
       register: signal_result
+      changed_when: false
 
     - name: Persist results for verify
       ansible.builtin.copy:

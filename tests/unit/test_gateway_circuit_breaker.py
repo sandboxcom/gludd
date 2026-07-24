@@ -127,7 +127,8 @@ def _make_gateway(
 
 
 class TestNoDoubleCount:
-    def test_breaker_does_not_trip_below_threshold(self) -> None:
+    @pytest.mark.asyncio
+    async def test_breaker_does_not_trip_below_threshold(self) -> None:
         """failure_threshold-1 real failures must NOT trip the breaker.
 
         With the old double-count, two real failures advanced the consecutive
@@ -146,7 +147,7 @@ class TestNoDoubleCount:
         _conn_error = httpx.ConnectError("connection refused")
         _FakeChatModel.script = [_conn_error, _conn_error]
         with pytest.raises(httpx.ConnectError):
-            gateway.call_model_with_retry(
+            await gateway.call_model_with_retry(
                 "primary", [{"role": "user", "content": "hi"}],
                 max_retries=1, base_backoff_seconds=0.0,
             )
@@ -224,7 +225,8 @@ class TestSuccessReset:
 
 
 class TestMidLoopBreakerGuard:
-    def test_breaker_trips_mid_retry_stops_further_attempts(self) -> None:
+    @pytest.mark.asyncio
+    async def test_breaker_trips_mid_retry_stops_further_attempts(self) -> None:
         """Mid-loop circuit-open guard halts retries as soon as the breaker trips.
 
         With failure_threshold=2, two transient connection errors trip the breaker.
@@ -246,7 +248,7 @@ class TestMidLoopBreakerGuard:
         _conn_error = httpx.ConnectError("connection refused")
         _FakeChatModel.script = [_conn_error, _conn_error]
         with pytest.raises(httpx.ConnectError):
-            gateway.call_model_with_retry(
+            await gateway.call_model_with_retry(
                 "primary",
                 [{"role": "user", "content": "hi"}],
                 max_retries=10,

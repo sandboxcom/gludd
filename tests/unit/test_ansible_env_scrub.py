@@ -16,6 +16,12 @@ def _make_runner() -> CoreAnsibleRunner:
     return CoreAnsibleRunner()
 
 
+@pytest.fixture(autouse=True)
+def _skip_real_ansible_plugin_loader():
+    with patch("ansible.plugins.loader.init_plugin_loader", return_value=None):
+        yield
+
+
 class TestPlaybookEnvScrub:
     """PlaybookExecutor.run() must not see secrets in os.environ."""
 

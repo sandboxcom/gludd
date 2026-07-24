@@ -21,30 +21,62 @@ import os
 import subprocess
 import sys
 
+_ACTIVE_STATUSES = ("in_progress", "queued", "waiting")
+
 
 def _gh_run_list(branch: str) -> list[dict]:
-    cmd = [
-        "gh", "run", "list",
-        "--branch", branch,
-        "--status", "in_progress",
-        "--status", "queued",
-        "--status", "waiting",
-        "--limit", "1",
-        "--json", "status,conclusion,databaseId,headSha,createdAt",
-        "-R", "sandboxcom/gludd",
-    ]
-    try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
-        if result.returncode != 0:
-            print(f"CI-BUSY-CHECK: gh error: {result.stderr.strip()}", file=sys.stderr)
+    runs_by_id: dict[str, dict] = {}
+    for status in _ACTIVE_STATUSES:
+        cmd = [
+            "gh", "run", "list",
+            "--workflow", "Build and Release",
+            "--branch", branch,
+            "--status", status,
+            "--limit", "20",
+            "--json", "status,conclusion,databaseId,headSha,createdAt",
+            "-R", "sandboxcom/gludd",
+        ]
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+        except FileNotFoundError:
+            print(
+                "CI-BUSY-CHECK: gh CLI not available - fail-open (allow push)",
+                file=sys.stderr,
+            )
             return []
-        return json.loads(result.stdout) if result.stdout.strip() else []
-    except FileNotFoundError:
-        print("CI-BUSY-CHECK: gh CLI not available — fail-open (allow push)", file=sys.stderr)
-        return []
-    except (subprocess.TimeoutExpired, json.JSONDecodeError, OSError) as exc:
-        print(f"CI-BUSY-CHECK: error: {exc} — fail-open (allow push)", file=sys.stderr)
-        return []
+        except (subprocess.TimeoutExpired, OSError) as exc:
+            print(
+                f"CI-BUSY-CHECK: error while checking {status}: {exc} "
+                "- fail-open (allow push)",
+                file=sys.stderr,
+            )
+            return []
+
+        if result.returncode != 0:
+            print(
+                f"CI-BUSY-CHECK: gh error while checking {status}: "
+                f"{result.stderr.strip()}",
+                file=sys.stderr,
+            )
+            continue
+        try:
+            runs = json.loads(result.stdout) if result.stdout.strip() else []
+        except json.JSONDecodeError as exc:
+            print(
+                f"CI-BUSY-CHECK: bad gh JSON while checking {status}: {exc} "
+                "- fail-open (allow push)",
+                file=sys.stderr,
+            )
+            return []
+        for run in runs:
+            run_id = str(run.get("databaseId") or f"{status}:{len(runs_by_id)}")
+            runs_by_id[run_id] = run
+
+    return sorted(
+        runs_by_id.values(),
+        key=lambda run: run.get("createdAt") or "",
+        reverse=True,
+    )
 
 
 def ci_busy_check(branch: str, force: bool = False) -> int:

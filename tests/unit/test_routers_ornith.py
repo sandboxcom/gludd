@@ -214,12 +214,12 @@ class TestRegister:
         daemon_state: dict[str, object] = {}
         register(app, daemon_state)
         all_routes = [r for r in app.routes if hasattr(r, "methods")]
-        config_route = next(
-            (r for r in all_routes if r.path == "/admin/ornith/config"), None
-        )
-        assert config_route is not None
-        assert "GET" in config_route.methods
-        assert "PUT" in config_route.methods
+        config_methods = set()
+        for route in all_routes:
+            if route.path == "/admin/ornith/config":
+                config_methods.update(route.methods)
+        assert "GET" in config_methods
+        assert "PUT" in config_methods
 
     def test_pairs_endpoint_get_registered(self):
         from general_ludd.routers.ornith import register

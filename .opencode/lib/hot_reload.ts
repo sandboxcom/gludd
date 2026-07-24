@@ -94,9 +94,15 @@ export function loadHotModule(name: string, defaults: HotModule): HotModule {
     if (hotCache[name] && hotCache[name].mtime === mtime) {
       return withJsonHookKeys(hotCache[name].module)
     }
-    const _require = createRequire(import.meta.url)
+    const _require = createRequire(typeof __filename === "string" ? __filename : import.meta.url)
     try { delete _require.cache[_require.resolve(hotPath)] } catch {}
-    let mod = _require(hotPath) as HotModule
+    let mod: HotModule
+    try {
+      mod = _require(hotPath) as HotModule
+    } catch (e) {
+      console.warn(`gludd-hot: require("${hotPath}") failed (${String(e).slice(0, 200)}) — falling back to compiled-in defaultImpl`)
+      return withJsonHookKeys(defaults)
+    }
     if (Object.keys(mod).length === 0) {
       mod = legacyExportsObject(fs.readFileSync(hotPath, "utf8"))
       if (Object.keys(mod).length === 0) mod = defaults

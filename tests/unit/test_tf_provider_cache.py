@@ -1,7 +1,7 @@
 """TDD for shared Terraform provider plugin cache (design doc §10 #3).
 
 Closes the long-standing "open question": third-party providers (aws, google,
-azurerm, kubernetes, vsphere, runpod) were re-downloaded once per stack.
+azurerm, kubernetes, vsphere, runpod, libvirt, qemu) were re-downloaded once per stack.
 ``infra/terraform/versions.tf`` is now the canonical version contract and
 ``TF_PLUGIN_CACHE_DIR`` shares each downloaded provider binary across every
 stack. ``scripts/check_tf_provider_versions.py`` keeps the stacks in sync with

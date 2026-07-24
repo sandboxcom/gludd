@@ -8,34 +8,32 @@
   ansible.builtin.assert:
     that:
       - git_op | string | length > 0
-
-    fail_msg: "git_op is required (clone|commit|push|merge|branch|worktree|state)"
+    fail_msg: "git_op is required (clone|commit|gated_commit|push|merge|gated_merge|branch|worktree|state)"
 
 - name: "Include clone tasks"
   ansible.builtin.include_tasks: clone.yml
-  when: git_op == 'clone'
+  when: git_op == "clone"
 
 - name: "Include commit tasks"
   ansible.builtin.include_tasks: commit.yml
-  when: git_op == 'commit'
+  when: git_op in ["commit", "gated_commit"]
 
 - name: "Include push tasks"
   ansible.builtin.include_tasks: push.yml
-  when: git_op == 'push'
+  when: git_op == "push"
 
 - name: "Include merge tasks"
   ansible.builtin.include_tasks: merge.yml
-  when: git_op == 'merge'
+  when: git_op in ["merge", "gated_merge"]
 
 - name: "Include branch tasks"
   ansible.builtin.include_tasks: branch.yml
-  when: git_op == 'branch'
+  when: git_op == "branch"
 
 - name: "Include worktree tasks"
   ansible.builtin.include_tasks: worktree.yml
-  when: git_op == 'worktree'
+  when: git_op == "worktree"
 
 - name: "Include state-machine guard tasks"
   ansible.builtin.include_tasks: state.yml
-
   when: git_op == "state"

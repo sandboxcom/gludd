@@ -26,12 +26,23 @@ class TestConfineExportPath:
             result = confine_export_path(None, "dataset.jsonl")
             assert result == Path("/tmp/ornith-exports/dataset.jsonl")
 
+
     def test_path_within_allowed_root_resolves(self):
         with tempfile.TemporaryDirectory() as td, patch(
             "general_ludd.ornith.sandbox._ALLOWED_EXPORT_ROOTS", [td]
         ):
             result = confine_export_path(f"{td}/my-export.jsonl", "fallback.jsonl")
             assert result == Path(td) / "my-export.jsonl"
+
+    def test_platform_private_tmp_alias_is_allowed_when_present(self):
+        private_tmp = Path("/private/tmp")
+        if not private_tmp.exists():
+            pytest.skip("platform does not expose /private/tmp")
+        with patch(
+            "general_ludd.ornith.sandbox._ALLOWED_EXPORT_ROOTS", [str(private_tmp)]
+        ):
+            result = confine_export_path(private_tmp / "ornith-export.jsonl", "fallback.jsonl")
+        assert result == private_tmp / "ornith-export.jsonl"
 
     def test_path_outside_allowed_roots_raises_valueerror(self):
         with patch(

@@ -287,7 +287,11 @@ class KubernetesSource:
             self._verify = True
 
         transport = config.get("transport")
-        self._transport: _Transport = cast(_Transport, transport) if transport is not None else _default_transport
+        self._transport: _Transport = (
+            cast(_Transport, transport)
+            if transport is not None
+            else cast(_Transport, _default_transport)
+        )
 
         reason = _endpoint_block_reason(self._api_server, allow_private=self._allow_private)
         if reason:
@@ -358,7 +362,7 @@ class KubernetesSource:
             logger.warning("kubernetes config error in query", exc_info=True)
             return [self._error(str(exc))]
         except Exception:
-            logger.warning("kubernetes query failed", exc_info=True)
+            logger.exception("kubernetes query failed")
             return [self._error("query failed")]
 
     # -- logs -------------------------------------------------------------- #

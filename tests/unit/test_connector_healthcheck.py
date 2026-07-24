@@ -42,6 +42,7 @@ _NON_SOURCE_MODULES = frozenset(
             "registry",
             "ingest",
             "ingest_formats",
+            "_util",
             "_errors",
             "_protocols",
             "_util",

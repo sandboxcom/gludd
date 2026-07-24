@@ -1,6 +1,6 @@
 ---
-# commit.yml — stage and commit with gate checks
-# The gate command runs BEFORE the commit; on gate failure the commit is skipped.
+# commit.yml — commit through the guarded gludd_git module.
+# A non-empty gate_cmd or git_op=gated_commit uses GitAutomation.gated_commit.
 
 - name: "Assert repo_path and message"
   ansible.builtin.assert:
@@ -9,60 +9,48 @@
       - commit_message | string | length > 0
     fail_msg: "repo_path and commit_message are required for commit operation"
 
-- name: "Check for uncommitted changes (porcelain)"
-  ansible.builtin.command:
-    cmd: git status --porcelain
-    chdir: "{{ repo_path }}"
-  register: _commit_status
-  changed_when: false
-  failed_when: false
+- name: "Assert gated commit has a gate command"
+  ansible.builtin.assert:
+    that:
+      - gate_cmd | default([]) | length > 0
+    fail_msg: "gate_cmd is required when git_op=gated_commit"
+  when: git_op == "gated_commit"
 
-- name: "End play — nothing to commit (idempotent)"
-  ansible.builtin.meta: end_play
-  when: _commit_status.stdout_lines | default([]) | length == 0
-
-- name: "Run gate command before commit"
-  ansible.builtin.command:
-    cmd: "{{ gate_cmd | join(' ') }}"
-    chdir: "{{ repo_path }}"
-  register: _commit_gate
-  failed_when: false
-  changed_when: false
-  timeout: "{{ git_gate_timeout | default(60) }}"
-  when: gate_cmd | default([]) | length > 0
-
-- name: "Fail — gate command returned non-zero"
-  ansible.builtin.fail:
-    msg: >
-      Gate command failed with exit code {{ _commit_gate.rc }} before commit:
-      {{ _commit_gate.stderr | default('') }}
+- name: "Commit changes through gludd_git"
+  general_ludd.agent.gludd_git:
+    path: "{{ repo_path }}"
+    op: commit
+    message: "{{ commit_message }}"
+  register: _git_automation_commit_module
   when:
-    - gate_cmd | default([]) | length > 0
-    - _commit_gate.rc | default(0) != 0
+    - git_op == "commit"
+    - gate_cmd | default([]) | length == 0
 
-- name: "Stage all changes"
-  ansible.builtin.command:
-    cmd: git add -A
-    chdir: "{{ repo_path }}"
-  changed_when: true
-
-- name: "Commit changes"
-  ansible.builtin.command:
-    cmd: "git commit -m {{ commit_message | quote }}"
-    chdir: "{{ repo_path }}"
-  register: _commit_cmd
-  changed_when: true
-
-- name: "Get commit SHA"
-  ansible.builtin.command:
-    cmd: git rev-parse HEAD
-    chdir: "{{ repo_path }}"
-  register: _commit_sha
-  changed_when: false
+- name: "Gated commit changes through gludd_git"
+  general_ludd.agent.gludd_git:
+    path: "{{ repo_path }}"
+    op: gated_commit
+    message: "{{ commit_message }}"
+    files: "{{ commit_files }}"
+    gate_cmd: "{{ gate_cmd | default([]) }}"
+  register: _git_automation_gated_commit_module
+  when:
+    - git_op == "gated_commit" or gate_cmd | default([]) | length > 0
 
 - name: "Set commit result fact"
   ansible.builtin.set_fact:
     git_automation_commit_result:
-      success: "{{ _commit_cmd.rc | default(1) == 0 }}"
-      sha: "{{ _commit_sha.stdout | default('') | trim }}"
-      message: "{{ _commit_cmd.stderr | default('') if _commit_cmd.rc | default(1) != 0 else 'committed' }}"
+      success: true
+      sha: "{{ _git_automation_commit_module.sha | default(None) }}"
+      message: "{{ _git_automation_commit_module.message | default(commit_message) }}"
+  when:
+    - _git_automation_commit_module is defined
+    - not (_git_automation_commit_module.skipped | default(false))
+
+- name: "Set gated commit result fact"
+  ansible.builtin.set_fact:
+    git_automation_commit_result: "{{ _git_automation_gated_commit_module.result }}"
+    git_automation_gated_commit_result: "{{ _git_automation_gated_commit_module.result }}"
+  when:
+    - _git_automation_gated_commit_module is defined
+    - not (_git_automation_gated_commit_module.skipped | default(false))

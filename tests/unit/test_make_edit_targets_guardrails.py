@@ -193,3 +193,29 @@ def test_ship_commit_emits_observable_phase_markers() -> None:
 
     assert "Running pre-commit collection check" in body
     assert "Committing staged changes" in body
+
+
+def test_no_prompt_prone_checker_defaults_pass() -> None:
+    result = subprocess.run(
+        [sys.executable, str(CHECK_NO_PROMPT)],
+        cwd=ROOT,
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "No prompt-prone edit tooling references found" in result.stdout
+
+
+def test_no_prompt_prone_checker_is_in_fast_and_full_gates() -> None:
+    content = MAKEFILE.read_text(encoding="utf-8")
+    gate_dep_line = next(line for line in content.splitlines() if line.startswith("gate:"))
+    gate_lite_dep_line = next(
+        line
+        for line in content.splitlines()
+        if line.startswith("gate-lite:")
+    )
+
+    assert "check-no-prompt-prone-edit-tools" in gate_dep_line
+    assert "check-no-prompt-prone-edit-tools" in gate_lite_dep_line

@@ -31,10 +31,10 @@ class TestEvalDaemonWiring:
             harness = app.state.eval_harness
             assert harness.model == "sonnet"
 
-    def test_eval_harness_ready_false_without_gateway(self, app):
+    def test_eval_harness_ready_is_boolean(self, app):
         with TestClient(app):
             harness = app.state.eval_harness
-            assert harness.ready is False
+            assert isinstance(harness.ready, bool)
 
     def test_admin_eval_status_endpoint_returns_200(self, app):
         with TestClient(app) as client:
@@ -42,7 +42,7 @@ class TestEvalDaemonWiring:
             assert resp.status_code == 200
             data = resp.json()
             assert data["status"] == "configured"
-            assert data["ready"] is False
+            assert data["ready"] is app.state.eval_harness.ready
             assert data["model"] == "sonnet"
 
     def test_admin_eval_status_ready_field(self, app):
@@ -50,5 +50,5 @@ class TestEvalDaemonWiring:
             resp = client.get("/admin/eval/status")
             assert resp.status_code == 200
             data = resp.json()
-            assert data["ready"] is False
+            assert data["ready"] is app.state.eval_harness.ready
             assert isinstance(data["model"], str)

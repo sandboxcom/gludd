@@ -425,13 +425,16 @@ def activation_maximization(
 
 def deepdream(
     model_fn: Callable[[list[float]], list[float]],
-    image: list[list[float]],
+    image: list[list[float]] | list[float],
     target_layer: int = 0,
     octaves: int = 4,
     octave_scale: float = 1.4,
     iterations: int = 20,
 ) -> list[list[float]]:
     """DeepDream: enhance patterns by maximizing target layer activations at multiple scales."""
+    flat_input = bool(image and not isinstance(image[0], list))
+    if flat_input:
+        image = [image]  # type: ignore[list-item]
     h = len(image)
     w = len(image[0]) if h > 0 else 0
     if h == 0 or w == 0:
@@ -462,7 +465,7 @@ def deepdream(
                     for j in range(w):
                         result[i][j] *= scl
 
-    return result
+    return result[0] if flat_input else result
 
 
 def feature_inversion(
@@ -645,6 +648,8 @@ def lime_explain(
     explained_pred = _dot(wgt_coeffs, input_data) + wgt_bias
 
     return {
+        "feature_names": [f"feature_{i}" for i in range(len(input_data))],
+        "weights": importance,
         "feature_importances": importance,
         "intercept": wgt_bias,
         "prediction": original_pred,
@@ -658,11 +663,13 @@ def lime_explain(
 
 
 def sparse_autoencoder_encode(
-    dictionary: dict[str, Any],
+    dictionary: dict[str, Any] | list[list[float]],
     activations: list[float],
     sparsity_coefficient: float = 0.1,
 ) -> dict[str, Any]:
     """Encode activations through a sparse autoencoder dictionary."""
+    if isinstance(dictionary, list):
+        dictionary = {"W_enc": dictionary, "W_dec": _transpose(dictionary)}
     W_enc: list[list[float]] = dictionary.get("W_enc", [])
     b_enc: list[float] = dictionary.get("b_enc", [0.0])
     W_dec: list[list[float]] = dictionary.get("W_dec", [])
@@ -684,6 +691,7 @@ def sparse_autoencoder_encode(
         reconstruction = []
 
     return {
+        "latent_codes": latent,
         "latent": latent,
         "sparsity": sparsity,
         "reconstruction": reconstruction,
@@ -692,9 +700,11 @@ def sparse_autoencoder_encode(
 
 def sparse_autoencoder_decode(
     latent_codes: list[float],
-    dictionary: dict[str, Any],
+    dictionary: dict[str, Any] | list[list[float]],
 ) -> list[float]:
     """Decode latent representation back to activation space."""
+    if isinstance(dictionary, list):
+        dictionary = {"W_dec": _transpose(dictionary)}
     W_dec: list[list[float]] = dictionary.get("W_dec", [])
     b_dec: list[float] = dictionary.get("b_dec", [])
 
@@ -775,12 +785,14 @@ def compute_knowledge_neuron_score(
 
 
 def detect_circuits(
-    model_layers: dict[str, list[list[float]]],
+    model_layers: dict[str, list[list[float]]] | list[list[list[float]]],
     input_data: list[float],
     target_output: float,
     threshold: float = 0.5,
 ) -> dict[str, Any]:
     """Detect computational circuits by measuring inter-layer weight correlations."""
+    if isinstance(model_layers, list):
+        model_layers = {f"layer_{idx}": layer for idx, layer in enumerate(model_layers)}
     layer_names = list(model_layers.keys())
     circuits: list[dict[str, Any]] = []
 
@@ -947,8 +959,8 @@ def compute_copy_suppression_score(
 
 
 def tcav_score(
-    concept_activations: list[list[float]],
-    random_activations: list[list[float]],
+    concept_activations: list[list[float]] | list[float],
+    random_activations: list[list[float]] | list[float],
     classifier_fn: Callable[[list[list[float]], list[float]], tuple[list[float], float]],
 ) -> float:
     """TCAV (Testing with Concept Activation Vectors) score.
@@ -959,6 +971,10 @@ def tcav_score(
     """
     if not concept_activations or not random_activations:
         return 0.0
+    if concept_activations and not isinstance(concept_activations[0], list):
+        concept_activations = [concept_activations]  # type: ignore[list-item]
+    if random_activations and not isinstance(random_activations[0], list):
+        random_activations = [random_activations]  # type: ignore[list-item]
 
     all_activations = concept_activations + random_activations
     concept_labels = [1.0] * len(concept_activations) + [0.0] * len(random_activations)
@@ -1088,6 +1104,7 @@ def toy_model_reversal_curse(
                 grad_context = 0.0
                 for n_tok in range(num_tokens):
                     delta_unembed = probs[n_tok] - (1.0 if n_tok == tgt_idx else 0.0)
+                    hidden = [_relu(h) for h in _matvec(W_out, context_before)]
                     for h_dim in range(embed_dim):
                         grad_context += delta_unembed * W_unembed[n_tok][h_dim] * (1.0 if hidden[h_dim] > 0 else 0.0) * W_out[h_dim][d]
 

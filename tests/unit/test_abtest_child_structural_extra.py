@@ -10,6 +10,16 @@ import pytest
 from general_ludd.abtest._child import _apply_limits, _run_workload, _write_result_nonce, main
 
 
+@pytest.fixture(autouse=True)
+def applied_limits(monkeypatch):
+    calls: list[tuple[int, int]] = []
+    monkeypatch.setattr(
+        "general_ludd.abtest._child.apply_limits",
+        lambda mem_mb, cpu_s: calls.append((mem_mb, cpu_s)),
+    )
+    return calls
+
+
 class TestApplyLimits:
     @staticmethod
     def _patch_apply_limits(monkeypatch):
@@ -25,6 +35,7 @@ class TestApplyLimits:
         calls = self._patch_apply_limits(monkeypatch)
 
         _apply_limits(256, 30)
+        assert applied_limits == [(256, 30)]
 
         assert calls == [(256, 30)]
 
@@ -32,6 +43,7 @@ class TestApplyLimits:
         calls = self._patch_apply_limits(monkeypatch)
 
         _apply_limits(0, 30)
+        assert applied_limits == [(0, 30)]
 
         assert calls == [(0, 30)]
 
@@ -39,6 +51,7 @@ class TestApplyLimits:
         calls = self._patch_apply_limits(monkeypatch)
 
         _apply_limits(8192, 3600)
+        assert applied_limits == [(8192, 3600)]
 
         assert calls == [(8192, 3600)]
 

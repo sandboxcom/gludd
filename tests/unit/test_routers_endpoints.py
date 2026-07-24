@@ -924,6 +924,8 @@ _SIGNING_PSK_CASES: ClassVar[list[tuple[str, str, dict[str, object] | None]]] = 
     ("POST", "/admin/signing/gitsign/config", {"project_id": "p1"}),
     ("GET", "/admin/signing/gitsign/p1", None),
 ]
+_SIGNING_ADMIN_TOKEN = "test-admin-token"
+_SIGNING_ADMIN_HEADERS = {"X-Admin-Token": _SIGNING_ADMIN_TOKEN}
 
 
 def _make_secrets_resolver() -> MagicMock:
@@ -1248,7 +1250,10 @@ class TestSigningEndpoints:
                     method,
                     path,
                     json=body,
-                    headers={"Authorization": f"Bearer {_PSK}"},
+                    headers={
+                        "Authorization": f"Bearer {_PSK}",
+                        **_SIGNING_ADMIN_HEADERS,
+                    },
                 )
                 assert resp.status_code == 200
 

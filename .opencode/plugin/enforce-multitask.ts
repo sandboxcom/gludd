@@ -78,13 +78,60 @@ function writeState(s: MultitaskState): void {
 }
 function hasPendingWork(): boolean {
   try {
-    const tasksPath = path.join(getProjectRoot(), "TASKS.md")
-    if (!fs.existsSync(tasksPath)) return false
-    const content = fs.readFileSync(tasksPath, "utf8")
-    return /^\s*[-*]\s*\[\s*\]/m.test(content)
+    const root = getProjectRoot()
+
+    const tasksPath = path.join(root, "TASKS.md")
+    if (fs.existsSync(tasksPath)) {
+      const content = fs.readFileSync(tasksPath, "utf8")
+      if (/^\s*[-*]\s*\[\s*\]/m.test(content)) return true
+    }
+
+    const ratchetPath = path.join(root, "config", "ratchet.yml")
+    if (fs.existsSync(ratchetPath)) {
+      const content = fs.readFileSync(ratchetPath, "utf8")
+      const entries = content.split("\n").filter(
+        l => l.trim() && !l.trim().startsWith("#") && (l.includes("::") || /^\w[\w\s]*:\s/.test(l))
+      ).length
+      if (entries > 0) return true
+    }
+
+    const bugsPath = path.join(root, "BUGS.md")
+    if (fs.existsSync(bugsPath)) {
+      const content = fs.readFileSync(bugsPath, "utf8")
+      const hasOpen = content.split("\n").some(
+        l => /^###\s+\d{4}-\d{2}-\d{2}\s+[-—]/.test(l) && !l.includes("(resolved)")
+      )
+      if (hasOpen) return true
+    }
+
+    const gatePath = path.join(root, ".gate-status")
+    if (fs.existsSync(gatePath)) {
+      const content = fs.readFileSync(gatePath, "utf8")
+      if (/=== GATE:\s*FAILED/.test(content)) return true
+      if (/test REQUIRED/.test(content) || /smoke REQUIRED/.test(content)) return true
+    }
+
+    const ciCachePath = "/tmp/gludd-watchdog-ci.json"
+    if (fs.existsSync(ciCachePath)) {
+      const ciData = JSON.parse(fs.readFileSync(ciCachePath, "utf8"))
+      const rawLastCheck: number = ciData.last_ci_check || 0
+      const lastCheck: number = rawLastCheck < 1e11 ? rawLastCheck * 1000 : rawLastCheck
+      const lastStatus = ciData.last_ci_status || ""
+      if (Date.now() - lastCheck < 600_000 && lastStatus && lastStatus !== "SUCCESS") return true
+    }
+
+    try {
+      const todowritePath = "/tmp/gludd-todowrite-state.json"
+      if (fs.existsSync(todowritePath)) {
+        const tdData = JSON.parse(fs.readFileSync(todowritePath, "utf8"))
+        const items: any[] = Array.isArray(tdData.items) ? tdData.items : []
+        if (items.some((it: any) => it && (it.status === "pending" || it.status === "in_progress"))) return true
+      }
+    } catch {}
   } catch {
     return false
   }
+  return false
 }
 function handleMessageBoundary(s: MultitaskState): void {
   const now = Date.now()
@@ -234,10 +281,7 @@ const defaultImpl: HotModule = {
       // edit after 2 reads would incorrectly surface UNDER-FLOOR instead of
       // CONSECUTIVE NON-DISPATCH STREAK (2026-07-18 bug).
       if (!disengaged) {
-        // Read tools (read/grep/glob) are excluded from the COUNTER.
-        // They are still gated by the UNDER-FLOOR block below, but
-        // investigation bursts should never trigger the grinding penalty.
-        if (!isReadTool(lt)) {
+        if (!isReadTool(tool)) {
           if (_state.consecutiveNonDispatchStartTs === 0) {
             _state.consecutiveNonDispatchStartTs = now
           }
@@ -246,9 +290,6 @@ const defaultImpl: HotModule = {
           } else {
             _state.consecutiveNonDispatch = 0
             _state.consecutiveNonDispatchStartTs = now
-            // The window-restarting call IS a non-dispatch call inside the new
-            // window — count it as 1 (T25), or every post-expiry threshold is
-            // off by one (6 calls trip it instead of 5).
             _state.consecutiveNonDispatch++
           }
         }

@@ -20,21 +20,20 @@ def _run_runtime_check_with_plugin(source: str) -> subprocess.CompletedProcess[s
 
 
 def test_check_plugin_runtime_runs_without_crashing():
-    """The script should not raise unhandled exceptions; exit 0 or 1 is valid."""
+    """The script should load all checked plugins cleanly."""
     result = subprocess.run(
         ["python", str(SCRIPT)],
         capture_output=True, text=True, timeout=120, cwd=str(ROOT),
     )
-    assert result.returncode in (0, 1), (
-        f"check_plugin_runtime exited {result.returncode} (expected 0 or 1)\n"
-        f"stdout: {result.stdout}\n"
-        f"stderr: {result.stderr}"
-    )
-    assert (
-        "runtime check skipped" in result.stdout
-        or "runtime load + import checks OK" in result.stdout
-        or "runtime/import check(s) failed" in result.stdout
-    )
+    message = chr(10).join([
+        f"check_plugin_runtime exited {result.returncode}",
+        f"stdout: {result.stdout}",
+        f"stderr: {result.stderr}",
+    ])
+    assert result.returncode == 0, message
+    assert "runtime load + import checks OK" in result.stdout
+
+
 
 
 def test_dangerous_child_process_detected():

@@ -116,7 +116,6 @@ def main(argv: list[str]) -> int:
     nonce = argv[6]
 
     _apply_limits(mem_limit_mb, cpu_seconds)
-
     # Candidate src shadows the installed package.
     candidate_src = candidate_root.rstrip("/") + "/src"
     sys.path.insert(0, candidate_src)

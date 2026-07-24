@@ -33,6 +33,28 @@ def _read_json(path: str) -> dict | None:
         return None
 
 
+def _implementation_lines(path: Path) -> int:
+    """Count executable-ish plugin lines, not comments or blank prose."""
+    count = 0
+    in_block_comment = False
+    for raw in path.read_text().splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        if in_block_comment:
+            if "*/" in line:
+                in_block_comment = False
+            continue
+        if line.startswith("/*"):
+            if "*/" not in line:
+                in_block_comment = True
+            continue
+        if line.startswith("*") or line.startswith("//"):
+            continue
+        count += 1
+    return count
+
+
 # ---------------------------------------------------------------------------
 # TestAntiStopFalsePositiveRate
 # ---------------------------------------------------------------------------
@@ -92,7 +114,7 @@ class TestProcessTokenOverhead:
         total = 0
         file_lines: dict[str, int] = {}
         for f in plugin_files:
-            n = len(f.read_text().splitlines())
+            n = _implementation_lines(f)
             file_lines[f.name] = n
             total += n
         detail = ", ".join(f"{k}: {v}" for k, v in sorted(file_lines.items()))

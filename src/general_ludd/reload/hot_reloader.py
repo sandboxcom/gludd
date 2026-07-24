@@ -40,6 +40,8 @@ from general_ludd.self_update.module_snapshot import (
 )
 
 logger = logging.getLogger(__name__)
+_LOCK_OWNERS: dict[int, int] = {}
+_LOCK_OWNERS_GUARD = threading.Lock()
 
 
 class ReloadScope(enum.StrEnum):
@@ -106,12 +108,21 @@ class HotReloader:
 
     @contextlib.contextmanager
     def _reload_slot(self, key: str) -> Any:
+        lock_id = id(self._reload_lock)
+        thread_id = threading.get_ident()
+        with _LOCK_OWNERS_GUARD:
+            if _LOCK_OWNERS.get(lock_id) == thread_id:
+                raise ReloadBusyError(
+                    f"Reload lock acquisition timeout for {key}"
+                )
         acquired = self._reload_lock.acquire(timeout=self._reload_timeout_s)
         if not acquired:
             raise ReloadBusyError(
-                f"Reload lock acquisition timeout after {self._reload_timeout_s}s (key={key})"
+                f"Reload lock acquisition timeout for {key}"
             )
         try:
+            with _LOCK_OWNERS_GUARD:
+                _LOCK_OWNERS[lock_id] = thread_id
             last = self._last_reload_at.get(key)
             if last is not None:
                 elapsed = time.time() - last
@@ -122,6 +133,9 @@ class HotReloader:
             yield
         finally:
             self._last_reload_at[key] = time.time()
+            with _LOCK_OWNERS_GUARD:
+                if _LOCK_OWNERS.get(lock_id) == thread_id:
+                    _LOCK_OWNERS.pop(lock_id, None)
             self._reload_lock.release()
 
     def reload(self, scope: ReloadScope) -> ReloadResult:

@@ -11,11 +11,47 @@ import signal
 import subprocess
 import sys
 import time
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 
 from ci_named_shard_files import expand_shard
 
+SHARD_STATE_ENV_VARS = (
+    "GLUDD_STOP_STATE_FILE",
+    "GLUDD_STREAK_FILE",
+    "GLUDD_TASK_DEADLINE_STATE",
+    "GLUDD_TASK_DEADLINE_WARNINGS",
+    "GLUDD_TASK_STALE_FILE",
+    "GLUDD_SESSION_STATE",
+    "GLUDD_MAINTHREAD_STREAK_FILE",
+    "GLUDD_FORCE_DELEGATE_STATE",
+    "GLUDD_MODEL_UTIL_STATE",
+    "GLUDD_READ_GRIND_FILE",
+    "GLUDD_SONNET_TARGET_CONFIG",
+    "GLUDD_MAIN_MODEL_FILE",
+    "GLUDD_STOP_TEXT_COMPLETE_COUNT",
+    "GLUDD_FLOOR_TEXT_COMPLETE_COUNT",
+    "GLUDD_BLOCK_COUNTER_FILE",
+    "GLUDD_BLOCK_REASON_FILE",
+    "GLUDD_PERSIST_STOP_BLOCK_FILE",
+    "GLUDD_FORCE_DISPATCH_PATH",
+    "GLUDD_RELEASE_COMPLETENESS_FILE",
+    "GLUDD_LAST_TEST_RESULT_FILE",
+    "GLUDD_MULTITASK_STATE_FILE",
+    "GLUDD_POST_RESULTS_STATE_FILE",
+    "GLUDD_TEXT_ONLY_STATE_FILE",
+    "GLUDD_WATCHDOG_CI_FILE",
+    "GLUDD_STOP_TOOL_COUNTS_FILE",
+    "GLUDD_WATCHDOG_PID_FILE",
+    "GLUDD_ENHANCEMENT_RATIO_STATE",
+    "GLUDD_FALSE_DONE_STATE_FILE",
+    "GLUDD_TODOWRITE_STATE",
+    "GLUDD_CI_STATE_FILE",
+    "GLUDD_DISENGAGE_PATH",
+    "GLUDD_DISENGAGE_AUDIT_PATH",
+    "GLUDD_ALIVE_PATH",
+)
 
 @dataclass
 class RunningShard:
@@ -65,6 +101,30 @@ def _command_for_shard(shard: str, pytest_args: list[str], workers_per_shard: in
     return command, basetemp
 
 
+def _state_file_for_env(state_dir: Path, name: str) -> Path:
+    suffix = ".jsonl" if name.endswith("AUDIT_PATH") else ".json"
+    if name.endswith("WARNINGS"):
+        suffix = ".log"
+    return state_dir / f"{name.lower()}{suffix}"
+
+
+def _env_for_shard(shard: str, basetemp: Path) -> dict[str, str]:
+    state_dir = basetemp / "state"
+    tmp_dir = basetemp / "tmp"
+    state_dir.mkdir(parents=True, exist_ok=True)
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+
+    env = os.environ.copy()
+    env["TMPDIR"] = str(tmp_dir)
+    env["GLUDD_GATE_BASETEMP"] = str(basetemp / "gate-basetemp")
+    env["GLUDD_HOT_MODULE_PREFIX"] = str(state_dir / "hot-")
+    for name in SHARD_STATE_ENV_VARS:
+        env[name] = str(_state_file_for_env(state_dir, name))
+    env["GLUDD_SHARD_NAME"] = shard
+    env["GLUDD_SHARD_STATE_DIR"] = str(state_dir)
+    return env
+
+
 def _quote(command: list[str]) -> str:
     return " ".join(shlex.quote(part) for part in command)
 
@@ -74,7 +134,7 @@ def _terminate_all(running: list[RunningShard]) -> None:
         if item.process.poll() is not None:
             continue
         try:
-            os.killpg(item.process.pid, signal.SIGTERM)
+            os.killpg(item.process.pid, signal.SIGINT)
         except ProcessLookupError:
             continue
     deadline = time.monotonic() + 10
@@ -82,10 +142,8 @@ def _terminate_all(running: list[RunningShard]) -> None:
         while item.process.poll() is None and time.monotonic() < deadline:
             time.sleep(0.2)
         if item.process.poll() is None:
-            try:
+            with suppress(ProcessLookupError):
                 os.killpg(item.process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
 
 
 def _cleanup(running: list[RunningShard]) -> None:
@@ -99,7 +157,11 @@ def run(shards: list[str], pytest_args: list[str], workers_per_shard: int, heart
         command, basetemp = _command_for_shard(shard, pytest_args, workers_per_shard)
         print(f"=== ci shard {shard}: launch ===", flush=True)
         print(_quote(command), flush=True)
-        process = subprocess.Popen(command, start_new_session=True)
+        env = _env_for_shard(shard, basetemp)
+        tmpdir = env["TMPDIR"]
+        state_dir = env["GLUDD_SHARD_STATE_DIR"]
+        print(f"SHARD-ISOLATION shard={shard} tmpdir={tmpdir} state_dir={state_dir}", flush=True)
+        process = subprocess.Popen(command, start_new_session=True, env=env)
         running.append(RunningShard(shard, process, basetemp, command))
 
     pending = {item.name for item in running}
@@ -117,7 +179,11 @@ def run(shards: list[str], pytest_args: list[str], workers_per_shard: int, heart
                 results[item.name] = rc
                 if rc < 0:
                     signum = -rc
-                    signal_name = signal.Signals(signum).name if signum in signal.Signals.__members__.values() else str(signum)
+                    signal_name = (
+                        signal.Signals(signum).name
+                        if signum in signal.Signals.__members__.values()
+                        else str(signum)
+                    )
                     print(f"SHARD-SIGNAL shard={item.name} signal={signal_name} rc={rc}", flush=True)
                 elif rc == 0:
                     print(f"SHARD-PASS shard={item.name} rc=0", flush=True)

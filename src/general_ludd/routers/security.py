@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import cast
 
 import yaml
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from general_ludd.security.permissions import (
@@ -364,11 +364,28 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         events = audit.query(agent_id=agent_id, since=since, capability=capability)
         return {"events": events}
 
-    @app.get("/admin/perm/spec/{agent_type}")
-    async def admin_perm_spec_get(agent_type: str) -> object:
+    @app.api_route("/admin/perm/spec/{agent_type}", methods=["GET", "PUT"])
+    async def admin_perm_spec_get(agent_type: str, request: Request) -> object:
         import yaml
 
         from general_ludd.security.permissions import default_spec
+        if request.method == "PUT":
+            req = await request.json()
+            spec_yaml = cast(str, req.get("spec_yaml"))
+            if not spec_yaml:
+                return JSONResponse(status_code=400, content={"error": "spec_yaml is required"})
+            try:
+                spec = PermissionSpecParser.parse(spec_yaml)
+            except Exception as exc:
+                return JSONResponse(status_code=400, content={"error": f"parse error: {exc}"})
+            errors = PermissionSpecParser.validate(spec)
+            if errors:
+                return JSONResponse(status_code=400, content={"error": "validation failed", "details": errors})
+            perms = _perms_dir(app)
+            path = perms / f"{agent_type}.yml"
+            path.write_text(spec_yaml)
+            return {"status": "saved", "agent_type": agent_type, "path": str(path)}
+
         perms = _perms_dir(app)
         path = perms / f"{agent_type}.yml"
         if not path.exists():
@@ -402,23 +419,6 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             return {"agent_type": agent_type, "spec_yaml": spec_yaml}
         spec_yaml = path.read_text()
         return {"agent_type": agent_type, "spec_yaml": spec_yaml}
-
-    @app.put("/admin/perm/spec/{agent_type}")
-    async def admin_perm_spec_put(agent_type: str, req: dict[str, object]) -> object:
-        spec_yaml = cast(str, req.get("spec_yaml"))
-        if not spec_yaml:
-            return JSONResponse(status_code=400, content={"error": "spec_yaml is required"})
-        try:
-            spec = PermissionSpecParser.parse(spec_yaml)
-        except Exception as exc:
-            return JSONResponse(status_code=400, content={"error": f"parse error: {exc}"})
-        errors = PermissionSpecParser.validate(spec)
-        if errors:
-            return JSONResponse(status_code=400, content={"error": "validation failed", "details": errors})
-        perms = _perms_dir(app)
-        path = perms / f"{agent_type}.yml"
-        path.write_text(spec_yaml)
-        return {"status": "saved", "agent_type": agent_type, "path": str(path)}
 
     @app.get("/admin/perm/spec")
     async def admin_perm_spec_list() -> object:

@@ -81,7 +81,7 @@ const NAG_TEXT = (
   "Set GLUDD_ANTI_ESSAY_ENFORCE=0 to disable this guard.\n"
 )
 const defaultImpl: HotModule = {
-  "text.complete": async (output) => {
+  "experimental.text.complete": async (output) => {
     if (isSubagent()) return
     reportAlive("enforce-anti-essay")
     try {
@@ -120,7 +120,7 @@ const defaultImpl: HotModule = {
     try {
       if (process.env.GLUDD_ANTI_ESSAY_ENFORCE === "0") return
       // tool.execute.before only watches — doesn't block tool calls.
-      // The text.complete hook is the primary enforcement surface.
+      // The experimental.text.complete hook is the primary enforcement surface.
     } catch {
       // fail-open
     }

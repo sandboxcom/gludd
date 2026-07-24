@@ -233,9 +233,9 @@ class TestWaveThresholds:
         wave_reset = src.count("s.wave = []") + src.count("s.wave=[]") + src.count("s.wave = []")
         assert wave_reset >= 1, "Wave does not reset after ratio check"
 
-    def test_early_warned_resets_after_wave(self):
+    def test_no_legacy_early_warned_state(self):
         src = _plugin_source()
-        assert "s.early_warned = false" in src, "early_warned flag not reset after wave check"
+        assert "early_warned" not in src, "legacy early_warned state should not be present"
 
 
 class TestExtractPrompt:
