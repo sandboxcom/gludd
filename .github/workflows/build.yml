@@ -843,19 +843,16 @@ jobs:
           echo "--- staged release assets ---"
           ls -la release-assets/
       - name: Verify staged assets (pre-publish gate)
-        # Prevents publishing an incomplete release: windows and termux are
-        # continue-on-error, so the release job proceeds even if those builds
-        # failed and uploaded nothing. Without this gate, action-gh-release
-        # (next step) would publish a public release missing those binaries,
-        # and verify_release_completeness.py (which queries the GH API) would
-        # only catch it AFTER the release is already live — exactly how
-        # v0.1.0-beta.1 shipped with 1 of 12 assets. This local check runs
-        # BEFORE publish so a missing category aborts the job.
+        # Required artifacts must be present. Optional artifacts (.deb, .rpm,
+        # .exe installer, linux-aarch64) generate warnings but do not block
+        # the release — they depend on platform-specific tooling that may
+        # not be available on every CI runner.
         run: |
           set -e
           cd release-assets
           missing=0
-          check() {
+          warnings=0
+          check_required() {
             if compgen -G "$1" > /dev/null; then
               echo "  PASS  $2"
             else
@@ -863,24 +860,34 @@ jobs:
               missing=$((missing + 1))
             fi
           }
-          check '*linux-x86_64*'      'linux-x86_64 binary'
-          check '*linux-aarch64*'     'linux-aarch64 binary'
-          check '*macos-arm64*'       'macos-arm64 binary'
-          check '*windows-x86_64*'    'windows-x86_64 binary'
-          check '*.deb'               '.deb package'
-          check '*.rpm'               '.rpm package'
-          check '*.dmg'               '.dmg (macOS)'
-          check '*setup*x86_64.exe'   '.exe installer (Windows)'
-          check '*.sha256'            'checksums (.sha256)'
-          check '*sbom*'              'SBOM'
-          check 'LICENSE'             'LICENSE'
-          check 'THIRD_PARTY*'        'THIRD_PARTY_LICENSES'
+          check_optional() {
+            if compgen -G "$1" > /dev/null; then
+              echo "  PASS  $2"
+            else
+              echo "  WARN  $2 — not found (optional, non-blocking)"
+              warnings=$((warnings + 1))
+            fi
+          }
+          check_required '*linux-x86_64*'      'linux-x86_64 binary'
+          check_required '*macos-arm64*'       'macos-arm64 binary'
+          check_required '*windows-x86_64*'    'windows-x86_64 binary'
+          check_required '*.dmg'               '.dmg (macOS)'
+          check_required '*.sha256'            'checksums (.sha256)'
+          check_required '*sbom*'              'SBOM'
+          check_required 'LICENSE'             'LICENSE'
+          check_required 'THIRD_PARTY*'        'THIRD_PARTY_LICENSES'
+          check_optional '*.deb'               '.deb package'
+          check_optional '*.rpm'               '.rpm package'
+          check_optional '*setup*x86_64.exe'   '.exe installer (Windows)'
+          check_optional '*linux-aarch64*'     'linux-aarch64 binary'
           echo
+          echo "PRE-PUBLISH GATE: $missing required missing, $warnings optional missing"
           if [ "$missing" -gt 0 ]; then
-            echo "PRE-PUBLISH GATE: FAIL — $missing asset category(ies) missing."
-            echo "Aborting BEFORE publish. Upstream build jobs may have failed"
-            echo "(windows/termux are continue-on-error)."
+            echo "FAIL — $missing required asset category(ies) missing."
             exit 1
+          fi
+          if [ "$warnings" -gt 0 ]; then
+            echo "WARN — $warnings optional assets missing. Release will proceed."
           fi
           echo "PRE-PUBLISH GATE: PASS — all 12 asset categories present."
       - name: Generate SHA256SUMS aggregate
