@@ -5301,7 +5301,7 @@ worktree-merge-all:
 	}
 
 pipeline-status:
-	@echo run python scripts/pipeline_status.py status
+	@$(UV) run python scripts/pipeline_status.py status
 
 pipeline-health: pipeline-status
 	@true
