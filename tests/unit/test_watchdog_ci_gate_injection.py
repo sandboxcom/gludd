@@ -70,7 +70,7 @@ def _setup_ci_gate_test(monkeypatch, tmp_path: Path, tasks_clean=True, ratchet_e
     monkeypatch.setattr(aw, "_RATCHET_YML", tmp_path / "ratchet.yml")
 
     monkeypatch.setattr(aw, "_GATE_STATUS", tmp_path / ".gate-status")
-    monkeypatch.setattr(aw, "_CI_STATUS", tmp_path / ".ci-status")
+    monkeypatch.setattr(aw, "_CI_STATUS", tmp_path / ".ci-status", raising=False)
     monkeypatch.setattr(aw, "_CHECK_COOLDOWN_FILE", str(tmp_path / "check-cooldowns.json"))
     monkeypatch.setattr(aw, "HEARTBEAT_FILE", str(tmp_path / "heartbeat.json"))
     monkeypatch.setattr(aw, "ORCHESTRATOR_STATE_FILE", str(tmp_path / "orchestrator.json"))
