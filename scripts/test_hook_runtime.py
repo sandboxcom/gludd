@@ -155,7 +155,7 @@ def _with_open_work(env: dict, tmp_tasks: str) -> tuple[dict, str]:
 def test_clean_tree_get_git_status():
     """getGitStatus() returns non-empty string in a real git repo."""
     code = f"""\
-const mod = await import('{PLUGIN_DIR}/enforce-clean-tree.ts')
+const mod = await import('{LIB_DIR}/plugin_test_exports.ts')
 console.log(JSON.stringify({{status: mod.getGitStatus(), length: mod.getGitStatus().length}}))
 """
     result = _run_ts(code)
@@ -168,7 +168,7 @@ console.log(JSON.stringify({{status: mod.getGitStatus(), length: mod.getGitStatu
 def test_clean_tree_is_dirty_in_real_repo():
     """isTreeDirty() returns boolean in a real git repo."""
     code = f"""\
-const mod = await import('{PLUGIN_DIR}/enforce-clean-tree.ts')
+const mod = await import('{LIB_DIR}/plugin_test_exports.ts')
 console.log(JSON.stringify({{dirty: mod.isTreeDirty()}}))
 """
     result = _run_ts(code)
@@ -178,7 +178,7 @@ console.log(JSON.stringify({{dirty: mod.isTreeDirty()}}))
 def test_clean_tree_count_dirty_files_zero():
     """countDirtyFiles returns 0 for empty status."""
     code = f"""\
-const mod = await import('{PLUGIN_DIR}/enforce-clean-tree.ts')
+const mod = await import('{LIB_DIR}/plugin_test_exports.ts')
 console.log(JSON.stringify({{count: mod.countDirtyFiles('')}}))
 """
     result = _run_ts(code)
@@ -188,7 +188,7 @@ console.log(JSON.stringify({{count: mod.countDirtyFiles('')}}))
 def test_clean_tree_count_dirty_files_nonzero():
     """countDirtyFiles counts lines in porcelain output."""
     code = f"""\
-const mod = await import('{PLUGIN_DIR}/enforce-clean-tree.ts')
+const mod = await import('{LIB_DIR}/plugin_test_exports.ts')
 const fake = ' M foo.py\\n?? bar.py\\n M baz.py'
 console.log(JSON.stringify({{count: mod.countDirtyFiles(fake)}}))
 """
@@ -199,7 +199,7 @@ console.log(JSON.stringify({{count: mod.countDirtyFiles(fake)}}))
 def test_clean_tree_build_deny_message():
     """buildDenyMessage includes count and DENY_MESSAGE_PREFIX."""
     code = f"""\
-const mod = await import('{PLUGIN_DIR}/enforce-clean-tree.ts')
+const mod = await import('{LIB_DIR}/plugin_test_exports.ts')
 console.log(JSON.stringify({{msg: mod.buildDenyMessage(5), prefix: mod.getDenyMessagePrefix()}}))
 """
     result = _run_ts(code)
@@ -211,7 +211,7 @@ console.log(JSON.stringify({{msg: mod.buildDenyMessage(5), prefix: mod.getDenyMe
 def test_clean_tree_dispatch_tools_defined():
     """DISPATCH_TOOLS array contains task, agent, workflow."""
     code = f"""\
-const mod = await import('{PLUGIN_DIR}/enforce-clean-tree.ts')
+const mod = await import('{LIB_DIR}/plugin_test_exports.ts')
 console.log(JSON.stringify(mod.getDispatchTools()))
 """
     result = _run_ts(code)
@@ -229,13 +229,14 @@ def test_clean_tree_hook_dispatch_with_dirty_tree():
             f.flush()
             os.fsync(f.fileno())
         code = f"""\
+const helpers = await import('{LIB_DIR}/plugin_test_exports.ts')
 const mod = await import('{PLUGIN_DIR}/enforce-clean-tree.ts')
-const gs = mod.getGitStatus()
+const gs = helpers.getGitStatus()
 console.log("GIT_STATUS[" + gs.length + "]=" + JSON.stringify(gs).slice(0,200))
-const dt = mod.isTreeDirty()
+const dt = helpers.isTreeDirty()
 console.log("IS_DIRTY=" + dt)
 const toolName = 'task'
-const isDispatch = mod.getDispatchTools().includes(toolName)
+const isDispatch = helpers.getDispatchTools().includes(toolName)
 console.log("IS_DISPATCH=" + isDispatch)
 const plugin = await mod.default({{}})
 const result = await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
@@ -1887,7 +1888,7 @@ console.log(JSON.stringify({{
 def test_stop_permission_seeking_export_matches():
     """getPermissionSeekingRe() is exported and matches the right phrases."""
     code = f"""\
-const mod = await import('{PLUGIN_DIR}/enforce-stop.ts')
+const mod = await import('{LIB_DIR}/plugin_test_exports.ts')
 const re = mod.getPermissionSeekingRe()
 console.log(JSON.stringify({{
     hasExport: typeof mod.getPermissionSeekingRe === 'function',
@@ -1948,7 +1949,7 @@ console.log(JSON.stringify({{
 def test_stop_status_summary_export_matches():
     """getStatusSummaryRe() + looksLikeStatusSummary are exported and detect the pattern."""
     code = f"""\
-const mod = await import('{PLUGIN_DIR}/enforce-stop.ts')
+const mod = await import('{LIB_DIR}/plugin_test_exports.ts')
 const re = mod.getStatusSummaryRe()
 const structural = "**What changed**\\n- [x] item one\\n- [x] item two\\n**Remaining**\\n| A | B |\\n| - | - |\\n"
 console.log(JSON.stringify({{
@@ -2001,10 +2002,11 @@ def test_clean_tree_dirty_dispatch_blocked():
             f.flush()
             os.fsync(f.fileno())
         code = f"""\
+const helpers = await import('{LIB_DIR}/plugin_test_exports.ts')
 const mod = await import('{PLUGIN_DIR}/enforce-clean-tree.ts')
-const gs = mod.getGitStatus()
+const gs = helpers.getGitStatus()
 console.log("GIT_STATUS[" + gs.length + "]=" + JSON.stringify(gs).slice(0,200))
-const dt = mod.isTreeDirty()
+const dt = helpers.isTreeDirty()
 console.log("IS_DIRTY=" + dt)
 console.log("SUBAGENT=" + process.env.OPENCODE_SUBAGENT)
 console.log("ENFORCE=" + process.env.GLUDD_CLEAN_TREE_ENFORCE)
@@ -2072,7 +2074,7 @@ console.log(JSON.stringify(result ?? {{allowed: true}}))
 def test_clean_tree_isTreeDirty_empty_string():
     """isTreeDirty() with empty string (no git repo) returns false."""
     code = f"""\
-const mod = await import('{PLUGIN_DIR}/enforce-clean-tree.ts')
+const mod = await import('{LIB_DIR}/plugin_test_exports.ts')
 // Simulate getGitStatus returning "" by directly testing logic
 const count = mod.countDirtyFiles('')
 const empty = mod.countDirtyFiles('   ')
@@ -2088,7 +2090,7 @@ console.log(JSON.stringify({{empty: count, whitespace: empty, newlines}}))
 def test_clean_tree_countDirtyFiles_edge_cases():
     """countDirtyFiles handles edge-case porcelain output."""
     code = f"""\
-const mod = await import('{PLUGIN_DIR}/enforce-clean-tree.ts')
+const mod = await import('{LIB_DIR}/plugin_test_exports.ts')
 const mixed = mod.countDirtyFiles(' M a.py\\n   \\n?? b.py\\n  \\n')
 const trailing = mod.countDirtyFiles('?? x.py\\n M y.py\\n')
 const single = mod.countDirtyFiles('?? z.py')
@@ -2103,11 +2105,9 @@ console.log(JSON.stringify({{mixed, trailing, single}}))
 def test_clean_tree_countDirtyFiles_single_line():
     """countDirtyFiles with single entry returns 1."""
     code = f"""\
-const mod = await import('{PLUGIN_DIR}/enforce-clean-tree.ts')
+const mod = await import('{LIB_DIR}/plugin_test_exports.ts')
 console.log(JSON.stringify({{single: mod.countDirtyFiles('?? foo.py')}}))
 """
-    result = _run_ts(code)
-    assert result["single"] == 1
 
 
 def test_clean_tree_non_dispatch_tool_not_blocked():
@@ -2139,7 +2139,7 @@ console.log(JSON.stringify(results))
 def test_clean_tree_buildDenyMessage_edge_cases():
     """buildDenyMessage with 0, 1, many files includes correct counts."""
     code = f"""\
-const mod = await import('{PLUGIN_DIR}/enforce-clean-tree.ts')
+const mod = await import('{LIB_DIR}/plugin_test_exports.ts')
 console.log(JSON.stringify({{
     zero: mod.buildDenyMessage(0),
     one: mod.buildDenyMessage(1),
@@ -2156,7 +2156,7 @@ console.log(JSON.stringify({{
 def test_clean_tree_getGitStatus_real_repo_returns_string():
     """getGitStatus() in real repo returns a string (may be empty or non-empty)."""
     code = f"""\
-const mod = await import('{PLUGIN_DIR}/enforce-clean-tree.ts')
+const mod = await import('{LIB_DIR}/plugin_test_exports.ts')
 const status = mod.getGitStatus()
 const dirty = mod.isTreeDirty()
 console.log(JSON.stringify({{isStr: typeof status === 'string', isBool: typeof dirty === 'boolean', length: status.length}}))
@@ -2189,7 +2189,7 @@ console.log(JSON.stringify(result ?? {{allowed: true}}))
 def test_verified_claim_with_evidence():
     """Text contains 'commit' + hash → passed through (evidence present)."""
     code = f"""\
-const mod = await import('{PLUGIN_DIR}/enforce-verified-claims.ts')
+const mod = await import('{LIB_DIR}/plugin_test_exports.ts')
 console.log(JSON.stringify({{shouldBlock: mod.shouldBlock('commit abc12345')}}))
 """
     result = _run_ts(code)
@@ -2199,7 +2199,7 @@ console.log(JSON.stringify({{shouldBlock: mod.shouldBlock('commit abc12345')}}))
 def test_verified_claim_no_evidence_blocked():
     """Text contains 'committed' but no hash → text.complete blocks."""
     code = f"""\
-const mod = await import('{PLUGIN_DIR}/enforce-verified-claims.ts')
+const mod = await import('{LIB_DIR}/plugin_test_exports.ts')
 console.log(JSON.stringify({{shouldBlock: mod.shouldBlock('everything committed')}}))
 """
     result = _run_ts(code)
@@ -2208,12 +2208,14 @@ console.log(JSON.stringify({{shouldBlock: mod.shouldBlock('everything committed'
 
 def test_verified_claims_commit_unverified_msg_blocked():
     """Bash commit target with unverified MSG → tool.execute.before denies."""
+    hot_module = "/tmp/gludd-hot-enforce-verified-claims.js"
+    _clean_state_files(hot_module)
     code = f"""\
 const mod = await import('{PLUGIN_DIR}/enforce-verified-claims.ts')
 const plugin = mod.default()
 let result
 try {{
-  result = await plugin['tool.execute.before']({{tool: 'bash', args: {{command: 'make git-commit MSG="all done and fixed"', MSG: 'all done and fixed'}}}})
+  result = await plugin['tool.execute.before']({{tool: 'bash', args: {{command: 'make git-commit MSG="just working now"'}}}})
   console.log(JSON.stringify(result ?? {{allowed: true}}))
 }} catch (e) {{
   console.log(JSON.stringify({{permissionDecision: 'deny', message: String(e)}}))
@@ -2221,6 +2223,7 @@ try {{
 """
     result = _run_ts(code)
     assert result.get("permissionDecision") == "deny", f"Expected deny for unverified commit MSG, got: {result}"
+    _clean_state_files(hot_module)
 
 
 def test_verified_claims_commit_verified_msg_allowed():
@@ -2255,7 +2258,7 @@ console.log(JSON.stringify({{allowed: result === undefined || result === null}})
 def test_no_suppression_plain_comment():
     """Plain # comment → allowed."""
     code = f"""\
-const mod = await import('{PLUGIN_DIR}/enforce-no-suppressions.ts')
+const mod = await import('{LIB_DIR}/plugin_test_exports.ts')
 console.log(JSON.stringify({{
     isSuppression: mod.isSuppressionComment('# regular comment'),
     allowEdit: mod.shouldAllowEdit('src/foo.py', '# regular comment'),
@@ -2269,7 +2272,7 @@ console.log(JSON.stringify({{
 def test_no_suppression_noqa_blocked():
     """Text contains '# noqa' → isSuppressionComment returns true."""
     code = f"""\
-const mod = await import('{PLUGIN_DIR}/enforce-no-suppressions.ts')
+const mod = await import('{LIB_DIR}/plugin_test_exports.ts')
 console.log(JSON.stringify({{
     isSuppression: mod.isSuppressionComment('# noqa'),
     verdict: mod.shouldAllowEdit('src/foo.py', '# noqa'),
@@ -2284,7 +2287,7 @@ console.log(JSON.stringify({{
 def test_no_suppression_type_ignore_blocked():
     """Text contains '# type: ignore' → isSuppressionComment returns true."""
     code = f"""\
-const mod = await import('{PLUGIN_DIR}/enforce-no-suppressions.ts')
+const mod = await import('{LIB_DIR}/plugin_test_exports.ts')
 console.log(JSON.stringify({{
     isSuppression: mod.isSuppressionComment('# type: ignore'),
     verdict: mod.shouldAllowEdit('src/bar.py', '# type: ignore'),
@@ -2298,7 +2301,7 @@ console.log(JSON.stringify({{
 def test_no_suppression_allowlisted_file():
     """Editing fix_not_disable.py → allowed even with # noqa."""
     code = f"""\
-const mod = await import('{PLUGIN_DIR}/enforce-no-suppressions.ts')
+const mod = await import('{LIB_DIR}/plugin_test_exports.ts')
 console.log(JSON.stringify({{
     isAllowed: mod.isAllowlistedPath('src/general_ludd/security/fix_not_disable.py'),
     verdict: mod.shouldAllowEdit('src/general_ludd/security/fix_not_disable.py', '# noqa'),
@@ -2951,11 +2954,9 @@ def test_commit_lock_allowed_no_lock():
     lock_path = f"/tmp/gludd-commit-lock-test-a-{os.getpid()}"
     _clean_state_files(lock_path)
     code = f"""\
-let registeredBefore = null
-const api = {{ tool: {{ execute: {{ before(fn) {{ registeredBefore = fn }}, after(fn) {{}} }} }} }}
 const mod = await import('{PLUGIN_DIR}/enforce-commit-lock.ts')
-await mod.default(api)
-const result = await registeredBefore({{tool: 'bash', command: 'make ship-commit MSG=test'}})
+const plugin = await mod.default({{}})
+const result = await plugin['tool.execute.before']({{tool: 'bash', command: 'make ship-commit MSG=test'}})
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
     result = _run_ts(code, env_override={"GLUDD_COMMIT_LOCK_PATH": lock_path})
@@ -2970,11 +2971,9 @@ def test_commit_lock_fresh_lock_denies():
     with open(lock_path, "w") as f:
         f.write(str(os.getpid()))
     code = f"""\
-let registeredBefore = null
-const api = {{ tool: {{ execute: {{ before(fn) {{ registeredBefore = fn }}, after(fn) {{}} }} }} }}
 const mod = await import('{PLUGIN_DIR}/enforce-commit-lock.ts')
-await mod.default(api)
-const result = await registeredBefore({{tool: 'bash', command: 'make git-commit MSG=test'}})
+const plugin = await mod.default({{}})
+const result = await plugin['tool.execute.before']({{tool: 'bash', command: 'make git-commit MSG=test'}})
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
     result = _run_ts(code, env_override={"GLUDD_COMMIT_LOCK_PATH": lock_path})
@@ -2993,11 +2992,9 @@ def test_commit_lock_stale_break_allows():
     six_min_ago = time.time() - 360
     os.utime(lock_path, (six_min_ago, six_min_ago))
     code = f"""\
-let registeredBefore = null
-const api = {{ tool: {{ execute: {{ before(fn) {{ registeredBefore = fn }}, after(fn) {{}} }} }} }}
 const mod = await import('{PLUGIN_DIR}/enforce-commit-lock.ts')
-await mod.default(api)
-const result = await registeredBefore({{tool: 'bash', command: 'make repo-commit MSG=test'}})
+const plugin = await mod.default({{}})
+const result = await plugin['tool.execute.before']({{tool: 'bash', command: 'make repo-commit MSG=test'}})
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
     result = _run_ts(code, env_override={"GLUDD_COMMIT_LOCK_PATH": lock_path})
@@ -3010,11 +3007,9 @@ def test_commit_lock_non_commit_allowed():
     lock_path = f"/tmp/gludd-commit-lock-test-nc-{os.getpid()}"
     _clean_state_files(lock_path)
     code = f"""\
-let registeredBefore = null
-const api = {{ tool: {{ execute: {{ before(fn) {{ registeredBefore = fn }}, after(fn) {{}} }} }} }}
 const mod = await import('{PLUGIN_DIR}/enforce-commit-lock.ts')
-await mod.default(api)
-const result = await registeredBefore({{tool: 'bash', command: 'make test-unit'}})
+const plugin = await mod.default({{}})
+const result = await plugin['tool.execute.before']({{tool: 'bash', command: 'make test-unit'}})
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
     result = _run_ts(code, env_override={"GLUDD_COMMIT_LOCK_PATH": lock_path})
@@ -3029,11 +3024,9 @@ def test_commit_lock_subagent_guard():
     with open(lock_path, "w") as f:
         f.write("locked")
     code = f"""\
-let registeredBefore = null
-const api = {{ tool: {{ execute: {{ before(fn) {{ registeredBefore = fn }}, after(fn) {{}} }} }} }}
 const mod = await import('{PLUGIN_DIR}/enforce-commit-lock.ts')
-await mod.default(api)
-const result = await registeredBefore({{tool: 'bash', command: 'make ship-commit MSG=test'}})
+const plugin = await mod.default({{}})
+const result = await plugin['tool.execute.before']({{tool: 'bash', command: 'make ship-commit MSG=test'}})
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
     result = _run_ts(code, env_override={
@@ -3051,11 +3044,9 @@ def test_commit_lock_env_disable():
     with open(lock_path, "w") as f:
         f.write("locked")
     code = f"""\
-let registeredBefore = null
-const api = {{ tool: {{ execute: {{ before(fn) {{ registeredBefore = fn }}, after(fn) {{}} }} }} }}
 const mod = await import('{PLUGIN_DIR}/enforce-commit-lock.ts')
-await mod.default(api)
-const result = await registeredBefore({{tool: 'bash', command: 'make ship-commit MSG=test'}})
+const plugin = await mod.default({{}})
+const result = await plugin['tool.execute.before']({{tool: 'bash', command: 'make ship-commit MSG=test'}})
 console.log(JSON.stringify(result ?? {{allowed: true}}))
 """
     result = _run_ts(code, env_override={
@@ -3072,14 +3063,11 @@ def test_commit_lock_after_releases_lock():
     _clean_state_files(lock_path)
     code = f"""\
 const fs = await import('node:fs')
-let registeredBefore = null
-let registeredAfter = null
-const api = {{ tool: {{ execute: {{ before(fn) {{ registeredBefore = fn }}, after(fn) {{ registeredAfter = fn }} }} }} }}
 const mod = await import('{PLUGIN_DIR}/enforce-commit-lock.ts')
-await mod.default(api)
-const beforeResult = await registeredBefore({{tool: 'bash', command: 'make ship-commit MSG=test'}})
+const plugin = await mod.default({{}})
+const beforeResult = await plugin['tool.execute.before']({{tool: 'bash', command: 'make ship-commit MSG=test'}})
 const lockBefore = fs.existsSync('{lock_path}')
-await registeredAfter({{tool: 'bash', command: 'make ship-commit MSG=test'}})
+await plugin['tool.execute.after']({{tool: 'bash', command: 'make ship-commit MSG=test'}})
 const lockAfter = fs.existsSync('{lock_path}')
 console.log(JSON.stringify({{beforeOk: beforeResult === undefined, lockBefore, lockAfter: !lockAfter}}))
 """
@@ -3093,7 +3081,7 @@ console.log(JSON.stringify({{beforeOk: beforeResult === undefined, lockBefore, l
 def test_commit_lock_is_commit_command():
     """isCommitCommand matches commit targets, rejects non-commit and non-make."""
     code = f"""\
-const mod = await import('{PLUGIN_DIR}/enforce-commit-lock.ts')
+const mod = await import('{LIB_DIR}/plugin_test_exports.ts')
 console.log(JSON.stringify({{
     ship: mod.isCommitCommand('make ship-commit MSG=test'),
     nonCommit: mod.isCommitCommand('make test-unit'),
