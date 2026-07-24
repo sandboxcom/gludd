@@ -355,6 +355,7 @@ help:
 	@echo "  --- Complete Target Index ---"
 	@$(PYTHON) scripts/check_make_help.py --print-index
 	@echo "  --- New Targets ---"
+	@echo "  bump-version            bump version in all files (pyproject.toml, __init__.py, README) at once"
 	@echo "  check-version-consistencyverify version matches across pyproject.toml, __init__.py, and README"
 	@echo "  check-gate-fresh        validate .gate-status is fresh and all phases pass — replaces broken _gate-fresh-check inline shell"
 	@echo "  pipeline-health         verify both local and remote pipelines are actually running (not stalled/zombie)"
@@ -5312,4 +5313,9 @@ check-gate-fresh:
 
 check-version-consistency:
 	@$(UV) run python scripts/check_version_consistency.py
+
+bump-version:
+	@[ -n "$(NEW)" ] || { echo "Usage: make bump-version NEW=0.1.0-beta.2"; exit 1; }
+	@$(UV) run python scripts/bump_version.py $(NEW)
+	@$(MAKE) --no-print-directory check-version-consistency
 
