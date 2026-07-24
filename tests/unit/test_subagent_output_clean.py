@@ -22,6 +22,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 PLUGIN_DIRS = [
     PROJECT_ROOT / ".opencode" / "plugin",
+    PROJECT_ROOT / ".opencode" / "plugin" / "impl",
     PROJECT_ROOT / ".opencode" / "plugins",
 ]
 
