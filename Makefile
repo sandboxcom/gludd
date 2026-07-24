@@ -355,6 +355,7 @@ help:
 	@echo "  --- Complete Target Index ---"
 	@$(PYTHON) scripts/check_make_help.py --print-index
 	@echo "  --- New Targets ---"
+	@echo "  check-version-consistencyverify version matches across pyproject.toml, __init__.py, and README"
 	@echo "  check-gate-fresh        validate .gate-status is fresh and all phases pass — replaces broken _gate-fresh-check inline shell"
 	@echo "  pipeline-health         verify both local and remote pipelines are actually running (not stalled/zombie)"
 	@echo "  pipeline-status         show both local gate + remote CI status in one view"
@@ -5308,4 +5309,7 @@ pipeline-health: pipeline-status
 
 check-gate-fresh:
 	@echo run python scripts/gate_fresh_check.py check .gate-status
+
+check-version-consistency:
+	@$(UV) run python scripts/check_version_consistency.py
 
