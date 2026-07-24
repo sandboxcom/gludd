@@ -355,6 +355,7 @@ help:
 	@echo "  --- Complete Target Index ---"
 	@$(PYTHON) scripts/check_make_help.py --print-index
 	@echo "  --- New Targets ---"
+	@echo "  pipeline-status         show both local gate + remote CI status in one view"
 	@echo "  gate-all-background     run gate-all in background, poll with gate-status-check"
 	@echo "  target-two              Second test target"
 	@echo "  target-one              First test target"
@@ -5322,3 +5323,11 @@ worktree-merge-all:
 		echo; \\
 		echo "=== Worktree merge complete: $${final_cnt:-0} total, $${final_mrg:-0} merged, $${final_cnf:-0} conflicts ==="; \\
 	}
+
+pipeline-status:
+	@echo "=== LOCAL GATE ==="; \
+	/Library/Developer/CommandLineTools/usr/bin/make --no-print-directory gate-status 2>/dev/null || echo "  (no gate status file)"; \
+	echo ""; \
+	echo "=== REMOTE CI (development) ==="; \
+	/Library/Developer/CommandLineTools/usr/bin/make --no-print-directory ci-verdict BRANCH=development 2>&1 || true
+
