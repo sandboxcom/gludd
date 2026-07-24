@@ -248,6 +248,166 @@ Tasks created from the release pipeline failures that prevented v0.1.0-beta.1 de
 - [ ] DC.8 — Enforcement plugin architecture documentation: document how plugins interact, hot-reload pattern, fail-open behavior. | priority: low | fix: docs/ENFORCEMENT_ARCHITECTURE.md | verify: manual review | status: pending
 - [ ] DC.9 — TASKS.md: mark completed RP/BP/TQ/SC items with evidence (commit hashes, test counts). | priority: low | fix: update status fields | verify: grep for unchecked items | status: pending
 - [ ] DC.10 — Makefile: add make tasks-list target that extracts Current Session tasks from TASKS.md. | priority: low | fix: already partially implemented (567e78f5), verify works | verify: make tasks-list shows items | status: pending
+
+---
+
+## Phase EX — Execution Discipline (20 specs)
+
+- [ ] EX.1 — Sequence operations atomically: push + tag must be a single atomic operation, not two separate steps that can race. Create make release-tag-push that does both + cancels conflicting runs. | priority: critical | fix: Makefile target | verify: test_release_tag_push.py
+- [ ] EX.2 — Verify before claiming: every claim of "done/passed/fixed/green" must include the command output in the same message. No memory-based claims. | priority: critical | fix: AGENTS.md rule + enforce-verified-claims.ts tightening | verify: test_verified_claims_plugin.py
+- [ ] EX.3 — Cancel stale CI before pushing: always check make ci-status for in_progress runs on the target branch before pushing. Cancel if the run is for an older commit. | priority: high | fix: add to git-push-sandboxcom pre-flight | verify: test_push_preflight_cancel.py
+- [ ] EX.4 — Never push during CI: if CI is in_progress on target branch, wait. Do not force-push to cancel. Exception: release-cut pipeline which owns the CI lifecycle. | priority: high | fix: already enforced by _push-rate-guard, verify it works | verify: test_push_rate_guard.py
+- [ ] EX.5 — Batch commits before pushing: accumulate 3+ commits before pushing. Never push every commit individually (cancels CI runs). | priority: high | fix: AGENTS.md rule + batch-push threshold check | verify: test_batch_push_threshold.py
+- [ ] EX.6 — Clean tree before dispatching: always commit or stash before dispatching subagents. Dirty tree causes pre-commit stash conflicts. | priority: high | fix: already enforced by enforce-clean-tree.ts, verify | verify: test_clean_tree_plugin.py
+- [ ] EX.7 — Read diff before committing: after make git-add, run make git-staged to review what's being committed. Catches accidental inclusions. | priority: medium | fix: AGENTS.md rule | verify: test_agents_md_section.py
+- [ ] EX.8 — Tag specific commit, not HEAD: when tagging a release, tag the specific verified commit (COMMIT=sha), not HEAD which may have unpushed changes. | priority: high | fix: AGENTS.md rule + make git-tag-push COMMIT= usage | verify: test_tag_specific_commit.py
+- [ ] EX.9 — Verify remote after every push: run make verify-remote BRANCH=<b> SHA=<sha> after every push. A silent "Everything up-to-date" is not success. | priority: critical | fix: AGENTS.md rule (already exists, verify compliance) | verify: test_verify_remote_compliance.py
+- [ ] EX.10 — Never commit during CI: if CI is running on the current branch, local commits accumulate. Push them as a batch after CI completes. | priority: medium | fix: AGENTS.md rule | verify: test_agents_md_section.py
+- [ ] EX.11 — Use feature branches for multi-file changes: changes touching 3+ files should go on a feature branch, not master. | priority: medium | fix: AGENTS.md rule + enforce-branch-discipline.ts | verify: test_branch_discipline.py
+- [ ] EX.12 — Dispatch commit as subagent: one of the 10 dispatch slots runs make ship-commit. Keeps 9 productive tasks running while commit happens. | priority: medium | fix: AGENTS.md rule (already exists, verify compliance) | verify: test_dispatch_commit.py
+- [ ] EX.13 — Process results immediately: when subagent results arrive, codify them within 5 seconds. Don't batch results for later processing. | priority: high | fix: AGENTS.md rule + enforce-nothing-dropped.ts | verify: test_nothing_dropped.py
+- [ ] EX.14 — Max 3 reads between dispatch waves: after subagent results arrive, at most 3 read/grep/glob calls before the next dispatch wave. | priority: high | fix: already in enforce-floor.ts POST_RESULT_READ_LIMIT=3, verify | verify: test_post_result_read_limit.py
+- [ ] EX.15 — Uniform task duration: size subagent tasks for 2-5 min each. Shorter = overhead waste. Longer = deadline risk. | priority: medium | fix: AGENTS.md rule | verify: test_agents_md_section.py
+- [ ] EX.16 — Fill thin waves with research: when <2 edit tasks queued, fill remaining slots with read-only research/audit tasks. Never let wave shrink to 0-1. | priority: medium | fix: AGENTS.md rule (already exists, verify compliance) | verify: test_wave_filling.py
+- [ ] EX.17 — Never run gate on main thread: make gate takes 40 min and blocks ALL subagent dispatch. Use make gate-background instead. | priority: critical | fix: already enforced by enforce-make.ts, verify | verify: test_no_foreground_gate.py
+- [ ] EX.18 — Background gate polling from subagent: dispatch a subagent to poll make gate-status-check, not the main thread. | priority: high | fix: AGENTS.md rule (already exists, verify compliance) | verify: test_background_gate_polling.py
+- [ ] EX.19 — Task timeout enforcement: each subagent task must complete in <5 min. Tasks exceeding timeout are killed by task_watchdog.py. | priority: high | fix: already implemented (enforce-deadline.ts + task_watchdog.py), verify | verify: test_task_timeout.py
+- [ ] EX.20 — Worktree isolation for file-editing subagents: subagents that edit files must work in isolated git worktrees, not the shared master tree. | priority: high | fix: make agent-workflow BRANCH=<name> + AGENTS.md rule | verify: test_worktree_isolation.py
+
+---
+
+## Phase CG — Code Generation Quality (15 specs)
+
+- [ ] CG.1 — Never use replaceAll without review: after every replaceAll, read the changed sections before committing. Catches unintended matches. | priority: critical | fix: AGENTS.md rule | verify: test_agents_md_section.py
+- [ ] CG.2 — Write failing test first (TDD): every src/ change must have a test file written BEFORE the implementation. Enforced by enforce-tdd.ts. | priority: critical | fix: already enforced, verify | verify: test_tdd_enforcement.py
+- [ ] CG.3 — Run make lint after every edit: not just before push. Lint errors compound if left unfixed. | priority: high | fix: AGENTS.md rule + pre-commit hook (BP.8) | verify: test_lint_after_edit.py
+- [ ] CG.4 — Check Node v26 compat after plugin edits: run make check-node-v26-compat after every .ts file change. Catches forbidden patterns. | priority: high | fix: AGENTS.md rule (already exists, verify compliance) | verify: test_node_compat_check.py
+- [ ] CG.5 — Run make check-plugin-hook-invoke after plugin edits: invokes every hook function, catches ReferenceError. | priority: critical | fix: AGENTS.md rule (already exists, verify compliance) | verify: test_hook_invoke_after_edit.py
+- [ ] CG.6 — No comments unless asked: code changes must not include comments unless the user explicitly requests them. | priority: medium | fix: AGENTS.md rule (already exists, verify compliance) | verify: test_no_comments.py
+- [ ] CG.7 — Follow existing code conventions: check neighboring files for style, naming, patterns before writing new code. | priority: medium | fix: AGENTS.md rule (already exists, verify compliance) | verify: test_conventions.py
+- [ ] CG.8 — No type: ignore, noqa, pylint:disable, fmt:skip, isort:skip: enforced by enforce-no-suppressions.ts at edit time. | priority: high | fix: already enforced, verify | verify: test_no_suppressions_e2e.py
+- [ ] CG.9 — No Any type annotations: use specific types or object (top type). Flagged by make check-types. | priority: medium | fix: already implemented, verify | verify: test_check_types.py
+- [ ] CG.10 — Atomic commits: each commit = one logical change (one test file, one feature, one fix). Never batch unrelated changes. | priority: medium | fix: AGENTS.md rule (already exists, verify compliance) | verify: test_atomic_commits.py
+- [ ] CG.11 — Commit message describes the change: message must say what changed and why, not just "fix". | priority: low | fix: AGENTS.md rule | verify: test_commit_message_quality.py
+- [ ] CG.12 — Verify test passes before committing implementation: run the test AFTER writing implementation to confirm it passes. | priority: high | fix: AGENTS.md TDD rule (already exists, verify compliance) | verify: test_tdd_green_phase.py
+- [ ] CG.13 — Use make targets for all bash: never run bare commands (uv, python, pip, git, cat, ls). Only make <target>. | priority: critical | fix: enforced by enforce-make.ts, verify | verify: test_make_only_bash.py
+- [ ] CG.14 — Check coverage gaps after new modules: run make check-coverage-gaps after adding new src/ files. | priority: medium | fix: AGENTS.md rule | verify: test_coverage_gap_check.py
+- [ ] CG.15 — Run make collect-check before every commit: verify 0 collection errors before committing code changes. | priority: high | fix: already in git-commit target, verify | verify: test_collect_check_before_commit.py
+
+---
+
+## Phase CID — CI Interaction Discipline (15 specs)
+
+- [ ] CID.1 — Check CI at most once per 10 minutes: use make ci-verdict-safe (cooldown-enforced), not bare ci-verdict. | priority: high | fix: enforced by ci-verdict-safe cooldown + enforce-no-ci-poll.ts | verify: test_ci_check_frequency.py
+- [ ] CID.2 — Never dispatch CI-poll subagent: a subagent that loops on ci-verdict is forbidden. Holds a slot doing nothing. | priority: critical | fix: AGENTS.md rule (already exists, verify compliance) | verify: test_no_ci_poll_subagent.py
+- [ ] CID.3 — Deploy-and-forget pattern: push + record timestamp + resume work. Check CI at next natural break (30+ min). | priority: high | fix: make deploy-and-forget target + AGENTS.md rule | verify: test_deploy_and_forget.py
+- [ ] CID.4 — CI green required only for release-cut: for all other work, start immediately. Don't gate non-release work on CI. | priority: high | fix: AGENTS.md rule (already exists, verify compliance) | verify: test_ci_gate_for_release_only.py
+- [ ] CID.5 — make ci-wait is release-cut only: never use ci-wait outside of release-cut pipeline. | priority: high | fix: AGENTS.md rule (already exists, verify compliance) | verify: test_ci_wait_usage.py
+- [ ] CID.6 — CI-COOLDOWN is not PENDING: when ci-verdict-safe returns exit 3, CI state is UNKNOWN. Never report as PENDING. | priority: high | fix: already implemented in ci_check_cooldown.py, verify | verify: test_cooldown_not_pending.py
+- [ ] CID.7 — Never report stale CI verdict: if ci-verdict headSha != branch tip, the verdict is stale. Run ci-verdict again. | priority: critical | fix: already implemented in ci-verdict (STALE RUN WARNING), verify | verify: test_stale_ci_detection.py
+- [ ] CID.8 — Cancel master CI before tag push: when pushing a tag, cancel the master-triggered Build and Release to avoid concurrency conflict. | priority: high | fix: make release-tag-push automates this | verify: test_cancel_before_tag.py
+- [ ] CID.9 — Monitor CI from subagent, not main thread: main thread dispatches work. Subagent polls and reports. | priority: high | fix: AGENTS.md rule (already exists, verify compliance) | verify: test_ci_monitor_from_subagent.py
+- [ ] CID.10 — CI run ID in all CI claims: when saying "CI green", cite the run ID and headSha. | priority: medium | fix: AGENTS.md rule (already exists, verify compliance) | verify: test_ci_claim_format.py
+- [ ] CID.11 — Don't cancel CI unless replacing with a newer run: cancellation should only happen when a new push supersedes the old commit. | priority: medium | fix: AGENTS.md rule | verify: test_ci_cancellation_discipline.py
+- [ ] CID.12 — Verify-remote after every push: run make verify-remote BRANCH=<b> SHA=<sha> to confirm the push landed. | priority: critical | fix: AGENTS.md rule (already exists, verify compliance) | verify: test_verify_remote_compliance.py
+- [ ] CID.13 — CI status format: report as "CI GREEN: sha=<sha> run=<id>" or "CI RED: sha=<sha> run=<id> conclusion=<c>". Not just "CI is green". | priority: low | fix: AGENTS.md rule | verify: test_ci_status_format.py
+- [ ] CID.14 — Don't push if CI is the same SHA: if the remote already has the HEAD SHA, the push is a no-op. Verify first. | priority: medium | fix: check git rev-list count before pushing | verify: test_noop_push_detection.py
+- [ ] CID.15 — CI run URL in release evidence: when marking A.4 complete, include the CI run URL and conclusion. | priority: medium | fix: AGENTS.md rule (already exists, verify compliance) | verify: test_release_evidence_format.py
+
+---
+
+## Phase CM — Communication Discipline (15 specs)
+
+- [ ] CM.1 — Answer direct questions with one word first: "No." or "Yes." Then provide context. Never lead with explanation. | priority: critical | fix: AGENTS.md rule | verify: test_agents_md_section.py
+- [ ] CM.2 — No status tables as terminal response: markdown tables listing completed work with no following tool call are forbidden. | priority: critical | fix: already enforced by enforce-stop.ts STATUS_SUMMARY_RE, verify | verify: test_status_summary_blocked.py
+- [ ] CM.3 — No "shall I proceed?" or "want me to continue?": asking permission to do work you should just do is a stop pattern. | priority: critical | fix: already enforced by enforce-stop.ts STOP_PATTERN_PHRASES, verify | verify: test_permission_seeking_blocked.py
+- [ ] CM.4 — No bolded question headers as recap: "**What changed?**" or "**What's left?**" with no tool call is a Q&A stop. | priority: high | fix: already enforced by enforce-stop.ts QA_RESPONSE_PATTERNS, verify | verify: test_qa_response_blocked.py
+- [ ] CM.5 — Response must include tool call when work is pending: if TASKS.md has unchecked items, every response needs a tool call. | priority: critical | fix: already enforced by enforce-stop.ts text.complete hook, verify | verify: test_tool_call_required.py
+- [ ] CM.6 — Max 3 lines of explanation before tool call: don't write paragraphs of context before acting. Lead with action. | priority: medium | fix: AGENTS.md rule | verify: test_agents_md_section.py
+- [ ] CM.7 — No "here's the status" or "final status" phrases: these are premature-stop signals. | priority: high | fix: already enforced by enforce-stop.ts STOP_SIGNAL_WORDS, verify | verify: test_stop_signal_words.py
+- [ ] CM.8 — Commit evidence in done claims: saying "committed" requires the commit hash in the same message. | priority: critical | fix: already enforced by enforce-verified-claims.ts, verify | verify: test_verified_claims_plugin.py
+- [ ] CM.9 — Push evidence in done claims: saying "pushed" requires make verify-remote output in the same message. | priority: critical | fix: already enforced by AGENTS.md rule, verify | verify: test_push_evidence.py
+- [ ] CM.10 — CI evidence in done claims: saying "CI green" requires make ci-verdict output with run ID and headSha. | priority: critical | fix: already enforced by AGENTS.md rule, verify | verify: test_ci_evidence.py
+- [ ] CM.11 — No "everything complete" or "all done" without gate output: paste make gate PASS output as evidence. | priority: critical | fix: already enforced by AGENTS.md rule, verify | verify: test_gate_evidence.py
+- [ ] CM.12 — Visual status update between tool calls: 1-line status of what's being done. Never go silent for more than a few seconds. | priority: high | fix: AGENTS.md rule (already exists, verify compliance) | verify: test_visual_status.py
+- [ ] CM.13 — No emoji unless explicitly requested: no checkmarks, rockets, warning signs in code or communication. | priority: low | fix: AGENTS.md rule (already exists, verify compliance) | verify: test_no_emoji.py
+- [ ] CM.14 — State blockers and workarounds: if blocked, say what's blocking in 1 line and what workaround is being attempted. Don't ask "which do you want?". | priority: high | fix: AGENTS.md rule (already exists, verify compliance) | verify: test_blocker_reporting.py
+- [ ] CM.15 — Concise responses: <4 lines of text unless user asks for detail. One-word answers are best. | priority: medium | fix: AGENTS.md rule (already exists, verify compliance) | verify: test_response_length.py
+
+---
+
+## Phase SE — Subagent Engineering (15 specs)
+
+- [ ] SE.1 — 10 subagents per dispatch wave: maintain minimum 10 concurrent subagent threads. Never let count drop below 10 while work remains. | priority: critical | fix: enforced by enforce-floor.ts/enforce-multitask.ts, verify | verify: test_ten_agent_floor.py
+- [ ] SE.2 — Each subagent must produce a deliverable: a code change, test file, config, or documented analysis. Status reports are NOT deliverables. | priority: critical | fix: AGENTS.md rule (already exists, verify compliance) | verify: test_subagent_deliverable.py
+- [ ] SE.3 — Terse subagent prompts: each prompt ≤20 lines. Ask for exactly what's needed. Specify "return ≤5 bullet points." | priority: high | fix: AGENTS.md rule (already exists, verify compliance) | verify: test_subagent_prompt_length.py
+- [ ] SE.4 — Subagents return summaries, not raw output: return terse summaries + file pointers. Keep detail off main thread. | priority: high | fix: AGENTS.md rule (already exists, verify compliance) | verify: test_subagent_output_format.py
+- [ ] SE.5 — Research serialized: at most 1 research subagent at a time. Multiple researchers collide on same files. | priority: medium | fix: AGENTS.md rule (already exists, verify compliance) | verify: test_research_serialized.py
+- [ ] SE.6 — Coding subagents ≤2 parallel: disjoint files only. Worktree isolation per agent. Merge sequentially. | priority: high | fix: AGENTS.md rule (already exists, verify compliance) | verify: test_coding_parallel_limit.py
+- [ ] SE.7 — Read-only tools are cheap: prefer grep/glob/read over dispatching a subagent for a simple search. | priority: medium | fix: AGENTS.md rule (already exists, verify compliance) | verify: test_read_tools_preferred.py
+- [ ] SE.8 — Never dispatch for single grep/read: dispatching a subagent to search for a class name burns 100x tokens of using grep. | priority: high | fix: AGENTS.md rule (already exists, verify compliance) | verify: test_no_dispatch_for_search.py
+- [ ] SE.9 — Never dispatch check-only subagents: "check CI", "audit lint", "scan dead code" subagents produce no fixes. Dispatch "FIX all lint errors" instead. | priority: critical | fix: AGENTS.md rule (already exists, verify compliance) | verify: test_no_check_only_dispatch.py
+- [ ] SE.10 — Re-dispatch failed/stalled tasks: completed tasks are NOT re-dispatched. Failed tasks are re-dispatched with backoff. | priority: high | fix: AGENTS.md rule (already exists, verify compliance) | verify: test_redispatch_policy.py
+- [ ] SE.11 — Dispatch replacement immediately: the moment a subagent completes, dispatch a replacement. Never let pool linger below floor. | priority: critical | fix: AGENTS.md rule (already exists, verify compliance) | verify: test_immediate_replacement.py
+- [ ] SE.12 — Process results in <5 seconds: scan subagent results immediately. Don't write analysis prose between waves. | priority: high | fix: AGENTS.md rule (already exists, verify compliance) | verify: test_fast_result_processing.py
+- [ ] SE.13 — One focused task per subagent: one file to edit, one test to run, one research question. Don't bundle concerns. | priority: high | fix: AGENTS.md rule (already exists, verify compliance) | verify: test_one_task_per_agent.py
+- [ ] SE.14 — Read-only research is reliable filler: when edit backlog is short, fill with research/audit/review tasks. Always productive. | priority: medium | fix: AGENTS.md rule (already exists, verify compliance) | verify: test_research_filler.py
+- [ ] SE.15 — Subagent task IDs in TASKS.md: every dispatched task gets an ID (W.N, G.N, FIX-N) before dispatch. | priority: high | fix: AGENTS.md rule (already exists, verify compliance) | verify: test_task_id_tracking.py
+
+---
+
+## Phase RL — Release Lifecycle (15 specs)
+
+- [ ] RL.1 — Release-cut is the only sanctioned release command: never push tags manually. Use make release-cut which runs all gates. | priority: critical | fix: AGENTS.md rule (already exists, verify compliance) | verify: test_release_cut_only.py
+- [ ] RL.2 — CI green required before tag: make release-cut runs require-ci-green as step 0. Aborts if CI is not green on HEAD. | priority: critical | fix: already implemented, verify | verify: test_ci_green_before_tag.py
+- [ ] RL.3 — README status table must match version: make check-readme-status verifies README "Status as of" matches pyproject.toml version. | priority: high | fix: already implemented, verify | verify: test_readme_status_check.py
+- [ ] RL.4 — All 12 artifact categories required: verify-release-completeness checks all 12. No category is optional. | priority: critical | fix: revert "optional" gate change, fix .rpm and .exe builds | verify: make verify-release-completeness exits 0 | status: in_progress
+- [ ] RL.5 — Tag push triggers release job: the Build and Release workflow runs on v* tag pushes. Tag = release trigger. | priority: high | fix: already configured in build.yml, verify | verify: test_tag_triggers_release.py
+- [ ] RL.6 — Release artifacts verified post-publish: the release job runs verify-release-completeness as a blocking step. | priority: critical | fix: already implemented in build.yml, verify | verify: test_release_verification_step.py
+- [ ] RL.7 — Green release branch immutable: once a release branch's remote tip is CI-GREEN, no new commits may land on it. | priority: high | fix: enforced by check_green_branch_guard.py, verify | verify: test_green_branch_guard.py
+- [ ] RL.8 — Release-promote is the only merge path: development→master merge via make release-promote. Never merge from worktree. | priority: high | fix: AGENTS.md rule (already exists, verify compliance) | verify: test_release_promote_only.py
+- [ ] RL.9 — Release-recut for artifact retries: if the Build-and-Release job fails, use make release-recut to re-trigger. | priority: medium | fix: already implemented, verify | verify: test_release_recut.py
+- [ ] RL.10 — Draft release fallback: make release-create builds a single binary and publishes a DRAFT. Cannot produce full 12-artifact matrix. | priority: low | fix: already implemented, verify documentation | verify: test_draft_fallback.py
+- [ ] RL.11 — Version bump before release: pyproject.toml, __init__.py, CHANGELOG.md must all be bumped to the release version. | priority: high | fix: already part of release-cut, verify | verify: test_version_bump.py
+- [ ] RL.12 — Pre-publish gate checks staged assets: before publishing, the release job verifies all 12 asset categories exist locally. | priority: critical | fix: already implemented in build.yml, verify (revert optional change) | verify: test_pre_publish_gate.py
+- [ ] RL.13 — Post-deploy smoke test: the release job runs a smoke test on the published Linux binary. | priority: medium | fix: already implemented in build.yml, verify | verify: test_post_deploy_smoke.py
+- [ ] RL.14 — SHA256SUMS aggregate: the release job generates a SHA256SUMS file aggregating all checksums. | priority: low | fix: already implemented in build.yml, verify | verify: test_sha256sums.py
+- [ ] RL.15 — Release evidence format: marking A.4 complete requires: CI run URL, conclusion=success, artifact URL, asset count, verify-release-completeness PASS. | priority: critical | fix: AGENTS.md rule (already exists, verify compliance) | verify: test_release_evidence_format.py
+
+---
+
+## Phase PM — Process Monitoring (10 specs)
+
+- [ ] PM.1 — Audit own previous session for premature stops: at session start, read BUGS.md and SESSION.md. Check for unfinished work. | priority: high | fix: AGENTS.md rule (already exists, verify compliance) | verify: test_session_start_audit.py
+- [ ] PM.2 — Log all premature-stop incidents in BUGS.md: every text-only response while work was pending gets logged with root cause. | priority: high | fix: AGENTS.md rule (already exists, verify compliance) | verify: test_bugs_md_logging.py
+- [ ] PM.3 — Track enforcement disengage count per session: display count after each disengage. Warn at 2, alarm at 3. | priority: medium | fix: BP.6 disengage audit | verify: test_disengage_count.py
+- [ ] PM.4 — Monitor subagent pool size: track live agent count. Alert when below floor. | priority: medium | fix: already tracked by enforce-floor.ts, verify | verify: test_pool_monitoring.py
+- [ ] PM.5 — Track CI poll count per session: display count. Alert when >5 total polls. | priority: medium | fix: enforce-no-ci-poll.ts state file | verify: test_ci_poll_count.py
+- [ ] PM.6 — Session start within 5 minutes: from session start to first dispatch wave. Timeout if exceeded. | priority: high | fix: enforced by enforce-session-start.ts time gates, verify | verify: test_session_start_timeliness.py
+- [ ] PM.7 — Track word count compliance: when user requests N words, verify N words were written. | priority: low | fix: manual verification + AGENTS.md rule | verify: test_word_count_compliance.py
+- [ ] PM.8 — Monitor gate status freshness: .gate-status must be newer than the last src/ edit. Stale gate = red gate. | priority: high | fix: already enforced by _gate-fresh-check, verify | verify: test_gate_freshness.py
+- [ ] PM.9 — Track commit frequency: commits should be atomic (one per logical change). Track commits per hour. Alert if >10/hour (rushing). | priority: low | fix: AGENTS.md rule | verify: test_commit_frequency.py
+- [ ] PM.10 — Monitor disk usage: /tmp/gludd-* files accumulate. Clean when >100MB. | priority: medium | fix: make check-disk + make clean-tmp, verify | verify: test_disk_monitoring.py
+
+---
+
+## Phase FW — Framework and Tooling (15 specs)
+
+- [ ] FW.1 — Plugin auto-discovery safety: .opencode/plugin/ must contain ONLY valid plugins with export default. No companion files. | priority: critical | fix: already enforced by test_plugin_dir_hygiene.py, verify | verify: test_plugin_dir_hygiene.py
+- [ ] FW.2 — Hot-reload proxy on all plugins: every enforcement plugin uses the hot-reload proxy pattern for runtime updates without restart. | priority: high | fix: already implemented, verify all 14 plugins | verify: test_hot_reload_proxy_coverage.py
+- [ ] FW.3 — Subagent enforcement isolation: plugins must not fire in subagent context. Check OPENCODE_SUBAGENT env var. | priority: critical | fix: already implemented via isSubagent() guard, verify | verify: test_subagent_guard_all_plugins.py
+- [ ] FW.4 — Fail-open on all plugins: any exception in a plugin hook must allow the operation, never block. | priority: critical | fix: already implemented via try/catch, verify | verify: test_fail_open_all_plugins.py
+- [ ] FW.5 — Env var disable for all plugins: every plugin has GLUDD_*_ENFORCE=0 env var to disable. | priority: high | fix: already implemented, verify all plugins have it | verify: test_env_disable_all_plugins.py
+- [ ] FW.6 — Plugin heartbeat: each plugin writes a heartbeat file on invocation. Detects dead plugins. | priority: medium | fix: reportAlive() exists, verify all plugins call it | verify: test_plugin_heartbeat.py
+- [ ] FW.7 — Make target for every operation: never run bare commands. Every bash operation must be a make target. | priority: critical | fix: enforced by enforce-make.ts, verify | verify: test_make_target_coverage.py
+- [ ] FW.8 — No shell metacharacters in bash: | ; && || $() `` > < 2>&1 {} ! \ all forbidden in make commands. | priority: critical | fix: enforced by enforce-make.ts, verify | verify: test_metachar_blocking.py
+- [ ] FW.9 — Workspace-restricted file access: read/write/edit/glob/grep only in /Users/shawnwilson/gludd/ and /tmp/gludd-*. | priority: high | fix: already enforced by opencode.json permissions, verify | verify: test_workspace_restriction.py
+- [ ] FW.10 — Crash recovery: stale state files from crashed sessions are detected (PID mismatch, age) and auto-reset. | priority: high | fix: already implemented in enforce-session-start.ts, verify | verify: test_crash_recovery.py
+- [ ] FW.11 — Plugin manifest validation: verify every plugin in opencode.json exists on disk. No orphans, no missing files. | priority: medium | fix: make verify-plugin-manifest, verify | verify: test_plugin_manifest.py
+- [ ] FW.12 — Shared.ts consolidation: common helpers (isSubagent, reportAlive, isDisengaged, isReadTool, isDispatchTool) in one module. | priority: medium | fix: already implemented, verify no duplication | verify: test_shared_consolidation.py
+- [ ] FW.13 — Node v26 compatibility: all .ts files parseable by --experimental-strip-types. No enums, namespaces, nested try-catch in catch. | priority: high | fix: make check-node-v26-compat, verify | verify: test_node_v26_compat.py
+- [ ] FW.14 — Plugin test exports outside plugin dir: test helpers in lib/plugin_test_exports.ts, not in .opencode/plugin/. | priority: high | fix: already implemented, verify | verify: test_exports_location.py
+- [ ] FW.15 — Behavioral plugin tests (scripts/test_plugin_behavior.py): 36 tests that actually invoke hooks with real inputs. | priority: high | fix: already implemented, verify all pass | verify: test_plugin_behavior.py
 - [x] A.5 — CI shard matrix rework (unit-1a→1a+1d split) | priority: high | effort: medium | status: completed | evidence: build.yml lines 186-244 — 6 shards (unit-1a, unit-1b, unit-1d, unit-2, unit-3, other) already split with path exclusions; unit-1a→1a+1d split completed 2026-07-09 per inline comment
 - [x] A.6 — Coverage --fail-under=0 workaround removal once E1 coverage hits threshold | priority: medium | effort: small | status: completed | evidence: fail_under 70→85 in pyproject.toml, commit 5a04fffb (metric module + lint-fix sweep), gate green
 - [x] A.7 — Push-guard fix: enforce push-guard on development branch CI green | priority: high | effort: small | status: completed | evidence: push-guard enforcement applied to development branch
