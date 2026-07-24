@@ -2083,6 +2083,502 @@ old summary table omitted entirely. Grand total across the file: **326** boxes.
 
 ---
 
+## Phase BR2 — Branch Management (25 specs)
+
+- [ ] BR2.1 — Feature branch naming convention: branches must match `feature/<verb>-<noun>` (e.g. `feature/add-psk-rotation`). | priority: medium | fix: pre-push hook script + AGENTS.md rule | verify: test_branch_naming.py
+- [ ] BR2.2 — Development branch is default integration target: all feature branches merge into development first, never master directly. | priority: critical | fix: enforce-branch-discipline.ts denies feature→master | verify: test_dev_first_merge.py
+- [ ] BR2.3 — Master branch immutability: master only receives merges from development or emergency hotfixes, never feature commits. | priority: critical | fix: enforce-branch-discipline.ts | verify: test_master_immutable.py
+- [ ] BR2.4 — Release branch naming convention: release branches use `release/<version>` (e.g. `release/v0.1.0-beta.2`). | priority: high | fix: AGENTS.md rule + make release-branch-new validates | verify: test_release_branch_naming.py
+- [ ] BR2.5 — Worktree branch naming: agent worktree branches use `agent-<short-descriptive-name>` prefix. | priority: medium | fix: AGENTS.md rule + make agent-worktree enforces | verify: test_worktree_branch_naming.py
+- [ ] BR2.6 — Merge strategy: feature→development uses --no-ff (preserves branch history). Fast-forward only for trivial docs. | priority: high | fix: make feature-done uses --no-ff flag | verify: test_no_ff_merge.py
+- [ ] BR2.7 — Rebase workflow: feature branches rebase onto development before merge to linearize history and avoid conflicts. | priority: medium | fix: AGENTS.md rule + make git-rebranch-onto target | verify: test_rebase_before_merge.py
+- [ ] BR2.8 — Branch deletion after merge: feature branches deleted locally and remotely after successful merge to development. | priority: high | fix: make feature-done cleans up branch | verify: test_branch_cleanup.py
+- [ ] BR2.9 — Stale branch detection: branches with no commits in 30 days flagged for archival or deletion. | priority: low | fix: scripts/check_stale_branches.py | verify: test_stale_branch_detection.py
+- [ ] BR2.10 — Branch protection rules: master and development have protection rules (no force-push, require CI green). | priority: high | fix: GitHub branch protection config + AGENTS.md | verify: test_branch_protection.py
+- [ ] BR2.11 — Hotfix branch workflow: hotfix branches use `hotfix/<issue>` created from master, cherry-picked to development. | priority: high | fix: AGENTS.md rule + make hotfix-start target | verify: test_hotfix_workflow.py
+- [ ] BR2.12 — Branch divergence threshold: if local branch is >20 commits behind remote, warn before continuing work. | priority: medium | fix: scripts/check_branch_divergence.py | verify: test_divergence_warn.py
+- [ ] BR2.13 — Concurrent branch limits: max 5 active feature branches per developer to avoid context switching. | priority: low | fix: advisory check in branch-report | verify: test_branch_limit.py
+- [ ] BR2.14 — Branch naming regex enforcement: strict pattern `^(feature|hotfix|release|agent|fix)-[a-z0-9-]+$`. | priority: medium | fix: pre-commit hook on branch creation | verify: test_branch_regex.py
+- [ ] BR2.15 — Merge commit message format: `Merge <branch> into <target>: <summary>`. | priority: low | fix: git merge --no-ff template | verify: test_merge_message.py
+- [ ] BR2.16 — Squash merge option: small feature branches (<5 commits) may use squash merge for clean history. | priority: low | fix: AGENTS.md rule + make feature-done SQUASH=1 | verify: test_squash_option.py
+- [ ] BR2.17 — Branch source verification: new branches must branch from latest development (or master for hotfixes). | priority: high | fix: make feature-start verifies base is up-to-date | verify: test_branch_source.py
+- [ ] BR2.18 — Release branch freeze: once a release branch is cut, no new features land on it (only bug fixes). | priority: high | fix: AGENTS.md rule + CI check on release/* branches | verify: test_release_freeze.py
+- [ ] BR2.19 — Development→master promotion: only via make release-promote, requires CI green on both branches. | priority: critical | fix: make release-promote target | verify: test_release_promote.py
+- [ ] BR2.20 — Worktree branch isolation: each worktree has exactly one branch, no sharing between worktrees. | priority: high | fix: make agent-worktree creates unique branch per worktree | verify: test_worktree_isolation.py
+- [ ] BR2.21 — Branch age tracking: record creation date of each branch, surface in `make branch-report`. | priority: low | fix: scripts/branch_report.py | verify: test_branch_age.py
+- [ ] BR2.22 — Conflict resolution ownership: merge conflicts resolved by the feature branch owner, not the integrator. | priority: medium | fix: AGENTS.md rule | verify: test_conflict_ownership.py
+- [ ] BR2.23 — Branch tag synchronization: release branches tagged with version, master tagged post-merge. | priority: medium | fix: make release-cut handles tagging | verify: test_branch_tags.py
+- [ ] BR2.24 — Abandoned branch cleanup: branches merged >7 days ago and not deleted are auto-flagged. | priority: low | fix: scripts/cleanup_merged_branches.py | verify: test_abandoned_cleanup.py
+- [ ] BR2.25 — Branch audit log: every branch create/merge/delete recorded in audit log with timestamp+user. | priority: medium | fix: hook on git operations + audit logger | verify: test_branch_audit.py
+
+---
+
+## Phase AU2 — Authentication (25 specs)
+
+- [ ] AU2.1 — PSK authentication required for all worker endpoints: 403 without valid PSK. | priority: critical | fix: already implemented in worker auth middleware | verify: test_psk_required.py
+- [ ] AU2.2 — PSK rotation policy: PSK rotated every 90 days, old PSKs revoked after grace period. | priority: high | fix: scripts/rotate_psk.py + AGENTS.md schedule | verify: test_psk_rotation.py
+- [ ] AU2.3 — PSK stored in OpenBao, never in env vars or config files committed to repo. | priority: critical | fix: already implemented via hvac client | verify: test_psk_storage.py
+- [ ] AU2.4 — STS token lifecycle: mint → use → expire → reap. No tokens live beyond TTL. | priority: critical | fix: already implemented in sts/ module | verify: test_sts_lifecycle.py
+- [ ] AU2.5 — Token minting scopes tokens to (human ∩ agent ∩ requested) intersection. | priority: high | fix: already implemented in TokenMinter | verify: test_token_scoping.py
+- [ ] AU2.6 — Token revocation immediate: revoked tokens rejected on next use, not after TTL expiry. | priority: critical | fix: TokenRevoker checks revocation list | verify: test_token_revocation.py
+- [ ] AU2.7 — Token reaper runs hourly: expires tokens past TTL, reclaims quota. | priority: high | fix: TokenReaper scheduled task | verify: test_token_reaper.py
+- [ ] AU2.8 — Token quotas per agent per project: max N concurrent active tokens enforced. | priority: high | fix: TokenQuotaEnforcer | verify: test_token_quota.py
+- [ ] AU2.9 — Permission intersection narrows: effective = intersection(human, agent, requested). Never widens scope. | priority: critical | fix: already implemented in intersection evaluator | verify: test_permission_intersection.py
+- [ ] AU2.10 — Escalation requests require ≥3 alternatives tried before approval considered. | priority: high | fix: API validation on POST /admin/perm/escalation-request | verify: test_escalation_alternatives.py
+- [ ] AU2.11 — Auto-approval for within-intersection requests: agent gets what it would have had but for narrow intersection. | priority: medium | fix: already implemented in escalation handler | verify: test_auto_approval.py
+- [ ] AU2.12 — Outside-intersection requests create HumanTodo for human review. | priority: high | fix: already implemented | verify: test_outside_intersection_todo.py
+- [ ] AU2.13 — Fail-closed on auth errors: connection failures result in denial, not fallback to anonymous. | priority: critical | fix: already implemented in auth middleware | verify: test_fail_closed_auth.py
+- [ ] AU2.14 — Fail-closed on OpenBao errors: secret retrieval failure denies operation, never falls back to default. | priority: critical | fix: already implemented in secret resolver | verify: test_openbao_fail_closed.py
+- [ ] AU2.15 — Token TTL max 1 hour: short-lived tokens reduce exposure window. | priority: high | fix: TokenMinter default TTL=3600s | verify: test_token_ttl.py
+- [ ] AU2.16 — Token refresh before expiry: TokenRotator rotates tokens 5 min before expiry. | priority: medium | fix: already implemented | verify: test_token_rotation.py
+- [ ] AU2.17 — PSK never logged: exception sanitization strips PSK from error messages and logs. | priority: critical | fix: exc_sanitizer.py | verify: test_psk_not_logged.py
+- [ ] AU2.18 — Token audit log: every mint/use/revoke recorded in StsAuditLog with agent attribution. | priority: high | fix: already implemented | verify: test_token_audit.py
+- [ ] AU2.19 — Token narrowing: tokens scoped to minimum required path-prefix and allowed-hosts set. | priority: high | fix: already implemented in narrowing module | verify: test_token_narrowing.py
+- [ ] AU2.20 — Permission escalation cooldown: max 3 escalation requests per hour per agent. | priority: medium | fix: rate limiter on escalation endpoint | verify: test_escalation_cooldown.py
+- [ ] AU2.21 — Human role defaults: human-operator is default role, human-admin for privileged ops, human-viewer read-only. | priority: medium | fix: config/permissions/human-*.yml | verify: test_human_roles.py
+- [ ] AU2.22 — STS token hibernation: tokens can be hibernated (suspended) and revived with MAC key validation. | priority: low | fix: already implemented | verify: test_token_hibernation.py
+- [ ] AU2.23 — Token injector: tokens injected into agent context transparently without exposure in logs. | priority: medium | fix: already implemented in injector module | verify: test_token_injector.py
+- [ ] AU2.24 — PSK broadcast security: worker_broadcast uses PSK for auth without leaking it in transit. | priority: critical | fix: already fixed (I.1.4) | verify: test_broadcast_psk.py
+- [ ] AU2.25 — Auth integration tests: e2e tests covering full PSK + STS auth lifecycle. | priority: high | fix: tests/e2e/test_auth_lifecycle.py | verify: test_auth_e2e.py
+
+---
+
+## Phase TL2 — Tool Limits (25 specs)
+
+- [ ] TL2.1 — Bash tool: only `make <target>` commands allowed. No bare commands (uv, python, pip, git, cat, ls). | priority: critical | fix: enforce-make.ts | verify: test_make_only.py
+- [ ] TL2.2 — Bash tool: shell metacharacters forbidden (| ; && || $() backtick > < 2>&1 {} ! backslash). | priority: critical | fix: enforce-make.ts metachar matcher | verify: test_metachar_block.py
+- [ ] TL2.3 — Read tool: workspace-only access (/Users/shawnwilson/gludd/ and /tmp/gludd-*). External reads prompt user. | priority: high | fix: opencode.json permission rules | verify: test_read_workspace.py
+- [ ] TL2.4 — Write tool: workspace-only access. External writes blocked. | priority: high | fix: opencode.json permission rules | verify: test_write_workspace.py
+- [ ] TL2.5 — Edit tool: no lint-suppression comments (# noqa, # type: ignore, # pylint:, # fmt:, # isort:). | priority: high | fix: enforce-no-suppressions.ts | verify: test_no_suppressions_edit.py
+- [ ] TL2.6 — Write tool: TDD gate blocks writing src/general_ludd/**/*.py without test file existing first. | priority: critical | fix: enforce-tdd.ts | verify: test_tdd_write_gate.py
+- [ ] TL2.7 — Task tool: dispatch depth limit (max 3 levels of subagent nesting). | priority: high | fix: enforce-depth.ts | verify: test_dispatch_depth.py
+- [ ] TL2.8 — Task tool: task timeout 5 minutes, killed by task_watchdog.py daemon. | priority: high | fix: enforce-deadline.ts + task_watchdog.py | verify: test_task_timeout.py
+- [ ] TL2.9 — Task tool: dispatch ceiling 10 concurrent subagents (floor == ceiling == 10). | priority: high | fix: enforce-multitask.ts | verify: test_dispatch_ceiling.py
+- [ ] TL2.10 — Glob tool: path parameter restricted to workspace prefixes. | priority: medium | fix: opencode.json permission rules | verify: test_glob_workspace.py
+- [ ] TL2.11 — Grep tool: path parameter restricted to workspace prefixes. | priority: medium | fix: opencode.json permission rules | verify: test_grep_workspace.py
+- [ ] TL2.12 — Edit tool: dirty tree check before dispatch (enforce-clean-tree blocks dispatch on dirty tree). | priority: high | fix: enforce-clean-tree.ts | verify: test_clean_tree_edit.py
+- [ ] TL2.13 — Bash tool: long-running foreground commands denied (>30s), must use background variant. | priority: high | fix: enforce-make.ts foreground detection | verify: test_long_running_deny.py
+- [ ] TL2.14 — Bash tool: git operations serialized via commit-lock to prevent index corruption. | priority: medium | fix: enforce-commit-lock.ts flock | verify: test_commit_lock.py
+- [ ] TL2.15 — Task tool: enhancement ratio enforced (≥50% enhancements per dispatch wave). | priority: medium | fix: enforce-enhancement-ratio.ts | verify: test_enhancement_ratio.py
+- [ ] TL2.16 — Edit tool: deletion gate blocks file deletions without explicit approval. | priority: high | fix: enforce-deletion-gate.ts | verify: test_deletion_gate.py
+- [ ] TL2.17 — Bash tool: no-wait rule blocks sleep/ci-wait/gate-tail/gate-status-check on main thread. | priority: high | fix: enforce-no-wait.ts | verify: test_no_wait_rule.py
+- [ ] TL2.18 — Task tool: CI-poll dispatch denied (no "poll CI until terminal" subagents). | priority: critical | fix: enforce-no-wait.ts CI_POLL_DISPATCH_PATTERNS | verify: test_ci_poll_dispatch_deny.py
+- [ ] TL2.19 — Bash tool: CI poll limiter (max 3 consecutive ci-status/ci-verdict/ci-view calls). | priority: high | fix: enforce-no-ci-poll.ts | verify: test_ci_poll_limit.py
+- [ ] TL2.20 — Edit/Bash tool: branch discipline blocks push/merge from worktree context. | priority: high | fix: enforce-branch-discipline.ts | verify: test_branch_discipline_edit.py
+- [ ] TL2.21 — Bash tool: worktree guard blocks push/merge/tag from inside worktree. | priority: high | fix: enforce-worktree.ts | verify: test_worktree_guard.py
+- [ ] TL2.22 — Task/Edit/Bash tool: objective enforcement blocks non-objective work when primary objective unmet. | priority: medium | fix: enforce-objective.ts | verify: test_objective_enforce.py
+- [ ] TL2.23 — Edit tool: test integrity blocks edits containing CI anti-patterns (xfail without reason, skip without reason). | priority: medium | fix: enforce-test-integrity.ts | verify: test_test_integrity.py
+- [ ] TL2.24 — Bash tool: batch-push guard blocks push while CI is pending on target branch. | priority: high | fix: enforce-batch-push.ts | verify: test_batch_push_guard.py
+- [ ] TL2.25 — Read/Edit/Write/Glob/Grep: context enforcement blocks when SESSION.md stale >24h. | priority: medium | fix: enforce-context.ts | verify: test_context_enforce.py
+
+---
+
+## Phase RC2 — Race Conditions (25 specs)
+
+- [ ] RC2.1 — Concurrent git operations: two commits running simultaneously corrupt git index. Fix: commit-lock serialization via flock. | priority: critical | fix: enforce-commit-lock.ts | verify: test_concurrent_commit.py
+- [ ] RC2.2 — Concurrent file edits: two subagents editing same file on shared tree lose one change. Fix: worktree isolation per agent. | priority: critical | fix: make agent-worktree creates isolated checkout | verify: test_concurrent_edit.py
+- [ ] RC2.3 — Concurrent plugin state writes: /tmp/gludd-*.json corrupted by parallel writes from multiple processes. Fix: atomic writeJsonFile temp+rename. | priority: high | fix: already fixed (663ceb03) | verify: test_concurrent_state_write.py
+- [ ] RC2.4 — Concurrent CI runs: push+tag to same SHA causes concurrency conflict cancellation. Fix: release-tag-push automation. | priority: high | fix: make release-tag-push target | verify: test_concurrent_ci.py
+- [ ] RC2.5 — Concurrent dispatch+commit: dispatching subagents while committing causes dirty tree conflicts. Fix: enforce-clean-tree before dispatch. | priority: high | fix: enforce-clean-tree.ts | verify: test_dispatch_commit_race.py
+- [ ] RC2.6 — Hot-reload TOCTOU: snapshot→swap race in plugin hot-reload. Fix: lock-guarded atomic swap. | priority: high | fix: already implemented in hot_reload.ts | verify: test_hot_reload_toctou.py
+- [ ] RC2.7 — Worker broadcast PSK leak: concurrent registration races leak PSK. Fix: serialized registration. | priority: high | fix: already fixed (I.1.4) | verify: test_broadcast_race.py
+- [ ] RC2.8 — FileClaimRegistry livelock: concurrent claims on same file cause infinite retry. Fix: total-order claim + backoff. | priority: high | fix: already fixed (D.10) | verify: test_claim_livelock.py
+- [ ] RC2.9 — EventBus list-mutation-during-iteration: firing events while iterating listener list. Fix: copy-on-fire snapshot. | priority: high | fix: already fixed (C.12) | verify: test_eventbus_race.py
+- [ ] RC2.10 — DB session across dispatch gather: session used after close in async gather. Fix: pin session before gather. | priority: high | fix: already fixed (E.10) | verify: test_session_pin.py
+- [ ] RC2.11 — Pause/resume persist-before-mutate: pause state read before write completes. Fix: persist-first ordering. | priority: high | fix: already fixed (D.7.1) | verify: test_pause_race.py
+- [ ] RC2.12 — Hibernation MAC key race: concurrent revive uses stale key. Fix: durable MAC key with version. | priority: high | fix: already fixed (D.7.2) | verify: test_hibernation_race.py
+- [ ] RC2.13 — Token mint race: concurrent minting creates duplicate tokens. Fix: unique constraint on token ID. | priority: medium | fix: already implemented in TokenMinter | verify: test_token_mint_race.py
+- [ ] RC2.14 — Tenant contextvar race: ThreadPoolExecutor spawns sessions without tenant filter. Fix: do_orm_execute listener. | priority: high | fix: already fixed (C.3) | verify: test_tenant_race.py
+- [ ] RC2.15 — Check-and-set semaphore: dispatcher get_semaphore not atomic. Fix: async with self._lock. | priority: high | fix: already fixed (S.7) | verify: test_semaphore_race.py
+- [ ] RC2.16 — Git automation merge bypass: merge_branch skips per-repo lock. Fix: acquire lock before merge. | priority: high | fix: already fixed (C.17) | verify: test_merge_lock_race.py
+- [ ] RC2.17 — Self-improve deny-list substring bypass: path matching too loose, allows protected paths. Fix: canonical path comparison. | priority: high | fix: already fixed (S.9) | verify: test_denylist_race.py
+- [ ] RC2.18 — Validation subprocess cwd: unconfined working directory allows path escape. Fix: restrict cwd to workspace. | priority: medium | fix: already fixed (S.11) | verify: test_validation_cwd.py
+- [ ] RC2.19 — Integrity store TOCTOU: check-then-store race allows tampered baseline. Fix: atomic compare-and-swap. | priority: medium | fix: already fixed (C.5) | verify: test_integrity_toctou.py
+- [ ] RC2.20 — Webhook delivery rebind: URL valid at registration, malicious at delivery time. Fix: re-check URL on delivery. | priority: medium | fix: already fixed (H.21) | verify: test_webhook_rebind_race.py
+- [ ] RC2.21 — MCP startup orphan: partial multi-server startup leaves orphan processes. Fix: rollback on failure. | priority: high | fix: already fixed (H.15) | verify: test_mcp_orphan.py
+- [ ] RC2.22 — MCP stopall orphan: one failing stop() orphans remaining processes. Fix: stop-all-or-none semantics. | priority: medium | fix: already fixed (H.9) | verify: test_mcp_stopall.py
+- [ ] RC2.23 — Project overlay dangerous fields: concurrent config override races on dangerous keys. Fix: deny-list overlay fields. | priority: high | fix: already fixed (H.7) | verify: test_overlay_race.py
+- [ ] RC2.24 — Memory cross-project bleed: concurrent memory writes across projects corrupt records. Fix: project_id scoping. | priority: high | fix: already fixed (H.8) | verify: test_memory_bleed.py
+- [ ] RC2.25 — Remediation idempotency: concurrent remediate calls double-fire actions. Fix: idempotency-key on endpoint. | priority: medium | fix: already fixed (C.25) | verify: test_remediation_idempotency.py
+
+---
+
+## Phase XE2 — Execution Examples (25 specs)
+
+Step-by-step execution protocols for every recurring operation. Each spec codifies the exact command sequence an agent must follow, removing ambiguity and preventing shortcut-driven bugs.
+
+- [ ] XE2.1 — Release-cut protocol: (1) make gate green, (2) make check-readme-status, (3) make require-ci-green, (4) make git-push-sandboxcom, (5) make git-tag-push, (6) make release-view, (7) make verify-release-completeness | priority: critical | fix: document 7-step sequence in docs/RELEASE_RUNBOOK.md | verify: test_release_cut_protocol.py
+- [ ] XE2.2 — Gate-background protocol: (1) make gate-background, (2) record PID, (3) dispatch subagent to poll make gate-status-check every 60s, (4) when === GATE: PASSED/FAILED === appears, ingest result | priority: critical | fix: AGENTS.md section + make gate-status-check output format | verify: test_gate_background_protocol.py
+- [ ] XE2.3 — Dispatch-wave protocol: (1) read TASKS.md unchecked items, (2) compose ≥10 subagent prompts each ≤20 lines, (3) ≥50% enhancements, (4) dispatch in ONE message, (5) process results within 5s, (6) refill immediately | priority: critical | fix: codify in AGENTS.md pipeline model section | verify: test_dispatch_wave_protocol.py
+- [ ] XE2.4 — CI-wait protocol (release-cut only): (1) make batch-push, (2) make verify-remote, (3) make ci-verdict-safe every 10 min via subagent, (4) resume other work between checks, (5) never use make ci-wait outside release-cut | priority: high | fix: AGENTS.md CI-poll subsection | verify: test_ci_wait_protocol.py
+- [ ] XE2.5 — Crash-recovery protocol: (1) detect stale PID in /tmp/gludd-session-start.json, (2) make crash-recovery, (3) make reload-enforcement, (4) make clean-tmp, (5) verify-state, (6) resume work | priority: high | fix: make crash-recovery recipe in docs | verify: test_crash_recovery_protocol.py
+- [ ] XE2.6 — Verify-remote protocol: (1) capture local HEAD via make git-log, (2) make verify-remote BRANCH=<b> SHA=<sha>, (3) confirm VERIFIED <branch>@<sha> output, (4) if mismatch, investigate silent push failure | priority: critical | fix: AGENTS.md branch-landing integrity section | verify: test_verify_remote_protocol.py
+- [ ] XE2.7 — Worktree-creation protocol: (1) make agent-worktree BRANCH=agent-<name>, (2) capture WORKTREE_PATH, (3) dispatch subagent with cwd=WORKTREE_PATH, (4) subagent edits + commits on its branch, (5) orchestrator merges from main checkout | priority: high | fix: AGENTS.md worktree lifecycle section | verify: test_worktree_creation_protocol.py
+- [ ] XE2.8 — Worktree-merge protocol: (1) verify clean main tree, (2) make agent-merge-dev BRANCH=<name>, (3) gate-green check, (4) make agent-cleanup BRANCH=<name>, (5) verify agent-worktree-list shows only main checkout | priority: high | fix: AGENTS.md worktree lifecycle rule | verify: test_worktree_merge_protocol.py
+- [ ] XE2.9 — Tag-push protocol: (1) verify CI green on HEAD via make ci-verdict-safe, (2) verify README status updated, (3) make git-tag-push TAG=<t> COMMIT=<sha>, (4) verify tag exists via git ls-remote --tags | priority: critical | fix: make release-cut automates this sequence | verify: test_tag_push_protocol.py
+- [ ] XE2.10 — Bug-fix iteration protocol: (1) read failure log, (2) identify root cause, (3) write failing test (TDD red), (4) implement minimal fix (TDD green), (5) make lint, (6) make collect-check, (7) commit, (8) verify test passes post-commit | priority: high | fix: AGENTS.md TDD policy section | verify: test_bug_fix_protocol.py
+- [ ] XE2.11 — TDD red-green-refactor protocol: (1) identify behavior needed, (2) write tests/unit/test_<module>.py with failing assertion, (3) make test-unit TESTFILE=... confirm fail, (4) write minimal src/ implementation, (5) confirm pass, (6) refactor with tests green | priority: critical | fix: enforce-tdd.ts enforces step ordering | verify: test_tdd_protocol.py
+- [ ] XE2.12 — Plugin-edit protocol: (1) write failing test, (2) edit .ts file, (3) make check-node-v26-compat, (4) make check-plugin-hook-invoke, (5) make test-hook-runtime, (6) make verify-enforcement, (7) commit, (8) note restart requirement | priority: critical | fix: AGENTS.md plugin hook invocation section | verify: test_plugin_edit_protocol.py
+- [ ] XE2.13 — Lint-fix protocol: (1) make lint, (2) for each error: read the line, reflow/extract/delete never # noqa, (3) make lint again, (4) commit only when 0 errors | priority: high | fix: AGENTS.md no-suppressions policy | verify: test_lint_fix_protocol.py
+- [ ] XE2.14 — Pre-commit-check protocol: (1) make lint, (2) make typecheck, (3) make collect-check, (4) make test-count (0 errors), (5) make git-staged review, (6) then make git-commit | priority: high | fix: RP.23 pre-commit-check Makefile target | verify: test_pre_commit_protocol.py
+- [ ] XE2.15 — Hot-module-reload protocol: (1) edit .ts source, (2) make hot-reload-plugins to rebuild /tmp/gludd-hot-*.js, (3) make check-hot-reload-fresh, (4) inform user restart required for full reload | priority: medium | fix: AGENTS.md plugin tuning section | verify: test_hot_reload_protocol.py
+- [ ] XE2.16 — Subagent-failure protocol: (1) read subagent result, (2) if status=failed: re-dispatch with smaller scope + backoff, (3) if status=completed but partial: SendMessage with specific gap, (4) if killed by transient API error: re-dispatch after backoff, (5) never re-dispatch completed work | priority: high | fix: AGENTS.md agent at-rest policy | verify: test_subagent_failure_protocol.py
+- [ ] XE2.17 — Disk-guard-recovery protocol: (1) make disk-check, (2) if >95%: make disk-guard, (3) make clean-worktree-venvs if no live worktree agents, (4) make clean-tmp, (5) verify disk <90% before resuming | priority: medium | fix: AGENTS.md disk discipline section | verify: test_disk_recovery_protocol.py
+- [ ] XE2.18 — Enforce-disengage protocol (emergency only): (1) confirm grinding inline with no progress, (2) make disengage-enforcement, (3) record in /tmp/gludd-disengage-audit.jsonl, (4) fix offending plugin code, (5) make reload-enforcement to re-arm, (6) never use as routine workflow | priority: high | fix: AGENTS.md plugin tuning section | verify: test_disengage_protocol.py
+- [ ] XE2.19 — Pre-push verification protocol: (1) make gate-status shows PASS, (2) make verify-enforcement shows 0 issues, (3) make test-count shows 0 collection errors, (4) ≥3 commits accumulated (or COMMIT_THRESHOLD met), (5) CI not in-flight, (6) then make batch-push | priority: critical | fix: AGENTS.md batch-push rule | verify: test_pre_push_protocol.py
+- [ ] XE2.20 — Post-push verification protocol: (1) make verify-remote BRANCH=<b> SHA=<sha> shows VERIFIED, (2) make ci-verdict-safe shows run started, (3) deploy-and-forget (resume real work), (4) check back 30+ min later | priority: critical | fix: AGENTS.md verification section | verify: test_post_push_protocol.py
+- [ ] XE2.21 — Test-shard-split protocol: (1) identify slow shard via CI timing logs, (2) count files matching glob, (3) if >100 files or >20min: split into 2 shards by alphabet range, (4) update build.yml matrix, (5) structural test verifies no shard exceeds 25min | priority: medium | fix: RP.11 shard split pattern | verify: test_shard_split_protocol.py
+- [ ] XE2.22 — Release-recut protocol: (1) confirm Build-and-Release job failed (not code failure), (2) make release-recut TAG=<t>, (3) verify tag deleted + re-pushed, (4) monitor new CI run via subagent, (5) verify-release-completeness after green | priority: high | fix: make release-recut target | verify: test_release_recut_protocol.py
+- [ ] XE2.23 — Cold-start session protocol: (1) make watchdog-auto, (2) read TASKS/BUGS/ratchet/SESSION + git-status + git-log in ONE message, (3) dispatch ≥10 subagents in next message, (4) no prose before first dispatch | priority: critical | fix: AGENTS.md session-start protocol | verify: test_cold_start_protocol.py
+- [ ] XE2.24 — Stale-state-cleanup protocol: (1) make crash-recovery resets PID-mismatched state files, (2) make clean-tmp removes /tmp/gludd-* older than session, (3) make reload-enforcement resets streak/poll/disengage counters, (4) verify-state confirms clean baseline | priority: medium | fix: make crash-recovery recipe | verify: test_stale_cleanup_protocol.py
+- [ ] XE2.25 — New-feature-branch protocol: (1) make feature-start MSG='feature/<name>', (2) commit small green increments, (3) make gate-background, (4) when green: make feature-done MSG='feature/<name>', (5) verify merge --no-ff landed on master | priority: medium | fix: AGENTS.md feature branch workflow | verify: test_feature_branch_protocol.py
+
+---
+
+## Phase QA2 — Quality Assurance (25 specs)
+
+QA checks the agent MUST run before specific operations. Each check is a mechanical gate, not a recommendation.
+
+- [ ] QA2.1 — make lint before every commit: 0 errors required. Catches style/import errors at commit time, not push time | priority: critical | fix: pre-commit hook (BP.8) + AGENTS.md rule | verify: test_lint_before_commit.py
+- [ ] QA2.2 — make typecheck before every push: 0 errors required. mypy must pass before code leaves the local machine | priority: high | fix: pre-push hook or manual discipline | verify: test_typecheck_before_push.py
+- [ ] QA2.3 — make collect-check before every commit: 0 collection errors. Broken imports block the entire test suite | priority: high | fix: already in git-commit pre-commit, verify compliance | verify: test_collect_before_commit.py
+- [ ] QA2.4 — make test-hook-runtime before every plugin commit: 0 failures. Catches TS hook behavior regressions | priority: critical | fix: pre-commit hook for .ts files | verify: test_hook_runtime_before_commit.py
+- [ ] QA2.5 — make check-coverage-gaps before every release: 0 new gaps. Untested modules shipped to production are defects | priority: high | fix: release-cut step or manual gate | verify: test_coverage_before_release.py
+- [ ] QA2.6 — make test-count before every commit: 0 collection errors. Verifies pytest can discover all tests | priority: high | fix: already in git-commit target, verify | verify: test_count_before_commit.py
+- [ ] QA2.7 — make _gate-fresh-check before every commit: .gate-status newer than last src/ edit. Stale gate = red gate | priority: critical | fix: already in git-commit target | verify: test_gate_fresh_before_commit.py
+- [ ] QA2.8 — make check-node-v26-compat after every plugin edit: 5/5 suites pass. Catches forbidden TS patterns | priority: high | fix: AGENTS.md Node v26 section | verify: test_node_compat_after_edit.py
+- [ ] QA2.9 — make check-plugin-hook-invoke after every plugin edit: 27/27 PASS. Catches ReferenceError in hooks | priority: critical | fix: AGENTS.md plugin hook invocation section | verify: test_hook_invoke_after_edit.py
+- [ ] QA2.10 — make verify-plugin-manifest after every plugin change: every plugin in opencode.json exists on disk | priority: high | fix: AGENTS.md plugin lifecycle section | verify: test_manifest_after_plugin_change.py
+- [ ] QA2.11 — make verify-enforcement before every release: all plugins BLOCKING, 0 issues | priority: high | fix: release-cut prerequisite | verify: test_enforcement_before_release.py
+- [ ] QA2.12 — make check-readme-status before make release-cut: README "Status as of" matches pyproject.toml version | priority: critical | fix: already in release-cut step 1 | verify: test_readme_status_before_release.py
+- [ ] QA2.13 — make check-duplicate-targets in gate: no Makefile target declared >1 time | priority: medium | fix: already in gate | verify: test_duplicate_targets_in_gate.py
+- [ ] QA2.14 — make smoke after daemon changes: daemon boots without TypeError, /health returns 200 | priority: high | fix: AGENTS.md healthcheck rule | verify: test_smoke_after_daemon_edit.py
+- [ ] QA2.15 — make healthcheck after dependency changes: all critical imports resolve | priority: medium | fix: AGENTS.md healthcheck rule | verify: test_healthcheck_after_dep_change.py
+- [ ] QA2.16 — make ansible-syntax after playbook changes: playbooks parse without error | priority: high | fix: AGENTS.md ansible section | verify: test_ansible_syntax_after_edit.py
+- [ ] QA2.17 — make molecule-test after role changes: molecule idempotence passes | priority: medium | fix: AGENTS.md molecule section | verify: test_molecule_after_role_edit.py
+- [ ] QA2.18 — make sast before release: bandit SAST reports 0 high-severity findings | priority: medium | fix: release-cut prerequisite | verify: test_sast_before_release.py
+- [ ] QA2.19 — make sbom before release: CycloneDX SBOM generated successfully | priority: medium | fix: release-cut prerequisite | verify: test_sbom_before_release.py
+- [ ] QA2.20 — make pip-audit before release: 0 high-severity CVEs in dependencies | priority: medium | fix: release-cut prerequisite | verify: test_pip_audit_before_release.py
+- [ ] QA2.21 — make secrets-scan before commit: 0 new secrets vs .secrets.baseline | priority: high | fix: pre-commit hook (detect-secrets) | verify: test_secrets_scan_before_commit.py
+- [ ] QA2.22 — make test-failures after gate red: shows FAILED+ERROR lines with exit code propagation | priority: high | fix: already implemented (R1.1), verify | verify: test_failures_after_gate_red.py
+- [ ] QA2.23 — make gate-audit before release: per-file coverage threshold (85%) met | priority: high | fix: release-cut prerequisite | verify: test_coverage_audit_before_release.py
+- [ ] QA2.24 — make verify-release-completeness after release-cut: all 12 artifact categories present | priority: critical | fix: already in release-cut step 4 | verify: test_release_completeness_after_cut.py
+- [ ] QA2.25 — make check-opencode-backup before long session: .opencode.orig/ not older than 24h | priority: medium | fix: AGENTS.md backup rule | verify: test_backup_before_session.py
+
+---
+
+## Phase CN2 — Configuration Management (25 specs)
+
+Configuration file integrity. Each spec pins a specific config file's required structure, schema, or entries.
+
+- [ ] CN2.1 — opencode.json schema: must have plugin[], permission[], shares keys; no top-level env key (rejected by schema) | priority: high | fix: structural test verifying schema | verify: test_opencode_json_schema.py
+- [ ] CN2.2 — opencode.json permission.read: allows /Users/shawnwilson/gludd/** and /tmp/gludd-* | priority: high | fix: verify permission block | verify: test_opencode_read_perms.py
+- [ ] CN2.3 — opencode.json permission.write: workspace + /tmp/gludd-* only, nothing outside | priority: high | fix: verify permission block | verify: test_opencode_write_perms.py
+- [ ] CN2.4 — opencode.json permission.bash: deny * then allow make * (last-match-wins semantics) | priority: critical | fix: verify ordering | verify: test_opencode_bash_perms.py
+- [ ] CN2.5 — opencode.json plugin list: every entry exists on disk in .opencode/plugin/ with export default | priority: high | fix: make verify-plugin-manifest | verify: test_opencode_plugin_list.py
+- [ ] CN2.6 — pyproject.toml version matches src/general_ludd/__init__.py __version__ | priority: high | fix: make check-version-consistency | verify: test_version_sync.py
+- [ ] CN2.7 — pyproject.toml [tool.ruff] line-length=120, target Python 3.11 | priority: low | fix: structural test | verify: test_ruff_config.py
+- [ ] CN2.8 — pyproject.toml [tool.mypy] covers src/ AND tests/ (no security/sandboxes exclude) | priority: medium | fix: verify scope | verify: test_mypy_config.py
+- [ ] CN2.9 — pyproject.toml [tool.coverage] fail_under=85 (was 70, lifted in E.1) | priority: medium | fix: verify threshold | verify: test_fail_under.py
+- [ ] CN2.10 — pyproject.toml [project.dependencies]: all packages also in uv.lock, no extras unlisted | priority: medium | fix: verify lock consistency | verify: test_deps_sync.py
+- [ ] CN2.11 — .pre-commit-config.yaml references detect-secrets, ruff, mypy hooks with correct stages | priority: high | fix: verify hook entries | verify: test_pre_commit_hooks.py
+- [ ] CN2.12 — .gitignore ignores .gate-status, .ci-status, .opencode.orig/, dist/, *.egg-info, __pycache__/ | priority: medium | fix: verify entries present | verify: test_gitignore_entries.py
+- [ ] CN2.13 — config/ratchet.yml format: list of node_id: reason entries, or empty | priority: low | fix: verify YAML structure | verify: test_ratchet_format.py
+- [ ] CN2.14 — config/permissions/human-admin.yml, human-operator.yml, human-viewer.yml all exist | priority: medium | fix: verify files | verify: test_permission_specs.py
+- [ ] CN2.15 — config/remediation.yml has permission_escalation_block_hours, human_input_block_hours, max_requeues_before_chronic | priority: low | fix: verify keys present | verify: test_remediation_config_keys.py
+- [ ] CN2.16 — config/tdd_allowlist.yml: every entry has documented reason, no "don't need tests" | priority: low | fix: audit allowlist | verify: test_tdd_allowlist_format.py
+- [ ] CN2.17 — config/ai_sdlc.yml: top-level keys match expected schema (models, providers, defaults) | priority: low | fix: verify schema | verify: test_ai_sdlc_config.py
+- [ ] CN2.18 — config/skills/*.md: every file has YAML frontmatter with name + description | priority: low | fix: make check-skills-frontmatter | verify: test_skills_frontmatter.py
+- [ ] CN2.19 — .opencode/lib/shared.ts exports: isSubagent, reportAlive, isDisengaged, isReadTool, isDispatchTool, readState, writeState | priority: high | fix: verify export surface | verify: test_shared_exports.py
+- [ ] CN2.20 — .opencode/lib/hot_reload.ts exports: loadHotModule function + HotModule type | priority: medium | fix: verify exports | verify: test_hot_reload_exports.py
+- [ ] CN2.21 — .opencode/lib/plugin_test_exports.ts: contains DONE_WORDS, SUPPRESSION_PATTERNS, ALLOWLIST_PATHS, STOP_PATTERN_PHRASES | priority: high | fix: verify test helper exports | verify: test_test_exports_surface.py
+- [ ] CN2.22 — .opencode/plugin/*.ts: every file has exactly one default export that is a function; no named exports, no companion files | priority: critical | fix: test_plugin_dir_hygiene.py | verify: test_plugin_dir_structure.py
+- [ ] CN2.23 — .opencode/skills/*/SKILL.md: every skill directory has SKILL.md with frontmatter | priority: low | fix: verify structure | verify: test_skill_dir_structure.py
+- [ ] CN2.24 — Makefile: target naming follows verb-noun convention (git-status, gate-background, release-cut) | priority: low | fix: audit naming | verify: test_target_naming_convention.py
+- [ ] CN2.25 — .github/workflows/build.yml: has triggers (push to master, tag v*, PR), concurrency group, permissions (contents:write, packages:write) | priority: high | fix: verify workflow structure | verify: test_workflow_structure.py
+
+---
+
+## Phase HM2 — Health Monitoring (25 specs)
+
+System health probes. Each spec defines a liveness/readiness check for a specific subsystem.
+
+- [ ] HM2.1 — Daemon /health endpoint returns 200 with JSON {status: "ok"} when alive | priority: high | fix: verify endpoint response | verify: test_health_endpoint_alive.py
+- [ ] HM2.2 — Plugin heartbeat files at /tmp/gludd-plugin-heartbeat-*.json: each plugin writes mtime on invocation | priority: medium | fix: reportAlive() called in every plugin hook | verify: test_plugin_heartbeat_files.py
+- [ ] HM2.3 — Watchdog alive check: agent_watchdog.py polls at 10s intervals, writes activity file | priority: medium | fix: make watchdog-auto ensures daemon running | verify: test_watchdog_alive.py
+- [ ] HM2.4 — Gate-status freshness: .gate-status mtime newer than last src/ edit. Stale = red gate | priority: high | fix: _gate-fresh-check in commit targets | verify: test_gate_status_freshness.py
+- [ ] HM2.5 — CI status currency: make ci-verdict headSha matches branch tip. Mismatch = stale verdict | priority: high | fix: STALE RUN WARNING in ci-verdict output | verify: test_ci_status_currency.py
+- [ ] HM2.6 — Worktree health check: make worktree-health-check flags worktrees >24h with unmerged commits | priority: high | fix: already implemented (scripts/check_worktree_health.py) | verify: test_worktree_health_check.py
+- [ ] HM2.7 — Disk health: make disk-check exits 1 if disk >90% or /tmp/gludd-* >100MB | priority: medium | fix: already implemented (scripts/check_disk_usage.py) | verify: test_disk_health_check.py
+- [ ] HM2.8 — Enforcement state freshness: /tmp/gludd-*.json files have valid PID matching current session | priority: medium | fix: PID-scoped state in enforce-floor.ts | verify: test_enforcement_state_freshness.py
+- [ ] HM2.9 — Hot-module freshness: /tmp/gludd-hot-*.js mtime newer than .ts source | priority: high | fix: make check-hot-reload-fresh | verify: test_hot_module_freshness.py
+- [ ] HM2.10 — Background gate PID liveness: .gate-background.pid process still running, not zombie | priority: high | fix: gate-status-check verifies PID | verify: test_gate_pid_liveness.py
+- [ ] HM2.11 — Task watchdog liveness: task_watchdog.py polls /tmp/gludd-task-deadlines.json at 5s intervals | priority: high | fix: make task-watchdog-start ensures daemon | verify: test_task_watchdog_alive.py
+- [ ] HM2.12 — Agent liveness probe: scripts/agent_liveness.py counts Workflow subagents in pool | priority: medium | fix: already implemented | verify: test_agent_liveness_probe.py
+- [ ] HM2.13 — Model gateway health: gateway responds to ping within 5s, fallback chain intact | priority: medium | fix: verify gateway endpoint | verify: test_model_gateway_health.py
+- [ ] HM2.14 — Worker auth health: worker returns 403 without PSK (fail-closed verified) | priority: critical | fix: SEC.9 already implemented | verify: test_worker_auth_health.py
+- [ ] HM2.15 — OpenBao connection health: hvac client connects, secret retrieval succeeds (or fails closed gracefully) | priority: high | fix: DR.18 fail-closed pattern | verify: test_openbao_health.py
+- [ ] HM2.16 — Database connection health: SQLAlchemy engine responds to SELECT 1 within 2s | priority: high | fix: verify connection pool | verify: test_db_health.py
+- [ ] HM2.17 — Alembic migration health: head revision matches alembic/versions/ latest, no drift | priority: medium | fix: make alembic-check or similar | verify: test_alembic_health.py
+- [ ] HM2.18 — Stale-PID cleanup: /tmp/gludd-*.pid files with dead PIDs removed by make crash-recovery | priority: medium | fix: already implemented | verify: test_stale_pid_cleanup.py
+- [ ] HM2.19 — Stale-state cleanup: /tmp/gludd-*.json with PID mismatch reset by crash-recovery | priority: medium | fix: already implemented | verify: test_stale_state_cleanup.py
+- [ ] HM2.20 — Disengage audit log: /tmp/gludd-disengage-audit.jsonl tracks every make disengage-enforcement with timestamp+PID | priority: medium | fix: BP.6 disengage audit | verify: test_disengage_audit_health.py
+- [ ] HM2.21 — Session-start state health: /tmp/gludd-session-start.json has current PID, dispatch count >0 after first wave | priority: medium | fix: enforce-session-start.ts tracks state | verify: test_session_start_health.py
+- [ ] HM2.22 — CI poll counter health: /tmp/gludd-ci-poll-state.json shows count <MAX_CONSECUTIVE_POLLS (3) | priority: medium | fix: enforce-no-ci-poll.ts tracks state | verify: test_ci_poll_health.py
+- [ ] HM2.23 — Enhancement ratio health: /tmp/gludd-enhancement-ratio.json shows fix% ≤50% for current wave | priority: medium | fix: enforce-enhancement-ratio.ts tracks state | verify: test_enhancement_ratio_health.py
+- [ ] HM2.24 — Deadline tracker health: /tmp/gludd-task-deadlines.json shows no task exceeded GLUDD_TASK_TIMEOUT_MS | priority: high | fix: enforce-deadline.ts tracks state | verify: test_deadline_tracker_health.py
+- [ ] HM2.25 — Plugin manifest health: make verify-plugin-manifest shows every plugin in opencode.json exists on disk, no orphans | priority: high | fix: already implemented | verify: test_plugin_manifest_health.py
+
+---
+
+## Phase CR4 — Code Review Checklist (25 specs)
+
+- [ ] CR4.1 — Check imports sorted alphabetically within group | priority: medium | fix: ruff isort rule, verify in review checklist | verify: test_import_sorting.py
+- [ ] CR4.2 — Check imports use absolute paths, no relative imports across package boundaries | priority: medium | fix: ruff TID252, manual review | verify: test_no_relative_imports.py
+- [ ] CR4.3 — Check no wildcard imports (from x import *) in src/ | priority: high | fix: ruff F403, replace with explicit names | verify: test_no_wildcard_imports.py
+- [ ] CR4.4 — Check no unused imports in committed code | priority: high | fix: ruff F401, remove unused | verify: test_no_unused_imports.py
+- [ ] CR4.5 — Check all functions have return type annotations | priority: high | fix: mypy --disallow-untyped-defs | verify: test_return_type_annotations.py
+- [ ] CR4.6 — Check all function parameters have type annotations | priority: high | fix: mypy strict mode | verify: test_param_type_annotations.py
+- [ ] CR4.7 — Check no Any type in public API signatures | priority: high | fix: make check-types, use specific types | verify: test_no_any_public_api.py
+- [ ] CR4.8 — Check tests cover the happy path for every public function | priority: high | fix: coverage audit, add tests | verify: test_happy_path_coverage.py
+- [ ] CR4.9 — Check tests cover the error/exception path | priority: high | fix: pytest.raises assertions | verify: test_error_path_coverage.py
+- [ ] CR4.10 — Check tests cover edge cases (empty, null, boundary, overflow) | priority: medium | fix: parametrized tests with edge values | verify: test_edge_case_coverage.py
+- [ ] CR4.11 — Check per-file coverage >= 85% on modified files | priority: high | fix: make gate-audit, add tests to gaps | verify: test_per_file_coverage.py
+- [ ] CR4.12 — Check naming: functions are verbs, classes are nouns, constants UPPER_SNAKE | priority: medium | fix: pep8-naming ruff plugin | verify: test_naming_conventions.py
+- [ ] CR4.13 — Check public classes/functions have docstrings describing purpose | priority: medium | fix: ruff pydocstyle, add docstrings | verify: test_docstring_presence.py
+- [ ] CR4.14 — Check docstrings document parameters, returns, and raises | priority: low | fix: Google-style docstrings, ruff pydocstyle | verify: test_docstring_completeness.py
+- [ ] CR4.15 — Check no hardcoded secrets, tokens, passwords, or API keys | priority: critical | fix: detect-secrets pre-commit, remove secrets | verify: test_no_hardcoded_secrets.py
+- [ ] CR4.16 — Check no SQL injection vectors (parameterized queries only) | priority: critical | fix: bandit B608, use ORM/parameterized | verify: test_no_sql_injection.py
+- [ ] CR4.17 — Check no command injection vectors (no shell=True with user input) | priority: critical | fix: bandit B602, use shell=False | verify: test_no_command_injection.py
+- [ ] CR4.18 — Check no path traversal vectors (paths validated and confined) | priority: high | fix: pathlib resolve + prefix check | verify: test_no_path_traversal.py
+- [ ] CR4.19 — Check no N+1 query patterns in hot paths | priority: medium | fix: joinedload/selectinload, batch queries | verify: test_no_n_plus_1_queries.py
+- [ ] CR4.20 — Check no blocking calls on async paths (time.sleep, requests.get) | priority: high | fix: asyncio.to_thread, aiohttp | verify: test_no_blocking_async.py
+- [ ] CR4.21 — Check error messages are actionable (tell user what to do) | priority: medium | fix: rewrite messages with remediation | verify: test_actionable_errors.py
+- [ ] CR4.22 — Check logging is structured (JSON, not print) in daemon paths | priority: medium | fix: structlog/json formatter | verify: test_structured_logging.py
+- [ ] CR4.23 — Check cyclomatic complexity < 10 per function | priority: low | fix: ruff C901, refactor to smaller functions | verify: test_cyclomatic_complexity.py
+- [ ] CR4.24 — Check each function has single responsibility (one purpose) | priority: medium | fix: refactor, extract helper functions | verify: test_single_responsibility.py
+- [ ] CR4.25 — Check no dead code (every function/class has a caller outside tests) | priority: high | fix: vulture scan, remove unused | verify: test_no_dead_code_review.py
+
+---
+
+## Phase AC2 — Acceptance Criteria (25 specs)
+
+- [ ] AC2.1 — Unit tests pass on developer machine before commit | priority: critical | fix: make test-unit, fix failures | verify: test_unit_local_pass.py
+- [ ] AC2.2 — Unit tests pass on CI for every PR and push | priority: critical | fix: CI workflow test step, fix platform failures | verify: test_unit_ci_pass.py
+- [ ] AC2.3 — Integration tests pass for all modified subsystems | priority: high | fix: make test-integration, fix failures | verify: test_integration_pass.py
+- [ ] AC2.4 — E2E tests pass through the daemon API as a user would | priority: high | fix: make test-e2e, fix failures | verify: test_e2e_pass.py
+- [ ] AC2.5 — Per-file coverage >= 85% on all modified source files | priority: high | fix: make gate-audit, fill coverage gaps | verify: test_coverage_85.py
+- [ ] AC2.6 — Coverage on critical paths (auth, payment, dispatch) >= 95% | priority: high | fix: targeted tests for critical modules | verify: test_critical_coverage_95.py
+- [ ] AC2.7 — Lint clean: 0 ruff errors, 0 warnings on modified files | priority: high | fix: make lint, fix all errors | verify: test_lint_clean.py
+- [ ] AC2.8 — Typecheck clean: 0 mypy errors on modified files | priority: high | fix: make typecheck, fix all errors | verify: test_typecheck_clean.py
+- [ ] AC2.9 — Collect-check: 0 collection errors before commit | priority: high | fix: make collect-check, fix import errors | verify: test_collect_zero.py
+- [ ] AC2.10 — README.md updated with new feature/behavior | priority: medium | fix: update README section, commit with code | verify: test_readme_updated.py
+- [ ] AC2.11 — CHANGELOG.md updated with user-facing changes | priority: medium | fix: add entry under [Unreleased] | verify: test_changelog_updated.py
+- [ ] AC2.12 — SESSION.md updated with current session state | priority: medium | fix: update after each work unit | verify: test_session_updated.py
+- [ ] AC2.13 — Alembic migration tested both upgrade and downgrade | priority: high | fix: make alembic-up + alembic-down test | verify: test_migration_roundtrip.py
+- [ ] AC2.14 — Change is backward compatible (no breaking API changes) | priority: high | fix: version bump only on breaking changes | verify: test_backward_compat.py
+- [ ] AC2.15 — API contract preserved: existing endpoints still work | priority: high | fix: contract test suite | verify: test_api_contract.py
+- [ ] AC2.16 — Performance regression < 10% on modified hot paths | priority: medium | fix: benchmark before/after, optimize | verify: test_perf_regression.py
+- [ ] AC2.17 — Memory regression < 10% on modified hot paths | priority: medium | fix: memory profiling, optimize | verify: test_mem_regression.py
+- [ ] AC2.18 — New daemon endpoints have integration + e2e tests | priority: high | fix: add test_endpoint.py + test_e2e_endpoint.py | verify: test_new_endpoint_tests.py
+- [ ] AC2.19 — New CLI commands have unit tests covering all flags | priority: high | fix: add test_cli_<command>.py | verify: test_new_cli_tests.py
+- [ ] AC2.20 — New config options documented in CONFIG_REFERENCE.md | priority: medium | fix: update config docs | verify: test_config_documented.py
+- [ ] AC2.21 — New environment variables documented in AGENTS.md + README | priority: medium | fix: add to env var table | verify: test_env_vars_documented.py
+- [ ] AC2.22 — Security review passed: no new vulnerabilities introduced | priority: critical | fix: make security-audit, fix findings | verify: test_security_review.py
+- [ ] AC2.23 — Molecule tests pass for new/modified ansible roles | priority: medium | fix: make molecule-test, fix playbooks | verify: test_molecule_pass.py
+- [ ] AC2.24 — Smoke test green: daemon boots and /health returns 200 | priority: high | fix: make smoke, fix boot errors | verify: test_smoke_green.py
+- [ ] AC2.25 — Gate green: make gate passes all phases (lint+typecheck+collect+test+smoke) | priority: critical | fix: make gate-background, fix failures | verify: test_gate_green.py
+
+---
+
+## Phase DE2 — Deployment Environments (25 specs)
+
+- [ ] DE2.1 — Dev environment setup script (make init) is idempotent | priority: high | fix: verify make init runs twice cleanly | verify: test_dev_setup_idempotent.py
+- [ ] DE2.2 — Dev environment reproducible from pyproject.toml + uv.lock | priority: high | fix: uv sync --frozen, verify lock committed | verify: test_dev_reproducible.py
+- [ ] DE2.3 — CI environment matches production Python version (3.11+) | priority: high | fix: align CI matrix with prod runtime | verify: test_ci_python_version.py
+- [ ] DE2.4 — Staging environment is isolated from production data | priority: critical | fix: separate DB, separate secrets namespace | verify: test_staging_isolation.py
+- [ ] DE2.5 — Production environment binds to 127.0.0.1 unless explicitly configured | priority: critical | fix: verify bind address default | verify: test_prod_bind_address.py
+- [ ] DE2.6 — Config files per environment (dev/staging/prod) with safe defaults | priority: high | fix: config/dev.yml, config/staging.yml, config/prod.yml | verify: test_config_per_env.py
+- [ ] DE2.7 — Secrets per environment (OpenBao paths scoped per env) | priority: critical | fix: secret/<env>/ namespace | verify: test_secrets_per_env.py
+- [ ] DE2.8 — Environment variables documented with safe defaults | priority: medium | fix: .env.example file, AGENTS.md table | verify: test_env_documented.py
+- [ ] DE2.9 — Config override hierarchy: env vars > project config > defaults | priority: high | fix: UserConfig loader precedence | verify: test_config_precedence.py
+- [ ] DE2.10 — Separate database per environment (no shared prod/dev DB) | priority: critical | fix: DATABASE_URL per env, migration isolation | verify: test_db_isolation.py
+- [ ] DE2.11 — Migrations run automatically on environment startup | priority: medium | fix: alembic upgrade head in daemon lifespan | verify: test_auto_migration.py
+- [ ] DE2.12 — Rollback plan documented for each environment | priority: high | fix: docs/ROLLBACK_<env>.md per environment | verify: test_rollback_documented.py
+- [ ] DE2.13 — Health check endpoint available in every environment | priority: high | fix: /health returns env name + version | verify: test_health_per_env.py
+- [ ] DE2.14 — Monitoring configured per environment (metrics, alerts) | priority: medium | fix: /metrics endpoint, alert rules | verify: test_monitoring_per_env.py
+- [ ] DE2.15 — Logging configured per environment (level, format, destination) | priority: medium | fix: LOG_LEVEL env var, JSON in prod | verify: test_logging_per_env.py
+- [ ] DE2.16 — Backup strategy documented per environment | priority: medium | fix: docs/BACKUP.md, automated backup script | verify: test_backup_per_env.py
+- [ ] DE2.17 — Disaster recovery plan with RTO/RPO targets | priority: high | fix: docs/DR_PLAN.md with recovery steps | verify: test_dr_plan.py
+- [ ] DE2.18 — Blue-green deployment support for zero-downtime updates | priority: medium | fix: dual-instance config + health-gated switch | verify: test_blue_green.py
+- [ ] DE2.19 — Canary deployment support for gradual rollout | priority: low | fix: traffic-split config, canary health monitor | verify: test_canary_deploy.py
+- [ ] DE2.20 — Feature flags per environment (enable/disable features without redeploy) | priority: medium | fix: flag registry, per-env overrides | verify: test_feature_flags.py
+- [ ] DE2.21 — Network policies per environment (firewall rules, allowed hosts) | priority: high | fix: NetworkPolicy per env, SSRF allowlist | verify: test_network_policy.py
+- [ ] DE2.22 — Resource limits per environment (CPU, memory, connections) | priority: medium | fix: ResourceQuota config, cgroup limits | verify: test_resource_limits.py
+- [ ] DE2.23 — Auto-scaling configured per environment based on load | priority: low | fix: HPA/KEDA config, scaling thresholds | verify: test_auto_scaling.py
+- [ ] DE2.24 — TLS enforced in staging and production (no plaintext HTTP) | priority: critical | fix: cert manager, redirect HTTP→HTTPS | verify: test_tls_enforced.py
+- [ ] DE2.25 — Audit logging enabled per environment with retention policy | priority: high | fix: audit log sink, retention rotation | verify: test_audit_logging.py
+
+---
+
+## Phase SL2 — Service Level (25 specs)
+
+- [ ] SL2.1 — Daemon uptime target >= 99.9% (measured via health probe) | priority: high | fix: supervisor auto-restart, crash recovery | verify: test_uptime_slo.py
+- [ ] SL2.2 — Daemon API response time p50 < 50ms under normal load | priority: high | fix: profile hot paths, optimize queries | verify: test_p50_latency.py
+- [ ] SL2.3 — Daemon API response time p99 < 100ms under normal load | priority: high | fix: identify slow endpoints, add caching | verify: test_p99_latency.py
+- [ ] SL2.4 — Daemon API response time p99.9 < 500ms under peak load | priority: medium | fix: load test, backpressure, queue depth | verify: test_p999_latency.py
+- [ ] SL2.5 — CI pipeline total duration < 30 min for typical PR | priority: high | fix: shard parallelism, cache deps | verify: test_ci_duration.py
+- [ ] SL2.6 — Local gate total duration < 40 min (make gate) | priority: medium | fix: parallel test workers, split slow tests | verify: test_gate_duration.py
+- [ ] SL2.7 — Full test suite duration < 30 min locally (make test) | priority: medium | fix: xdist workers, mark slow tests | verify: test_suite_duration.py
+- [ ] SL2.8 — Platform build duration < 20 min per OS in CI | priority: medium | fix: build caching, parallel jobs | verify: test_build_duration.py
+- [ ] SL2.9 — Release job duration < 10 min after builds complete | priority: medium | fix: parallel artifact upload, optimize gh API calls | verify: test_release_duration.py
+- [ ] SL2.10 — Lint check duration < 15 sec (make lint) | priority: low | fix: ruff cache, scope to changed files | verify: test_lint_duration.py
+- [ ] SL2.11 — Typecheck duration < 30 sec (make typecheck) | priority: low | fix: mypy incremental cache | verify: test_typecheck_duration.py
+- [ ] SL2.12 — Collect-check duration < 30 sec (make collect-check) | priority: low | fix: pytest cache, minimal import surface | verify: test_collect_duration.py
+- [ ] SL2.13 — Plugin hook execution < 1ms per call (enforce-*.ts) | priority: low | fix: minimize state file reads, cache | verify: test_hook_latency.py
+- [ ] SL2.14 — Daemon cold startup < 5 sec from process launch to /health 200 | priority: medium | fix: lazy imports, deferred init | verify: test_startup_slo.py
+- [ ] SL2.15 — Daemon graceful shutdown < 30 sec (drains pending requests) | priority: medium | fix: drain timeout, signal handling | verify: test_shutdown_slo.py
+- [ ] SL2.16 — Background gate heartbeat interval <= 60 sec (observable progress) | priority: medium | fix: tee phase markers to log file | verify: test_gate_heartbeat.py
+- [ ] SL2.17 — CI check cooldown >= 10 min between ci-verdict-safe calls | priority: medium | fix: ci_check_cooldown.py state file | verify: test_ci_cooldown_slo.py
+- [ ] SL2.18 — Push cooldown >= 120 sec between pushes to same branch | priority: medium | fix: _push-rate-guard interval check | verify: test_push_cooldown_slo.py
+- [ ] SL2.19 — Subagent task timeout = 5 min max (killed by task_watchdog) | priority: high | fix: enforce-deadline.ts + task_watchdog.py | verify: test_task_timeout_slo.py
+- [ ] SL2.20 — Worktree creation < 30 sec (make agent-worktree) | priority: low | fix: shared venv, git worktree add optimization | verify: test_worktree_creation_slo.py
+- [ ] SL2.21 — Worktree cleanup < 10 sec (make agent-cleanup) | priority: low | fix: rm + git worktree prune | verify: test_worktree_cleanup_slo.py
+- [ ] SL2.22 — Alembic migration duration < 60 sec for typical migration | priority: medium | fix: batch operations, index CONCURRENTLY | verify: test_migration_duration.py
+- [ ] SL2.23 — Smoke test duration < 10 sec (make smoke) | priority: low | fix: minimal boot path, health only | verify: test_smoke_duration.py
+- [ ] SL2.24 — Watchdog poll interval = 10 sec (agent_watchdog.py) | priority: medium | fix: sleep interval constant | verify: test_watchdog_interval_slo.py
+- [ ] SL2.25 — Stale enforcement state cleanup < 5 min (crash-recovery detects stale PID) | priority: medium | fix: PID check + age threshold in loadState() | verify: test_stale_cleanup_slo.py
+
+---
+
+## Phase DS2 — Dispatch Sequencing (25 specs)
+
+ specs about the order of dispatch operations: wave composition, result processing order, commit-as-subagent pattern, research serialization, coding parallelism limits, wave refill timing, uniform duration sizing, filler tasks, etc.
+
+- [ ] DS2.1 — Wave composition includes mixed task types | priority: high | fix: AGENTS.md rule that each wave has a mix of edit + research + commit tasks, never all one type | verify: test_wave_composition.py
+- [ ] DS2.2 — Result processing order prioritizes unblocked work | priority: medium | fix: process results whose deliverables unblock other agents first, not FIFO | verify: test_result_processing_order.py
+- [ ] DS2.3 — Commit-as-subagent runs in parallel with productive work | priority: high | fix: one of the 10 dispatch slots runs make ship-commit, other 9 do real work | verify: test_commit_as_subagent.py
+- [ ] DS2.4 — Research serialization enforced across waves | priority: high | fix: at most 1 research subagent in flight; queue additional research tasks until it completes | verify: test_research_serialization.py
+- [ ] DS2.5 — Coding parallelism capped at 2 disjoint-file agents | priority: high | fix: enforce max 2 concurrent coding subagents, each on disjoint files via worktree isolation | verify: test_coding_parallel_cap.py
+- [ ] DS2.6 — Wave refill timing: dispatch replacement within 5s of completion | priority: critical | fix: dispatch a new subagent the moment any one completes, never wait for batch drain | verify: test_refill_timing.py
+- [ ] DS2.7 — Uniform duration sizing: tasks targeted at 2-5 min each | priority: medium | fix: AGENTS.md rule that each subagent task is sized for 2-5 min; split if longer | verify: test_uniform_duration.py
+- [ ] DS2.8 — Filler tasks use read-only research/audit/review when edit backlog is short | priority: medium | fix: when <2 edit tasks queued, fill remaining slots with research; never let wave shrink to 0-1 | verify: test_filler_tasks.py
+- [ ] DS2.9 — Pipeline priming: batch N+1 in flight while batch N reconciles | priority: high | fix: launch next batch before current batch fully drains; avoid sawtooth pattern | verify: test_pipeline_priming.py
+- [ ] DS2.10 — Hot-file concurrency limited to 1 in-flight agent | priority: critical | fix: at most 1 agent per hot file (daemon.py, loop.py, gateway.py); serialize via integrator | verify: test_hot_file_concurrency.py
+- [ ] DS2.11 — Worktree disk bounding caps concurrent worktree agents at 5-6 | priority: medium | fix: cap worktree agents to avoid ENOSPC; reclaim with make clean-worktree-venvs when idle | verify: test_worktree_disk_bound.py
+- [ ] DS2.12 — Single integrator agent drains worktree commits onto main branch | priority: high | fix: one continuous integrator merges in steady stream; conflicts resolved by union | verify: test_integrator_agent.py
+- [ ] DS2.13 — Disjoint file work biases each new batch | priority: medium | fix: new batches lean toward disjoint / new-file work to keep reconciliation cost low | verify: test_disjoint_bias.py
+- [ ] DS2.14 — Pre-dispatch self-check counts dispatches before sending | priority: high | fix: count dispatches; if <10 and ≥2 pending items, add more before sending message | verify: test_pre_dispatch_count.py
+- [ ] DS2.15 — Post-response self-audit counts dispatches after writing | priority: high | fix: after writing response with tool calls, count dispatches; if 0 and pending, delete and add | verify: test_post_response_count.py
+- [ ] DS2.16 — Zero-dispatch streak max 2 consecutive responses | priority: high | fix: 3rd zero-dispatch response with pending work is hard policy violation; enforced by enforce-multitask.ts | verify: test_zero_dispatch_streak.py
+- [ ] DS2.17 — Message-shape rule: 0 or 2+ dispatches per message | priority: critical | fix: response with 1 dispatch when ≥2 work items remain is denied | verify: test_message_shape.py
+- [ ] DS2.18 — Subagent slot refill on every completion | priority: critical | fix: dispatch replacement immediately when subagent completes; never let pool linger below floor | verify: test_slot_refill.py
+- [ ] DS2.19 — Result ingestion codified within 5 seconds | priority: high | fix: scan results immediately, no analysis prose between waves; dispatch next wave within 5s | verify: test_ingestion_deadline.py
+- [ ] DS2.20 — Max 3 read/grep/glob calls between dispatch waves | priority: high | fix: at most 3 read-only calls after results arrive before next tool call MUST be a dispatch | verify: test_read_limit_between_waves.py
+- [ ] DS2.21 — Wave size hard floor at exactly 10 dispatches | priority: critical | fix: GLUDD_MIN_DISPATCHES=10; wave with <10 when work exists is denied | verify: test_wave_floor.py
+- [ ] DS2.22 — Wave size hard ceiling at exactly 10 dispatches | priority: critical | fix: MAX_DISPATCHES=10; wave with >10 is denied per COST-EFFICIENCY DIRECTIVE | verify: test_wave_ceiling.py
+- [ ] DS2.23 — Enhancement/fix ratio: at least 50% enhancements per wave | priority: high | fix: enforce-enhancement-ratio.ts blocks fix-only waves with ≥2 dispatches | verify: test_enhancement_ratio.py
+- [ ] DS2.24 — Dispatch IDs recorded in TASKS.md before dispatch | priority: high | fix: every dispatched task gets unique ID (W.N, G.N, FIX-N) in TASKS.md before the dispatch call | verify: test_dispatch_id_tracking.py
+- [ ] DS2.25 — Never re-dispatch completed tasks | priority: critical | fix: grep TASKS.md for [x] before dispatching; completed tasks are never re-dispatched | verify: test_no_redispatch_completed.py
+
+---
+
+## Phase PT2 — Performance Targets (25 specs)
+
+Specific performance targets: gate timing, test shard timing, plugin hook latency, daemon startup, lint speed, typecheck speed, CI duration per job, artifact upload time, etc.
+
+- [ ] PT2.1 — Full gate (make gate) completes in <40 min locally | priority: high | fix: verify timing; if exceeded, split slow phases or use gate-background | verify: test_gate_runtime.py
+- [ ] PT2.2 — Full test suite (make test) completes in <30 min locally | priority: medium | fix: verify timing; if exceeded, identify slow tests via pytest-duration | verify: test_suite_runtime.py
+- [ ] PT2.3 — unit-1a test shard completes in <20 min on CI | priority: high | fix: split shard (RP.11) into unit-1a1/unit-1a2 if exceeds 20 min | verify: test_shard_runtime.py
+- [ ] PT2.4 — Plugin hook execution latency <1ms per call | priority: low | fix: benchmark all 14 plugin hooks; optimize hot paths in shared.ts | verify: test_hook_latency.py
+- [ ] PT2.5 — Daemon startup completes in <5 sec | priority: medium | fix: make smoke verifies; profile import chain if exceeded | verify: test_startup_latency.py
+- [ ] PT2.6 — make lint completes in <15 sec | priority: low | fix: verify ruff performance; if exceeded, check ruff config | verify: test_lint_latency.py
+- [ ] PT2.7 — make typecheck completes in <30 sec | priority: low | fix: verify mypy performance; if exceeded, check mypy config | verify: test_typecheck_latency.py
+- [ ] PT2.8 — make collect-check completes in <30 sec | priority: low | fix: verify pytest collection performance | verify: test_collect_latency.py
+- [ ] PT2.9 — CI gate phase completes in <5 min | priority: medium | fix: verify CI gate phase timing; if exceeded, split shards further | verify: test_ci_gate_runtime.py
+- [ ] PT2.10 — Platform builds (linux/macos/windows) each complete in <20 min | priority: medium | fix: verify PyInstaller build timing per platform | verify: test_platform_build_runtime.py
+- [ ] PT2.11 — Release job completes in <10 min after builds finish | priority: medium | fix: verify release job timing; if exceeded, parallelize asset uploads | verify: test_release_job_runtime.py
+- [ ] PT2.12 — make test-hook-runtime completes in <20 sec | priority: low | fix: currently 16s; verify stays under 20s as plugins added | verify: test_hook_runtime_latency.py
+- [ ] PT2.13 — make check-plugin-hook-invoke completes in <10 sec | priority: low | fix: currently 5s; verify stays under 10s as plugins added | verify: test_invoke_latency.py
+- [ ] PT2.14 — Structural test suite completes in <5 sec total | priority: low | fix: currently 1.4s; verify stays under 5s | verify: test_structural_latency.py
+- [ ] PT2.15 — Artifact upload per asset completes in <60 sec | priority: medium | fix: verify actions/upload-artifact timing; if exceeded, reduce artifact size | verify: test_upload_latency.py
+- [ ] PT2.16 — SBOM generation (make sbom) completes in <30 sec | priority: low | fix: verify CycloneDX generation timing | verify: test_sbom_latency.py
+- [ ] PT2.17 — SAST scan (make sast) completes in <30 sec | priority: low | fix: verify bandit scan timing across src/ | verify: test_sast_latency.py
+- [ ] PT2.18 — pip-audit completes in <60 sec | priority: low | fix: verify dependency audit timing | verify: test_pip_audit_latency.py
+- [ ] PT2.19 — Test collection phase (pytest --collect-only) completes in <10 sec | priority: medium | fix: profile import chain; remove slow imports from conftest | verify: test_collection_phase_latency.py
+- [ ] PT2.20 — Hot-module build (make hot-reload-plugins) completes in <5 sec | priority: low | fix: verify esbuild/fallback compilation timing | verify: test_hot_build_latency.py
+- [ ] PT2.21 — Agent liveness probe (scripts/agent_liveness.py) completes in <500ms | priority: medium | fix: verify probe timing; if exceeded, optimize ps parsing | verify: test_liveness_probe_latency.py
+- [ ] PT2.22 — make verify-state completes in <2 sec | priority: medium | fix: verify bundled git-status + git-log + HEAD-vs-remote + ci-verdict timing | verify: test_verify_state_latency.py
+- [ ] PT2.23 — make ci-verdict completes in <1 sec (point-in-time check) | priority: high | fix: verify gh API call latency; cache result if needed | verify: test_ci_verdict_latency.py
+- [ ] PT2.24 — make verify-remote completes in <2 sec | priority: medium | fix: verify git ls-remote timing | verify: test_verify_remote_latency.py
+- [ ] PT2.25 — Worktree creation (make agent-worktree) completes in <5 sec | priority: low | fix: verify git worktree add timing; exclude venv from worktree | verify: test_worktree_creation_latency.py
+
+---
+
+## Phase LC2 — Lifecycle Management (25 specs)
+
+Object/session/task lifecycles: session start protocol, session end requirements, task lifecycle states, worktree lifecycle, release lifecycle, plugin lifecycle, hot-module lifecycle, etc.
+
+- [ ] LC2.1 — Session start protocol: read 4 tracking files in parallel then dispatch ≥10 | priority: critical | fix: TASKS.md + BUGS.md + ratchet.yml + SESSION.md in ONE message; dispatch wave next turn | verify: test_session_start_lifecycle.py
+- [ ] LC2.2 — Session end requirements: zero active worktrees, clean tree, SESSION.md updated | priority: high | fix: make agent-worktree-list shows only main checkout; SESSION.md reflects current state | verify: test_session_end_lifecycle.py
+- [ ] LC2.3 — Task lifecycle states enforced: pending → in_progress → completed/blocked | priority: high | fix: validate transitions; blocked requires blocker_kind; no skipped states | verify: test_task_state_lifecycle.py
+- [ ] LC2.4 — Worktree lifecycle: create → work → merge → cleanup as one atomic unit | priority: high | fix: make agent-worktree → subagent work → make agent-merge → make agent-cleanup | verify: test_worktree_lifecycle.py
+- [ ] LC2.5 — Release lifecycle: dev → CI green → tag → release → verify completeness | priority: critical | fix: never skip steps; release-cut enforces order; verify-release-completeness required | verify: test_release_lifecycle.py
+- [ ] LC2.6 — Plugin lifecycle: load at startup → register hooks → invoke → heartbeat → fail-open | priority: high | fix: plugins load once at startup; hot-reload via /tmp/gludd-hot-*.js for changes | verify: test_plugin_lifecycle.py
+- [ ] LC2.7 — Hot-module lifecycle: build → load → invoke → fallback to defaultImpl → cleanup | priority: medium | fix: make hot-reload-plugins builds; loadHotModule falls back on error; clean after restart | verify: test_hot_module_lifecycle.py
+- [ ] LC2.8 — Background gate lifecycle: launch detached → poll status → terminal marker → ingest result | priority: high | fix: make gate-background → poll via subagent → === GATE: PASSED/FAILED === → act | verify: test_bg_gate_lifecycle.py
+- [ ] LC2.9 — CI run lifecycle: queued → in_progress → completed (success/failure/cancelled) | priority: medium | fix: ci-verdict reports current state; never act on stale runs (headSha must match) | verify: test_ci_run_lifecycle.py
+- [ ] LC2.10 — Lock file lifecycle: acquire → use → release with stale detection | priority: medium | fix: enforce-commit-lock.ts uses flock; stale threshold 5min; auto-release on crash | verify: test_lock_lifecycle.py
+- [ ] LC2.11 — Database session lifecycle: pin → use → close BEFORE dispatch gather | priority: critical | fix: commit/close session before asyncio.gather to prevent pool exhaustion | verify: test_db_session_lifecycle.py
+- [ ] LC2.12 — Background task lifecycle: spawn → emit heartbeat → return result → cleanup | priority: high | fix: nohup + tee output; poll PID; cleanup state files on completion | verify: test_bg_task_lifecycle.py
+- [ ] LC2.13 — Subagent lifecycle: dispatch → run → return result → codify → refill slot | priority: high | fix: nothing-dropped guardrail ensures codification before terminal response | verify: test_subagent_lifecycle.py
+- [ ] LC2.14 — Watchdog lifecycle: start via make watchdog-auto → poll 10s → inject CONTINUE → reset streak 60s | priority: medium | fix: ensure daemon running at session start; verify polling | verify: test_watchdog_lifecycle.py
+- [ ] LC2.15 — Enforcement state lifecycle: write state → check on each hook → reset via crash-recovery | priority: medium | fix: /tmp/gludd-*.json files; PID detection for stale state; make crash-recovery | verify: test_enforcement_state_lifecycle.py
+- [ ] LC2.16 — Alembic migration lifecycle: create → upgrade → verify → rollback path defined | priority: high | fix: every migration has upgrade() + downgrade(); revision chain links correctly | verify: test_migration_lifecycle.py
+- [ ] LC2.17 — STS token lifecycle: mint → use → expire → reap (TokenReaper) | priority: high | fix: TokenReaper reaps expired tokens; cascade deletes; audit log records every transition | verify: test_token_lifecycle.py
+- [ ] LC2.18 — File claim lifecycle: claim → use → release with TTL reap on stale claims | priority: high | fix: FileClaimRegistry.claim_or_conflict + TTL reap + per-todo hash-offset backoff | verify: test_claim_lifecycle.py
+- [ ] LC2.19 — Hibernation lifecycle: persist state → quiesce at dispatcher seam → resume with rehydration | priority: high | fix: HibernationController with durable MAC key; rehydrate on resume | verify: test_hibernation_lifecycle.py
+- [ ] LC2.20 — Model gateway lifecycle: register profiles → discover via SearX → select with fallback → rotate tokens | priority: medium | fix: dynamic registry; TTL cache; failover chain | verify: test_model_gateway_lifecycle.py
+- [ ] LC2.21 — Connection lifecycle: open → pool → recycle on error → close on shutdown | priority: medium | fix: connection pool with health check; recycle stale connections | verify: test_connection_lifecycle.py
+- [ ] LC2.22 — Event subscription lifecycle: subscribe → emit → unsubscribe (no leaks) | priority: medium | fix: EventBus tracks subscribers; unsubscribe on cleanup; no dangling references | verify: test_event_subscription_lifecycle.py
+- [ ] LC2.23 — Audit log entry lifecycle: create → sign with HMAC → query for compliance → retain per policy | priority: medium | fix: audit entries signed; retention policy enforced; queryable by tenant | verify: test_audit_log_lifecycle.py
+- [ ] LC2.24 — Config reload lifecycle: edit → validate schema → reload daemon → verify wiring | priority: medium | fix: /admin/reload validates config before applying; graceful restart if needed | verify: test_config_reload_lifecycle.py
+- [ ] LC2.25 — Error recovery lifecycle: detect failure → diagnose root cause → fix → verify → codify in BUGS.md | priority: high | fix: every failure logged in BUGS.md with root cause + fix + verification | verify: test_error_recovery_lifecycle.py
+
+---
+
+## Phase IE2 — Integration Edge Cases (25 specs)
+
+Edge cases in system integrations: daemon-worker communication, event loop-thread pool interaction, DB session management, async/sync boundaries, etc.
+
+- [ ] IE2.1 — Daemon-worker communication uses PSK auth fail-closed on both sides | priority: critical | fix: worker returns 403 without valid PSK; daemon rejects unauthenticated worker broadcasts | verify: test_daemon_worker_psk.py
+- [ ] IE2.2 — Event loop offloads blocking operations via asyncio.to_thread | priority: high | fix: no sync calls (subprocess.run, time.sleep, requests.get) in async paths; use to_thread | verify: test_event_loop_offload.py
+- [ ] IE2.3 — DB session pinned across dispatch gather prevents pool exhaustion | priority: critical | fix: commit/close session BEFORE asyncio.gather; use scoped_session if needed | verify: test_db_session_pinning.py
+- [ ] IE2.4 — Async/sync boundary: no sync calls inside async functions | priority: high | fix: audit async def for sync calls; wrap with to_thread or rewrite as async | verify: test_async_sync_boundary.py
+- [ ] IE2.5 — Worker broadcast PSK auth + concurrency guard + symlink bypass protection | priority: high | fix: worker_broadcast.py authenticates with PSK; concurrency guard on registries; symlink paths rejected | verify: test_worker_broadcast_integration.py
+- [ ] IE2.6 — Hot-reload TOCTOU: snapshot→swap pattern prevents concurrent reload races | priority: high | fix: atomic snapshot of registries before swap; lock guard on shared state | verify: test_hot_reload_toc.py
+- [ ] IE2.7 — MCP transport stop() failure doesn't orphan other subprocesses | priority: high | fix: individual transport.stop() failures caught; remaining subprocesses cleaned up | verify: test_mcp_stop_isolation.py
+- [ ] IE2.8 — Multitenant DB contextvar propagates across thread pool boundaries | priority: critical | fix: do_orm_execute listener + with_loader_criteria injects tenant filter; thread pool binds contextvar | verify: test_tenant_thread_propagation.py
+- [ ] IE2.9 — Git locking works inside worktrees (currently broken) | priority: high | fix: use git rev-parse --git-common-dir instead of os.path.isdir(.git) in _git_dir() | verify: test_worktree_git_locking.py
+- [ ] IE2.10 — Alembic SQLite batch mode avoids ALTER TABLE limitations | priority: medium | fix: batch_alter_table for SQLite; full alter for Postgres | verify: test_alembic_sqlite_batch.py
+- [ ] IE2.11 — OpenBao secret retrieval is fail-closed on connection error | priority: critical | fix: connection error → deny (not allow); no fallback to env vars or plaintext | verify: test_openbao_fail_closed.py
+- [ ] IE2.12 — Model gateway strips caller kwargs (base_url, api_key) to prevent injection | priority: high | fix: pop base_url and api_key from kwargs before forwarding to provider | verify: test_gateway_kwarg_strip.py
+- [ ] IE2.13 — Connector exception text doesn't leak secrets to callers | priority: high | fix: exc_sanitizer.py redacts URLs, tokens, credentials from exception messages | verify: test_connector_exception_sanitizer.py
+- [ ] IE2.14 — Webhook delivery performs SSRF check at delivery time, not just registration | priority: high | fix: re-validate webhook URL against blocklist before each HTTP POST | verify: test_webhook_delivery_ssrf.py
+- [ ] IE2.15 — File claim livelock prevented via total-order claim acquisition + TTL reap | priority: high | fix: FileClaimRegistry atomic claim_or_conflict + TTL reap + backoff | verify: test_claim_livelock_prevention.py
+- [ ] IE2.16 — Pause/resume uses persist-before-mutate for atomic state transition | priority: high | fix: persist state to disk BEFORE updating in-memory flag; lock-free is_paused() via frozenset | verify: test_pause_persist_before_mutate.py
+- [ ] IE2.17 — Hibernation MAC key is durable and fail-closed on corruption | priority: high | fix: durable MAC key mirrors PauseStore pattern; fail-closed if key file corrupt | verify: test_hibernation_mac_key.py
+- [ ] IE2.18 — Self-improve gate enforces APPROVAL_REQUIRED regardless of auto_queue flag | priority: critical | fix: approval gate checked even when auto_queue=True; no admin route bypass | verify: test_self_improve_approval.py
+- [ ] IE2.19 — Tool-call loop validates args against input_schema before dispatch | priority: high | fix: jsonschema validation of args before tool execution; reject on mismatch | verify: test_tool_args_validation.py
+- [ ] IE2.20 — SSTI prevention: engine.py reachability verified; templating trusted-only | priority: high | fix: no user input in template strings; allowlist of trusted template sources | verify: test_ssti_prevention.py
+- [ ] IE2.21 — SSRF blocks numeric IP encodings (decimal, octal, hex) | priority: high | fix: is_url_blocked normalizes numeric IPs before checking; all encodings rejected | verify: test_ssrf_numeric_ip.py
+- [ ] IE2.22 — Credential leak sanitizer redacts secrets from exception text in admin facets | priority: high | fix: gateway exceptions redacted before surfacing in admin UI or replay records | verify: test_credential_leak_sanitizer.py
+- [ ] IE2.23 — Stream processor validates processor binary/args (no shell injection) | priority: high | fix: /admin/stream/dispatch validates processor path + args; no shell interpolation | verify: test_stream_processor_injection.py
+- [ ] IE2.24 — Project config overlay deny-list blocks dangerous fields (database.url, connectors) | priority: high | fix: project.yml cannot override database.url, connectors, budget, self_improve gates | verify: test_project_overlay_denylist.py
+- [ ] IE2.25 — Memory records enforce project_id to prevent cross-project bleed | priority: critical | fix: MemoryRecordModel has project_id column; queries scoped by project_id; migration 030 | verify: test_memory_cross_project_isolation.py
+
+---
+
 ## Phase CR5 — CI Run Catalog (25 specs)
 
 Each spec describes a distinct CI run type — its trigger conditions, expected duration, and success criteria. Tracked as behavioral fixtures so structural tests can pin each one.
