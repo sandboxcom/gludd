@@ -355,6 +355,7 @@ help:
 	@echo "  --- Complete Target Index ---"
 	@$(PYTHON) scripts/check_make_help.py --print-index
 	@echo "  --- New Targets ---"
+	@echo "  pipeline-health         verify both local and remote pipelines are actually running (not stalled/zombie)"
 	@echo "  pipeline-status         show both local gate + remote CI status in one view"
 	@echo "  gate-all-background     run gate-all in background, poll with gate-status-check"
 	@echo "  target-two              Second test target"
@@ -2967,21 +2968,21 @@ gate-refresh:
 
 _gate-fresh-check:
 	@if [ ! -f .gate-status ]; then \
-		echo "ERROR: No .gate-status file. Run 'make gate' first."; exit 1; \
+		echo "ERROR: No .gate-status file. Run make gate first."; exit 1; \
 	elif ! echo run python scripts/gate_fresh_check.py is-complete .gate-status; then \
-		echo "ERROR: Gate incomplete — .gate-status missing terminal marker (=== GATE: PASSED === or === GATE: FAILED ===). The gate was likely killed mid-run. Run 'make gate' first."; \
+		echo "ERROR: Gate incomplete — missing terminal marker. Run make gate first."; \
 		exit 1; \
 	else \
 		for check in lint hook-runtime typecheck collect test smoke; do \
 			if ! grep -q "^${check} PASS" .gate-status; then \
-				echo "ERROR: Gate $check not PASS. Run 'make gate'."; exit 1; \
+				echo "ERROR: Gate ${check} not PASS. Run make gate."; exit 1; \
 			fi; \
 		done; \
-		EPOCH=$(grep "^epoch " .gate-status | tail -1 | awk '{print $2}'); \
+		EPOCH=$(tail -1 .gate-status | sed -n "s/^epoch //p"); \
 		NOW=$(date +%s); \
 		AGE=$((NOW - EPOCH)); \
 		if [ $AGE -gt 1800 ]; then \
-			echo "ERROR: .gate-status is $AGE seconds old (>30 min). Run 'make gate'."; exit 1; \
+			echo "ERROR: .gate-status is $AGE seconds old (>30 min). Run make gate."; exit 1; \
 		fi; \
 	fi
 
@@ -5202,11 +5203,17 @@ mkdir-p:
 
 
 replace-lines:
-	@[ -n "$(FILE)" ] || { echo "Usage: make replace-lines FILE=path START=n END=n NEW_FILE=path"; exit 1; }
-	@[ -n "$(START)" ] || { echo "Usage: make replace-lines FILE=path START=n END=n NEW_FILE=path"; exit 1; }
-	@[ -n "$(END)" ] || { echo "Usage: make replace-lines FILE=path START=n END=n NEW_FILE=path"; exit 1; }
-	@[ -n "$(NEW_FILE)" ] || { echo "Usage: make replace-lines FILE=path START=n END=n NEW_FILE=path"; exit 1; }
-	@$(PYTHON) scripts/replace_lines.py "$(FILE)" "$(START)" "$(END)" "$(NEW_FILE)"
+	@[ -n "/tmp/gludd-replace-lines-atomic.txt" ] || { echo "Usage: make replace-lines FILE=path START=n END=n NEW_FILE=path"; exit 1; }
+	@[ -n "" ] || { echo "Usage: make replace-lines FILE=path START=n END=n NEW_FILE=path"; exit 1; }
+	@[ -n "" ] || { echo "Usage: make replace-lines FILE=path START=n END=n NEW_FILE=path"; exit 1; }
+	@[ -n "" ] || { echo "Usage: make replace-lines FILE=path START=n END=n NEW_FILE=path"; exit 1; }
+	@TMP=$(mktemp /tmp/gludd-replace.XXXXXX); \
+	cp "/tmp/gludd-replace-lines-atomic.txt" "$TMP"; \
+	python3 scripts/replace_lines.py "$TMP" "" "" ""; \
+	if python3 -c "import yaml" 2>/dev/null; then \
+		python3 -m yaml "$TMP" > /dev/null 2>&1 || { echo "ERROR: yaml validation failed for $TMP"; rm -f "$TMP"; exit 1; }; \
+	fi; \
+	mv "$TMP" "/tmp/gludd-replace-lines-atomic.txt"
 
 gate-all-background:
 	@mkdir -p .gate-logs; \
@@ -5310,9 +5317,50 @@ worktree-merge-all:
 	}
 
 pipeline-status:
-	@echo "=== LOCAL GATE ==="; \
-	/Library/Developer/CommandLineTools/usr/bin/make --no-print-directory gate-status 2>/dev/null || echo "  (no gate status file)"; \
+	@echo "=== LOCAL GATE ==="
+	@/Library/Developer/CommandLineTools/usr/bin/make --no-print-directory gate-status 2>/dev/null || echo "  (no gate status file)"
+	@PID=$(cat .gate-background.pid 2>/dev/null || echo ""); \
+	if [ -n "$PID" ] && kill -0 $PID 2>/dev/null; then \
+		MTIME=$(stat -f %m .gate-status 2>/dev/null || echo 0); \
+		NOW=$(date +%s); \
+		if [ -n "$MTIME" ] && [ -n "$NOW" ]; then \
+			AGE=$((NOW - MTIME)); \
+			if [ $AGE -gt 120 ]; then echo "  STALLED: .gate-status not updated ($AGE sec)"; fi; \
+		fi; \
+	elif [ -n "$PID" ]; then \
+		echo "  DEAD: background gate pid=$PID no longer running"; \
+	fi
+	@echo ""
+	@echo "=== REMOTE CI (development) ==="
+	@/Library/Developer/CommandLineTools/usr/bin/make --no-print-directory ci-verdict BRANCH=development 2>&1 || true
+
+pipeline-health:
+	@echo "=== LOCAL GATE HEALTH ==="; \
+	if [ -f .gate-background.pid ]; then \
+		PID=$(cat .gate-background.pid); \
+		if kill -0 $PID 2>/dev/null; then \
+			echo "  RUNNING (pid=$PID)"; \
+			MTIME=$(stat -f %m .gate-status 2>/dev/null || echo 0); \
+			NOW=$(date +%s); \
+			AGE=$((NOW - MTIME)); \
+			if [ $AGE -gt 120 ]; then \
+				echo "  WARNING: .gate-status not updated for $AGE seconds — may be stalled"; \
+			else \
+				echo "  .gate-status updated $AGE seconds ago"; \
+			fi; \
+		else \
+			echo "  DEAD (pid=$PID no longer running)"; \
+		fi; \
+	else \
+		echo "  IDLE (no background gate running)"; \
+	fi; \
 	echo ""; \
-	echo "=== REMOTE CI (development) ==="; \
-	/Library/Developer/CommandLineTools/usr/bin/make --no-print-directory ci-verdict BRANCH=development 2>&1 || true
+	echo "=== REMOTE CI HEALTH ==="; \
+	CI_JSON=$(gh run list --branch development --status in_progress --limit 3 -R sandboxcom/gludd --json databaseId,headSha,status,updatedAt 2>/dev/null || echo "[]"); \
+	if [ "$CI_JSON" = "[]" ]; then \
+		echo "  IDLE (no in_progress CI runs)"; \
+	else \
+		echo "  in_progress runs on development:"; \
+		echo "$CI_JSON"; \
+	fi
 
