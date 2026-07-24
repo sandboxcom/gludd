@@ -1797,11 +1797,15 @@ _push-rate-guard:
 	@# Uses ci_push_guard.py (branch-level active-run check, not commit-specific)
 	@# PUSH_BRANCH overrides the branch to check (default: master).
 	@PUSH_BRANCH=$${PUSH_BRANCH:-master}; \
-	if [ "$$GLUDD_FORCE_PUSH" = "1" ]; then \
-		FORCE=1 $(PYTHON) scripts/ci_push_guard.py "$$PUSH_BRANCH" || true; \
-	else \
-		$(PYTHON) scripts/ci_push_guard.py "$$PUSH_BRANCH" || { echo "Use GLUDD_FORCE_PUSH=1 to override, or wait for CI to complete."; exit 1; }; \
-	fi
+	$(PYTHON) scripts/ci_push_guard.py "$$PUSH_BRANCH" || { \
+		if [ "$$GLUDD_FORCE_PUSH" = "1" ]; then \
+			echo "BLOCKED: CI is in_progress on $$PUSH_BRANCH. GLUDD_FORCE_PUSH does NOT bypass the CI-in-flight check."; \
+			echo "A force-push would cancel the running build. Wait for CI to complete."; \
+			exit 1; \
+		else \
+			echo "Use GLUDD_FORCE_PUSH=1 to override cooldown only (NOT CI-in-flight)."; exit 1; \
+		fi; \
+	}
 	@# Check push cooldown (minimum interval between pushes)
 	@LAST_PUSH=$$(python3 -c "import json;from pathlib import Path;p=Path('/tmp/gludd-watchdog-push-timestamps.json');d=json.loads(p.read_text()) if p.exists() else [];print(d[-1] if d else 0)" 2>/dev/null || echo 0); \
 	if [ "$$LAST_PUSH" != "0" ]; then \
