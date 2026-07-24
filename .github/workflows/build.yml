@@ -179,7 +179,7 @@ jobs:
   # as a shard-unique artifact; the downstream `coverage` job combines them
   # into a single canonical coverage.xml for the whole suite.
   test-shard:
-    needs: [version, gate, test-shard]
+    needs: [version, gate]
     runs-on: ubuntu-latest
     continue-on-error: true  # Pre-existing test failures tracked in config/ratchet.yml. Test results visible in run log.
     # unit-3 (test_[n-z]* + secrets/) is the fattest shard and runs ~18m — right
