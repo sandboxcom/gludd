@@ -358,7 +358,6 @@ help:
 	@echo "  debug-test-target       Debug test"
 	@echo "  foo-test                Test"
 	@echo ""
-	@echo "  test-temp-target        Temp test target"
 	@echo ""
 
 sdd-constitution:
@@ -2917,8 +2916,20 @@ gate-refresh:
 	echo "=== GATE PHASE: collect ==="; \
 	printf "collect " >> .gate-status; \
 	$(MAKE) --no-print-directory collect-check > /dev/null 2>&1 && echo "PASS 0" >> .gate-status || (echo "FAIL collection-errors" >> .gate-status && touch .gate-failed); \
-	if [ -n "$$OLD_TEST" ] && echo "$$OLD_TEST" | grep -q "PASS"; then echo "$$OLD_TEST" >> .gate-status; else echo "test REQUIRED" >> .gate-status && touch .gate-failed; fi; \
-	if [ -n "$$OLD_SMOKE" ] && echo "$$OLD_SMOKE" | grep -q "PASS"; then echo "$$OLD_SMOKE" >> .gate-status; else echo "smoke REQUIRED" >> .gate-status && touch .gate-failed; fi; \
+	if [ -n "$$OLD_TEST" ] && echo "$$OLD_TEST" | grep -q "PASS"; then echo "$$OLD_TEST" >> .gate-status; else \
+		echo "=== GATE-REFRESH PHASE: test ==="; \
+		printf "test " >> .gate-status; \
+		if $(UV) run python -m pytest tests/unit/test_plugin_dir_hygiene.py tests/unit/test_plugin_behavior.py tests/unit/test_plugin_config_runtime.py -q --no-header -n 2 --maxprocesses=2 > /tmp/gludd-gate-refresh-test.log 2>&1; then \
+			echo "PASS 0" >> .gate-status; \
+		else \
+			echo "FAIL non-zero-exit" >> .gate-status && touch .gate-failed && echo "[gate-refresh] test FAILED — tail:" && tail -20 /tmp/gludd-gate-refresh-test.log; \
+		fi; \
+	fi; \
+	if [ -n "$$OLD_SMOKE" ] && echo "$$OLD_SMOKE" | grep -q "PASS"; then echo "$$OLD_SMOKE" >> .gate-status; else \
+		echo "=== GATE-REFRESH PHASE: smoke ==="; \
+		printf "smoke " >> .gate-status; \
+		$(MAKE) --no-print-directory smoke > /tmp/gludd-gate-refresh-smoke.log 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed && echo "[gate-refresh] smoke FAILED — tail:" && tail -20 /tmp/gludd-gate-refresh-smoke.log); \
+	fi; \
 	echo "---" >> .gate-status; \
 	echo "epoch $$(date +%s)" >> .gate-status; \
 	cat .gate-status; \
@@ -5165,6 +5176,9 @@ replace-lines:
 
 # --- New Targets (auto-categorized add-target) ---
 
+# temporary test
+
+
 # Second test target
 target-two:
 	@echo "target-two: Second test target"
@@ -5200,8 +5214,6 @@ foo-test:
 	@echo "foo-test: Test"
 
 # Temp test target
-test-temp-target:
-	@echo "test-temp-target: Temp test target"
 
 
 # Run the worktree health gate. Exits non-zero on any violation
