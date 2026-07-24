@@ -10,17 +10,62 @@
 <!-- gate:begin -->
 - lint PASS 0
 - env-writes PASS
-- hook-runtime FAIL (29 failures — named export stripping, commit 0e45db90)
+- hook-runtime PASS (122 passed, 0 failed, 18 skipped)
 - typecheck PASS 0
 - collect PASS 0
-- test REQUIRED
-- smoke REQUIRED
+- coverage-gaps PASS 0 new gaps
+- smoke PASS
+- GATE: PASSED
 
 <!-- gate:end -->
 
 ---
 
-## PRIMARY OBJECTIVE: FIX HOOK-RUNTIME → GREEN LOCAL GATE → GREEN CI ON MASTER → 12/12 ARTIFACTS FOR v0.1.0-beta.1
+## SESSION 52 — 2026-07-24
+
+- **HEAD: `d7dfd2a6`** on `master` branch (VERIFIED on sandboxcom)
+- **Version: 0.1.0-beta.1** (pyproject.toml)
+- **Push status: PUSHED + VERIFIED** — master@d7dfd2a6 on sandboxcom
+- **CI: TRIGGERED** — run pending on master@d7dfd2a6
+- **Gate: PASSED** — all phases green (lint 0, typecheck 0, collect 0, hook-runtime 122/0, coverage-gaps 0)
+- **Working tree: CLEAN**
+
+### What was fixed this session
+
+| Commit | Fix |
+|--------|-----|
+| `d7dfd2a6` | rename test file to match coverage scanner pattern + add idempotency tests for compat.annotated_types |
+| `98335f46` | update test_hook_runtime.py imports — helpers now in lib/plugin_test_exports.ts (30 failures → 0) |
+| `4ff0e0ad` | lint errors in test_plugin_session_start_deadlock.py (14 errors → 0) |
+| `53ef4f8b` | enforce-floor.ts ReferenceError — inline incrementTextCompleteCount + plugin hook invocation validation |
+| `c91019a4` | enforce-context.ts deadlock fix — isReadTool guard + plugin self-awareness tooling |
+| `3b31ab35` | remove opencode boot crash vectors — delete hot_reload.ts, remove named exports, move test helpers |
+
+### Hook-runtime resolution (PRIMARY BLOCKER RESOLVED)
+
+- **Root cause:** Plugin refactoring (commit 3b31ab35) moved helper functions from plugin files to `lib/plugin_test_exports.ts` and stripped named exports to fix opencode boot crash. Test harness (`test_hook_runtime.py`) still imported from plugin files directly.
+- **Fix:** Updated all 30 failing tests to import from `lib/plugin_test_exports.ts` instead. Rewrote commit-lock tests from PluginAPI pattern to direct plugin invocation. Result: 122 passed, 0 failed.
+- **Plugin hook validation:** New `make check-plugin-hook-invoke` target (commit 53ef4f8b) actually invokes every plugin hook function — catches ReferenceError class of bugs that import-only checks miss. 27/27 PASS.
+
+### Release pipeline status
+
+| Step | Status |
+|------|--------|
+| hook-runtime green | DONE (122/0) |
+| local gate green | DONE (all phases PASS) |
+| push to remote | DONE (VERIFIED master@d7dfd2a6) |
+| CI green on master | PENDING |
+| release-cut TAG=v0.1.0-beta.1 | BLOCKED on CI green |
+| verify-release-completeness 12/12 | BLOCKED on release-cut |
+
+### Next
+
+1. Wait for CI green on master@d7dfd2a6
+2. `make release-cut TAG=v0.1.0-beta.1 MSG='beta.1 release — full 12-artifact build with hook-runtime fix'`
+3. `make verify-release-completeness TAG=v0.1.0-beta.1` — confirm all 12 asset categories
+4. Tick `[x]` on TASKS.md A.4 with artifact URL + CI run id
+
+- **Last Updated: 2026-07-24 — Session 52.** HEAD `d7dfd2a6` on `master` (VERIFIED). Gate PASSED. 6 commits pushed. CI PENDING. A.4 blocked on CI green for release-cut.
 
 ---
 
