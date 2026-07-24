@@ -22,6 +22,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).parent.parent.parent
 PLUGIN_PATH = ROOT / ".opencode" / "plugin" / "enforce-verified-claims.ts"
+EXPORTS_PATH = ROOT / ".opencode" / "lib" / "plugin_test_exports.ts"
 OPENCODE_JSON = ROOT / "opencode.json"
 
 
@@ -29,8 +30,12 @@ def _plugin_source() -> str:
     return PLUGIN_PATH.read_text()
 
 
+def _exports_source() -> str:
+    return EXPORTS_PATH.read_text()
+
+
 def _extract_done_words(src: str) -> list[str]:
-    """Pull the DONE_WORDS string-literal entries out of the plugin source.
+    """Pull the DONE_WORDS string-literal entries out of the exports source.
 
     Accepts either `export const DONE_WORDS = [...]` or a plain const. Returns
     each quoted string entry, lower-cased so the matcher is case-insensitive.
@@ -40,7 +45,7 @@ def _extract_done_words(src: str) -> list[str]:
         src,
         re.DOTALL,
     )
-    assert m, "DONE_WORDS named export must be present in plugin source"
+    assert m, "DONE_WORDS named export must be present in exports source"
     return [w.lower() for w in re.findall(r'"([^"]+)"', m.group(1))]
 
 
@@ -99,7 +104,7 @@ def _has_evidence(text: str, patterns: list[str]) -> bool:
 
 def _verdict(text: str) -> str:
     """Return 'block' or 'allow' per the plugin's shouldBlock logic."""
-    src = _plugin_source()
+    src = _exports_source()
     done_words = _extract_done_words(src)
     evidence = _extract_evidence_patterns(src)
     not_done = _extract_not_done_phrases(src)
@@ -136,15 +141,15 @@ class TestPluginStructure:
         )
 
     def test_exports_done_words(self):
-        src = _plugin_source()
+        src = _exports_source()
         assert "DONE_WORDS" in src, "DONE_WORDS named export missing"
 
     def test_exports_evidence_patterns(self):
-        src = _plugin_source()
+        src = _exports_source()
         assert "EVIDENCE_PATTERNS" in src, "EVIDENCE_PATTERNS named export missing"
 
     def test_exports_should_block_function(self):
-        src = _plugin_source()
+        src = _exports_source()
         assert re.search(
             r"export\s+(async\s+)?function\s+shouldBlock|"
             r"export\s+const\s+shouldBlock",
@@ -182,7 +187,7 @@ class TestPluginStructure:
 # --------------------------------------------------------------------------- #
 class TestDoneWordsContract:
     def test_required_done_words_present(self):
-        words = _extract_done_words(_plugin_source())
+        words = _extract_done_words(_exports_source())
         required = [
             "landed", "committed", "pushed", "fixed", "passing",
             "shipped", "done", "complete", "green", "resolved",
