@@ -624,6 +624,746 @@ Tasks created from the release pipeline failures that prevented v0.1.0-beta.1 de
 - [ ] MX.19 — Branch discipline: never push feature work directly to master. Master = merges from development only. | priority: critical | fix: AGENTS.md branch discipline rule + enforce-branch-discipline.ts | verify: test_branch_discipline.py
 - [ ] MX.20 — Verify-state before claims: run make verify-state (git status + log + HEAD-vs-remote + CI verdict) before any done claim. | priority: critical | fix: AGENTS.md evidence-based rule | verify: test_verify_state.py
 - [ ] MX.21 — Force-push discipline: GLUDD_FORCE_PUSH=1 only for hotfixes. Never routine. Bypasses cooldown but NOT CI-in-flight. | priority: critical | fix: Makefile fix (committed 3defd0c1, pending push) + test_force_push_ci_guard.py | verify: test_force_push_discipline.py
+
+---
+
+## Phase EN — Enforcement Plugin Details (30 specs)
+
+- [ ] EN.1 — enforce-floor.ts: PID-scoped streak state to prevent cross-session contamination. | priority: high | fix: add pid field to /tmp/gludd-tool-streak.json, check on read | verify: test_streak_pid.py
+- [ ] EN.2 — enforce-floor.ts: text.complete hook blocks text-only responses when 0 dispatches made. Verify the hook fires correctly. | priority: high | fix: already implemented, verify hook registered | verify: test_floor_text_complete.py
+- [ ] EN.3 — enforce-floor.ts: message-shape enforcement — response with 1 dispatch is denied when ≥2 work items remain. | priority: high | fix: already implemented, verify | verify: test_message_shape.py
+- [ ] EN.4 — enforce-floor.ts: result-processing grace window allows ≤3 reads after results before requiring dispatch. | priority: medium | fix: POST_RESULT_READ_LIMIT=3, verify | verify: test_result_grace.py
+- [ ] EN.5 — enforce-floor.ts: disengage allows after streak breach — verify disengage bypass works for streak only, not other checks. | priority: medium | fix: already implemented, verify | verify: test_disengage_streak.py
+- [ ] EN.6 — enforce-delegate.ts: model utilization tracks sonnet vs non-sonnet dispatches in rolling window of 20. | priority: medium | fix: already implemented, verify | verify: test_model_util.py
+- [ ] EN.7 — enforce-delegate.ts: disk discipline checks worktree count and free space before allowing dispatch. | priority: medium | fix: already implemented, verify | verify: test_disk_discipline.py
+- [ ] EN.8 — enforce-delegate.ts: force-delegate opt-in mode denies targeted mutations when below floor. | priority: low | fix: GLUDD_FORCE_DELEGATE=1, verify | verify: test_force_delegate.py
+- [ ] EN.9 — enforce-delegate.ts: mainthread budget denies after MAINTHREAD_THRESHOLD consecutive mutations without dispatch. | priority: high | fix: already implemented, verify git shipping allowlist resets it | verify: test_mainthread_budget.py
+- [ ] EN.10 — enforce-delegate.ts: read-grind detection tracks investigation tool calls separately from mutations. | priority: medium | fix: already implemented, verify | verify: test_read_grind.py
+- [ ] EN.11 — enforce-multitask.ts: under-floor hard block denies non-dispatch tools when <10 dispatches in session. | priority: critical | fix: already implemented, verify | verify: test_under_floor_block.py
+- [ ] EN.12 — enforce-multitask.ts: dispatch ceiling blocks >10 concurrent subagents. | priority: high | fix: already implemented, verify | verify: test_dispatch_ceiling.py
+- [ ] EN.13 — enforce-multitask.ts: consecutive non-dispatch block denies after 2 zero-dispatch responses. | priority: high | fix: already implemented, verify | verify: test_consecutive_block.py
+- [ ] EN.14 — enforce-multitask.ts: text-only response blocked when next tool call has 0 dispatches and work pending. | priority: high | fix: already implemented, verify | verify: test_text_only_blocked.py
+- [ ] EN.15 — enforce-stop.ts: hasRealPendingWork checks TASKS.md + ratchet + CI + gate + release completeness. | priority: critical | fix: already implemented, verify each check | verify: test_pending_work_detection.py
+- [ ] EN.16 — enforce-stop.ts: status summary detection blanks responses with bolded headers + tables + evidence. | priority: high | fix: STATUS_SUMMARY_RE, verify | verify: test_status_summary.py
+- [ ] EN.17 — enforce-stop.ts: false-done claim detection blocks done-words without evidence tokens. | priority: critical | fix: already implemented, verify | verify: test_false_done.py
+- [ ] EN.18 — enforce-stop.ts: QA response pattern detection blocks Q&A recaps without tool calls. | priority: high | fix: QA_RESPONSE_PATTERNS, verify | verify: test_qa_response.py
+- [ ] EN.19 — enforce-stop.ts: permission-seeking detection blocks "shall I" / "should I" / "want me to". | priority: high | fix: STOP_PATTERN_PHRASES, verify | verify: test_permission_seeking.py
+- [ ] EN.20 — enforce-make.ts: only make targets allowed in bash. No bare commands. | priority: critical | fix: already implemented, verify | verify: test_make_only.py
+- [ ] EN.21 — enforce-make.ts: shell metacharacters forbidden (| ; && || $() `` > < 2>&1 {} ! \). | priority: critical | fix: already implemented, verify | verify: test_metachar_block.py
+- [ ] EN.22 — enforce-make.ts: long-running foreground command detection with suggestion to use background. | priority: high | fix: already implemented, verify | verify: test_long_running_block.py
+- [ ] EN.23 — enforce-make.ts: system.transform injection of SESSION.md banners + mechanical contract + root-cause directive. | priority: medium | fix: already implemented, verify | verify: test_system_transform.py
+- [ ] EN.24 — enforce-clean-tree.ts: denies dispatch when git status --porcelain is non-empty. | priority: high | fix: already implemented, verify | verify: test_clean_tree.py
+- [ ] EN.25 — enforce-tdd.ts: denies edit/write to src/general_ludd/**/*.py when no test file exists. | priority: critical | fix: already implemented, verify | verify: test_tdd_gate.py
+- [ ] EN.26 — enforce-no-suppressions.ts: denies edit/write containing # noqa / # type: ignore / # pylint: / # fmt: / # isort:. | priority: high | fix: already implemented, verify | verify: test_no_suppressions_gate.py
+- [ ] EN.27 — enforce-no-wait.ts: denies bash sleep/tail/gate-tail/gate-status-check on main thread. | priority: high | fix: already implemented, verify | verify: test_no_wait.py
+- [ ] EN.28 — enforce-commit-lock.ts: serializes git commit operations via lock file. | priority: medium | fix: already implemented, verify | verify: test_commit_lock.py
+- [ ] EN.29 — enforce-deadline.ts: tracks task wall-clock time, warns at timeout, records breached tasks. | priority: high | fix: already implemented, verify | verify: test_deadline.py
+- [ ] EN.30 — enforce-enhancement-ratio.ts: blocks fix-only dispatch waves when >50% are fixes. | priority: medium | fix: already implemented, verify | verify: test_enhancement_ratio.py
+
+---
+
+## Phase MK — Makefile Target Contracts (30 specs)
+
+- [ ] MK.1 — make gate: runs lint + typecheck + collect-check + hook-runtime + test + smoke. Writes .gate-status. | priority: critical | fix: verify all phases run | verify: test_gate_phases.py
+- [ ] MK.2 — make gate-background: launches gate via nohup. Returns in <1s. Writes PID file. | priority: critical | fix: verify nohup + PID file | verify: test_gate_background.py
+- [ ] MK.3 — make gate-status-check: non-blocking probe. Prints phase, terminal marker, last 20 lines. | priority: high | fix: verify output format | verify: test_gate_status_check.py
+- [ ] MK.4 — make gate-tail: live tail of latest gate log. | priority: medium | fix: verify tail works | verify: test_gate_tail.py
+- [ ] MK.5 — make gate-kill: SIGTERM then SIGKILL after 5s. Removes PID file. | priority: medium | fix: verify kill sequence | verify: test_gate_kill.py
+- [ ] MK.6 — make gate-lite: lint+typecheck+collect+smoke+unit@2w. Not gate of record. | priority: medium | fix: verify phases | verify: test_gate_lite.py
+- [ ] MK.7 — make git-commit: runs _gate-fresh-check + collect-check + pre-commit hooks. | priority: critical | fix: verify gate check runs | verify: test_git_commit_gate.py
+- [ ] MK.8 — make ship-commit: local commit by default (PUSH=0). Push separately with batch-push. | priority: high | fix: verify PUSH=0 default | verify: test_ship_commit.py
+- [ ] MK.9 — make batch-push: pushes when ≥5 unpushed commits or COMMIT_THRESHOLD met. CI-in-flight guard. | priority: critical | fix: verify threshold + guard | verify: test_batch_push.py
+- [ ] MK.10 — make release-cut: require-ci-green + check-readme-status + push + tag + release-view + poll. | priority: critical | fix: verify all steps | verify: test_release_cut.py
+- [ ] MK.11 — make release-delete: deletes GitHub Release + local tag + remote tag. | priority: high | fix: verify all 3 deletions | verify: test_release_delete.py
+- [ ] MK.12 — make verify-release-completeness: checks 12 categories via gh API. Exits 0 only if all pass. | priority: critical | fix: verify all 12 checks | verify: test_verify_release.py
+- [ ] MK.13 — make verify-remote: checks remote tip matches local SHA via git ls-remote. | priority: critical | fix: verify SHA comparison | verify: test_verify_remote.py
+- [ ] MK.14 — make verify-state: bundles git-status + git-log + HEAD-vs-remote + ci-verdict. | priority: high | fix: verify all 4 sections | verify: test_verify_state.py
+- [ ] MK.15 — make ci-verdict: point-in-time CI check. <1s. Exit 0=GREEN, 1=RED, 2=PENDING. | priority: high | fix: verify exit codes | verify: test_ci_verdict.py
+- [ ] MK.16 — make ci-verdict-safe: cooldown-enforced. 10-min default. Prints last-known verdict. | priority: high | fix: verify cooldown + last-known | verify: test_ci_verdict_safe.py
+- [ ] MK.17 — make ci-await: polls until terminal. 60s interval. Detects success+failure. | priority: medium | fix: verify polling loop | verify: test_ci_await.py
+- [ ] MK.18 — make ci-cancel: cancels a CI run by ID. | priority: medium | fix: verify gh run cancel | verify: test_ci_cancel.py
+- [ ] MK.19 — make ci-status: lists recent CI runs with status/conclusion/duration. | priority: medium | fix: verify output format | verify: test_ci_status.py
+- [ ] MK.20 — make ci-view: detailed job statuses for a specific run. JSON output. | priority: medium | fix: verify JSON structure | verify: test_ci_view.py
+- [ ] MK.21 — make check-plugin-hook-invoke: invokes every plugin hook. 27+ plugins. ReferenceError check. | priority: critical | fix: verify 27/27 | verify: test_hook_invoke.py
+- [ ] MK.22 — make check-node-v26-compat: scans .ts for forbidden patterns. 5/5 suites. | priority: high | fix: verify all suites pass | verify: test_node_compat.py
+- [ ] MK.23 — make verify-enforcement: checks all plugins BLOCKING + structural issues. | priority: high | fix: verify 0 issues | verify: test_verify_enforcement.py
+- [ ] MK.24 — make hot-reload-plugins: builds /tmp/gludd-hot-*.js from .ts source. | priority: medium | fix: verify build output | verify: test_hot_reload_build.py
+- [ ] MK.25 — make reload-enforcement: resets all enforcement state files. | priority: medium | fix: verify files cleaned | verify: test_reload_enforcement.py
+- [ ] MK.26 — make disengage-enforcement: suspends ALL plugins for 1 hour. | priority: high | fix: verify disengage file written | verify: test_disengage.py
+- [ ] MK.27 — make crash-recovery: kills stale daemons + resets state files. | priority: high | fix: verify daemon kill + state reset | verify: test_crash_recovery.py
+- [ ] MK.28 — make clean-tmp: removes /tmp/gludd-* files. | priority: medium | fix: verify cleanup | verify: test_clean_tmp.py
+- [ ] MK.29 — make check-coverage-gaps: scans src/ for untested modules. 0 new gaps. | priority: high | fix: verify gap detection | verify: test_coverage_gaps.py
+- [ ] MK.30 — make check-duplicate-targets: scans Makefile for duplicate target declarations. | priority: medium | fix: verify no duplicates | verify: test_duplicate_targets.py
+
+---
+
+## Phase AS — Agent Self-Awareness (20 specs)
+
+- [ ] AS.1 — Know which plugins are active: run make list-plugins at session start. Understand what each blocks. | priority: high | fix: make list-plugins exists, verify agent uses it | verify: test_plugin_awareness.py
+- [ ] AS.2 — Know disable env vars: each plugin has GLUDD_*_ENFORCE=0. Agent knows how to temporarily disable. | priority: medium | fix: AGENTS.md plugin reference table | verify: test_env_var_awareness.py
+- [ ] AS.3 — Know tool availability: check system prompt tool list. If bash is missing, diagnose in ≤2 turns. | priority: high | fix: AGENTS.md bash-diagnosis rule | verify: test_tool_diagnosis.py
+- [ ] AS.4 — Know session state: read /tmp/gludd-session-start.json to understand dispatch count, time gates. | priority: medium | fix: already tracked, verify agent reads it | verify: test_session_state_awareness.py
+- [ ] AS.5 — Know streak counter state: read /tmp/gludd-mainthread-streak.json to understand how close to threshold. | priority: low | fix: state file exists, verify agent is aware | verify: test_streak_awareness.py
+- [ ] AS.6 — Know live subagent count: use scripts/agent_liveness.py to check pool size. | priority: medium | fix: already exists, verify agent uses it | verify: test_liveness_awareness.py
+- [ ] AS.7 — Know gate status: read .gate-status before claiming work is done. | priority: critical | fix: already enforced, verify compliance | verify: test_gate_awareness.py
+- [ ] AS.8 — Know CI status: use ci-verdict-safe (not bare ci-verdict) for routine checks. | priority: high | fix: AGENTS.md rule, verify compliance | verify: test_ci_awareness.py
+- [ ] AS.9 — Know release status: use verify-release-completeness before claiming release is done. | priority: critical | fix: AGENTS.md rule, verify compliance | verify: test_release_awareness.py
+- [ ] AS.10 — Know TASKS.md state: read unchecked items before dispatching. Don't re-dispatch completed tasks. | priority: high | fix: AGENTS.md task tracking rule | verify: test_tasks_awareness.py
+- [ ] AS.11 — Know BUGS.md incidents: read at session start. Learn from past failures. | priority: high | fix: AGENTS.md premature-stop audit | verify: test_bugs_awareness.py
+- [ ] AS.12 — Know ratchet state: config/ratchet.yml entries = pending work. Empty = clean. | priority: medium | fix: AGENTS.md mechanical contract #2 | verify: test_ratchet_awareness.py
+- [ ] AS.13 — Know enforcement disengage state: check if disengage is active before acting surprised by missing enforcement. | priority: low | fix: check /tmp/gludd-watchdog-disengage.json | verify: test_disengage_awareness.py
+- [ ] AS.14 — Know worktree state: make agent-worktree-list shows active worktrees. | priority: medium | fix: already exists, verify agent checks | verify: test_worktree_awareness.py
+- [ ] AS.15 — Know disk state: make disk shows usage + gludd footprint. | priority: low | fix: already exists, verify agent checks before creating worktrees | verify: test_disk_awareness.py
+- [ ] AS.16 — Know model ratio: check sonnet vs non-sonnet dispatch ratio. Maintain sonnet dominance. | priority: low | fix: already tracked, verify agent is aware | verify: test_model_awareness.py
+- [ ] AS.17 — Know CI poll count: be aware of how many times ci-status has been checked. | priority: medium | fix: enforce-no-ci-poll.ts tracks it | verify: test_poll_awareness.py
+- [ ] AS.18 — Know deadline state: check /tmp/gludd-task-deadlines.json for breached tasks. | priority: medium | fix: enforce-deadline.ts tracks it | verify: test_deadline_awareness.py
+- [ ] AS.19 — Know enhancement ratio: check /tmp/gludd-enhancement-ratio.json for fix vs enhancement balance. | priority: low | fix: enforce-enhancement-ratio.ts tracks it | verify: test_ratio_awareness.py
+- [ ] AS.20 — Know clean tree state: check git status before dispatching. Dirty tree = dispatch denied. | priority: high | fix: enforce-clean-tree.ts | verify: test_tree_awareness.py
+
+---
+
+## Phase PL — Plugin Lifecycle (20 specs)
+
+- [ ] PL.1 — Plugin loading at startup: opencode loads .opencode/plugin/*.ts once. No hot-reload of main plugin files. | priority: critical | fix: documented, verify agent understands | verify: test_plugin_loading.py
+- [ ] PL.2 — Plugin auto-discovery: getLegacyPlugins() discovers every .ts in plugin/. Only export default allowed. | priority: critical | fix: test_plugin_dir_hygiene.py | verify: test_auto_discovery.py
+- [ ] PL.3 — Hot-reload proxy pattern: main plugin file delegates to defaultImpl or /tmp/gludd-hot-*.js. | priority: high | fix: already implemented on all plugins, verify | verify: test_hot_reload_proxy.py
+- [ ] PL.4 — Hot module building: make hot-reload-plugins compiles .ts → /tmp/gludd-hot-*.js. | priority: medium | fix: already implemented, verify | verify: test_hot_module_build.py
+- [ ] PL.5 — Hot module freshness: /tmp/gludd-hot-*.js must be newer than .ts source. | priority: high | fix: make check-hot-reload-fresh | verify: test_hot_freshness.py
+- [ ] PL.6 — Plugin registration in opencode.json: every plugin in plugin[] array must exist on disk. | priority: high | fix: verify-plugin-manifest | verify: test_plugin_manifest.py
+- [ ] PL.7 — No orphan files in plugin/: every .ts file must be registered or removed. | priority: high | fix: test_plugin_dir_hygiene.py checks | verify: test_no_orphans.py
+- [ ] PL.8 — Plugin export default is a function: Object.values(mod) must all be functions. Non-function exports crash loader. | priority: critical | fix: test_plugin_dir_hygiene.py | verify: test_export_default.py
+- [ ] PL.9 — Plugin subagent guard: every tool.execute.before hook checks isSubagent() first. | priority: critical | fix: test_subagent_context_isolation.py | verify: test_subagent_guard.py
+- [ ] PL.10 — Plugin fail-open: every hook wraps logic in try/catch. Exceptions allow the operation. | priority: critical | fix: structural test verifying catch blocks | verify: test_fail_open.py
+- [ ] PL.11 — Plugin env var disable: every plugin has GLUDD_*_ENFORCE=0 env var. | priority: high | fix: verify each plugin has it | verify: test_env_disable.py
+- [ ] PL.12 — Plugin heartbeat: every plugin calls reportAlive() on invocation. | priority: medium | fix: verify all plugins call it | verify: test_heartbeat.py
+- [ ] PL.13 — Plugin shared helpers: isSubagent, reportAlive, isDisengaged, isReadTool, isDispatchTool in shared.ts. | priority: medium | fix: verify no duplication | verify: test_shared_helpers.py
+- [ ] PL.14 — Plugin test exports in lib/: test helper functions in lib/plugin_test_exports.ts, not in plugin/. | priority: high | fix: already moved, verify | verify: test_exports_location.py
+- [ ] PL.15 — Plugin impl files: implementation logic in impl/enforce_*_impl.ts, imported by plugin wrapper. | priority: medium | fix: verify impl pattern | verify: test_impl_pattern.py
+- [ ] PL.16 — Plugin Node v26 compat: no enums, namespaces, nested try-catch in catch, type-annotated catch vars. | priority: high | fix: make check-node-v26-compat | verify: test_v26_compat.py
+- [ ] PL.17 — Plugin behavioral tests: scripts/test_plugin_behavior.py invokes hooks with real inputs. 36 tests. | priority: high | fix: already implemented, verify pass | verify: test_behavioral.py
+- [ ] PL.18 — Plugin runtime tests: scripts/test_hook_runtime.py invokes hooks via node --experimental-strip-types. 122+ tests. | priority: critical | fix: already implemented, verify | verify: test_runtime_tests.py
+- [ ] PL.19 — Plugin hook invocation validator: scripts/validate_plugins_runtime.mjs invokes factory + hooks. 27+ files. | priority: critical | fix: already implemented, verify | verify: test_validator.py
+- [ ] PL.20 — Plugin static validator: scripts/validate_plugins.py checks imports, hook shape, Node v26 compat. | priority: high | fix: already implemented, verify | verify: test_static_validator.py
+
+---
+
+## Phase GT2 — Git & Tag Management (20 specs)
+
+- [ ] GT2.1 — Never raw git commands: use make git-status, make git-log, make git-add, make git-commit. | priority: critical | fix: enforce-make.ts | verify: test_no_raw_git.py
+- [ ] GT2.2 — Git-add specific files: make git-add FILES='f1 f2'. Never git-add-all for selective commits. | priority: medium | fix: AGENTS.md rule | verify: test_selective_add.py
+- [ ] GT2.3 — Commit message describes change: what changed + why. Not just "fix". | priority: low | fix: AGENTS.md rule | verify: test_commit_message.py
+- [ ] GT2.4 — Tag specific commit: make git-tag-push TAG=... COMMIT=<sha>. Don't tag HEAD blindly. | priority: high | fix: AGENTS.md rule | verify: test_tag_commit.py
+- [ ] GT2.5 — Delete tag before re-creating: make git-tag-rm before git-tag-push if tag exists. | priority: high | fix: AGENTS.md rule | verify: test_tag_recreation.py
+- [ ] GT2.6 — Verify remote after push: make verify-remote BRANCH=<b> SHA=<sha>. | priority: critical | fix: AGENTS.md rule | verify: test_remote_verify.py
+- [ ] GT2.7 — Never push to master from worktree: worktree agents commit on their own branch. Orchestrator merges. | priority: critical | fix: enforce-worktree.ts | verify: test_no_worktree_push.py
+- [ ] GT2.8 — Feature branch workflow: make feature-start creates branch. make feature-done merges with --no-ff. | priority: medium | fix: already implemented | verify: test_feature_branch.py
+- [ ] GT2.9 — Development branch: make development-start creates from master. make development-push pushes. | priority: medium | fix: already implemented | verify: test_development_branch.py
+- [ ] GT2.10 — Development merge to master: make development-merge-to-master. CI-green required. | priority: high | fix: already implemented | verify: test_dev_merge.py
+- [ ] GT2.11 — Agent worktree: make agent-worktree BRANCH=<name>. Isolated checkout for subagent. | priority: high | fix: already implemented | verify: test_agent_worktree.py
+- [ ] GT2.12 — Agent merge: make agent-merge BRANCH=<name>. --no-ff merge into master. | priority: high | fix: already implemented | verify: test_agent_merge.py
+- [ ] GT2.13 — Agent cleanup: make agent-cleanup BRANCH=<name>. Removes worktree + branch. | priority: high | fix: already implemented | verify: test_agent_cleanup.py
+- [ ] GT2.14 — Agent worktree list: make agent-worktree-list shows all active worktrees. | priority: medium | fix: already implemented | verify: test_worktree_list.py
+- [ ] GT2.15 — Worktree health check: flags worktrees >24h with unmerged commits. | priority: high | fix: already implemented | verify: test_worktree_health.py
+- [ ] GT2.16 — Worktree merge-all: iterates all worktrees, merges each into development, cleans up. | priority: medium | fix: already implemented | verify: test_merge_all.py
+- [ ] GT2.17 — Sandboxcom remote: make git-remote-sandboxcom configures SSH key. Run if push fails with permission denied. | priority: medium | fix: already implemented | verify: test_remote_config.py
+- [ ] GT2.18 — Git stash: make git-stash stashes changes. make git-stash-pop restores. | priority: low | fix: already implemented | verify: test_git_stash.py
+- [ ] GT2.19 — Git reset: make git-reset FILES='HEAD~1'. Soft by default. | priority: low | fix: already implemented, verify --soft | verify: test_git_reset.py
+- [ ] GT2.20 — Git show: make git-show shows last commit diff. | priority: low | fix: already implemented | verify: test_git_show.py
+
+---
+
+## Phase ER — Error Recovery (20 specs)
+
+- [ ] ER.1 — ReferenceError recovery: if plugin throws ReferenceError, hot-module override at /tmp/gludd-hot-*.js can bypass. | priority: high | fix: documented hot-reload pattern | verify: test_ref_error_recovery.py
+- [ ] ER.2 — TypeError recovery: if plugin throws TypeError on null input, verify fail-open catch block handles it. | priority: medium | fix: verify catch blocks exist | verify: test_type_error_recovery.py
+- [ ] ER.3 — SSH key error recovery: if git push fails with "Permission denied (publickey)", run make git-remote-sandboxcom. | priority: medium | fix: already implemented | verify: test_ssh_recovery.py
+- [ ] ER.4 — CI cancellation recovery: if CI run is cancelled, wait for idle then re-push. Don't force-push. | priority: high | fix: AGENTS.md rule | verify: test_cancel_recovery.py
+- [ ] ER.5 — Tag already exists recovery: if git-tag-push fails with "already exists", run make git-tag-rm first. | priority: high | fix: AGENTS.md rule | verify: test_tag_exists_recovery.py
+- [ ] ER.6 — Stale .gate-status recovery: if gate status is older than last edit, run make gate-refresh. | priority: medium | fix: _gate-fresh-check detects | verify: test_stale_gate_recovery.py
+- [ ] ER.7 — Stale enforcement state recovery: if enforcement misfires from stale state, run make crash-recovery. | priority: high | fix: already implemented | verify: test_stale_state_recovery.py
+- [ ] ER.8 — Disk full recovery: if worktree creation fails with ENOSPC, run make clean-worktree-venvs. | priority: medium | fix: already implemented | verify: test_disk_full_recovery.py
+- [ ] ER.9 — Pre-commit stash conflict recovery: if commit fails due to stash conflict, use make commit-no-verify. | priority: low | fix: already implemented as escape hatch | verify: test_stash_conflict.py
+- [ ] ER.10 — Collection error recovery: if make collect-check fails, fix the import error before committing. | priority: high | fix: already in gate | verify: test_collection_error.py
+- [ ] ER.11 — Lint error recovery: if make lint fails, fix the error. Don't add # noqa. | priority: high | fix: enforce-no-suppressions.ts | verify: test_lint_error.py
+- [ ] ER.12 — Type error recovery: if make typecheck fails, fix the type annotation. Don't add # type: ignore. | priority: high | fix: enforce-no-suppressions.ts | verify: test_type_error.py
+- [ ] ER.13 — Test failure recovery: if test fails, fix the code. Don't weaken the assertion. Don't xfail. | priority: critical | fix: AGENTS.md guardrail integrity | verify: test_failure_recovery.py
+- [ ] ER.14 — CI red recovery: if CI is red, fix ALL failures. Don't classify as "pre-existing". | priority: critical | fix: AGENTS.md all-bugs rule | verify: test_ci_red_recovery.py
+- [ ] ER.15 — OOM recovery: if gate OOMs, run make gate-lite instead. Or split test shards. | priority: medium | fix: AGENTS.md background-gate rule | verify: test_oom_recovery.py
+- [ ] ER.16 — Timeout recovery: if task exceeds 5 min, task_watchdog.py kills it. Re-dispatch with smaller scope. | priority: high | fix: already implemented | verify: test_timeout_recovery.py
+- [ ] ER.17 — Plugin crash recovery: if plugin crashes at boot, move .opencode/ to .opencode.orig/ as workaround. | priority: high | fix: documented in BUGS.md | verify: test_plugin_crash.py
+- [ ] ER.18 — Lock file recovery: if git index.lock exists, remove it. Run make crash-recovery. | priority: medium | fix: AGENTS.md crash-recovery | verify: test_lock_file.py
+- [ ] ER.19 — Branch divergence recovery: if local and remote have diverged, rebase or reset. Don't force-push. | priority: medium | fix: AGENTS.md never-force-push rule | verify: test_divergence.py
+- [ ] ER.20 — Rate limit recovery: if GitHub API rate-limited, wait 60s, retry. Don't spam API calls. | priority: low | fix: AGENTS.md transient-error rule | verify: test_rate_limit.py
+
+---
+
+## Phase CL — Cleanup & Hygiene (15 specs)
+
+- [ ] CL.1 — make clean-tmp: removes /tmp/gludd-* files. Run before session start and after large batches. | priority: medium | fix: already implemented | verify: test_clean_tmp.py
+- [ ] CL.2 — make clean-artifacts: removes build artifacts, caches, temp files. | priority: low | fix: already implemented | verify: test_clean_artifacts.py
+- [ ] CL.3 — make check-disk: pre-commit check. Fails if /tmp/gludd-* >100MB or disk >90%. | priority: medium | fix: already implemented | verify: test_check_disk.py
+- [ ] CL.4 — make disk-guard: checks disk + cleans caches if >95%. | priority: medium | fix: already implemented | verify: test_disk_guard.py
+- [ ] CL.5 — Stale PID cleanup: /tmp/gludd-*.pid files with dead PIDs removed by crash-recovery. | priority: medium | fix: already implemented | verify: test_pid_cleanup.py
+- [ ] CL.6 — Stale state file cleanup: /tmp/gludd-*.json with stale PIDs removed by crash-recovery. | priority: medium | fix: already implemented | verify: test_state_cleanup.py
+- [ ] CL.7 — Log rotation: /tmp/gludd-*.log rotated when >10MB by watchdog. | priority: low | fix: already implemented | verify: test_log_rotation.py
+- [ ] CL.8 — Worktree cleanup: abandoned worktrees >24h flagged by health check. | priority: high | fix: already implemented | verify: test_worktree_cleanup.py
+- [ ] CL.9 — Venv cleanup: make clean-worktree-venvs reclaims ~320MB per worktree. | priority: medium | fix: already implemented | verify: test_venv_cleanup.py
+- [ ] CL.10 — Gate log cleanup: .gate-logs/*.gz compressed and rotated. | priority: low | fix: verify rotation exists | verify: test_gate_log_cleanup.py
+- [ ] CL.11 — .ci-status gitignored: runtime file not committed. | priority: low | fix: already in .gitignore | verify: test_ci_status_gitignored.py
+- [ ] CL.12 — .gate-status not committed: runtime file, gitignored. | priority: low | fix: verify .gitignore | verify: test_gate_status_gitignored.py
+- [ ] CL.13 — Plugin heartbeat files cleanup: /tmp/gludd-plugin-heartbeat-*.json cleaned by clean-tmp. | priority: low | fix: verify cleanup includes heartbeats | verify: test_heartbeat_cleanup.py
+- [ ] CL.14 — Hot module cleanup: /tmp/gludd-hot-*.js cleaned when stale. | priority: low | fix: verify cleanup includes hot modules | verify: test_hot_module_cleanup.py
+- [ ] CL.15 — Disengage file cleanup: /tmp/gludd-watchdog-disengage.json removed by reload-enforcement. | priority: medium | fix: already implemented | verify: test_disengage_cleanup.py
+
+---
+
+## Phase LM — Limits & Thresholds (20 specs)
+
+- [ ] LM.1 — CLAUDE_AGENT_FLOOR=10: minimum concurrent subagents. | priority: critical | fix: env var, verify default | verify: test_floor_value.py
+- [ ] LM.2 — CLAUDE_AGENT_CEILING=10: maximum concurrent subagents. | priority: high | fix: env var, verify default | verify: test_ceiling_value.py
+- [ ] LM.3 — MAINTHREAD_THRESHOLD=2: consecutive mutations before streak block. | priority: high | fix: env var, verify git shipping resets it | verify: test_threshold.py
+- [ ] LM.4 — MAX_ZERO_STREAK=2: consecutive zero-dispatch responses before block. | priority: high | fix: env var, verify | verify: test_zero_streak.py
+- [ ] LM.5 — MAX_CONSECUTIVE_POLLS=3: CI poll limit before denial. | priority: high | fix: env var GLUDD_CI_POLL_MAX | verify: test_poll_limit.py
+- [ ] LM.6 — CI_CHECK_COOLDOWN_SEC=600: minimum seconds between ci-verdict-safe checks. | priority: medium | fix: env var, verify default | verify: test_ci_cooldown.py
+- [ ] LM.7 — PUSH_COOLDOWN_SECS=120: minimum seconds between pushes. | priority: medium | fix: env var, verify | verify: test_push_cooldown.py
+- [ ] LM.8 — MAX_CANCELLED_RUNS=3: max cancelled CI runs in 2h before push block. | priority: medium | fix: env var, verify | verify: test_cancelled_limit.py
+- [ ] LM.9 — GLUDD_TASK_TIMEOUT_MS=300000: task wall-clock timeout (5 min). | priority: high | fix: env var, verify watchdog enforces | verify: test_task_timeout.py
+- [ ] LM.10 — STALE_THRESHOLD_MS=300000: commit lock stale threshold (5 min). | priority: low | fix: env var, verify | verify: test_lock_stale.py
+- [ ] LM.11 — READ_GRIND_ADVISORY_COUNT=5: investigation calls before advisory. | priority: low | fix: env var | verify: test_read_grind_advisory.py
+- [ ] LM.12 — READ_GRIND_DENY_COUNT=10: investigation calls before hard block. | priority: medium | fix: env var | verify: test_read_grind_deny.py
+- [ ] LM.13 — READ_GRIND_ADVISORY_MS=30000: time threshold for advisory. | priority: low | fix: env var | verify: test_grind_time.py
+- [ ] LM.14 — READ_GRIND_DENY_MS=60000: time threshold for hard block. | priority: low | fix: env var | verify: test_grind_deny_time.py
+- [ ] LM.15 — DISK_DANGER_GB=2.5: worktree creation blocked below this free space. | priority: low | fix: env var | verify: test_disk_danger.py
+- [ ] LM.16 — DISK_HARD_FLOOR_GB=1.0: all operations blocked below this. | priority: low | fix: env var | verify: test_disk_floor.py
+- [ ] LM.17 — WORKTREE_CAP=6: maximum concurrent worktree agents. | priority: medium | fix: env var | verify: test_worktree_cap.py
+- [ ] LM.18 — WORKTREE_MIN_FREE_GB=5.0: minimum free space for worktree creation. | priority: low | fix: env var | verify: test_worktree_min_disk.py
+- [ ] LM.19 — MODEL_UTIL_WINDOW=20: rolling window for model ratio tracking. | priority: low | fix: env var | verify: test_model_window.py
+- [ ] LM.20 — SONNET_TARGET_DEFAULT=0.91: default sonnet ratio target (10:1). | priority: low | fix: env var | verify: test_sonnet_target.py
+
+---
+
+## Phase HR — Hot Reload (15 specs)
+
+- [ ] HR.1 — Hot-reload proxy pattern: every enforcement plugin uses defaultImpl + loadHotModule(). | priority: high | fix: verify all 14 plugins | verify: test_proxy_all.py
+- [ ] HR.2 — Hot module path: /tmp/gludd-hot-enforce-<name>.js. Loaded if exists and valid. | priority: medium | fix: verify path format | verify: test_hot_path.py
+- [ ] HR.3 — Hot module fallback: if hot module invalid/missing, falls back to defaultImpl. | priority: high | fix: verify fallback works | verify: test_hot_fallback.py
+- [ ] HR.4 — Hot module building: make hot-reload-plugins compiles all .ts → .js. | priority: medium | fix: already implemented | verify: test_hot_build.py
+- [ ] HR.5 — Hot module freshness check: make check-hot-reload-fresh compares mtime. | priority: high | fix: already implemented | verify: test_hot_fresh.py
+- [ ] HR.6 — Hot module as emergency override: write /tmp/gludd-hot-enforce-stop.js with pass-through to bypass broken plugin. | priority: high | fix: documented pattern | verify: test_hot_override.py
+- [ ] HR.7 — Hot module cleanup: remove /tmp/gludd-hot-*.js after restart to restore full enforcement. | priority: medium | fix: documented | verify: test_hot_cleanup.py
+- [ ] HR.8 — Hot module for enforce-stop: specifically used to bypass isWatchdogDisengaged ReferenceError. | priority: high | fix: documented in Session 52 | verify: test_hot_stop.py
+- [ ] HR.9 — Hot module validation: hot module must export same hook surface as defaultImpl. | priority: medium | fix: verify hook keys match | verify: test_hot_validation.py
+- [ ] HR.10 — Hot module error handling: if hot module throws, fall back to defaultImpl. | priority: high | fix: loadHotModule catches errors | verify: test_hot_error.py
+- [ ] HR.11 — Hot module for all plugins: verify every plugin can be hot-reloaded. | priority: medium | fix: verify 14 plugins | verify: test_hot_all_plugins.py
+- [ ] HR.12 — Hot module build script: scripts/build_hot_modules.py compiles .ts → .js. | priority: low | fix: verify script exists | verify: test_build_script.py
+- [ ] HR.13 — Hot module state isolation: hot module doesn't share state with defaultImpl. | priority: low | fix: verify separate state | verify: test_hot_isolation.py
+- [ ] HR.14 — Hot module performance: loading hot module adds <1ms to hook execution. | priority: low | fix: verify timing | verify: test_hot_perf.py
+- [ ] HR.15 — Hot module testing: test_hook_runtime.py tests both defaultImpl and hot module paths. | priority: medium | fix: verify both paths tested | verify: test_hot_testing.py
+
+---
+
+## Phase SS — Subagent Task Templates (20 specs)
+
+- [ ] SS.1 — Fix-one-test-file template: subagent reads one failing test, understands the assertion, fixes the code, runs the test, commits. | priority: high | fix: document template | verify: test_fix_template.py
+- [ ] SS.2 — Write-structural-test template: subagent reads the source file, writes a test verifying structure/behavior, runs it. | priority: high | fix: document template | verify: test_write_test_template.py
+- [ ] SS.3 — Research-and-report template: subagent investigates a question, returns ≤5 bullet points + file pointers. | priority: medium | fix: document template | verify: test_research_template.py
+- [ ] SS.4 — Commit-and-push template: subagent runs make git-add + make git-commit + make git-push-sandboxcom. Resets streak. | priority: high | fix: document template | verify: test_commit_template.py
+- [ ] SS.5 — CI-monitor template: subagent polls make ci-view every 60s, reports when terminal. | priority: medium | fix: document template | verify: test_monitor_template.py
+- [ ] SS.6 — Gate-runner template: subagent runs make gate-background, polls status, reports result. | priority: medium | fix: document template | verify: test_gate_runner_template.py
+- [ ] SS.7 — Lint-fixer template: subagent runs make lint-fix, reviews changes, commits. | priority: low | fix: document template | verify: test_lint_fixer_template.py
+- [ ] SS.8 — Coverage-gap-fixer template: subagent identifies untested module, writes test, verifies coverage improves. | priority: medium | fix: document template | verify: test_coverage_template.py
+- [ ] SS.9 — Worktree-merge template: subagent merges a worktree branch into development, cleans up. | priority: medium | fix: document template | verify: test_merge_template.py
+- [ ] SS.10 — Debug-CI-failure template: subagent reads ci-faillog, identifies root cause, fixes code, commits. | priority: high | fix: document template | verify: test_debug_template.py
+- [ ] SS.11 — Documentation-update template: subagent updates SESSION.md/TASKS.md/BUGS.md with current state. | priority: low | fix: document template | verify: test_docs_template.py
+- [ ] SS.12 — Refactor template: subagent reads a module, identifies improvement, applies, tests, commits. | priority: medium | fix: document template | verify: test_refactor_template.py
+- [ ] SS.13 — Security-audit template: subagent scans for vulnerabilities, reports findings, fixes issues. | priority: medium | fix: document template | verify: test_security_template.py
+- [ ] SS.14 — Dead-code-removal template: subagent finds unused imports/classes, removes them, verifies tests pass. | priority: low | fix: document template | verify: test_dead_code_template.py
+- [ ] SS.15 — Feature-implementation template: subagent writes failing test first (TDD), then implements, then verifies. | priority: high | fix: document template | verify: test_feature_template.py
+- [ ] SS.16 — Ansible-role template: subagent creates ansible role with tasks/handlers/templates, adds molecule tests. | priority: medium | fix: document template | verify: test_ansible_template.py
+- [ ] SS.17 — Plugin-fix template: subagent fixes a plugin .ts file, runs check-plugin-hook-invoke, commits. | priority: high | fix: document template | verify: test_plugin_fix_template.py
+- [ ] SS.18 — Release-verification template: subagent runs verify-release-completeness, reports pass/fail per category. | priority: high | fix: document template | verify: test_release_verify_template.py
+- [ ] SS.19 — Enforcement-test template: subagent writes a test verifying a specific enforcement behavior. | priority: medium | fix: document template | verify: test_enforcement_test_template.py
+- [ ] SS.20 — Cleanup template: subagent runs make clean-tmp, removes stale worktrees, frees disk. | priority: low | fix: document template | verify: test_cleanup_template.py
+
+---
+
+## Phase VP — Verification Protocols (15 specs)
+
+- [ ] VP.1 — Post-restart verification: verify git shipping allowlist works (git-add + git-commit no block). | priority: critical | fix: 7-step protocol documented | verify: test_post_restart.py
+- [ ] VP.2 — Post-restart verification: verify CI poll limiter works (4th ci-status denied). | priority: critical | fix: documented | verify: test_post_restart_poll.py
+- [ ] VP.3 — Post-restart verification: verify import alias collision test catches bugs. | priority: high | fix: documented | verify: test_post_restart_alias.py
+- [ ] VP.4 — Post-restart verification: verify packaging template tests pass. | priority: high | fix: documented | verify: test_post_restart_pkgs.py
+- [ ] VP.5 — Post-restart verification: verify release pipeline structural tests pass. | priority: high | fix: documented | verify: test_post_restart_pipeline.py
+- [ ] VP.6 — Release verification: make verify-release-completeness exits 0 with all 12 categories. | priority: critical | fix: documented | verify: test_release_verify.py
+- [ ] VP.7 — CI verification: make ci-verdict shows conclusion=success + headSha matches branch tip. | priority: critical | fix: documented | verify: test_ci_verify.py
+- [ ] VP.8 — Push verification: make verify-remote shows VERIFIED <branch>@<sha>. | priority: critical | fix: documented | verify: test_push_verify.py
+- [ ] VP.9 — Gate verification: make gate-status shows === GATE: PASSED ===. | priority: high | fix: documented | verify: test_gate_verify.py
+- [ ] VP.10 — Enforcement verification: make verify-enforcement shows all BLOCKING + 0 issues. | priority: high | fix: documented | verify: test_enforcement_verify.py
+- [ ] VP.11 — Plugin verification: make check-plugin-hook-invoke shows 27+ PASS. | priority: high | fix: documented | verify: test_plugin_verify.py
+- [ ] VP.12 — Node v26 verification: make check-node-v26-compat shows 5/5 PASS. | priority: high | fix: documented | verify: test_v26_verify.py
+- [ ] VP.13 — Hook runtime verification: make test-hook-runtime shows 122+ passed, 0 failed. | priority: high | fix: documented | verify: test_hook_runtime_verify.py
+- [ ] VP.14 — Test count verification: make test-count shows 0 collection errors. | priority: high | fix: documented | verify: test_count_verify.py
+- [ ] VP.15 — Coverage gap verification: make check-coverage-gaps shows 0 new gaps. | priority: high | fix: documented | verify: test_gap_verify.py
+
+---
+
+## Phase IQ — Instruction Quality (15 specs)
+
+- [ ] IQ.1 — AGENTS.md section titles are CRITICAL: every behavioral rule has a "CRITICAL:" prefix for visibility. | priority: medium | fix: verify all critical rules have prefix | verify: test_critical_prefix.py
+- [ ] IQ.2 — AGENTS.md rules are mechanically enforceable: every rule either has a plugin hook or a structural test. | priority: high | fix: audit all CRITICAL sections for enforcement | verify: test_rules_enforceable.py
+- [ ] IQ.3 — AGENTS.md rules cite make targets: every operational rule references the specific make target to use. | priority: medium | fix: audit for target references | verify: test_rules_cite_targets.py
+- [ ] IQ.4 — AGENTS.md has no contradictions: rules don't conflict with each other. | priority: high | fix: audit for contradictions | verify: test_no_contradictions.py
+- [ ] IQ.5 — AGENTS.md is current: reflects current plugin names, env vars, make targets. | priority: medium | fix: audit against actual codebase | verify: test_agents_md_current.py
+- [ ] IQ.6 — AGENTS.md enforcement plugin reference table: documents all active plugins, what they block, disable env var. | priority: high | fix: already exists, verify current | verify: test_plugin_reference.py
+- [ ] IQ.7 — AGENTS.md quick reference: commands for common operations (disable floor, disable session-start, etc.). | priority: medium | fix: already exists, verify current | verify: test_quick_reference.py
+- [ ] IQ.8 — AGENTS.md bash command policy: documents allowed/denied commands and metacharacters. | priority: high | fix: already exists, verify current | verify: test_bash_policy.py
+- [ ] IQ.9 — AGENTS.md TDD policy: documents test-first workflow and enforcement. | priority: high | fix: already exists, verify current | verify: test_tdd_policy.py
+- [ ] IQ.10 — AGENTS.md commit policy: documents commit-after-green and no-bypass rules. | priority: high | fix: already exists, verify current | verify: test_commit_policy.py
+- [ ] IQ.11 — AGENTS.md release policy: documents release-cut as only sanctioned path. | priority: critical | fix: already exists, verify current | verify: test_release_policy.py
+- [ ] IQ.12 — AGENTS.md disk policy: documents disk discipline and cleanup targets. | priority: medium | fix: already exists, verify current | verify: test_disk_policy.py
+- [ ] IQ.13 — AGENTS.md model utilization: documents sonnet-dominant ratio target. | priority: low | fix: already exists, verify current | verify: test_model_policy.py
+- [ ] IQ.14 — AGENTS.md is not stale: reviewed each session. Changes reflect current codebase state. | priority: medium | fix: verify at session start | verify: test_not_stale.py
+- [ ] IQ.15 — AGENTS.md self-test: structural test verifying key sections exist and contain required phrases. | priority: medium | fix: test_agents_md_section.py | verify: test_self_test.py
+
+---
+
+## Phase FM — Failure Mode Catalog (25 specs)
+
+- [ ] FM.1 — Failure: "stopped with status table" → Prevention: enforce-stop.ts STATUS_SUMMARY_RE blanks it. | priority: high | fix: already implemented | verify: test_status_table_blocked.py
+- [ ] FM.2 — Failure: "asked shall I proceed" → Prevention: enforce-stop.ts STOP_PATTERN_PHRASES blocks it. | priority: high | fix: already implemented | verify: test_shall_i_blocked.py
+- [ ] FM.3 — Failure: "claimed done without evidence" → Prevention: enforce-verified-claims.ts blocks done-words without tokens. | priority: critical | fix: already implemented | verify: test_false_done_blocked.py
+- [ ] FM.4 — Failure: "CI PENDING claimed as evidence" → Prevention: removed CI GREEN/RED/PENDING from EVIDENCE_PATTERNS. | priority: high | fix: already implemented (commit 40872c4e) | verify: test_ci_not_evidence.py
+- [ ] FM.5 — Failure: "status summary with evidence still blocked" → Prevention: enforce-stop.ts blanks regardless of evidence. | priority: high | fix: already implemented (commit d1e0a953) | verify: test_summary_with_evidence.py
+- [ ] FM.6 — Failure: "interleaved summary with tool calls" → Prevention: enforce-stop.ts detects summaries even with tool calls. | priority: high | fix: already implemented (commit 0c816e34) | verify: test_interleaved_summary.py
+- [ ] FM.7 — Failure: "Q&A recap as terminal response" → Prevention: enforce-stop.ts QA_RESPONSE_PATTERNS. | priority: high | fix: already implemented | verify: test_qa_recap.py
+- [ ] FM.8 — Failure: "gate grepping only FAILED lines" → Prevention: test-failures shows FAILED+ERROR, propagates exit code. | priority: high | fix: already implemented (R1.1) | verify: test_failures_format.py
+- [ ] FM.9 — Failure: "plain git-commit has no gate" → Prevention: _gate-fresh-check in git-commit target. | priority: critical | fix: already implemented (R1.2) | verify: test_commit_gate.py
+- [ ] FM.10 — Failure: "no task ledger" → Prevention: TASKS.md evidence ledger, every done claim needs gate output + hash. | priority: high | fix: already implemented (R1.4) | verify: test_task_ledger.py
+- [ ] FM.11 — Failure: "all bugs aren't my bugs" → Prevention: AGENTS.md "All Bugs Are Your Bugs" section. | priority: high | fix: already exists | verify: test_all_bugs.py
+- [ ] FM.12 — Failure: "fix means disable" → Prevention: AGENTS.md "Fix Means Repair Never Disable" section. | priority: critical | fix: already exists | verify: test_fix_not_disable.py
+- [ ] FM.13 — Failure: "commit bypass with --no-verify" → Prevention: no-commit-bypass policy, _gate-fresh-check on all commit targets. | priority: critical | fix: already implemented | verify: test_no_bypass.py
+- [ ] FM.14 — Failure: "pushing every commit" → Prevention: batch-push with threshold, push rate guard. | priority: critical | fix: already implemented | verify: test_batch_push.py
+- [ ] FM.15 — Failure: "force-push cancels CI" → Prevention: GLUDD_FORCE_PUSH no longer bypasses CI-in-flight check. | priority: critical | fix: committed 3defd0c1, test_force_push_ci_guard.py | verify: test_force_push_guard.py
+- [ ] FM.16 — Failure: "circular dependency in YAML" → Prevention: test_release_pipeline_structure.py::TestNoCircularDependencies. | priority: high | fix: committed 85b2a24b | verify: test_circular_blocked.py
+- [ ] FM.17 — Failure: "YAML !cancelled() parse error" → Prevention: test_release_pipeline_structure.py::TestWorkflowYamlIsValid. | priority: high | fix: committed 85b2a24b | verify: test_yaml_valid.py
+- [ ] FM.18 — Failure: "missing packaging templates" → Prevention: test_packaging_templates_committed.py. | priority: high | fix: committed 09a64b3f | verify: test_templates_exist.py
+- [ ] FM.19 — Failure: "import alias collision" → Prevention: test_import_alias_collisions.py. | priority: high | fix: committed 09a64b3f | verify: test_alias_collision_blocked.py
+- [ ] FM.20 — Failure: "enforcement disengage as routine" → Prevention: git shipping allowlist eliminates the need. | priority: critical | fix: committed cc28816e | verify: test_no_routine_disengage.py
+- [ ] FM.21 — Failure: "CI polling as pretend work" → Prevention: enforce-no-ci-poll.ts limits to 3 consecutive. | priority: critical | fix: committed d1f442a5 | verify: test_ci_poll_limited.py
+- [ ] FM.22 — Failure: "not fixing root cause" → Prevention: root cause escalation rule (3-strike). | priority: high | fix: RP.17, pending | verify: test_root_cause.py
+- [ ] FM.23 — Failure: "stopping while release incomplete" → Prevention: release deadline enforcement. | priority: high | fix: RP.19, pending | verify: test_release_deadline.py
+- [ ] FM.24 — Failure: "overriding user instructions" → Prevention: AGENTS.md "Follow Explicit Instructions" section. | priority: critical | fix: OD.3, pending | verify: test_instruction_compliance.py
+- [ ] FM.25 — Failure: "writing explanations instead of code" → Prevention: structural tests + code changes > word count. | priority: high | fix: demonstrated by this session — code committed, explanations insufficient | verify: test_code_over_words.py
+
+---
+
+## Phase TC — Test Case Details (40 specs)
+
+- [ ] TC.1 — Test: verify enforce-delegate.ts GIT_SHIPPING_TARGETS includes git-add. | priority: critical | fix: parametrized test in test_git_shipping_allowlist.py | verify: 33 tests pass
+- [ ] TC.2 — Test: verify enforce-delegate.ts GIT_SHIPPING_TARGETS includes git-commit. | priority: critical | fix: parametrized test | verify: pass
+- [ ] TC.3 — Test: verify enforce-delegate.ts GIT_SHIPPING_TARGETS includes ship-commit. | priority: high | fix: parametrized test | verify: pass
+- [ ] TC.4 — Test: verify enforce-delegate.ts GIT_SHIPPING_TARGETS includes git-push-sandboxcom. | priority: high | fix: parametrized test | verify: pass
+- [ ] TC.5 — Test: verify enforce-delegate.ts GIT_SHIPPING_TARGETS includes batch-push. | priority: high | fix: parametrized test | verify: pass
+- [ ] TC.6 — Test: verify enforce-delegate.ts GIT_SHIPPING_TARGETS includes git-tag-push. | priority: high | fix: parametrized test | verify: pass
+- [ ] TC.7 — Test: verify enforce-delegate.ts GIT_SHIPPING_TARGETS includes release-cut. | priority: high | fix: parametrized test | verify: pass
+- [ ] TC.8 — Test: verify enforce-delegate.ts GIT_SHIPPING_TARGETS includes git-merge. | priority: medium | fix: parametrized test | verify: pass
+- [ ] TC.9 — Test: verify enforce-delegate.ts GIT_SHIPPING_TARGETS includes git-checkout. | priority: medium | fix: parametrized test | verify: pass
+- [ ] TC.10 — Test: verify enforce-delegate.ts GIT_SHIPPING_TARGETS includes git-stash. | priority: medium | fix: parametrized test | verify: pass
+- [ ] TC.11 — Test: verify enforce-delegate.ts GIT_SHIPPING_TARGETS includes git-reset. | priority: medium | fix: parametrized test | verify: pass
+- [ ] TC.12 — Test: verify enforce-delegate.ts isGitShippingTarget extracts make target name correctly. | priority: high | fix: regex test | verify: pass
+- [ ] TC.13 — Test: verify enforce-no-ci-poll.ts tracks ci-status. | priority: high | fix: test_ci_poll_limiter_plugin.py | verify: 11 tests pass
+- [ ] TC.14 — Test: verify enforce-no-ci-poll.ts tracks ci-verdict. | priority: high | fix: test | verify: pass
+- [ ] TC.15 — Test: verify enforce-no-ci-poll.ts tracks ci-view. | priority: high | fix: test | verify: pass
+- [ ] TC.16 — Test: verify enforce-no-ci-poll.ts resets on git-commit. | priority: high | fix: test | verify: pass
+- [ ] TC.17 — Test: verify enforce-no-ci-poll.ts resets on git-push. | priority: high | fix: test | verify: pass
+- [ ] TC.18 — Test: verify enforce-no-ci-poll.ts blocks 4th consecutive poll. | priority: critical | fix: test | verify: pass
+- [ ] TC.19 — Test: verify test_release_pipeline_structure.py detects circular deps. | priority: critical | fix: test with known circular dep | verify: fails correctly
+- [ ] TC.20 — Test: verify test_release_pipeline_structure.py detects test-shard in needs. | priority: critical | fix: test with test-shard in needs | verify: fails correctly
+- [ ] TC.21 — Test: verify test_release_pipeline_structure.py detects unquoted !cancelled(). | priority: high | fix: test with bad YAML | verify: fails correctly
+- [ ] TC.22 — Test: verify test_release_pipeline_structure.py checks continue-on-error. | priority: high | fix: test without it | verify: fails correctly
+- [ ] TC.23 — Test: verify test_release_pipeline_structure.py checks timeout >= 60. | priority: medium | fix: test with low timeout | verify: fails correctly
+- [ ] TC.24 — Test: verify test_import_alias_collisions.py detects isWatchdogDisengaged pattern. | priority: high | fix: test with known collision | verify: fails correctly
+- [ ] TC.25 — Test: verify test_packaging_templates_committed.py detects missing control file. | priority: high | fix: test without file | verify: fails correctly
+- [ ] TC.26 — Test: verify test_packaging_templates_committed.py detects missing spec file. | priority: high | fix: test without file | verify: fails correctly
+- [ ] TC.27 — Test: verify test_packaging_templates_committed.py detects missing nsi file. | priority: high | fix: test without file | verify: fails correctly
+- [ ] TC.28 — Test: verify test_packaging_templates_committed.py detects missing install.sh. | priority: medium | fix: test without file | verify: fails correctly
+- [ ] TC.29 — Test: verify test_force_push_ci_guard.py detects FORCE=1 bypass. | priority: critical | fix: test with old pattern | verify: fails correctly
+- [ ] TC.30 — Test: verify test_force_push_ci_guard.py detects || true bypass. | priority: critical | fix: test with old pattern | verify: fails correctly
+- [ ] TC.31 — Test: verify test_git_shipping_allowlist.py checks all required targets. | priority: high | fix: parametrized test | verify: 33 pass
+- [ ] TC.32 — Test: verify test_git_shipping_allowlist.py checks function signatures. | priority: high | fix: test signatures | verify: pass
+- [ ] TC.33 — Test: verify test_git_shipping_allowlist.py checks call sites pass command. | priority: high | fix: test call sites | verify: pass
+- [ ] TC.34 — Test: verify test_ci_poll_limiter_plugin.py checks registration in opencode.json. | priority: high | fix: test registration | verify: pass
+- [ ] TC.35 — Test: verify test_hook_runtime.py tests all 14 plugins. | priority: critical | fix: 122 tests | verify: 0 failures
+- [ ] TC.36 — Test: verify check-plugin-hook-invoke tests all 27+ plugins. | priority: critical | fix: 27/27 pass | verify: pass
+- [ ] TC.37 — Test: verify check-node-v26-compat scans all .ts files. | priority: high | fix: 5/5 suites | verify: pass
+- [ ] TC.38 — Test: verify verify-enforcement checks all plugins BLOCKING. | priority: high | fix: 0 issues | verify: pass
+- [ ] TC.39 — Test: verify test_plugin_dir_hygiene checks export default. | priority: high | fix: 54 tests | verify: pass
+- [ ] TC.40 — Test: verify test_plugin_behavior.py invokes hooks with real inputs. | priority: high | fix: 36 tests | verify: pass
+
+---
+
+## Phase CF — Configuration Files (25 specs)
+
+- [ ] CF.1 — opencode.json permission read block allows /Users/shawnwilson/gludd/** and /tmp/gludd-*. | priority: high | fix: verify permissions | verify: test_permissions.py
+- [ ] CF.2 — opencode.json permission write block allows workspace + tmp only. | priority: high | fix: verify | verify: test_write_perms.py
+- [ ] CF.3 — opencode.json permission bash block denies all except make *. | priority: critical | fix: verify | verify: test_bash_perms.py
+- [ ] CF.4 — opencode.json plugin list matches files on disk. No orphans, no missing. | priority: high | fix: verify-plugin-manifest | verify: test_manifest_match.py
+- [ ] CF.5 — opencode.json has no top-level env key (schema rejects it). | priority: medium | fix: verify schema compliance | verify: test_no_env_key.py
+- [ ] CF.6 — pyproject.toml version matches __init__.py __version__. | priority: high | fix: verify version sync | verify: test_version_sync.py
+- [ ] CF.7 — pyproject.toml fail_under >= 85. | priority: medium | fix: verify threshold | verify: test_fail_under.py
+- [ ] CF.8 — pyproject.toml has ruff config with line-length=120. | priority: low | fix: verify config | verify: test_ruff_config.py
+- [ ] CF.9 — pyproject.toml has mypy config covering tests/. | priority: medium | fix: verify config | verify: test_mypy_config.py
+- [ ] CF.10 — .pre-commit-config.yaml exists and references detect-secrets, ruff, mypy. | priority: high | fix: verify hooks | verify: test_pre_commit_config.py
+- [ ] CF.11 — .gitignore ignores .gate-status, .ci-status, dist build outputs. | priority: medium | fix: verify entries | verify: test_gitignore.py
+- [ ] CF.12 — config/ratchet.yml format is correct (node_id: reason). | priority: low | fix: verify format | verify: test_ratchet_format.py
+- [ ] CF.13 — config/permissions/ has human-admin, human-operator, human-viewer specs. | priority: medium | fix: verify files exist | verify: test_permission_specs.py
+- [ ] CF.14 — config/remediation.yml has thresholds for permission_escalation, human_input. | priority: low | fix: verify config | verify: test_remediation_config.py
+- [ ] CF.15 — config/tdd_allowlist.yml has documented exceptions only. | priority: low | fix: verify allowlist | verify: test_tdd_allowlist.py
+- [ ] CF.16 — .opencode/lib/shared.ts exports isSubagent, reportAlive, isDisengaged, isReadTool, isDispatchTool. | priority: high | fix: verify exports | verify: test_shared_exports.py
+- [ ] CF.17 — .opencode/lib/hot_reload.ts exports loadHotModule, HotModule type. | priority: medium | fix: verify exports | verify: test_hot_reload_exports.py
+- [ ] CF.18 — .opencode/lib/plugin_test_exports.ts has all moved test helpers. | priority: high | fix: verify exports exist | verify: test_test_exports.py
+- [ ] CF.19 — Makefile has _test-disabled-guard checking release job has test-shard reference. | priority: medium | fix: verify guard | verify: test_disabled_guard.py
+- [ ] CF.20 — Makefile has _gate-fresh-check verifying .gate-status freshness. | priority: high | fix: verify check | verify: test_gate_fresh_check.py
+- [ ] CF.21 — Makefile has _push-rate-guard with CI-in-flight check not bypassable by force-push. | priority: critical | fix: committed 3defd0c1 | verify: test_force_push_ci_guard.py
+- [ ] CF.22 — .github/workflows/build.yml has concurrency section with cancel-in-progress. | priority: high | fix: verify section | verify: test_concurrency_section.py
+- [ ] CF.23 — .github/workflows/build.yml release job has if: startsWith(github.ref, refs/tags/v). | priority: high | fix: verify condition | verify: test_release_condition.py
+- [ ] CF.24 — .github/workflows/build.yml test-shard has continue-on-error: true. | priority: high | fix: verify flag | verify: test_continue_on_error.py
+- [ ] CF.25 — .github/workflows/molecule.yml exists with shard matrix. | priority: medium | fix: verify file | verify: test_molecule_yml.py
+
+---
+
+## Phase DR — Daemon & Runtime (25 specs)
+
+- [ ] DR.1 — Daemon starts without TypeError: all modules importable from daemon startup. | priority: critical | fix: make smoke verifies | verify: test_daemon_boot.py
+- [ ] DR.2 — Daemon lifespan wires all controllers: PauseController, HibernationController, AgentDispatcher. | priority: high | fix: verify wiring | verify: test_daemon_wiring.py
+- [ ] DR.3 — Daemon binds to 127.0.0.1 by default unless explicitly configured otherwise. | priority: high | fix: verify bind address | verify: test_bind_address.py
+- [ ] DR.4 — Daemon health endpoint /health returns 200 when alive. | priority: high | fix: verify endpoint | verify: test_health_endpoint.py
+- [ ] DR.5 — Agent liveness probe (scripts/agent_liveness.py) counts Workflow subagents. | priority: medium | fix: verify counting | verify: test_liveness_probe.py
+- [ ] DR.6 — Watchdog daemon (agent_watchdog.py) polls at 10s intervals. | priority: medium | fix: verify interval | verify: test_watchdog_interval.py
+- [ ] DR.7 — Watchdog resets enforcement streak every 60s as failsafe. | priority: medium | fix: verify reset | verify: test_watchdog_reset.py
+- [ ] DR.8 — Watchdog injects CONTINUE directive when session is idle. | priority: medium | fix: verify injection | verify: test_watchdog_continue.py
+- [ ] DR.9 — Task watchdog (task_watchdog.py) kills tasks exceeding 5-min timeout. | priority: high | fix: verify kill | verify: test_task_watchdog_kill.py
+- [ ] DR.10 — Task watchdog records kills in /tmp/gludd-task-killed.json. | priority: medium | fix: verify logging | verify: test_task_kill_log.py
+- [ ] DR.11 — Background gate process writes phase markers to log file. | priority: high | fix: verify markers | verify: test_gate_markers.py
+- [ ] DR.12 — Background gate writes .gate-status with PASS/FAIL/RUNNING. | priority: critical | fix: verify status file | verify: test_gate_status_file.py
+- [ ] DR.13 — Event loop offloads blocking operations via asyncio.to_thread. | priority: medium | fix: verify offloading | verify: test_event_loop_offload.py
+- [ ] DR.14 — Event loop pins DB session before dispatch gather. | priority: high | fix: verify session management | verify: test_session_pinning.py
+- [ ] DR.15 — Worker auth is fail-closed: 403 without valid PSK. | priority: critical | fix: verify auth | verify: test_worker_auth.py
+- [ ] DR.16 — Worker broadcast uses PSK for authentication. | priority: high | fix: verify PSK usage | verify: test_broadcast_psk.py
+- [ ] DR.17 — Alembic migrations run on daemon startup if DATABASE_URL is set. | priority: medium | fix: verify migration | verify: test_alembic_startup.py
+- [ ] DR.18 — OpenBao secret retrieval is fail-closed on connection error. | priority: high | fix: verify fail-closed | verify: test_openbao_fail_closed.py
+- [ ] DR.19 — Model gateway strips caller kwargs (base_url, api_key). | priority: high | fix: verify stripping | verify: test_model_gateway_strip.py
+- [ ] DR.20 — Model gateway has default httpx timeout. | priority: medium | fix: verify timeout | verify: test_httpx_timeout.py
+- [ ] DR.21 — Ansible runner uses ANSIBLE_COLLECTIONS_PATH from paths.py. | priority: medium | fix: verify path | verify: test_ansible_path.py
+- [ ] DR.22 — Process isolation uses podman when available. | priority: medium | fix: verify podman path | verify: test_podman_isolation.py
+- [ ] DR.23 — Secret scoping is per-project (for_project parameter). | priority: high | fix: verify scoping | verify: test_secret_scoping.py
+- [ ] DR.24 — Manifest signing validates MCP tool manifests. | priority: high | fix: verify signing | verify: test_manifest_signing.py
+- [ ] DR.25 — Daemon graceful shutdown drains pending requests. | priority: medium | fix: verify shutdown | verify: test_graceful_shutdown.py
+
+---
+
+## Phase ANS — Ansible & Collections (20 specs)
+
+- [ ] ANS.1 — general_ludd.agent collection exists in collections/ansible_collections/. | priority: high | fix: verify path | verify: test_collection_exists.py
+- [ ] ANS.2 — Collection has roles for each feature (chat, vm, binary_re, radio, etc.). | priority: medium | fix: verify roles | verify: test_roles_exist.py
+- [ ] ANS.3 — Collection has module_utils for knowledge modules. | priority: medium | fix: verify modules | verify: test_module_utils.py
+- [ ] ANS.4 — Molecule tests exist for each role. | priority: medium | fix: verify molecule tests | verify: test_molecule_coverage.py
+- [ ] ANS.5 — Ansible syntax validation passes: make ansible-syntax. | priority: high | fix: verify syntax | verify: test_ansible_syntax.py
+- [ ] ANS.6 — Playbook list target exists: make playbook-list. | priority: low | fix: verify target | verify: test_playbook_list.py
+- [ ] ANS.7 — Collection precedence: project > user > bundled. | priority: medium | fix: verify precedence | verify: test_precedence.py
+- [ ] ANS.8 — gludd project init scaffolds via general_ludd.agent.project_init role. | priority: medium | fix: verify scaffold | verify: test_project_init.py
+- [ ] ANS.9 — gludd project paths prints resolved precedence table. | priority: low | fix: verify output | verify: test_project_paths.py
+- [ ] ANS.10 — Ansible runner adapter resolves paths via paths.py. | priority: medium | fix: verify adapter | verify: test_runner_adapter.py
+- [ ] ANS.11 — ai_parallel_dispatch role has barrier timeout. | priority: medium | fix: verify timeout | verify: test_dispatch_barrier.py
+- [ ] ANS.12 — process_audit role does not reference enforce-todos.ts. | priority: high | fix: already fixed (commit fefeeac9) | verify: test_no_todos_ref.py
+- [ ] ANS.13 — infra_deploy role has pre-flight validation + rollback. | priority: medium | fix: verify validation | verify: test_infra_deploy.py
+- [ ] ANS.14 — infra_destroy role exists for cleanup. | priority: low | fix: verify role | verify: test_infra_destroy.py
+- [ ] ANS.15 — task_splitter role is role-only (no Python module). | priority: low | fix: verify design | verify: test_task_splitter.py
+- [ ] ANS.16 — searx deploy role has health-check + SSL + auto-scaling. | priority: medium | fix: verify role | verify: test_searx_deploy.py
+- [ ] ANS.17 — Molecule CI failures fixed: gather_facts, failed_when Jinja2, VIRTUAL_ENV fallback. | priority: high | fix: already fixed (prior sessions) | verify: test_molecule_ci_fixes.py
+- [ ] ANS.18 — Collection meta/runtime.yml has correct version. | priority: low | fix: verify version | verify: test_collection_version.py
+- [ ] ANS.19 — All roles have defaults/main.yml. | priority: low | fix: verify defaults | verify: test_role_defaults.py
+- [ ] ANS.20 — All roles have tasks/main.yml. | priority: low | fix: verify tasks | verify: test_role_tasks.py
+
+---
+
+## Phase SEC — Security (20 specs)
+
+- [ ] SEC.1 — SSRF canonicalization: is_url_blocked/resolve_and_pin unified. | priority: high | fix: already fixed (C.1) | verify: test_ssrf_canonical.py
+- [ ] SEC.2 — DB tenant scoping: do_orm_execute listener injects tenant filter. | priority: high | fix: already fixed (C.3, a0ced18d) | verify: test_tenant_scoping.py
+- [ ] SEC.3 — Integrity store: HMAC canonical-JSON baseline, fail-closed on corrupt. | priority: medium | fix: already fixed (C.5) | verify: test_integrity_store.py
+- [ ] SEC.4 — Model gateway strips caller kwargs. | priority: medium | fix: already fixed (C.6) | verify: test_gateway_strip.py
+- [ ] SEC.5 — Self-improve gate bypasses fixed: APPROVAL_REQUIRED always enforced. | priority: high | fix: already fixed (C.13) | verify: test_approval_required.py
+- [ ] SEC.6 — Permission/capability lattice: deny-list drift fixed. | priority: medium | fix: already fixed (C.14) | verify: test_capability_lattice.py
+- [ ] SEC.7 — Tool-call loop: args validated vs input_schema. | priority: medium | fix: already fixed (C.15) | verify: test_tool_args_validation.py
+- [ ] SEC.8 — Filestore RCE: digest verification before store. | priority: high | fix: already fixed (C.16) | verify: test_filestore_rce.py
+- [ ] SEC.9 — Worker fail-closed auth: 403 without PSK. | priority: critical | fix: already fixed (C.20) | verify: test_worker_fail_closed.py
+- [ ] SEC.10 — SSTI sweep: engine.py reachability, templating trusted-only. | priority: medium | fix: already fixed (C.22) | verify: test_ssti_sweep.py
+- [ ] SEC.11 — Connector security audit: DB cred leak fix across 5 connectors. | priority: medium | fix: already fixed (C.23) | verify: test_connector_security.py
+- [ ] SEC.12 — Daemon bind 127.0.0.1 unless configured. | priority: low | fix: already fixed (C.24) | verify: test_bind_local.py
+- [ ] SEC.13 — Remediation endpoint idempotency: POST /admin/remediation/remediate has idempotency-key. | priority: medium | fix: already fixed (C.25) | verify: test_idempotency.py
+- [ ] SEC.14 — detect-secrets baseline: .secrets.baseline scanned on pre-commit. | priority: high | fix: already implemented | verify: test_secrets_baseline.py
+- [ ] SEC.15 — Bandit SAST: make sast runs bandit security scanner. | priority: medium | fix: already implemented | verify: test_sast.py
+- [ ] SEC.16 — SBOM generation: make sbom generates CycloneDX SBOM. | priority: medium | fix: already implemented | verify: test_sbom.py
+- [ ] SEC.17 — pip-audit: make pip-audit audits dependencies for CVEs. | priority: medium | fix: already implemented | verify: test_pip_audit.py
+- [ ] SEC.18 — Numeric IP guard: SSRF blocks numeric IP addresses. | priority: medium | fix: already fixed (H phase) | verify: test_numeric_ip.py
+- [ ] SEC.19 — Credential leak sanitizer: exception text doesn't expose secrets. | priority: high | fix: already fixed (C.23) | verify: test_credential_sanitizer.py
+- [ ] SEC.20 — Webhook rebind protection: webhook URLs validated against blocklist. | priority: medium | fix: already fixed (H phase) | verify: test_webhook_rebind.py
+
+---
+
+## Phase API — API & Endpoints (20 specs)
+
+- [ ] API.1 — /health returns 200 with status JSON. | priority: high | fix: verify endpoint | verify: test_health_api.py
+- [ ] API.2 — /api/facts returns agent facts. | priority: medium | fix: verify endpoint | verify: test_facts_api.py
+- [ ] API.3 — /api/human-todos supports CRUD operations. | priority: high | fix: verify endpoints | verify: test_human_todos_api.py
+- [ ] API.4 — /admin/perm/escalation-request validates ≥3 alternatives tried. | priority: high | fix: verify validation | verify: test_escalation_api.py
+- [ ] API.5 — /admin/models/discover-searx discovers models via SearX. | priority: medium | fix: verify endpoint | verify: test_searx_api.py
+- [ ] API.6 — /api/terraform/state/* implements HTTP state backend. | priority: medium | fix: verify endpoints | verify: test_terraform_state_api.py
+- [ ] API.7 — POST /admin/remediation/remediate has idempotency-key. | priority: medium | fix: verify idempotency | verify: test_remediation_api.py
+- [ ] API.8 — API responses include tenant_id for multi-tenant isolation. | priority: high | fix: verify tenant scoping | verify: test_api_tenant.py
+- [ ] API.9 — API error responses don't leak stack traces or secrets. | priority: high | fix: verify error handling | verify: test_api_errors.py
+- [ ] API.10 — API rate limiting prevents abuse. | priority: low | fix: verify rate limits | verify: test_rate_limiting.py
+- [ ] API.11 — /api/traces doesn't leak cross-tenant data. | priority: high | fix: already fixed (C.19) | verify: test_traces_isolation.py
+- [ ] API.12 — /api/accounting is tenant-scoped. | priority: high | fix: already fixed (C.18) | verify: test_accounting_tenant.py
+- [ ] API.13 — API uses PSK for worker authentication. | priority: critical | fix: verify PSK auth | verify: test_api_psk.py
+- [ ] API.14 — API endpoints have corresponding CLI commands. | priority: medium | fix: cross-interface check | verify: test_api_cli_parity.py
+- [ ] API.15 — API endpoints have corresponding TUI views. | priority: low | fix: cross-interface check | verify: test_api_tui_parity.py
+- [ ] API.16 — POST /api/projects creates project with dispatch_mode. | priority: medium | fix: verify endpoint | verify: test_projects_api.py
+- [ ] API.17 — GET /api/projects lists projects with weights. | priority: medium | fix: verify endpoint | verify: test_projects_list.py
+- [ ] API.18 — DELETE /api/projects removes project. | priority: medium | fix: verify endpoint | verify: test_projects_delete.py
+- [ ] API.19 — API versioning: /api/v1/ prefix or version header. | priority: low | fix: verify versioning | verify: test_api_versioning.py
+- [ ] API.20 — API CORS headers configured for web frontend. | priority: low | fix: verify CORS | verify: test_cors.py
+
+---
+
+## Phase CLI2 — CLI Commands (20 specs)
+
+- [ ] CLI2.1 — gludd --help shows all subcommands. | priority: medium | fix: verify help output | verify: test_cli_help.py
+- [ ] CLI2.2 — gludd project add/list/remove manages projects. | priority: medium | fix: verify commands | verify: test_cli_project.py
+- [ ] CLI2.3 — gludd pause / gludd resume manages agent lifecycle. | priority: medium | fix: verify commands | verify: test_cli_pause.py
+- [ ] CLI2.4 — gludd human-todo list/show/done/dismiss manages human todos. | priority: high | fix: verify commands | verify: test_cli_human_todo.py
+- [ ] CLI2.5 — gludd perm escalations approve/deny manages permission requests. | priority: high | fix: verify commands | verify: test_cli_perm.py
+- [ ] CLI2.6 — gludd remediation chronic-blockers shows recurring failures. | priority: medium | fix: verify command | verify: test_cli_remediation.py
+- [ ] CLI2.7 — gludd deploy invokes ansible playbooks. | priority: medium | fix: verify command | verify: test_cli_deploy.py
+- [ ] CLI2.8 — gludd tf-init/tf-validate/tf-plan manages terraform. | priority: medium | fix: verify commands | verify: test_cli_tf.py
+- [ ] CLI2.9 — gludd chat --eval runs evaluation mode. | priority: medium | fix: verify command | verify: test_cli_chat.py
+- [ ] CLI2.10 — gludd chat --stream streams responses. | priority: medium | fix: verify command | verify: test_cli_stream.py
+- [ ] CLI2.11 — gludd --version shows correct version from pyproject.toml. | priority: low | fix: verify output | verify: test_cli_version.py
+- [ ] CLI2.12 — CLI commands have --help for each subcommand. | priority: low | fix: verify help | verify: test_cli_subhelp.py
+- [ ] CLI2.13 — gludd background-test runs tests in background. | priority: medium | fix: verify command | verify: test_cli_bg_test.py
+- [ ] CLI2.14 — gludd vm sandbox manages VM instances. | priority: medium | fix: verify commands | verify: test_cli_vm.py
+- [ ] CLI2.15 — gludd sts tokens manages STS tokens. | priority: medium | fix: verify commands | verify: test_cli_sts.py
+- [ ] CLI2.16 — CLI exit codes: 0=success, 1=error, 2=usage. | priority: medium | fix: verify codes | verify: test_cli_exit_codes.py
+- [ ] CLI2.17 — CLI error messages are actionable (tell user what to do). | priority: low | fix: verify messages | verify: test_cli_errors.py
+- [ ] CLI2.18 — CLI config loading: reads from ~/.config/gludd/ + project local. | priority: low | fix: verify loading | verify: test_cli_config.py
+- [ ] CLI2.19 — CLI supports --project flag for project selection. | priority: medium | fix: verify flag | verify: test_cli_project_flag.py
+- [ ] CLI2.20 — CLI has TUI mode: gludd tui launches terminal UI. | priority: low | fix: verify TUI | verify: test_cli_tui.py
+
+---
+
+## Phase CO — Container (15 specs)
+
+- [ ] CO.1 — Containerfile exists and builds successfully. | priority: high | fix: verify build | verify: test_container_build.py
+- [ ] CO.2 — Container image tagged with version. | priority: medium | fix: verify tagging | verify: test_container_tag.py
+- [ ] CO.3 — Container runs daemon with correct bind address. | priority: high | fix: verify run config | verify: test_container_run.py
+- [ ] CO.4 — Container has health check configured. | priority: medium | fix: verify healthcheck | verify: test_container_health.py
+- [ ] CO.5 — Container pushes to GHCR (GitHub Container Registry). | priority: medium | fix: verify push | verify: test_container_push.py
+- [ ] CO.6 — Container image size < 500MB. | priority: low | fix: verify size | verify: test_container_size.py
+- [ ] CO.7 — Container runs as non-root user. | priority: medium | fix: verify user | verify: test_container_nonroot.py
+- [ ] CO.8 — Container has ENTRYPOINT set to gludd daemon. | priority: medium | fix: verify entrypoint | verify: test_container_entrypoint.py
+- [ ] CO.9 — Container supports environment variable configuration. | priority: medium | fix: verify env vars | verify: test_container_env.py
+- [ ] CO.10 — Container supports volume mounting for data persistence. | priority: low | fix: verify volumes | verify: test_container_volumes.py
+- [ ] CO.11 — make container-build builds the image. | priority: high | fix: verify target | verify: test_make_container_build.py
+- [ ] CO.12 — make container-run runs the image locally. | priority: high | fix: verify target | verify: test_make_container_run.py
+- [ ] CO.13 — make container-push pushes to registry. | priority: medium | fix: verify target | verify: test_make_container_push.py
+- [ ] CO.14 — CI workflow builds container image on tag push. | priority: medium | fix: verify CI step | verify: test_ci_container.py
+- [ ] CO.15 — Container includes all required runtime dependencies. | priority: high | fix: verify deps | verify: test_container_deps.py
+
+---
+
+## Phase TM2 — Task Management (20 specs)
+
+- [ ] TM2.1 — TodoModel tracks agent-assigned tasks with status (pending/in_progress/completed/blocked). | priority: high | fix: verify model | verify: test_todo_model.py
+- [ ] TM2.2 — HumanTodoModel tracks bot→human task requests. | priority: high | fix: verify model | verify: test_human_todo_model.py
+- [ ] TM2.3 — Task status transitions are validated (pending→in_progress→completed). | priority: medium | fix: verify transitions | verify: test_task_transitions.py
+- [ ] TM2.4 — Blocked tasks have blocker_kind (permission_escalation/human_input/resource_contention). | priority: medium | fix: verify field | verify: test_blocker_kind.py
+- [ ] TM2.5 — BlockerDetector scans for tasks past per-category threshold. | priority: high | fix: verify detector | verify: test_blocker_detector.py
+- [ ] TM2.6 — Chronic blockers grouped by (task_type, blocker_kind) over lookback. | priority: medium | fix: verify grouping | verify: test_chronic_blockers.py
+- [ ] TM2.7 — Remediation dispatcher takes action on blocked tasks (dispatch_agent/schedule_retry/file_human_todo). | priority: high | fix: verify dispatcher | verify: test_remediation_dispatcher.py
+- [ ] TM2.8 — Remediation reporter generates chronic blocker report. | priority: medium | fix: verify reporter | verify: test_remediation_reporter.py
+- [ ] TM2.9 — RemediationConfig has configurable thresholds. | priority: low | fix: verify config | verify: test_remediation_config.py
+- [ ] TM2.10 — Permission intersection: effective = intersection(human, agent, requested). | priority: high | fix: verify intersection | verify: test_permission_intersection.py
+- [ ] TM2.11 — Escalation requests require ≥3 alternatives tried. | priority: high | fix: verify validation | verify: test_escalation_validation.py
+- [ ] TM2.12 — Auto-approval for requests within human ∩ agent intersection. | priority: medium | fix: verify auto-approval | verify: test_auto_approval.py
+- [ ] TM2.13 — Outside-intersection requests create HumanTodo. | priority: high | fix: verify todo creation | verify: test_outside_intersection.py
+- [ ] TM2.14 — Human todo done → parent task → pending, human_input injected. | priority: high | fix: verify lifecycle | verify: test_todo_done.py
+- [ ] TM2.15 — Human todo dismissed → parent cancelled or requeued. | priority: medium | fix: verify lifecycle | verify: test_todo_dismissed.py
+- [ ] TM2.16 — FileClaimRegistry: atomic total-order claim acquisition. | priority: high | fix: already fixed (D.10) | verify: test_file_claims.py
+- [ ] TM2.17 — TTL reap on stale file claims. | priority: medium | fix: verify reap | verify: test_claim_reap.py
+- [ ] TM2.18 — Per-todo hash-offset backoff on conflict. | priority: medium | fix: verify backoff | verify: test_backoff.py
+- [ ] TM2.19 — _MAX_PUSH_RETRIES escape to BLOCKED state. | priority: medium | fix: verify escape | verify: test_push_retry_escape.py
+- [ ] TM2.20 — Task self-tracking in TASKS.md prevents forgetting. | priority: high | fix: AGENTS.md rule | verify: test_task_tracking.py
+
+---
+
+## Phase NW — Network & CI Infrastructure (20 specs)
+
+- [ ] NW.1 — GitHub remote configured with SSH key (sandboxcom_github_rsa). | priority: high | fix: make git-remote-sandboxcom | verify: test_remote_config.py
+- [ ] NW.2 — CI workflow uses cached actions (pinned SHAs, not @main). | priority: medium | fix: verify pinned SHAs | verify: test_pinned_actions.py
+- [ ] NW.3 — CI runner uses ubuntu-latest for linux builds. | priority: low | fix: verify runner | verify: test_ci_runner.py
+- [ ] NW.4 — CI runner uses macos-latest for macOS builds. | priority: low | fix: verify runner | verify: test_macos_runner.py
+- [ ] NW.5 — CI runner uses windows-latest for Windows builds. | priority: low | fix: verify runner | verify: test_windows_runner.py
+- [ ] NW.6 — uv cache reused across CI runs for speed. | priority: low | fix: verify caching | verify: test_uv_cache.py
+- [ ] NW.7 — pip cache reused across CI runs. | priority: low | fix: verify caching | verify: test_pip_cache.py
+- [ ] NW.8 — CI artifact upload uses actions/upload-artifact@v6+. | priority: low | fix: verify version | verify: test_upload_version.py
+- [ ] NW.9 — CI artifact download uses actions/download-artifact@v8+. | priority: low | fix: verify version | verify: test_download_version.py
+- [ ] NW.10 — GitHub Release created via softprops/action-gh-release. | priority: low | fix: verify action | verify: test_release_action.py
+- [ ] NW.11 — CI permissions: contents: write, packages: write. | priority: high | fix: verify permissions | verify: test_ci_permissions.py
+- [ ] NW.12 — CI concurrency group prevents duplicate runs. | priority: high | fix: verify group formula | verify: test_concurrency_group.py
+- [ ] NW.13 — CI cancel-in-progress false for pushes (preserves runs). | priority: medium | fix: verify value | verify: test_cancel_in_progress.py
+- [ ] NW.14 — CI cache key includes pyproject.toml hash for dependency caching. | priority: low | fix: verify key | verify: test_cache_key.py
+- [ ] NW.15 — CI runs on push to master + tag pushes (v*). | priority: medium | fix: verify triggers | verify: test_ci_triggers.py
+- [ ] NW.16 — CI runs on PR to master. | priority: low | fix: verify trigger | verify: test_pr_trigger.py
+- [ ] NW.17 — CI workflow_dispatch enabled (manual trigger). | priority: low | fix: verify trigger | verify: test_workflow_dispatch.py
+- [ ] NW.18 — Pages workflow deploys reveal.js presentation. | priority: low | fix: verify workflow | verify: test_pages_workflow.py
+- [ ] NW.19 — Molecule workflow runs molecule tests in shards. | priority: medium | fix: verify workflow | verify: test_molecule_workflow.py
+- [ ] NW.20 — CI job timeout-minutes set for every job. | priority: medium | fix: verify all jobs have timeout | verify: test_all_timeouts.py
+
+---
+
+## Phase PR2 — Performance (15 specs)
+
+- [ ] PR2.1 — Test suite completes in < 30 min locally. | priority: medium | fix: verify timing | verify: test_suite_timing.py
+- [ ] PR2.2 — Gate completes in < 40 min locally. | priority: medium | fix: verify timing | verify: test_gate_timing.py
+- [ ] PR2.3 — unit-1a shard completes in < 30 min on CI. | priority: high | fix: split shard (RP.11) | verify: test_shard_timing.py
+- [ ] PR2.4 — Platform builds complete in < 20 min each. | priority: medium | fix: verify timing | verify: test_build_timing.py
+- [ ] PR2.5 — Release job completes in < 10 min. | priority: medium | fix: verify timing | verify: test_release_timing.py
+- [ ] PR2.6 — Daemon startup < 5 sec. | priority: medium | fix: verify startup time | verify: test_startup_perf.py
+- [ ] PR2.7 — Plugin hook execution < 1ms per call. | priority: low | fix: verify timing | verify: test_hook_perf.py
+- [ ] PR2.8 — make lint completes in < 15 sec. | priority: low | fix: verify timing | verify: test_lint_perf.py
+- [ ] PR2.9 — make typecheck completes in < 30 sec. | priority: low | fix: verify timing | verify: test_typecheck_perf.py
+- [ ] PR2.10 — make collect-check completes in < 30 sec. | priority: low | fix: verify timing | verify: test_collect_perf.py
+- [ ] PR2.11 — make test-hook-runtime completes in < 20 sec. | priority: low | fix: verify timing (currently 16s) | verify: test_hook_runtime_perf.py
+- [ ] PR2.12 — make check-plugin-hook-invoke completes in < 10 sec. | priority: low | fix: verify timing (currently 5s) | verify: test_invoke_perf.py
+- [ ] PR2.13 — Structural tests complete in < 5 sec total. | priority: low | fix: verify timing (currently 1.4s) | verify: test_structural_perf.py
+- [ ] PR2.14 — CI gate phase completes in < 5 min. | priority: medium | fix: verify timing | verify: test_ci_gate_perf.py
+- [ ] PR2.15 — No N+1 queries in hot paths (event loop, repository). | priority: medium | fix: already fixed (E.12) | verify: test_no_n_plus_1.py
+
+---
+
+## Phase OB2 — Observability (15 specs)
+
+- [ ] OB2.1 — Gate phase markers: === GATE PHASE: <name> === in output. | priority: high | fix: already implemented | verify: test_phase_markers.py
+- [ ] OB2.2 — Gate terminal marker: === GATE: PASSED/FAILED ===. | priority: high | fix: already implemented | verify: test_terminal_marker.py
+- [ ] OB2.3 — Background gate writes PID file for status/kill. | priority: high | fix: already implemented | verify: test_pid_file.py
+- [ ] OB2.4 — CI status includes duration for each run. | priority: low | fix: verify output | verify: test_ci_duration.py
+- [ ] OB2.5 — Plugin heartbeat files visible at /tmp/gludd-plugin-heartbeat-*.json. | priority: medium | fix: verify files | verify: test_heartbeat_files.py
+- [ ] OB2.6 — Enforcement state files visible at /tmp/gludd-*.json. | priority: medium | fix: verify files | verify: test_state_files.py
+- [ ] OB2.7 — Watchdog activity file shows alive/inactive status. | priority: medium | fix: verify file | verify: test_watchdog_activity.py
+- [ ] OB2.8 — Agent liveness probe output includes count + process details. | priority: low | fix: verify output | verify: test_liveness_output.py
+- [ ] OB2.9 — make verify-state bundles git + CI + gate status. | priority: high | fix: already implemented | verify: test_verify_state_output.py
+- [ ] OB2.10 — Structured logging in daemon with JSON format. | priority: low | fix: verify logging | verify: test_structured_logging.py
+- [ ] OB2.11 — Event log records system occurrences (not human todos). | priority: medium | fix: verify event log | verify: test_event_log.py
+- [ ] OB2.12 — Audit log records security decisions. | priority: medium | fix: verify audit log | verify: test_audit_log.py
+- [ ] OB2.13 — Metrics endpoint /metrics exposes Prometheus metrics. | priority: low | fix: verify endpoint | verify: test_metrics_endpoint.py
+- [ ] OB2.14 — Heartbeat pattern: long-running operations emit periodic signals. | priority: high | fix: AGENTS.md no-unseen-events rule | verify: test_heartbeat_pattern.py
+- [ ] OB2.15 — CI run annotations surface failure details quickly. | priority: medium | fix: verify annotation polling | verify: test_ci_annotations.py
+
+---
+
+## Phase DP2 — Deployment (15 specs)
+
+- [ ] DP2.1 — make dist builds distribution tarball. | priority: high | fix: verify tarball | verify: test_dist_tarball.py
+- [ ] DP2.2 — make build-executable builds PyInstaller standalone. | priority: high | fix: verify binary | verify: test_pyinstaller.py
+- [ ] DP2.3 — make bundle-binaries includes ripgrep in distribution. | priority: medium | fix: verify bundling | verify: test_bundle_ripgrep.py
+- [ ] DP2.4 — Distribution includes install.sh for easy setup. | priority: medium | fix: verify inclusion | verify: test_install_sh_in_dist.py
+- [ ] DP2.5 — Distribution includes config/ templates/ playbooks/. | priority: medium | fix: verify contents | verify: test_dist_contents.py
+- [ ] DP2.6 — Release tarball < 100MB. | priority: low | fix: verify size | verify: test_tarball_size.py
+- [ ] DP2.7 — Release binary works on clean Ubuntu 22.04. | priority: high | fix: verify compatibility | verify: test_ubuntu_compat.py
+- [ ] DP2.8 — Release binary works on macOS arm64. | priority: high | fix: verify compatibility | verify: test_macos_compat.py
+- [ ] DP2.9 — Release binary works on Windows x86_64. | priority: high | fix: verify compatibility | verify: test_windows_compat.py
+- [ ] DP2.10 — install.sh copies binary + config to correct locations. | priority: medium | fix: verify script | verify: test_install_script.py
+- [ ] DP2.11 — Version stamping: binary reports correct version via --version. | priority: high | fix: verify stamping | verify: test_version_stamping.py
+- [ ] DP2.12 — SHA256 checksums generated for all artifacts. | priority: high | fix: verify checksums | verify: test_checksums.py
+- [ ] DP2.13 — SHA256SUMS aggregate file generated. | priority: medium | fix: verify aggregate | verify: test_sha256sums.py
+- [ ] DP2.14 — SBOM (CycloneDX) generated for release. | priority: medium | fix: verify SBOM | verify: test_release_sbom.py
+- [ ] DP2.15 — Release marked as prerelease for beta versions. | priority: medium | fix: verify flag | verify: test_prerelease_flag.py
+
+---
+
+## Phase UT2 — User Interaction (15 specs)
+
+- [ ] UT2.1 — User messages are answered directly before context. | priority: critical | fix: AGENTS.md rule | verify: test_direct_answer.py
+- [ ] UT2.2 — User never needs to ask "are you still working?" | priority: high | fix: visual status updates | verify: test_no_silence.py
+- [ ] UT2.3 — User never needs to ask "why did you stop?" | priority: critical | fix: don't stop | verify: test_no_stops.py
+- [ ] UT2.4 — User never needs to ask "where is my release?" | priority: critical | fix: deliver release | verify: test_release_delivered.py
+- [ ] UT2.5 — User never needs to repeat an instruction. | priority: high | fix: follow instructions first time | verify: test_no_repeats.py
+- [ ] UT2.6 — Status updates are 1 line, not paragraphs. | priority: medium | fix: AGENTS.md rule | verify: test_brief_status.py
+- [ ] UT2.7 — Tool call output is visible to user (not hidden). | priority: high | fix: AGENTS.md visual status rule | verify: test_visible_output.py
+- [ ] UT2.8 — Agent doesn't ask permission for routine work. | priority: high | fix: AGENTS.md self-directed rule | verify: test_no_permission_ask.py
+- [ ] UT2.9 — Agent handles interruptions gracefully (resumes work). | priority: medium | fix: AGENTS.md priority stacking | verify: test_interruption_handling.py
+- [ ] UT2.10 — Agent reports blockers with workaround, not just the problem. | priority: high | fix: AGENTS.md constraint rule | verify: test_blocker_reporting.py
+- [ ] UT2.11 — Agent doesn't present options and ask "which do you want?" | priority: high | fix: AGENTS.md no-blocking-questions rule | verify: test_no_options_question.py
+- [ ] UT2.12 — Agent responds to frustration with action, not explanation. | priority: high | fix: recognize user frustration, act | verify: test_frustration_response.py
+- [ ] UT2.13 — Agent doesn't waste tokens on CI polling the user can see. | priority: medium | fix: CI poll limiter | verify: test_no_ci_waste.py
+- [ ] UT2.14 — Agent doesn't write essays when asked for code. | priority: high | fix: recognize request type, respond accordingly | verify: test_code_not_essays.py
+- [ ] UT2.15 — Agent doesn't write code when asked for essays. | priority: high | fix: recognize request type | verify: test_essays_not_code.py
+
+---
+
+## Phase CO2 — Code Organization (15 specs)
+
+- [ ] CO2.1 — src/general_ludd/ has clear module boundaries (no circular imports). | priority: high | fix: verify import graph | verify: test_no_circular_imports.py
+- [ ] CO2.2 — Tests mirror src/ structure (tests/unit/test_<module>.py). | priority: medium | fix: verify naming convention | verify: test_test_naming.py
+- [ ] CO2.3 — Each src/ module has a corresponding test file. | priority: high | fix: coverage gap audit | verify: test_module_coverage.py
+- [ ] CO2.4 — No dead code: every class/function imported outside tests/. | priority: high | fix: dead code audit | verify: test_no_dead_code.py
+- [ ] CO2.5 — Shared utilities in shared.ts, not duplicated across plugins. | priority: medium | fix: verify consolidation | verify: test_no_duplication.py
+- [ ] CO2.6 — Plugin impl files separate from plugin wrappers. | priority: medium | fix: verify separation | verify: test_impl_separation.py
+- [ ] CO2.7 — Config files use consistent YAML format. | priority: low | fix: verify format | verify: test_yaml_format.py
+- [ ] CO2.8 — Make targets follow naming convention (verb-noun). | priority: low | fix: verify naming | verify: test_target_naming.py
+- [ ] CO2.9 — Commit messages follow convention (type: description). | priority: low | fix: verify format | verify: test_commit_format.py
+- [ ] CO2.10 — File paths use forward slashes (cross-platform). | priority: low | fix: verify paths | verify: test_path_format.py
+- [ ] CO2.11 — No hard-coded absolute paths in src/. | priority: medium | fix: verify paths | verify: test_no_hardcoded_paths.py
+- [ ] CO2.12 — Environment variables prefixed with GLUDD_. | priority: low | fix: verify prefix | verify: test_env_prefix.py
+- [ ] CO2.13 — State files in /tmp/gludd-*.json format. | priority: low | fix: verify format | verify: test_state_format.py
+- [ ] CO2.14 — Log files in /tmp/gludd-*.log format. | priority: low | fix: verify format | verify: test_log_format.py
+- [ ] CO2.15 — PID files in /tmp/gludd-*.pid format. | priority: low | fix: verify format | verify: test_pid_format.py
+
+---
+
+## Phase TR2 — Testing Runner (15 specs)
+
+- [ ] TR2.1 — pytest configured with xdist for parallel test execution. | priority: medium | fix: verify config | verify: test_xdist_config.py
+- [ ] TR2.2 — pytest configured with timeout (180s per test). | priority: medium | fix: verify config | verify: test_timeout_config.py
+- [ ] TR2.3 — pytest configured with asyncio mode=AUTO. | priority: medium | fix: verify config | verify: test_asyncio_config.py
+- [ ] TR2.4 — pytest configured with coverage (fail_under=85). | priority: medium | fix: verify config | verify: test_coverage_config.py
+- [ ] TR2.5 — conftest.py has _LEAKY_ENV_VARS frozenset for xdist isolation. | priority: medium | fix: verify set | verify: test_leaky_vars.py
+- [ ] TR2.6 — conftest.py has ratchet hook for known failures. | priority: low | fix: verify hook | verify: test_ratchet_hook.py
+- [ ] TR2.7 — Test fixtures use tmp_path for isolation. | priority: medium | fix: verify fixtures | verify: test_tmp_path.py
+- [ ] TR2.8 — No mock-only tests: every test verifies observable behavior. | priority: high | fix: AGENTS.md test-quality rule | verify: test_no_mock_only.py
+- [ ] TR2.9 — Test naming: test_<unit>_<behavior> or TestClass::test_method. | priority: low | fix: verify naming | verify: test_test_naming_convention.py
+- [ ] TR2.10 — AAA structure: Arrange, Act, Assert in each test. | priority: medium | fix: AGENTS.md test-quality rule | verify: test_aaa_structure.py
+- [ ] TR2.11 — Edge cases tested: empty input, null, boundary values. | priority: medium | fix: AGENTS.md test-quality rule | verify: test_edge_cases.py
+- [ ] TR2.12 — Realistic test data (not "foo", "bar", "test"). | priority: low | fix: AGENTS.md test-quality rule | verify: test_realistic_data.py
+- [ ] TR2.13 — One assertion concept per test. | priority: low | fix: AGENTS.md test-quality rule | verify: test_one_concept.py
+- [ ] TR2.14 — Tests are deterministic (no random, no time-dependent). | priority: medium | fix: AGENTS.md test-quality rule | verify: test_deterministic.py
+- [ ] TR2.15 — Tests clean up after themselves (no leaked files/processes). | priority: medium | fix: AGENTS.md test-quality rule | verify: test_cleanup.py
+
+---
+
+## Phase BK2 — Background Knowledge (10 specs)
+
+- [ ] BK2.1 — Agent knows the project structure (src/, tests/, .opencode/, collections/). | priority: low | fix: documented in AGENTS.md | verify: test_structure_knowledge.py
+- [ ] BK2.2 — Agent knows the tech stack (Python 3.11+, uv, pytest, ruff, mypy, FastAPI). | priority: low | fix: documented in AGENTS.md | verify: test_stack_knowledge.py
+- [ ] BK2.3 — Agent knows the enforcement system (14 plugins, 3 layers, fail-open). | priority: medium | fix: documented in AGENTS.md | verify: test_enforcement_knowledge.py
+- [ ] BK2.4 — Agent knows the release pipeline (release-cut → CI → verify-release-completeness). | priority: high | fix: documented in AGENTS.md | verify: test_pipeline_knowledge.py
+- [ ] BK2.5 — Agent knows the make target catalog (~100 targets). | priority: low | fix: make help output | verify: test_target_knowledge.py
+- [ ] BK2.6 — Agent knows the CI workflow structure (gate → shards → builds → release). | priority: medium | fix: documented in build.yml | verify: test_ci_knowledge.py
+- [ ] BK2.7 — Agent knows the packaging requirements (12 artifact categories). | priority: high | fix: documented in AGENTS.md | verify: test_packaging_knowledge.py
+- [ ] BK2.8 — Agent knows the testing strategy (unit/integration/e2e + molecule). | priority: low | fix: documented in AGENTS.md | verify: test_testing_knowledge.py
+- [ ] BK2.9 — Agent knows the security model (PSK, tenant scoping, SSRF, fail-closed). | priority: medium | fix: documented in AGENTS.md | verify: test_security_knowledge.py
+- [ ] BK2.10 — Agent knows the deployment targets (Linux, macOS, Windows, container). | priority: low | fix: documented in build.yml | verify: test_deployment_knowledge.py
 - [x] A.5 — CI shard matrix rework (unit-1a→1a+1d split) | priority: high | effort: medium | status: completed | evidence: build.yml lines 186-244 — 6 shards (unit-1a, unit-1b, unit-1d, unit-2, unit-3, other) already split with path exclusions; unit-1a→1a+1d split completed 2026-07-09 per inline comment
 - [x] A.6 — Coverage --fail-under=0 workaround removal once E1 coverage hits threshold | priority: medium | effort: small | status: completed | evidence: fail_under 70→85 in pyproject.toml, commit 5a04fffb (metric module + lint-fix sweep), gate green
 - [x] A.7 — Push-guard fix: enforce push-guard on development branch CI green | priority: high | effort: small | status: completed | evidence: push-guard enforcement applied to development branch
