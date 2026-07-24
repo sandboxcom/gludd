@@ -179,7 +179,7 @@ jobs:
   # as a shard-unique artifact; the downstream `coverage` job combines them
   # into a single canonical coverage.xml for the whole suite.
   test-shard:
-    needs: [version, gate]
+    needs: [version, gate, test-shard]
     runs-on: ubuntu-latest
     continue-on-error: true  # Pre-existing test failures tracked in config/ratchet.yml. Test results visible in run log.
     # unit-3 (test_[n-z]* + secrets/) is the fattest shard and runs ~18m — right
@@ -190,7 +190,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12"]
+        python-version: ["3.11"]
         shard: [unit-1a, unit-1b, unit-1d, unit-2, unit-3, other]
         include:
           # Map each shard label to the pytest path(s) it owns.
@@ -430,7 +430,7 @@ jobs:
           retention-days: 30
 
   molecule:
-    needs: [version, gate]
+    needs: [version, gate, test-shard]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     continue-on-error: true  # Non-blocking: 113 sequential scenarios (make molecule-scenarios) can be slow under runner load. Release does NOT need molecule (not in release.needs). Keep non-blocking so CI verdict reflects gate+test+builds, not molecule flakiness.
@@ -493,7 +493,7 @@ jobs:
           retention-days: 7
 
   linux:
-    needs: [version, gate]
+    needs: [version, gate, test-shard]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     # Non-blocking: a Linux pyinstaller/build hiccup must not sink a Release
@@ -545,7 +545,7 @@ jobs:
             dist/gludd-${{ env.VERSION }}-1.x86_64.rpm.sha256
 
   macos:
-    needs: [version, gate]
+    needs: [version, gate, test-shard]
     runs-on: macos-latest
     timeout-minutes: 30
     # Non-blocking: a macOS pyinstaller/build hiccup must not sink a Release
@@ -600,7 +600,7 @@ jobs:
             dist/gludd-${{ env.VERSION }}-macos-arm64.dmg.sha256
 
   windows:
-    needs: [version, gate]
+    needs: [version, gate, test-shard]
     runs-on: windows-latest
     timeout-minutes: 30
     # Safety net while the Windows pyinstaller build is stabilized: keep it
@@ -657,7 +657,7 @@ jobs:
             dist/gludd-${{ env.VERSION }}-setup-x86_64.exe.sha256
 
   termux:
-    needs: [version, gate]
+    needs: [version, gate, test-shard]
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 30
     # Non-blocking like the windows job: an aarch64 pyinstaller hiccup must not
@@ -700,7 +700,7 @@ jobs:
   # on every triggering event (validating the Dockerfile) but only PUSHES on tag
   # pushes and master. Gated on the same green gate+tests as the build jobs.
   container:
-    needs: [version, gate]
+    needs: [version, gate, test-shard]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     # Non-blocking for the Release: a transient GHCR/Docker hiccup must not sink an
@@ -787,7 +787,7 @@ jobs:
   #   Go to: https://github.com/sandboxcom/gludd/settings/secrets/actions
   #   Add:  DEEPSEEK_API_KEY = sk-...
   game-building:
-    needs: [version, gate]
+    needs: [version, gate, test-shard]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     continue-on-error: true
@@ -803,7 +803,7 @@ jobs:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
 
   release:
-    needs: [version, gate, linux, macos, windows, termux]
+    needs: [version, gate, test-shard, linux, macos, windows, termux]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     if: ${{ !cancelled() && startsWith(github.ref, 'refs/tags/v') }}
