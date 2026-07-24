@@ -306,6 +306,7 @@ help:
 	@echo "  molecule-test         Run molecule tests"
 	@echo ""
 	@echo "  --- CI ---"
+	@echo "  check-ci-scripts-integrityverify CI-critical scripts have not been tampered with (hash check)"
 	@echo "  ci-kill-zombie          cancel a CI run via gh run cancel"
 	@echo "  ci-run-summary          show CI run job statuses as concise table from gh run view JSON"
 	@echo "  ci-await BRANCH=<b> [TIMEOUT=<s>]  Poll CI for branch until terminal (green/red/timeout)"
@@ -355,6 +356,7 @@ help:
 	@echo "  --- Complete Target Index ---"
 	@$(PYTHON) scripts/check_make_help.py --print-index
 	@echo "  --- New Targets ---"
+	@echo "  sync-task-ledger        sync current task status to TASKS.md — must be run after any status change"
 	@echo "  gate-local              fast local gate: lint + typecheck + collect + hook-runtime + fast structural tests"
 	@echo "  bump-version            bump version in all files (pyproject.toml, __init__.py, README) at once"
 	@echo "  check-version-consistencyverify version matches across pyproject.toml, __init__.py, and README"
@@ -2780,9 +2782,9 @@ ci-status-api:
 		"https://api.github.com/repos/sandboxcom/gludd/actions/runs?per_page=8" 2>&1 | \
 		$(PYTHON) -c "import sys,json; d=json.load(sys.stdin); [print(r['created_at'], r['head_branch'], r['status'], r['conclusion'], r['html_url']) for r in d.get('workflow_runs',[])]" 2>&1 || echo "ci-status-api-failed"
 
-# --- Cross-version CI reproduction (W16) ---
-# Reproduce the CI gate under a specific python version (CI runs 3.11 and 3.12).
-# cancel a CI run via gh run cancel
+check-ci-scripts-integrity:
+	@$(UV) run python scripts/check_ci_integrity.py
+
 ci-kill-zombie:
 	@echo "ci-kill-zombie: cancel a CI run via gh run cancel"
 
@@ -5330,7 +5332,11 @@ bump-version:
 	@$(UV) run python scripts/bump_version.py $(NEW)
 	@$(MAKE) --no-print-directory check-version-consistency
 
-# --- New Targets (auto-categorized add-target) ---
+sync-task-ledger:
+	@echo "TASKS.md must be manually updated with current session tasks."
+	@echo "Add entries under ## Current Session section."
+	@$(MAKE) --no-print-directory check-task-ledger
+
 # fast local gate: lint + typecheck + collect + hook-runtime + fast structural tests
 gate-local:
 	@echo "gate-local: fast local gate: lint + typecheck + collect + hook-runtime + fast structural tests"
