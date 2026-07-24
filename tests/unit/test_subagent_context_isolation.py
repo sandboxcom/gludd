@@ -28,9 +28,14 @@ def _enforce_plugins() -> list[Path]:
 
 
 def _read_plugin(name: str) -> str:
+    """Read plugin source, including impl file if the plugin delegates to one."""
     path = PLUGIN_DIR / f"{name}.ts"
     assert path.exists(), f"Plugin not found: {path}"
-    return path.read_text()
+    src = path.read_text()
+    impl_path = PLUGIN_DIR / "impl" / f"{name.replace('-', '_')}_impl.ts"
+    if impl_path.exists():
+        src += "\n" + impl_path.read_text()
+    return src
 
 
 def _find_first_substantive_line(body: str) -> int:
