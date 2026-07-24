@@ -4,60 +4,29 @@ import * as fs from "node:fs";
 import type { Plugin } from "@opencode-ai/plugin";
 import { loadHotModule, type HotModule } from "../lib/hot_reload.ts";
 import { isSubagent, reportAlive } from "../lib/shared.ts";
+import { isCommitCommand } from "../lib/plugin_test_exports.ts";
+
 const LOCK_PATH: string = process.env.GLUDD_COMMIT_LOCK_PATH || "/tmp/gludd-commit.lock";
 const STALE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
-const COMMIT_TARGETS = Object.freeze([
-  "git-commit",
-  "commit-no-verify",
-  "git-commit-no-verify",
-  "ship-commit",
-  "repo-commit",
-  "git-commit-file",
-  "test-and-commit",
-  "commit-bootstrap",
-  "git-amend-msg",
-]) as readonly string[];
 const DENY_MESSAGE =
   "COMMIT-LOCK: another commit is in flight. Parallel commits race on the git index " +
   "(AGENTS.md commit-serialization guardrail). Retry serially — dispatch ONE commit " +
   "subagent at a time, or use `make ship-commit-files FILES='...'` for atomic staging. " +
   "Set GLUDD_COMMIT_LOCK_ENFORCE=0 to disable.";
 let _heldByThisCall = false;
-export function isCommitCommand(cmd: string): boolean {
-  for (const target of COMMIT_TARGETS) {
-    const escaped = target.replace(/[-]/g, "\\-");
-    // Match `make <target>` followed by whitespace or end-of-string.
-    // The `(?:\s|$)` ensures `ship-commit` does NOT match `ship-commit-files`.
-    const re = new RegExp(`\\bmake\\s+${escaped}(?:\\s|$)`);
-    if (re.test(cmd)) return true;
-  }
-  return false;
-}
+
 function lockAge(): number {
-  try {
-    const stat = fs.statSync(LOCK_PATH);
-    return Date.now() - stat.mtimeMs;
-  } catch {
-    return -1;
-  }
+  try { const stat = fs.statSync(LOCK_PATH); return Date.now() - stat.mtimeMs; } catch { return -1; }
 }
 function tryAcquire(): boolean {
   try {
     const fd = fs.openSync(LOCK_PATH, "wx");
-    fs.writeSync(fd, String(process.pid));
-    fs.closeSync(fd);
+    fs.writeSync(fd, String(process.pid)); fs.closeSync(fd);
     return true;
-  } catch {
-    return false;
-  }
+  } catch { return false; }
 }
-function releaseLock(): void {
-  try {
-    fs.unlinkSync(LOCK_PATH);
-  } catch {
-    // ignore — file may not exist
-  }
-}
+function releaseLock(): void { try { fs.unlinkSync(LOCK_PATH) } catch {} }
+
 async function beforeHook(input: { tool: string }): Promise<{permissionDecision: string, message: string} | undefined> {
   if (isSubagent()) return
   reportAlive("enforce-commit-lock")
@@ -68,17 +37,11 @@ async function beforeHook(input: { tool: string }): Promise<{permissionDecision:
     const params = input as { tool: string; command?: string }
     const cmd: string = params.command ?? ""
     if (!isCommitCommand(cmd)) return
-    if (tryAcquire()) {
-      _heldByThisCall = true
-      return
-    }
+    if (tryAcquire()) { _heldByThisCall = true; return }
     const age = lockAge()
     if (age > STALE_THRESHOLD_MS) {
       releaseLock()
-      if (tryAcquire()) {
-        _heldByThisCall = true
-        return
-      }
+      if (tryAcquire()) { _heldByThisCall = true; return }
     }
     return { permissionDecision: "deny", message: DENY_MESSAGE }
   } catch {
@@ -91,11 +54,8 @@ async function afterHook(input: { tool: string }): Promise<void> {
     if (process.env.GLUDD_COMMIT_LOCK_ENFORCE === "0") return
     if (!_heldByThisCall) return
     if (input.tool !== "bash") return
-    releaseLock()
-    _heldByThisCall = false
-  } catch {
-    // Fail-open
-  }
+    releaseLock(); _heldByThisCall = false
+  } catch {}
 }
 
 export default async function commitLockPlugin(
@@ -105,18 +65,5 @@ export default async function commitLockPlugin(
   "tool.execute.before": (input: { tool: string }, output: unknown) => Promise<{permissionDecision: string, message: string} | undefined>
   "tool.execute.after": (input: { tool: string }, output: unknown) => Promise<void>
 }> {
-  const hooks = {
-    "tool.execute.before": beforeHook,
-    "tool.execute.after": afterHook,
-  }
-
-  const input = _input as any
-  if (input?.tool?.execute?.before) {
-    input.tool.execute.before(beforeHook)
-  }
-  if (input?.tool?.execute?.after) {
-    input.tool.execute.after(afterHook)
-  }
-
-  return hooks
+  return { "tool.execute.before": beforeHook, "tool.execute.after": afterHook }
 }

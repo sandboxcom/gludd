@@ -27,6 +27,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 _OPENCODE_DIR = Path(os.environ.get("OPENCODE_DIR", str(ROOT / ".opencode"))).resolve()
 PLUGIN_DIR = _OPENCODE_DIR / "plugin"
+LIB_DIR = _OPENCODE_DIR / "lib"
 
 # Skip the entire module when the plugin directory is absent.
 # This lets operators move `.opencode/` aside as a workaround for broken plugins
