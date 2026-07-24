@@ -1843,6 +1843,125 @@ old summary table omitted entirely. Grand total across the file: **326** boxes.
 - [x] game SearX e2e tests — end-to-end tests for SearX game integration | evidence: Wave 34
 - [x] enforce-multitask min-dispatch — fix for enforce-multitask.ts min-dispatch threshold | evidence: Wave 34
 
+---
+
+## Phase AL2 — Alerting (25 specs)
+
+- [ ] AL2.1 — Alert when enforcement streak at threshold (≥4 of 5 calls) | priority: high | fix: emit console.warn in enforce-floor.ts when consecutive-non-dispatch counter hits 4 | verify: test_alert_streak_threshold.py — counter==4 fires warning
+- [ ] AL2.2 — Alert when CI cancelled >3 times in 2h | priority: critical | fix: extend _push-rate-guard MAX_CANCELLED_RUNS detection to emit CI-THRASH alert | verify: test_alert_ci_thrash.py — 4 cancellations fires alert
+- [ ] AL2.3 — Alert when disengage count >2 per session | priority: high | fix: BP.6 disengage audit log + warning display at count 3 | verify: test_alert_disengage_count.py — 3 disengages fires alarm
+- [ ] AL2.4 — Alert when release in_progress >3h without artifacts | priority: critical | fix: BP.4 release deadline plugin emits hard-stop at 3h elapsed | verify: test_alert_release_stalled.py — 3h elapsed fires alert
+- [ ] AL2.5 — Alert when test shard times out | priority: high | fix: ci-faillog parser detects "cancelled due to timeout" and surfaces in ci-verdict | verify: test_alert_shard_timeout.py — timeout string triggers alert
+- [ ] AL2.6 — Alert when disk >90% full | priority: critical | fix: extend check_disk_usage.py to print DISK-CRITICAL banner at 90% | verify: test_alert_disk_critical.py — 91% triggers banner
+- [ ] AL2.7 — Alert when plugins are dead (heartbeat missing >60s) | priority: high | fix: BP.12 plugin heartbeat startup check + warning | verify: test_alert_dead_plugin.py — missing heartbeat triggers
+- [ ] AL2.8 — Alert when .gate-status is stale (>1h old) | priority: high | fix: extend _gate-fresh-check to emit STALE-GATE banner when mtime > 3600s | verify: test_alert_stale_gate.py — 90min old status triggers
+- [ ] AL2.9 — Alert when CI not green 30min after push | priority: high | fix: ci-verdict-safe checks deploy-and-forget timestamp + emits CI-STALLED if >30min | verify: test_alert_ci_stalled.py — 35min elapsed triggers
+- [ ] AL2.10 — Alert when watchdog daemon is inactive | priority: medium | fix: heartbeat file mtime check in agent_watchdog.py, surface via make verify-state | verify: test_alert_watchdog_dead.py — stale heartbeat triggers
+- [ ] AL2.11 — Alert when mainthread budget exceeded (>2 consecutive mutations) | priority: high | fix: enforce-delegate.ts MAINTHREAD_THRESHOLD warning at threshold-1 | verify: test_alert_mainthread_budget.py — 2 mutations fires warning
+- [ ] AL2.12 — Alert when subagent floor breached (<10 live) | priority: critical | fix: enforce-multitask.ts emits FLOOR-BREACH when dispatch count < 10 | verify: test_alert_floor_breach.py — 7 dispatches triggers
+- [ ] AL2.13 — Alert when enhancement ratio violated (fix%>50%) | priority: medium | fix: enforce-enhancement-ratio.ts console.warn at wave boundary | verify: test_alert_ratio_violation.py — 4 fixes / 6 total triggers
+- [ ] AL2.14 — Alert when CI poll count exceeds 3 consecutive | priority: high | fix: enforce-no-ci-poll.ts emits POLL-STAGNATION at 3rd consecutive | verify: test_alert_poll_exceeded.py — 3 polls triggers
+- [ ] AL2.15 — Alert when worktree disk threshold approaching (5 worktrees active) | priority: medium | fix: enforce-delegate.ts disk discipline prints DISK-WARN at 5 worktrees | verify: test_alert_worktree_disk.py — 5 worktrees triggers
+- [ ] AL2.16 — Alert when task deadline exceeded (>5min) | priority: high | fix: enforce-deadline.ts prints TASK-DEADLINE-EXCEEDED with task ID | verify: test_alert_task_deadline.py — 6min task triggers
+- [ ] AL2.17 — Alert when dirty tree blocks dispatch | priority: high | fix: enforce-clean-tree.ts emits DIRTY-TREE-DISPATCH-BLOCKED with file list | verify: test_alert_dirty_tree.py — dirty tree triggers
+- [ ] AL2.18 — Alert when GLUDD_FORCE_PUSH=1 attempted | priority: critical | fix: _push-rate-guard prints FORCE-PUSH-WARNING when env var set | verify: test_alert_force_push.py — env var triggers warning
+- [ ] AL2.19 — Alert when plugin throws ReferenceError at boot | priority: critical | fix: validate_plugins_runtime.mjs prints PLUGIN-BOOT-FAIL with file name | verify: test_alert_plugin_referror.py — broken plugin triggers
+- [ ] AL2.20 — Alert when hot-reload module is stale (older than .ts) | priority: medium | fix: check-hot-reload-fresh prints HOT-STALE when mtime inverted | verify: test_alert_hot_stale.py — older hot module triggers
+- [ ] AL2.21 — Alert when config/ratchet.yml has entries | priority: high | fix: enforce-stop.ts hasRealPendingWork emits RATCHET-HAS-ENTRIES | verify: test_alert_ratchet_entries.py — non-empty ratchet triggers
+- [ ] AL2.22 — Alert when TASKS.md has >5 unchecked items | priority: medium | fix: structural test counts unchecked items, prints TASK-BACKLOG-GROWING | verify: test_alert_task_backlog.py — 6 unchecked triggers
+- [ ] AL2.23 — Alert when CI headSha != branch tip (stale run) | priority: critical | fix: ci-verdict STALE RUN WARNING already exists, extend to console.error | verify: test_alert_stale_ci.py — mismatch triggers
+- [ ] AL2.24 — Alert when release artifacts missing categories | priority: critical | fix: verify-release-completeness prints MISSING-ARTIFACT-CATEGORY for each gap | verify: test_alert_missing_artifacts.py — 11/12 categories triggers
+- [ ] AL2.25 — Alert when enforcement is disengaged >10min | priority: high | fix: shared.ts isDisengaged() prints DISENGAGED-ACTIVE with elapsed time | verify: test_alert_disengage_active.py — 11min elapsed triggers
+
+---
+
+## Phase CP3 — Capacity Planning (25 specs)
+
+- [ ] CP3.1 — Enforce max 10 concurrent subagents (CLAUDE_AGENT_CEILING=10) | priority: critical | fix: enforce-multitask.ts dispatch ceiling block at >10 | verify: test_capacity_subagent_max.py — 11th dispatch denied
+- [ ] CP3.2 — Enforce max 6 worktree agents (WORKTREE_CAP=6) | priority: high | fix: enforce-delegate.ts disk discipline blocks at 7th worktree | verify: test_capacity_worktree_max.py — 7th denied
+- [ ] CP3.3 — Enforce max 12 test shards in CI matrix | priority: medium | fix: structural test asserts build.yml shard count ≤12 | verify: test_capacity_shard_max.py — 13 shards fails
+- [ ] CP3.4 — Warn when venv creation approaches 320MB threshold | priority: medium | fix: agent-worktree prints venv-size after creation | verify: test_capacity_venv_size.py — size displayed
+- [ ] CP3.5 — Enforce gate memory ceiling (8GB max) | priority: high | fix: gate-background launches with ulimit -v 8388608 | verify: test_capacity_gate_memory.py — ulimit set
+- [ ] CP3.6 — Document CI runner specs (2-core, 7GB RAM ubuntu-latest) | priority: low | fix: docs/CI_RUNNER_SPECS.md | verify: test_capacity_runner_doc.py — doc exists
+- [ ] CP3.7 — Block worktree creation below DISK_MIN_FREE_GB=5 | priority: high | fix: enforce-delegate.ts DISK_HARD_FLOOR_GB check | verify: test_capacity_disk_min.py — 4GB free blocks
+- [ ] CP3.8 — Enforce memory ceiling per daemon process (2GB) | priority: medium | fix: gunicorn worker config max_requests + memory limit | verify: test_capacity_daemon_mem.py — limit set
+- [ ] CP3.9 — Alert when open files ulimit <4096 | priority: low | fix: daemon startup check prints ulimit -n | verify: test_capacity_ulimit.py — 1024 triggers warning
+- [ ] CP3.10 — Enforce DB connection pool max 20 | priority: medium | fix: SQLAlchemy engine pool_size=20, max_overflow=0 | verify: test_capacity_db_pool.py — pool capped
+- [ ] CP3.11 — Enforce max 4 worker processes | priority: medium | fix: gunicorn workers=4 hardcoded default | verify: test_capacity_workers.py — 4 set
+- [ ] CP3.12 — Enforce API rate limit 100 req/min | priority: low | fix: slowapi limiter on daemon endpoints | verify: test_capacity_api_rate.py — 101st denied
+- [ ] CP3.13 — Alert when GitHub API rate limit <1000 remaining | priority: medium | fix: gh wrapper checks X-RateLimit-Remaining header | verify: test_capacity_gh_rate.py — 999 triggers warning
+- [ ] CP3.14 — Enforce max 3 background test runners | priority: medium | fix: background-test-runner skill tracks active count | verify: test_capacity_bg_tests.py — 4th denied
+- [ ] CP3.15 — Enforce plugin execution budget 1ms per hook | priority: low | fix: structural test measures hook execution time | verify: test_capacity_hook_time.py — >1ms flagged
+- [ ] CP3.16 — Enforce subagent context window ≤128k tokens | priority: medium | fix: dispatch prompt size check before send | verify: test_capacity_context_window.py — >128k denied
+- [ ] CP3.17 — Track main thread token budget (target: ≤sonnet total) | priority: medium | fix: model_utilization hook tracks main vs subagent tokens | verify: test_capacity_mainthread_budget.py — ratio tracked
+- [ ] CP3.18 — Enforce per-model token cap per dispatch | priority: low | fix: TokenQuotaEnforcer per-agent limit (already exists) | verify: test_capacity_token_cap.py — quota enforced
+- [ ] CP3.19 — Rotate log files >10MB | priority: low | fix: watchdog log rotation (already exists) | verify: test_capacity_log_rotation.py — >10MB rotates
+- [ ] CP3.20 — Cap state file accumulation at 50 files in /tmp/gludd-* | priority: low | fix: clean-tmp prints count, warns at 50 | verify: test_capacity_state_files.py — 51 triggers warning
+- [ ] CP3.21 — Enforce max 20 worktree branches | priority: low | fix: agent-worktree-list count check | verify: test_capacity_branch_count.py — 21 triggers warning
+- [ ] CP3.22 — Serialize concurrent git operations (commit-lock) | priority: high | fix: enforce-commit-lock.ts flock (already exists) | verify: test_capacity_git_lock.py — concurrent blocked
+- [ ] CP3.23 — Allow max 1 concurrent commit operation | priority: medium | fix: commit-lock STALE_THRESHOLD_MS=300000 | verify: test_capacity_commit_concurrent.py — 2nd blocked
+- [ ] CP3.24 — Cap event loop fan-out at 10 dispatches per tick | priority: medium | fix: event loop dispatch gather limit | verify: test_capacity_fanout.py — 11th queued
+- [ ] CP3.25 — Enforce TokenQuotaEnforcer per-agent project scope | priority: medium | fix: NF.7 TokenQuotaEnforcer (already exists) | verify: test_capacity_token_quota.py — quota enforced
+
+---
+
+## Phase DI2 — Documentation Index (25 specs)
+
+- [ ] DI2.1 — Verify AGENTS.md has all CRITICAL sections indexed | priority: high | fix: structural test greps for "## CRITICAL:" headers | verify: test_doc_agents_sections.py — all sections present
+- [ ] DI2.2 — Verify README status table matches pyproject.toml version | priority: high | fix: check-readme-status (already exists) | verify: test_doc_readme_status.py — versions match
+- [ ] DI2.3 — Verify CHANGELOG.md has [Unreleased] section | priority: medium | fix: structural test checks for header | verify: test_doc_changelog.py — section exists
+- [ ] DI2.4 — Verify BUGS.md has incident entries with timestamps | priority: medium | fix: structural test checks format | verify: test_doc_bugs_format.py — entries well-formed
+- [ ] DI2.5 — Verify SESSION.md updated within 24h | priority: high | fix: enforce-context.ts checks mtime | verify: test_doc_session_fresh.py — stale triggers
+- [ ] DI2.6 — Verify TASKS.md has no bare checkboxes (all have evidence) | priority: medium | fix: evidence-integrity audit (already exists) | verify: test_doc_tasks_evidence.py — bare boxes flagged
+- [ ] DI2.7 — Verify docs/specs/ has FEATURE_*.md for each NF item | priority: low | fix: structural test cross-references | verify: test_doc_specs_exist.py — all specs present
+- [ ] DI2.8 — Create docs/ARCHITECTURE.md with module diagram | priority: medium | fix: write architecture overview doc | verify: test_doc_architecture.py — doc exists
+- [ ] DI2.9 — Verify CONTRIBUTING.md exists with setup instructions | priority: low | fix: already exists, verify current | verify: test_doc_contributing.py — doc current
+- [ ] DI2.10 — Verify CONFIG_REFERENCE.md documents all env vars | priority: medium | fix: already exists, audit for completeness | verify: test_doc_config_ref.py — all GLUDD_* vars documented
+- [ ] DI2.11 — Verify MCP_TOOL_REFERENCE.md lists all 37 tools | priority: low | fix: already exists, verify count | verify: test_doc_mcp_ref.py — 37 tools listed
+- [ ] DI2.12 — Create docs/ENFORCEMENT_ARCHITECTURE.md | priority: medium | fix: DC.8 — write plugin interaction doc | verify: test_doc_enforcement_arch.py — doc exists
+- [ ] DI2.13 — Verify docs/RELEASE_RUNBOOK.md documents full flow | priority: medium | fix: DC.7 — already exists, verify complete | verify: test_doc_release_runbook.py — flow documented
+- [ ] DI2.14 — Create docs/TEST_STRATEGY.md | priority: low | fix: document unit/integration/e2e/molecule strategy | verify: test_doc_test_strategy.py — doc exists
+- [ ] DI2.15 — Verify docs/SECURITY.md has CVE adjudications | priority: medium | fix: already exists, verify current | verify: test_doc_security.py — CVE entries present
+- [ ] DI2.16 — Create docs/TUI.md documenting terminal UI | priority: low | fix: document TUI commands and views | verify: test_doc_tui.py — doc exists
+- [ ] DI2.17 — Create docs/CLI.md documenting all subcommands | priority: low | fix: document gludd CLI tree | verify: test_doc_cli.py — doc exists
+- [ ] DI2.18 — Create docs/WORKTREE_LIFECYCLE.md | priority: medium | fix: document create→merge→cleanup flow | verify: test_doc_worktree_lifecycle.py — doc exists
+- [ ] DI2.19 — Create docs/SUBAGENT_DESIGN.md | priority: low | fix: document subagent dispatch model | verify: test_doc_subagent_design.py — doc exists
+- [ ] DI2.20 — Create docs/PLUGIN_LIFECYCLE.md | priority: medium | fix: document loading, hot-reload, fail-open | verify: test_doc_plugin_lifecycle.py — doc exists
+- [ ] DI2.21 — Create docs/GUARDRAIL_PATTERN.md (3-layer) | priority: medium | fix: document permission+hook+prompt pattern | verify: test_doc_guardrail_pattern.py — doc exists
+- [ ] DI2.22 — Verify docs/DELEGATION_HANDOFF.md exists | priority: low | fix: already exists (AG.7), verify current | verify: test_doc_delegation.py — doc current
+- [ ] DI2.23 — Create docs/CI_PIPELINE.md | priority: low | fix: document gate→shards→builds→release flow | verify: test_doc_ci_pipeline.py — doc exists
+- [ ] DI2.24 — Verify docs/ORCHESTRATION.md exists | priority: medium | fix: already referenced in AGENTS.md, verify exists | verify: test_doc_orchestration.py — doc exists
+- [ ] DI2.25 — Create docs/DECISION_LOG.md for architecture decisions | priority: low | fix: ADR-style decision records | verify: test_doc_decision_log.py — doc exists
+
+---
+
+## Phase TK2 — Token Economy (25 specs)
+
+- [ ] TK2.1 — Use sonnet model for ≥90% of subagent dispatches | priority: high | fix: model_utilization hook tracks sonnet ratio (already exists) | verify: test_token_sonnet_ratio.py — ratio ≥0.90
+- [ ] TK2.2 — Subagent prompts ≤20 lines each | priority: high | fix: AGENTS.md rule, dispatch prompt size check | verify: test_token_prompt_length.py — prompts truncated at 20 lines
+- [ ] TK2.3 — Subagent returns ≤5 bullet points or ≤10 lines | priority: high | fix: AGENTS.md rule, prompt specifies return format | verify: test_token_return_size.py — returns terse
+- [ ] TK2.4 — Never re-read large tool outputs already in context | priority: medium | fix: AGENTS.md keep-opus-lean rule | verify: test_token_no_reread.py — re-reads flagged
+- [ ] TK2.5 — Never re-derive established facts | priority: medium | fix: AGENTS.md keep-opus-lean rule | verify: test_token_no_rederive.py — repeated derivations flagged
+- [ ] TK2.6 — Lean on memory index instead of re-reading files | priority: medium | fix: AGENTS.md memory-first lookup rule | verify: test_token_memory_first.py — memory consulted
+- [ ] TK2.7 — Main thread (opus) tokens ≤ sonnet subagent tokens | priority: medium | fix: AGENTS.md opus-lean rule | verify: test_token_opus_lean.py — ratio tracked
+- [ ] TK2.8 — Cost-weighted ratio: sonnet tokens ≥3× opus tokens | priority: low | fix: model_utilization cost-weighted tracking | verify: test_token_cost_weighted.py — ratio ≥3
+- [ ] TK2.9 — Prefer dispatch over inline grind (100× savings) | priority: high | fix: AGENTS.md dispatch-preferred rule | verify: test_token_dispatch_preferred.py — inline grind flagged
+- [ ] TK2.10 — Subagent returns punch-list format, not raw output | priority: medium | fix: AGENTS.md punch-list rule | verify: test_token_punch_list.py — format verified
+- [ ] TK2.11 — Specify "return ≤5 bullet points" in every prompt | priority: medium | fix: AGENTS.md prompt template rule | verify: test_token_return_spec.py — spec in prompt
+- [ ] TK2.12 — Avoid grep -r '*' (broad patterns waste tokens) | priority: low | fix: AGENTS.md narrow-grep rule | verify: test_token_narrow_grep.py — broad patterns flagged
+- [ ] TK2.13 — Avoid full-file re-reads when offset/limit suffices | priority: medium | fix: AGENTS.md partial-read rule | verify: test_token_partial_read.py — full reads flagged
+- [ ] TK2.14 — Cache context in memory instead of re-fetching | priority: low | fix: AGENTS.md cache-first rule | verify: test_token_cache_first.py — re-fetches flagged
+- [ ] TK2.15 — Never dispatch duplicate work (dedup check) | priority: high | fix: AGENTS.md task dedup rule, hash task spec | verify: test_token_dedup.py — duplicates blocked
+- [ ] TK2.16 — Deduplicate dispatches via task spec hash | priority: medium | fix: validate_task_ledger.py hash check | verify: test_token_dispatch_dedup.py — hash collision blocked
+- [ ] TK2.17 — Pin subagent scope to one file/one question | priority: medium | fix: AGENTS.md one-task-per-agent rule | verify: test_token_scoped.py — multi-file dispatches flagged
+- [ ] TK2.18 — One focused task per subagent (no bundling) | priority: high | fix: AGENTS.md one-task rule | verify: test_token_no_bundle.py — bundled tasks flagged
+- [ ] TK2.19 — Avoid redundant research (check if already done) | priority: medium | fix: AGENTS.md research-dedup rule | verify: test_token_no_redundant.py — repeats flagged
+- [ ] TK2.20 — Share state via /tmp/gludd-* files, not re-computation | priority: low | fix: AGENTS.md state-sharing rule | verify: test_token_state_share.py — re-computation flagged
+- [ ] TK2.21 — Keep system prompt minimal (no redundant rules) | priority: low | fix: AGENTS.md dedup audit | verify: test_token_sysprompt_minimal.py — duplicates flagged
+- [ ] TK2.22 — Inline hot-file edits (single-file, no dispatch needed) | priority: medium | fix: AGENTS.md inline-preferred rule | verify: test_token_inline_hot.py — dispatch-for-single-edit flagged
+- [ ] TK2.23 — Use read-only research as filler (always productive) | priority: low | fix: AGENTS.md research-filler rule | verify: test_token_research_filler.py — filler used
+- [ ] TK2.24 — Codify subagent results immediately (no re-dispatch) | priority: high | fix: AGENTS.md codify-immediately rule | verify: test_token_codify_fast.py — re-dispatches flagged
+- [ ] TK2.25 — No analysis prose between dispatch waves | priority: medium | fix: AGENTS.md no-prose-between-waves rule | verify: test_token_no_prose_waves.py — prose flagged
 
 ---
 
@@ -1961,3 +2080,499 @@ old summary table omitted entirely. Grand total across the file: **326** boxes.
 - [x] check_version_consistency script | 7cb9e92b
 - [x] ci-integrity + task-ledger scripts | 2b513a21
 - [x] Cancel zombie CI 30064364867
+
+---
+
+## Phase CR5 — CI Run Catalog (25 specs)
+
+Each spec describes a distinct CI run type — its trigger conditions, expected duration, and success criteria. Tracked as behavioral fixtures so structural tests can pin each one.
+
+- [ ] CR5.1 — Gate run on push to master: trigger=push refs/heads/master, expected_duration=8-12 min, success=exit 0 + .gate-status=PASS | priority: critical | fix: structural test verifying build.yml gate job triggers on master push | verify: test_gate_run_master_trigger.py
+- [ ] CR5.2 — Gate run on tag push: trigger=push refs/tags/v*, expected_duration=10-15 min, success=gate green before release job | priority: critical | fix: verify gate runs as release dependency | verify: test_gate_run_tag_trigger.py
+- [ ] CR5.3 — Gate run on PR to master: trigger=pull_request master, expected_duration=8-12 min, success=exit 0 + checks-passed status | priority: high | fix: verify PR trigger config | verify: test_gate_run_pr_trigger.py
+- [ ] CR5.4 — Test shard run unit-1a: trigger=workflow gate, expected_duration=20-30 min, success=0 failed + 0 collection errors + continue-on-error=true | priority: high | fix: structural test for shard matrix entry | verify: test_shard_unit_1a.py
+- [ ] CR5.5 — Test shard run unit-1b: trigger=workflow gate, expected_duration=15-25 min, success=shard reports pass with zero errors | priority: high | fix: verify path glob in matrix | verify: test_shard_unit_1b.py
+- [ ] CR5.6 — Test shard run unit-1d: trigger=workflow gate, expected_duration=15-25 min, success=all tests pass, no errors | priority: high | fix: verify shard path mappings | verify: test_shard_unit_1d.py
+- [ ] CR5.7 — Test shard run unit-2: trigger=workflow gate, expected_duration=10-20 min, success=passes + continue-on-error=true | priority: medium | fix: verify shard definition | verify: test_shard_unit_2.py
+- [ ] CR5.8 — Test shard run unit-3: trigger=workflow gate, expected_duration=10-20 min, success=passes | priority: medium | fix: verify shard definition | verify: test_shard_unit_3.py
+- [ ] CR5.9 — Test shard run other: trigger=workflow gate, expected_duration=5-10 min, success=all non-categorized tests pass | priority: low | fix: verify catch-all shard | verify: test_shard_other.py
+- [ ] CR5.10 — Linux build run: trigger=workflow on v* tag, runner=ubuntu-latest, expected_duration=10-15 min, success=produces gludd-linux-x86_64.tar.gz + .sha256 | priority: critical | fix: verify linux job in build.yml | verify: test_linux_build_run.py
+- [ ] CR5.11 — macOS build run: trigger=workflow on v* tag, runner=macos-latest, expected_duration=15-25 min, success=produces gludd-darwin-arm64.tar.gz + .sha256 + gludd-VERSION.dmg | priority: critical | fix: verify macos job | verify: test_macos_build_run.py
+- [ ] CR5.12 — Windows build run: trigger=workflow on v* tag, runner=windows-latest, expected_duration=20-35 min, success=produces gludd-windows-x86_64.zip + gludd-VERSION-setup-x86_64.exe | priority: critical | fix: verify windows job | verify: test_windows_build_run.py
+- [ ] CR5.13 — Termux build run: trigger=workflow on v* tag, runner=ubuntu-latest + termux setup, expected_duration=8-12 min, success=produces gludd-android-arm64.tar.gz | priority: medium | fix: verify termux job | verify: test_termux_build_run.py
+- [ ] CR5.14 — Container build run: trigger=workflow on v* tag, runner=ubuntu-latest, expected_duration=8-15 min, success=produces gludd-container.tar.gz + pushes to ghcr | priority: high | fix: verify container job | verify: test_container_build_run.py
+- [ ] CR5.15 — Molecule run: trigger=workflow on v* tag, expected_duration=15-25 min, success=molecule converge on all shards + idempotence passes | priority: medium | fix: verify molecule workflow | verify: test_molecule_run.py
+- [ ] CR5.16 — Coverage run: trigger=workflow on v* tag, expected_duration=10-15 min, success=coverage.xml produced + fail_under=85 met | priority: medium | fix: verify coverage job | verify: test_coverage_run.py
+- [ ] CR5.17 — Release run: trigger=workflow on v* tag (after gate+builds), expected_duration=5-10 min, success=12 artifacts published + verify-release-completeness PASS | priority: critical | fix: verify release job downloads all builds + publishes | verify: test_release_run.py
+- [ ] CR5.18 — Pages deployment run: trigger=workflow_dispatch + push to docs/presentation, expected_duration=2-5 min, success=deployed to GitHub Pages + HTTP 200 | priority: low | fix: verify pages workflow | verify: test_pages_run.py
+- [ ] CR5.19 — Gate timeout failure mode: when gate exceeds 120 min, action auto-cancel + .gate-status=FAIL + log surfaced | priority: high | fix: verify timeout-minutes=120 + fail marker | verify: test_gate_timeout.py
+- [ ] CR5.20 — Test shard timeout failure mode: when unit-1a exceeds 120 min, action auto-cancel + continue-on-error means release still proceeds | priority: high | fix: verify continue-on-error semantics | verify: test_shard_timeout.py
+- [ ] CR5.21 — Build job failure propagation: when linux build fails, release job is skipped (needs chain) | priority: critical | fix: verify release job needs all builds | verify: test_build_failure_propagation.py
+- [ ] CR5.22 — Concurrency cancellation: pushing new commit cancels in-progress run for same branch via cancel-in-progress | priority: high | fix: verify concurrency group formula | verify: test_concurrency_cancel.py
+- [ ] CR5.23 — Manual workflow_dispatch trigger: any workflow can be triggered manually via GitHub UI with ref parameter | priority: low | fix: verify workflow_dispatch input | verify: test_manual_trigger.py
+- [ ] CR5.24 — PR run vs push run isolation: PR runs do not trigger release/publish jobs (only test+gate) | priority: high | fix: verify job conditionals on github.event_name | verify: test_pr_run_isolation.py
+- [ ] CR5.25 — CI cache hit semantics: uv + pip caches restored from key including pyproject.toml hash; cache miss does not fail the run | priority: low | fix: verify cache key formula | verify: test_ci_cache.py
+
+---
+
+## Phase CT3 — Contract Testing (25 specs)
+
+Each spec pins an interface contract between two subsystems — failures of these contracts cause silent breakage (wrong return type, missing field, divergent schema).
+
+- [ ] CT3.1 — Daemon-Worker contract: daemon POSTs to /broadcast with PSK-authenticated worker; worker returns {status, result} with exit_code:int and stdout:str fields | priority: critical | fix: structural test asserting field types on response schema | verify: test_daemon_worker_contract.py
+- [ ] CT3.2 — Daemon-Worker contract: worker must respond within DEFAULT_TIMEOUT=300s or daemon marks task failed | priority: high | fix: test timeout enforcement on daemon side | verify: test_worker_timeout_contract.py
+- [ ] CT3.3 — Daemon-Worker contract: worker PSK validation fails-closed (403) when PSK missing/mismatched | priority: critical | fix: structural test for 403 response on bad PSK | verify: test_worker_psk_contract.py
+- [ ] CT3.4 — Plugin-Hook contract: tool.execute.before returns {permissionDecision: allow|deny, message?: string} exactly — never throws, never returns undefined | priority: critical | fix: behavioral test invoking every plugin hook with null inputs | verify: test_plugin_hook_return_shape.py
+- [ ] CT3.5 — Plugin-Hook contract: text.complete may return {text?: string} or undefined — never throws synchronously | priority: high | fix: behavioral test of text.complete with malformed input | verify: test_text_complete_shape.py
+- [ ] CT3.6 — Plugin-Hook contract: every plugin export default is a function taking {config} and returning object with hook keys | priority: critical | fix: structural test verifying factory signature | verify: test_plugin_factory_contract.py
+- [ ] CT3.7 — Make-Target contract: every PHONY target prints progress (not silent), exits 0 on success, exits non-zero on failure | priority: high | fix: parametrized test running targets with --dry-run | verify: test_make_target_contract.py
+- [ ] CT3.8 — Make-Target contract: git-commit target runs _gate-fresh-check + collect-check + pre-commit hooks before git commit | priority: critical | fix: structural test asserting recipe references | verify: test_git_commit_recipe.py
+- [ ] CT3.9 — Make-Target contract: ship-commit has PUSH=0 default; explicit PUSH=1 required to push | priority: high | fix: structural test verifying default value | verify: test_ship_commit_default.py
+- [ ] CT3.10 — Make-Target contract: release-cut runs require-ci-green → check-readme-status → push → tag → release-view in that order | priority: critical | fix: structural test on recipe ordering | verify: test_release_cut_order.py
+- [ ] CT3.11 — Test-File-Source-File contract: tests/unit/test_<module>.py imports from src/general_ludd/<module>.py only (no cross-test imports) | priority: high | fix: AST-based structural test | verify: test_test_source_mapping.py
+- [ ] CT3.12 — Test-File-Source-File contract: every src/general_ludd/<module>.py with non-trivial logic has a corresponding test_<module>.py | priority: high | fix: coverage gap audit enforcement | verify: test_source_has_test.py
+- [ ] CT3.13 — Config-File-Schema contract: config/ratchet.yml entries are {node_id: reason} map; structural validator rejects malformed entries | priority: medium | fix: schema test with pyyaml | verify: test_ratchet_schema.py
+- [ ] CT3.14 — Config-File-Schema contract: config/permissions/human-*.yml contains PermissionSpec with path_prefix, allowed_hosts, denied, ttl_secs fields | priority: high | fix: schema test on each permission spec | verify: test_permission_schema.py
+- [ ] CT3.15 — Config-File-Schema contract: config/remediation.yml has permission_escalation_block_hours, human_input_block_hours, max_requeues_before_chronic keys | priority: medium | fix: schema test asserting all keys | verify: test_remediation_schema.py
+- [ ] CT3.16 — Config-File-Schema contract: pyproject.toml [tool.ruff] line-length=120, [tool.mypy] strict=true, [tool.pytest.ini_options] asyncmode=auto | priority: medium | fix: toml schema test | verify: test_pyproject_schema.py
+- [ ] CT3.17 — Daemon-API contract: POST /api/projects returns {id, name, dispatch_mode, weight} with id:string, weight:float | priority: high | fix: schema test on endpoint response | verify: test_projects_api_contract.py
+- [ ] CT3.18 — Daemon-API contract: GET /health returns {status: ok, version: str, uptime: int} with all three fields present | priority: high | fix: schema test on health endpoint | verify: test_health_api_contract.py
+- [ ] CT3.19 — Daemon-API contract: error responses follow {error: str, code: int, details?: str} shape, never raw exception text | priority: critical | fix: schema test on error paths | verify: test_error_api_contract.py
+- [ ] CT3.20 — DB-Model contract: TodoModel has status field with enum {pending, in_progress, completed, blocked_on_human, cancelled} — no other values valid | priority: high | fix: structural test on enum literal set | verify: test_todo_status_enum.py
+- [ ] CT3.21 — Alembic-Migration contract: every migration has upgrade() and downgrade() that are exact inverses; down_revision links form a chain with no gaps | priority: critical | fix: migration chain walker | verify: test_migration_chain.py
+- [ ] CT3.22 — Plugin-State-File contract: /tmp/gludd-*.json files contain pid:number, timestamp:number, and at least one domain field; missing pid = treat as stale | priority: high | fix: schema test on every state file writer | verify: test_state_file_schema.py
+- [ ] CT3.23 — Ansible-Role contract: every role has tasks/main.yml + defaults/main.yml + (optional) handlers/main.yml; meta/main.yml declares author/platform/version | priority: medium | fix: structural test over collections/ | verify: test_role_structure.py
+- [ ] CT3.24 — Module-Import contract: src/general_ludd/__init__.py exports __version__ matching pyproject.toml [project].version exactly | priority: high | fix: version sync test | verify: test_version_export_contract.py
+- [ ] CT3.25 — Skill-Markdown contract: every .opencode/skills/*/SKILL.md has frontmatter with name + description; description is non-empty and ≤200 chars | priority: low | fix: frontmatter parser test | verify: test_skill_md_contract.py
+
+---
+
+## Phase LN2 — Logging (25 specs)
+
+Each spec pins a logging behavior — structured JSON, log levels, rotation, heartbeats, enforcement state, CI status, gate phases.
+
+- [ ] LN2.1 — Daemon emits structured JSON logs: each line is valid JSON with timestamp, level, logger, message, and contextual fields | priority: high | fix: configure structlog/json formatter in daemon startup | verify: test_structured_json_logs.py
+- [ ] LN2.2 — Log levels enforced hierarchically: DEBUG < INFO < WARNING < ERROR < CRITICAL; runtime level configurable via LOG_LEVEL env var | priority: high | fix: verify filter chain respects hierarchy | verify: test_log_level_hierarchy.py
+- [ ] LN2.3 — DEBUG logs never emitted in production (LOG_LEVEL=INFO default); CI sets LOG_LEVEL=WARNING | priority: medium | fix: structural test of default level | verify: test_default_log_level.py
+- [ ] LN2.4 — Sensitive data redaction: Authorization headers, PSK values, api_keys replaced with [REDACTED] before logging | priority: critical | fix: install redaction filter at logger setup | verify: test_log_redaction.py
+- [ ] LN2.5 — Log rotation: /tmp/gludd-*.log files rotated when size > 10MB, keeping last 5 rotations | priority: medium | fix: configure RotatingFileHandler in logging config | verify: test_log_rotation.py
+- [ ] LN2.6 — Heartbeat logging: long-running operations (gate, build, test suite) emit a heartbeat every 30s with phase + elapsed_seconds | priority: high | fix: heartbeat helper in background ops | verify: test_heartbeat_logging.py
+- [ ] LN2.7 — Enforcement state logging: every plugin hook execution writes to /tmp/gludd-plugin-trace.jsonl with hook_name, decision, duration_ms, timestamp | priority: medium | fix: trace writer in shared.ts reportAlive | verify: test_enforcement_trace.py
+- [ ] LN2.8 — CI status logging: every ci-verdict invocation logs run_id, conclusion, headSha, duration to /tmp/gludd-ci-history.jsonl | priority: medium | fix: history append in scripts/ci_verdict.py | verify: test_ci_history_logging.py
+- [ ] LN2.9 — Gate phase logging: === GATE PHASE: <name> === emitted at the start of every gate phase (lint, typecheck, collect, hook-runtime, test, smoke) | priority: high | fix: verify phase markers in Makefile gate recipe | verify: test_gate_phase_markers.py
+- [ ] LN2.10 — Gate terminal marker: === GATE: PASSED === or === GATE: FAILED === emitted exactly once at gate completion | priority: critical | fix: verify terminal marker in gate recipe | verify: test_gate_terminal_marker.py
+- [ ] LN2.11 — Dispatch logging: every Task/agent/workflow dispatch logs task_id, prompt_sha256, model, timestamp to /tmp/gludd-dispatch-log.jsonl | priority: medium | fix: dispatch tracer in enforce-floor.ts | verify: test_dispatch_logging.py
+- [ ] LN2.12 — Subagent result logging: every subagent completion logs task_id, status, duration_seconds, deliverable_kind to /tmp/gludd-dispatch-log.jsonl | priority: medium | fix: extend dispatch tracer | verify: test_subagent_result_logging.py
+- [ ] LN2.13 — Disengage audit logging: every make disengage-enforcement appends {timestamp, pid, reason?} to /tmp/gludd-disengage-audit.jsonl | priority: high | fix: append in disengage target recipe | verify: test_disengage_audit_logging.py
+- [ ] LN2.14 — Push logging: every push logs branch, sha, remote_response, timestamp to /tmp/gludd-push-log.jsonl | priority: medium | fix: append in git-push-sandboxcom target | verify: test_push_logging.py
+- [ ] LN2.15 — Commit logging: every commit logs sha, branch, message_subject, files_changed_count to /tmp/gludd-commit-log.jsonl | priority: medium | fix: append in git-commit target | verify: test_commit_logging.py
+- [ ] LN2.16 — Error logging: every caught exception in plugin hooks logs error_class, message, stack_sha256 (not full stack) at ERROR level | priority: high | fix: error reporter in shared.ts fail-open catch | verify: test_error_logging.py
+- [ ] LN2.17 — Watchdog activity logging: agent_watchdog.py writes heartbeat every 60s to /tmp/gludd-watchdog.log with pid, alive_subagents_count | priority: medium | fix: verify watchdog heartbeat format | verify: test_watchdog_logging.py
+- [ ] LN2.18 — Task-deadline logging: enforce-deadline.ts logs task_id, started_at, elapsed_ms, breached:bool on every check | priority: medium | fix: extend plugin trace writer | verify: test_deadline_logging.py
+- [ ] LN2.19 — Plugin heartbeat logging: every plugin writes /tmp/gludd-plugin-heartbeat-<name>.json on first invocation with timestamp + pid | priority: medium | fix: verify reportAlive writes the file | verify: test_plugin_heartbeat_logging.py
+- [ ] LN2.20 — Hot-module load logging: loadHotModule writes /tmp/gludd-hot-load-log.jsonl entry with module_name, mtime, success:bool | priority: low | fix: trace in loadHotModule function | verify: test_hot_load_logging.py
+- [ ] LN2.21 — Migration logging: alembic upgrade writes /tmp/gludd-migration-log.jsonl with revision, direction, duration_ms, success | priority: medium | fix: alembic event hook | verify: test_migration_logging.py
+- [ ] LN2.22 — Worker broadcast logging: every worker broadcast logs worker_id, task_id, response_status, duration_ms | priority: medium | fix: extend daemon broadcast logger | verify: test_worker_broadcast_logging.py
+- [ ] LN2.23 — Permission escalation logging: every escalation request logs agent_id, requested_scope, decision (auto/pending/denied), timestamp | priority: high | fix: audit log append in escalation endpoint | verify: test_escalation_logging.py
+- [ ] LN2.24 — Crash recovery logging: make crash-recovery writes /tmp/gludd-crash-recovery-log.jsonl with reset_files list, killed_pids list, timestamp | priority: medium | fix: append in crash-recovery target | verify: test_crash_recovery_logging.py
+- [ ] LN2.25 — Log format contract: every JSON log line is parseable by json.loads() with no exceptions; malformed lines are counted and surfaced | priority: high | fix: log validator script run in gate | verify: test_log_format_validity.py
+
+---
+
+## Phase MC2 — Metrics Collection (25 specs)
+
+Each spec pins a metric that should be tracked — counts, durations, percentages. Surfaced via /metrics endpoint and /tmp/gludd-metrics.json.
+
+- [ ] MC2.1 — Dispatch count metric: total Task/agent/workflow dispatches per session, exposed as dispatch_count:int | priority: medium | fix: counter in enforce-floor.ts state file | verify: test_dispatch_count_metric.py
+- [ ] MC2.2 — Live subagent count metric: current count of in-flight Workflow subagents via scripts/agent_liveness.py | priority: medium | fix: expose in metrics endpoint | verify: test_live_subagent_metric.py
+- [ ] MC2.3 — CI poll count metric: total ci-status/ci-verdict/ci-view invocations per session, exposed as ci_poll_count:int | priority: medium | fix: counter in enforce-no-ci-poll.ts | verify: test_ci_poll_count_metric.py
+- [ ] MC2.4 — Disengage count metric: total make disengage-enforcement invocations per session + all-time | priority: high | fix: counter in disengage audit log | verify: test_disengage_count_metric.py
+- [ ] MC2.5 — Commit count metric: total commits per session + commits-per-hour rate | priority: low | fix: counter in commit log | verify: test_commit_count_metric.py
+- [ ] MC2.6 — Push count metric: total pushes per session + pushes-per-hour rate | priority: low | fix: counter in push log | verify: test_push_count_metric.py
+- [ ] MC2.7 — Gate duration metric: wall-clock seconds of last gate run, exposed as gate_duration_seconds:float | priority: high | fix: timer in gate-background launcher | verify: test_gate_duration_metric.py
+- [ ] MC2.8 — Gate phase durations metric: per-phase wall-clock seconds (lint, typecheck, collect, hook-runtime, test, smoke) | priority: medium | fix: phase timer in gate recipe | verify: test_gate_phase_durations.py
+- [ ] MC2.9 — Test suite duration metric: wall-clock seconds of last full test run | priority: medium | fix: timer in test target | verify: test_suite_duration_metric.py
+- [ ] MC2.10 — Test shard duration metric: per-shard wall-clock seconds (unit-1a, 1b, 1d, 2, 3, other) | priority: medium | fix: timer in CI workflow per shard | verify: test_shard_duration_metric.py
+- [ ] MC2.11 — Coverage percentage metric: per-file + overall coverage from last coverage run, exposed as coverage_pct:float | priority: high | fix: parser reading coverage.xml | verify: test_coverage_metric.py
+- [ ] MC2.12 — Coverage threshold delta metric: coverage_pct - fail_under, exposed as coverage_delta:float (negative = failing) | priority: high | fix: derived from coverage metric | verify: test_coverage_delta_metric.py
+- [ ] MC2.13 — Plugin hook execution count metric: per-plugin invocation count + per-hook breakdown | priority: low | fix: counter in plugin trace writer | verify: test_plugin_hook_count_metric.py
+- [ ] MC2.14 — Plugin hook duration metric: per-plugin avg + p95 execution time in milliseconds | priority: medium | fix: timing in reportAlive wrapper | verify: test_plugin_hook_duration_metric.py
+- [ ] MC2.15 — Enforcement block count metric: per-plugin count of permissionDecision:deny outcomes | priority: high | fix: counter in plugin trace writer | verify: test_block_count_metric.py
+- [ ] MC2.16 — False-positive block count metric: blocks that were subsequently overridden by disengage (proxy for plugin accuracy) | priority: medium | fix: cross-reference disengage audit + block count | verify: test_false_positive_metric.py
+- [ ] MC2.17 — Worktree count metric: active git worktrees, exposed as worktree_count:int | priority: low | fix: parse git worktree list | verify: test_worktree_count_metric.py
+- [ ] MC2.18 — Disk usage metric: free_space_gb:float, tmp_gludd_mb:float, worktree_total_mb:float | priority: medium | fix: du + df parsing in metrics collector | verify: test_disk_metric.py
+- [ ] MC2.19 — Task deadline breach count metric: total tasks that exceeded 5-min timeout per session | priority: high | fix: counter in enforce-deadline.ts | verify: test_deadline_breach_metric.py
+- [ ] MC2.20 — CI run duration metric: per-run wall-clock seconds for the last 10 CI runs | priority: low | fix: parse gh run list --json startedAt,updatedAt | verify: test_ci_duration_metric.py
+- [ ] MC2.21 — CI verdict distribution metric: count of GREEN/RED/PENDING verdicts over last 50 runs | priority: low | fix: aggregate from ci history log | verify: test_ci_verdict_distribution.py
+- [ ] MC2.22 — Release artifact count metric: published artifacts per release, expected=12, exposed as artifact_count:int | priority: high | fix: parse gh release view --json assets | verify: test_artifact_count_metric.py
+- [ ] MC2.23 — Model utilization metric: per-model dispatch count + percentage (sonnet, opus, haiku, deepseek) | priority: medium | fix: counter in enforce-delegate.ts | verify: test_model_util_metric.py
+- [ ] MC2.24 — Sonnet ratio metric: sonnet_count / total_count, target ≥ 0.91 (10:1), exposed as sonnet_ratio:float | priority: medium | fix: derived from model utilization | verify: test_sonnet_ratio_metric.py
+- [ ] MC2.25 — Metrics endpoint contract: GET /metrics returns Prometheus-format text with all metrics above as gauges/counters, content-type text/plain | priority: high | fix: prometheus_client integration in daemon | verify: test_metrics_endpoint_contract.py
+
+---
+
+## Phase CR2 — Crash Recovery Details (25 specs)
+
+- [ ] CR2.1 — Plugin crash at boot blocks opencode startup | priority: critical | fix: wrap plugin loader in try/catch, log failing plugin, continue with remaining plugins; document .opencode.orig/ rename as emergency workaround | verify: test_plugin_boot_crash_recovery.py
+- [ ] CR2.2 — Enforcement state file corruption (invalid JSON in /tmp/gludd-*.json) | priority: high | fix: JSON.parse wrapped in try/catch with state reset on SyntaxError; atomic write via temp+rename | verify: test_corrupt_state_recovery.py
+- [ ] CR2.3 — Stale git index.lock from killed commit | priority: high | fix: enforce-commit-lock.ts detects stale lock via PID liveness check; remove lock if PID dead | verify: test_stale_index_lock.py
+- [ ] CR2.4 — Stale PID files in /tmp/gludd-*.pid reference dead processes | priority: medium | fix: crash-recovery target scans PID files, removes those whose PID is no longer running via kill -0 | verify: test_stale_pid_cleanup.py
+- [ ] CR2.5 — OOM during gate kills the gate process mid-phase | priority: high | fix: gate-lite as fallback; detect OOM via dmesg/exit code 137; emit marker to .gate-status before crash | verify: test_gate_oom_recovery.py
+- [ ] CR2.6 — SSH key expiry (sandboxcom_github_rsa) causes push failures mid-session | priority: medium | fix: make git-remote-sandboxcom reconfigures key; detect "Permission denied (publickey)" and auto-run reconfig | verify: test_ssh_key_refresh.py
+- [ ] CR2.7 — CI runner hits 6-hour timeout with no signal | priority: medium | fix: workflow timeout-minutes set well under 6h; heartbeat step prints timestamp every 5 min | verify: test_ci_timeout_heartbeat.py
+- [ ] CR2.8 — Node process crash (segfault) orphans background gate | priority: high | fix: gate-background writes PID file; session start scans for orphaned PIDs and kills them | verify: test_orphan_gate_cleanup.py
+- [ ] CR2.9 — Watchdog daemon (agent_watchdog.py) dies silently | priority: high | fix: make watchdog-auto verifies daemon alive via PID file + heartbeat mtime; restarts if stale >60s | verify: test_watchdog_auto_restart.py
+- [ ] CR2.10 — Task watchdog orphan leaves child processes running after parent dies | priority: high | fix: task_watchdog.py writes child PIDs to /tmp/gludd-task-children.json; crash-recovery reaps them | verify: test_task_orphan_reap.py
+- [ ] CR2.11 — Hot module corruption (/tmp/gludd-hot-*.js has syntax error from partial write) | priority: high | fix: loadHotModule catches import error, falls back to defaultImpl; hot-reload-plugins validates output | verify: test_hot_module_corruption.py
+- [ ] CR2.12 — opencode.db WAL file bloat slows session startup | priority: low | fix: periodic PRAGMA wal_checkpoint(TRUNCATE); document make db-checkpoint target | verify: test_wal_checkpoint.py
+- [ ] CR2.13 — Worktree creation fails with ENOSPC mid-dispatch wave | priority: medium | fix: disk-discipline pre-check before make agent-worktree; fall back to non-isolated agent | verify: test_worktree_enospc.py
+- [ ] CR2.14 — Pre-commit stash conflict on pop (untracked file overlaps) | priority: medium | fix: commit-no-verify as documented escape hatch; clean tree before dispatch prevents stash entirely | verify: test_stash_conflict_recovery.py
+- [ ] CR2.15 — Disk fills mid-commit leaving half-written object | priority: medium | fix: git fsck recovery documented; disk-guard pre-check before commit | verify: test_disk_full_commit.py
+- [ ] CR2.16 — Plugin loader crashes on non-function export default | priority: critical | fix: test_plugin_dir_hygiene verifies Object.values(mod) are all functions; auto-quarantine bad plugins | verify: test_bad_export_quarantine.py
+- [ ] CR2.17 — Subagent process leak (Task children not reaped) | priority: high | fix: session end runs make kill-stale-agents; agent_liveness.py reports orphan count | verify: test_subagent_leak.py
+- [ ] CR2.18 — Background gate survives session end as orphan | priority: medium | fix: session end runs make gate-kill if .gate-background.pid exists | verify: test_bg_gate_session_end.py
+- [ ] CR2.19 — Alembic migration partial apply leaves DB in inconsistent state | priority: high | fix: migrations transactional; downgrade path tested; daemon startup runs alembic current to detect drift | verify: test_partial_migration.py
+- [ ] CR2.20 — OpenBao connection drop mid-tick leaves secrets unretrievable | priority: high | fix: fail-closed on OpenBao error; circuit breaker pattern with retry-after | verify: test_openbao_drop_recovery.py
+- [ ] CR2.21 — httpx connection pool exhaustion hangs model gateway | priority: medium | fix: connection pool limits configured; timeout on acquire; circuit breaker | verify: test_httpx_pool_exhaustion.py
+- [ ] CR2.22 — asyncio event loop blocked by sync call (subprocess.run without to_thread) | priority: high | fix: grep for subprocess.run/call in async functions; all must use asyncio.to_thread | verify: test_no_blocking_in_async.py
+- [ ] CR2.23 — psutil.NoSuchProcess race (process gone between check and kill) | priority: low | fix: wrap kill() in try/except NoSuchProcess; treat as success | verify: test_psutil_race.py
+- [ ] CR2.24 — EXDEV error on atomic rename across /tmp → /private/tmp symlink | priority: medium | fix: write temp file in same dir as target, then rename; already fixed in session-start.ts | verify: test_exdev_rename.py
+- [ ] CR2.25 — GitHub API secondary rate limit rejects push with retry-after | priority: medium | fix: push rate guard respects retry-after header; exponential backoff documented | verify: test_secondary_rate_limit.py
+
+---
+
+## Phase TS — TypeScript Specifics (25 specs)
+
+- [ ] TS.1 — Node v26 --experimental-strip-types strips types only, no type checking | priority: high | fix: mypy-equivalent (tsc --noEmit) NOT run by Node; document that types are advisory | verify: test_strip_types_semantics.py
+- [ ] TS.2 — ESM imports only: no require() in .ts plugin files | priority: critical | fix: validate_plugins.py greps for require(, fails on match; use import | verify: test_no_require_in_ts.py
+- [ ] TS.3 — No enums (TypeScript-only construct, not stripped) | priority: high | fix: use const objects `{ FOO: "foo" }` with `as const`; check-node-v26-compat scans for `enum ` | verify: test_no_enums.py
+- [ ] TS.4 — No namespaces (TypeScript-only construct) | priority: high | fix: use ES modules; check-node-v26-compat scans for `namespace ` | verify: test_no_namespaces.py
+- [ ] TS.5 — export default only in .opencode/plugin/: no named exports | priority: critical | fix: test_plugin_dir_hygiene verifies only export default; named exports crash loader | verify: test_no_named_exports_plugins.py
+- [ ] TS.6 — Type annotations stripped at runtime: runtime sees untyped values | priority: medium | fix: document that `function foo(x: number)` becomes `function foo(x)` at runtime | verify: test_type_stripping.py
+- [ ] TS.7 — Catch blocks must be untyped: `catch (e)` not `catch (e: TypeError)` | priority: high | fix: use `catch (e)` then `if (e instanceof TypeError)` inside; check-node-v26-compat | verify: test_untyped_catch.py
+- [ ] TS.8 — No nested try inside catch block: causes ERR_INVALID_TYPESCRIPT_SYNTAX | priority: critical | fix: extract recovery logic to helper function called from catch; check-node-v26-compat scans `catch { try` | verify: test_no_nested_try_catch.py
+- [ ] TS.9 — Hot-reload proxy pattern: every plugin delegates to defaultImpl or loadHotModule() | priority: high | fix: thin wrapper plugin file imports impl; loadHotModule reads /tmp/gludd-hot-*.js | verify: test_hot_reload_proxy_all_plugins.py
+- [ ] TS.10 — shared.ts consolidation: isSubagent, reportAlive, isDisengaged, isReadTool, isDispatchTool | priority: medium | fix: all helpers in .opencode/lib/shared.ts; no duplication across plugins | verify: test_shared_no_duplication.py
+- [ ] TS.11 — impl/ pattern: implementation logic in impl/enforce_*_impl.ts, imported by plugin wrapper | priority: medium | fix: plugin file is 5-line wrapper that imports impl and calls hooks | verify: test_impl_pattern.py
+- [ ] TS.12 — Test exports in lib/plugin_test_exports.ts, not in plugin/ dir | priority: high | fix: test helper functions moved to lib/; plugin/ has only export default | verify: test_test_exports_location.py
+- [ ] TS.13 — Type-only re-exports handled correctly: `export type { X }` stripped | priority: low | fix: verify strip-types handles `export type`; avoid complex re-export patterns | verify: test_type_reexport.py
+- [ ] TS.14 — Interface vs type alias: both work, prefer interface for object shapes | priority: low | fix: coding standard: interface for objects, type for unions/intersections | verify: test_interface_preference.py
+- [ ] TS.15 — `as` casts allowed: runtime-safe, stripped by transform | priority: low | fix: document that `x as Foo` becomes `x` at runtime; safe narrowing | verify: test_as_cast.py
+- [ ] TS.16 — `satisfies` operator supported by Node v26 strip-types | priority: low | fix: verify `(obj as Foo)` and `obj satisfies Foo` both work | verify: test_satisfies_operator.py
+- [ ] TS.17 — No `import =` (TypeScript-only construct) | priority: medium | fix: use ES module `import`; check-node-v26-compat scans for `import =` | verify: test_no_import_equals.py
+- [ ] TS.18 — No `export =` (TypeScript-only construct) | priority: medium | fix: use export default; check-node-v26-compat scans for `export =` | verify: test_no_export_equals.py
+- [ ] TS.19 — Generic type params stripped: `function foo<T>(x: T)` becomes `function foo(x)` | priority: low | fix: document that generics are type-level only | verify: test_generic_stripping.py
+- [ ] TS.20 — Decorators not supported by --experimental-strip-types | priority: low | fix: avoid @decorator syntax in plugin code; use higher-order functions | verify: test_no_decorators.py
+- [ ] TS.21 — JSX not supported in plugin code (.ts only, no .tsx) | priority: low | fix: plugin files are .ts; no JSX/TSX in .opencode/plugin/ | verify: test_no_jsx.py
+- [ ] TS.22 — const enums forbidden: inlined at compile time, not stripped | priority: high | fix: use regular enum-free const objects; check-node-v26-compat | verify: test_no_const_enums.py
+- [ ] TS.23 — Numeric literal vs string keys: object indexing gotchas with strip-types | priority: low | fix: use Map for dynamic keys; document Record<K, V> stripping | verify: test_object_indexing.py
+- [ ] TS.24 — Promise<T> return types stripped: runtime returns untyped Promise | priority: low | fix: document that async function returns Promise at runtime regardless of annotation | verify: test_promise_stripping.py
+- [ ] TS.25 — this binding in callbacks: arrow functions preserve this, regular functions don't | priority: medium | fix: coding standard: use arrow functions in plugin callbacks | verify: test_this_binding.py
+
+---
+
+## Phase PY — Python Specifics (25 specs)
+
+- [ ] PY.1 — No `Any` type annotation: use `object` (top type) or specific types | priority: high | fix: make check-types flags Any usage; replace with object + narrowing | verify: test_no_any_type.py
+- [ ] PY.2 — ruff E501 (line too long): reflow, never # noqa | priority: medium | fix: enforce-no-suppressions.ts blocks # noqa; reflow lines >120 chars | verify: test_e501_reflow.py
+- [ ] PY.3 — ruff F401 (unused import): delete the import | priority: high | fix: enforce-no-suppressions.ts blocks # noqa; remove unused import | verify: test_f401_cleanup.py
+- [ ] PY.4 — ruff RUF012 (mutable class default): use frozenset/tuple/default_factory | priority: medium | fix: replace `class_attrs = []` with `= field(default_factory=list)` | verify: test_ruf012_fix.py
+- [ ] PY.5 — ruff SIM102 (nested if collapsible): combine with `and` | priority: low | fix: `if a: if b:` → `if a and b:` | verify: test_sim102_collapse.py
+- [ ] PY.6 — pytest fixtures: scope (function/module/session), params, yield teardown | priority: medium | fix: document fixture patterns; scope="session" for expensive setup | verify: test_fixture_patterns.py
+- [ ] PY.7 — conftest.py: shared fixtures at directory level, hooks (pytest_collection_modifyitems) | priority: medium | fix: document conftest hierarchy; _LEAKY_ENV_VARS frozenset for xdist | verify: test_conftest_patterns.py
+- [ ] PY.8 — xdist isolation: tmp_path_factory, worker_id, no shared mutable state | priority: high | fix: each worker gets own tmp; _LEAKY_ENV_VARS reset between tests | verify: test_xdist_isolation.py
+- [ ] PY.9 — Coverage measurement: coverage.py config, branch coverage, fail_under | priority: medium | fix: pyproject.toml [tool.coverage] branch=true, fail_under=85 | verify: test_coverage_config.py
+- [ ] PY.10 — mypy strict: disallow_untyped_defs=True, no_implicit_optional | priority: high | fix: all def signatures annotated; pyproject.toml [tool.mypy] strict=True | verify: test_mypy_strict.py
+- [ ] PY.11 — Import organization: stdlib, third-party, local (isort/ruff isort) | priority: low | fix: ruff I001 rule; three groups separated by blank line | verify: test_import_org.py
+- [ ] PY.12 — Protocol classes for structural typing: typing.Protocol with runtime_checkable | priority: medium | fix: use Protocol for duck-typing contracts; @runtime_checkable for isinstance | verify: test_protocol_typing.py
+- [ ] PY.13 — TypeVar + Generic for parameterized types: TypeVar bound, constraints | priority: medium | fix: `T = TypeVar("T", bound=Comparable)`; Generic[T] for containers | verify: test_typevar_generic.py
+- [ ] PY.14 — async def + await: no blocking calls (subprocess.run, time.sleep) in async | priority: high | fix: use asyncio.to_thread / asyncio.sleep; grep for blocking calls in async funcs | verify: test_no_blocking_async.py
+- [ ] PY.15 — dataclass with frozen=True for immutable value objects | priority: medium | fix: @dataclass(frozen=True) for hashable, immutable records | verify: test_frozen_dataclass.py
+- [ ] PY.16 — Pydantic v2: model_validator, field_validator, model_config | priority: medium | fix: use @model_validator(mode="after") for cross-field validation | verify: test_pydantic_v2.py
+- [ ] PY.17 — SQLAlchemy 2.0: Mapped[T], mapped_column(), DeclarativeBase | priority: high | fix: use 2.0 style; DeclarativeBase subclass; Mapped[int] annotations | verify: test_sqlalchemy_2.py
+- [ ] PY.18 — functools.lru_cache gotchas: unhashable args, memory leaks, cache_clear | priority: low | fix: document lru_cache limitations; use cachetools.TTLCache for size-bounded | verify: test_lru_cache.py
+- [ ] PY.19 — contextlib.contextmanager for resource lifecycle: yield + try/finally | priority: medium | fix: @contextmanager def resource(): try: yield x finally: cleanup | verify: test_contextmanager.py
+- [ ] PY.20 — logging.getLogger(__name__): per-module loggers, not root | priority: medium | fix: never use logging.info() directly; always getLogger(__name__) | verify: test_module_logger.py
+- [ ] PY.21 — pathlib.Path: no os.path string concatenation | priority: medium | fix: Path(a) / b instead of os.path.join(a, b); .read_text() instead of open() | verify: test_pathlib_usage.py
+- [ ] PY.22 — typing.cast vs runtime check: cast is type-only, no runtime effect | priority: low | fix: document cast is advisory; use isinstance for runtime narrowing | verify: test_cast_vs_isinstance.py
+- [ ] PY.23 — typing.Protocol vs abc.ABC: structural vs nominal typing | priority: low | fix: Protocol for duck typing, ABC for inheritance contracts | verify: test_protocol_vs_abc.py
+- [ ] PY.24 — Exception chaining: raise X from Y preserves traceback | priority: medium | fix: always `raise NewError() from original`; never bare raise in unrelated context | verify: test_exception_chaining.py
+- [ ] PY.25 — Walrus operator := for assignment in expression | priority: low | fix: `if (n := len(x)) > 10:` instead of two lines; document readability threshold | verify: test_walrus_operator.py
+
+---
+
+## Phase SH — Shell Script Specifics (25 specs)
+
+- [ ] SH.1 — `set -euo pipefail` strict mode in all .claude/hooks/*.sh | priority: high | fix: every shell script begins with set -euo pipefail; shellcheck SC2086 enforced | verify: test_strict_mode.py
+- [ ] SH.2 — Exit codes: 0=success, 1=error, 2=usage; hooks must exit 0 on allow | priority: critical | fix: documented exit code contract; hooks never exit non-zero on success path | verify: test_exit_codes.py
+- [ ] SH.3 — stdin/stdout contract: hooks read JSON from stdin, write JSON decision to stdout | priority: high | fix: parse stdin via jq/python; emit {"permissionDecision":"allow"} | verify: test_stdio_contract.py
+- [ ] SH.4 — trap on EXIT for cleanup: always remove temp files | priority: medium | fix: `trap 'rm -f "$TMPFILE"' EXIT` in every script using temp files | verify: test_trap_cleanup.py
+- [ ] SH.5 — Quoting: always "$VAR" never $VAR (word splitting/globbing) | priority: high | fix: shellcheck SC2086; double-quote all variable expansions | verify: test_quoting.py
+- [ ] SH.6 — Make target wrapping: bash tool only runs make, scripts invoked via make targets | priority: critical | fix: enforce-make.ts blocks non-make bash; every script has a make target wrapper | verify: test_make_wrapping.py
+- [ ] SH.7 — Shebang: #!/usr/bin/env bash (portable, not /bin/bash) | priority: medium | fix: every .sh starts with #!/usr/bin/env bash; shellcheck SC2120 | verify: test_shebang.py
+- [ ] SH.8 — IFS handling: save and restore IFS around modifications | priority: low | fix: `OLDIFS=$IFS; IFS=','; ...; IFS=$OLDIFS` or use subshell | verify: test_ifs_handling.py
+- [ ] SH.9 — shellcheck lint on all .claude/hooks/*.sh in pre-commit | priority: high | fix: .pre-commit-config.yaml includes shellcheck hook; SC rules enforced | verify: test_shellcheck_hook.py
+- [ ] SH.10 — Arrays: declare -a, iterate with "${arr[@]}", not $arr | priority: medium | fix: `files=("a" "b"); for f in "${files[@]}"; do` | verify: test_array_handling.py
+- [ ] SH.11 — Functions with local variables: declare local inside functions | priority: medium | fix: `my_func() { local var="x"; }` prevents global pollution | verify: test_local_vars.py
+- [ ] SH.12 — Error messages to stderr: `echo "error" >&2` not stdout | priority: medium | fix: all error/diagnostic output goes to stderr; stdout reserved for data | verify: test_stderr_errors.py
+- [ ] SH.13 — Color output: detect TTY before emitting ANSI codes | priority: low | fix: `if [ -t 1 ]; then RED='\033[0;31m'; else RED=''; fi` | verify: test_tty_detection.py
+- [ ] SH.14 — Read-only variables: declare -r for constants | priority: low | fix: `declare -r VERSION="1.0"` prevents accidental mutation | verify: test_readonly_vars.py
+- [ ] SH.15 — Temp files via mktemp, always cleaned by trap | priority: high | fix: `TMPFILE=$(mktemp); trap 'rm -f "$TMPFILE"' EXIT` | verify: test_mktemp_cleanup.py
+- [ ] SH.16 — Process substitution `<()` `>()` avoids temp files | priority: low | fix: `diff <(cmd1) <(cmd2)` instead of temp files | verify: test_proc_substitution.py
+- [ ] SH.17 — Signal handling: trap SIGTERM and SIGINT for graceful shutdown | priority: medium | fix: `trap 'cleanup; exit 1' TERM INT` in long-running scripts | verify: test_signal_handling.py
+- [ ] SH.18 — Background jobs: jobs/wait/kill with PID tracking | priority: medium | fix: `cmd & PID=$!; wait $PID; kill $PID if still running` | verify: test_background_jobs.py
+- [ ] SH.19 — find vs glob: prefer make targets or python, avoid raw find in hooks | priority: low | fix: use glob tool or python glob; find is slow and platform-dependent | verify: test_no_raw_find.py
+- [ ] SH.20 — sed in-place portability: macOS sed -i '' vs GNU sed -i | priority: medium | fix: use `sed -i.bak` + rm, or python for cross-platform edits | verify: test_sed_portability.py
+- [ ] SH.21 — basename/dirname: prefer parameter expansion ${var##*/} | priority: low | fix: `file=${path##*/}` instead of `basename "$path"` (no fork) | verify: test_param_expansion.py
+- [ ] SH.22 — Prefer [[ ]] over [ ] or test: supports pattern matching, no word splitting | priority: low | fix: `if [[ "$var" == foo* ]]; then` for glob matching | verify: test_double_brackets.py
+- [ ] SH.23 — Case statement for pattern matching over if-elif chains | priority: low | fix: `case "$var" in foo*) ...;; bar*) ...;; esac` | verify: test_case_statement.py
+- [ ] SH.24 — getopts for argument parsing in scripts with flags | priority: medium | fix: `while getopts "vf:" opt; do case $opt in v) verbose=1;; f) file=$OPTARG;; esac; done` | verify: test_getopts.py
+- [ ] SH.25 — set -x for debugging: trace execution to stderr, gated on DEBUG env var | priority: low | fix: `[ -n "$DEBUG" ] && set -x` at top of script | verify: test_debug_trace.py
+
+---
+
+## Phase RB3 — Rollback Procedures (25 specs)
+
+Behavioral fix specs covering rollback for every change type: code, config, plugin, state, release, migration, worktree, hot-reload, env, baseline, etc. Each spec defines a distinct rollback surface and the canonical command/test pair.
+
+- [ ] RB3.1 — Code rollback via git reset: codify `make git-reset FILES='HEAD~1'` (soft) as the only sanctioned code-rollback path; document that hard reset on shared branches is forbidden | priority: high | fix: AGENTS.md section + Makefile help text | verify: test_git_reset_contract.py
+- [ ] RB3.2 — Config rollback via backup: every config mutation (`config/*.yml`, `opencode.json`) MUST be preceded by `make backup-config` writing timestamped copy to `.config-backups/` | priority: high | fix: add backup-config Makefile target + pre-edit hook | verify: test_config_backup.py
+- [ ] RB3.3 — Plugin rollback via .opencode.orig/: `make restore-opencode` documented as the canonical rollback when a plugin edit breaks the loader at boot | priority: critical | fix: AGENTS.md section + verify-opencode-backup gate | verify: test_restore_opencode.py
+- [ ] RB3.4 — State rollback via crash-recovery: `make crash-recovery` resets `/tmp/gludd-session-start.json`, `/tmp/gludd-floor-override`, `/tmp/gludd-tool-streak` after a crash leaves stale state | priority: high | fix: extend target to enumerate all state files | verify: test_crash_recovery_files.py
+- [ ] RB3.5 — Release rollback via release-delete: `gh release delete <tag> --yes` + `git push --delete origin <tag>` then re-cut; codify as `make release-rollback TAG=<t>` | priority: critical | fix: Makefile target wrapping gh + git push --delete | verify: test_release_rollback_target.py
+- [ ] RB3.6 — Migration rollback via alembic downgrade: every migration MUST ship a tested `downgrade()` path; `make migration-test REV=<r>` runs up+down+up | priority: high | fix: extend alembic test harness | verify: test_migration_downgrade_roundtrip.py
+- [ ] RB3.7 — Worktree rollback via agent-cleanup: abandoned worktree branches MUST be cleaned with `make agent-cleanup BRANCH=<name>`; orphaned branches block gate via worktree-health-check | priority: high | fix: AGENTS.md section + worktree-merge-all target | verify: test_worktree_health_check.py
+- [ ] RB3.8 — Hot-reload rollback: `/tmp/gludd-hot-*.js` files are deleted on `make reload-enforcement`, forcing recompile from current `.ts` source | priority: medium | fix: document hot-reload cache invalidation | verify: test_hot_reload_invalidation.py
+- [ ] RB3.9 — Env-var rollback: `GLUDD_*_ENFORCE=0` documented as the temporary disable path; every enforcement plugin MUST honor the env var | priority: high | fix: AGENTS.md table listing every env var | verify: test_env_disable_matrix.py
+- [ ] RB3.10 — Secrets baseline rollback: `make secrets-baseline` rebuilds `.secrets.baseline` after a verified false-positive; old baseline kept in `.secrets.baseline.bak` | priority: medium | fix: add .bak rotation to secrets-baseline target | verify: test_secrets_baseline_backup.py
+- [ ] RB3.11 — Tag rollback: `git tag -d <tag>` locally + `git push --delete origin <tag>` remotely BEFORE re-cutting; codify as `make tag-rollback TAG=<t>` | priority: high | fix: Makefile target | verify: test_tag_rollback.py
+- [ ] RB3.12 — Merge rollback: `git revert -m 1 <merge-sha>` for bad --no-ff merges; NEVER `git reset` on shared branches post-push | priority: critical | fix: AGENTS.md section | verify: test_merge_revert_contract.py
+- [ ] RB3.13 — Ratchet rollback: entries removed from `config/ratchet.yml` MUST be moved to `.ratchet-archive.yml` with reason, never deleted outright | priority: medium | fix: add ratchet-archive convention | verify: test_ratchet_archive.py
+- [ ] RB3.14 — Pre-commit hook rollback: `.git/hooks/pre-commit` edits MUST be reversible via `make install-hooks` (idempotent reinstall) | priority: low | fix: make install-hooks idempotent | verify: test_install_hooks_idempotent.py
+- [ ] RB3.15 — CI workflow rollback: broken `build.yml` commits MUST be reverted within 1 push; `make ci-cancel` cancels the triggered run | priority: high | fix: document revert+cancel sequence | verify: test_ci_workflow_revert.py
+- [ ] RB3.16 — Dependency rollback: `uv.lock` changes that break imports MUST be rolled back via `git checkout HEAD -- uv.lock` + `make sync` | priority: medium | fix: AGENTS.md section | verify: test_uv_lock_rollback.py
+- [ ] RB3.17 — Database rollback: alembic `downgrade -1` on dev DB after a bad migration; production DB rollback requires human approval (HumanTodo) | priority: high | fix: add prod-rollback gate | verify: test_db_rollback_gate.py
+- [ ] RB3.18 — SESSION.md rollback: stale SESSION.md after a reverted commit MUST be restored via `git checkout HEAD -- SESSION.md` | priority: low | fix: AGENTS.md reminder | verify: test_session_md_rollback.py
+- [ ] RB3.19 — TASKS.md rollback: false ticks discovered in audit MUST be reverted to `[ ]` with a DISPUTED note, never silently re-ticked | priority: high | fix: codify audit-revert convention | verify: test_tasks_md_audit_revert.py
+- [ ] RB3.20 — Enforcement disengage rollback: `make disengage-enforcement` writes a 1h signal; `make reload-enforcement` is the rollback that re-arms early | priority: medium | fix: document reload as disengage-rollback | verify: test_disengage_reload.py
+- [ ] RB3.21 — Agent worktree venv rollback: corrupted worktree venv (`~320MB`) removed via `make clean-worktree-venvs` before re-creating with `make agent-worktree` | priority: medium | fix: add clean-and-recreate target | verify: test_worktree_venv_recreate.py
+- [ ] RB3.22 — Disk cleanup rollback: `make clean-tmp` is reversible — `/tmp/gludd-*` files are regenerable from current session state | priority: low | fix: document regenerability | verify: test_clean_tmp_regenerable.py
+- [ ] RB3.23 — Branch rollback via rebase: feature branches that diverge MUST be rebased with `make git-rebranch-onto`, never force-pushed | priority: high | fix: AGENTS.md section | verify: test_rebranch_onto.py
+- [ ] RB3.24 — Build artifact rollback: `make clean` removes `dist/`, `build/`; `make dist` regenerates — never manually edit build artifacts | priority: low | fix: document clean→dist cycle | verify: test_clean_dist_cycle.py
+- [ ] RB3.25 — Rollback drill: quarterly `make rollback-drill` that exercises every rollback path (git-reset, restore-opencode, crash-recovery, release-rollback, migration-downgrade) and reports failures | priority: medium | fix: add rollback-drill Makefile target | verify: test_rollback_drill.py
+
+---
+
+## Phase NM2 — Naming Conventions (25 specs)
+
+Behavioral fix specs codifying naming for every artifact class: tests, plugins, make targets, env vars, state files, branches, migrations, scripts, docs, collections, etc.
+
+- [ ] NM2.1 — Test files MUST match `test_<module>.py`: tests for `src/general_ludd/foo.py` live at `tests/unit/test_general_ludd_foo.py` or `tests/unit/test_foo.py` | priority: high | fix: AGENTS.md section + lint rule | verify: test_test_file_naming.py
+- [ ] NM2.2 — Plugin files MUST match `enforce-*.ts`: every enforcement plugin in `.opencode/plugin/` uses the `enforce-` prefix; non-enforcement plugins use descriptive nouns | priority: high | fix: add naming lint to check-plugin-validate | verify: test_plugin_naming.py
+- [ ] NM2.3 — Make targets MUST be verb-noun: `git-status`, `release-cut`, `agent-worktree`; never `status-git` or `cutrelease` | priority: medium | fix: AGENTS.md section + Makefile lint | verify: test_make_target_naming.py
+- [ ] NM2.4 — Env vars MUST be `GLUDD_*`: all project env vars use the `GLUDD_` prefix; `CLAUDE_*` legacy vars are grandfathered but deprecated | priority: medium | fix: add env-var naming lint | verify: test_env_var_naming.py
+- [ ] NM2.5 — State files MUST be `/tmp/gludd-*.json`: enforcement state files use kebab-case + `.json` extension; never `.txt` or uppercase | priority: medium | fix: add state-file naming lint | verify: test_state_file_naming.py
+- [ ] NM2.6 — Agent branches MUST be `agent-<short-descriptive-name>`: kebab-case, descriptive, prefixed with `agent-` | priority: high | fix: AGENTS.md section + branch-name lint in agent-worktree | verify: test_agent_branch_naming.py
+- [ ] NM2.7 — Feature branches MUST be `feature/<short-name>`: slash-separated, `feature/` prefix | priority: medium | fix: AGENTS.md section | verify: test_feature_branch_naming.py
+- [ ] NM2.8 — Release branches MUST be `release/<version>`: e.g. `release/v0.1.0-beta.2`; version matches the tag | priority: high | fix: AGENTS.md section | verify: test_release_branch_naming.py
+- [ ] NM2.9 — Alembic migrations MUST be 3-digit zero-padded: `001_add_tenancy.py`, `035_sts_tokens.py`; never `1_add.py` or `35sts.py` | priority: medium | fix: add migration naming lint | verify: test_migration_naming.py
+- [ ] NM2.10 — Ansible roles MUST be `snake_case`: `binary_re`, `radio_engineer`, `os_expert`; never `BinaryRE` or `radio-engineer` | priority: medium | fix: add role-name lint | verify: test_role_naming.py
+- [ ] NM2.11 — Python modules MUST be `snake_case`: `event_loop.py`, `agent_executor.py`; never `EventLoop.py` | priority: high | fix: ruff already enforces; add structural test | verify: test_module_naming.py
+- [ ] NM2.12 — Classes MUST be `PascalCase`: `EventLoop`, `VMSandboxManager`; never `event_loop` or `eventLoop` | priority: medium | fix: ruff already enforces; add structural test | verify: test_class_naming.py
+- [ ] NM2.13 — Constants MUST be `UPPER_SNAKE`: `MAX_STREAK`, `FLOOR_OVERRIDE`; never `maxStreak` or `max_streak` | priority: low | fix: ruff already enforces; add structural test | verify: test_constant_naming.py
+- [ ] NM2.14 — TypeScript files MUST be `kebab-case` or `snake_case`: `enforce-floor.ts`, `shared.ts`; never `EnforceFloor.ts` | priority: low | fix: add ts naming lint | verify: test_ts_file_naming.py
+- [ ] NM2.15 — Scripts MUST be `verb_noun.py` or `check_*` / `verify_*`: `check_disk_usage.py`, `verify_release_artifact.py`; never `disk.py` or `releasecheck.py` | priority: medium | fix: add script naming lint | verify: test_script_naming.py
+- [ ] NM2.16 — Docs MUST be `UPPER_SNAKE.md` or `kebab-case.md`: `SECURITY_ROLES.md`, `release-runbook.md`; never `securityRoles.md` | priority: low | fix: add doc naming lint | verify: test_doc_naming.py
+- [ ] NM2.17 — Collections MUST be `general_ludd.<collection>`: `general_ludd.agent`, `general_ludd.security`; never `gludd.agent` | priority: high | fix: AGENTS.md section | verify: test_collection_naming.py
+- [ ] NM2.18 — Commit messages MUST be imperative mood: "Add chat export", not "Added chat export" or "Adds chat export" | priority: medium | fix: add commit-msg hook lint | verify: test_commit_msg_naming.py
+- [ ] NM2.19 — Task IDs MUST be `<PHASE>.<N>` or `<PHASE>-<N>`: `BP.1`, `RB3-1`; phases use uppercase letters + digits | priority: low | fix: add task-id lint to validate_task_ledger | verify: test_task_id_naming.py
+- [ ] NM2.20 — Config keys MUST be `snake_case`: `default_human_role`, `human_input_block_hours`; never `defaultHumanRole` | priority: medium | fix: add config-key lint | verify: test_config_key_naming.py
+- [ ] NM2.21 — Daemon endpoints MUST be `/api/<resource>` or `/admin/<resource>`: kebab-case in paths, never camelCase | priority: medium | fix: add endpoint-path lint | verify: test_endpoint_naming.py
+- [ ] NM2.22 — CLI subcommands MUST be `noun-verb` or `noun <verb>`: `human-todo list`, `perm escalations`; never `list-human-todos` | priority: medium | fix: add CLI naming lint | verify: test_cli_naming.py
+- [ ] NM2.23 — Pytest fixtures MUST be `snake_case` with descriptive intent: `tmp_repo`, `clean_state`; never `TmpRepo` or `x` | priority: low | fix: ruff + structural test | verify: test_fixture_naming.py
+- [ ] NM2.24 — Worktree branches MUST include agent prefix and short intent: `agent-fix-slurm`, `agent-add-tui-view`; never `agent1` or `agent-temp` | priority: medium | fix: AGENTS.md section | verify: test_worktree_branch_descriptive.py
+- [ ] NM2.25 — State file fields MUST be `snake_case` JSON keys: `last_check_epoch`, `stored_pid`; never `lastCheckEpoch` or `LastCheckEpoch` | priority: low | fix: add JSON-key lint | verify: test_state_file_key_naming.py
+
+---
+
+## Phase FL2 — File Layout (25 specs)
+
+Behavioral fix specs codifying repository file organization for every directory: `src/`, `tests/`, `.opencode/`, `collections/`, `dist/`, `scripts/`, `docs/`, `config/`, etc.
+
+- [ ] FL2.1 — `src/general_ludd/` structure: one subdir per subsystem (`db/`, `events/`, `agents/`, `security/`, `ansible/`, `models/`, `sts/`, `vm/`, `chat/`); no orphan files at the root | priority: high | fix: add structural test for top-level layout | verify: test_src_layout.py
+- [ ] FL2.2 — `tests/unit/` mirrors `src/` structure: `tests/unit/test_<module>.py` for every `src/general_ludd/<module>.py` | priority: high | fix: add coverage-gap detector | verify: test_test_mirror_src.py
+- [ ] FL2.3 — `tests/integration/` tests 2+ subsystems together: never single-module tests (those go in `unit/`) | priority: medium | fix: AGENTS.md section | verify: test_integration_scope.py
+- [ ] FL2.4 — `tests/e2e/` tests through the daemon API as a user would: never imported internals | priority: medium | fix: AGENTS.md section | verify: test_e2e_scope.py
+- [ ] FL2.5 — `.opencode/plugin/` contains ONLY `enforce-*.ts` plugin files: no `_exports.ts`, no `hot_reload.ts`, no helpers (those live in `lib/`) | priority: critical | fix: test_plugin_dir_hygiene.py already exists; extend to new files | verify: test_plugin_dir_hygiene.py
+- [ ] FL2.6 — `.opencode/skill/` and `.opencode/skills/` structure: one SKILL.md per skill, in a named directory | priority: medium | fix: add skill-dir lint | verify: test_skill_dir_layout.py
+- [ ] FL2.7 — `collections/ansible_collections/general_ludd/<collection>/roles/<role>/` layout: standard ansible collection structure; no flat role dirs | priority: high | fix: ansible-syntax already checks; add structural test | verify: test_collection_layout.py
+- [ ] FL2.8 — `dist/` contains packaging templates only: `debian/control`, `rpm/gludd.spec`, `windows/gludd.nsi`, `install.sh`; no compiled binaries committed | priority: medium | fix: add dist-dir lint | verify: test_dist_layout.py
+- [ ] FL2.9 — `scripts/` contains operational scripts only: `check_*`, `verify_*`, `validate_*`; no application business logic | priority: high | fix: add scripts-dir lint | verify: test_scripts_dir_scope.py
+- [ ] FL2.10 — `docs/` contains markdown only: no `.py`, `.ts`, or executable files; subdirs allowed for media (`docs/img/`, `docs/diagrams/`) | priority: low | fix: add docs-dir lint | verify: test_docs_dir_scope.py
+- [ ] FL2.11 — `config/` contains YAML configs only: `permissions/*.yml`, `remediation.yml`, `ratchet.yml`, `tdd_allowlist.yml`; no `.py` or `.json` (those are code) | priority: medium | fix: add config-dir lint | verify: test_config_dir_scope.py
+- [ ] FL2.12 — `alembic/versions/` contains migration `.py` files only: no helper modules (those go in `alembic/` root or `src/`) | priority: medium | fix: add versions-dir lint | verify: test_alembic_versions_scope.py
+- [ ] FL2.13 — `.github/workflows/` contains `.yml` files only: no scripts (those go in `scripts/` and are referenced by `run:`) | priority: low | fix: add workflows-dir lint | verify: test_workflows_dir_scope.py
+- [ ] FL2.14 — `.claude/hooks/` contains `.sh` files only: registered in `.claude/settings.json`; no `.py` or `.ts` | priority: low | fix: add hooks-dir lint | verify: test_claude_hooks_scope.py
+- [ ] FL2.15 — `molecule/` or `collections/.../molecule/` follows molecule scenario layout: `converge.yml`, `verify.yml`, `destroy.yml` per scenario | priority: medium | fix: molecule-test already checks; add structural test | verify: test_molecule_layout.py
+- [ ] FL2.16 — Root files are limited to: `AGENTS.md`, `TASKS.md`, `BUGS.md`, `SESSION.md`, `README.md`, `CHANGELOG.md`, `pyproject.toml`, `Makefile`, `opencode.json`; no orphan scripts at root | priority: high | fix: add root-file allowlist lint | verify: test_root_files_allowlist.py
+- [ ] FL2.17 — `src/general_ludd/__init__.py` contains version + public API only: no business logic, no imports of heavy modules | priority: medium | fix: add __init__ scope lint | verify: test_init_scope.py
+- [ ] FL2.18 — `tests/conftest.py` contains fixtures only: no test functions, no business logic | priority: medium | fix: ruff + structural test | verify: test_conftest_scope.py
+- [ ] FL2.19 — `lib/` under `.opencode/` contains shared test helpers: `plugin_test_exports.ts`, `shared.ts`; no plugin definitions | priority: high | fix: test_plugin_dir_hygiene covers; extend | verify: test_lib_dir_scope.py
+- [ ] FL2.20 — `.config-backups/` (created on demand) contains timestamped config snapshots: never committed to git | priority: low | fix: add to .gitignore | verify: test_config_backups_gitignored.py
+- [ ] FL2.21 — `.gate-logs/` contains `gate-<timestamp>.log` files only: rotated when >10MB; never committed | priority: low | fix: confirm .gitignore entry | verify: test_gate_logs_gitignored.py
+- [ ] FL2.22 — `.opencode.orig/` is the plugin snapshot dir: created by `make backup-opencode`, restored by `make restore-opencode`; never manually edited | priority: medium | fix: AGENTS.md section | verify: test_opencode_orig_scope.py
+- [ ] FL2.23 — `infra/terraform/<stack>/` layout: one dir per stack with `versions.tf`, `main.tf`, `variables.tf`, `outputs.tf`; no orphan `.tf` files at `infra/terraform/` root | priority: medium | fix: add tf-layout lint | verify: test_terraform_stack_layout.py
+- [ ] FL2.24 — `<project>/.gludd/collections/` is the project-local collection override tier: shadows bundled collections per precedence contract | priority: medium | fix: AGENTS.md section | verify: test_project_collections_layout.py
+- [ ] FL2.25 — File layout drift detector: `make check-layout` runs all FL2.* lints in one pass; fails on any new file violating the layout contract | priority: high | fix: aggregate target composing all FL2 checks | verify: test_check_layout_target.py
+
+---
+
+## Phase VL2 — Validation Layers (25 specs)
+
+Behavioral fix specs codifying every validation layer: config permissions, runtime hooks, structural tests, pre-commit hooks, CI gate, runtime hook invocation, node-v26 compat, etc. Each layer is independently enforceable and fail-closed.
+
+- [ ] VL2.1 — Config permission layer (`opencode.json` `permission` block): last-matching-rule-wins; `make *: allow` before `*: deny`; verified by structural test | priority: critical | fix: test already exists; extend for new rules | verify: test_opencode_permissions.py
+- [ ] VL2.2 — Runtime hook layer (`.opencode/plugin/*.ts` `tool.execute.before`): every plugin exports `default` factory; hooks return `permissionDecision: allow|deny` | priority: critical | fix: test already exists; extend for new plugins | verify: test_plugin_hook_shape.py
+- [ ] VL2.3 — Structural test layer (`tests/unit/test_*.py`): every plugin has a structural pin test verifying exports, constants, and hook registration | priority: high | fix: add structural-test gap detector | verify: test_structural_coverage.py
+- [ ] VL2.4 — Behavioral test layer (`tests/unit/test_*_plugin.py` with runtime invocation): at least one test per plugin invokes the actual hook function and asserts on the return value | priority: high | fix: extend test_hook_runtime.py harness | verify: test_hook_runtime.py
+- [ ] VL2.5 — Pre-commit hook layer (`.git/hooks/pre-commit`): runs `make lint` + `make collect-check` before commit; installed via `make install-hooks` | priority: high | fix: BP.8 covers; verify installed | verify: test_pre_commit_hook_installed.py
+- [ ] VL2.6 — CI gate layer (`.github/workflows/build.yml` `gate` job): runs full suite on push/tag; structural test prevents circular deps | priority: critical | fix: test_release_pipeline_structure.py | verify: test_release_pipeline_structure.py
+- [ ] VL2.7 — `make verify-enforcement` layer: checks all plugins are healthy (import clean, export default, hooks registered); exits non-zero on any failure | priority: high | fix: extend for new plugins | verify: test_verify_enforcement.py
+- [ ] VL2.8 — `make check-plugin-hook-invoke` layer: runtime validator that invokes every hook with null-safe inputs; catches `ReferenceError` (undefined symbols) | priority: critical | fix: extend validate_plugins_runtime.mjs for new hooks | verify: test_check_plugin_hook_invoke.py
+- [ ] VL2.9 — `make check-node-v26-compat` layer: scans `.ts` files for forbidden patterns (`catch { try`, `catch (e:`, `enum`, `namespace`); Node v26 strip-types compat | priority: high | fix: extend check_node_v26_compat.py for new patterns | verify: test_node_v26_compat.py
+- [ ] VL2.10 — `make check-plugin-validate` layer: fast static analysis (imports, hook shape, dangerous patterns); pre-check before runtime invocation | priority: medium | fix: extend validate_plugins.py | verify: test_check_plugin_validate.py
+- [ ] VL2.11 — `make collect-check` layer: pytest collection-error gate; 0 collection errors required before commit | priority: high | fix: already exists; verify wiring | verify: test_collect_check.py
+- [ ] VL2.12 — `make lint` layer: ruff check on `src/` + `tests/`; 0 errors required; no `# noqa` suppressions | priority: high | fix: already exists; verify no regressions | verify: test_lint_layer.py
+- [ ] VL2.13 — `make typecheck` layer: mypy on `src/`; baseline-bounded errors; no `# type: ignore` suppressions | priority: high | fix: already exists; verify baseline file | verify: test_typecheck_layer.py
+- [ ] VL2.14 — `make check-types` layer: flags `Any` usage in new annotations; tight-types policy | priority: medium | fix: already exists; extend for new modules | verify: test_check_types.py
+- [ ] VL2.15 — `make check-tdd-compliance` layer: blocks commits where modified `src/` files lack corresponding test files | priority: high | fix: extend for scripts/ dir (RP.13 follow-up) | verify: test_check_tdd_compliance.py
+- [ ] VL2.16 — `make check-duplicate-targets` layer: scans Makefile for duplicate target declarations; prevents the ci-await class of bug | priority: medium | fix: already exists; verify wiring | verify: test_check_duplicate_targets.py
+- [ ] VL2.17 — `make verify-release-completeness` layer: checks 12 artifact categories, prerelease flag, version-stamped asset names, zero-size assets | priority: critical | fix: already exists; extend for new artifact types | verify: test_verify_release_completeness.py
+- [ ] VL2.18 — `make verify-remote` layer: `git ls-remote` assertion that remote tip matches expected SHA; catches silent push failures | priority: high | fix: already exists; verify SSH key usage | verify: test_verify_remote.py
+- [ ] VL2.19 — `make ci-verdict` layer: GitHub Actions verdict with headSha match check; emits STALE RUN WARNING on mismatch | priority: high | fix: already exists; extend for new verdict sources | verify: test_ci_verdict.py
+- [ ] VL2.20 — `make worktree-health-check` layer: flags worktrees >24h old with unmerged commits; blocks gate on abandonment | priority: medium | fix: already exists; verify age threshold | verify: test_worktree_health_check.py
+- [ ] VL2.21 — `make check-readme-status` layer: verifies README.md status table version matches `pyproject.toml`; gate step 1 of release-cut | priority: medium | fix: already exists; verify TAG arg | verify: test_check_readme_status.py
+- [ ] VL2.22 — `make require-ci-green` layer: pre-release gate querying GitHub Actions for the exact SHA verdict; fail-closed on unknown | priority: critical | fix: already exists; verify branch auto-detect | verify: test_require_ci_green.py
+- [ ] VL2.23 — `make check-disk` layer: pre-commit check failing if `/tmp/gludd-*` >100MB or disk >90% full | priority: medium | fix: already exists; verify thresholds | verify: test_check_disk.py
+- [ ] VL2.24 — `make secrets-scan` layer: detect-secrets against `.secrets.baseline`; read-only scan mode | priority: high | fix: already exists; verify baseline freshness | verify: test_secrets_scan.py
+- [ ] VL2.25 — Validation layer registry: `make list-validation-layers` prints every VL2.* layer with its command, scope, and exit-code contract; ensures no layer is silently skipped | priority: medium | fix: add registry Makefile target | verify: test_validation_layer_registry.py
+
+---
+
+## Phase GH — GitHub Specifics (25 specs)
+
+- [ ] GH.1 — Workflow trigger on push to master only: build.yml triggers on push to master and v* tags, never on all branches | priority: high | fix: audit build.yml on.push.branches + on.push.tags | verify: test_workflow_triggers.py
+- [ ] GH.2 — Workflow trigger on PR to master: build.yml triggers on pull_request to master for pre-merge validation | priority: medium | fix: audit on.pull_request.branches | verify: test_pr_trigger_config.py
+- [ ] GH.3 — workflow_dispatch enabled for manual runs: build.yml supports workflow_dispatch with optional inputs | priority: low | fix: audit on.workflow_dispatch presence | verify: test_manual_dispatch.py
+- [ ] GH.4 — Concurrency group prevents duplicate runs: group formula includes ref_name/ref_type to avoid tag+branch conflicts | priority: high | fix: audit concurrency.group formula in build.yml | verify: test_concurrency_group_formula.py
+- [ ] GH.5 — Concurrency cancel-in-progress is false for pushes: preserves in-flight runs instead of cancelling them | priority: medium | fix: audit concurrency.cancel-in-progress value | verify: test_cancel_in_progress_config.py
+- [ ] GH.6 — Artifact upload uses if: always(): every build job uploads artifacts even on partial failure | priority: high | fix: audit upload-artifact steps for if: always() | verify: test_upload_always.py
+- [ ] GH.7 — Artifact retention set to 90 days: uploaded artifacts don't expire prematurely before release verification | priority: low | fix: audit retention-days on upload-artifact steps | verify: test_artifact_retention.py
+- [ ] GH.8 — GitHub Release created via softprops/action-gh-release: release job uses the standard release action with proper inputs | priority: medium | fix: audit release job action reference | verify: test_release_action_ref.py
+- [ ] GH.9 — Release job downloads all build artifacts: release job uses download-artifact with pattern matching all build outputs | priority: high | fix: audit download-artifact step in release job | verify: test_release_downloads.py
+- [ ] GH.10 — Release marked prerelease for beta tags: gh release creation sets prerelease: true for v*-beta* tags | priority: medium | fix: audit prerelease flag in release step | verify: test_prerelease_flag_config.py
+- [ ] GH.11 — gh CLI used for release verification: scripts use gh release view and gh run list for release/CI status checks | priority: high | fix: audit scripts/ for gh CLI usage patterns | verify: test_gh_cli_usage.py
+- [ ] GH.12 — PR checks include gate + lint + typecheck: required status checks on PRs cover quality gates | priority: high | fix: audit branch protection required checks | verify: test_pr_required_checks.py
+- [ ] GH.13 — Branch protection on master: master branch requires PR reviews and status checks before merge | priority: critical | fix: audit branch protection rules via gh api | verify: test_branch_protection.py
+- [ ] GH.14 — Branch protection requires linear history: master enforces rebase/merge commits, no merge commits | priority: low | fix: audit enforce_admins + required_linear_history | verify: test_linear_history.py
+- [ ] GH.15 — Status checks must pass before merge: required status check list includes gate, lint, typecheck, collect-check | priority: high | fix: audit required_status_checks.contexts | verify: test_required_status_checks.py
+- [ ] GH.16 — Deployment environments for staging/production: build.yml uses environment blocks for gated deployments | priority: low | fix: audit environment usage in deploy jobs | verify: test_environments.py
+- [ ] GH.17 — GitHub secrets used for CI credentials: secrets.GITHUB_TOKEN and repository secrets used for authentication | priority: high | fix: audit secrets usage in build.yml | verify: test_secrets_usage.py
+- [ ] GH.18 — Repository secrets not echoed in logs: secrets are masked, never printed to CI output | priority: critical | fix: audit workflow steps for secret leakage | verify: test_no_secret_echo.py
+- [ ] GH.19 — CI permissions scoped to contents+packages: permissions block restricts token to write contents and packages only | priority: high | fix: audit permissions block in build.yml | verify: test_ci_permissions_config.py
+- [ ] GH.20 — Checkout uses pinned SHA not @main: actions/checkout pinned to specific commit, not floating tag | priority: medium | fix: audit all action references for pinning | verify: test_pinned_actions.py
+- [ ] GH.21 — setup-python uses correct version matrix: python-version matches pyproject.toml requires-python | priority: medium | fix: audit setup-python version | verify: test_python_version_matrix.py
+- [ ] GH.22 — cache key includes pyproject.toml hash: dependency cache invalidates when pyproject.toml changes | priority: low | fix: audit cache key formula | verify: test_cache_key_config.py
+- [ ] GH.23 — gh run list used for CI verdict retrieval: scripts/require_ci_green.py uses gh run list with correct filters | priority: high | fix: audit require_ci_green.py gh CLI usage | verify: test_ci_verdict_retrieval.py
+- [ ] GH.24 — GitHub Release asset naming convention: assets follow gludd-VERSION-PLATFORM-ARCH pattern | priority: medium | fix: audit release asset names in build.yml | verify: test_asset_naming.py
+- [ ] GH.25 — gh release view used for completeness check: scripts/verify_release_completeness.py queries gh release view for assets | priority: critical | fix: audit verify_release_completeness.py gh usage | verify: test_release_completeness_query.py
+
+---
+
+## Phase ST2 — State Machine Specs (25 specs)
+
+- [ ] ST2.1 — Streak counter initial state: consecutive non-dispatch counter starts at 0 on session start | priority: high | fix: verify streak state file initializes to 0 | verify: test_streak_initial_state.py
+- [ ] ST2.2 — Streak counter increment transition: each non-dispatch tool call increments counter by 1 | priority: high | fix: verify increment logic in enforce-floor.ts | verify: test_streak_increment.py
+- [ ] ST2.3 — Streak counter reset on dispatch: any task/agent/workflow dispatch resets counter to 0 | priority: critical | fix: verify reset on dispatch detection | verify: test_streak_reset_on_dispatch.py
+- [ ] ST2.4 — Streak counter terminal state: at MAX_STREAK=2, non-dispatch tools are blocked | priority: critical | fix: verify block at threshold | verify: test_streak_terminal_block.py
+- [ ] ST2.5 — Streak counter time-window reset: if no calls occur within 30s, counter resets to 0 | priority: medium | fix: verify time-bounded reset logic | verify: test_streak_time_reset.py
+- [ ] ST2.6 — Floor counter initial state: dispatch count starts at 0, increments on each dispatch | priority: high | fix: verify floor state file initialization | verify: test_floor_initial.py
+- [ ] ST2.7 — Floor counter terminal state: at GLUDD_MIN_DISPATCHES=10, non-dispatch tools are allowed | priority: critical | fix: verify threshold check in enforce-multitask.ts | verify: test_floor_terminal.py
+- [ ] ST2.8 — Floor counter wave detection: dispatches in same message count toward wave total | priority: high | fix: verify per-message wave counting | verify: test_wave_counting.py
+- [ ] ST2.9 — Session-start initial state: dispatch count=0, time gate active, before-first-read gate active | priority: high | fix: verify session-start state file shape | verify: test_session_start_state.py
+- [ ] ST2.10 — Session-start first-read transition: reading TASKS/BUGS/ratchet/SESSION transitions to allow dispatches | priority: high | fix: verify isTaskFileRead transition | verify: test_session_start_first_read.py
+- [ ] ST2.11 — Session-start dispatch-now warning: at 60s with 0 dispatches, DISPATCH NOW warning fires | priority: high | fix: verify DISPATCH_NOW_SECS=60 time gate | verify: test_dispatch_now_warning.py
+- [ ] ST2.12 — Session-start hard-deny state: at 120s with 0 dispatches, non-dispatch mutations hard-denied | priority: critical | fix: verify HARD_DENY_SECS=120 enforcement | verify: test_hard_deny_state.py
+- [ ] ST2.13 — Session-start terminal state: after MIN_DISPATCHES=10, all session-start gates clear | priority: critical | fix: verify gate clear on threshold | verify: test_session_start_terminal.py
+- [ ] ST2.14 — Session-start crash recovery: stale state (PID mismatch or age>300s) resets to fresh | priority: high | fix: verify loadState crash detection | verify: test_crash_recovery_state.py
+- [ ] ST2.15 — Deadline initial state: each dispatched task records start timestamp in deadlines file | priority: medium | fix: verify deadline recording on dispatch | verify: test_deadline_initial.py
+- [ ] ST2.16 — Deadline warning transition: at GLUDD_TASK_TIMEOUT_MS elapsed, console.warn fires | priority: high | fix: verify deadline warning at threshold | verify: test_deadline_warning.py
+- [ ] ST2.17 — Deadline breach terminal state: breached task IDs recorded in /tmp/gludd-task-stale.json | priority: high | fix: verify stale task recording | verify: test_deadline_breach.py
+- [ ] ST2.18 — CI poll counter initial state: consecutive ci-status/ci-verdict count starts at 0 | priority: medium | fix: verify poll state file initialization | verify: test_poll_initial.py
+- [ ] ST2.19 — CI poll counter reset transition: git-commit/git-push/edit/write resets poll counter to 0 | priority: high | fix: verify reset on productive mutation | verify: test_poll_reset.py
+- [ ] ST2.20 — CI poll counter terminal state: at MAX_CONSECUTIVE_POLLS=3, 4th poll is denied | priority: critical | fix: verify deny at threshold in enforce-no-ci-poll.ts | verify: test_poll_terminal_block.py
+- [ ] ST2.21 — Disengage initial state: no disengage file present, all enforcement active | priority: high | fix: verify absence of /tmp/gludd-watchdog-disengage | verify: test_disengage_initial.py
+- [ ] ST2.22 — Disengage active state: disengage file written, heuristic checks skipped for MAX_DISENGAGE_MS | priority: medium | fix: verify isDisengaged() returns true | verify: test_disengage_active.py
+- [ ] ST2.23 — Disengage expiry transition: after MAX_DISENGAGE_MS, disengage file removed, enforcement resumes | priority: high | fix: verify time-based expiry | verify: test_disengage_expiry.py
+- [ ] ST2.24 — Clean-tree state machine: clean tree allows dispatch, dirty tree denies dispatch | priority: high | fix: verify clean-tree state transitions in enforce-clean-tree.ts | verify: test_clean_tree_state.py
+- [ ] ST2.25 — TDD state machine: test file absent denies edit to src/, test file present allows edit | priority: critical | fix: verify TDD state transitions in enforce-tdd.ts | verify: test_tdd_state_machine.py
+
+---
+
+## Phase ET2 — Error Types Catalog (25 specs)
+
+- [ ] ET2.1 — ReferenceError prevention: all cross-plugin function references must be imported or inlined | priority: critical | fix: import explicitly or inline to avoid undefined symbol | verify: test_reference_error_prevention.py
+- [ ] ET2.2 — TypeError prevention: null-safe inputs in hook tests, type narrowing before property access | priority: high | fix: add typeof/instanceof guards before property access | verify: test_type_error_prevention.py
+- [ ] ET2.3 — ValueError prevention: validate input ranges before passing to functions expecting bounded values | priority: high | fix: add boundary checks for numeric inputs | verify: test_value_error_prevention.py
+- [ ] ET2.4 — KeyError prevention: use .get() with default instead of dict[key] for optional fields | priority: high | fix: replace direct key access with .get(key, default) | verify: test_key_error_prevention.py
+- [ ] ET2.5 — AttributeError prevention: hasattr() check or getattr() with default before accessing optional attrs | priority: high | fix: use getattr(obj, attr, default) pattern | verify: test_attribute_error_prevention.py
+- [ ] ET2.6 — OSError prevention: wrap file I/O in try/except, verify paths exist before access | priority: medium | fix: use pathlib.Path.exists() before read/write | verify: test_os_error_prevention.py
+- [ ] ET2.7 — RecursionError prevention: identify infinite loops via call-chain tracing, add base cases | priority: high | fix: trace recursion, add depth limit or base case | verify: test_recursion_error_prevention.py
+- [ ] ET2.8 — ImportError prevention: verify module paths, use conditional imports for optional deps | priority: high | fix: check sys.modules or use importlib.util.find_spec | verify: test_import_error_prevention.py
+- [ ] ET2.9 — AssertionError prevention: explicit assertions with descriptive messages, not bare assert | priority: medium | fix: use assert cond, "message" pattern | verify: test_assertion_error_prevention.py
+- [ ] ET2.10 — TimeoutError prevention: set explicit timeouts on network calls, use asyncio.wait_for | priority: high | fix: wrap async ops in asyncio.wait_for(timeout=N) | verify: test_timeout_error_prevention.py
+- [ ] ET2.11 — ConnectionError prevention: retry with backoff on transient network failures | priority: medium | fix: exponential backoff retry wrapper | verify: test_connection_error_prevention.py
+- [ ] ET2.12 — PermissionError prevention: verify file permissions before write, use umask appropriately | priority: medium | fix: check os.access(path, os.W_OK) before write | verify: test_permission_error_prevention.py
+- [ ] ET2.13 — FileNotFoundError prevention: check path existence before open(), create parent dirs | priority: high | fix: Path.parent.mkdir(parents=True, exist_ok=True) | verify: test_file_not_found_prevention.py
+- [ ] ET2.14 — StopIteration prevention: use next(it, default) instead of bare next() on iterators | priority: low | fix: provide sentinel default to next() | verify: test_stop_iteration_prevention.py
+- [ ] ET2.15 — RuntimeError prevention: avoid modifying collection during iteration, use copy for iteration | priority: medium | fix: iterate over list(copy) when mutating | verify: test_runtime_error_prevention.py
+- [ ] ET2.16 — IndexError prevention: check len() before indexing, use slicing for safety | priority: low | fix: bounds check before list[i] access | verify: test_index_error_prevention.py
+- [ ] ET2.17 — UnicodeDecodeError prevention: specify encoding='utf-8' on all open() calls | priority: high | fix: add encoding param to all open() | verify: test_unicode_decode_prevention.py
+- [ ] ET2.18 — JSONDecodeError prevention: wrap json.loads in try/except, validate before parse | priority: high | fix: try/except json.JSONDecodeError with fallback | verify: test_json_decode_prevention.py
+- [ ] ET2.19 — MemoryError prevention: stream large files instead of loading into memory, use generators | priority: medium | fix: use yield/generators for large datasets | verify: test_memory_error_prevention.py
+- [ ] ET2.20 — SystemExit prevention: never call sys.exit() in library code, raise exceptions instead | priority: high | fix: replace sys.exit with raise SystemExit in main only | verify: test_system_exit_prevention.py
+- [ ] ET2.21 — NotImplementedError prevention: abstract methods raise NotImplementedError with clear message | priority: low | fix: document expected override in docstring | verify: test_not_implemented_prevention.py
+- [ ] ET2.22 — OverflowError prevention: check numeric bounds before arithmetic on large values | priority: low | fix: validate range before math operations | verify: test_overflow_error_prevention.py
+- [ ] ET2.23 — ZeroDivisionError prevention: check divisor != 0 before division | priority: high | fix: if divisor: result = num / divisor | verify: test_zero_division_prevention.py
+- [ ] ET2.24 — AttributeError on None prevention: optional chaining or None check before method call | priority: high | fix: if obj is not None: obj.method() | verify: test_none_attribute_prevention.py
+- [ ] ET2.25 — Type-checking ImportError prevention: TYPE_CHECKING guard for circular import type hints | priority: medium | fix: from typing import TYPE_CHECKING; if TYPE_CHECKING: import... | verify: test_type_checking_import.py
+
+---
+
+## Phase WC3 — Worktree Contracts (25 specs)
+
+- [ ] WC3.1 — Worktree creation via make agent-worktree: every worktree created through make agent-worktree BRANCH=<name> | priority: high | fix: verify all worktrees use the make target | verify: test_worktree_creation_target.py
+- [ ] WC3.2 — Worktree branch naming convention: branches follow agent-<short-descriptive-name> pattern | priority: medium | fix: verify naming in make agent-worktree | verify: test_branch_naming.py
+- [ ] WC3.3 — Worktree isolation from shared master: worktree has its own checkout, index, and branch | priority: high | fix: verify git worktree add creates isolated checkout | verify: test_worktree_isolation.py
+- [ ] WC3.4 — Worktree merge via make agent-merge: worktree branches merged through make agent-merge BRANCH=<name> | priority: high | fix: verify merge target usage | verify: test_worktree_merge_target.py
+- [ ] WC3.5 — Worktree cleanup via make agent-cleanup: worktree + branch removed after merge via make agent-cleanup | priority: high | fix: verify cleanup target usage | verify: test_worktree_cleanup_target.py
+- [ ] WC3.6 — Worktree merge-then-cleanup is atomic: merge and cleanup happen as one unit, no lingering worktrees | priority: critical | fix: verify merge followed immediately by cleanup | verify: test_merge_cleanup_atomic.py
+- [ ] WC3.7 — Worktree health check at session end: make worktree-health-check flags stale/abandoned worktrees | priority: high | fix: verify health check runs at session end | verify: test_worktree_health_session_end.py
+- [ ] WC3.8 — Worktree age threshold: worktrees older than 24h with unmerged commits are flagged | priority: high | fix: verify age check in check_worktree_health.py | verify: test_worktree_age_threshold.py
+- [ ] WC3.9 — Worktree concurrent limit: max 5-6 worktree agents to avoid ENOSPC | priority: medium | fix: verify WORKTREE_CAP enforcement | verify: test_worktree_concurrent_limit.py
+- [ ] WC3.10 — Worktree disk management: each worktree creates ~320MB venv, cleaned when idle | priority: medium | fix: verify make clean-worktree-venvs reclaims disk | verify: test_worktree_disk_management.py
+- [ ] WC3.11 — Worktree venv sharing: non-isolated agents share main venv, worktree agents get own venv | priority: low | fix: verify venv isolation strategy | verify: test_venv_sharing.py
+- [ ] WC3.12 — Worktree conflict resolution: conflicts resolved by keeping BOTH sides (union of independent fixes) | priority: high | fix: verify union merge strategy | verify: test_conflict_resolution.py
+- [ ] WC3.13 — Worktree never merges from inside: orchestrator merges from main checkout, not from worktree | priority: critical | fix: verify merge happens on main checkout | verify: test_no_internal_merge.py
+- [ ] WC3.14 — Worktree subagent never pushes: subagent commits on its branch, orchestrator handles push | priority: high | fix: verify subagent has no push capability | verify: test_worktree_no_push.py
+- [ ] WC3.15 — Worktree re-dispatch is safe: make agent-worktree on existing branch attaches fresh worktree | priority: medium | fix: verify re-attach behavior | verify: test_worktree_redispatch.py
+- [ ] WC3.16 — Worktree list diagnostic: make agent-worktree-list shows all active worktrees + branches | priority: medium | fix: verify list target output format | verify: test_worktree_list_format.py
+- [ ] WC3.17 — Worktree merge-all bulk operation: make worktree-merge-all iterates and merges all worktrees | priority: medium | fix: verify bulk merge target | verify: test_worktree_merge_all.py
+- [ ] WC3.18 — Worktree branch must exist on remote: health check flags branches not on sandboxcom | priority: high | fix: verify remote tracking check | verify: test_worktree_remote_tracking.py
+- [ ] WC3.19 — Worktree session end = zero worktrees: make agent-worktree-list shows only main checkout at session end | priority: high | fix: verify all worktrees cleaned before session end | verify: test_zero_worktrees_session_end.py
+- [ ] WC3.20 — Worktree development merge path: make agent-merge-dev merges into development branch | priority: high | fix: verify agent-merge-dev target | verify: test_worktree_dev_merge.py
+- [ ] WC3.21 — Worktree one branch per worktree: no sharing branches across worktrees | priority: high | fix: verify one-to-one branch-worktree mapping | verify: test_one_branch_per_worktree.py
+- [ ] WC3.22 — Worktree file-editing subagent mandatory isolation: any subagent that edits files MUST use a worktree | priority: high | fix: verify isolation for file-editing tasks | verify: test_editing_subagent_isolation.py
+- [ ] WC3.23 — Worktree read-only research stays on main: read-only research subagents don't need worktrees | priority: medium | fix: verify research tasks skip worktree creation | verify: test_research_no_worktree.py
+- [ ] WC3.24 — Worktree hot-file concurrency limit: at most ONE in-flight agent per hot file (daemon.py, loop.py, gateway.py) | priority: critical | fix: verify hot-file serialization | verify: test_hot_file_concurrency.py
+- [ ] WC3.25 — Worktree git lock known gap: git locking is broken inside worktrees (.git is a file, not dir) | priority: medium | fix: document gap, use git rev-parse --git-common-dir fix | verify: test_worktree_lock_gap.py
