@@ -98,7 +98,7 @@ _commit-lock-acquire check-clean-tree worktree-state all-worktree-state main-wor
         watchdog-read watchdog-start watchdog-status watchdog-stop watchdog-log \
         task-watchdog-start task-watchdog-stop task-watchdog-status task-watchdog-log task \
         check-readme-status check-types check-types-baseline check-plugin-versions check-plugin-versions-quiet \
-        check-plugin-liveness check-plugin-health write-plugin-manifest codemod-lean-enforcement-plugins restart-opencode disengage-enforcement reload-enforcement \
+        check-plugin-liveness check-plugin-health write-plugin-manifest codemod-lean-enforcement-plugins restart-opencode disengage-enforcement disengage-next reload-enforcement \
         rearm-enforcement enforcement-status \
         hot-reload-plugins hot-reload-status hot-reload-clean \
          verify-release-artifact verify-release-completeness git-tag-rm git-tag-delete git-tag-move release-cut release-recut release-create release-delete \
@@ -1677,6 +1677,9 @@ install-hooks:
 	@PIP_INDEX_URL=https://pypi.org/simple $(UV) run pre-commit install --install-hooks
 	@PIP_INDEX_URL=https://pypi.org/simple $(UV) run pre-commit install --hook-type pre-push
 	@echo "pre-commit hooks installed: secrets-scan, ruff, collect-check (pre-commit), gate (pre-push)"
+	@cp scripts/hooks/pre-commit-lint .git/hooks/pre-commit 2>/dev/null || true
+	@chmod +x .git/hooks/pre-commit 2>/dev/null || true
+	@echo "Installed pre-commit lint hook"
 
 scan-conflicts:
 	@$(PYTHON) scripts/scan_conflicts.py
@@ -4590,7 +4593,15 @@ disengage-enforcement:
 	@$(UV) run python3 -c "import json,time; ts=int(time.time()*1000); json.dump({'disengage_until':ts+3600000,'disengage_until_epoch_ms':ts+3600000,'reason':'manual_disengage','ts':time.time()},open('/tmp/gludd-watchdog-disengage.json','w'))"
 	@$(UV) run python3 -c "import json,time; ts=int(time.time()*1000); json.dump({'consecutiveBlocks':0,'totalBlocks':0,'lastBlockTs':0,'disengageUntil':ts+3600000},open('/tmp/gludd-block-counter.json','w'))"
 	@$(UV) run python3 -c "import json,time; json.dump({'last_ci_check':int(time.time()*1000),'last_ci_status':'SUCCESS','run_id':'disengaged','head_sha':'$(shell git rev-parse HEAD)'},open('/tmp/gludd-watchdog-ci.json','w'))"
+	@echo '{"ts": "'$$(date -u +%Y-%m-%dT%H:%M:%SZ)'", "pid": '$$PID'}' >> /tmp/gludd-disengage-audit.jsonl
 	@echo "Disengage files written — enforcement hooks will pass through for 1 hour"
+	@COUNT=$$(wc -l < /tmp/gludd-disengage-audit.jsonl 2>/dev/null || echo 0); \
+	echo "Disengage count this machine: $$COUNT (max 2/session recommended)"
+
+# --- Single-operation disengage — disarms for ONE tool call then auto-rearms ---
+disengage-next:
+	@echo '{"expires": 1, "reason": "single-operation disengage", "ts": "'$$(date -u +%Y-%m-%dT%H:%M:%SZ)'"}' > /tmp/gludd-watchdog-disengage.json
+	@echo "DISENGAGED for next operation only. Will auto-rearm after one tool call."
 
 # --- Reload enforcement state mid-session ---
 # Refresh state files that plugins re-read on every hook invocation so

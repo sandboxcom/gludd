@@ -47,6 +47,20 @@ export function isDisengaged(opts: DisengageOpts = {}): boolean {
   try {
     if (!fs.existsSync(DISENGAGE_PATH)) return false
     const d = JSON.parse(fs.readFileSync(DISENGAGE_PATH, "utf8"))
+
+    // Single-use disengage (make disengage-next): arms for ONE tool call,
+    // then the file is deleted so the next operation re-arms enforcement.
+    if (d.expires === 1) {
+      try {
+        fs.unlinkSync(DISENGAGE_PATH)
+      } catch { /* fail-open */ }
+      try {
+        const audit = JSON.stringify({ ts: Date.now(), pid: process.pid, sessionUuid: _sessionUuid, single: true }) + "\n"
+        fs.appendFileSync(DISENGAGE_AUDIT_PATH, audit, "utf8")
+      } catch { /* fail-open */ }
+      return true
+    }
+
     if (typeof d.disengage_until !== "number") return false
     const now = Date.now()
     const effective = Math.min(d.disengage_until, now + maxMs)

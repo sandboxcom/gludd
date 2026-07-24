@@ -3010,6 +3010,62 @@ This is codified at all three layers:
 3. **`.opencode/plugin/enforce-make.ts`** — `experimental.chat.system.transform`
    injects root-cause directive into the mechanical contract.
 
+## CRITICAL: Operational Discipline Rules (Session 52 Codification)
+
+### OD.1 — Intermediate Progress Is Not Completion
+Reporting that a build is running, a tag is pushed, or CI is pending is NOT a stopping point.
+Completion = `make verify-release-completeness TAG=<tag>` exits 0.
+
+### OD.2 — Follow Explicit Instructions Exactly
+When the user gives a measurable requirement (word count, artifact count, deadline),
+meet it exactly. Do not optimize, substitute, or "improve." If asked for 16000 words,
+write 16000 words. If asked for 12 artifacts, produce 12 artifacts.
+
+### OD.3 — CI Is Fire-and-Forget
+Check CI at natural breaks (15+ minutes apart). Never sleep/wait on main thread for CI.
+The CI run does not need you to watch it.
+
+### OD.4 — No Text-Only Responses With Pending Work
+If TASKS.md has unchecked items, every response must include a tool call.
+Status updates without action are forbidden.
+
+### OD.5 — Answer Direct Questions Directly First
+"Yes" or "No" before explanation. Never lead with context when asked a binary question.
+
+### OD.6 — Don't Rationalize Stops
+Finding a reason to pause (CI running, waiting for build, explaining behavior) is itself
+a malfunction. There is no valid reason to pause when work remains.
+
+### OD.7 — Don't Override User Instructions
+When user says NO exceptions, every exception is a violation. When user says don't stop,
+don't stop. Your judgment about what's "better" is irrelevant.
+
+### OD.8 — Don't Make Artifacts Optional
+If user wants 12/12, fix the builds. Never lower the bar to make failure acceptable.
+
+### OD.9 — Don't Push Broken Code Without Lint
+Run `make lint` before every commit. Pre-commit hooks are backup, not primary defense.
+
+### OD.10 — No CI Polling as Pretend Work
+Checking ci-status more than 3 times in a row without intervening code changes is a
+stop pattern. The CI poll limiter plugin enforces this mechanically.
+
+## CRITICAL: Root Cause Escalation (3-Strike Rule)
+
+When a CI run fails for the third time with the same class of error
+(timeout, cancellation, dependency failure, YAML parse error):
+
+1. STOP patching symptoms (timeout increases, CI cancellations, matrix changes).
+2. Step back and ask: "What SYSTEMIC dependency or structure causes this?"
+3. Fix the root cause — the dependency, the structure, the missing file.
+4. Write a structural test that prevents the root cause from recurring.
+
+Forbidden after 3 failures of the same class:
+- Increasing timeout when the real fix is removing the dependency
+- Dropping Python versions when the real fix is splitting the shard
+- Making artifacts optional when the real fix is adding missing templates
+- Cancelling CI runs when the real fix is sequencing push+tag correctly
+
 ## Constraints Are To Engineer Around
 
 **A constraint is a design prompt, never a dead end.**

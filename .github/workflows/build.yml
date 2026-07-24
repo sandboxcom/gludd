@@ -843,15 +843,14 @@ jobs:
           echo "--- staged release assets ---"
           ls -la release-assets/
       - name: Verify staged assets (pre-publish gate)
-        # Required artifacts must be present. Optional artifacts (.deb, .rpm,
-        # .exe installer, linux-aarch64) generate warnings but do not block
-        # the release — they depend on platform-specific tooling that may
-        # not be available on every CI runner.
+        # ALL 12 artifact categories are REQUIRED — no exceptions.
+        # User mandate (2026-07-24): "i want all of the artifacts i asked
+        # for with NO exceptions." Optional categories weaken the gate and
+        # allowed incomplete releases through. Fix builds, not lower the bar.
         run: |
           set -e
           cd release-assets
           missing=0
-          warnings=0
           check_required() {
             if compgen -G "$1" > /dev/null; then
               echo "  PASS  $2"
@@ -860,34 +859,23 @@ jobs:
               missing=$((missing + 1))
             fi
           }
-          check_optional() {
-            if compgen -G "$1" > /dev/null; then
-              echo "  PASS  $2"
-            else
-              echo "  WARN  $2 — not found (optional, non-blocking)"
-              warnings=$((warnings + 1))
-            fi
-          }
           check_required '*linux-x86_64*'      'linux-x86_64 binary'
+          check_required '*linux-aarch64*'     'linux-aarch64 binary'
           check_required '*macos-arm64*'       'macos-arm64 binary'
           check_required '*windows-x86_64*'    'windows-x86_64 binary'
+          check_required '*.deb'               '.deb package'
+          check_required '*.rpm'               '.rpm package'
           check_required '*.dmg'               '.dmg (macOS)'
+          check_required '*setup*x86_64.exe'   '.exe installer (Windows)'
           check_required '*.sha256'            'checksums (.sha256)'
           check_required '*sbom*'              'SBOM'
           check_required 'LICENSE'             'LICENSE'
           check_required 'THIRD_PARTY*'        'THIRD_PARTY_LICENSES'
-          check_optional '*.deb'               '.deb package'
-          check_optional '*.rpm'               '.rpm package'
-          check_optional '*setup*x86_64.exe'   '.exe installer (Windows)'
-          check_optional '*linux-aarch64*'     'linux-aarch64 binary'
           echo
-          echo "PRE-PUBLISH GATE: $missing required missing, $warnings optional missing"
+          echo "PRE-PUBLISH GATE: $missing required missing"
           if [ "$missing" -gt 0 ]; then
-            echo "FAIL — $missing required asset category(ies) missing."
+            echo "FAIL — $missing required asset category(ies) missing. ALL 12 categories are required."
             exit 1
-          fi
-          if [ "$warnings" -gt 0 ]; then
-            echo "WARN — $warnings optional assets missing. Release will proceed."
           fi
           echo "PRE-PUBLISH GATE: PASS — all 12 asset categories present."
       - name: Generate SHA256SUMS aggregate
