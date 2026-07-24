@@ -2885,6 +2885,54 @@ Pattern that failed (this session): agent dispatched 6 parallel subagents, got 6
 - This AGENTS.md section — proactive instruction
 - If a plugin has 0 runtime tests, that plugin is in the same category as "dead code" — it exists on disk but its behavior is unverified
 
+## CRITICAL: Plugin Hook Invocation Validation (Anti-ReferenceError Gate)
+
+**Every plugin edit MUST be followed by `make check-plugin-hook-invoke` before commiting.** This target loads every plugin file, invokes its factory function, and calls each hook with null-safe inputs — catching `ReferenceError` (undefined symbols like `incrementTextCompleteCount is not defined`) that pure import checks miss.
+
+### The incident (2026-07-24)
+
+`enforce-floor.ts` called `incrementTextCompleteCount()` in its `text.complete` hook. The function was defined in `enforce_stop_impl.ts:438` but never imported into `enforce-floor.ts`. The existing checks missed it because:
+
+1. **`check-node-v26-compat`** only checks TypeScript syntax compatibility (forbidden patterns like `catch { try`). A missing function import is syntactically valid TypeScript.
+2. **`check-plugin-runtime` (old)** only ran `import("file.ts")` — which loads the module successfully. The `ReferenceError` only manifests when the hook FUNCTION is actually CALLED.
+3. **`check-plugin-imports`** only checks for forbidden import patterns (`@opencode/plugin`, bare `fs`, bare `child_process`). It doesn't validate cross-file symbol resolution.
+
+The bug caused opencode to crash at boot because the plugin loader evaluated all plugins, encountered the `ReferenceError` in `enforce-floor.ts`, and failed to start. The only workaround was to rename `.opencode/` to `.opencode.orig/` — disabling ALL enforcement plugins.
+
+### The fix (3-layer)
+
+1. **Bug fix:** The missing `incrementTextCompleteCount()` function was inlined into `enforce-floor.ts` with its own `TEXT_COMPLETE_COUNT_FILE` constant, avoiding a cross-plugin dependency on `enforce_stop_impl.ts`.
+2. **Runtime validation script:** `scripts/validate_plugins_runtime.mjs` — for each plugin `.ts` file:
+   a. Dynamically imports the module
+   b. Calls the factory function if `default` export is callable
+   c. Invokes `tool.execute.before`, `experimental.text.complete`, `text.complete`, `session.idle`, and `experimental.chat.system.transform` hooks with null inputs
+   d. Catches `ReferenceError` specifically (undefined symbols are always bugs)
+   e. Ignores other errors (TypeError on null input is expected; not a bug)
+3. **Static validation script:** `scripts/validate_plugins.py` — fast pre-check for Node v26 compat, dangerous imports, import resolution, and hook shape. The undefined-call static analysis is opt-in (`--strict`) due to inherent false positives from variable-mediated calls.
+
+### Make targets
+
+| Target | What it does | Speed |
+|---|---|---|
+| `make check-plugin-hook-invoke` | Runtime hook invocation — the definitive ReferenceError check | ~5s |
+| `make check-plugin-validate` | Static analysis (Node v26 compat, imports, hook shape) | <1s |
+| `make check-plugin-runtime` | Delegates to `check-plugin-hook-invoke` (Python wrapper) | ~5s |
+
+All three are in `make gate`. `check-plugin-hook-invoke` is the gate of record for the "undefined symbol" class of bug — all others are supplementary.
+
+### NEVER
+
+- NEVER commit a plugin edit without running `make check-plugin-hook-invoke` first.
+- NEVER assume a plugin works because it imports cleanly — hooks must be INVOKED to verify.
+- NEVER add `incrementTextCompleteCount` or similar cross-plugin function references without importing them. Use inlined definitions to avoid cross-plugin dependencies.
+
+### Enforcement
+
+- **Script:** `scripts/validate_plugins_runtime.mjs` — the canonical runtime validator
+- **Make:** `make check-plugin-hook-invoke` — in `make gate`
+- **Prompt:** this section — proactive instruction
+- **Test:** the script itself is a test; `make check-plugin-hook-invoke` exit 1 = test fail
+
 ## CRITICAL: Root-Cause-Only Fix Policy
 
 **Every issue MUST be fixed at its root cause — never at its symptom.** This

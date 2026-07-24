@@ -40,6 +40,18 @@ const MESSAGE_BOUNDARY_MS = parseInt(
 )
 const POST_DISPATCH_GRACE_MS = 15000
 const RESULT_PHASE_READ_LIMIT = 3
+const TEXT_COMPLETE_COUNT_FILE = process.env.GLUDD_FLOOR_TEXT_COMPLETE_COUNT || "/tmp/gludd-floor-text-complete-count.json"
+// ── Text.complete counter (inlined to avoid cross-plugin dependency) ───────
+function incrementTextCompleteCount(): void {
+  try {
+    const now = Date.now()
+    let data = readJsonFile<{ count: number; ts?: number; last_fired?: number }>(TEXT_COMPLETE_COUNT_FILE, { count: 0 })
+    data.count++
+    data.ts = now
+    data.last_fired = now
+    writeJsonFile(TEXT_COMPLETE_COUNT_FILE, data)
+  } catch {}
+}
 // ── Helpers ────────────────────────────────────────────────────────────────
 function isCommitBashCommand(cmd: string): boolean {
   return /^make\s+(git-commit|commit-no-verify|git-commit-file|test-and-commit|repo-commit|feature-done|git-merge)(\s|$)/.test(cmd)

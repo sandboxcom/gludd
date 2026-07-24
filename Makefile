@@ -706,6 +706,22 @@ check-plugin-syntax:
 check-plugin-runtime:
 	@$(UV) run python3 scripts/check_plugin_runtime.py
 
+# Comprehensive static validation of all .opencode plugins (Node v26 compat,
+# dangerous imports, import resolution, hook shape). The definitive
+# ReferenceError check is check-plugin-hook-invoke (runtime hook invocation).
+check-plugin-validate:
+	@$(UV) run python3 scripts/validate_plugins.py
+
+# Strict runtime validation: actually invokes every plugin hook function
+# with null inputs to catch ReferenceError (undefined symbols like
+# incrementTextCompleteCount). Catches bugs the import-only check misses.
+# This is the fix for the 2026-07-24 "incrementTextCompleteCount is not
+# defined" incident.
+check-plugin-hook-invoke:
+	@echo "=== PLUGIN HOOK INVOCATION VALIDATION (strict ReferenceError check) ==="
+	@node --experimental-strip-types scripts/validate_plugins_runtime.mjs
+	@echo "check-plugin-hook-invoke: PASS"
+
 check-opencode-ready:
 	@$(UV) run python3 scripts/check_opencode_ready.py
 
@@ -744,7 +760,7 @@ test-opencode-boot-e2e:
 gate-fast: lint typecheck collect-check
 	@echo "=== GATE-FAST: PASS ==="
 
-gate: check-opencode-integrity check-plugin-hooks opencode-boot-smoke validate-task-ledger check-dispatch-dedup check-subagent-guards verify-plugin-manifest check-skills-frontmatter check-coverage-gaps check-plugin-syntax check-plugin-runtime check-plugin-imports check-node-v26-compat check-duplicate-targets
+gate: check-opencode-integrity check-plugin-hooks opencode-boot-smoke validate-task-ledger check-dispatch-dedup check-subagent-guards verify-plugin-manifest check-skills-frontmatter check-coverage-gaps check-plugin-syntax check-plugin-runtime check-plugin-hook-invoke check-plugin-imports check-node-v26-compat check-duplicate-targets
 	@rm -f .gate-failed
 	@echo "=== GATE $(shell date -u +%Y-%m-%dT%H:%M:%SZ) ===" > .gate-status
 	@# OBSERVABILITY INVARIANT (see AGENTS.md "No unseen events"): every gate phase
