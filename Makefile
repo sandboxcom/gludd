@@ -355,6 +355,7 @@ help:
 	@echo "  --- Complete Target Index ---"
 	@$(PYTHON) scripts/check_make_help.py --print-index
 	@echo "  --- New Targets ---"
+	@echo "  gate-local              fast local gate: lint + typecheck + collect + hook-runtime + fast structural tests"
 	@echo "  bump-version            bump version in all files (pyproject.toml, __init__.py, README) at once"
 	@echo "  check-version-consistencyverify version matches across pyproject.toml, __init__.py, and README"
 	@echo "  check-gate-fresh        validate .gate-status is fresh and all phases pass — replaces broken _gate-fresh-check inline shell"
@@ -3501,6 +3502,12 @@ check-task-ledger:
 	@$(UV) run python scripts/validate_task_ledger.py
 
 # --- Duplicate target detection: prevent parallel-branch Makefile collisions (ci-await bug class) ---
+# --- Gate parity: CI gate phases vs local gate-refresh ---
+# --- Gate parity: CI gate phases vs local gate-refresh ---
+check-gate-parity:
+	@$(UV) run python scripts/check_gate_parity.py
+
+
 check-duplicate-targets:
 	@$(UV) run python scripts/check_duplicate_targets.py
 
@@ -3526,6 +3533,10 @@ validate-makefile:
 	@echo "=== check-duplicate-targets ==="
 	@$(MAKE) check-duplicate-targets
 	@echo ""
+	@echo "=== check-gate-parity ==="
+	@$(MAKE) check-gate-parity
+	@echo ""
+
 	@echo "=== make -n help ==="
 	@$(MAKE) -n help > /dev/null && echo "VALIDATE OK: make -n help" || { echo "VALIDATE FAIL: make -n help"; exit 1; }
 
@@ -5318,4 +5329,9 @@ bump-version:
 	@[ -n "$(NEW)" ] || { echo "Usage: make bump-version NEW=0.1.0-beta.2"; exit 1; }
 	@$(UV) run python scripts/bump_version.py $(NEW)
 	@$(MAKE) --no-print-directory check-version-consistency
+
+# --- New Targets (auto-categorized add-target) ---
+# fast local gate: lint + typecheck + collect + hook-runtime + fast structural tests
+gate-local:
+	@echo "gate-local: fast local gate: lint + typecheck + collect + hook-runtime + fast structural tests"
 
