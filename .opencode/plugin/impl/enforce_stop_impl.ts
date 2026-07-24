@@ -43,7 +43,6 @@ import { createRequire } from "node:module"
 import type { Plugin } from "@opencode-ai/plugin"
 import {
   isSubagent,
-  isDisengaged as isWatchdogDisengaged,
   reportAlive,
   writeHeartbeat,
   updateSharedStreak,
@@ -1385,7 +1384,7 @@ const defaultImpl: HotModule = {
           COMMIT_TARGET_RE.test(command) ? "commit" :
           PUSH_TARGET_RE.test(command) ? "push" : undefined
         const repoPending = repoHasPendingWork(execSync, repoMode)
-        const disengaged = isWatchdogDisengaged()
+        const disengaged = isDisengaged()
         if (!disengaged && (taskMd || ratchetCount > 0 || bugsOpen || gateRed || ciBad || ciUnknown || repoPending)) {
           try {
             const cPath = process.env.GLUDD_STOP_TOOL_COUNTS_FILE || "/tmp/gludd-stop-tool-counts.json"
@@ -1427,7 +1426,7 @@ const defaultImpl: HotModule = {
       const isMutationTool = !isDispatchTool(input.tool) && !isReadTool(input.tool)
 
       if (isMutationTool) {
-        const grindingDisengaged = isWatchdogDisengaged()
+        const grindingDisengaged = isDisengaged()
         if (!grindingDisengaged) {
           if (streakState.streak > GRINDING_HARD_DENY_THRESHOLD) {
             try {
