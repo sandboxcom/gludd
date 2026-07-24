@@ -315,6 +315,7 @@ help:
 	@echo "  ci-diagnose            Fetch CI failure annotations and group by root cause"
 	@echo "  ci-cooldown-status     Show remaining cooldown seconds"
 	@echo "  ci-view RUN=<id>       Show CI run details (jobs, steps, failures)"
+	@echo "  ci-view-json RUN=<id>  Raw JSON CI run details (pipe to jq / scripts)"
 	@echo "  ci-active              List active/in-flight CI runs"
 	@echo "  ci-greenness           CI reliability ratio (green / total completed)"
 	@echo ""
@@ -2124,7 +2125,14 @@ release-list:
 # Confirm a published GitHub Release + list its downloadable assets.
 release-view:
 	@[ -n "$(TAG)" ] || { echo "Usage: make release-view TAG=v0.1.0-alpha.1"; exit 1; }
-	@gh release view "$(TAG)" -R sandboxcom/gludd --json tagName,name,isDraft,isPrerelease,publishedAt,url,assets 2>&1 | $(PYTHON) -c "import sys,json; d=json.load(sys.stdin); print('RELEASE:', d.get('tagName'), '|', d.get('url')); print('  draft=%s prerelease=%s published=%s' % (d.get('isDraft'), d.get('isPrerelease'), d.get('publishedAt'))); a=d.get('assets',[]); print('  ASSETS (%d):' % len(a)); [print('   -', x['name'], x['size'], 'bytes') for x in a]" || echo "release-view-failed"
+	@gh release view "$(TAG)" -R sandboxcom/gludd --json tagName,name,isDraft,isPrerelease,publishedAt,url,assets 2>&1 | $(PYTHON) -c "import sys,json; d=json.load(sys.stdin); \
+		st = '📝 DRAFT' if d.get('isDraft') else ('📦 prerelease' if d.get('isPrerelease') else '📦 release'); \
+		print('RELEASE %s  [%s]' % (d.get('tagName','?'), st)); \
+		print('  url:      %s' % d.get('url','')); \
+		print('  published:%s' % d.get('publishedAt','-')); \
+		a=d.get('assets',[]); \
+		print('  ASSETS (%d):' % len(a)); \
+		[print('   - %-40s %8.1f MB' % (x['name'], x['size']/1048576.0)) for x in a]" 2>&1 || echo "release-view-failed"
 
 # Verify a GitHub Release has published assets (exit 0 only if non-draft + assets >= 1).
 # A tag is NOT a release. This is the machine-enforceable definition of "shipped."
@@ -2563,13 +2571,31 @@ ci-failed-tests:
 	@gh run view -R sandboxcom/gludd $(RUN) --log-failed 2>/dev/null | grep -E 'FAILED tests/|ERROR tests/|= .*(failed|error).* =' | sort -u || echo "no-failed-test-lines-found"
 
 # Authenticated job-level breakdown of a run: per-job status/conclusion/timing
-# plus every non-success/non-skipped step, so a CANCELLED run's cause (which
-# job, which step, how long it ran before being cut) is visible without
-# guessing. Usage: make ci-view RUN=<run-id>
+# plus every non-success/non-skipped step, formatted as a human-readable
+# summary so a CANCELLED run's cause (which job, which step, how long it ran
+# before being cut) is visible without parsing JSON. Raw JSON is available
+# via `make ci-view-json RUN=<run-id>` for piping to jq / scripts.
+# Usage: make ci-view RUN=<run-id>
 ci-view:
 	@if [ -z "$(RUN)" ]; then echo "Usage: make ci-view RUN=<run-id>"; exit 1; fi
 	@gh run view -R sandboxcom/gludd $(RUN) --json databaseId,status,conclusion,event,displayTitle,headSha,createdAt,updatedAt,jobs \
-		--jq '{databaseId,status,conclusion,event,displayTitle,headSha,createdAt,updatedAt,jobs:[.jobs[]|{name,status,conclusion,startedAt,completedAt,steps:[.steps[]|select(.conclusion!="success" and .conclusion!="skipped")|{name,conclusion,number}]}]}' 2>&1 || echo "ci-view-failed"
+		--jq '{databaseId,status,conclusion,event,displayTitle,headSha,createdAt,updatedAt,jobs:[.jobs[]|{name,status,conclusion,startedAt,completedAt,steps:[.steps[]|select(.conclusion!="success" and .conclusion!="skipped")|{name,conclusion,number}]}]}' 2>&1 | \
+		$(PYTHON) -c "import sys,json; d=json.load(sys.stdin); \
+		S={'success':'✅','failure':'❌','cancelled':'⊘','skipped':'◌','timed_out':'⏱',None:'⏳','':'⏳'}; \
+		print('Run: %s  [%s/%s]  %s' % (d.get('databaseId','?'), d.get('status','?'), d.get('conclusion') or '-', d.get('displayTitle',''))); \
+		print('  sha=%s  event=%s' % ((d.get('headSha') or '')[:8], d.get('event',''))); \
+		print('  created=%s  updated=%s' % (d.get('createdAt',''), d.get('updatedAt',''))); \
+		print(''); \
+		print('JOBS:'); \
+		[print('  %-32s %s %s%s' % ((j.get('name') or '?')[:32], S.get(j.get('conclusion'), '⚠️'), j.get('conclusion') or j.get('status','?'), '   (%s)' % ', '.join(s.get('name','?') for s in j.get('steps',[])) if j.get('steps') else '')) for j in d.get('jobs',[])]" 2>&1 || echo "ci-view-failed"
+
+# Raw JSON output of a CI run — scripting/piping counterpart to `ci-view`.
+# Returns the same jq-filtered JSON the old ci-view emitted; pipe to jq or
+# python -m json.tool for pretty-printing. Usage: make ci-view-json RUN=<run-id>
+ci-view-json:
+	@if [ -z "$(RUN)" ]; then echo "Usage: make ci-view-json RUN=<run-id>"; exit 1; fi
+	@gh run view -R sandboxcom/gludd $(RUN) --json databaseId,status,conclusion,event,displayTitle,headSha,createdAt,updatedAt,jobs \
+		--jq '{databaseId,status,conclusion,event,displayTitle,headSha,createdAt,updatedAt,jobs:[.jobs[]|{name,status,conclusion,startedAt,completedAt,steps:[.steps[]|select(.conclusion!="success" and .conclusion!="skipped")|{name,conclusion,number}]}]}' 2>&1 || echo "ci-view-json-failed"
 
 ci-run-view:
 	@if [ -z "$(RUN)" ]; then echo "Usage: make ci-run-view RUN=<id>"; exit 1; fi
@@ -2708,12 +2734,25 @@ gh-actions-billing-user:
 	@gh api /users/sandboxcom/settings/billing/actions 2>&1 || echo "gh-api-failed (likely needs admin)"
 
 # Show jobs (name + conclusion + step that failed) for a run id, unauthenticated.
+# Output is a human-readable table — pipe `make ci-jobs-anon-json RUN=...` for
+# raw JSON. Usage: make ci-jobs-anon RUN=<run-id>
 ci-jobs-anon:
 	@if [ -z "$(RUN)" ]; then echo "Usage: make ci-jobs-anon RUN=<run-id>"; exit 1; fi
 	@curl -s -H "Accept: application/vnd.github+json" \
 		"https://api.github.com/repos/sandboxcom/gludd/actions/runs/$(RUN)/jobs?per_page=50" 2>&1 | \
 		$(PYTHON) -c "import sys,json; d=json.load(sys.stdin); \
-		[ (print('JOB', j['id'], j['name'], '->', j['conclusion']), [print('   step FAILED:', s['name']) for s in j.get('steps',[]) if s.get('conclusion') not in ('success','skipped',None)]) for j in d.get('jobs',[]) ]" 2>&1 || echo "ci-jobs-anon-failed"
+		S={'success':'✅','failure':'❌','cancelled':'⊘','skipped':'◌','timed_out':'⏱',None:'⏳','':'⏳'}; \
+		jobs=d.get('jobs',[]); \
+		print('Run %s — %d job(s)' % ('$(RUN)', len(jobs))); \
+		print(''); \
+		[print('  %-34s %s %s%s' % ((j.get('name') or '?')[:34], S.get(j.get('conclusion'), '⚠️'), j.get('conclusion') or j.get('status','?'), '   (%s)' % ', '.join(s.get('name','?') for s in j.get('steps',[]) if s.get('conclusion') not in ('success','skipped',None)) if any(s.get('conclusion') not in ('success','skipped',None) for s in j.get('steps',[])) else '')) for j in jobs]" 2>&1 || echo "ci-jobs-anon-failed"
+
+# Raw JSON counterpart to `ci-jobs-anon` for scripting / piping to jq.
+# Usage: make ci-jobs-anon-json RUN=<run-id>
+ci-jobs-anon-json:
+	@if [ -z "$(RUN)" ]; then echo "Usage: make ci-jobs-anon-json RUN=<run-id>"; exit 1; fi
+	@curl -s -H "Accept: application/vnd.github+json" \
+		"https://api.github.com/repos/sandboxcom/gludd/actions/runs/$(RUN)/jobs?per_page=50" 2>&1 || echo "ci-jobs-anon-json-failed"
 
 # Try to fetch a job's log (follows redirect to signed URL; public repos sometimes allow).
 ci-annotations-anon:
