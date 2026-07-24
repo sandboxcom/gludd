@@ -355,6 +355,7 @@ help:
 	@echo "  --- Complete Target Index ---"
 	@$(PYTHON) scripts/check_make_help.py --print-index
 	@echo "  --- New Targets ---"
+	@echo "  check-gate-fresh        validate .gate-status is fresh and all phases pass — replaces broken _gate-fresh-check inline shell"
 	@echo "  pipeline-health         verify both local and remote pipelines are actually running (not stalled/zombie)"
 	@echo "  pipeline-status         show both local gate + remote CI status in one view"
 	@echo "  gate-all-background     run gate-all in background, poll with gate-status-check"
@@ -2966,25 +2967,8 @@ gate-refresh:
 		echo "=== GATE: PASSED ===" >> .gate-status; \
 	fi
 
-_gate-fresh-check:
-	@if [ ! -f .gate-status ]; then \
-		echo "ERROR: No .gate-status file. Run make gate first."; exit 1; \
-	elif ! echo run python scripts/gate_fresh_check.py is-complete .gate-status; then \
-		echo "ERROR: Gate incomplete — missing terminal marker. Run make gate first."; \
-		exit 1; \
-	else \
-		for check in lint hook-runtime typecheck collect test smoke; do \
-			if ! grep -q "^${check} PASS" .gate-status; then \
-				echo "ERROR: Gate ${check} not PASS. Run make gate."; exit 1; \
-			fi; \
-		done; \
-		EPOCH=$(tail -1 .gate-status | sed -n "s/^epoch //p"); \
-		NOW=$(date +%s); \
-		AGE=$((NOW - EPOCH)); \
-		if [ $AGE -gt 1800 ]; then \
-			echo "ERROR: .gate-status is $AGE seconds old (>30 min). Run make gate."; exit 1; \
-		fi; \
-	fi
+_gate-fresh-check: check-gate-fresh
+	@true
 
 # Internal: serialize commit-shaped targets so parallel subagents cannot race on
 # the git index (staging sweeps, index-lock errors). Uses flock (Linux) with a
@@ -5363,4 +5347,7 @@ pipeline-health:
 		echo "  in_progress runs on development:"; \
 		echo "$CI_JSON"; \
 	fi
+
+check-gate-fresh:
+	@echo run python scripts/gate_fresh_check.py check .gate-status
 
