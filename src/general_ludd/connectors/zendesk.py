@@ -112,7 +112,9 @@ class ZendeskSource:
             raise ValueError("zendesk: unsupported URL scheme in subdomain")
         if not bool(self.config.get("allow_private", False)):
             probe_url = f"https://{subdomain}"
-            if (subdomain.count(chr(46)) > 0 or subdomain.lower() == "localhost") and is_url_blocked(probe_url, scheme_allowlist=("http", "https")):  # noqa: E501
+            if (subdomain.count(chr(46)) > 0 or subdomain.lower() == "localhost") and is_url_blocked(
+                probe_url, scheme_allowlist=("http", "https")
+            ):
                 raise ValueError(
                     f"zendesk: refusing private/loopback host {subdomain!r} "
                     "(set allow_private=True to override)"
