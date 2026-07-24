@@ -501,7 +501,7 @@ jobs:
     # is the same class of risk as the windows/termux jobs. Pre-publish gate
     # in the release job catches missing artifacts before publish.
     continue-on-error: true
-    if: ${{ !cancelled() && (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/'))) }}
+    if: "!cancelled() && (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/')))"
     env:
       VERSION: ${{ needs.version.outputs.version }}
     steps:
@@ -553,7 +553,7 @@ jobs:
     # is the same class of risk as the windows/termux jobs. Pre-publish gate
     # in the release job catches missing artifacts before publish.
     continue-on-error: true
-    if: ${{ !cancelled() && (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/'))) }}
+    if: "!cancelled() && (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/')))"
     env:
       VERSION: ${{ needs.version.outputs.version }}
     steps:
@@ -607,7 +607,7 @@ jobs:
     # NON-BLOCKING so a tag still produces a Release with the linux/macos/termux
     # artifacts. Re-make it blocking once Windows builds reliably.
     continue-on-error: true
-    if: ${{ !cancelled() && (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/'))) }}
+    if: "!cancelled() && (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/')))"
     env:
       VERSION: ${{ needs.version.outputs.version }}
       # pyinstaller imports ansible.cli at build time, and ansible's
@@ -663,7 +663,7 @@ jobs:
     # Non-blocking like the windows job: an aarch64 pyinstaller hiccup must not
     # sink a Release that already carries the linux/macos artifacts.
     continue-on-error: true
-    if: ${{ !cancelled() && (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/'))) }}
+    if: "!cancelled() && (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/')))"
     env:
       VERSION: ${{ needs.version.outputs.version }}
     steps:
@@ -806,7 +806,7 @@ jobs:
     needs: [version, gate, test-shard, linux, macos, windows, termux]
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    if: ${{ !cancelled() && startsWith(github.ref, 'refs/tags/v') }}
+    if: "!cancelled() && startsWith(github.ref, 'refs/tags/v')"
     env:
       VERSION: ${{ needs.version.outputs.version }}
     steps:
