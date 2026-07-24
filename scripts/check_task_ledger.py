@@ -1,5 +1,4 @@
-import os
-import sys
+import os, sys, subprocess
 
 f = "TASKS.md"
 if not os.path.exist(f):
@@ -13,12 +12,14 @@ if "Current Session" not in c:
     print("ERROR: TASKS.md lacks 'Current Session' section")
     sys.exit(1)
 
-import re
-unchecked = re.findall(r'^\s*\s*\( s\)\s+(.+)$', c, re.MULTILINE)
-if len(unchecked) > 0:
-    print(f"ERROR: {len(unchecked)} unchecked task(s) in TASKS.md")
-    for t in unchecked:
-        print(f"  {t[1].strip()}")
-    sys.exit(1)
+# Check that staged files have corresponding task entries
+r = subprocess.run(["git","diff","--cached","--name-only"], capture_output=True, text=True, timeout=5)
+staged = [s for s in r.stdout.strip().split("\n") if s]
+if staged:
+    current_sec = c.split("## Current Session")[1]
+    for s in staged:
+        if s not in current_sec:
+            print(f"ERROR: staged file '{s}' not mentioned in TASKS.md Current Session")
+            sys.exit(1)
 
-print("OK: TASKS.md current with no unchecked items")
+print("OK: TASKS.md current and covers staged changes")

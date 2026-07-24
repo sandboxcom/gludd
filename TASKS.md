@@ -566,7 +566,65 @@ old summary table omitted entirely. Grand total across the file: **326** boxes.
 
 ---
 
-## Current Session — 2026-07-24
+
+---
+
+## Current Session — 2026-07-24 (updated)
+
+### CRITICAL — Active (1 in_progress, 12 pending)
+- [ ] CI-green on tag v0.1.0-beta.1 (SHA e6b97c0a): run 30069656965 in_progress | test: make ci-verdict BRANCH=v0.1.0-beta.1
+- [ ] Release artifacts: verify 12 categories via make verify-release-completeness | status: no release yet, CI must complete first
+- [ ] TDD: write test_ci_push_guard.py — headSha matching, duplicate detection, FORCE bypass
+- [ ] TDD: write test_check_ci_integrity.py — baseline match, drift, missing file
+- [ ] TDD: write test_check_gate_parity.py — rewrite from deleted lint-broken version
+- [ ] TDD: write test_pipeline_status.py — stale gate, dead PID, missing file
+- [ ] TDD: write test_bump_version.py — version replacement across files
+- [ ] TDD: write test_check_version_consistency.py — mismatch detect, match pass
+- [ ] TDD: write test_ci_run_summary.py — JSON parse, failure grouping, exit codes
+- [ ] TDD: write test_gate_local.py — 6 phases, .gate-status, terminal marker
+- [ ] TDD: write test_write_text_escaping.py — $(cmd) roundtrip
+
+### HIGH — Enforcement (needs opencode restart)
+- [ ] Restart opencode to activate 13 enforcement plugins
+- [ ] Extend check-tdd-compliance to scripts/ directory (blocks 9 violations above)
+- [ ] ci-busy-check headSha fix: only block push when CI matches current remote tip
+
+### HIGH — Pipeline / Gate
+- [ ] check-gate-parity: add 4 missing CI phases to gate-refresh
+- [ ] Fix write-text $ escaping: stdin piping
+- [ ] pipeline-health: auto-restart when gate stale >5 min
+
+### MEDIUM — Version / Release
+- [ ] check-version-consistency: wire into release-cut step 0
+- [ ] release-create: add sbom + shasum to fallback path
+- [ ] sync-task-ledger target: actually write to TASKS.md (currently stub)
+
+### COMPLETED this session (24 items)
+- [x] Restore 23 zero-byte plugin files | e8b6891b
+- [x] Fix 6 lint errors | e8b6891b
+- [x] Fix hook-runtime grind test | 53eb64f1
+- [x] Fix 24 plugin export failures | 8fdca5e5
+- [x] Fix hot-module build (esbuild+fallback) | ea776a74
+- [x] Fix molecule (idempotence + imports) | 5c05d9f0, 89b7fc40
+- [x] Fix CI hot-reload freshness | 593bf1bf
+- [x] Clean 18 orphaned worktrees + health gate | 978e8c77
+- [x] Delete beta.2 tag | ba92a3e1
+- [x] ci-cancel target | b620fdf0
+- [x] pipeline-status target | 556dfe02
+- [x] bump-version + check-version-consistency | 7cb9e92b, c05677fb
+- [x] _gate-fresh-check Python delegate | 556dfe02
+- [x] replace-lines atomic validation | bff8fc74
+- [x] Merge development→master | e20afacd
+- [x] Tag v0.1.0-beta.1 pushed | remote
+- [x] Local smoke PASSED | version 0.1.0-beta.1
+- [x] gate-parity script | 1dce0e14
+- [x] pipeline-health | 3de2b180
+- [x] Untrack .ci-status | 04c715fc
+- [x] require_ci_green cancelled/skipped fix | f7fd931a
+- [x] check_version_consistency script | 7cb9e92b
+- [x] ci-integrity + task-ledger scripts | 2b513a21
+- [x] TDD: test_check_task_ledger.py + check_task_ledger.py | df9f3738
+- [x] TASKS.md updated with current session | df9f3738
 
 ### CRITICAL — Active
 - [ ] check_task_ledger.py enforcement: blocks commits when TASKS.md stale/missing | test: tests/unit/test_check_task_ledger.py | status: impl+test written, needs commit
