@@ -569,7 +569,17 @@ old summary table omitted entirely. Grand total across the file: **326** boxes.
 
 ---
 
-## Current Session — 2026-07-24 (updated)
+
+
+[ -] MAIN-WORKTREE-RESTRICT: codify + enforce that main checkout is read-only except TASKS.md/AGENTS.md/config — all code work happens in isolated worktrees
+| priority: critical | status: in_progress
+- [ ] Add AGENTS.md rule: every task requires worktree; creation requires TASK.md entry; cleanup after merge | priority: critical | status: pending
+- [ ] Extend enforce-worktree.ts to block Write/Edit on main checkout for non-metadata files | priority: critical | status: pending
+- [ ] Create test: verify main-worktree write blocking | priority: critical | status: pending
+- [ ] Create first worktree with TASK.md entry for CI push guard fix | priority: critical | status: pending
+- [ ] Wait for CI green on tag v0.1.0-beta.1 | priority: high | status: in_progress
+  | evidence: run 30070191190 pending
+ (updated)
 
 ### CRITICAL — Active (1 in_progress, 12 pending)
 - [ ] CI-green on tag v0.1.0-beta.1 (SHA e6b97c0a): run 30069656965 in_progress | test: make ci-verdict BRANCH=v0.1.0-beta.1
