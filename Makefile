@@ -1097,7 +1097,7 @@ for d in ['.opencode/plugin','.opencode/plugins'] if os.path.isdir(d) \
 for p in [os.path.join(d,f) for f in os.listdir(d) if f.endswith('.ts')]]"
 	@echo "Fixed all plugin exports for Bun compatibility"
 
-# Re-add binary boot test target (lost in git restore)  
+# Re-add binary boot test target (lost in git restore)
 test-opencode-binary-boot:
 	@$(UV) run python -m pytest tests/e2e/test_opencode_binary_boot.py -v
 
@@ -5334,4 +5334,3 @@ bump-version:
 # fast local gate: lint + typecheck + collect + hook-runtime + fast structural tests
 gate-local:
 	@echo "gate-local: fast local gate: lint + typecheck + collect + hook-runtime + fast structural tests"
-
