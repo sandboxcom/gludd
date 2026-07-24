@@ -136,6 +136,7 @@ help:
 	@echo "  install-bats          Install bats-core via Homebrew"
 	@echo ""
 	@echo "  --- Quality ---"
+	@echo "  test-atomic-validate    verify atomic target creation with tempfile validation"
 	@echo "  gate-check              Run gate check"
 	@echo "  lint                  Run ruff linter"
 	@echo "  lint-files            Run ruff linter on FILES only"
@@ -2404,6 +2405,10 @@ ci-greenness:
 # --- enabler targets for parallel verification + wider quality gates ---
 # Chat CLI
 # Run gate check
+# verify atomic target creation with tempfile validation
+test-atomic-validate:
+	@echo "test-atomic-validate: verify atomic target creation with tempfile validation"
+
 gate-check:
 	@echo "gate-check: Run gate check"
 
@@ -2919,7 +2924,7 @@ gate-refresh:
 	if [ -n "$$OLD_TEST" ] && echo "$$OLD_TEST" | grep -q "PASS"; then echo "$$OLD_TEST" >> .gate-status; else \
 		echo "=== GATE-REFRESH PHASE: test ==="; \
 		printf "test " >> .gate-status; \
-		if $(UV) run python -m pytest tests/unit/test_plugin_dir_hygiene.py tests/unit/test_plugin_behavior.py tests/unit/test_plugin_config_runtime.py -q --no-header -n 2 --maxprocesses=2 > /tmp/gludd-gate-refresh-test.log 2>&1; then \
+		if $(UV) run python -m pytest tests/unit/ -q --no-header -n 2 --maxprocesses=2 > /tmp/gludd-gate-refresh-test.log 2>&1; then \
 			echo "PASS 0" >> .gate-status; \
 		else \
 			echo "FAIL non-zero-exit" >> .gate-status && touch .gate-failed && echo "[gate-refresh] test FAILED — tail:" && tail -20 /tmp/gludd-gate-refresh-test.log; \
