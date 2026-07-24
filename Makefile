@@ -4021,6 +4021,11 @@ list-tests:
 # Excludes internal/helper targets starting with `_`. Subagents use this to discover
 # available targets instead of guessing nonexistent ones.
 list-targets:
+
+# List all enforcement plugins with hooks, block conditions, and disable env vars.
+# Used by agents to discover active enforcement constraints.
+list-plugins:
+	@$(PYTHON) scripts/list_plugins.py --markdown
 	@$(PYTHON) -c "import re; targets = re.findall(r'^\s*(?!#)([a-zA-Z][-a-zA-Z0-9]*):', open('Makefile').read(), re.MULTILINE); [print(t) for t in sorted(set(targets)) if not t.startswith('_')]"
 
 dogfood:

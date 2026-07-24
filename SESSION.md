@@ -6,7 +6,7 @@
 
 ---
 
-## Current Gate Status (2026-07-23)
+## Current Gate Status (2026-07-24)
 <!-- gate:begin -->
 - lint PASS 0
 - env-writes PASS
@@ -1020,3 +1020,33 @@ A  tests/unit/test_model_search_searx.py
 ---
 
 > Older sessions (23-29, historical) archived to `docs/archive/SESSION_history.md`
+
+---
+
+## 2026-07-24: Fix enforcement-context.ts read deadlock + add plugin self-awareness
+
+**Bug:** `.opencode/plugin/enforce-context.ts` denied ALL tool calls (including reads)
+when SESSION.md was >24h stale. At session start, this blocked the required 6-read
+protocol, deadlocking the session. User had to move `.opencode/` to `.opencode.orig`
+(second occurrence, see BUGS.md 2026-07-23 for first).
+
+**Root cause:** enforce-context.ts had no tool-type filter — it returned
+`permissionDecision: "deny"` for every tool type. Reads needed to restore context
+were blocked by the plugin checking for context staleness.
+
+**Fix:**
+- Added `isReadTool` guard to enforce-context.ts defaultImpl `tool.execute.before`
+- Read tools (read, grep, glob) now always allowed; only mutation tools are gated
+
+**New tooling:**
+- `make list-plugins` — enumerates all enforcement plugins with hooks, blocks, disable env vars
+- `tests/unit/test_plugin_session_start_deadlock.py` — 8 tests verifying:
+  - All tool.execute.before plugins have disable env vars
+  - No plugin denies reads at session start
+  - enforce-context.ts has isReadTool exclusion in defaultImpl
+  - Counter thresholds don't trigger within 6 session-start reads
+  - Plugin count matches opencode.json
+  - list-plugins target and script exist
+
+**AGENTS.md:** Added "Enforcement Plugin Reference" section with plugin table,
+block conditions, and disable env vars.
