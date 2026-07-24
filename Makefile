@@ -5301,52 +5301,10 @@ worktree-merge-all:
 	}
 
 pipeline-status:
-	@echo "=== LOCAL GATE ==="
-	@/Library/Developer/CommandLineTools/usr/bin/make --no-print-directory gate-status 2>/dev/null || echo "  (no gate status file)"
-	@PID=$(cat .gate-background.pid 2>/dev/null || echo ""); \
-	if [ -n "$PID" ] && kill -0 $PID 2>/dev/null; then \
-		MTIME=$(stat -f %m .gate-status 2>/dev/null || echo 0); \
-		NOW=$(date +%s); \
-		if [ -n "$MTIME" ] && [ -n "$NOW" ]; then \
-			AGE=$((NOW - MTIME)); \
-			if [ $AGE -gt 120 ]; then echo "  STALLED: .gate-status not updated ($AGE sec)"; fi; \
-		fi; \
-	elif [ -n "$PID" ]; then \
-		echo "  DEAD: background gate pid=$PID no longer running"; \
-	fi
-	@echo ""
-	@echo "=== REMOTE CI (development) ==="
-	@/Library/Developer/CommandLineTools/usr/bin/make --no-print-directory ci-verdict BRANCH=development 2>&1 || true
+	@echo run python scripts/pipeline_status.py status
 
-pipeline-health:
-	@echo "=== LOCAL GATE HEALTH ==="; \
-	if [ -f .gate-background.pid ]; then \
-		PID=$(cat .gate-background.pid); \
-		if kill -0 $PID 2>/dev/null; then \
-			echo "  RUNNING (pid=$PID)"; \
-			MTIME=$(stat -f %m .gate-status 2>/dev/null || echo 0); \
-			NOW=$(date +%s); \
-			AGE=$((NOW - MTIME)); \
-			if [ $AGE -gt 120 ]; then \
-				echo "  WARNING: .gate-status not updated for $AGE seconds — may be stalled"; \
-			else \
-				echo "  .gate-status updated $AGE seconds ago"; \
-			fi; \
-		else \
-			echo "  DEAD (pid=$PID no longer running)"; \
-		fi; \
-	else \
-		echo "  IDLE (no background gate running)"; \
-	fi; \
-	echo ""; \
-	echo "=== REMOTE CI HEALTH ==="; \
-	CI_JSON=$(gh run list --branch development --status in_progress --limit 3 -R sandboxcom/gludd --json databaseId,headSha,status,updatedAt 2>/dev/null || echo "[]"); \
-	if [ "$CI_JSON" = "[]" ]; then \
-		echo "  IDLE (no in_progress CI runs)"; \
-	else \
-		echo "  in_progress runs on development:"; \
-		echo "$CI_JSON"; \
-	fi
+pipeline-health: pipeline-status
+	@true
 
 check-gate-fresh:
 	@echo run python scripts/gate_fresh_check.py check .gate-status
