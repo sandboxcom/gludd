@@ -408,6 +408,222 @@ Tasks created from the release pipeline failures that prevented v0.1.0-beta.1 de
 - [ ] FW.13 — Node v26 compatibility: all .ts files parseable by --experimental-strip-types. No enums, namespaces, nested try-catch in catch. | priority: high | fix: make check-node-v26-compat, verify | verify: test_node_v26_compat.py
 - [ ] FW.14 — Plugin test exports outside plugin dir: test helpers in lib/plugin_test_exports.ts, not in .opencode/plugin/. | priority: high | fix: already implemented, verify | verify: test_exports_location.py
 - [ ] FW.15 — Behavioral plugin tests (scripts/test_plugin_behavior.py): 36 tests that actually invoke hooks with real inputs. | priority: high | fix: already implemented, verify all pass | verify: test_plugin_behavior.py
+
+---
+
+## Phase AR — Agent Reasoning (20 specs)
+
+- [ ] AR.1 — Root-cause-first reasoning: when a failure occurs, trace the chain of causality to its origin before attempting a fix. Never patch a symptom without understanding why it occurred. | priority: critical | fix: AGENTS.md rule (already exists), add reasoning template to system.transform | verify: test_agents_md_section.py
+- [ ] AR.2 — Constraint-as-design-prompt: when hitting a limitation (API granularity, timeout, missing tool), treat it as a problem to engineer around, not a reason to stop. | priority: high | fix: AGENTS.md rule (already exists), verify compliance | verify: test_constraint_engineering.py
+- [ ] AR.3 — Pre-dispatch self-check: before composing a dispatch wave, count dispatches. If <10 and ≥2 pending items exist, add more before sending. | priority: high | fix: AGENTS.md rule (already exists), verify compliance | verify: test_pre_dispatch_check.py
+- [ ] AR.4 — Post-response self-audit: after writing a response with tool calls, count dispatches. If 0 and work is pending, delete and add dispatches. | priority: high | fix: AGENTS.md rule (already exists), verify compliance | verify: test_post_response_audit.py
+- [ ] AR.5 — Priority stacking (AND not OR): new instructions stack on existing objectives. A new priority doesn't replace previous mandates. | priority: critical | fix: AGENTS.md rule (already exists), verify compliance | verify: test_priority_stacking.py
+- [ ] AR.6 — Self-directed work: when a gap/bug is found while working, fix it immediately. Don't list it and ask for approval. | priority: high | fix: AGENTS.md rule (already exists), verify compliance | verify: test_self_directed_fix.py
+- [ ] AR.7 — Never block on questions: when hitting a decision point, choose the most reasonable option, state the assumption, proceed. | priority: high | fix: AGENTS.md rule (already exists), enforce-no-blocking-questions hook | verify: test_no_blocking_questions.py
+- [ ] AR.8 — Instruction-following priority: when user gives specific instruction that contradicts current plan, follow the instruction FIRST. | priority: critical | fix: AGENTS.md rule (already exists), verify compliance | verify: test_instruction_priority.py
+- [ ] AR.9 — Evidence over assertion: every factual claim must have supporting evidence from a tool call. Unsupported claims are violations. | priority: critical | fix: AGENTS.md rule (already exists), enforce-verified-claims.ts | verify: test_evidence_based.py
+- [ ] AR.10 — Trust gate output over memory: gate exit codes are the single source of truth. SESSION.md claims have been false. | priority: high | fix: AGENTS.md rule (already exists), verify compliance | verify: test_gate_truth.py
+- [ ] AR.11 — All bugs are my bugs: no "pre-existing" exception. Every red test, lint error, CI failure is my responsibility. | priority: high | fix: AGENTS.md rule (already exists), verify compliance | verify: test_all_bugs_owned.py
+- [ ] AR.12 — When you find a gap, fix it now: don't list gaps and wait for approval. You found it, you own it, you fix it. | priority: high | fix: AGENTS.md rule (already exists), verify compliance | verify: test_gap_fix_now.py
+- [ ] AR.13 — Constraints are to engineer around: a limitation is a design prompt. Never present a constraint as a dead end without a workaround. | priority: high | fix: AGENTS.md rule (already exists), verify compliance | verify: test_constraint_workaround.py
+- [ ] AR.14 — Don't rationalize stops: finding a reason to pause is itself a malfunction. "CI is running" is not a reason to stop. | priority: critical | fix: AGENTS.md rule (already exists), verify compliance | verify: test_no_rationalized_stops.py
+- [ ] AR.15 — Answer THEN continue: when asked a factual question, answer briefly then immediately make a tool call. Never answer and stop. | priority: high | fix: AGENTS.md rule (already exists), verify compliance | verify: test_answer_then_continue.py
+- [ ] AR.16 — Completion requires green gate + TASKS.md evidence: nothing else counts as done. No self-assessment, no assertion from memory. | priority: critical | fix: AGENTS.md rule (already exists), verify compliance | verify: test_completion_criteria.py
+- [ ] AR.17 — Use existing mature tools: never write custom code when a well-formed existing tool exists (detect-secrets, ruff, mypy, pytest, pre-commit). | priority: high | fix: AGENTS.md rule (already exists), verify compliance | verify: test_mature_tools.py
+- [ ] AR.18 — No unseen events: any operation >30s must surface continuous progress (tee, heartbeat, phase marker). Never redirect to /dev/null. | priority: high | fix: AGENTS.md rule (already exists), verify compliance | verify: test_observability.py
+- [ ] AR.19 — Bash unavailable → adapt in ≤2 turns: if make commands fail, execute 3-step diagnosis in one parallel message, then adapt. | priority: medium | fix: AGENTS.md rule (already exists), verify compliance | verify: test_bash_adaptation.py
+- [ ] AR.20 — Never use COMMIT_THRESHOLD=1: use make git-commit or make ship-commit. Push only when CI is idle. | priority: critical | fix: AGENTS.md rule (already exists), enforce in Makefile | verify: test_no_commit_threshold_1.py
+
+---
+
+## Phase DF — Debugging & Failure (20 specs)
+
+- [ ] DF.1 — Read failure logs before guessing: when CI fails, read the actual error message from make ci-faillog before proposing a fix. | priority: critical | fix: AGENTS.md rule | verify: test_read_before_fix.py
+- [ ] DF.2 — One fix per iteration: don't change 5 things at once. Fix one issue, test, commit, then fix the next. | priority: high | fix: AGENTS.md atomic commits rule | verify: test_one_fix_per_iteration.py
+- [ ] DF.3 — Verify the fix locally before pushing: run the specific test that was failing. Confirm it passes. Then commit. | priority: high | fix: AGENTS.md TDD rule | verify: test_local_verify_before_push.py
+- [ ] DF.4 — Trace the full chain: when a test fails, trace from the assertion → the function → the input → the root cause. Don't patch the assertion. | priority: high | fix: AGENTS.md root-cause rule | verify: test_full_chain_trace.py
+- [ ] DF.5 — Never weaken a test to make it pass: a failing test means the code is broken, not the test. Fix the code. | priority: critical | fix: AGENTS.md guardrail integrity rule | verify: test_no_weakened_tests.py
+- [ ] DF.6 — Never disable a guardrail to fix a symptom: if a guardrail blocks you, fix the guardrail's logic, not remove it. | priority: critical | fix: AGENTS.md guardrail integrity rule | verify: test_no_disabled_guardrails.py
+- [ ] DF.7 — Document the root cause in BUGS.md: every failure gets logged with what happened, why guardrail failed, what was fixed. | priority: high | fix: AGENTS.md premature-stop audit rule | verify: test_bugs_md_logging.py
+- [ ] DF.8 — Retry with backoff on transient errors: API 529/429/503 errors → exponential backoff. Don't retry immediately 10 times. | priority: medium | fix: AGENTS.md transient-error rule | verify: test_backoff_retry.py
+- [ ] DF.9 — Check for stale state files: /tmp/gludd-*.json from crashed sessions cause false enforcement. Run make crash-recovery. | priority: medium | fix: AGENTS.md crash-recovery rule | verify: test_stale_state_cleanup.py
+- [ ] DF.10 — Gate .gate-status freshness: if .gate-status is older than the last src/ edit, it's stale. Re-run gate. | priority: high | fix: already enforced by _gate-fresh-check, verify | verify: test_gate_freshness_check.py
+- [ ] DF.11 — Collection errors are failures: make collect-check must show 0 errors. Collection errors mean imports are broken. | priority: high | fix: already enforced in gate, verify | verify: test_collect_zero_errors.py
+- [ ] DF.12 — Molecule CI failures: fix the molecule playbook, don't skip the test. Each failure is a real issue. | priority: medium | fix: AGENTS.md all-bugs-are-my-bugs rule | verify: test_molecule_fixes.py
+- [ ] DF.13 — Platform-specific failures: tests that pass on macOS but fail on Linux CI need platform-conditional logic or CI-specific fixes. | priority: medium | fix: investigate each failure individually | verify: test_platform_fixes.py
+- [ ] DF.14 — Import errors → fix the import: don't delete the importing file. Fix the path or create the missing module. | priority: high | fix: AGENTS.md root-cause rule | verify: test_import_error_fix.py
+- [ ] DF.15 — RecursionError → find the infinite loop: trace the call chain. Don't increase the recursion limit. | priority: high | fix: AGENTS.md root-cause rule | verify: test_recursion_fix.py
+- [ ] DF.16 — TypeError: object list can't be used in 'await' expression → fix the async/await mismatch. Don't remove the await. | priority: medium | fix: AGENTS.md root-cause rule | verify: test_typeerror_fix.py
+- [ ] DF.17 — AF_UNIX path too long → use shorter socket paths. CI runners have different path length limits. | priority: low | fix: use tmp_path with shorter prefix | verify: test_socket_path_fix.py
+- [ ] DF.18 — AttributeError: module has no attribute → the module was refactored. Update the test to match the new API. | priority: medium | fix: AGENTS.md root-cause rule | verify: test_attribute_error_fix.py
+- [ ] DF.19 — KeyError in test → the data structure changed. Update the test to match the new structure. | priority: low | fix: AGENTS.md root-cause rule | verify: test_keyerror_fix.py
+- [ ] DF.20 — Failed CI → fix ALL failures: never classify as "pre-existing". Every failure is a task to complete. | priority: critical | fix: AGENTS.md all-bugs-are-my-bugs rule | verify: test_fix_all_failures.py
+
+---
+
+## Phase DT — Data & State Tracking (15 specs)
+
+- [ ] DT.1 — TASKS.md is the task ledger: every dispatched task gets a unique ID before dispatch. Never re-dispatch completed tasks. | priority: high | fix: AGENTS.md task self-tracking rule | verify: test_task_ledger.py
+- [ ] DT.2 — Cross-check TASKS.md before dispatching: grep for unchecked items. Don't re-dispatch [x] items. | priority: high | fix: AGENTS.md task self-tracking rule | verify: test_no_redispatch.py
+- [ ] DT.3 — Update TASKS.md status immediately after results: don't batch. Mark [x] with evidence right away. | priority: high | fix: AGENTS.md task self-tracking rule | verify: test_immediate_status_update.py
+- [ ] DT.4 — SESSION.md maintained at all times: read at session start, update after each logical unit of work. Never stale. | priority: high | fix: AGENTS.md session persistence rule | verify: test_session_md_currency.py
+- [ ] DT.5 — BUGS.md tracks premature-stop incidents: every stop while work was pending gets logged with root cause. | priority: high | fix: AGENTS.md premature-stop audit rule | verify: test_bugs_md_incident_log.py
+- [ ] DT.6 — config/ratchet.yml tracks known failures: empty ratchet = no known-unfixed work. Any entry = pending work. | priority: medium | fix: AGENTS.md mechanical contract rule #2 | verify: test_ratchet_tracking.py
+- [ ] DT.7 — .gate-status tracks gate output: PASS/FAIL/RUNNING with timestamp. Must be fresh (newer than last src/ edit). | priority: high | fix: already enforced by _gate-fresh-check | verify: test_gate_status_tracking.py
+- [ ] DT.8 — .ci-status tracks CI verdict: last-known conclusion + headSha. Must match branch tip or it's stale. | priority: medium | fix: already implemented, verify | verify: test_ci_status_tracking.py
+- [ ] DT.9 — Nothing-dropped guardrail: every subagent result must be committed, ticked, or cancelled before terminal response. | priority: critical | fix: AGENTS.md nothing-dropped rule, enforce-stop.ts | verify: test_nothing_dropped.py
+- [ ] DT.10 — Force-dispatch signal: /tmp/gludd-force-dispatch.json contains specific tasks for the agent to dispatch. Cleaned after read. | priority: medium | fix: already implemented, verify cleanup | verify: test_force_dispatch_cleanup.py
+- [ ] DT.11 — Todowrite discipline for ≥3-ask sessions: maintain todowrite list tracking every ask until codification is complete. | priority: medium | fix: AGENTS.md todowrite discipline rule | verify: test_todowrite_discipline.py
+- [ ] DT.12 — Conversation history audit: query opencode.db for user messages, cross-reference against implementation. Find missed requests. | priority: high | fix: AGENTS.md self-audit rule | verify: test_conversation_audit.py
+- [ ] DT.13 — Dead code audit: for every new class/module, search src/ for imports. If only imported in tests, it's dead code. | priority: high | fix: AGENTS.md self-audit rule | verify: test_dead_code_audit.py
+- [ ] DT.14 — Wiring audit: for every new schema field, trace it daemon→event_loop→worker→response. Every field must be wired end-to-end. | priority: high | fix: AGENTS.md self-audit rule | verify: test_wiring_audit.py
+- [ ] DT.15 — Migration audit: for every new SQLAlchemy model, check alembic/versions/ for migration + correct revision chain. | priority: high | fix: AGENTS.md self-audit rule | verify: test_migration_audit.py
+
+---
+
+## Phase GT — Gate & Test Pipeline (15 specs)
+
+- [ ] GT.1 — Gate is the source of truth: make gate output overrides SESSION.md claims. If they disagree, gate is correct. | priority: critical | fix: AGENTS.md mechanical contract rule #6 | verify: test_gate_truth.py
+- [ ] GT.2 — Gate phases: lint → typecheck → collect-check → hook-runtime → test → smoke. Each writes to .gate-status. | priority: high | fix: already implemented, verify phase markers | verify: test_gate_phases.py
+- [ ] GT.3 — Background gate for long runs: make gate-background launches detached, writes .gate-status. Never run foreground. | priority: critical | fix: already implemented, verify target exists | verify: test_gate_background.py
+- [ ] GT.4 — Gate status check: make gate-status-check prints phase, terminal marker, last 20 lines. Non-blocking. | priority: high | fix: already implemented, verify | verify: test_gate_status_check.py
+- [ ] GT.5 — Gate kill: make gate-kill sends SIGTERM then SIGKILL to background gate. Emergency stop. | priority: medium | fix: already implemented, verify | verify: test_gate_kill.py
+- [ ] GT.6 — Gate refresh: make gate-refresh re-runs gate phases quickly and updates .gate-status. | priority: medium | fix: already implemented, verify | verify: test_gate_refresh.py
+- [ ] GT.7 — Lite gate for between commits: make gate-lite runs lint+typecheck+collect+smoke+unit@2w. Not the gate of record. | priority: medium | fix: already implemented, verify | verify: test_gate_lite.py
+- [ ] GT.8 — Coverage audit: make gate-audit runs gate + per-file coverage threshold check (85%). | priority: medium | fix: already implemented, verify | verify: test_gate_audit.py
+- [ ] GT.9 — Test count before commit: make test-count shows 0 collection errors before every commit. | priority: high | fix: already in git-commit pre-commit, verify | verify: test_test_count.py
+- [ ] GT.10 — Test failures shown: make test-failures shows FAILED+ERROR lines. Propagates exit code. | priority: high | fix: already implemented, verify | verify: test_test_failures.py
+- [ ] GT.11 — Hook runtime tests: make test-hook-runtime invokes actual TS plugin hooks. Must be green before plugin commits. | priority: critical | fix: already implemented (122/0), verify | verify: test_hook_runtime.py
+- [ ] GT.12 — Plugin hook invocation validator: make check-plugin-hook-invoke invokes every hook with real inputs. 27/27 PASS. | priority: critical | fix: already implemented, verify | verify: test_hook_invoke.py
+- [ ] GT.13 — Node v26 compat check: make check-node-v26-compat scans .ts for forbidden patterns (nested try-catch, enums). | priority: high | fix: already implemented (5/5), verify | verify: test_node_compat.py
+- [ ] GT.14 — Duplicate target detection: make check-duplicate-targets scans Makefile for targets declared >1 time. | priority: medium | fix: already implemented, verify | verify: test_duplicate_targets.py
+- [ ] GT.15 — Coverage gap audit: make check-coverage-gaps scans src/ for untested modules. 0 new gaps required. | priority: high | fix: already implemented, verify | verify: test_coverage_gaps.py
+
+---
+
+## Phase SD — Session Discipline (15 specs)
+
+- [ ] SD.1 — Session start within 5 min: read TASKS/BUGS/ratchet/SESSION + git-status + git-log in ONE message. Then dispatch ≥10 subagents. | priority: critical | fix: AGENTS.md session-start protocol, enforce-session-start.ts | verify: test_session_start_protocol.py
+- [ ] SD.2 — Start watchdog first: make watchdog-auto before any other work. Ensures background daemon running. | priority: high | fix: AGENTS.md session-start step 0 | verify: test_watchdog_started.py
+- [ ] SD.3 — No prose before first dispatch: first response must be tool calls (reads + dispatches). No "let me check..." text. | priority: critical | fix: AGENTS.md session-start contract | verify: test_no_prose_first.py
+- [ ] SD.4 — Read backlog in parallel: TASKS.md + BUGS.md + ratchet.yml + SESSION.md in ONE message. Not serial. | priority: high | fix: AGENTS.md session-start step 1 | verify: test_parallel_reads.py
+- [ ] SD.5 — Dispatch wave immediately after reads: step 1 (reads) → step 2 (dispatch) is ONE turn. No intervening tool calls. | priority: critical | fix: AGENTS.md session-start step 2 | verify: test_immediate_dispatch.py
+- [ ] SD.6 — Time-to-dispatch constraint: ≤5 min wall-clock from session start to first dispatch wave. | priority: high | fix: enforce-session-start.ts time gates (60s warn, 120s hard-deny) | verify: test_dispatch_timeliness.py
+- [ ] SD.7 — No Q&A first response: if backlog has work, first response must be dispatches. Not "Sure, let me look into that." | priority: critical | fix: AGENTS.md session-start exception clause | verify: test_no_qa_first.py
+- [ ] SD.8 — Audit previous session for premature stops: read SESSION.md "Next Steps". If items existed before last commit, previous session stopped prematurely. | priority: high | fix: AGENTS.md premature-stop audit policy | verify: test_previous_session_audit.py
+- [ ] SD.9 — Fix root cause guardrail before continuing: if previous session had a stop incident, fix the guardrail first. | priority: high | fix: AGENTS.md premature-stop audit policy | verify: test_guardrail_fix_first.py
+- [ ] SD.10 — Log incident in BUGS.md: every premature stop gets logged with date, what stopped, why guardrail failed, what was fixed. | priority: high | fix: AGENTS.md premature-stop audit policy | verify: test_incident_logging.py
+- [ ] SD.11 — Session end with zero worktrees: make agent-worktree-list shows only main checkout. No abandoned worktrees. | priority: high | fix: AGENTS.md worktree lifecycle rule | verify: test_no_abandoned_worktrees.py
+- [ ] SD.12 — Worktree merge-then-cleanup: every worktree branch merged into development before cleanup. One atomic unit. | priority: high | fix: AGENTS.md worktree lifecycle rule | verify: test_worktree_merge_cleanup.py
+- [ ] SD.13 — Worktree health check: make worktree-health-check flags worktrees >24h with unmerged commits. Exits non-zero on violation. | priority: high | fix: already implemented, verify | verify: test_worktree_health.py
+- [ ] SD.14 — Backup opencode before sessions: make backup-opencode snapshots .opencode/ to .opencode.orig/. Run before long sessions. | priority: medium | fix: already implemented, verify | verify: test_opencode_backup.py
+- [ ] SD.15 — Crash recovery: make crash-recovery resets enforcement state files. Run after crashed sessions. | priority: high | fix: already implemented, verify | verify: test_crash_recovery_target.py
+
+---
+
+## Phase WC — Workspace & Context (15 specs)
+
+- [ ] WC.1 — No external file access: read/write/edit/glob/grep only in /Users/shawnwilson/gludd/ or /tmp/gludd-*. | priority: high | fix: enforced by opencode.json permissions | verify: test_workspace_restriction.py
+- [ ] WC.2 — Check parent dir exists before creating files: use ls to verify parent directory before mkdir/write. | priority: medium | fix: AGENTS.md bash tool policy | verify: test_dir_verification.py
+- [ ] WC.3 — Quote file paths with spaces: double-quote paths containing spaces. | priority: medium | fix: AGENTS.md bash tool policy | verify: test_path_quoting.py
+- [ ] WC.4 — Use workdir parameter: don't cd into directories. Use the workdir parameter of the bash tool. | priority: high | fix: AGENTS.md bash tool policy | verify: test_workdir_usage.py
+- [ ] WC.5 — Clean /tmp/gludd-* regularly: run make clean-tmp before session start and after large batches. | priority: medium | fix: AGENTS.md disk discipline | verify: test_clean_tmp.py
+- [ ] WC.6 — Disk guard: make disk-guard checks disk + cleans caches if >95% full. Pre-commit check fails if >90%. | priority: medium | fix: already implemented, verify | verify: test_disk_guard.py
+- [ ] WC.7 — Max 5-6 worktree agents: each worktree creates ~320MB venv. Don't exceed ENOSPC threshold. | priority: medium | fix: AGENTS.md worktree cap rule | verify: test_worktree_cap.py
+- [ ] WC.8 — Clean worktree venvs when idle: make clean-worktree-venvs reclaims disk when no worktree agents are live. | priority: low | fix: already implemented, verify | verify: test_venv_cleanup.py
+- [ ] WC.9 — Context window management: don't re-read large tool outputs. Don't re-derive established facts. Lean on memory index. | priority: medium | fix: AGENTS.md keep-opus-lean rule | verify: test_context_management.py
+- [ ] WC.10 — Terse main-thread turns: short replies. Don't re-read large outputs. Don't explain what's obvious. | priority: medium | fix: AGENTS.md keep-opus-lean rule | verify: test_terse_turns.py
+- [ ] WC.11 — Subagents return summaries + file pointers: keep detail off main thread. Punch-list, not raw output. | priority: medium | fix: AGENTS.md keep-opus-lean rule | verify: test_subagent_summaries.py
+- [ ] WC.12 — Prefer sonnet for subagents: sonnet is the cost-efficient default. Maintain sonnet-dominant ratio. | priority: medium | fix: AGENTS.md model utilization rule | verify: test_sonnet_ratio.py
+- [ ] WC.13 — No bare git commands: use make git-status, make git-log, make git-add, etc. Never raw git. | priority: critical | fix: enforced by enforce-make.ts | verify: test_no_raw_git.py
+- [ ] WC.14 — Use make for all operations: never run uv, python, pip, cat, ls, find, rm, cp, mv, rg directly. | priority: critical | fix: enforced by enforce-make.ts | verify: test_make_only.py
+- [ ] WC.15 — Clean tree before dispatch: commit or stash before dispatching subagents. Dirty tree causes pre-commit conflicts. | priority: high | fix: enforced by enforce-clean-tree.ts | verify: test_clean_tree_dispatch.py
+
+---
+
+## Phase RV — Review & Verification (15 specs)
+
+- [ ] RV.1 — Self-audit after significant work: run through conversation history, dead code, wiring, migration, test level, gap audits. | priority: high | fix: AGENTS.md self-audit policy | verify: test_self_audit_compliance.py
+- [ ] RV.2 — Cross-interface completeness: if feature added to CLI, check TUI, daemon API, playbooks, config. | priority: high | fix: AGENTS.md self-audit rule | verify: test_cross_interface.py
+- [ ] RV.3 — Evidence in done claims: paste the measurement (gate output, commit hash, CI verdict) in the SAME message as the claim. | priority: critical | fix: AGENTS.md evidence-based response policy | verify: test_evidence_in_claims.py
+- [ ] RV.4 — Verify-remote after push: make verify-remote BRANCH=<b> SHA=<sha> confirms remote tip matches. | priority: critical | fix: AGENTS.md branch-landing integrity rule | verify: test_verify_remote.py
+- [ ] RV.5 — Never report stale CI verdict: if ci-verdict headSha != branch tip, the verdict is stale. | priority: critical | fix: AGENTS.md branch-landing integrity rule | verify: test_no_stale_ci.py
+- [ ] RV.6 — Never report cooldown as pending: CI-COOLDOWN means UNKNOWN, not PENDING. | priority: high | fix: AGENTS.md CI cooldown rule | verify: test_cooldown_not_pending.py
+- [ ] RV.7 — Staged release assets verification: pre-publish gate checks all 12 categories locally before publishing. | priority: critical | fix: already in build.yml release job | verify: test_staged_assets.py
+- [ ] RV.8 — Release completeness verification: make verify-release-completeness checks 12 categories via GitHub API. | priority: critical | fix: already implemented, verify | verify: test_release_completeness.py
+- [ ] RV.9 — Post-deploy smoke test: release job runs smoke test on published binary. Verifies it actually works. | priority: medium | fix: already in build.yml | verify: test_post_deploy.py
+- [ ] RV.10 — check-readme-status before release: README "Status as of" must match pyproject.toml version. | priority: high | fix: already implemented | verify: test_readme_status.py
+- [ ] RV.11 — verify-enforcement: all plugins BLOCKING + structural checks pass. Run before any release. | priority: high | fix: already implemented | verify: test_verify_enforcement.py
+- [ ] RV.12 — check-node-v26-compat: all .ts files parse under --experimental-strip-types. | priority: high | fix: already implemented | verify: test_node_compat.py
+- [ ] RV.13 — check-duplicate-targets: no Makefile target declared >1 time. | priority: medium | fix: already implemented | verify: test_duplicate_targets.py
+- [ ] RV.14 — check-hot-reload-fresh: /tmp/gludd-hot-*.js newer than .ts source. | priority: medium | fix: make check-hot-reload-fresh | verify: test_hot_reload_fresh.py
+- [ ] RV.15 — proactive-scan: automated bug pattern scanner. Run in gate. 0 issues required. | priority: medium | fix: already implemented | verify: test_proactive_scan.py
+
+---
+
+## Phase PB — Prevention & Guardrails (15 specs)
+
+- [ ] PB.1 — Guardrail integrity policy: never remove/disable/weaken a guardrail to fix a symptom. Fix the guardrail's logic. | priority: critical | fix: AGENTS.md rule (already exists), verify | verify: test_guardrail_integrity.py
+- [ ] PB.2 — Three-layer guardrail pattern: every new restriction needs (1) config permission, (2) runtime hook, (3) agent prompt. | priority: high | fix: AGENTS.md meta-rule (already exists) | verify: test_three_layer_pattern.py
+- [ ] PB.3 — No lint-suppression comments: # noqa, # type: ignore, # pylint: disable, # fmt: off/skip, # isort:skip all forbidden. | priority: high | fix: enforced by enforce-no-suppressions.ts | verify: test_no_suppressions.py
+- [ ] PB.4 — Commit-after-green: commit work after tests pass. Don't leave green work uncommitted. | priority: high | fix: AGENTS.md commit-after-green policy | verify: test_commit_after_green.py
+- [ ] PB.5 — Clean tree before dispatch: enforce-clean-tree.ts denies dispatch when git status is dirty. | priority: high | fix: already implemented | verify: test_clean_tree_before_dispatch.py
+- [ ] PB.6 — No-commit-bypass: every commit-shaped make target enforces .gate-status freshness+green. No exceptions. | priority: critical | fix: AGENTS.md no-commit-bypass policy | verify: test_no_commit_bypass.py
+- [ ] PB.7 — Don't push every commit: batch-push with threshold. Never COMMIT_THRESHOLD=1. | priority: critical | fix: AGENTS.md batch-push rule + Makefile enforcement | verify: test_batch_push_rule.py
+- [ ] PB.8 — Green branch immutable: once release branch remote tip is CI-GREEN, no new commits. | priority: high | fix: check_green_branch_guard.py | verify: test_green_branch.py
+- [ ] PB.9 — Release pipeline CI-green: tag push requires CI green on HEAD. require_ci_green.py. | priority: critical | fix: already in release-cut pipeline | verify: test_ci_green_required.py
+- [ ] PB.10 — Release is artifact not tag: tag without artifacts = NOT shipped. verify-release-completeness required. | priority: critical | fix: AGENTS.md release-is-artifact rule | verify: test_artifact_not_tag.py
+- [ ] PB.11 — No false completion: .claude/hooks/no_false_completion_stop.sh blocks done claims without evidence. | priority: critical | fix: already implemented, verify active | verify: test_no_false_completion.py
+- [ ] PB.12 — Verified claims: enforce-verified-claims.ts blocks done-words without evidence tokens. | priority: critical | fix: already implemented | verify: test_verified_claims.py
+- [ ] PB.13 — Anti-loop directive: never run make git-log, make ci-verdict, make git-diff as standalone calls. | priority: high | fix: AGENTS.md anti-loop directive | verify: test_no_compulsive_check.py
+- [ ] PB.14 — Agent at-rest policy: completed tasks not re-dispatched. Failed tasks re-dispatched with backoff+cap. | priority: high | fix: AGENTS.md at-rest policy | verify: test_at_rest_policy.py
+- [ ] PB.15 — Zombie task prevention: never arm self-relaunching watcher for long tasks. Main loop owns long runs. | priority: high | fix: AGENTS.md zombie rule | verify: test_no_zombie_watchers.py
+
+---
+
+## Phase IS — Integration & Wiring (15 specs)
+
+- [ ] IS.1 — Feature starts on development first: never create same feature on master and development independently. | priority: critical | fix: AGENTS.md single-source rule | verify: test_single_source.py
+- [ ] IS.2 — Emergency fixes backported: if fix urgently needed on master, cherry-pick to development immediately. | priority: high | fix: AGENTS.md single-source rule | verify: test_backport_fixes.py
+- [ ] IS.3 — Shared-infrastructure single-writer: Makefile, opencode.json, AGENTS.md — only one agent edits at a time. | priority: high | fix: AGENTS.md single-source rule | verify: test_single_writer.py
+- [ ] IS.4 — No parallel Makefile edits on different branches: duplicate target detection at gate time. | priority: high | fix: make check-duplicate-targets | verify: test_no_duplicate_targets.py
+- [ ] IS.5 — README status table refresh: every release must go through make release-cut. Direct tag push bypasses README currency gate. | priority: critical | fix: AGENTS.md release-cut rule | verify: test_readme_currency_gate.py
+- [ ] IS.6 — Development→master merge: merge via make development-merge-to-master. CI-green required. | priority: high | fix: already implemented | verify: test_dev_merge.py
+- [ ] IS.7 — Feature branch workflow: make feature-start creates branch. make feature-done merges with --no-ff after full test suite passes. | priority: medium | fix: already implemented | verify: test_feature_workflow.py
+- [ ] IS.8 — Agent worktree lifecycle: make agent-worktree creates isolated checkout. Subagent works inside. Orchestrator merges. | priority: high | fix: already implemented | verify: test_worktree_lifecycle.py
+- [ ] IS.9 — Collection precedence: project > user > bundled. Higher tier shadows lower. | priority: medium | fix: AGENTS.md project-collection rule | verify: test_collection_precedence.py
+- [ ] IS.10 — Ansible runner adapter: resolves paths via paths.py. Sets ANSIBLE_COLLECTIONS_PATH + ANSIBLE_ROLES_PATH. | priority: low | fix: already implemented | verify: test_ansible_paths.py
+- [ ] IS.11 — Daemon wiring: new modules must be importable from daemon startup. No deferred imports that crash at boot. | priority: high | fix: AGENTS.md no-manual-default rule | verify: test_daemon_wiring.py
+- [ ] IS.12 — No dead-code isolation: every class in src/ must be importable and instantiable from daemon startup. | priority: high | fix: AGENTS.md no-manual-default rule | verify: test_no_dead_code.py
+- [ ] IS.13 — No manual-default: every process fully automated. No "run X manually." No "config required." Safe defaults. | priority: high | fix: AGENTS.md no-manual-default rule | verify: test_no_manual_default.py
+- [ ] IS.14 — No check-only gateways: verify/download scripts must do the action, not just report. | priority: medium | fix: AGENTS.md no-manual-default rule | verify: test_no_check_only.py
+- [ ] IS.15 — Background test runner: long tests run in background, pollable. No task thread blocked waiting for test. | priority: medium | fix: background-test-runner skill | verify: test_background_test.py
+
+---
+
+## Phase MX — Miscellaneous Behavioral (21 specs)
+
+- [ ] MX.1 — Codify improvements immediately: when discovering a better way, codify in AGENTS.md/hooks/memory in the SAME session. | priority: high | fix: AGENTS.md codify rule | verify: test_codify_immediately.py
+- [ ] MX.2 — Three codification layers: AGENTS.md (policy) + hooks (enforcement) + memory (cross-session). Every guardrail needs all three. | priority: high | fix: AGENTS.md meta-rule | verify: test_three_layers.py
+- [ ] MX.3 — Orchestration hooks current state: document which hooks are advisory vs blocking. Update when changed. | priority: medium | fix: AGENTS.md orchestration hooks section | verify: test_hooks_documented.py
+- [ ] MX.4 — Model utilization: maintain sonnet-dominant ratio. Use sonnet for most subagents. Opus/haiku for specific cases. | priority: medium | fix: AGENTS.md model utilization rule | verify: test_model_ratio.py
+- [ ] MX.5 — Disk discipline: don't fill disk. /tmp/gludd-* cleaned regularly. Worktree venvs managed. | priority: medium | fix: AGENTS.md disk discipline section | verify: test_disk_management.py
+- [ ] MX.6 — Multitasking/blockers: work is SERIAL only if it mutates shared master tree or competes for gate/commit/push slot. Everything else PARALLEL. | priority: high | fix: AGENTS.md multitasking rule | verify: test_parallel_work.py
+- [ ] MX.7 — Pipeline orchestration: continuous pipelined stream of subagent batches. Don't drain to zero between waves. | priority: high | fix: AGENTS.md pipeline model | verify: test_pipeline_model.py
+- [ ] MX.8 — Worktree-per-subagent: file-editting subagents MUST work in isolated git worktree. Read-only research stays on main checkout. | priority: high | fix: AGENTS.md worktree rule | verify: test_worktree_per_subagent.py
+- [ ] MX.9 — Subagent reliability: each task <5 min. Never dispatch make gate. One focused task per agent. Read-only research is reliable. | priority: high | fix: AGENTS.md subagent rules | verify: test_subagent_reliability.py
+- [ ] MX.10 — Background gate workflow: make gate-background + make gate-status-check. Never make gate on main thread. | priority: critical | fix: AGENTS.md background-gate rule | verify: test_background_gate.py
+- [ ] MX.11 — Message-shape rule: every response with tool calls has 0 dispatches (serial hot-file work) OR 2+ dispatches (dispatch wave). Never 1. | priority: high | fix: AGENTS.md message-shape rule | verify: test_message_shape.py
+- [ ] MX.12 — Anti-grinding: 5+ non-dispatch tool calls in 30s window → blocked. Only dispatch unblocks. | priority: high | fix: enforce-floor.ts anti-grinding | verify: test_anti_grinding.py
+- [ ] MX.13 — Background ops never block dispatch: main thread dispatches subagents and polls. Never sleeps. | priority: high | fix: AGENTS.md anti-wait rule + enforce-no-wait.ts | verify: test_no_blocking_bg.py
+- [ ] MX.14 — CI-poll subagents forbidden: never dispatch a "poll CI until terminal" subagent. | priority: critical | fix: AGENTS.md CI-poll rule | verify: test_no_ci_poll_dispatch.py
+- [ ] MX.15 — CI check cooldown: make ci-verdict-safe enforces 10-min cooldown. Bare ci-verdict is release-cut internal only. | priority: high | fix: already implemented | verify: test_ci_cooldown.py
+- [ ] MX.16 — Long ops backgrounded: anything >30s runs in background with progress markers. Never foreground on main thread. | priority: critical | fix: AGENTS.md long-ops rule + enforce-make.ts | verify: test_long_ops_backgrounded.py
+- [ ] MX.17 — Deploy-and-forget: push + record timestamp + resume work. Check CI 30+ min later. | priority: high | fix: make deploy-and-forget target | verify: test_deploy_and_forget.py
+- [ ] MX.18 — Keep opus lean: delegate heavy reading/editing/testing to sonnet subagents. Main thread = coordination only. | priority: medium | fix: AGENTS.md opus-lean rule | verify: test_opus_lean.py
+- [ ] MX.19 — Branch discipline: never push feature work directly to master. Master = merges from development only. | priority: critical | fix: AGENTS.md branch discipline rule + enforce-branch-discipline.ts | verify: test_branch_discipline.py
+- [ ] MX.20 — Verify-state before claims: run make verify-state (git status + log + HEAD-vs-remote + CI verdict) before any done claim. | priority: critical | fix: AGENTS.md evidence-based rule | verify: test_verify_state.py
+- [ ] MX.21 — Force-push discipline: GLUDD_FORCE_PUSH=1 only for hotfixes. Never routine. Bypasses cooldown but NOT CI-in-flight. | priority: critical | fix: Makefile fix (committed 3defd0c1, pending push) + test_force_push_ci_guard.py | verify: test_force_push_discipline.py
 - [x] A.5 — CI shard matrix rework (unit-1a→1a+1d split) | priority: high | effort: medium | status: completed | evidence: build.yml lines 186-244 — 6 shards (unit-1a, unit-1b, unit-1d, unit-2, unit-3, other) already split with path exclusions; unit-1a→1a+1d split completed 2026-07-09 per inline comment
 - [x] A.6 — Coverage --fail-under=0 workaround removal once E1 coverage hits threshold | priority: medium | effort: small | status: completed | evidence: fail_under 70→85 in pyproject.toml, commit 5a04fffb (metric module + lint-fix sweep), gate green
 - [x] A.7 — Push-guard fix: enforce push-guard on development branch CI green | priority: high | effort: small | status: completed | evidence: push-guard enforcement applied to development branch
