@@ -3072,3 +3072,131 @@ Behavioral fix specs codifying every validation layer: config permissions, runti
 - [ ] WC3.23 — Worktree read-only research stays on main: read-only research subagents don't need worktrees | priority: medium | fix: verify research tasks skip worktree creation | verify: test_research_no_worktree.py
 - [ ] WC3.24 — Worktree hot-file concurrency limit: at most ONE in-flight agent per hot file (daemon.py, loop.py, gateway.py) | priority: critical | fix: verify hot-file serialization | verify: test_hot_file_concurrency.py
 - [ ] WC3.25 — Worktree git lock known gap: git locking is broken inside worktrees (.git is a file, not dir) | priority: medium | fix: document gap, use git rev-parse --git-common-dir fix | verify: test_worktree_lock_gap.py
+
+---
+
+## Phase SA2 — Security Audit (25 specs)
+
+Behavioral fix specs covering security audit procedures: secrets scanning, SAST, SBOM, pip-audit, SSRF validation, tenant isolation, PSK validation, capability lattice, and related audit surfaces. Each spec defines a distinct audit procedure and the canonical command/test pair.
+
+- [ ] SA2.1 — Pre-commit secrets scan against baseline: every commit runs detect-secrets `--baseline .secrets.baseline` and fails on new findings | priority: critical | fix: wire detect-secrets into .git/hooks/pre-commit via make install-hooks | verify: test_pre_commit_secrets_scan.py
+- [ ] SA2.2 — Periodic full-repo secrets scan: `make secrets-scan` walks the entire tree against the baseline and reports drift | priority: high | fix: extend secrets-scan target to enumerate all file types | verify: test_secrets_scan_full.py
+- [ ] SA2.3 — Interactive secrets scrub workflow: `make secrets-scrub` walks findings and prompts for allowlist/scrub decisions | priority: medium | fix: document scrub workflow in AGENTS.md | verify: test_secrets_scrub_workflow.py
+- [ ] SA2.4 — Rebuild secrets baseline after verified false positive: `make secrets-baseline` regenerates `.secrets.baseline` only after human review | priority: medium | fix: add .bak rotation to secrets-baseline target | verify: test_secrets_baseline_rebuild.py
+- [ ] SA2.5 — Bandit SAST gate: `make sast` runs bandit on src/ with severity threshold HIGH; gate fails on any HIGH finding | priority: high | fix: add bandit config to pyproject.toml [tool.bandit] | verify: test_sast_gate.py
+- [ ] SA2.6 — Bandit baseline for legacy code: existing MEDIUM/LOW findings tracked in `config/bandit-baseline.json`; only new findings fail | priority: medium | fix: add -b bandit-baseline.json flag to sast target | verify: test_bandit_baseline.py
+- [ ] SA2.7 — CycloneDX SBOM generation: `make sbom` generates `dist/sbom.cyclonedx.json` from `pyproject.toml` dependencies | priority: high | fix: wire cyclonedx-bom into sbom target | verify: test_sbom_generation.py
+- [ ] SA2.8 — SBOM attached to release artifacts: every GitHub Release includes the CycloneDX SBOM as a release asset | priority: high | fix: add SBOM upload step to release job in build.yml | verify: test_release_sbom_attached.py
+- [ ] SA2.9 — pip-audit in gate: `make pip-audit` runs pip-audit on the lockfile and fails on any known CVE | priority: high | fix: add pip-audit target to gate prerequisites | verify: test_pip_audit_gate.py
+- [ ] SA2.10 — pip-audit ignore-list with review expiry: vulnerabilities explicitly ignored in `config/pip-audit-ignore.json` MUST have a `review_after` date | priority: medium | fix: add ignore-list schema validation | verify: test_pip_audit_ignore_expiry.py
+- [ ] SA2.11 — SSRF canonicalization audit: `make audit-ssrf` runs a static analysis pass verifying all outbound URL call sites go through resolve_and_pin | priority: high | fix: extend audit-ssrf target to scan src/ for httpx/urllib call sites | verify: test_ssrf_audit_pass.py
+- [ ] SA2.12 — SSRF numeric-IP guard audit: verify decimal/octal/hex IP literal encodings are blocked across every host_is_blocked caller | priority: medium | fix: extend audit-ssrf target with numeric-IP test corpus | verify: test_ssrf_numeric_audit.py
+- [ ] SA2.13 — Tenant isolation audit: `make audit-tenant` runs an integration test that asserts cross-tenant data is not reachable from any endpoint | priority: critical | fix: add two-tenant e2e test suite covering /api/traces, /api/accounting, /api/projects | verify: test_tenant_isolation_audit.py
+- [ ] SA2.14 — do_orm_execute listener verified active: structural test confirming the tenant filter is registered and injects on every ORM query path | priority: high | fix: extend audit-tenant with SQLAlchemy event listener probe | verify: test_tenant_listener_active.py
+- [ ] SA2.15 — PSK validation on every worker auth: integration test asserting worker returns 403 on missing/invalid PSK | priority: critical | fix: add e2e test for worker auth fail-closed contract | verify: test_psk_validation.py
+- [ ] SA2.16 — PSK rotation procedure documented: docs/SECURITY.md contains the PSK rotation runbook with verify steps | priority: medium | fix: write rotation runbook section | verify: test_psk_rotation_docs.py
+- [ ] SA2.17 — Capability lattice deny-list drift audit: `make audit-capabilities` verifies the deny-list has not drifted across applier.py, capability_lattice.py, apply.py | priority: high | fix: extend audit-capabilities to diff the three lists | verify: test_capability_drift.py
+- [ ] SA2.18 — STS token re-delegation TTL check: structural test confirming STS re-delegation cannot escalate TTL beyond the original | priority: high | fix: extend audit-capabilities with STS TTL narrowing probe | verify: test_sts_ttl_narrowing.py
+- [ ] SA2.19 — SSTI reachability sweep: `make audit-ssti` runs a static analysis pass confirming user input never reaches the templating engine unsanitized | priority: high | fix: extend audit-ssti to walk engine.py call graph | verify: test_ssti_reachability.py
+- [ ] SA2.20 — Filestore digest verification audit: every store_binary call site must be preceded by _verify_digest; structural test confirms | priority: high | fix: extend audit-filestore to scan for store_binary callers | verify: test_filestore_digest_audit.py
+- [ ] SA2.21 — Credential leak sanitizer audit: exception text from connectors does not contain secrets; e2e test injects a fake secret and asserts it is redacted | priority: high | fix: extend audit-credentials with secret-injection probe | verify: test_credential_leak_audit.py
+- [ ] SA2.22 — Webhook rebind protection audit: webhook URLs registered in the database are SSRF-checked at delivery time, not just at registration | priority: medium | fix: extend audit-webhooks to verify delivery-time re-check | verify: test_webhook_rebind_audit.py
+- [ ] SA2.23 — Comprehensive security audit target: `make security-audit` runs secrets + sast + sbom + pip-audit + all SA2 audit passes | priority: high | fix: aggregate target composing all SA2 checks | verify: test_security_audit_target.py
+- [ ] SA2.24 — Security audit gate failure blocks release: `make security-audit` exit != 0 aborts `make release-cut` at step 0 | priority: critical | fix: wire security-audit into release-cut prerequisites | verify: test_security_audit_blocks_release.py
+- [ ] SA2.25 — Quarterly security audit review: `make security-audit-review` opens a HumanTodo reminding the operator to review the audit config, baselines, and ignore-lists every 90 days | priority: low | fix: add HumanTodo scheduling to security-audit target | verify: test_security_audit_review_schedule.py
+
+---
+
+## Phase DG2 — Dependency Governance (25 specs)
+
+Behavioral fix specs covering dependency management: uv lockfile integrity, pip-audit, SBOM generation, license compliance, version pinning, security advisories, and related governance surfaces.
+
+- [ ] DG2.1 — uv.lock committed to repo: lockfile is checked in; CI verifies `uv lock --check` passes on every PR | priority: high | fix: add uv-lock-check target to CI gate | verify: test_uv_lock_committed.py
+- [ ] DG2.2 — uv.lock regenerated on pyproject.toml change: pre-commit hook runs `uv lock` when pyproject.toml dependency section changes | priority: medium | fix: add pyproject.toml diff check to pre-commit | verify: test_uv_lock_regen_hook.py
+- [ ] DG2.3 — All dependencies pinned in uv.lock: no floating version specifiers (`>=`, `~=`) in the locked graph; every transitive dep has an exact pin | priority: high | fix: add pinning lint to uv-lock-check target | verify: test_dependencies_pinned.py
+- [ ] DG2.4 — No wildcard version specifiers in pyproject.toml: dependencies declared with `*` are forbidden; minimum version required | priority: high | fix: add ruff/pyproject lint rule | verify: test_no_wildcard_deps.py
+- [ ] DG2.5 — pip-audit runs against uv.lock: `make pip-audit` uses `pip-audit -r <uv-export>` to scan the resolved dependency graph | priority: high | fix: wire uv export into pip-audit target | verify: test_pip_audit_uses_lock.py
+- [ ] DG2.6 — pip-audit fail-closed on HIGH severity: vulnerabilities rated HIGH or CRITICAL fail the gate; LOW/MEDIUM are advisory | priority: critical | fix: add severity threshold flag to pip-audit | verify: test_pip_audit_severity_gate.py
+- [ ] DG2.7 — CycloneDX SBOM generated from uv.lock: `make sbom` uses `cyclonedx-py` against the lockfile, not pyproject.toml | priority: medium | fix: switch sbom target input from pyproject to uv.lock | verify: test_sbom_from_lock.py
+- [ ] DG2.8 — SBOM includes license information: generated SBOM `components[].licenses` field is populated for every dependency | priority: medium | fix: add --license flag to cyclonedx-py | verify: test_sbom_license_field.py
+- [ ] DG2.9 — License allowlist enforcement: dependencies with licenses outside the allowlist (MIT, Apache-2.0, BSD-3-Clause, ISC) fail the gate | priority: high | fix: add license-check target reading SBOM licenses | verify: test_license_allowlist.py
+- [ ] DG2.10 — Copyleft license detection: GPL/AGPL/LGPL/MPL dependencies trigger a HumanTodo for legal review before merge | priority: high | fix: add copyleft-detect target | verify: test_copyleft_detection.py
+- [ ] DG2.11 — Dependency deprecation check: deprecated packages (e.g. setuptools pinned <60) flagged by `make audit-deprecations` | priority: low | fix: wire pip-audit --deprecated flag | verify: test_deprecation_check.py
+- [ ] DG2.12 — Unused dependency audit: `make audit-unused-deps` uses `pip-tools` or equivalent to find deps declared but never imported | priority: medium | fix: add unused-deps target | verify: test_unused_deps_audit.py
+- [ ] DG2.13 — Security advisory subscription: docs/DEPENDENCY_GOVERNANCE.md lists the CVE feeds monitored (OSV, GitHub Advisory Database, PyPA) | priority: low | fix: document advisory sources | verify: test_advisory_subscription_docs.py
+- [ ] DG2.14 — Dependabot/Renovate configuration: `.github/dependabot.yml` or renovate.json enables weekly dependency PRs | priority: medium | fix: add dependabot config for python ecosystem | verify: test_dependabot_config.py
+- [ ] DG2.15 — Dependency update PRs run full gate: dependabot PRs are not auto-merged; must pass `make gate` + `make pip-audit` | priority: high | fix: add required status checks for dependabot branches | verify: test_dependabot_gate_required.py
+- [ ] DG2.16 — Transitive dependency surface minimized: `make audit-dep-surface` reports the total transitive count and flags growth >5% week-over-week | priority: low | fix: add dep-surface-count target writing to metrics file | verify: test_dep_surface_minimized.py
+- [ ] DG2.17 — Dev dependencies separated: optional-dependencies in pyproject.toml [project.optional-dependencies] dev/test/docs split; not bundled into runtime | priority: medium | fix: audit pyproject.toml optional-deps structure | verify: test_dev_deps_separated.py
+- [ ] DG2.18 — No pinned git dependencies in runtime: runtime deps are PyPI packages; git+ssh deps are dev-only and documented | priority: high | fix: audit pyproject.toml for git+ references in [project.dependencies] | verify: test_no_runtime_git_deps.py
+- [ ] DG2.19 — Dependency changelog review on update: every dependency bump commit message links to the upstream changelog | priority: low | fix: add commit-msg hook checking for changelog URL on dep bumps | verify: test_dep_changelog_review.py
+- [ ] DG2.20 — Vulnerability disclosure SLA: HIGH severity dep vulnerabilities remediated within 7 days; CRITICAL within 48h; tracked in config/ratchet.yml | priority: high | fix: add SLA check to pip-audit target | verify: test_vuln_disclosure_sla.py
+- [ ] DG2.21 — Dependency pinning policy documented: docs/DEPENDENCY_GOVERNANCE.md specifies the pinning strategy (exact vs range) per dependency class | priority: low | fix: write pinning policy section | verify: test_pinning_policy_docs.py
+- [ ] DG2.22 — uv export reproducibility: `uv export --format requirements-txt` produces byte-identical output across runs on the same lockfile | priority: medium | fix: add export-repro check to uv-lock-check | verify: test_uv_export_reproducible.py
+- [ ] DG2.23 — Dependency license file inclusion: distribution tarball includes LICENSE files for bundled dependencies | priority: low | fix: add license bundling to make dist | verify: test_license_files_in_dist.py
+- [ ] DG2.24 — Dependency governance audit target: `make audit-dependencies` runs uv-lock-check + pip-audit + license-check + unused-deps + dep-surface | priority: high | fix: aggregate target | verify: test_dependency_audit_target.py
+- [ ] DG2.25 — Dependency governance gate blocks release: `make audit-dependencies` exit != 0 aborts `make release-cut` | priority: critical | fix: wire audit-dependencies into release-cut prerequisites | verify: test_dependency_audit_blocks_release.py
+
+---
+
+## Phase VC2 — Version Control (25 specs)
+
+Behavioral fix specs covering versioning: semantic versioning, beta/alpha tags, pyproject.toml version, __init__.py version, CHANGELOG, README status table, and related version-control surfaces.
+
+- [ ] VC2.1 — Semantic versioning enforced: every release tag matches `vMAJOR.MINOR.PATCH` with optional `-prerelease` suffix; structural test validates format | priority: high | fix: add tag-format lint to release-cut | verify: test_semver_format.py
+- [ ] VC2.2 — Pre-release tag naming: alpha tags are `vX.Y.Z-alpha.N`, beta tags are `vX.Y.Z-beta.N`; never `vX.Y.Zalpha` or `vX.Y.Z-betaN` | priority: high | fix: document tag grammar in AGENTS.md | verify: test_prerelease_tag_grammar.py
+- [ ] VC2.3 — pyproject.toml version is single source: `version` field in [project] is the canonical version; no hardcoded versions elsewhere | priority: critical | fix: structural test confirming no version literals in src/ | verify: test_pyproject_version_source.py
+- [ ] VC2.4 — __init__.py __version__ matches pyproject.toml: `src/general_ludd/__init__.py` `__version__` reads from pyproject via importlib.metadata | priority: high | fix: replace literal with importlib.metadata.version("general_ludd") | verify: test_init_version_matches_pyproject.py
+- [ ] VC2.5 — Version bump target: `make bump-version PART=patch|minor|major` updates pyproject.toml + __init__.py + CHANGELOG in one commit | priority: high | fix: add bump-version Makefile target using bumpver | verify: test_bump_version_target.py
+- [ ] VC2.6 — CHANGELOG.md follows Keep a Changelog format: sections [Unreleased], [X.Y.Z] with Added/Changed/Deprecated/Removed/Fixed/Security subsections | priority: medium | fix: add changelog lint to gate | verify: test_changelog_format.py
+- [ ] VC2.7 — CHANGELOG entry on every merge: every --no-ff merge commit adds a line under [Unreleased] describing the change | priority: medium | fix: add merge-changelog hook | verify: test_changelog_merge_entry.py
+- [ ] VC2.8 — README status table version matches release: README.md `**Status as of vX.Y.Z**` line matches the current release tag | priority: high | fix: check-readme-status target already exists; verify wiring | verify: test_readme_status_matches_release.py
+- [ ] VC2.9 — README status table row count matches TASKS.md phase count: structural test confirming README table reflects all active phases | priority: low | fix: add row-count diff check | verify: test_readme_table_completeness.py
+- [ ] VC2.10 — Tag creation only via make git-tag-push: no raw `git tag` commands; structural test scans shell history patterns | priority: high | fix: AGENTS.md rule + enforce-make.ts | verify: test_tag_via_make_only.py
+- [ ] VC2.11 — Annotated tags only: `make git-tag-push` uses `git tag -a` (annotated); lightweight tags are forbidden for releases | priority: medium | fix: add -a flag to git-tag-push | verify: test_annotated_tags.py
+- [ ] VC2.12 — Tag specific commit, not HEAD: `make git-tag-push TAG=... COMMIT=<sha>` tags a verified commit; tagging HEAD is documented as risky | priority: high | fix: AGENTS.md rule | verify: test_tag_specific_commit.py
+- [ ] VC2.13 — Tag deletion via make git-tag-rm: local + remote tag removal in one target; no raw `git tag -d` or `git push --delete` | priority: high | fix: add git-tag-rm Makefile target | verify: test_tag_deletion_target.py
+- [ ] VC2.14 — Release-cut gate: README status + pyproject version + __init__ version all match the TAG argument before `make release-cut` proceeds | priority: critical | fix: extend check-readme-status to verify all three sources | verify: test_release_cut_version_gate.py
+- [ ] VC2.15 — Version consistency check: `make check-version-consistency` compares pyproject.toml, __init__.py, CHANGELOG latest, README status | priority: high | fix: already partially implemented (7cb9e92b); verify wiring | verify: test_version_consistency_target.py
+- [ ] VC2.16 — Branch naming for releases: release branches follow `release/vX.Y.Z` pattern; structural test validates | priority: medium | fix: add branch-name lint to release-branch-new | verify: test_release_branch_version_format.py
+- [ ] VC2.17 — Hotfix branch naming: `hotfix/vX.Y.Z.N` for emergency patches; documented in AGENTS.md | priority: low | fix: document hotfix convention | verify: test_hotfix_branch_naming.py
+- [ ] VC2.18 — Merge commits use --no-ff: feature merges preserve the branch history; structural test confirms merge commits have two parents | priority: medium | fix: AGENTS.md rule already exists; verify compliance | verify: test_no_ff_merges.py
+- [ ] VC2.19 — Commit message imperative mood: messages are "Add feature", not "Added feature"; commit-msg hook lints | priority: low | fix: add commit-msg hook checking verb form | verify: test_commit_imperative_mood.py
+- [ ] VC2.20 — Commit message references task ID: every commit message includes `TASKS.md <PHASE.N>` reference; linted by commit-msg hook | priority: medium | fix: add task-id lint to commit-msg hook | verify: test_commit_message_task_ref.py
+- [ ] VC2.21 — Atomic commits: each commit represents one logical change; structural test flags commits touching >5 unrelated files | priority: medium | fix: add atomic-commit detector to pre-commit | verify: test_atomic_commits.py
+- [ ] VC2.22 — No commit bypass flags: COMMIT_THRESHOLD=1, --no-verify, GLUDD_FORCE_PUSH=1 forbidden without explicit user authorization | priority: critical | fix: AGENTS.md rule already exists; verify enforcement | verify: test_no_bypass_flags.py
+- [ ] VC2.23 — Signed commits (GPG): release tags are GPG-signed; `make git-tag-push` uses `-s` flag | priority: low | fix: add -s flag to git-tag-push | verify: test_signed_tags.py
+- [ ] VC2.24 — Release evidence recorded in TASKS.md: marking A.4 (release task) complete requires tag, CI run URL, artifact URL, asset count | priority: critical | fix: AGENTS.md rule already exists; verify compliance | verify: test_release_evidence_format.py
+- [ ] VC2.25 — Version archive: deprecated version tags listed in docs/RELEASE_HISTORY.md with deprecation date and successor | priority: low | fix: add release-history target | verify: test_release_history_docs.py
+
+---
+
+## Phase RB4 — Build Reproducibility (25 specs)
+
+Behavioral fix specs covering reproducible builds: deterministic PyInstaller, fixed dependency versions, consistent CI environment, checksum verification, artifact attestation, and related reproducibility surfaces.
+
+- [ ] RB4.1 — Deterministic PyInstaller build: `make build-executable` produces byte-identical binaries across runs given the same source + lockfile | priority: high | fix: add --clean flag, set SOURCE_DATE_EPOCH, strip timestamps | verify: test_pyinstaller_reproducible.py
+- [ ] RB4.2 — SOURCE_DATE_EPOCH set in build env: PyInstaller build sets `SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)` to zero embedded timestamps | priority: high | fix: add env export to build-executable target | verify: test_source_date_epoch_set.py
+- [ ] RB4.3 — Fixed dependency versions at build time: build job uses `uv sync --frozen` to install exact lockfile versions, no resolver | priority: critical | fix: add --frozen flag to uv sync in CI | verify: test_frozen_sync.py
+- [ ] RB4.4 — Consistent Python version across build matrix: all platform builds use the same Python minor version pinned in setup-python matrix | priority: high | fix: audit setup-python version in build.yml | verify: test_python_version_consistent.py
+- [ ] RB4.5 — Reproducible tarball: `make dist` produces byte-identical tarball given same source; sorts file entries, strips mtimes | priority: medium | fix: add --sort=name --mtime to tar command | verify: test_tarball_reproducible.py
+- [ ] RB4.6 — Checksum generation for every artifact: every build job generates a `.sha256` checksum alongside the artifact | priority: high | fix: add sha256sum step to every build job in build.yml | verify: test_checksum_generated.py
+- [ ] RB4.7 — SHA256SUMS aggregate file: release job aggregates all per-artifact checksums into a single SHA256SUMS file | priority: high | fix: add sha256sum aggregation step to release job | verify: test_sha256sums_aggregate.py
+- [ ] RB4.8 — Checksum verification post-build: every build job verifies its own checksum before uploading artifact | priority: high | fix: add sha256sum -c verification step | verify: test_checksum_verified.py
+- [ ] RB4.9 — Artifact attestation via cosign or sigstore: release artifacts signed with cosign; signature stored alongside release | priority: medium | fix: add cosign sign step to release job | verify: test_artifact_attestation.py
+- [ ] RB4.10 — Build provenance metadata: every artifact ships a `provenance.json` with source commit, build time, builder version, deps hash | priority: medium | fix: add provenance generation step | verify: test_provenance_metadata.py
+- [ ] RB4.11 — SLSA build level 3 compliance: build workflow meets SLSA Build Level 3 (provenance generated, non-falsifiable, isolated build) | priority: low | fix: add slsa-github-generator action | verify: test_slsa_level3.py
+- [ ] RB4.12 — CI runner pinned to specific OS version: ubuntu-22.04, macos-13, windows-2022 — not `-latest` (floating) | priority: medium | fix: audit runs-on fields in build.yml | verify: test_runner_version_pinned.py
+- [ ] RB4.13 — Action versions pinned to SHA: all actions referenced by commit SHA, not @vN or @main | priority: high | fix: audit uses: lines in build.yml | verify: test_actions_pinned_to_sha.py
+- [ ] RB4.14 — uv cache key includes lockfile hash: cache invalidates when uv.lock changes, not when pyproject.toml changes | priority: medium | fix: update cache key formula | verify: test_cache_key_uses_lockfile.py
+- [ ] RB4.15 — Build environment recorded: CI job writes build env (Python version, OS, uv version, dependency hash) to build-env.json artifact | priority: medium | fix: add build-env dump step | verify: test_build_env_recorded.py
+- [ ] RB4.16 — Container image build reproducible: Containerfile builds with --timestamp flag (or equivalent) for deterministic layers | priority: low | fix: add --timestamp to podman/docker build | verify: test_container_reproducible.py
+- [ ] RB4.17 — Container image digest pinned: container-push records the image digest; verify-release-completeness checks digest matches | priority: medium | fix: add digest capture to container-push | verify: test_container_digest_pinned.py
+- [ ] RB4.18 — PyInstaller spec committed: gludd.spec file is checked in, not generated at build time | priority: high | fix: verify gludd.spec exists in repo | verify: test_pyinstaller_spec_committed.py
+- [ ] RB4.19 — PyInstaller spec references correct entry point: spec's Analysis first arg matches the daemon entry point module path | priority: high | fix: audit gludd.spec entry point | verify: test_pyinstaller_entry_point.py
+- [ ] RB4.20 — Build cache warmed before build: CI pre-warms uv cache + pip cache to avoid resolver drift | priority: low | fix: add cache warm-up step | verify: test_build_cache_warmed.py
+- [ ] RB4.21 — Build verification via checksum comparison: two CI runs on same commit produce artifacts with matching checksums | priority: high | fix: add cross-run checksum diff job | verify: test_build_checksum_match.py
+- [ ] RB4.22 — Reproducibility audit target: `make audit-reproducibility` runs build twice and diffs checksums; exits 0 on match | priority: high | fix: add reproducibility-audit Makefile target | verify: test_reproducibility_audit_target.py
+- [ ] RB4.23 — Reproducibility failure surfaces diff: on checksum mismatch, audit prints the diff (file names, sizes, embedded timestamps) | priority: medium | fix: extend audit with diffoscope-style output | verify: test_reproducibility_diff.py
+- [ ] RB4.24 — Reproducibility gate blocks release: `make audit-reproducibility` exit != 0 aborts `make release-cut` | priority: critical | fix: wire audit-reproducibility into release-cut prerequisites | verify: test_reproducibility_blocks_release.py
+- [ ] RB4.25 — Reproducibility badge in README: README.md displays a reproducible-builds badge linking to the latest audit result | priority: low | fix: add badge to README header | verify: test_reproducibility_badge.py
