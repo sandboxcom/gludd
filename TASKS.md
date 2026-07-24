@@ -749,26 +749,26 @@ Tasks created from the release pipeline failures that prevented v0.1.0-beta.1 de
 
 ## Phase GI — Git & Tag Management (20 specs)
 
-- [ ] GT2.1 — Never raw git commands: use make git-status, make git-log, make git-add, make git-commit. | priority: critical | fix: enforce-make.ts | verify: test_no_raw_git.py
-- [ ] GT2.2 — Git-add specific files: make git-add FILES='f1 f2'. Never git-add-all for selective commits. | priority: medium | fix: AGENTS.md rule | verify: test_selective_add.py
-- [ ] GT2.3 — Commit message describes change: what changed + why. Not just "fix". | priority: low | fix: AGENTS.md rule | verify: test_commit_message.py
-- [ ] GT2.4 — Tag specific commit: make git-tag-push TAG=... COMMIT=<sha>. Don't tag HEAD blindly. | priority: high | fix: AGENTS.md rule | verify: test_tag_commit.py
-- [ ] GT2.5 — Delete tag before re-creating: make git-tag-rm before git-tag-push if tag exists. | priority: high | fix: AGENTS.md rule | verify: test_tag_recreation.py
-- [ ] GT2.6 — Verify remote after push: make verify-remote BRANCH=<b> SHA=<sha>. | priority: critical | fix: AGENTS.md rule | verify: test_remote_verify.py
-- [ ] GT2.7 — Never push to master from worktree: worktree agents commit on their own branch. Orchestrator merges. | priority: critical | fix: enforce-worktree.ts | verify: test_no_worktree_push.py
-- [ ] GT2.8 — Feature branch workflow: make feature-start creates branch. make feature-done merges with --no-ff. | priority: medium | fix: already implemented | verify: test_feature_branch.py
-- [ ] GT2.9 — Development branch: make development-start creates from master. make development-push pushes. | priority: medium | fix: already implemented | verify: test_development_branch.py
-- [ ] GT2.10 — Development merge to master: make development-merge-to-master. CI-green required. | priority: high | fix: already implemented | verify: test_dev_merge.py
-- [ ] GT2.11 — Agent worktree: make agent-worktree BRANCH=<name>. Isolated checkout for subagent. | priority: high | fix: already implemented | verify: test_agent_worktree.py
-- [ ] GT2.12 — Agent merge: make agent-merge BRANCH=<name>. --no-ff merge into master. | priority: high | fix: already implemented | verify: test_agent_merge.py
-- [ ] GT2.13 — Agent cleanup: make agent-cleanup BRANCH=<name>. Removes worktree + branch. | priority: high | fix: already implemented | verify: test_agent_cleanup.py
-- [ ] GT2.14 — Agent worktree list: make agent-worktree-list shows all active worktrees. | priority: medium | fix: already implemented | verify: test_worktree_list.py
-- [ ] GT2.15 — Worktree health check: flags worktrees >24h with unmerged commits. | priority: high | fix: already implemented | verify: test_worktree_health.py
-- [ ] GT2.16 — Worktree merge-all: iterates all worktrees, merges each into development, cleans up. | priority: medium | fix: already implemented | verify: test_merge_all.py
-- [ ] GT2.17 — Sandboxcom remote: make git-remote-sandboxcom configures SSH key. Run if push fails with permission denied. | priority: medium | fix: already implemented | verify: test_remote_config.py
-- [ ] GT2.18 — Git stash: make git-stash stashes changes. make git-stash-pop restores. | priority: low | fix: already implemented | verify: test_git_stash.py
-- [ ] GT2.19 — Git reset: make git-reset FILES='HEAD~1'. Soft by default. | priority: low | fix: already implemented, verify --soft | verify: test_git_reset.py
-- [ ] GT2.20 — Git show: make git-show shows last commit diff. | priority: low | fix: already implemented | verify: test_git_show.py
+- [ ] GI.1 — Never raw git commands: use make git-status, make git-log, make git-add, make git-commit. | priority: critical | fix: enforce-make.ts | verify: test_no_raw_git.py
+- [ ] GI.2 — Git-add specific files: make git-add FILES='f1 f2'. Never git-add-all for selective commits. | priority: medium | fix: AGENTS.md rule | verify: test_selective_add.py
+- [ ] GI.3 — Commit message describes change: what changed + why. Not just "fix". | priority: low | fix: AGENTS.md rule | verify: test_commit_message.py
+- [ ] GI.4 — Tag specific commit: make git-tag-push TAG=... COMMIT=<sha>. Don't tag HEAD blindly. | priority: high | fix: AGENTS.md rule | verify: test_tag_commit.py
+- [ ] GI.5 — Delete tag before re-creating: make git-tag-rm before git-tag-push if tag exists. | priority: high | fix: AGENTS.md rule | verify: test_tag_recreation.py
+- [ ] GI.6 — Verify remote after push: make verify-remote BRANCH=<b> SHA=<sha>. | priority: critical | fix: AGENTS.md rule | verify: test_remote_verify.py
+- [ ] GI.7 — Never push to master from worktree: worktree agents commit on their own branch. Orchestrator merges. | priority: critical | fix: enforce-worktree.ts | verify: test_no_worktree_push.py
+- [ ] GI.8 — Feature branch workflow: make feature-start creates branch. make feature-done merges with --no-ff. | priority: medium | fix: already implemented | verify: test_feature_branch.py
+- [ ] GI.9 — Development branch: make development-start creates from master. make development-push pushes. | priority: medium | fix: already implemented | verify: test_development_branch.py
+- [ ] GI.10 — Development merge to master: make development-merge-to-master. CI-green required. | priority: high | fix: already implemented | verify: test_dev_merge.py
+- [ ] GI.11 — Agent worktree: make agent-worktree BRANCH=<name>. Isolated checkout for subagent. | priority: high | fix: already implemented | verify: test_agent_worktree.py
+- [ ] GI.12 — Agent merge: make agent-merge BRANCH=<name>. --no-ff merge into master. | priority: high | fix: already implemented | verify: test_agent_merge.py
+- [ ] GI.13 — Agent cleanup: make agent-cleanup BRANCH=<name>. Removes worktree + branch. | priority: high | fix: already implemented | verify: test_agent_cleanup.py
+- [ ] GI.14 — Agent worktree list: make agent-worktree-list shows all active worktrees. | priority: medium | fix: already implemented | verify: test_worktree_list.py
+- [ ] GI.15 — Worktree health check: flags worktrees >24h with unmerged commits. | priority: high | fix: already implemented | verify: test_worktree_health.py
+- [ ] GI.16 — Worktree merge-all: iterates all worktrees, merges each into development, cleans up. | priority: medium | fix: already implemented | verify: test_merge_all.py
+- [ ] GI.17 — Sandboxcom remote: make git-remote-sandboxcom configures SSH key. Run if push fails with permission denied. | priority: medium | fix: already implemented | verify: test_remote_config.py
+- [ ] GI.18 — Git stash: make git-stash stashes changes. make git-stash-pop restores. | priority: low | fix: already implemented | verify: test_git_stash.py
+- [ ] GI.19 — Git reset: make git-reset FILES='HEAD~1'. Soft by default. | priority: low | fix: already implemented, verify --soft | verify: test_git_reset.py
+- [ ] GI.20 — Git show: make git-show shows last commit diff. | priority: low | fix: already implemented | verify: test_git_show.py
 
 ---
 
@@ -1314,21 +1314,21 @@ Tasks created from the release pipeline failures that prevented v0.1.0-beta.1 de
 
 ## Phase CS — Code Organization (15 specs)
 
-- [ ] CO2.1 — src/general_ludd/ has clear module boundaries (no circular imports). | priority: high | fix: verify import graph | verify: test_no_circular_imports.py
-- [ ] CO2.2 — Tests mirror src/ structure (tests/unit/test_<module>.py). | priority: medium | fix: verify naming convention | verify: test_test_naming.py
-- [ ] CO2.3 — Each src/ module has a corresponding test file. | priority: high | fix: coverage gap audit | verify: test_module_coverage.py
-- [ ] CO2.4 — No dead code: every class/function imported outside tests/. | priority: high | fix: dead code audit | verify: test_no_dead_code.py
-- [ ] CO2.5 — Shared utilities in shared.ts, not duplicated across plugins. | priority: medium | fix: verify consolidation | verify: test_no_duplication.py
-- [ ] CO2.6 — Plugin impl files separate from plugin wrappers. | priority: medium | fix: verify separation | verify: test_impl_separation.py
-- [ ] CO2.7 — Config files use consistent YAML format. | priority: low | fix: verify format | verify: test_yaml_format.py
-- [ ] CO2.8 — Make targets follow naming convention (verb-noun). | priority: low | fix: verify naming | verify: test_target_naming.py
-- [ ] CO2.9 — Commit messages follow convention (type: description). | priority: low | fix: verify format | verify: test_commit_format.py
-- [ ] CO2.10 — File paths use forward slashes (cross-platform). | priority: low | fix: verify paths | verify: test_path_format.py
-- [ ] CO2.11 — No hard-coded absolute paths in src/. | priority: medium | fix: verify paths | verify: test_no_hardcoded_paths.py
-- [ ] CO2.12 — Environment variables prefixed with GLUDD_. | priority: low | fix: verify prefix | verify: test_env_prefix.py
-- [ ] CO2.13 — State files in /tmp/gludd-*.json format. | priority: low | fix: verify format | verify: test_state_format.py
-- [ ] CO2.14 — Log files in /tmp/gludd-*.log format. | priority: low | fix: verify format | verify: test_log_format.py
-- [ ] CO2.15 — PID files in /tmp/gludd-*.pid format. | priority: low | fix: verify format | verify: test_pid_format.py
+- [ ] CS.1 — src/general_ludd/ has clear module boundaries (no circular imports). | priority: high | fix: verify import graph | verify: test_no_circular_imports.py
+- [ ] CS.2 — Tests mirror src/ structure (tests/unit/test_<module>.py). | priority: medium | fix: verify naming convention | verify: test_test_naming.py
+- [ ] CS.3 — Each src/ module has a corresponding test file. | priority: high | fix: coverage gap audit | verify: test_module_coverage.py
+- [ ] CS.4 — No dead code: every class/function imported outside tests/. | priority: high | fix: dead code audit | verify: test_no_dead_code.py
+- [ ] CS.5 — Shared utilities in shared.ts, not duplicated across plugins. | priority: medium | fix: verify consolidation | verify: test_no_duplication.py
+- [ ] CS.6 — Plugin impl files separate from plugin wrappers. | priority: medium | fix: verify separation | verify: test_impl_separation.py
+- [ ] CS.7 — Config files use consistent YAML format. | priority: low | fix: verify format | verify: test_yaml_format.py
+- [ ] CS.8 — Make targets follow naming convention (verb-noun). | priority: low | fix: verify naming | verify: test_target_naming.py
+- [ ] CS.9 — Commit messages follow convention (type: description). | priority: low | fix: verify format | verify: test_commit_format.py
+- [ ] CS.10 — File paths use forward slashes (cross-platform). | priority: low | fix: verify paths | verify: test_path_format.py
+- [ ] CS.11 — No hard-coded absolute paths in src/. | priority: medium | fix: verify paths | verify: test_no_hardcoded_paths.py
+- [ ] CS.12 — Environment variables prefixed with GLUDD_. | priority: low | fix: verify prefix | verify: test_env_prefix.py
+- [ ] CS.13 — State files in /tmp/gludd-*.json format. | priority: low | fix: verify format | verify: test_state_format.py
+- [ ] CS.14 — Log files in /tmp/gludd-*.log format. | priority: low | fix: verify format | verify: test_log_format.py
+- [ ] CS.15 — PID files in /tmp/gludd-*.pid format. | priority: low | fix: verify format | verify: test_pid_format.py
 
 ---
 
