@@ -104,6 +104,18 @@ function isGitShippingTarget(command: string): boolean {
   if (!m) return false
   return GIT_SHIPPING_TARGETS.has(m[1])
 }
+// QUALITY-GATE ALLOWLIST (BP.7): lint, typecheck, and quality-gate operations
+// are NOT grinding — they are terminal validation steps that complete units of
+// work. Like git shipping targets, they must NOT increment the streak counter.
+const LINT_TARGETS: ReadonlySet<string> = new Set([
+  "lint", "lint-fix", "typecheck", "collect-check",
+  "test-count", "healthcheck", "smoke", "check-coverage-gaps",
+])
+function isLintTarget(command: string): boolean {
+  const m = command.match(/(?:^|\s)make\s+(\S+)/)
+  if (!m) return false
+  return LINT_TARGETS.has(m[1])
+}
 // ============================================================================
 // HELPERS
 // ============================================================================
@@ -599,6 +611,9 @@ function mainthreadBudgetBefore(tool: string, command: string): string | null {
     // Git shipping operations (commit, push, tag) are NEVER blocked.
     // They are terminal actions that complete work, not grinding.
     if (tool === "bash" && isGitShippingTarget(command)) return null
+    // Quality-gate operations (lint, typecheck, collect-check, etc.) are
+    // NEVER blocked — they are validation steps that complete units of work.
+    if (tool === "bash" && isLintTarget(command)) return null
     // Read-grind check (separate from the edit-streak below): investigation
     // tools don't count toward the edit/write/bash streak, but they DO count
     // toward a SEPARATE counter with time-based detection. Both conditions
@@ -663,6 +678,10 @@ function mainthreadBudgetAfter(tool: string, command: string): void {
       saveReadGrindState(0, Date.now())
     } else if (tool === "bash" && isGitShippingTarget(command)) {
       // Git shipping operations reset the streak — they complete a unit of work.
+      writeStreak({ count: 0 })
+      saveReadGrindState(0, Date.now())
+    } else if (tool === "bash" && isLintTarget(command)) {
+      // Quality-gate operations reset the streak — they validate completed work.
       writeStreak({ count: 0 })
       saveReadGrindState(0, Date.now())
     } else if (isMainthreadTool(tool)) {

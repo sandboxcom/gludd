@@ -747,7 +747,7 @@ Tasks created from the release pipeline failures that prevented v0.1.0-beta.1 de
 
 ---
 
-## Phase GT2 — Git & Tag Management (20 specs)
+## Phase GI — Git & Tag Management (20 specs)
 
 - [ ] GT2.1 — Never raw git commands: use make git-status, make git-log, make git-add, make git-commit. | priority: critical | fix: enforce-make.ts | verify: test_no_raw_git.py
 - [ ] GT2.2 — Git-add specific files: make git-add FILES='f1 f2'. Never git-add-all for selective commits. | priority: medium | fix: AGENTS.md rule | verify: test_selective_add.py
@@ -1312,7 +1312,7 @@ Tasks created from the release pipeline failures that prevented v0.1.0-beta.1 de
 
 ---
 
-## Phase CO2 — Code Organization (15 specs)
+## Phase CS — Code Organization (15 specs)
 
 - [ ] CO2.1 — src/general_ludd/ has clear module boundaries (no circular imports). | priority: high | fix: verify import graph | verify: test_no_circular_imports.py
 - [ ] CO2.2 — Tests mirror src/ structure (tests/unit/test_<module>.py). | priority: medium | fix: verify naming convention | verify: test_test_naming.py
