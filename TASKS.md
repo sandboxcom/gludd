@@ -583,7 +583,7 @@ old summary table omitted entirely. Grand total across the file: **326** boxes.
 - [ ] Fix write-text $ escaping: stdin piping
 - [ ] pipeline-health: auto-restart when gate stale >5 min
 
-### MEDIUM — Version / Release  
+### MEDIUM — Version / Release
 - [ ] check-version-consistency: wire into release-cut step 0
 - [ ] release-create: add sbom + shasum to fallback path
 - [ ] sync-task-ledger target: actually write current task state to TASKS.md
