@@ -1,5 +1,31 @@
 #!/usr/bin/env bash
-set -e
-echo "Running lint check before commit..."
-make lint
-echo "Lint passed."
+# Pre-commit hook: runs `make lint` to catch lint errors at commit time
+# rather than at push/CI time.
+#
+# Install:
+#   ln -sf ../../scripts/hooks/pre-commit-lint .git/hooks/pre-commit
+#   chmod +x scripts/hooks/pre-commit-lint
+#
+# Or use `make install-hooks` which wires all pre-commit hooks.
+set -u
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MAKEFILE="$SCRIPT_DIR/../../Makefile"
+
+if [ ! -f "$MAKEFILE" ]; then
+    echo "pre-commit-lint: ERROR — Makefile not found at $MAKEFILE" >&2
+    echo "pre-commit-lint: cannot run 'make lint'. Aborting commit." >&2
+    exit 1
+fi
+
+echo "pre-commit-lint: running 'make lint'..."
+if ! make lint; then
+    echo "" >&2
+    echo "pre-commit-lint: FAILED — lint errors detected." >&2
+    echo "pre-commit-lint: fix the errors above, then re-run your commit." >&2
+    echo "pre-commit-lint: bypass with 'git commit --no-verify' (not recommended)." >&2
+    exit 1
+fi
+
+echo "pre-commit-lint: OK — lint passed."
+exit 0
