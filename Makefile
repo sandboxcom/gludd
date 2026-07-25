@@ -1334,6 +1334,11 @@ disk-check:
 check-disk:
 	@uv run python scripts/check_disk_usage.py
 
+# Enforcement floor diagnostic — read-only report of all enforcement state files
+# and flag violations: under-floor waves, zero-streak, disabled env vars.
+enforce-floor-check:
+	@uv run python scripts/check_enforcement_floor.py
+
 # Disk headroom check — run BEFORE any heavy op (gate, agent dispatch) so we
 # never silently refill the volume. Prints % used + free on the data volume.
 disk:
@@ -3823,6 +3828,24 @@ proactive-scan:
 check-dispatch-dedup:
 	@$(UV) run python scripts/check_dispatch_dedup.py
 
+# --- Session-wide dispatch tracker (cumulative dispatched vs completed) ---
+# Reinforces 10-agent floor by tracking dispatched/completed across full session.
+# Used by enforce-floor-v2.ts to block non-dispatch tools when deficit > 0.
+
+DISPATCH_TRACKER = $(UV) run python scripts/dispatch_tracker.py
+
+dispatch-tracker-status:
+	@$(DISPATCH_TRACKER) deficit
+
+dispatch-tracker-reset:
+	@$(DISPATCH_TRACKER) reset
+
+dispatch-tracker-add:
+	@$(DISPATCH_TRACKER) add $(or $(N),1)
+
+dispatch-tracker-complete:
+	@$(DISPATCH_TRACKER) complete $(or $(N),1)
+
 # --- Dead-code detection: flag classes/functions in src/ never imported in production code ---
 check-dead-code:
 	@$(UV) run python scripts/check_dead_code.py
@@ -4912,6 +4935,8 @@ reload-enforcement:
 	@echo "  /tmp/gludd-task-deadlines.json     → removed"
 	@rm -f /tmp/gludd-multitask-state.json
 	@echo "  /tmp/gludd-multitask-state.json    → removed (PID staleness guard)"
+	@rm -f /tmp/gludd-dispatch-state.json
+	@echo "  /tmp/gludd-dispatch-state.json      → removed (dispatch tracker)"
 	@echo "=== RELOAD COMPLETE — plugins will re-read state on next hook call ==="
 
 # --- Re-arm enforcement — remove disengage signal so plugins resume blocking ---

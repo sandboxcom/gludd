@@ -55,6 +55,7 @@ interface MultitaskState {
   underFloorCount: number
   lastDispatchTs: number
   singleDispatchWaves: number
+  sessionDispatchTotal: number
 }
 function freshState(): MultitaskState {
   return {
@@ -72,6 +73,7 @@ function freshState(): MultitaskState {
     underFloorCount: 0,
     lastDispatchTs: 0,
     singleDispatchWaves: 0,
+    sessionDispatchTotal: 0,
   }
 }
 function readState(): MultitaskState {
@@ -204,6 +206,7 @@ let _state: MultitaskState = (() => {
   s.underFloorCount = 0
   s.singleDispatchWaves = 0
   s.lastDispatchTs = 0
+  // Preserve sessionDispatchTotal across restarts so the cumulative counter survives
   writeState(s)
   return s
 })()
@@ -285,6 +288,7 @@ const defaultImpl: HotModule = {
           }
         }
         _state.thisMessageDispatches++
+        _state.sessionDispatchTotal++
         _state.estimatedInFlight++
         _state.lastDispatchTs = now
         writeState(_state)
@@ -338,14 +342,23 @@ const defaultImpl: HotModule = {
       // reaches the floor. This closes the "dispatch 1, then grind reads"
       // bypass.
       //
+      // 2026-07-25 FIX: previously only blocked edit/write/bash. The agent
+      // dispatched 2 agents then used unlimited reads between waves —
+      // underFloorCount reached 2066 without being mechanically stopped.
+      // Now blocks ALL non-dispatch tools (includes read/glob/grep) when ANY
+      // dispatches have been made this session. Session-start (0 dispatches)
+      // still allows reads for the initial backlog survey.
+      //
       // Fallback for the first-edit-with-zero-dispatches case where the streak
       // counter (above) is still below threshold. When the streak has already
       // hit threshold, the streak block wins.
+      const _isUnderFloorRead = lt === "read" || lt === "grep" || lt === "glob"
+      const _isUnderFloorMutation = lt === "edit" || lt === "write" || lt === "bash"
       if (
         !disengaged &&
         hasPendingWork() &&
         _state.thisMessageDispatches < MIN_DISPATCHES &&
-        (lt === "edit" || lt === "write" || lt === "bash")
+        (_isUnderFloorMutation || (_isUnderFloorRead && _state.sessionDispatchTotal > 0))
       ) {
         writeState(_state)
         return {
@@ -353,7 +366,7 @@ const defaultImpl: HotModule = {
           message: [
             "UNDER-FLOOR HARD BLOCK: ONLY " + String(_state.thisMessageDispatches) + " DISPATCHES.",
             "Floor is 10. DISPATCH " + String(MIN_DISPATCHES) + " SUBAGENTS NOW OR YOU ARE BLOCKED.",
-            "You have " + String(_state.thisMessageDispatches) + "; need " + String(MIN_DISPATCHES) + ". edit/write/bash/read/grep/glob are blocked until floor reached.",
+            "You have " + String(_state.thisMessageDispatches) + "; need " + String(MIN_DISPATCHES) + ". ALL tools (read/grep/glob/edit/write/bash) are blocked when below floor and dispatches have been made this session.",
             "consecutive non-dispatch calls: " + String(_state.consecutiveNonDispatch),
             "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
             "Run 'make disengage-enforcement' to bypass.",
