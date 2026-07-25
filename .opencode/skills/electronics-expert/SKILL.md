@@ -2272,4 +2272,3 @@ Common ratings:
 Note: IP rating is for electrical enclosures and connectors. A connector rated
 IP67 means it is dust-tight and immersible when mated -- unmated, it may have
 no protection.
-
