@@ -1032,8 +1032,14 @@ run-watched:
 test-integration:
 	@$(UV) run python -m pytest tests/integration/ $(_XD) -v
 
+E2E_TEST_TIMEOUT ?= 180
+E2E_STALL_SECS ?= 180
+E2E_MAX_SECS ?= 3600
+
 test-e2e:
-	@$(UV) run python -m pytest tests/e2e/ $(_XD) -v
+	@BT="/tmp/gludd-e2e-$${ID:-$$$$}"; rm -rf "$$BT"; \
+	$(MAKE) --no-print-directory run-watched CMD="GLUDD_E2E_ACTIVE=1 $(UV) run python -m pytest tests/e2e/ $(_XD) -v $(PYTEST_ARGS) --timeout=$(E2E_TEST_TIMEOUT) --basetemp=$$BT" STALL_SECS="$(E2E_STALL_SECS)" MAX_SECS="$(E2E_MAX_SECS)" LOG="/tmp/gludd-e2e-$$$${ID:-$$$$}.log"; \
+	RC=$$?; chmod -R u+rwx "$$BT" 2>/dev/null || true; rm -rf "$$BT"; exit $$RC
 
 test-games:
 	@$(UV) run python -m pytest tests/e2e/test_game_building_deepseek.py $(_XD) -v $(PYTEST_ARGS)
