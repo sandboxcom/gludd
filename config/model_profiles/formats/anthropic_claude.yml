@@ -1,0 +1,119 @@
+# Model Input Format Profile: Anthropic Claude
+# ====================================================
+# PURPOSE: Document Claude's preferred input format for prompt construction.
+# Used by the gludd prompt renderer to adapt system prompts, context blocks,
+# and separator tokens per model.
+#
+# SOURCES:
+#   - https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/overview
+#   - https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/use-xml-tags
+#   - Anthropic prompt engineering best practices (2026)
+
+format_profile_id: anthropic_claude_format
+target_models:
+  - claude-sonnet-4-20250514
+  - claude-opus-4
+  - claude-haiku-4
+  - claude-fable-5
+  - claude-mythos-5
+
+# --- Prompt Structure ---
+
+system_prompt_wrapper: XML
+system_prompt_role: system
+# Claude uses a first-class 'system' parameter (not a message role).
+# System prompt is placed BEFORE all messages.
+
+context_block_format: |
+  <documents>
+    <document index="N">
+      <source>filename.ext</source>
+      <document_content>
+        {{CONTENT}}
+      </document_content>
+    </document>
+  </documents>
+# Claude docs explicitly recommend XML-wrapped documents.
+# Put long data at TOP of prompt, query at BOTTOM (improves quality by ~30%).
+
+# --- Separators & Formatting ---
+
+separator_token: XML tags
+# Use descriptive XML tag pairs: <instructions>, <context>, <examples>, <input>
+# Nest tags for hierarchy: <documents> containing <document index="N">
+
+code_block_style: fenced
+# Triple-backtick code blocks with language identifier.
+
+table_preference: markdown_table
+# Markdown tables work well. Claude handles structured data in tables.
+
+citation_format: inline_xml
+# Use <quotes> tags to ground responses in source material.
+# Ask Claude to extract quotes first, then produce answer.
+# Pattern: "Find quotes from documents... Place in <quotes> tags. Then..."
+
+# --- Token & Context Parameters ---
+
+context_window: 200000
+max_effective_prompt: 175000
+# Claude 200K window. Place ~5-10% headroom for output.
+# Default max_output_tokens: 16000 (Sonnet/Opus)
+# Long documents benefit most from XML wrapping + top-placement.
+
+max_output_tokens: 16000
+prompt_caching_supported: true
+# Anthropic supports prompt caching on repeated prefixes;
+# keep cacheable static content at the START of the prompt.
+
+# --- Behavioral Quirks ---
+
+known_quirks:
+  - "Long data at TOP improves quality ~30% — query should be at bottom of prompt"
+  - "prefilled responses deprecated in 4.6+; use structured outputs or instructions instead"
+  - "XML tags reduce misinterpretation when prompt mixes instructions + context + examples"
+  - "Claude Opus 4.6 over-engineers — creates extra files, unnecessary abstractions; add anti-overengineering guard"
+  - "newer models skip verbal summaries after tool calls; add 'provide a quick summary' if needed"
+  - "Opus 5 verbosity higher than prior models; prompt explicitly for conciseness"
+  - "'think' word triggers extended thinking on Opus 4.5; use 'consider', 'evaluate', 'reason through'"
+  - "adaptive thinking is default on Opus 5+; calibrate via effort parameter, not budget_tokens"
+  - "3-5 examples wrapped in <example>/<examples> tags is optimal few-shot pattern"
+  - "claude responds well to role-setting: 'You are a [role]' at start of system prompt"
+
+undocumented_preferences:
+  - "Heavily trained on XML-structured data; XML patterns trigger reliable schema-following"
+  - "Responds better to 'do X' than 'don't do Y'; use positive instruction framing"
+  - "Code blocks with language identifier significantly improve code quality"
+  - "Self-check instruction ('verify your answer against...') catches errors, but Opus 5 over-verifies"
+  - "Hard-negatives in long system prompts can cause overcorrection in opposite direction"
+
+# --- Formatting Weights (0-1, relative importance for prompt adaptation) ---
+
+formatting_weights:
+  xml_structure: 1.0          # CRITICAL: XML is the preferred structural format
+  markdown_headers: 0.5       # Works but XML preferred for structure
+  json_data: 0.6              # Claude handles JSON well but XML is primary
+  fenced_code_blocks: 0.9     # Always use language-identified fences
+  numbered_lists: 0.7         # Good for sequential instructions
+  bullet_lists: 0.6           # Works but numbered preferred for order
+  tables: 0.7                 # Markdown tables OK
+  inline_formatting: 0.5      # Bold/italic recognized but XML emphasis preferred
+  role_prefixes: 0.9          # "You are a [role]" is highly effective
+  whitespace_separators: 0.8  # Section breaks improve Claude's parsing
+
+# --- Multi-turn Conversation ---
+
+multi_turn_format:
+  approach: api_native
+  # Claude uses standard system/user/assistant message format.
+  # System prompt is persistent (not repeated each turn).
+  # Assistant message content includes text blocks, tool_use blocks, thinking blocks.
+  # No special concatenation needed — API handles turn ordering.
+
+# --- Tool Use ---
+
+tool_use_format: anthropic_native
+# Claude supports native tool_use + tool_result content blocks.
+# Tool definitions in tools[] parameter.
+# Parallel tool calling is default behavior in latest models.
+# Explicit <use_parallel_tool_calls> guidance can boost parallel rate to ~100%.

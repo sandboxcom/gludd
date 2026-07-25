@@ -1,0 +1,128 @@
+# Model Input Format Profile: DeepSeek
+# ====================================================
+# PURPOSE: Document DeepSeek's preferred input format for prompt construction.
+# Used by the gludd prompt renderer to adapt system prompts, context blocks,
+# and separator tokens per model.
+#
+# SOURCES:
+#   - https://api-docs.deepseek.com/ (official API docs, 2026)
+#   - https://api-docs.deepseek.com/guides/thinking_mode
+#   - https://api-docs.deepseek.com/guides/anthropic_api
+
+format_profile_id: deepseek_format
+target_models:
+  - deepseek-v4-pro
+  - deepseek-v4-flash
+  - deepseek-chat
+  - deepseek-reasoner
+
+# --- Prompt Structure ---
+
+system_prompt_wrapper: Plain / Markdown
+# DeepSeek uses OpenAI-compatible chat format.
+# System prompt via 'system' role in messages array.
+# Both plain text and markdown work; concise, direct instructions preferred.
+# Also supports Anthropic API format with 'system' parameter.
+
+system_prompt_role: system
+# Standard OpenAI-compatible 'system' role.
+# No special wrapper needed — straight text works well.
+# DeepSeek responds well to concise, clear system prompts.
+# Chinese and mixed-language prompts are fully supported.
+
+context_block_format: |
+  ## Reference: {name}
+  ```text
+  {content}
+  ```
+# DeepSeek handles markdown section headers + code blocks for context.
+# No official XML tag preference in docs.
+# Context blocks work well with markdown formatting.
+# Keep system prompt clear; context can go in user messages.
+
+# --- Separators & Formatting ---
+
+separator_token: Markdown headers (##/###) + code blocks
+# Markdown formatting works well across OpenAI-compatible interface.
+# Code blocks for code/data separation.
+
+code_block_style: fenced
+# Triple-backtick with optional language identifier.
+# DeepSeek is code-generation focused; handles code blocks excellently.
+
+table_preference: markdown_table
+# Markdown tables work. JSON for structured data extraction.
+
+citation_format: inline_text
+# No built-in citation annotation system.
+# Use inline citations like [source] or markdown reference links.
+
+# --- Token & Context Parameters ---
+
+context_window: 65536
+# DeepSeek-V4 models: 64K tokens.
+# deepseek-chat (deprecated): 64K.
+# Context is consumed by: user input + model output + thinking tokens (CoT).
+
+max_effective_prompt: 56000
+# Thinking tokens (reasoning_content) consume context internally.
+# Budget ~15% for thinking overhead + output.
+
+max_output_tokens: 8192
+prompt_caching_supported: true
+# DeepSeek supports context caching (KV cache) via API.
+# Repeated system prompts benefit from caching.
+# Cache key based on prompt prefix.
+
+# --- Behavioral Quirks ---
+
+known_quirks:
+  - "thinking mode defaults to ENABLED on DeepSeek-V4; reasoning_content separate from content"
+  - "CoT from prior turns (without tool calls) is IGNORED by the API — simplifies multi-turn context"
+  - "CoT from turns WITH tool calls MUST be passed back in subsequent requests, or 400 error"
+  - "thinking mode does NOT support temperature, top_p, presence_penalty, frequency_penalty"
+  - "supports both OpenAI AND Anthropic API formats (dual protocol)"
+  - "Anthropic model mapping: claude-opus -> deepseek-v4-pro, claude-sonnet/haiku -> deepseek-v4-flash"
+  - "reasoning_effort: low/medium mapped to high; xhigh mapped to max"
+  - "Chinese-friendly: handles mixed CN/EN naturally; responds to Chinese prompts"
+  - "for agent tools (Claude Code, OpenCode): effort auto-set to max"
+
+undocumented_preferences:
+  - "Responds particularly well to numbered lists and structured sections"
+  - "Code output quality is high with explicit language identifier in fences"
+  - "Direct, concise system prompts outperform verbose multi-paragraph prompts"
+  - "Mixed-language (CN+EN) prompts handled naturally without special formatting"
+  - "Tool calling pattern follows OpenAI conventions exactly"
+
+# --- Formatting Weights (0-1, relative importance for prompt adaptation) ---
+
+formatting_weights:
+  markdown_headers: 0.8       # Effective for section separation
+  xml_structure: 0.4          # Not documented as preference; Anthropic API path may benefit
+  json_data: 0.8              # JSON output mode documented; good JSON handling
+  fenced_code_blocks: 0.9     # Code is core strength; always use language identifier
+  numbered_lists: 0.7         # Good for sequential instructions
+  bullet_lists: 0.6           # Works but numbered preferred
+  tables: 0.6                 # Handles markdown tables
+  inline_formatting: 0.5      # Basic markdown supported
+  role_prefixes: 0.7          # "You are a [role]" effective but not critical
+  whitespace_separators: 0.6  # Clean separation helps
+  plain_text: 0.9             # PLAIN IS FINE: DeepSeek works well with minimal formatting
+
+# --- Multi-turn Conversation ---
+
+multi_turn_format:
+  approach: openai_compatible
+  # Standard OpenAI-compatible messages array.
+  # In THINKING MODE (no tool calls): ignore prior-turn reasoning_content.
+  # In THINKING MODE (WITH tool calls): MUST include reasoning_content in subsequent turns.
+  # In non-thinking mode: standard chat format.
+  # System prompt at messages[0] with role='system'.
+
+# --- Tool Use ---
+
+tool_use_format: openai_compatible
+# OpenAI-compatible function calling.
+# Tools defined in tools[] array.
+# Tool calls return tool_call_id for response matching.
+# Thinking mode + tool calls: reasoning_content must propagate across tool-call turns.

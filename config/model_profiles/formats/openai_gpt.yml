@@ -1,0 +1,132 @@
+# Model Input Format Profile: OpenAI GPT
+# ====================================================
+# PURPOSE: Document GPT's preferred input format for prompt construction.
+# Used by the gludd prompt renderer to adapt system prompts, context blocks,
+# and separator tokens per model.
+#
+# SOURCES:
+#   - https://platform.openai.com/docs/guides/prompt-engineering
+#   - https://platform.openai.com/docs/guides/structured-outputs
+#   - OpenAI model spec chain-of-command (2025)
+
+format_profile_id: openai_gpt_format
+target_models:
+  - gpt-4
+  - gpt-4-turbo
+  - gpt-4o
+  - gpt-4.1
+  - gpt-5.5
+  - gpt-5.6
+  - gpt-4o-mini
+
+# --- Prompt Structure ---
+
+system_prompt_wrapper: Markdown + XML
+# OpenAI recommends a HYBRID approach:
+#   - Markdown headers (### Section) for organizational hierarchy
+#   - XML tags (<context>, <example>) for structured content blocks
+#   - Both recognized equally well
+
+system_prompt_role: developer
+# OpenAI uses 'developer' role (NOT 'system') for highest-priority instructions.
+# 'developer' messages are prioritized above 'user' messages.
+# In Responses API: use 'instructions' parameter instead of message role.
+
+context_block_format: |
+  ## Context Reference Material
+  <!-- Sections below contain reference data for this request -->
+
+  ### Document: {name}
+  <context id="{id}">
+  {content}
+  </context>
+# OpenAI's docs show Markdown headers + XML tags as the canonical pattern.
+# Keep cacheable content at the TOP of prompt for prompt caching.
+# Context section typically goes near the END of the developer message.
+
+# --- Separators & Formatting ---
+
+separator_token: Markdown headers (###) + XML tags
+# Use `### Section Name` for major sections (Identity, Instructions, Examples, Context).
+# Use XML tags for content demarcation within sections.
+# This is the pattern in OpenAI's official examples.
+
+code_block_style: fenced
+# Triple-backtick with language identifier.
+# OpenAI models are heavily trained on GitHub markdown.
+
+table_preference: markdown_table
+# Markdown tables are well-supported across GPT models.
+# For structured data extraction, use JSON Schema Structured Outputs instead.
+
+citation_format: inline_annotation
+# OpenAI supports text annotations with citation data.
+# Use `annotations` in the Responses API output.
+# In chat format: use `[source]` or `<citation>` XML tags.
+
+# --- Token & Context Parameters ---
+
+context_window: 128000
+# GPT-4 baseline: 128K. GPT-4.1: up to 1M.
+# Per-model values vary; use model-specific window.
+
+max_effective_prompt: 110000
+# Practical limit: ~85% of context window for input.
+# GPT models show "lost in the middle" effect — attention to content
+# in the middle of a long prompt can degrade.
+
+max_output_tokens: 8000
+prompt_caching_supported: true
+# OpenAI supports automatic prompt caching on repeated prefix fragments.
+# Keep static content (identity, instructions) at the START for maximum cache hits.
+
+# --- Behavioral Quirks ---
+
+known_quirks:
+  - "Lost in the middle: GPT models attend less to content in the middle of very long prompts"
+  - "GPT-4o and later use 'developer' role, not 'system'; 'system' still works but is deprecated"
+  - "Reasoning models (o-series) need different prompting — less instruction, more objective description"
+  - "GPT-5+ benefit from explicit instructions rather than relying on model to infer intent"
+  - "Structured Outputs (json_schema) is preferred over JSON mode for schema adherence"
+  - "Prompt caching: cacheable content must be at START of prompt and FIRST in JSON body"
+  - "GPT-3.5 tends to focus on the LAST portion of a prompt; GPT-4+ more even attention"
+  - "Few-shot examples: 3-5 diverse examples wrapped in XML tags for best results"
+
+undocumented_preferences:
+  - "GPT-4o+ responds well to markdown tables for structured comparisons"
+  - "Numbered lists > bullet lists for instruction following accuracy"
+  - "'You are a [role]' preamble in developer message improves role adherence"
+  - "Clean separation between 'what' (instructions) and 'how' (examples) improves reliability"
+  - "Avoid negative instructions ('don't do X') — prefer positive framing ('do Y instead')"
+  - "Explicit output format instruction ('return JSON with keys: a, b, c') > implicit hope"
+
+# --- Formatting Weights (0-1, relative importance for prompt adaptation) ---
+
+formatting_weights:
+  markdown_headers: 0.9       # STRONG: Markdown headers are highly effective
+  xml_structure: 0.8          # Works well, especially for context blocks
+  json_data: 1.0              # EXCELLENT: GPT is deeply optimized for JSON
+  fenced_code_blocks: 0.9     # Standard; language identifier important
+  numbered_lists: 0.8         # Better than bullets for instruction following
+  bullet_lists: 0.7           # Works but numbered preferred
+  tables: 0.9                 # Very strong table comprehension
+  inline_formatting: 0.7      # Bold/italic recognized
+  role_prefixes: 0.9          # "You are a [role]" is highly effective
+  whitespace_separators: 0.6  # Section breaks help but less critical than XML
+
+# --- Multi-turn Conversation ---
+
+multi_turn_format:
+  approach: api_native
+  # GPT uses developer/user/assistant message roles.
+  # 'developer' is highest authority (system-level instructions).
+  # 'user' is end-user input.
+  # Conversation state managed via previous_response_id (Responses API)
+  #   or full message array (Chat Completions API).
+
+# --- Tool Use ---
+
+tool_use_format: openai_native
+# Function calling with JSON Schema tool definitions.
+# Parallel tool calling supported.
+# Structured Outputs for tool arguments ensures valid JSON.
