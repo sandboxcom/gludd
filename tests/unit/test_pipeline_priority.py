@@ -68,11 +68,7 @@ def section_src(agents_src):
     # Slice from the heading to the next top-level (## ) heading that follows it.
     after = agents_src[idx + len(SECTION_HEADING):]
     next_heading = after.find("\n## ")
-    if next_heading < 0:
-        # Last section in the file — take the rest.
-        section = agents_src[idx:]
-    else:
-        section = agents_src[idx:idx + len(SECTION_HEADING) + next_heading]
+    section = agents_src[idx:] if next_heading < 0 else agents_src[idx:idx + len(SECTION_HEADING) + next_heading]
     return re.sub(r"\s+", " ", section)
 
 
@@ -109,14 +105,14 @@ class TestKeyPhrasesPresent:
 class TestAntiPatternsPresent:
     """The anti-patterns list must call out the specific failure modes."""
 
-    EXPECTED_ANTI_PATTERNS = [
+    EXPECTED_ANTI_PATTERNS: tuple[str, ...] = (
         "structural-test subagents while the pipeline is red",
         "new enforcement plugin while commits sit unpushed",
         "documentation while CI is failing",
         "CI is pending",
         "unrelated feature work",
         "0 pipeline-focused dispatches",
-    ]
+    )
 
     @pytest.mark.parametrize(
         "phrase", EXPECTED_ANTI_PATTERNS, ids=[p[:30] for p in EXPECTED_ANTI_PATTERNS]

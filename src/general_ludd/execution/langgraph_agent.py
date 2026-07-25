@@ -268,23 +268,25 @@ class LangGraphAgentLoop:
             sandbox_enforcer = self._sandbox_enforcer
 
             async def _execute(
-                _name: str = tool_name,
-                _srv_id: str = server_id,
+                *args: Any,
+                _tool_name: str = tool_name,
+                _server_id: str = server_id,
                 _client: Any = mcp_client,
                 _tmo: float = timeout,
-                _auditor: Any = auditor,
+                _aud: Any = auditor,
                 _sandbox: Any = sandbox_enforcer,
                 **kwargs: Any,
             ) -> str:
+                input_data = args[0] if args else kwargs
                 if _sandbox is not None:
                     try:
                         _sandbox.verify_ready()
                     except SandboxNotAvailableError as exc:
                         return (
                             f"Tool error: sandbox not available — "
-                            f"refusing to execute {_name!r}: {exc}"
+                            f"refusing to execute {_tool_name!r}: {exc}"
                         )
-                    for _key, _val in kwargs.items():
+                    for _key, _val in input_data.items():
                         if isinstance(_val, str) and _key in (
                             "path", "file", "file_path", "workdir", "output",
                             "dir", "directory", "cwd", "out_path",
@@ -294,11 +296,11 @@ class LangGraphAgentLoop:
                             except Exception as exc:
                                 return (
                                     f"Tool error: path {_val!r} escapes sandbox "
-                                    f"for tool {_name!r}: {exc}"
+                                    f"for tool {_tool_name!r}: {exc}"
                                 )
-                if _auditor is not None:
-                    verdict = _auditor.audit(
-                        _name, kwargs,
+                if _aud is not None:
+                    verdict = _aud.audit(
+                        _tool_name, input_data,
                         task_context="langgraph_agent",
                     )
                     if verdict is not None and not verdict.allowed:
@@ -310,22 +312,22 @@ class LangGraphAgentLoop:
                         )
                 try:
                     result = await asyncio.wait_for(
-                        _client.call_tool(_srv_id, _name, kwargs),
+                        _client.call_tool(_server_id, _tool_name, input_data),
                         timeout=_tmo,
                     )
-                    if _auditor is not None:
-                        _auditor.record_success(_name, kwargs, result)
+                    if _aud is not None:
+                        _aud.record_success(_tool_name, input_data, result)
                     return str(result)
                 except TimeoutError:
-                    if _auditor is not None:
-                        _auditor.record_error(
-                            _name, kwargs,
+                    if _aud is not None:
+                        _aud.record_error(
+                            _tool_name, input_data,
                             f"timeout after {_tmo}s",
                         )
-                    return f"Tool error: {_name!r} timed out after {_tmo}s"
+                    return f"Tool error: {_tool_name!r} timed out after {_tmo}s"
                 except Exception as exc:
-                    if _auditor is not None:
-                        _auditor.record_error(_name, kwargs, str(exc))
+                    if _aud is not None:
+                        _aud.record_error(_tool_name, input_data, str(exc))
                     return f"Tool error: {exc}"
 
             lc_tool = StructuredTool.from_function(
