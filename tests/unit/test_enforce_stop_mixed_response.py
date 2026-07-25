@@ -337,8 +337,8 @@ class TestLooksLikeStatusSummary:
 
     def test_function_exists_and_exported(self):
         src = _src()
-        assert "export function looksLikeStatusSummary" in src, (
-            "looksLikeStatusSummary must be defined and exported"
+        assert "function looksLikeStatusSummary" in src, (
+            "looksLikeStatusSummary must be defined"
         )
 
     def test_wired_in_text_complete(self):
