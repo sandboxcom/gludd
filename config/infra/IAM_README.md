@@ -21,6 +21,14 @@ permissions required** for the named gludd operation to function.
 | `azure-iam-roles.yml` | Azure RBAC role assignments scoped to resource group |
 | `azure-iam-policy.json` | Azure custom role definition (detailed Action/NotAction) |
 
+## Headless CI validation
+
+Run `make iam-headless-smoke` before applying any IAM change. It is deliberately
+credential-free: CI validates the manifest shape, all four personas, descriptions,
+and explicit denial of administrator-equivalent bindings without contacting a cloud
+control plane. Provider-specific live permission simulations remain an operator
+responsibility after deployment.
+
 ---
 
 ## AWS — Apply Roles

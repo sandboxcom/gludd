@@ -1657,6 +1657,9 @@ provider-smoke:
 	@test -n "$(SMOKE_TEST)" || { echo Usage: make provider-smoke PROVIDER=aws SMOKE_TEST=ec2-a100 ARGS=--json; exit 1; }
 	@$(UV) run gludd smoke "$(PROVIDER)" "$(SMOKE_TEST)" $(ARGS)
 
+iam-headless-smoke:
+	@$(UV) run python scripts/iam_headless_smoke.py
+
 smoke:
 	@$(UV) run python scripts/smoke_daemon.py
 
@@ -5349,4 +5352,3 @@ install-opa:
 # fast local gate: lint + typecheck + collect + hook-runtime + fast structural tests
 gate-local:
 	@echo "gate-local: fast local gate: lint + typecheck + collect + hook-runtime + fast structural tests"
-
