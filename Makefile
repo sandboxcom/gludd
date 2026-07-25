@@ -5130,6 +5130,16 @@ test-os-expert:
 test-sts:
 	@$(UV) run python -m pytest tests/unit/test_sts_issuer.py tests/unit/test_sts_daemon_wiring.py tests/unit/test_sts_reaper.py tests/unit/test_sts_audit_model.py tests/unit/test_sts_audit.py tests/integration/sts/test_sts_module_integration.py tests/integration/test_secrets_sts_integration.py tests/e2e/test_e2e_security_sts.py -v --tb=short
 
+# Skill-lens: run lens on all skills with sample queries, report token savings.
+skill-lens-test:
+	@echo "=== skill-lens-test: lens all skills + unit tests ==="
+	@$(UV) run python -m pytest tests/unit/test_skill_lens.py tests/unit/test_skill_context.py -v --tb=short
+	@echo ""
+	@echo "--- skill-lens smoke (all skills with sample queries) ---"
+	@$(UV) run python3 scripts/skill_lens_smoke.py
+	@echo ""
+	@echo "skill-lens-test: PASS"
+
 # VM sandbox test suite
 test-vm:
 	@$(UV) run python -m pytest tests/unit/test_vm_lifecycle.py tests/unit/test_security_sandboxes_vm_lifecycle.py tests/unit/test_vm_sandbox_backends.py tests/unit/test_vm_image_builder.py tests/unit/test_vm_image_builder_self_test.py tests/unit/test_vm_p4_real_executor.py tests/unit/test_vm_p5_real_firecracker.py tests/integration/test_vm_sandbox_integration.py tests/integration/sandboxes/test_vm_sandbox_integration.py tests/bench/test_vm_sandbox_overhead.py -v --tb=short
