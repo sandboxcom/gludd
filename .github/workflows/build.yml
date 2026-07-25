@@ -537,15 +537,15 @@ jobs:
         # and upload-artifact so a broken binary never reaches the release.
         run: |
           set -e
-          echo "--- gludd --version ---"
-          ./dist/gludd --version
+          echo "--- gludd version ---"
+          ./dist/gludd version
           echo "--- gludd --help (first 5 lines) ---"
           ./dist/gludd --help | head -5
           # Guard against known crash signatures that PyInstaller bundling has
-          # silently produced in past releases. If --version / --help printed a
+          # silently produced in past releases. If version / --help printed a
           # traceback or the ansible missing-data-file error, the binary is
           # broken — fail this step so the artifact is never published.
-          OUT="$(./dist/gludd --version 2>&1; ./dist/gludd --help 2>&1 | head -5)"
+          OUT="$(./dist/gludd version 2>&1; ./dist/gludd --help 2>&1 | head -5)"
           if echo "$OUT" | grep -qiE 'traceback|Missing base YAML definition file'; then
             echo "FAIL: smoke test output contained a crash signature:"
             echo "$OUT"
@@ -627,11 +627,11 @@ jobs:
         # broken binary never reaches the release artifacts.
         run: |
           set -e
-          echo "--- gludd --version ---"
-          ./dist/gludd --version
+          echo "--- gludd version ---"
+          ./dist/gludd version
           echo "--- gludd --help (first 5 lines) ---"
           ./dist/gludd --help | head -5
-          OUT="$(./dist/gludd --version 2>&1; ./dist/gludd --help 2>&1 | head -5)"
+          OUT="$(./dist/gludd version 2>&1; ./dist/gludd --help 2>&1 | head -5)"
           if echo "$OUT" | grep -qiE 'traceback|Missing base YAML definition file'; then
             echo "FAIL: smoke test output contained a crash signature:"
             echo "$OUT"
