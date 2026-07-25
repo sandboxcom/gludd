@@ -201,7 +201,11 @@ function readTargetShare(): number {
   try {
     const cfg = JSON.parse(fs.readFileSync(SONNET_TARGET_CONFIG, "utf8"))
     const v = parseFloat(cfg.target_share)
-    return Number.isNaN(v) ? SONNET_TARGET_DEFAULT : v
+    if (Number.isNaN(v)) return SONNET_TARGET_DEFAULT
+    if (typeof cfg.until_epoch === "number" && Date.now() / 1000 > cfg.until_epoch) {
+      return SONNET_TARGET_DEFAULT
+    }
+    return v
   } catch {
     return SONNET_TARGET_DEFAULT
   }
@@ -682,6 +686,7 @@ function mainthreadBudgetAfter(tool: string, command: string): void {
     if (isDispatchTool(tool)) {
       writeStreak({ count: 0 })
       saveReadGrindState(0, Date.now())
+      try { fs.unlinkSync(FORCE_DISPATCH_FILE) } catch { /* absent OK */ }
     } else if (tool === "bash" && isGitShippingTarget(command)) {
       // Git shipping operations reset the streak — they complete a unit of work.
       writeStreak({ count: 0 })
