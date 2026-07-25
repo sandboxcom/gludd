@@ -109,8 +109,14 @@ function isGitShippingTarget(command: string): boolean {
 // are NOT grinding — they are terminal validation steps that complete units of
 // work. Like git shipping targets, they must NOT increment the streak counter.
 const LINT_TARGETS: ReadonlySet<string> = new Set([
-  "lint", "lint-fix", "typecheck", "collect-check",
-  "test-count", "healthcheck", "smoke", "check-coverage-gaps",
+  "lint",
+  "lint-fix",
+  "typecheck",
+  "collect-check",
+  "test-count",
+  "healthcheck",
+  "smoke",
+  "check-coverage-gaps",
 ])
 function isLintTarget(command: string): boolean {
   const m = command.match(/(?:^|\s)make\s+(\S+)/)
