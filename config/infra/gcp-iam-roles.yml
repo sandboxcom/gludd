@@ -1,0 +1,210 @@
+# GCP IAM roles with least privilege for gludd deployment
+# ======================================================================
+# PRINCIPLE: Each role grants the *minimum* set of predefined GCP IAM
+# roles needed for the gludd operation.  Predefined roles are preferred
+# over custom roles because GCP automatically updates predefined role
+# permissions when new API features are added.  Conditions narrow the
+# scope to specific zones, instance types, and resource name patterns.
+#
+# GCP BEST PRACTICE for least privilege:
+#   (a) Use PREDEFINED roles where possible (GCP maintains them).
+#   (b) Apply CONDITIONS (CEL expressions) to restrict resource scope.
+#   (c) Grant at the PROJECT level (not org/folder) unless multiple
+#       projects share the deployment.
+#   (d) Use SERVICE ACCOUNTS as the identity, never a user account.
+
+# ----------------------------------------------------------------------
+# How to apply:
+#   gcloud iam service-accounts create gludd-terraform-deploy \
+#       --display-name="gludd Terraform Deployer"
+#   gcloud projects add-iam-policy-binding PROJECT_ID \
+#       --member="serviceAccount:gludd-terraform-deploy@PROJECT_ID.iam.gserviceaccount.com" \
+#       --role="roles/compute.instanceAdmin.v1" \
+#       --condition-from-file="config/infra/gcp-condition-instance-type.cond"
+#
+# How to test (verify each role works):
+#   gcloud iam roles describe roles/compute.instanceAdmin.v1
+#   gcloud iam service-accounts get-iam-policy \
+#       gludd-terraform-deploy@PROJECT_ID.iam.gserviceaccount.com
+#   gcloud iam roles simulate --member=serviceAccount:gludd-terraform-deploy@PROJECT_ID.iam.gserviceaccount.com \
+#       --permissions=compute.instances.list,compute.instances.insert
+#
+# How to audit:
+#   1. Policy Analyzer (recommender tab in IAM console) — shows unused
+#      permissions per service account.  Run quarterly.
+#   2. `gcloud projects get-iam-policy PROJECT_ID --format=json` →
+#      pipe through `scripts/audit_gcp_iam.py` to flag any non-allowlisted
+#      role binding.
+#   3. Cloud Audit Logs — filter `protoPayload.@type="type.googleapis.com/google.iam.v1.AuditData"`
+#      for denied calls.  Each denial is a gap or misconfiguration.
+# ======================================================================
+
+roles:
+
+  # ====================================================================
+  # terraform_deploy — provision/destroy GCP infrastructure via Terraform.
+  #
+  # WHY EACH ROLE EXISTS (what breaks if removed):
+  #
+  #   compute.instanceAdmin.v1  Create, modify, and delete VM instances,
+  #     disk attachments, and instance groups.  Terraform uses this for
+  #     every compute resource.  Remove → `terraform apply` fails on
+  #     google_compute_instance.
+  #
+  #   compute.networkAdmin  Create/modify VPC networks, subnets, firewall
+  #     rules.  Terraform uses this for VPC setup.  Remove → VPC/network
+  #     resources fail.
+  #
+  #   compute.viewer  Read-only auf all compute resources (instances, disks,
+  #     networks, firewalls).  Terraform plan reads every existing resource.
+  #     Remove → plan fails with "not authorized to describe."
+  #
+  #   storage.objectViewer  Read Terraform state from the GCS state bucket.
+  #     Remove → plan/apply fail with "backend state not accessible."
+  #
+  #   storage.objectCreator  Write Terraform state + lock file.  Remove →
+  #     state is never written; next plan sees stale/default state.
+  #
+  #   iam.serviceAccountUser  Impersonate the gludd-runtime service account
+  #     when attaching it to instances at launch.  Remove → instances launch
+  #     with the default compute engine SA (over-privileged).
+  #
+  #   resourcemanager.tagUser  Apply cost-center and environment tags.
+  #     Remove → billing attribution breaks.
+  #
+  # CONDITIONS narrow scope:
+  #   - Instance type: only e2-standard (bootstrap) + g2-standard (GPU)
+  #     + a2-highgpu (A100) families
+  #   - Zone: only us-central1-a/c/f, us-east1-b/c/d (gludd GPU zones)
+  #   - Disk type: only pd-ssd (required for Local SSD GPU attachment)
+  # ====================================================================
+  terraform_deploy:
+    description: "Provision/destroy gludd infrastructure via Terraform on GCP"
+    roles:
+      - roles/compute.instanceAdmin.v1
+      - roles/compute.networkAdmin
+      - roles/compute.viewer
+      - roles/storage.objectViewer
+      - roles/storage.objectCreator
+      - roles/iam.serviceAccountUser
+      - roles/resourcemanager.tagUser
+    conditions:
+      - title: "Restrict to gludd instance types"
+        description: "Only allow e2-standard (bootstrap), g2-standard/accelerator (L4 GPU), and a2-highgpu/accelerator (A100 GPU) families"
+        expression: >-
+          resource.type == "compute.googleapis.com/Instance"
+          && resource.name.extract("{instances}/").startsWith("e2-standard-")
+          || resource.name.extract("{instances}/").startsWith("g2-standard-")
+          || resource.name.extract("{instances}/").startsWith("a2-highgpu-")
+      - title: "Restrict to gludd GPU zones"
+        description: "Only allow deployment in zones where GPU quotas are provisioned"
+        expression: >-
+          resource.name.startsWith("zones/us-central1-a")
+          || resource.name.startsWith("zones/us-central1-c")
+          || resource.name.startsWith("zones/us-central1-f")
+          || resource.name.startsWith("zones/us-east1-b")
+          || resource.name.startsWith("zones/us-east1-c")
+          || resource.name.startsWith("zones/us-east1-d")
+      - title: "Restrict disk type to SSD"
+        description: "Only pd-ssd and local-ssd (required for GPU attach)"
+        expression: >-
+          resource.type == "compute.googleapis.com/Disk"
+          && (resource.name.endsWith("pd-ssd")
+          || resource.name.endsWith("local-ssd"))
+
+  # ====================================================================
+  # runtime_execution — daemon + ansible playbook execution at runtime.
+  # Attached to the service account running the gludd daemon on GCE.
+  #
+  # WHY EACH ROLE EXISTS (what breaks if removed):
+  #
+  #   compute.viewer  Describe instances, networks, and metadata.  The
+  #     daemon polls instance health and spot preemption notices.
+  #     Remove → daemon cannot discover its own instances.
+  #
+  #   logging.logWriter  Write structured logs to Cloud Logging (daemon
+  #     stdout/stderr, ansible output).  Remove → logs exist only on local
+  #     disk and are lost at instance termination.
+  #
+  #   storage.objectViewer  Read playbook artifacts and model weights from
+  #     the GCS artifact bucket.  Remove → ansible runs fail because
+  #     playbook YAML is inaccessible.
+  #
+  #   storage.objectCreator  Write job results, logs, and model output to
+  #     GCS.  Remove → job outputs are trapped on the instance.
+  #
+  #   secretmanager.secretAccessor  Fetch API keys for external model
+  #     providers (Together, Fireworks, HuggingFace).  Remove → daemon
+  #     cannot authenticate to external APIs.
+  #
+  #   artifactregistry.reader  Pull gludd container images from Artifact
+  #     Registry.  Remove → `docker pull` fails; daemon cannot deploy
+  #     model server containers.
+  #
+  #   monitoring.metricWriter  Write custom metrics (inference latency,
+  #     model queue depth) to Cloud Monitoring for Grafana dashboards.
+  #     Remove → monitoring dashboards show no gludd data.
+  # ====================================================================
+  runtime_execution:
+    description: "Run gludd daemon + ansible playbooks at runtime on GCE"
+    roles:
+      - roles/compute.viewer
+      - roles/logging.logWriter
+      - roles/storage.objectViewer
+      - roles/storage.objectCreator
+      - roles/secretmanager.secretAccessor
+      - roles/artifactregistry.reader
+      - roles/monitoring.metricWriter
+    conditions:
+      - title: "Restrict secret access to gludd-namespaced secrets"
+        description: "Only allow reading secrets whose names match gludd-*"
+        expression: >-
+          resource.type == "secretmanager.googleapis.com/Secret"
+          && resource.name.extract("{secrets}/").startsWith("gludd-")
+      - title: "Restrict object access to gludd GCS bucket"
+        description: "Only allow reads/writes within the gludd-artifacts and gludd-logs buckets"
+        expression: >-
+          resource.name.startsWith("projects/_/buckets/gludd-artifacts")
+          || resource.name.startsWith("projects/_/buckets/gludd-logs")
+
+  # ====================================================================
+  # model_inference — call Vertex AI model endpoints.
+  # Attached to the inference job service account.
+  #
+  # WHY EACH ROLE EXISTS (what breaks if removed):
+  #
+  #   aiplatform.user  Predict (invoke) deployed Vertex AI endpoints
+  #     (custom vLLM models).  Remove → every model call through Vertex
+  #     AI fails with 403.
+  #
+  #   aiplatform.viewer  List available endpoints and models for the TUI
+  #     model selector.  Remove → endpoint list is empty even when
+  #     endpoints exist.
+  #
+  # CONDITIONS narrow scope to gludd-named endpoints and models only.
+  # ====================================================================
+  model_inference:
+    description: "Call Vertex AI model endpoints for inference"
+    roles:
+      - roles/aiplatform.user
+      - roles/aiplatform.viewer
+    conditions:
+      - title: "Restrict to gludd-named endpoints"
+        description: "Only invoke endpoints whose display name starts with gludd-"
+        expression: >-
+          resource.type == "aiplatform.googleapis.com/Endpoint"
+          && resource.name.extract("{endpoints}/").startsWith("gludd-")
+
+  # ====================================================================
+  # monitor — read-only dashboards, billing, and alerting.
+  # Attached to the monitoring agent service account.
+  # ====================================================================
+  monitor:
+    description: "Read-only monitoring: Cloud Monitoring dashboards, billing"
+    roles:
+      - roles/monitoring.viewer
+      - roles/logging.viewer
+      - roles/billing.viewer
+    conditions:
+      - title: "Limit to gludd project"
+        expression: "resource.name.startsWith('projects/gludd-')"

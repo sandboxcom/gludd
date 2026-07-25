@@ -1,0 +1,172 @@
+# Azure IAM roles with least privilege for gludd deployment
+# ======================================================================
+# PRINCIPLE: Use Azure RBAC (role-based access control) with BUILT-IN
+# roles scoped to SPECIFIC resource groups.  Built-in roles are preferred
+# over custom roles because (a) Microsoft maintains them across API
+# version changes and (b) the existing custom role definition is in
+# `azure-iam-policy.json` for the container-app deployer path.
+#
+# The `azure-iam-policy.json` file contains the detailed Action/NotAction
+# allowlist for the Terraform deployer role.  This file defines the
+# high-level role assignments for all three gludd personas.
+#
+# AZURE LEAST-PRIVILEGE PATTERN:
+#   (a) Scope every role assignment to a specific resource group
+#       (never subscription-level unless unavoidable).
+#   (b) Use built-in roles with DataActions where available.
+#   (c) Assign to Managed Identity (system-assigned or user-assigned),
+#       never a service principal key.
+#   (d) Custom roles (`azure-iam-policy.json`) must list explicit
+#       Actions and NotActions — never `Microsoft.*/*`.
+
+# ----------------------------------------------------------------------
+# How to apply:
+#   # Create the custom Terraform deployer role from the JSON definition
+#   az role definition create --role-definition @config/infra/azure-iam-policy.json
+#
+#   # Assign built-in roles at resource-group scope
+#   az role assignment create \
+#       --assignee ${PRINCIPAL_ID} \
+#       --role "Virtual Machine Contributor" \
+#       --scope "/subscriptions/${SUB_ID}/resourceGroups/gludd-prod"
+#
+# How to test (verify each role works):
+#   az role assignment list --assignee ${PRINCIPAL_ID} --resource-group gludd-prod
+#   az role definition list --name "General Ludd Container App Deployer"
+#   # Simulate a permission
+#   az rest --method POST \
+#       --uri "https://management.azure.com/subscriptions/${SUB_ID}/providers/Microsoft.Authorization/checkAccess?api-version=2022-04-01" \
+#       --body '{"subject":{"id":"${PRINCIPAL_ID}"},"actions":["Microsoft.Compute/virtualMachines/read"],"resource":{"id":"${SCOPE}"}}'
+#
+# How to audit:
+#   1. Azure Policy — assign the built-in "Audit usage of custom RBAC rules"
+#      policy to flag any role assignment using a non-allowlisted custom role.
+#   2. `az role assignment list --all --query "[?principalId=='${PRINCIPAL_ID}']"`
+#      → pipe through `scripts/audit_azure_iam.py` to verify every assignment
+#      is in the allowlist below.
+#   3. Activity Log — filter for `OperationName = "Create role assignment"`
+#      and verify the role + scope match this file.
+# ======================================================================
+
+roles:
+
+  # ====================================================================
+  # terraform_deploy — provision/destroy Azure infrastructure via Terraform.
+  #
+  # WHY EACH ROLE EXISTS (what breaks if removed):
+  #
+  #   "General Ludd Container App Deployer" (custom, defined in
+  #     azure-iam-policy.json) — full lifecycle of Container Apps, ACR,
+  #     VNets, Subnets, NSGs, Public IPs, NICs, and VMs.  Detailed
+  #     Action/NotAction allowlist in that file.  This is the LEAST
+  #     privilege for Terraform — every action is individually listed.
+  #
+  #   Contributor (scoped to resource group) — enables resource group
+  #     creation and tag operations that the custom role explicitly
+  #     allows.  This is a FALLBACK for Terraform providers that do not
+  #     support granular custom roles.
+  #
+  #   Storage Blob Data Contributor — read/write Terraform state from
+  #     the storage account blob container.  Remove → plan/apply fail
+  #     with "backend not accessible."
+  #
+  #   Key Vault Secrets User — read secrets (API keys, certs) from Key
+  #     Vault during Terraform plan (for resource reference resolution).
+  #     Remove → Terraform cannot resolve Key Vault references.
+  #
+  # SCOPING: All role assignments are at the resource-group level.
+  # The template placeholders {subscription-id} and {rg-name} MUST be
+  # replaced before applying.
+  # ====================================================================
+  terraform_deploy:
+    description: "Provision/destroy gludd infrastructure via Terraform on Azure"
+    scope: "/subscriptions/{subscription-id}/resourceGroups/{rg-name}"
+    role_definitions:
+      - "General Ludd Container App Deployer"
+      - "Contributor"
+      - "Storage Blob Data Contributor"
+      - "Key Vault Secrets User"
+    # The Contributor role is the broadest permission granted here.  It is
+    # scoped to a SINGLE resource group, so the blast radius is limited.
+    # When Terraform provider granularity improves, replace Contributor
+    # with the individual `Microsoft.*/write` actions actually needed.
+    warning: >-
+      "Contributor" is broad.  If gludd is deployed in a production
+      subscription, replace with Network Contributor + Storage Account
+      Contributor + Virtual Machine Contributor + the custom Container
+      App Deployer role.  Contributor at resource-group scope is a
+      pragmatic lowest-common-denominator for providers that do not
+      support Azure custom roles natively.
+
+  # ====================================================================
+  # runtime_execution — daemon + ansible playbook execution at runtime.
+  # Attached to the managed identity on the Container App / VM.
+  #
+  # WHY EACH ROLE EXISTS (what breaks if removed):
+  #
+  #   Virtual Machine Contributor  Create/start/stop/restart VMs
+  #     (ansible playbooks provision GPU VMs).  Remove → daemon cannot
+  #     scale GPU instances up or down.
+  #
+  #   Storage Blob Data Reader  Read playbook artifacts and model weights
+  #     from Azure Blob Storage.  Remove → ansible playbook fetch fails.
+  #
+  #   Storage Blob Data Contributor  Write job results and logs to blob
+  #     storage.  Remove → job outputs stay on the VM and are lost on
+  #     deallocate.
+  #
+  #   Log Analytics Contributor  Write structured logs to Log Analytics
+  #     workspace.  Remove → logs exist only on local disk; no
+  #     centralized query or alerting.
+  #
+  #   Key Vault Secrets User  Read API keys for model providers.
+  #     Remove → daemon cannot authenticate to external AI APIs.
+  #
+  #   AcrPull  Pull container images from Azure Container Registry for
+  #     model server deployments.  Remove → image pull fails.
+  # ====================================================================
+  runtime_execution:
+    description: "Run gludd daemon + ansible playbooks at runtime on Azure"
+    scope: "/subscriptions/{subscription-id}/resourceGroups/{rg-name}"
+    role_definitions:
+      - "Virtual Machine Contributor"
+      - "Storage Blob Data Reader"
+      - "Storage Blob Data Contributor"
+      - "Log Analytics Contributor"
+      - "Key Vault Secrets User"
+      - "AcrPull"
+
+  # ====================================================================
+  # model_inference — call Azure OpenAI / Cognitive Services endpoints.
+  # Attached to the inference job managed identity.
+  #
+  # WHY EACH ROLE EXISTS (what breaks if removed):
+  #
+  #   Cognitive Services User  Call Azure OpenAI (GPT-4, o1) and other
+  #     Cognitive Services endpoints.  Remove → every model call through
+  #     Azure OpenAI fails with 401.
+  #
+  #   Cognitive Services Metrics Advisor User  Read inference metrics
+  #     for latency monitoring.  Remove → inference latency dashboard
+  #     shows no data.
+  #
+  # SCOPING: Both assignments are at the Cognitive Services resource
+  # scope (not resource group) for tighter isolation.
+  # ====================================================================
+  model_inference:
+    description: "Call Azure OpenAI and Cognitive Services endpoints for AI inference"
+    scope: "/subscriptions/{subscription-id}/resourceGroups/{rg-name}/providers/Microsoft.CognitiveServices/accounts/{account-name}"
+    role_definitions:
+      - "Cognitive Services User"
+      - "Cognitive Services Metrics Advisor User"
+
+  # ====================================================================
+  # monitor — read-only dashboards, billing, and alerting.
+  # ====================================================================
+  monitor:
+    description: "Read-only monitoring: Azure Monitor, Cost Management, Service Health"
+    scope: "/subscriptions/{subscription-id}/resourceGroups/{rg-name}"
+    role_definitions:
+      - "Monitoring Reader"
+      - "Cost Management Reader"
+      - "Service Health Reader"

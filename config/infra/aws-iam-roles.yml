@@ -1,0 +1,363 @@
+# AWS IAM roles with least privilege for gludd deployment
+# ======================================================================
+# PRINCIPLE: Every action in these policies is the *minimum* required for
+# the named gludd operation to function.  Wildcard `*` on Resource is
+# scoped down by Condition blocks where possible.  No policy grants `*:*`
+# (full admin).  Each role is a distinct trust boundary — run only the
+# daemon components that need that role, never combine them.
+
+# ----------------------------------------------------------------------
+# How to apply:
+#   aws iam create-role --role-name gludd-terraform-deploy \
+#       --assume-role-policy-document file://config/infra/aws-assume-role-tf.json
+#   aws iam put-role-policy --role-name gludd-terraform-deploy \
+#       --policy-name TerraformDeploy --policy-document file://config/infra/aws-iam-roles.yml
+#
+#   aws iam create-role --role-name gludd-runtime \
+#       --assume-role-policy-document file://config/infra/aws-assume-role-daemon.json
+#   aws iam put-role-policy --role-name gludd-runtime \
+#       --policy-name RuntimeExecution --policy-document file://config/infra/aws-iam-roles.yml
+#
+#   aws iam create-role --role-name gludd-model-inference \
+#       --assume-role-policy-document file://config/infra/aws-assume-role-model.json
+#   aws iam put-role-policy --role-name gludd-model-inference \
+#       --policy-name ModelInference --policy-document file://config/infra/aws-iam-roles.yml
+#
+# How to test (verify each role works):
+#   aws iam simulate-principal-policy --policy-source-arn arn:aws:iam::123456789012:role/gludd-terraform-deploy \
+#       --action-names ec2:RunInstances ec2:DescribeInstances s3:GetObject
+#
+# How to audit (least-privilege checklist):
+#   1. Run `scripts/audit_aws_iam.py` — enumerates every attached policy and
+#      flags any action that is not listed in this file.
+#   2. AWS IAM Access Analyzer — generates a policy for each role showing
+#      unused permissions.  Remove any action flagged unused for >90 days.
+#   3. CloudTrail — search for `errorCode = "AccessDenied"` and
+#      `userIdentity.arn` matching these roles; each denial is a gap or a
+#      misconfiguration.
+# ======================================================================
+
+roles:
+
+  # ====================================================================
+  # terraform_deploy — provision/destroy infrastructure via Terraform.
+  # Used by: CI pipeline, `make terraform-apply`, `make terraform-destroy`.
+  #
+  # WHY EACH PERMISSION EXISTS (what breaks if removed):
+  #
+  #   ec2:Describe*         The Terraform plan step must list instance
+  #                         types, AMIs, security groups, VPCs, subnets,
+  #                         key pairs, and volumes.  Remove this → plan
+  #                         fails with "not authorized to describe."
+  #
+  #   ec2:RunInstances      Terraform creates GPU spot instances.  Remove
+  #                         this → `terraform apply` fails at resource
+  #                         creation.  Scoped by Condition to only allowed
+  #                         instance types (t3.medium/large for bootstrap,
+  #                         g4dn/g5/p3/p4d for GPU workloads).
+  #
+  #   ec2:TerminateInstances  Terraform destroys instances on scale-down
+  #                           or `terraform destroy`.  Remove this → orphan
+  #                           instances accumulate and continue billing.
+  #
+  #   iam:PassRole          Terraform passes gludd-runtime and
+  #                         gludd-model-inference instance profiles to EC2
+  #                         at launch.  Remove this → instances launch
+  #                         with no permissions and fail on startup.
+  #                         CRITICAL: this is scoped by Resource to the
+  #                         two pre-approved gludd role ARNs — never `*`.
+  #
+  #   s3:GetObject          Read Terraform state from the state bucket.
+  #                         Remove this → plan/apply fail with "state
+  #                         file not accessible."
+  #
+  #   s3:PutObject          Write state + state lock file to the bucket.
+  #                         Remove this → apply succeeds but state is
+  #                         stale (next plan applies from old state).
+  #
+  #   dynamodb:*Item        Terraform state locking via DynamoDB (prevents
+  #                         concurrent applies).  Remove this → two CI
+  #                         pipelines can apply simultaneously, corrupting
+  #                         state.
+  #
+  #   iam:GetRole           Resolve instance profile ARNs during plan.
+  #                         Remove this → plan shows "unknown resource."
+  #
+  #   iam:ListInstanceProfiles  Discover which instance profiles exist.
+  #                             Remove this → plan fails on first run in
+  #                             a new account.
+  #
+  # SCOPING: Condition blocks restrict instance types and IAM role passing
+  # to specific ARNs.  Resource: "*" is the AWS default for EC2 actions
+  # that do not support resource-level permissions.
+  # ====================================================================
+  terraform_deploy:
+    description: "Provision/destroy gludd infrastructure via Terraform/OpenTofu"
+    policy:
+      - Effect: Allow
+        Action:
+          # --- Compute virtualization -------------------------------------------------
+          # EC2 discovery: required by terraform plan to locate AMIs, subnets,
+          # security groups, key pairs, and existing instances.
+          - ec2:Describe*
+          # EC2 launch: creates GPU spot instances (t3 for bootstrap, g4dn/g5
+          # for inference).  Instance type restricted by Condition below.
+          - ec2:RunInstances
+          # EC2 teardown: destroys instances on scale-down or terraform destroy.
+          - ec2:TerminateInstances
+          # --- IAM role passing -------------------------------------------------------
+          # Pass pre-approved roles (gludd-runtime, gludd-model-inference) to EC2.
+          # MUST be scoped by Resource — never pass `*`.
+          - iam:PassRole
+          # Resolve instance profile ARNs during terraform plan.
+          - iam:GetRole
+          - iam:ListInstanceProfiles
+          # --- State storage (S3 + DynamoDB lock) --------------------------------------
+          # Read Terraform state from the configured backend (S3).
+          - s3:GetObject
+          - s3:PutObject
+          - s3:ListBucket
+          # DynamoDB lock so two CI pipelines never apply simultaneously.
+          - dynamodb:GetItem
+          - dynamodb:PutItem
+          - dynamodb:DeleteItem
+          - dynamodb:DescribeTable
+        Resource: "*"
+        Condition:
+          # Only allow launching the instance types gludd actually uses.
+          # Bootstrap: t3.medium, t3.large.  GPU: g4dn.xlarge → g4dn.12xlarge,
+          # g5.xlarge → g5.48xlarge, p3.2xlarge → p3.16xlarge.
+          StringEquals:
+            "ec2:InstanceType":
+              - t3.medium
+              - t3.large
+              - g4dn.xlarge
+              - g4dn.2xlarge
+              - g4dn.4xlarge
+              - g4dn.8xlarge
+              - g4dn.12xlarge
+              - g5.xlarge
+              - g5.2xlarge
+              - g5.4xlarge
+              - g5.8xlarge
+              - g5.12xlarge
+              - g5.24xlarge
+              - g5.48xlarge
+              - p3.2xlarge
+              - p3.8xlarge
+              - p3.16xlarge
+      # Deny: this role must NOT create/delete IAM roles or users — that is
+      # a manual bootstrap operation done once by an admin.  Principle of
+      # least privilege: the Terraform role provisions infrastructure, not
+      # identity.
+      - Effect: Deny
+        Action:
+          - iam:CreateRole
+          - iam:DeleteRole
+          - iam:CreateUser
+          - iam:DeleteUser
+          - iam:AttachRolePolicy
+          - iam:DetachRolePolicy
+          - iam:PutRolePolicy
+          - iam:DeleteRolePolicy
+        Resource: "*"
+
+  # ====================================================================
+  # runtime_execution — daemon + ansible playbook execution at runtime.
+  # Attached to the EC2 instance profile that the gludd daemon runs under.
+  #
+  # WHY EACH PERMISSION EXISTS (what breaks if removed):
+  #
+  #   ec2:DescribeInstances  The daemon polls for instance health,
+  #     spot-interruption notices, and billing tags.  Remove this →
+  #     daemon cannot discover which GPU instances it launched.
+  #
+  #   ec2:DescribeSpotInstanceRequests  Detect two-minute spot warning.
+  #     Remove this → spot termination kills instances mid-job with no
+  #     chance to checkpoint.
+  #
+  #   ssm:SendCommand        Run ansible playbooks on remote instances
+  #     (bootstrap, model server deploy, health check).  Remove this →
+  #     daemon cannot provision or maintain any instance it launches.
+  #
+  #   ssm:GetCommandInvocation  Read the output of ansible runs.  Remove
+  #     this → daemon runs playbooks but never sees the result (fire-and-
+  #     forget with no error handling).
+  #
+  #   ssm:ListCommands       Discover recent command invocations for
+  #     historical debugging.  Remove this → TUI "last ansible run" tab
+  #     shows no data.
+  #
+  #   s3:GetObject           Fetch playbook artifacts and model weights
+  #     from the artifact bucket.  Remove this → every ansible run fails
+  #     with "playbook not found."
+  #
+  #   s3:PutObject           Upload job results and logs.  Remove this →
+  #     job outputs are trapped on the instance and lost on termination.
+  #
+  #   logs:PutLogEvents      Push structured logs to CloudWatch log group
+  #     /gludd/daemon.  Remove this → logs exist only on-disk and are
+  #     lost when the instance is terminated.
+  #
+  #   logs:CreateLogGroup    One-time setup for the daemon's log group.
+  #     Remove this → daemon fails to start on first launch in a new
+  #     account.
+  #
+  #   logs:CreateLogStream   Create a per-instance log stream.  Remove
+  #     this → PutLogEvents has nowhere to write.
+  #
+  #   ec2:CreateTags         Tag instances with job-id, model name, and
+  #     cost center for billing attribution.  Remove this → cloud bill is
+  #     an undifferentiated sum.
+  #
+  #   secretsmanager:GetSecretValue  Fetch API keys for model providers
+  #     (Together, Fireworks, HuggingFace).  Remove this → daemon cannot
+  #     authenticate to external AI APIs.
+  #
+  # SCOPING: Resource: "*" on ec2:Describe* is required because AWS does
+  # not support resource-level permission for EC2 describe actions.
+  # s3 actions should be scoped to the gludd artifact bucket ARN.
+  # ====================================================================
+  runtime_execution:
+    description: "Run gludd daemon + ansible playbooks at runtime on EC2"
+    policy:
+      - Effect: Allow
+        Action:
+          # --- Instance discovery ----------------------------------------------------
+          # Describe EC2 instances + spot requests for health polling and
+          # spot-interruption detection.
+          - ec2:DescribeInstances
+          - ec2:DescribeInstanceStatus
+          - ec2:DescribeSpotInstanceRequests
+          - ec2:DescribeTags
+          - ec2:DescribeInstanceTypes
+          # Tag instances with job-id/model/cost-center for billing attribution.
+          - ec2:CreateTags
+          # --- Ansible execution via SSM ----------------------------------------------
+          # Send ansible playbooks to remote EC2 instances and read back results.
+          - ssm:SendCommand
+          - ssm:GetCommandInvocation
+          - ssm:ListCommands
+          - ssm:DescribeInstanceInformation
+          # --- Artifact storage (S3) -------------------------------------------------
+          # Fetch playbook bundles + model weights; write job output + logs.
+          - s3:GetObject
+          - s3:PutObject
+          - s3:ListBucket
+          # --- CloudWatch logging ----------------------------------------------------
+          # Structured logs to /gludd/daemon log group.  CreateLogGroup is one-time
+          # bootstrap; CreateLogStream per-instance; PutLogEvents continuous.
+          - logs:CreateLogGroup
+          - logs:CreateLogStream
+          - logs:PutLogEvents
+          - logs:DescribeLogGroups
+          - logs:DescribeLogStreams
+          # --- Secrets Manager (API keys for external model providers) ---------------
+          # Fetch API tokens for Together.ai, Fireworks, HuggingFace, Replicate, etc.
+          - secretsmanager:GetSecretValue
+          - secretsmanager:DescribeSecret
+        Resource: "*"
+      # Deny: runtime execution must NOT modify IAM or security groups —
+      # that would let a compromised daemon escalate privileges.
+      - Effect: Deny
+        Action:
+          - iam:*
+          - ec2:AuthorizeSecurityGroupIngress
+          - ec2:AuthorizeSecurityGroupEgress
+          - ec2:RevokeSecurityGroupIngress
+          - ec2:RevokeSecurityGroupEgress
+        Resource: "*"
+
+  # ====================================================================
+  # model_inference — call AI model APIs (SageMaker endpoints + Bedrock).
+  # Attached to the inference job role (not the daemon's instance profile).
+  #
+  # WHY EACH PERMISSION EXISTS (what breaks if removed):
+  #
+  #   sagemaker:InvokeEndpoint   Send inference requests to deployed
+  #     SageMaker endpoints (vLLM servers).  Remove this → every model
+  #     call through SageMaker fails with AccessDenied.
+  #
+  #   sagemaker:DescribeEndpoint  Check endpoint status before sending
+  #     first request (is it InService?).  Remove this → requests to
+  #     Creating/Failed endpoints produce opaque errors.
+  #
+  #   sagemaker:ListEndpoints     Discover which endpoints exist (TUI
+  #     "inference targets" tab).  Remove this → UI shows "0 endpoints"
+  #     even when they exist.
+  #
+  #   bedrock:InvokeModel         Call Claude/Sonnet/Opus through Bedrock.
+  #     Remove this → Bedrock-based agents fail.
+  #
+  #   bedrock:InvokeModelWithResponseStream  Streaming inference (SSE
+  #     chunked responses).  Remove this → streaming mode silently falls
+  #     back to no-op; all Bedrock calls time out.
+  #
+  #   bedrock:ListFoundationModels  Discover available models for the
+  #     TUI model selector.  Remove this → model drop-down shows nothing.
+  #
+  # SCOPING: Neither SageMaker nor Bedrock support resource-level
+  # permissions on InvokeEndpoint/InvokeModel — Resource: "*" is required.
+  # Scope by Condition on the endpoint/model name prefix where possible.
+  # ====================================================================
+  model_inference:
+    description: "Call AI model APIs (SageMaker endpoints, Bedrock models)"
+    policy:
+      - Effect: Allow
+        Action:
+          # --- SageMaker inference ---------------------------------------------------
+          # Invoke deployed vLLM endpoints.  Scope by endpoint name prefix
+          # (gludd-*) in the Condition block.
+          - sagemaker:InvokeEndpoint
+          # Poll endpoint status (InService/Creating/Failed).
+          - sagemaker:DescribeEndpoint
+          # Enumerate endpoints for TUI display.
+          - sagemaker:ListEndpoints
+          # --- Bedrock inference -----------------------------------------------------
+          # Synchronous (non-streaming) Bedrock calls.
+          - bedrock:InvokeModel
+          # Streaming inference (SSE chunked responses).
+          - bedrock:InvokeModelWithResponseStream
+          # List available foundation models for TUI model selector.
+          - bedrock:ListFoundationModels
+          # --- CloudWatch logging for inference metrics ---
+          - logs:PutLogEvents
+          - logs:CreateLogStream
+          - logs:DescribeLogStreams
+        Resource: "*"
+        Condition:
+          # Only invoke gludd-* endpoints (not arbitrary endpoints).
+          # Bedrock does not support resource-level permissions on
+          # InvokeModel — the guard is the model access request (allowlist
+          # per model in the AWS console).
+          StringLike:
+            "sagemaker:EndpointName": "gludd-*"
+
+  # ====================================================================
+  # monitor — read-only dashboards, billing, and alerting.
+  # Attached to the monitoring agent (CloudWatch + Grafana).
+  #
+  # Used by: cloudwatch dashboards, cost explorer queries,
+  # health-check polling.
+  # ====================================================================
+  monitor:
+    description: "Read-only monitoring: CloudWatch dashboards, CE, health"
+    policy:
+      - Effect: Allow
+        Action:
+          # --- CloudWatch metrics + dashboards (read-only) ---------------------------
+          - cloudwatch:GetDashboard
+          - cloudwatch:ListDashboards
+          - cloudwatch:GetMetricData
+          - cloudwatch:GetMetricStatistics
+          - cloudwatch:DescribeAlarms
+          # --- Cost Explorer (read-only) ---------------------------------------------
+          # Query spend by service/tag.  Remove → cost dashboard shows $0.
+          - ce:GetCostAndUsage
+          - ce:GetCostForecast
+          - ce:GetTags
+          # --- Health checks ---------------------------------------------------------
+          # Poll instance states.  Remove → health dashboard shows "unknown."
+          - ec2:DescribeInstances
+          - ec2:DescribeInstanceStatus
+        Resource: "*"
