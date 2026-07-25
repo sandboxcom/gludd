@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
@@ -88,7 +89,7 @@ class TestTarballStagingContents:
     is reported independently.
     """
 
-    REQUIRED_ASSETS = [
+    REQUIRED_ASSETS: ClassVar[list[tuple[str, str]]] = [
         ("gludd binary", r"cp\s+dist/gludd\s+dist/release/gludd"),
         ("install.sh", r"cp\s+dist/install\.sh\s+dist/release/install\.sh"),
         ("config/", r"cp\s+-r\s+config\s+dist/release/config"),

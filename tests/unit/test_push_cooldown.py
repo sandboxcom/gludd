@@ -28,8 +28,6 @@ import re
 import time
 from pathlib import Path
 
-import pytest
-
 ROOT = Path(__file__).resolve().parents[2]
 MAKEFILE = ROOT / "Makefile"
 
@@ -83,10 +81,7 @@ def _is_push_allowed(
 
 def _record_push(state_path: Path, now: float) -> None:
     """Replicate the Makefile's push-timestamp append (keeps last 50)."""
-    if state_path.exists():
-        data = json.loads(state_path.read_text())
-    else:
-        data = []
+    data = json.loads(state_path.read_text()) if state_path.exists() else []
     data.append(now)
     state_path.parent.mkdir(parents=True, exist_ok=True)
     state_path.write_text(json.dumps(data[-50:]))

@@ -161,7 +161,7 @@ class TestMoleculeShardSubset:
     """The whole point of the matrix is that each leg runs a DIFFERENT slice
     of the scenario list. The run step must invoke the sharded runner
     (``molecule-test-shard SHARD=<n>/<total>``) — NOT ``molecule-test-all``,
-    which would run every scenario in every leg (N× duplicate work) and
+    which would run every scenario in every leg (Nx duplicate work) and
     defeat parallelism."""
 
     def test_run_step_invokes_sharded_runner(self):

@@ -19,7 +19,6 @@ import re
 
 from tests.unit.test_release_pipeline_structure import _workflow_source
 
-
 SHA256SUMS_STEP_PATTERNS = (
     # `sha256sum * > SHA256SUMS` or `sha256sum gludd-* > SHA256SUMS`
     re.compile(r"sha256sum\s+\S.*?>\s*SHA256SUMS", re.IGNORECASE),
@@ -89,7 +88,7 @@ class TestSha256sumsAggregateGeneration:
         assert has_named_step and has_redirect, (
             "SHA256SUMS step should be a named step (e.g. "
             "'Generate SHA256SUMS aggregate') containing a sha256sum redirect. "
-            "Found named_step=%s, redirect=%s." % (has_named_step, has_redirect)
+            f"Found named_step={has_named_step}, redirect={has_redirect}."
         )
 
     def test_sha256sums_uploaded_as_release_asset(self):

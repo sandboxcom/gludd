@@ -695,6 +695,14 @@ collect-check:
 	fi; \
 	echo "Collection OK"
 
+pre-commit-check:
+	@echo "=== PRE-COMMIT CHECK (lint + collect-check + typecheck) ==="
+	@echo "Run this before every commit per AGENTS.md OD.10"
+	@$(MAKE) lint
+	@$(MAKE) collect-check
+	@$(MAKE) typecheck
+	@echo "=== PRE-COMMIT CHECK: PASSED ==="
+
 collect-check-e2e-live:
 	@$(UV) run python -m pytest tests/e2e/ tests/live/ --collect-only -q 2>&1 | tail -5
 

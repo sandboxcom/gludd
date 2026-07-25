@@ -137,7 +137,6 @@ def test_outfile_and_workflow_patterns_agree() -> None:
     # NSIS uses ${VERSION}; the workflow uses either ${{ env.VERSION }} or
     # $env:VERSION. Normalize both to the ${VERSION} token and compare basenames.
     nsi_normalized = nsi_basename
-    workflow_normalized = workflow
 
     # Confirm the .nsi side matches the canonical pattern structurally.
     nsi_shape = nsi_normalized.replace("${VERSION}", "<VER>")

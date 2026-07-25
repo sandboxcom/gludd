@@ -19,7 +19,6 @@ from subprocess import CompletedProcess
 from typing import Any, cast
 from unittest.mock import patch
 
-
 # ---------------------------------------------------------------------------
 # Import the module under test by path (it lives in scripts/, not a package)
 # ---------------------------------------------------------------------------
@@ -125,9 +124,9 @@ class TestDetectBranchIntegration:
             captured["cmd"] = cmd
             return _proc("[]")
 
-        with patch.object(require_ci_green, "_detect_branch", return_value="feature/rp-12"):
-            with patch("subprocess.run", side_effect=fake_run):
-                verdict_for("deadbeef", branch=None)
+        with patch.object(require_ci_green, "_detect_branch", return_value="feature/rp-12"), \
+             patch("subprocess.run", side_effect=fake_run):
+            verdict_for("deadbeef", branch=None)
 
         # The gh command should include the detected branch name
         assert "feature/rp-12" in captured["cmd"]

@@ -228,10 +228,7 @@ def test_macos_artifact_path_includes_each_asset(missing_asset: str) -> None:
     assert upload_step is not None, "macos job has no actions/upload-artifact step"
     with_ = upload_step.get("with") or {}
     path_field = with_.get("path")
-    if isinstance(path_field, list):
-        path_blob = "\n".join(str(p) for p in path_field)
-    else:
-        path_blob = str(path_field or "")
+    path_blob = "\n".join(str(p) for p in path_field) if isinstance(path_field, list) else str(path_field or "")
     # Each asset is matched by a token that should appear in the path list.
     tokens = {
         "tarball": "macos-arm64.tar.gz",
