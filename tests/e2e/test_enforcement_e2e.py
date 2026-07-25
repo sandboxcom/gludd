@@ -37,6 +37,7 @@ PLUGIN_REGISTRATION_ORDER = [
     "enforce-floor.ts",
     "enforce-delegate.ts",
     "enforce-multitask.ts",
+    "enforce-floor-v2.ts",
     "enforce-stop.ts",
     "enforce-deadline.ts",
     "enforce-enhancement-ratio.ts",
@@ -56,6 +57,10 @@ PLUGIN_REGISTRATION_ORDER = [
     "enforce-worktree.ts",
     "enforce-audit.ts",
     "enforce-context.ts",
+    "enforce-deliverable.ts",
+    "enforce-no-ci-poll.ts",
+    "enforce-release-deadline.ts",
+    "enforce-task-tracking.ts",
 ]
 
 _STATE_FILES = [
