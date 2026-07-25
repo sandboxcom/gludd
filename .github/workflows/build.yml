@@ -706,11 +706,11 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          Write-Host "--- gludd.exe --version ---"
-          .\dist\gludd.exe --version
+          Write-Host "--- gludd.exe version ---"
+          .\dist\gludd.exe version
           Write-Host "--- gludd.exe --help (first 5 lines) ---"
           .\dist\gludd.exe --help | Select-Object -First 5
-          $out = (.\dist\gludd.exe --version 2>&1 | Out-String)
+          $out = (.\dist\gludd.exe version 2>&1 | Out-String)
           $out += (.\dist\gludd.exe --help 2>&1 | Select-Object -First 5 | Out-String)
           if ($out -match '(?i)traceback|Missing base YAML definition file') {
             Write-Host "FAIL: smoke test output contained a crash signature:"
