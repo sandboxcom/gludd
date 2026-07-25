@@ -41,6 +41,44 @@ const MESSAGE_BOUNDARY_MS = parseInt(
 const POST_DISPATCH_GRACE_MS = 15000
 const RESULT_PHASE_READ_LIMIT = 3
 const TEXT_COMPLETE_COUNT_FILE = process.env.GLUDD_FLOOR_TEXT_COMPLETE_COUNT || "/tmp/gludd-floor-text-complete-count.json"
+// ── Missed commit dispatch tracking (DP.1) ─────────────────────────────────
+// Tracks when a git-commit runs on the main thread instead of via a subagent
+// dispatch slot. After 3 misses, injects a reminder to use one dispatch slot
+// for make ship-commit.
+const MISSED_COMMIT_FILE = process.env.GLUDD_MISSED_COMMIT_FILE || "/tmp/gludd-missed-commit-dispatch.json"
+const MISSED_COMMIT_THRESHOLD = 3
+const MISSED_COMMIT_REMINDER_MS = 300_000
+interface MissedCommitState {
+  misses: number
+  last_miss_ts: number
+  last_reminder_ts: number
+  pid: number
+}
+function readMissedCommitState(): MissedCommitState {
+  return readJsonFile<MissedCommitState>(MISSED_COMMIT_FILE, { misses: 0, last_miss_ts: 0, last_reminder_ts: 0, pid: 0 })
+}
+function recordMissedCommit(): void {
+  try {
+    const s = readMissedCommitState()
+    s.misses++
+    s.last_miss_ts = Date.now()
+    s.pid = process.pid
+    writeJsonFile(MISSED_COMMIT_FILE, s)
+  } catch {}
+}
+function maybeRemindMissedCommitDispatch(): string | null {
+  try {
+    const s = readMissedCommitState()
+    if (s.misses < MISSED_COMMIT_THRESHOLD) return null
+    const now = Date.now()
+    if (now - s.last_reminder_ts < MISSED_COMMIT_REMINDER_MS) return null
+    s.last_reminder_ts = now
+    writeJsonFile(MISSED_COMMIT_FILE, s)
+    return "DP.1: Use one dispatch slot for make ship-commit — keeps 9 productive tasks running."
+  } catch {
+    return null
+  }
+}
 // ── Text.complete counter (inlined to avoid cross-plugin dependency) ───────
 function incrementTextCompleteCount(): void {
   try {
@@ -428,6 +466,12 @@ const defaultImpl: HotModule = {
         const outArgs = (output as Record<string, unknown> | undefined)?.args as { command?: string } | undefined
         const cmd = typeof outArgs?.command === "string" ? outArgs.command.trim() : ""
         commitToolMode = isCommitBashCommand(cmd)
+        // DP.1: track missed commit dispatches — commit on main thread, not via subagent
+        if (commitToolMode) {
+          recordMissedCommit()
+          const reminder = maybeRemindMissedCommitDispatch()
+          if (reminder) console.warn(reminder)
+        }
         if (COMPULSIVE_CHECK_RE.test(cmd) && openWorkExists()) {
           return {
             permissionDecision: "deny" as const,

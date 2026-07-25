@@ -181,6 +181,7 @@ PLUGINS_WITH_TOOL_BEFORE = [
     "enforce-commit-lock",  # style B; has guard
     "enforce-clean-tree",   # style B; has guard
     "enforce-enhancement-ratio",  # style A; has guard
+    "enforce-deliverable",   # style A; has guard
 ]
 
 # Plugins with text.complete hooks

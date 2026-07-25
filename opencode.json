@@ -60,6 +60,7 @@
     "./.opencode/plugin/enforce-worktree.ts",
     "./.opencode/plugin/enforce-audit.ts",
     "./.opencode/plugin/enforce-context.ts",
+    "./.opencode/plugin/enforce-deliverable.ts",
     "./.opencode/plugin/enforce-no-ci-poll.ts",
     "./.opencode/plugin/enforce-release-deadline.ts",
     "./.opencode/plugins/watchdog.ts"
