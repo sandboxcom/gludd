@@ -2269,6 +2269,35 @@ release-recut:
 	done; \
 	echo "Poll exhausted after $(VERIFY_POLLS) attempts (treat as STILL BUILDING, not success)."; exit 1
 
+# Atomic "push master + push tag" operation. Cancels any in_progress CI run
+# on master FIRST so the tag-triggered release job isn't immediately
+# cancelled by the subsequent master push (CID.8 concurrency bug class).
+# Use this instead of separate git-push-sandboxcom + git-tag-push calls when
+# you need the tag to land atomically with the code it points at.
+# Usage: make release-tag-push TAG=v0.1.0-alpha.1 [MSG='release notes']
+release-tag-push:
+	@[ -n "$(TAG)" ] || { echo "Usage: make release-tag-push TAG=v0.1.0-alpha.1 [MSG='...']"; exit 1; }
+	@echo "=== release-tag-push: cancelling any in_progress CI on master ==="
+	@RUNS=$$(gh run list -R sandboxcom/gludd --branch master --status in_progress --json databaseId 2>/dev/null); \
+	RUN_IDS=$$(echo "$$RUNS" | $(PYTHON) -c "import sys,json; d=json.load(sys.stdin); print(' '.join(str(r['databaseId']) for r in d))" 2>/dev/null); \
+	for rid in $$RUN_IDS; do \
+		echo "  cancelling master run $$rid"; \
+		$(MAKE) -s ci-cancel RUN=$$rid || true; \
+	done
+	@echo "=== release-tag-push: checking ci-active for queued runs ==="
+	@QUEUED=$$(gh run list -R sandboxcom/gludd --branch master --status queued --json databaseId 2>/dev/null); \
+	Q_RUN_IDS=$$(echo "$$QUEUED" | $(PYTHON) -c "import sys,json; d=json.load(sys.stdin); print(' '.join(str(r['databaseId']) for r in d))" 2>/dev/null); \
+	for rid in $$Q_RUN_IDS; do \
+		echo "  cancelling queued master run $$rid"; \
+		$(MAKE) -s ci-cancel RUN=$$rid || true; \
+	done
+	@$(MAKE) -s ci-active
+	@echo "=== release-tag-push: pushing master to sandboxcom ==="
+	@$(MAKE) -s git-push-sandboxcom
+	@echo "=== release-tag-push: creating and pushing tag $(TAG) ==="
+	@$(MAKE) -s git-tag-push TAG=$(TAG) MSG="$(MSG)"
+	@echo "=== release-tag-push: complete — master + tag $(TAG) pushed atomically ==="
+
 # The single release command. 6 steps, fail-closed at every gate:
 #   0. require-ci-green        — abort if CI is not GREEN for HEAD (or SHA=...)
 #   1. check-readme-status     — README status table is current for this TAG
