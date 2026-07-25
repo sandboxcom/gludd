@@ -4087,14 +4087,22 @@ HINDSIGHT_VOLUME ?= $(HOME)/.cache/gludd/hindsight
 
 hindsight-start:
 	@mkdir -p "$(HINDSIGHT_VOLUME)"
+	@if [ -z "$${OPENAI_API_KEY:-}" ] && [ -z "$${HINDSIGHT_API_LLM_API_KEY:-}" ]; then \
+		echo "ERROR: OPENAI_API_KEY or HINDSIGHT_API_LLM_API_KEY must be set"; \
+		exit 1; \
+	fi
 	@if [ -n "$$($(CONTAINER_RUNTIME) ps -q -f name=$(HINDSIGHT_CONTAINER) 2>/dev/null)" ]; then \
 		echo "Hindsight sidecar already running"; \
 	else \
+		$(CONTAINER_RUNTIME) stop $(HINDSIGHT_CONTAINER) 2>/dev/null || true; \
+		$(CONTAINER_RUNTIME) rm $(HINDSIGHT_CONTAINER) 2>/dev/null || true; \
 		$(CONTAINER_RUNTIME) pull $(HINDSIGHT_IMAGE) 2>/dev/null || true; \
 		$(CONTAINER_RUNTIME) run -d \
 			--name $(HINDSIGHT_CONTAINER) \
 			-p $(HINDSIGHT_PORT):8888 \
-			-v "$(HINDSIGHT_VOLUME):/data" \
+			-p 9999:9999 \
+			-e HINDSIGHT_API_LLM_API_KEY="$${HINDSIGHT_API_LLM_API_KEY:-$${OPENAI_API_KEY}}" \
+			-v "$(HINDSIGHT_VOLUME):/home/hindsight/.pg0" \
 			--restart unless-stopped \
 			$(HINDSIGHT_IMAGE); \
 		echo "Hindsight sidecar started on port $(HINDSIGHT_PORT)"; \

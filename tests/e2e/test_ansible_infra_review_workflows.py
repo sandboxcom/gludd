@@ -873,8 +873,6 @@ class TestDecisionApplier:
     async def test_apply_complete_decision(self):
         from general_ludd.review.decision_applier import apply_decision
         from general_ludd.schemas.task_decision import TaskDecision
-        from general_ludd.schemas.todo import TodoStatus
-
         decision = TaskDecision(
             return_id="ret-1",
             matched_todo_id="todo-1",

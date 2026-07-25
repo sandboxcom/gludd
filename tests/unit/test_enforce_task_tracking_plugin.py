@@ -19,8 +19,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-import pytest
-
 ROOT = Path(__file__).parent.parent.parent
 PLUGIN_PATH = ROOT / ".opencode" / "plugin" / "enforce-task-tracking.ts"
 OPECODE_JSON = ROOT / "opencode.json"
