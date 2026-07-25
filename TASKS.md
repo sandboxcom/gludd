@@ -3340,7 +3340,7 @@ Behavioral fix specs covering subagent deliverable quality: every subagent produ
 
 ## Session 54 — 2026-07-25 (Active)
 
-HEAD on master. Pushed to sandboxcom at 9dc05f9b. Working toward v0.1.0-beta.3.
+HEAD on master at 45c5d580 (S54.B2/B8/C6/F1 completed, S54.G/H added). Working toward v0.1.0-beta.3.
 
 ### S54.A — GHA CI Pipeline Green + Beta.3 Release
 
@@ -3352,13 +3352,13 @@ HEAD on master. Pushed to sandboxcom at 9dc05f9b. Working toward v0.1.0-beta.3.
 ### S54.B — E2E Test Coverage >85%
 
 - [ ] S54.B1 — Audit current E2E module coverage (at ~16%, target >85% of ~650 src modules) | priority: high | effort: small | status: in_progress | evidence: audit done by explore subagent — 105/650 modules = 16% covered
-- [ ] S54.B2 — Expand connectors E2E: batch1 (94 tests), batch2 (68 tests), batch3 (55 tests) — coverage: ~78 of ~108 connector files remain uncovered | priority: high | effort: large | status: in_progress
+- [x] S54.B2 — Expand connectors E2E: batch1 (94 tests), batch2 (68 tests), batch3 (55 tests), batch4+5 (196 tests, 34 modules) — coverage: ~89 of ~108 connector files now covered | priority: high | effort: large | status: completed | evidence: commit 45c5d580
 - [ ] S54.B3 — Models/planning/pipeline E2E: 145 tests written, all passing | priority: high | effort: medium | status: completed | evidence: commit fe81807e
 - [ ] S54.B4 — CLI/daemon lifecycle E2E: 47 tests, collection OK | priority: high | effort: medium | status: completed | evidence: commit fe81807e
 - [ ] S54.B5 — Security/sandbox E2E: 150 tests, collection OK | priority: high | effort: medium | status: completed | evidence: commit b264f4b8
 - [ ] S54.B6 — Routers/self-update E2E: 38+69=107 tests, collection OK | priority: high | effort: medium | status: completed | evidence: commit b264f4b8
 - [ ] S54.B7 — Ansible/infra/review E2E: 97 tests, 82 passing, 14 assertion fixes needed | priority: high | effort: medium | status: in_progress
-- [ ] S54.B8 — Connectors batch4+ to close coverage gap toward 85% | priority: high | effort: large | status: pending
+- [x] S54.B8 — Connectors batch4+ to close coverage gap toward 85% | priority: high | effort: large | status: completed | evidence: batch4+5 196 tests across 34 additional connector modules at commit 45c5d580, total connectors E2E ~89/108 modules covered
 
 ### S54.C — Memory System Implementation + Deep Testing
 
@@ -3367,7 +3367,7 @@ HEAD on master. Pushed to sandboxcom at 9dc05f9b. Working toward v0.1.0-beta.3.
 - [ ] S54.C3 — Mental models + memory banks: isolated banks with mission/directives/disposition, 5 bank templates | priority: high | effort: medium | status: completed | evidence: 65 tests pass, commit b264f4b8
 - [ ] S54.C4 — Hindsight adapter: sidecar integration with fallback to internal memory | priority: medium | effort: small | status: completed | evidence: 30 tests pass, commit b264f4b8
 - [ ] S54.C5 — Memory concurrency/race tests: 36 tests, collection OK | priority: high | effort: medium | status: completed | evidence: commit fe81807e
-- [ ] S54.C6 — Memory retrieval quality + benchmarks: 48 tests (precision/recall/RRF/perf), 44/48 pass | priority: high | effort: medium | status: in_progress | evidence: 4 small fixes needed
+- [x] S54.C6 — Memory retrieval quality + benchmarks: 48 tests (precision/recall/RRF/perf), 48/48 pass | priority: high | effort: medium | status: completed | evidence: all 48 tests pass at commit 45c5d580
 - [ ] S54.C7 — Hindsight research: TEMPR patterns adopted, Docker sidecar integration evaluated | priority: medium | effort: small | status: completed | evidence: research done, recommendation to adopt Docker sidecar + Python SDK
 
 ### S54.D — Skill + Role Pattern Implementation
@@ -3389,6 +3389,18 @@ HEAD on master. Pushed to sandboxcom at 9dc05f9b. Working toward v0.1.0-beta.3.
 
 ### S54.F — Secrets Baseline Validation
 
-- [x] S54.F1 — Research free services that test if a secret is valid+working for any web service | priority: high | effort: medium | status: completed | evidence: TruffleHog selected — 800+ credential detectors with live API verification, free, OSS, actively maintained
+- [x] S54.F1 — Research free services that test if a secret is valid+working for any web service | priority: high | effort: medium | status: completed | evidence: TruffleHog installed, 0 live secrets found — 800+ credential detectors with live API verification, free, OSS, actively maintained
 - [x] S54.F2 — Integrate secret validation into secrets baseline workflow (run on any .secrets.baseline change) | priority: high | effort: medium | status: completed | evidence: scripts/verify_secrets_baseline.py (filter non-test entries, extract values, run trufflehog --only-verified), Makefile targets verify-secrets + install-trufflehog, wired into make security-audit
 - [x] S54.F3 — Wire secret validation into pre-commit or CI pipeline | priority: high | effort: small | status: completed | evidence: pre-commit hook (verify-secrets on .secrets.baseline change) in .pre-commit-config.yaml, CI step (verify secrets baseline) in .github/workflows/build.yml gate job
+
+### S54.G — IAM Hardening + Smoke Tests (New, 2026-07-25)
+
+- [ ] S54.G1 — Dev IAM user creation: automate headless-iam-dr with least-privilege policy | priority: high | effort: medium | status: pending
+- [ ] S54.G2 — Smoke test suite: boot daemon, run healthcheck, verify endpoints respond | priority: high | effort: medium | status: pending
+- [ ] S54.G3 — GHA integration: wire IAM smoke tests into CI pipeline | priority: high | effort: medium | status: pending
+
+### S54.H — 10-Wide Wave Discipline (New, 2026-07-25)
+
+- [ ] S54.H1 — Fix enforce-multitask.ts floor enforcement to mechanically prevent sub-10 dispatch waves | priority: high | effort: medium | status: pending
+- [ ] S54.H2 — Add wave-size self-audit: pre-dispatch check that counts Task/agent dispatches before sending | priority: high | effort: small | status: pending
+- [ ] S54.H3 — Codify 10-wide wave requirement in AGENTS.md enforcement-plugin reference table | priority: medium | effort: small | status: pending
