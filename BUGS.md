@@ -4,6 +4,12 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-07-25 — (resolved) NSIS installer build failed on every CI run for DAYS due to BUILDDIR path resolution
+- **What**: The NSIS installer step in the Windows CI job failed on every run with "Can't open output file" / "Error - aborting creation process". This blocked the v0.1.0-beta.1 release for multiple sessions.
+- **Root cause**: NSIS resolves OutFile paths relative to the SCRIPT FILE location (dist/windows/), not the working directory. BUILDDIR="dist" resolved to dist/windows/dist/ — a directory that didn't exist.
+- **Fix**: Changed BUILDDIR from "dist" to ".." in build.yml (commit d99624cc). Now OutFile resolves to dist/gludd-VERSION-setup-x86_64.exe — the correct path. Also updated gludd.nsi comments to document NSIS path resolution behavior.
+- **Lesson**: NSIS path resolution is relative to the script file, not the CWD. This is different from most build tools. Always use relative paths from the script's perspective, or absolute paths.
+
 ### 2026-07-23 — (resolved) opencode crashed at boot due to _exports.ts and hot_reload.ts in .opencode/plugin/
 
 - **What**: opencode crashed every time the user typed `opencode` (TUI). The user had to move `.opencode/` to `.opencode.orig/` repeatedly to get a working prompt. The prior fix (commit `0e45db90`, "remove named exports from plugins to fix opencode crash") was incomplete: it stripped named exports from the main plugin files but moved them into `_exports.ts` companion files that were placed DIRECTLY INSIDE `.opencode/plugin/` — where opencode's auto-discovery picks them up and crashes on the missing default function export. Additionally, `.opencode/plugin/hot_reload.ts` (a dead compatibility stub with no `export default`) was sitting in the same directory.

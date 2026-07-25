@@ -2967,7 +2967,7 @@ Pattern that failed (this session): agent dispatched 6 parallel subagents, got 6
 - This AGENTS.md section — proactive instruction
 - If a plugin has 0 runtime tests, that plugin is in the same category as "dead code" — it exists on disk but its behavior is unverified
 
-## CRITICAL: Plugin Hook Invocation Validation (Anti-ReferenceError Gate)
+## CRITICAL: Plugin Hook Invocation Validation (Anti-ReferenceError Gate) (DC.4)
 
 **Every plugin edit MUST be followed by `make check-plugin-hook-invoke` before commiting.** This target loads every plugin file, invokes its factory function, and calls each hook with null-safe inputs — catching `ReferenceError` (undefined symbols like `incrementTextCompleteCount is not defined`) that pure import checks miss.
 
@@ -3144,6 +3144,15 @@ at the 10-agent floor even when CI is the apparent center of attention.
 Checking ci-status more than 3 times in a row without intervening code changes is a
 stop pattern. Each poll produces zero progress; only code changes unblock CI.
 If you find yourself polling, dispatch a subagent that produces a deliverable instead.
+
+## CRITICAL: Git Operations Are Not Grinding (DC.3)
+
+`make git-add`, `make git-commit`, `make git-push-sandboxcom`, `make batch-push`,
+`make ship-commit`, `make git-tag-push`, and `make release-cut` are TERMINAL actions
+that ship work — they are not "grinding." The `GIT_SHIPPING_TARGETS` allowlist in
+`enforce-delegate.ts` (BP.1) RESETS the streak counter instead of incrementing it, so
+git operations never trigger the main-thread delegation budget. Do NOT disengage
+enforcement to commit or push — the allowlist already exempts them.
 
 ## CRITICAL: Root Cause Escalation (3-Strike Rule)
 
