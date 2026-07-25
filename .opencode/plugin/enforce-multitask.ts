@@ -54,6 +54,7 @@ interface MultitaskState {
   sawNonDispatchSinceDispatch: boolean
   underFloorCount: number
   lastDispatchTs: number
+  singleDispatchWaves: number
 }
 function freshState(): MultitaskState {
   return {
@@ -70,8 +71,8 @@ function freshState(): MultitaskState {
     sawNonDispatchSinceDispatch: false,
     underFloorCount: 0,
     lastDispatchTs: 0,
+    singleDispatchWaves: 0,
   }
-}
 }
 function readState(): MultitaskState {
   if (isStateFileMtimeStale(MULTITASK_STATE_FILE)) {
@@ -143,16 +144,17 @@ function hasPendingWork(): boolean {
 function handleMessageBoundary(s: MultitaskState): void {
   const now = Date.now()
   // Idempotency guard: prevent double-processing within 500ms. When
-  // text.complete calls handleMessageBoundary first (canonical signal),
+  // text.complete calls the boundary handler first (canonical signal),
   // the heuristic detection in tool.execute.before may fire again on
   // the same boundary within the same process. Without this guard,
   // zeroStreak double-increments and waveHistory gets duplicate entries.
   const lastB = (s as any)._lastBoundaryTs
-  if (lastB && now - lastB < 500) {
-    return
-  }
+  if (lastB && now - lastB < 500) return
   (s as any)._lastBoundaryTs = now
   s.prevMessageDispatches = s.thisMessageDispatches
+  // MT.2: single-dispatch wave escalation — 3 consecutive 1-dispatch waves triggers escalation.
+  // Do NOT increment on 0-dispatch waves — that is the zero-streak violation.
+  if (s.prevMessageDispatches === 1) { s.singleDispatchWaves++ } else if (s.prevMessageDispatches >= 2) { s.singleDispatchWaves = 0 }
   if (s.thisMessageDispatches === 0) {
     s.zeroStreak++
   } else {
@@ -170,17 +172,6 @@ function handleMessageBoundary(s: MultitaskState): void {
     s.underFloorCount++
   } else {
     s.underFloorCount = 0
-  }
-  // MT.2: single-dispatch wave escalation
-  // Count consecutive waves with exactly 1 dispatch.
-  // After 3 consecutive single-dispatch waves, escalate with a warning
-  // injected into the next text.complete response.
-  // Reset when a wave has 2+ dispatches.
-  // Do NOT increment on 0-dispatch waves — that is the zero-streak violation.
-  if (s.prevMessageDispatches === 1) {
-    s.singleDispatchWaves++
-  } else if (s.prevMessageDispatches >= 2) {
-    s.singleDispatchWaves = 0
   }
   s.thisMessageDispatches = 0
 }
@@ -413,12 +404,14 @@ const defaultImpl: HotModule = {
   },
   "text.complete": async (_input: unknown, output: unknown) => {
     if (isSubagent()) return output
-    // Compatibility alias for older OpenCode hook metadata.
-    // zeroStreak / MAX_ZERO_STREAK / MUST DISPATCH / subagent behavior is
-    // implemented by the canonical experimental.text.complete handler below.
-    return await defaultImpl["experimental.text.complete"]?.(_input, output)
+    return await handleTextComplete(_input, output)
   },
   "experimental.text.complete": async (_input: unknown, output: unknown) => {
+    return await handleTextComplete(_input, output)
+  },
+}
+
+async function handleTextComplete(_input: unknown, output: unknown): Promise<unknown> {
     if (isSubagent()) return output
     if (!FLOOR_ENFORCE) return undefined
     const text = typeof output === "string" ? output
@@ -509,7 +502,6 @@ const defaultImpl: HotModule = {
     }
     writeState(_state)
     return output
-  },
 }
 // ============================================================================
 // PROXY PLUGIN (hot-reload aware)
@@ -621,6 +613,19 @@ export default (({ }) => {
     }
     if (_state.singleDispatchWaves >= 3) {
       warnings.push("MESSAGE SHAPE VIOLATION: 3 consecutive single-dispatch waves. Batch wider — 2+ dispatches per message.")
+    }
+    // DP.2: wave refill automation — inject reminder when pool drops low
+    if (
+      _state.lastDispatchTs > 0 &&
+      _state.estimatedInFlight < 5 &&
+      (Date.now() - _state.lastDispatchTs) > RESULT_ARRIVAL_REFRESH_INTERVAL_MS
+    ) {
+      warnings.push([
+        "⛔ FLOOR LOW: only " + String(_state.estimatedInFlight) + " agents remain.",
+        "Last dispatch was >" + String(Math.round((Date.now() - _state.lastDispatchTs) / 1000)) + "s ago.",
+        "Dispatch replacements now to maintain the 10-agent floor.",
+        "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
+      ].join("\n"))
     }
     if (warnings.length > 0) {
       const warning = warnings.join("\n\n")
