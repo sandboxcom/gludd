@@ -149,10 +149,12 @@ class BehaviorRenderer:
     def __init__(
         self,
         prompt_enhancer: object | None = None,
+        skill_context_provider: object | None = None,
     ) -> None:
         # Cache of rendered behavior bodies keyed by render-determining content.
         self._render_cache: dict[str, str] = {}
         self._prompt_enhancer = prompt_enhancer
+        self._skill_context_provider = skill_context_provider
 
     @staticmethod
     def _cache_key(behavior: AgentBehavior) -> str:
@@ -367,8 +369,28 @@ class BehaviorRenderer:
         self, behavior: AgentBehavior, agent_name: str, task: str
     ) -> str:
         base = self.render(behavior)
-        header = f"You are agent **{agent_name}**. Your current task: {task}\n\n"
-        result = header + base
+        header = (
+            f"You are agent **{agent_name}**. Your current task: {task}\n\n"
+        )
+        sections: list[str] = [header]
+
+        if self._skill_context_provider is not None:
+            provider = getattr(self._skill_context_provider, "provide", None)
+            if provider is not None:
+                try:
+                    ctx = provider(task)
+                    if ctx.context_text:
+                        sections.append(
+                            "# Available Skill Context (lensed for this task)\n\n"
+                            f"{ctx.context_text}\n"
+                            f"_Token savings: ~{ctx.token_savings} tokens "
+                            f"(vs full skills)_\n"
+                        )
+                except Exception:
+                    pass
+
+        sections.append(base)
+        result = "\n".join(sections)
         if self._prompt_enhancer is not None:
             enhance = getattr(self._prompt_enhancer, "enhance_prompt", None)
             if enhance is not None:

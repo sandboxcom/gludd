@@ -19,6 +19,8 @@ __all__ = (
     "ResearchQuery",
     "ResearchReport",
     "ResearcherAgent",
+    "SkillContext",
+    "SkillContextProvider",
     "TokenWindowManager",
     "default_primary_behavior",
     "default_registry",
@@ -42,6 +44,7 @@ from general_ludd.agents.researcher import (
     ResearchQuery,
     ResearchReport,
 )
+from general_ludd.agents.skill_context import SkillContext, SkillContextProvider
 from general_ludd.agents.token_window import TokenWindowManager
 from general_ludd.agents.tool_adapter import AgentToolAdapter
 from general_ludd.agents.types import AgentConfig, AgentPermission, AgentTask, AgentType
