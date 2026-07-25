@@ -23,7 +23,7 @@
   "enforce-objective.ts": "38155233a4332226714cfb7ef47325ed64e9a5c3def38f5b6058c917c57aeac5",
   "enforce-release-deadline.ts": "fa5211c8b69a07ef9086f02aaaee9501934497ca7d028d16aaf49fb8fbda891f",
   "enforce-session-start.ts": "b37a94ec1ee223c2b5fd25a3b1d41636c7214c0ce359fb860d61b89a7371bca0",
-  "enforce-stop.ts": "f1fcb242b2ddfc70b96216e0c48bf7f84ba5fae7a485bdcd57bf104f1840aa7d",
+  "enforce-stop.ts": "c89ab3340319761e75e0a932715a18f34c51e82c1be996ff8ed968090b161c52",
   "enforce-task-tracking.ts": "c09486bbd4bcbb04db76ed354d663f22a7e84990594a9a9bbe6b0739800986e3",
   "enforce-tdd.ts": "11b3ff41f6248ac1e24c2863d8f322d1d67cc029c8988225fe39c531fd9e6660",
   "enforce-test-integrity.ts": "5fc25edcd7b22658619b57b5cc6ed6aa600084ea6fa7faf6bc0ccc281f060ce5",

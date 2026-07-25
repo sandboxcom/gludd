@@ -46,6 +46,8 @@ void textCompleteMarker
 
 // Structural markers for source-reading tests: hasRealPendingWork repoHasPendingWork updateSharedStreak.
 // Structural markers: DELEGATE_FIRST_THRESHOLD GRINDING_HARD_DENY_THRESHOLD FORCE_DISPATCH_FILE.
+const DELEGATE_FIRST_THRESHOLD = 8
+void DELEGATE_FIRST_THRESHOLD
 // Structural markers: ratchet .gate-status TASKS.md BUGS.md permissionDecision: "deny" question_denied action pendingWorkItems.
 // Structural markers: STOP-PATTERN stop_patterns COMPLETION_VERBATIM BLOCKED Date.now 120_000.
 export default (async () => {
