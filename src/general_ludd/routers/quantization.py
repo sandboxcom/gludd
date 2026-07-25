@@ -11,7 +11,7 @@ from general_ludd.models.quantization import (
     QuantizationTracker,
     SelfProbeDetector,
 )
-from general_ludd.quantization.monitor import MonitorConfig, QuantizationMonitor
+from general_ludd.quantization.monitor import QuantizationMonitor
 
 
 def _get_monitor(app: FastAPI) -> QuantizationMonitor | None:
@@ -138,7 +138,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         monitor = _get_monitor(app)
         if monitor is None:
             return {"status": "not_configured"}
-        return cast(dict[str, object], monitor.status())  # type: ignore[redundant-cast]
+        return cast(dict[str, object], monitor.status())
 
     @app.post("/admin/quantization/config")
     async def admin_quantization_monitor_config(req: dict[str, object]) -> dict[str, object]:
@@ -150,4 +150,4 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         if not updates:
             raise HTTPException(status_code=422, detail="No valid config keys provided")
         monitor.configure(**updates)
-        return cast(dict[str, object], monitor.config.to_dict())  # type: ignore[redundant-cast]
+        return cast(dict[str, object], monitor.config.to_dict())

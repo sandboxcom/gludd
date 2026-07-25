@@ -53,7 +53,7 @@ class TestQuantizationMonitor:
         assert score.score < 0.3
 
     def test_configure_tunable(self):
-        from general_ludd.quantization.monitor import QuantizationMonitor, MonitorConfig
+        from general_ludd.quantization.monitor import MonitorConfig, QuantizationMonitor
 
         monitor = QuantizationMonitor(MonitorConfig(alert_threshold=0.5, check_interval_s=120))
         assert monitor.config.alert_threshold == 0.5
@@ -64,7 +64,7 @@ class TestQuantizationMonitor:
         assert monitor.config.check_interval_s == 600
 
     def test_alert_fires_at_threshold(self):
-        from general_ludd.quantization.monitor import QuantizationMonitor, MonitorConfig
+        from general_ludd.quantization.monitor import MonitorConfig, QuantizationMonitor
 
         monitor = QuantizationMonitor(MonitorConfig(alert_threshold=0.1, cooldown_alerts_s=0))
 
@@ -90,7 +90,7 @@ class TestQuantizationMonitor:
         assert len(history["m2"]) == 1
 
     def test_status_returns_counts(self):
-        from general_ludd.quantization.monitor import QuantizationMonitor, MonitorConfig
+        from general_ludd.quantization.monitor import MonitorConfig, QuantizationMonitor
 
         monitor = QuantizationMonitor(MonitorConfig(alert_threshold=0.05, cooldown_alerts_s=0))
 
@@ -105,7 +105,7 @@ class TestQuantizationMonitor:
     def test_start_stop_lifecycle(self):
         import asyncio
 
-        from general_ludd.quantization.monitor import QuantizationMonitor, MonitorConfig
+        from general_ludd.quantization.monitor import MonitorConfig, QuantizationMonitor
 
         async def _run():
             monitor = QuantizationMonitor(MonitorConfig())
@@ -118,7 +118,7 @@ class TestQuantizationMonitor:
         asyncio.run(_run())
 
     def test_alert_cooldown_respected(self):
-        from general_ludd.quantization.monitor import QuantizationMonitor, MonitorConfig
+        from general_ludd.quantization.monitor import MonitorConfig, QuantizationMonitor
 
         monitor = QuantizationMonitor(
             MonitorConfig(alert_threshold=0.1, cooldown_alerts_s=3600)
@@ -168,7 +168,7 @@ class TestScoringFunctions:
         from general_ludd.quantization.monitor import _score_precision_loss
 
         response = "The exact value is 3.14159265358979323846 calculated precisely."
-        score, desc = _score_precision_loss(response)
+        score, _desc = _score_precision_loss(response)
         assert score < 0.3
 
 

@@ -1174,7 +1174,9 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
         help="Compiled output template for smoke list/report rendering",
     )
     test_smoke_parser.add_argument("--timeout", type=float, default=2.0, help="HTTP probe timeout in seconds")
-    test_smoke_parser.add_argument("--max-cost-usd", type=float, default=10.0, help="Fail if estimated cost exceeds this")
+    test_smoke_parser.add_argument(
+        "--max-cost-usd", type=float, default=10.0, help="Fail if estimated cost exceeds this"
+    )
     test_smoke_parser.add_argument("--base-url", default=None, help="Override endpoint base URL for this run")
     test_smoke_parser.add_argument("--model", default=None, help="Override model identifier for this run")
     test_smoke_parser.add_argument("--region", default=None, help="Provider region for provisioned smoke tests")
@@ -1218,7 +1220,7 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
         "collection": collection_parser,
         "config": config_parser,
         "searx": searx_parser,
-        "test-bg": testbg_parser,
+        "test-bg": test_bg_parser,
         "test": test_parser,
         "chat": chat_parser,
         # Pause state is managed via tasks/agents/infra API endpoints.

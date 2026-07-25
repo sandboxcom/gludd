@@ -197,7 +197,7 @@ class TestConfigChainE2E:
         """Host 0.0.0.0 without allowed_cidr raises ValueError."""
         from general_ludd.config.user_config import NetworkConfig
 
-        with pytest.raises(ValueError, match="allowed_cidr|binds to all interfaces"):
+        with pytest.raises(ValueError, match=r"allowed_cidr|binds to all interfaces"):
             NetworkConfig(host="0.0.0.0")
 
     def test_network_config_world_open_with_cidr_ok(self):
@@ -387,7 +387,7 @@ class TestGitAutomationWorkflow:
             git = GitAutomation(repo_path=d)
             git.commit(message="base")
 
-            wt_path = os.path.join(str(tmp_path := tempfile.mkdtemp()), "gludd-e2e-wt")
+            wt_path = os.path.join(str(_tmp_path := tempfile.mkdtemp()), "gludd-e2e-wt")
             wt = git.create_worktree(d, "wt-e2e-branch", wt_path)
             assert wt.success, f"worktree creation failed: {wt}"
             assert os.path.isdir(wt.path)
@@ -1131,7 +1131,9 @@ class TestFactsEndpoint:
         app.state._health_tracker = None
         app.state._model_gateway = None
         app.state._hardware = None
-        app.state._dispatch_facet = lambda: {"recent_count": 0, "total_dispatched": 0, "recent": [], "registered_kinds": []}
+        app.state._dispatch_facet = lambda: {
+            "recent_count": 0, "total_dispatched": 0, "recent": [], "registered_kinds": []
+        }
 
         daemon_state: dict[str, object] = {
             "todos": [],

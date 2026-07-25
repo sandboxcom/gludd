@@ -2,10 +2,6 @@
 
 from __future__ import annotations
 
-import sys
-
-import pytest
-
 
 def _get_subcommands() -> list[str]:
     """Parse top-level subcommands from the parser built by cli.py."""
@@ -22,10 +18,7 @@ def _get_subcommands() -> list[str]:
             for action in parser._actions
             if hasattr(action, "choices") and action.dest == "command"
         }
-        if "command" in choices and hasattr(choices["command"], "choices"):
-            choices = choices["command"].choices
-        else:
-            choices = {}
+        choices = choices["command"].choices if "command" in choices and hasattr(choices["command"], "choices") else {}
     return list(choices.keys())
 
 

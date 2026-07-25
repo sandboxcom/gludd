@@ -6,8 +6,6 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any
 
-import pytest
-
 ROOT = Path(__file__).parent.parent.parent
 FILTER_PATH = ROOT / "plugins" / "filter" / "format_for_model.py"
 
@@ -124,7 +122,10 @@ class TestFormatSearchResults:
         assert "Summary text." in result
 
     def test_large_results_not_truncated_by_default(self) -> None:
-        large = [{"title": f"Result {i}", "url": f"https://example.com/{i}", "snippet": f"Snippet {i}"} for i in range(100)]
+        large = [
+            {"title": f"Result {i}", "url": f"https://example.com/{i}", "snippet": f"Snippet {i}"}
+            for i in range(100)
+        ]
         result = MOD.format_search_results(large, "claude")
         assert "<result>" in result
         assert all(f"Result {i}" in result for i in range(100))
