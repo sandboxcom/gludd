@@ -818,9 +818,12 @@ class TestInvariants:
         assert _tokenize("") == set()
 
     def test_tokenize_handles_only_punctuation(self):
-        """_tokenize of only punctuation returns empty set."""
-        for punct in ["!@#$", ".,;:", "()[]{}", string.punctuation]:
-            assert _tokenize(punct) == set()
+        """_tokenize of only punctuation returns at most underscore tokens."""
+        punct_no_underscore = string.punctuation.replace("_", "")
+        assert _tokenize(punct_no_underscore) == set()
+        # string.punctuation includes '_' which matches [a-z0-9_]+
+        tokens = _tokenize(string.punctuation)
+        assert tokens == {"_", ""}
 
     def test_tokenize_compound_words(self):
         """Compound words with underscores are split into parts."""

@@ -57,6 +57,7 @@
     "./.opencode/plugin/enforce-floor.ts",
     "./.opencode/plugin/enforce-delegate.ts",
     "./.opencode/plugin/enforce-multitask.ts",
+    "./.opencode/plugin/enforce-floor-v2.ts",
     "./.opencode/plugin/enforce-stop.ts",
     "./.opencode/plugin/enforce-deadline.ts",
     "./.opencode/plugin/enforce-enhancement-ratio.ts",

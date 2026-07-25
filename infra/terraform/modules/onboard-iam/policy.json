@@ -24,7 +24,12 @@
         "ec2:StartInstances",
         "ec2:StopInstances"
       ],
-      "Resource": "arn:aws:ec2:*:*:*"
+      "Resource": "arn:aws:ec2:*:*:*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "${operator_region}"
+        }
+      }
     },
     {
       "Sid": "Ec2MutateSecurityGroup",
@@ -72,7 +77,22 @@
       "Sid": "IamPassRoleSelfOnly",
       "Effect": "Allow",
       "Action": ["iam:PassRole"],
-      "Resource": "${operator_role_arn}"
+      "Resource": "${operator_role_arn}",
+      "Condition": {
+        "StringEqualsIfExists": {
+          "ec2:InstanceType": [
+            "g4dn.xlarge",
+            "g5.xlarge",
+            "g5.2xlarge",
+            "g5.4xlarge",
+            "g5.12xlarge",
+            "g6.xlarge",
+            "p3.2xlarge",
+            "p4d.24xlarge",
+            "p5.48xlarge"
+          ]
+        }
+      }
     },
     {
       "Sid": "CloudWatchLogsGluddOnly",

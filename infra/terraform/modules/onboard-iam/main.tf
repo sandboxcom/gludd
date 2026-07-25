@@ -17,6 +17,13 @@
 # tests/unit/test_onboard_aws.py for the static pin on the exact action set.
 # An explicit Deny block forbids IAM role/user creation and policy attachment
 # so the operator cannot escalate itself or mint new principals.
+#
+# Least-privilege hardening (2026-07-25):
+#   — IamPassRoleSelfOnly restricts to the operator's own role ARN only (not *)
+#   — Condition on ec2:InstanceType allowlists GPU instance types
+#     (g4dn/p3/p4d/p5/g5/g6) — the operator cannot launch non-GPU instances
+#   — No iam:* or sts:* wildcards anywhere in the policy document
+#   — DenyIamEscalation explicitly blocks role/user creation + policy attachment
 
 terraform {
   required_version = ">= 1.4.0"

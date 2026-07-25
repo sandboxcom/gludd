@@ -34,11 +34,11 @@ if TYPE_CHECKING:
 # Terraform module at infra/terraform/modules/onboard-iam-gcp/main.tf and
 # asserted by tests/unit/test_onboard_gcp.py::TestTerraformModuleLeastPriv.
 EXPECTED_ROLES: tuple[str, ...] = (
-    "roles/compute.instanceAdmin.v1",
     "roles/compute.securityAdmin",
     "roles/iam.serviceAccountUser",
     "roles/logging.logWriter",
 )
+CUSTOM_ROLE_SUFFIX: str = "gluddComputeOperator"
 
 DEFAULT_SERVICE_ACCOUNT_NAME = "gludd-compute-operator"
 DEFAULT_DISPLAY_NAME = "Gludd compute operator (ephemeral GPU provisioning)"
@@ -199,6 +199,13 @@ def validate_token_and_role(
     granted_roles = _roles_for_member(policy, resolved_sa_email)
     roles_verified = sorted(r for r in EXPECTED_ROLES if r in granted_roles)
     missing = sorted(r for r in EXPECTED_ROLES if r not in granted_roles)
+
+    # Also check for the custom compute-operator role (project-scoped name).
+    custom_found = any(CUSTOM_ROLE_SUFFIX in r for r in granted_roles)
+    if custom_found:
+        roles_verified.append(f"<custom>{CUSTOM_ROLE_SUFFIX}")
+    else:
+        missing.append(f"<custom>{CUSTOM_ROLE_SUFFIX}")
 
     info: dict[str, Any] = {
         "project_id": resolved_project,

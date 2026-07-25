@@ -78,8 +78,16 @@ deny_azure_forbidden_role contains msg if {
     msg := sprintf("Azure role assignment uses forbidden role '%s'", [role])
 }
 
+deny_azure_missing_scope contains msg if {
+    assignment := input.azure_role_assignments[_]
+    scope := object.get(assignment, "scope", "")
+    scope == ""
+    msg := "Azure role assignment missing scope — billing account is uncontrolled"
+}
+
 azure_least_privilege_valid if {
     count(deny_azure_forbidden_role) == 0
+    count(deny_azure_missing_scope) == 0
 }
 
 # ============================================================================
@@ -108,9 +116,17 @@ deny_gcp_wildcard_permission contains msg if {
     msg := sprintf("GCP role '%s' has wildcard permission '%s'", [binding.role, permission])
 }
 
+deny_gcp_set_metadata contains msg if {
+    binding := input.gcp_role_bindings[_]
+    permissions := object.get(binding, "permissions", [])
+    "compute.instances.setMetadata" in {p | p := permissions[_]}
+    msg := sprintf("GCP role '%s' grants compute.instances.setMetadata — SSH key injection risk", [binding.role])
+}
+
 gcp_least_privilege_valid if {
     count(deny_gcp_forbidden_role) == 0
     count(deny_gcp_wildcard_permission) == 0
+    count(deny_gcp_set_metadata) == 0
 }
 
 # ============================================================================
