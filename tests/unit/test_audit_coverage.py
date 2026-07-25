@@ -1,5 +1,6 @@
 """Tests for the make audit-coverage target and coverage audit tooling."""
 
+import importlib.util
 import json
 import subprocess
 from pathlib import Path
@@ -103,6 +104,27 @@ class TestAuditCoverageScript:
             capture_output=True, text=True, cwd=str(ROOT),
         )
         assert result.returncode == 2
+
+    def test_default_audit_uses_isolated_report_and_bounded_child(self, tmp_path, monkeypatch):
+        spec = importlib.util.spec_from_file_location("audit_coverage", AUDIT_SCRIPT)
+        assert spec and spec.loader
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        calls = []
+
+        def fake_run(args, **kwargs):
+            calls.append((args, kwargs))
+            return type("Result", (), {"returncode": 0})()
+
+        monkeypatch.setattr(module.subprocess, "run", fake_run)
+        report_path = tmp_path / "coverage-data.json"
+
+        assert module.run_pytest_coverage("src/general_ludd", str(report_path)) == 0
+        args, kwargs = calls[0]
+        assert f"--cov-report=json:{report_path}" in args
+        assert kwargs["env"]["GLUDD_COVERAGE_AUDIT"] == "1"
+        assert kwargs["timeout"] == module.COVERAGE_AUDIT_TIMEOUT_SECONDS
 
 
 class TestMakefileTargets:

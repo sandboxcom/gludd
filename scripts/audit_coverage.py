@@ -2,7 +2,8 @@
 """Coverage audit: run pytest with coverage, parse results, flag files below threshold.
 
 Usage:
-  python3 scripts/audit_coverage.py [--threshold=85] [--source=src/general_ludd] [--json-out=.gate-logs/coverage-<ts>.json]
+  python3 scripts/audit_coverage.py [--threshold=85] [--source=src/general_ludd]
+  [--json-out=.gate-logs/coverage-<ts>.json]
   python3 scripts/audit_coverage.py --json-file=coverage.json --threshold=85
 
 Modes:
@@ -14,7 +15,7 @@ import json
 import os
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 
@@ -65,7 +66,7 @@ def parse_coverage_json(json_path: str, threshold: float, source_path: str) -> t
     all_ok = len(files_under) == 0
 
     report = {
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
         "threshold": threshold,
         "source": source_path,
         "total_files": len(per_file),
@@ -88,19 +89,38 @@ def _relative_path(fpath: str, source_path: str) -> str:
         return fpath
 
 
+COVERAGE_AUDIT_TIMEOUT_SECONDS = int(
+    os.environ.get("GLUDD_COVERAGE_AUDIT_TIMEOUT_SECONDS", "1800")
+)
+
+
 def run_pytest_coverage(source: str, json_out_path: str) -> int:
-    rc = subprocess.run(
-        [
-            sys.executable, "-m", "pytest",
-            "tests/",
-            f"--cov={source}",
-            "--cov-report=json",
-            "--cov-report=term-missing",
-            "-q",
-        ],
-        cwd=Path(__file__).parent.parent,
-    ).returncode
-    return rc
+    """Run one bounded pytest process and write only this audit's coverage data."""
+    env = os.environ.copy()
+    env["GLUDD_COVERAGE_AUDIT"] = "1"
+    try:
+        return subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "pytest",
+                "tests/",
+                f"--cov={source}",
+                f"--cov-report=json:{json_out_path}",
+                "--cov-report=term-missing",
+                "-q",
+            ],
+            cwd=Path(__file__).parent.parent,
+            env=env,
+            timeout=COVERAGE_AUDIT_TIMEOUT_SECONDS,
+        ).returncode
+    except subprocess.TimeoutExpired:
+        print(
+            "ERROR: coverage pytest timed out after "
+            f"{COVERAGE_AUDIT_TIMEOUT_SECONDS}s",
+            file=sys.stderr,
+        )
+        return 124
 
 
 def main() -> None:
@@ -122,15 +142,15 @@ def main() -> None:
             json_out = arg.split("=", 1)[1]
 
     root = Path(__file__).parent.parent
-    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
 
+    logs_dir = root / ".gate-logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
     if json_out is None:
-        logs_dir = root / ".gate-logs"
-        logs_dir.mkdir(parents=True, exist_ok=True)
         json_out = str(logs_dir / f"coverage-{ts}.json")
 
     if json_file is None:
-        json_file = str(root / "coverage.json")
+        json_file = str(logs_dir / f"coverage-data-{ts}.json")
 
     # Run pytest with coverage if no existing JSON supplied
     if not any(arg.startswith("--json-file=") for arg in sys.argv[1:]):
@@ -142,7 +162,7 @@ def main() -> None:
         print(f"ERROR: coverage.json not found at {json_file}", file=sys.stderr)
         sys.exit(2)
 
-    report, files_under, all_ok = parse_coverage_json(json_file, threshold, source)
+    report, files_under, _all_ok = parse_coverage_json(json_file, threshold, source)
 
     report["pytest_exit_code"] = pyrc
 
