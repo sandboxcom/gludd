@@ -552,7 +552,7 @@ class TestModelRoutingDecision:
         assert "balanced" in DEFAULT_STRATEGIES
         assert "quality" in DEFAULT_STRATEGIES
         for _strategy_name, weights in DEFAULT_STRATEGIES.items():
-            assert "success_rate" in weights, f"missing success_rate weighting"
+            assert "success_rate" in weights, "missing success_rate weighting"
 
     def test_build_router_from_config_maps_profiles(self):
         """build_router_from_config uses role/quality/latency/pattern routing."""

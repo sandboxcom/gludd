@@ -5603,3 +5603,6 @@ tasks-list:
 
 tick-legacy-phases:
 	@$(UV) run python3 /tmp/gludd-tick-sweep.py
+
+gen-python-expert-skill:
+	@uv run python3 /tmp/gludd-gen-python-expert-skill.py && uv run python3 /tmp/gludd-append-skill.py && uv run python3 /tmp/gludd-append2-skill.py
