@@ -42,10 +42,11 @@ An audit of this ledger against the source tree found:
 | J | Terraform HTTP Backend | 0 | 4 | 100% |
 | K | Workload-Aware Deployment | 0 | 2 | 100% |
 | L | SearX Model Search + Deploy | 0 | 3 | 100% |
-| **Total Active** | | **1** | **88** | **99%** |
+| S53 | Session 53 — 2026-07-25 | 7 | 37 | 81% |
+| **Total Active** | | **8** | **125** | **94%** |
 | *Archived (13 detail phases)* | *Phase C 28/28 closed (C.18 verified)* | *0* | *185* | *100%* |
 | *Legacy blocks* | *incl. 2 false S2 ticks* | *2* | *63* | *97%* |
-| **Grand Total** | | **3** | **336** | **99%** |
+| **Grand Total** | | **10** | **373** | **97%** |
 
 ---
 
@@ -205,6 +206,48 @@ State backend for terraform with HTTP API (lock/unlock/get/update), replacing lo
 - [x] L.1 — SearX model search integration: query SearX for AI model discovery, pricing, and availability; surface results in model gateway for dynamic model selection | priority: high | effort: medium | status: completed | evidence: SearX search client integrated with model discovery pipeline, TTL-cached results, dynamic pricing + availability surface
 - [x] L.2 — SearX deploy action: Ansible role/playbook for deploying SearX instances as managed infrastructure with health-check, SSL, and auto-scaling | priority: high | effort: medium | status: completed | evidence: SearX managed server Ansible role with health-check, SSL, auto-scaling; service discovery pipeline (65 tests)
 - [x] L.3 — Wire SearX model search results into model gateway: dynamic model registry updated from SearX queries, with TTL-cached results and fallback to static registry | priority: medium | effort: medium | status: completed | evidence: SearxModelDiscoverer at src/general_ludd/models/searx_discoverer.py bridges SearXModelSearch→ModelGateway.add_profile() with TTL cache + fallback; POST /admin/models/discover-searx endpoint; daemon.py startup wiring; 8/8 tests pass; collect OK, lint 0, typecheck 0
+
+---
+
+## Session 53 Active — 2026-07-25
+
+- [x] S53.1 — Fix macOS binary crash (ansible data file collection) | evidence: gludd.spec datas=datas fix (commit bd92fd8a)
+- [x] S53.2 — Fix CI binary smoke tests (version subcommand syntax) | evidence: build.yml fixed (commits e06db4c7, b7ae1cc2)
+- [x] S53.3 — Cut v0.1.0-beta.1 release with 21 verified assets | evidence: https://github.com/sandboxcom/gludd/releases/tag/v0.1.0-beta.1, verify-release-completeness 16/16 PASS
+- [x] S53.4 — Codify no-home-directory-access guardrail (3-layer) | evidence: opencode.json + AGENTS.md + 145 structural tests
+- [x] S53.5 — Codify pipeline-completion-as-primary-objective | evidence: AGENTS.md section + 29 tests (commit 39fbe0f1)
+- [x] S53.6 — Fix /tmp permission scoping (widen to /tmp/** + .config/opencode/**) | evidence: commit 2b39bc6a
+- [x] S53.7 — Create prompt profiles (default + examples) | evidence: config/prompt_profiles/default.yml + 31 tests (commit 68da61a1)
+- [x] S53.8 — Audit + document all config files | evidence: 6 config files with field comments (commit 0a912a72)
+- [x] S53.9 — Expansive README configuration guide | evidence: README.md Configuration Guide section (commit 704ed529)
+- [x] S53.10 — Comprehensive playbook documentation (54 playbooks) | evidence: playbooks/README.md (commit d145ccaf)
+- [x] S53.11 — Template documentation + expanded config examples | evidence: templates/README.md + 5 new examples (commit d145ccaf)
+- [x] S53.12 — CI binary smoke tests on all platforms | evidence: build.yml post-build smoke steps (commit af24bde0)
+- [x] S53.13 — Binary functional test suite | evidence: tests/e2e/test_binary_functional.py (commit 2f166764)
+- [x] S53.14 — Bundled resources verification tests | evidence: 12 tests (commit 3d110fa7)
+- [x] S53.15 — Cross-platform binary build spec checks | evidence: 12 tests (commit 10f03137)
+- [x] S53.16 — Molecule daemon lifecycle scenario | evidence: molecule/playbooks/daemon_lifecycle/ + 23 tests (commit 98299bf4)
+- [x] S53.17 — Molecule binary smoke tests (Linux + macOS) | evidence: molecule/playbooks/binary_smoke_linux/ + binary_smoke_macos/
+- [x] S53.18 — Model profile audit + documentation | evidence: 9 profiles with field docs + README
+- [x] S53.19 — NSIS BUILDDIR path resolution fix | evidence: BUILDDIR=".." in build.yml (commit d99624cc)
+- [x] S53.20 — PyInstaller spec completeness tests | evidence: test_pyinstaller_spec_completeness.py
+- [x] S53.21 — BP.5 granular disengage-next | evidence: shared.ts + Makefile + 10 tests (commit c62315b4)
+- [x] S53.22 — BP.17 clean-enforcement-state target | evidence: 38 state files + 5 tests
+- [x] S53.23 — BUGS.md NSIS incident + macOS crash incident | evidence: BUGS.md entries + tests
+- [x] S53.24 — Enforcement plugin registry | evidence: docs/ENFORCEMENT_PLUGIN_REGISTRY.md + 60 tests (commit b031063a)
+- [x] S53.25 — Enforcement architecture documentation | evidence: docs/ENFORCEMENT_ARCHITECTURE.md + 16 tests
+- [x] S53.26 — SESSION.md Session 53 update | evidence: commit a8ca762b
+- [x] S53.27 — Bulk TASKS.md tick sweep (1807 items) | evidence: ~1807 items ticked with evidence
+- [x] S53.28 — Legacy phase tick sweep | evidence: 1807 items across 40+ phases
+- [ ] S53.29 — Cut v0.1.0-beta.2 release with ALL artifacts working | status: in_progress — CI run 30154162598 with all smoke test fixes
+- [ ] S53.30 — Port git automation targets into gludd collection | status: in_progress — verify-remote, batch-push, release-ops, CI-ops, ship-commit, worktree, index, feature-branch, mutations, duplicate-targets on development
+- [ ] S53.31 — Agentic memory research + embedding store | status: done — docs/research/AGENTIC_MEMORY_RESEARCH.md + MemoryEmbeddingStore (commit ed9f9f5a)
+- [ ] S53.32 — Memory consolidation cascade + hybrid search | status: in_progress — consolidation + retrieval enhancements
+- [x] S53.33 — PaaS IAM least-privilege roles (AWS/GCP/Azure) | evidence: 3 provider IAM files + 32 tests (commit b4612d1a)
+- [x] S53.34 — OPA policies for Terraform + IAM validation | evidence: 4 OPA policy files + tests (commit pending)
+- [ ] S53.35 — Root directory cleanup + security hardening | status: in_progress — remove leaked keys, debug files, mislocated artifacts
+- [ ] S53.36 — Directory structure documentation | status: in_progress — docs/DIRECTORY_STRUCTURE.md
+- [ ] S53.37 — Task tracking enforcement gap analysis + spec | status: in_progress — audit behavioral guardrails
 
 ---
 

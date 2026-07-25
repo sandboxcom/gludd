@@ -84,10 +84,12 @@ infra/terraform/.plugin-cache/*
 *.tfvars
 !*.tfvars.example
 
-# Z.AI / GLM API key material — never track (.zai.key also matches *.key above)
-zai.api
+# API and SSH key material — never track (also matched by *.key / *_rsa above)
+.deepseek.key
 .zai.key
 zai.key
+zai.api
+sandboxcom_github_rsa
 
 /tmp/
 web_retriever/

@@ -355,6 +355,7 @@ help:
 	@echo "  --- Complete Target Index ---"
 	@$(PYTHON) scripts/check_make_help.py --print-index
 	@echo "  --- New Targets ---"
+	@echo "  install-opa             install opa via brew"
 	@echo "  gate-local              fast local gate: lint + typecheck + collect + hook-runtime + fast structural tests"
 	@echo "  bump-version            bump version in all files (pyproject.toml, __init__.py, README) at once"
 	@echo "  check-version-consistencyverify version matches across pyproject.toml, __init__.py, and README"
@@ -1241,6 +1242,11 @@ crash-recovery:
 
 clean-tmp:
 	@python3 scripts/clean_tmp.py
+
+# Remove leaked API keys and SSH key material from the project root.
+# These are gitignored but may accumulate from tool writes or agent errors.
+clean-root:
+	@bash scripts/clean-root.sh
 
 clean-pycache-test-chat-history:
 	@find /Users/shawnwilson/gludd -name "__pycache__" -path "*test_chat_history*" -exec rm -rf {} + 2>/dev/null || true
@@ -5331,6 +5337,15 @@ bump-version:
 	@$(MAKE) --no-print-directory check-version-consistency
 
 # --- New Targets (auto-categorized add-target) ---
+
+# install opa via brew
+install-opa:
+	@command -v opa >/dev/null 2>&1 && { opa version; exit 0; } || true
+	@command -v brew >/dev/null 2>&1 || { echo "brew MISSING — cannot install opa"; exit 1; }
+	@echo "Installing opa via brew (may take a minute)..."
+	@brew install opa 2>&1 | tail -15 || echo "brew-install-opa-failed"
+	@command -v opa >/dev/null 2>&1 && opa version || echo "opa still missing after install"
+
 # fast local gate: lint + typecheck + collect + hook-runtime + fast structural tests
 gate-local:
 	@echo "gate-local: fast local gate: lint + typecheck + collect + hook-runtime + fast structural tests"
