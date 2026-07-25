@@ -5606,3 +5606,33 @@ tick-legacy-phases:
 
 gen-python-expert-skill:
 	@uv run python3 /tmp/gludd-gen-python-expert-skill.py && uv run python3 /tmp/gludd-append-skill.py && uv run python3 /tmp/gludd-append2-skill.py
+
+validate-skills:
+	@echo "=== Validating skills ==="
+	@errors=0; \
+	for skill_dir in .opencode/skills/*/; do \
+		name=$$(basename "$$skill_dir"); \
+		if [ "$$name" = "skills" ]; then continue; fi; \
+		skill_file="$$skill_dir/SKILL.md"; \
+		if [ ! -f "$$skill_file" ]; then \
+			echo "MISSING: $$skill_dir (no SKILL.md)"; \
+			errors=$$((errors + 1)); \
+			continue; \
+		fi; \
+		lines=$$(wc -l < "$$skill_file"); \
+		has_frontmatter=$$(head -1 "$$skill_file" | grep -c "^---$$" || true); \
+		has_name=$$(grep -c "^name:" "$$skill_file" || true); \
+		has_desc=$$(grep -c "^description:" "$$skill_file" || true); \
+		if [ "$$has_frontmatter" = "0" ] || [ "$$has_name" = "0" ] || [ "$$has_desc" = "0" ]; then \
+			echo "INVALID FRONTMATTER: $$skill_file"; \
+			errors=$$((errors + 1)); \
+		elif [ "$$lines" -lt 100 ]; then \
+			echo "THIN (<100 lines): $$skill_file ($$lines lines)"; \
+		else \
+			echo "OK: $$name ($$lines lines)"; \
+		fi; \
+	done; \
+	echo "=== Skills validated: $$errors errors ==="; \
+	exit $$errors
+
+.PHONY: validate-skills
