@@ -1,11 +1,13 @@
 """Structural pin for the no-home-directory-access user mandate.
 
 The user issued a HARD mandate: "NEVER ask for access to my full home
-directory ever again." Access is limited to exactly three path prefixes:
+directory ever again." Access is limited to exactly five path prefixes:
 
-    1. /Users/shawnwilson/gludd/**            (the workspace)
-    2. /tmp/**                                (all of /tmp, not just /tmp/gludd-*)
-    3. /Users/shawnwilson/.config/opencode/** (opencode config directory)
+    1. /Users/shawnwilson/gludd/**                    (the workspace)
+    2. /tmp/**                                        (all of /tmp)
+    3. /Users/shawnwilson/.config/opencode/**         (opencode config)
+    4. /Users/shawnwilson/.local/share/opencode/**    (opencode data/tool-output)
+    5. /Users/shawnwilson/.cache/**                   (pre-commit/uv/tool caches)
 
 Every other path under /Users/shawnwilson/ is FORBIDDEN — no ~/.ssh,
 ~/.aws, ~/.gnupg, ~/Documents, ~/Desktop, ~/Library, etc.
@@ -18,7 +20,7 @@ This guardrail is codified at three layers (see AGENTS.md
     Layer 3 — this structural test (regression prevention)
 
 This test pins Layer 2: it verifies that the opencode.json permission block
-for each of read/write/edit/glob/grep allows EXACTLY the three prefixes
+for each of read/write/edit/glob/grep allows EXACTLY the five prefixes
 above, includes a `*: deny` catch-all, and rejects representative
 home-directory paths outside the allowed set. If a future edit widens
 access (e.g. re-adds `/Users/shawnwilson/**: allow`) or drops the catch-all,
@@ -40,6 +42,8 @@ AGENTS_MD = ROOT / "AGENTS.md"
 ALLOWED_PREFIXES = (
     "/Users/shawnwilson/gludd/**",
     "/Users/shawnwilson/.config/opencode/**",
+    "/Users/shawnwilson/.local/share/opencode/**",
+    "/Users/shawnwilson/.cache/**",
     "/tmp/**",
 )
 
@@ -191,6 +195,8 @@ def test_no_broader_home_prefix_than_allowed() -> None:
     permitted_home_prefixes = {
         "/Users/shawnwilson/gludd/**",
         "/Users/shawnwilson/.config/opencode/**",
+        "/Users/shawnwilson/.local/share/opencode/**",
+        "/Users/shawnwilson/.cache/**",
     }
     perm = _load_permission()
     for tool in FILE_TOOLS:
