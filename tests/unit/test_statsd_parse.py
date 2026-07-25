@@ -54,20 +54,20 @@ class TestStatsdParseModule:
     def test_parse_line_counter(self) -> None:
         src = StatsdParseSource()
         record = src.parse_line("page.views:1|c")
-        assert record["name"] == "page.views"
+        assert record["message"] == "page.views"
         assert record["value"] == 1.0
-        assert record["type"] == "c"
+        assert record["level_or_status"] == "c"
 
     def test_parse_line_with_sample_rate(self) -> None:
         src = StatsdParseSource()
         record = src.parse_line("requests:10|c|@0.5")
-        assert record["sample_rate"] == 0.5
+        assert record["labels"]["sample_rate"] == 0.5
 
     def test_parse_line_with_tags(self) -> None:
         src = StatsdParseSource()
         record = src.parse_line("latency:100|ms|#env:prod,region:us-east-1")
-        assert record["tags"]["env"] == "prod"
-        assert record["tags"]["region"] == "us-east-1"
+        assert record["labels"]["env"] == "prod"
+        assert record["labels"]["region"] == "us-east-1"
 
     def test_parse_line_malformed_raises_in_strict(self) -> None:
         src = StatsdParseSource({"strict": True})
