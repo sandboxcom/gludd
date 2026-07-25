@@ -2937,6 +2937,19 @@ gate-refresh:
 	else \
 		echo "FAIL $$($(UV) run ruff check src tests --output-format concise 2>&1 | grep -c .)" >> .gate-status && touch .gate-failed; \
 	fi; \
+	mkdir -p .gate-logs; \
+	echo "=== GATE PHASE: verify-feature-claims ==="; \
+	printf "verify-feature-claims " >> .gate-status; \
+	$(MAKE) --no-print-directory verify-feature-claims > .gate-logs/verify-feature-claims.log 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed && tail -30 .gate-logs/verify-feature-claims.log); \
+	echo "=== GATE PHASE: hot-reload ==="; \
+	printf "hot-reload " >> .gate-status; \
+	$(MAKE) --no-print-directory hot-reload-plugins > .gate-logs/hot-reload.log 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed && tail -30 .gate-logs/hot-reload.log); \
+	echo "=== GATE PHASE: verify-hot-reload ==="; \
+	printf "verify-hot-reload " >> .gate-status; \
+	$(MAKE) --no-print-directory check-hot-reload-fresh > .gate-logs/verify-hot-reload.log 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed && tail -30 .gate-logs/verify-hot-reload.log); \
+	echo "=== GATE PHASE: check-status-table ==="; \
+	printf "check-status-table " >> .gate-status; \
+	$(MAKE) --no-print-directory check-status-table > .gate-logs/check-status-table.log 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed && tail -30 .gate-logs/check-status-table.log); \
 	echo "=== GATE PHASE: env-writes ==="; \
 	printf "env-writes " >> .gate-status; \
 	$(MAKE) --no-print-directory check-test-env-writes > /dev/null 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed); \
@@ -5352,3 +5365,11 @@ install-opa:
 # fast local gate: lint + typecheck + collect + hook-runtime + fast structural tests
 gate-local:
 	@echo "gate-local: fast local gate: lint + typecheck + collect + hook-runtime + fast structural tests"
+
+# Publish the verified master release commit and its annotated tag as one release step.
+# Usage: make release-tag-push TAG=v0.1.0-beta.3 MSG='release v0.1.0-beta.3'
+release-tag-push:
+	@[ -n "$(TAG)" ] || { echo "Usage: make release-tag-push TAG=v0.1.0-beta.3 MSG='release message'"; exit 1; }
+	@$(MAKE) --no-print-directory ci-active BRANCH=master || exit 1
+	@$(MAKE) --no-print-directory git-push-sandboxcom
+	@$(MAKE) --no-print-directory git-tag-push TAG="$(TAG)" MSG="$(MSG)"
