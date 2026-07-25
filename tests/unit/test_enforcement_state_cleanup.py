@@ -47,7 +47,7 @@ class TestCleanEnforcementStateTarget:
 
     def test_uses_rm_f_for_safe_removal(self):
         recipe = _recipe("clean-enforcement-state")
-        rm_lines = [l for l in recipe.split("\n") if "rm " in l]
+        rm_lines = [line for line in recipe.split("\n") if "rm " in line]
         for line in rm_lines:
             assert "-f" in line, (
                 f"rm must use -f flag for safe removal of non-existent files: {line.strip()}"
