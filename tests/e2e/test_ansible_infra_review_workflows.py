@@ -730,8 +730,8 @@ class TestInfraCostTracker:
         tracker = InfraCostTracker()
         tracker.record("aws", "gpu_instance", "i-1", 5.0, sku="p4d.24xlarge")
         tracker.record("aws", "gpu_instance", "i-2", 3.0, sku="g5.xlarge")
-        assert tracker.total_cost == 8.0
-        assert tracker.cost_by_provider["aws"] == 8.0
+        assert tracker.total_cost() == 8.0
+        assert tracker.cost_by_provider()["aws"] == 8.0
 
     def test_per_project_costs(self):
         from general_ludd.infra.cost_tracker import InfraCostTracker
@@ -739,8 +739,8 @@ class TestInfraCostTracker:
         tracker = InfraCostTracker()
         tracker.record("gcp", "gpu_instance", "i-3", 10.0, project_id="proj-a")
         tracker.record("gcp", "storage", "vol-1", 2.0, project_id="proj-b")
-        assert tracker.cost_by_project["proj-a"] == 10.0
-        assert tracker.cost_by_project["proj-b"] == 2.0
+        assert tracker.cost_by_project()["proj-a"] == 10.0
+        assert tracker.cost_by_project()["proj-b"] == 2.0
 
     def test_hourly_rate_usd_builtin(self):
         from general_ludd.infra.cost_tracker import InfraCostTracker
@@ -762,7 +762,7 @@ class TestInfraCostTracker:
         tracker = InfraCostTracker()
         tracker.record("aws", "gpu_instance", "i-x", 1.0)
         tracker.record("aws", "gpu_instance", "i-y", 2.0)
-        assert len(tracker.records) == 2
+        assert len(tracker.records()) == 2
 
     def test_cost_by_resource_type(self):
         from general_ludd.infra.cost_tracker import InfraCostTracker
@@ -770,8 +770,8 @@ class TestInfraCostTracker:
         tracker = InfraCostTracker()
         tracker.record("aws", "gpu_instance", "i-1", 5.0)
         tracker.record("aws", "storage", "vol-1", 1.0)
-        assert tracker.cost_by_resource_type["gpu_instance"] == 5.0
-        assert tracker.cost_by_resource_type["storage"] == 1.0
+        assert tracker.cost_by_resource_type()["gpu_instance"] == 5.0
+        assert tracker.cost_by_resource_type()["storage"] == 1.0
 
     def test_provider_breakdown(self):
         from general_ludd.infra.cost_tracker import InfraCostTracker
@@ -857,7 +857,7 @@ class TestEvidenceChecker:
 
         checker = EvidenceChecker()
         results = checker.audit_response(
-            "Fixed in src/foo/bar.py:42. The tests pass.",
+            "Fixed in src/foo/bar.py:42. The tests are passing.",
             tool_outputs=["File src/foo/bar.py:42 modified"],
         )
         assert any(r.supported for r in results)
@@ -880,6 +880,7 @@ class TestDecisionApplier:
             matched_todo_id="todo-1",
             decision="complete",
             confidence=0.9,
+            evidence_refs=["commit:abc12345"],
         )
         mock_repo = MagicMock()
         mock_todo = MagicMock()
@@ -888,11 +889,12 @@ class TestDecisionApplier:
         mock_repo.get_by_id.return_value = mock_todo
 
         with patch(
-            "general_ludd.review.decision_applier.TodoStatus",
-            wraps=TodoStatus,
+            "general_ludd.review.decision_applier.asyncio.to_thread",
+            return_value=decision,
         ):
-            await apply_decision(decision, mock_repo, MagicMock())
-            mock_repo.transition.assert_called()
+            await apply_decision(decision, mock_repo, MagicMock(), repo_root="/tmp")
+        mock_repo.transition.assert_called()
+        assert mock_repo.transition.called
 
     @pytest.mark.asyncio
     async def test_apply_needs_more_work_decision(self):
@@ -954,6 +956,7 @@ class TestDecisionApplier:
             matched_todo_id="todo-low",
             decision="complete",
             confidence=0.3,
+            evidence_refs=["commit:abc12345"],
         )
         mock_repo = MagicMock()
         mock_todo = MagicMock()
@@ -961,7 +964,11 @@ class TestDecisionApplier:
         mock_todo.project_id = None
         mock_repo.get_by_id.return_value = mock_todo
 
-        await apply_decision(decision, mock_repo, MagicMock())
+        with patch(
+            "general_ludd.review.decision_applier.asyncio.to_thread",
+            return_value=decision,
+        ):
+            await apply_decision(decision, mock_repo, MagicMock(), repo_root="/tmp")
         assert mock_repo.create.called
 
     @pytest.mark.asyncio

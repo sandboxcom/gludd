@@ -89,7 +89,7 @@ _commit-lock-acquire check-clean-tree worktree-state all-worktree-state main-wor
         status-snapshot audit-evidence deps-audit dogfood-features ruff-audit check-make-help \
         skill-install skill-list bootstrap-skills scan-tool-usage \
          scan-secrets scan-secrets-baseline clean-untracked clean-hooks clean-plugins \
-         secrets-scrub secrets-scan secrets-baseline security-audit clean-artifacts health-check \
+         secrets-scrub secrets-scan secrets-baseline verify-secrets install-trufflehog security-audit clean-artifacts health-check \
         git-remote-sandboxcom git-push-sandboxcom git-pull-sandboxcom git-fetch-sandboxcom \
         git-add-all help grep scan-secrets-fresh untrack \
          git-tracked-keys git-ls-tracked git-history-file dist-path-check git-is-ancestor git-revlist-count check-git-hygiene \
@@ -267,6 +267,8 @@ help:
 	@echo "  secrets-baseline      Rebuild .secrets.baseline"
 	@echo "  scan-secrets          Alias for secrets-scan"
 	@echo "  scan-secrets-baseline Alias for secrets-baseline"
+	@echo "  verify-secrets        Verify .secrets.baseline entries are not live (truffleHog)"
+	@echo "  install-trufflehog    Install truffleHog (brew or pip)"
 	@echo "  security-audit        Comprehensive: secrets + sast + pip-audit + backlog gate"
 	@echo "  clean-artifacts       Clean build artifacts, caches, temp files (replaces direct rm)"
 	@echo "  health-check          Verify imports and basic system health"
@@ -770,7 +772,7 @@ test-opencode-boot-e2e:
 gate-fast: lint typecheck collect-check
 	@echo "=== GATE-FAST: PASS ==="
 
-gate: check-opencode-integrity check-plugin-hooks opencode-boot-smoke validate-task-ledger check-dispatch-dedup check-subagent-guards verify-plugin-manifest check-skills-frontmatter check-coverage-gaps check-plugin-syntax check-plugin-runtime check-plugin-hook-invoke check-plugin-imports check-node-v26-compat check-duplicate-targets
+gate: check-opencode-integrity check-plugin-hooks opencode-boot-smoke validate-task-ledger check-dispatch-dedup check-subagent-guards verify-plugin-manifest check-skills-frontmatter check-coverage-gaps check-plugin-syntax check-plugin-runtime check-plugin-hook-invoke check-plugin-imports check-node-v26-compat check-duplicate-targets check-task-integrity
 	@rm -f .gate-failed
 	@echo "=== GATE $(shell date -u +%Y-%m-%dT%H:%M:%SZ) ===" > .gate-status
 	@# OBSERVABILITY INVARIANT (see AGENTS.md "No unseen events"): every gate phase
@@ -3097,10 +3099,28 @@ secrets-baseline:
 	@mv -f .secrets.baseline.tmp .secrets.baseline
 	@echo "[secrets-baseline] wrote .secrets.baseline ($$(wc -c < .secrets.baseline | tr -d ' ') bytes)"
 
+# verify-secrets: verify .secrets.baseline entries are not live credentials (truffleHog)
+verify-secrets:
+	@$(UV) run python scripts/verify_secrets_baseline.py
+
+# install-trufflehog: install truffleHog for live secret verification
+install-trufflehog:
+	@if command -v brew >/dev/null 2>&1; then \
+		brew install trufflehog; \
+	elif command -v pip >/dev/null 2>&1; then \
+		pip install trufflehog; \
+	else \
+		echo "ERROR: install trufflehog manually — https://github.com/trufflesecurity/trufflehog"; \
+		exit 1; \
+	fi
+	@echo "[install-trufflehog] installed: $$(trufflehog --version 2>&1 || echo 'version check failed')"
+
 # security-audit: comprehensive security check (secrets + sast + pip-audit + backlog gate)
 security-audit:
 	@echo "=== SECURITY AUDIT: secrets scan ==="
 	@$(MAKE) --no-print-directory secrets-scan || echo "[secrets-scan skipped — baseline plugin mismatch]"
+	@echo "=== SECURITY AUDIT: verify secrets baseline (truffleHog) ==="
+	@$(MAKE) --no-print-directory verify-secrets; RC=$$?; [ $$RC -eq 2 ] && echo "[verify-secrets skipped — trufflehog not installed]" || [ $$RC -eq 0 ] || exit $$RC
 	@echo "=== SECURITY AUDIT: sast (bandit) ==="
 	@$(MAKE) --no-print-directory sast
 	@echo "=== SECURITY AUDIT: pip-audit (gating) ==="
@@ -3730,6 +3750,9 @@ auto-update-ledger:
 # --- Task ledger validation: check-* naming convention alias ---
 check-task-ledger:
 	@$(UV) run python scripts/validate_task_ledger.py
+
+check-task-integrity:
+	@$(PYTHON) scripts/check_task_integrity.py
 
 # --- Duplicate target detection: prevent parallel-branch Makefile collisions (ci-await bug class) ---
 # --- Gate parity: CI gate phases vs local gate-refresh ---

@@ -3335,3 +3335,60 @@ Behavioral fix specs covering subagent deliverable quality: every subagent produ
 - [x] SQ.23 — Subagent quality score tracked per agent: completion rate, deliverable rate, time-to-result, commit-verified rate; used to optimize model assignment | priority: low | fix: add to /tmp/gludd-subagent-quality.json | verify: test_sq_quality_tracking.py — score computed | status: completed | evidence: feature exists per Session 53 audit
 - [x] SQ.24 — Subagent slot waste detection: subagent that returns in <30s with no deliverable or "found nothing" consumed a slot for zero value; flag as wasted slot | priority: medium | fix: add waste detector to dispatch log | verify: test_sq_slot_waste.py — no-deliverable fast return flagged | status: completed | evidence: feature exists per Session 53 audit
 - [x] SQ.25 — Subagent deliverable evidence in TASKS.md: when subagent result is codified, TASKS.md entry must cite commit hash, test count, or gate output — not just "done" | priority: high | fix: verify TASKS.md evidence integrity audit catches bare checkboxes | verify: test_sq_evidence_in_tasks.py — "evidence: done" flagged | status: completed | evidence: feature exists per Session 53 audit
+
+---
+
+## Session 54 — 2026-07-25 (Active)
+
+HEAD on master. Pushed to sandboxcom at 9dc05f9b. Working toward v0.1.0-beta.3.
+
+### S54.A — GHA CI Pipeline Green + Beta.3 Release
+
+- [ ] S54.A1 — Verify CI green on master (9dc05f9b) | priority: critical | effort: small | status: pending
+- [ ] S54.A2 — Fix any CI failures surfaced by the run | priority: critical | effort: medium | status: pending
+- [ ] S54.A3 — verify-release-completeness passes for v0.1.0-beta.3 | priority: critical | effort: small | status: pending
+- [ ] S54.A4 — Cut v0.1.0-beta.3 via make release-cut | priority: critical | effort: medium | status: pending
+
+### S54.B — E2E Test Coverage >85%
+
+- [ ] S54.B1 — Audit current E2E module coverage (at ~16%, target >85% of ~650 src modules) | priority: high | effort: small | status: in_progress | evidence: audit done by explore subagent — 105/650 modules = 16% covered
+- [ ] S54.B2 — Expand connectors E2E: batch1 (94 tests), batch2 (68 tests), batch3 (55 tests) — coverage: ~78 of ~108 connector files remain uncovered | priority: high | effort: large | status: in_progress
+- [ ] S54.B3 — Models/planning/pipeline E2E: 145 tests written, all passing | priority: high | effort: medium | status: completed | evidence: commit fe81807e
+- [ ] S54.B4 — CLI/daemon lifecycle E2E: 47 tests, collection OK | priority: high | effort: medium | status: completed | evidence: commit fe81807e
+- [ ] S54.B5 — Security/sandbox E2E: 150 tests, collection OK | priority: high | effort: medium | status: completed | evidence: commit b264f4b8
+- [ ] S54.B6 — Routers/self-update E2E: 38+69=107 tests, collection OK | priority: high | effort: medium | status: completed | evidence: commit b264f4b8
+- [ ] S54.B7 — Ansible/infra/review E2E: 97 tests, 82 passing, 14 assertion fixes needed | priority: high | effort: medium | status: in_progress
+- [ ] S54.B8 — Connectors batch4+ to close coverage gap toward 85% | priority: high | effort: large | status: pending
+
+### S54.C — Memory System Implementation + Deep Testing
+
+- [ ] S54.C1 — TEMPR multi-strategy retriever: 4-strategy (semantic+BM25+temporal+graph) with RRF fusion | priority: high | effort: medium | status: completed | evidence: 59 tests pass, commit b264f4b8
+- [ ] S54.C2 — Observation consolidation with evidence tracking: dedup, proof counts, confidence, staleness | priority: high | effort: medium | status: completed | evidence: 43 tests, commit b264f4b8
+- [ ] S54.C3 — Mental models + memory banks: isolated banks with mission/directives/disposition, 5 bank templates | priority: high | effort: medium | status: completed | evidence: 65 tests pass, commit b264f4b8
+- [ ] S54.C4 — Hindsight adapter: sidecar integration with fallback to internal memory | priority: medium | effort: small | status: completed | evidence: 30 tests pass, commit b264f4b8
+- [ ] S54.C5 — Memory concurrency/race tests: 36 tests, collection OK | priority: high | effort: medium | status: completed | evidence: commit fe81807e
+- [ ] S54.C6 — Memory retrieval quality + benchmarks: 48 tests (precision/recall/RRF/perf), 44/48 pass | priority: high | effort: medium | status: in_progress | evidence: 4 small fixes needed
+- [ ] S54.C7 — Hindsight research: TEMPR patterns adopted, Docker sidecar integration evaluated | priority: medium | effort: small | status: completed | evidence: research done, recommendation to adopt Docker sidecar + Python SDK
+
+### S54.D — Skill + Role Pattern Implementation
+
+- [ ] S54.D1 — Skill-lens Python module: extracts relevant sections from skills by keyword relevance | priority: high | effort: medium | status: completed | evidence: 31 tests pass, commit b264f4b8
+- [ ] S54.D2 — Skill-lens ansible role: standard role structure with tasks/defaults/meta | priority: high | effort: small | status: completed | evidence: commit b264f4b8
+- [ ] S54.D3 — Skill-lens daemon integration: SkillContextProvider wired into BehaviorRenderer | priority: high | effort: medium | status: completed | evidence: 24 tests, commit fe81807e
+- [ ] S54.D4 — Skill-lens quality tests: 155 tests (semantic equivalence, cross-language, no overfitting), 144/155 pass | priority: high | effort: medium | status: in_progress | evidence: 11 small fixes needed
+- [ ] S54.D5 — Expand 6 thin skills to >800 lines: type-safety (155→1112L), test-quality (116→908L), guardrail-pattern (113→929L), enforce-bootstrap (112→811L), deep-spec (88→1000+L), background-test-runner (88→1229L) | priority: medium | effort: medium | status: completed | evidence: all 6 expanded, committed in prior wave
+
+### S54.E — Expert Skills + Knowledge Base Expansion
+
+- [ ] S54.E1 — Python expert skill: 1978 lines, CPython internals + PEPs + patterns | priority: high | effort: medium | status: completed | evidence: commit feddf675
+- [ ] S54.E2 — Java/JVM expert skill: 2613 lines, Maven/Gradle/Kotlin/Groovy/Spring/security | priority: high | effort: medium | status: completed | evidence: commit feddf675
+- [ ] S54.E3 — Go expert skill: 3581 lines, goroutines/channels/tooling/security | priority: high | effort: medium | status: completed | evidence: commit feddf675
+- [ ] S54.E4 — Culinary expert skill: 1364 lines, recipes/nutrition/flavor/substitution/storage | priority: medium | effort: medium | status: completed | evidence: commit ada1bb05
+- [ ] S54.E5 — Electronics expert skill: 2274 lines, PCB/SPICE/BOM/signal integrity | priority: medium | effort: medium | status: completed | evidence: commit ada1bb05
+- [ ] S54.E6 — Expert audit done: 6 thin skills identified + expanded, gaps in DB/cloud/Rust/TS/K8s/ML | priority: medium | effort: small | status: completed | evidence: audit subagent report
+
+### S54.F — Secrets Baseline Validation
+
+- [x] S54.F1 — Research free services that test if a secret is valid+working for any web service | priority: high | effort: medium | status: completed | evidence: TruffleHog selected — 800+ credential detectors with live API verification, free, OSS, actively maintained
+- [x] S54.F2 — Integrate secret validation into secrets baseline workflow (run on any .secrets.baseline change) | priority: high | effort: medium | status: completed | evidence: scripts/verify_secrets_baseline.py (filter non-test entries, extract values, run trufflehog --only-verified), Makefile targets verify-secrets + install-trufflehog, wired into make security-audit
+- [x] S54.F3 — Wire secret validation into pre-commit or CI pipeline | priority: high | effort: small | status: completed | evidence: pre-commit hook (verify-secrets on .secrets.baseline change) in .pre-commit-config.yaml, CI step (verify secrets baseline) in .github/workflows/build.yml gate job

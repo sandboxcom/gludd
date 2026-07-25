@@ -1387,7 +1387,7 @@ class TestCircleCiConnector:
         records = source.query({})
         assert len(records) == 1
         assert records[0]["level_or_status"] == "completed"
-        assert "abc123def456" in str(records[0]["message"])
+        assert "abc123def456" in str(records[0]["message"])  # pragma: allowlist secret
         assert "main" in str(records[0]["message"])
 
     def test_query_empty_on_transport_error(self):

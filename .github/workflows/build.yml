@@ -153,6 +153,16 @@ jobs:
         env:
           GLUDD_PSK: ""
 
+      - name: Verify secrets baseline (truffleHog)
+        # Cross-references .secrets.baseline entries against truffleHog's live
+        # verification. Exits non-zero if any baselined secret is a live credential.
+        # Installs truffleHog inline; exit 2 (not-installed) is treated as non-fatal.
+        run: |
+          make install-trufflehog
+          make verify-secrets
+        env:
+          GLUDD_PSK: ""
+
   # Parallel test shards — 7 path-based groups × 1 Python version = 7 jobs.
   # Each shard is independent: a failure in shard "unit-1a1" is reported at the
   # job level within minutes of that shard finishing, without waiting for the
