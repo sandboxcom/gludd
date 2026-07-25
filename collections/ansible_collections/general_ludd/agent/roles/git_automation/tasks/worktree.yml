@@ -1,5 +1,6 @@
 ---
 # worktree.yml — git worktree operations through the guarded gludd_git module.
+# Operations: list, create, remove, merge, cleanup, health_check, merge_all
 
 - name: "Assert parameters for worktree operation"
   ansible.builtin.assert:
@@ -7,6 +8,8 @@
       - repo_path | string | length > 0
       - worktree_op | string | length > 0
     fail_msg: "repo_path and worktree_op are required"
+
+# ── list ────────────────────────────────────────────────────────────────
 
 - name: "List worktrees through gludd_git"
   general_ludd.agent.gludd_git:
@@ -22,6 +25,8 @@
       worktrees: "{{ _wt_list.result.worktrees | default([]) }}"
   when: worktree_op == 'list'
 
+# ── create ──────────────────────────────────────────────────────────────
+
 - name: "Create worktree"
   when: worktree_op == 'create'
   block:
@@ -35,17 +40,24 @@
           - "'..' not in worktree_path_param.split('/')"
         fail_msg: "worktree_branch and worktree_path_param required, no leading '-' or '..'"
 
+    - name: "Set base branch default"
+      ansible.builtin.set_fact:
+        _base: "{{ worktree_base_branch | default('HEAD') }}"
+
     - name: "Create worktree through gludd_git"
       general_ludd.agent.gludd_git:
         path: "{{ repo_path }}"
         op: worktree_create
         branch: "{{ worktree_branch }}"
         worktree_path: "{{ worktree_path_param }}"
+        base: "{{ _base }}"
       register: _wt_create
 
     - name: "Set worktree create result"
       ansible.builtin.set_fact:
         git_automation_worktree_result: "{{ _wt_create.result }}"
+
+# ── remove ──────────────────────────────────────────────────────────────
 
 - name: "Remove worktree"
   when: worktree_op == 'remove'
@@ -70,3 +82,118 @@
           op: remove
           success: "{{ _wt_remove.result.removed | default(false) | bool }}"
           path: "{{ worktree_path_param }}"
+
+# ── merge ───────────────────────────────────────────────────────────────
+
+- name: "Merge worktree branch"
+  when: worktree_op == 'merge'
+  block:
+    - name: "Assert merge params"
+      ansible.builtin.assert:
+        that:
+          - worktree_branch | string | length > 0
+          - not worktree_branch.startswith('-')
+        fail_msg: "worktree_branch required for merge, no leading '-'"
+
+    - name: "Set merge target default"
+      ansible.builtin.set_fact:
+        _merge_target: "{{ merge_target_branch | default('development') }}"
+
+    - name: "Merge branch through gludd_git"
+      general_ludd.agent.gludd_git:
+        path: "{{ repo_path }}"
+        op: worktree_merge
+        branch: "{{ worktree_branch }}"
+        target: "{{ _merge_target }}"
+      register: _wt_merge
+
+    - name: "Set merge result"
+      ansible.builtin.set_fact:
+        git_automation_worktree_result:
+          op: merge
+          success: "{{ _wt_merge.result.success | default(false) | bool }}"
+          branch: "{{ worktree_branch }}"
+          target: "{{ _merge_target }}"
+          conflicts: "{{ _wt_merge.result.conflicts | default([]) }}"
+          message: "{{ _wt_merge.result.message | default('') }}"
+
+# ── cleanup ─────────────────────────────────────────────────────────────
+
+- name: "Cleanup worktree"
+  when: worktree_op == 'cleanup'
+  block:
+    - name: "Assert cleanup params"
+      ansible.builtin.assert:
+        that:
+          - worktree_branch | string | length > 0
+          - not worktree_branch.startswith('-')
+        fail_msg: "worktree_branch required for cleanup, no leading '-'"
+
+    - name: "Cleanup worktree through gludd_git"
+      general_ludd.agent.gludd_git:
+        path: "{{ repo_path }}"
+        op: worktree_cleanup
+        branch: "{{ worktree_branch }}"
+      register: _wt_cleanup
+
+    - name: "Set cleanup result"
+      ansible.builtin.set_fact:
+        git_automation_worktree_result:
+          op: cleanup
+          success: "{{ _wt_cleanup.result.success | default(false) | bool }}"
+          branch: "{{ worktree_branch }}"
+          branch_removed: "{{ _wt_cleanup.result.branch_removed | default(false) | bool }}"
+
+# ── health_check ────────────────────────────────────────────────────────
+
+- name: "Health check worktrees"
+  when: worktree_op == 'health_check'
+  block:
+    - name: "Set health check defaults"
+      ansible.builtin.set_fact:
+        _max_age: "{{ max_age_hours | default(24) }}"
+        _remote: "{{ health_remote_name | default('sandboxcom') }}"
+        _target: "{{ health_target_branch | default('development') }}"
+
+    - name: "Run health check through gludd_git"
+      general_ludd.agent.gludd_git:
+        path: "{{ repo_path }}"
+        op: worktree_health_check
+        max_age_hours: "{{ _max_age }}"
+        remote_name: "{{ _remote }}"
+        target_branch: "{{ _target }}"
+      register: _wt_health
+
+    - name: "Set health check result"
+      ansible.builtin.set_fact:
+        git_automation_worktree_result:
+          op: health_check
+          healthy: "{{ (_wt_health.result.violations | default([])) | length == 0 }}"
+          violations: "{{ _wt_health.result.violations | default([]) }}"
+          violation_count: "{{ (_wt_health.result.violations | default([])) | length }}"
+
+# ── merge_all ───────────────────────────────────────────────────────────
+
+- name: "Merge all worktrees"
+  when: worktree_op == 'merge_all'
+  block:
+    - name: "Set merge_all target default"
+      ansible.builtin.set_fact:
+        _ma_target: "{{ merge_all_target_branch | default('development') }}"
+
+    - name: "Run merge_all through gludd_git"
+      general_ludd.agent.gludd_git:
+        path: "{{ repo_path }}"
+        op: worktree_merge_all
+        target: "{{ _ma_target }}"
+      register: _wt_ma
+
+    - name: "Set merge_all result"
+      ansible.builtin.set_fact:
+        git_automation_worktree_result:
+          op: merge_all
+          total: "{{ _wt_ma.result.total | default(0) }}"
+          merged: "{{ _wt_ma.result.merged | default(0) }}"
+          conflicts: "{{ _wt_ma.result.conflicts | default(0) }}"
+          skipped: "{{ _wt_ma.result.skipped | default(0) }}"
+          errors: "{{ _wt_ma.result.errors | default([]) }}"
