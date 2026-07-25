@@ -36,6 +36,8 @@ const CONSECUTIVE_NON_DISPATCH_THRESHOLD = parseInt(
   process.env.GLUDD_CONSECUTIVE_NON_DISPATCH_THRESHOLD || "5", 10)
 const CONSECUTIVE_NON_DISPATCH_WINDOW_MS = parseInt(
   process.env.GLUDD_CONSECUTIVE_NON_DISPATCH_WINDOW_MS || "30000", 10)
+const RESULT_ARRIVAL_REFRESH_INTERVAL_MS = parseInt(
+  process.env.GLUDD_REFRESH_INTERVAL_MS || "30000", 10)
 // Env-overridable (T10) so tests isolate from live sessions; default stays in /tmp.
 const MULTITASK_STATE_FILE = process.env.GLUDD_MULTITASK_STATE_FILE || "/tmp/gludd-multitask-state.json"
 interface MultitaskState {
@@ -51,7 +53,7 @@ interface MultitaskState {
   consecutiveNonDispatchStartTs: number
   sawNonDispatchSinceDispatch: boolean
   underFloorCount: number
-  singleDispatchWaves: number
+  lastDispatchTs: number
 }
 function freshState(): MultitaskState {
   return {
@@ -67,8 +69,9 @@ function freshState(): MultitaskState {
     consecutiveNonDispatchStartTs: 0,
     sawNonDispatchSinceDispatch: false,
     underFloorCount: 0,
-    singleDispatchWaves: 0,
+    lastDispatchTs: 0,
   }
+}
 }
 function readState(): MultitaskState {
   if (isStateFileMtimeStale(MULTITASK_STATE_FILE)) {
@@ -209,6 +212,7 @@ let _state: MultitaskState = (() => {
   s.sawNonDispatchSinceDispatch = false
   s.underFloorCount = 0
   s.singleDispatchWaves = 0
+  s.lastDispatchTs = 0
   writeState(s)
   return s
 })()
@@ -291,6 +295,7 @@ const defaultImpl: HotModule = {
         }
         _state.thisMessageDispatches++
         _state.estimatedInFlight++
+        _state.lastDispatchTs = now
         writeState(_state)
         return
       }
@@ -434,12 +439,19 @@ const defaultImpl: HotModule = {
       const dispatched = _state.thisMessageDispatches
       handleMessageBoundary(_state)
       // MT.1: escalate when under-floor waves keep happening
-      const escalation = _state.underFloorCount >= 3
+      const mt1Escalation = _state.underFloorCount >= 3
         ? [
             "",
             "⛔ ESCALATION: You have dispatched fewer than " + String(MAX_DISPATCHES) + " agents for " + String(_state.underFloorCount) + " consecutive waves.",
             "The 10-agent floor is MANDATORY. Every wave must be >= " + String(MAX_DISPATCHES) + " dispatches.",
             "This is " + String(_state.underFloorCount) + " waves in a row below the floor. Correct immediately.",
+          ].join("\n")
+        : ""
+      // MT.2: single-dispatch wave escalation
+      const mt2Escalation = _state.singleDispatchWaves >= 3
+        ? [
+            "",
+            "MESSAGE SHAPE VIOLATION: 3 consecutive single-dispatch waves. Batch wider — 2+ dispatches per message.",
           ].join("\n")
         : ""
       writeState(_state)
@@ -450,7 +462,8 @@ const defaultImpl: HotModule = {
           `This message had only ${dispatched} dispatch(es).`,
           `The 10-agent floor REQUIRES ${MIN_DISPATCHES} per wave.`,
           "Your text has been blanked. Re-send with >= " + String(MIN_DISPATCHES) + " dispatches.",
-          escalation,
+          mt1Escalation,
+          mt2Escalation,
           "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
         ].join("\n"),
       }
@@ -458,12 +471,34 @@ const defaultImpl: HotModule = {
     handleMessageBoundary(_state)
     // MT.1: escalate when under-floor waves keep happening — inject into
     // non-blocked output so the agent sees it even on full-wave responses.
+    // MT.2: single-dispatch wave escalation — inject when 3 consecutive waves
+    // had exactly 1 dispatch.  2+ dispatches resets the counter.
+    const warnings: string[] = []
     if (_state.underFloorCount >= 3) {
-      const warning = [
+      warnings.push([
         "⛔ DISPATCH FLOOR VIOLATION: " + String(_state.underFloorCount) + " consecutive waves with fewer than " + String(MAX_DISPATCHES) + " dispatches.",
         "The 10-agent floor is MANDATORY. Each wave MUST dispatch exactly " + String(MAX_DISPATCHES) + " agents.",
         "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
-      ].join("\n")
+      ].join("\n"))
+    }
+    if (_state.singleDispatchWaves >= 3) {
+      warnings.push("MESSAGE SHAPE VIOLATION: 3 consecutive single-dispatch waves. Batch wider — 2+ dispatches per message.")
+    }
+    // DP.2: wave refill automation — inject reminder when pool drops low
+    if (
+      _state.lastDispatchTs > 0 &&
+      _state.estimatedInFlight < 5 &&
+      (Date.now() - _state.lastDispatchTs) > RESULT_ARRIVAL_REFRESH_INTERVAL_MS
+    ) {
+      warnings.push([
+        "⛔ FLOOR LOW: only " + String(_state.estimatedInFlight) + " agents remain.",
+        "Last dispatch was >" + String(Math.round((Date.now() - _state.lastDispatchTs) / 1000)) + "s ago.",
+        "Dispatch replacements now to maintain the 10-agent floor.",
+        "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
+      ].join("\n"))
+    }
+    if (warnings.length > 0) {
+      const warning = warnings.join("\n\n")
       const wrappedOutput = typeof output === "string"
         ? warning + "\n\n" + output
         : (output as any)?.text
@@ -528,12 +563,19 @@ export default (({ }) => {
       // consume the ceiling when the agent re-sends the corrective 10-wave.
       handleMessageBoundary(_state)
       // MT.1: escalate when under-floor waves keep happening
-      const escalation = _state.underFloorCount >= 3
+      const mt1Escalation = _state.underFloorCount >= 3
         ? [
             "",
             "⛔ ESCALATION: " + String(_state.underFloorCount) + " waves in a row below the " + String(MAX_DISPATCHES) + "-agent floor.",
             "You have dispatched fewer than " + String(MAX_DISPATCHES) + " agents for " + String(_state.underFloorCount) + " consecutive responses.",
             "The 10-agent floor is MANDATORY. Correct immediately.",
+          ].join("\n")
+        : ""
+      // MT.2: single-dispatch wave escalation
+      const mt2Escalation = _state.singleDispatchWaves >= 3
+        ? [
+            "",
+            "MESSAGE SHAPE VIOLATION: 3 consecutive single-dispatch waves. Batch wider — 2+ dispatches per message.",
           ].join("\n")
         : ""
       writeState(_state)
@@ -549,7 +591,8 @@ export default (({ }) => {
           "",
           "Your text has been blanked. Re-send with >= " +
             String(MIN_DISPATCHES) + " task/agent/workflow dispatches.",
-          escalation,
+          mt1Escalation,
+          mt2Escalation,
           "",
           "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
         ].join("\n"),
@@ -566,12 +609,21 @@ export default (({ }) => {
     handleMessageBoundary(_state)
     // MT.1: escalate when under-floor waves keep happening — inject into
     // non-blocked output so the agent sees it even on full-wave responses.
+    // MT.2: single-dispatch wave escalation — inject when 3 consecutive waves
+    // had exactly 1 dispatch.  2+ dispatches resets the counter.
+    const warnings: string[] = []
     if (_state.underFloorCount >= 3) {
-      const warning = [
+      warnings.push([
         "⛔ DISPATCH FLOOR VIOLATION: " + String(_state.underFloorCount) + " consecutive waves with fewer than " + String(MAX_DISPATCHES) + " dispatches.",
         "The 10-agent floor is MANDATORY. Each wave MUST dispatch exactly " + String(MAX_DISPATCHES) + " agents.",
         "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
-      ].join("\n")
+      ].join("\n"))
+    }
+    if (_state.singleDispatchWaves >= 3) {
+      warnings.push("MESSAGE SHAPE VIOLATION: 3 consecutive single-dispatch waves. Batch wider — 2+ dispatches per message.")
+    }
+    if (warnings.length > 0) {
+      const warning = warnings.join("\n\n")
       writeState(_state)
       if (typeof output === "string") return warning + "\n\n" + (output as string)
       if ((output as any)?.text) {
