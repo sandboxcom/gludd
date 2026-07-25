@@ -1,3 +1,29 @@
+# Model Profile: OpenAI GPT-4
+# ================================
+# PURPOSE: Connect to OpenAI's GPT-4 API for coding and planning tasks.
+# REQUIRED: Set OPENAI_API_KEY environment variable.
+#
+# Fields:
+#   model_profile_id     — Unique identifier referenced in model_routing
+#   role_names           — Which agent roles use this profile
+#   provider             — LangChain provider package name
+#   provider_package     — pip package to install
+#   provider_class_hint  — LangChain chat model class
+#   model_name           — Exact model identifier from the provider
+#   credential_alias     — Environment variable name for API key
+#   context_window       — Total tokens the model can process
+#   max_input_tokens     — Practical input limit (leave headroom)
+#   max_output_tokens    — Max response length
+#   cost_per_input_token — USD per 1M input tokens (for budget tracking)
+#   cost_per_output_token— USD per 1M output tokens
+#   api_metered          — Whether the API charges per request
+#   run_budget_usd       — Max spend per run
+#   enabled              — Whether this profile is active
+#   resource_profile     — Hardware profile (ai_heavy, cpu_light)
+#   latency_class        — Speed tier (fast, medium, slow)
+#   quality_class        — Quality tier (high, medium, low)
+#   fallback_profiles    — Profiles to try if this one fails
+#   probe_enabled        — Health-check the endpoint on startup
 model_profile_id: openai_gpt4
 role_names:
   - coder

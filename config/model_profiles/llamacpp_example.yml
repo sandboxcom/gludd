@@ -1,3 +1,31 @@
+# Model Profile: llama.cpp Local Server
+# ================================
+# PURPOSE: Run models locally via a llama.cpp server. Lowest-resource local option;
+#          best for single-user workstations without a GPU.
+# REQUIRED: Start llama.cpp server and set LLAMACPP_BASE_URL environment variable.
+# NOTE:    Currently disabled (enabled: false) — enable after launching the server.
+#
+# Fields:
+#   model_profile_id     — Unique identifier referenced in model_routing
+#   role_names           — Which agent roles use this profile
+#   provider             — LangChain provider package name
+#   provider_package     — pip package to install
+#   provider_class_hint  — LangChain chat model class
+#   model_name           — Exact model identifier from the provider
+#   api_base_alias       — Environment variable name for the API base URL
+#   context_window       — Total tokens the model can process
+#   max_input_tokens     — Practical input limit (leave headroom)
+#   max_output_tokens    — Max response length
+#   cost_per_input_token — USD per 1M input tokens (for budget tracking)
+#   cost_per_output_token— USD per 1M output tokens
+#   api_metered          — Whether the API charges per request
+#   run_budget_usd       — Max spend per run
+#   enabled              — Whether this profile is active
+#   resource_profile     — Hardware profile (ai_heavy, cpu_light)
+#   latency_class        — Speed tier (fast, medium, slow)
+#   quality_class        — Quality tier (high, medium, low)
+#   fallback_profiles    — Profiles to try if this one fails
+#   probe_enabled        — Health-check the endpoint on startup
 model_profile_id: llamacpp_local
 role_names:
   - coder

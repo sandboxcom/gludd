@@ -1,26 +1,56 @@
-default_profile: deepseek_coder
-weak_model_profile: deepseek_coder
+# =============================================================================
+# model_routing.yml — Standalone model-routing configuration (shipped sample).
+# =============================================================================
+#
+# Purpose:
+#   Selects which model profile (from config/model_profiles/*.yml) handles each
+#   class of work. This is the standalone form; an inline `model_routing:`
+#   block in general-ludd.yml takes precedence when present (see
+#   src/general_ludd/daemon.py:380-388 for precedence resolution).
+#
+# REQUIRED vs OPTIONAL:
+#   OPTIONAL (defaults are used if missing).
+#
+# What happens if this file is missing:
+#   ModelRoutingConfig() (src/general_ludd/config/model_routing.py:11) returns
+#   empty dicts and None profile ids — the daemon boots, but every dispatch
+#   relies on the caller specifying the profile explicitly via the todo's
+#   `model_profile` field. Without that, dispatches fail with
+#   "no model profile resolved."
+#
+# Field reference:
+#   default_profile     : str         — profile id used when no rule matches.
+#   weak_model_profile  : str         — profile id for low-cost tasks.
+#   fallback_chain      : list[str]   — profiles tried in order on API error.
+#   role_routing        : dict[str,str] — task role -> profile id.
+#   quality_routing     : dict[str,str] — quality tier -> profile id.
+#   latency_routing     : dict[str,str] — latency tier -> profile id.
+#   pattern_routing     : dict[str,str] — task pattern -> role name (in role_routing).
+# =============================================================================
 
-fallback_chain:
-  - qwen_coder
-  - zai_coder
+default_profile: deepseek_coder   # Fallback profile for unmatched dispatches.
+weak_model_profile: deepseek_coder # Profile for commit_message / summaries.
 
-role_routing:
-  coder: deepseek_coder
-  planner: deepseek_coder
-  reviewer: deepseek_coder
-  fast: deepseek_coder
+fallback_chain:                   # Profiles tried in order on API error/timeout.
+  - qwen_coder                    # First fallback.
+  - zai_coder                     # Second fallback.
 
-quality_routing:
-  high: deepseek_coder
-  medium: deepseek_coder
+role_routing:                     # Map role -> profile id.
+  coder: deepseek_coder           # Implementation work.
+  planner: deepseek_coder         # Spec / sprint planning.
+  reviewer: deepseek_coder        # Code review (independence recommended).
+  fast: deepseek_coder            # Latency-sensitive roles.
 
-latency_routing:
-  fast: deepseek_coder
+quality_routing:                  # Map quality tier -> profile id.
+  high: deepseek_coder            # High-stakes dispatches (e.g., refactors).
+  medium: deepseek_coder          # Default-quality dispatches.
 
-pattern_routing:
-  return_review: reviewer
-  commit_message: weak
-  gap_analysis: fast
-  code_generation: coder
-  planning: planner
+latency_routing:                  # Map latency tier -> profile id.
+  fast: deepseek_coder            # Latency-bound dispatches.
+
+pattern_routing:                  # Map task pattern -> role key in role_routing.
+  return_review: reviewer         # Review-return tasks route to reviewer role.
+  commit_message: weak            # Commit msgs route to weak_model_profile.
+  gap_analysis: fast              # Gap analysis routes to latency_routing.fast.
+  code_generation: coder          # Code generation routes to role_routing.coder.
+  planning: planner               # Planning tasks route to role_routing.planner.

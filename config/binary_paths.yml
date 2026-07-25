@@ -1,15 +1,35 @@
-# Binary paths configuration
-# Override paths to external binaries. Defaults to PATH lookup via shutil.which.
+# =============================================================================
+# binary_paths.yml — External-binary path overrides (shipped sample).
+# =============================================================================
+#
+# Purpose:
+#   Overrides the lookup path for external CLI binaries that gludd shells out
+#   to (terraform, ansible-playbook, vault, etc.). When a path is the bare
+#   binary name (e.g. "terraform"), gludd resolves it via `shutil.which()` at
+#   startup. When an absolute or relative path is given, gludd uses it verbatim
+#   — useful for pinning specific versions per deployment.
+#
+# REQUIRED vs OPTIONAL:
+#   OPTIONAL (defaults are used if missing).
+#
+# What happens if this file is missing:
+#   BinaryPaths() (loaded in src/general_ludd/daemon.py:392-397) returns None,
+#   and every subsystem falls back to `shutil.which(<binary>)` on PATH. If a
+#   binary is not on PATH, the relevant role (terraform_apply, ansible_runner,
+#   vault_init, etc.) fails at invocation with a clear "binary not found" error
+#   rather than crashing the daemon. To pin specific binary paths, operators
+#   copy this file to ~/.config/general-ludd/binary_paths.yml and edit.
+# =============================================================================
 
 binary_paths:
-  terraform: "terraform"
-  opentofu: "tofu"
-  vault: "vault"
-  openbao: "bao"
-  podman: "podman"
-  docker: "docker"
-  ansible_playbook: "ansible-playbook"
-  git: "git"
-  uv: "uv"
-  opa: "opa"
-  conftest: "conftest"
+  terraform: "terraform"          # Infrastructure-as-code apply/plan.
+  opentofu: "tofu"                # OpenTofu fork of Terraform (OSS).
+  vault: "vault"                  # HashiCorp Vault CLI (legacy secrets).
+  openbao: "bao"                  # OpenBao fork of Vault (gludd default).
+  podman: "podman"                # Container runtime for process_isolation.
+  docker: "docker"                # Alt container runtime.
+  ansible_playbook: "ansible-playbook" # Playbook executor (roles).
+  git: "git"                      # Git CLI for git_automation subsystem.
+  uv: "uv"                        # Python package manager (preferred over pip).
+  opa: "opa"                      # Open Policy Agent (policy gates).
+  conftest: "conftest"            # Rego policy test runner for IaC.

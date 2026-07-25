@@ -1,7 +1,35 @@
-# TDD Compliance Allowlist
-# Each entry must have a documented reason. "Don't need tests" is not a reason.
-# Structural exclusions (__init__.py, .pyi, __pycache__, typing/protocol stubs)
-# are handled in code and do not need entries here.
+# =============================================================================
+# tdd_allowlist.yml — TDD compliance allowlist (loaded by the gate).
+# =============================================================================
+#
+# Purpose:
+#   Lists source files that the TDD compliance gate
+#   (scripts/check_tdd_compliance.py, invoked by `make check-tdd-compliance`)
+#   exempts from the "every src/ file needs a tests/unit/test_<name>.py" rule.
+#   Without an entry here, a modified src/ file with no matching test file
+#   BLOCKS the commit (exit 1 from the gate).
+#
+# REQUIRED vs OPTIONAL:
+#   OPTIONAL (defaults are used if missing).
+#
+# What happens if this file is missing:
+#   scripts/check_tdd_compliance.py prints a PyYAML-missing warning but does
+#   NOT fail — it falls back to an empty allowlist, meaning every src/ file
+#   without a test file is flagged. Effectively: stricter gate, not a softer
+#   one. Re-add this file to carve out the well-justified exceptions below.
+#
+# Format:
+#   allowlist:
+#     - path: "<relative/path/from/repo/root.py>"
+#       reason: "<why indirect test coverage is sufficient>"
+#
+# Rules for entries:
+#   - "Don't need tests" is NOT a valid reason.
+#   - Structural exclusions (__init__.py, *.pyi, typing/protocol stubs,
+#     __pycache__) are handled in code and do NOT need entries here.
+#   - Each entry is audited at gate time — vague reasons fail review.
+# =============================================================================
+
 allowlist:
   - path: "src/general_ludd/db/models.py"
     reason: "SQLAlchemy ORM model definitions — tested indirectly via repository integration tests and migration tests"
