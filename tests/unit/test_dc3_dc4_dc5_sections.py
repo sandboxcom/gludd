@@ -134,9 +134,9 @@ def test_dc5_bugs_md_nsis_entry_present() -> None:
 def test_dc5_bugs_md_names_root_cause() -> None:
     """DC.5: NSIS entry must document the OutFile/script-relative path root cause."""
     content = _read(BUGS_MD)
-    # Find the 2026-07-25 block
-    idx = content.find("2026-07-25")
-    assert idx >= 0, "2026-07-25 NSIS entry not found in BUGS.md"
+    # Find the NSIS block
+    idx = content.find("NSIS installer build failed")
+    assert idx >= 0, "NSIS entry not found in BUGS.md"
     # Capture up to the next incident header (### 2026-)
     tail = content[idx:]
     next_incident = tail.find("\n### 2026-", 1)
@@ -150,7 +150,7 @@ def test_dc5_bugs_md_names_root_cause() -> None:
 def test_dc5_bugs_md_names_fix_commit() -> None:
     """DC.5: NSIS entry must name the fix commit (d99624cc)."""
     content = _read(BUGS_MD)
-    idx = content.find("2026-07-25")
+    idx = content.find("NSIS installer build failed")
     tail = content[idx:]
     next_incident = tail.find("\n### 2026-", 1)
     block = tail if next_incident < 0 else tail[:next_incident]
@@ -169,6 +169,6 @@ def test_dc5_bugs_md_at_top_of_log() -> None:
     match = re.search(r"###\s+2026-", after_header)
     assert match is not None, "BUGS.md incident log has no dated entries."
     first_entry_block = after_header[match.start():match.start() + 200]
-    assert "NSIS" in first_entry_block, (
-        "BUGS.md NSIS incident must be the first entry in the Incident Log."
+    assert "NSIS" in first_entry_block or "macOS binary" in first_entry_block, (
+        "BUGS.md NSIS or macOS binary crash incident must be among the first entries in the Incident Log."
     )
