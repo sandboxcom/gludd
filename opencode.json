@@ -1,4 +1,5 @@
 {
+  "$schema": "https://opencode.ai/config.json",
   "permission": {
     "read": [
       { "path": "/Users/shawnwilson/gludd/**", "allow": true },
@@ -88,7 +89,6 @@
     "./.opencode/plugin/enforce-no-ci-poll.ts",
     "./.opencode/plugin/enforce-release-deadline.ts",
     "./.opencode/plugin/enforce-task-tracking.ts",
-    "./.opencode/plugins/watchdog.ts",
-    "@vectorize-io/opencode-hindsight"
+    "./.opencode/plugins/watchdog.ts"
   ]
 }

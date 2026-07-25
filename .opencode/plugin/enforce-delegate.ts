@@ -572,14 +572,18 @@ function writeForceDispatchSignal(cmds: DispatchItem[]): void {
 // the prior block message (which embeds the commands directly) has already
 // been delivered to the agent's context. The file is a one-shot signal; once
 // consumed it must be deleted.
+function deleteForceDispatchSignal(): void {
+  try { fs.unlinkSync(FORCE_DISPATCH_FILE) } catch { /* absent OK */ }
+}
+
 function consumeForceDispatchSignal(): DispatchItem[] | null {
   try {
     if (!fs.existsSync(FORCE_DISPATCH_FILE)) return null
     const data = JSON.parse(fs.readFileSync(FORCE_DISPATCH_FILE, "utf8"))
-    try { fs.unlinkSync(FORCE_DISPATCH_FILE) } catch { /* absent OK */ }
+    deleteForceDispatchSignal()
     return Array.isArray(data.dispatch_commands) ? data.dispatch_commands : null
   } catch {
-    try { fs.unlinkSync(FORCE_DISPATCH_FILE) } catch { /* absent OK */ }
+    deleteForceDispatchSignal()
     return null
   }
 }
