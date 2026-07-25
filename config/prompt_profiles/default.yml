@@ -1,0 +1,46 @@
+# Prompt Profile: default
+# =======================
+# This is the built-in default prompt profile used by all agents
+# unless overridden in config/agents/default_agents.yml.
+#
+# Prompt profiles control the system prompt, behavior flags, and
+# skill attachments for an agent. Copy this file to create custom
+# profiles (e.g., config/prompt_profiles/terse.yml).
+
+profile_id: default
+description: "Built-in default — balanced coding, review, and planning"
+
+# System prompt template — Jinja2 template path relative to templates/
+# This template is rendered with agent context (name, role, tools).
+# The file must exist under templates/prompts/ (or a project override dir).
+system_prompt_template: prompts/base_harness_aware.md.j2
+
+# Behavior flags — control agent runtime behavior.
+# These map onto AgentBehavior fields rendered into the system prompt.
+behavior:
+  session_persistence: true          # Agent maintains SESSION.md across turns.
+  verbose_output: true               # Agent explains its actions inline.
+  auto_commit: false                 # Agent commits after tests pass (off by default).
+  max_reasoning_steps: 10            # Max chain-of-thought depth before acting.
+  require_evidence: true             # Every factual claim must cite a tool output.
+
+# Skills — additional capabilities attached to this profile.
+# Each entry MUST match a markdown file in config/skills/<name>.md.
+skills:
+  - codify_directive                 # Codify lessons into AGENTS.md + hooks.
+  - return_review                    # Review completed work before reporting done.
+
+# Model hints — override model routing for specific task types.
+# Keys are task-type aliases; values MUST be valid TaskRole names
+# (planner, coder, reviewer, editor, compactor, enumerator).
+model_hints:
+  code_generation: coder             # Use coder model profile for generation tasks.
+  code_review: reviewer              # Use reviewer model profile for review tasks.
+  planning: planner                  # Use planner model profile for planning tasks.
+
+# Token budget — per-agent token limits.
+# These bound the prompt + response size sent to the model gateway.
+token_budget:
+  max_input_tokens: 180000           # Leave headroom under the context window.
+  max_output_tokens: 8000            # Max response length per turn.
+  reserve_for_tools: 20000           # Tokens reserved for tool I/O context.

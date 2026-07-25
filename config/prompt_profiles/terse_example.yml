@@ -1,0 +1,37 @@
+# Prompt Profile: terse_example
+# =============================
+# Minimal profile for fast, terse agents. Contrasts with default.yml by:
+#   - Disabling verbose_output and session_persistence (no SESSION.md churn).
+#   - Lowering max_reasoning_steps to 3 (act fast, reason less).
+#   - Dropping skills to an empty list (no codify/review overhead).
+#   - Shrinking the token budget (smaller prompts, shorter responses).
+# Use this as a starting point for high-throughput subagents where latency
+# and token cost matter more than depth.
+
+profile_id: terse_example
+description: "Minimal profile for fast, low-overhead subagents"
+
+# System prompt template — same template family as default, but the agent's
+# rendered prompt is shorter because fewer skills/behavior flags are injected.
+system_prompt_template: prompts/base_harness_aware.md.j2
+
+# Behavior flags — trimmed for speed over thoroughness.
+behavior:
+  session_persistence: false         # No SESSION.md writes; subagents are ephemeral.
+  verbose_output: false              # Agent outputs only the result, no narration.
+  auto_commit: false                 # Still off — subagents should not commit.
+  max_reasoning_steps: 3             # Act after at most 3 reasoning steps.
+  require_evidence: true             # Keep evidence requirement (never lie).
+
+# Skills — none attached. A terse agent does the work, not the meta-work.
+skills: []
+
+# Model hints — route everything to the coder profile for speed.
+model_hints:
+  code_generation: coder
+
+# Token budget — tight bounds to keep cost and latency low.
+token_budget:
+  max_input_tokens: 60000            # Smaller context window (cheaper model tier).
+  max_output_tokens: 2000            # Short responses only.
+  reserve_for_tools: 8000            # Minimal tool I/O reservation.
