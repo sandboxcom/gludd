@@ -18,7 +18,7 @@ export function getDispatchTools(): readonly string[] {
 }
 export function getDenyMessagePrefix(): string { return "DIRTY TREE" }
 export const METADATA_FILES: ReadonlySet<string> = Object.freeze(
-  new Set(["SESSION.md", "TASKS.md", "BUGS.md", ".gitignore", ".ci-status", ".gate-status"]),
+  new Set(["SESSION.md", "TASKS.md", "BUGS.md", ".ci-status"]),
 )
 function _extractFilePath(line: string): string {
   const path = line.slice(3).trim()

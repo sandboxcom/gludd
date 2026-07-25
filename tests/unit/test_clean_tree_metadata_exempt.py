@@ -1,4 +1,4 @@
-"""BP.18: Clean-tree check exempts metadata files (SESSION.md, TASKS.md, BUGS.md, .gitignore, .ci-status, .gate-status).
+"""BP.18: Clean-tree check exempts metadata files (SESSION.md, TASKS.md, BUGS.md, .ci-status).
 
 Per AGENTS.md "Clean Tree Before Dispatch" (2026-07-08) + BP.18 exemption.
 When ALL dirty files are runtime metadata/docs (not code), the clean-tree
@@ -15,8 +15,7 @@ PLUGIN_PATH = ROOT / ".opencode/plugin/enforce-clean-tree.ts"
 EXPORTS_PATH = ROOT / ".opencode/lib/plugin_test_exports.ts"
 
 EXPECTED_METADATA_FILES = {
-    "SESSION.md", "TASKS.md", "BUGS.md", ".gitignore",
-    ".ci-status", ".gate-status",
+    "SESSION.md", "TASKS.md", "BUGS.md", ".ci-status",
 }
 
 
@@ -53,13 +52,20 @@ def _init_repo(cwd: Path) -> None:
 
 
 def _extract_file_paths(status: str) -> set[str]:
-    """Mirror _extractFilePath() logic: strip 3-char status, handle renames."""
+    """Parse file paths from `git status --porcelain` output.
+
+    Porcelain format: ``XY PATH`` or ``XY ORIG -> PATH`` where XY is a 2-char
+    status code. Uses whitespace splitting (robust to status-field width
+    variations across git versions) rather than a fixed character offset.
+    """
     paths: set[str] = set()
     for line in status.strip().split("\n"):
-        line = line.strip()
-        if not line:
+        if not line.strip():
             continue
-        path = line[3:].strip()
+        parts = line.split(None, 1)
+        if len(parts) < 2:
+            continue
+        path = parts[1].strip()
         arrow = path.rfind(" -> ")
         if arrow >= 0:
             path = path[arrow + 4:]
@@ -77,7 +83,7 @@ class TestMetadataFilesConstant:
     def test_all_expected_files_present(self):
         src = _exports_source()
         match = re.search(
-            r'METADATA_FILES[^=]*=\s*Object\.freeze\(\s*new Set\(\[(.*?)\]\)\s*\)',
+            r'METADATA_FILES[^=]*=\s*Object\.freeze\(\s*new Set\(\[(.*?)\]\),?\s*\)',
             src, re.DOTALL,
         )
         assert match, "METADATA_FILES Object.freeze(new Set(...)) not found"
@@ -164,20 +170,36 @@ class TestIsMetadataOnlyDirtyFunction:
         )
         assert is_meta_only, "Empty status = clean = allowed"
 
-    def test_gitignore_only_returns_true(self, tmp_path):
-        """Dirty tree with only .gitignore → metadata-only → allowed."""
-        repo = tmp_path / "gitignore-only"
+    def test_metadata_only_session_returns_true(self, tmp_path):
+        """Dirty tree with only SESSION.md → metadata-only → allowed."""
+        repo = tmp_path / "session-only"
         repo.mkdir()
         _init_repo(repo)
         (repo / "src.py").write_text("content")
         subprocess.run(["git", "add", "src.py"], cwd=repo, capture_output=True)
         subprocess.run(["git", "commit", "-m", "init"], cwd=repo, capture_output=True)
-        (repo / ".gitignore").write_text("*.pyc")
+        (repo / "SESSION.md").write_text("session update")
         status = _git_status_porcelain(repo)
         paths = _extract_file_paths(status)
-        assert paths == {".gitignore"}
+        assert paths == {"SESSION.md"}, f"Unexpected dirty paths: {paths}"
         is_meta_only = paths.issubset(EXPECTED_METADATA_FILES)
-        assert is_meta_only, ".gitignore only → metadata-only → allowed"
+        assert is_meta_only, "Only SESSION.md dirty → should be allowed"
+
+    def test_metadata_only_tasks_bugs_returns_true(self, tmp_path):
+        """Dirty tree with TASKS.md + BUGS.md → metadata-only → allowed."""
+        repo = tmp_path / "tasks-bugs"
+        repo.mkdir()
+        _init_repo(repo)
+        (repo / "src.py").write_text("content")
+        subprocess.run(["git", "add", "src.py"], cwd=repo, capture_output=True)
+        subprocess.run(["git", "commit", "-m", "init"], cwd=repo, capture_output=True)
+        (repo / "TASKS.md").write_text("tasks update")
+        (repo / "BUGS.md").write_text("bugs update")
+        status = _git_status_porcelain(repo)
+        paths = _extract_file_paths(status)
+        assert paths == {"TASKS.md", "BUGS.md"}, f"Unexpected dirty paths: {paths}"
+        is_meta_only = paths.issubset(EXPECTED_METADATA_FILES)
+        assert is_meta_only, "TASKS.md + BUGS.md dirty → should be allowed"
 
     def test_staged_metadata_returns_true(self, tmp_path):
         """Staged BUGS.md (index dirty) → metadata-only → allowed."""
