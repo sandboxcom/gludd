@@ -576,14 +576,15 @@ class TestMergeConflictWorkflow:
 
     def test_parse_single_conflict_hunk(self):
         mc = self._controller()
-        content = """\
-line before
-<<<<<<< ours
-a = 1
-=======
-a = 2
->>>>>>> theirs
-line after"""
+        content = (
+            "line before\n"
+            f"{'<' * 7} ours\n"
+            "a = 1\n"
+            f"{'=' * 7}\n"
+            "a = 2\n"
+            f"{'>' * 7} theirs\n"
+            "line after"
+        )
         hunks = mc.parse_hunks(content)
         assert len(hunks) == 1
         assert hunks[0].ours == ("a = 1",)
@@ -592,18 +593,19 @@ line after"""
 
     def test_parse_multiple_hunks(self):
         mc = self._controller()
-        content = """\
-<<<<<<< ours
-x = 1
-=======
-x = 2
->>>>>>> theirs
-middle
-<<<<<<< ours
-y = 3
-=======
-y = 4
->>>>>>> theirs"""
+        content = (
+            f"{'<' * 7} ours\n"
+            "x = 1\n"
+            f"{'=' * 7}\n"
+            "x = 2\n"
+            f"{'>' * 7} theirs\n"
+            "middle\n"
+            f"{'<' * 7} ours\n"
+            "y = 3\n"
+            f"{'=' * 7}\n"
+            "y = 4\n"
+            f"{'>' * 7} theirs"
+        )
         hunks = mc.parse_hunks(content)
         assert len(hunks) == 2
 
@@ -696,12 +698,13 @@ y = 4
 
     def test_plan_file_auto_resolvable(self):
         mc = self._controller()
-        content = """\
-<<<<<<< ours
-import os
-=======
-from pathlib import Path
->>>>>>> theirs"""
+        content = (
+            f"{'<' * 7} ours\n"
+            "import os\n"
+            f"{'=' * 7}\n"
+            "from pathlib import Path\n"
+            f"{'>' * 7} theirs"
+        )
         plan = mc.plan_file("src/foo.py", content)
         assert plan.path == "src/foo.py"
         assert plan.auto_resolvable is True
@@ -709,30 +712,32 @@ from pathlib import Path
 
     def test_plan_file_with_escalation_is_not_auto_resolvable(self):
         mc = self._controller()
-        content = """\
-<<<<<<< ours
-a = 1
-=======
-a = 2
->>>>>>> theirs"""
+        content = (
+            f"{'<' * 7} ours\n"
+            "a = 1\n"
+            f"{'=' * 7}\n"
+            "a = 2\n"
+            f"{'>' * 7} theirs"
+        )
         plan = mc.plan_file("src/bar.py", content)
         assert plan.auto_resolvable is False
         assert plan.escalation_count == 1
 
     def test_plan_file_mixed_resolutions(self):
         mc = self._controller()
-        content = """\
-<<<<<<< ours
-import os
-=======
-import sys
->>>>>>> theirs
-middle
-<<<<<<< ours
-result = heavy_compute()
-=======
-result = 42
->>>>>>> theirs"""
+        content = (
+            f"{'<' * 7} ours\n"
+            "import os\n"
+            f"{'=' * 7}\n"
+            "import sys\n"
+            f"{'>' * 7} theirs\n"
+            "middle\n"
+            f"{'<' * 7} ours\n"
+            "result = heavy_compute()\n"
+            f"{'=' * 7}\n"
+            "result = 42\n"
+            f"{'>' * 7} theirs"
+        )
         plan = mc.plan_file("src/main.py", content)
         assert len(plan.resolutions) == 2
         assert plan.auto_resolvable is False
@@ -1003,12 +1008,13 @@ class TestCrossControllerIntegration:
         prompt = renderer.render(behavior)
         assert "TDD" in prompt
 
-        conflict_content = """\
-<<<<<<< ours
-timeout = 30
-=======
-timeout = 15
->>>>>>> theirs"""
+        conflict_content = (
+            f"{'<' * 7} ours\n"
+            "timeout = 30\n"
+            f"{'=' * 7}\n"
+            "timeout = 15\n"
+            f"{'>' * 7} theirs"
+        )
         plan = mc.plan_file("config.py", conflict_content)
         assert plan.auto_resolvable is False
         assert plan.escalation_count == 1

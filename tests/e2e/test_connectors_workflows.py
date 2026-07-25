@@ -39,8 +39,10 @@ from general_ludd.connectors.docker_engine import (
     _DockerResponse,
     _is_multiplexed,
     _iter_log_payload,
-    _record as docker_record,
     _split_rfc3339,
+)
+from general_ludd.connectors.docker_engine import (
+    _record as docker_record,
 )
 from general_ludd.connectors.gcp_observability import GcpObservabilitySource
 from general_ludd.connectors.github_actions import GitHubActionsSource
@@ -61,7 +63,6 @@ from general_ludd.connectors.registry import (
     _validate_source_class,
 )
 from general_ludd.connectors.webhook_buffer import WebhookBufferSource
-
 
 # ============================================================================
 # Helpers

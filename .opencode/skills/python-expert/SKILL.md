@@ -36,20 +36,20 @@ core count.
     import sys
     import threading
     import time
-    
+
     def cpu_bound():
         start = time.perf_counter()
         x = 0
         while time.perf_counter() - start < 1.0:
             x += 1
         return x
-    
+
     single = cpu_bound()  # baseline
-    
+
     counts = []
     def worker():
         counts.append(cpu_bound())
-    
+
     t1 = threading.Thread(target=worker)
     t2 = threading.Thread(target=worker)
     t1.start(); t2.start()

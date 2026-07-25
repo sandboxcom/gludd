@@ -11,31 +11,31 @@ Covers:
 
 from __future__ import annotations
 
-import json
+import contextlib
 import os
 import tempfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
-from sqlalchemy import select, func, text
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from general_ludd.db.models import Base, AgentMessageModel, TodoModel, TodoEventModel
+from general_ludd.db.models import Base
 from general_ludd.db.repository import (
-    TodoRepository,
     AgentMessageRepository,
     ConcurrencyError,
     InvalidTransitionError,
+    TodoRepository,
 )
-from general_ludd.models.router import ModelRouter
 from general_ludd.models.failover import ModelFailoverChain
+from general_ludd.models.router import ModelRouter
 from general_ludd.planning.artifact import PlanArtifact
 from general_ludd.planning.repo_map import CodeSymbol, RepoMap, RepoMapBuilder
 from general_ludd.schemas.todo import TodoStatus
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -81,10 +81,8 @@ async def db_file_session():
             await conn.run_sync(Base.metadata.drop_all)
     finally:
         await engine.dispose()
-        try:
+        with contextlib.suppress(OSError):
             os.unlink(db_path)
-        except OSError:
-            pass
 
 
 def _make_todo_data(**overrides):
@@ -166,9 +164,9 @@ class TestTodoRepositoryCRUD:
 
     async def test_get_by_ids_batch(self, db_session: AsyncSession):
         repo = TodoRepository(db_session)
-        t1 = await repo.create(_make_todo_data(todo_id="BATCH-1", title="One"))
-        t2 = await repo.create(_make_todo_data(todo_id="BATCH-2", title="Two"))
-        t3 = await repo.create(_make_todo_data(todo_id="BATCH-3", title="Three"))
+        await repo.create(_make_todo_data(todo_id="BATCH-1", title="One"))
+        await repo.create(_make_todo_data(todo_id="BATCH-2", title="Two"))
+        await repo.create(_make_todo_data(todo_id="BATCH-3", title="Three"))
 
         result = await repo.get_by_ids(["BATCH-1", "BATCH-3", "NONEXISTENT"])
         assert len(result) == 2
@@ -844,8 +842,8 @@ class TestPlanArtifact:
     def test_from_todo(self):
         class FakeTodo:
             todo_id = "TODO-FAKE"
-            tags = ["urgent", "backend"]
-            test_commands = ["pytest -v", "make lint"]
+            tags: ClassVar[list[str]] = ["urgent", "backend"]
+            test_commands: ClassVar[list[str]] = ["pytest -v", "make lint"]
             title = "Fake Title"
             description = "Fake Description"
 
@@ -1073,9 +1071,9 @@ class TestDatabaseSessionLifecycle:
             async with engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
 
-            async with engine.connect() as conn1:
+            async with engine.connect():
                 pass
-            async with engine.connect() as conn2:
+            async with engine.connect():
                 pass
         finally:
             await engine.dispose()

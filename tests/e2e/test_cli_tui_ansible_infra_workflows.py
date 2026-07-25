@@ -15,13 +15,12 @@ import io
 import os
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 import yaml
 
 from general_ludd.cli import build_parser
-
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 1. CLI COMMAND PARSING
@@ -600,7 +599,7 @@ class TestCliHelpOutput:
         try:
             with pytest.raises(SystemExit) as exc:
                 parser, _ = build_parser()
-                parser.parse_args(sub_args + ["--help"])
+                parser.parse_args([*sub_args, "--help"])
             assert exc.value.code == 0
         finally:
             sys.stdout = old_stdout
@@ -664,7 +663,6 @@ class TestCliSubcommandRouting:
         assert not missing, f"Group commands missing from subcommand_map: {missing}"
 
     def test_subcommand_map_values_are_parsers(self):
-        import argparse as _argparse
         _, sub_map = build_parser()
         assert len(sub_map) >= 15
         for name, subparser in sub_map.items():
@@ -760,7 +758,7 @@ class TestTUIKeyHandler:
         assert state["current_view"] == "main"
 
     def test_view_toggle_keys(self):
-        from general_ludd.tui.keybindings import TUIKeyHandler, _TOGGLE_VIEWS
+        from general_ludd.tui.keybindings import _TOGGLE_VIEWS
         assert len(_TOGGLE_VIEWS) >= 20
         for key, (view_name, _status) in _TOGGLE_VIEWS.items():
             assert isinstance(key, str) and len(key) == 1
@@ -874,7 +872,7 @@ class TestTUIBreadcrumb:
     """Verify TUI breadcrumb navigation."""
 
     def test_push_and_pop(self):
-        from general_ludd.tui.breadcrumb import push_breadcrumb, pop_breadcrumb
+        from general_ludd.tui.breadcrumb import pop_breadcrumb, push_breadcrumb
         state: dict = {"breadcrumb": ["main"]}
         push_breadcrumb(state, "models")
         assert state["breadcrumb"] == ["main", "models"]
@@ -892,8 +890,9 @@ class TestTUITables:
     """Verify TUI table factory."""
 
     def test_make_table_returns_rich_table(self):
-        from general_ludd.tui.tables import _make_table
         from rich.table import Table
+
+        from general_ludd.tui.tables import _make_table
         columns = [("Name", "cyan", 1, 10), ("Value", "green", 2, 20)]
         t = _make_table("Test", columns, rows=[("k1", "v1"), ("k2", "v2")])
         assert isinstance(t, Table)
@@ -939,7 +938,7 @@ class TestAnsibleRunnerPaths:
     def test_collections_path_entry_frozen(self):
         from general_ludd.ansible.paths import CollectionsPathEntry
         e = CollectionsPathEntry(source="test", path=Path("/tmp"), precedence=0)
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             e.source = "other"
 
     def test_activate_collection_version(self, tmp_path):
@@ -1152,9 +1151,9 @@ class TestAnsibleConversion:
     def test_normalize_role_output_phonetic(self):
         from general_ludd.ansible.runner import _normalize_role_output
         raw = _normalize_role_output("phonetic_transcribe", {
-            "words": [{"transcription": "həˈloʊ"}],
+            "words": [{"transcription": "helou"}],
         })
-        assert "həˈloʊ" in raw["ipa"]
+        assert "helou" in raw["ipa"]
 
     def test_normalize_role_output_locale(self):
         from general_ludd.ansible.runner import _normalize_role_output
@@ -1371,8 +1370,8 @@ class TestTerraformTfvars:
         assert escape_tfvar_value('a\nb') == '"a\\nb"'
 
     def test_engine_serve_cmd_vllm(self):
-        from general_ludd.infra.terraform import _engine_serve_cmd
         from general_ludd.infra.compute import ComputeConfig, ComputeProvider, GPUType, InferenceEngine
+        from general_ludd.infra.terraform import _engine_serve_cmd
         cfg = ComputeConfig(
             provider=ComputeProvider.AWS,
             gpu_type=GPUType.A100_80,
@@ -1385,8 +1384,8 @@ class TestTerraformTfvars:
         assert "Llama-3.2-1B" in cmd
 
     def test_engine_serve_cmd_llamacpp(self):
-        from general_ludd.infra.terraform import _engine_serve_cmd
         from general_ludd.infra.compute import ComputeConfig, ComputeProvider, GPUType, InferenceEngine
+        from general_ludd.infra.terraform import _engine_serve_cmd
         cfg = ComputeConfig(
             provider=ComputeProvider.GCP,
             gpu_type=GPUType.T4,
@@ -1400,8 +1399,8 @@ class TestTerraformTfvars:
         assert "-m" in cmd
 
     def test_user_data_script(self):
-        from general_ludd.infra.terraform import _user_data_script
         from general_ludd.infra.compute import ComputeConfig, ComputeProvider, GPUType, InferenceEngine
+        from general_ludd.infra.terraform import _user_data_script
         cfg = ComputeConfig(
             provider=ComputeProvider.AWS,
             gpu_type=GPUType.A100_80,
@@ -1422,8 +1421,8 @@ class TestTerraformStateBackend:
     """Verify state backend selection."""
 
     def test_local_backend_default(self):
-        from general_ludd.infra.terraform_state import StateBackendSelector
         from general_ludd.infra.compute import ComputeConfig, ComputeProvider, GPUType, InferenceEngine
+        from general_ludd.infra.terraform_state import StateBackendSelector
         selector = StateBackendSelector(
             openbao_client=MagicMock(),
             secrets_manager=MagicMock(health_check=lambda: False),
@@ -1438,8 +1437,8 @@ class TestTerraformStateBackend:
         assert backend.kind == "local"
 
     def test_remote_backend_above_threshold(self):
-        from general_ludd.infra.terraform_state import StateBackendSelector
         from general_ludd.infra.compute import ComputeConfig, ComputeProvider, GPUType, InferenceEngine
+        from general_ludd.infra.terraform_state import StateBackendSelector
         selector = StateBackendSelector(
             openbao_client=MagicMock(),
             secrets_manager=MagicMock(health_check=lambda: True),
@@ -1486,25 +1485,25 @@ class TestComputeConfig:
 
     def test_gpu_count_minimum(self):
         from general_ludd.infra.compute import ComputeConfig, ComputeProvider, GPUType
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             ComputeConfig(provider=ComputeProvider.AWS, gpu_type=GPUType.T4,
                           gpu_count=0, model_name="x")
 
     def test_max_cost_must_be_positive(self):
         from general_ludd.infra.compute import ComputeConfig, ComputeProvider, GPUType
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             ComputeConfig(provider=ComputeProvider.AWS, gpu_type=GPUType.T4,
                           max_cost_usd=0, model_name="x")
 
     def test_timeout_must_be_positive(self):
         from general_ludd.infra.compute import ComputeConfig, ComputeProvider, GPUType
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             ComputeConfig(provider=ComputeProvider.AWS, gpu_type=GPUType.T4,
                           timeout_minutes=0, model_name="x")
 
     def test_disk_size_minimum(self):
         from general_ludd.infra.compute import ComputeConfig, ComputeProvider, GPUType
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             ComputeConfig(provider=ComputeProvider.AWS, gpu_type=GPUType.T4,
                           disk_size_gb=0, model_name="x")
 
@@ -1519,7 +1518,7 @@ class TestComputeConfig:
 
         invalid = ["bad$name", "name with spaces", 'name"quote']
         for name in invalid:
-            with pytest.raises(Exception):
+            with pytest.raises(ValueError):
                 ComputeConfig(provider=ComputeProvider.AWS, gpu_type=GPUType.T4,
                              model_name=name)
 
@@ -1533,7 +1532,7 @@ class TestComputeConfig:
 
         invalid = ["bad region", "us east 1"]
         for r in invalid:
-            with pytest.raises(Exception):
+            with pytest.raises(ValueError):
                 ComputeConfig(provider=ComputeProvider.AWS, gpu_type=GPUType.T4,
                              region=r, model_name="x")
 
@@ -1546,7 +1545,7 @@ class TestComputeConfig:
                                workload_type=wt, model_name="x")
             assert cfg.workload_type == wt
 
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             ComputeConfig(provider=ComputeProvider.AWS, gpu_type=GPUType.T4,
                          workload_type="invalid_type", model_name="x")
 
@@ -1585,13 +1584,13 @@ class TestComputeConfig:
 
     def test_compute_instance_port_validation(self):
         from general_ludd.infra.compute import ComputeInstance, ComputeProvider, GPUType
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             ComputeInstance(instance_id="x", provider=ComputeProvider.AWS,
                            gpu_type=GPUType.T4, port=70000)
 
     def test_compute_instance_cost_non_negative(self):
         from general_ludd.infra.compute import ComputeInstance, ComputeProvider, GPUType
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             ComputeInstance(instance_id="x", provider=ComputeProvider.AWS,
                            gpu_type=GPUType.T4, cost_incurred=-1.0)
 
@@ -1610,7 +1609,7 @@ class TestComputeConfig:
                                guided_decoding_backend=backend, model_name="x")
             assert cfg.guided_decoding_backend == backend
 
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             ComputeConfig(provider=ComputeProvider.AWS, gpu_type=GPUType.T4,
                          guided_decoding_backend="bad_backend", model_name="x")
 
@@ -1710,7 +1709,7 @@ class TestPricing:
 
     def test_pricing_structure(self):
         from general_ludd.infra.pricing import PRICING
-        for model, rates in PRICING.items():
+        for _model, rates in PRICING.items():
             assert isinstance(rates, tuple)
             assert len(rates) == 2
             input_rate, output_rate = rates
@@ -1725,7 +1724,7 @@ class TestPricing:
 
     def test_infra_pricing_values_positive(self):
         from general_ludd.infra.pricing import INFRA_PRICING
-        for kind, rate in INFRA_PRICING.items():
+        for _kind, rate in INFRA_PRICING.items():
             assert rate >= 0
 
 
@@ -1742,8 +1741,8 @@ class TestProviderRegistry:
         assert len(_BUILTIN_PROVIDERS) >= 16
 
     def test_provider_info_model(self):
-        from general_ludd.infra.providers import ProviderInfo
         from general_ludd.infra.compute import ComputeProvider, GPUType
+        from general_ludd.infra.providers import ProviderInfo
         info = ProviderInfo(
             provider=ComputeProvider.AWS,
             display_name="Amazon Web Services",
@@ -1759,9 +1758,9 @@ class TestProviderRegistry:
         assert info.terraform_provider == "hashicorp/aws"
 
     def test_provider_info_display_name_validation(self):
-        from general_ludd.infra.providers import ProviderInfo
         from general_ludd.infra.compute import ComputeProvider, GPUType
-        with pytest.raises(Exception):
+        from general_ludd.infra.providers import ProviderInfo
+        with pytest.raises(ValueError):
             ProviderInfo(
                 provider=ComputeProvider.AWS,
                 display_name="",
@@ -1773,16 +1772,16 @@ class TestProviderRegistry:
             )
 
     def test_registry_get(self):
-        from general_ludd.infra.providers import ProviderRegistry
         from general_ludd.infra.compute import ComputeProvider
+        from general_ludd.infra.providers import ProviderRegistry
         reg = ProviderRegistry()
         info = reg.get(ComputeProvider.AWS)
         assert info.provider == ComputeProvider.AWS
         assert info.display_name == "Amazon Web Services"
 
     def test_registry_get_all_providers(self):
-        from general_ludd.infra.providers import ProviderRegistry
         from general_ludd.infra.compute import ComputeProvider
+        from general_ludd.infra.providers import ProviderRegistry
         reg = ProviderRegistry()
         for provider in ComputeProvider:
             try:
@@ -1803,8 +1802,8 @@ class TestProviderRegistry:
         assert "Microsoft Azure" in names
 
     def test_get_cheapest_for_gpu(self):
-        from general_ludd.infra.providers import ProviderRegistry
         from general_ludd.infra.compute import GPUType
+        from general_ludd.infra.providers import ProviderRegistry
         reg = ProviderRegistry()
         info = reg.get_cheapest_for_gpu(GPUType.A100_80)
         assert info is not None
@@ -1812,8 +1811,8 @@ class TestProviderRegistry:
         assert info.pricing["a100_80"] > 0
 
     def test_get_cheapest_for_gpu_unknown(self):
-        from general_ludd.infra.providers import ProviderRegistry
         from general_ludd.infra.compute import GPUType
+        from general_ludd.infra.providers import ProviderRegistry
         reg = ProviderRegistry()
         with pytest.raises(KeyError, match="No provider supports"):
             reg.get_cheapest_for_gpu(GPUType.AMD_MI250)
@@ -1841,8 +1840,8 @@ class TestProviderRegistry:
         assert len(sub_hour) >= 5
 
     def test_auth_env_providers(self):
-        from general_ludd.infra.providers import ProviderRegistry
         from general_ludd.infra.compute import ComputeProvider
+        from general_ludd.infra.providers import ProviderRegistry
         reg = ProviderRegistry()
         vmware_info = reg.get(ComputeProvider.VMWARE)
         assert len(vmware_info.auth_env) >= 1
@@ -1852,8 +1851,8 @@ class TestProviderRegistry:
         assert "FIREWORKS_API_KEY" in fireworks_info.auth_env
 
     def test_api_only_providers(self):
-        from general_ludd.infra.providers import ProviderRegistry
         from general_ludd.infra.compute import ComputeProvider
+        from general_ludd.infra.providers import ProviderRegistry
         reg = ProviderRegistry()
         for prov in (ComputeProvider.TOGETHER_AI, ComputeProvider.FIREWORKS_AI,
                      ComputeProvider.HUGGINGFACE, ComputeProvider.REPLICATE):

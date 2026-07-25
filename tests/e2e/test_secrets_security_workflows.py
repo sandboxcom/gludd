@@ -27,9 +27,9 @@ from fastapi.testclient import TestClient
 # Shared fixtures and helpers
 # ---------------------------------------------------------------------------
 
-_PSK = "e2e-secrets-security-psk"
-_API_KEY = "sk-proj-e2e-secret-test-key-abcdef1234567890"
-_SECRET_VALUE = "e2e-supersecret-value-42"
+_PSK = "e2e-secrets-security-psk"  # pragma: allowlist secret
+_API_KEY = "sk-proj-e2e-secret-test-key-abcdef1234567890"  # pragma: allowlist secret
+_SECRET_VALUE = "e2e-supersecret-value-42"  # pragma: allowlist secret
 
 
 def _make_mock_hvac_client() -> MagicMock:
@@ -272,7 +272,7 @@ class TestVaultTokenAuthLifecycle:
             }
         }
         new_secret = mgr.rotate_approle_secret_id("rotate-role")
-        assert new_secret == "rotated-secret-id-999"
+        assert new_secret == "rotated-secret-id-999"  # pragma: allowlist secret
         mock_client.auth.approle.destroy_secret_id_accessor.assert_called_once_with(
             "rotate-role", "accessor-001"
         )
