@@ -1274,13 +1274,43 @@ clean-enforcement-state:
 	@echo "=== Cleaning enforcement state files ==="
 	@rm -f /tmp/gludd-tool-streak.json
 	@rm -f /tmp/gludd-mainthread-streak.json
-	@rm -f /tmp/gludd-ci-poll-streak.json
+	@rm -f /tmp/gludd-read-grind.json
+	@rm -f /tmp/gludd-model-util.json
+	@rm -f /tmp/gludd-force-delegate.json
+	@rm -f /tmp/gludd-force-dispatch.json
 	@rm -f /tmp/gludd-stagnant-streak.json
 	@rm -f /tmp/gludd-release-deadline.json
-	@rm -f /tmp/gludd-force-dispatch.json
-	@rm -f /tmp/gludd-block-counter.json
-	@rm -f /tmp/gludd-persist-stop-block.json
+	@rm -f /tmp/gludd-disengage-next
+	@rm -f /tmp/gludd-watchdog-disengage
+	@rm -f /tmp/gludd-watchdog-disengage.json
 	@rm -f /tmp/gludd-disengage-audit.jsonl
+	@rm -f /tmp/gludd-ci-poll-streak.json
+	@rm -f /tmp/gludd-ci-poll-counter.json
+	@rm -f /tmp/gludd-ci-check-state.json
+	@rm -f /tmp/gludd-session-start.json
+	@rm -f /tmp/gludd-enhancement-ratio.json
+	@rm -f /tmp/gludd-task-deadlines.json
+	@rm -f /tmp/gludd-task-deadlines.warnings.log
+	@rm -f /tmp/gludd-task-stale.json
+	@rm -f /tmp/gludd-multitask-state.json
+	@rm -f /tmp/gludd-floor-text-complete-count.json
+	@rm -f /tmp/gludd-stop-state.json
+	@rm -f /tmp/gludd-stop-text-complete-count.json
+	@rm -f /tmp/gludd-stop-session-blocks.json
+	@rm -f /tmp/gludd-stop-tool-counts.json
+	@rm -f /tmp/gludd-block-counter.json
+	@rm -f /tmp/gludd-block-reason.json
+	@rm -f /tmp/gludd-persist-stop-block.json
+	@rm -f /tmp/gludd-false-done-blocks.json
+	@rm -f /tmp/gludd-blanked-responses.json
+	@rm -f /tmp/gludd-missed-commit-dispatch.json
+	@rm -f /tmp/gludd-release-completeness.json
+	@rm -f /tmp/gludd-last-test-result.json
+	@rm -f /tmp/gludd-post-results-state.json
+	@rm -f /tmp/gludd-text-only-state.json
+	@rm -f /tmp/gludd-todowrite-state.json
+	@rm -f /tmp/gludd-watchdog-ci.json
+	@rm -f /tmp/gludd-context-check.json
 	@echo "Enforcement state files cleaned."
 
 clean-pycache-test-chat-history:
@@ -4743,8 +4773,11 @@ disengage-enforcement:
 	echo "Disengage count: $$COUNT (max 2/session recommended)"
 
 # --- Single-operation disengage — disarms for ONE tool call then auto-rearms ---
+# BP.5: writes a dedicated marker file /tmp/gludd-disengage-next that
+# isDisengaged() consumes on first read (delete + return true). Separate
+# from the shared disengage JSON so the two modes stay independent.
 disengage-next:
-	@echo '{"expires": 1, "reason": "single-operation disengage", "ts": "'$$(date -u +%Y-%m-%dT%H:%M:%SZ)'"}' > /tmp/gludd-watchdog-disengage.json
+	@date -u +%Y-%m-%dT%H:%M:%SZ > /tmp/gludd-disengage-next
 	@echo "DISENGAGED for next operation only. Will auto-rearm after one tool call."
 
 # --- Reload enforcement state mid-session ---
@@ -4762,6 +4795,8 @@ reload-enforcement:
 	@echo "  /tmp/gludd-mainthread-streak.json  → strength=0"
 	@rm -f /tmp/gludd-watchdog-disengage.json
 	@echo "  /tmp/gludd-watchdog-disengage.json → removed"
+	@rm -f /tmp/gludd-disengage-next
+	@echo "  /tmp/gludd-disengage-next         → removed"
 	@rm -f /tmp/gludd-false-done-blocks.json
 	@echo "  /tmp/gludd-false-done-blocks.json  → removed"
 	@rm -f /tmp/gludd-enhancement-ratio.json
@@ -4776,9 +4811,9 @@ reload-enforcement:
 
 # --- Re-arm enforcement — remove disengage signal so plugins resume blocking ---
 rearm-enforcement:
-	@if [ -f /tmp/gludd-watchdog-disengage.json ]; then \
-		rm -f /tmp/gludd-watchdog-disengage.json \
-		&& echo "REARMED: /tmp/gludd-watchdog-disengage.json removed — enforcement plugins will resume blocking."; \
+	@if [ -f /tmp/gludd-watchdog-disengage.json ] || [ -f /tmp/gludd-disengage-next ]; then \
+		rm -f /tmp/gludd-watchdog-disengage.json /tmp/gludd-disengage-next \
+		&& echo "REARMED: disengage signals removed — enforcement plugins will resume blocking."; \
 	else \
 		echo "REARMED (no-op): no disengage signal found — enforcement already active."; \
 	fi
@@ -4790,6 +4825,7 @@ enforcement-status:
 	@printf "  tool-streak:             "; [ -f /tmp/gludd-tool-streak.json ] && $(UV) run python3 -c 'import json; d=json.load(open("/tmp/gludd-tool-streak.json")); print("count=%s" % d.get("count", 0))' || echo "(none)"
 	@printf "  mainthread-streak:       "; [ -f /tmp/gludd-mainthread-streak.json ] && $(UV) run python3 -c 'import json; d=json.load(open("/tmp/gludd-mainthread-streak.json")); print("streak=%s" % d.get("streak", 0))' || echo "(none)"
 	@printf "  disengaged:              "; [ -f /tmp/gludd-watchdog-disengage.json ] && echo "YES" || echo "NO"
+	@printf "  disengage-next:          "; [ -f /tmp/gludd-disengage-next ] && echo "ARMED (single-use)" || echo "NO"
 	@printf "  enhancement-ratio:       "; [ -f /tmp/gludd-enhancement-ratio.json ] && echo "active (wave tracked)" || echo "(none — wave cleared)"
 	@printf "  session-start:           "; [ -f /tmp/gludd-session-start.json ] && echo "active" || echo "(none — window reset)"
 	@printf "  task-deadlines:          "; [ -f /tmp/gludd-task-deadlines.json ] && echo "active" || echo "(none)"
