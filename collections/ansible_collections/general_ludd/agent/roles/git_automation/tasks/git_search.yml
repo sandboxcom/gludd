@@ -1,0 +1,18 @@
+---
+- name: "Assert query parameters"
+  ansible.builtin.assert:
+    that:
+      - (query | default("")) != "" or (author | default("")) != "" or (since | default("")) != "" or (path_filter | default("")) != ""
+    fail_msg: "At least one search filter is required: query, author, since, or path_filter"
+
+- name: "Search git history"
+  ansible.builtin.command:
+    cmd: >-
+      {{ ansible_playbook_python | default("python3") }}
+      -c "import json; from general_ludd.git_automation.git_search import search_git_history; results = search_git_history(query='{{ query | default("") }}', since='{{ since | default("") }}', author='{{ author | default("") }}', path_filter='{{ path_filter | default("") }}', limit={{ limit | default(100) }}, offset={{ offset | default(0) }}, db_path='{{ db_path | default(".gludd/git_history.db") }}', repo_path='{{ repo_path | default(".") }}'); print(json.dumps(results))"
+  register: _git_search_result
+  changed_when: false
+
+- name: "Set search results fact"
+  ansible.builtin.set_fact:
+    git_search_results: "{{ _git_search_result.stdout | from_json }}"

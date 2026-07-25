@@ -1,0 +1,19 @@
+---
+- name: "Assert repo_path and db_path"
+  ansible.builtin.assert:
+    that:
+      - repo_path | default(".") | string | length > 0
+      - db_path | default(".gludd/git_history.db") | string | length > 0
+    fail_msg: "repo_path and db_path are required for git-index"
+
+- name: "Index git history into SQLite"
+  ansible.builtin.command:
+    cmd: >-
+      {{ ansible_playbook_python | default("python3") }}
+      -c "from general_ludd.git_automation.git_index import index_git_history; print(index_git_history('{{ repo_path | default(".") }}', '{{ db_path | default(".gludd/git_history.db") }}'))"
+  register: _git_index_result
+  changed_when: false
+
+- name: "Set index count fact"
+  ansible.builtin.set_fact:
+    git_index_count: "{{ _git_index_result.stdout | trim | int }}"

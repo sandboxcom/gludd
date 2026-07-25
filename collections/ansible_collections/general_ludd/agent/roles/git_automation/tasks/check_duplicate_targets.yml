@@ -1,0 +1,18 @@
+---
+- name: "Check for duplicate Makefile targets"
+  ansible.builtin.command:
+    cmd: >-
+      {{ gludd_python | default(ansible_playbook_python) }}
+      -c "from general_ludd.git_automation.duplicate_targets import main; exit(main())"
+    chdir: "{{ repo_path | default(playbook_dir) }}"
+  register: _dup_check
+  changed_when: false
+  failed_when: false
+
+- name: "Set duplicate target check result"
+  ansible.builtin.set_fact:
+    git_automation_duplicate_targets_result:
+      ok: "{{ _dup_check.rc == 0 }}"
+      return_code: "{{ _dup_check.rc }}"
+      stdout: "{{ _dup_check.stdout }}"
+      stderr: "{{ _dup_check.stderr }}"

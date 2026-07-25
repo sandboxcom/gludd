@@ -8,7 +8,7 @@
   ansible.builtin.assert:
     that:
       - git_op | string | length > 0
-    fail_msg: "git_op is required (clone|commit|gated_commit|push|merge|gated_merge|branch|worktree|state)"
+    fail_msg: "git_op is required (clone|commit|gated_commit|push|merge|gated_merge|branch|worktree|state|release_cut|release_delete|release_recut|ci_verdict|ci_cancel)"
 
 - name: "Include clone tasks"
   ansible.builtin.include_tasks: clone.yml
@@ -34,6 +34,34 @@
   ansible.builtin.include_tasks: worktree.yml
   when: git_op == "worktree"
 
+- name: "Include batch-push tasks"
+  ansible.builtin.include_tasks: batch_push.yml
+  when: git_op == "batch_push"
+
 - name: "Include state-machine guard tasks"
   ansible.builtin.include_tasks: state.yml
   when: git_op == "state"
+
+- name: "Include verify-remote tasks"
+  ansible.builtin.include_tasks: verify_remote.yml
+  when: git_op == "verify_remote"
+
+- name: "Include release_cut tasks"
+  ansible.builtin.include_tasks: release_cut.yml
+  when: git_op == "release_cut"
+
+- name: "Include release_delete tasks"
+  ansible.builtin.include_tasks: release_delete.yml
+  when: git_op == "release_delete"
+
+- name: "Include release_recut tasks"
+  ansible.builtin.include_tasks: release_recut.yml
+  when: git_op == "release_recut"
+
+- name: "Include CI verdict tasks"
+  ansible.builtin.include_tasks: ci_verdict.yml
+  when: git_op == "ci_verdict"
+
+- name: "Include CI cancel tasks"
+  ansible.builtin.include_tasks: ci_cancel.yml
+  when: git_op == "ci_cancel"

@@ -1,0 +1,12 @@
+---
+- name: "Show git history index statistics"
+  ansible.builtin.command:
+    cmd: >-
+      {{ ansible_playbook_python | default("python3") }}
+      -c "import json; from general_ludd.git_automation.git_stats import get_git_stats; stats = get_git_stats(repo_path='{{ repo_path | default(".") }}', db_path='{{ db_path | default(".gludd/git_history.db") }}'); print(json.dumps(stats, default=str))"
+  register: _git_stats_result
+  changed_when: false
+
+- name: "Set stats fact"
+  ansible.builtin.set_fact:
+    git_history_stats: "{{ _git_stats_result.stdout | from_json }}"
