@@ -202,7 +202,7 @@ class TestApplyLadder:
 
         with patch(
             "general_ludd.self_update.apply.os.environ",
-            {"GLUDD_SELF_UPDATE_APPROVAL_SECRET": "valid"},  # pragma: allowlist secret
+            {"GLUDD_SELF_UPDATE_APPROVAL_SECRET": "valid"},  # pragma: allowlist secret  # pragma: allowlist secret
         ):
             result = apply_plan(plan, request, validate=validate)
             assert result.outcome == ApplyOutcome.APPLIED
@@ -239,7 +239,7 @@ class TestApplyLadder:
         )
         with patch(
             "general_ludd.self_update.apply.os.environ",
-            {"GLUDD_SELF_UPDATE_APPROVAL_SECRET": "valid"},
+            {"GLUDD_SELF_UPDATE_APPROVAL_SECRET": "valid"},  # pragma: allowlist secret
         ):
             result = apply_plan(plan, request)
             assert result.outcome == ApplyOutcome.REFUSED
