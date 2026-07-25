@@ -51,6 +51,7 @@ interface MultitaskState {
   consecutiveNonDispatchStartTs: number
   sawNonDispatchSinceDispatch: boolean
   underFloorCount: number
+  singleDispatchWaves: number
 }
 function freshState(): MultitaskState {
   return {
@@ -66,6 +67,7 @@ function freshState(): MultitaskState {
     consecutiveNonDispatchStartTs: 0,
     sawNonDispatchSinceDispatch: false,
     underFloorCount: 0,
+    singleDispatchWaves: 0,
   }
 }
 function readState(): MultitaskState {
@@ -166,6 +168,17 @@ function handleMessageBoundary(s: MultitaskState): void {
   } else {
     s.underFloorCount = 0
   }
+  // MT.2: single-dispatch wave escalation
+  // Count consecutive waves with exactly 1 dispatch.
+  // After 3 consecutive single-dispatch waves, escalate with a warning
+  // injected into the next text.complete response.
+  // Reset when a wave has 2+ dispatches.
+  // Do NOT increment on 0-dispatch waves — that is the zero-streak violation.
+  if (s.prevMessageDispatches === 1) {
+    s.singleDispatchWaves++
+  } else if (s.prevMessageDispatches >= 2) {
+    s.singleDispatchWaves = 0
+  }
   s.thisMessageDispatches = 0
 }
 function spawnGateRefresh(): void {
@@ -195,6 +208,7 @@ let _state: MultitaskState = (() => {
   s.consecutiveNonDispatchStartTs = 0
   s.sawNonDispatchSinceDispatch = false
   s.underFloorCount = 0
+  s.singleDispatchWaves = 0
   writeState(s)
   return s
 })()

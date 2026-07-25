@@ -21,6 +21,8 @@ import { isSubagent, reportAlive, writeHeartbeat } from "../lib/shared.ts"
 
 const ENABLED = (process.env.GLUDD_DELIVERABLE_ENFORCE || "1") !== "0"
 
+const MAX_PROMPT_LINES = 20
+
 const CHECK_ONLY_PATTERNS = /\b(check|audit|scan|review|survey|report|summarize)\s+(CI|lint|typecheck|dead\s*code|dirty\s*tree|coverage|secrets|vulnerabilities|status)\b/i
 
 function extractPrompt(args: any): string {
@@ -53,6 +55,13 @@ const defaultImpl: HotModule = {
           `DELIVERABLE WARNING: dispatch prompt matches check-only pattern. ` +
           `Subagents MUST produce a concrete fix/deliverable, not just a status report. ` +
           `See AGENTS.md "Subagent Task Design — Fix, Don't Check".`
+        )
+      }
+      const promptLines = prompt.split("\n").length
+      if (promptLines > MAX_PROMPT_LINES) {
+        console.warn(
+          `TERSE PROMPT RULE: dispatch prompt is ${promptLines} lines. ` +
+          `Max: ${MAX_PROMPT_LINES} lines. Condense to essential requirements only.`
         )
       }
     } catch { /* fail open */ }
