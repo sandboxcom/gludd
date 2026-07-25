@@ -242,7 +242,7 @@ class TestRabbitMqConnector:
         )
         source = RabbitMqSource(
             {"base_url": "https://mq.example.com", "user_env": "RMQ_USER",
-             "password_env": "RMQ_PASS"},
+             "password_env": "RMQ_PASS"},  # pragma: allowlist secret
             http_get=transport,
         )
         source.health()

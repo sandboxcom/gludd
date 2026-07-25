@@ -454,7 +454,7 @@ class CrossConversationMemory:
     ) -> list[dict[str, Any]]:
         if self._hindsight_adapter is None:
             return []
-        return self._hindsight_adapter.recall(query, top_k)
+        return cast(list[dict[str, Any]], self._hindsight_adapter.recall(query, top_k))
 
     def hindsight_reflect(self, query: str) -> str:
         if self._hindsight_adapter is None:

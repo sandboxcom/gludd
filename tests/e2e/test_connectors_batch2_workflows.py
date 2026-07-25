@@ -1376,7 +1376,7 @@ class TestCircleCiConnector:
                     "number": 100,
                     "state": "completed",
                     "created_at": "2025-01-01T12:00:00.000Z",
-                    "vcs": {"revision": "abc123def456", "branch": "main"},
+                    "vcs": {"revision": "abc123def456", "branch": "main"},  # pragma: allowlist secret
                 }
             ]
         }
@@ -1493,7 +1493,7 @@ class TestTravisCiConnector:
                     "state": "passed",
                     "finished_at": "2025-01-01T12:00:00Z",
                     "branch": {"name": "main"},
-                    "commit": {"sha": "abc123def45678901234"},
+                    "commit": {"sha": "abc123def45678901234"},  # pragma: allowlist secret
                 }
             ]
         })

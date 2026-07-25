@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 _HINDSIGHT_IMPORT_ERROR: str | None = None
 try:
-    from hindsight_client import Hindsight as _HindsightClient
+    from hindsight_client import Hindsight as _HindsightClient  # type: ignore[import-not-found]
 except ImportError as exc:
     _HindsightClient = None
     _HINDSIGHT_IMPORT_ERROR = str(exc)

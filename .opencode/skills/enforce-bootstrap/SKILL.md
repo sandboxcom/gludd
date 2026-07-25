@@ -442,7 +442,7 @@ and how to inspect/reset it.
 {
   "last_check_epoch": 1753459300,
   "last_push_epoch": 1753459200,
-  "last_head_sha": "abc123def456",
+  "last_head_sha": "abc123def456",  <!-- pragma: allowlist secret -->
   "check_count": 3
 }
 ```
