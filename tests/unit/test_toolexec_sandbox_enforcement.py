@@ -9,7 +9,7 @@ from __future__ import annotations
 import os
 import subprocess
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -382,22 +382,23 @@ class TestLangGraphAgentSandboxIntegration:
         assert agent._sandbox_enforcer is None
 
     @pytest.mark.asyncio
-    async def test_tool_execution_blocked_by_unverified_sandbox(self) -> None:
+    async def test_tool_execution_blocked_by_unverified_sandbox(self, tmp_path: Path) -> None:
         from general_ludd.execution.langgraph_agent import LangGraphAgentLoop
 
         mcp_client = MagicMock()
-        mcp_client.list_tools = MagicMock()
+        mcp_client.list_tools = AsyncMock()
 
         class FakeTool:
             name = "read_file"
             description = "Read a file"
 
         mcp_client.list_tools.return_value = [FakeTool()]
+        mcp_client.call_tool = AsyncMock()
 
         registry = MagicMock()
         registry.get_tool.return_value = MagicMock(server_id="srv-1")
 
-        enforcer = SandboxEnforcer(SandboxConfig())
+        enforcer = SandboxEnforcer(SandboxConfig(jail_dir=str(tmp_path / "does-not-exist")))
         agent = LangGraphAgentLoop(
             model_gateway=MagicMock(),
             mcp_client=mcp_client,
@@ -420,14 +421,14 @@ class TestLangGraphAgentSandboxIntegration:
         (jail / "allowed.txt").write_text("hello")
 
         mcp_client = MagicMock()
-        mcp_client.list_tools = MagicMock()
+        mcp_client.list_tools = AsyncMock()
 
         class FakeTool:
             name = "read_file"
             description = "Read a file"
 
         mcp_client.list_tools.return_value = [FakeTool()]
-        mcp_client.call_tool = MagicMock()
+        mcp_client.call_tool = AsyncMock()
         mcp_client.call_tool.return_value = "hello world"
 
         registry = MagicMock()
@@ -459,13 +460,14 @@ class TestLangGraphAgentSandboxIntegration:
         outside.mkdir()
 
         mcp_client = MagicMock()
-        mcp_client.list_tools = MagicMock()
+        mcp_client.list_tools = AsyncMock()
 
         class FakeTool:
             name = "read_file"
             description = "Read a file"
 
         mcp_client.list_tools.return_value = [FakeTool()]
+        mcp_client.call_tool = AsyncMock()
 
         registry = MagicMock()
         registry.get_tool.return_value = MagicMock(server_id="srv-1")
@@ -489,14 +491,14 @@ class TestLangGraphAgentSandboxIntegration:
         from general_ludd.execution.langgraph_agent import LangGraphAgentLoop
 
         mcp_client = MagicMock()
-        mcp_client.list_tools = MagicMock()
+        mcp_client.list_tools = AsyncMock()
 
         class FakeTool:
             name = "echo"
             description = "Echo a message"
 
         mcp_client.list_tools.return_value = [FakeTool()]
-        mcp_client.call_tool = MagicMock()
+        mcp_client.call_tool = AsyncMock()
         mcp_client.call_tool.return_value = "echoed"
 
         registry = MagicMock()

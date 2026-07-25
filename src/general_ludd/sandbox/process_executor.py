@@ -65,12 +65,27 @@ class ProcessExecutor:
         import resource
         if limits.memory_mb is not None:
             memory_bytes = limits.memory_mb * 1024 * 1024
-            resource.setrlimit(resource.RLIMIT_AS, (memory_bytes, memory_bytes))
+            try:
+                resource.setrlimit(resource.RLIMIT_AS, (memory_bytes, memory_bytes))
+            except (ValueError, OSError):
+                pass
         if limits.cpu_seconds is not None:
-            resource.setrlimit(resource.RLIMIT_CPU, (limits.cpu_seconds, limits.cpu_seconds))
+            try:
+                resource.setrlimit(resource.RLIMIT_CPU, (limits.cpu_seconds, limits.cpu_seconds))
+            except (ValueError, OSError):
+                pass
         if limits.max_file_size is not None:
-            resource.setrlimit(resource.RLIMIT_FSIZE, (limits.max_file_size, limits.max_file_size))
+            try:
+                resource.setrlimit(resource.RLIMIT_FSIZE, (limits.max_file_size, limits.max_file_size))
+            except (ValueError, OSError):
+                pass
         if limits.max_open_files is not None:
-            resource.setrlimit(resource.RLIMIT_NOFILE, (limits.max_open_files, limits.max_open_files))
+            try:
+                resource.setrlimit(resource.RLIMIT_NOFILE, (limits.max_open_files, limits.max_open_files))
+            except (ValueError, OSError):
+                pass
         if limits.max_processes is not None:
-            resource.setrlimit(resource.RLIMIT_NPROC, (limits.max_processes, limits.max_processes))
+            try:
+                resource.setrlimit(resource.RLIMIT_NPROC, (limits.max_processes, limits.max_processes))
+            except (ValueError, OSError):
+                pass

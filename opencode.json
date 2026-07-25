@@ -3,27 +3,32 @@
   "permission": {
     "read": {
       "/Users/shawnwilson/gludd/**": "allow",
-      "/tmp/gludd-*": "allow",
+      "/Users/shawnwilson/.config/opencode/**": "allow",
+      "/tmp/**": "allow",
       "*": "deny"
     },
     "write": {
       "/Users/shawnwilson/gludd/**": "allow",
-      "/tmp/gludd-*": "allow",
+      "/Users/shawnwilson/.config/opencode/**": "allow",
+      "/tmp/**": "allow",
       "*": "deny"
     },
     "edit": {
       "/Users/shawnwilson/gludd/**": "allow",
-      "/tmp/gludd-*": "allow",
+      "/Users/shawnwilson/.config/opencode/**": "allow",
+      "/tmp/**": "allow",
       "*": "deny"
     },
     "glob": {
       "/Users/shawnwilson/gludd/**": "allow",
-      "/tmp/gludd-*": "allow",
+      "/Users/shawnwilson/.config/opencode/**": "allow",
+      "/tmp/**": "allow",
       "*": "deny"
     },
     "grep": {
       "/Users/shawnwilson/gludd/**": "allow",
-      "/tmp/gludd-*": "allow",
+      "/Users/shawnwilson/.config/opencode/**": "allow",
+      "/tmp/**": "allow",
       "*": "deny"
     },
     "task": {
