@@ -2157,6 +2157,12 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
         app.state._worktree_monitor = wt_monitor
 
+        from general_ludd.quantization.monitor import MonitorConfig as QuantMonitorConfig
+        from general_ludd.quantization.monitor import QuantizationMonitor
+        quant_monitor = QuantizationMonitor(QuantMonitorConfig())
+        app.state._quantization_monitor = quant_monitor
+        await quant_monitor.start()
+
         from general_ludd.agents.dispatcher import AgentDispatcher
         from general_ludd.agents.registry import default_registry
         from general_ludd.agents.types import AgentTask
@@ -2547,6 +2553,12 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     if _searx_srv is not None:
         with contextlib.suppress(Exception):
             _searx_srv.stop()
+    _quant_monitor = getattr(app.state, "_quantization_monitor", None)
+    if _quant_monitor is not None:
+        try:
+            await _quant_monitor.stop()
+        except Exception:
+            logger.warning("QuantizationMonitor.stop() failed during shutdown", exc_info=True)
 
 
 def _build_sts_reaper(session_factory: Any, secrets_resolver: Any) -> Any:

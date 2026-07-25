@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import cast
+
 from fastapi import FastAPI, HTTPException
 
 from general_ludd.models.quantization import (
@@ -9,6 +11,11 @@ from general_ludd.models.quantization import (
     QuantizationTracker,
     SelfProbeDetector,
 )
+from general_ludd.quantization.monitor import MonitorConfig, QuantizationMonitor
+
+
+def _get_monitor(app: FastAPI) -> QuantizationMonitor | None:
+    return getattr(app.state, "_quantization_monitor", None)
 
 
 def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
@@ -125,3 +132,22 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             "changes": changes,
             "models_checked": len(tracker.list_all()),
         }
+
+    @app.get("/admin/quantization/status")
+    async def admin_quantization_monitor_status() -> dict[str, object]:
+        monitor = _get_monitor(app)
+        if monitor is None:
+            return {"status": "not_configured"}
+        return cast(dict[str, object], monitor.status())  # type: ignore[redundant-cast]
+
+    @app.post("/admin/quantization/config")
+    async def admin_quantization_monitor_config(req: dict[str, object]) -> dict[str, object]:
+        monitor = _get_monitor(app)
+        if monitor is None:
+            raise HTTPException(status_code=503, detail="QuantizationMonitor not wired")
+        allowed = {"alert_threshold", "check_interval_s", "max_history_samples", "cooldown_alerts_s"}
+        updates = {k: v for k, v in req.items() if k in allowed}
+        if not updates:
+            raise HTTPException(status_code=422, detail="No valid config keys provided")
+        monitor.configure(**updates)
+        return cast(dict[str, object], monitor.config.to_dict())  # type: ignore[redundant-cast]

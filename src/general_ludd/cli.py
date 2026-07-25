@@ -631,40 +631,6 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     leaderboard_parser.add_argument("--daemon-url", default="http://localhost:8000")
     leaderboard_parser.set_defaults(func=_cmd_leaderboard)
 
-    pause_parser = sub.add_parser("pause", help="Pause a project or model")
-    pause_parser.set_defaults(func=None)
-    pause_sub = pause_parser.add_subparsers(dest="pause_command")
-
-    pause_list = pause_sub.add_parser("list", help="List paused entities")
-    pause_list.add_argument("--daemon-url", default="http://localhost:8000")
-    pause_list.set_defaults(func=_cmd_pause_list)
-
-    pause_project = pause_sub.add_parser("project", help="Pause a project")
-    pause_project.add_argument("target_id", help="Project ID to pause")
-    pause_project.add_argument("--reason", default="", help="Reason for pausing")
-    pause_project.add_argument("--daemon-url", default="http://localhost:8000")
-    pause_project.set_defaults(func=_cmd_pause_project)
-
-    pause_model = pause_sub.add_parser("model", help="Pause a model")
-    pause_model.add_argument("target_id", help="Model ID to pause")
-    pause_model.add_argument("--reason", default="", help="Reason for pausing")
-    pause_model.add_argument("--daemon-url", default="http://localhost:8000")
-    pause_model.set_defaults(func=_cmd_pause_model)
-
-    resume_parser = sub.add_parser("resume", help="Resume a paused project or model")
-    resume_parser.set_defaults(func=None)
-    resume_sub = resume_parser.add_subparsers(dest="resume_command")
-
-    resume_project = resume_sub.add_parser("project", help="Resume a project")
-    resume_project.add_argument("target_id", help="Project ID to resume")
-    resume_project.add_argument("--daemon-url", default="http://localhost:8000")
-    resume_project.set_defaults(func=_cmd_resume_project)
-
-    resume_model = resume_sub.add_parser("model", help="Resume a model")
-    resume_model.add_argument("target_id", help="Model ID to resume")
-    resume_model.add_argument("--daemon-url", default="http://localhost:8000")
-    resume_model.set_defaults(func=_cmd_resume_model)
-
     chat_parser = sub.add_parser("chat", help="Interactive AI chat REPL")
     chat_parser.add_argument("--eval", type=str, default=None, metavar="PROMPT",
                              help="Single-turn evaluation (non-interactive)")
@@ -722,9 +688,11 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     fs_bins.add_argument("--daemon-url", default="http://localhost:8000")
     fs_bins.set_defaults(func=_cmd_filestore_binaries)
 
-    selftest_p = sub.add_parser("selftest", help="Run self-tests via molecule scenarios")
-    selftest_p.add_argument("--daemon-url", default="http://localhost:8000")
-    selftest_p.set_defaults(func=_cmd_selftest)
+    # selftest removed from standalone CLI — moved under `test self` below.
+    # Code retained for programmatic use.
+    # selftest_p = sub.add_parser("selftest", help="Run self-tests via molecule scenarios")
+    # selftest_p.add_argument("--daemon-url", default="http://localhost:8000")
+    # selftest_p.set_defaults(func=_cmd_selftest)
 
     preflight_p = sub.add_parser("preflight", help="Run the preflight quality gate")
     preflight_p.add_argument(
@@ -873,19 +841,21 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     codeintel_search.add_argument("--daemon-url", default="http://localhost:8000")
     codeintel_search.set_defaults(func=_cmd_code_search)
 
-    quant_parser = sub.add_parser("quantization", help="Model quantization detection")
-    quant_parser.set_defaults(func=None)
-    quant_sub = quant_parser.add_subparsers(dest="quantization_command")
-    quant_list = quant_sub.add_parser("list", help="List known quantization info")
-    quant_list.add_argument("--daemon-url", default="http://localhost:8000")
-    quant_list.set_defaults(func=_cmd_quantization_list)
-    quant_detect = quant_sub.add_parser("detect", help="Detect quantization for a model")
-    quant_detect.add_argument("--model-id", required=True, help="Model ID to detect")
-    quant_detect.add_argument("--daemon-url", default="http://localhost:8000")
-    quant_detect.set_defaults(func=_cmd_quantization_detect)
-    quant_drift = quant_sub.add_parser("drift-check", help="Check for quantization drift")
-    quant_drift.add_argument("--daemon-url", default="http://localhost:8000")
-    quant_drift.set_defaults(func=_cmd_quantization_drift_check)
+    # quantization removed from CLI — should be a tunable daemon subsystem.
+    # Code retained below for programmatic use.
+    # quant_parser = sub.add_parser("quantization", help="Model quantization detection")
+    # quant_parser.set_defaults(func=None)
+    # quant_sub = quant_parser.add_subparsers(dest="quantization_command")
+    # quant_list = quant_sub.add_parser("list", help="List known quantization info")
+    # quant_list.add_argument("--daemon-url", default="http://localhost:8000")
+    # quant_list.set_defaults(func=_cmd_quantization_list)
+    # quant_detect = quant_sub.add_parser("detect", help="Detect quantization for a model")
+    # quant_detect.add_argument("--model-id", required=True, help="Model ID to detect")
+    # quant_detect.add_argument("--daemon-url", default="http://localhost:8000")
+    # quant_detect.set_defaults(func=_cmd_quantization_detect)
+    # quant_drift = quant_sub.add_parser("drift-check", help="Check for quantization drift")
+    # quant_drift.add_argument("--daemon-url", default="http://localhost:8000")
+    # quant_drift.set_defaults(func=_cmd_quantization_drift_check)
 
     slurm_parser = sub.add_parser("slurm", help="Slurm job management")
     slurm_parser.set_defaults(func=None)
@@ -942,39 +912,41 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     connectors_query.add_argument("--daemon-url", default="http://localhost:8000")
     connectors_query.set_defaults(func=_cmd_connectors_query)
 
-    smoke_parser = sub.add_parser(
-        "smoke",
-        help="Run low-cost provider, compute, local-model, or connector smoke checks",
-    )
-    smoke_parser.add_argument("provider", nargs="?", default=None, help="Provider or service slug, or 'list'")
-    smoke_parser.add_argument("test", nargs="?", default=None, help="Smoke test name, e.g. metadata or ec2-a100")
-    smoke_parser.add_argument("--list", action="store_true", help="List available smoke tests")
-    smoke_parser.add_argument("--live", action="store_true", help="Allow cheap live metadata probes")
-    smoke_parser.add_argument(
-        "--provisioned",
-        action="store_true",
-        help="Provision a real resource, run a model task, and tear it down",
-    )
-    smoke_parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
-    smoke_parser.add_argument("--output", default=None, help="Write the rendered diagnostic bundle to this file")
-    smoke_parser.add_argument(
-        "--output-template",
-        default=None,
-        help="Compiled output template for smoke list/report rendering",
-    )
-    smoke_parser.add_argument("--timeout", type=float, default=2.0, help="HTTP probe timeout in seconds")
-    smoke_parser.add_argument("--max-cost-usd", type=float, default=10.0, help="Fail if estimated cost exceeds this")
-    smoke_parser.add_argument("--base-url", default=None, help="Override endpoint base URL for this run")
-    smoke_parser.add_argument("--model", default=None, help="Override model identifier for this run")
-    smoke_parser.add_argument("--region", default=None, help="Provider region for provisioned smoke tests")
-    smoke_parser.add_argument("--gpu-count", type=int, default=1, help="GPU count for provisioned smoke tests")
-    smoke_parser.add_argument(
-        "--engine",
-        default="vllm",
-        choices=["vllm", "llamacpp"],
-        help="Inference engine for provisioned smoke tests",
-    )
-    smoke_parser.set_defaults(func=_cmd_smoke)
+    # smoke removed from standalone CLI — moved under `test smoke` below.
+    # Code retained for programmatic use.
+    # smoke_parser = sub.add_parser(
+    #     "smoke",
+    #     help="Run low-cost provider, compute, local-model, or connector smoke checks",
+    # )
+    # smoke_parser.add_argument("provider", nargs="?", default=None, help="Provider or service slug, or 'list'")
+    # smoke_parser.add_argument("test", nargs="?", default=None, help="Smoke test name, e.g. metadata or ec2-a100")
+    # smoke_parser.add_argument("--list", action="store_true", help="List available smoke tests")
+    # smoke_parser.add_argument("--live", action="store_true", help="Allow cheap live metadata probes")
+    # smoke_parser.add_argument(
+    #     "--provisioned",
+    #     action="store_true",
+    #     help="Provision a real resource, run a model task, and tear it down",
+    # )
+    # smoke_parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
+    # smoke_parser.add_argument("--output", default=None, help="Write the rendered diagnostic bundle to this file")
+    # smoke_parser.add_argument(
+    #     "--output-template",
+    #     default=None,
+    #     help="Compiled output template for smoke list/report rendering",
+    # )
+    # smoke_parser.add_argument("--timeout", type=float, default=2.0, help="HTTP probe timeout in seconds")
+    # smoke_parser.add_argument("--max-cost-usd", type=float, default=10.0, help="Fail if estimated cost exceeds this")
+    # smoke_parser.add_argument("--base-url", default=None, help="Override endpoint base URL for this run")
+    # smoke_parser.add_argument("--model", default=None, help="Override model identifier for this run")
+    # smoke_parser.add_argument("--region", default=None, help="Provider region for provisioned smoke tests")
+    # smoke_parser.add_argument("--gpu-count", type=int, default=1, help="GPU count for provisioned smoke tests")
+    # smoke_parser.add_argument(
+    #     "--engine",
+    #     default="vllm",
+    #     choices=["vllm", "llamacpp"],
+    #     help="Inference engine for provisioned smoke tests",
+    # )
+    # smoke_parser.set_defaults(func=_cmd_smoke)
 
     login_parser = sub.add_parser("login", help="Browser-based OAuth2 / API key login for services")
     login_parser.add_argument(
@@ -1040,10 +1012,9 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
 
     perm_parser = _register_perm(sub)
 
-    # `gludd payment` — PCI-DSS payment card vault (envelope-encrypted).
-    from general_ludd.cli_payment import register as _register_payment
-
-    payment_parser = _register_payment(sub)
+    # payment removed from CLI — access via prompting. Code retained in cli_payment.py for programmatic use.
+    # from general_ludd.cli_payment import register as _register_payment
+    # payment_parser = _register_payment(sub)
 
     # `gludd human-todo` — bot→human task requests.
     from general_ludd.cli_human_todos import add_human_todo_subparser
@@ -1114,42 +1085,37 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     add_language_subparser(sub)
     language_parser = sub.choices["language"]
 
-    # `gludd account` — account backup, deletion, and cloud retention policy.
-    from general_ludd.cli_account import add_account_subparser
+    # account removed from CLI — access via prompting. Code retained in cli_account.py for programmatic use.
+    # from general_ludd.cli_account import add_account_subparser
+    # add_account_subparser(sub)
+    # account_parser = sub.choices["account"]
 
-    add_account_subparser(sub)
-    account_parser = sub.choices["account"]
+    # physics removed from CLI — access via prompting/collection. Code retained in cli_physics.py for programmatic use.
+    # from general_ludd.cli_physics import add_physics_subparser
+    # add_physics_subparser(sub)
+    # physics_parser = sub.choices["physics"]
 
-    # `gludd physics` — computational physics, chemistry, and math toolkit.
-    from general_ludd.cli_physics import add_physics_subparser
-
-    add_physics_subparser(sub)
-    physics_parser = sub.choices["physics"]
-
-    testbg_parser = sub.add_parser("test-bg", help="Background test runner commands")
-    testbg_parser.set_defaults(func=None)
-    tbg_sub = testbg_parser.add_subparsers(dest="testbg_command")
-
-    tbg_launch = tbg_sub.add_parser("launch", help="Launch a test in the background")
-    tbg_launch.add_argument("testfile", help="Test file path")
-    tbg_launch.add_argument("--wait", action="store_true", help="Block until test completes")
-    tbg_launch.set_defaults(func=_cmd_testbg_launch)
-
-    tbg_status = tbg_sub.add_parser("status", help="Check status of a background test")
-    tbg_status.add_argument("testfile", help="Test file path")
-    tbg_status.set_defaults(func=_cmd_testbg_status)
-
-    tbg_poll = tbg_sub.add_parser("poll-all", help="Status for all tracked background tests")
-    tbg_poll.set_defaults(func=_cmd_testbg_poll_all)
-
-    tbg_kill = tbg_sub.add_parser("kill", help="Kill a background test")
-    tbg_kill.add_argument("testfile", help="Test file path")
-    tbg_kill.add_argument("--force", action="store_true", help="Force SIGKILL after SIGTERM")
-    tbg_kill.set_defaults(func=_cmd_testbg_kill)
-
-    tbg_results = tbg_sub.add_parser("results", help="Get final results for a completed test")
-    tbg_results.add_argument("testfile", help="Test file path")
-    tbg_results.set_defaults(func=_cmd_testbg_results)
+    # test-bg removed from standalone CLI — moved under `test background` below.
+    # Code retained for programmatic use.
+    # testbg_parser = sub.add_parser("test-bg", help="Background test runner commands")
+    # testbg_parser.set_defaults(func=None)
+    # tbg_sub = testbg_parser.add_subparsers(dest="testbg_command")
+    # tbg_launch = tbg_sub.add_parser("launch", help="Launch a test in the background")
+    # tbg_launch.add_argument("testfile", help="Test file path")
+    # tbg_launch.add_argument("--wait", action="store_true", help="Block until test completes")
+    # tbg_launch.set_defaults(func=_cmd_testbg_launch)
+    # tbg_status = tbg_sub.add_parser("status", help="Check status of a background test")
+    # tbg_status.add_argument("testfile", help="Test file path")
+    # tbg_status.set_defaults(func=_cmd_testbg_status)
+    # tbg_poll = tbg_sub.add_parser("poll-all", help="Status for all tracked background tests")
+    # tbg_poll.set_defaults(func=_cmd_testbg_poll_all)
+    # tbg_kill = tbg_sub.add_parser("kill", help="Kill a background test")
+    # tbg_kill.add_argument("testfile", help="Test file path")
+    # tbg_kill.add_argument("--force", action="store_true", help="Force SIGKILL after SIGTERM")
+    # tbg_kill.set_defaults(func=_cmd_testbg_kill)
+    # tbg_results = tbg_sub.add_parser("results", help="Get final results for a completed test")
+    # tbg_results.add_argument("testfile", help="Test file path")
+    # tbg_results.set_defaults(func=_cmd_testbg_results)
 
     test_parser = sub.add_parser("test", help="Test runner commands")
     test_parser.set_defaults(func=None)
@@ -1180,6 +1146,41 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     tbg2_results.add_argument("testfile", help="Test file path")
     tbg2_results.set_defaults(func=_cmd_testbg_results)
 
+    test_self_parser = test_sub.add_parser("self", help="Run self-tests via molecule scenarios")
+    test_self_parser.add_argument("--daemon-url", default="http://localhost:8000")
+    test_self_parser.set_defaults(func=_cmd_selftest)
+
+    test_smoke_parser = test_sub.add_parser("smoke", help="Run provider/service smoke checks")
+    test_smoke_parser.add_argument("provider", nargs="?", default=None, help="Provider or service slug, or 'list'")
+    test_smoke_parser.add_argument("test", nargs="?", default=None, help="Smoke test name, e.g. metadata or ec2-a100")
+    test_smoke_parser.add_argument("--list", action="store_true", help="List available smoke tests")
+    test_smoke_parser.add_argument("--live", action="store_true", help="Allow cheap live metadata probes")
+    test_smoke_parser.add_argument(
+        "--provisioned",
+        action="store_true",
+        help="Provision a real resource, run a model task, and tear it down",
+    )
+    test_smoke_parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
+    test_smoke_parser.add_argument("--output", default=None, help="Write the rendered diagnostic bundle to this file")
+    test_smoke_parser.add_argument(
+        "--output-template",
+        default=None,
+        help="Compiled output template for smoke list/report rendering",
+    )
+    test_smoke_parser.add_argument("--timeout", type=float, default=2.0, help="HTTP probe timeout in seconds")
+    test_smoke_parser.add_argument("--max-cost-usd", type=float, default=10.0, help="Fail if estimated cost exceeds this")
+    test_smoke_parser.add_argument("--base-url", default=None, help="Override endpoint base URL for this run")
+    test_smoke_parser.add_argument("--model", default=None, help="Override model identifier for this run")
+    test_smoke_parser.add_argument("--region", default=None, help="Provider region for provisioned smoke tests")
+    test_smoke_parser.add_argument("--gpu-count", type=int, default=1, help="GPU count for provisioned smoke tests")
+    test_smoke_parser.add_argument(
+        "--engine",
+        default="vllm",
+        choices=["vllm", "llamacpp"],
+        help="Inference engine for provisioned smoke tests",
+    )
+    test_smoke_parser.set_defaults(func=_cmd_smoke)
+
     subcommand_map = {
         "login": login_parser,
         "models": models_parser,
@@ -1196,10 +1197,8 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
         "templates": templates_parser,
         "playbooks": playbooks_parser,
         "code": codeintel_parser,
-        "quantization": quant_parser,
         "slurm": slurm_parser,
         "connectors": connectors_parser,
-        "smoke": smoke_parser,
         "perm": perm_parser,
         "human-todo": human_todo_parser,
         "self-improve": self_improve_parser,
@@ -1208,10 +1207,7 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
         "deploy-check": deploy_check_parser,
         "core-changes": core_changes_parser,
         "make": make_parser,
-        "payment": payment_parser,
         "language": language_parser,
-        "account": account_parser,
-        "physics": physics_parser,
         "audit-plugins": audit_plugins_parser,
         "collection": collection_parser,
         "config": config_parser,
@@ -1219,8 +1215,7 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
         "test-bg": testbg_parser,
         "test": test_parser,
         "chat": chat_parser,
-        "pause": pause_parser,
-        "resume": resume_parser,
+        # Pause state is managed via tasks/agents/infra API endpoints.
     }
 
     return parser, subcommand_map
