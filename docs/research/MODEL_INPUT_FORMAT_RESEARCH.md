@@ -1,6 +1,6 @@
 # Model Input Format Research
 
-**Date:** 2026-07-25  
+**Date:** 2026-07-25
 **Purpose:** Document the preferred input formats, context structuring conventions,
 and behavioral quirks of 6 major AI model providers for use by gludd's prompt
 rendering and model routing systems.

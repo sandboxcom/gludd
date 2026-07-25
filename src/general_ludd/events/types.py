@@ -188,11 +188,11 @@ class SelfUpdateAppliedEvent(Event):
 class BranchEvent(Event):
     """Emitted when gludd takes a code branch decision."""
 
-    module: str
-    function: str
-    branch_id: str
-    decision: str
-    context: dict[str, Any]
+    module: str = field(default="")
+    function: str = field(default="")
+    branch_id: str = field(default="")
+    decision: str = field(default="")
+    context: dict[str, Any] = field(default_factory=dict)
 
     def __init__(
         self,
