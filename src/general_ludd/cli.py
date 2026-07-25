@@ -202,6 +202,12 @@ COMMANDS
       --store {env,openbao}  Credential storage backend (default: env)
 
     help                Show this manual
+    Pause state is managed via tasks/agents/infra API endpoints:
+      POST /api/tasks/{task_id}/pause
+      POST /api/tasks/{task_id}/resume
+      POST /api/agents/{agent_id}/pause
+      POST /api/infra/{deployment_id}/pause
+      GET  /api/pause/status
 
     test-bg             Background test runner commands
       launch              Launch a test in the background
@@ -1896,61 +1902,6 @@ def _cmd_version(args: argparse.Namespace) -> None:
 
 def _cmd_health(args: argparse.Namespace) -> None:
     data = _http_call("GET", f"{args.daemon_url}/healthz", timeout=10.0)
-    if data is None:
-        return
-    print(json.dumps(data, indent=2))
-
-
-def _cmd_pause_list(args: argparse.Namespace) -> None:
-    data = _http_call("GET", f"{args.daemon_url}/api/pause", timeout=10.0)
-    if data is None:
-        return
-    print(json.dumps(data, indent=2))
-
-
-def _cmd_pause_project(args: argparse.Namespace) -> None:
-    data = _http_call(
-        "POST",
-        f"{args.daemon_url}/api/pause/project",
-        json={"target_id": args.target_id, "reason": args.reason},
-        timeout=10.0,
-    )
-    if data is None:
-        return
-    print(json.dumps(data, indent=2))
-
-
-def _cmd_pause_model(args: argparse.Namespace) -> None:
-    data = _http_call(
-        "POST",
-        f"{args.daemon_url}/api/pause/model",
-        json={"target_id": args.target_id, "reason": args.reason},
-        timeout=10.0,
-    )
-    if data is None:
-        return
-    print(json.dumps(data, indent=2))
-
-
-def _cmd_resume_project(args: argparse.Namespace) -> None:
-    data = _http_call(
-        "POST",
-        f"{args.daemon_url}/api/resume/project",
-        json={"target_id": args.target_id},
-        timeout=10.0,
-    )
-    if data is None:
-        return
-    print(json.dumps(data, indent=2))
-
-
-def _cmd_resume_model(args: argparse.Namespace) -> None:
-    data = _http_call(
-        "POST",
-        f"{args.daemon_url}/api/resume/model",
-        json={"target_id": args.target_id},
-        timeout=10.0,
-    )
     if data is None:
         return
     print(json.dumps(data, indent=2))
