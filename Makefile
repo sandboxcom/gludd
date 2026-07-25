@@ -4730,10 +4730,13 @@ disengage-enforcement:
 	@$(UV) run python3 -c "import json,time; ts=int(time.time()*1000); json.dump({'disengage_until':ts+3600000,'disengage_until_epoch_ms':ts+3600000,'reason':'manual_disengage','ts':time.time()},open('/tmp/gludd-watchdog-disengage.json','w'))"
 	@$(UV) run python3 -c "import json,time; ts=int(time.time()*1000); json.dump({'consecutiveBlocks':0,'totalBlocks':0,'lastBlockTs':0,'disengageUntil':ts+3600000},open('/tmp/gludd-block-counter.json','w'))"
 	@$(UV) run python3 -c "import json,time; json.dump({'last_ci_check':int(time.time()*1000),'last_ci_status':'SUCCESS','run_id':'disengaged','head_sha':'$(shell git rev-parse HEAD)'},open('/tmp/gludd-watchdog-ci.json','w'))"
-	@echo '{"ts": "'$$(date -u +%Y-%m-%dT%H:%M:%SZ)'", "pid": '$$PID'}' >> /tmp/gludd-disengage-audit.jsonl
+	@AUDIT="$${GLUDD_DISENGAGE_AUDIT_PATH:-/tmp/gludd-disengage-audit.jsonl}"; \
+	ISO=$$(date -u +%Y-%m-%dT%H:%M:%SZ); \
+	printf '{"ts":"%s","timestamp":"%s","pid":%s,"reason":"manual"}\n' "$$ISO" "$$ISO" $$$$ >> $$AUDIT
 	@echo "Disengage files written — enforcement hooks will pass through for 1 hour"
-	@COUNT=$$(wc -l < /tmp/gludd-disengage-audit.jsonl 2>/dev/null || echo 0); \
-	echo "Disengage count this machine: $$COUNT (max 2/session recommended)"
+	@AUDIT="$${GLUDD_DISENGAGE_AUDIT_PATH:-/tmp/gludd-disengage-audit.jsonl}"; \
+	COUNT=$$(wc -l < $$AUDIT 2>/dev/null || echo 0); \
+	echo "Disengage count: $$COUNT (max 2/session recommended)"
 
 # --- Single-operation disengage — disarms for ONE tool call then auto-rearms ---
 disengage-next:
