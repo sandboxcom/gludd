@@ -40,3 +40,8 @@ def test_e2e_runner_has_suite_watchdog_bounds() -> None:
     assert "run-watched" in body
     assert "E2E_MAX_SECS" in body
     assert "E2E_STALL_SECS" in body
+
+
+def test_e2e_runner_log_is_namespaced_by_process() -> None:
+    body = _target_body("test-e2e")
+    assert 'LOG="/tmp/gludd-e2e-$$$$.log"' in body

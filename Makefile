@@ -1038,7 +1038,7 @@ E2E_MAX_SECS ?= 3600
 
 test-e2e:
 	@BT="/tmp/gludd-e2e-$${ID:-$$$$}"; rm -rf "$$BT"; \
-	$(MAKE) --no-print-directory run-watched CMD="GLUDD_E2E_ACTIVE=1 $(UV) run python -m pytest tests/e2e/ $(_XD) -v $(PYTEST_ARGS) --timeout=$(E2E_TEST_TIMEOUT) --basetemp=$$BT" STALL_SECS="$(E2E_STALL_SECS)" MAX_SECS="$(E2E_MAX_SECS)" LOG="/tmp/gludd-e2e-$$$${ID:-$$$$}.log"; \
+	$(MAKE) --no-print-directory run-watched CMD="GLUDD_E2E_ACTIVE=1 $(UV) run python -m pytest tests/e2e/ $(_XD) -v $(PYTEST_ARGS) --timeout=$(E2E_TEST_TIMEOUT) --basetemp=$$BT" STALL_SECS="$(E2E_STALL_SECS)" MAX_SECS="$(E2E_MAX_SECS)" LOG="/tmp/gludd-e2e-$$$$.log"; \
 	RC=$$?; chmod -R u+rwx "$$BT" 2>/dev/null || true; rm -rf "$$BT"; exit $$RC
 
 test-games:
