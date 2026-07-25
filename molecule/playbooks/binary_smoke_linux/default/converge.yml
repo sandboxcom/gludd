@@ -1,0 +1,176 @@
+---
+# Converge: install + exercise the built gludd binary inside the Linux container.
+#
+# Coverage map (each step persists its output to /tmp for verify.yml):
+#   1. apt: ca-certificates + curl
+#   2. copy dist/gludd into the container + chmod +x
+#   3. gludd version            -> SemVer
+#   4. gludd --help             -> subcommand listing
+#   5. gludd project paths      -> bundled path resolution
+#   6. ERROR: gludd --invalid-flag -> non-zero, clean argparse error
+#   7. start gludd daemon (backgrounded) + poll /healthz up to 30s
+#   8. POST /api/todos          -> daemon accepts a trivial job
+#   9. ERROR: second gludd daemon on the occupied port -> graceful failure
+- name: Converge - smoke test the gludd binary in a Linux container
+  hosts: all
+  gather_facts: true
+  become: true
+  vars:
+    gludd_bin: /usr/local/bin/gludd
+    daemon_host: "127.0.0.1"
+    daemon_port: 8000
+    daemon_url: "http://127.0.0.1:8000"
+    daemon_log: /tmp/gludd-daemon.log
+    host_binary: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/dist/gludd"
+  tasks:
+    - name: Install minimal runtime deps (ca-certificates, curl)
+      ansible.builtin.apt:
+        name:
+          - ca-certificates
+          - curl
+        update_cache: true
+        cache_valid_time: 600
+
+    - name: Copy the built gludd binary into the container
+      ansible.builtin.copy:
+        src: "{{ host_binary }}"
+        dest: "{{ gludd_bin }}"
+        mode: "0755"
+        owner: root
+        group: root
+
+    # The copy sets mode 0755 explicitly; this chmod is belt-and-suspenders so
+    # a binary that arrives with a strange umask is still executable.
+    - name: Ensure the binary is executable (chmod +x)
+      ansible.builtin.file:
+        path: "{{ gludd_bin }}"
+        mode: "0755"
+
+    # --- (3) version: prints "general-ludd-agent <semver>" -----------------
+    - name: Run 'gludd version'
+      ansible.builtin.command: "{{ gludd_bin }} version"
+      register: gludd_version
+      changed_when: false
+
+    # --- (4) --help: lists all subcommands ---------------------------------
+    - name: Run 'gludd --help'
+      ansible.builtin.command: "{{ gludd_bin }} --help"
+      register: gludd_help
+      changed_when: false
+
+    # --- (5) project paths: resolves bundled config/templates/playbooks dirs
+    - name: Run 'gludd project paths'
+      ansible.builtin.command: "{{ gludd_bin }} project paths"
+      register: gludd_paths
+      changed_when: false
+      failed_when: false
+
+    - name: Persist CLI outputs for verify
+      ansible.builtin.copy:
+        content: |
+          === version (rc={{ gludd_version.rc }}) ===
+          {{ gludd_version.stdout }}
+          {{ gludd_version.stderr }}
+          === --help (rc={{ gludd_help.rc }}) ===
+          {{ gludd_help.stdout }}
+          {{ gludd_help.stderr }}
+          === project paths (rc={{ gludd_paths.rc }}) ===
+          {{ gludd_paths.stdout }}
+          {{ gludd_paths.stderr }}
+        dest: /tmp/gludd-cli-outputs.txt
+        mode: "0644"
+
+    # --- (6) ERROR PATH: invalid flag --------------------------------------
+    # argparse must reject an unknown flag with exit code 2 and a clean
+    # "error: unrecognized arguments" message — NOT a Python traceback.
+    - name: Run 'gludd --invalid-flag' (expect non-zero, clean error)
+      ansible.builtin.command: "{{ gludd_bin }} --invalid-flag"
+      register: gludd_bad_flag
+      changed_when: false
+      failed_when: false
+
+    - name: Persist invalid-flag result
+      ansible.builtin.copy:
+        content: "rc={{ gludd_bad_flag.rc }}\nstdout={{ gludd_bad_flag.stdout }}\nstderr={{ gludd_bad_flag.stderr }}\n"
+        dest: /tmp/gludd-bad-flag.txt
+        mode: "0644"
+
+    # --- (7) daemon start + health poll ------------------------------------
+    - name: Start the gludd daemon in the background
+      ansible.builtin.shell:
+        cmd: "nohup {{ gludd_bin }} daemon --host {{ daemon_host }} --port {{ daemon_port }} > {{ daemon_log }} 2>&1 &"
+      changed_when: true
+
+    - name: Poll /healthz up to 30s for HTTP 200
+      ansible.builtin.shell: |
+        code=000
+        for i in $(seq 1 30); do
+          code=$(curl -s -o /tmp/health-body.txt -w '%{http_code}' {{ daemon_url }}/healthz 2>/dev/null || echo 000)
+          if [ "$code" = "200" ]; then echo "HEALTHY"; exit 0; fi
+          sleep 1
+        done
+        echo "TIMEOUT last_code=$code"
+        echo "--- daemon log tail ---"
+        tail -n 40 {{ daemon_log }} 2>/dev/null || true
+        exit 1
+      args:
+        executable: /bin/bash
+      register: health_wait
+      changed_when: false
+      failed_when: "'HEALTHY' not in health_wait.stdout"
+
+    - name: Persist health result
+      ansible.builtin.copy:
+        content: "{{ health_wait.stdout }}"
+        dest: /tmp/gludd-health.txt
+        mode: "0644"
+
+    # --- (8) job submission via the daemon API -----------------------------
+    # There is no /api/playbook/run endpoint; jobs are submitted as todos and
+    # the event loop maps work_type -> playbook. Verifying the daemon ACCEPTS
+    # + QUEUES the job proves request processing end-to-end.
+    - name: Submit a trivial job (POST /api/todos)
+      ansible.builtin.uri:
+        url: "{{ daemon_url }}/api/todos"
+        method: POST
+        body_format: json
+        body:
+          title: "binary-smoke-linux-noop"
+          work_type: "noop"
+          queue: "core"
+          priority: "medium"
+        status_code: [200, 201]
+        return_content: true
+      register: job_submit
+      retries: 5
+      delay: 2
+      until: job_submit.status in [200, 201]
+
+    - name: Persist job submission result
+      ansible.builtin.copy:
+        content: "{{ job_submit.json | default({}) | to_nice_json }}"
+        dest: /tmp/gludd-job-submit.json
+        mode: "0644"
+
+    # --- (9) ERROR PATH: occupied port -------------------------------------
+    # A second daemon binding the SAME port must fail (non-zero) and do so
+    # gracefully — no uncaught Python traceback.
+    - name: Run a second daemon on the occupied port (expect graceful failure)
+      ansible.builtin.shell: |
+        {{ gludd_bin }} daemon --host {{ daemon_host }} --port {{ daemon_port }} > /tmp/gludd-port-clash.out 2>&1
+        echo "EXIT_RC=$?"
+      args:
+        executable: /bin/bash
+      register: port_clash
+      changed_when: false
+      failed_when: false
+
+    - name: Persist port-clash result
+      ansible.builtin.copy:
+        content: |
+          rc_block={{ port_clash.stdout }}
+          stderr={{ port_clash.stderr }}
+          --- daemon port-clash output ---
+          {{ lookup('file', '/tmp/gludd-port-clash.out') | default('') }}
+        dest: /tmp/gludd-port-clash.txt
+        mode: "0644"

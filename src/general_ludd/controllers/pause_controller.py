@@ -44,7 +44,7 @@ if TYPE_CHECKING:
         HibernationHandle,
     )
 
-PauseKind = Literal["project", "model"]
+PauseKind = Literal["project", "model", "task", "agent", "infra"]
 
 
 class PauseRecord(BaseModel):
@@ -108,6 +108,9 @@ class PauseController:
         # the prior committed frozenset or the new one — never a torn view.
         self._paused_projects: frozenset[str] = frozenset()
         self._paused_models: frozenset[str] = frozenset()
+        self._paused_tasks: frozenset[str] = frozenset()
+        self._paused_agents: frozenset[str] = frozenset()
+        self._paused_infra: frozenset[str] = frozenset()
         self._rebuild_from_store()
 
     # ------------------------------------------------------------------
@@ -126,35 +129,64 @@ class PauseController:
         records: dict[tuple[str, str], PauseRecord] = {}
         projects: set[str] = set()
         models: set[str] = set()
+        tasks: set[str] = set()
+        agents: set[str] = set()
+        infra: set[str] = set()
         for raw in self._store.load():
             try:
                 record = PauseRecord.model_validate(raw)
-            except Exception:  # tolerate a single bad record, don't wedge all
+            except Exception:
                 continue
             records[(record.kind, record.target_id)] = record
-            (projects if record.kind == "project" else models).add(record.target_id)
+            if record.kind == "project":
+                projects.add(record.target_id)
+            elif record.kind == "model":
+                models.add(record.target_id)
+            elif record.kind == "task":
+                tasks.add(record.target_id)
+            elif record.kind == "agent":
+                agents.add(record.target_id)
+            elif record.kind == "infra":
+                infra.add(record.target_id)
         self._records = records
         self._paused_projects = frozenset(projects)
         self._paused_models = frozenset(models)
+        self._paused_tasks = frozenset(tasks)
+        self._paused_agents = frozenset(agents)
+        self._paused_infra = frozenset(infra)
 
     def _set_for(self, kind: str) -> frozenset[str]:
-        return self._paused_projects if kind == "project" else self._paused_models
+        return {
+            "project": self._paused_projects,
+            "model": self._paused_models,
+            "task": self._paused_tasks,
+            "agent": self._paused_agents,
+            "infra": self._paused_infra,
+        }[kind]
 
     def _rebind_add(self, kind: str, target_id: str) -> None:
-        # Called under self._lock, AFTER a successful persist. Builds a new
-        # frozenset and rebinds the attribute — never mutates the existing one
-        # in place — so is_paused() (lock-free) never sees a torn set.
         if kind == "project":
             self._paused_projects = self._paused_projects | {target_id}
-        else:
+        elif kind == "model":
             self._paused_models = self._paused_models | {target_id}
+        elif kind == "task":
+            self._paused_tasks = self._paused_tasks | {target_id}
+        elif kind == "agent":
+            self._paused_agents = self._paused_agents | {target_id}
+        elif kind == "infra":
+            self._paused_infra = self._paused_infra | {target_id}
 
     def _rebind_discard(self, kind: str, target_id: str) -> None:
-        # Called under self._lock, AFTER a successful persist. See _rebind_add.
         if kind == "project":
             self._paused_projects = self._paused_projects - {target_id}
-        else:
+        elif kind == "model":
             self._paused_models = self._paused_models - {target_id}
+        elif kind == "task":
+            self._paused_tasks = self._paused_tasks - {target_id}
+        elif kind == "agent":
+            self._paused_agents = self._paused_agents - {target_id}
+        elif kind == "infra":
+            self._paused_infra = self._paused_infra - {target_id}
 
     def _persist(self, candidate: dict[tuple[str, str], PauseRecord]) -> None:
         """Durably write *candidate* — the would-be post-mutation record set.
@@ -392,10 +424,12 @@ class PauseController:
         """
         return target_id in self._set_for(kind)
 
-    def list_paused(self) -> list[PauseRecord]:
-        """Return all current pause records (projects and models)."""
+    def list_paused(self, kind: PauseKind | None = None) -> list[PauseRecord]:
+        """Return current pause records, optionally filtered by *kind*."""
         with self._lock:
-            return list(self._records.values())
+            if kind is None:
+                return list(self._records.values())
+            return [r for r in self._records.values() if r.kind == kind]
 
     def get(self, kind: PauseKind, target_id: str) -> PauseRecord | None:
         """Return the record for ``(kind, target_id)``, or ``None``."""

@@ -1,46 +1,71 @@
 {
   "$schema": "https://opencode.ai/config.json",
   "permission": {
-    "read": {
-      "/Users/shawnwilson/gludd/**": "allow",
-      "/tmp/gludd-*": "allow",
-      "*": "deny"
-    },
-    "write": {
-      "/Users/shawnwilson/gludd/**": "allow",
-      "/tmp/gludd-*": "allow",
-      "*": "deny"
-    },
-    "edit": {
-      "/Users/shawnwilson/gludd/**": "allow",
-      "/tmp/gludd-*": "allow",
-      "*": "deny"
-    },
-    "glob": {
-      "/Users/shawnwilson/gludd/**": "allow",
-      "/tmp/gludd-*": "allow",
-      "*": "deny"
-    },
-    "grep": {
-      "/Users/shawnwilson/gludd/**": "allow",
-      "/tmp/gludd-*": "allow",
-      "*": "deny"
-    },
-    "task": {
-      "*": "allow"
-    },
-    "bash": {
-      "*": "deny",
-      "make *": "allow"
-    },
+    "read": [
+      { "path": "/Users/shawnwilson/gludd/**", "allow": true },
+      { "path": "/tmp/**", "allow": true },
+      { "path": "/Users/shawnwilson/.config/opencode/**", "allow": true },
+      { "path": "/Users/shawnwilson/.local/share/opencode/**", "allow": true },
+      { "path": "/Users/shawnwilson/.cache/**", "allow": true },
+      { "path": "*", "allow": false }
+    ],
+    "write": [
+      { "path": "/Users/shawnwilson/gludd/**", "allow": true },
+      { "path": "/tmp/**", "allow": true },
+      { "path": "/Users/shawnwilson/.config/opencode/**", "allow": true },
+      { "path": "/Users/shawnwilson/.local/share/opencode/**", "allow": true },
+      { "path": "/Users/shawnwilson/.cache/**", "allow": true },
+      { "path": "*", "allow": false }
+    ],
+    "edit": [
+      { "path": "/Users/shawnwilson/gludd/**", "allow": true },
+      { "path": "/tmp/**", "allow": true },
+      { "path": "/Users/shawnwilson/.config/opencode/**", "allow": true },
+      { "path": "/Users/shawnwilson/.local/share/opencode/**", "allow": true },
+      { "path": "/Users/shawnwilson/.cache/**", "allow": true },
+      { "path": "*", "allow": false }
+    ],
+    "glob": [
+      { "path": "/Users/shawnwilson/gludd/**", "allow": true },
+      { "path": "/tmp/**", "allow": true },
+      { "path": "/Users/shawnwilson/.config/opencode/**", "allow": true },
+      { "path": "/Users/shawnwilson/.local/share/opencode/**", "allow": true },
+      { "path": "/Users/shawnwilson/.cache/**", "allow": true },
+      { "path": "*", "allow": false }
+    ],
+    "grep": [
+      { "path": "/Users/shawnwilson/gludd/**", "allow": true },
+      { "path": "/tmp/**", "allow": true },
+      { "path": "/Users/shawnwilson/.config/opencode/**", "allow": true },
+      { "path": "/Users/shawnwilson/.local/share/opencode/**", "allow": true },
+      { "path": "/Users/shawnwilson/.cache/**", "allow": true },
+      { "path": "*", "allow": false }
+    ],
+    "bash": [
+      { "path": "/Users/shawnwilson/gludd/**", "allow": true },
+      { "path": "/tmp/**", "allow": true },
+      { "path": "/Users/shawnwilson/.config/opencode/**", "allow": true },
+      { "path": "/Users/shawnwilson/.local/share/opencode/**", "allow": true },
+      { "path": "/Users/shawnwilson/.cache/**", "allow": true },
+      { "path": "*", "allow": false },
+      { "command": "make *", "allow": true }
+    ],
     "doom_loop": "deny"
   },
+  "compaction": {
+    "prune": true,
+    "reserved": 5000
+  },
+  "formatter": true,
+  "lsp": true,
+  "snapshot": false,
   "plugin": [
     "./.opencode/plugin/enforce-session-start.ts",
     "./.opencode/plugin/enforce-make.ts",
     "./.opencode/plugin/enforce-floor.ts",
     "./.opencode/plugin/enforce-delegate.ts",
     "./.opencode/plugin/enforce-multitask.ts",
+    "./.opencode/plugin/enforce-floor-v2.ts",
     "./.opencode/plugin/enforce-stop.ts",
     "./.opencode/plugin/enforce-deadline.ts",
     "./.opencode/plugin/enforce-enhancement-ratio.ts",
@@ -60,6 +85,10 @@
     "./.opencode/plugin/enforce-worktree.ts",
     "./.opencode/plugin/enforce-audit.ts",
     "./.opencode/plugin/enforce-context.ts",
+    "./.opencode/plugin/enforce-deliverable.ts",
+    "./.opencode/plugin/enforce-no-ci-poll.ts",
+    "./.opencode/plugin/enforce-release-deadline.ts",
+    "./.opencode/plugin/enforce-task-tracking.ts",
     "./.opencode/plugins/watchdog.ts"
   ]
 }

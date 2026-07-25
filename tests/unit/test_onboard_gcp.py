@@ -14,6 +14,25 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 GCP_MODULE_DIR = REPO_ROOT / "infra" / "terraform" / "modules" / "onboard-iam-gcp"
 
 
+def _permissions_list(main_tf_text: str) -> list[str]:
+    """Extract individual permission strings from the custom role's permissions list."""
+    import re
+    perms: list[str] = []
+    in_block = False
+    for line in main_tf_text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("permissions"):
+            in_block = True
+            continue
+        if in_block:
+            if stripped == "]":
+                break
+            m = re.search(r'"([^"]+)"', stripped)
+            if m:
+                perms.append(m.group(1))
+    return perms
+
+
 # ---------------------------------------------------------------------------
 # create_role_instructions
 # ---------------------------------------------------------------------------
@@ -116,9 +135,9 @@ class TestValidateTokenAndRole:
         assert ok is False
         assert isinstance(info["missing"], list)
         assert len(info["missing"]) > 0
-        # Roles gludd needs:
+        # Roles gludd needs (built-in + custom):
         for role in info["missing"]:
-            assert role.startswith("roles/")
+            assert role.startswith("roles/") or role.startswith("<custom>")
 
     def test_ok_when_all_roles_present(self, tmp_path: Path) -> None:
         fake_key = tmp_path / "key.json"
@@ -136,6 +155,11 @@ class TestValidateTokenAndRole:
                 for r in gcp_onboard.EXPECTED_ROLES
             ]
         }
+        # Also add the custom role.
+        policy["bindings"].append({
+            "role": f"projects/proj-123/roles/{gcp_onboard.CUSTOM_ROLE_SUFFIX}",
+            "members": [f"serviceAccount:{sa_email}"],
+        })
         with patch.object(gcp_onboard, "_build_gcp_client", return_value=fake_discovery), \
              patch.object(gcp_onboard, "_get_iam_policy", return_value=policy):
             ok, info = gcp_onboard.validate_token_and_role(
@@ -146,7 +170,12 @@ class TestValidateTokenAndRole:
 
         assert ok is True
         assert info["missing"] == []
-        assert set(info["roles_verified"]) == set(gcp_onboard.EXPECTED_ROLES)
+        builtin_verified = [r for r in info["roles_verified"] if not r.startswith("<custom>")]
+        assert set(builtin_verified) == set(gcp_onboard.EXPECTED_ROLES)
+        # Custom role must also be verified.
+        assert any("<custom>" in r for r in info["roles_verified"]), (
+            "Custom role gluddComputeOperator not verified"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -161,6 +190,19 @@ class TestTerraformModuleLeastPriv:
 
     def test_iam_policy_uses_least_priv_roles(self) -> None:
         main_tf = (GCP_MODULE_DIR / "main.tf").read_text()
+        # The module MUST use the custom compute_operator role now
+        # (replaces roles/compute.instanceAdmin.v1 — see AGENTS.md least-privilege).
+        assert "gluddComputeOperator" in main_tf, (
+            "Missing custom role gluddComputeOperator — "
+            "must replace roles/compute.instanceAdmin.v1"
+        )
+        # setMetadata MUST NOT appear in the permissions list.
+        assert "compute.instances.setMetadata" not in main_tf or (
+            'setMetadata' in main_tf and 'compute.instances.setMetadata' not in _permissions_list(main_tf)
+        ), (
+            "compute.instances.setMetadata found in GCP role permissions — "
+            "allows SSH key injection for privilege escalation"
+        )
         # Every EXPECTED role must appear in the module.
         for role in gcp_onboard.EXPECTED_ROLES:
             assert role in main_tf, f"Expected role {role} missing from main.tf"

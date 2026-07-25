@@ -1,0 +1,336 @@
+"""Structural tests verifying ``gludd.spec`` collects ALL data files needed
+to prevent the ``Missing base YAML definition file (bad install?)`` runtime
+crash that shipped in v0.1.0-beta.1.
+
+Background:
+    v0.1.0-beta.1 shipped a binary that crashed on macOS because
+    ``ansible/config/base.yml`` was not collected into the PyInstaller
+    bundle. ``ansible.config.manager`` reads that YAML at startup via
+    ``importlib.resources``; PyInstaller's static analyzer does not see the
+    runtime resource lookup, so the file is silently dropped.
+
+    The fix layers are pinned here:
+      1. ``collect_data_files('ansible')`` must run AND its result must be
+         passed to ``Analysis(... datas=[...] ...)``. (Computing it but
+         dropping the value is the bug that re-shipped the crash.)
+      2. ``collect_submodules('ansible.module_utils')`` (plus plugins,
+         template, galaxy) must run so PyInstaller's static analyzer does
+         not miss ansible's dynamic imports.
+      3. ``ansible`` (the executor stack) must NOT appear in ``excludes=``;
+         only ``ansible.cli`` is excluded (Windows cp1252 locale issue).
+
+    The other libraries gludd depends on (jinja2, pydantic, sqlalchemy,
+    uvicorn) ship their own non-.py data files. PyInstaller ships built-in
+    hooks for each, so explicit ``collect_data_files`` is not normally
+    required — but if a library ever introduces a runtime-critical YAML or
+    JSON file its built-in hook does not cover, the tests below will surface
+    it by scanning the installed package at test time.
+"""
+
+from __future__ import annotations
+
+import re
+from importlib import resources
+from pathlib import Path
+
+import pytest
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+SPEC_PATH = REPO_ROOT / "gludd.spec"
+
+# Extensions PyInstaller does NOT auto-detect — they must be explicitly
+# collected via ``collect_data_files`` or a built-in PyInstaller hook.
+DATA_FILE_EXTENSIONS = (".yml", ".yaml", ".json", ".txt", ".cfg", ".ini", ".toml")
+
+# Path subsegments that mark a data file as test/documentation/example rather
+# than runtime-critical. Files under these paths do NOT need to be bundled.
+_NON_RUNTIME_MARKERS = ("test", "tests", "example", "examples", "doc", "docs")
+
+
+@pytest.fixture(scope="module")
+def spec_text() -> str:
+    """Contents of ``gludd.spec`` as a single string."""
+    assert SPEC_PATH.is_file(), f"gludd.spec missing at {SPEC_PATH}"
+    return SPEC_PATH.read_text(encoding="utf-8")
+
+
+def _excludes_from_spec(spec_text: str) -> set[str]:
+    """Parse the ``excludes=`` list from ``gludd.spec`` and return its entries.
+
+    Returns an empty set if the spec has no excludes list (which would itself
+    be a regression — the spec excludes ``ansible.cli`` for Windows cp1252).
+    """
+    excludes_match = re.search(r"excludes\s*=\s*\[([^\]]*)\]", spec_text, re.DOTALL)
+    if not excludes_match:
+        return set()
+    return set(re.findall(r"['\"]([^'\"]+)['\"]", excludes_match.group(1)))
+
+
+def _analysis_datas_body(spec_text: str) -> str | None:
+    """Extract the body of the ``datas=`` argument inside ``Analysis(...)``.
+
+    PyInstaller only bundles what is passed to ``Analysis(datas=[...])`` — a
+    module-level ``datas = [...]`` variable is ignored. This helper lets the
+    tests assert on what actually reaches the bundle.
+
+    Returns the inner text of the ``datas=[...]`` list inside Analysis, or
+    None if no Analysis block with a datas argument is found.
+    """
+    # Match "datas=[" up to the matching "]" — the spec's datas lists are
+    # single-level (no nested lists), so a non-greedy capture to the next "]"
+    # at the same paren depth is sufficient.
+    analysis_match = re.search(
+        r"Analysis\s*\((?P<body>.*?)\)\s*$",
+        spec_text,
+        re.DOTALL | re.MULTILINE,
+    )
+    if not analysis_match:
+        return None
+    body = analysis_match.group("body")
+    datas_match = re.search(r"datas\s*=\s*\[(?P<inner>.*?)\]", body, re.DOTALL)
+    if not datas_match:
+        return None
+    return datas_match.group("inner")
+
+
+def _find_runtime_data_files(package_name: str) -> list[Path]:
+    """Find runtime-critical non-.py data files shipped by an installed package.
+
+    Uses ``importlib.resources`` so the lookup works in both dev mode
+    (site-packages) and PyInstaller mode (``collect_data_files`` wires the
+    resource reader). Returns paths relative to the package root, filtered
+    to exclude test/doc/example files (those do not need bundling).
+
+    Returns an empty list if the package is not importable in this
+    environment — that is a soft-fail so the test still produces a useful
+    assertion on the spec structure.
+    """
+    try:
+        root = Path(str(resources.files(package_name)))
+    except (ImportError, ModuleNotFoundError, TypeError, ValueError):
+        return []
+    if not root.is_dir():
+        return []
+    runtime_files: list[Path] = []
+    for p in root.rglob("*"):
+        if not p.is_file():
+            continue
+        if p.suffix.lower() not in DATA_FILE_EXTENSIONS:
+            continue
+        rel = p.relative_to(root)
+        rel_lower = str(rel).lower()
+        if any(marker in rel_lower for marker in _NON_RUNTIME_MARKERS):
+            continue
+        runtime_files.append(rel)
+    return runtime_files
+
+
+class TestAnsibleDataCollection:
+    """The gludd binary crashed on macOS because ``ansible/config/base.yml``
+    wasn't bundled. These tests verify the spec collects ALL ansible data."""
+
+    def test_spec_uses_collect_data_files(self, spec_text: str) -> None:
+        """Verify gludd.spec calls ``collect_data_files('ansible')``.
+
+        Without this call, PyInstaller's static analyzer misses every
+        non-.py file under the ansible package — including
+        ``ansible/config/base.yml`` (the crash file), the plugin YAML
+        definitions, and the module-utils data files.
+        """
+        assert re.search(
+            r"collect_data_files\(\s*['\"]ansible['\"]\s*\)", spec_text
+        ), (
+            "gludd.spec must call collect_data_files('ansible') to bundle "
+            "ansible/config/base.yml and the rest of ansible's YAML data. "
+            "Without it the binary crashes on startup with "
+            "'Missing base YAML definition file (bad install?)'."
+        )
+
+    def test_ansible_datas_actually_passed_to_analysis(self, spec_text: str) -> None:
+        """The ``collect_data_files('ansible')`` result MUST reach Analysis.
+
+        PyInstaller only bundles what is in ``Analysis(datas=[...])``. A
+        module-level ``datas = [...] + _ansible_datas`` variable is computed
+        but IGNORED unless it is the same object passed to ``Analysis``.
+        The v0.1.0-beta.1 crash returned because the spec computed the data
+        and then handed Analysis a different (ansible-less) inline list.
+
+        This test pins the fix: the Analysis ``datas=`` body must reference
+        the ansible-data variable (or contain the collect_data_files call
+        inline).
+        """
+        body = _analysis_datas_body(spec_text)
+        assert body is not None, (
+            "gludd.spec must have an Analysis(...) block with a datas=[...] argument"
+        )
+        # Accept either (a) the module-level variable pattern, or (b) an
+        # inline collect_data_files('ansible') call inside Analysis(datas=).
+        uses_module_var = bool(re.search(r"\b_ansible_datas\b", body))
+        uses_module_datas_var = bool(re.search(r"\bdatas\b", body)) and bool(
+            re.search(r"^datas\s*=\s*\[", spec_text, re.MULTILINE)
+        )
+        inline_collect = bool(
+            re.search(r"collect_data_files\(\s*['\"]ansible['\"]\s*\)", body)
+        )
+        assert uses_module_var or uses_module_datas_var or inline_collect, (
+            "Analysis(datas=[...]) must include the ansible data — either by "
+            "appending _ansible_datas, by passing the module-level `datas` "
+            "variable, or by calling collect_data_files('ansible') inline. "
+            "The current spec computes _ansible_datas but drops it before "
+            "Analysis, so ansible/config/base.yml is NOT bundled. This is "
+            "the root cause of the 'Missing base YAML definition file' crash."
+        )
+
+    def test_spec_uses_collect_submodules(self, spec_text: str) -> None:
+        """Verify gludd.spec calls ``collect_submodules('ansible.module_utils')``.
+
+        ansible performs dynamic imports inside module_utils, plugins,
+        template, and galaxy. PyInstaller's static analyzer cannot follow
+        importlib.import_module() calls, so each must be collected
+        explicitly. Without this, the bundle's executor path silently
+        fails the first time ansible resolves a module/action.
+        """
+        assert re.search(
+            r"collect_submodules\(\s*['\"]ansible\.module_utils['\"]\s*\)",
+            spec_text,
+        ), (
+            "gludd.spec must call collect_submodules('ansible.module_utils') "
+            "to bundle ansible's dynamically-imported subpackage. The static "
+            "analyzer misses these imports otherwise."
+        )
+        # The spec should also collect the other dynamically-loaded ansible
+        # subpackages (plugins, template, galaxy) — these are the ones
+        # core_runner.py and the executor touch at runtime.
+        for sub in ("ansible.plugins", "ansible.template", "ansible.galaxy"):
+            assert re.search(
+                r"collect_submodules\(\s*['\"]" + re.escape(sub) + r"['\"]\s*\)",
+                spec_text,
+            ), (
+                f"gludd.spec must call collect_submodules('{sub}') — used at "
+                f"runtime by ansible's executor path."
+            )
+
+    def test_spec_does_not_exclude_ansible(self, spec_text: str) -> None:
+        """Verify ansible is NOT in the excludes list (only ansible.cli is).
+
+        ``ansible.cli`` is excluded because ``ansible.cli.initialize_locale()``
+        hard-fails on Windows' cp1252 locale. The executor stack
+        (ansible.parsing, ansible.executor, ansible.inventory, ansible.vars,
+        ansible.template, ansible.plugins) MUST be bundled — core_runner.py
+        drives it at runtime.
+        """
+        excluded = _excludes_from_spec(spec_text)
+        # The whole 'ansible' package must NOT be excluded.
+        assert "ansible" not in excluded, (
+            "ansible must NOT be in excludes — gludd drives ansible-core's "
+            "executor API (src/general_ludd/ansible/core_runner.py:77-83) at "
+            "runtime. Excluding it strips the entire executor stack."
+        )
+        # Sanity: ansible.cli SHOULD remain excluded (Windows cp1252 issue).
+        assert "ansible.cli" in excluded, (
+            "ansible.cli MUST remain in excludes — "
+            "ansible.cli.initialize_locale() hard-fails on Windows cp1252 "
+            "locale ('Ansible requires UTF-8; Detected 1252')."
+        )
+
+
+class TestOtherLibraryDataFiles:
+    """Check other libraries that ship data files PyInstaller might miss.
+
+    PyInstaller ships built-in hooks for the major libraries gludd uses
+    (jinja2, pydantic, sqlalchemy, uvicorn). Those hooks auto-collect each
+    library's standard data files, so explicit ``collect_data_files`` calls
+    in gludd.spec are normally redundant.
+
+    These tests are the structural pin: each library must (a) NOT be in the
+    spec's excludes list and (b) NOT ship a runtime-critical YAML/JSON/cfg
+    file that its built-in hook misses. If a future version of any library
+    introduces such a file, the test surfaces it here so the spec can be
+    updated before another "Missing base YAML definition file" class crash.
+    """
+
+    def test_jinja2_data_collected(self, spec_text: str) -> None:
+        """Jinja2 ships test templates; runtime templates are Python-loaded.
+
+        ``ansible.template.Templar`` (used by core_runner.py:79) wraps jinja2.
+        PyInstaller's hook-jinja2.py auto-collects jinja2's data files.
+        """
+        excluded = _excludes_from_spec(spec_text)
+        assert "jinja2" not in excluded, (
+            "jinja2 must not be excluded — ansible's Templar uses jinja2 "
+            "for playbook rendering at runtime."
+        )
+        critical = _find_runtime_data_files("jinja2")
+        assert not critical, (
+            "jinja2 ships runtime YAML/JSON/CFG files that PyInstaller's "
+            f"built-in hook may miss: {critical}. gludd.spec must add "
+            "collect_data_files('jinja2') to bundle them."
+        )
+
+    def test_pydantic_data_collected(self, spec_text: str) -> None:
+        """Pydantic ships JSON schema files for its core schema model.
+
+        gludd's models (e.g. AnsibleResult in core_runner.py:201) use pydantic.
+        PyInstaller's hook-pydantic.py auto-collects pydantic's data files.
+        """
+        excluded = _excludes_from_spec(spec_text)
+        assert "pydantic" not in excluded, (
+            "pydantic must not be excluded — gludd's pydantic models use it "
+            "at runtime for validation and JSON schema generation."
+        )
+        critical = _find_runtime_data_files("pydantic")
+        # pydantic v2 ships a few non-test .pyi / .json files internally; the
+        # schema-related .json files are read via importlib.resources, so a
+        # built-in-hook miss would crash at first model_dump_json call.
+        assert not critical, (
+            "pydantic ships runtime YAML/JSON/CFG files that PyInstaller's "
+            f"built-in hook may miss: {critical}. gludd.spec must add "
+            "collect_data_files('pydantic') to bundle them."
+        )
+
+    def test_sqlalchemy_data_collected(self, spec_text: str) -> None:
+        """SQLAlchemy may need plugin data files (e.g. dialect configs).
+
+        gludd's db layer (db.models, db.repository) uses sqlalchemy.
+        PyInstaller's hook-sqlalchemy.py auto-collects its data files.
+        """
+        excluded = _excludes_from_spec(spec_text)
+        assert "sqlalchemy" not in excluded, (
+            "sqlalchemy must not be excluded — gludd's db layer "
+            "(db/models.py, db/repository.py) uses sqlalchemy at runtime."
+        )
+        critical = _find_runtime_data_files("sqlalchemy")
+        assert not critical, (
+            "sqlalchemy ships runtime YAML/JSON/CFG files that PyInstaller's "
+            f"built-in hook may miss: {critical}. gludd.spec must add "
+            "collect_data_files('sqlalchemy') to bundle them."
+        )
+
+    def test_uvicorn_data_collected(self, spec_text: str) -> None:
+        """Uvicorn ships default config files and process-control submodules.
+
+        gludd's worker uses uvicorn. The spec already lists uvicorn.loops,
+        uvicorn.protocols, uvicorn.lifespan as hiddenimports (lines ~57-66).
+        """
+        excluded = _excludes_from_spec(spec_text)
+        assert "uvicorn" not in excluded, (
+            "uvicorn must not be excluded — gludd's worker uses uvicorn "
+            "to serve the FastAPI app at runtime."
+        )
+        # Verify uvicorn's dynamic-import subpackages are in hiddenimports.
+        # uvicorn uses importlib to load loops/protocols/lifespan based on
+        # the --loop/--http/--lifespan flags; PyInstaller's static analyzer
+        # misses these. The spec MUST list each as a hiddenimport.
+        for required_hidden in ("uvicorn.loops", "uvicorn.protocols", "uvicorn.lifespan"):
+            assert re.search(
+                r"['\"]" + re.escape(required_hidden) + r"['\"]", spec_text
+            ), (
+                f"gludd.spec must list '{required_hidden}' as a hiddenimport — "
+                f"uvicorn resolves these dynamically at startup."
+            )
+        critical = _find_runtime_data_files("uvicorn")
+        assert not critical, (
+            "uvicorn ships runtime YAML/JSON/CFG files that PyInstaller's "
+            f"built-in hook may miss: {critical}. gludd.spec must add "
+            "collect_data_files('uvicorn') to bundle them."
+        )

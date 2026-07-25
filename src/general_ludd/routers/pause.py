@@ -1,9 +1,16 @@
-"""Pause/resume API endpoints for projects and models.
+"""Pause/resume API endpoints for tasks, agents, infrastructure, projects, and models.
 
 Endpoints:
     GET  /api/pause              — list all paused entities
+    GET  /api/pause/status       — list all paused entities (alias)
     POST /api/pause/project      — pause a project
     POST /api/pause/model        — pause a model
+    POST /api/tasks/{task_id}/pause    — pause a task
+    POST /api/tasks/{task_id}/resume   — resume a task
+    POST /api/agents/{agent_id}/pause  — pause an agent
+    POST /api/agents/{agent_id}/resume — resume an agent
+    POST /api/infra/{deployment_id}/pause  — pause deployed infra
+    POST /api/infra/{deployment_id}/resume — resume deployed infra
     POST /api/resume/project     — resume a project
     POST /api/resume/model       — resume a model
 
@@ -15,7 +22,7 @@ The shared PauseController instance is stored on
 from __future__ import annotations
 
 import logging
-from typing import cast
+from typing import Any, cast
 
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
@@ -24,6 +31,14 @@ from general_ludd.agents.hibernation import HibernationHandle
 from general_ludd.controllers.pause_controller import PauseController
 
 logger = logging.getLogger(__name__)
+
+
+class PauseEntityRequest(BaseModel):
+    reason: str = Field("", description="Reason for pausing")
+
+
+class ResumeEntityRequest(BaseModel):
+    pass
 
 
 class PauseRequest(BaseModel):
@@ -41,6 +56,15 @@ class ResumeRequest(BaseModel):
     target_id: str = Field(..., min_length=1, description="Project or model identifier")
 
 
+def _format_pause_record(record: Any) -> dict[str, object]:
+    return {
+        "kind": record.kind,
+        "target_id": record.target_id,
+        "paused_at": record.paused_at,
+        "reason": record.reason,
+    }
+
+
 def _get_controller(app: FastAPI) -> PauseController | None:
     return getattr(app.state, "_pause_controller", None)
 
@@ -55,15 +79,119 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         records = controller.list_paused()
         return {
             "paused": [
-                {
-                    "kind": r.kind,
-                    "target_id": r.target_id,
-                    "paused_at": r.paused_at,
-                    "reason": r.reason,
-                }
+                _format_pause_record(r)
                 for r in records
             ],
             "count": len(records),
+        }
+
+    @app.get("/api/pause/status")
+    async def api_pause_status() -> dict[str, object]:
+        """List all currently paused entities across all types."""
+        controller = _get_controller(app)
+        if controller is None:
+            return {"paused": [], "count": 0, "by_type": {}}
+        records = controller.list_paused()
+        by_type: dict[str, list[dict[str, object]]] = {}
+        for r in records:
+            by_type.setdefault(r.kind, []).append(_format_pause_record(r))
+        return {
+            "paused": [_format_pause_record(r) for r in records],
+            "count": len(records),
+            "by_type": by_type,
+        }
+
+    # --- Task pause/resume ---
+
+    @app.post("/api/tasks/{task_id}/pause")
+    async def api_pause_task(task_id: str, req: PauseEntityRequest) -> dict[str, object]:
+        controller = _get_controller(app)
+        if controller is None:
+            return {"error": "pause controller not available", "paused": False}
+        record = controller.pause("task", task_id, reason=req.reason)
+        return {
+            "paused": True,
+            "kind": "task",
+            "target_id": record.target_id,
+            "paused_at": record.paused_at,
+            "reason": record.reason,
+        }
+
+    @app.post("/api/tasks/{task_id}/resume")
+    async def api_resume_task(task_id: str, _req: ResumeEntityRequest | None = None) -> dict[str, object]:
+        controller = _get_controller(app)
+        if controller is None:
+            return {"error": "pause controller not available", "resumed": False}
+        record = controller.resume("task", task_id)
+        if record is None:
+            return {"resumed": False, "target_id": task_id, "message": "was not paused"}
+        return {
+            "resumed": True,
+            "kind": "task",
+            "target_id": record.target_id,
+            "paused_at": record.paused_at,
+        }
+
+    # --- Agent pause/resume ---
+
+    @app.post("/api/agents/{agent_id}/pause")
+    async def api_pause_agent(agent_id: str, req: PauseEntityRequest) -> dict[str, object]:
+        controller = _get_controller(app)
+        if controller is None:
+            return {"error": "pause controller not available", "paused": False}
+        record = controller.pause("agent", agent_id, reason=req.reason)
+        return {
+            "paused": True,
+            "kind": "agent",
+            "target_id": record.target_id,
+            "paused_at": record.paused_at,
+            "reason": record.reason,
+        }
+
+    @app.post("/api/agents/{agent_id}/resume")
+    async def api_resume_agent(agent_id: str, _req: ResumeEntityRequest | None = None) -> dict[str, object]:
+        controller = _get_controller(app)
+        if controller is None:
+            return {"error": "pause controller not available", "resumed": False}
+        record = controller.resume("agent", agent_id)
+        if record is None:
+            return {"resumed": False, "target_id": agent_id, "message": "was not paused"}
+        return {
+            "resumed": True,
+            "kind": "agent",
+            "target_id": record.target_id,
+            "paused_at": record.paused_at,
+        }
+
+    # --- Infra pause/resume ---
+
+    @app.post("/api/infra/{deployment_id}/pause")
+    async def api_pause_infra(deployment_id: str, req: PauseEntityRequest) -> dict[str, object]:
+        controller = _get_controller(app)
+        if controller is None:
+            return {"error": "pause controller not available", "paused": False}
+        record = controller.pause("infra", deployment_id, reason=req.reason)
+        return {
+            "paused": True,
+            "kind": "infra",
+            "target_id": record.target_id,
+            "paused_at": record.paused_at,
+            "reason": record.reason,
+        }
+
+    @app.post("/api/infra/{deployment_id}/resume")
+    async def api_resume_infra(deployment_id: str, _req: ResumeEntityRequest | None = None) -> dict[str, object]:
+        controller = _get_controller(app)
+        if controller is None:
+            return {"error": "pause controller not available", "resumed": False}
+        record = controller.resume("infra", deployment_id)
+        if record is None:
+            return {"resumed": False, "target_id": deployment_id, "message": "was not paused"}
+        return {
+            "resumed": True,
+            "kind": "infra",
+            "target_id": record.target_id,
+            "paused_at": record.paused_at,
         }
 
     @app.post("/api/pause/project")

@@ -41,6 +41,7 @@ build/
 .gate-lite-status
 .gate-lite-failed
 .gate-background.pid
+.watchdog.pid
 .gate-logs/
 .ci-status
 ci-attempt-logs/

@@ -6,21 +6,104 @@
 
 ---
 
-## Current Gate Status (2026-07-23)
+## Current Gate Status (2026-07-24)
 <!-- gate:begin -->
 - lint PASS 0
 - env-writes PASS
-- hook-runtime FAIL (29 failures — named export stripping, commit 0e45db90)
+- hook-runtime PASS (122 passed, 0 failed, 18 skipped)
 - typecheck PASS 0
 - collect PASS 0
-- test REQUIRED
-- smoke REQUIRED
+- coverage-gaps PASS 0 new gaps
+- smoke PASS
+- GATE: PASSED
 
 <!-- gate:end -->
 
 ---
 
-## PRIMARY OBJECTIVE: FIX HOOK-RUNTIME → GREEN LOCAL GATE → GREEN CI ON MASTER → 12/12 ARTIFACTS FOR v0.1.0-beta.1
+## SESSION 53 — 2026-07-25
+
+- **HEAD: `d99624cc`** on `master` branch (VERIFIED on sandboxcom)
+- **Version: 0.1.0-beta.1** (RELEASED — all 12 artifacts verified)
+- **Push status: PUSHED + VERIFIED** — master@d99624cc on sandboxcom
+- **CI: GREEN** — run 30145571826 conclusion: success (all gates, all builds, release job)
+- **Release: PUBLISHED** — https://github.com/sandboxcom/gludd/releases/tag/v0.1.0-beta.1
+- **Artifacts: 21 assets, 12/12 categories verified** (verify-release-completeness ALL 16 CHECKS PASSED)
+- **Gate: PASSED** — all phases green
+- **Working tree: CLEAN**
+
+### Release v0.1.0-beta.1 — SHIPPED
+
+| Step | Status |
+|------|--------|
+| NSIS BUILDDIR path fix | DONE (commit d99624cc) |
+| CI green on master | DONE (run 30143015812) |
+| Tag push v0.1.0-beta.1 | DONE |
+| CI green on tag | DONE (run 30145571826) |
+| Release published | DONE (21 assets) |
+| verify-release-completeness | PASS (16/16 checks) |
+
+### Root cause of multi-day NSIS failure
+
+NSIS resolves `OutFile` paths relative to the **script file location** (`dist/windows/`), not the CWD. `BUILDDIR="dist"` produced output at `dist/windows/dist/` — a nonexistent directory. Fixed by changing to `BUILDDIR=".."` which resolves correctly to `dist/gludd-VERSION-setup-x86_64.exe`.
+
+### Other accomplishments
+
+- /tmp permission widened from `/tmp/gludd-*` to `/tmp/**` + `.config/opencode/**`
+- No-home-directory-access guardrail codified (3-layer: opencode.json + AGENTS.md + 145 tests)
+- Pipeline-as-primary-objective guardrail codified (AGENTS.md + 29 tests)
+- 50+ structural tests added across RP/BP/CP/PK/TQ/SC/OD/DC phases
+- 10+ enforcement plugins improved (BP.3-BP.20)
+
+- **Last Updated: 2026-07-25 — Session 53.** HEAD `d99624cc` on `master` (VERIFIED). Gate PASSED. Release v0.1.0-beta.1 PUBLISHED with 21 assets. All 12 artifact categories verified.
+
+---
+
+## SESSION 52 — 2026-07-24
+
+- **HEAD: `d7dfd2a6`** on `master` branch (VERIFIED on sandboxcom)
+- **Version: 0.1.0-beta.1** (pyproject.toml)
+- **Push status: PUSHED + VERIFIED** — master@d7dfd2a6 on sandboxcom
+- **CI: TRIGGERED** — run pending on master@d7dfd2a6
+- **Gate: PASSED** — all phases green (lint 0, typecheck 0, collect 0, hook-runtime 122/0, coverage-gaps 0)
+- **Working tree: CLEAN**
+
+### What was fixed this session
+
+| Commit | Fix |
+|--------|-----|
+| `d7dfd2a6` | rename test file to match coverage scanner pattern + add idempotency tests for compat.annotated_types |
+| `98335f46` | update test_hook_runtime.py imports — helpers now in lib/plugin_test_exports.ts (30 failures → 0) |
+| `4ff0e0ad` | lint errors in test_plugin_session_start_deadlock.py (14 errors → 0) |
+| `53ef4f8b` | enforce-floor.ts ReferenceError — inline incrementTextCompleteCount + plugin hook invocation validation |
+| `c91019a4` | enforce-context.ts deadlock fix — isReadTool guard + plugin self-awareness tooling |
+| `3b31ab35` | remove opencode boot crash vectors — delete hot_reload.ts, remove named exports, move test helpers |
+
+### Hook-runtime resolution (PRIMARY BLOCKER RESOLVED)
+
+- **Root cause:** Plugin refactoring (commit 3b31ab35) moved helper functions from plugin files to `lib/plugin_test_exports.ts` and stripped named exports to fix opencode boot crash. Test harness (`test_hook_runtime.py`) still imported from plugin files directly.
+- **Fix:** Updated all 30 failing tests to import from `lib/plugin_test_exports.ts` instead. Rewrote commit-lock tests from PluginAPI pattern to direct plugin invocation. Result: 122 passed, 0 failed.
+- **Plugin hook validation:** New `make check-plugin-hook-invoke` target (commit 53ef4f8b) actually invokes every plugin hook function — catches ReferenceError class of bugs that import-only checks miss. 27/27 PASS.
+
+### Release pipeline status
+
+| Step | Status |
+|------|--------|
+| hook-runtime green | DONE (122/0) |
+| local gate green | DONE (all phases PASS) |
+| push to remote | DONE (VERIFIED master@d7dfd2a6) |
+| CI green on master | PENDING |
+| release-cut TAG=v0.1.0-beta.1 | BLOCKED on CI green |
+| verify-release-completeness 12/12 | BLOCKED on release-cut |
+
+### Next
+
+1. Wait for CI green on master@d7dfd2a6
+2. `make release-cut TAG=v0.1.0-beta.1 MSG='beta.1 release — full 12-artifact build with hook-runtime fix'`
+3. `make verify-release-completeness TAG=v0.1.0-beta.1` — confirm all 12 asset categories
+4. Tick `[x]` on TASKS.md A.4 with artifact URL + CI run id
+
+- **Last Updated: 2026-07-24 — Session 52.** HEAD `d7dfd2a6` on `master` (VERIFIED). Gate PASSED. 6 commits pushed. CI PENDING. A.4 blocked on CI green for release-cut.
 
 ---
 
@@ -1020,3 +1103,33 @@ A  tests/unit/test_model_search_searx.py
 ---
 
 > Older sessions (23-29, historical) archived to `docs/archive/SESSION_history.md`
+
+---
+
+## 2026-07-24: Fix enforcement-context.ts read deadlock + add plugin self-awareness
+
+**Bug:** `.opencode/plugin/enforce-context.ts` denied ALL tool calls (including reads)
+when SESSION.md was >24h stale. At session start, this blocked the required 6-read
+protocol, deadlocking the session. User had to move `.opencode/` to `.opencode.orig`
+(second occurrence, see BUGS.md 2026-07-23 for first).
+
+**Root cause:** enforce-context.ts had no tool-type filter — it returned
+`permissionDecision: "deny"` for every tool type. Reads needed to restore context
+were blocked by the plugin checking for context staleness.
+
+**Fix:**
+- Added `isReadTool` guard to enforce-context.ts defaultImpl `tool.execute.before`
+- Read tools (read, grep, glob) now always allowed; only mutation tools are gated
+
+**New tooling:**
+- `make list-plugins` — enumerates all enforcement plugins with hooks, blocks, disable env vars
+- `tests/unit/test_plugin_session_start_deadlock.py` — 8 tests verifying:
+  - All tool.execute.before plugins have disable env vars
+  - No plugin denies reads at session start
+  - enforce-context.ts has isReadTool exclusion in defaultImpl
+  - Counter thresholds don't trigger within 6 session-start reads
+  - Plugin count matches opencode.json
+  - list-plugins target and script exist
+
+**AGENTS.md:** Added "Enforcement Plugin Reference" section with plugin table,
+block conditions, and disable env vars.

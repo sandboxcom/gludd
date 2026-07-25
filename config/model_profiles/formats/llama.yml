@@ -1,0 +1,137 @@
+# Model Input Format Profile: Llama (Meta)
+# ====================================================
+# PURPOSE: Document Llama's preferred input format for prompt construction.
+# Used by the gludd prompt renderer to adapt system prompts, context blocks,
+# and separator tokens per model.
+#
+# SOURCES:
+#   - https://www.llama.com/ (Meta Llama site)
+#   - HuggingFace Llama model cards
+#   - Community documentation and Llama 2/3/3.1 papers
+#   - Llama 3.1: 128K context, improved instruction following
+
+format_profile_id: llama_format
+target_models:
+  - llama-3.1-405b-instruct
+  - llama-3.1-70b-instruct
+  - llama-3.1-8b-instruct
+  - llama-3-70b-instruct
+  - llama-2-70b-chat
+
+# --- Prompt Structure ---
+
+system_prompt_wrapper: Chat Template (OpenAI-compatible)
+# Llama 2: Used special tokens [INST] / <<SYS>> / [/INST]
+#   Format: <s>[INST] <<SYS>>\n{system}\n<</SYS>>\n\n{user} [/INST]
+# Llama 3 / 3.1: Standard chat template (OpenAI-compatible)
+#   Format: <|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n{system}<|eot_id|>
+#           <|start_header_id|>user<|end_header_id|>\n\n{user}<|eot_id|>
+#           <|start_header_id|>assistant<|end_header_id|>\n\n
+
+system_prompt_role: system
+# Llama 3+ uses standard 'system' role in OpenAI-compatible API.
+# Llama 2 required <<SYS>> wrapper in [INST] blocks.
+# Most deployments now use Llama 3.1+ with standard chat template.
+# HuggingFace apply_chat_template() handles both formats.
+
+context_block_format: |
+  ### Reference Information
+  Below is reference material. Use it to answer the question.
+
+  {content}
+
+  ---
+  Now, using the above reference, answer:
+# Llama works well with natural-language sectioning.
+# Markdown headers help but plain text sections with clear separators also effective.
+# Prefer natural-language transitions over XML tags.
+
+# --- Separators & Formatting ---
+
+separator_token: Markdown headers + horizontal rules (---)
+# Llama 3+ handles markdown well.
+# Llama 2 prefers natural language with clear section breaks.
+# Horizontal rules (---) as section separators work across all versions.
+
+code_block_style: fenced
+# Triple-backtick with language identifier.
+# Meta's coding benchmarks show strong code comprehension.
+
+table_preference: markdown_table
+# Markdown tables work.
+# JSON for structured output.
+
+citation_format: inline_text
+# No built-in citation system.
+# Use inline references or [source] markers.
+
+# --- Token & Context Parameters ---
+
+context_window: 128000
+# Llama 3.1: 128K context for all sizes (8B/70B/405B).
+# Llama 3: 8K context.
+# Llama 2: 4K context.
+
+max_effective_prompt: 110000
+# Practical limit: ~85% of context window.
+# Llama 3.1 handles long context well but "lost in middle" still applies.
+# For 8B model: keep prompt under 8K for best quality.
+
+max_output_tokens: 4096
+prompt_caching_supported: false
+# No built-in prompt caching API.
+# Deployments may cache via inference server (vLLM prefix caching).
+
+# --- Behavioral Quirks ---
+
+known_quirks:
+  - "Llama 2 format != Llama 3 format: [INST]/<<SYS>> vs chat template"
+  - "Llama 2 [INST] blocks do NOT support system prompt inside first user message in some deployments"
+  - "Llama 3+ uses <|start_header_id|> / <|eot_id|> token format internally"
+  - "Llama 3.1 responds well to natural-language instructions over special formatting"
+  - "Best results with clear, direct prompts rather than verbose multi-paragraph instructions"
+  - "Few-shot examples: 2-3 examples effective for format steering"
+  - "Open-weight: many fine-tunes may change behavior (check model card)"
+  - "GGUF quantized versions: minor quality loss, same prompt format works"
+  - "Strong on reasoning tasks with chain-of-thought prompts"
+
+undocumented_preferences:
+  - "Meta's internal training used natural language heavily; overly-structured XML may not help"
+  - "Responds better to 'please' and polite phrasing than terse commands"
+  - "Code generation quality varies by model size; 70B+ significantly better than 8B"
+  - "Thinking/CoT prompts ('let's think step by step') improve reasoning accuracy"
+  - "System prompt effectiveness varies — explicit role-setting in user message sometimes better"
+
+# --- Formatting Weights (0-1, relative importance for prompt adaptation) ---
+
+formatting_weights:
+  markdown_headers: 0.7       # Useful for organization
+  xml_structure: 0.3          # Not naturally trained on XML-heavy prompts
+  json_data: 0.7              # Good JSON comprehension
+  fenced_code_blocks: 0.8     # Important for code tasks
+  numbered_lists: 0.7         # Works well
+  bullet_lists: 0.7           # Works well
+  tables: 0.6                 # Handles tables
+  inline_formatting: 0.6      # Standard markdown
+  role_prefixes: 0.6          # "You are a [role]" works; Llama trained on Meta AI assistant style
+  whitespace_separators: 0.7  # Section breaks important for parsing
+  natural_language: 1.0       # STRONG: Natural language is the native format
+  polite_phrasing: 0.8        # "Please", "thank you" acknowledged in training
+
+# --- Multi-turn Conversation ---
+
+multi_turn_format:
+  approach: chat_template
+  # Llama 3+: Standard OpenAI-compatible messages with HuggingFace chat template.
+  # Each turn adds system/user/assistant messages.
+  # Llama 2: [INST] blocks for each user turn; assistant response between blocks.
+  # apply_chat_template() handles version-specific formatting.
+
+# --- Tool Use ---
+
+tool_use_format: openai_compatible
+# Llama 3.1 has native tool calling support (built-in).
+# Function definitions in tools[] array.
+# Uses special tokens for tool call/response demarcation.
+# Llama 3: Tool calling available but less robust than 3.1.
+# Llama 2: No native tool calling; simulate with prompt formatting.

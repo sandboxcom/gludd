@@ -1,0 +1,173 @@
+---
+# Verify: assert the gludd binary booted, parsed CLI args, resolved the
+# collections precedence, and started the daemon without a traceback.
+#
+# Reads the captured outputs from {{ _smoke_out_dir }} (written by converge.yml)
+# so the assertions run against a stable snapshot rather than re-invoking the
+# binary.
+- name: Verify — gludd binary smoke results (macOS localhost)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    _smoke_out_dir: /tmp/gludd-binary-smoke-macos
+    _daemon_port: "{{ lookup('env', 'GLUDD_SMOKE_PORT') | default('18000', true) }}"
+    _daemon_url: "http://127.0.0.1:{{ _daemon_port }}"
+  tasks:
+    - name: Slurp captured outputs
+      ansible.builtin.slurp:
+        src: "{{ _smoke_out_dir }}/{{ item }}"
+      register: _slurp_raw
+      loop:
+        - binary_path.txt
+        - version.stdout.txt
+        - version.stderr.txt
+        - version.rc.txt
+        - help.stdout.txt
+        - help.stderr.txt
+        - help.rc.txt
+        - paths.stdout.txt
+        - paths.stderr.txt
+        - paths.rc.txt
+        - daemon.stderr.log
+        - health.json
+
+    - name: Decode captured outputs
+      ansible.builtin.set_fact:
+        _binary_path: "{{ (_slurp_raw.results | selectattr('item', 'equalto', 'binary_path.txt') | list | first).content | b64decode | trim }}"
+        _version_out: "{{ (_slurp_raw.results | selectattr('item', 'equalto', 'version.stdout.txt') | list | first).content | b64decode }}"
+        _version_err: "{{ (_slurp_raw.results | selectattr('item', 'equalto', 'version.stderr.txt') | list | first).content | b64decode }}"
+        _version_rc: "{{ (_slurp_raw.results | selectattr('item', 'equalto', 'version.rc.txt') | list | first).content | b64decode | trim }}"
+        _help_out: "{{ (_slurp_raw.results | selectattr('item', 'equalto', 'help.stdout.txt') | list | first).content | b64decode }}"
+        _help_err: "{{ (_slurp_raw.results | selectattr('item', 'equalto', 'help.stderr.txt') | list | first).content | b64decode }}"
+        _help_rc: "{{ (_slurp_raw.results | selectattr('item', 'equalto', 'help.rc.txt') | list | first).content | b64decode | trim }}"
+        _paths_out: "{{ (_slurp_raw.results | selectattr('item', 'equalto', 'paths.stdout.txt') | list | first).content | b64decode }}"
+        _paths_err: "{{ (_slurp_raw.results | selectattr('item', 'equalto', 'paths.stderr.txt') | list | first).content | b64decode }}"
+        _paths_rc: "{{ (_slurp_raw.results | selectattr('item', 'equalto', 'paths.rc.txt') | list | first).content | b64decode | trim }}"
+        _daemon_err: "{{ (_slurp_raw.results | selectattr('item', 'equalto', 'daemon.stderr.log') | list | first).content | b64decode }}"
+        _health_json: "{{ (_slurp_raw.results | selectattr('item', 'equalto', 'health.json') | list | first).content | b64decode }}"
+
+    - name: Parse health response JSON
+      ansible.builtin.set_fact:
+        _health: "{{ _health_json | from_json }}"
+      when: _health_json | length > 0
+
+    # ------------------------------------------------------------------
+    # version
+    # ------------------------------------------------------------------
+    - name: Assert version command succeeded
+      ansible.builtin.assert:
+        that:
+          - _version_rc == "0"
+          - _version_out | regex_search("(?i)([0-9]+\\.[0-9]+\\.[0-9]+)")
+          - "'general-ludd-agent' in _version_out or 'gludd' in _version_out"
+        fail_msg: >-
+          `gludd version` did not return a version string.
+          rc={{ _version_rc }}
+          stdout={{ _version_out }}
+          stderr={{ _version_err }}
+
+    # ------------------------------------------------------------------
+    # help
+    # ------------------------------------------------------------------
+    - name: Assert help shows usage and subcommands
+      ansible.builtin.assert:
+        that:
+          - _help_rc == "0"
+          - "'usage:' in _help_out or 'Usage:' in _help_out or 'usage ' in _help_out"
+          - "'daemon' in _help_out"
+          - "'project' in _help_out"
+        fail_msg: >-
+          `gludd --help` did not show usage + subcommand list.
+          rc={{ _help_rc }}
+          stdout_head={{ _help_out[:400] }}
+
+    # ------------------------------------------------------------------
+    # project paths (collections precedence + config/templates/playbooks)
+    # ------------------------------------------------------------------
+    - name: Assert project paths resolved at least one tier
+      ansible.builtin.assert:
+        that:
+          - _paths_rc == "0"
+          - _paths_out | length > 0
+          - "('Collection search path' in _paths_out) or ('BUNDLED' in _paths_out) or ('PROJECT' in _paths_out) or ('collections' in _paths_out | lower)"
+        fail_msg: >-
+          `gludd project paths` produced no path entries.
+          rc={{ _paths_rc }}
+          stdout={{ _paths_out }}
+          stderr={{ _paths_err }}
+
+    - name: Assert project paths lists config/templates/playbooks-accessible tier
+      ansible.builtin.assert:
+        that:
+          # The precedence table must surface the BUNDLED tier (the install
+          # root that also carries config/templates/playbooks). If it's
+          # missing, the binary cannot locate its own data files at runtime.
+          - "'BUNDLED' in _paths_out or 'bundled' in _paths_out | lower"
+        fail_msg: >-
+          `gludd project paths` is missing the BUNDLED tier — the binary
+          cannot find its config/templates/playbooks directories.
+          stdout={{ _paths_out }}
+
+    # ------------------------------------------------------------------
+    # daemon boot: no traceback, no Missing base YAML definition file
+    # ------------------------------------------------------------------
+    - name: Assert daemon stderr has no Python traceback
+      ansible.builtin.assert:
+        that:
+          - "'Traceback (most recent call last)' not in _daemon_err"
+          - "'ImportError' not in _daemon_err"
+          - "'ModuleNotFoundError' not in _daemon_err"
+        fail_msg: >-
+          Daemon emitted a Python traceback on stderr.
+          --- daemon.stderr.log ---
+          {{ _daemon_err }}
+
+    - name: Assert daemon stderr has no Missing base YAML definition file
+      ansible.builtin.assert:
+        that:
+          - "'Missing base YAML definition file' not in _daemon_err"
+        fail_msg: >-
+          Daemon emitted 'Missing base YAML definition file' on stderr —
+          a frozen-binary data-file resolution regression.
+          --- daemon.stderr.log ---
+          {{ _daemon_err }}
+
+    # ------------------------------------------------------------------
+    # health endpoint
+    # ------------------------------------------------------------------
+    - name: Assert health endpoint returned 200 OR a JSON status field
+      ansible.builtin.assert:
+        that:
+          - _health.status is defined
+          - (_health.status == 200) or (_health.body | default('') | regex_search('"status"'))
+        fail_msg: >-
+          Daemon /healthz did not return 200 or a JSON status field.
+          health={{ _health }}
+
+    # ------------------------------------------------------------------
+    # Cleanup: kill the smoke daemon
+    # ------------------------------------------------------------------
+    - name: Read daemon PID
+      ansible.builtin.slurp:
+        src: "{{ _smoke_out_dir }}/daemon.pid"
+      register: _pid_raw
+      failed_when: false
+
+    - name: Kill smoke daemon
+      ansible.builtin.shell: |
+        set -e
+        pids=$(lsof -ti tcp:{{ _daemon_port }} || true)
+        if [ -n "$pids" ]; then kill $pids 2>/dev/null || true; fi
+        pid="{{ (_pid_raw.content | default('')) | b64decode | trim }}"
+        if [ -n "$pid" ]; then kill "$pid" 2>/dev/null || true; fi
+      args:
+        executable: /bin/sh
+      changed_when: false
+      failed_when: false
+
+    - name: Remove smoke output dir
+      ansible.builtin.file:
+        path: "{{ _smoke_out_dir }}"
+        state: absent
+      ignore_errors: true

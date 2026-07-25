@@ -35,6 +35,11 @@ resource "azurerm_user_assigned_identity" "gludd_operator" {
 
 # Create + manage VMs (azurerm_virtual_machine in _generate_azure). This is
 # the scoped built-in; the broader all-resource role is intentionally NOT used.
+#
+# Billing scope: the `scope` field below constrains the role assignment to
+# exactly the subscription in var.subscription_id.  This controls which
+# billing account is charged — Azure defaults to the tenant default billing
+# account when scope is not explicit.  Asserted by tests/e2e/test_iam_smoke.py.
 resource "azurerm_role_assignment" "vm_contributor" {
   scope                            = "/subscriptions/${var.subscription_id}"
   role_definition_name             = "Virtual Machine Contributor"

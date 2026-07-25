@@ -1,0 +1,323 @@
+---
+# Converge - exercise every config-loading path through the real gludd binary.
+#
+# Phases:
+#   1. `gludd project paths --json`          → path-config resolution
+#   2. parse every config/**/*.yml           → file-integrity / "config validate"
+#   3. boot daemon (best-effort)             → full config chain; config loads
+#                                              BEFORE infra, so a DB-refused
+#                                              error means config LOADED fine
+#   4. probe config-derived endpoints        → loaded config is live
+#   5. env-var override boot on port 9999    → GLUDD_NETWORK__PORT precedence
+#   6. failure modes                         → corrupt / missing / invalid YAML
+- name: Converge - config loading via the gludd binary
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    project_dir: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+    daemon_port: "{{ lookup('env', 'GLUDD_CONFIG_PORT') | default('8971', true) }}"
+    override_port: "{{ lookup('env', 'GLUDD_CONFIG_OVERRIDE_PORT') | default('9999', true) }}"
+    daemon_host: "127.0.0.1"
+    daemon_url: "http://{{ daemon_host }}:{{ daemon_port }}"
+    override_url: "http://{{ daemon_host }}:{{ override_port }}"
+    work_dir: "/tmp/gludd-config-loading"
+    py_bin: "{{ lookup('env', 'VIRTUAL_ENV') | default('/usr', true) }}/bin/python3"
+  tasks:
+
+    # ---------- resolve binary ----------
+    - name: Read gludd binary path
+      ansible.builtin.slurp:
+        src: "/tmp/gludd-config-loading-bin.path"
+      register: bin_raw
+
+    - name: Set gludd_bin fact
+      ansible.builtin.set_fact:
+        gludd_bin: "{{ bin_raw.content | b64decode | trim }}"
+
+    # =====================================================================
+    # 1. PROJECT PATHS  (proves path-config resolution works)
+    # =====================================================================
+    - name: "Run: gludd project paths --json"
+      ansible.builtin.command:
+        cmd: "{{ gludd_bin }} project paths --json"
+        chdir: "{{ project_dir }}"
+      environment:
+        GLUDD_PROJECT_DIR: "{{ project_dir }}"
+      register: paths_result
+      failed_when: paths_result.rc != 0
+
+    - name: Persist project paths output
+      ansible.builtin.copy:
+        content: "{{ paths_result.stdout }}"
+        dest: "{{ work_dir }}/project_paths.json"
+        mode: "0644"
+
+    - name: Show project paths output
+      ansible.builtin.debug:
+        var: paths_result.stdout
+
+    # =====================================================================
+    # 2. CONFIG VALIDATE  (parse every bundled config file)
+    # =====================================================================
+    - name: "config validate equivalent - parse every config/**/*.yml"
+      ansible.builtin.shell:
+        cmd: |
+          {{ py_bin }} - <<'PY'
+          import glob, json, sys
+          from pathlib import Path
+          import yaml
+          root = Path("{{ project_dir }}/config")
+          files = sorted(root.glob("**/*.yml"))
+          results = []
+          for f in files:
+              try:
+                  with open(f) as fh:
+                      yaml.safe_load(fh)
+                  results.append({"file": str(f.relative_to(root)), "ok": True})
+              except yaml.YAMLError as exc:
+                  results.append({"file": str(f.relative_to(root)), "ok": False,
+                                  "error": f"YAMLError: {exc}"})
+              except Exception as exc:  # surface any parse failure (YAML or IO)
+                  results.append({"file": str(f.relative_to(root)), "ok": False,
+                                  "error": f"{type(exc).__name__}: {exc}"})
+          print(json.dumps({"files": results}))
+          PY
+      args:
+        executable: /bin/bash
+        chdir: "{{ project_dir }}"
+      register: parse_result
+      changed_when: false
+
+    - name: Persist config parse results
+      ansible.builtin.copy:
+        content: "{{ parse_result.stdout }}"
+        dest: "{{ work_dir }}/config_parse.json"
+        mode: "0644"
+
+    # ---------- verify the shipped agents roster ----------
+    - name: Load default_agents.yml agent names
+      ansible.builtin.shell:
+        cmd: |
+          {{ py_bin }} - <<'PY'
+          import json, yaml
+          with open("{{ project_dir }}/config/agents/default_agents.yml") as fh:
+              data = yaml.safe_load(fh) or {}
+          names = [a.get("name") for a in (data.get("agents") or []) if isinstance(a, dict)]
+          print(json.dumps({"names": names}))
+          PY
+      args:
+        executable: /bin/bash
+      register: agents_raw
+      changed_when: false
+
+    - name: Persist agent roster
+      ansible.builtin.copy:
+        content: "{{ agents_raw.stdout }}"
+        dest: "{{ work_dir }}/agents.json"
+        mode: "0644"
+
+    # ---------- verify model profiles are present ----------
+    - name: Enumerate model profile files
+      ansible.builtin.find:
+        paths: "{{ project_dir }}/config/model_profiles"
+        patterns: "*.yml"
+      register: model_profiles_found
+
+    - name: Persist model profile list
+      ansible.builtin.copy:
+        content: "{{ model_profiles_found.files | map(attribute='path') | list | to_nice_json }}"
+        dest: "{{ work_dir }}/model_profiles.json"
+        mode: "0644"
+
+    # =====================================================================
+    # 3. DAEMON BOOT  (best-effort; config loads before infra)
+    # =====================================================================
+    - name: Boot gludd daemon on {{ daemon_port }} (background)
+      ansible.builtin.shell:
+        cmd: |
+          nohup {{ gludd_bin }} daemon \
+            --host {{ daemon_host }} --port {{ daemon_port }} \
+            --log-level debug \
+            > {{ work_dir }}/daemon.log 2>&1 &
+          echo $! > {{ work_dir }}/daemon.pid
+      args:
+        executable: /bin/bash
+        chdir: "{{ project_dir }}"
+      environment:
+        GLUDD_PROJECT_DIR: "{{ project_dir }}"
+      changed_when: true
+
+    - name: Wait up to 20s for daemon /healthz or process exit
+      ansible.builtin.shell:
+        cmd: |
+          pid=$(cat {{ work_dir }}/daemon.pid)
+          for i in $(seq 1 40); do
+            if curl -sf {{ daemon_url }}/healthz >/dev/null 2>&1; then
+              echo "UP"; exit 0
+            fi
+            if ! kill -0 "$pid" 2>/dev/null; then
+              echo "EXITED"; exit 0
+            fi
+            sleep 0.5
+          done
+          echo "RUNNING_NO_HEALTHZ"
+      args:
+        executable: /bin/bash
+      register: daemon_wait
+      changed_when: false
+
+    - name: Record daemon wait outcome
+      ansible.builtin.copy:
+        content: "{{ daemon_wait.stdout }}"
+        dest: "{{ work_dir }}/daemon_status.txt"
+        mode: "0644"
+
+    # =====================================================================
+    # 4. API CHECKS  (only if the daemon answered /healthz)
+    # =====================================================================
+    - name: Probe config-derived endpoints (when daemon is UP)
+      ansible.builtin.uri:
+        url: "{{ daemon_url }}{{ item }}"
+        method: GET
+        return_content: true
+        status_code: [200, 503]
+        timeout: 5
+      loop:
+        - "/healthz"
+        - "/api/status"
+      register: api_probes
+      when: daemon_wait.stdout == "UP"
+      failed_when: false
+
+    - name: Persist API probe results
+      ansible.builtin.copy:
+        content: "{{ api_probes | to_nice_json }}"
+        dest: "{{ work_dir }}/api_probes.json"
+        mode: "0644"
+      when: daemon_wait.stdout == "UP"
+
+    # =====================================================================
+    # 5. ENV-VAR OVERRIDE  (GLUDD_NETWORK__PORT → port 9999)
+    # =====================================================================
+    - name: Boot second daemon with GLUDD_NETWORK__PORT={{ override_port }}
+      ansible.builtin.shell:
+        cmd: |
+          nohup {{ gludd_bin }} daemon \
+            --host {{ daemon_host }} \
+            --log-level debug \
+            > {{ work_dir }}/daemon_override.log 2>&1 &
+          echo $! > {{ work_dir }}/daemon_override.pid
+      args:
+        executable: /bin/bash
+        chdir: "{{ project_dir }}"
+      environment:
+        GLUDD_PROJECT_DIR: "{{ project_dir }}"
+        GLUDD_NETWORK__PORT: "{{ override_port }}"
+      changed_when: true
+
+    - name: Wait up to 15s for override-port /healthz
+      ansible.builtin.shell:
+        cmd: |
+          pid=$(cat {{ work_dir }}/daemon_override.pid)
+          for i in $(seq 1 30); do
+            if curl -sf {{ override_url }}/healthz >/dev/null 2>&1; then
+              echo "UP_ON_OVERRIDE_PORT"; exit 0
+            fi
+            if ! kill -0 "$pid" 2>/dev/null; then
+              echo "EXITED"; exit 0
+            fi
+            sleep 0.5
+          done
+          echo "NOT_UP"
+      args:
+        executable: /bin/bash
+      register: override_wait
+      changed_when: false
+
+    - name: Record env-override outcome
+      ansible.builtin.copy:
+        content: "{{ override_wait.stdout }}"
+        dest: "{{ work_dir }}/override_status.txt"
+        mode: "0644"
+
+    # =====================================================================
+    # 6. FAILURE MODES
+    # =====================================================================
+    - name: "FAILURE MODE - invalid YAML produces a clear YAMLError (not a hang)"
+      ansible.builtin.shell:
+        cmd: |
+          {{ py_bin }} - <<'PY'
+          import json, yaml
+          bad = "network:\n  port: 8000\n  host: [unterminated\n  ::garbage"
+          try:
+              yaml.safe_load(bad)
+              print(json.dumps({"handled": False, "error": "no error raised on invalid YAML"}))
+          except yaml.YAMLError as exc:
+              print(json.dumps({"handled": True, "error_class": type(exc).__name__,
+                                "message": str(exc)[:200]}))
+          PY
+      args:
+        executable: /bin/bash
+      register: invalid_yaml_raw
+      changed_when: false
+
+    - name: Persist invalid-YAML result
+      ansible.builtin.copy:
+        content: "{{ invalid_yaml_raw.stdout }}"
+        dest: "{{ work_dir }}/failure_invalid_yaml.json"
+        mode: "0644"
+
+    - name: "FAILURE MODE - missing optional config falls back to defaults"
+      ansible.builtin.command:
+        cmd: "{{ gludd_bin }} project paths --json"
+        chdir: "{{ project_dir }}"
+      environment:
+        # Point at a nonexistent user-config dir; project paths must still
+        # resolve from the bundled tier and not crash.
+        XDG_CONFIG_HOME: "{{ work_dir }}/nonexistent-user-config"
+        GLUDD_PROJECT_DIR: "{{ project_dir }}"
+      register: missing_cfg_result
+      failed_when: missing_cfg_result.rc != 0
+
+    - name: Persist missing-config result
+      ansible.builtin.copy:
+        content: "{{ missing_cfg_result.stdout }}"
+        dest: "{{ work_dir }}/failure_missing_config.json"
+        mode: "0644"
+
+    - name: "FAILURE MODE - corrupt agents file yields a parse error (graceful)"
+      ansible.builtin.shell:
+        cmd: |
+          {{ py_bin }} - <<'PY'
+          import json, yaml
+          corrupt = "\t\tnetwork: bad indent\n  - broken: [unclosed"
+          try:
+              yaml.safe_load(corrupt)
+              print(json.dumps({"handled": False, "error": "no error on corrupt YAML"}))
+          except yaml.YAMLError as exc:
+              print(json.dumps({"handled": True, "error_class": type(exc).__name__,
+                                "message": str(exc)[:200]}))
+          PY
+      args:
+        executable: /bin/bash
+      register: corrupt_yaml_raw
+      changed_when: false
+
+    - name: Persist corrupt-YAML result
+      ansible.builtin.copy:
+        content: "{{ corrupt_yaml_raw.stdout }}"
+        dest: "{{ work_dir }}/failure_corrupt_yaml.json"
+        mode: "0644"
+
+    # ---------- teardown: stop any daemons we started ----------
+    - name: Stop daemons started by this scenario
+      ansible.builtin.shell:
+        cmd: |
+          for pf in {{ work_dir }}/daemon.pid {{ work_dir }}/daemon_override.pid; do
+            if [ -f "$pf" ]; then kill "$(cat "$pf")" 2>/dev/null || true; rm -f "$pf"; fi
+          done
+      args:
+        executable: /bin/bash
+      changed_when: false
+      failed_when: false

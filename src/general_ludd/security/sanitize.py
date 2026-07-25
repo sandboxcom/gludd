@@ -154,6 +154,8 @@ def confine_path(candidate: str, root: str) -> str | None:
     """
     if not candidate or not root:
         return None
+    if "\x00" in candidate or "\x00" in root:
+        return None
     real_root = os.path.realpath(root)
     # Join a relative candidate onto the root so a bare basename is confined
     # relative to root rather than the process CWD; os.path.join leaves an

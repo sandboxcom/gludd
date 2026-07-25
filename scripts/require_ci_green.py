@@ -1,6 +1,18 @@
 import json, subprocess, sys
 
-def verdict_for(sha, branch="development"):
+def _detect_branch():
+    try:
+        r = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            capture_output=True, text=True, timeout=5)
+        branch = r.stdout.strip()
+        return branch if branch and branch != "HEAD" else "development"
+    except Exception:
+        return "development"
+
+def verdict_for(sha, branch=None):
+    if branch is None:
+        branch = _detect_branch()
     try:
         r = subprocess.run(
             ["gh", "run", "list", "--commit", sha, "--branch", branch,
@@ -32,7 +44,7 @@ def verdict_for(sha, branch="development"):
 
 if __name__ == "__main__":
     sha = sys.argv[1] if len(sys.argv) > 1 else None
-    branch = sys.argv[2] if len(sys.argv) > 2 else "development"
+    branch = sys.argv[2] if len(sys.argv) > 2 else None
     if not sha:
         r = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, timeout=5)
         sha = r.stdout.strip()

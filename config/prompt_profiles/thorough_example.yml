@@ -1,0 +1,47 @@
+# Prompt Profile: thorough_example
+# ================================
+# Deep-analysis profile for agents that need maximum reasoning depth.
+# Contrasts with default.yml by:
+#   - Raising max_reasoning_steps to 25 (extended chain-of-thought).
+#   - Enabling auto_commit (the agent owns its work end-to-end).
+#   - Attaching all four bundled skills (codify + review + research + audit).
+#   - Expanding the token budget (large context for multi-file synthesis).
+# Use this for planning agents, refactor sweeps, or any task where the
+# cost of a wrong answer exceeds the cost of extra tokens.
+
+profile_id: thorough_example
+description: "Deep-analysis profile — extended reasoning, full skill suite"
+
+# System prompt template — same base template; the rendered prompt grows
+# because all skills and behavior flags are injected.
+system_prompt_template: prompts/base_harness_aware.md.j2
+
+# Behavior flags — maximize thoroughness and ownership.
+behavior:
+  session_persistence: true          # Maintain SESSION.md across the whole sweep.
+  verbose_output: true               # Narrate reasoning for auditability.
+  auto_commit: true                  # Commit after tests pass (owns the work).
+  max_reasoning_steps: 25            # Extended chain-of-thought before acting.
+  require_evidence: true             # Every claim cited — no exceptions.
+
+# Skills — full suite for deep, self-auditing work.
+# Each entry MUST match a markdown file in config/skills/<name>.md.
+skills:
+  - codify_directive                 # Codify lessons into AGENTS.md + hooks.
+  - return_review                    # Review completed work before reporting done.
+  - researcher                       # SearXNG-powered web research + citations.
+  - osquery_system_state             # Query live system state for diagnostics.
+
+# Model hints — route each task type to its strongest role profile.
+# Values MUST be valid TaskRole names (planner, coder, reviewer, editor,
+# compactor, enumerator).
+model_hints:
+  code_generation: coder             # Generation → coder profile.
+  code_review: reviewer              # Review → reviewer profile.
+  planning: planner                  # Planning → planner profile.
+
+# Token budget — expanded for multi-file synthesis and long reasoning traces.
+token_budget:
+  max_input_tokens: 200000           # Large context for whole-repo reads.
+  max_output_tokens: 16000           # Long responses for detailed plans/diffs.
+  reserve_for_tools: 40000           # Heavy tool I/O (multiple file reads).

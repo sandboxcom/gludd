@@ -1,0 +1,198 @@
+---
+# Verify — assert each lifecycle step succeeded AND that shutdown left no
+# lingering side effects. Each assertion carries the exact mandated error
+# message so a CI failure points at the specific lifecycle phase that broke.
+#
+# Side-effect checks (per the scenario spec):
+#   - no zombie processes after shutdown
+#   - no leftover socket files
+#   - log output does not contain tracebacks
+#   - PID file (if any) is cleaned up
+- name: Verify - daemon lifecycle assertions + side-effect hygiene
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    daemon_port: "{{ lookup('env', 'GLUDD_DAEMON_LIFECYCLE_PORT') | default('8767', true) }}"
+    daemon_host: "127.0.0.1"
+    statefile: "/tmp/gludd-daemon-lifecycle-state.json"
+    default_pidfile: "/tmp/gludd-daemon-lifecycle.pid"
+    default_logfile: "/tmp/gludd-daemon-lifecycle.log"
+    socket_dir: "/tmp/gludd-daemon-lifecycle"
+  tasks:
+    - name: Load persisted lifecycle state
+      ansible.builtin.slurp:
+        src: "{{ statefile }}"
+      register: state_raw
+
+    - name: Parse lifecycle state
+      ansible.builtin.set_fact:
+        state: "{{ state_raw.content | b64decode | from_json }}"
+
+    # ---------------------------------------------------------------------
+    # Lifecycle step assertions (exact mandated error messages)
+    # ---------------------------------------------------------------------
+    - name: Daemon must start within 30 seconds
+      ansible.builtin.assert:
+        that:
+          - state.healthz.status is defined
+          - state.healthz.status | int == 200
+          - (state.healthz.elapsed_retries | default(0)) | int <= 30
+        fail_msg: >-
+          Daemon must start within 30 seconds.
+          Observed /healthz status={{ state.healthz.status | default('unknown') }}
+          after retries={{ state.healthz.elapsed_retries | default('?') }}.
+          Inspect {{ default_logfile }} for startup errors.
+        success_msg: "Daemon answered /healthz within the 30s startup budget."
+
+    - name: Health endpoint must return 200
+      ansible.builtin.assert:
+        that:
+          - state.health.status is defined
+          - state.health.status | int == 200
+          - state.health.has_status_field | bool
+        fail_msg: >-
+          Health endpoint must return 200.
+          Observed status={{ state.health.status | default('unknown') }},
+          has_status_field={{ state.health.has_status_field | default(false) }}.
+        success_msg: "GET /health returned 200 with a JSON status field."
+
+    - name: /api/facts must return a JSON list (or object)
+      ansible.builtin.assert:
+        that:
+          - state.facts.status is defined
+          - state.facts.status | int == 200
+          - state.facts.is_mapping_or_list | bool
+        fail_msg: >-
+          /api/facts must return a JSON list or object.
+          Observed status={{ state.facts.status | default('unknown') }},
+          body_was_mapping_or_list={{ state.facts.is_mapping_or_list | default(false) }}.
+        success_msg: "/api/facts returned a JSON object/list as expected."
+
+    - name: /api/tasks must return a JSON list
+      ansible.builtin.assert:
+        that:
+          - state.tasks.status is defined
+          - state.tasks.status | int == 200
+          - state.tasks.is_list | bool
+        fail_msg: >-
+          /api/tasks must return a JSON list.
+          Observed status={{ state.tasks.status | default('unknown') }},
+          body_was_list={{ state.tasks.is_list | default(false) }}.
+          (If this endpoint is unimplemented, this scenario is the spec —
+          implement /api/tasks to return a list of task records.)
+        success_msg: "/api/tasks returned a JSON list."
+
+    - name: Daemon must accept playbook run requests
+      ansible.builtin.assert:
+        that:
+          - state.playbook.accepted | bool
+        fail_msg: >-
+          Daemon must accept playbook run requests.
+          POST /api/playbook/run returned status={{ state.playbook.status | default('unknown') }}
+          (expected 200/201/202). If the endpoint is unimplemented, this
+          scenario is the spec — implement /api/playbook/run to accept a
+          minimal playbook body.
+        success_msg: "POST /api/playbook/run was accepted (2xx)."
+
+    - name: Daemon must shut down cleanly on SIGTERM
+      ansible.builtin.assert:
+        that:
+          - state.shutdown.exit_probe is defined
+          - "'exited' in (state.shutdown.exit_probe | string)"
+        fail_msg: >-
+          Daemon must shut down cleanly on SIGTERM.
+          exit_probe={{ state.shutdown.exit_probe | default('unknown') }}
+          (process was still alive after the 15s grace window).
+          Inspect {{ default_logfile }} for shutdown-traceback / hang.
+        success_msg: "Daemon process exited after SIGTERM."
+
+    - name: Port 8000 must be free after shutdown
+      ansible.builtin.assert:
+        that:
+          - state.shutdown.port_after_shutdown is defined
+          - "'closed' in (state.shutdown.port_after_shutdown | string)"
+        fail_msg: >-
+          Port {{ daemon_port }} must be free after shutdown.
+          port_probe={{ state.shutdown.port_after_shutdown | default('unknown') }}
+          (listener still bound — daemon did not release the socket).
+        success_msg: "Port {{ daemon_port }} released after shutdown."
+
+    # ---------------------------------------------------------------------
+    # Side-effect hygiene
+    # ---------------------------------------------------------------------
+    - name: Read daemon log (for traceback + observability checks)
+      ansible.builtin.slurp:
+        src: "{{ default_logfile }}"
+      register: log_raw
+      failed_when: false
+
+    - name: Scan daemon log for tracebacks
+      ansible.builtin.assert:
+        that:
+          - log_raw.content is defined
+          - "'Traceback (most recent call last)' not in (log_raw.content | b64decode)"
+        fail_msg: >-
+          Daemon log output contains a Python traceback — shutdown path is
+          not clean. Inspect {{ default_logfile }} and fix the underlying
+          exception before claiming a clean lifecycle.
+        success_msg: "Daemon log contains no tracebacks."
+
+    - name: Probe for zombie processes descended from the daemon
+      ansible.builtin.shell:
+        cmd: >-
+          ps -A -o pid,ppid,state,comm | awk '$3 == "Z" { print }' || true
+      register: zombie_scan
+      changed_when: false
+      failed_when: false
+
+    - name: No zombie processes after shutdown
+      ansible.builtin.assert:
+        that:
+          - zombie_scan.stdout is defined
+          - (zombie_scan.stdout | trim) | length == 0
+        fail_msg: >-
+          Zombie processes detected after daemon shutdown:
+          {{ zombie_scan.stdout }}
+          A child was not reaped before the daemon exited.
+        success_msg: "No zombie processes left after shutdown."
+
+    - name: Probe for leftover socket files in the scenario socket dir
+      ansible.builtin.find:
+        paths: "{{ socket_dir }}"
+        patterns: ["*.sock", "*.socket"]
+        recurse: true
+      register: leftover_sockets
+      failed_when: false
+
+    - name: No leftover socket files after shutdown
+      ansible.builtin.assert:
+        that:
+          - leftover_sockets.matched | default(0) | int == 0
+        fail_msg: >-
+          Leftover socket files detected after shutdown:
+          {{ leftover_sockets.files | default([]) | map(attribute='path') | list }}
+          The daemon should unlink its unix sockets on lifespan teardown.
+        success_msg: "No leftover socket files after shutdown."
+
+    - name: Probe for any leftover PID file
+      ansible.builtin.stat:
+        path: "{{ default_pidfile }}"
+      register: pidfile_stat
+
+    - name: PID file (if any) is cleaned up after shutdown
+      ansible.builtin.assert:
+        that:
+          - not pidfile_stat.stat.exists
+        fail_msg: >-
+          PID file {{ default_pidfile }} was not cleaned up after shutdown.
+          The daemon should unlink its PID file on graceful exit.
+        success_msg: "PID file cleaned up after shutdown."
+
+    - name: Final cleanup of any residual state
+      ansible.builtin.shell:
+        cmd: >-
+          rm -f {{ default_pidfile }} {{ statefile }}
+          && rm -rf {{ socket_dir }}
+      changed_when: false
+      failed_when: false

@@ -1,17 +1,36 @@
 # -*- mode: python ; coding: utf-8 -*-
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+
 block_cipher = None
+
+# Ansible ships YAML config files (ansible/config/base.yml, etc.) that are
+# loaded at runtime via importlib resources. PyInstaller doesn't auto-detect
+# these — without explicit collection, the binary crashes on startup with
+# "Missing base YAML definition file (bad install?)".
+# collect_data_files pulls all non-.py files from the ansible package.
+_ansible_datas = collect_data_files('ansible')
+_ansible_binaries = []
+
+datas = [
+    ('config', 'config'),
+    ('templates', 'templates'),
+    ('playbooks', 'playbooks'),
+    ('LICENSE', '.'),
+    ('THIRD_PARTY_LICENSES.md', '.'),
+] + _ansible_datas
+
+# Also collect ansible submodules that aren't auto-detected by the static
+# analyzer (module_utils, plugins, etc. are imported dynamically).
+_hidden_ansible = collect_submodules('ansible.module_utils')
+_hidden_ansible += collect_submodules('ansible.plugins')
+_hidden_ansible += collect_submodules('ansible.template')
+_hidden_ansible += collect_submodules('ansible.galaxy')
 
 a = Analysis(
     ['src/general_ludd/cli.py'],
     pathex=['src'],
     binaries=[],
-    datas=[
-        ('config', 'config'),
-        ('templates', 'templates'),
-        ('playbooks', 'playbooks'),
-        ('LICENSE', '.'),
-        ('THIRD_PARTY_LICENSES.md', '.'),
-    ],
+    datas=datas,
     hiddenimports=[
         'general_ludd',
         'general_ludd.cli',
@@ -39,7 +58,7 @@ a = Analysis(
         'uvicorn.protocols.websockets.auto',
         'uvicorn.lifespan',
         'uvicorn.lifespan.on',
-    ],
+    ] + _hidden_ansible,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

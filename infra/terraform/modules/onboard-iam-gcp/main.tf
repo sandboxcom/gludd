@@ -25,11 +25,69 @@ resource "google_service_account" "gludd_operator" {
   project      = var.project_id
 }
 
-# Create + manage compute instances (google_compute_instance).
-# This is the scoped instanceAdmin.v1 — NOT the broader compute.admin.
-resource "google_project_iam_member" "compute_instance_admin" {
+# Custom least-privilege role — intentional replacement for
+# roles/compute.instanceAdmin.v1.  That built-in role carries
+# compute.instances.setMetadata, which allows SSH key injection for
+# privilege escalation on running instances.  This custom role grants
+# ONLY the instance/disk/address/network/machine-type permissions that
+# gludd's Terraform graph emits (google_compute_instance +
+# google_compute_disk + google_compute_address in _generate_gcp) and
+# NOTHING ELSE — notably NO setMetadata.
+resource "google_project_iam_custom_role" "compute_operator" {
+  role_id     = "gluddComputeOperator"
+  title       = "Gludd Compute Operator (no setMetadata)"
+  description = "compute.instanceAdmin.v1 minus compute.instances.setMetadata.  Asserted by tests/e2e/test_iam_smoke.py and tests/unit/test_onboard_gcp.py."
+  project     = var.project_id
+  permissions = [
+    "compute.acceleratorTypes.get",
+    "compute.acceleratorTypes.list",
+    "compute.addresses.create",
+    "compute.addresses.delete",
+    "compute.addresses.get",
+    "compute.addresses.list",
+    "compute.addresses.use",
+    "compute.diskTypes.get",
+    "compute.diskTypes.list",
+    "compute.disks.create",
+    "compute.disks.delete",
+    "compute.disks.get",
+    "compute.disks.list",
+    "compute.disks.use",
+    "compute.globalOperations.get",
+    "compute.images.get",
+    "compute.images.list",
+    "compute.images.useReadOnly",
+    "compute.instances.delete",
+    "compute.instances.get",
+    "compute.instances.insert",
+    "compute.instances.list",
+    "compute.instances.reset",
+    "compute.instances.setDeletionProtection",
+    "compute.instances.setLabels",
+    "compute.instances.setMachineType",
+    "compute.instances.setScheduling",
+    "compute.instances.setServiceAccount",
+    "compute.instances.setTags",
+    "compute.instances.start",
+    "compute.instances.stop",
+    "compute.instances.update",
+    "compute.machineTypes.get",
+    "compute.machineTypes.list",
+    "compute.networks.get",
+    "compute.networks.list",
+    "compute.projects.get",
+    "compute.subnetworks.get",
+    "compute.subnetworks.list",
+    "compute.subnetworks.use",
+    "compute.zoneOperations.get",
+    "compute.zones.get",
+    "compute.zones.list",
+  ]
+}
+
+resource "google_project_iam_member" "compute_operator" {
   project = var.project_id
-  role    = "roles/compute.instanceAdmin.v1"
+  role    = "projects/${var.project_id}/roles/${google_project_iam_custom_role.compute_operator.role_id}"
   member  = "serviceAccount:${google_service_account.gludd_operator.email}"
 }
 

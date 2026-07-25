@@ -25,6 +25,7 @@ class EventType(_enum.StrEnum):
     SLOW_OPERATION = "slow_operation"
     CUSTOM = "custom"
     SELF_UPDATE_APPLIED = "self_update_applied"
+    BRANCH_EXECUTED = "branch_executed"
 
 
 @dataclass
@@ -179,5 +180,37 @@ class SelfUpdateAppliedEvent(Event):
         super().__init__(
             type=EventType.SELF_UPDATE_APPLIED,
             payload={"commit_sha": commit_sha, "reloaded_modules": reloaded_modules},
+            **kwargs,
+        )
+
+
+@dataclass
+class BranchEvent(Event):
+    """Emitted when gludd takes a code branch decision."""
+
+    module: str = field(default="")
+    function: str = field(default="")
+    branch_id: str = field(default="")
+    decision: str = field(default="")
+    context: dict[str, Any] = field(default_factory=dict)
+
+    def __init__(
+        self,
+        module: str,
+        function: str,
+        branch_id: str,
+        decision: str,
+        context: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(
+            type=EventType.BRANCH_EXECUTED,
+            payload={
+                "module": module,
+                "function": function,
+                "branch_id": branch_id,
+                "decision": decision,
+                "context": context or {},
+            },
             **kwargs,
         )

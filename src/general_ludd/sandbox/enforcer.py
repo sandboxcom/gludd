@@ -95,12 +95,17 @@ class SandboxEnforcer:
             return
 
         jail = self._config.jail_dir
-        if not jail:
+        auto = not jail
+        if auto:
             jail = tempfile.mkdtemp(prefix="gludd-sandbox-")
             self._config.jail_dir = jail
 
         jail_path = Path(jail)
         try:
+            if not auto and not jail_path.exists():
+                raise FileNotFoundError(
+                    f"Sandbox jail directory {jail!r} does not exist"
+                )
             jail_path.mkdir(parents=True, exist_ok=True)
             if not os.access(jail, os.W_OK):
                 raise SandboxNotAvailableError(

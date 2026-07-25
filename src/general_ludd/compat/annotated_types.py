@@ -42,4 +42,4 @@ def apply_annotated_types_runtime_patch() -> None:
     grouped: Any = getattr(at, "GroupedMetadata", None)
     if getattr(grouped, _PATCH_MARKER, False):
         return
-    at.GroupedMetadata = _SafeGroupedMetadata  # type: ignore[misc, assignment]
+    vars(at)["GroupedMetadata"] = _SafeGroupedMetadata

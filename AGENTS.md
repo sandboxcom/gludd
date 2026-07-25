@@ -316,26 +316,34 @@ The state-file pattern is the canonical mechanism for runtime enforcement tuning
 9. **No unseen events — an unobservable operation is a broken operation.** Any operation that runs longer than a few seconds (a gate, a test suite, a build, a poll loop, a backgrounded task, a daemon background job) MUST surface continuous progress: stream its output (`tee`), emit a per-phase marker, or print a periodic heartbeat. Never redirect a long-running operation solely to `/dev/null` or a buffered file with no live signal. If an event happens and no one can see it, it did not happen. Enforced by `tests/unit/test_observability_guardrails.py`; mirrored for agent behavior in [[gludd-observability-invariant]] memory.
 10. **Bash unavailable ⇒ adapt in ≤2 turns.** If `make` commands fail or bash is missing from your tool list, execute the 3-step diagnosis (check tool list, read SESSION.md for known issue, read opencode.json for permissions) IN ONE PARALLEL MESSAGE. Then adapt: use read/edit/write/grep/glob tools directly. Never spend 10+ turns diagnosing a tool-unavailable error — it is either a provider/model limitation (unfixable mid-session) or a permission-ordering bug (one-line fix). SESSION.md line ~9 documents known bash-unavailable sessions. BUGS.md tracks bash-diagnosis-relapse incidents.
     - **When you detect you're grinding inline** (main-thread streak accumulating, floor plugin blocking your edits, enforcement errors on every edit) → run `make disengage-enforcement` before any other action. This writes the emergency disengage signal that all enforcement hooks respect. Then fix the offending plugin code, run `make write-plugin-manifest`, and restart opencode.
-11. **No external file access.** Read/Write/Edit/Glob/Grep MUST stay inside `/Users/shawnwilson/gludd/` or `/tmp/gludd-*`. Any tool call targeting a path outside the workspace prompts the user and blocks work. See "CRITICAL: No External File Access."
+11. **No external file access.** Read/Write/Edit/Glob/Grep MUST stay inside `/Users/shawnwilson/gludd/**`, `/tmp/**`, or `/Users/shawnwilson/.config/opencode/**`. Any tool call targeting any other path under `/Users/shawnwilson/` prompts the user and blocks work. See "CRITICAL: No External File Access."
 12. **NEVER use `COMMIT_THRESHOLD=1`. Use `make git-commit` or `make ship-commit` for local commits. Push only when CI is idle.** `COMMIT_THRESHOLD=1` bypasses the batch-push threshold and pushes every commit individually, cancelling every prior CI run — zero validation occurs. Since GER-5, `make ship-commit` commits locally by default (`PUSH=0`); to push after commit, use `make ship-commit MSG='...' PUSH=1` or a separate `make batch-push`. The sanctioned push is `make batch-push` (default 5+ commits threshold) with `make ci-verdict-safe` confirming CI idle first. Local commits accumulate via `make git-commit` or `make ship-commit`; the batch push is a single event, not per-commit. See "CRITICAL: Don't Push Every Commit — Batch Locally, Push Once."
 
 ## CRITICAL: No External File Access
 
-**Read/Write/Edit/Glob/Grep MUST NOT access paths outside `/Users/shawnwilson/gludd/` or `/tmp/gludd-*`.** External file access prompts the user for permission and blocks work — a blocked tool call stalls the session exactly like a premature stop.
+**Read/Write/Edit/Glob/Grep MUST NOT access paths outside the five allowed prefixes.** External file access prompts the user for permission and blocks work — a blocked tool call stalls the session exactly like a premature stop.
+
+**User mandate (HARD): NEVER ask for access to the user's full home directory ever again.** Access is limited to exactly five path prefixes. Any other path under `/Users/shawnwilson/` is FORBIDDEN — no `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/Documents`, `~/Desktop`, `~/Library`, or any other home-directory path outside the workspace, opencode dirs, and cache. This is a hard user mandate, not a guideline.
 
 ### Rules
 
-1. **Allowed path prefixes (exhaustive):** `/Users/shawnwilson/gludd/` (the workspace) and `/tmp/gludd-*` (session state files). Everything else is out of bounds.
+1. **Allowed path prefixes (exhaustive — exactly five):**
+   - `/Users/shawnwilson/gludd/**` (the workspace)
+   - `/tmp/**` (all of `/tmp`, not just `/tmp/gludd-*` session state files)
+   - `/Users/shawnwilson/.config/opencode/**` (opencode config directory)
+   - `/Users/shawnwilson/.local/share/opencode/**` (opencode data — conversation DB, tool output cache)
+   - `/Users/shawnwilson/.cache/**` (pre-commit hooks, uv cache, build tool caches)
+   Everything else is out of bounds.
 2. **Applies to ALL file tools:** Read, Write, Edit, Glob (`path` parameter), Grep (`path` parameter). A glob/grep with an external `path` is the same violation as an external read.
 3. **Applies to subagents.** Every dispatched subagent inherits this restriction; subagent prompts that reference external paths are a dispatch bug.
-4. **No exceptions for "just reading."** Reading `~/.config/...`, `/etc/...`, another repo, or any home-directory file outside the workspace prompts the user and blocks work. If external content is genuinely needed, request a make target or ask the user — do not attempt the access.
+4. **No exceptions for "just reading."** Reading `~/.ssh/...`, `~/.aws/...`, `~/.gnupg/...`, `~/Documents/...`, `~/Desktop/...`, `/etc/...`, another repo, or ANY home-directory file outside the workspace and the opencode config dir prompts the user and blocks work. If external content is genuinely needed, request a make target or ask the user — do not attempt the access.
 5. **If a task appears to require an external path**, the correct responses are: (a) find the equivalent data inside the workspace, (b) add a make target that surfaces it, or (c) report the specific path needed in ≤2 lines and continue other work. Never fire the external tool call and let it block.
 
 ### Enforcement
 
 - **Prompt** — this section + Mechanical Contract rule 11 (proactive instruction).
-- **Permission layer** — external paths trigger a user prompt (hard gate at the harness level).
-- **Plugin (future)** — a `tool.execute.before` matcher on read/write/edit/glob/grep paths may deny out-of-workspace targets mechanically.
+- **Permission layer** — `opencode.json` `permission` block: each of `read`/`write`/`edit`/`glob`/`grep` allows exactly the five prefixes above and denies everything else via `*: deny` (last-match-wins). Hard gate at the harness level.
+- **Structural test** — `tests/unit/test_no_home_directory_access.py` pins the permission block: verifies the three allowed prefixes per tool, verifies the `*: deny` catch-all, and verifies NO path under `/Users/shawnwilson/` other than `gludd/` and `.config/opencode/` is allowed.
 
 ## ⛔ PRE-GENERATION CONTRACT (READ BEFORE GENERATING ANY TEXT)
 
@@ -1978,6 +1986,63 @@ This is enforced by:
 
 Multiple sessions have demonstrated the forgetting pattern: the agent dispatches work, receives results, writes a summary, and moves on without codifying any of the results in the task ledger. The next session starts from scratch. The task ledger makes forgetting structurally impossible — every task exists as a checkable entry or it doesn't exist at all.
 
+
+## CRITICAL: Enforcement Plugin Reference (Session-Start Self-Awareness)
+
+Before making ANY tool call, the agent MUST know which plugins are active and
+what they block. Run `make list-plugins` at session start for the current roster.
+
+### Plugin Tool-Execute Blocks (in priority order)
+
+Plugins fire in opencode.json registration order. Earlier plugins win on ties.
+
+| Plugin | What it blocks | Disable via |
+|--------|---------------|-------------|
+| enforce-context.ts | ALL tools when SESSION.md stale >24h (↳ reads excluded) | GLUDD_CONTEXT_ENFORCE=0 |
+| enforce-multitask.ts | ALL non-dispatch tools when <10 dispatches (↳ reads excluded) | GLUDD_MULTITASK_FLOOR_ENFORCE=0 |
+| enforce-delegate.ts | edit/write/bash after 2 consecutive calls; read-grind after serial reads | GLUDD_MAINTHREAD_STREAK_ENFORCE=0 |
+| enforce-floor.ts | ALL non-dispatch tools after 5 calls in 30s (↳ reads excluded) | GLUDD_FLOOR_ENFORCE=0 |
+| enforce-session-start.ts | edit/write/bash until >=10 dispatches made | GLUDD_SESSION_START_ENFORCE=0 |
+| enforce-make.ts | non-make bash commands | (hard-coded ON) |
+| enforce-clean-tree.ts | task/agent dispatch on dirty git tree | GLUDD_CLEAN_TREE_ENFORCE=0 |
+| enforce-tdd.ts | edit/write to src/ when no test file exists | GLUDD_TDD_ENFORCE=0 |
+| enforce-no-suppressions.ts | edit/write with # noqa / # type: ignore | GLUDD_NO_SUPPRESSIONS_ENFORCE=0 |
+| enforce-no-wait.ts | bash sleep/ci-wait/gate-tail on main thread | GLUDD_NO_WAIT_ENFORCE=0 |
+| enforce-deadline.ts | task dispatch past timeout (5min default) | GLUDD_TASK_DEADLINE_ENFORCE=0 |
+| enforce-depth.ts | task/agent dispatch exceeding depth limit | GLUDD_DEPTH_ENFORCE=0 |
+| enforce-enhancement-ratio.ts | task/agent dispatch when fix% > 50% | GLUDD_ENHANCEMENT_RATIO_ENFORCE=0 |
+| enforce-batch-push.ts | bash push while CI pending | GLUDD_BATCH_PUSH_ENFORCE=0 |
+| enforce-branch-discipline.ts | bash push/merge from worktree | GLUDD_BRANCH_DISCIPLINE_ENFORCE=0 |
+| enforce-worktree.ts | bash push/merge/tag from inside worktree | GLUDD_WORKTREE_ENFORCE=0 |
+| enforce-deletion-gate.ts | edit/write that deletes files | GLUDD_DELETION_GATE_ENFORCE=0 |
+| enforce-objective.ts | edit/write/bash when PRIMARY OBJECTIVE unmet | GLUDD_OBJECTIVE_ENFORCE=0 |
+| enforce-verified-claims.ts | bash push without verification | GLUDD_VERIFIED_CLAIMS_ENFORCE=0 |
+| enforce-commit-lock.ts | concurrent git operations | GLUDD_COMMIT_LOCK_ENFORCE=0 |
+| enforce-test-integrity.ts | edit/write with CI anti-patterns | GLUDD_TEST_INTEGRITY_ENFORCE=0 |
+
+### Text-Output Plugins (fire on response, not on tool calls)
+
+| Plugin | What it blocks | Disable via |
+|--------|---------------|-------------|
+| enforce-stop.ts | text-only responses when work pending | (hard-coded ON) |
+| enforce-anti-essay.ts | essay-length responses when work pending | GLUDD_ANTI_ESSAY_ENFORCE=0 |
+| enforce-audit.ts | done-words in text when work pending | GLUDD_AUDIT_ENFORCE=0 |
+
+### Quick Reference
+
+```bash
+make list-plugins              # Full roster with hooks and block conditions
+GLUDD_FLOOR_ENFORCE=0 make ... # Temporarily disable floor enforcement
+GLUDD_SESSION_START_ENFORCE=0  # Disable session-start gate (Q&A sessions)
+GLUDD_MAINTHREAD_STREAK_ENFORCE=0  # Disable delegate streak block
+make verify-enforcement        # Check all plugins are healthy
+```
+
+**Key insight:** plugins that only block `edit/write/bash` or `task/agent` do NOT
+block `read`/`grep`/`glob` calls. The agent can always read files to diagnose
+blocked edits. Plugins marked "↳ reads excluded" explicitly skip read tools.
+
+
 ## Working Conventions
 
 - TDD: write failing tests first (enforced by plugin + policy)
@@ -2192,6 +2257,67 @@ against HEAD. It queries GitHub Actions via `gh run list` and is fail-closed:
   `release-candidate/*` branch, confirm its CI green, then `ship-ff` master to it.
 - Never claim "green" without a CI run id + SUCCESS conclusion for the exact SHA
   (reinforces the no-unquantified-status-claims rule). Per-file `test-iso` is NOT the gate.
+
+## CRITICAL: Pipeline Completion Is The Primary Objective
+
+**When a release is pending, getting the build green and the artifacts published
+is the #1 priority — above structural tests, new plugins, documentation, refactors,
+or any other enhancement.** This was codified after multiple sessions where the
+agent spent days adding structural tests and guardrails while the release pipeline
+stayed red or unpushed. The user's explicit feedback: the CI pipeline build has
+NOT been the priority for DAYS, and that is the bug this section exists to prevent.
+
+### Rules (each is a hard policy, not a guideline)
+
+1. **First dispatch is pipeline-focused.** When a release is pending (A.4 or
+   equivalent unchecked in TASKS.md), the FIRST dispatch in every wave MUST be
+   pipeline-focused: push unpushed commits, check CI verdict, fix CI failures,
+   or cut the release. Structural tests, new plugins, and documentation come
+   AFTER the pipeline dispatch slot is filled.
+
+2. **Secondary work capped at 50% of the wave.** Adding structural tests, new
+   plugins, or documentation while the pipeline is red or unpushed is a
+   SECONDARY priority — it MUST NEVER consume more than 50% of the dispatch
+   wave. If the wave has 10 slots, at least 5 must advance the pipeline
+   (push/fix/cut) when the pipeline is not green.
+
+3. **Check push status at session start.** The agent MUST check push status at
+   the start of every session: if commits are unpushed, pushing them is the
+   FIRST action — before any read of TASKS.md, before any dispatch wave, before
+   any structural test. An unpushed pipeline is a blocked pipeline.
+
+4. **"CI is pending" is never a stop.** "CI is pending" is never an excuse to
+   stop working on the pipeline. Use the CI wait to fix test failures, write
+   regression tests for the failures CI surfaces, or prepare the release-cut
+   command — NOT to add unrelated features, plugins, or guardrails. See
+   DC.1 (CI Wait Productivity).
+
+5. **Release is NOT done until 12 assets verified.** The release is NOT done
+   until `make verify-release-completeness TAG=<tag>` exits 0 with all 12 asset
+   categories confirmed. A tag push is not done. A green CI run is not done.
+   Only the artifact-completeness gate is done. (Reinforces "A Release is an
+   Artifact, Not a Tag" below.)
+
+### Anti-patterns (each is a policy violation)
+
+- Dispatching 10 structural-test subagents while the pipeline is red.
+- Adding a new enforcement plugin while commits sit unpushed.
+- Writing documentation while CI is failing.
+- Treating "CI is pending" as a reason to start unrelated feature work.
+- Claiming the release is "done" without `verify-release-completeness` exit 0.
+- Letting a single wave pass with 0 pipeline-focused dispatches when a release
+  is pending.
+
+### Enforcement (3-layer guardrail)
+
+1. **Prompt** — this section (proactive instruction for every agent reading
+   AGENTS.md).
+2. **Test** — `tests/unit/test_pipeline_priority.py` structurally pins the
+   section heading and key phrases so a regression that strips them is caught
+   at gate time.
+3. **Operational Discipline Rules** — OD.1 (Intermediate Progress Is Not
+   Completion), OD.3 (CI Is Fire-and-Forget), OD.8 (Don't Make Artifacts
+   Optional), and DC.1 (CI Wait Productivity) all reinforce this section.
 
 ## CRITICAL: A Release is an Artifact, Not a Tag (codified)
 
@@ -2414,6 +2540,21 @@ The prior enforcement relied on message-shape rules (≥2 dispatches per message
 - **Plugin:** `.opencode/plugin/enforce-floor.ts` — `tool.execute.before` hook, consecutive-non-dispatch counter, 5-call / 30s threshold, blocks all non-dispatch tools at threshold.
 - **Prompt:** this section.
 - **Disable:** `GLUDD_FLOOR_ENFORCE=0` disables the floor plugin entirely (including this check).
+
+### Session-configurable read-grind thresholds (BP.14)
+
+The `enforce-delegate.ts` read-grind detector is separately tunable per session via `GLUDD_READ_GRIND_*` env vars (no need to disengage all enforcement). Defaults:
+
+| Env var | Default | Effect |
+|---|---|---|
+| `GLUDD_READ_GRIND_ADVISORY_COUNT` | 5 | Investigation calls before the advisory nudge. |
+| `GLUDD_READ_GRIND_ADVISORY_MS` | 30000 | Min ms since last dispatch before the advisory fires. |
+| `GLUDD_READ_GRIND_DENY_COUNT` | 10 | Investigation calls before the hard block. |
+| `GLUDD_READ_GRIND_DENY_MS` | 60000 | Min ms since last dispatch before the block fires. |
+| `GLUDD_READ_GRIND_STALE_MS` | 60000 | Reset a stale non-zero count after this many ms. |
+| `GLUDD_READ_GRIND_FILE` | `/tmp/gludd-read-grind.json` | State file for the counter. |
+
+For focused investigation work, raise the deny threshold: `GLUDD_READ_GRIND_DENY_COUNT=20`. A dispatch always resets the counter to 0 regardless of the threshold.
 
 ## Pipeline Orchestration Model
 
@@ -2828,6 +2969,54 @@ Pattern that failed (this session): agent dispatched 6 parallel subagents, got 6
 - This AGENTS.md section — proactive instruction
 - If a plugin has 0 runtime tests, that plugin is in the same category as "dead code" — it exists on disk but its behavior is unverified
 
+## CRITICAL: Plugin Hook Invocation Validation (Anti-ReferenceError Gate) (DC.4)
+
+**Every plugin edit MUST be followed by `make check-plugin-hook-invoke` before commiting.** This target loads every plugin file, invokes its factory function, and calls each hook with null-safe inputs — catching `ReferenceError` (undefined symbols like `incrementTextCompleteCount is not defined`) that pure import checks miss.
+
+### The incident (2026-07-24)
+
+`enforce-floor.ts` called `incrementTextCompleteCount()` in its `text.complete` hook. The function was defined in `enforce_stop_impl.ts:438` but never imported into `enforce-floor.ts`. The existing checks missed it because:
+
+1. **`check-node-v26-compat`** only checks TypeScript syntax compatibility (forbidden patterns like `catch { try`). A missing function import is syntactically valid TypeScript.
+2. **`check-plugin-runtime` (old)** only ran `import("file.ts")` — which loads the module successfully. The `ReferenceError` only manifests when the hook FUNCTION is actually CALLED.
+3. **`check-plugin-imports`** only checks for forbidden import patterns (`@opencode/plugin`, bare `fs`, bare `child_process`). It doesn't validate cross-file symbol resolution.
+
+The bug caused opencode to crash at boot because the plugin loader evaluated all plugins, encountered the `ReferenceError` in `enforce-floor.ts`, and failed to start. The only workaround was to rename `.opencode/` to `.opencode.orig/` — disabling ALL enforcement plugins.
+
+### The fix (3-layer)
+
+1. **Bug fix:** The missing `incrementTextCompleteCount()` function was inlined into `enforce-floor.ts` with its own `TEXT_COMPLETE_COUNT_FILE` constant, avoiding a cross-plugin dependency on `enforce_stop_impl.ts`.
+2. **Runtime validation script:** `scripts/validate_plugins_runtime.mjs` — for each plugin `.ts` file:
+   a. Dynamically imports the module
+   b. Calls the factory function if `default` export is callable
+   c. Invokes `tool.execute.before`, `experimental.text.complete`, `text.complete`, `session.idle`, and `experimental.chat.system.transform` hooks with null inputs
+   d. Catches `ReferenceError` specifically (undefined symbols are always bugs)
+   e. Ignores other errors (TypeError on null input is expected; not a bug)
+3. **Static validation script:** `scripts/validate_plugins.py` — fast pre-check for Node v26 compat, dangerous imports, import resolution, and hook shape. The undefined-call static analysis is opt-in (`--strict`) due to inherent false positives from variable-mediated calls.
+
+### Make targets
+
+| Target | What it does | Speed |
+|---|---|---|
+| `make check-plugin-hook-invoke` | Runtime hook invocation — the definitive ReferenceError check | ~5s |
+| `make check-plugin-validate` | Static analysis (Node v26 compat, imports, hook shape) | <1s |
+| `make check-plugin-runtime` | Delegates to `check-plugin-hook-invoke` (Python wrapper) | ~5s |
+
+All three are in `make gate`. `check-plugin-hook-invoke` is the gate of record for the "undefined symbol" class of bug — all others are supplementary.
+
+### NEVER
+
+- NEVER commit a plugin edit without running `make check-plugin-hook-invoke` first.
+- NEVER assume a plugin works because it imports cleanly — hooks must be INVOKED to verify.
+- NEVER add `incrementTextCompleteCount` or similar cross-plugin function references without importing them. Use inlined definitions to avoid cross-plugin dependencies.
+
+### Enforcement
+
+- **Script:** `scripts/validate_plugins_runtime.mjs` — the canonical runtime validator
+- **Make:** `make check-plugin-hook-invoke` — in `make gate`
+- **Prompt:** this section — proactive instruction
+- **Test:** the script itself is a test; `make check-plugin-hook-invoke` exit 1 = test fail
+
 ## CRITICAL: Root-Cause-Only Fix Policy
 
 **Every issue MUST be fixed at its root cause — never at its symptom.** This
@@ -2904,6 +3093,84 @@ This is codified at all three layers:
    injects root-cause directive into the pre-generation gate block.
 3. **`.opencode/plugin/enforce-make.ts`** — `experimental.chat.system.transform`
    injects root-cause directive into the mechanical contract.
+
+## CRITICAL: Operational Discipline Rules (Session 52 Codification)
+
+### OD.1 — Intermediate Progress Is Not Completion
+Reporting that a build is running, a tag is pushed, or CI is pending is NOT a stopping point.
+Completion = `make verify-release-completeness TAG=<tag>` exits 0.
+
+### OD.2 — Follow Explicit Instructions Exactly
+When the user gives a measurable requirement (word count, artifact count, deadline),
+meet it exactly. Do not optimize, substitute, or "improve." If asked for 16000 words,
+write 16000 words. If asked for 12 artifacts, produce 12 artifacts.
+
+### OD.3 — CI Is Fire-and-Forget
+Check CI at natural breaks (15+ minutes apart). Never sleep/wait on main thread for CI.
+The CI run does not need you to watch it.
+
+### OD.4 — No Text-Only Responses With Pending Work
+If TASKS.md has unchecked items, every response must include a tool call.
+Status updates without action are forbidden.
+
+### OD.5 — Answer Direct Questions Directly First
+"Yes" or "No" before explanation. Never lead with context when asked a binary question.
+
+### OD.6 — Don't Rationalize Stops
+Finding a reason to pause (CI running, waiting for build, explaining behavior) is itself
+a malfunction. There is no valid reason to pause when work remains.
+
+### OD.7 — Don't Override User Instructions
+When user says NO exceptions, every exception is a violation. When user says don't stop,
+don't stop. Your judgment about what's "better" is irrelevant.
+
+### OD.8 — Don't Make Artifacts Optional
+If user wants 12/12, fix the builds. Never lower the bar to make failure acceptable.
+
+### OD.9 — Don't Push Broken Code Without Lint
+Run `make lint` before every commit. Pre-commit hooks are backup, not primary defense.
+
+### OD.10 — No CI Polling as Pretend Work
+Checking ci-status more than 3 times in a row without intervening code changes is a
+stop pattern. The CI poll limiter plugin enforces this mechanically.
+
+## CRITICAL: CI Wait Productivity (DC.1)
+
+During CI waits, dispatch subagents to: fix tests, write structural tests, update
+docs, investigate slow shards. 0 subagents during CI wait is a policy violation.
+Use the CI window to make progress on disjoint work — the pipeline must stay primed
+at the 10-agent floor even when CI is the apparent center of attention.
+
+## CRITICAL: Polling CI Is Not Work (DC.2)
+
+Checking ci-status more than 3 times in a row without intervening code changes is a
+stop pattern. Each poll produces zero progress; only code changes unblock CI.
+If you find yourself polling, dispatch a subagent that produces a deliverable instead.
+
+## CRITICAL: Git Operations Are Not Grinding (DC.3)
+
+`make git-add`, `make git-commit`, `make git-push-sandboxcom`, `make batch-push`,
+`make ship-commit`, `make git-tag-push`, and `make release-cut` are TERMINAL actions
+that ship work — they are not "grinding." The `GIT_SHIPPING_TARGETS` allowlist in
+`enforce-delegate.ts` (BP.1) RESETS the streak counter instead of incrementing it, so
+git operations never trigger the main-thread delegation budget. Do NOT disengage
+enforcement to commit or push — the allowlist already exempts them.
+
+## CRITICAL: Root Cause Escalation (3-Strike Rule)
+
+When a CI run fails for the third time with the same class of error
+(timeout, cancellation, dependency failure, YAML parse error):
+
+1. STOP patching symptoms (timeout increases, CI cancellations, matrix changes).
+2. Step back and ask: "What SYSTEMIC dependency or structure causes this?"
+3. Fix the root cause — the dependency, the structure, the missing file.
+4. Write a structural test that prevents the root cause from recurring.
+
+Forbidden after 3 failures of the same class:
+- Increasing timeout when the real fix is removing the dependency
+- Dropping Python versions when the real fix is splitting the shard
+- Making artifacts optional when the real fix is adding missing templates
+- Cancelling CI runs when the real fix is sequencing push+tag correctly
 
 ## Constraints Are To Engineer Around
 

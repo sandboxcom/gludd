@@ -1,42 +1,98 @@
+# =============================================================================
+# general-ludd.yml — Top-level daemon configuration (shipped sample).
+# =============================================================================
+#
+# Purpose:
+#   Defines the runtime shape of the gludd daemon: bind address, model routing,
+#   database connection, agent pool, orchestration limits, process isolation,
+#   and spend budget. This file is the canonical reference for the daemon's
+#   UserConfig schema (src/general_ludd/config/user_config.py).
+#
+# REQUIRED vs OPTIONAL:
+#   OPTIONAL (defaults are used if missing).
+#
+# What happens if this file is missing:
+#   The daemon's `load_startup_config` (src/general_ludd/daemon.py:304) uses
+#   Pydantic defaults from UserConfig, NetworkConfig, ModelRoutingConfig, etc.
+#   The daemon boots in an "unconfigured" but functional state: loopback bind,
+#   empty allowed_cidr (loopback-only enforcement), empty model routing
+#   (caller picks default), 4-agent pool, 10 concurrent model calls, isolation
+#   disabled, $50 budget. To deploy, operators copy this file to
+#   ~/.config/general-ludd/general-ludd.yml (or /etc/general-ludd/) and edit.
+# =============================================================================
+
+# ── network ───────────────────────────────────────────────────────────────────
+# Bind address and CIDR allowlist for the HTTP listener. Loopback by default;
+# production deployments should set `host: 0.0.0.0` AND a non-empty
+# `allowed_cidr` list (validated in NetworkConfig._require_cidr_for_world_open).
 network:
-  host: 127.0.0.1
-  port: 8000
-  # allowed_cidr:
-  #   - 10.0.0.0/8
-  #   - 127.0.0.0/8
-  #   - 192.168.0.0/16
-  #   - 172.16.0.0/12
+  host: 127.0.0.1            # Bind IP; 0.0.0.0/:: requires allowed_cidr set.
+  port: 8000                 # HTTP listen port.
+  # allowed_cidr:             # CIDR allowlist; empty = loopback-only.
+  #   - 10.0.0.0/8            # Internal corporate range.
+  #   - 127.0.0.0/8           # Loopback.
+  #   - 192.168.0.0/16        # RFC1918 private.
+  #   - 172.16.0.0/12         # RFC1918 private.
+
+# ── model_routing ─────────────────────────────────────────────────────────────
+# Inline model-routing block (overrides config/model_routing.yml when present).
+# Mirrors ModelRoutingConfig (src/general_ludd/config/model_routing.py).
+# All profiles referenced here MUST be defined under config/model_profiles/.
 model_routing:
-  default_profile: zai_coder
-  weak_model_profile: zai_coder
-  role_routing:
-    coder: zai_coder
-    planner: zai_coder
-    reviewer: zai_coder
-  quality_routing:
-    high: zai_coder
-    medium: zai_coder
-  latency_routing:
-    fast: zai_coder
-  pattern_routing:
-    return_review: reviewer
-    commit_message: weak
-    gap_analysis: fast
-    code_generation: coder
-    planning: planner
+  default_profile: zai_coder  # Profile used when no role/quality/latency match.
+  weak_model_profile: zai_coder # Low-cost profile for commit msgs, summaries.
+  role_routing:              # Map task role -> model profile id.
+    coder: zai_coder         # Implementation work.
+    planner: zai_coder       # Spec / sprint planning.
+    reviewer: zai_coder      # Code review (ideally different from coder).
+  quality_routing:           # Map quality tier -> model profile id.
+    high: zai_coder          # High-stakes dispatches.
+    medium: zai_coder        # Default-quality dispatches.
+  latency_routing:           # Map latency tier -> model profile id.
+    fast: zai_coder          # Latency-sensitive dispatches.
+  pattern_routing:           # Map task pattern -> role key in role_routing.
+    return_review: reviewer  # Review-return tasks use reviewer role.
+    commit_message: weak     # Commit msgs use weak_model_profile.
+    gap_analysis: fast       # Gap analysis uses latency_routing.fast.
+    code_generation: coder   # Code generation uses role_routing.coder.
+    planning: planner        # Planning tasks use role_routing.planner.
+
+# ── database ──────────────────────────────────────────────────────────────────
+# PostgreSQL connection settings. No password is stored here — it is fetched
+# from OpenBao (config/openbao/default.yml) at runtime via the secrets manager.
+# Defaults assume a local dev PostgreSQL with a `gludd` user/db pre-created.
 database:
-  host: localhost
-  port: 5432
-  name: gludd
-  user: gludd
+  host: localhost            # PostgreSQL host (or socket path).
+  port: 5432                 # PostgreSQL port.
+  name: gludd                # Database name (must exist).
+  user: gludd                # Database user (must exist, GRANT privileges).
+
+# ── agents ────────────────────────────────────────────────────────────────────
+# Agent-pool defaults. Agent definitions themselves live in
+# config/agents/default_agents.yml. This block controls pool sizing and the
+# agent used when a todo does not name one.
 agents:
-  default_agent: build
-  max_concurrent: 4
+  default_agent: build       # Agent name to use when todo.agent_name is empty.
+  max_concurrent: 4          # Max simultaneous agent instances of any one name.
+
+# ── orchestration ─────────────────────────────────────────────────────────────
+# Event-loop concurrency caps. These bound parallel model calls regardless of
+# the agent-pool size, preventing runaway spend under dispatch storms.
 orchestration:
-  max_concurrent_model_calls: 10
+  max_concurrent_model_calls: 10 # Hard cap on in-flight model HTTP requests.
+
+# ── process_isolation ─────────────────────────────────────────────────────────
+# Per-task sandboxing via podman/docker. When enabled, every ansible-runner
+# invocation runs inside a container; when disabled, all playbooks run inline.
+# See src/general_ludd/ansible/isolation.py for the full ProcessIsolationConfig.
 process_isolation:
-  enabled: false
-  container_runtime: podman
+  enabled: false             # OFF by default; opt-in for hardening.
+  container_runtime: podman  # 'podman' or 'docker'.
+
+# ── budget ────────────────────────────────────────────────────────────────────
+# Spend caps for model API calls. Tracked by spend_limiter; enforce_deallocate
+# aborts new dispatches once max_usd is reached. warn_percent fires a warning
+# log + /api/metrics event.
 budget:
-  max_usd: 50
-  warn_percent: 80
+  max_usd: 50                # Hard ceiling per daemon run (USD).
+  warn_percent: 80           # Warn at this % of max_usd (e.g. 80 = $40).

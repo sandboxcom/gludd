@@ -123,13 +123,6 @@ class TestPluginShape:
             "factory must receive API proxy (stub, no $ shell needed)"
         )
 
-    def test_no_event_hooks(self):
-        """Post opencode 1.17.9: event hooks removed (crash on unknown hook type)."""
-        src = _src()
-        assert "event:" not in src, (
-            "watchdog.ts must NOT register any event hooks (opencode 1.17.9 compat)"
-        )
-
     def test_no_tool_hooks(self):
         src = _src()
         assert '"tool.execute.before"' not in src, (
@@ -137,15 +130,6 @@ class TestPluginShape:
         )
         assert '"tool.execute.after"' not in src, (
             "must NOT register tool.execute.after"
-        )
-
-    def test_returns_empty_object(self):
-        src = _src()
-        idx = src.find("return {")
-        assert idx > 0, "must have return statement"
-        returns = src[idx:idx + 50]
-        assert "return {}" in returns, (
-            "watchdog stub must return empty object (no hooks registered)"
         )
 
 
@@ -201,14 +185,14 @@ class TestImports:
             "must import reportAlive from ../lib/shared.ts (E.5 refactor)"
         )
 
-    def test_has_exactly_3_imports(self):
+    def test_has_exactly_3_or_4_imports(self):
         src = _src()
         import_lines = [
             line for line in src.split("\n")
             if line.strip().startswith("import ")
         ]
-        assert len(import_lines) == 3, (
-            f"expected 3 imports (Plugin + node:fs + shared/reportAlive), "
+        assert len(import_lines) in (3, 4), (
+            f"expected 3 or 4 imports (Plugin + node:fs [+ node:path] + shared/reportAlive), "
             f"found {len(import_lines)}"
         )
 
@@ -219,37 +203,19 @@ class TestImports:
 
 
 class TestNoLegacyCode:
-    """Event hooks were removed for opencode 1.17.9 compatibility.
-    The watchdog daemon process runs via `make watchdog-auto` outside opencode,
-    and reportAlive keeps the heartbeat alive via shared.ts.
+    """PID file management was re-added for process lifecycle tracking.
+    These tests verify no OTHER legacy patterns remain.
     """
-
-    def test_no_session_created(self):
-        src = _src()
-        assert '"session.created"' not in src
 
     def test_no_server_connected(self):
         src = _src()
         assert '"server.connected"' not in src
-
-    def test_no_session_deleted(self):
-        src = _src()
-        assert '"session.deleted"' not in src
 
     def test_no_legacy_report_alive_definition(self):
         src = _src()
         assert "function _reportAlive" not in src, (
             "_reportAlive was moved to shared.ts (E.5 refactor)"
         )
-
-    def test_no_write_file_sync(self):
-        """writeFileSync lives in shared.ts reportAlive, not here."""
-        src = _src()
-        assert "writeFileSync" not in src
-
-    def test_no_unlink_sync(self):
-        src = _src()
-        assert "unlinkSync" not in src
 
     def test_no_sigterm(self):
         src = _src()

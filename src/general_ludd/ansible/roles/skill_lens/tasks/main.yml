@@ -1,0 +1,31 @@
+---
+- name: Validate skill name
+  ansible.builtin.assert:
+    that:
+      - skill_name is defined
+      - skill_name | length > 0
+      - skill_name is match("^[a-z][a-z0-9_-]*$")
+    fail_msg: "skill_name must be a valid skill identifier (e.g. python-expert)"
+  when: skill_name is defined
+
+- name: Set task description fallback
+  ansible.builtin.set_fact:
+    _task_description: "{{ task_description | default('') }}"
+
+- name: Run skill lens
+  general_ludd.agent.skill_lens:
+    skill_name: "{{ skill_name }}"
+    task_description: "{{ _task_description }}"
+    max_sections: "{{ max_sections | default(3) }}"
+  register: _lens_result
+
+- name: Emit lens output
+  ansible.builtin.debug:
+    msg: "{{ _lens_result.prompt }}"
+    verbosity: 1
+
+- name: Set lens fact for downstream tasks
+  ansible.builtin.set_fact:
+    skill_lens_prompt: "{{ _lens_result.prompt }}"
+    skill_lens_header: "{{ _lens_result.header }}"
+    skill_lens_num_sections: "{{ _lens_result.sections | length }}"

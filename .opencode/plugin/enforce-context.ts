@@ -6,7 +6,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { Plugin } from "@opencode-ai/plugin";
 import { loadHotModule, type HotModule } from "../lib/hot_reload.ts";
-import { isSubagent, reportAlive, readJsonFile, writeJsonFile, getProjectRoot } from "../lib/shared.ts";
+import { isSubagent, isReadTool, reportAlive, readJsonFile, writeJsonFile, getProjectRoot } from "../lib/shared.ts";
 const STATE_FILE = "/tmp/gludd-context-check.json";
 const DEFAULT_STALE_SECONDS = 86400;
 const PROJECT_ROOT = getProjectRoot();
@@ -57,6 +57,7 @@ const defaultImpl: HotModule = {
       if (process.env.GLUDD_CONTEXT_ENFORCE === "0") return;
       const state = loadState();
       if (!shouldCheck(state)) return;
+      if (isReadTool((_input as any)?.tool ?? "")) return;
       const staleSec = getStaleSeconds();
       const mtime = getSessionMdMtime();
       if (mtime !== null && isStale(mtime, staleSec)) {

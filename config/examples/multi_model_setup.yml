@@ -1,0 +1,88 @@
+# ============================================================================
+# multi_model_setup.yml — Different models per role (coder/reviewer/planner)
+# ============================================================================
+#
+# USE CASE
+# --------
+# A team that wants to spend tokens where they matter: a strong model for
+# generating code, a cheaper model for high-volume review passes, and a
+# fast model for planning/routing decisions. This setup assumes you have
+# three model profiles defined under config/model_profiles/ — for example
+# deepseek_coder.yml, qwen_coder.yml, and openai_example.yml.
+#
+# Copy to ~/.config/general-ludd/user.yml and adjust the profile ids to
+# match files present in your installation.
+# ============================================================================
+
+# --- model_routing ---------------------------------------------------------
+model_routing:
+  # Profile used when nothing more specific matches. Picked here as the
+  # workhorse coding model.
+  default_profile: deepseek_coder
+
+  # Used for low-stakes, high-volume tasks: commit-message synthesis,
+  # weak-label routing, gap_analysis fast path. Cheap and fast.
+  weak_model_profile: qwen_coder
+
+  # Map a logical ROLE to a profile id. The harness looks up roles via
+  # RoleRouter before consulting default_profile.
+  role_routing:
+    coder: deepseek_coder      # generates implementation diffs
+    reviewer: openai_gpt4      # independent reviewer; stronger reasoning
+    planner: qwen_coder        # breaks work into child todos
+
+  # Quality-of-service routing. A todo tagged quality=high (e.g. security,
+  # release-cut) bypasses the role map and goes straight to the strong model.
+  quality_routing:
+    high: openai_gpt4
+    medium: deepseek_coder
+
+  # Latency routing. Latency-sensitive patterns (commit_message, return_review)
+  # use the weak profile to keep the loop moving.
+  latency_routing:
+    fast: qwen_coder
+
+  # Pattern routing — the most specific level. Wins over role/quality/latency.
+  # Keys are pattern names recognised by the event loop's pattern detector.
+  pattern_routing:
+    return_review: reviewer    # reviewer role → openai_gpt4
+    commit_message: weak       # weak profile → qwen_coder
+    gap_analysis: fast         # fast latency → qwen_coder
+    code_generation: coder     # coder role → deepseek_coder
+    planning: planner          # planner role → qwen_coder
+
+# --- database --------------------------------------------------------------
+# Standard local PostgreSQL. Override credentials via env vars in production.
+database:
+  host: localhost
+  port: 5432
+  name: gludd
+  user: gludd
+
+# --- agents ----------------------------------------------------------------
+agents:
+  default_agent: build         # agent definition under config/agents/
+  max_concurrent: 4            # 4 parallel worktrees
+
+# --- orchestration ---------------------------------------------------------
+orchestration:
+  # Hard ceiling on concurrent model-calling HTTP processes regardless of
+  # agent count. Keeps API rate limits under control when each agent fans
+  # out subagents.
+  max_concurrent_model_calls: 8
+
+# --- budget ----------------------------------------------------------------
+budget:
+  max_usd: 100                 # hard stop — loop refuses to dispatch past this
+  warn_percent: 80             # emits a warning log at $80 spent
+
+# What this enables
+# -----------------
+# * Strong model (openai_gpt4) on review and high-stakes work; cheaper models
+#   everywhere else — typical cost split is ~70% coder, ~20% reviewer, ~10%
+#   planner.
+# * Pattern routing makes the choices deterministic — `commit_message` will
+#   always use the cheap weak model even if the surrounding todo is high quality.
+# * Concurrency capped at 8 model calls so a 4-wide agent wave cannot
+#   accidentally exceed a typical provider rate limit.
+# * $100 budget hard-stop protects against runaway loops.

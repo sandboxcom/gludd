@@ -67,8 +67,23 @@ const MAINTHREAD_THRESHOLD = parseInt(process.env.GLUDD_MAINTHREAD_THRESHOLD || 
 // Investigation tools (grep/glob/file-view) don't count toward the
 // edit/write/bash streak, but they DO count toward a SEPARATE counter with
 // time-based detection:
+// ---------------------------------------------------------------------------
+// READ-GRIND THRESHOLDS — session-configurable via GLUDD_READ_GRIND_* env vars.
+//
+// Override any of these per session when you need a different envelope; e.g.
+// during focused investigation raise GLUDD_READ_GRIND_DENY_COUNT=20 so a longer
+// serial-read burst is permitted WITHOUT disengaging all enforcement (BP.14).
+//
 //   ADVISORY: >5 calls AND >30s since last dispatch -> console.warn
 //   BLOCK:    >10 calls AND >60s since last dispatch -> throw (hard-deny)
+//   STALE:    a non-zero count older than 60s since the last dispatch is
+//             reset to 0 on the next read (the burst has gone cold).
+//
+// parseInt/parseFloat + `|| "<default>"` coerces empty or "0" overrides to a
+// finite number and never throws; mainthreadBudgetBefore's try/catch is the
+// fail-open backstop for any malformed input (setting a threshold to 0 is
+// safe — it just means the block can never fire because `count > 0` requires
+// a positive count, and the time gate still applies).
 // This closes the hole where 100 serial investigation calls went undetected
 // because they were exempt from ALL streak counters.
 const READ_GRIND_FILE = process.env.GLUDD_READ_GRIND_FILE || "/tmp/gludd-read-grind.json"
@@ -76,10 +91,54 @@ const READ_GRIND_ADVISORY_COUNT = parseInt(process.env.GLUDD_READ_GRIND_ADVISORY
 const READ_GRIND_ADVISORY_MS = parseInt(process.env.GLUDD_READ_GRIND_ADVISORY_MS || "30000", 10)
 const READ_GRIND_DENY_COUNT = parseInt(process.env.GLUDD_READ_GRIND_DENY_COUNT || "10", 10)
 const READ_GRIND_DENY_MS = parseInt(process.env.GLUDD_READ_GRIND_DENY_MS || "60000", 10)
+const READ_GRIND_STALE_MS = parseFloat(process.env.GLUDD_READ_GRIND_STALE_MS || "60000")
 const DISK_DANGER_GB = parseFloat(process.env.GLUDD_DISK_DANGER_GB || "2.5")
 const DISK_HARD_FLOOR_GB = parseFloat(process.env.GLUDD_DISK_HARD_FLOOR_GB || "1.0")
 const WORKTREE_CAP = parseInt(process.env.GLUDD_WORKTREE_CAP || "6", 10)
 const WORKTREE_MIN_FREE_GB = parseFloat(process.env.GLUDD_MIN_FREE_GB || "5.0")
+// GIT SHIPPING ALLOWLIST (RP.13 fix): git operations (commit, push, tag,
+// merge) are terminal shipping actions, not inline grinding. They must NOT
+// increment the streak counter. Without this, git-add followed by git-commit
+// triggers MAINTHREAD_THRESHOLD=2 and blocks the commit — forcing
+// make disengage-enforcement which disables ALL guardrails.
+const GIT_SHIPPING_TARGETS: ReadonlySet<string> = new Set([
+  "git-add", "git-add-all", "git-commit", "git-commit-file",
+  "ship-commit", "commit-no-verify", "repo-commit",
+  "git-push-sandboxcom", "batch-push",
+  "git-tag-push", "git-tag-move", "git-tag-rm",
+  "release-cut", "release-delete", "release-recut", "release-create",
+  "git-merge", "git-checkout", "git-branch",
+  "git-stash", "git-stash-pop", "git-reset",
+  "git-rm", "git-mv", "git-show", "git-restore",
+  "git-remote-sandboxcom", "git-log", "git-status",
+  "git-diff", "git-staged", "feature-start", "feature-done",
+  "verify-remote", "verify-state", "verify-enforcement",
+  "release-view", "release-artifacts",
+  "ci-cancel", "ci-status",
+])
+function isGitShippingTarget(command: string): boolean {
+  const m = command.match(/(?:^|\s)make\s+(\S+)/)
+  if (!m) return false
+  return GIT_SHIPPING_TARGETS.has(m[1])
+}
+// QUALITY-GATE ALLOWLIST (BP.7): lint, typecheck, and quality-gate operations
+// are NOT grinding — they are terminal validation steps that complete units of
+// work. Like git shipping targets, they must NOT increment the streak counter.
+const LINT_TARGETS: ReadonlySet<string> = new Set([
+  "lint",
+  "lint-fix",
+  "typecheck",
+  "collect-check",
+  "test-count",
+  "healthcheck",
+  "smoke",
+  "check-coverage-gaps",
+])
+function isLintTarget(command: string): boolean {
+  const m = command.match(/(?:^|\s)make\s+(\S+)/)
+  if (!m) return false
+  return LINT_TARGETS.has(m[1])
+}
 // ============================================================================
 // HELPERS
 // ============================================================================
@@ -164,7 +223,11 @@ function readTargetShare(): number {
   try {
     const cfg = JSON.parse(fs.readFileSync(SONNET_TARGET_CONFIG, "utf8"))
     const v = parseFloat(cfg.target_share)
-    return Number.isNaN(v) ? SONNET_TARGET_DEFAULT : v
+    if (Number.isNaN(v)) return SONNET_TARGET_DEFAULT
+    if (typeof cfg.until_epoch === "number" && Date.now() / 1000 > cfg.until_epoch) {
+      return SONNET_TARGET_DEFAULT
+    }
+    return v
   } catch {
     return SONNET_TARGET_DEFAULT
   }
@@ -501,35 +564,61 @@ function writeForceDispatchSignal(cmds: DispatchItem[]): void {
       ts: Date.now(),
     }))
   } catch { // fail open
- }
+  }
+}
+// BP.16: Consume (read + delete) a stale force-dispatch signal so the watchdog
+// cannot re-inject stale dispatch commands on its next poll cycle. Called at
+// the top of mainthreadBudgetBefore — by the time the next tool call arrives,
+// the prior block message (which embeds the commands directly) has already
+// been delivered to the agent's context. The file is a one-shot signal; once
+// consumed it must be deleted.
+function deleteForceDispatchSignal(): void {
+  try { fs.unlinkSync(FORCE_DISPATCH_FILE) } catch { /* absent OK */ }
+}
+
+function consumeForceDispatchSignal(): DispatchItem[] | null {
+  try {
+    if (!fs.existsSync(FORCE_DISPATCH_FILE)) return null
+    const data = JSON.parse(fs.readFileSync(FORCE_DISPATCH_FILE, "utf8"))
+    deleteForceDispatchSignal()
+    return Array.isArray(data.dispatch_commands) ? data.dispatch_commands : null
+  } catch {
+    deleteForceDispatchSignal()
+    return null
+  }
 }
 interface MainthreadStreakState {
   count: number
   ts: number
+  pid: number
 }
 function readStreak(): MainthreadStreakState {
   try {
     const raw = fs.readFileSync(MAINTHREAD_STREAK_FILE, "utf8").trim()
     if (raw.startsWith("{")) {
       const obj = JSON.parse(raw)
-      return {
-        count: parseInt(obj.count, 10) || 0,
-        ts: parseInt(obj.ts, 10) || 0,
+      const storedPid = parseInt(obj.pid, 10) || 0
+      const count = parseInt(obj.count, 10) || 0
+      const ts = parseInt(obj.ts, 10) || 0
+      if (storedPid !== 0 && storedPid !== process.pid) {
+        return { count: 0, ts, pid: process.pid }
       }
+      return { count, ts, pid: storedPid || process.pid }
     }
     const n = parseInt(raw, 10)
     return {
       count: Number.isNaN(n) ? 0 : n,
       ts: 0,
+      pid: process.pid,
     }
   } catch {
-    return { count: 0, ts: 0 }
+    return { count: 0, ts: 0, pid: process.pid }
   }
 }
 function writeStreak(partial: Partial<MainthreadStreakState>): void {
   try {
     const current = readStreak()
-    const merged: MainthreadStreakState = { ...current, ...partial, ts: Date.now() }
+    const merged: MainthreadStreakState = { ...current, ...partial, ts: Date.now(), pid: process.pid }
     const tmp = MAINTHREAD_STREAK_FILE + ".tmp"
     fs.writeFileSync(tmp, JSON.stringify(merged))
     fs.renameSync(tmp, MAINTHREAD_STREAK_FILE)
@@ -542,7 +631,6 @@ function writeStreak(partial: Partial<MainthreadStreakState>): void {
 // dispatch so time-based detection can distinguish a legitimate burst from
 // a grinding spree.
 // ---------------------------------------------------------------------------
-const READ_GRIND_STALE_MS = parseFloat(process.env.GLUDD_READ_GRIND_STALE_MS || "60000")
 function loadReadGrindState(): { count: number; lastDispatchTs: number } {
   try {
     const obj = JSON.parse(fs.readFileSync(READ_GRIND_FILE, "utf8"))
@@ -568,10 +656,20 @@ function isMainthreadTool(tool: string): boolean {
   // Only mutation tools gated here — investigation tools tracked separately.
   return ["edit", "write", "bash"].includes(tool)
 }
-function mainthreadBudgetBefore(tool: string): string | null {
+function mainthreadBudgetBefore(tool: string, command: string): string | null {
   try {
     if (!MAINTHREAD_STREAK_ENABLED) return null
     if (isDisengaged()) return null
+    // BP.16: Consume any stale force-dispatch signal from a prior block cycle.
+    // The signal was delivered via the block error message and/or watchdog
+    // injection. Keeping the file causes re-injection on every watchdog poll.
+    consumeForceDispatchSignal()
+    // Git shipping operations (commit, push, tag) are NEVER blocked.
+    // They are terminal actions that complete work, not grinding.
+    if (tool === "bash" && isGitShippingTarget(command)) return null
+    // Quality-gate operations (lint, typecheck, collect-check, etc.) are
+    // NEVER blocked — they are validation steps that complete units of work.
+    if (tool === "bash" && isLintTarget(command)) return null
     // Read-grind check (separate from the edit-streak below): investigation
     // tools don't count toward the edit/write/bash streak, but they DO count
     // toward a SEPARATE counter with time-based detection. Both conditions
@@ -629,9 +727,18 @@ function mainthreadBudgetBefore(tool: string): string | null {
     return null
   }
 }
-function mainthreadBudgetAfter(tool: string): void {
+function mainthreadBudgetAfter(tool: string, command: string): void {
   try {
     if (isDispatchTool(tool)) {
+      writeStreak({ count: 0 })
+      saveReadGrindState(0, Date.now())
+      try { fs.unlinkSync(FORCE_DISPATCH_FILE) } catch { /* absent OK */ }
+    } else if (tool === "bash" && isGitShippingTarget(command)) {
+      // Git shipping operations reset the streak — they complete a unit of work.
+      writeStreak({ count: 0 })
+      saveReadGrindState(0, Date.now())
+    } else if (tool === "bash" && isLintTarget(command)) {
+      // Quality-gate operations reset the streak — they validate completed work.
       writeStreak({ count: 0 })
       saveReadGrindState(0, Date.now())
     } else if (isMainthreadTool(tool)) {
@@ -668,6 +775,7 @@ const defaultImpl = {
     _writeHeartbeat()
     const tool = input.tool
     const args = output?.args ?? input?.args
+    const command = String(args?.command ?? input?.command ?? "")
     // task/agent/workflow dispatch — model utilization + disk discipline
     if (isDispatchTool(tool)) {
       const modelMsg = enforceModelUtilization(args)
@@ -679,12 +787,14 @@ const defaultImpl = {
     // (Each of these is FAIL-OPEN internally; they return null on any error.)
     const forceMsg = enforceForceDelegate(tool, args)
     if (forceMsg) throw new Error(forceMsg)
-    const budgetMsg = mainthreadBudgetBefore(tool)
+    const budgetMsg = mainthreadBudgetBefore(tool, command)
     if (budgetMsg) throw new Error(budgetMsg)
   },
   "tool.execute.after": async (input, _output) => {
     // mainthread budget streak counter — never throws
-    mainthreadBudgetAfter(input.tool)
+    const args = _output?.args ?? input?.args
+    const command = String(args?.command ?? input?.command ?? "")
+    mainthreadBudgetAfter(input.tool, command)
   },
 }
 // ============================================================================

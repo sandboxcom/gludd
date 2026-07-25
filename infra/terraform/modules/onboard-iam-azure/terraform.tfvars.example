@@ -1,0 +1,28 @@
+# Example tfvars for `make onboard-iam-azure` — the Azure managed-identity IAM module.
+# Real values never live here — placeholders only. At apply time the
+# TerraformGenerator composer writes a real terraform.tfvars into a tempdir
+# from ComputeConfig + SecretsManager (see TERRAFORM_INFRA_STRUCTURE.md §8).
+#
+# Copy to terraform.tfvars and fill in, OR pass via -var-file at apply time.
+
+# Azure subscription id where gludd provisions GPU VMs. REQUIRED — no default.
+# Find at: az account show --query id -o tsv
+subscription_id = "00000000-0000-0000-0000-000000000000"
+
+# Resource group for the gludd operator identity and later its VMs.
+# Default: gludd-rg. Created by the module if it does not exist.
+resource_group_name = "gludd-rg"
+
+# Azure region for the resource group + identity. Default: eastus.
+# Choose a region with GPU quota (eastus, westus2, westeurope).
+location = "eastus"
+
+# Name of the gludd operator user-assigned managed identity. Default:
+# gludd-compute-operator. This identity is granted Virtual Machine Contributor
+# (to create/destroy VMs) and Managed Identity Operator (to attach itself to
+# the VMs it creates). Role set pinned by tests/unit/test_onboard_azure.py.
+identity_name = "gludd-compute-operator"
+
+# azure_credentials (subscription_id / client_id / client_secret / tenant_id)
+# are NOT included — they come from the standard Azure provider chain
+# (env / azure-cli / managed identity) per SecretsManager, never tfvars.

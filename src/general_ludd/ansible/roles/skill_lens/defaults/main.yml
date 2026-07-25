@@ -1,0 +1,4 @@
+---
+max_sections: 3
+default_skill: python-expert
+cache_enabled: true

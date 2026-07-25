@@ -43,7 +43,6 @@ import { createRequire } from "node:module"
 import type { Plugin } from "@opencode-ai/plugin"
 import {
   isSubagent,
-  isDisengaged as isWatchdogDisengaged,
   reportAlive,
   writeHeartbeat,
   updateSharedStreak,
@@ -101,15 +100,15 @@ const COMPLETION_WORDS_RE = /\b(?:committed|done|completed|landed|pushed|shipped
 // Strongest stop-signal regex: unambiguous terminal completion verbatim.
 // Stricter than COMPLETION_WORDS_RE — these phrases have NO non-completion
 // reading. A match here is the highest-confidence stop signal.
-export const COMPLETION_VERBATIM = /\b(?:all done|all tasks complete|everything is done|everything is complete|work is complete|all work done|fully implemented|fully complete|nothing (?:more|else) (?:to do|left|remaining)|ready to ship|ready for review|shipped and verified|committed and pushed)\b/i
+const COMPLETION_VERBATIM = /\b(?:all done|all tasks complete|everything is done|everything is complete|work is complete|all work done|fully implemented|fully complete|nothing (?:more|else) (?:to do|left|remaining)|ready to ship|ready for review|shipped and verified|committed and pushed)\b/i
 const SHORT_COMPLETION_PHRASES = /\b(?:all done\.?|done\.|finished\.|complete\.|all set\.|all good\.|good to go\.?|ready to ship\.?|ready for review\.?|everything is (?:done|complete|ready|set|good)|i'm done\.?|we're done\.?|that's (?:done|complete|it|all)|no more work|nothing more|all finished)\b/i
 
 const QA_RESPONSE_PATTERNS = /(?:completed in this session|done since the (?:crash|last session)|everything (?:committed|landed|pushed|shipped|is complete)|here.{0,30}(?:what was|.?s what) (?:done|completed|changed)|summary of what was (?:done|completed)|what.{0,10}(?:changed|done|completed|left|remains|is next|\?s left))/i
 
 const SUBAGENT_TEXT_MARKERS = /(?:task_id|task_result|agent\s+result|subagent\s+result|task\s+completed|generated|completed successfully|exit code)/i
 
-export const STOP_PATTERN_PHRASES = /\b(?:shall\s+i\s+continue|should\s+i\s+proceed|want\s+me\s+to\b[^?!.]*)/i
-export const PERMISSION_SEEKING_RE = /(?:want me to\s+(?:proceed|continue|dispatch|write|fix|move|start|do|run|create|add|update|implement|handle|begin|work|go ahead)|should i\s+(?:proceed|continue|fix|dispatch|start|move|go ahead)|shall i\s+(?:proceed|continue|fix|start)|^proceed\?$)/im
+const STOP_PATTERN_PHRASES = /\b(?:shall\s+i\s+continue|should\s+i\s+proceed|want\s+me\s+to\b[^?!.]*)/i
+const PERMISSION_SEEKING_RE = /(?:want me to\s+(?:proceed|continue|dispatch|write|fix|move|start|do|run|create|add|update|implement|handle|begin|work|go ahead)|should i\s+(?:proceed|continue|fix|dispatch|start|move|go ahead)|shall i\s+(?:proceed|continue|fix|start)|^proceed\?$)/im
 
 // ── STATUS-SUMMARY detection (2026-07-15) ───────────────────────────────────
 // ROOT CAUSE: a status summary containing commit hashes or "CI: PENDING"
@@ -117,7 +116,7 @@ export const PERMISSION_SEEKING_RE = /(?:want me to\s+(?:proceed|continue|dispat
 // !hasStructuredEvidence() was bypassed. Evidence proves a claim true;
 // it does NOT make stopping-to-summarize acceptable. These patterns are
 // blocked REGARDLESS of evidence when pending work exists.
-export const STATUS_SUMMARY_RE = new RegExp(
+const STATUS_SUMMARY_RE = new RegExp(
   [
     "here.{0,4}s the (?:session\\s+\\d+\\s+)?(?:final\\s+)?status",
     "session\\s+\\d+\\s+(?:final\\s+)?(?:status|summary|wrap[- ]?up|recap)",
@@ -128,7 +127,7 @@ export const STATUS_SUMMARY_RE = new RegExp(
   "im",
 )
 
-export function looksLikeStatusSummary(text: string): boolean {
+function looksLikeStatusSummary(text: string): boolean {
   if (STATUS_SUMMARY_RE.test(text)) return true
   // Long responses with markdown section headers are status reports:
   // >500 chars + >=1 "##" section header = structured report shape.
@@ -1385,7 +1384,7 @@ const defaultImpl: HotModule = {
           COMMIT_TARGET_RE.test(command) ? "commit" :
           PUSH_TARGET_RE.test(command) ? "push" : undefined
         const repoPending = repoHasPendingWork(execSync, repoMode)
-        const disengaged = isWatchdogDisengaged()
+        const disengaged = isDisengaged()
         if (!disengaged && (taskMd || ratchetCount > 0 || bugsOpen || gateRed || ciBad || ciUnknown || repoPending)) {
           try {
             const cPath = process.env.GLUDD_STOP_TOOL_COUNTS_FILE || "/tmp/gludd-stop-tool-counts.json"
@@ -1427,7 +1426,7 @@ const defaultImpl: HotModule = {
       const isMutationTool = !isDispatchTool(input.tool) && !isReadTool(input.tool)
 
       if (isMutationTool) {
-        const grindingDisengaged = isWatchdogDisengaged()
+        const grindingDisengaged = isDisengaged()
         if (!grindingDisengaged) {
           if (streakState.streak > GRINDING_HARD_DENY_THRESHOLD) {
             try {

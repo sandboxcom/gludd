@@ -1,0 +1,44 @@
+---
+# Molecule scenario: config_loading
+#
+# Verifies the gludd binary can load ALL bundled config files at runtime:
+#   - `gludd project paths` resolves the 3-tier collections precedence (path config)
+#   - every config/**/*.yml parses as valid YAML (file integrity)
+#   - the daemon boots past the config-loading phase (full config chain)
+#   - config-derived endpoints answer (proves the loaded config is live)
+#   - env-var override works: GLUDD_NETWORK__PORT reroutes the listener
+#   - failure modes: corrupt / missing / invalid-YAML configs are handled
+#     with a clear error, not a traceback crash
+#
+# Scope note: the daemon needs PostgreSQL + OpenBao to reach /readyz. This
+# scenario proves the CONFIG-LOADING chain specifically — the daemon log must
+# be free of KeyError / YAMLError / ConfigParser even when infra is absent
+# (those errors are config-loading failures; a DB connection refusal is NOT).
+driver:
+  name: default
+platforms: []
+provisioner:
+  name: ansible
+  env:
+    ANSIBLE_COLLECTIONS_PATH: "${MOLECULE_PROJECT_DIRECTORY}/collections"
+    GLUDD_CONFIG_PORT: "8971"
+    GLUDD_CONFIG_OVERRIDE_PORT: "9999"
+  playbooks:
+    prepare: default/prepare.yml
+    converge: default/converge.yml
+    verify: default/verify.yml
+verifier:
+  name: ansible
+scenario:
+  test_sequence:
+    - dependency
+    - cleanup
+    - destroy
+    - syntax
+    - create
+    - prepare
+    - converge
+    - side_effect
+    - verify
+    - cleanup
+    - destroy

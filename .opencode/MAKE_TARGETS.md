@@ -185,7 +185,8 @@ Auto-generated from Makefile (3252 lines). Subagents: use ONLY these targets. An
 | `ci-verdict-safe` | | Cooldown-enforced CI check |
 | `ci-cooldown-status` | | Show remaining cooldown |
 | `ci-status` | | Recent CI runs list |
-| `ci-view` | `RUN=...` | Job-level CI run breakdown |
+| `ci-view` | `RUN=...` | Job-level CI run breakdown (formatted) |
+| `ci-view-json` | `RUN=...` | Job-level CI run breakdown (raw JSON) |
 | `ci-rerun` | `RUN=...` | Re-run CI jobs |
 | `ci-trigger` | | Dispatch Build and Release workflow |
 | `ci-active` | | List in-progress/queued runs |
@@ -218,7 +219,8 @@ Auto-generated from Makefile (3252 lines). Subagents: use ONLY these targets. An
 | `gh-tags` | `REPO='owner/name'` | Resolve action repo tags->SHAs |
 | `gh-action-node` | `REPO='..' TAG='..'` | Node runtime for action tag |
 | `ci-verify-wait` | | Dry-run CI verify on HEAD |
-| `ci-jobs-anon` | `RUN=...` | Job list (unauthenticated) |
+| `ci-jobs-anon` | `RUN=...` | Job list (unauthenticated, formatted) |
+| `ci-jobs-anon-json` | `RUN=...` | Job list (unauthenticated, raw JSON) |
 | `ci-annotations-anon` | `RUN=...` | Check-run annotations |
 | `ci-joblog-anon` | `JOB=...` | Download job log |
 | `ci-checkrun-anno` | `CHECK=...` | Check-run annotations |

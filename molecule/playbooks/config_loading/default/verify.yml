@@ -1,0 +1,200 @@
+---
+# Verify - assert every config-loading path produced the expected evidence.
+#
+# Each converge phase persists its result to {{ work_dir }}/*.json (or .txt).
+# This play loads each artifact and asserts on its content so a regression in
+# any single phase (paths resolution, config parse, daemon boot, env-var
+# override, failure-mode handling) surfaces a precise failure rather than a
+# generic "scenario failed".
+- name: Verify - config loading assertions
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    project_dir: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+    work_dir: "/tmp/gludd-config-loading"
+  tasks:
+
+    # =====================================================================
+    # 1. project paths: >=3 entries (PROJECT, USER, BUNDLED tiers)
+    # =====================================================================
+    - name: Load project paths output
+      ansible.builtin.slurp:
+        src: "{{ work_dir }}/project_paths.json"
+      register: paths_blob
+
+    - name: Parse project paths
+      ansible.builtin.set_fact:
+        paths_json: "{{ paths_blob.content | b64decode | from_json }}"
+
+    - name: Assert at least 3 path entries
+      ansible.builtin.assert:
+        that:
+          - paths_json | length >= 3
+        fail_msg: "project paths returned <3 entries: {{ paths_json }}"
+        success_msg: "project paths returned {{ paths_json | length }} entries"
+
+    # =====================================================================
+    # 2. config parse: every bundled config file is valid YAML
+    # =====================================================================
+    - name: Load config parse results
+      ansible.builtin.slurp:
+        src: "{{ work_dir }}/config_parse.json"
+      register: parse_blob
+
+    - name: Parse config results
+      ansible.builtin.set_fact:
+        parse_json: "{{ parse_blob.content | b64decode | from_json }}"
+
+    - name: Find any config files that failed to parse
+      ansible.builtin.set_fact:
+        bad_configs: "{{ parse_json.files | selectattr('ok', 'equalto', false) | list }}"
+
+    - name: Assert every bundled config file parsed cleanly
+      ansible.builtin.assert:
+        that:
+          - bad_configs | length == 0
+          - parse_json.files | length >= 10
+        fail_msg: "config parse failures: {{ bad_configs }}"
+        success_msg: "all {{ parse_json.files | length }} bundled config files parsed cleanly"
+
+    # =====================================================================
+    # 3. agents: build / plan / explore present in default_agents.yml
+    # =====================================================================
+    - name: Load agent roster
+      ansible.builtin.slurp:
+        src: "{{ work_dir }}/agents.json"
+      register: agents_blob
+
+    - name: Parse agent roster
+      ansible.builtin.set_fact:
+        agents_json: "{{ agents_blob.content | b64decode | from_json }}"
+
+    - name: Assert required agents are configured
+      ansible.builtin.assert:
+        that:
+          - "'build' in agents_json.names"
+          - "'plan' in agents_json.names"
+          - "'explore' in agents_json.names"
+        fail_msg: "required agents missing from default_agents.yml: {{ agents_json.names }}"
+        success_msg: "agent roster includes build/plan/explore: {{ agents_json.names }}"
+
+    # =====================================================================
+    # 4. model profiles: >=1 profile shipped under config/model_profiles/
+    # =====================================================================
+    - name: Load model profile list
+      ansible.builtin.slurp:
+        src: "{{ work_dir }}/model_profiles.json"
+      register: profiles_blob
+
+    - name: Parse model profiles
+      ansible.builtin.set_fact:
+        profiles_json: "{{ profiles_blob.content | b64decode | from_json }}"
+
+    - name: Assert model profiles were discovered
+      ansible.builtin.assert:
+        that:
+          - profiles_json | length >= 1
+        fail_msg: "no model profiles found under config/model_profiles/"
+        success_msg: "found {{ profiles_json | length }} model profile(s)"
+
+    # =====================================================================
+    # 5. daemon log: free of config-loading errors
+    #    KeyError / YAMLError / ConfigParser are config-load failures.
+    #    A DB connection refusal is NOT - infra is out of scope here.
+    # =====================================================================
+    - name: Slurp daemon log (if present)
+      ansible.builtin.slurp:
+        src: "{{ work_dir }}/daemon.log"
+      register: daemon_log_blob
+      failed_when: false
+
+    - name: Search daemon log for config-error signatures
+      ansible.builtin.set_fact:
+        daemon_config_errors: >-
+          {{
+            (daemon_log_blob.content | b64decode)
+            | regex_findall('KeyError|ConfigParser|yaml\.YAMLError|YAMLError')
+          }}
+      when: daemon_log_blob.content is defined
+
+    - name: Assert daemon log is free of config-loading errors
+      ansible.builtin.assert:
+        that:
+          - (daemon_config_errors | default([])) | length == 0
+        fail_msg: "config-loading errors in daemon log: {{ daemon_config_errors }}"
+        success_msg: "daemon log clean of KeyError/YAMLError/ConfigParser"
+      when: daemon_log_blob.content is defined
+
+    # =====================================================================
+    # 6. env-var override: GLUDD_NETWORK__PORT rerouted the listener
+    # =====================================================================
+    - name: Load override outcome
+      ansible.builtin.slurp:
+        src: "{{ work_dir }}/override_status.txt"
+      register: override_blob
+
+    - name: Show override outcome (informational; infra may block full boot)
+      ansible.builtin.debug:
+        msg: "GLUDD_NETWORK__PORT override result: {{ override_blob.content | b64decode | trim }}"
+
+    # =====================================================================
+    # 7. failure modes
+    # =====================================================================
+    - name: Load invalid-YAML failure result
+      ansible.builtin.slurp:
+        src: "{{ work_dir }}/failure_invalid_yaml.json"
+      register: inv_blob
+
+    - name: Parse invalid-YAML result
+      ansible.builtin.set_fact:
+        inv_json: "{{ inv_blob.content | b64decode | from_json }}"
+
+    - name: Assert invalid YAML was handled gracefully
+      ansible.builtin.assert:
+        that:
+          - inv_json.handled | bool
+          - "'YAMLError' in inv_json.error_class"
+        fail_msg: "invalid YAML was NOT handled gracefully: {{ inv_json }}"
+        success_msg: "invalid YAML raised a clean YAMLError"
+
+    - name: Load missing-config failure result
+      ansible.builtin.slurp:
+        src: "{{ work_dir }}/failure_missing_config.json"
+      register: miss_blob
+
+    - name: Parse missing-config result
+      ansible.builtin.set_fact:
+        miss_json: "{{ miss_blob.content | b64decode | from_json }}"
+
+    - name: Assert missing optional config fell back to defaults (no crash)
+      ansible.builtin.assert:
+        that:
+          - miss_json | length >= 3
+        fail_msg: "project paths crashed/returned too few entries with missing user config: {{ miss_json }}"
+        success_msg: "missing user config -> bundled defaults used ({{ miss_json | length }} path entries)"
+
+    - name: Load corrupt-YAML failure result
+      ansible.builtin.slurp:
+        src: "{{ work_dir }}/failure_corrupt_yaml.json"
+      register: corrupt_blob
+
+    - name: Parse corrupt-YAML result
+      ansible.builtin.set_fact:
+        corrupt_json: "{{ corrupt_blob.content | b64decode | from_json }}"
+
+    - name: Assert corrupt YAML surfaced a clear error
+      ansible.builtin.assert:
+        that:
+          - corrupt_json.handled | bool
+          - "'YAMLError' in corrupt_json.error_class"
+        fail_msg: "corrupt YAML was NOT surfaced cleanly: {{ corrupt_json }}"
+        success_msg: "corrupt YAML surfaced a clear YAMLError"
+
+    # ---------- final cleanup ----------
+    - name: Clean work dir artifacts
+      ansible.builtin.file:
+        path: "{{ work_dir }}"
+        state: absent
+      changed_when: false
+      failed_when: false

@@ -3,6 +3,23 @@
 # ai_sdlc.yml — AI Development Lifecycle Pipeline Configuration
 # =============================================================================
 #
+# Purpose:
+#   Reference specification codifying the AI-DLC research corpus into a single
+#   machine-readable pipeline definition. Used by the sdlc_gate role and the
+#   documentation generators; NOT loaded by the daemon at boot. Treat this as
+#   the authoritative mapping from research frameworks (AWS ML Lens, Microsoft
+#   CAF, Google MLOps, NIST AI RMF, AI-SDLC Protocol, Agile-V, Verification-
+#   First, AI Assurance Pyramid) to gludd's event-loop phases.
+#
+# REQUIRED vs OPTIONAL:
+#   OPTIONAL (defaults are used if missing).
+#
+# What happens if this file is missing:
+#   Nothing breaks at runtime — the daemon does not parse this file. It exists
+#   for human reference, the sdlc_gate role's stage documentation, and any
+#   future tool that wants to walk the framework-to-role mapping mechanically.
+#   Removing it removes documentation only.
+#
 # Codifies the AI-DLC research corpus into gludd's runtime pipeline:
 #
 #   Sources:

@@ -11,6 +11,12 @@ import * as path from "node:path"
 export const DISENGAGE_PATH =
   process.env.GLUDD_DISENGAGE_PATH || "/tmp/gludd-watchdog-disengage.json"
 
+// Dedicated single-use disengage marker (BP.5). `make disengage-next` writes
+// this file; isDisengaged() consumes it on first read (delete + return true).
+// Separate from DISENGAGE_PATH so the two modes cannot interfere.
+export const DISENGAGE_NEXT_PATH =
+  process.env.GLUDD_DISENGAGE_NEXT_PATH || "/tmp/gludd-disengage-next"
+
 export const DISENGAGE_AUDIT_PATH =
   process.env.GLUDD_DISENGAGE_AUDIT_PATH || "/tmp/gludd-disengage-audit.jsonl"
 
@@ -45,8 +51,36 @@ const _sessionUuid = `${process.pid}-${Math.floor(Date.now() / 1000)}`
 export function isDisengaged(opts: DisengageOpts = {}): boolean {
   const maxMs = opts.maxMs ?? 300_000
   try {
+    // BP.5: dedicated single-use disengage marker. Consume-once: delete the
+    // file then return true. The next call finds no file and returns false.
+    // Checked BEFORE the JSON path so the two mechanisms are independent.
+    try {
+      if (fs.existsSync(DISENGAGE_NEXT_PATH)) {
+        fs.unlinkSync(DISENGAGE_NEXT_PATH)
+        try {
+          const audit = JSON.stringify({ ts: Date.now(), pid: process.pid, sessionUuid: _sessionUuid, single: true, source: "disengage-next" }) + "\n"
+          fs.appendFileSync(DISENGAGE_AUDIT_PATH, audit, "utf8")
+        } catch { /* fail-open */ }
+        return true
+      }
+    } catch { /* fail-open: permission / race → ignore */ }
+
     if (!fs.existsSync(DISENGAGE_PATH)) return false
     const d = JSON.parse(fs.readFileSync(DISENGAGE_PATH, "utf8"))
+
+    // Single-use disengage (make disengage-next): arms for ONE tool call,
+    // then the file is deleted so the next operation re-arms enforcement.
+    if (d.expires === 1) {
+      try {
+        fs.unlinkSync(DISENGAGE_PATH)
+      } catch { /* fail-open */ }
+      try {
+        const audit = JSON.stringify({ ts: Date.now(), pid: process.pid, sessionUuid: _sessionUuid, single: true }) + "\n"
+        fs.appendFileSync(DISENGAGE_AUDIT_PATH, audit, "utf8")
+      } catch { /* fail-open */ }
+      return true
+    }
+
     if (typeof d.disengage_until !== "number") return false
     const now = Date.now()
     const effective = Math.min(d.disengage_until, now + maxMs)

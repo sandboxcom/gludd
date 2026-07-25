@@ -1,52 +1,93 @@
-agents:
-  - name: build
-    description: "Primary build agent with all tool permissions"
-    type: primary
-    model_profile: zai_coder
-    prompt_profile: default
-    max_steps: 10
-    permissions:
-      can_edit: true
-      can_bash: true
-      can_read: true
-      can_dispatch_subagents: true
-      allowed_subagents:
-        - "*"
-    max_concurrent: 1
-    enabled: true
+# =============================================================================
+# default_agents.yml — Built-in agent definitions (shipped defaults).
+# =============================================================================
+#
+# Purpose:
+#   Defines the set of agents the gludd daemon can dispatch. Each entry maps
+#   1:1 to an AgentConfig dataclass (src/general_ludd/agents/types.py:29) that
+#   the dispatcher (src/general_ludd/agents/dispatcher.py) consumes. This file
+#   is the canonical source for the agent registry
+#   (src/general_ludd/agents/registry.py:54).
+#
+# REQUIRED vs OPTIONAL:
+#   OPTIONAL (defaults are used if missing).
+#
+# What happens if this file is missing:
+#   The agent registry seeds itself with the SAME four built-in agents shown
+#   below (build, plan, explore, general) directly in code
+#   (src/general_ludd/agents/registry.py:_default_agents), so the daemon boots
+#   fully functional. To customize the roster, operators copy this file to
+#   ~/.config/general-ludd/agents/default_agents.yml and edit. The `research`
+#   agent below is an extension that depends on a SearXNG connector being
+#   configured separately — without that connector, `research` is registered
+#   but its dispatches return "no tool bound."
+#
+# Field reference (per agent entry):
+#   name                  : str   — unique agent identifier (todo.agent_name).
+#   description           : str   — human-readable summary shown in TUI/CLI.
+#   type                  : str   — 'primary' (top-level) | 'subagent'.
+#   model_profile         : str   — profile id from config/model_profiles/.
+#   prompt_profile        : str   — prompt-template id (event_loop/loop.py:195).
+#   max_steps             : int   — per-dispatch tool-call budget.
+#   permissions:                  — AgentPermission (agents/types.py:19).
+#     can_edit                  : bool — may write files.
+#     can_bash                  : bool — may invoke bash/make.
+#     can_read                  : bool — may read files.
+#     can_dispatch_subagents    : bool — may spawn child agents.
+#     allowed_subagents         : list — "*" or explicit child agent names.
+#   max_concurrent        : int   — max in-flight instances (pool sizing).
+#   enabled               : bool  — if false, agent is registered but skipped.
+# =============================================================================
 
-  - name: plan
+agents:
+  - name: build               # Primary implementation agent (full tool access).
+    description: "Primary build agent with all tool permissions"
+    type: primary             # Top-level agent (cannot be invoked as a subagent).
+    model_profile: zai_coder  # Model profile from config/model_profiles/.
+    prompt_profile: default   # Prompt template (Jinja2) id.
+    max_steps: 10             # Hard cap on tool calls per dispatch.
+    permissions:
+      can_edit: true                  # May write/edit project files.
+      can_bash: true                  # May run make/bash commands.
+      can_read: true                  # May read files (almost always true).
+      can_dispatch_subagents: true    # May spawn child agents.
+      allowed_subagents:
+        - "*"                 # Wildcard: may dispatch any registered agent.
+    max_concurrent: 1         # Only 1 instance at a time (stateful editing).
+    enabled: true             # Active in the registry.
+
+  - name: plan                # Read-only planning agent (spawns explore only).
     description: "Primary planning agent with read-only access"
     type: primary
     model_profile: zai_coder
     prompt_profile: default
     max_steps: 10
     permissions:
-      can_edit: false
-      can_bash: false
+      can_edit: false                 # Read-only.
+      can_bash: false                 # No command execution.
       can_read: true
       can_dispatch_subagents: true
       allowed_subagents:
-        - "explore"
+        - "explore"           # Restricted: may only spawn `explore` children.
     max_concurrent: 1
     enabled: true
 
-  - name: explore
+  - name: explore             # Read-only codebase exploration subagent.
     description: "Subagent for codebase exploration, read-only"
-    type: subagent
+    type: subagent            # Invoked by `build` or `plan` (not top-level).
     model_profile: zai_coder
     prompt_profile: default
     max_steps: 10
     permissions:
-      can_edit: false
+      can_edit: false                 # Strict read-only.
       can_bash: false
       can_read: true
-      can_dispatch_subagents: false
-      allowed_subagents: []
-    max_concurrent: 5
+      can_dispatch_subagents: false   # Leaf node — no further nesting.
+      allowed_subagents: []           # Required empty list (dispatcher reads this).
+    max_concurrent: 5         # Up to 5 parallel explorations.
     enabled: true
 
-  - name: general
+  - name: general             # General-purpose subagent (mutating, no nesting).
     description: "General-purpose subagent with all tool permissions"
     type: subagent
     model_profile: zai_coder
@@ -56,22 +97,22 @@ agents:
       can_edit: true
       can_bash: true
       can_read: true
-      can_dispatch_subagents: false
+      can_dispatch_subagents: false   # No nesting — kept shallow on purpose.
       allowed_subagents: []
-    max_concurrent: 3
+    max_concurrent: 3         # Up to 3 parallel general-purpose workers.
     enabled: true
 
-  - name: research
+  - name: research            # Web-research subagent (SearXNG-backed).
     description: "Research agent — SearXNG-powered web research with source verification, confidence scoring, and structured citation output"
     type: subagent
     model_profile: zai_coder
     prompt_profile: default
     max_steps: 10
     permissions:
-      can_edit: false
+      can_edit: false                 # Read-only — produces citations, not edits.
       can_bash: false
       can_read: true
       can_dispatch_subagents: false
       allowed_subagents: []
-    max_concurrent: 3
-    enabled: true
+    max_concurrent: 3         # Up to 3 parallel research tasks.
+    enabled: true             # NOTE: requires SearXNG connector configuration.

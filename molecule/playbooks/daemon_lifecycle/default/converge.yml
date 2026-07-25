@@ -1,0 +1,246 @@
+---
+# Converge — drive the full daemon lifecycle.
+#
+# Steps (each assertion is duplicated in verify.yml with the exact mandated
+# error message so a regression surfaces the right diagnosis):
+#   1. Start `./gludd daemon` in the background (nohup + start_new_session so
+#      it survives the converge play). Record its PID for the shutdown step.
+#   2. Poll /healthz for up to 30 seconds.
+#   3. GET /api/facts — verify the body is a JSON object/list the caller can
+#      consume (the daemon's facts aggregator).
+#   4. GET /api/tasks — verify it returns a list. (Specification endpoint:
+#      drives the implementation contract for a tasks facet parallel to
+#      /api/todos.)
+#   5. POST /api/playbook/run with a minimal playbook body — verify the daemon
+#      accepts the request (2xx).
+#   6. GET /health — verify 200 + JSON status.
+#   7. Send SIGTERM to the recorded PID.
+#   8. Verify the daemon exits cleanly (exit code 0 via reaped returncode).
+#   9. Verify port 8767 is released after shutdown.
+#
+# The recorded state file (/tmp/gludd-daemon-lifecycle-state.json) carries
+# every step's outcome into verify.yml so the assertions there can cite the
+# exact observed values in their failure messages.
+- name: Converge - exercise full daemon lifecycle
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    project_dir: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+    venv_bin: "{{ lookup('env', 'VIRTUAL_ENV') | default('/usr', true) }}/bin"
+    daemon_port: "{{ lookup('env', 'GLUDD_DAEMON_LIFECYCLE_PORT') | default('8767', true) }}"
+    daemon_host: "127.0.0.1"
+    daemon_url: "http://127.0.0.1:{{ daemon_port }}"
+    pidfile: "/tmp/gludd-daemon-lifecycle.pid"
+    logfile: "/tmp/gludd-daemon-lifecycle.log"
+    statefile: "/tmp/gludd-daemon-lifecycle-state.json"
+    socket_dir: "/tmp/gludd-daemon-lifecycle"
+  tasks:
+    - name: Clean any stale state from a previous run
+      ansible.builtin.shell:
+        cmd: >-
+          rm -f {{ pidfile }} {{ statefile }} {{ logfile }}
+          && rm -rf {{ socket_dir }}
+      changed_when: false
+      failed_when: false
+
+    - name: Create socket-tracking directory
+      ansible.builtin.file:
+        path: "{{ socket_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Start the gludd daemon (background, nohup)
+      ansible.builtin.shell:
+        cmd: >-
+          set -o monitor;
+          nohup {{ venv_bin }}/python -m general_ludd.cli daemon
+          --host {{ daemon_host }} --port {{ daemon_port }}
+          --log-level info --workers 1
+          > {{ logfile }} 2>&1 &
+          echo $! > {{ pidfile }};
+      args:
+        chdir: "{{ project_dir }}"
+      environment:
+        GLUDD_PSK_DISABLE: "1"
+        GLUDD_ALLOW_NO_AUTH: "1"
+        PYTHONPATH: "{{ project_dir }}/src"
+      changed_when: true
+
+    - name: Slurp the recorded PID
+      ansible.builtin.slurp:
+        src: "{{ pidfile }}"
+      register: pid_raw
+
+    - name: Parse the daemon PID
+      ansible.builtin.set_fact:
+        daemon_pid: "{{ (pid_raw.content | b64decode).strip() | int }}"
+
+    - name: Poll /healthz for up to 30 seconds
+      ansible.builtin.uri:
+        url: "{{ daemon_url }}/healthz"
+        method: GET
+        status_code: 200
+        return_content: true
+      register: healthz_probe
+      until: healthz_probe.status == 200
+      retries: 30
+      delay: 1
+
+    - name: GET /api/facts
+      ansible.builtin.uri:
+        url: "{{ daemon_url }}/api/facts"
+        method: GET
+        status_code: 200
+        return_content: true
+        body_format: json
+      register: facts_resp
+
+    - name: GET /api/tasks
+      ansible.builtin.uri:
+        url: "{{ daemon_url }}/api/tasks"
+        method: GET
+        status_code: 200
+        return_content: true
+        body_format: json
+      register: tasks_resp
+
+    - name: POST /api/playbook/run with a minimal playbook body
+      ansible.builtin.uri:
+        url: "{{ daemon_url }}/api/playbook/run"
+        method: POST
+        status_code: [200, 201, 202]
+        return_content: true
+        body_format: json
+        body:
+          playbook: "noop.yml"
+          extra_vars: {}
+      register: playbook_resp
+
+    - name: GET /health (public status)
+      ansible.builtin.uri:
+        url: "{{ daemon_url }}/health"
+        method: GET
+        status_code: 200
+        return_content: true
+        body_format: json
+      register: health_resp
+
+    - name: Snapshot pre-shutdown state for verify
+      ansible.builtin.copy:
+        dest: "{{ statefile }}"
+        mode: "0644"
+        content: >-
+          {{
+            {
+              "daemon_pid": daemon_pid,
+              "daemon_url": daemon_url,
+              "daemon_port": daemon_port,
+              "logfile": logfile,
+              "pidfile": pidfile,
+              "socket_dir": socket_dir,
+              "healthz": {
+                "status": healthz_probe.status,
+                "elapsed_retries": healthz_probe.retries | default(0)
+              },
+              "facts": {
+                "status": facts_resp.status,
+                "is_mapping_or_list": (facts_resp.json is mapping or facts_resp.json is sequence)
+              },
+              "tasks": {
+                "status": tasks_resp.status,
+                "is_list": (tasks_resp.json is sequence)
+              },
+              "playbook": {
+                "status": playbook_resp.status,
+                "accepted": (playbook_resp.status in [200, 201, 202])
+              },
+              "health": {
+                "status": health_resp.status,
+                "has_status_field": ("status" in (health_resp.json | default({})))
+              }
+            } | to_nice_json
+          }}
+
+    - name: Send SIGTERM to the daemon
+      ansible.builtin.shell:
+        cmd: "kill -TERM {{ daemon_pid }} || true"
+      changed_when: true
+
+    - name: Wait for the daemon process to exit (up to 15s)
+      ansible.builtin.shell:
+        cmd: >-
+          for i in $(seq 1 150);
+          do
+            if ! kill -0 {{ daemon_pid }} 2>/dev/null; then echo "exited"; break; fi
+            sleep 0.1;
+          done;
+          kill -0 {{ daemon_pid }} 2>/dev/null && echo "alive" || echo "exited"
+      register: exit_probe
+      changed_when: false
+      failed_when: false
+
+    - name: Reap the daemon exit code (wait/waitpid)
+      ansible.builtin.shell:
+        cmd: >-
+          wait {{ daemon_pid }} 2>/dev/null; echo $?
+      register: exit_code_raw
+      changed_when: false
+      failed_when: false
+
+    - name: Verify port released after shutdown
+      ansible.builtin.shell:
+        cmd: >-
+          (nc -z {{ daemon_host }} {{ daemon_port }} && echo "open") || echo "closed"
+      register: port_probe
+      changed_when: false
+      failed_when: false
+
+    - name: Record shutdown outcome into state file
+      ansible.builtin.copy:
+        dest: "{{ statefile }}"
+        mode: "0644"
+        content: >-
+          {{
+            {
+              "daemon_pid": daemon_pid,
+              "daemon_url": daemon_url,
+              "daemon_port": daemon_port,
+              "logfile": logfile,
+              "pidfile": pidfile,
+              "socket_dir": socket_dir,
+              "healthz": {
+                "status": healthz_probe.status,
+                "elapsed_retries": healthz_probe.retries | default(0)
+              },
+              "facts": {
+                "status": facts_resp.status,
+                "is_mapping_or_list": (facts_resp.json is mapping or facts_resp.json is sequence)
+              },
+              "tasks": {
+                "status": tasks_resp.status,
+                "is_list": (tasks_resp.json is sequence)
+              },
+              "playbook": {
+                "status": playbook_resp.status,
+                "accepted": (playbook_resp.status in [200, 201, 202])
+              },
+              "health": {
+                "status": health_resp.status,
+                "has_status_field": ("status" in (health_resp.json | default({})))
+              },
+              "shutdown": {
+                "exit_probe": exit_probe.stdout | default(""),
+                "exit_code_raw": exit_code_raw.stdout | default(""),
+                "port_after_shutdown": port_probe.stdout | default("")
+              }
+            } | to_nice_json
+          }}
+
+    - name: Show converge summary
+      ansible.builtin.debug:
+        msg: >-
+          daemon_pid={{ daemon_pid }}
+          healthz_retries={{ healthz_probe.retries | default(0) }}
+          shutdown_exit_probe={{ exit_probe.stdout | default("?") }}
+          port_after_shutdown={{ port_probe.stdout | default("?") }}

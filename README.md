@@ -61,7 +61,7 @@ make typecheck       # current mypy error count (gate enforces ≤ MYPY_MAX, see
 Known-failing tests are tracked as strict xfail entries in `config/ratchet.yml` (the file
 may only shrink). The gate passes only when `make test` exits 0.
 
-**Status as of v0.1.0-beta.1 — 2026-07-23**
+**Status as of v0.1.0-beta.2 — 2026-07-25**
 
 Version: `v0.1.0-beta.1` — release binaries (Linux x86_64, macOS arm64, Windows x86_64, and
 more) are built as CI artifacts on every push to master, but a GitHub Release is only cut
@@ -230,6 +230,245 @@ The daemon can run on its own codebase:
 ```bash
 make dogfood     # runs the event loop on the gludd repo itself
 ```
+
+## Configuration Guide
+
+This guide covers everything you need to configure gludd for real-world use — from
+zero-config boot to multi-provider routing, custom agents, budget caps, MCP servers,
+and remote deployment. **Every config file is optional; the system ships with safe
+defaults that work out-of-the-box.**
+
+### Configuration Files Overview
+
+gludd loads its configuration from a single directory (discovered via `$GLUDD_CONFIG_DIR`
+→ `~/.config/general-ludd` → `/etc/general-ludd`). The `config/` directory inside the
+repo is a **template library** — copy what you need, or point `GLUDD_CONFIG_DIR` at it.
+
+| File | Required? | Purpose |
+|------|-----------|---------|
+| `config/general-ludd.yml` | No (has defaults) | Main daemon config: network, database, agents, budget |
+| `config/agents/default_agents.yml` | No (has defaults) | Agent definitions: names, roles, permissions, model profiles |
+| `config/model_profiles/*.yml` | No (has defaults) | Model provider configs: API keys, context windows, costs |
+| `config/prompt_profiles/*.yml` | No (has defaults) | System prompts, behavior flags, skills |
+| `config/permissions/*.yml` | No (has defaults) | Path-prefix, host, and TTL permissions per agent/human role |
+
+Supporting files (also optional):
+
+| File | Purpose |
+|------|---------|
+| `config/model_routing.yml` | Routing table: role, quality, latency, and pattern-based model selection |
+| `config/mcp_servers/example.yml` | MCP (Model Context Protocol) server connections |
+| `config/openbao/default.yml` | OpenBao secrets backend (external, auto, or disabled) |
+| `config/ansible/isolation.yml` | Process isolation settings (podman/docker containers for task runs) |
+| `config/binary_paths.yml` | Paths to external binaries (ansible-runner, git, terraform, etc.) |
+
+### Quick Start (Zero Config)
+
+**gludd boots with built-in defaults. No config files need to be created.** The system
+works out-of-the-box:
+
+```bash
+# Zero config — uses sensible defaults for everything
+GLUDD_CONFIG_DIR="$PWD/config" uv run gludd daemon --port 8000
+```
+
+The defaults give you:
+- **Network**: bound to `127.0.0.1:8000` (loopback only — safe for local dev)
+- **Database**: SQLite at `~/.local/share/general-ludd/gludd.db` (auto-created)
+- **Model routing**: routes to `zai_coder` profile (requires `ZAI_API_KEY`)
+- **Agents**: 4 built-in agents — `build`, `plan`, `explore`, `general`, `research`
+- **Budget**: capped at `$50 USD` per session with an 80% warning threshold
+- **Concurrency**: up to 4 concurrent agent runs, 10 concurrent model calls
+
+**The only thing you MUST provide is an API key** for at least one model provider:
+
+```bash
+export ZAI_API_KEY="..."     # default profile
+# OR
+export OPENAI_API_KEY="..."  # then update model_routing to use openai profile
+# OR
+export ANTHROPIC_API_KEY="..."  # then update model_routing to use anthropic profile
+```
+
+### Customizing Your Setup
+
+Real-world scenarios — copy, edit, and restart the daemon to apply.
+
+#### Scenario 1: Use Anthropic Claude Instead of the Default Model
+
+The default model profile is `zai_coder` (Z.AI GLM). To switch to Anthropic Claude:
+
+```bash
+# 1. Copy the example profile into your config dir
+mkdir -p ~/.config/general-ludd/model_profiles
+cp config/model_profiles/anthropic_example.yml \
+   ~/.config/general-ludd/model_profiles/anthropic_claude.yml
+
+# 2. Set your Anthropic API key (never commit it to YAML)
+export ANTHROPIC_API_KEY="sk-ant-..."
+
+# 3. Edit ~/.config/general-ludd/general-ludd.yml to point at the new profile
+```
+
+```yaml
+# ~/.config/general-ludd/general-ludd.yml
+model_routing:
+  default_profile: anthropic_claude
+  weak_model_profile: anthropic_claude
+  role_routing:
+    coder: anthropic_claude
+    planner: anthropic_claude
+    reviewer: anthropic_claude
+```
+
+Restart the daemon, then verify the active profile:
+
+```bash
+gludd models router-status    # must list anthropic_claude as active
+```
+
+#### Scenario 2: Add a Read-Only Reviewer Agent
+
+To add a new agent that can read code and run model calls but cannot edit files or
+execute bash commands, edit `config/agents/default_agents.yml`:
+
+```yaml
+# ~/.config/general-ludd/agents/default_agents.yml
+agents:
+  # ...existing agents (build, plan, explore, general, research)...
+
+  - name: reviewer
+    description: "Read-only code reviewer — analyzes changes, suggests improvements"
+    type: primary
+    model_profile: anthropic_claude     # or any profile you've configured
+    prompt_profile: default
+    max_steps: 10
+    permissions:
+      can_edit: false                   # cannot modify files
+      can_bash: false                   # cannot run shell commands
+      can_read: true                    # can read everything
+      can_dispatch_subagents: true
+      allowed_subagents:
+        - "explore"                     # can fan out read-only explorers
+    max_concurrent: 2
+    enabled: true
+```
+
+Restart the daemon. The new `reviewer` agent appears in `gludd agents list` and can be
+selected via `role_routing.reviewer` in `general-ludd.yml`.
+
+#### Scenario 3: Limit Agent Spending
+
+To cap total spending per session at $10 USD with a 90% warning:
+
+```yaml
+# ~/.config/general-ludd/general-ludd.yml
+budget:
+  max_usd: 10          # hard cap — daemon refuses new model calls once exceeded
+  warn_percent: 90     # emits a warning log + metric event at 90% of cap
+```
+
+The budget tracks **all model calls** across all agents and providers. When the cap is
+hit, the daemon stops dispatching new tasks and emits a `budget_exceeded` event visible
+in `gludd status` and `/api/metrics`. Existing in-flight tasks complete normally.
+
+```bash
+gludd status         # shows current spend vs cap
+curl http://localhost:8000/api/metrics | jq '.spend'
+```
+
+#### Scenario 4: Connect an MCP Server
+
+MCP (Model Context Protocol) servers expose additional tools to agents — filesystems,
+databases, browsers, custom APIs. To connect one:
+
+```bash
+mkdir -p ~/.config/general-ludd/mcp_servers
+cp config/mcp_servers/example.yml ~/.config/general-ludd/mcp_servers/filesystem.yml
+```
+
+Edit the copied file to point at your MCP server:
+
+```yaml
+# ~/.config/general-ludd/mcp_servers/filesystem.yml
+servers:
+  filesystem:
+    command: ["npx", "-y", "@modelcontextprotocol/server-filesystem"]
+    args: ["/path/to/allowed/dir"]   # restrict to a specific directory
+    timeout_seconds: 30
+    enabled: true
+
+  # Add more servers as needed
+  # database:
+  #   command: ["npx", "-y", "@modelcontextprotocol/server-postgres"]
+  #   args: ["postgresql://localhost/mydb"]
+  #   timeout_seconds: 60
+  #   enabled: true
+```
+
+Agents can now invoke MCP tools via the `gludd_mcp_tool` Ansible module:
+
+```yaml
+- name: Read a file via MCP
+  gludd_mcp_tool:
+    server: filesystem
+    tool: read_file
+    args:
+      path: "/path/to/allowed/dir/README.md"
+```
+
+#### Scenario 5: Run gludd on a Remote Server
+
+By default, gludd binds to `127.0.0.1` (loopback only). To expose it on a remote
+host — **and you MUST configure authentication first** (PSK via `GLUDD_PSK` env var) —
+edit `general-ludd.yml`:
+
+```yaml
+# ~/.config/general-ludd/general-ludd.yml
+network:
+  host: 0.0.0.0               # bind to all interfaces
+  port: 8000
+  allowed_cidr:               # restrict to known networks (RECOMMENDED)
+    - "10.0.0.0/8"            # private network
+    - "192.168.0.0/16"        # private network
+    - "203.0.113.42/32"       # specific external IP (e.g. CI runner)
+```
+
+**⚠ Security warning:** Binding to `0.0.0.0` without `allowed_cidr` exposes the daemon
+to the entire network. Always configure both:
+
+1. **PSK auth** — set `GLUDD_PSK` env var to a strong random secret on both the daemon
+   and any client (`gludd --psk "$GLUDD_PSK" ...`).
+2. **CIDR allowlist** — restrict `network.allowed_cidr` to the IPs/networks that need
+   access.
+
+```bash
+# On the remote server
+export GLUDD_PSK="$(openssl rand -hex 32)"
+GLUDD_CONFIG_DIR="/etc/general-ludd" uv run gludd daemon --port 8000
+
+# On a client
+export GLUDD_PSK="<same-secret>"
+gludd --host https://remote.example.com:8000 status
+```
+
+For production deployments, put gludd behind a TLS-terminating reverse proxy (nginx,
+Caddy, Traefik) and let the proxy handle cert management + rate limiting.
+
+### Configuration Discovery — Recap
+
+The full search order (first match wins):
+
+1. **`$GLUDD_CONFIG_DIR`** env var — explicit override (recommended for source checkouts)
+2. **`~/.config/general-ludd/`** — per-user config (XDG-compliant)
+3. **`/etc/general-ludd/`** — system-wide config (for server deployments)
+
+**The repo's `config/` directory is NOT on this path.** It exists as a template
+library — copy from it, or set `GLUDD_CONFIG_DIR="$PWD/config"` to use it directly.
+See the warning under [Start the Daemon](#start-the-daemon) for the common
+"agents succeed instantly but do nothing" trap.
+
+For the full key-by-key reference, see [Configuration Reference](#configuration-reference).
 
 ## Architecture
 

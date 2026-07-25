@@ -46,7 +46,6 @@ SRC_DIR = PROJECT_ROOT / "src" / "general_ludd"
 TESTS_DIR = PROJECT_ROOT / "tests"
 
 ALLOWLIST = (
-    re.compile(r".*/__init__\.py$"),
     re.compile(r".*/__pycache__/.*"),
     re.compile(r".*\.pyi$"),
     re.compile(r".*/typing\.py$"),
@@ -125,6 +124,22 @@ def _is_allowlisted(path: Path) -> bool:
         if pattern.search(path_str):
             return True
     return False
+
+
+def _is_init_in_empty_dir(path: Path) -> bool:
+    if path.name != "__init__.py":
+        return False
+    parent = path.parent
+    if not parent.is_dir():
+        return False
+    try:
+        siblings = [
+            p for p in parent.iterdir()
+            if p.is_file() and p.suffix == ".py" and p.name != "__init__.py"
+        ]
+    except OSError:
+        return False
+    return len(siblings) == 0
 
 
 def _module_path(src_file: Path) -> str:
@@ -288,6 +303,8 @@ def main(argv: list[str]) -> int:
 
     for src_file in src_files:
         if _is_allowlisted(src_file):
+            continue
+        if _is_init_in_empty_dir(src_file):
             continue
 
         checked += 1

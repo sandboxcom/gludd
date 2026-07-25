@@ -1,0 +1,44 @@
+---
+# Prepare (runs on the CONTROLLER, before the container consumes the binary):
+# ensure the gludd Linux binary exists at dist/gludd. Building it here (rather
+# than in converge) keeps the heavy PyInstaller step off the scenario's critical
+# path and makes converge a pure copy+run. Idempotent via `creates`.
+- name: Prepare - ensure the built gludd binary exists on the controller
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    project_dir: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+    binary_path: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/dist/gludd"
+  tasks:
+    - name: Sanity-check the project directory is set
+      ansible.builtin.assert:
+        that:
+          - project_dir | length > 0
+          - project_dir != "None"
+        fail_msg: "MOLECULE_PROJECT_DIRECTORY is unset; cannot locate dist/gludd."
+
+    - name: Build the gludd binary if it is missing (make build-executable)
+      ansible.builtin.command: "make build-executable"
+      args:
+        chdir: "{{ project_dir }}"
+        creates: "{{ binary_path }}"
+      register: _build
+
+    - name: Confirm dist/gludd exists
+      ansible.builtin.stat:
+        path: "{{ binary_path }}"
+      register: _bin
+
+    - name: Assert the binary is present and executable
+      ansible.builtin.assert:
+        that:
+          - _bin.stat.exists | bool
+          - _bin.stat.executable | bool
+        fail_msg: >
+          dist/gludd not found or not executable after build.
+          Run `make build-executable` on the controller and re-run this scenario.
+
+    - name: Report binary path
+      ansible.builtin.debug:
+        msg: "gludd binary ready: {{ binary_path }} (built={{ _build.changed }})"

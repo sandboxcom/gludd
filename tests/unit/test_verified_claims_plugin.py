@@ -22,6 +22,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).parent.parent.parent
 PLUGIN_PATH = ROOT / ".opencode" / "plugin" / "enforce-verified-claims.ts"
+EXPORTS_PATH = ROOT / ".opencode" / "lib" / "plugin_test_exports.ts"
 OPENCODE_JSON = ROOT / "opencode.json"
 
 
@@ -29,8 +30,12 @@ def _plugin_source() -> str:
     return PLUGIN_PATH.read_text()
 
 
+def _exports_source() -> str:
+    return EXPORTS_PATH.read_text()
+
+
 def _extract_done_words(src: str) -> list[str]:
-    """Pull the DONE_WORDS string-literal entries out of the plugin source.
+    """Pull the DONE_WORDS string-literal entries out of the exports source.
 
     Accepts either `export const DONE_WORDS = [...]` or a plain const. Returns
     each quoted string entry, lower-cased so the matcher is case-insensitive.
@@ -40,7 +45,7 @@ def _extract_done_words(src: str) -> list[str]:
         src,
         re.DOTALL,
     )
-    assert m, "DONE_WORDS named export must be present in plugin source"
+    assert m, "DONE_WORDS named export must be present in exports source"
     return [w.lower() for w in re.findall(r'"([^"]+)"', m.group(1))]
 
 
@@ -99,7 +104,7 @@ def _has_evidence(text: str, patterns: list[str]) -> bool:
 
 def _verdict(text: str) -> str:
     """Return 'block' or 'allow' per the plugin's shouldBlock logic."""
-    src = _plugin_source()
+    src = _exports_source()
     done_words = _extract_done_words(src)
     evidence = _extract_evidence_patterns(src)
     not_done = _extract_not_done_phrases(src)
@@ -136,15 +141,15 @@ class TestPluginStructure:
         )
 
     def test_exports_done_words(self):
-        src = _plugin_source()
+        src = _exports_source()
         assert "DONE_WORDS" in src, "DONE_WORDS named export missing"
 
     def test_exports_evidence_patterns(self):
-        src = _plugin_source()
+        src = _exports_source()
         assert "EVIDENCE_PATTERNS" in src, "EVIDENCE_PATTERNS named export missing"
 
     def test_exports_should_block_function(self):
-        src = _plugin_source()
+        src = _exports_source()
         assert re.search(
             r"export\s+(async\s+)?function\s+shouldBlock|"
             r"export\s+const\s+shouldBlock",
@@ -182,7 +187,7 @@ class TestPluginStructure:
 # --------------------------------------------------------------------------- #
 class TestDoneWordsContract:
     def test_required_done_words_present(self):
-        words = _extract_done_words(_plugin_source())
+        words = _extract_done_words(_exports_source())
         required = [
             "landed", "committed", "pushed", "fixed", "passing",
             "shipped", "done", "complete", "green", "resolved",
@@ -358,4 +363,171 @@ class TestToolExecuteBefore:
         # The regex only matches commit targets; everything else falls through.
         assert "cmd.startsWith" in src, (
             "tool.execute.before must check cmd.startsWith('make ') before matching"
+        )
+
+
+# --------------------------------------------------------------------------- #
+# Coverage-claim enforcement (DC.5)
+# --------------------------------------------------------------------------- #
+
+def _extract_completion_finality_patterns(src: str) -> list[str]:
+    m = re.search(
+        r"(?:export\s+)?const\s+COMPLETION_FINALITY_PATTERNS[^=]*=\s*\[(.*?)\]",
+        src,
+        re.DOTALL,
+    )
+    assert m, "COMPLETION_FINALITY_PATTERNS named export must be present"
+    return re.findall(r"/([^/]+)/[a-z]*", m.group(1))
+
+
+def _extract_coverage_target(src: str) -> float:
+    m = re.search(
+        r"(?:export\s+)?const\s+COVERAGE_TARGET\s*=\s*([\d.]+)",
+        src,
+    )
+    assert m, "COVERAGE_TARGET named export must be present"
+    return float(m.group(1))
+
+
+def _has_coverage_finality_claim(text: str, patterns: list[str]) -> bool:
+    for pat in patterns:
+        if re.search(pat, text, re.IGNORECASE):
+            return True
+    return False
+
+
+class TestCoverageClaimContract:
+    def test_coverage_target_exported(self):
+        target = _extract_coverage_target(_exports_source())
+        assert target == 0.85, f"COVERAGE_TARGET must be 0.85, got {target}"
+
+    def test_completion_finality_patterns_exported(self):
+        patterns = _extract_completion_finality_patterns(_exports_source())
+        assert len(patterns) >= 1, (
+            "COMPLETION_FINALITY_PATTERNS must contain at least 1 pattern"
+        )
+
+    def test_plugin_imports_should_block_coverage_claim(self):
+        src = _plugin_source()
+        assert "shouldBlockCoverageClaim" in src, (
+            "plugin must import shouldBlockCoverageClaim from plugin_test_exports"
+        )
+
+    def test_plugin_has_text_complete_for_coverage(self):
+        src = _plugin_source()
+        assert "experimental.text.complete" in src, (
+            "plugin must register experimental.text.complete hook"
+        )
+        assert "COVERAGE_BLOCK" in src, (
+            "plugin must define COVERAGE_BLOCK message"
+        )
+
+
+class TestCoverageClaimMatcher:
+    def test_final_e2e_push_at_low_coverage_blocked(self):
+        """final E2E push at 68% → block."""
+        assert _coverage_verdict("final E2E push at 68% coverage") == "block"
+
+    def test_final_e2e_push_at_high_coverage_allowed(self):
+        """final E2E push at 92% → allow."""
+        assert _coverage_verdict("final E2E push at 92% coverage") == "allow"
+
+    def test_final_e2e_push_without_percentage_blocked(self):
+        """final E2E push with no coverage % → block (suspicious claim)."""
+        assert _coverage_verdict("final E2E push") == "block"
+
+    def test_complete_coverage_wave_at_50pct_blocked(self):
+        """complete coverage wave at 50% → block."""
+        assert _coverage_verdict("complete coverage wave at 50%") == "block"
+
+    def test_no_finality_claim_allows_any_coverage(self):
+        """Text with coverage % but no finality claim → allow."""
+        assert _coverage_verdict("coverage currently at 68%, working to improve") == "allow"
+
+    def test_other_text_passes_through(self):
+        """Ordinary text without final/coverage claims → allow."""
+        assert _coverage_verdict("fixed the build config, abc1234") == "allow"
+
+
+def _coverage_verdict(text: str) -> str:
+    exports_src = _exports_source()
+    patterns = _extract_completion_finality_patterns(exports_src)
+    if not _has_coverage_finality_claim(text, patterns):
+        return "allow"
+    cov_match = re.search(
+        r"(?:coverage|at)\s*(?:is\s*)?(\d+(?:\.\d+)?)\s*%",
+        text,
+        re.IGNORECASE,
+    )
+    if cov_match:
+        pct = float(cov_match.group(1)) / 100
+        if pct >= 0.85:
+            return "allow"
+    return "block"
+
+
+# --------------------------------------------------------------------------- #
+# Script: check_coverage_claim.py structural + behavioral
+# --------------------------------------------------------------------------- #
+class TestCheckCoverageClaimScript:
+    SCRIPT = ROOT / "scripts" / "check_coverage_claim.py"
+
+    def test_script_exists(self):
+        assert self.SCRIPT.exists(), (
+            "scripts/check_coverage_claim.py must exist"
+        )
+
+    def test_script_is_executable(self):
+        assert self.SCRIPT.stat().st_mode & 0o111, (
+            "scripts/check_coverage_claim.py must be executable"
+        )
+
+    def test_script_defines_coverage_target(self):
+        src = self.SCRIPT.read_text()
+        assert "COVERAGE_TARGET" in src and "0.85" in src, (
+            "script must define COVERAGE_TARGET = 0.85"
+        )
+
+    def test_script_explicit_msg_flag(self):
+        """--msg flag must override git log for pre-commit usage."""
+        import subprocess
+        result = subprocess.run(
+            ["python3", str(self.SCRIPT), "--msg", "final e2e push at 50% coverage"],
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 1, (
+            f"--msg 'final e2e push at 50%' should exit 1, got {result.returncode}"
+        )
+        assert "BLOCKED" in result.stdout, (
+            "script must print BLOCKED for false claim"
+        )
+
+    def test_script_clean_msg_passes(self):
+        import subprocess
+        result = subprocess.run(
+            ["python3", str(self.SCRIPT), "--msg", "fix: update CI config"],
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 0, (
+            f"clean message should exit 0, got {result.returncode}"
+        )
+
+    def test_script_high_coverage_passes(self):
+        import subprocess
+        result = subprocess.run(
+            ["python3", str(self.SCRIPT), "--msg", "final e2e push at 92% coverage"],
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 0, (
+            f"high-coverage claim should exit 0, got {result.returncode}"
+        )
+
+    def test_script_coverage_override_flag(self):
+        import subprocess
+        result = subprocess.run(
+            ["python3", str(self.SCRIPT), "--msg", "final e2e push", "--coverage", "0.90"],
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 0, (
+            f"--coverage 0.90 should exit 0 (above target), got {result.returncode}"
         )

@@ -1,0 +1,33 @@
+# Example tfvars for `make onboard-iam-gcp` — the GCP service-account IAM module.
+# Real values never live here — placeholders only. At apply time the
+# TerraformGenerator composer writes a real terraform.tfvars into a tempdir
+# from ComputeConfig + SecretsManager (see TERRAFORM_INFRA_STRUCTURE.md §8).
+#
+# Copy to terraform.tfvars and fill in, OR pass via -var-file at apply time.
+
+# GCP project id where gludd provisions GPU instances. REQUIRED — no default.
+# Find at: gcloud config get-value project
+project_id = "your-gcp-project-id"
+
+# Service-account id (account_id) for the gludd operator. Default:
+# gludd-compute-operator. The SA is granted compute.instanceAdmin.v1
+# (scoped instance create/destroy, NOT full compute.admin),
+# compute.securityAdmin (firewall rules), iam.serviceAccountUser (self-attach
+# to instances), and logging.logWriter (runtime logs). Role set pinned by
+# tests/unit/test_onboard_gcp.py.
+service_account_name = "gludd-compute-operator"
+
+# Human-readable display name for the service account in the GCP console.
+# Default: "Gludd compute operator (ephemeral GPU provisioning)".
+display_name = "Gludd compute operator (ephemeral GPU provisioning)"
+
+# Whether to create a service-account JSON key for local/CI auth. DISABLED by
+# default — prefer Application Default Credentials (gcloud auth
+# application-default login). Set to true only when ADC is not available (CI
+# runners, restricted environments). The key is marked sensitive in outputs.
+create_key = false
+
+# gcp_credentials are NOT included — they come from the standard GCP provider
+# chain (env / gcloud ADC / attached service account) per SecretsManager,
+# never tfvars. The module reads the project from var.project_id; you do not
+# need to set GOOGLE_PROJECT separately.

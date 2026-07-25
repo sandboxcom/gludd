@@ -1,0 +1,134 @@
+# Model Input Format Profile: GLM (ZhipuAI / ChatGLM)
+# ====================================================
+# PURPOSE: Document GLM's preferred input format for prompt construction.
+# Used by the gludd prompt renderer to adapt system prompts, context blocks,
+# and separator tokens per model.
+#
+# SOURCES:
+#   - https://docs.bigmodel.cn/ (ZhipuAI GLM official documentation, 2026)
+#   - https://open.bigmodel.cn/ (ZhipuAI platform)
+#   - GLM-4 technical reports
+
+format_profile_id: glm_format
+target_models:
+  - glm-4
+  - glm-4-flash
+  - glm-4-plus
+  - glm-4-air
+  - glm-4-long
+  - chatglm-3-turbo
+  - cogview (image generation)
+
+# --- Prompt Structure ---
+
+system_prompt_wrapper: Markdown + Structured
+# GLM uses OpenAI-compatible API format.
+# System prompt via 'system' role in messages array.
+# Both plain text, markdown, and structured formats work.
+# Chinese-optimized; handles bilingual naturally.
+
+system_prompt_role: system
+# Standard 'system' role in OpenAI-compatible interface.
+# Supports system prompt with role-based message format.
+# Chinese system prompts yield Chinese-style responses.
+
+context_block_format: |
+  ## 参考信息 / Reference
+  {content}
+# GLM handles markdown section headers.
+# Bilingual labels (CN/EN) work naturally.
+# Table-structured context is particularly effective for GLM.
+# Keep context organized with clear section demarcation.
+
+# --- Separators & Formatting ---
+
+separator_token: Markdown headers (##) + section breaks
+# Markdown section headers work well.
+# Clear visual separation between sections improves accuracy.
+
+code_block_style: fenced
+# Triple-backtick with language identifier.
+# GLM handles code generation and code comprehension well.
+
+table_preference: markdown_table
+# Markdown tables strongly preferred.
+# GLM is particularly good at structured data in tables.
+# JSON for structured extraction.
+
+citation_format: inline_text
+# No built-in citation annotations.
+# Use inline references or markdown footnote-style citations.
+
+# --- Token & Context Parameters ---
+
+context_window: 128000
+# GLM-4 standard: 128K tokens.
+# GLM-4-Long: extended context (varies by model version).
+# GLM-4-Flash: cost-optimized, same 128K window.
+# Token ratio: ~1 Chinese character = 1 token; ~1 English word = 1 token.
+
+max_effective_prompt: 115000
+# Leave ~10% for output.
+# Chinese text: roughly 1.6 tokens per character (varies by tokenizer).
+# Check actual usage via response.usage for precise tracking.
+
+max_output_tokens: 4096
+prompt_caching_supported: false
+# No documented prompt caching API.
+# ZhipuAI platform may implement caching internally.
+
+# --- Behavioral Quirks ---
+
+known_quirks:
+  - "Chinese-first optimization: Chinese prompts may yield better quality for CN content"
+  - "Bilingual (CN+EN) prompts handled gracefully; code-switching is natural"
+  - "Token ratio: ~1 token per Chinese word, ~1.6 tokens per character (verify per model)"
+  - "Context window exceeded errors return clearly — check usage.total_tokens"
+  - "OpenAI SDK compatible: use with langchain-openai or direct openai package"
+  - "GLM-4 model family: various sizes (Plus, Air, Flash) for different cost/quality tradeoffs"
+  - "Supports function calling in OpenAI-compatible format"
+  - "Web search integration available through Zhipu platform"
+  - "Knowledge base retrieval available for RAG applications"
+
+undocumented_preferences:
+  - "Structured dialogue format (clear Q&A patterns) improves response quality"
+  - "Table-heavy input is handled particularly well compared to some Western models"
+  - "Chinese technical terms mixed with English (e.g., '使用 Transformer 架构') is natural to GLM"
+  - "System prompt in the user's language sets response language preference"
+  - "Code + Chinese comment mixing is well-supported (common in CN development)"
+
+# --- Formatting Weights (0-1, relative importance for prompt adaptation) ---
+
+formatting_weights:
+  markdown_headers: 0.8       # Effective for section organization
+  xml_structure: 0.5          # Not primary preference; markdown is better
+  json_data: 0.8              # Good JSON handling for structured data
+  fenced_code_blocks: 0.8     # Code blocks well-supported
+  numbered_lists: 0.7         # Works for sequential instructions
+  bullet_lists: 0.7           # Works well
+  tables: 0.9                 # VERY STRONG: GLM excels at table-structured data
+  inline_formatting: 0.6      # Standard markdown
+  role_prefixes: 0.7          # "You are a [role]" is effective
+  whitespace_separators: 0.7  # Clean sections help
+  chinese_language: 1.0       # NATIVE: Chinese is the model's primary language
+  structured_dialogue: 0.8    # Structured Q&A format improves quality
+  structured_data: 0.9        # Tables, JSON, CSV all handled well
+
+# --- Multi-turn Conversation ---
+
+multi_turn_format:
+  approach: openai_compatible
+  # Standard OpenAI-compatible messages array.
+  # System prompt at messages[0] with role='system'.
+  # User/assistant turns alternate.
+  # Context window includes all prior messages + current output.
+  # Check total_tokens in response.usage for window monitoring.
+
+# --- Tool Use ---
+
+tool_use_format: openai_compatible
+# OpenAI-compatible function calling.
+# Tools defined in tools[] array with JSON Schema.
+# Tool calling available in GLM-4 series.
+# Also supports web search and knowledge base retrieval via platform-specific APIs
+#   (not through standard function calling).

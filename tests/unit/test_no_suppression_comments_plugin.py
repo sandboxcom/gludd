@@ -21,6 +21,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).parent.parent.parent
 PLUGIN_PATH = ROOT / ".opencode" / "plugin" / "enforce-no-suppressions.ts"
+EXPORTS_PATH = ROOT / ".opencode" / "lib" / "plugin_test_exports.ts"
 OPENCODE_JSON = ROOT / "opencode.json"
 
 # Spec-defined forbidden patterns (the source of truth — the plugin MUST
@@ -53,7 +54,7 @@ def _extract_regex_array(src: str) -> list[str]:
     )
     assert m, (
         "SUPPRESSION_PATTERNS named export must be present in "
-        "enforce-no-suppressions.ts (per task spec — expose the matcher as a "
+        "plugin_test_exports.ts (per task spec — expose the matcher as a "
         "named export so this test can pin its behavior)."
     )
     body = m.group(1)
@@ -112,13 +113,12 @@ class TestPluginStructure:
         )
 
     def test_exports_named_matcher(self):
-        src = PLUGIN_PATH.read_text()
-        # The task spec requires the matcher be exposed as a named export.
+        src = EXPORTS_PATH.read_text()
         assert re.search(
             r"export\s+(async\s+)?function\s+isSuppression|"
             r"export\s+const\s+isSuppression",
             src,
-        ), "plugin must export a named matcher function (isSuppression*)"
+        ), "exports must have a named matcher function (isSuppression*)"
 
     def test_deny_message_text_present(self):
         src = PLUGIN_PATH.read_text()
@@ -157,7 +157,7 @@ class TestExtractedPatterns:
     """Validate that the patterns exported by the plugin equal the spec."""
 
     def test_pattern_count_matches_spec(self):
-        src = PLUGIN_PATH.read_text()
+        src = EXPORTS_PATH.read_text()
         patterns = _extract_regex_array(src)
         assert len(patterns) == len(SPEC_PATTERNS), (
             f"plugin exports {len(patterns)} patterns; spec requires "
@@ -165,7 +165,7 @@ class TestExtractedPatterns:
         )
 
     def test_each_spec_pattern_is_present(self):
-        src = PLUGIN_PATH.read_text()
+        src = EXPORTS_PATH.read_text()
         patterns = _extract_regex_array(src)
         for spec in SPEC_PATTERNS:
             # The plugin's pattern body must equal the spec regex (modulo
@@ -181,7 +181,7 @@ class TestExtractedPatterns:
 
 class TestAllowlistExport:
     def test_allowlist_contains_required_paths(self):
-        src = PLUGIN_PATH.read_text()
+        src = EXPORTS_PATH.read_text()
         allowlist = _extract_allowlist(src)
         for required in SPEC_ALLOWLIST:
             assert required in allowlist, (
@@ -203,7 +203,7 @@ class TestMatcherVerdicts:
 
     @classmethod
     def setup_class(cls):
-        src = PLUGIN_PATH.read_text()
+        src = EXPORTS_PATH.read_text()
         cls.patterns = _extract_regex_array(src)
         cls.allowlist = _extract_allowlist(src)
 

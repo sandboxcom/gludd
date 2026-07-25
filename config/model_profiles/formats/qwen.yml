@@ -1,0 +1,128 @@
+# Model Input Format Profile: Qwen (Alibaba)
+# ====================================================
+# PURPOSE: Document Qwen's preferred input format for prompt construction.
+# Used by the gludd prompt renderer to adapt system prompts, context blocks,
+# and separator tokens per model.
+#
+# SOURCES:
+#   - https://huggingface.co/Qwen/Qwen3-235B-A22B (Qwen3 model card, 2025)
+#   - https://qwen.readthedocs.io/en/latest/ (Qwen documentation)
+#   - https://huggingface.co/Qwen (organization page)
+
+format_profile_id: qwen_format
+target_models:
+  - qwen3-coder
+  - qwen3-235b-a22b
+  - qwen3-30b-a3b
+  - qwen3-4b
+  - qwen2.5-coder
+
+# --- Prompt Structure ---
+
+system_prompt_wrapper: Markdown + Chat Template
+# Qwen3 uses HuggingFace chat template with Jinja2.
+# OpenAI-compatible API; system prompt via 'system' role.
+# Markdown formatting works well; Chinese-optimized.
+# Qwen3 has native thinking/non-thinking mode toggle.
+
+system_prompt_role: system
+# Standard OpenAI-compatible 'system' role.
+# Qwen3 supports /think and /no_think in user input to toggle thinking per-turn.
+# When enable_thinking=True, output wrapped in <think>...</think>.
+
+context_block_format: |
+  ### Reference: {name}
+  <context>
+  {content}
+  </context>
+# Qwen handles markdown + XML context blocks well.
+# 100+ language support; Chinese + English in same prompt is natural.
+# Long-context support: 32K native, 131K with YaRN.
+
+# --- Separators & Formatting ---
+
+separator_token: Markdown headers (###) + XML tags
+# Standard markdown section separators.
+# XML tags for content delineation (Qwen-3 understands XML structure).
+
+code_block_style: fenced
+# Triple-backtick with language identifier.
+# Qwen2.5/3 Coder models are optimized for code generation.
+
+table_preference: markdown_table
+# Markdown tables well-supported.
+# JSON for structured data.
+# Qwen handles Chinese tables naturally.
+
+citation_format: inline_text
+# No built-in citation annotations.
+# Use inline references or markdown links.
+
+# --- Token & Context Parameters ---
+
+context_window: 32768
+# Qwen3 native: 32,768 tokens.
+# With YaRN scaling: 131,072 tokens (4x extension).
+# rope_scaling config in config.json or via CLI flags.
+
+max_effective_prompt: 28000
+# Leave ~15% for output. Qwen3 recommends output length of 32,768 for most queries.
+# For competition-level math/code: max output 38,912.
+
+max_output_tokens: 4096
+prompt_caching_supported: false
+# No explicit context caching API documented.
+
+# --- Behavioral Quirks ---
+
+known_quirks:
+  - "THINKING MODE: DO NOT use greedy decoding — causes performance degradation and endless repetition"
+  - "thinking mode sampling: Temp=0.6, TopP=0.95, TopK=20, MinP=0"
+  - "non-thinking mode sampling: Temp=0.7, TopP=0.8, TopK=20, MinP=0"
+  - "thinking/non-thinking switch: enable_thinking=True in tokenizer.apply_chat_template()"
+  - "/think and /no_think commands in user prompt for dynamic per-turn switching"
+  - "When enable_thinking=True, output ALWAYS wrapped in <think>...</think> (may be empty)"
+  - "When enable_thinking=False, /think and /no_think have NO effect"
+  - "presence_penalty 0-2 can reduce repetition but may cause language mixing"
+  - "Multi-turn: historical model output should exclude thinking content (handled by Jinja2 template)"
+  - "For math: add 'Please reason step by step, put final answer within \boxed{}.'"
+  - "For MCQs: add JSON output format with 'answer' field"
+
+undocumented_preferences:
+  - "Chinese-first optimization shows in code-comment mixing behavior"
+  - "System prompt in Chinese yields Chinese response style; English prompt yields English style"
+  - "Performance drops on short texts when YaRN is enabled; only enable for long contexts"
+  - "Agent/tool-calling best handled through Qwen-Agent framework, not raw tool definitions"
+  - "Qwen3 Agentic performance is leading among open-source models"
+
+# --- Formatting Weights (0-1, relative importance for prompt adaptation) ---
+
+formatting_weights:
+  markdown_headers: 0.8       # Effective for section organization
+  xml_structure: 0.6          # Understood but not primary preference
+  json_data: 0.8              # Good JSON handling; use for structured output
+  fenced_code_blocks: 0.9     # Coder models excel with code blocks
+  numbered_lists: 0.7         # Works well for instruction sequences
+  bullet_lists: 0.7           # Works well
+  tables: 0.8                 # Strong table comprehension (CN+EN)
+  inline_formatting: 0.6      # Standard markdown
+  role_prefixes: 0.8          # "You are a [role]" is effective
+  whitespace_separators: 0.6  # Clean sections help
+  chinese_language: 0.9       # Chinese prompts are fully native
+
+# --- Multi-turn Conversation ---
+
+multi_turn_format:
+  approach: chat_template
+  # Qwen3 uses Jinja2 chat template from HuggingFace tokenizer.
+  # Standard OpenAI-compatible messages array.
+  # In thinking mode: exclude historical thinking content from next turn.
+  # The chat template handles this automatically when using apply_chat_template().
+
+# --- Tool Use ---
+
+tool_use_format: qwen_agent
+# Qwen-Agent framework is the recommended way to use tool calling.
+# Supports MCP server configuration.
+# OpenAI-compatible function calling also possible.
+# Tool calling works in both thinking and non-thinking modes.

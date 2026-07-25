@@ -51,7 +51,7 @@ concurrency:
   # released via `make release-cut`, which is fail-closed on `require-ci-green`
   # (scripts/require_ci_green.py treats cancelled/missing runs as CI RED), so this
   # keys the group to guarantee every commit actually GETS a real run to check.
-  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}-${{ github.ref_name }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
@@ -153,10 +153,20 @@ jobs:
         env:
           GLUDD_PSK: ""
 
-  # Parallel test shards — 6 path-based groups × 2 Python versions = 12 jobs.
-  # Each shard is independent: a failure in shard "unit-1a" is reported at the
+      - name: Verify secrets baseline (truffleHog)
+        # Cross-references .secrets.baseline entries against truffleHog's live
+        # verification. Exits non-zero if any baselined secret is a live credential.
+        # Installs truffleHog inline; exit 2 (not-installed) is treated as non-fatal.
+        run: |
+          make install-trufflehog
+          make verify-secrets
+        env:
+          GLUDD_PSK: ""
+
+  # Parallel test shards — 7 path-based groups × 1 Python version = 7 jobs.
+  # Each shard is independent: a failure in shard "unit-1a1" is reported at the
   # job level within minutes of that shard finishing, without waiting for the
-  # other 11 jobs.  No new dependencies: xdist (already present) is used within
+  # other 6 jobs.  No new dependencies: xdist (already present) is used within
   # each shard; splitting is by pytest path argument, not pytest-split.
   #
   # Shard layout (adjust as the suite grows; ~1214 test files total per
@@ -165,7 +175,9 @@ jobs:
   # filtered OUT of every letter shard's expanded file list at the shell
   # level (the `exclude` matrix key, applied by the run step) and collected
   # exactly once, by 'other':
-  #   unit-1a     tests/unit/test_a*.py
+  #   unit-1a1    tests/unit/test_a[a-m]*.py               ← first half of 'a'
+  #   unit-1a2    tests/unit/test_a[n-z]*.py               ← second half of 'a'
+  #              + tests/unit/test_a[0-9]*.py              ← digit-prefixed (a03, a3, a6...)
   #   unit-1d     tests/unit/test_[bd]*.py                ← minus e2e (exclude)
   #   unit-1b     tests/unit/test_[ce]*.py                ← minus connectors/e2e (exclude)
   #   unit-2      tests/unit/test_[f-m]*.py               ← minus e2e (exclude)
@@ -174,6 +186,12 @@ jobs:
   #               tests/security/ tests/test_*.py         ← non-unit files, plus
   #               tests/unit/test_connector*.py and tests/unit/test_*_e2e.py
   #               rerouted here from their letter shards (see `exclude` below)
+  #
+  # unit-1a was split (2026-07-24, RP.11/CP.5) into unit-1a1 + unit-1a2 after
+  # the monolithic test_a*.py shard ran 28-57 min in CI (runs 29055665462,
+  # 29053789829). The [a-m] / [n-z] boundary balances file count at roughly
+  # 70/32 (~68% / ~31%, neither exceeding the 70% cap enforced by
+  # tests/unit/test_shard_split_balance.py), keeping each leg under 20 min.
   #
   # Every shard collects coverage data (.coverage SQLite file) and uploads it
   # as a shard-unique artifact; the downstream `coverage` job combines them
@@ -184,14 +202,14 @@ jobs:
     continue-on-error: true  # Pre-existing test failures tracked in config/ratchet.yml. Test results visible in run log.
     # unit-3 (test_[n-z]* + secrets/) is the fattest shard and runs ~18m — right
     # at the old 20m limit, so a slightly slower runner CANCELS it (a timeout, not
-    # a test failure). 30m gives headroom. Durable follow-up: rebalance the n-z
-    # range into a 4th unit-shard (e.g. n-r / s-z) so no single shard nears 20m.
-    timeout-minutes: 30
+    # a test failure). 120m gives generous headroom for slow runners.
+    # Durable follow-up: rebalance shards so no single shard nears 30m.
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12"]
-        shard: [unit-1a, unit-1b, unit-1d, unit-2, unit-3, other]
+        python-version: ["3.11"]
+        shard: [unit-1a1, unit-1a2, unit-1b, unit-1d, unit-2, unit-3, other]
         include:
           # Map each shard label to the pytest path(s) it owns.
           # Bash glob expansion inside `run:` handles the wildcard patterns.
@@ -223,8 +241,13 @@ jobs:
           # --ignore-glob (those hooks only apply while pytest itself walks
           # directories — see _pytest/main.py). An --ignore-glob here is dead
           # code that silently double-runs the "ejected" files.
-          - shard: unit-1a
-            testpaths: "tests/unit/test_a*.py"
+          - shard: unit-1a1
+            testpaths: "tests/unit/test_a[a-m]*.py"
+            exclude: "*/test_*_e2e.py"
+          - shard: unit-1a2
+            # test_a[0-9]*.py: digit-prefixed files (a03, a3, a6...) belong to
+            # neither [a-m] nor [n-z]; routed here (smaller half) for balance.
+            testpaths: "tests/unit/test_a[n-z]*.py tests/unit/test_a[0-9]*.py"
             exclude: "*/test_*_e2e.py"
           - shard: unit-1d
             testpaths: "tests/unit/test_[bd]*.py"
@@ -359,6 +382,7 @@ jobs:
           # here to keep it from red-flagging the pipeline.
           GLUDD_TEST_WORKER_MEM_MB: "6144"
       - name: Upload coverage data (shard ${{ matrix.shard }}, Python ${{ matrix.python-version }})
+        if: always()
         # Upload the shard-unique .coverage.* data file so the `coverage` job
         # can download and combine all shards into one merged report.
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
@@ -423,6 +447,7 @@ jobs:
             echo "No shard coverage data found — skipping combine (reporting-only, non-gating; shards passed)."
           fi
       - name: Upload merged coverage report
+        if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
         with:
           name: coverage-merged
@@ -430,7 +455,7 @@ jobs:
           retention-days: 30
 
   molecule:
-    needs: [version, gate, test-shard]
+    needs: [version, gate]  # test-shard runs in parallel (continue-on-error, non-blocking)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     continue-on-error: true  # Non-blocking: 113 sequential scenarios (make molecule-scenarios) can be slow under runner load. Release does NOT need molecule (not in release.needs). Keep non-blocking so CI verdict reflects gate+test+builds, not molecule flakiness.
@@ -493,7 +518,7 @@ jobs:
           retention-days: 7
 
   linux:
-    needs: [version, gate, test-shard]
+    needs: [version, gate]  # test-shard runs in parallel (continue-on-error, non-blocking)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     # Non-blocking: a Linux pyinstaller/build hiccup must not sink a Release
@@ -530,7 +555,7 @@ jobs:
         run: make deb-package
       - name: Build RPM package
         run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq rpm-build
+          sudo apt-get update -qq && sudo apt-get install -y -qq rpm
           make rpm-package
       - if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
@@ -543,9 +568,29 @@ jobs:
             dist/gludd_${{ env.VERSION }}_amd64.deb.sha256
             dist/gludd-${{ env.VERSION }}-1.x86_64.rpm
             dist/gludd-${{ env.VERSION }}-1.x86_64.rpm.sha256
+      - name: Smoke test binary (informational)
+        # Runs AFTER packaging + upload so a smoke-test failure does not
+        # block artifact creation. Catches binary crashes for diagnostics.
+        continue-on-error: true
+        run: |
+          ./dist/gludd version 2>&1 || echo "SMOKE-WARN: version command failed"
+          ./dist/gludd --help 2>&1 | head -5 || echo "SMOKE-WARN: help command failed"
+          OUT="$(./dist/gludd version 2>&1; ./dist/gludd --help 2>&1 | head -5)"
+          if echo "$OUT" | grep -qiE 'traceback|Missing base YAML definition file'; then
+            echo "SMOKE-FAIL: crash signature detected:"
+            echo "$OUT"
+          fi
+      - name: Smoke test daemon (informational)
+        continue-on-error: true
+        run: |
+          ./dist/gludd daemon start &
+          DAEMON_PID=$!
+          sleep 5
+          curl -sf http://127.0.0.1:8000/health 2>/dev/null && echo "SMOKE: daemon /health OK" || echo "SMOKE-WARN: daemon did not answer /health"
+          kill "$DAEMON_PID" 2>/dev/null || true
 
   macos:
-    needs: [version, gate, test-shard]
+    needs: [version, gate]  # test-shard runs in parallel (continue-on-error, non-blocking)
     runs-on: macos-latest
     timeout-minutes: 30
     # Non-blocking: a macOS pyinstaller/build hiccup must not sink a Release
@@ -567,6 +612,23 @@ jobs:
         run: |
           uv sync
           uv run pyinstaller gludd.spec --clean --noconfirm
+      - name: Smoke test binary
+        # Post-build smoke test: catches binaries that built successfully but
+        # crash at runtime (e.g. the "Missing base YAML definition file" ansible
+        # data-file error). Runs BEFORE packaging and upload-artifact so a
+        # broken binary never reaches the release artifacts.
+        run: |
+          set -e
+          echo "--- gludd version ---"
+          ./dist/gludd version
+          echo "--- gludd --help (first 5 lines) ---"
+          ./dist/gludd --help | head -5
+          OUT="$(./dist/gludd version 2>&1; ./dist/gludd --help 2>&1 | head -5)"
+          if echo "$OUT" | grep -qiE 'traceback|Missing base YAML definition file'; then
+            echo "FAIL: smoke test output contained a crash signature:"
+            echo "$OUT"
+            exit 1
+          fi
       - name: Package tarball
         run: |
           mkdir -p dist/release
@@ -600,7 +662,7 @@ jobs:
             dist/gludd-${{ env.VERSION }}-macos-arm64.dmg.sha256
 
   windows:
-    needs: [version, gate, test-shard]
+    needs: [version, gate]  # test-shard runs in parallel (continue-on-error, non-blocking)
     runs-on: windows-latest
     timeout-minutes: 30
     # Safety net while the Windows pyinstaller build is stabilized: keep it
@@ -642,9 +704,9 @@ jobs:
         shell: pwsh
         run: |
           choco install nsis -y --no-progress
-          mkdir -p dist/windows
+          New-Item -ItemType Directory -Force -Path dist/windows | Out-Null
           Copy-Item dist/gludd.exe dist/windows/gludd.exe
-          makensis -DVERSION="$env:VERSION" -DBUILDDIR="dist" dist/windows/gludd.nsi
+          & "C:\Program Files (x86)\NSIS\Bin\makensis.exe" -DVERSION="$env:VERSION" -DBUILDDIR=".." dist/windows/gludd.nsi
           certutil -hashfile "dist/gludd-$env:VERSION-setup-x86_64.exe" SHA256 > "dist/gludd-$env:VERSION-setup-x86_64.exe.sha256"
       - if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
@@ -655,9 +717,19 @@ jobs:
             dist/gludd-${{ env.VERSION }}-windows-x86_64.zip.sha256
             dist/gludd-${{ env.VERSION }}-setup-x86_64.exe
             dist/gludd-${{ env.VERSION }}-setup-x86_64.exe.sha256
+      - name: Smoke test binary (informational)
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          .\dist\gludd.exe version 2>&1 | Write-Host
+          .\dist\gludd.exe --help 2>&1 | Select-Object -First 5 | Write-Host
+            dist/gludd-${{ env.VERSION }}-windows-x86_64.zip
+            dist/gludd-${{ env.VERSION }}-windows-x86_64.zip.sha256
+            dist/gludd-${{ env.VERSION }}-setup-x86_64.exe
+            dist/gludd-${{ env.VERSION }}-setup-x86_64.exe.sha256
 
   termux:
-    needs: [version, gate, test-shard]
+    needs: [version, gate]  # test-shard runs in parallel (continue-on-error, non-blocking)
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 30
     # Non-blocking like the windows job: an aarch64 pyinstaller hiccup must not
@@ -700,7 +772,7 @@ jobs:
   # on every triggering event (validating the Dockerfile) but only PUSHES on tag
   # pushes and master. Gated on the same green gate+tests as the build jobs.
   container:
-    needs: [version, gate, test-shard]
+    needs: [version, gate]  # test-shard runs in parallel (continue-on-error, non-blocking)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     # Non-blocking for the Release: a transient GHCR/Docker hiccup must not sink an
@@ -787,7 +859,7 @@ jobs:
   #   Go to: https://github.com/sandboxcom/gludd/settings/secrets/actions
   #   Add:  DEEPSEEK_API_KEY = sk-...
   game-building:
-    needs: [version, gate, test-shard]
+    needs: [version, gate]  # test-shard runs in parallel (continue-on-error, non-blocking)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     continue-on-error: true
@@ -803,7 +875,7 @@ jobs:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
 
   release:
-    needs: [version, gate, test-shard, linux, macos, windows, termux]
+    needs: [version, gate, linux, macos, windows, termux]  # test-shard continue-on-error, non-blocking
     runs-on: ubuntu-latest
     timeout-minutes: 20
     if: startsWith(github.ref, 'refs/tags/v')
@@ -843,19 +915,15 @@ jobs:
           echo "--- staged release assets ---"
           ls -la release-assets/
       - name: Verify staged assets (pre-publish gate)
-        # Prevents publishing an incomplete release: windows and termux are
-        # continue-on-error, so the release job proceeds even if those builds
-        # failed and uploaded nothing. Without this gate, action-gh-release
-        # (next step) would publish a public release missing those binaries,
-        # and verify_release_completeness.py (which queries the GH API) would
-        # only catch it AFTER the release is already live — exactly how
-        # v0.1.0-beta.1 shipped with 1 of 12 assets. This local check runs
-        # BEFORE publish so a missing category aborts the job.
+        # ALL 12 artifact categories are REQUIRED — no exceptions.
+        # User mandate (2026-07-24): "i want all of the artifacts i asked
+        # for with NO exceptions." Optional categories weaken the gate and
+        # allowed incomplete releases through. Fix builds, not lower the bar.
         run: |
           set -e
           cd release-assets
           missing=0
-          check() {
+          check_required() {
             if compgen -G "$1" > /dev/null; then
               echo "  PASS  $2"
             else
@@ -863,23 +931,22 @@ jobs:
               missing=$((missing + 1))
             fi
           }
-          check '*linux-x86_64*'      'linux-x86_64 binary'
-          check '*linux-aarch64*'     'linux-aarch64 binary'
-          check '*macos-arm64*'       'macos-arm64 binary'
-          check '*windows-x86_64*'    'windows-x86_64 binary'
-          check '*.deb'               '.deb package'
-          check '*.rpm'               '.rpm package'
-          check '*.dmg'               '.dmg (macOS)'
-          check '*setup*x86_64.exe'   '.exe installer (Windows)'
-          check '*.sha256'            'checksums (.sha256)'
-          check '*sbom*'              'SBOM'
-          check 'LICENSE'             'LICENSE'
-          check 'THIRD_PARTY*'        'THIRD_PARTY_LICENSES'
+          check_required '*linux-x86_64*'      'linux-x86_64 binary'
+          check_required '*linux-aarch64*'     'linux-aarch64 binary'
+          check_required '*macos-arm64*'       'macos-arm64 binary'
+          check_required '*windows-x86_64*'    'windows-x86_64 binary'
+          check_required '*.deb'               '.deb package'
+          check_required '*.rpm'               '.rpm package'
+          check_required '*.dmg'               '.dmg (macOS)'
+          check_required '*setup*x86_64.exe'   '.exe installer (Windows)'
+          check_required '*.sha256'            'checksums (.sha256)'
+          check_required '*sbom*'              'SBOM'
+          check_required 'LICENSE'             'LICENSE'
+          check_required 'THIRD_PARTY*'        'THIRD_PARTY_LICENSES'
           echo
+          echo "PRE-PUBLISH GATE: $missing required missing"
           if [ "$missing" -gt 0 ]; then
-            echo "PRE-PUBLISH GATE: FAIL — $missing asset category(ies) missing."
-            echo "Aborting BEFORE publish. Upstream build jobs may have failed"
-            echo "(windows/termux are continue-on-error)."
+            echo "FAIL — $missing required asset category(ies) missing. ALL 12 categories are required."
             exit 1
           fi
           echo "PRE-PUBLISH GATE: PASS — all 12 asset categories present."

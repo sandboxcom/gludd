@@ -16,10 +16,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 MULTITASK_PATH = ROOT / ".opencode/plugin/enforce-multitask.ts"
 STOP_PATH = ROOT / ".opencode/plugin/enforce-stop.ts"
+STOP_IMPL_PATH = ROOT / ".opencode/plugin/impl/enforce_stop_impl.ts"
 
 
 def _src(path: Path) -> str:
-    return path.read_text()
+    s = path.read_text()
+    if path == STOP_PATH and STOP_IMPL_PATH.exists():
+        s += "\n" + STOP_IMPL_PATH.read_text()
+    return s
 
 
 def _from_marker(src: str) -> str:

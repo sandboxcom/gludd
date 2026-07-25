@@ -36,6 +36,8 @@ const CONSECUTIVE_NON_DISPATCH_THRESHOLD = parseInt(
   process.env.GLUDD_CONSECUTIVE_NON_DISPATCH_THRESHOLD || "5", 10)
 const CONSECUTIVE_NON_DISPATCH_WINDOW_MS = parseInt(
   process.env.GLUDD_CONSECUTIVE_NON_DISPATCH_WINDOW_MS || "30000", 10)
+const RESULT_ARRIVAL_REFRESH_INTERVAL_MS = parseInt(
+  process.env.GLUDD_REFRESH_INTERVAL_MS || "30000", 10)
 // Env-overridable (T10) so tests isolate from live sessions; default stays in /tmp.
 const MULTITASK_STATE_FILE = process.env.GLUDD_MULTITASK_STATE_FILE || "/tmp/gludd-multitask-state.json"
 interface MultitaskState {
@@ -50,6 +52,10 @@ interface MultitaskState {
   consecutiveNonDispatch: number
   consecutiveNonDispatchStartTs: number
   sawNonDispatchSinceDispatch: boolean
+  underFloorCount: number
+  lastDispatchTs: number
+  singleDispatchWaves: number
+  sessionDispatchTotal: number
 }
 function freshState(): MultitaskState {
   return {
@@ -64,6 +70,10 @@ function freshState(): MultitaskState {
     consecutiveNonDispatch: 0,
     consecutiveNonDispatchStartTs: 0,
     sawNonDispatchSinceDispatch: false,
+    underFloorCount: 0,
+    lastDispatchTs: 0,
+    singleDispatchWaves: 0,
+    sessionDispatchTotal: 0,
   }
 }
 function readState(): MultitaskState {
@@ -136,16 +146,17 @@ function hasPendingWork(): boolean {
 function handleMessageBoundary(s: MultitaskState): void {
   const now = Date.now()
   // Idempotency guard: prevent double-processing within 500ms. When
-  // text.complete calls handleMessageBoundary first (canonical signal),
+  // text.complete calls the boundary handler first (canonical signal),
   // the heuristic detection in tool.execute.before may fire again on
   // the same boundary within the same process. Without this guard,
   // zeroStreak double-increments and waveHistory gets duplicate entries.
   const lastB = (s as any)._lastBoundaryTs
-  if (lastB && now - lastB < 500) {
-    return
-  }
+  if (lastB && now - lastB < 500) return
   (s as any)._lastBoundaryTs = now
   s.prevMessageDispatches = s.thisMessageDispatches
+  // MT.2: single-dispatch wave escalation — 3 consecutive 1-dispatch waves triggers escalation.
+  // Do NOT increment on 0-dispatch waves — that is the zero-streak violation.
+  if (s.prevMessageDispatches === 1) { s.singleDispatchWaves++ } else if (s.prevMessageDispatches >= 2) { s.singleDispatchWaves = 0 }
   if (s.thisMessageDispatches === 0) {
     s.zeroStreak++
   } else {
@@ -154,6 +165,15 @@ function handleMessageBoundary(s: MultitaskState): void {
   s.waveHistory.push(s.prevMessageDispatches)
   if (s.waveHistory.length > WAVE_HISTORY_SIZE) {
     s.waveHistory = s.waveHistory.slice(-WAVE_HISTORY_SIZE)
+  }
+  // MT.1: under-floor dispatch escalation
+  // Count consecutive waves where dispatches were below the floor.
+  // After 3+ consecutive sub-floor waves, escalate with a warning
+  // injected into the next text.complete response.
+  if (s.prevMessageDispatches < MAX_DISPATCHES) {
+    s.underFloorCount++
+  } else {
+    s.underFloorCount = 0
   }
   s.thisMessageDispatches = 0
 }
@@ -183,6 +203,10 @@ let _state: MultitaskState = (() => {
   s.consecutiveNonDispatch = 0
   s.consecutiveNonDispatchStartTs = 0
   s.sawNonDispatchSinceDispatch = false
+  s.underFloorCount = 0
+  s.singleDispatchWaves = 0
+  s.lastDispatchTs = 0
+  // Preserve sessionDispatchTotal across restarts so the cumulative counter survives
   writeState(s)
   return s
 })()
@@ -264,7 +288,9 @@ const defaultImpl: HotModule = {
           }
         }
         _state.thisMessageDispatches++
+        _state.sessionDispatchTotal++
         _state.estimatedInFlight++
+        _state.lastDispatchTs = now
         writeState(_state)
         return
       }
@@ -316,14 +342,23 @@ const defaultImpl: HotModule = {
       // reaches the floor. This closes the "dispatch 1, then grind reads"
       // bypass.
       //
+      // 2026-07-25 FIX: previously only blocked edit/write/bash. The agent
+      // dispatched 2 agents then used unlimited reads between waves —
+      // underFloorCount reached 2066 without being mechanically stopped.
+      // Now blocks ALL non-dispatch tools (includes read/glob/grep) when ANY
+      // dispatches have been made this session. Session-start (0 dispatches)
+      // still allows reads for the initial backlog survey.
+      //
       // Fallback for the first-edit-with-zero-dispatches case where the streak
       // counter (above) is still below threshold. When the streak has already
       // hit threshold, the streak block wins.
+      const _isUnderFloorRead = lt === "read" || lt === "grep" || lt === "glob"
+      const _isUnderFloorMutation = lt === "edit" || lt === "write" || lt === "bash"
       if (
         !disengaged &&
         hasPendingWork() &&
         _state.thisMessageDispatches < MIN_DISPATCHES &&
-        (lt === "edit" || lt === "write" || lt === "bash")
+        (_isUnderFloorMutation || (_isUnderFloorRead && _state.sessionDispatchTotal > 0))
       ) {
         writeState(_state)
         return {
@@ -331,7 +366,7 @@ const defaultImpl: HotModule = {
           message: [
             "UNDER-FLOOR HARD BLOCK: ONLY " + String(_state.thisMessageDispatches) + " DISPATCHES.",
             "Floor is 10. DISPATCH " + String(MIN_DISPATCHES) + " SUBAGENTS NOW OR YOU ARE BLOCKED.",
-            "You have " + String(_state.thisMessageDispatches) + "; need " + String(MIN_DISPATCHES) + ". edit/write/bash/read/grep/glob are blocked until floor reached.",
+            "You have " + String(_state.thisMessageDispatches) + "; need " + String(MIN_DISPATCHES) + ". ALL tools (read/grep/glob/edit/write/bash) are blocked when below floor and dispatches have been made this session.",
             "consecutive non-dispatch calls: " + String(_state.consecutiveNonDispatch),
             "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
             "Run 'make disengage-enforcement' to bypass.",
@@ -382,12 +417,14 @@ const defaultImpl: HotModule = {
   },
   "text.complete": async (_input: unknown, output: unknown) => {
     if (isSubagent()) return output
-    // Compatibility alias for older OpenCode hook metadata.
-    // zeroStreak / MAX_ZERO_STREAK / MUST DISPATCH / subagent behavior is
-    // implemented by the canonical experimental.text.complete handler below.
-    return await defaultImpl["experimental.text.complete"]?.(_input, output)
+    return await handleTextComplete(_input, output)
   },
   "experimental.text.complete": async (_input: unknown, output: unknown) => {
+    return await handleTextComplete(_input, output)
+  },
+}
+
+async function handleTextComplete(_input: unknown, output: unknown): Promise<unknown> {
     if (isSubagent()) return output
     if (!FLOOR_ENFORCE) return undefined
     const text = typeof output === "string" ? output
@@ -407,6 +444,22 @@ const defaultImpl: HotModule = {
     if (_state.thisMessageDispatches > 0 && _state.thisMessageDispatches < MIN_DISPATCHES) {
       const dispatched = _state.thisMessageDispatches
       handleMessageBoundary(_state)
+      // MT.1: escalate when under-floor waves keep happening
+      const mt1Escalation = _state.underFloorCount >= 3
+        ? [
+            "",
+            "⛔ ESCALATION: You have dispatched fewer than " + String(MAX_DISPATCHES) + " agents for " + String(_state.underFloorCount) + " consecutive waves.",
+            "The 10-agent floor is MANDATORY. Every wave must be >= " + String(MAX_DISPATCHES) + " dispatches.",
+            "This is " + String(_state.underFloorCount) + " waves in a row below the floor. Correct immediately.",
+          ].join("\n")
+        : ""
+      // MT.2: single-dispatch wave escalation
+      const mt2Escalation = _state.singleDispatchWaves >= 3
+        ? [
+            "",
+            "MESSAGE SHAPE VIOLATION: 3 consecutive single-dispatch waves. Batch wider — 2+ dispatches per message.",
+          ].join("\n")
+        : ""
       writeState(_state)
       return {
         text: [
@@ -415,14 +468,53 @@ const defaultImpl: HotModule = {
           `This message had only ${dispatched} dispatch(es).`,
           `The 10-agent floor REQUIRES ${MIN_DISPATCHES} per wave.`,
           "Your text has been blanked. Re-send with >= " + String(MIN_DISPATCHES) + " dispatches.",
+          mt1Escalation,
+          mt2Escalation,
           "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
         ].join("\n"),
       }
     }
     handleMessageBoundary(_state)
+    // MT.1: escalate when under-floor waves keep happening — inject into
+    // non-blocked output so the agent sees it even on full-wave responses.
+    // MT.2: single-dispatch wave escalation — inject when 3 consecutive waves
+    // had exactly 1 dispatch.  2+ dispatches resets the counter.
+    const warnings: string[] = []
+    if (_state.underFloorCount >= 3) {
+      warnings.push([
+        "⛔ DISPATCH FLOOR VIOLATION: " + String(_state.underFloorCount) + " consecutive waves with fewer than " + String(MAX_DISPATCHES) + " dispatches.",
+        "The 10-agent floor is MANDATORY. Each wave MUST dispatch exactly " + String(MAX_DISPATCHES) + " agents.",
+        "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
+      ].join("\n"))
+    }
+    if (_state.singleDispatchWaves >= 3) {
+      warnings.push("MESSAGE SHAPE VIOLATION: 3 consecutive single-dispatch waves. Batch wider — 2+ dispatches per message.")
+    }
+    // DP.2: wave refill automation — inject reminder when pool drops low
+    if (
+      _state.lastDispatchTs > 0 &&
+      _state.estimatedInFlight < 5 &&
+      (Date.now() - _state.lastDispatchTs) > RESULT_ARRIVAL_REFRESH_INTERVAL_MS
+    ) {
+      warnings.push([
+        "⛔ FLOOR LOW: only " + String(_state.estimatedInFlight) + " agents remain.",
+        "Last dispatch was >" + String(Math.round((Date.now() - _state.lastDispatchTs) / 1000)) + "s ago.",
+        "Dispatch replacements now to maintain the 10-agent floor.",
+        "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
+      ].join("\n"))
+    }
+    if (warnings.length > 0) {
+      const warning = warnings.join("\n\n")
+      const wrappedOutput = typeof output === "string"
+        ? warning + "\n\n" + output
+        : (output as any)?.text
+          ? { ...(output as any), text: warning + "\n\n" + String((output as any).text) }
+          : output
+      writeState(_state)
+      return wrappedOutput
+    }
     writeState(_state)
     return output
-  },
 }
 // ============================================================================
 // PROXY PLUGIN (hot-reload aware)
@@ -475,6 +567,22 @@ export default (({ }) => {
       // the blanked message is OVER — its stale dispatch count must not
       // consume the ceiling when the agent re-sends the corrective 10-wave.
       handleMessageBoundary(_state)
+      // MT.1: escalate when under-floor waves keep happening
+      const mt1Escalation = _state.underFloorCount >= 3
+        ? [
+            "",
+            "⛔ ESCALATION: " + String(_state.underFloorCount) + " waves in a row below the " + String(MAX_DISPATCHES) + "-agent floor.",
+            "You have dispatched fewer than " + String(MAX_DISPATCHES) + " agents for " + String(_state.underFloorCount) + " consecutive responses.",
+            "The 10-agent floor is MANDATORY. Correct immediately.",
+          ].join("\n")
+        : ""
+      // MT.2: single-dispatch wave escalation
+      const mt2Escalation = _state.singleDispatchWaves >= 3
+        ? [
+            "",
+            "MESSAGE SHAPE VIOLATION: 3 consecutive single-dispatch waves. Batch wider — 2+ dispatches per message.",
+          ].join("\n")
+        : ""
       writeState(_state)
       return {
         text: [
@@ -488,6 +596,8 @@ export default (({ }) => {
           "",
           "Your text has been blanked. Re-send with >= " +
             String(MIN_DISPATCHES) + " task/agent/workflow dispatches.",
+          mt1Escalation,
+          mt2Escalation,
           "",
           "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
         ].join("\n"),
@@ -502,6 +612,43 @@ export default (({ }) => {
     // handleMessageBoundary prevents double-processing if heuristic signals
     // also fire.
     handleMessageBoundary(_state)
+    // MT.1: escalate when under-floor waves keep happening — inject into
+    // non-blocked output so the agent sees it even on full-wave responses.
+    // MT.2: single-dispatch wave escalation — inject when 3 consecutive waves
+    // had exactly 1 dispatch.  2+ dispatches resets the counter.
+    const warnings: string[] = []
+    if (_state.underFloorCount >= 3) {
+      warnings.push([
+        "⛔ DISPATCH FLOOR VIOLATION: " + String(_state.underFloorCount) + " consecutive waves with fewer than " + String(MAX_DISPATCHES) + " dispatches.",
+        "The 10-agent floor is MANDATORY. Each wave MUST dispatch exactly " + String(MAX_DISPATCHES) + " agents.",
+        "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
+      ].join("\n"))
+    }
+    if (_state.singleDispatchWaves >= 3) {
+      warnings.push("MESSAGE SHAPE VIOLATION: 3 consecutive single-dispatch waves. Batch wider — 2+ dispatches per message.")
+    }
+    // DP.2: wave refill automation — inject reminder when pool drops low
+    if (
+      _state.lastDispatchTs > 0 &&
+      _state.estimatedInFlight < 5 &&
+      (Date.now() - _state.lastDispatchTs) > RESULT_ARRIVAL_REFRESH_INTERVAL_MS
+    ) {
+      warnings.push([
+        "⛔ FLOOR LOW: only " + String(_state.estimatedInFlight) + " agents remain.",
+        "Last dispatch was >" + String(Math.round((Date.now() - _state.lastDispatchTs) / 1000)) + "s ago.",
+        "Dispatch replacements now to maintain the 10-agent floor.",
+        "Set GLUDD_MULTITASK_FLOOR_ENFORCE=0 to disable.",
+      ].join("\n"))
+    }
+    if (warnings.length > 0) {
+      const warning = warnings.join("\n\n")
+      writeState(_state)
+      if (typeof output === "string") return warning + "\n\n" + (output as string)
+      if ((output as any)?.text) {
+        return { ...(output as any), text: warning + "\n\n" + String((output as any).text) }
+      }
+      return output
+    }
     writeState(_state)
     return output
   },

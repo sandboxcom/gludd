@@ -1,0 +1,46 @@
+# ============================================================================
+# minimal_setup.yml — Absolute minimum user configuration
+# ============================================================================
+#
+# USE CASE
+# --------
+# You just installed gludd and want it to run with sane defaults. You have a
+# local PostgreSQL on the default port and a model profile already defined in
+# config/model_profiles/. You do not need any custom routing, isolation, or
+# budget controls yet.
+#
+# This file demonstrates that gludd boots with an effectively empty user
+# config — every section shown here is either a default or a single value
+# override. Copy to ~/.config/general-ludd/user.yml and edit at will.
+#
+# All top-level keys are OPTIONAL. Omitting a key falls back to the value in
+# config/general-ludd.yml (the system defaults file).
+# ============================================================================
+
+# --- model_routing ---------------------------------------------------------
+# Route all roles to the same profile. The named profile must exist under
+# config/model_profiles/<id>.yml. Omit this entire block to inherit the
+# system default (currently zai_coder).
+model_routing:
+  # Profile id used when no more-specific routing matches.
+  default_profile: zai_coder
+
+# --- database --------------------------------------------------------------
+# Override only the fields that differ from defaults. Here we keep the
+# default host/port/name but set a different user.
+database:
+  user: gludd
+
+# --- agents ----------------------------------------------------------------
+# How many concurrent agent worktrees can be active. 1 is the safest value
+# for a fresh install; raise once you trust the workflow.
+agents:
+  max_concurrent: 1
+
+# What this enables
+# -----------------
+# * gludd boots against the bundled zai_coder profile with no extra setup.
+# * A single agent slot — no concurrency surprises while you learn the system.
+# * Every other subsystem (budget, isolation, watchdog) inherits safe defaults
+#   from config/general-ludd.yml.
+# * Add sections below as your needs grow; nothing here blocks future expansion.

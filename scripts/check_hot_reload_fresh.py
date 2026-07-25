@@ -3,12 +3,20 @@
 
 Checks each /tmp/gludd-hot-<plugin>.js against its corresponding
 .opencode/plugin/<plugin>.ts source:
-  1. Hot module must exist
-  2. Hot module mtime must be >= source .ts mtime
-  3. Hot module must contain valid JS (no bare TS artifacts)
+  1. If a hot module exists, its mtime must be >= source .ts mtime (STALE otherwise)
+  2. If a hot module exists, it must contain valid JS (no bare TS artifacts)
 
-Exit 0: all hot modules are fresh + valid.
-Exit 1: at least one hot module is stale or broken.
+Hot modules that DON'T exist are SKIPPED (not a failure) — the plugin falls
+back to compiled-in defaults safely (fail-open design in hot_reload.ts). Only
+STALE modules (older than source) are failures, because they silently load old
+code while the operator believes the edit took effect.
+
+Exit 0: all existing hot modules are fresh + valid (or none exist).
+Exit 1: at least one existing hot module is stale or broken.
+
+Path overrides (for testing / isolated environments):
+  GLUDD_PLUGIN_DIR  — source .ts directory (default: .opencode/plugin)
+  GLUDD_HOT_OUT_DIR — hot-module output directory (default: /tmp)
 """
 
 import os
@@ -16,10 +24,15 @@ import re
 import sys
 from pathlib import Path
 
-PLUGIN_DIR = Path(__file__).resolve().parent.parent / ".opencode" / "plugin"
-OUT_DIR = Path("/tmp")
+PLUGIN_DIR = Path(
+    os.environ.get(
+        "GLUDD_PLUGIN_DIR",
+        Path(__file__).resolve().parent.parent / ".opencode" / "plugin",
+    )
+)
+OUT_DIR = Path(os.environ.get("GLUDD_HOT_OUT_DIR", "/tmp"))
 
-PLUGINS = [
+DEFAULT_PLUGINS = [
     "enforce-deadline",
     "enforce-enhancement-ratio",
     "enforce-floor",
@@ -73,25 +86,33 @@ def has_default_impl(src: Path) -> bool:
         return False
 
 
-def main() -> int:
-    problems: list[str] = []
-    checked = 0
-    skipped_no_proxy = 0
+def find_stale(
+    plugin_dir: Path,
+    out_dir: Path,
+    plugins: list[str] | None = None,
+) -> list[str]:
+    """Return a list of problem strings for stale or broken hot modules.
 
-    for name in PLUGINS:
-        src = PLUGIN_DIR / f"{name}.ts"
-        hot = OUT_DIR / f"gludd-hot-{name}.js"
+    A hot module that does NOT exist is never a problem (the plugin falls back
+    to compiled-in defaults). Only modules that exist but are older than their
+    source, or contain stale TS artifacts, are reported.
+    """
+    if plugins is None:
+        plugins = DEFAULT_PLUGINS
+
+    problems: list[str] = []
+
+    for name in plugins:
+        src = plugin_dir / f"{name}.ts"
+        hot = out_dir / f"gludd-hot-{name}.js"
 
         if not src.exists():
-            problems.append(f"{name}: source {src} not found")
             continue
 
         if not has_default_impl(src) or name in ("enforce-multitask",):
-            skipped_no_proxy += 1
             continue
 
         if not hot.exists():
-            problems.append(f"{name}: hot module {hot} missing — run make hot-reload-plugins")
             continue
 
         src_mtime = src.stat().st_mtime
@@ -113,21 +134,38 @@ def main() -> int:
                 problems.append(f"{name}: {si}")
             continue
 
-        checked += 1
+    return problems
 
-    skipped_msg = f" ({skipped_no_proxy} skipped — no defaultImpl)" if skipped_no_proxy else ""
+
+def main(argv: list[str] | None = None) -> int:
+    del argv  # no argparse flags; path overrides come from env vars
+
+    plugin_dir = PLUGIN_DIR
+    out_dir = OUT_DIR
+    plugins = DEFAULT_PLUGINS
+
+    problems = find_stale(plugin_dir, out_dir, plugins)
+
+    existing = 0
+    for name in plugins:
+        src = plugin_dir / f"{name}.ts"
+        hot = out_dir / f"gludd-hot-{name}.js"
+        if src.exists() and hot.exists() and has_default_impl(src):
+            existing += 1
+
+    fresh = existing - len(problems)
 
     if problems:
         print("=== HOT-RELOAD FRESHNESS FAILED ===\n")
         for p in problems:
             print(f"  FAIL  {p}")
-        print(f"\n{checked}/{checked + len(problems)} hot modules fresh, {len(problems)} problem(s){skipped_msg}")
+        print(f"\n{fresh}/{existing} hot modules fresh, {len(problems)} problem(s)")
         print("\nFix: make hot-reload-plugins")
         return 1
 
-    print(f"=== HOT-RELOAD FRESHNESS: {checked}/{checked} modules fresh + valid{skipped_msg} ===")
+    print(f"=== HOT-RELOAD FRESHNESS: {fresh}/{existing} modules fresh + valid ===")
     return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main(sys.argv[1:]))

@@ -1,0 +1,197 @@
+{
+  "$schema": "https://gludd.local/schemas/model-profile/v1",
+  "profile": "java-expert",
+  "version": "1.0.0",
+  "description": "Java/JVM tooling preferences for gludd agents working with JVM projects",
+
+  "build_tool": {
+    "preference": "gradle",
+    "fallback": "maven",
+    "gradle_dsl": "kotlin",
+    "gradle_version": "8.10+",
+    "maven_version": "3.9+",
+    "notes": "Prefer Gradle with Kotlin DSL for new projects. Use Maven for projects with deep Maven plugin investment or when corporate standards require it."
+  },
+
+  "jdk": {
+    "lts_preference": "21",
+    "minimum": "17",
+    "release_flag": true,
+    "notes": "Use --release flag, not -source/-target. Java 21 is the current LTS. Java 8 is end-of-public-updates; do not target for new projects."
+  },
+
+  "linting": {
+    "checkstyle": {
+      "config": "google_checks",
+      "rules_of_note": [
+        "LineLength (120 max)",
+        "JavadocMethod (public API only)",
+        "HiddenField (prevent shadowing)",
+        "IllegalImport (sun.*, internal APIs)",
+        "EqualsHashCode (always override both)",
+        "MissingSwitchDefault"
+      ],
+      "suppressions_file": "config/checkstyle/suppressions.xml"
+    },
+    "spotbugs": {
+      "effort": "max",
+      "threshold": "low",
+      "categories_of_concern": [
+        "MALICIOUS_CODE (deserialization, reflection abuse)",
+        "SECURITY (path traversal, injection, weak crypto)",
+        "CORRECTNESS (null pointer, infinite loops, equals issues)",
+        "MT_CORRECTNESS (thread safety bugs)",
+        "PERFORMANCE (inefficient string concatenation, boxing)"
+      ],
+      "exclude_filter": "config/spotbugs/exclude.xml"
+    },
+    "error_prone": {
+      "severity": "ERROR",
+      "checks_of_note": [
+        "BugChecker (compile-time detection)",
+        "ImmutableEnumChecker",
+        "MissingOverride",
+        "EqualsIncompatibleType",
+        "FutureReturnValueIgnored",
+        "BadComparable",
+        "UnusedVariable"
+      ]
+    }
+  },
+
+  "testing": {
+    "framework": "junit5",
+    "mocking": "mockito",
+    "assertions": "assertj",
+    "integration_testing": "testcontainers",
+    "mutation_testing": "pitest",
+    "coverage_tool": "jacoco",
+    "coverage_minimum_line": 0.80,
+    "coverage_minimum_branch": 0.70,
+    "test_naming_convention": "MethodName_StateUnderTest_ExpectedBehavior",
+    "forbidden_in_tests": [
+      "Thread.sleep() (use Awaitility)",
+      "System.currentTimeMillis() (use Clock)",
+      "new Date() without Clock (use Instant)",
+      "PowerMock (use refactoring instead)",
+      "reflection to set private fields (add constructor or builder)"
+    ]
+  },
+
+  "security_scanning": {
+    "dependency_check_oss": {
+      "tool": "owasp-dependency-check",
+      "fail_on_cvss": 7.0,
+      "suppression_file": "owasp-suppressions.xml"
+    },
+    "forbidden_apis": [
+      "java.util.Random (use SecureRandom)",
+      "java.lang.Runtime.exec() without sanitization",
+      "java.io.ObjectInputStream on untrusted input",
+      "javax.xml.parsers.DocumentBuilderFactory with default config (XXE)",
+      "java.sql.Statement with string concatenation (SQLi)",
+      "java.io.File with user-controlled path (path traversal)",
+      "java.util.logging with unsanitized user input (log injection)"
+    ],
+    "crypto_requirements": {
+      "symmetric": "AES/GCM/NoPadding with 256-bit key minimum",
+      "asymmetric": "RSA 3072+ or Ed25519",
+      "hash": "SHA-256 minimum, SHA-512 for long-term",
+      "forbidden": ["MD5", "SHA-1", "DES", "RC4", "3DES", "ECB", "CBC without HMAC"]
+    }
+  },
+
+  "project_types": {
+    "spring_boot": {
+      "build_tool": "gradle",
+      "jdk": "21",
+      "layout": "maven_standard",
+      "key_dependencies": [
+        "spring-boot-starter-web (REST)",
+        "spring-boot-starter-data-jpa (persistence)",
+        "spring-boot-starter-security (auth)",
+        "spring-boot-starter-test (testing)",
+        "spring-boot-starter-actuator (monitoring)",
+        "springdoc-openapi-starter-webmvc-ui (API docs)"
+      ],
+      "config_format": "application.yml",
+      "test_profile": "@SpringBootTest for integration, @WebMvcTest for web layer, @DataJpaTest for repositories"
+    },
+    "android": {
+      "build_tool": "gradle",
+      "jdk": "17 (Android toolchain; Kotlin compiles to JVM 17 bytecode)",
+      "layout": "android_standard",
+      "language": "kotlin",
+      "key_dependencies": [
+        "androidx.compose (UI)",
+        "androidx.room (persistence)",
+        "androidx.work (background)",
+        "retrofit2 (networking)",
+        "coil (image loading)",
+        "hilt/dagger (DI)"
+      ],
+      "min_sdk": "26 (Android 8.0)",
+      "target_sdk": "34"
+    },
+    "library": {
+      "build_tool": "gradle",
+      "jdk": "17 (broadest compatibility)",
+      "layout": "maven_standard",
+      "requirements": [
+        "module-info.java for JPMS support",
+        "ServiceLoader for plugin architecture",
+        "null-safety annotations (@Nullable, @NotNull)",
+        "OSGi metadata optional",
+        "no transitive logging dependency (use SLF4J API only)"
+      ]
+    },
+    "cli_tool": {
+      "build_tool": "gradle",
+      "jdk": "21",
+      "layout": "maven_standard",
+      "packaging": "jpackage native installer or GraalVM native-image",
+      "key_dependencies": [
+        "picocli (argument parsing)",
+        "jbang (single-file scripts)",
+        "logback (logging)"
+      ]
+    },
+    "jakarta_ee": {
+      "build_tool": "maven",
+      "jdk": "21",
+      "layout": "maven_standard",
+      "server": "WildFly 32+ or Payara 6+",
+      "packaging": "war",
+      "key_dependencies": [
+        "jakarta.platform:jakarta.jakartaee-api:10.0.0",
+        "jakarta.servlet:jakarta.servlet-api (provided)",
+        "jakarta.persistence:jakarta.persistence-api"
+      ]
+    }
+  },
+
+  "dependency_management": {
+    "repository": "maven_central",
+    "alternative_repositories": ["gradle_plugin_portal"],
+    "bom_preference": "use_bom_for_managed_dependencies",
+    "version_catalog": "use_libs_versions_toml",
+    "dependency_convergence": "enforce (fail on version conflicts)",
+    "transitive_dependency_audit": "monthly",
+    "forbidden": [
+      "SNAPSHOT dependencies in releases",
+      "com.sun.* internal APIs",
+      "sun.misc.Unsafe (except as strictly necessary)",
+      "log4j-core < 2.17.1 (CVE-2021-44228, CVE-2021-45046)"
+    ]
+  },
+
+  "code_quality": {
+    "immutability": "prefer records and @Value classes. Minimize mutability.",
+    "null_handling": "use Optional for return types only. Never for fields or parameters. Use @Nullable annotation.",
+    "exception_handling": "prefer unchecked. Use checked exceptions only for recoverable conditions. Never catch Throwable.",
+    "concurrency": "prefer java.util.concurrent over synchronized. Virtual threads for I/O-bound work.",
+    "logging": "SLF4J facade. Structured logging with MDC for correlation IDs. No System.out/err in production.",
+    "serialization": "prefer JSON (Jackson) or Protocol Buffers. Avoid Java serialization entirely.",
+    "resource_management": "always try-with-resources. No finalize()."
+  }
+}

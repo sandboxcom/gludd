@@ -80,3 +80,11 @@ repos:
         types: [python]
         pass_filenames: false
         require_serial: true
+
+      - id: verify-secrets
+        name: Verify secrets baseline
+        entry: make verify-secrets
+        language: system
+        files: ^\.secrets\.baseline$
+        pass_filenames: false
+        require_serial: true

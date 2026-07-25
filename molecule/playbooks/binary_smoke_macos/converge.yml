@@ -1,0 +1,221 @@
+---
+# Converge: locate a gludd binary, run CLI smoke commands, start the daemon,
+# and capture every output for verify.yml to assert on.
+#
+# Binary resolution order (first hit wins):
+#   1. $GLUDD_BINARY_PATH (absolute path override)
+#   2. <project_root>/dist/gludd (locally-built via `make build-executable`)
+#   3. Download latest macOS release asset from GitHub
+#
+# All captured outputs land under {{ _smoke_out_dir }} so verify.yml can read
+# them back without re-invoking the binary.
+- name: Converge — gludd binary smoke (macOS localhost)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    _smoke_out_dir: /tmp/gludd-binary-smoke-macos
+    _daemon_port: "{{ lookup('env', 'GLUDD_SMOKE_PORT') | default('18000', true) }}"
+    _daemon_url: "http://127.0.0.1:{{ _daemon_port }}"
+    _project_root: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') | default(playbook_dir | dirname | dirname, true) }}"
+    _local_binary: "{{ _project_root }}/dist/gludd"
+    _override_binary: "{{ lookup('env', 'GLUDD_BINARY_PATH') }}"
+    _resolved_binary: "{{ _override_binary if _override_binary | length > 0 else _local_binary }}"
+    _release_asset_glob: "gludd-*-macos"
+  tasks:
+    - name: Ensure smoke output dir exists
+      ansible.builtin.file:
+        path: "{{ _smoke_out_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Stat candidate binary
+      ansible.builtin.stat:
+        path: "{{ _resolved_binary }}"
+      register: _bin_stat
+
+    - name: Locate macOS release asset name (latest release)
+      ansible.builtin.command:
+        argv:
+          - gh
+          - release
+          - view
+          - --json
+          - assets
+          - --jq
+          - ".assets[].name"
+      register: _release_assets_raw
+      changed_when: false
+      failed_when: false
+      when: not _bin_stat.stat.exists
+
+    - name: Filter for macOS asset
+      ansible.builtin.set_fact:
+        _macos_asset: >-
+          {{ (
+            _release_assets_raw.stdout_lines
+            | default([])
+            | select("match", _release_asset_glob)
+            | list
+            | first
+          ) | default("") }}
+      when: not _bin_stat.stat.exists
+
+    - name: Download macOS release binary
+      ansible.builtin.command:
+        argv:
+          - gh
+          - release
+          - download
+          - --pattern
+          - "{{ _macos_asset }}"
+          - --dir
+          - "{{ _smoke_out_dir }}"
+          - --clobber
+      args:
+        chdir: "{{ _project_root }}"
+      register: _download
+      changed_when: true
+      when:
+        - not _bin_stat.stat.exists
+        - _macos_asset | length > 0
+
+    - name: Resolve downloaded binary path
+      ansible.builtin.find:
+        paths: "{{ _smoke_out_dir }}"
+        patterns: "gludd*"
+        file_type: file
+      register: _downloaded_bin
+      when: not _bin_stat.stat.exists
+
+    - name: Set effective binary path
+      ansible.builtin.set_fact:
+        _binary: >-
+          {{
+            (_resolved_binary if _bin_stat.stat.exists else
+             (_downloaded_bin.files[0].path if (_downloaded_bin.files | default([]) | length > 0) else ""))
+          }}
+
+    - name: Fail clearly when no binary is available
+      ansible.builtin.fail:
+        msg: >-
+          No gludd binary found. Set GLUDD_BINARY_PATH, build via
+          `make build-executable` (produces dist/gludd), or ensure a GitHub
+          release macOS asset exists. Checked: {{ _resolved_binary }}
+      when: _binary | length == 0
+
+    - name: Make binary executable
+      ansible.builtin.file:
+        path: "{{ _binary }}"
+        mode: "0755"
+      register: _chmod
+
+    - name: Record binary path for verify.yml
+      ansible.builtin.copy:
+        content: "{{ _binary }}\n"
+        dest: "{{ _smoke_out_dir }}/binary_path.txt"
+        mode: "0644"
+
+    - name: Run `gludd version` (subcommand form)
+      ansible.builtin.command:
+        argv:
+          - "{{ _binary }}"
+          - version
+      register: _version_subcmd
+      changed_when: false
+      failed_when: false
+
+    - name: Run `gludd --version` (flag form, may not be wired)
+      ansible.builtin.command:
+        argv:
+          - "{{ _binary }}"
+          - --version
+      register: _version_flag
+      changed_when: false
+      failed_when: false
+
+    - name: Select version output (subcommand preferred)
+      ansible.builtin.set_fact:
+        _version_out: >-
+          {{ (_version_subcmd.stdout if _version_subcmd.rc == 0 else _version_flag.stdout) | default("") }}
+        _version_err: >-
+          {{ (_version_subcmd.stderr if _version_subcmd.rc == 0 else _version_flag.stderr) | default("") }}
+        _version_rc: "{{ _version_subcmd.rc if _version_subcmd.rc == 0 else _version_flag.rc }}"
+
+    - name: Run `gludd --help`
+      ansible.builtin.command:
+        argv:
+          - "{{ _binary }}"
+          - --help
+      register: _help_out
+      changed_when: false
+      failed_when: false
+
+    - name: Run `gludd project paths`
+      ansible.builtin.command:
+        argv:
+          - "{{ _binary }}"
+          - project
+          - paths
+      register: _paths_out
+      changed_when: false
+      failed_when: false
+
+    - name: Write captured outputs
+      ansible.builtin.copy:
+        content: "{{ item.body }}\n"
+        dest: "{{ _smoke_out_dir }}/{{ item.name }}"
+        mode: "0644"
+      loop:
+        - {name: version.stdout.txt, body: "{{ _version_out }}"}
+        - {name: version.stderr.txt, body: "{{ _version_err }}"}
+        - {name: version.rc.txt, body: "{{ _version_rc }}"}
+        - {name: help.stdout.txt, body: "{{ _help_out.stdout }}"}
+        - {name: help.stderr.txt, body: "{{ _help_out.stderr }}"}
+        - {name: help.rc.txt, body: "{{ _help_out.rc }}"}
+        - {name: paths.stdout.txt, body: "{{ _paths_out.stdout }}"}
+        - {name: paths.stderr.txt, body: "{{ _paths_out.stderr }}"}
+        - {name: paths.rc.txt, body: "{{ _paths_out.rc }}"}
+
+    - name: Kill any pre-existing smoke daemon on {{ _daemon_port }}
+      ansible.builtin.shell: |
+        set -e
+        pids=$(lsof -ti tcp:{{ _daemon_port }} || true)
+        if [ -n "$pids" ]; then kill $pids 2>/dev/null || true; sleep 1; fi
+      args:
+        executable: /bin/sh
+      changed_when: false
+      failed_when: false
+
+    - name: Start daemon in background on port {{ _daemon_port }}
+      ansible.builtin.shell: |
+        set -e
+        nohup {{ _binary | quote }} daemon \
+          --host 127.0.0.1 \
+          --port {{ _daemon_port }} \
+          --log-level info \
+          > {{ _smoke_out_dir }}/daemon.stdout.log 2> {{ _smoke_out_dir }}/daemon.stderr.log &
+        echo $! > {{ _smoke_out_dir }}/daemon.pid
+      args:
+        executable: /bin/sh
+      register: _daemon_start
+      changed_when: true
+
+    - name: Poll /healthz until daemon is ready
+      ansible.builtin.uri:
+        url: "{{ _daemon_url }}/healthz"
+        method: GET
+        return_content: true
+        status_code: [200, 503]
+        timeout: 3
+      register: _health_resp
+      until: _health_resp.status == 200
+      retries: 30
+      delay: 1
+      failed_when: false
+
+    - name: Write health response for verify.yml
+      ansible.builtin.copy:
+        content: "{{ {'status': _health_resp.status, 'body': _health_resp.content | default('')} | to_nice_json }}\n"
+        dest: "{{ _smoke_out_dir }}/health.json"
+        mode: "0644"
