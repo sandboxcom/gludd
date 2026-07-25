@@ -46,7 +46,8 @@ UninstPage instfiles
 Section "Install"
   SetOutPath "$INSTDIR"
   ; Source path must match the CI Copy-Item destination (dist/windows/gludd.exe).
-  File "${BUILDDIR}\windows\gludd.exe"
+  ; The .nsi is also at dist/windows/ so File resolves relative to this directory.
+  File "gludd.exe"
   WriteUninstaller "$INSTDIR\uninstall.exe"
 
   WriteRegStr HKLM "${UNINST_KEY}" "DisplayName"     "${APPNAME}"
