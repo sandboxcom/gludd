@@ -67,8 +67,23 @@ const MAINTHREAD_THRESHOLD = parseInt(process.env.GLUDD_MAINTHREAD_THRESHOLD || 
 // Investigation tools (grep/glob/file-view) don't count toward the
 // edit/write/bash streak, but they DO count toward a SEPARATE counter with
 // time-based detection:
+// ---------------------------------------------------------------------------
+// READ-GRIND THRESHOLDS — session-configurable via GLUDD_READ_GRIND_* env vars.
+//
+// Override any of these per session when you need a different envelope; e.g.
+// during focused investigation raise GLUDD_READ_GRIND_DENY_COUNT=20 so a longer
+// serial-read burst is permitted WITHOUT disengaging all enforcement (BP.14).
+//
 //   ADVISORY: >5 calls AND >30s since last dispatch -> console.warn
 //   BLOCK:    >10 calls AND >60s since last dispatch -> throw (hard-deny)
+//   STALE:    a non-zero count older than 60s since the last dispatch is
+//             reset to 0 on the next read (the burst has gone cold).
+//
+// parseInt/parseFloat + `|| "<default>"` coerces empty or "0" overrides to a
+// finite number and never throws; mainthreadBudgetBefore's try/catch is the
+// fail-open backstop for any malformed input (setting a threshold to 0 is
+// safe — it just means the block can never fire because `count > 0` requires
+// a positive count, and the time gate still applies).
 // This closes the hole where 100 serial investigation calls went undetected
 // because they were exempt from ALL streak counters.
 const READ_GRIND_FILE = process.env.GLUDD_READ_GRIND_FILE || "/tmp/gludd-read-grind.json"
@@ -76,6 +91,7 @@ const READ_GRIND_ADVISORY_COUNT = parseInt(process.env.GLUDD_READ_GRIND_ADVISORY
 const READ_GRIND_ADVISORY_MS = parseInt(process.env.GLUDD_READ_GRIND_ADVISORY_MS || "30000", 10)
 const READ_GRIND_DENY_COUNT = parseInt(process.env.GLUDD_READ_GRIND_DENY_COUNT || "10", 10)
 const READ_GRIND_DENY_MS = parseInt(process.env.GLUDD_READ_GRIND_DENY_MS || "60000", 10)
+const READ_GRIND_STALE_MS = parseFloat(process.env.GLUDD_READ_GRIND_STALE_MS || "60000")
 const DISK_DANGER_GB = parseFloat(process.env.GLUDD_DISK_DANGER_GB || "2.5")
 const DISK_HARD_FLOOR_GB = parseFloat(process.env.GLUDD_DISK_HARD_FLOOR_GB || "1.0")
 const WORKTREE_CAP = parseInt(process.env.GLUDD_WORKTREE_CAP || "6", 10)
@@ -611,7 +627,6 @@ function writeStreak(partial: Partial<MainthreadStreakState>): void {
 // dispatch so time-based detection can distinguish a legitimate burst from
 // a grinding spree.
 // ---------------------------------------------------------------------------
-const READ_GRIND_STALE_MS = parseFloat(process.env.GLUDD_READ_GRIND_STALE_MS || "60000")
 function loadReadGrindState(): { count: number; lastDispatchTs: number } {
   try {
     const obj = JSON.parse(fs.readFileSync(READ_GRIND_FILE, "utf8"))

@@ -355,3 +355,113 @@ class TestReadGrindAgentsMdDocumentation:
                 f"Doc deny count ({doc_deny_count.group(1)}) must match "
                 f"code default ({code_deny_count.group(1)})"
             )
+
+
+# --------------------------------------------------------------------------- #
+# BP.14 — per-session configurability behavior
+# --------------------------------------------------------------------------- #
+class TestReadGrindThresholdConfigurable:
+    """Raising the env var MUST allow more reads before the block fires, and a
+    zero/empty override MUST NOT crash the session.
+
+    These are structural assertions (TypeScript cannot be executed from Python),
+    but they pin the load-bearing pieces that make per-session tuning safe:
+
+      * the comparison is strict ``>`` (not ``>=``), so setting
+        GLUDD_READ_GRIND_DENY_COUNT=20 permits exactly 20 reads before the
+        21st trips the block;
+      * parseInt/parseFloat carry a ``|| "<default>"`` fallback so an empty
+        override falls back to the documented default rather than NaN;
+      * mainthreadBudgetBefore is wrapped in try/catch so even a malformed
+        override (``"abc"``, ``""``, ``"0"``) never wedges the session.
+    """
+
+    def test_deny_comparison_is_strict_greater_than(self):
+        """The block must use strict ``>`` against READ_GRIND_DENY_COUNT so a
+        higher override linearly raises the number of permitted reads."""
+        src = _src()
+        m = re.search(
+            r"rs\.count\s*>\s*READ_GRIND_DENY_COUNT\s*&&\s*sinceDispatchMs\s*>\s*READ_GRIND_DENY_MS",
+            src,
+        )
+        assert m, (
+            "Block condition must be `rs.count > READ_GRIND_DENY_COUNT && "
+            "sinceDispatchMs > READ_GRIND_DENY_MS` (strict >). A `>=` would "
+            "off-by-one the override; an inline literal would ignore the env var."
+        )
+
+    def test_advisory_comparison_is_strict_greater_than(self):
+        """The advisory must also use strict ``>`` so raising
+        GLUDD_READ_GRIND_ADVISORY_COUNT defers the nudge proportionally."""
+        src = _src()
+        m = re.search(
+            r"rs\.count\s*>\s*READ_GRIND_ADVISORY_COUNT\s*&&\s*sinceDispatchMs\s*>\s*READ_GRIND_ADVISORY_MS",
+            src,
+        )
+        assert m, (
+            "Advisory condition must use strict `>` against "
+            "READ_GRIND_ADVISORY_COUNT — a higher override must defer the nudge."
+        )
+
+    def test_higher_override_allows_more_reads(self):
+        """BP.14 contract: setting GLUDD_READ_GRIND_DENY_COUNT=20 must permit
+        20 reads before the block. Because the comparison is strict ``>`` and
+        the constant is wired through (no inline literal), the override takes
+        effect linearly. This test pins both invariants together."""
+        src = _src()
+        # (1) The threshold is read from the env var (not an inline literal).
+        assert re.search(
+            r'READ_GRIND_DENY_COUNT\s*=\s*parseInt\s*\(\s*process\.env\.GLUDD_READ_GRIND_DENY_COUNT',
+            src,
+        ), "DENY_COUNT must come from process.env.GLUDD_READ_GRIND_DENY_COUNT"
+        # (2) The enforcement references the named constant (not a literal).
+        budget_fn = src[src.index("mainthreadBudgetBefore") : src.index("mainthreadBudgetAfter")]
+        assert "READ_GRIND_DENY_COUNT" in budget_fn, (
+            "mainthreadBudgetBefore must reference READ_GRIND_DENY_COUNT so an "
+            "env-var override actually changes the block threshold"
+        )
+        # (3) Strict > means count==20 with DENY_COUNT==20 does NOT block.
+        assert re.search(r"rs\.count\s*>\s*READ_GRIND_DENY_COUNT", budget_fn), (
+            "Comparison must be strict `>` so DENY_COUNT=20 permits 20 reads "
+            "(the 21st trips the block)"
+        )
+
+    def test_zero_override_does_not_crash(self):
+        """Setting GLUDD_READ_GRIND_DENY_COUNT=0 must not crash. parseInt('0',10)
+        returns the finite number 0 (never NaN/throw), and because the block
+        requires `count > 0` the session stays usable (block just never fires
+        from the count axis; the time gate still applies)."""
+        src = _src()
+        # parseInt with explicit radix 10 — parseInt("0", 10) === 0, finite.
+        assert re.search(
+            r'READ_GRIND_DENY_COUNT\s*=\s*parseInt\s*\(\s*process\.env\.\w+\s*\|\|\s*"\d+"\s*,\s*10\s*\)',
+            src,
+        ), (
+            "DENY_COUNT must use parseInt(..., 10) with explicit radix so a "
+            "'0' override coerces to the finite number 0 (not NaN)"
+        )
+        # The `|| "<default>"` fallback handles an EMPTY override (NaN source).
+        assert re.search(
+            r'READ_GRIND_DENY_COUNT\s*=\s*parseInt\s*\(\s*process\.env\.\w+\s*\|\|\s*"\d+"',
+            src,
+        ), "DENY_COUNT must have a `|| \"<default>\"` fallback for empty overrides"
+
+    def test_enforcement_fail_open_on_malformed_override(self):
+        """A malformed override (e.g. GLUDD_READ_GRIND_DENY_COUNT=abc) must not
+        wedge the session. mainthreadBudgetBefore must be wrapped in try/catch
+        so a thrown error fails open (returns null = allow)."""
+        src = _src()
+        m = re.search(
+            r"function mainthreadBudgetBefore\([^)]*\)[^{]*\{",
+            src,
+        )
+        assert m, "mainthreadBudgetBefore function not found"
+        fn_start = m.end()
+        # Scan forward to the matching top-level `function mainthreadBudgetAfter`.
+        after_idx = src.index("mainthreadBudgetAfter")
+        body = src[fn_start:after_idx]
+        assert "catch" in body, (
+            "mainthreadBudgetBefore must be wrapped in try/catch so a malformed "
+            "GLUDD_READ_GRIND_* override (e.g. 'abc') fails open instead of "
+            "wedging the session"
+        )

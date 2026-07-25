@@ -2472,6 +2472,21 @@ The prior enforcement relied on message-shape rules (≥2 dispatches per message
 - **Prompt:** this section.
 - **Disable:** `GLUDD_FLOOR_ENFORCE=0` disables the floor plugin entirely (including this check).
 
+### Session-configurable read-grind thresholds (BP.14)
+
+The `enforce-delegate.ts` read-grind detector is separately tunable per session via `GLUDD_READ_GRIND_*` env vars (no need to disengage all enforcement). Defaults:
+
+| Env var | Default | Effect |
+|---|---|---|
+| `GLUDD_READ_GRIND_ADVISORY_COUNT` | 5 | Investigation calls before the advisory nudge. |
+| `GLUDD_READ_GRIND_ADVISORY_MS` | 30000 | Min ms since last dispatch before the advisory fires. |
+| `GLUDD_READ_GRIND_DENY_COUNT` | 10 | Investigation calls before the hard block. |
+| `GLUDD_READ_GRIND_DENY_MS` | 60000 | Min ms since last dispatch before the block fires. |
+| `GLUDD_READ_GRIND_STALE_MS` | 60000 | Reset a stale non-zero count after this many ms. |
+| `GLUDD_READ_GRIND_FILE` | `/tmp/gludd-read-grind.json` | State file for the counter. |
+
+For focused investigation work, raise the deny threshold: `GLUDD_READ_GRIND_DENY_COUNT=20`. A dispatch always resets the counter to 0 regardless of the threshold.
+
 ## Pipeline Orchestration Model
 
 The goal is a **continuous, pipelined** stream of subagent batches — not a
@@ -3049,6 +3064,19 @@ Run `make lint` before every commit. Pre-commit hooks are backup, not primary de
 ### OD.10 — No CI Polling as Pretend Work
 Checking ci-status more than 3 times in a row without intervening code changes is a
 stop pattern. The CI poll limiter plugin enforces this mechanically.
+
+## CRITICAL: CI Wait Productivity (DC.1)
+
+During CI waits, dispatch subagents to: fix tests, write structural tests, update
+docs, investigate slow shards. 0 subagents during CI wait is a policy violation.
+Use the CI window to make progress on disjoint work — the pipeline must stay primed
+at the 10-agent floor even when CI is the apparent center of attention.
+
+## CRITICAL: Polling CI Is Not Work (DC.2)
+
+Checking ci-status more than 3 times in a row without intervening code changes is a
+stop pattern. Each poll produces zero progress; only code changes unblock CI.
+If you find yourself polling, dispatch a subagent that produces a deliverable instead.
 
 ## CRITICAL: Root Cause Escalation (3-Strike Rule)
 
