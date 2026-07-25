@@ -642,10 +642,9 @@ jobs:
         shell: pwsh
         run: |
           choco install nsis -y --no-progress
-          $env:Path += ";C:\Program Files (x86)\NSIS"
           New-Item -ItemType Directory -Force -Path dist/windows | Out-Null
           Copy-Item dist/gludd.exe dist/windows/gludd.exe
-          makensis -DVERSION="$env:VERSION" -DBUILDDIR="dist" dist/windows/gludd.nsi
+          & "C:\Program Files (x86)\NSIS\Bin\makensis.exe" -DVERSION="$env:VERSION" -DBUILDDIR="dist" dist/windows/gludd.nsi
           certutil -hashfile "dist/gludd-$env:VERSION-setup-x86_64.exe" SHA256 > "dist/gludd-$env:VERSION-setup-x86_64.exe.sha256"
       - if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)

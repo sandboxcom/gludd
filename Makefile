@@ -2635,6 +2635,39 @@ ci-run-view:
 	@gh run view "$(RUN)" -R sandboxcom/gludd --json jobs,conclusion,headSha,status 2>&1 || echo "ci-run-view-failed"
 
 # Re-run a specific (e.g. cancelled) run's failed/cancelled jobs. Usage: make ci-rerun RUN=<run-id>
+ci-monitor:
+	@if [ -z "$(RUN)" ]; then echo "Usage: make ci-monitor RUN=<run-id> [INTERVAL=60] [MAX_POLLS=120]"; exit 1; fi
+	@INTERVAL=$(or $(INTERVAL),60); MAX_POLLS=$(or $(MAX_POLLS),120); POLL=0; \
+	while [ $$POLL -lt $$MAX_POLLS ]; do \
+		POLL=$$((POLL + 1)); \
+		TIMESTAMP=$$(date -u +%H:%M:%S); \
+		JSON=$$(gh run view -R sandboxcom/gludd $(RUN) --json databaseId,status,conclusion,event,displayTitle,headSha,createdAt,updatedAt,jobs \
+			--jq '{databaseId,status,conclusion,event,displayTitle,headSha,createdAt,updatedAt,jobs:[.jobs[]|{name,status,conclusion,startedAt,completedAt,steps:[.steps[]|select(.conclusion!="success" and .conclusion!="skipped")|{name,conclusion,number}]}]}' 2>/dev/null); \
+		if [ -z "$$JSON" ]; then echo "[$$TIMESTAMP poll $$POLL] ERROR: no JSON returned"; sleep $$INTERVAL; continue; fi; \
+		STATUS=$$(echo "$$JSON" | $(PYTHON) -c "import sys,json; d=json.load(sys.stdin); print(d.get('status','?') + '/' + (d.get('conclusion') or '-'))"); \
+		JOBS=$$(echo "$$JSON" | $(PYTHON) -c "import sys,json; d=json.load(sys.stdin); \
+			S={'success':'OK','failure':'FAIL','cancelled':'CANC','skipped':'SKIP','timed_out':'TO',None:'RUN','':'RUN'}; \
+			lines=[]; \
+			for j in d.get('jobs',[]): \
+				c=j.get('conclusion') or j.get('status'); \
+				b=S.get(c,c); \
+				n=(j.get('name','?')[:28]); \
+				steps=''; \
+				for s in j.get('steps',[]): \
+					sc=s.get('conclusion') or ''; \
+					if sc: steps+=','+s.get('name','?')[:20]+'='+S.get(sc,sc); \
+				lines.append('  %-30s %s%s' % (n,b,' ['+steps[1:]+']' if steps else '')); \
+			print('\n'.join(lines))") 2>/dev/null; \
+		echo ""; echo "[$$TIMESTAMP poll $$POLL] RUN=$(RUN) status=$$STATUS"; \
+		if [ -n "$$JOBS" ]; then echo "$$JOBS"; echo ""; fi; \
+		if echo "$$STATUS" | grep -q 'completed'; then \
+			echo ">>> RUN $(RUN) COMPLETED <<<"; \
+			exit 0; \
+		fi; \
+		sleep $$INTERVAL; \
+	done; \
+	echo ">>> MONITOR EXHAUSTED after $$MAX_POLLS polls — run still in_progress <<<"; exit 1
+
 ci-rerun:
 	@if [ -z "$(RUN)" ]; then echo "Usage: make ci-rerun RUN=<run-id>"; exit 1; fi
 	@gh run rerun -R sandboxcom/gludd $(RUN) 2>&1 || echo "ci-rerun-failed"
