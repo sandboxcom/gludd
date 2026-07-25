@@ -1148,7 +1148,7 @@ class TestBlockerDetector:
 
     def test_remediation_config_is_frozen(self):
         cfg = RemediationConfig()
-        with pytest.raises(Exception):
+        with pytest.raises(Exception):  # noqa: B017
             cfg.human_input_block_hours = 12  # frozen dataclass
 
 

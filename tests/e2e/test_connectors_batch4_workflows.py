@@ -267,7 +267,10 @@ class TestOktaConnector:
 
         def _transport(method: str, url: str, **kw: object) -> MockHttpResponse:
             call_count[0] += 1
-            resp = MockHttpResponse(200, [{"published": "2025-01-01T00:00:00Z", "displayMessage": f"event {call_count[0]}"}])
+            msg = f"event {call_count[0]}"
+            resp = MockHttpResponse(
+                200, [{"published": "2025-01-01T00:00:00Z", "displayMessage": msg}]
+            )
             if call_count[0] < 3:
                 resp.headers = {"Link": '<https://ok.example.com/api/v1/logs?after=2>; rel="next"'}
             return resp
@@ -300,12 +303,12 @@ class TestEntraSigninConnector:
         from general_ludd.connectors.entra_signin import EntraSigninSource
 
         os.environ["ENTRA_CLIENT_ID"] = "cid"
-        os.environ["ENTRA_SECRET"] = "sec"
+        os.environ["ENTRA_SECRET"] = "sec"  # pragma: allowlist secret
         try:
             source = EntraSigninSource({
                 "tenant_id": "test-tenant-id",
                 "client_id_env": "ENTRA_CLIENT_ID",
-                "secret_env": "ENTRA_SECRET",
+                "secret_env": "ENTRA_SECRET",  # pragma: allowlist secret
             })
             assert source.name is not None
         finally:
@@ -1624,8 +1627,16 @@ class TestMacUnifiedLogConnector:
 
         def _executor(**kw: object) -> list[dict[str, object]]:
             return [
-                {"timestamp": "2025-01-01T12:00:00Z", "message": "Connection from 1.2.3.4", "processImagePath": "/usr/sbin/sshd"},
-                {"timestamp": "2025-01-01T12:01:00Z", "message": "Accepted publickey", "processImagePath": "/usr/sbin/sshd"},
+                {
+                    "timestamp": "2025-01-01T12:00:00Z",
+                    "message": "Connection from 1.2.3.4",
+                    "processImagePath": "/usr/sbin/sshd",
+                },
+                {
+                    "timestamp": "2025-01-01T12:01:00Z",
+                    "message": "Accepted publickey",
+                    "processImagePath": "/usr/sbin/sshd",
+                },
             ]
 
         source = MacUnifiedLogSource(executor=_executor)

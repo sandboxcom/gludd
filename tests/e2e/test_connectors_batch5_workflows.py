@@ -430,7 +430,12 @@ class TestContainerdConnector:
             call_count += 1
             if "ps" in str(argv):
                 return _json.dumps({
-                    "items": [{"id": "abc", "metadata": {"name": "web", "namespace": "default"}, "state": "CONTAINER_RUNNING", "createdAt": "1700000000000000000"}]
+                    "items": [{
+                        "id": "abc",
+                        "metadata": {"name": "web", "namespace": "default"},
+                        "state": "CONTAINER_RUNNING",
+                        "createdAt": "1700000000000000000",
+                    }]
                 })
             return _json.dumps({})
 
@@ -643,12 +648,12 @@ class TestRedfishConnector:
         from general_ludd.connectors.redfish import RedfishSource
 
         os.environ["RF_USR"] = "admin"
-        os.environ["RF_PWD"] = "pass"
+        os.environ["RF_PWD"] = "pass"  # pragma: allowlist secret
         try:
             source = RedfishSource({
                 "base_url": "https://idrac.example.com",
                 "username_env": "RF_USR",
-                "password_env": "RF_PWD",
+                "password_env": "RF_PWD",  # pragma: allowlist secret
             })
             assert source.KIND == "metrics"
         finally:
@@ -662,7 +667,11 @@ class TestRedfishConnector:
         os.environ["RF_P"] = "p"
         try:
             source = RedfishSource(
-                {"base_url": "https://idrac.example.com", "username_env": "RF_U", "password_env": "RF_P"},
+                {
+                    "base_url": "https://idrac.example.com",
+                    "username_env": "RF_U",
+                    "password_env": "RF_P",
+                },  # pragma: allowlist secret
                 transport=transport,
             )
             result = source.health()
@@ -678,7 +687,11 @@ class TestRedfishConnector:
         os.environ["RF_P2"] = "p"
         try:
             source = RedfishSource(
-                {"base_url": "https://idrac.example.com", "username_env": "RF_U2", "password_env": "RF_P2"},
+                {
+                    "base_url": "https://idrac.example.com",
+                    "username_env": "RF_U2",
+                    "password_env": "RF_P2",
+                },  # pragma: allowlist secret
                 transport=transport,
             )
             result = source.health()
@@ -694,11 +707,24 @@ class TestRedfishConnector:
             body={
                 "@odata.id": "/redfish/v1/Chassis/1/Thermal",
                 "Temperatures": [
-                    {"Name": "CPU1 Temp", "ReadingCelsius": 45, "Status": {"Health": "OK"}},
-                    {"Name": "Inlet Temp", "ReadingCelsius": 22, "Status": {"Health": "OK"}},
+                    {
+                        "Name": "CPU1 Temp",
+                        "ReadingCelsius": 45,
+                        "Status": {"Health": "OK"},
+                    },
+                    {
+                        "Name": "Inlet Temp",
+                        "ReadingCelsius": 22,
+                        "Status": {"Health": "OK"},
+                    },
                 ],
                 "Fans": [
-                    {"Name": "Fan1", "Reading": 4500, "ReadingUnits": "RPM", "Status": {"Health": "OK"}},
+                    {
+                        "Name": "Fan1",
+                        "Reading": 4500,
+                        "ReadingUnits": "RPM",
+                        "Status": {"Health": "OK"},
+                    },
                 ],
             },
         )
@@ -706,7 +732,11 @@ class TestRedfishConnector:
         os.environ["RF_PQ"] = "p"
         try:
             source = RedfishSource(
-                {"base_url": "https://idrac.example.com", "username_env": "RF_Q", "password_env": "RF_PQ"},
+                {
+                    "base_url": "https://idrac.example.com",
+                    "username_env": "RF_Q",
+                    "password_env": "RF_PQ",
+                },  # pragma: allowlist secret
                 transport=transport,
             )
             records = source.query({})
@@ -960,8 +990,16 @@ class TestMacOSLogConnector:
 
         def _runner(argv: list[str]) -> str:
             return _json.dumps([
-                {"eventMessage": "Login attempt", "processImagePath": "/usr/libexec/opendirectoryd", "timestamp": "2025-01-01 12:00:00.000000-0500"},
-                {"eventMessage": "Authentication succeeded", "processImagePath": "/usr/libexec/opendirectoryd", "timestamp": "2025-01-01 12:00:01.000000-0500"},
+                {
+                    "eventMessage": "Login attempt",
+                    "processImagePath": "/usr/libexec/opendirectoryd",
+                    "timestamp": "2025-01-01 12:00:00.000000-0500",
+                },
+                {
+                    "eventMessage": "Authentication succeeded",
+                    "processImagePath": "/usr/libexec/opendirectoryd",
+                    "timestamp": "2025-01-01 12:00:01.000000-0500",
+                },
             ])
 
         source = MacOSLogSource({"predicate": 'process == "opendirectoryd"'}, runner=_runner)

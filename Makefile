@@ -124,7 +124,8 @@ log-agent-result disk-guard disk-check check-disk disk tmp-gludd-usage tmp-gludd
          subagent-init subagent-cleanup \
          chat chat-eval test-chat \
 git-tag-delete git-tag-move release-deploy append-text write-text-b64 replace-text-b64 mkdir-p replace-lines _no-raw-git-guard \
-         git-push-committed-head-nv ci-trigger-committed-head ci-push-committed-head provider-smoke check-no-prompt-prone-edit-tools add-target edit-target edit-makefile-target validate-makefile
+         git-push-committed-head-nv ci-trigger-committed-head ci-push-committed-head provider-smoke check-no-prompt-prone-edit-tools add-target edit-target edit-makefile-target validate-makefile \
+         azure-event-guard-start azure-event-guard-stop azure-event-guard-check azure-event-guard-status
 
 help:
 	@echo "Usage: make [target]"
@@ -333,6 +334,12 @@ help:
 	@echo "  searx-up              Start SearXNG via Docker Compose"
 	@echo "  searx-down            Stop SearXNG and remove volumes"
 	@echo "  searx-test            Health-check the SearXNG JSON API"
+	@echo ""
+	@echo "  --- Azure Event Guard ---"
+	@echo "  azure-event-guard-start  Launch Azure Activity Log guard in background (--watch)"
+	@echo "  azure-event-guard-stop   Kill the Azure event guard process"
+	@echo "  azure-event-guard-check  One-shot pre-flight check (--once)"
+	@echo "  azure-event-guard-status Check if guard is running + recent violations"
 	@echo ""
 	@echo "  --- Disk ---"
 	@echo "  fix-hooks-tmp           temp fix target"
@@ -1730,7 +1737,59 @@ provider-smoke:
 	@test -n "$(SMOKE_TEST)" || { echo Usage: make provider-smoke PROVIDER=aws SMOKE_TEST=ec2-a100 ARGS=--json; exit 1; }
 	@$(UV) run gludd smoke "$(PROVIDER)" "$(SMOKE_TEST)" $(ARGS)
 
-smoke:
+# --- Azure Event Guard ---
+# Monitors Azure Activity Log for expensive resource creation, duplicate names,
+# and wrong-account usage during smoke tests.  Pre-req: az CLI installed + logged in.
+#   AZURE_SUBSCRIPTION_ID, AZURE_RESOURCE_GROUP (required)
+#   AZURE_TENANT_ID, AZURE_EVENT_GUARD_LOOKBACK, AZURE_EVENT_GUARD_INTERVAL (optional)
+AZURE_EVENT_GUARD_SCRIPT := scripts/azure_event_guard.sh
+AZURE_EVENT_GUARD_PID_FILE := .gate-logs/azure-event-guard.pid
+AZURE_EVENT_GUARD_LOG := .gate-logs/azure-event-guard.log
+
+azure-event-guard-start:
+	@echo "=== Azure Event Guard START ==="
+	@test -f "$(AZURE_EVENT_GUARD_SCRIPT)" || { echo "Guard script missing: $(AZURE_EVENT_GUARD_SCRIPT)"; exit 1; }
+	@if [ -f "$(AZURE_EVENT_GUARD_PID_FILE)" ] && kill -0 $$(cat "$(AZURE_EVENT_GUARD_PID_FILE)") 2>/dev/null; then \
+		echo "Azure event guard already running PID=$$(cat $(AZURE_EVENT_GUARD_PID_FILE))"; \
+	else \
+		mkdir -p .gate-logs; \
+		nohup bash "$(AZURE_EVENT_GUARD_SCRIPT)" --watch \
+			> "$(AZURE_EVENT_GUARD_LOG)" 2>&1 & \
+		echo $$! > "$(AZURE_EVENT_GUARD_PID_FILE)"; \
+		echo "Azure event guard started PID=$$!"; \
+	fi
+
+azure-event-guard-stop:
+	@echo "=== Azure Event Guard STOP ==="
+	@if [ -f "$(AZURE_EVENT_GUARD_PID_FILE)" ]; then \
+		kill $$(cat "$(AZURE_EVENT_GUARD_PID_FILE)") 2>/dev/null || true; \
+		rm -f "$(AZURE_EVENT_GUARD_PID_FILE)"; \
+		echo "Guard stopped"; \
+	else \
+		echo "No guard running"; \
+	fi
+	@pkill -f 'azure_event_guard.sh' 2>/dev/null || true
+
+azure-event-guard-check:
+	@echo "=== Azure Event Guard CHECK (--once) ==="
+	@bash "$(AZURE_EVENT_GUARD_SCRIPT)" --once
+
+azure-event-guard-status:
+	@echo "=== Azure Event Guard status ==="
+	@if [ -f "$(AZURE_EVENT_GUARD_PID_FILE)" ]; then \
+		echo "PID: $$(cat $(AZURE_EVENT_GUARD_PID_FILE) 2>/dev/null)"; \
+		if kill -0 $$(cat $(AZURE_EVENT_GUARD_PID_FILE)) 2>/dev/null; then \
+			echo "Status: running"; \
+		else \
+			echo "Status: stopped (stale PID file)"; \
+		fi; \
+	else \
+		echo "No PID file — guard not started"; \
+	fi
+	@echo "--- Recent violations ---"
+	@tail -20 /tmp/gludd-azure-violations.log 2>/dev/null || echo "No violations logged"
+
+smoke: azure-event-guard-start
 	@$(UV) run python scripts/smoke_daemon.py
 
 install-hooks:
