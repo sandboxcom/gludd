@@ -316,26 +316,32 @@ The state-file pattern is the canonical mechanism for runtime enforcement tuning
 9. **No unseen events — an unobservable operation is a broken operation.** Any operation that runs longer than a few seconds (a gate, a test suite, a build, a poll loop, a backgrounded task, a daemon background job) MUST surface continuous progress: stream its output (`tee`), emit a per-phase marker, or print a periodic heartbeat. Never redirect a long-running operation solely to `/dev/null` or a buffered file with no live signal. If an event happens and no one can see it, it did not happen. Enforced by `tests/unit/test_observability_guardrails.py`; mirrored for agent behavior in [[gludd-observability-invariant]] memory.
 10. **Bash unavailable ⇒ adapt in ≤2 turns.** If `make` commands fail or bash is missing from your tool list, execute the 3-step diagnosis (check tool list, read SESSION.md for known issue, read opencode.json for permissions) IN ONE PARALLEL MESSAGE. Then adapt: use read/edit/write/grep/glob tools directly. Never spend 10+ turns diagnosing a tool-unavailable error — it is either a provider/model limitation (unfixable mid-session) or a permission-ordering bug (one-line fix). SESSION.md line ~9 documents known bash-unavailable sessions. BUGS.md tracks bash-diagnosis-relapse incidents.
     - **When you detect you're grinding inline** (main-thread streak accumulating, floor plugin blocking your edits, enforcement errors on every edit) → run `make disengage-enforcement` before any other action. This writes the emergency disengage signal that all enforcement hooks respect. Then fix the offending plugin code, run `make write-plugin-manifest`, and restart opencode.
-11. **No external file access.** Read/Write/Edit/Glob/Grep MUST stay inside `/Users/shawnwilson/gludd/` or `/tmp/gludd-*`. Any tool call targeting a path outside the workspace prompts the user and blocks work. See "CRITICAL: No External File Access."
+11. **No external file access.** Read/Write/Edit/Glob/Grep MUST stay inside `/Users/shawnwilson/gludd/**`, `/tmp/**`, or `/Users/shawnwilson/.config/opencode/**`. Any tool call targeting any other path under `/Users/shawnwilson/` prompts the user and blocks work. See "CRITICAL: No External File Access."
 12. **NEVER use `COMMIT_THRESHOLD=1`. Use `make git-commit` or `make ship-commit` for local commits. Push only when CI is idle.** `COMMIT_THRESHOLD=1` bypasses the batch-push threshold and pushes every commit individually, cancelling every prior CI run — zero validation occurs. Since GER-5, `make ship-commit` commits locally by default (`PUSH=0`); to push after commit, use `make ship-commit MSG='...' PUSH=1` or a separate `make batch-push`. The sanctioned push is `make batch-push` (default 5+ commits threshold) with `make ci-verdict-safe` confirming CI idle first. Local commits accumulate via `make git-commit` or `make ship-commit`; the batch push is a single event, not per-commit. See "CRITICAL: Don't Push Every Commit — Batch Locally, Push Once."
 
 ## CRITICAL: No External File Access
 
-**Read/Write/Edit/Glob/Grep MUST NOT access paths outside `/Users/shawnwilson/gludd/` or `/tmp/gludd-*`.** External file access prompts the user for permission and blocks work — a blocked tool call stalls the session exactly like a premature stop.
+**Read/Write/Edit/Glob/Grep MUST NOT access paths outside the three allowed prefixes.** External file access prompts the user for permission and blocks work — a blocked tool call stalls the session exactly like a premature stop.
+
+**User mandate (HARD): NEVER ask for access to the user's full home directory ever again.** Access is limited to exactly three path prefixes. Any other path under `/Users/shawnwilson/` is FORBIDDEN — no `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/Documents`, `~/Desktop`, `~/Library`, or any other home-directory path outside the workspace and the opencode config dir. This is a hard user mandate, not a guideline.
 
 ### Rules
 
-1. **Allowed path prefixes (exhaustive):** `/Users/shawnwilson/gludd/` (the workspace) and `/tmp/gludd-*` (session state files). Everything else is out of bounds.
+1. **Allowed path prefixes (exhaustive — exactly three):**
+   - `/Users/shawnwilson/gludd/**` (the workspace)
+   - `/tmp/**` (all of `/tmp`, not just `/tmp/gludd-*` session state files)
+   - `/Users/shawnwilson/.config/opencode/**` (opencode config directory)
+   Everything else is out of bounds.
 2. **Applies to ALL file tools:** Read, Write, Edit, Glob (`path` parameter), Grep (`path` parameter). A glob/grep with an external `path` is the same violation as an external read.
 3. **Applies to subagents.** Every dispatched subagent inherits this restriction; subagent prompts that reference external paths are a dispatch bug.
-4. **No exceptions for "just reading."** Reading `~/.config/...`, `/etc/...`, another repo, or any home-directory file outside the workspace prompts the user and blocks work. If external content is genuinely needed, request a make target or ask the user — do not attempt the access.
+4. **No exceptions for "just reading."** Reading `~/.ssh/...`, `~/.aws/...`, `~/.gnupg/...`, `~/Documents/...`, `~/Desktop/...`, `/etc/...`, another repo, or ANY home-directory file outside the workspace and the opencode config dir prompts the user and blocks work. If external content is genuinely needed, request a make target or ask the user — do not attempt the access.
 5. **If a task appears to require an external path**, the correct responses are: (a) find the equivalent data inside the workspace, (b) add a make target that surfaces it, or (c) report the specific path needed in ≤2 lines and continue other work. Never fire the external tool call and let it block.
 
 ### Enforcement
 
 - **Prompt** — this section + Mechanical Contract rule 11 (proactive instruction).
-- **Permission layer** — external paths trigger a user prompt (hard gate at the harness level).
-- **Plugin (future)** — a `tool.execute.before` matcher on read/write/edit/glob/grep paths may deny out-of-workspace targets mechanically.
+- **Permission layer** — `opencode.json` `permission` block: each of `read`/`write`/`edit`/`glob`/`grep` allows exactly the three prefixes above and denies everything else via `*: deny` (last-match-wins). Hard gate at the harness level.
+- **Structural test** — `tests/unit/test_no_home_directory_access.py` pins the permission block: verifies the three allowed prefixes per tool, verifies the `*: deny` catch-all, and verifies NO path under `/Users/shawnwilson/` other than `gludd/` and `.config/opencode/` is allowed.
 
 ## ⛔ PRE-GENERATION CONTRACT (READ BEFORE GENERATING ANY TEXT)
 
@@ -2249,6 +2255,67 @@ against HEAD. It queries GitHub Actions via `gh run list` and is fail-closed:
   `release-candidate/*` branch, confirm its CI green, then `ship-ff` master to it.
 - Never claim "green" without a CI run id + SUCCESS conclusion for the exact SHA
   (reinforces the no-unquantified-status-claims rule). Per-file `test-iso` is NOT the gate.
+
+## CRITICAL: Pipeline Completion Is The Primary Objective
+
+**When a release is pending, getting the build green and the artifacts published
+is the #1 priority — above structural tests, new plugins, documentation, refactors,
+or any other enhancement.** This was codified after multiple sessions where the
+agent spent days adding structural tests and guardrails while the release pipeline
+stayed red or unpushed. The user's explicit feedback: the CI pipeline build has
+NOT been the priority for DAYS, and that is the bug this section exists to prevent.
+
+### Rules (each is a hard policy, not a guideline)
+
+1. **First dispatch is pipeline-focused.** When a release is pending (A.4 or
+   equivalent unchecked in TASKS.md), the FIRST dispatch in every wave MUST be
+   pipeline-focused: push unpushed commits, check CI verdict, fix CI failures,
+   or cut the release. Structural tests, new plugins, and documentation come
+   AFTER the pipeline dispatch slot is filled.
+
+2. **Secondary work capped at 50% of the wave.** Adding structural tests, new
+   plugins, or documentation while the pipeline is red or unpushed is a
+   SECONDARY priority — it MUST NEVER consume more than 50% of the dispatch
+   wave. If the wave has 10 slots, at least 5 must advance the pipeline
+   (push/fix/cut) when the pipeline is not green.
+
+3. **Check push status at session start.** The agent MUST check push status at
+   the start of every session: if commits are unpushed, pushing them is the
+   FIRST action — before any read of TASKS.md, before any dispatch wave, before
+   any structural test. An unpushed pipeline is a blocked pipeline.
+
+4. **"CI is pending" is never a stop.** "CI is pending" is never an excuse to
+   stop working on the pipeline. Use the CI wait to fix test failures, write
+   regression tests for the failures CI surfaces, or prepare the release-cut
+   command — NOT to add unrelated features, plugins, or guardrails. See
+   DC.1 (CI Wait Productivity).
+
+5. **Release is NOT done until 12 assets verified.** The release is NOT done
+   until `make verify-release-completeness TAG=<tag>` exits 0 with all 12 asset
+   categories confirmed. A tag push is not done. A green CI run is not done.
+   Only the artifact-completeness gate is done. (Reinforces "A Release is an
+   Artifact, Not a Tag" below.)
+
+### Anti-patterns (each is a policy violation)
+
+- Dispatching 10 structural-test subagents while the pipeline is red.
+- Adding a new enforcement plugin while commits sit unpushed.
+- Writing documentation while CI is failing.
+- Treating "CI is pending" as a reason to start unrelated feature work.
+- Claiming the release is "done" without `verify-release-completeness` exit 0.
+- Letting a single wave pass with 0 pipeline-focused dispatches when a release
+  is pending.
+
+### Enforcement (3-layer guardrail)
+
+1. **Prompt** — this section (proactive instruction for every agent reading
+   AGENTS.md).
+2. **Test** — `tests/unit/test_pipeline_priority.py` structurally pins the
+   section heading and key phrases so a regression that strips them is caught
+   at gate time.
+3. **Operational Discipline Rules** — OD.1 (Intermediate Progress Is Not
+   Completion), OD.3 (CI Is Fire-and-Forget), OD.8 (Don't Make Artifacts
+   Optional), and DC.1 (CI Wait Productivity) all reinforce this section.
 
 ## CRITICAL: A Release is an Artifact, Not a Tag (codified)
 
