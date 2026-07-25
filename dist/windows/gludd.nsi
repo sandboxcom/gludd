@@ -33,10 +33,10 @@ ManifestDPIAware true
 !define COMPANYNAME  "sandboxcom"
 !define UNINST_KEY   "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}"
 
-; BUILDDIR is "dist" -> OutFile "dist\gludd-<ver>-setup-x86_64.exe"
-; (backslashes are canonical for NSIS path arguments; Windows treats the
-; resulting file path identically to the forward-slash form used by the
-; CI's certutil/artifact steps.)
+; BUILDDIR is ".." (relative to this script at dist/windows/) -> OutFile "../gludd-<ver>-setup-x86_64.exe"
+; resolves to dist/gludd-<ver>-setup-x86_64.exe — matching what the CI's
+; certutil/artifact steps expect. NSIS resolves OutFile relative to the
+; SCRIPT file location, not the CWD.
 Name "${APPNAME} ${VERSION}"
 OutFile "${BUILDDIR}\gludd-${VERSION}-setup-x86_64.exe"
 InstallDir "$PROGRAMFILES64\${APPNAME}"
