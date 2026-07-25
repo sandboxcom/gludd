@@ -81,7 +81,8 @@ _commit-lock-acquire check-clean-tree worktree-state all-worktree-state main-wor
         test-binary-re test-radio test-os-expert test-e2e-test-gen test-language test-language-expert test-collections \
         molecule-test-binary-re molecule-test-radio molecule-test-os-expert molecule-test-e2e-test-gen molecule-test-language \
         move-ansible-roles \
-        container-build container-run container-push \
+         container-build container-run container-push \
+         hindsight-start hindsight-stop hindsight-status \
          file-executable build-executable deb-package deb-install-deps rpm-package macos-dmg windows-installer release-artifacts dist-clean bundle-binaries bundle-ripgrep \
         sast sbom pip-audit security security-backlog-gate \
         audit-messages qa validate collect-check gate gate-refresh gate-lite smoke install-hooks \
@@ -4053,6 +4054,42 @@ container-run:
 container-push:
 	@if [ -z "$(CONTAINER_RUNTIME)" ]; then echo "ERROR: podman or docker not found"; exit 1; fi
 	@$(CONTAINER_RUNTIME) push $(CONTAINER_IMAGE)
+
+# --- Hindsight memory sidecar ---
+
+HINDSIGHT_IMAGE ?= ghcr.io/vectorize-io/hindsight:latest
+HINDSIGHT_CONTAINER ?= gludd-hindsight
+HINDSIGHT_PORT ?= 8888
+HINDSIGHT_VOLUME ?= $(HOME)/.cache/gludd/hindsight
+
+hindsight-start:
+	@mkdir -p "$(HINDSIGHT_VOLUME)"
+	@if [ -n "$$($(CONTAINER_RUNTIME) ps -q -f name=$(HINDSIGHT_CONTAINER) 2>/dev/null)" ]; then \
+		echo "Hindsight sidecar already running"; \
+	else \
+		$(CONTAINER_RUNTIME) pull $(HINDSIGHT_IMAGE) 2>/dev/null || true; \
+		$(CONTAINER_RUNTIME) run -d \
+			--name $(HINDSIGHT_CONTAINER) \
+			-p $(HINDSIGHT_PORT):8888 \
+			-v "$(HINDSIGHT_VOLUME):/data" \
+			--restart unless-stopped \
+			$(HINDSIGHT_IMAGE); \
+		echo "Hindsight sidecar started on port $(HINDSIGHT_PORT)"; \
+	fi
+
+hindsight-stop:
+	@$(CONTAINER_RUNTIME) stop $(HINDSIGHT_CONTAINER) 2>/dev/null || true
+	@$(CONTAINER_RUNTIME) rm $(HINDSIGHT_CONTAINER) 2>/dev/null || true
+	@echo "Hindsight sidecar stopped"
+
+hindsight-status:
+	@if [ -n "$$($(CONTAINER_RUNTIME) ps -q -f name=$(HINDSIGHT_CONTAINER) 2>/dev/null)" ]; then \
+		echo "Hindsight sidecar: RUNNING"; \
+		$(CONTAINER_RUNTIME) port $(HINDSIGHT_CONTAINER) 8888 2>/dev/null || true; \
+	else \
+		echo "Hindsight sidecar: NOT RUNNING"; \
+	fi
+	@curl -sf http://localhost:$(HINDSIGHT_PORT)/health 2>/dev/null && echo "" || echo "health endpoint unreachable"
 
 # --- VM sandbox image targets (FEATURE_UNIKERNEL_SANDBOX P3) ---
 

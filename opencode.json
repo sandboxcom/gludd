@@ -78,6 +78,7 @@
     "./.opencode/plugin/enforce-deliverable.ts",
     "./.opencode/plugin/enforce-no-ci-poll.ts",
     "./.opencode/plugin/enforce-release-deadline.ts",
-    "./.opencode/plugins/watchdog.ts"
+    "./.opencode/plugins/watchdog.ts",
+    "@vectorize-io/opencode-hindsight"
   ]
 }

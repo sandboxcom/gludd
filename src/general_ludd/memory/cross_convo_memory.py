@@ -120,10 +120,29 @@ class CrossConversationMemory:
 
     Manages conversation lifecycles, working memory, context injection,
     and summary generation.  Uses CrossConversationStore for persistence.
+
+    memory_backend: "internal" (default) uses CrossConversationStore only.
+    "hindsight" wires a HindsightMemoryAdapter for TEMPR retrieval alongside
+    the existing store.  Requires HINDSIGHT_ENABLED=true and sidecar running.
     """
 
-    def __init__(self, store: CrossConversationStore | None = None) -> None:
+    def __init__(
+        self,
+        store: CrossConversationStore | None = None,
+        memory_backend: str = "internal",
+    ) -> None:
         self._store = store or CrossConversationStore()
+        self._memory_backend = memory_backend
+        self._hindsight_adapter: Any = None
+
+        if memory_backend == "hindsight":
+            from general_ludd.memory.hindsight_adapter import HindsightMemoryAdapter
+
+            self._hindsight_adapter = HindsightMemoryAdapter.get_instance()
+            logger.info(
+                "CrossConversationMemory: hindsight backend enabled — %s",
+                self._hindsight_adapter.health_check(),
+            )
 
     # ================================================================== lifecycle
 
@@ -419,6 +438,28 @@ class CrossConversationMemory:
     @property
     def available(self) -> bool:
         return self._store.available
+
+    # ====================================================== hindsight retrieval
+
+    @property
+    def memory_backend(self) -> str:
+        return self._memory_backend
+
+    @property
+    def hindsight_adapter(self) -> Any | None:
+        return self._hindsight_adapter
+
+    def retrieve_hindsight(
+        self, query: str, top_k: int = 5,
+    ) -> list[dict[str, Any]]:
+        if self._hindsight_adapter is None:
+            return []
+        return self._hindsight_adapter.recall(query, top_k)
+
+    def hindsight_reflect(self, query: str) -> str:
+        if self._hindsight_adapter is None:
+            return ""
+        return self._hindsight_adapter.reflect(query)
 
     # ============================================================ private
 

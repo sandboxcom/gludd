@@ -1,0 +1,24 @@
+---
+galaxy_info:
+  namespace: general_ludd
+  name: skill_lens
+  author: gludd
+  description: Surgical skill-lens role — extracts context-relevant sections from expert skills for agent prompts.
+  license: MIT
+
+  min_ansible_version: "2.14"
+
+  platforms:
+    - name: GenericLinux
+    - name: macOS
+
+  galaxy_tags:
+    - agent
+    - skills
+    - prompts
+    - orchestration
+
+dependencies: []
+
+collections:
+  - general_ludd.agent
