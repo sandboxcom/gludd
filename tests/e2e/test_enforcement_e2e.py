@@ -29,7 +29,7 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
-pytestmark = pytest.mark.xdist_group("enforcement_state_files")
+pytestmark = pytest.mark.xdist_group("enforcement_plugin_state_files")
 
 PLUGIN_REGISTRATION_ORDER = [
     "enforce-session-start.ts",
