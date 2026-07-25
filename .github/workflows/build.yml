@@ -530,6 +530,44 @@ jobs:
         run: |
           uv sync
           uv run pyinstaller gludd.spec --clean --noconfirm
+      - name: Smoke test binary
+        # Post-build smoke test: catches binaries that built successfully but
+        # crash at runtime (e.g. the "Missing base YAML definition file" ansible
+        # data-file error that shipped in v0.1.0-beta.1). Runs BEFORE packaging
+        # and upload-artifact so a broken binary never reaches the release.
+        run: |
+          set -e
+          echo "--- gludd --version ---"
+          ./dist/gludd --version
+          echo "--- gludd --help (first 5 lines) ---"
+          ./dist/gludd --help | head -5
+          # Guard against known crash signatures that PyInstaller bundling has
+          # silently produced in past releases. If --version / --help printed a
+          # traceback or the ansible missing-data-file error, the binary is
+          # broken — fail this step so the artifact is never published.
+          OUT="$(./dist/gludd --version 2>&1; ./dist/gludd --help 2>&1 | head -5)"
+          if echo "$OUT" | grep -qiE 'traceback|Missing base YAML definition file'; then
+            echo "FAIL: smoke test output contained a crash signature:"
+            echo "$OUT"
+            exit 1
+          fi
+      - name: Smoke test daemon start
+        # Linux-only: verify the freshly-built binary can actually boot the
+        # daemon and answer a /health request. Other platforms can't easily run
+        # the daemon in CI, so this is linux-specific. Runs before upload-artifact
+        # so a daemon that can't boot doesn't get shipped.
+        run: |
+          set -e
+          ./dist/gludd daemon start &
+          DAEMON_PID=$!
+          sleep 5
+          if ! curl -sf http://127.0.0.1:8000/health; then
+            echo "FAIL: daemon did not answer /health within 5s"
+            kill "$DAEMON_PID" 2>/dev/null || true
+            exit 1
+          fi
+          echo "PASS: daemon answered /health"
+          kill "$DAEMON_PID" 2>/dev/null || true
       - name: Package tarball
         run: |
           mkdir -p dist/release
@@ -582,6 +620,23 @@ jobs:
         run: |
           uv sync
           uv run pyinstaller gludd.spec --clean --noconfirm
+      - name: Smoke test binary
+        # Post-build smoke test: catches binaries that built successfully but
+        # crash at runtime (e.g. the "Missing base YAML definition file" ansible
+        # data-file error). Runs BEFORE packaging and upload-artifact so a
+        # broken binary never reaches the release artifacts.
+        run: |
+          set -e
+          echo "--- gludd --version ---"
+          ./dist/gludd --version
+          echo "--- gludd --help (first 5 lines) ---"
+          ./dist/gludd --help | head -5
+          OUT="$(./dist/gludd --version 2>&1; ./dist/gludd --help 2>&1 | head -5)"
+          if echo "$OUT" | grep -qiE 'traceback|Missing base YAML definition file'; then
+            echo "FAIL: smoke test output contained a crash signature:"
+            echo "$OUT"
+            exit 1
+          fi
       - name: Package tarball
         run: |
           mkdir -p dist/release
@@ -643,6 +698,25 @@ jobs:
         run: |
           uv sync
           uv run pyinstaller gludd.spec --clean --noconfirm
+      - name: Smoke test binary
+        # Post-build smoke test (Windows): catches binaries that built
+        # successfully but crash at runtime (e.g. the "Missing base YAML
+        # definition file" ansible data-file error). Runs BEFORE packaging
+        # and upload-artifact so a broken binary never reaches the release.
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          Write-Host "--- gludd.exe --version ---"
+          .\dist\gludd.exe --version
+          Write-Host "--- gludd.exe --help (first 5 lines) ---"
+          .\dist\gludd.exe --help | Select-Object -First 5
+          $out = (.\dist\gludd.exe --version 2>&1 | Out-String)
+          $out += (.\dist\gludd.exe --help 2>&1 | Select-Object -First 5 | Out-String)
+          if ($out -match '(?i)traceback|Missing base YAML definition file') {
+            Write-Host "FAIL: smoke test output contained a crash signature:"
+            Write-Host $out
+            exit 1
+          }
       - name: Package zip
         shell: pwsh
         run: |
