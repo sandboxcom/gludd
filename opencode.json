@@ -4,30 +4,40 @@
     "read": {
       "/Users/shawnwilson/gludd/**": "allow",
       "/Users/shawnwilson/.config/opencode/**": "allow",
+      "/Users/shawnwilson/.local/share/opencode/**": "allow",
+      "/Users/shawnwilson/.cache/**": "allow",
       "/tmp/**": "allow",
       "*": "deny"
     },
     "write": {
       "/Users/shawnwilson/gludd/**": "allow",
       "/Users/shawnwilson/.config/opencode/**": "allow",
+      "/Users/shawnwilson/.local/share/opencode/**": "allow",
+      "/Users/shawnwilson/.cache/**": "allow",
       "/tmp/**": "allow",
       "*": "deny"
     },
     "edit": {
       "/Users/shawnwilson/gludd/**": "allow",
       "/Users/shawnwilson/.config/opencode/**": "allow",
+      "/Users/shawnwilson/.local/share/opencode/**": "allow",
+      "/Users/shawnwilson/.cache/**": "allow",
       "/tmp/**": "allow",
       "*": "deny"
     },
     "glob": {
       "/Users/shawnwilson/gludd/**": "allow",
       "/Users/shawnwilson/.config/opencode/**": "allow",
+      "/Users/shawnwilson/.local/share/opencode/**": "allow",
+      "/Users/shawnwilson/.cache/**": "allow",
       "/tmp/**": "allow",
       "*": "deny"
     },
     "grep": {
       "/Users/shawnwilson/gludd/**": "allow",
       "/Users/shawnwilson/.config/opencode/**": "allow",
+      "/Users/shawnwilson/.local/share/opencode/**": "allow",
+      "/Users/shawnwilson/.cache/**": "allow",
       "/tmp/**": "allow",
       "*": "deny"
     },
