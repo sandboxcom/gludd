@@ -1,0 +1,35 @@
+---
+# feature_done.yml — Merge a feature branch (--no-ff) and delete it.
+# Mirrors: make feature-done MSG='feature/name'
+
+- name: "Assert parameters for feature-done"
+  ansible.builtin.assert:
+    that:
+      - repo_path | string | length > 0
+      - feature_name | string | length > 0
+      - not feature_name.startswith('-')
+    fail_msg: "repo_path and feature_name are required; feature_name must not start with '-'"
+
+- name: "Assert clean working tree before merge"
+  general_ludd.agent.gludd_git:
+    path: "{{ repo_path }}"
+    op: state
+    assert_clean: true
+  register: _feature_done_state
+  failed_when: not (_feature_done_state.result.success | default(false))
+
+- name: "Merge feature branch into target"
+  general_ludd.agent.gludd_git:
+    path: "{{ repo_path }}"
+    op: feature_done
+    feature_name: "{{ feature_name }}"
+    target: "{{ target | default('master') }}"
+  register: _feature_done
+
+- name: "Set feature-done result"
+  ansible.builtin.set_fact:
+    git_automation_feature_done_result:
+      op: feature_done
+      name: "{{ _feature_done.branch | default(feature_name) }}"
+      target: "{{ target | default('master') }}"
+      success: "{{ _feature_done.result.success | default(false) }}"

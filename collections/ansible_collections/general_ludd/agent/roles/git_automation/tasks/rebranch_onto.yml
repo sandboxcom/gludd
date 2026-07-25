@@ -1,0 +1,28 @@
+---
+# rebranch_onto.yml — Create new branch at <base> and cherry-pick commits.
+# Mirrors: make git-rebranch-onto NEW=<branch> BASE=<sha> RANGE='<sha1> <sha2> ...'
+
+- name: "Assert parameters for rebranch-onto"
+  ansible.builtin.assert:
+    that:
+      - repo_path | string | length > 0
+      - new_base | string | length > 0
+      - not new_base.startswith('-')
+    fail_msg: "repo_path and new_base are required; new_base must not start with '-'"
+
+- name: "Rebranch onto new base through gludd_git"
+  general_ludd.agent.gludd_git:
+    path: "{{ repo_path }}"
+    op: rebranch_onto
+    new_base: "{{ new_base }}"
+    commits: "{{ commits | default([]) }}"
+  register: _rebranch
+
+- name: "Set rebranch-onto result"
+  ansible.builtin.set_fact:
+    git_automation_rebranch_onto_result:
+      op: rebranch_onto
+      branch: "{{ _rebranch.branch | default('') }}"
+      base: "{{ new_base }}"
+      original: "{{ _rebranch.original | default('') }}"
+      success: "{{ _rebranch.result.success | default(false) }}"

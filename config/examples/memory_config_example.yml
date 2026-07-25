@@ -1,0 +1,193 @@
+# =============================================================================
+# gludd Agentic Memory Configuration — Example
+# =============================================================================
+#
+# Copy to config/memory.yml and adjust for your deployment.
+# Falls back to in-memory defaults when this file is absent.
+#
+# =============================================================================
+# Memory Subsystem Overview
+# =============================================================================
+#
+# gludd supports four memory tiers:
+#
+#   Tier 1 — Working Memory: Scoped key-value store per conversation session.
+#            Backed by CrossConversationStore (LangGraph InMemoryStore or
+#            ephemeral dict). TTL-based expiration.
+#
+#   Tier 2 — Episodic Memory: Structured records of past task executions.
+#            Backed by MemoryRepository (SQL memory_records table) or
+#            LocalAgentMemory (diskcache). Supports consolidation.
+#
+#   Tier 3 — Semantic Memory: Consolidated summaries + learned patterns.
+#            Produced by MemoryConsolidator from episodic records. Stored
+#            in "consolidated" namespace.
+#
+#   Tier 4 — Embedding/Search Memory: Vector similarity search over memory
+#            records. Backed by MemoryEmbeddingStore (in-memory index) with
+#            optional vector database (pgvector, Chroma, FAISS).
+#
+# =============================================================================
+
+memory:
+  # ---------------------------------------------------------------------------
+  # General
+  # ---------------------------------------------------------------------------
+
+  # Enable/disable the memory subsystem entirely.
+  enabled: true
+
+  # Default TTL for new memory records (seconds). 0 = no expiry.
+  default_ttl_seconds: 86400  # 24 hours
+
+  # Maximum number of records to keep per agent per namespace.
+  # Oldest records are evicted when the limit is exceeded.
+  max_records_per_namespace: 10000
+
+  # ---------------------------------------------------------------------------
+  # Episodic Memory
+  # ---------------------------------------------------------------------------
+
+  episodic:
+    # Backend: "sql" (MemoryRepository) or "local" (LocalAgentMemory/diskcache)
+    backend: sql
+
+    # diskcache directory (only used when backend=local)
+    local_cache_dir: ".gludd/local_memory"
+
+    # Minimum number of episodes before consolidation runs.
+    min_episodes_to_consolidate: 10
+
+    # Only consolidate episodes older than this many hours.
+    max_episode_age_hours: 24.0
+
+    # Consolidation schedule (cron expression; empty = disabled)
+    consolidation_schedule: "0 */6 * * *"  # every 6 hours
+
+  # ---------------------------------------------------------------------------
+  # Semantic Memory (Consolidation)
+  # ---------------------------------------------------------------------------
+
+  semantic:
+    # Enable model-driven consolidation (calls LLM to generate insights).
+    model_consolidation_enabled: true
+
+    # Model to use for consolidation (must be registered in model profiles).
+    consolidation_model: "sonnet"
+
+    # Max tokens for consolidation prompt.
+    consolidation_max_tokens: 2048
+
+  # ---------------------------------------------------------------------------
+  # Embedding
+  # ---------------------------------------------------------------------------
+
+  embedding:
+    # Provider: "hash" (built-in HashEmbedder, 256-dim, deterministic, free),
+    #           "openai" (text-embedding-3-small, 1536-dim, $0.02/1M tokens),
+    #           "sentence_transformers" (all-MiniLM-L6-v2, 384-dim, local),
+    #           "ollama" (nomic-embed-text, 768-dim, local via Ollama)
+    provider: hash
+
+    # Dimensionality — auto-detected from provider; override if needed.
+    # dim: 256
+
+    # For provider=openai:
+    # openai_model: "text-embedding-3-small"
+    # openai_api_key_env: "OPENAI_API_KEY"
+
+    # For provider=sentence_transformers:
+    # sentence_transformers_model: "all-MiniLM-L6-v2"
+
+    # For provider=ollama:
+    # ollama_model: "nomic-embed-text"
+    # ollama_host: "http://localhost:11434"
+
+  # ---------------------------------------------------------------------------
+  # Vector Store (for embedding-based search)
+  # ---------------------------------------------------------------------------
+
+  vector_store:
+    # Backend: "in_memory" (default), "pgvector", "chroma", "faiss"
+    backend: in_memory
+
+    # For backend=pgvector:
+    # pgvector:
+    #   table_name: "memory_embeddings"
+    #   index_type: "ivfflat"  # or "hnsw"
+    #   lists: 100
+
+    # For backend=chroma:
+    # chroma:
+    #   collection_name: "gludd_memory"
+    #   persist_directory: ".gludd/chroma_db"
+    #   host: null  # null = local; or "chroma-server:8000"
+
+    # For backend=faiss:
+    # faiss:
+    #   index_type: "IndexFlatIP"  # Inner Product (cosine with normalized vectors)
+    #   use_gpu: false
+    #   persist_path: ".gludd/faiss_index.bin"
+
+  # ---------------------------------------------------------------------------
+  # Cross-Conversation Memory
+  # ---------------------------------------------------------------------------
+
+  cross_conversation:
+    # Backend: "langgraph" (InMemoryStore) or "ephemeral" (dict)
+    backend: langgraph
+
+    # Maximum number of conversations to retain.
+    max_conversations: 1000
+
+    # Automatically import relevant context from past conversations
+    # when starting a new conversation.
+    auto_import_context: true
+
+    # Number of past conversations to import for context.
+    import_limit: 5
+
+  # ---------------------------------------------------------------------------
+  # Retrieval
+  # ---------------------------------------------------------------------------
+
+  retrieval:
+    # Search mode: "keyword" (Jaccard overlap), "embedding" (cosine similarity),
+    #              "hybrid" (weighted combination)
+    mode: keyword
+
+    # Hybrid search weights (must sum to 1.0)
+    hybrid:
+      keyword_weight: 0.3
+      embedding_weight: 0.7
+
+    # Default top-k for retrieval queries.
+    default_top_k: 10
+
+    # Minimum score threshold (0.0 to 1.0).
+    min_score: 0.0
+
+    # Recency boost: multiply score by these factors for recent records.
+    recency_boost:
+      enabled: true
+      last_hour: 1.5
+      last_day: 1.2
+      older_than_week: 0.9
+
+  # ---------------------------------------------------------------------------
+  # Procedural Memory (future)
+  # ---------------------------------------------------------------------------
+
+  # procedural:
+  #   enabled: false
+  #   extraction_threshold: 5  # min occurrences before extracting pattern
+  #   max_patterns: 100
+
+  # ---------------------------------------------------------------------------
+  # Knowledge Graph (future)
+  # ---------------------------------------------------------------------------
+
+  # knowledge_graph:
+  #   enabled: false
+  #   backend: "rdflib"  # or "neo4j"
+  #   neo4j_uri: "bolt://localhost:7687"
