@@ -548,7 +548,24 @@ function writeForceDispatchSignal(cmds: DispatchItem[]): void {
       ts: Date.now(),
     }))
   } catch { // fail open
- }
+  }
+}
+// BP.16: Consume (read + delete) a stale force-dispatch signal so the watchdog
+// cannot re-inject stale dispatch commands on its next poll cycle. Called at
+// the top of mainthreadBudgetBefore — by the time the next tool call arrives,
+// the prior block message (which embeds the commands directly) has already
+// been delivered to the agent's context. The file is a one-shot signal; once
+// consumed it must be deleted.
+function consumeForceDispatchSignal(): DispatchItem[] | null {
+  try {
+    if (!fs.existsSync(FORCE_DISPATCH_FILE)) return null
+    const data = JSON.parse(fs.readFileSync(FORCE_DISPATCH_FILE, "utf8"))
+    try { fs.unlinkSync(FORCE_DISPATCH_FILE) } catch { /* absent OK */ }
+    return Array.isArray(data.dispatch_commands) ? data.dispatch_commands : null
+  } catch {
+    try { fs.unlinkSync(FORCE_DISPATCH_FILE) } catch { /* absent OK */ }
+    return null
+  }
 }
 interface MainthreadStreakState {
   count: number
@@ -624,6 +641,10 @@ function mainthreadBudgetBefore(tool: string, command: string): string | null {
   try {
     if (!MAINTHREAD_STREAK_ENABLED) return null
     if (isDisengaged()) return null
+    // BP.16: Consume any stale force-dispatch signal from a prior block cycle.
+    // The signal was delivered via the block error message and/or watchdog
+    // injection. Keeping the file causes re-injection on every watchdog poll.
+    consumeForceDispatchSignal()
     // Git shipping operations (commit, push, tag) are NEVER blocked.
     // They are terminal actions that complete work, not grinding.
     if (tool === "bash" && isGitShippingTarget(command)) return null
