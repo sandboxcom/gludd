@@ -2574,8 +2574,8 @@ ci-job-log:
 	@if [ -z "$(RUN)" ] || [ -z "$(JOB)" ]; then echo "Usage: make ci-job-log RUN=<run-id> JOB=<job-name-substring>"; exit 1; fi
 	@JID=$$(gh run view -R sandboxcom/gludd $(RUN) --json jobs --jq ".jobs[] | select(.name | contains(\"$(JOB)\")) | .databaseId" | head -1); \
 	if [ -z "$$JID" ]; then echo "no job matching '$(JOB)' found in run $(RUN)"; exit 1; fi; \
-	echo "--- job id: $$JID ---"; \
-	gh run view -R sandboxcom/gludd --log --job=$$JID 2>&1 | tail -400 || echo "ci-job-log-failed"
+	echo "--- job: $(JOB) (id: $$JID) ---"; \
+	gh api repos/sandboxcom/gludd/actions/jobs/$$JID/logs 2>&1 | tail -400 || echo "ci-job-log-failed"
 
 # List job names for a run so you know what to pass as JOB to ci-job-log.
 # Usage: make ci-job-list RUN=<run-id>
@@ -2583,11 +2583,9 @@ ci-job-list:
 	@if [ -z "$(RUN)" ]; then echo "Usage: make ci-job-list RUN=<run-id>"; exit 1; fi
 	@gh run view -R sandboxcom/gludd $(RUN) --json jobs --jq '.jobs[] | "\(.name)  \(.status)/\(.conclusion)"' 2>/dev/null || echo "ci-job-list-failed"
 
-# Get the failure log for a specific failed job in a still-running run.
+# Get logs for a specific job via GitHub REST API — works even while the run
+# is still in_progress (unlike gh run view --log which blocks until completion).
 # Usage: make ci-live-log RUN=<run-id> JOB=<name>
-# Unlike ci-faillog (which needs the run to be complete), this gets individual
-# job logs that are available as soon as the job finishes, even if the run is
-# still in_progress.
 ci-live-log:
 	@if [ -z "$(RUN)" ] || [ -z "$(JOB)" ]; then echo "Usage: make ci-live-log RUN=<run-id> JOB=<job-name-substring>"; exit 1; fi
 	@JID=$$(gh run view -R sandboxcom/gludd $(RUN) --json jobs --jq ".jobs[] | select(.name | contains(\"$(JOB)\")) | .databaseId" | head -1); \
@@ -2597,7 +2595,7 @@ ci-live-log:
 		exit 1; \
 	fi; \
 	echo "--- live log for job: $(JOB) (id: $$JID) ---"; \
-	gh run view -R sandboxcom/gludd --log --job=$$JID 2>&1 | grep -v '^[a-z].*Build executable.*[0-9][0-9][0-9] [A-Z]' | tail -200
+	gh api repos/sandboxcom/gludd/actions/jobs/$$JID/logs 2>&1 | tail -200
 
 # Just the FAILED/ERROR test ids + summary lines from a run's failed-step logs
 # (ci-faillog tails raw logs; this filters the signal). Usage: make ci-failed-tests RUN=<id>
@@ -3798,7 +3796,7 @@ deb-install-deps:
 rpm-package:
 	@echo "=== Building .rpm package ==="
 	@which rpmbuild >/dev/null 2>&1 || (echo "ERROR: rpmbuild not found. Install rpm-build package."; exit 1)
-	@mkdir -p dist/rpm /tmp/gludd-rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
+	@mkdir -p dist/rpm /tmp/gludd-rpmbuild/BUILD /tmp/gludd-rpmbuild/RPMS /tmp/gludd-rpmbuild/SOURCES /tmp/gludd-rpmbuild/SPECS /tmp/gludd-rpmbuild/SRPMS
 	@cp dist/gludd /tmp/gludd-rpmbuild/SOURCES/gludd
 	@sed "s/VERSION_PLACEHOLDER/$(VERSION)/g" dist/rpm/gludd.spec > /tmp/gludd-rpmbuild/SPECS/gludd.spec
 	@rpmbuild -bb --define "_topdir /tmp/gludd-rpmbuild" /tmp/gludd-rpmbuild/SPECS/gludd.spec
