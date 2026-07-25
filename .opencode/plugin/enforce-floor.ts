@@ -29,8 +29,17 @@ const TARGET = Math.min(
   parseInt(process.env.CLAUDE_AGENT_TARGET || "10", 10),
   CEILING,
 )
+// A wave is the complete set of parallel dispatches in one assistant message.
+// Keep this independently tunable for plugin e2e tests, but default to the
+// project-wide ten-agent ceiling.
+const WAVE_WIDTH = _tunable(
+  "/tmp/gludd-dispatch-wave-width",
+  "GLUDD_DISPATCH_WAVE_WIDTH",
+  "10",
+)
 const FLOOR_ENFORCE = process.env.GLUDD_FLOOR_ENFORCE !== "0"
 const STREAK_PLUGIN_NAME = "enforce-floor"
+const DISPATCH_PREFLIGHT_PATH = "/tmp/gludd-dispatch-preflight.json"
 // Shared state filenames used through shared.ts: gludd-tool-streak.json, gludd-watchdog-disengage.json.
 // ── Time-based message boundary detection ──────────────────────────────────
 // Inter-call gap that marks a new agent message. Env-tunable so e2e tests can
@@ -179,6 +188,31 @@ function _buildDispatchCommands(): DispatchCommand[] {
   } catch {}
   return commands
 }
+
+/** Persist an observable preflight before the first member of every wave. */
+function recordDispatchPreflight(commands: DispatchCommand[]): void {
+  try {
+    writeJsonFile(DISPATCH_PREFLIGHT_PATH, {
+      created_at: new Date().toISOString(),
+      required_width: WAVE_WIDTH,
+      planned_items: commands.slice(0, WAVE_WIDTH).map(command => command.task_item),
+      status: "in_progress",
+    })
+  } catch {}
+}
+
+function recordDispatchWaveComplete(dispatches: number): void {
+  try {
+    const prior = readJsonFile(DISPATCH_PREFLIGHT_PATH) as Record<string, unknown> | null
+    writeJsonFile(DISPATCH_PREFLIGHT_PATH, {
+      ...(prior || {}),
+      completed_at: new Date().toISOString(),
+      observed_dispatches: dispatches,
+      required_width: WAVE_WIDTH,
+      status: "complete",
+    })
+  } catch {}
+}
 // ── Module-level state (persists across tool.execute.before calls) ─────────
 const MAX_STREAK = 2
 let _streakCount = 0
@@ -310,6 +344,20 @@ const defaultImpl: HotModule = {
       // ── Time-based result-processing phase detection ─────────────────
       const msSinceDispatch = now - _lastDispatchTs
       const inResultPhase = _dispatchCount > 0 && msSinceDispatch < POST_DISPATCH_GRACE_MS && msSinceDispatch > 2000
+      if (isDispatchTool(tool) && _thisMessageDispatchCount >= WAVE_WIDTH && openWorkExists()) {
+        return {
+          permissionDecision: "deny" as const,
+          message: [
+            "⛔ WAVE WIDTH VIOLATION — DISPATCH BLOCKED",
+            "",
+            `This wave already contains ${_thisMessageDispatchCount} dispatches; the required width is ${WAVE_WIDTH}.`,
+            "Do not exceed the configured concurrent-agent ceiling.",
+          ].join("\n"),
+        }
+      }
+      if (isDispatchTool(tool) && _thisMessageDispatchCount === 0) {
+        recordDispatchPreflight(_buildDispatchCommands())
+      }
       // ── Dispatch tool → reset streaks, count, return ─────────────────
       if (isDispatchTool(tool)) {
         _streakCount = 0
@@ -321,7 +369,28 @@ const defaultImpl: HotModule = {
         _sessionDispatchCount++
         if (_dispatchCount > _dispatchPeak) _dispatchPeak = _dispatchCount
         _consecutiveReadsInResultPhase = 0
+        if (_thisMessageDispatchCount === WAVE_WIDTH) {
+          recordDispatchWaveComplete(_thisMessageDispatchCount)
+        }
         return
+      }
+      // A completed assistant message containing dispatches must be an exact
+      // ten-wide wave before the main thread can resume inline activity.
+      if (
+        _prevMessageDispatchCount > 0 &&
+        _prevMessageDispatchCount < WAVE_WIDTH &&
+        openWorkExists()
+      ) {
+        return {
+          permissionDecision: "deny" as const,
+          message: [
+            "⛔ WAVE WIDTH VIOLATION — INLINE WORK BLOCKED",
+            "",
+            `Previous message dispatched ${_prevMessageDispatchCount}; required wave width is ${WAVE_WIDTH}.`,
+            "Run the pre-dispatch audit and submit one parallel wave of exactly 10 concrete tasks.",
+            "Do not resume reads, edits, or bash calls after an undersized wave.",
+          ].join("\n"),
+        }
       }
       // ── Session-start dispatch stall ─────────────────────────────────
       if (_isInSessionStartWindow() && _sessionDispatchCount === 0) {
@@ -514,11 +583,6 @@ const defaultImpl: HotModule = {
       return
     }
   },
-  "experimental.text.complete": async (_input: unknown, output: unknown) => {
-    if (isSubagent()) return output
-    incrementTextCompleteCount()
-    return output
-  },
 }
 // ============================================================================
 // PROXY PLUGIN (hot-reload aware — tool.execute.before only)
@@ -554,11 +618,6 @@ export default (({ }) => {
       const impl = loadHotModule("floor", defaultImpl)
       const fn = impl["tool.execute.before"]
       return fn ? await fn(input, output) : undefined
-    },
-    "experimental.text.complete": async (input: unknown, output: unknown) => {
-      const impl = loadHotModule("floor", defaultImpl)
-      const fn = impl["experimental.text.complete"]
-      return fn ? await fn(input, output) : output
     },
   }
 }) satisfies Plugin
