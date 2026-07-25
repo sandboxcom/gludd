@@ -1,0 +1,91 @@
+# ============================================================================
+# high_security_setup.yml — Restrictive permissions, process isolation ON
+# ============================================================================
+#
+# USE CASE
+# --------
+# A regulated or production environment where gludd executes untrusted or
+# semi-trusted work. Every agent runs inside a container, network egress is
+# allowlisted, file writes are constrained, and budgets are tight. Suitable
+# for shared-tenant deployments where operators cannot trust agent output.
+#
+# Pair this file with the bundled permission specs under
+# config/permissions/ (human-admin / human-operator / human-viewer) and the
+# per-task isolation playbook under config/ansible/isolation.yml.
+# ============================================================================
+
+# --- network ---------------------------------------------------------------
+# Bind the daemon to loopback only. allowed_cidr, when present, restricts
+# which client IPs may hit the API. The defaults file leaves this commented
+# out; here we explicitly lock down to a private subnet.
+network:
+  host: 127.0.0.1
+  port: 8000
+  allowed_cidr:
+    - 127.0.0.0/8             # local operator only
+    # - 10.0.0.0/8            # uncomment to allow ops VPN
+
+# --- model_routing ---------------------------------------------------------
+model_routing:
+  default_profile: zai_coder
+  weak_model_profile: zai_coder
+  role_routing:
+    coder: zai_coder
+    planner: zai_coder
+    reviewer: zai_coder
+  quality_routing:
+    high: zai_coder
+    medium: zai_coder
+  latency_routing:
+    fast: zai_coder
+
+# --- database --------------------------------------------------------------
+# Connect over a UNIX socket or loopback. Use strong credentials sourced
+# from environment / OpenBao — never inline passwords here.
+database:
+  host: localhost
+  port: 5432
+  name: gludd
+  user: gludd
+  # password: <sourced from OPENBAO at runtime — do NOT inline>
+
+# --- agents ----------------------------------------------------------------
+agents:
+  default_agent: build
+  # Lower concurrency in isolated mode: each agent now spawns a container,
+  # which is heavier than a worktree.
+  max_concurrent: 2
+
+# --- orchestration ---------------------------------------------------------
+orchestration:
+  # Tight cap: containers are expensive, and high-security deployments tend
+  # to share a host with other services.
+  max_concurrent_model_calls: 4
+
+# --- process_isolation -----------------------------------------------------
+# THE key section for this profile. Each agent runs inside a container with
+# no host filesystem access beyond its scratch volume.
+process_isolation:
+  enabled: true               # turn isolation ON (default is false)
+  container_runtime: podman   # podman preferred — rootless by default
+  # Optional: pin the image so supply-chain changes do not silently land.
+  # image: registry.internal/gludd-agent:0.1.0
+  # read_only_root: true      # mount rootfs read-only; writes go to scratch
+  # drop_capabilities: ["ALL"]
+  # network_mode: none        # agents get no network unless allowlisted
+
+# --- budget ----------------------------------------------------------------
+# Deliberately tight. A compromised or runaway agent exhausts this fast and
+# triggers the hard-stop before doing damage.
+budget:
+  max_usd: 25
+  warn_percent: 60            # warn early — operators get a 40% runway
+
+# What this enables
+# -----------------
+# * Every agent executes inside a rootless Podman container — no host fs
+#   access, no implicit network.
+# * API surface locked to loopback; remote operators must tunnel in.
+# * Low concurrency + low budget = small blast radius if a workflow goes wrong.
+# * Pair with config/permissions/human-admin.yml for STS-scoped escalation
+#   requests — agents cannot self-elevate beyond the human intersection.

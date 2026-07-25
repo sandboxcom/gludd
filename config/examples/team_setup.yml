@@ -1,0 +1,100 @@
+# ============================================================================
+# team_setup.yml — Multiple human roles (admin, operator, viewer)
+# ============================================================================
+#
+# USE CASE
+# --------
+# A small team shares one gludd deployment. Each human authenticates with a
+# different role that scopes what they can approve, what files they can
+# touch, and what secrets they can read. gludd's permission system uses
+# intersection (human_spec ∩ agent_spec) so a human can never grant an agent
+# more than they themselves have — see config/permissions/human-*.yml for the
+# spec definitions.
+#
+# This file sets the daemon-side defaults; per-user overrides live in
+# ~/.config/general-ludd/users/<user_id>.yml (not shown).
+# ============================================================================
+
+# --- network ---------------------------------------------------------------
+# Bind to loopback; operators tunnel in via SSH. The team is small enough
+# that a reverse-proxy / SSO layer is not warranted.
+network:
+  host: 127.0.0.1
+  port: 8000
+
+# --- model_routing ---------------------------------------------------------
+model_routing:
+  default_profile: zai_coder
+  weak_model_profile: zai_coder
+  role_routing:
+    coder: zai_coder
+    planner: zai_coder
+    reviewer: zai_coder
+  quality_routing:
+    high: zai_coder
+    medium: zai_coder
+  latency_routing:
+    fast: zai_coder
+
+# --- database --------------------------------------------------------------
+database:
+  host: localhost
+  port: 5432
+  name: gludd
+  user: gludd
+
+# --- agents ----------------------------------------------------------------
+agents:
+  default_agent: build
+  # 4 concurrent slots — sized for a 3-person team plus headroom for the
+  # integrator lane.
+  max_concurrent: 4
+
+# --- orchestration ---------------------------------------------------------
+orchestration:
+  max_concurrent_model_calls: 8
+
+# --- default_human_role ----------------------------------------------------
+# Role applied when a user connects without a per-user override. The bundled
+# choices are:
+#   human-admin    — full file/net/secret access; can grant escalations
+#   human-operator — read code, approve human-todos, no destructive secret ops
+#   human-viewer   — read-only; can observe but cannot approve or dispatch
+#
+# Default to the most restrictive role that still lets a typical user do
+# their job. Operators who need admin powers get an explicit override file.
+default_human_role: human-operator
+
+# --- permissions_dir -------------------------------------------------------
+# Directory the daemon scans for PermissionSpec files. Defaults to
+# config/permissions/; override only if you keep specs outside the repo.
+# permissions_dir: config/permissions
+
+# --- escalation ------------------------------------------------------------
+# When an agent requests a permission outside the human ∩ agent intersection,
+# a HumanTodo with category=permission_escalation is filed. Tunables:
+escalation:
+  # Hours before a pending permission_escalation todo triggers a retry.
+  permission_escalation_block_hours: 4
+  # Hours before a generic human-input block triggers a reminder.
+  human_input_block_hours: 24
+  # Max re-queues before a todo is labelled a chronic blocker.
+  max_requeues_before_chronic: 3
+
+# --- budget ----------------------------------------------------------------
+# Team-wide shared budget. Per-user caps would come from the per-user
+# override files; this is the global ceiling.
+budget:
+  max_usd: 200
+  warn_percent: 75
+
+# What this enables
+# -----------------
+# * Three-tier human access without a separate IAM stack — every user gets
+#   one of the bundled human-* PermissionSpecs.
+# * Default role is operator (safe); admins and viewers require explicit
+#   per-user overrides so a misconfigured account cannot accidentally hold
+#   destructive power.
+# * Escalation timeouts ensure a forgotten permission request surfaces as a
+#   HumanTodo within hours, not days — no silent stalls.
+# * Shared $200 budget keeps the team's aggregate spend in check.

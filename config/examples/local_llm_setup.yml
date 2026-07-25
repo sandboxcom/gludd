@@ -1,0 +1,94 @@
+# ============================================================================
+# local_llm_setup.yml — Local-only models via vLLM and llama.cpp
+# ============================================================================
+#
+# USE CASE
+# --------
+# Air-gapped, cost-zero, or privacy-first deployment: all inference runs on
+# local hardware. No outbound API calls, no per-token billing. Two local
+# backends are wired: vLLM (GPU server, medium-latency) and llama.cpp
+# (single host, slower but lower infrastructure).
+#
+# This file expects the bundled profile definitions at:
+#   config/model_profiles/vllm_example.yml      (profile id: vllm_local)
+#   config/model_profiles/llamacpp_example.yml  (profile id: llamacpp_local)
+# Copy those out of `*_example.yml` to drop the `_example` suffix, or
+# reference the example ids directly as shown below.
+# ============================================================================
+
+# --- model_routing ---------------------------------------------------------
+model_routing:
+  # Primary workhorse: the GPU vLLM server. Mistral-7B class model.
+  default_profile: vllm_local
+
+  # Weak profile for commit messages / fast patterns. llama.cpp runs on the
+  # same host as the daemon — no GPU contention with the coder model.
+  weak_model_profile: llamacpp_local
+
+  role_routing:
+    coder: vllm_local          # 32k context, 4k output — fits most diffs
+    reviewer: vllm_local       # same model reviews its own work (no GPT-4)
+    planner: llamacpp_local    # planning is low-token; use the lighter model
+
+  quality_routing:
+    # Even "high" quality work goes to vLLM — there is no stronger option
+    # available locally. Document this so operators do not expect a remote
+    # fallback.
+    high: vllm_local
+    medium: vllm_local
+
+  latency_routing:
+    fast: llamacpp_local       # low-token, low-latency fast path
+
+  pattern_routing:
+    return_review: reviewer    # vLLM
+    commit_message: weak       # llama.cpp
+    gap_analysis: fast         # llama.cpp
+    code_generation: coder     # vLLM
+    planning: planner          # llama.cpp
+
+# --- database --------------------------------------------------------------
+database:
+  host: localhost
+  port: 5432
+  name: gludd
+  user: gludd
+
+# --- agents ----------------------------------------------------------------
+agents:
+  default_agent: build
+  # vLLM has limited throughput on a single GPU; keep the wave small so the
+  # inference server is not saturated. Each agent's requests queue at the
+  # server when this exceeds its concurrency.
+  max_concurrent: 2
+
+# --- orchestration ---------------------------------------------------------
+orchestration:
+  # Match the vLLM server's configured max_num_seqs. Going higher than the
+  # server's batch capacity just queues requests locally — no throughput gain.
+  max_concurrent_model_calls: 4
+
+# --- process_isolation -----------------------------------------------------
+# Off by default — containers would compete with the GPU server for memory.
+# Enable only if you have a separate isolation host.
+process_isolation:
+  enabled: false
+  container_runtime: podman
+
+# --- budget ----------------------------------------------------------------
+# Local models are not metered, but keep a budget configured so the loop's
+# spend-protection logic still has a circuit breaker (cost is approximate,
+# sourced from cost_per_*_token in each profile — set to 0.0 locally).
+budget:
+  max_usd: 1000                # effectively unbounded; tuned for circuit-breaker only
+  warn_percent: 90
+
+# What this enables
+# -----------------
+# * Zero outbound API traffic — every token is generated on local hardware.
+# * Two-tier routing: vLLM does the heavy lifting (coder/reviewer), llama.cpp
+#   handles the low-volume fast path (commit messages, planning).
+# * Concurrency tuned to the local server's batch capacity instead of a
+#   cloud rate limit.
+# * Budget kept as a safety net, not a real cost control — set
+#   cost_per_*_token: 0.0 in each profile so the meter reads zero.
