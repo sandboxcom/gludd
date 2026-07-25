@@ -5592,3 +5592,6 @@ gate-local:
 
 tasks-list:
 	@uv run python -c "import sys; c=open('TASKS.md').read(); idx=c.find('## Current Session'); print(c[idx:] if idx>=0 else 'ERROR: No Current Session section')"
+
+tick-legacy-phases:
+	@$(UV) run python3 /tmp/gludd-tick-sweep.py
