@@ -277,7 +277,12 @@ class LangGraphAgentLoop:
                 _sandbox: Any = sandbox_enforcer,
                 **kwargs: Any,
             ) -> str:
-                input_data = args[0] if args else kwargs
+                if args and isinstance(args[0], dict):
+                    input_data = args[0]
+                elif kwargs:
+                    input_data = kwargs
+                else:
+                    input_data = {}
                 if _sandbox is not None:
                     try:
                         _sandbox.verify_ready()
