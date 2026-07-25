@@ -1,0 +1,25 @@
+---
+# ship_commit.yml — gate-gated commit through gludd_git module.
+# Ports Makefile ship-commit: checks .gate-status, runs collect-check,
+# commits only if the gate is green.
+
+- name: "Assert repo_path and message"
+  ansible.builtin.assert:
+    that:
+      - repo_path | string | length > 0
+      - commit_message | string | length > 0
+    fail_msg: "repo_path and commit_message are required for ship_commit"
+
+- name: "Check gate status for ship-commit"
+  general_ludd.agent.gludd_git:
+    path: "{{ repo_path }}"
+    op: ship_commit
+    message: "{{ commit_message }}"
+    files: "{{ commit_files | default([]) }}"
+    push: "{{ commit_push | default(false) }}"
+    skip_gate: "{{ commit_skip_gate | default(false) }}"
+  register: _git_automation_ship_commit_module
+
+- name: "Set ship-commit result fact"
+  ansible.builtin.set_fact:
+    git_automation_ship_commit_result: "{{ _git_automation_ship_commit_module.result | default({}) }}"

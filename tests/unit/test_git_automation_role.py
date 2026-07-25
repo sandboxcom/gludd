@@ -46,6 +46,8 @@ class TestGitAutomationRoleStructure:
             "branch.yml",
             "worktree.yml",
             "state.yml",
+            "verify_remote.yml",
+            "ship_commit.yml",
         ],
     )
     def test_required_task_files_exist(self, task_file: str) -> None:
@@ -76,6 +78,7 @@ class TestTaskFilesAreValidYaml:
             "branch.yml",
             "worktree.yml",
             "state.yml",
+            "verify_remote.yml",
         ],
     )
     def test_task_file_is_valid_yaml(self, task_file: str) -> None:
@@ -112,6 +115,12 @@ class TestMainYmlImportsAllSubTasks:
         "branch.yml",
         "worktree.yml",
         "state.yml",
+        "batch_push.yml",
+        "ci_verdict.yml",
+        "ci_cancel.yml",
+        "release_cut.yml",
+        "release_delete.yml",
+        "release_recut.yml",
     }
 
     def test_main_includes_all_sub_tasks(self) -> None:

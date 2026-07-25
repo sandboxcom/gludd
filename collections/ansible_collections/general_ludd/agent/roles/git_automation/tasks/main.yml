@@ -18,6 +18,10 @@
   ansible.builtin.include_tasks: commit.yml
   when: git_op in ["commit", "gated_commit"]
 
+- name: "Include ship-commit tasks"
+  ansible.builtin.include_tasks: ship_commit.yml
+  when: git_op == "ship_commit"
+
 - name: "Include push tasks"
   ansible.builtin.include_tasks: push.yml
   when: git_op == "push"

@@ -150,3 +150,104 @@ def _tokenize(text: str) -> list[str]:
 
 def _any_overlap(terms_a: list[str], terms_b: list[str]) -> bool:
     return bool(set(terms_a) & set(terms_b))
+
+
+def score_memory(memory: dict[str, Any], current_time: datetime | None = None) -> float:
+    """Calculate importance/freshness score for a memory entry.
+
+    Score = importance_weight * (1.0 / (1 + age_days)) * access_count_bonus
+    """
+    import_weight = float(memory.get("importance_weight", 1.0))
+    access_count = int(memory.get("access_count", 0))
+    created_at_str = memory.get("created_at", "")
+
+    age_days = 0.0
+    if created_at_str:
+        try:
+            created = datetime.fromisoformat(created_at_str)
+            now = current_time or datetime.now(UTC)
+            age_seconds = max(0.0, (now - created).total_seconds())
+            age_days = age_seconds / 86400.0
+        except (ValueError, TypeError):
+            pass
+
+    recency_factor = 1.0 / (1.0 + age_days)
+    access_bonus = min(1.0 + access_count * 0.1, 2.0)
+    score = import_weight * recency_factor * access_bonus
+    return round(score, 4)
+
+
+def hybrid_search(
+    query: str,
+    memories: list[dict[str, Any]],
+    top_k: int = 10,
+    bm25_weight: float = 0.3,
+    semantic_weight: float = 0.7,
+) -> list[tuple[dict[str, Any], float]]:
+    """Combine keyword (BM25) and semantic similarity for ranking.
+
+    BM25 scoring uses term frequency with inverse document frequency.
+    Semantic similarity uses token overlap with Jaccard distance.
+    Results are combined with the given weight ratio and sorted by score.
+    """
+    if not memories:
+        return []
+
+    query_terms = _tokenize(query.lower())
+    if not query_terms:
+        return [(m, 0.0) for m in memories[:top_k]]
+
+    doc_texts: list[str] = []
+    doc_terms: list[set[str]] = []
+    for m in memories:
+        text = " ".join(str(v) for v in m.values() if isinstance(v, (str, int, float)))
+        doc_texts.append(text.lower())
+        doc_terms.append(set(_tokenize(text.lower())))
+
+    N = len(memories)
+    avgdl = sum(len(t) for t in doc_terms) / N if N > 0 else 1.0
+    k1 = 1.5
+    b = 0.75
+
+    df: dict[str, int] = {}
+    for dt in doc_terms:
+        for t in dt:
+            df[t] = df.get(t, 0) + 1
+
+    query_set = set(query_terms)
+
+    bm25_scores: list[float] = []
+    for i in range(N):
+        score = 0.0
+        dl = len(doc_terms[i])
+        for term in query_terms:
+            if df.get(term, 0) == 0:
+                continue
+            idf = max(0, int(((N - df.get(term, 0) + 0.5) / (df.get(term, 0) + 0.5)) * 10))
+            tf = sum(1 for t in doc_terms[i] if t == term)
+            numerator = tf * (k1 + 1)
+            denominator = tf + k1 * (1 - b + b * (dl / avgdl))
+            score += idf * (numerator / denominator) if denominator > 0 else 0.0
+        bm25_scores.append(score)
+
+    semantic_scores: list[float] = []
+    for i in range(N):
+        dt = doc_terms[i]
+        if dt:
+            overlap = len(query_set & dt) / len(query_set | dt) if query_set else 0.0
+        else:
+            overlap = 0.0
+        semantic_scores.append(overlap)
+
+    max_bm25 = max(bm25_scores) if bm25_scores else 1.0
+    max_semantic = max(semantic_scores) if semantic_scores else 1.0
+    norm_bm25 = [s / max_bm25 if max_bm25 > 0 else 0.0 for s in bm25_scores]
+    norm_semantic = [s / max_semantic if max_semantic > 0 else 0.0 for s in semantic_scores]
+
+    combined: list[tuple[dict[str, Any], float]] = []
+    for i in range(N):
+        score = bm25_weight * norm_bm25[i] + semantic_weight * norm_semantic[i]
+        combined.append((memories[i], round(score, 4)))
+
+    combined.sort(key=lambda x: x[1], reverse=True)
+    return combined[:top_k]

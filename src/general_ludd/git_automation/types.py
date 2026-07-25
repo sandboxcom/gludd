@@ -85,3 +85,52 @@ class GitStateResult:
     unintegrated_worktrees: list[dict[str, object]] = field(default_factory=list)
     unintegrated_branches: list[dict[str, object]] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+
+
+@dataclass
+class BatchPushResult:
+    """Outcome of a batch push: whether it was attempted, reason, and verification."""
+    pushed: bool
+    unpushed_count: int = 0
+    threshold: int = 5
+    reason: str = ""
+    remote_sha: str = ""
+    verified: bool = False
+
+
+@dataclass
+class ReleaseCutResult:
+    success: bool
+    tag: str
+    branch: str
+    commit_sha: str = ""
+    message: str = ""
+    steps_completed: list[str] = field(default_factory=list)
+
+
+@dataclass
+class VerifyRemoteResult:
+    status: str          # "VERIFIED", "MISMATCH", "UNREACHABLE"
+    remote_sha: str
+    expected_sha: str
+    remote: str
+    ref: str
+    message: str = ""
+
+
+@dataclass
+class ReleaseDeleteResult:
+    success: bool
+    tag: str
+    message: str = ""
+    local_deleted: bool = False
+    remote_deleted: bool = False
+    gh_release_deleted: bool = False
+
+
+@dataclass
+class ReleaseRecutResult:
+    success: bool
+    tag: str
+    message: str = ""
+    steps_completed: list[str] = field(default_factory=list)

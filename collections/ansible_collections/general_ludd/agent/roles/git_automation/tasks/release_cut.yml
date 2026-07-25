@@ -1,0 +1,26 @@
+---
+# release_cut.yml — release cut operation through gludd_git module.
+# Ported from Makefile target: release-cut
+
+- name: "Assert release_cut parameters"
+  ansible.builtin.assert:
+    that:
+      - repo_path | string | length > 0
+      - release_tag | string | length > 0
+    fail_msg: "repo_path and release_tag are required for release_cut"
+
+- name: "Cut release through gludd_git"
+  general_ludd.agent.gludd_git:
+    path: "{{ repo_path }}"
+    op: release_cut
+    release_tag: "{{ release_tag }}"
+    release_message: "{{ release_message | default('') }}"
+    release_branch: "{{ release_branch | default('master') }}"
+    release_remote: "{{ release_remote | default('sandboxcom') }}"
+    release_skip_readme_check: "{{ release_skip_readme_check | default(false) | bool }}"
+    release_skip_ci_check: "{{ release_skip_ci_check | default(false) | bool }}"
+  register: _release_cut
+
+- name: "Set release_cut result fact"
+  ansible.builtin.set_fact:
+    git_automation_release_result: "{{ _release_cut.result }}"

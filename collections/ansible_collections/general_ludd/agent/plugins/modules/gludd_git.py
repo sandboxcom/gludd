@@ -46,6 +46,7 @@ DOCUMENTATION:
         - merge
         - gated_merge
         - push
+        - verify_remote
         - tag_release
         - tag_checkpoint
         - release_tag
@@ -220,6 +221,7 @@ def main() -> None:
                     "merge",
                     "gated_merge",
                     "push",
+                    "verify_remote",
                     "tag_release",
                     "tag_checkpoint",
                     "release_tag",
@@ -242,6 +244,9 @@ def main() -> None:
             tag=dict(type="str", default=None),
             todo_id=dict(type="str", default=None),
             sha=dict(type="str", default=None),
+            expected_sha=dict(type="str", default=None),
+            ssh_key_path=dict(type="str", default=None),
+            ref_type=dict(type="str", default="heads", choices=["heads", "tags"]),
 
             remote=dict(type="str", default="origin"),
             state_ref=dict(type="str", default=""),
@@ -269,6 +274,7 @@ def main() -> None:
             ("op", "merge", ["source", "target"]),
             ("op", "gated_merge", ["source", "target"]),
             ("op", "push", ["branch"]),
+            ("op", "verify_remote", ["branch", "expected_sha"]),
             ("op", "tag_release", ["tag"]),
             ("op", "tag_checkpoint", ["tag"]),
             ("op", "checkpoint_tag", ["todo_id", "sha"]),
@@ -479,6 +485,17 @@ def main() -> None:
                 path, remote=module.params["remote"], branch=module.params["branch"]
             )
             module.exit_json(**ok_result({"result": asdict(res)}, changed=res.success))
+            return
+
+        if op == "verify_remote":
+            res = git.verify_remote(
+                remote=module.params["remote"],
+                branch=module.params["branch"],
+                expected_sha=module.params["expected_sha"],
+                ssh_key_path=module.params["ssh_key_path"],
+                ref_type=module.params["ref_type"],
+            )
+            module.exit_json(**ok_result({"result": asdict(res)}, changed=False))
             return
 
         if op == "tag_release":

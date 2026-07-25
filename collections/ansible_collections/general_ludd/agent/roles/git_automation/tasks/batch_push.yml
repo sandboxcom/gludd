@@ -1,0 +1,51 @@
+---
+# batch_push.yml — batch push with commit-threshold + CI-in-flight guard.
+# Ported from the Makefile batch-push target (lines 1867-1880).
+#
+# Parameters:
+#   repo_path       (required) path to the git repository
+#   push_remote     (default "sandboxcom") remote name
+#   push_branch     (default "master") branch to push
+#   threshold       (default 5) minimum unpushed commits before pushing
+#   force           (default false) bypass threshold and CI checks
+#   check_ci        (default true) check for in-flight CI before pushing
+#
+# Returns:
+#   git_automation_batch_push_result: dict with {pushed, unpushed_count,
+#     threshold, reason, remote_sha, verified}
+
+- name: "Assert batch-push parameters"
+  ansible.builtin.assert:
+    that:
+      - repo_path | string | length > 0
+      - push_remote | default("sandboxcom") | string | length > 0
+      - push_branch | default("master") | string | length > 0
+    fail_msg: "repo_path, push_remote, and push_branch are required for batch-push"
+
+- name: "Validate threshold is a positive integer"
+  ansible.builtin.assert:
+    that:
+      - (threshold | default(5) | int) > 0
+    fail_msg: "threshold must be a positive integer"
+
+- name: "Invoke batch push via gludd_git"
+  general_ludd.agent.gludd_git:
+    path: "{{ repo_path }}"
+    op: batch_push
+    remote: "{{ push_remote | default('sandboxcom') }}"
+    branch: "{{ push_branch | default('master') }}"
+    threshold: "{{ threshold | default(5) }}"
+    force: "{{ force | default(false) }}"
+    check_ci: "{{ check_ci | default(true) }}"
+  register: _batch_push_result
+
+- name: "Set batch push result fact"
+  ansible.builtin.set_fact:
+    git_automation_batch_push_result: "{{ _batch_push_result.result }}"
+
+- name: "Fail on push failure when fail_on_push_error is true"
+  ansible.builtin.fail:
+    msg: "Batch push blocked: {{ _batch_push_result.result.reason | default('unknown') }}"
+  when:
+    - not (_batch_push_result.result.pushed | default(false) | bool)
+    - fail_on_push_error | default(false) | bool

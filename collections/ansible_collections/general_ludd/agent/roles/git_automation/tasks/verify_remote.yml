@@ -1,0 +1,33 @@
+---
+# verify_remote.yml — verify remote ref tip via git ls-remote.
+# Ported from the Makefile verify-remote target.
+
+- name: "Assert verify_remote parameters"
+  ansible.builtin.assert:
+    that:
+      - verify_remote_name | string | length > 0
+      - verify_remote_branch | string | length > 0
+      - verify_expected_sha | string | length > 0
+    fail_msg: "verify_remote_name, verify_remote_branch, and verify_expected_sha are required"
+
+- name: "Verify remote ref tip matches expected SHA"
+  general_ludd.agent.gludd_git:
+    path: "{{ repo_path | default('.') }}"
+    op: verify_remote
+    remote: "{{ verify_remote_name }}"
+    branch: "{{ verify_remote_branch }}"
+    expected_sha: "{{ verify_expected_sha }}"
+    ssh_key_path: "{{ verify_ssh_key_path | default(omit) }}"
+    ref_type: "{{ verify_ref_type | default('heads') }}"
+  register: _verify_result
+
+- name: "Set verify_remote result fact"
+  ansible.builtin.set_fact:
+    git_automation_verify_result: "{{ _verify_result.result }}"
+
+- name: "Fail on mismatch when fail_on_verify_mismatch is true"
+  ansible.builtin.fail:
+    msg: "REMOTE MISMATCH: {{ _verify_result.result.result.message | default('') }}"
+  when:
+    - _verify_result.result.result.status | default('') == 'MISMATCH'
+    - fail_on_verify_mismatch | default(false) | bool

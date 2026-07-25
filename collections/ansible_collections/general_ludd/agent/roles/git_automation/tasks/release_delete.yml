@@ -1,0 +1,23 @@
+---
+# release_delete.yml — release delete operation through gludd_git module.
+# Ported from Makefile target: release-delete
+
+- name: "Assert release_delete parameters"
+  ansible.builtin.assert:
+    that:
+      - repo_path | string | length > 0
+      - release_tag | string | length > 0
+    fail_msg: "repo_path and release_tag are required for release_delete"
+
+- name: "Delete release through gludd_git"
+  general_ludd.agent.gludd_git:
+    path: "{{ repo_path }}"
+    op: release_delete
+    release_tag: "{{ release_tag }}"
+    release_remote: "{{ release_remote | default('sandboxcom') }}"
+    release_repo: "{{ release_repo | default('sandboxcom/gludd') }}"
+  register: _release_delete
+
+- name: "Set release_delete result fact"
+  ansible.builtin.set_fact:
+    git_automation_release_result: "{{ _release_delete.result }}"

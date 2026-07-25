@@ -14,6 +14,13 @@ from general_ludd.memory.consolidation import (
     CONSOLIDATION_KEY_PREFIX,
     MemoryConsolidator,
     _safe_key,
+    consolidate_cascade,
+)
+from general_ludd.memory.episodic import (
+    EPISODIC_NAMESPACE,
+    Episode,
+    EpisodicMemoryRecorder,
+    reconstruct_timeline,
 )
 
 EPISODIC_NAMESPACE = "episodic"
@@ -795,3 +802,306 @@ class _FakeEpisode:
 class _FakeRow:
     def __init__(self, *, value: str = ""):
         self.value = value
+
+
+class _FakeTimelineRepo:
+    def __init__(self, episodes: list[dict[str, Any]] | None = None):
+        self.store: dict[str, str] = {}
+        for ep_dict in (episodes or []):
+            ep_key = ep_dict.get("id", f"ep-{hash(json.dumps(ep_dict, sort_keys=True, default=str))}")
+            self.store[f"agent-1:{EPISODIC_NAMESPACE}:None:{ep_key}"] = json.dumps(ep_dict, default=str)
+
+    async def list_by_namespace(self, agent_id, *, namespace="", project_id=None, limit=100):
+        prefix = f"{agent_id}:{namespace}:{project_id}:"
+        results = []
+        for k, v in self.store.items():
+            if k.startswith(prefix):
+                results.append(_FakeRow(value=v))
+        return results[:limit]
+
+
+class _FakeTimelineRow:
+    def __init__(self, *, key: str = "", value: str = ""):
+        self.key = key
+        self.value = value
+
+
+class TestConsolidateCascade:
+    def test_levels_0_returns_empty(self):
+        result = consolidate_cascade([], levels=0)
+        assert result == []
+
+    def test_levels_1_produces_compressed(self):
+        memories = [
+            {"task_type": "code", "outcome": "success", "duration_seconds": 10, "takeaway": "good"},
+            {"task_type": "code", "outcome": "success", "duration_seconds": 20, "takeaway": "better"},
+        ]
+        result = consolidate_cascade(memories, levels=1)
+        assert len(result) == 1
+        assert result[0]["level"] == 1
+        assert result[0]["label"] == "compressed"
+        data = result[0]["data"]
+        assert len(data) == 1
+        assert data[0]["episode_count"] == 2
+        assert data[0]["total_duration"] == 30.0
+        assert data[0]["avg_duration"] == 15.0
+
+    def test_levels_2_produces_compressed_and_abstract(self):
+        memories = [
+            {"task_type": "code", "outcome": "success", "duration_seconds": 10, "takeaway": "use tdd"},
+            {"task_type": "deploy", "outcome": "failure", "error_message": "disk full", "duration_seconds": 5},
+        ]
+        result = consolidate_cascade(memories, levels=2)
+        assert len(result) == 2
+        assert result[0]["level"] == 1
+        assert result[0]["label"] == "compressed"
+        assert result[1]["level"] == 2
+        assert result[1]["label"] == "abstract"
+        abs_data = result[1]["data"]
+        assert abs_data["total_episodes"] == 2
+        assert abs_data["task_type_count"] == 2
+        assert "overall_success_rate_pct" in abs_data
+        assert "failure_rate_pct" in abs_data
+
+    def test_levels_3_produces_all_three_levels(self):
+        memories = [
+            {"task_type": "code", "outcome": "success", "duration_seconds": 10, "takeaway": "tdd works"},
+            {"task_type": "test", "outcome": "failure", "error_message": "timeout occurred", "duration_seconds": 30},
+            {"task_type": "deploy", "outcome": "failure", "error_message": "disk full error", "duration_seconds": 5},
+        ]
+        result = consolidate_cascade(memories, levels=3)
+        assert len(result) == 3
+        assert result[0]["label"] == "compressed"
+        assert result[1]["label"] == "abstract"
+        insight = result[2]
+        assert insight["level"] == 3
+        assert insight["label"] == "insight"
+        assert "insights" in insight["data"]
+        assert "recommendation_priority" in insight["data"]
+        assert insight["data"]["recommendation_priority"] in ("high", "medium", "low")
+
+    def test_all_success_produces_low_priority(self):
+        memories = [
+            {"task_type": "code", "outcome": "success", "duration_seconds": 1},
+            {"task_type": "code", "outcome": "success", "duration_seconds": 1},
+        ]
+        result = consolidate_cascade(memories, levels=3)
+        assert result[2]["data"]["recommendation_priority"] == "medium"
+
+    def test_all_failure_produces_high_priority(self):
+        memories = [
+            {"task_type": "code", "outcome": "failure", "error_message": "err1", "duration_seconds": 1},
+            {"task_type": "code", "outcome": "failure", "error_message": "err2", "duration_seconds": 1},
+        ]
+        result = consolidate_cascade(memories, levels=3)
+        assert result[2]["data"]["recommendation_priority"] == "high"
+
+    def test_empty_memories_handled(self):
+        result = consolidate_cascade([], levels=3)
+        assert len(result) == 3
+        assert result[2]["data"]["recommendation_priority"] == "high"
+
+    def test_level_1_outcome_counts(self):
+        memories = [
+            {"task_type": "code", "outcome": "success"},
+            {"task_type": "code", "outcome": "success"},
+            {"task_type": "code", "outcome": "failure"},
+            {"task_type": "code", "outcome": "partial"},
+        ]
+        result = consolidate_cascade(memories, levels=1)
+        outcomes = result[0]["data"][0]["outcomes"]
+        assert outcomes["success"] == 2
+        assert outcomes["failure"] == 1
+        assert outcomes["partial"] == 1
+
+    def test_level_1_priority_counts(self):
+        memories = [
+            {"task_type": "code", "priority": "high"},
+            {"task_type": "code", "priority": "high"},
+            {"task_type": "code", "priority": "medium"},
+        ]
+        result = consolidate_cascade(memories, levels=1)
+        priorities = result[0]["data"][0]["priorities"]
+        assert priorities["high"] == 2
+        assert priorities["medium"] == 1
+
+    def test_level_1_multiple_task_types(self):
+        memories = [
+            {"task_type": "code", "outcome": "success"},
+            {"task_type": "test", "outcome": "failure"},
+            {"task_type": "deploy", "outcome": "success"},
+        ]
+        result = consolidate_cascade(memories, levels=1)
+        assert len(result[0]["data"]) == 3
+
+    def test_level_2_success_rate(self):
+        memories = [
+            {"task_type": "code", "outcome": "success"},
+            {"task_type": "code", "outcome": "failure"},
+        ]
+        result = consolidate_cascade(memories, levels=2)
+        assert result[1]["data"]["overall_success_rate_pct"] == 50.0
+        assert result[1]["data"]["failure_rate_pct"] == 50.0
+
+    def test_level_3_insights_list(self):
+        memories = [
+            {"task_type": "code", "outcome": "failure", "error_message": "timeout error on network call"},
+            {"task_type": "test", "outcome": "failure", "error_message": "import error module not found"},
+        ]
+        result = consolidate_cascade(memories, levels=3)
+        insights = result[2]["data"]["insights"]
+        assert len(insights) > 0
+
+    def test_level_unauthorized_error_messages_captured(self):
+        memories = [
+            {"task_type": "code", "outcome": "failure", "error_message": "disk full error"},
+        ]
+        result = consolidate_cascade(memories, levels=3)
+        compressed = result[0]["data"][0]
+        assert "disk full error" in compressed["error_patterns"]
+
+    def test_level_1_takeaways_capped_at_10(self):
+        memories = [
+            {"task_type": "code", "outcome": "success", "takeaway": f"tip_{i}"} for i in range(15)
+        ]
+        result = consolidate_cascade(memories, levels=1)
+        assert len(result[0]["data"][0]["key_takeaways"]) == 10
+
+
+class TestReconstructTimeline:
+    def make_ep(self, **kwargs):
+        return {
+            "id": kwargs.pop("id", str(hash(str(kwargs)))),
+            "agent_id": "agent-1",
+            "task_type": "code",
+            "work_type": "code",
+            "priority": "medium",
+            "outcome": "success",
+            "context": {},
+            "tools_used": [],
+            "takeaway": "",
+            "error_message": "",
+            "duration_seconds": 5.0,
+            "session_id": "",
+            "created_at": datetime.now(UTC).isoformat(),
+            **kwargs,
+        }
+
+    @pytest.mark.asyncio
+    async def test_empty_repo_returns_empty(self):
+        repo = _FakeTimelineRepo([])
+        recorder = EpisodicMemoryRecorder(repo)
+        result = await reconstruct_timeline(recorder, "agent-1")
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_returns_all_episodes_for_agent(self):
+        ep1 = self.make_ep()
+        ep2 = self.make_ep()
+        repo = _FakeTimelineRepo([ep1, ep2])
+        recorder = EpisodicMemoryRecorder(repo)
+        result = await reconstruct_timeline(recorder, "agent-1")
+        assert len(result) == 2
+
+    @pytest.mark.asyncio
+    async def test_filters_by_session_id(self):
+        ep1 = self.make_ep(session_id="sess-a")
+        ep2 = self.make_ep(session_id="sess-b")
+        repo = _FakeTimelineRepo([ep1, ep2])
+        recorder = EpisodicMemoryRecorder(repo)
+        result = await reconstruct_timeline(recorder, "agent-1", session_id="sess-a")
+        assert len(result) == 1
+        assert result[0].session_id == "sess-a"
+
+    @pytest.mark.asyncio
+    async def test_filters_by_start_time(self):
+        t1 = "2024-01-01T00:00:00+00:00"
+        t2 = "2024-06-01T00:00:00+00:00"
+        ep1 = self.make_ep(created_at=t1)
+        ep2 = self.make_ep(created_at=t2)
+        repo = _FakeTimelineRepo([ep1, ep2])
+        recorder = EpisodicMemoryRecorder(repo)
+        result = await reconstruct_timeline(recorder, "agent-1", start_time="2024-03-01T00:00:00+00:00")
+        assert len(result) == 1
+        assert result[0].created_at == t2
+
+    @pytest.mark.asyncio
+    async def test_filters_by_end_time(self):
+        t1 = "2024-01-01T00:00:00+00:00"
+        t2 = "2024-06-01T00:00:00+00:00"
+        ep1 = self.make_ep(created_at=t1)
+        ep2 = self.make_ep(created_at=t2)
+        repo = _FakeTimelineRepo([ep1, ep2])
+        recorder = EpisodicMemoryRecorder(repo)
+        result = await reconstruct_timeline(recorder, "agent-1", end_time="2024-03-01T00:00:00+00:00")
+        assert len(result) == 1
+        assert result[0].created_at == t1
+
+    @pytest.mark.asyncio
+    async def test_filters_by_start_and_end_time(self):
+        t1 = "2024-01-01T00:00:00+00:00"
+        t2 = "2024-03-01T00:00:00+00:00"
+        t3 = "2024-06-01T00:00:00+00:00"
+        ep1 = self.make_ep(created_at=t1)
+        ep2 = self.make_ep(created_at=t2)
+        ep3 = self.make_ep(created_at=t3)
+        repo = _FakeTimelineRepo([ep1, ep2, ep3])
+        recorder = EpisodicMemoryRecorder(repo)
+        result = await reconstruct_timeline(
+            recorder, "agent-1",
+            start_time="2024-02-01T00:00:00+00:00",
+            end_time="2024-05-01T00:00:00+00:00",
+        )
+        assert len(result) == 1
+        assert result[0].created_at == t2
+
+    @pytest.mark.asyncio
+    async def test_sorted_by_created_at_ascending(self):
+        t3 = "2024-03-01T00:00:00+00:00"
+        t1 = "2024-01-01T00:00:00+00:00"
+        t2 = "2024-02-01T00:00:00+00:00"
+        ep1 = self.make_ep(created_at=t3)
+        ep2 = self.make_ep(created_at=t1)
+        ep3 = self.make_ep(created_at=t2)
+        repo = _FakeTimelineRepo([ep1, ep2, ep3])
+        recorder = EpisodicMemoryRecorder(repo)
+        result = await reconstruct_timeline(recorder, "agent-1")
+        timestamps = [ep.created_at for ep in result]
+        assert timestamps == sorted(timestamps)
+
+    @pytest.mark.asyncio
+    async def test_both_session_and_time_filters(self):
+        t1 = "2024-01-01T00:00:00+00:00"
+        t2 = "2024-02-01T00:00:00+00:00"
+        ep1 = self.make_ep(session_id="sess-1", created_at=t1)
+        ep2 = self.make_ep(session_id="sess-1", created_at=t2)
+        ep3 = self.make_ep(session_id="sess-2", created_at=t1)
+        repo = _FakeTimelineRepo([ep1, ep2, ep3])
+        recorder = EpisodicMemoryRecorder(repo)
+        result = await reconstruct_timeline(
+            recorder, "agent-1",
+            session_id="sess-1",
+            start_time="2024-01-15T00:00:00+00:00",
+        )
+        assert len(result) == 1
+        assert result[0].session_id == "sess-1"
+
+    @pytest.mark.asyncio
+    async def test_no_matching_session_returns_empty(self):
+        ep = self.make_ep(session_id="sess-a")
+        repo = _FakeTimelineRepo([ep])
+        recorder = EpisodicMemoryRecorder(repo)
+        result = await reconstruct_timeline(recorder, "agent-1", session_id="sess-none")
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_no_matching_time_range_returns_empty(self):
+        ep = self.make_ep(created_at="2024-03-01T00:00:00+00:00")
+        repo = _FakeTimelineRepo([ep])
+        recorder = EpisodicMemoryRecorder(repo)
+        result = await reconstruct_timeline(
+            recorder, "agent-1",
+            start_time="2024-06-01T00:00:00+00:00",
+            end_time="2024-07-01T00:00:00+00:00",
+        )
+        assert result == []

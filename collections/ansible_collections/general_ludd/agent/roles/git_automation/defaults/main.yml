@@ -71,3 +71,20 @@ state_reconciled_preserve_heads: []
 state_reconciled_preserve_head_file: "config/reconciled_preserved_heads.txt"
 state_assert_no_unintegrated_worktrees: false
 state_assert_no_unintegrated_branches: false
+
+# ── Verify remote ────────────────────────────────────────────────────────────
+verify_remote_name: ""
+verify_remote_branch: ""
+verify_expected_sha: ""
+verify_ssh_key_path: ""
+verify_ref_type: "heads"
+fail_on_verify_mismatch: false
+
+# ── Release operations ──────────────────────────────────────────────────────
+release_tag: ""
+release_message: ""
+release_branch: "master"
+release_remote: "sandboxcom"
+release_repo: "sandboxcom/gludd"
+release_skip_readme_check: false
+release_skip_ci_check: false

@@ -34,6 +34,7 @@ class Episode:
     takeaway: str = ""
     error_message: str = ""
     duration_seconds: float = 0.0
+    session_id: str = ""
     created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
 
@@ -137,6 +138,7 @@ def _episode_to_dict(ep: Episode) -> dict[str, object]:
         "takeaway": ep.takeaway,
         "error_message": ep.error_message,
         "duration_seconds": ep.duration_seconds,
+        "session_id": ep.session_id,
         "created_at": ep.created_at,
     }
 
@@ -154,5 +156,34 @@ def _dict_to_episode(d: dict[str, Any]) -> Episode:
         takeaway=d.get("takeaway", ""),
         error_message=d.get("error_message", ""),
         duration_seconds=float(d.get("duration_seconds", 0)),
+        session_id=d.get("session_id", ""),
         created_at=d.get("created_at", ""),
     )
+
+
+async def reconstruct_timeline(
+    recorder: EpisodicMemoryRecorder,
+    agent_id: str,
+    session_id: str | None = None,
+    start_time: str | None = None,
+    end_time: str | None = None,
+    project_id: str | None = None,
+) -> list[Episode]:
+    """Reconstruct the chronological sequence of events for a session.
+
+    Returns episodes sorted by created_at ascending. Optionally filtered
+    by session_id and a time window [start_time, end_time].
+    """
+    episodes = await recorder.list_episodes(agent_id, project_id=project_id, limit=5000)
+
+    if session_id:
+        episodes = [ep for ep in episodes if ep.session_id == session_id]
+
+    if start_time:
+        episodes = [ep for ep in episodes if ep.created_at >= start_time]
+
+    if end_time:
+        episodes = [ep for ep in episodes if ep.created_at <= end_time]
+
+    episodes.sort(key=lambda ep: ep.created_at)
+    return episodes

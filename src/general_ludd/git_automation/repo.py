@@ -30,9 +30,11 @@ from general_ludd.git_automation.types import (
     InitResult,
     MergeResult,
     PushResult,
+    VerifyRemoteResult,
     WorktreeInfo,
     WorktreeResult,
 )
+from general_ludd.git_automation.verify_remote import verify_remote as _verify_remote_fn
 from general_ludd.security.ssrf import resolved_host_is_blocked
 
 logger = logging.getLogger(__name__)
@@ -1425,6 +1427,97 @@ class GitAutomation:
             branch=branch or "",
             message=result.stderr.strip() if result.stderr else result.stdout.strip(),
         )
+
+    def verify_remote(
+        self,
+        remote: str,
+        branch: str,
+        expected_sha: str,
+        ssh_key_path: str | None = None,
+        *,
+        ref_type: str = "heads",
+    ) -> VerifyRemoteResult:
+        """Verify the remote ref tip matches ``expected_sha`` via ``git ls-remote``.
+
+        Ported from the Makefile ``verify-remote`` target.
+        """
+        return _verify_remote_fn(
+            remote=remote,
+            branch=branch,
+            expected_sha=expected_sha,
+            ssh_key_path=ssh_key_path,
+            ref_type=ref_type,
+        )
+
+    # ── staging / mutation operations ──────────────────────────────────
+
+    def stash(self, message: str = "") -> bool:
+        """Push working-tree changes onto the stash stack. Returns True if
+        anything was stashed, False if the tree was already clean."""
+        args = ["stash", "push"]
+        if message:
+            args.extend(["-m", message])
+        try:
+            result = self._run_git(*args, check=True)
+            return "No local changes to save" not in result.stdout
+        except subprocess.CalledProcessError:
+            return False
+
+    def stash_pop(self) -> bool:
+        try:
+            self._run_git("stash", "pop", check=True)
+            return True
+        except subprocess.CalledProcessError:
+            return False
+
+    def reset_mixed(self) -> None:
+        self._run_git("reset", check=True)
+
+    def reset_soft(self, *, ref: str) -> None:
+        _reject_leading_dash(ref, kind="reset ref")
+        self._run_git("reset", "--soft", "--", ref, check=True)
+
+    def reset_hard(self, *, ref: str) -> None:
+        _reject_leading_dash(ref, kind="reset ref")
+        self._run_git("reset", "--hard", "--", ref, check=True)
+
+    def add(self, files: Sequence[str]) -> None:
+        if not files:
+            return
+        self._run_git("add", "--", *files, check=True)
+
+    def add_all(self) -> None:
+        self._run_git("add", "-A", check=True)
+
+    def rm(self, files: Sequence[str]) -> None:
+        if not files:
+            return
+        self._run_git("rm", "-r", "--", *files, check=True)
+
+    def rm_cached(self, files: Sequence[str]) -> None:
+        if not files:
+            return
+        self._run_git("rm", "--cached", "--", *files, check=True)
+
+    def mv(self, old: str, new: str) -> None:
+        _reject_leading_dash(old, kind="mv source path")
+        _reject_leading_dash(new, kind="mv destination path")
+        os.makedirs(os.path.dirname(os.path.join(self.repo_path, new)) or self.repo_path, exist_ok=True)
+        self._run_git("mv", "--", old, new, check=True)
+
+    def ls_tracked(self) -> list[str]:
+        result = self._git_stdout_or_empty("ls-files")
+        if not result:
+            return []
+        return [line.strip() for line in result.splitlines() if line.strip()]
+
+    def restore(self, path: str) -> bool:
+        _reject_leading_dash(path, kind="restore path")
+        try:
+            self._run_git("restore", "--", path, check=True)
+            return True
+        except subprocess.CalledProcessError:
+            return False
 
     def create_local_bare_mirror(self, repo_path: str, mirror_path: str) -> str:
         with git_repo_lock(repo_path):

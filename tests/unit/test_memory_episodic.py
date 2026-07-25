@@ -140,7 +140,7 @@ class TestSerializationRoundtrip:
         expected_keys = {
             "id", "agent_id", "task_type", "work_type", "priority",
             "outcome", "context", "tools_used", "takeaway", "error_message",
-            "duration_seconds", "created_at",
+            "duration_seconds", "session_id", "created_at",
         }
         assert set(d.keys()) == expected_keys
 

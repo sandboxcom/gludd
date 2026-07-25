@@ -1,4 +1,8 @@
-"""OPA/conftest policy tests for infra/terraform/policies/.
+"""OPA/conftest policy tests.
+
+Covers:
+- infra/terraform/policies/ (conftest-based Terraform policies)
+- config/opa/ (OPA Rego policies: config_policy, terraform_policy, iam_policy)
 
 Skips cleanly when `conftest` or `opa` are not on PATH so the suite remains
 green in environments without those binaries installed.
@@ -226,3 +230,105 @@ def test_fixture_is_valid_json(scenario: str) -> None:
     assert isinstance(data, dict)
     assert "planned_values" in data
     assert "configuration" in data
+
+
+# ---------------------------------------------------------------------------
+# OPA Rego policy tests — config/opa/
+# ---------------------------------------------------------------------------
+
+_OPA_POLICIES = _PROJECT / "config" / "opa"
+
+
+def _opa_available() -> bool:
+    return shutil.which("opa") is not None
+
+
+def _run_opa_test() -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["opa", "test", str(_OPA_POLICIES), "-v"],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=str(_OPA_POLICIES),
+    )
+
+
+def test_opa_all_policies_pass() -> None:
+    """opa test config/opa/ must exit 0 with all tests passing."""
+    if not _opa_available():
+        pytest.skip("opa not installed")
+    proc = _run_opa_test()
+    assert proc.returncode == 0, (
+        f"opa test failed (exit {proc.returncode}):\n{proc.stdout}\n{proc.stderr}"
+    )
+
+
+def test_opa_config_policy_tests_pass() -> None:
+    """config_policy_test.rego tests must all pass."""
+    if not _opa_available():
+        pytest.skip("opa not installed")
+    proc = _run_opa_test()
+    for marker in [
+        "data.hottentot.config.test_guardrail_layers_valid",
+        "data.hottentot.config.test_tdd_enforced",
+        "data.hottentot.config.test_commit_after_green",
+        "data.hottentot.config.test_command_patterns_valid",
+        "data.hottentot.config.test_stop_conditions_valid",
+    ]:
+        assert f"PASS: {marker}" in proc.stdout, (
+            f"Expected PASS for {marker} not in:\n{proc.stdout}"
+        )
+
+
+def test_opa_terraform_policy_tests_pass() -> None:
+    """terraform_policy_test.rego tests must all pass."""
+    if not _opa_available():
+        pytest.skip("opa not installed")
+    proc = _run_opa_test()
+    terraform_tests = [
+        "data.terraform_test.test_deny_untagged_resource",
+        "data.terraform_test.test_allow_tagged_resource",
+        "data.terraform_test.test_allow_existing_resource_no_tags",
+        "data.terraform_test.test_deny_security_group_rule_no_description",
+        "data.terraform_test.test_allow_security_group_rule_with_description",
+        "data.terraform_test.test_deny_s3_public_acls_not_blocked",
+        "data.terraform_test.test_allow_s3_block_public_acls",
+        "data.terraform_test.test_deny_rds_no_encryption",
+        "data.terraform_test.test_allow_rds_encrypted",
+        "data.terraform_test.test_deny_iam_wildcard_action",
+        "data.terraform_test.test_allow_iam_scoped_policy",
+    ]
+    for marker in terraform_tests:
+        assert f"PASS: {marker}" in proc.stdout, (
+            f"Expected PASS for {marker} not in:\n{proc.stdout}"
+        )
+
+
+def test_opa_iam_policy_tests_pass() -> None:
+    """iam_policy_test.rego tests must all pass."""
+    if not _opa_available():
+        pytest.skip("opa not installed")
+    proc = _run_opa_test()
+    iam_tests = [
+        "data.iam_test.test_deny_admin_access",
+        "data.iam_test.test_allow_scoped_policy",
+        "data.iam_test.test_deny_wildcard_rds",
+        "data.iam_test.test_deny_mfa_missing_for_create_user",
+        "data.iam_test.test_allow_create_user_with_mfa",
+    ]
+    for marker in iam_tests:
+        assert f"PASS: {marker}" in proc.stdout, (
+            f"Expected PASS for {marker} not in:\n{proc.stdout}"
+        )
+
+
+def test_opa_total_pass_count() -> None:
+    """Verify total test pass count across all OPA test files."""
+    if not _opa_available():
+        pytest.skip("opa not installed")
+    proc = _run_opa_test()
+    # Count PASS lines in output
+    pass_lines = [line for line in proc.stdout.splitlines() if line.startswith("PASS:")]
+    assert len(pass_lines) >= 21, (
+        f"Expected >=21 PASS lines, got {len(pass_lines)}:\n{proc.stdout}"
+    )
