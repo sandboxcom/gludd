@@ -247,6 +247,7 @@ _LEAKY_ENV_VARS: frozenset[str] = frozenset({
     "GL_CONFIG_DIR",
     "DATABASE_URL",
     "GLUDD_MT_BACKLOG",
+    "GLUDD_XDIST_TRACE_LOG",
     "ZAI_API_KEY",
     "ZAI_BASE_URL",
 })
