@@ -1,0 +1,39 @@
+---
+# Resolve the gludd binary path and stash it for converge/verify.
+# Preference: dist/gludd (built via `make build-executable`) → venv entry point.
+- name: Prepare - locate gludd binary
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    project_dir: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+  tasks:
+    - name: Detect gludd binary (dist build → venv → PATH fallback)
+      ansible.builtin.shell:
+        cmd: |
+          if [ -x "{{ project_dir }}/dist/gludd" ]; then
+            echo "{{ project_dir }}/dist/gludd"
+          elif [ -x "{{ lookup('env', 'VIRTUAL_ENV') | default('/usr', true) }}/bin/gludd" ]; then
+            echo "{{ lookup('env', 'VIRTUAL_ENV') | default('/usr', true) }}/bin/gludd"
+          else
+            # Last resort: let the shell find it on PATH.
+            command -v gludd || echo "gludd"
+          fi
+      register: gludd_detect
+      changed_when: false
+
+    - name: Record binary path for later phases
+      ansible.builtin.copy:
+        content: "{{ gludd_detect.stdout | trim }}"
+        dest: "/tmp/gludd-config-loading-bin.path"
+        mode: "0644"
+
+    - name: Show resolved gludd binary
+      ansible.builtin.debug:
+        msg: "gludd binary -> {{ gludd_detect.stdout | trim }}"
+
+    - name: Ensure shared work dir exists
+      ansible.builtin.file:
+        path: "/tmp/gludd-config-loading"
+        state: directory
+        mode: "0755"

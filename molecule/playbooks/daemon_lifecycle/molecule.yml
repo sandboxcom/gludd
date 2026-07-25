@@ -1,0 +1,28 @@
+---
+# Molecule scenario: full daemon lifecycle.
+#
+# Exercises the REAL `./gludd daemon` command end-to-end:
+#   start -> health probe -> API calls -> SIGTERM -> clean exit -> cleanup.
+#
+# Unlike the mock_daemon scenarios (which stand up server.py to exercise the
+# gludd_* ansible modules against canned responses), this scenario drives the
+# real daemon binary so its lifespan, signal handling, and shutdown hygiene
+# are observed directly. Side effects checked in verify.yml:
+#   - no zombie processes after SIGTERM
+#   - no leftover socket files
+#   - log output contains no tracebacks
+#   - PID file (if any) is cleaned up
+driver:
+  name: default
+platforms: []
+provisioner:
+  name: ansible
+  env:
+    ANSIBLE_COLLECTIONS_PATH: "${MOLECULE_PROJECT_DIRECTORY}/collections"
+    # Isolate this scenario from any host daemon on the default 8000 port.
+    GLUDD_DAEMON_LIFECYCLE_PORT: "8767"
+  playbooks:
+    converge: default/converge.yml
+    verify: default/verify.yml
+verifier:
+  name: ansible
