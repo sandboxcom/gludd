@@ -359,6 +359,7 @@ jobs:
           # here to keep it from red-flagging the pipeline.
           GLUDD_TEST_WORKER_MEM_MB: "6144"
       - name: Upload coverage data (shard ${{ matrix.shard }}, Python ${{ matrix.python-version }})
+        if: always()
         # Upload the shard-unique .coverage.* data file so the `coverage` job
         # can download and combine all shards into one merged report.
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
@@ -423,6 +424,7 @@ jobs:
             echo "No shard coverage data found — skipping combine (reporting-only, non-gating; shards passed)."
           fi
       - name: Upload merged coverage report
+        if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
         with:
           name: coverage-merged

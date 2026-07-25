@@ -34,48 +34,72 @@ class TestPackagingTemplatesCommitted:
             f"causes the release pipeline to fail."
         )
 
-    def test_debian_control_has_version_placeholder(self):
+    DEBIAN_REQUIRED_FIELDS: tuple[str, ...] = (
+        "Package:",
+        "Version:",
+        "Architecture:",
+        "Maintainer:",
+        "Description:",
+    )
+
+    RPM_REQUIRED_SECTIONS: tuple[str, ...] = (
+        "%description",
+        "%prep",
+        "%build",
+        "%install",
+        "%files",
+        "%changelog",
+    )
+
+    NSIS_REQUIRED_DIRECTIVES: tuple[str, ...] = (
+        'Name "',
+        'OutFile "',
+        "Section",
+        "WriteUninstaller",
+    )
+
+    VERSION_PLACEHOLDER_TEMPLATES: tuple[str, ...] = (
+        "dist/debian/control",
+        "dist/rpm/gludd.spec",
+        "dist/windows/gludd.nsi",
+    )
+
+    @pytest.mark.parametrize("field", DEBIAN_REQUIRED_FIELDS)
+    def test_debian_control_has_required_fields(self, field: str):
+        """PK.6: Debian control has all required fields."""
         fpath = ROOT / "dist" / "debian" / "control"
-        if fpath.exists():
-            assert "VERSION_PLACEHOLDER" in fpath.read_text(), (
-                "dist/debian/control must contain VERSION_PLACEHOLDER "
-                "for sed substitution at build time"
-            )
+        assert fpath.exists(), "dist/debian/control must be committed"
+        assert field in fpath.read_text(), (
+            f"dist/debian/control must have {field} field"
+        )
 
-    def test_rpm_spec_has_version_placeholder(self):
+    @pytest.mark.parametrize("section", RPM_REQUIRED_SECTIONS)
+    def test_rpm_spec_has_required_sections(self, section: str):
+        """PK.7: RPM spec has all required sections."""
         fpath = ROOT / "dist" / "rpm" / "gludd.spec"
-        if fpath.exists():
-            assert "VERSION_PLACEHOLDER" in fpath.read_text(), (
-                "dist/rpm/gludd.spec must contain VERSION_PLACEHOLDER "
-                "for sed substitution at build time"
-            )
+        assert fpath.exists(), "dist/rpm/gludd.spec must be committed"
+        assert section in fpath.read_text(), (
+            f"dist/rpm/gludd.spec must have {section} section"
+        )
 
-    def test_debian_control_has_required_fields(self):
-        fpath = ROOT / "dist" / "debian" / "control"
-        if fpath.exists():
-            content = fpath.read_text()
-            for field in ["Package:", "Version:", "Architecture:", "Description:"]:
-                assert field in content, (
-                    f"dist/debian/control must have {field} field"
-                )
-
-    def test_rpm_spec_has_required_sections(self):
-        fpath = ROOT / "dist" / "rpm" / "gludd.spec"
-        if fpath.exists():
-            content = fpath.read_text()
-            for section in ["%description", "%install", "%files"]:
-                assert section in content, (
-                    f"dist/rpm/gludd.spec must have {section} section"
-                )
-
-    def test_nsi_has_required_directives(self):
+    @pytest.mark.parametrize("directive", NSIS_REQUIRED_DIRECTIVES)
+    def test_nsi_has_required_directives(self, directive: str):
+        """PK.8: NSIS has required directives."""
         fpath = ROOT / "dist" / "windows" / "gludd.nsi"
-        if fpath.exists():
-            content = fpath.read_text()
-            for directive in ['Name "', 'OutFile "', "Section"]:
-                assert directive in content, (
-                    f"dist/windows/gludd.nsi must have {directive}"
-                )
+        assert fpath.exists(), "dist/windows/gludd.nsi must be committed"
+        assert directive in fpath.read_text(), (
+            f"dist/windows/gludd.nsi must have {directive}"
+        )
+
+    @pytest.mark.parametrize("rel_path", VERSION_PLACEHOLDER_TEMPLATES)
+    def test_template_has_version_placeholder(self, rel_path: str):
+        """PK.9: VERSION_PLACEHOLDER exists in all 3 packaging templates."""
+        fpath = ROOT / rel_path
+        assert fpath.exists(), f"{rel_path} must be committed"
+        assert "VERSION_PLACEHOLDER" in fpath.read_text(), (
+            f"{rel_path} must contain VERSION_PLACEHOLDER "
+            "for sed substitution at build time"
+        )
 
     def test_install_sh_is_executable(self):
         fpath = ROOT / "dist" / "install.sh"

@@ -11,6 +11,10 @@
 ; missing the !ifndef guards below halt compilation with a clear message
 ; instead of silently emitting a mis-named OutFile (e.g. gludd--setup-x86_64.exe)
 ; that would then break the downstream certutil/artifact-upload steps.
+;
+; VERSION_PLACEHOLDER is the canonical sed-substitution marker shared with
+; dist/debian/control and dist/rpm/gludd.spec; NSIS instead receives VERSION
+; via -D on the makensis command line (see CI contract above).
 
 Unicode true
 ManifestDPIAware true
