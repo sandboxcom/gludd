@@ -98,7 +98,7 @@ jobs:
       - name: Lint, typecheck, collect, smoke
         run: |
           uv sync --python ${{ matrix.python-version }}
-          make lint typecheck test-count smoke
+          make lint typecheck test-count smoke iam-headless-smoke
         env:
           GLUDD_PSK: ""
           GLUDD_XDIST: auto
