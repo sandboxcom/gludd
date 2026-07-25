@@ -1,0 +1,46 @@
+---
+# Molecule scenario: smoke-test the BUILT gludd binary inside a Linux container.
+#
+# Runs the PyInstaller single-file bundle (dist/gludd, from `make
+# build-executable`) inside an ubuntu:24.04 container to verify the binary:
+#   - boots with no import / missing-file errors,
+#   - answers `version` / `--help` / `project paths`,
+#   - starts its daemon and serves `/healthz`,
+#   - accepts a job via POST /api/todos,
+#   - exits cleanly on an invalid flag and on a port clash.
+#
+# NOTE on driver choice: gludd's CLI has no `--version` flag (use the `version`
+# subcommand), no `daemon start` subcommand (use `daemon`), exposes health at
+# `/healthz` (not `/health`), and has no `/api/playbook/run` endpoint (jobs are
+# submitted via POST /api/todos). This scenario adapts the generic task brief
+# to those real surfaces so the smoke test is functional.
+#
+# REQUIRES: docker or podman on the runner. The repo's `make gate` does NOT run
+# molecule, so this scenario only executes in the dedicated CI molecule job
+# (GitHub-hosted runners ship with Docker) or via an explicit
+# `make molecule-test SCENARIO=binary_smoke_linux`.
+driver:
+  name: docker
+platforms:
+  - name: gludd-test-linux
+    image: ubuntu:24.04
+    # ubuntu:24.04's default CMD exits immediately; keep the container alive
+    # for the duration of the scenario so ansible can run tasks inside it.
+    command: "sleep infinity"
+    pre_build_image: false
+provisioner:
+  name: ansible
+  playbooks:
+    prepare: default/prepare.yml
+    converge: default/converge.yml
+    verify: default/verify.yml
+verifier:
+  name: ansible
+scenario:
+  test_sequence:
+    - dependency
+    - create
+    - prepare
+    - converge
+    - verify
+    - destroy

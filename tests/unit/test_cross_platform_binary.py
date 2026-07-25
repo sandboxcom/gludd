@@ -134,10 +134,6 @@ class TestSpecPlatformCompatibility:
         created them, breaking reproducibility on other platforms. The bundled
         files (config/, templates/, playbooks/, LICENSE, etc.) are repo-relative.
         """
-        # Find the datas= argument to Analysis(...).
-        analysis_match = re.search(
-            r"Analysis\s*\(([^)]*\Z)", spec_text, re.DOTALL
-        )
         # The spec has both a module-level `datas = [...]` and an inline
         # `datas=[...]` inside Analysis. Check the module-level one — that's
         # what _ansible_datas gets appended to.

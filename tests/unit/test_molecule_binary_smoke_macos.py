@@ -256,9 +256,9 @@ class TestNoGatherFactsTrue:
 
 
 __all__ = [
-    "TestScenarioFilesExist",
-    "TestMoleculeYmlShape",
     "TestConvergeYmlShape",
-    "TestVerifyYmlShape",
+    "TestMoleculeYmlShape",
     "TestNoGatherFactsTrue",
+    "TestScenarioFilesExist",
+    "TestVerifyYmlShape",
 ]

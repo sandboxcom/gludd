@@ -1,0 +1,171 @@
+---
+# Verify: assert every binary-smoke invariant against the outputs persisted by
+# converge.yml. Runs inside the same container (the backgrounded daemon from
+# converge is still up).
+- name: Verify - gludd binary smoke invariants
+  hosts: all
+  gather_facts: false
+  become: true
+  vars:
+    daemon_url: "http://127.0.0.1:8000"
+  tasks:
+    # ===================================================================
+    # CLI outputs: version / help / project paths
+    # ===================================================================
+    - name: Load persisted CLI outputs
+      ansible.builtin.slurp:
+        src: /tmp/gludd-cli-outputs.txt
+      register: _cli_raw
+
+    - name: Parse CLI outputs
+      ansible.builtin.set_fact:
+        cli_outputs: "{{ _cli_raw.content | b64decode }}"
+
+    - name: Assert version is a SemVer string
+      ansible.builtin.assert:
+        that:
+          - "'general-ludd-agent' in cli_outputs"
+          - "cli_outputs | regex_search('\\\\d+\\\\.\\\\d+\\\\.\\\\d+') | length > 0"
+        fail_msg: "version did not print a SemVer: {{ cli_outputs }}"
+        success_msg: "version printed a SemVer"
+
+    - name: Assert --help lists all top-level subcommands
+      ansible.builtin.assert:
+        that:
+          - "'daemon' in cli_outputs"
+          - "'project' in cli_outputs"
+          - "'version' in cli_outputs"
+          - "'models' in cli_outputs"
+        fail_msg: "--help missing expected subcommands: {{ cli_outputs }}"
+        success_msg: "--help lists daemon/project/version/models (+more)"
+
+    - name: Assert binary locates bundled config/templates/playbooks paths
+      ansible.builtin.assert:
+        that:
+          - "'Collection search path' in cli_outputs"
+          - "gludd_paths_rc_line | default('') is search('rc=0')"
+        fail_msg: >
+          'gludd project paths' did not resolve bundled paths cleanly:
+          {{ cli_outputs }}
+        success_msg: "project paths resolved bundled collections"
+      vars:
+        # The converge persistence wraps the rc on its own line; if absent we
+        # still rely on the 'Collection search path' banner being present.
+        gludd_paths_rc_line: ""
+
+    - name: Assert no Python traceback / import / missing-file errors in CLI output
+      ansible.builtin.assert:
+        that:
+          - "'Traceback' not in cli_outputs"
+          - "'ModuleNotFoundError' not in cli_outputs"
+          - "'ImportError' not in cli_outputs"
+          - "'Missing base YAML definition file' not in cli_outputs"
+          - "'No module named' not in cli_outputs"
+        fail_msg: "CLI output contained a boot/import error: {{ cli_outputs }}"
+        success_msg: "no traceback / ImportError / ModuleNotFoundError / missing-base-YAML"
+
+    # ===================================================================
+    # Invalid flag error path
+    # ===================================================================
+    - name: Load persisted invalid-flag result
+      ansible.builtin.slurp:
+        src: /tmp/gludd-bad-flag.txt
+      register: _bad_raw
+
+    - name: Parse invalid-flag result
+      ansible.builtin.set_fact:
+        bad_flag_text: "{{ _bad_raw.content | b64decode }}"
+
+    - name: Assert invalid flag exits non-zero with a clean (non-traceback) error
+      ansible.builtin.assert:
+        that:
+          # rc= line is non-zero (argparse rejects unknown flags with exit 2).
+          - "bad_flag_text | regex_search('rc=([0-9]+)', '\\1') | first | int != 0"
+          - "'Traceback' not in bad_flag_text"
+          - "'ModuleNotFoundError' not in bad_flag_text"
+        fail_msg: "invalid-flag did not fail cleanly: {{ bad_flag_text }}"
+        success_msg: "invalid flag rejected cleanly (non-zero, no traceback)"
+
+    # ===================================================================
+    # Daemon health: /healthz still 200
+    # ===================================================================
+    - name: GET /healthz (daemon must still be answering)
+      ansible.builtin.uri:
+        url: "{{ daemon_url }}/healthz"
+        method: GET
+        status_code: [200]
+        return_content: true
+      register: health_check
+
+    - name: Assert health endpoint returns 200
+      ansible.builtin.assert:
+        that:
+          - health_check.status == 200
+        fail_msg: "healthz did not return 200: status={{ health_check.status }}"
+        success_msg: "healthz returned 200"
+
+    # ===================================================================
+    # Job submission: daemon accepted the trivial job
+    # ===================================================================
+    - name: Load persisted job submission result
+      ansible.builtin.slurp:
+        src: /tmp/gludd-job-submit.json
+      register: _job_raw
+
+    - name: Parse job submission result
+      ansible.builtin.set_fact:
+        job_result: "{{ _job_raw.content | b64decode | from_json }}"
+
+    - name: Assert the daemon processed the job request (todo_id present)
+      ansible.builtin.assert:
+        that:
+          - "job_result.todo_id is defined or job_result['todo_id'] is defined"
+          - "'Traceback' not in (job_result | string)"
+        fail_msg: "daemon did not accept the job: {{ job_result }}"
+        success_msg: "daemon accepted the trivial job via POST /api/todos"
+
+    # ===================================================================
+    # Occupied-port error path
+    # ===================================================================
+    - name: Load persisted port-clash result
+      ansible.builtin.slurp:
+        src: /tmp/gludd-port-clash.txt
+      register: _clash_raw
+
+    - name: Parse port-clash result
+      ansible.builtin.set_fact:
+        clash_text: "{{ _clash_raw.content | b64decode }}"
+
+    - name: Assert the port-clash was handled gracefully
+      ansible.builtin.assert:
+        that:
+          # Either it exited non-zero, or it logged an address-in-use signal —
+          # and either way it MUST NOT have produced an uncaught traceback.
+          - >
+            (clash_text | regex_search('EXIT_RC=([0-9]+)', '\\1') | first | int != 0)
+            or ('in use' in (clash_text | lower)) or ('address already' in (clash_text | lower))
+          - "'Traceback' not in clash_text"
+        fail_msg: "port clash was not handled gracefully: {{ clash_text }}"
+        success_msg: "port clash handled gracefully (non-zero or address-in-use, no traceback)"
+
+    # ===================================================================
+    # Daemon log: no tracebacks surfaced during the whole run
+    # ===================================================================
+    - name: Load the daemon log
+      ansible.builtin.slurp:
+        src: /tmp/gludd-daemon.log
+      register: _daemon_log_raw
+      failed_when: false
+
+    - name: Parse the daemon log
+      ansible.builtin.set_fact:
+        daemon_log_text: "{{ _daemon_log_raw.content | b64decode }}"
+      when: _daemon_log_raw.content is defined
+
+    - name: Assert the daemon log shows no uncaught tracebacks
+      ansible.builtin.assert:
+        that:
+          - "'Traceback (most recent call last)' not in (daemon_log_text | default(''))"
+        fail_msg: "daemon log contained a traceback: {{ daemon_log_text | default('<no log>') }}"
+        success_msg: "daemon log is traceback-free"
+      when: _daemon_log_raw.content is defined
