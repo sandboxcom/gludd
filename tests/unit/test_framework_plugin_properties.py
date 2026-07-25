@@ -66,7 +66,7 @@ def _effective_source(plugin_path: Path) -> str:
     Properties like reportAlive / loadHotModule / _ENFORCE live in the impl
     file, not the wrapper. Treat the impl file as part of the plugin.
     """
-    parts = plugin_path.stem.split("_")  # enforce-make -> ["enforce-make"]
+    plugin_path.stem.split("_")  # enforce-make -> ["enforce-make"]
     stem = plugin_path.stem  # "enforce-make"
     # Convention: impl file is impl/<stem>_impl.ts or impl/enforce_<X>_impl.ts
     candidates = [

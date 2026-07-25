@@ -64,9 +64,13 @@ def _target_recipe(makefile: str, target: str) -> str:
             out.append(line)
             continue
         if capturing:
-            if line and not line.startswith(("\t", " ", "#")) and not line.startswith(target):
-                if line[0].isalpha() or line[0] == "_":
-                    break
+            if (
+                line
+                and not line.startswith(("\t", " ", "#"))
+                and not line.startswith(target)
+                and (line[0].isalpha() or line[0] == "_")
+            ):
+                break
             out.append(line)
     return "\n".join(out)
 

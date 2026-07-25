@@ -17,8 +17,8 @@ Run:  make test-specific TESTFILE='tests/unit/test_agents_md_section'
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 import pytest
 

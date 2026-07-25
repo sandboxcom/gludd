@@ -42,7 +42,6 @@ from general_ludd.config.user_config import (
 )
 from general_ludd.secrets.config import OpenBaoConfig
 
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 REPO_CONFIG_DIR = REPO_ROOT / "config"
 

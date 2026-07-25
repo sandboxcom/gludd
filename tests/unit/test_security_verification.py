@@ -229,7 +229,7 @@ def test_workspace_path_scoped(tool: str) -> None:
     """Every file tool must allow the workspace prefix (and deny everything else)."""
     cfg = json.loads(OPENCODE_JSON_PATH.read_text())
     block = cfg.get("permission", {}).get(tool, {})
-    assert f"/Users/shawnwilson/gludd/**" in block, (
+    assert "/Users/shawnwilson/gludd/**" in block, (
         f"tool {tool!r} does not allow /Users/shawnwilson/gludd/** workspace prefix"
     )
     assert block.get("*") == "deny", (
