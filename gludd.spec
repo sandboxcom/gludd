@@ -30,13 +30,7 @@ a = Analysis(
     ['src/general_ludd/cli.py'],
     pathex=['src'],
     binaries=[],
-    datas=[
-        ('config', 'config'),
-        ('templates', 'templates'),
-        ('playbooks', 'playbooks'),
-        ('LICENSE', '.'),
-        ('THIRD_PARTY_LICENSES.md', '.'),
-    ],
+    datas=datas,
     hiddenimports=[
         'general_ludd',
         'general_ludd.cli',
