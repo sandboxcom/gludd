@@ -147,6 +147,70 @@ class TestWorkflowYamlIsValid:
             )
 
 
+class TestNoJobExceedsMaxTimeout:
+    """No job in build.yml may set timeout-minutes > 120.
+
+    Excessive timeouts mask stuck/hung jobs: a job that legitimately needs
+    >2h wall-clock is almost certainly doing something wrong (unbounded
+    retry loop, waiting on a resource that will never arrive, OOM-thrashing).
+    The 120-minute ceiling is the project policy; anything higher is a bug.
+
+    Current maxima (as of CP.14):
+      - test-shard: 120  (borderline OK — fattest shard runs ~18m on a slow
+                          runner; 120m gives headroom without being excessive.
+                          Durable follow-up: rebalance shards so the cap can
+                          drop to 60.)
+      - all other jobs: <= 30
+    """
+
+    MAX_TIMEOUT_MINUTES = 120
+
+    def test_no_job_exceeds_max_timeout(self):
+        import yaml
+
+        src = _workflow_source()
+        data = yaml.safe_load(src)
+        jobs = data.get("jobs", {})
+        assert jobs, "no jobs found in build.yml"
+
+        violations: list[str] = []
+        for job_name, job_spec in jobs.items():
+            if not isinstance(job_spec, dict):
+                continue
+            timeout = job_spec.get("timeout-minutes")
+            if timeout is None:
+                # Missing timeout-minutes is a separate concern (GH default is
+                # 360m); this test only enforces the upper bound on jobs that
+                # DO set it.
+                continue
+            if timeout > self.MAX_TIMEOUT_MINUTES:
+                violations.append(
+                    f"  {job_name}: timeout-minutes={timeout} "
+                    f"(max allowed={self.MAX_TIMEOUT_MINUTES})"
+                )
+        assert not violations, (
+            "Jobs with excessive timeout-minutes (> "
+            f"{self.MAX_TIMEOUT_MINUTES}m) — indicates a stuck/hung job:\n"
+            + "\n".join(violations)
+        )
+
+    def test_all_jobs_have_explicit_timeout(self):
+        """Every job should declare timeout-minutes (GH default is 360m)."""
+        import yaml
+
+        src = _workflow_source()
+        data = yaml.safe_load(src)
+        jobs = data.get("jobs", {})
+        missing = [
+            name for name, spec in jobs.items()
+            if isinstance(spec, dict) and "timeout-minutes" not in spec
+        ]
+        assert not missing, (
+            "Jobs missing explicit timeout-minutes (GH default 360m is "
+            "excessive):\n  " + "\n  ".join(missing)
+        )
+
+
 class TestTestShardIsNonBlocking:
     """test-shard MUST have continue-on-error: true."""
 
