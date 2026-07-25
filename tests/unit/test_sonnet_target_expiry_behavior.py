@@ -16,6 +16,7 @@ deny/allow decision — not a reimplementation of the logic.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import re
@@ -111,10 +112,8 @@ try {{
         data["target_pct"] = target_pct
         return data
     finally:
-        try:
+        with contextlib.suppress(OSError):
             os.unlink(tmp_script)
-        except OSError:
-            pass
 
 
 def _write_state(path: str, history: list[str]) -> None:

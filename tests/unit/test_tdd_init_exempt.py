@@ -14,10 +14,8 @@ directory requires a test like any other ``.py`` file.
 from __future__ import annotations
 
 import json
-import os
 import re
 import subprocess
-import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).parent.parent.parent

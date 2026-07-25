@@ -21,8 +21,6 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-import pytest
-
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_PATH = ROOT / ".opencode" / "plugin" / "enforce-delegate.ts"
 
