@@ -1,0 +1,32 @@
+# Example tfvars for `make onboard-iam` — the AWS least-privilege IAM module.
+# Real values never live here — placeholders only. At apply time the
+# TerraformGenerator composer writes a real terraform.tfvars into a tempdir
+# from ComputeConfig + SecretsManager (see TERRAFORM_INFRA_STRUCTURE.md §8).
+#
+# Copy to terraform.tfvars and fill in, OR pass via -var-file at apply time.
+
+# IAM role name gludd assumes / attaches to EC2 instances. Must be unique
+# within the account. Default: gludd-compute-operator.
+role_name = "gludd-compute-operator"
+
+# Least-privilege IAM policy name attached to the operator role. Default:
+# gludd-compute-least-priv. The policy is static-auditable (policy.json) and
+# pinned by tests/unit/test_onboard_aws.py.
+policy_name = "gludd-compute-least-priv"
+
+# AWS region gludd deploys compute into. Scopes EC2/EBS/EIP/log-group ARNs in
+# the policy. Cannot be changed after apply without role recreation.
+region = "us-east-1"
+
+# Tags applied to the IAM role, policy, and instance profile. The Purpose tag
+# is cosmetic; ManagedBy = "gludd" signals ownership to AWS billing tools.
+tags = {
+  ManagedBy = "gludd"
+  Component = "onboard-iam"
+  Purpose   = "least-privilege-compute-operator"
+}
+
+# aws_credentials are NOT included — they come from the standard AWS provider
+# chain (env / instance profile / ~/.aws/credentials) per SecretsManager,
+# never tfvars. The module derives the account ID from aws_caller_identity so
+# you do not need to provide it.

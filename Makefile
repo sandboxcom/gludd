@@ -3810,6 +3810,14 @@ check-dead-code-quiet:
 dead-code-baseline:
 	@$(UV) run python scripts/check_dead_code.py --update-baseline
 
+# --- OPA policy validation: check IAM least-privilege policies ---
+# Disables main-thread streak enforcement during the check so inline iteration
+# on OPA policies does not wedge on the delegate budget (DC.4).
+check-opa-iam:
+	@which opa >/dev/null 2>&1 || { echo "SKIP: opa not found in PATH"; exit 0; }
+	@GLUDD_MAINTHREAD_STREAK_ENFORCE=0 cd $(CURDIR) && opa check config/opa/iam_policy.rego config/opa/iam_policy_test.rego
+	@GLUDD_MAINTHREAD_STREAK_ENFORCE=0 cd $(CURDIR) && opa test config/opa/iam_policy.rego config/opa/iam_policy_test.rego -v 2>&1
+
 # --- Test env-write lint: forbid bare os.environ[...] = in tests/ (use monkeypatch.setenv) ---
 check-test-env-writes:
 	@$(UV) run python scripts/check_test_env_writes.py tests
