@@ -22,6 +22,7 @@ in this environment.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import re
 import signal
@@ -31,7 +32,6 @@ import sys
 import textwrap
 import time
 from pathlib import Path
-from typing import Any
 
 import httpx
 import pytest
@@ -119,14 +119,13 @@ def find_free_port() -> int:
 def wait_for_url(url: str, *, timeout: float = 30.0, interval: float = 0.3) -> bool:
     """Poll *url* until it returns 200 or *timeout* seconds elapse."""
     deadline = time.monotonic() + timeout
-    last_exc: Exception | None = None
     while time.monotonic() < deadline:
         try:
             resp = httpx.get(url, timeout=2.0)
             if resp.status_code == 200:
                 return True
-        except Exception as exc:  # noqa: BLE001 — connection refused while booting
-            last_exc = exc
+        except Exception:
+            pass
         time.sleep(interval)
     return False
 
@@ -205,10 +204,8 @@ def isolated_daemon(tmp_path: Path):
                 os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
                 proc.wait(timeout=10)
             except (ProcessLookupError, subprocess.TimeoutExpired):
-                try:
+                with contextlib.suppress(Exception):
                     os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-                except Exception:
-                    pass
                 proc.wait(timeout=5)
 
 
@@ -391,10 +388,8 @@ class TestDaemonCommand:
         except subprocess.TimeoutExpired:
             # Fall back to SIGKILL so the test process doesn't leak the daemon,
             # but record the failure — clean shutdown should have worked.
-            try:
+            with contextlib.suppress(Exception):
                 os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-            except Exception:
-                pass
             pytest.fail("daemon parent did not shut down within 20s of SIGTERM")
 
         # The port should no longer answer.
@@ -487,7 +482,5 @@ class TestErrorHandling:
                     os.killpg(os.getpgid(first.pid), signal.SIGTERM)
                     first.wait(timeout=10)
                 except Exception:
-                    try:
+                    with contextlib.suppress(Exception):
                         os.killpg(os.getpgid(first.pid), signal.SIGKILL)
-                    except Exception:
-                        pass
