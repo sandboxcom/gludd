@@ -21,6 +21,44 @@
 
 ---
 
+## SESSION 53 — 2026-07-25
+
+- **HEAD: `d99624cc`** on `master` branch (VERIFIED on sandboxcom)
+- **Version: 0.1.0-beta.1** (RELEASED — all 12 artifacts verified)
+- **Push status: PUSHED + VERIFIED** — master@d99624cc on sandboxcom
+- **CI: GREEN** — run 30145571826 conclusion: success (all gates, all builds, release job)
+- **Release: PUBLISHED** — https://github.com/sandboxcom/gludd/releases/tag/v0.1.0-beta.1
+- **Artifacts: 21 assets, 12/12 categories verified** (verify-release-completeness ALL 16 CHECKS PASSED)
+- **Gate: PASSED** — all phases green
+- **Working tree: CLEAN**
+
+### Release v0.1.0-beta.1 — SHIPPED
+
+| Step | Status |
+|------|--------|
+| NSIS BUILDDIR path fix | DONE (commit d99624cc) |
+| CI green on master | DONE (run 30143015812) |
+| Tag push v0.1.0-beta.1 | DONE |
+| CI green on tag | DONE (run 30145571826) |
+| Release published | DONE (21 assets) |
+| verify-release-completeness | PASS (16/16 checks) |
+
+### Root cause of multi-day NSIS failure
+
+NSIS resolves `OutFile` paths relative to the **script file location** (`dist/windows/`), not the CWD. `BUILDDIR="dist"` produced output at `dist/windows/dist/` — a nonexistent directory. Fixed by changing to `BUILDDIR=".."` which resolves correctly to `dist/gludd-VERSION-setup-x86_64.exe`.
+
+### Other accomplishments
+
+- /tmp permission widened from `/tmp/gludd-*` to `/tmp/**` + `.config/opencode/**`
+- No-home-directory-access guardrail codified (3-layer: opencode.json + AGENTS.md + 145 tests)
+- Pipeline-as-primary-objective guardrail codified (AGENTS.md + 29 tests)
+- 50+ structural tests added across RP/BP/CP/PK/TQ/SC/OD/DC phases
+- 10+ enforcement plugins improved (BP.3-BP.20)
+
+- **Last Updated: 2026-07-25 — Session 53.** HEAD `d99624cc` on `master` (VERIFIED). Gate PASSED. Release v0.1.0-beta.1 PUBLISHED with 21 assets. All 12 artifact categories verified.
+
+---
+
 ## SESSION 52 — 2026-07-24
 
 - **HEAD: `d7dfd2a6`** on `master` branch (VERIFIED on sandboxcom)
