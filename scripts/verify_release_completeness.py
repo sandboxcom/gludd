@@ -25,6 +25,20 @@ from typing import Callable
 
 FALLBACK_REPO = "sandboxcom/gludd"
 
+# ---------------------------------------------------------------------------
+# ALL 12 artifact categories are REQUIRED — no exceptions.
+#
+# User mandate (2026-07-24, TASKS CP.11/RL.4): "i want all of the artifacts
+# i asked for with NO exceptions." There is NO optional/exception list. If a
+# build job is broken (deb, rpm, exe, aarch64), the fix is to repair the
+# build, not weaken this gate. Every category below MUST pass or the release
+# is incomplete.
+#
+# To prevent regression: (a) the assertion below pins the count at 12, and
+# (b) OPTIONAL_CATEGORIES is intentionally an empty frozenset so no code path
+# can ever treat a category as non-blocking.
+# ---------------------------------------------------------------------------
+
 EXPECTED_CATEGORIES: dict[str, Callable[[set[str]], bool]] = {
     "linux-x86_64 binary": lambda a: any(
         re.search(r"linux.*(x86[._-]?64|amd64)", n, re.IGNORECASE) for n in a
@@ -66,6 +80,17 @@ EXPECTED_CATEGORIES: dict[str, Callable[[set[str]], bool]] = {
         re.search(r"THIRD_PARTY", n, re.IGNORECASE) for n in a
     ),
 }
+
+# Structural guard: if anyone removes or adds a category, this assertion
+# fires at import time — catching the regression before a release ships.
+assert len(EXPECTED_CATEGORIES) == 12, (
+    f"EXPECTED_CATEGORIES must have exactly 12 entries (ALL required, none optional), "
+    f"got {len(EXPECTED_CATEGORIES)}. See TASKS CP.11/RL.4."
+)
+
+# Explicitly empty: no category is optional. Exists so future code can
+# reference OPTIONAL_CATEGORIES without introducing a new exception list.
+OPTIONAL_CATEGORIES: frozenset[str] = frozenset()
 
 MIN_ASSETS = 12  # 4 platform tarballs + .deb + .rpm + .dmg + .exe installer + checksums + SBOM + 2 docs
 
