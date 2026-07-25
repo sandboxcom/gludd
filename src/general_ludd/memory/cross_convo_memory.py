@@ -459,7 +459,7 @@ class CrossConversationMemory:
     def hindsight_reflect(self, query: str) -> str:
         if self._hindsight_adapter is None:
             return ""
-        return self._hindsight_adapter.reflect(query)
+        return str(self._hindsight_adapter.reflect(query))
 
     # ============================================================ private
 
