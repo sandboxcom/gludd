@@ -25,21 +25,42 @@ fi
 
 exit_code=0
 
-# --- Layer 1: raw YAML parse via PyYAML -------------------------------------
+# --- Layer 1: raw YAML parse + unquoted-tag scan ----------------------------
 # safe_load rejects custom tags (!cancelled(), !env, etc.) and indentation
-# errors. This is the fast first line of defense (<100ms).
+# errors. We ALSO scan for unquoted !cancelled() / !github.* in if: conditions
+# because PyYAML treats `if: foo() && !cancelled()` as a plain scalar string
+# (the && makes the RHS a string), so safe_load does NOT catch it — but GitHub
+# Actions' parser does, and fails the run in <1s. This mirrors the structural
+# test TestWorkflowYamlIsValid::test_no_bang_cancelled_outside_quotes.
 python3 - "$YML_PATH" <<'PYEOF' || exit_code=$?
+import re
 import sys
 import yaml
 
 path = sys.argv[1]
 with open(path, "r", encoding="utf-8") as fh:
     src = fh.read()
+
+# 1a. Raw YAML parse — catches indentation and explicit-tag errors.
 try:
     yaml.safe_load(src)
 except yaml.YAMLError as exc:
     print(f"workflow-yaml: YAML PARSE ERROR in {path}:", exc, file=sys.stderr)
     sys.exit(1)
+
+# 1b. Unquoted !cancelled() / !github.* tag scan. These look like YAML tags to
+# GHA's parser even when PyYAML treats them as scalar-string characters.
+# Quoted forms ('if: "..."') are safe; only bare `if: ... !tag()` is rejected.
+tag_re = re.compile(r"^\s*if:\s+(?!['\"])(?=.*!Cancelled\(\)|.*!cancelled\(\)|.*!GitHub\w*\.|.*!github\w*\.)")
+for lineno, line in enumerate(src.splitlines(), start=1):
+    if tag_re.match(line):
+        print(
+            f"workflow-yaml: UNQUOTED TAG in {path}:{lineno}: {line.strip()!r} — "
+            "GitHub Actions parses !cancelled() / !github.* as a YAML tag. "
+            "Quote the condition: if: \"... && !cancelled()\"",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 PYEOF
 
 if [ "$exit_code" -ne 0 ]; then

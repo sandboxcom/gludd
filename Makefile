@@ -1695,6 +1695,30 @@ install-hooks:
 	@chmod +x .git/hooks/pre-commit 2>/dev/null || true
 	@echo "Installed pre-commit lint hook"
 
+# RP.15: install the workflow-YAML pre-commit hook. Validates
+# .github/workflows/build.yml at commit time (catches unquoted !cancelled(),
+# bad indentation, circular deps) instead of at push/CI time. The hook script
+# is the source of truth — this target just (a) ensures it is executable and
+# (b) wires it into .git/hooks/pre-commit-workflow-yaml so it can be invoked
+# by pre-commit frameworks or directly. Does NOT overwrite an existing
+# .git/hooks/pre-commit (use the pre-commit framework for composition).
+install-workflow-hook:
+	@chmod +x scripts/hooks/pre-commit-workflow-yaml
+	@if [ -d .git/hooks ]; then \
+		cp scripts/hooks/pre-commit-workflow-yaml .git/hooks/pre-commit-workflow-yaml; \
+		chmod +x .git/hooks/pre-commit-workflow-yaml; \
+		echo "Installed pre-commit-workflow-yaml hook to .git/hooks/"; \
+	else \
+		echo "SKIP: .git/hooks/ not found (not a git repo?)"; \
+	fi
+	@echo "To wire into pre-commit, add to .pre-commit-config.yaml:"
+	@echo "  - id: workflow-yaml"
+	@echo "    name: workflow yaml"
+	@echo "    entry: scripts/hooks/pre-commit-workflow-yaml"
+	@echo "    language: system"
+	@echo "    files: ^\\.github/workflows/.*\\.ya?ml$$"
+	@echo "    pass_filenames: false"
+
 scan-conflicts:
 	@$(PYTHON) scripts/scan_conflicts.py
 
