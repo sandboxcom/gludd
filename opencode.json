@@ -51,6 +51,13 @@
     ],
     "doom_loop": "deny"
   },
+  "compaction": {
+    "prune": true,
+    "reserved": 5000
+  },
+  "formatter": true,
+  "lsp": true,
+  "snapshot": false,
   "plugin": [
     "./.opencode/plugin/enforce-session-start.ts",
     "./.opencode/plugin/enforce-make.ts",

@@ -158,3 +158,26 @@ export function shouldBlock(text: string): boolean {
   if (!found) return false
   return !EVIDENCE_PATTERNS.some((p) => p.test(text))
 }
+
+// ── Coverage-claim enforcement (DC.5) ──────────────────────────────────────
+
+export const COVERAGE_TARGET = 0.85
+
+export const COMPLETION_FINALITY_PATTERNS = [
+  /\b(?:final|complete|finished|done)\s+(?:e2e|coverage|test)\s+(?:push|expansion|wave)\b/i,
+]
+
+export function shouldBlockCoverageClaim(text: string): boolean {
+  if (!text || text.trim().length === 0) return false
+  let matched = false
+  for (const pat of COMPLETION_FINALITY_PATTERNS) {
+    if (pat.test(text)) { matched = true; break }
+  }
+  if (!matched) return false
+  const covMatch = text.match(/(?:coverage|at)\s*(?:is\s*)?(\d+(?:\.\d+)?)\s*%/i)
+  if (covMatch) {
+    const pct = parseFloat(covMatch[1]) / 100
+    if (pct >= COVERAGE_TARGET) return false
+  }
+  return true
+}
