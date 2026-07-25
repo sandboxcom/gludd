@@ -7,6 +7,7 @@ import { loadHotModule, type HotModule } from "../lib/hot_reload.ts";
 import { isSubagent, reportAlive } from "../lib/shared.ts";
 import {
   getDispatchTools, getGitStatus, countDirtyFiles, buildDenyMessage,
+  isMetadataOnlyDirty,
 } from "../lib/plugin_test_exports.ts";
 
 // ============================================================================
@@ -22,6 +23,7 @@ const defaultImpl: HotModule = {
       if (!getDispatchTools().includes(tool)) return;
       const status = getGitStatus();
       if (status.length > 0) {
+        if (isMetadataOnlyDirty(status)) return;
         const count = countDirtyFiles(status);
         return {
           permissionDecision: "deny",

@@ -11,7 +11,6 @@ import { isSubagent, reportAlive, getProjectRoot } from "../lib/shared.ts";
 // MUST match scripts/check_tdd_compliance.py ALLOWLIST. Type definitions,
 // package markers, and protocols don't need behavioral tests.
 const ALLOWLIST_PATTERNS: RegExp[] = [
-  /__init__\.py$/,
   /__pycache__\//,
   /\.pyi$/,
   /(^|\/)typing\.py$/,
@@ -60,6 +59,20 @@ function isAllowlisted(filePath: string): boolean {
   const normalized = filePath.replace(/\\/g, "/");
   return ALLOWLIST_PATTERNS.some(re => re.test(normalized));
 }
+function isInitInEmptyDir(filePath: string): boolean {
+  const normalized = filePath.replace(/\\/g, "/");
+  if (path.basename(normalized) !== "__init__.py") return false;
+  const dir = path.dirname(normalized);
+  try {
+    if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) return false;
+    const entries = fs.readdirSync(dir);
+    return !entries.some(
+      e => e.endsWith(".py") && e !== "__init__.py",
+    );
+  } catch {
+    return false;
+  }
+}
 function isImplementationFile(filePath: string): boolean {
   if (typeof filePath !== "string" || filePath.length === 0) return false;
   const normalized = filePath.replace(/\\/g, "/");
@@ -80,6 +93,9 @@ function shouldAllowEdit(
       return { allow: true };
     }
     if (isAllowlisted(filePath)) {
+      return { allow: true };
+    }
+    if (isInitInEmptyDir(filePath)) {
       return { allow: true };
     }
     const candidates = candidateTestPaths(filePath, projectRoot);

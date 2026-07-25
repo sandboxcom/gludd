@@ -543,30 +543,35 @@ function writeForceDispatchSignal(cmds: DispatchItem[]): void {
 interface MainthreadStreakState {
   count: number
   ts: number
+  pid: number
 }
 function readStreak(): MainthreadStreakState {
   try {
     const raw = fs.readFileSync(MAINTHREAD_STREAK_FILE, "utf8").trim()
     if (raw.startsWith("{")) {
       const obj = JSON.parse(raw)
-      return {
-        count: parseInt(obj.count, 10) || 0,
-        ts: parseInt(obj.ts, 10) || 0,
+      const storedPid = parseInt(obj.pid, 10) || 0
+      const count = parseInt(obj.count, 10) || 0
+      const ts = parseInt(obj.ts, 10) || 0
+      if (storedPid !== 0 && storedPid !== process.pid) {
+        return { count: 0, ts, pid: process.pid }
       }
+      return { count, ts, pid: storedPid || process.pid }
     }
     const n = parseInt(raw, 10)
     return {
       count: Number.isNaN(n) ? 0 : n,
       ts: 0,
+      pid: process.pid,
     }
   } catch {
-    return { count: 0, ts: 0 }
+    return { count: 0, ts: 0, pid: process.pid }
   }
 }
 function writeStreak(partial: Partial<MainthreadStreakState>): void {
   try {
     const current = readStreak()
-    const merged: MainthreadStreakState = { ...current, ...partial, ts: Date.now() }
+    const merged: MainthreadStreakState = { ...current, ...partial, ts: Date.now(), pid: process.pid }
     const tmp = MAINTHREAD_STREAK_FILE + ".tmp"
     fs.writeFileSync(tmp, JSON.stringify(merged))
     fs.renameSync(tmp, MAINTHREAD_STREAK_FILE)

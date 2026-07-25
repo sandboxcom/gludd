@@ -1262,6 +1262,19 @@ crash-recovery:
 clean-tmp:
 	@python3 scripts/clean_tmp.py
 
+clean-enforcement-state:
+	@echo "=== Cleaning enforcement state files ==="
+	@rm -f /tmp/gludd-tool-streak.json
+	@rm -f /tmp/gludd-mainthread-streak.json
+	@rm -f /tmp/gludd-ci-poll-streak.json
+	@rm -f /tmp/gludd-stagnant-streak.json
+	@rm -f /tmp/gludd-release-deadline.json
+	@rm -f /tmp/gludd-force-dispatch.json
+	@rm -f /tmp/gludd-block-counter.json
+	@rm -f /tmp/gludd-persist-stop-block.json
+	@rm -f /tmp/gludd-disengage-audit.jsonl
+	@echo "Enforcement state files cleaned."
+
 clean-pycache-test-chat-history:
 	@find /Users/shawnwilson/gludd -name "__pycache__" -path "*test_chat_history*" -exec rm -rf {} + 2>/dev/null || true
 	@find /Users/shawnwilson/gludd -name "*.pyc" -path "*test_chat_history*" -delete 2>/dev/null || true

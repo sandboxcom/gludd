@@ -17,6 +17,23 @@ export function getDispatchTools(): readonly string[] {
   return ["task", "agent", "workflow"]
 }
 export function getDenyMessagePrefix(): string { return "DIRTY TREE" }
+export const METADATA_FILES: ReadonlySet<string> = Object.freeze(
+  new Set(["SESSION.md", "TASKS.md", "BUGS.md", ".gitignore", ".ci-status", ".gate-status"]),
+)
+function _extractFilePath(line: string): string {
+  const path = line.slice(3).trim()
+  const arrow = path.lastIndexOf(" -> ")
+  return arrow >= 0 ? path.slice(arrow + 4) : path
+}
+export function isMetadataOnlyDirty(status: string): boolean {
+  if (!status.trim()) return true
+  const lines = status.trim().split("\n").filter((l: string) => l.trim())
+  if (lines.length === 0) return true
+  return lines.every((line: string) => {
+    const fp = _extractFilePath(line)
+    return METADATA_FILES.has(fp)
+  })
+}
 export function getGitStatus(): string {
   try {
     return execSync("git status --porcelain", {
