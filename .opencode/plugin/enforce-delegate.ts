@@ -98,6 +98,7 @@ const GIT_SHIPPING_TARGETS: ReadonlySet<string> = new Set([
   "git-diff", "git-staged", "feature-start", "feature-done",
   "verify-remote", "verify-state", "verify-enforcement",
   "release-view", "release-artifacts",
+  "ci-cancel", "ci-status",
 ])
 function isGitShippingTarget(command: string): boolean {
   const m = command.match(/(?:^|\s)make\s+(\S+)/)
