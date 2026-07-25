@@ -74,30 +74,70 @@ for (const file of files) {
         process.exit(1);
       }
     }
-    // Now exercise each hook with null/undefined-safe inputs to catch ReferenceErrors
-    const hooks = [
-      "tool.execute.before",
-      "experimental.text.complete",
-      "text.complete",
-      "session.idle",
-      "experimental.chat.system.transform",
-    ];
+    // Realistic inputs that mirror actual tool call arguments. Hooks that only
+    // crash on real input shapes (not null) hide bugs the null pass misses:
+    //   - ReferenceError from undefined symbols called inside conditional branches
+    //     that only execute when a real tool/tool_input is present
+    //   - TypeError from accessing properties off the wrong shape (e.g.
+    //     tool_input.command when tool_input is undefined on a real edit call)
+    // The null pass above intentionally ignores TypeError (expected on null).
+    // The realistic pass below treats BOTH ReferenceError AND TypeError as bugs
+    // because the input shape is now valid.
+    const REAL_INPUTS = {
+      "tool.execute.before": [
+        {
+          tool: "bash",
+          tool_input: { command: "make lint" },
+          path: "/Users/shawnwilson/gludd",
+        },
+        {
+          tool: "edit",
+          tool_input: {
+            filePath: "/Users/shawnwilson/gludd/test.py",
+            oldString: "",
+            newString: "x",
+          },
+          path: "/Users/shawnwilson/gludd/test.py",
+        },
+      ],
+      "experimental.text.complete": [{ text: "some response text" }],
+      "text.complete": [{ text: "some response text" }],
+      "session.idle": [{ event: "idle" }],
+      "experimental.chat.system.transform": [{ role: "user", content: "hi" }],
+    };
+    const hooks = Object.keys(REAL_INPUTS);
     for (const hook of hooks) {
       const fn = plugin[hook];
-      if (typeof fn === 'function') {
+      if (typeof fn !== 'function') continue;
+      // Null-input pass: runs once per hook. Hooks should handle null/undefined
+      // gracefully. ReferenceError is always a bug; TypeError on null is
+      // expected (null.length etc.) and ignored.
+      try {
+        await fn(null, null);
+      } catch (e) {
+        if (e instanceof ReferenceError) {
+          process.stderr.write(
+            "HOOK INVOCATION ERROR (null, " + hook + "): " + e.message + "\\n"
+          );
+          process.exit(1);
+        }
+      }
+      // Realistic-input pass: input shape is valid, so BOTH ReferenceError AND
+      // TypeError indicate a real bug (not a null-input artifact). Catches
+      // branch-only ReferenceErrors and shape-mismatch TypeErrors.
+      for (const input of REAL_INPUTS[hook]) {
         try {
-          // Call with null input — hooks should handle null/undefined gracefully
-          await fn(null, null);
+          await fn(input, { tool: input.tool });
         } catch (e) {
-          // Some hooks may legitimately throw on null input (e.g., assertions),
-          // but ReferenceError is always a bug.
-          if (e instanceof ReferenceError) {
+          if (e instanceof ReferenceError || e instanceof TypeError) {
+            const kind = e.constructor.name;
+            const descr = JSON.stringify(input).slice(0, 120);
             process.stderr.write(
-              "HOOK INVOCATION ERROR (" + hook + "): " + e.message + "\\n"
+              "REAL-INPUT " + kind + " (" + hook + ", input=" + descr +
+              "): " + e.message + "\\n"
             );
             process.exit(1);
           }
-          // Other errors (TypeError on null.length etc.) are expected with null input — ignore.
         }
       }
     }
