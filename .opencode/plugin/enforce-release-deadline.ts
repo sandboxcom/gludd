@@ -1,102 +1,149 @@
-// enforce-release-deadline.ts — escalating enforcement during release tasks (RP.19).
-//
-// PROBLEM: a release task marked in_progress in TASKS.md ran for 4+ hours
-// without producing artifacts. No deadline tracking existed, so the agent
-// drifted into unrelated work while the release stalled.
-//
-// WHAT IT DOES:
-//   * tool.execute.before — detects a release task in_progress in TASKS.md,
-//     records the start time in STATE_FILE. After BLOCK_MS, denies the
-//     non-release bash targets listed in BLOCKED_TARGETS.
-//   * experimental.text.complete — after WARN_MS, injects a warning
-//     directing the agent back to release-critical work.
-//
-// THRESHOLDS (configurable via env):
-//   WARN_MS  (default 7200000  = 2h) — inject warning via text.complete
-//   BLOCK_MS (default 10800000 = 3h) — block non-release bash commands
-//
-// ALLOWED during block: release-critical operations — editing
-// .github/workflows/build.yml, pushing, tagging, verify-release-completeness.
-// These are never blocked; the block only applies to the non-release targets
-// listed in BLOCKED_TARGETS.
-//
-// FAIL-OPEN: every path is wrapped so an internal error never wedges the
-// session. Worst case = no deadline enforcement, never a blocked tool call.
-//
-// HOT-RELOAD: implements the proxy pattern from hot_reload.ts. Hook functions
-// check /tmp/gludd-hot-release-deadline.js on every invocation. Run
-// `make hot-reload-plugins` after editing this file to generate the hot module.
 import type { Plugin } from "@opencode-ai/plugin"
 import * as fs from "node:fs"
 import * as path from "node:path"
-import {
-  isSubagent,
-  reportAlive,
-  readJsonFile,
-  writeJsonFile,
-  getProjectRoot,
-} from "../lib/shared.ts"
 import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
-
+import { isSubagent, reportAlive, getProjectRoot } from "../lib/shared.ts"
+// enforce-release-deadline.ts — release-task elapsed-time enforcement (RP.19/BP.4).
+//
+// PROBLEM: release work (cut a version, verify artifacts, promote master) had no
+// time-box. A release task sat in_progress for hours with no surfaced heartbeat,
+// blocking every other lane of work. AGENTS.md "Release Pipeline Must Be CI-Green"
+// codified the PROCEDURE but not the DEADLINE — this plugin makes the deadline
+// observable and mechanically enforced.
+//
+// WHAT IT DOES:
+//   * tool.execute.before (ANY tool)   -> scan TASKS.md for a release task marked
+//                                          status: in_progress; if found, record
+//                                          start timestamp (once) into STATE_FILE.
+//                                          If elapsed > WARN  -> inject directive.
+//                                          If elapsed > BLOCK -> deny non-release
+//                                          bash targets (test/lint/typecheck/
+//                                          ci-status/ci-view), ALLOWING only
+//                                          release-critical ops (release-cut,
+//                                          verify-release-completeness, pushes,
+//                                          tags, edits).
+//   * experimental.text.complete       -> inject the warning directive into the
+//                                          outgoing text so the orchestrator sees
+//                                          it without reading a state file.
+//
+// ALLOWED (never blocked) past the hard deadline:
+//   release-cut, verify-release-completeness, verify-release-artifact,
+//   git-push-*, git-tag-push, verify-remote, release-view, release-create,
+//   release-branch-new, release-promote, release-recut, ci-verdict*,
+//   require-ci-green, edits/writes (the agent must be free to complete the
+//   release), task/agent/workflow dispatch (keep the pipeline primed).
+//
+// FAIL-OPEN: every code path is wrapped so an internal error NEVER wedges the
+// session. Worst case = no deadline enforcement (back to old behavior), never
+// a blocked tool call.
+//
+// HOT-RELOAD: implements the proxy pattern from hot_reload.ts.  Hook functions
+// check /tmp/gludd-hot-release-deadline.js on every invocation.  If present and
+// newer than cached, the hot module's hook overrides the compiled-in default.
+// Run `make hot-reload-plugins` after editing this file to generate the hot
+// module.
 // ============================================================================
 // CONFIG
 // ============================================================================
-const WARN_MS = parseInt(
-  process.env.GLUDD_RELEASE_DEADLINE_WARN_MS || "7200000",
-  10,
+const RELEASE_DEADLINE_WARN_MS = parseInt(
+  process.env.GLUDD_RELEASE_DEADLINE_WARN_MS || "7200000", 10
 )
-const BLOCK_MS = parseInt(
-  process.env.GLUDD_RELEASE_DEADLINE_BLOCK_MS || "10800000",
-  10,
+const RELEASE_DEADLINE_BLOCK_MS = parseInt(
+  process.env.GLUDD_RELEASE_DEADLINE_BLOCK_MS || "10800000", 10
 )
 const STATE_FILE =
   process.env.GLUDD_RELEASE_DEADLINE_STATE || "/tmp/gludd-release-deadline.json"
 const ENFORCE = process.env.GLUDD_RELEASE_DEADLINE_ENFORCE !== "0"
-
-// Non-release bash targets blocked after BLOCK_MS. These are work categories
-// that should not run once a release has stalled past 3h. Release-critical
-// targets (release-cut, git-push, git-tag-push, verify-release-completeness)
-// are deliberately NOT in this list so they remain available.
-const BLOCKED_TARGETS = ["test-unit", "lint", "typecheck", "ci-status", "ci-view"]
-
+// Bash targets that become DENIED once the hard deadline elapses.
+// Release-critical targets (release-cut, verify-release-*, pushes, tags) are
+// intentionally absent so the agent can still complete the release.
+const BLOCKED_TARGETS = Object.freeze([
+  "test-unit",
+  "lint",
+  "typecheck",
+  "ci-status",
+  "ci-view",
+  "test",
+  "test-integration",
+  "test-e2e",
+  "qa",
+  "gate",
+  "gate-lite",
+  "preflight",
+  "validate",
+  "ansible-syntax",
+  "molecule-test",
+  "security",
+  "sast",
+  "sbom",
+  "pip-audit",
+  "collect-check",
+  "healthcheck",
+])
 // ============================================================================
 // STATE FILE
 // ============================================================================
 interface ReleaseDeadlineState {
-  release_task?: string | null
-  start_ms?: number | null
-  last_check_ms?: number | null
-  warned?: boolean | null
+  release_task: string | null
+  start_ms: number | null
+  warned: boolean | null
 }
-
 function loadState(): ReleaseDeadlineState {
-  return readJsonFile<ReleaseDeadlineState>(STATE_FILE, {})
-}
-
-function saveState(s: ReleaseDeadlineState): void {
-  writeJsonFile(STATE_FILE, s)
-}
-
-function elapsedMs(state: ReleaseDeadlineState): number {
-  if (typeof state.start_ms !== "number") return 0
-  return Date.now() - state.start_ms
-}
-
-// ============================================================================
-// RELEASE TASK DETECTION
-// ============================================================================
-// Scans TASKS.md for a release task marked in_progress. Returns the task
-// identifier (first token, e.g. "RP.19") or null when no release task is
-// active. Fails open (returns null) on any read/parse error.
-function detectReleaseTaskInProgress(): string | null {
-  const root = getProjectRoot()
   try {
+    if (!fs.existsSync(STATE_FILE)) return newFreshState()
+    const raw = JSON.parse(fs.readFileSync(STATE_FILE, "utf8"))
+    if (!raw || typeof raw !== "object") return newFreshState()
+    return {
+      release_task: typeof raw.release_task === "string" ? raw.release_task : null,
+      start_ms: typeof raw.start_ms === "number" ? raw.start_ms : null,
+      warned: typeof raw.warned === "boolean" ? raw.warned : null,
+    }
+  } catch {
+    return newFreshState()
+  }
+}
+function newFreshState(): ReleaseDeadlineState {
+  return { release_task: null, start_ms: null, warned: null }
+}
+function saveState(s: ReleaseDeadlineState): void {
+  try {
+    const tmp = `${STATE_FILE}.tmp.${process.pid}`
+    fs.writeFileSync(tmp, JSON.stringify(s), "utf8")
+    fs.renameSync(tmp, STATE_FILE)
+  } catch {
+    // fail-open: permission / disk-full → silently skip
+  }
+}
+function clearState(): void {
+  try {
+    if (fs.existsSync(STATE_FILE)) {
+      const fresh = newFreshState()
+      const tmp = `${STATE_FILE}.tmp.${process.pid}`
+      fs.writeFileSync(tmp, JSON.stringify(fresh), "utf8")
+      fs.renameSync(tmp, STATE_FILE)
+    }
+  } catch {
+    // fail-open
+  }
+}
+// ============================================================================
+// TASKS.md release-task detection
+// ============================================================================
+// Scan TASKS.md for a task line that:
+//   1. matches /status:\s*in_progress/i
+//   2. contains "release" (case-insensitive)
+// Returns the first word of the task id (e.g. "RP.19") or null.
+// Returns null if TASKS.md is missing or unreadable (fail-open).
+function detectReleaseTaskInProgress(): string | null {
+  try {
+    const root = getProjectRoot()
     const tasksPath = path.join(root, "TASKS.md")
     if (!fs.existsSync(tasksPath)) return null
-    const content = fs.readFileSync(tasksPath, "utf8")
-    for (const line of content.split("\n")) {
+    const text = fs.readFileSync(tasksPath, "utf8")
+    for (const line of text.split("\n")) {
       if (!/status:\s*in_progress/i.test(line)) continue
       if (!/release/i.test(line)) continue
+      // task id = first token after the checkbox marker
       const m = line.match(/^\s*[-*]\s+\[\s*x?\s*\]\s+(\S+)/)
       if (m && m[1]) return m[1]
       return "release"
@@ -106,119 +153,145 @@ function detectReleaseTaskInProgress(): string | null {
     return null
   }
 }
-
 // ============================================================================
-// WARNING TEXT
+// Bash target classification
 // ============================================================================
-const WARN_TEXT =
-  "\n\u25888\u25888\u25888  RELEASE DEADLINE WARNING  \u25888\u25888\u25888\n" +
-  "A release task has been in_progress for over 2 hours. The release has " +
-  "stalled \u2014 focus on release-critical work: fix CI, edit build.yml, push, " +
-  "tag, run verify-release-completeness. Do NOT drift into unrelated work.\n"
-
+// Extract the make target from a bash command string.  Returns "" if not a
+// `make <target>` invocation.
+function extractMakeTarget(cmd: unknown): string {
+  try {
+    if (typeof cmd !== "string") return ""
+    const trimmed = cmd.trim()
+    if (!trimmed.startsWith("make ")) return ""
+    const rest = trimmed.slice(5).trim()
+    // stop at the first flag (`MSG=`, `FILES=`, etc.)
+    const m = rest.match(/^([A-Za-z0-9_.-]+)/)
+    return m ? m[1] : ""
+  } catch {
+    return ""
+  }
+}
+function isBlockedTarget(target: string): boolean {
+  return BLOCKED_TARGETS.includes(target)
+}
 // ============================================================================
 // DEFAULT IMPLEMENTATION (compiled-in fallback)
 // ============================================================================
 const defaultImpl: HotModule = {
-  "tool.execute.before": async (input: any) => {
-    // process.env.OPENCODE_SUBAGENT guard
+  "tool.execute.before": async (input: any, _output: any) => {
     if (isSubagent()) return
     reportAlive("enforce-release-deadline")
     if (!ENFORCE) return
     try {
-      const tool = input?.tool
-      const taskId = detectReleaseTaskInProgress()
-      const s = loadState()
-      const now = Date.now()
-      if (taskId) {
-        // Record or refresh the start time for the active release task.
-        if (!s.release_task || s.release_task !== taskId) {
-          s.release_task = taskId
-          s.start_ms = now
-          s.warned = false
-        }
-        s.last_check_ms = now
-        saveState(s)
-      } else {
-        // No release task in progress — clear any stale state.
-        if (s.release_task) {
-          s.release_task = null
-          s.start_ms = null
-          s.warned = null
-          saveState(s)
+      const task = detectReleaseTaskInProgress()
+      const state = loadState()
+      // If no release task is in_progress, clear any stale tracking state.
+      if (!task) {
+        if (state.release_task !== null) clearState()
+        return
+      }
+      // Release task IS in_progress — record start (once) and compute elapsed.
+      if (state.release_task !== task || state.start_ms === null) {
+        state.release_task = task
+        state.start_ms = Date.now()
+        state.warned = false
+        saveState(state)
+      }
+      const elapsed = Date.now() - (state.start_ms as number)
+      const elapsedMin = Math.round(elapsed / 60000)
+      // HARD BLOCK at 3h: deny non-release bash targets.
+      if (elapsed > RELEASE_DEADLINE_BLOCK_MS) {
+        const tool = typeof input?.tool === "string" ? input.tool : ""
+        if (tool === "bash") {
+          const cmd =
+            typeof input?.args?.command === "string" ? input.args.command :
+            typeof input?.command === "string" ? input.command : ""
+          const target = extractMakeTarget(cmd)
+          if (target && isBlockedTarget(target)) {
+            return {
+              permissionDecision: "deny",
+              message:
+                `RELEASE DEADLINE BLOCK: release task ${state.release_task} has ` +
+                `been in_progress for ${elapsedMin}min (hard limit ` +
+                `${Math.round(RELEASE_DEADLINE_BLOCK_MS / 60000)}min). ` +
+                `"${target}" is not release-critical. Allowed: release-cut, ` +
+                `verify-release-completeness, git-push-*, git-tag-push, edits. ` +
+                `Complete or cancel the release task to resume normal work.`,
+            }
+          }
         }
         return
       }
-      const elapsed = elapsedMs(s)
-      if (elapsed <= BLOCK_MS) return
-      // Past 3h: block non-release bash targets.
-      if (tool !== "bash") return
-      const args = input?.args ?? {}
-      const cmd = String(args?.command ?? input?.command ?? "")
-      if (!cmd.startsWith("make ")) return
-      const target = cmd.slice(5).trim().split(/\s+/)[0]
-      if (BLOCKED_TARGETS.includes(target)) {
-        const hrs = (elapsed / 3600000).toFixed(1)
-        return {
-          permissionDecision: "deny",
-          message: (
-            `RELEASE DEADLINE BLOCK: release task ${taskId} has been ` +
-            `in_progress for ${hrs}h (limit 3h). Non-release work ` +
-            `(\`make ${target}\`) is blocked until the release completes. ` +
-            `Focus on release-critical ops: edit build.yml, push, tag, ` +
-            `verify-release-completeness. Complete the release or mark it ` +
-            `cancelled in TASKS.md to resume normal work.`
-          ),
+      // WARNING at 2h: inject directive, persist warned flag.
+      if (elapsed > RELEASE_DEADLINE_WARN_MS && !state.warned) {
+        state.warned = true
+        saveState(state)
+        const line =
+          `RELEASE DEADLINE WARNING: release task ${state.release_task} has ` +
+          `been in_progress for ${elapsedMin}min (warn threshold ` +
+          `${Math.round(RELEASE_DEADLINE_WARN_MS / 60000)}min). Hard block on ` +
+          `non-release bash commands in ` +
+          `${Math.round((RELEASE_DEADLINE_BLOCK_MS - elapsed) / 60000)}min.`
+        console.warn(line)
+      }
+    } catch {
+      // fail-open: never block on an internal error
+    }
+  },
+  "experimental.text.complete": async (_output: any) => {
+    if (isSubagent()) return
+    reportAlive("enforce-release-deadline")
+    if (!ENFORCE) return
+    try {
+      const task = detectReleaseTaskInProgress()
+      if (!task) return
+      const state = loadState()
+      if (state.release_task !== task || state.start_ms === null) return
+      const elapsed = Date.now() - (state.start_ms as number)
+      if (elapsed > RELEASE_DEADLINE_WARN_MS) {
+        const elapsedMin = Math.round(elapsed / 60000)
+        const remainMin = Math.max(
+          0, Math.round((RELEASE_DEADLINE_BLOCK_MS - elapsed) / 60000)
+        )
+        const verb = elapsed > RELEASE_DEADLINE_BLOCK_MS
+          ? "PAST HARD BLOCK"
+          : "WARNING"
+        const text =
+          typeof _output?.text === "string" ? _output.text : ""
+        if (text.includes("RELEASE DEADLINE")) return
+        const directive =
+          `\n\n⚠ RELEASE DEADLINE ${verb}: release task ${task} has been ` +
+          `in_progress for ${elapsedMin}min. ${remainMin > 0
+            ? `Hard block on non-release bash in ${remainMin}min. `
+            : `Non-release bash commands are BLOCKED. `
+          }` +
+          `Complete the release (release-cut + verify-release-completeness) or ` +
+          `cancel the task to resume normal work.`
+        if (_output && typeof _output === "object") {
+          (_output as Record<string, unknown>).text = text + directive
         }
       }
     } catch {
       // fail-open
     }
   },
-  "experimental.text.complete": async (output: any) => {
-    // process.env.OPENCODE_SUBAGENT guard
-    if (isSubagent()) return output
-    reportAlive("enforce-release-deadline")
-    if (!ENFORCE) return output
-    try {
-      const s = loadState()
-      if (!s.release_task) return output
-      const elapsed = elapsedMs(s)
-      if (elapsed <= WARN_MS) return output
-      // Past 2h: inject the warning into the text response.
-      s.warned = true
-      s.last_check_ms = Date.now()
-      saveState(s)
-      const text = typeof output === "object" && output !== null && "text" in output
-        ? String((output as Record<string, unknown>).text)
-        : typeof output === "string" ? output : ""
-      return {
-        ...(output as Record<string, unknown>),
-        text: WARN_TEXT + (text || ""),
-      }
-    } catch {
-      // fail-open
-      return output
-    }
-  },
 }
-
 // ============================================================================
 // PROXY PLUGIN (hot-reload aware)
 // ============================================================================
-export default (() => {
+export default (({ }) => {
   return {
-    "tool.execute.before": async (input: any) => {
+    "tool.execute.before": async (input: any, output: any) => {
       if (isSubagent()) return
       const impl = loadHotModule("release-deadline", defaultImpl)
       const fn = impl["tool.execute.before"]
-      return fn ? await fn(input) : undefined
+      return fn ? await fn(input, output) : undefined
     },
-    "experimental.text.complete": async (_input: any, output: any) => {
-      if (isSubagent()) return output
+    "experimental.text.complete": async (output: any) => {
+      if (isSubagent()) return
       const impl = loadHotModule("release-deadline", defaultImpl)
       const fn = impl["text.complete"] || impl["experimental.text.complete"]
-      return fn ? await fn(output) : output
+      return fn ? await fn(output) : undefined
     },
   }
 }) satisfies Plugin
