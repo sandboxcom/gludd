@@ -58,10 +58,9 @@ def _extract_ci_gate_section(text: str) -> str:
             continue
         # A new key at the same indent as 'gate' means a sibling job
         m = re.match(rf"^{indent}([a-z])", line)
-        if m and not m.group(1) == "g":
-            # Make sure it is not a continuation of the gate block
-            if not line.startswith(indent + " "):
-                break
+        # A sibling job at the gate indentation ends the gate block.
+        if m and m.group(1) != "g" and not line.startswith(indent + " "):
+            break
         gate_lines.append(line)
     return "\n".join(gate_lines)
 
@@ -113,14 +112,24 @@ def extract_local_phases(makefile_path: Path) -> list[str]:
         if in_target:
             # Recipe ends when we hit a non-indented, non-empty, non-comment line
             # that looks like a new target
-            if stripped and not line.startswith("\t") and not line.startswith("    "):
-                if re.match(r"^[a-zA-Z_][a-zA-Z0-9_.-]*:", stripped):
-                    break
+            if (
+                stripped
+                and not line.startswith("\t")
+                and not line.startswith("    ")
+                and re.match(r"^[a-zA-Z_][a-zA-Z0-9_.-]*:", stripped)
+            ):
+                break
             m = re.search(r"=== GATE(?:-REFRESH)? PHASE:\s*(\S+)", line)
             if m:
                 phases.append(m.group(1))
 
     return phases
+
+
+def ci_to_local_phase_names(ci_phases: set[str]) -> set[str]:
+    """Translate CI phase names to their equivalent local gate phase names."""
+    ci_to_local = {"verify-enforcement": "hook-runtime"}
+    return {ci_to_local.get(phase, phase) for phase in ci_phases}
 
 
 def main() -> int:
@@ -145,9 +154,7 @@ def main() -> int:
 
     # CI-to-local name mapping: CI phase name → local phase name
     # Some phases have different names in local gate-refresh.
-    ci_to_local: dict[str, str] = {
-        "verify-enforcement": "hook-runtime",
-    }
+    ci_to_local: dict[str, str] = {"verify-enforcement": "hook-runtime"}
 
     # Some CI phases are intentionally not run locally (too expensive, CI-specific)
     known_exclusions: set[str] = set()
@@ -170,7 +177,7 @@ def main() -> int:
         print(f"\n  CI→local map: {ci_to_local}", file=sys.stderr)
         return 1
 
-    extra_local = local_set - {ci_to_local.get(p, p) for p in ci_phases}
+    extra_local = local_set - ci_to_local_phase_names(ci_phases)
     msg = f"GATE PARITY: OK — {len(ci_phases)} CI phases, {len(local_phases)} local phases"
     if extra_local:
         msg += f" (local-only: {sorted(extra_local)})"
