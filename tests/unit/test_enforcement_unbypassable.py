@@ -59,8 +59,6 @@ ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_DIR = ROOT / ".opencode" / "plugin"
 NODE = os.environ.get("GLUDD_NODE_BIN", "node")
 
-WATCHDOG_CI_FILE = Path("/tmp/gludd-watchdog-ci.json")
-
 if shutil.which(NODE) is None:
     pytest.skip("node binary unavailable", allow_module_level=True)
 
@@ -84,6 +82,7 @@ _AMBIENT_ENV_KEYS = [
     "GLUDD_PERSIST_STOP_BLOCK_FILE",
     "GLUDD_STOP_TEXT_COMPLETE_COUNT",
     "GLUDD_STOP_TOOL_COUNTS_FILE",
+    "GLUDD_WATCHDOG_CI_FILE",
     "GLUDD_MULTITASK_STATE_FILE",
     "GLUDD_ALIVE_PATH",
     "GLUDD_STREAK_FILE",
@@ -223,6 +222,7 @@ def _stop_env(base: Path) -> dict[str, str]:
         "GLUDD_STOP_TOOL_COUNTS_FILE": str(state / "tool-counts.json"),
         "GLUDD_ALIVE_PATH": str(state / "alive.json"),
         "GLUDD_STREAK_FILE": str(state / "streak.json"),
+        "GLUDD_WATCHDOG_CI_FILE": str(state / "watchdog-ci.json"),
     }
 
 
@@ -281,12 +281,12 @@ console.log(JSON.stringify({{ result: r === undefined || r === null ? null : r }
 """
 
 
-def _ci_cache_pre_js(ts_expression: str) -> str:
+def _ci_cache_pre_js(ts_expression: str, cache_path: str) -> str:
     """JS that writes the watchdog CI cache exactly as agent_watchdog.py's
     _update_ci_cache() does, immediately before the hook is invoked (minimal
     race window with the live watchdog daemon)."""
     return f"""
-fs.writeFileSync("/tmp/gludd-watchdog-ci.json", JSON.stringify({{
+fs.writeFileSync({json.dumps(cache_path)}, JSON.stringify({{
   last_ci_check: {ts_expression},
   last_ci_status: "FAILURE",
   last_output: "CI RED: run 29613868503 conclusion='failure'",
@@ -398,7 +398,7 @@ class TestTextCompleteBlocksOnCiRed:
             _text_complete_driver(
                 bundle,
                 "CI failed but here's a summary",
-                pre_js=_ci_cache_pre_js(ts_expression),
+                pre_js=_ci_cache_pre_js(ts_expression, env["GLUDD_WATCHDOG_CI_FILE"]),
             ),
             env,
             cwd=str(base / "project"),
@@ -412,9 +412,6 @@ class TestTextCompleteBlocksOnCiRed:
 
     def test_text_complete_blocks_when_ci_red(self):
         base = _mk_workdir(unchecked_tasks=False)
-        original_ci = (
-            WATCHDOG_CI_FILE.read_text() if WATCHDOG_CI_FILE.exists() else None
-        )
         try:
             sanity_result, sanity_state = self._run_ci_leg(
                 "Date.now()", base, "stop-state-ms.json",
@@ -439,11 +436,6 @@ class TestTextCompleteBlocksOnCiRed:
             )
             _assert_blanked(result, "CI FAILURE (watchdog seconds-format cache)")
         finally:
-            if original_ci is None:
-                with contextlib.suppress(OSError):
-                    WATCHDOG_CI_FILE.unlink()
-            else:
-                WATCHDOG_CI_FILE.write_text(original_ci)
             shutil.rmtree(base, ignore_errors=True)
 
 
