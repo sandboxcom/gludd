@@ -172,6 +172,9 @@ class TestGitWorkflowTargetRecipeContent:
             assert "rsa" in recipe or "ed25519" in recipe
             assert "exit 1" in recipe
 
+    def test_default_ssh_key_path_matches_project_key_name(self):
+        assert "SSH_KEY ?= $(HOME)/.ssh/sandboxcom_gludd_rsa" in _makefile_src()
+
 
 
 
