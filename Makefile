@@ -125,6 +125,7 @@ log-agent-result disk-guard disk-check check-disk disk tmp-gludd-usage tmp-gludd
         install-bats test-install check-subagent-guards verify-plugin-manifest \
          check-task-ledger \
          check-task-integrity check-make-target-contract active-work-status \
+         codex-stop-guard \
          test-service-discovery service-discover service-catalog \
          subagent-init subagent-cleanup \
          chat chat-eval test-chat \
@@ -214,6 +215,7 @@ help:
 	@echo "  test-opa-policies     Execute Rego policy tests when opa is installed"
 	@echo "  check-make-target-contract  Validate target variables, help, and behavioral examples"
 	@echo "  active-work-status    Emit auditable PIDs, gate state, hashes, and open tasks"
+	@echo "  codex-stop-guard      Fail closed when tracked work remains; emit a Codex stop challenge token"
 	@echo "  iam-headless-smoke    Validate least-privilege provider manifests without credentials"
 	@echo "  check-task-integrity  Require changed files to map to registered tasks"
 	@echo "  validate-task-ledger  Validate TASKS.md metadata and completion evidence"
@@ -5467,6 +5469,11 @@ status-heartbeat:
 		tmp="$$STATE.tmp.$$$$"; printf '{"timestamp":"%s","sha":"%s","interval_seconds":%s,"iteration":%s}\n' "$$timestamp" "$$sha" "$$INTERVAL_VALUE" "$$i" > "$$tmp"; mv -f "$$tmp" "$$STATE"; \
 		i=$$((i + 1)); if [ "$$COUNT_VALUE" -ne 0 ] && [ "$$i" -ge "$$COUNT_VALUE" ]; then break; fi; sleep "$$INTERVAL_VALUE"; \
 	done
+
+# Repository-level Codex stop invariant.  This cannot control the Codex host;
+# it gives CI and an external runner a fail-closed, auditable decision instead.
+codex-stop-guard:
+	@$(PYTHON) scripts/codex_stop_guard.py
 
 pipeline-health: pipeline-status
 	@true
