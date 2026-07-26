@@ -95,6 +95,30 @@ try:
 except ImportError:  # pragma: no cover - older controller versions
     _AnsibleSentinel = None
 
+# ansible-core 2.19+ resolves serializer/error helpers from private
+# module_utils modules while formatting ``exit_json`` results.  Referencing
+# them explicitly keeps Ansible's payload bundler from omitting them.
+try:
+    from ansible.module_utils._internal import (
+        _ambient_context as _ansible_ambient_context,
+    )
+    from ansible.module_utils._internal import (
+        _event_utils as _ansible_event_utils,
+    )
+    from ansible.module_utils._internal import (
+        _messages as _ansible_messages,
+    )
+    from ansible.module_utils._internal import (
+        _traceback as _ansible_traceback,
+    )
+    from ansible.module_utils.common import yaml as _ansible_yaml
+except ImportError:  # pragma: no cover - older controller versions
+    _ansible_ambient_context = None
+    _ansible_event_utils = None
+    _ansible_messages = None
+    _ansible_traceback = None
+    _ansible_yaml = None
+
 try:
     from ansible_collections.general_ludd.agent.plugins.module_utils.gludd import (
         GluddClient,

@@ -42,9 +42,12 @@ Only stdlib is required; ``psutil`` is used when importable for the RAM reading.
 from __future__ import annotations
 
 import os
+import json
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 import uuid
 from collections.abc import Mapping, Sequence
 
@@ -61,6 +64,7 @@ _OOM_OUTPUT_MARKERS = (
     "crashed while running",
     "replacing crashed worker",
 )
+DEFAULT_HEARTBEAT_SECS = 30.0
 
 
 def per_worker_gb(env: Mapping[str, str] | None = None) -> float:
@@ -193,6 +197,52 @@ def is_oom_exit(returncode: int, output: str = "") -> bool:
     return any(marker in low for marker in _OOM_OUTPUT_MARKERS)
 
 
+def heartbeat_interval_seconds(env: Mapping[str, str] | None = None) -> float:
+    """Return the quiet-period heartbeat interval, defaulting on bad input."""
+    env = os.environ if env is None else env
+    raw = env.get("GLUDD_ADAPTIVE_HEARTBEAT_SECS")
+    if raw:
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            value = DEFAULT_HEARTBEAT_SECS
+        if value > 0:
+            return value
+    return DEFAULT_HEARTBEAT_SECS
+
+
+def progress_file_path(env: Mapping[str, str] | None = None) -> str:
+    """Resolve the durable progress path, isolated per adaptive runner process."""
+    env = os.environ if env is None else env
+    configured = env.get("GLUDD_ADAPTIVE_PROGRESS_FILE")
+    if configured:
+        return configured
+    root = env.get("TMPDIR") or tempfile.gettempdir()
+    return os.path.join(root, f"gludd-adaptive-test-{os.getpid()}.json")
+
+
+def _persist_progress(path: str, payload: Mapping[str, object]) -> None:
+    """Atomically persist progress; telemetry failures never affect test runs."""
+    temporary: str | None = None
+    try:
+        parent = os.path.dirname(path) or "."
+        os.makedirs(parent, exist_ok=True)
+        fd, temporary = tempfile.mkstemp(prefix=".adaptive-progress-", dir=parent)
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            json.dump(dict(payload), stream, sort_keys=True)
+            stream.write("\n")
+        os.replace(temporary, path)
+        temporary = None
+    except Exception:
+        pass
+    finally:
+        if temporary is not None:
+            try:
+                os.unlink(temporary)
+            except OSError:
+                pass
+
+
 def _stream_run(cmd: Sequence[str]) -> tuple[int, str]:
     """Run ``cmd``, tee output to our stdout live, and capture it for OOM sniffing."""
     proc = subprocess.Popen(
@@ -203,12 +253,59 @@ def _stream_run(cmd: Sequence[str]) -> tuple[int, str]:
         bufsize=1,
     )
     chunks: list[str] = []
+    progress_path = progress_file_path()
+    started = time.monotonic()
+    progress_lock = threading.Lock()
+    progress: dict[str, object] = {
+        "pid": os.getpid(),
+        "status": "running",
+        "started_at": time.time(),
+        "updated_at": time.time(),
+        "lines": 0,
+        "bytes": 0,
+        "heartbeat_count": 0,
+    }
+    _persist_progress(progress_path, progress)
+    stop_heartbeat = threading.Event()
+
+    def emit_heartbeat() -> None:
+        interval = heartbeat_interval_seconds()
+        while not stop_heartbeat.wait(interval):
+            with progress_lock:
+                progress["heartbeat_count"] = int(progress["heartbeat_count"]) + 1
+                progress["updated_at"] = time.time()
+                snapshot = dict(progress)
+                lines = int(progress["lines"])
+                elapsed = time.monotonic() - started
+            _persist_progress(progress_path, snapshot)
+            print(
+                f"[adaptive-test] heartbeat elapsed={elapsed:.0f}s lines={lines}",
+                flush=True,
+            )
+
+    heartbeat = threading.Thread(target=emit_heartbeat, name="adaptive-test-heartbeat", daemon=True)
+    heartbeat.start()
     assert proc.stdout is not None
-    for line in proc.stdout:
-        sys.stdout.write(line)
-        sys.stdout.flush()
-        chunks.append(line)
-    proc.wait()
+    try:
+        for line in proc.stdout:
+            sys.stdout.write(line)
+            sys.stdout.flush()
+            chunks.append(line)
+            with progress_lock:
+                progress["lines"] = int(progress["lines"]) + 1
+                progress["bytes"] = int(progress["bytes"]) + len(line.encode("utf-8"))
+                progress["updated_at"] = time.time()
+        proc.wait()
+    finally:
+        stop_heartbeat.set()
+        heartbeat.join(timeout=1.0)
+        with progress_lock:
+            progress["status"] = "finished"
+            progress["returncode"] = proc.returncode
+            progress["elapsed_seconds"] = round(time.monotonic() - started, 3)
+            progress["updated_at"] = time.time()
+            snapshot = dict(progress)
+        _persist_progress(progress_path, snapshot)
     return proc.returncode, "".join(chunks)
 
 

@@ -17,8 +17,10 @@ deterministic regardless of the load on the machine running the suite.
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 import sys
+import time
 from pathlib import Path
 from types import ModuleType
 
@@ -360,3 +362,36 @@ def test_run_reuses_same_basetemp_across_oom_retries(
     assert rc == 0
     assert len(basetemps) == 3  # -n 4, 2, 1
     assert len(set(basetemps)) == 1  # all identical across retries
+
+
+def test_stream_run_emits_heartbeat_and_persists_counters(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Quiet child output still produces observable and durable progress."""
+    progress_file = tmp_path / "adaptive-progress.json"
+    monkeypatch.setenv("GLUDD_ADAPTIVE_HEARTBEAT_SECS", "0.01")
+    monkeypatch.setenv("GLUDD_ADAPTIVE_PROGRESS_FILE", str(progress_file))
+
+    class _QuietStream:
+        def __iter__(self):
+            time.sleep(0.03)
+            yield "pytest finished\n"
+
+    class _Process:
+        stdout = _QuietStream()
+        returncode = 0
+
+        def wait(self):
+            return self.returncode
+
+    monkeypatch.setattr(at.subprocess, "Popen", lambda *args, **kwargs: _Process())
+
+    rc, output = at._stream_run(["pytest", "tests/"])
+
+    assert rc == 0
+    assert output == "pytest finished\n"
+    payload = json.loads(progress_file.read_text())
+    assert payload["status"] == "finished"
+    assert payload["lines"] == 1
+    assert payload["heartbeat_count"] >= 1
+    assert "heartbeat" in capsys.readouterr().out

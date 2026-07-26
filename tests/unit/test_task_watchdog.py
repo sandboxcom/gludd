@@ -24,6 +24,12 @@ from scripts.task_watchdog import (
     run_once,
 )
 
+
+def test_direct_script_execution_has_process_cleanup_import_fallback() -> None:
+    """The Makefile launches the file path, so imports must work outside package mode."""
+    source = Path(__file__).resolve().parents[2] / "scripts" / "task_watchdog.py"
+    assert "from process_cleanup import descendant_processes, snapshot_processes" in source.read_text()
+
 # ---------------------------------------------------------------------------
 # load_deadlines
 # ---------------------------------------------------------------------------

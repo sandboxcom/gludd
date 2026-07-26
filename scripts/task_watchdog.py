@@ -43,7 +43,12 @@ import time
 from contextlib import suppress
 from pathlib import Path
 
-from scripts.process_cleanup import descendant_processes, snapshot_processes
+try:
+    # ``make task-watchdog-start`` executes this file by path, where the
+    # repository root is not on ``sys.path`` and the package import fails.
+    from scripts.process_cleanup import descendant_processes, snapshot_processes
+except ModuleNotFoundError:  # pragma: no cover - exercised by direct launch
+    from process_cleanup import descendant_processes, snapshot_processes
 
 DEADLINES_FILE = os.environ.get(
     "GLUDD_TASK_DEADLINE_STATE", "/tmp/gludd-task-deadlines.json"

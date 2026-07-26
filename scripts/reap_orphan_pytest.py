@@ -11,6 +11,11 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+try:
+    from scripts.resource_arbiter import resource_path
+except ModuleNotFoundError:  # pragma: no cover - direct script execution
+    from resource_arbiter import resource_path
+
 
 @dataclass(frozen=True)
 class ProcessRecord:
@@ -18,6 +23,16 @@ class ProcessRecord:
     ppid: int
     elapsed_seconds: int
     command: str
+
+
+_OWNER_COMMAND_MARKERS = (
+    "run_gate.sh",
+    "gate_async.sh",
+    "make gate",
+    "gate-refresh",
+    "agent_watchdog.py",
+    "task_watchdog.py",
+)
 
 
 def parse_elapsed_seconds(value: str) -> int:
@@ -71,6 +86,83 @@ def reapable_with_descendants(
     )
 
 
+def _read_pid(path: Path) -> int | None:
+    """Read a PID claim without treating malformed state as ownership."""
+    try:
+        token = path.read_text(encoding="utf-8").split()[0]
+        pid = int(token)
+    except (FileNotFoundError, IndexError, ValueError, OSError):
+        return None
+    return pid if pid > 0 else None
+
+
+def owner_pids(project_root: Path) -> set[int]:
+    """Collect project-scoped gate/agent owner claims from durable state."""
+    root = project_root.resolve()
+    paths = (
+        root / ".gate-background.pid",
+        resource_path("gate", root),
+        resource_path("async-gate", root),
+    )
+    pids = {pid for path in paths if (pid := _read_pid(path)) is not None}
+    status = root / ".gate-status"
+    try:
+        fields = status.read_text(encoding="utf-8").split()
+    except (FileNotFoundError, OSError):
+        fields = []
+    if len(fields) >= 3 and fields[0] == "RUNNING":
+        try:
+            pid = int(fields[2])
+        except ValueError:
+            pass
+        else:
+            if pid > 0:
+                pids.add(pid)
+    for token in os.environ.get("GLUDD_AGENT_OWNER_PID", "").split(","):
+        try:
+            pid = int(token.strip())
+        except ValueError:
+            continue
+        if pid > 0:
+            pids.add(pid)
+    return pids
+
+
+def _is_owner_command(command: str) -> bool:
+    return any(marker in command for marker in _OWNER_COMMAND_MARKERS)
+
+
+def _has_live_owner(
+    records: list[ProcessRecord], *, project_root: Path, owner_pids: set[int]
+) -> bool:
+    root = str(project_root.resolve())
+    return any(
+        _is_owner_command(record.command)
+        and (record.pid in owner_pids or root in record.command)
+        for record in records
+    )
+
+
+def select_reapable_records(
+    records: list[ProcessRecord],
+    *,
+    project_root: Path,
+    min_age_seconds: int,
+    owner_pids: set[int] | None = None,
+) -> list[ProcessRecord]:
+    """Select orphan trees only when no live project owner can supervise them."""
+    owners = owner_pids if owner_pids is not None else set()
+    if _has_live_owner(records, project_root=project_root, owner_pids=owners):
+        return []
+    return [
+        record
+        for record in records
+        if reapable_with_descendants(
+            record, records, project_root=project_root, min_age_seconds=min_age_seconds
+        )
+    ]
+
+
 def _records(project_root: Path) -> list[ProcessRecord]:
     output = subprocess.run(
         ["ps", "-axo", "pid=,ppid=,etime=,command="],
@@ -93,17 +185,20 @@ def _records(project_root: Path) -> list[ProcessRecord]:
 
 def reap(project_root: Path, *, min_age_seconds: int, apply: bool) -> int:
     records = _records(project_root)
-    candidates = [
-        record
-        for record in records
-        if reapable_with_descendants(
-            record, records, project_root=project_root, min_age_seconds=min_age_seconds
-        )
-    ]
+    candidates = select_reapable_records(
+        records,
+        project_root=project_root,
+        min_age_seconds=min_age_seconds,
+        owner_pids=owner_pids(project_root),
+    )
+    if not candidates and _has_live_owner(
+        records, project_root=project_root, owner_pids=owner_pids(project_root)
+    ):
+        print("orphan-pytest skipped: live project gate/agent owner present")
     for record in candidates:
-          action = "REAP" if apply else "WOULD-REAP"
-          print(f"{action} pid={record.pid} age={record.elapsed_seconds}s command={record.command}")
-          if apply:
+        action = "REAP" if apply else "WOULD-REAP"
+        print(f"{action} pid={record.pid} age={record.elapsed_seconds}s command={record.command}")
+        if apply:
             with contextlib.suppress(OSError, ProcessLookupError):
                 os.killpg(os.getpgid(record.pid), signal.SIGTERM)
     print(f"orphan-pytest candidates={len(candidates)} apply={apply}")

@@ -70,6 +70,25 @@ def test_agent_module_explicitly_bundles_ansible_sentinel_dependency() -> None:
     assert "ansible.module_utils.common.sentinel" in source
 
 
+def test_agent_module_bundles_ansible_serializer_internal_dependencies() -> None:
+    """Ansible 2.19+ serializing a result needs private module-utils helpers."""
+    module_path = Path(__file__).parents[2] / (
+        "collections/ansible_collections/general_ludd/agent/plugins/modules/"
+        "gludd_agent_run.py"
+    )
+    source = module_path.read_text(encoding="utf-8")
+
+    for dependency in (
+        "ansible.module_utils._internal",
+        "_ambient_context",
+        "_event_utils",
+        "_messages",
+        "_traceback",
+        "ansible.module_utils.common import yaml",
+    ):
+        assert dependency in source
+
+
 # ---------------------------------------------------------------------------
 # Tests for _run_local behavioral contract
 # ---------------------------------------------------------------------------
