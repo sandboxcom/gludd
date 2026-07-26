@@ -14,8 +14,9 @@ def test_gate_kill_selects_adaptive_full_gate_only() -> None:
             12327,
             12322,
             42,
-            f"{root}/.venv/bin/python scripts/adaptive_test.py tests/ -q "
-            "--cov=general_ludd --cov-fail-under=85",
+            f"{root}/.venv/bin/python3 -m pytest tests/ -q "
+            "--cov=general_ludd --cov-report=xml --cov-fail-under=85 "
+            f"--basetemp={root}/tmp/gate-JMaR1F -n 1",
         ),
         ProcessRecord(
             43919,

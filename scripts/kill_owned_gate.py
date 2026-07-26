@@ -22,10 +22,13 @@ class ProcessRecord:
 
 def _is_owned_adaptive_gate(record: ProcessRecord, project_root: Path) -> bool:
     command = record.command
-    return (
-        "adaptive_test.py" in command
-        and " tests/" in command
+    full_gate_pytest = (
+        " -m pytest tests/" in command
+        and "--cov=general_ludd" in command
         and "--cov-fail-under=85" in command
+    )
+    return (
+        ("adaptive_test.py" in command or full_gate_pytest)
         and str(project_root.resolve()) in command
     )
 
