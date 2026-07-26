@@ -680,7 +680,7 @@ old summary table omitted entirely. Grand total across the file: **326** boxes.
 - [ ] T-CODEX-CONT-044 — Enforce bounded worker admission | priority: high | effort: M | status: pending
 - [ ] T-CODEX-CONT-045 — Detect duplicate resource leases | priority: high | effort: S | status: pending
 - [x] T-CODEX-CONT-046 — Reclaim stale owners only after identity validation | priority: high | effort: M | status: completed | evidence: `scripts/reap_orphan_pytest.py` validates namespaced gate/agent owner command identity, protects only trees tied to a live owner, and reclaims older unrelated roots; `tests/unit/test_orphan_pytest_reaper.py` (8 passed, including stale status PID, live-owner, and unrelated-root regressions, 2026-07-26)
-- [ ] T-CODEX-CONT-047 — Refuse to terminate unrelated project processes | priority: high | effort: M | status: pending
+- [x] T-CODEX-CONT-047 — Refuse to terminate unrelated project processes | priority: high | effort: M | status: completed | evidence: `scripts/kill_owned_gate.py` selects only project-root adaptive full-gate commands and excludes coverage-audit/direct-E2E processes; `make gate-kill` invokes it before lock cleanup; focused gate-kill tests 3 passed (2026-07-26)
 - [ ] T-CODEX-CONT-048 — Add watchdog singleton ownership | priority: high | effort: M | status: pending
 - [ ] T-CODEX-CONT-049 — Record resource pressure before starting heavy work | priority: medium | effort: S | status: pending
 - [ ] T-CODEX-CONT-050 — Fail closed when resource limits cannot be measured | priority: high | effort: S | status: pending

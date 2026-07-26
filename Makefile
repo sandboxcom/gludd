@@ -4385,6 +4385,9 @@ gate-logs:
 
 # Force-kill a running background gate: SIGTERM then SIGKILL after 5s.
 gate-kill:
+	@# Terminate only adaptive full-gate trees owned by this checkout; coverage
+	@# audits and E2E pytest trees are intentionally excluded by command identity.
+	@APPLY=1 $(UV) run python scripts/kill_owned_gate.py
 	@PID=$$(cat .gate-background.pid 2>/dev/null || echo ""); \
 	if [ -n "$$PID" ] && kill -0 "$$PID" 2>/dev/null; then \
 		echo "[gate-kill] sending SIGTERM to pid=$$PID"; \
