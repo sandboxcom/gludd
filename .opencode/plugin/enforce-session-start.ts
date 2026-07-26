@@ -78,6 +78,13 @@ let _lastTimeGateWarningTs = 0
 //   true  = primed — gate is latched open for this instance forever
 let sessionPrimed: boolean | null = null
 const TASK_FILES = ["TASKS.md", "BUGS.md", "config/ratchet.yml", "SESSION.md"]
+
+function resolveImpl(): HotModule {
+  // Hermetic tests provide an explicit state file. Do not route those calls
+  // through a generated hot module, whose extracted closure can diverge from
+  // the compiled session gate and silently allow premature mutations.
+  return process.env.GLUDD_SESSION_STATE ? defaultImpl : loadHotModule("enforce-session-start", defaultImpl)
+}
 // --- System prompt banner ---------------------------------------------------
 function buildSessionDirective(): string {
   const nowSecs = parseInt(process.env.GLUDD_SESSION_START_DISPATCH_NOW_SECS || "60", 10)
@@ -437,7 +444,7 @@ export default (({ }) => {
     ) => {
       // process.env.OPENCODE_SUBAGENT guard
       if (isSubagent()) return output
-      const impl = loadHotModule("enforce-session-start", defaultImpl)
+      const impl = resolveImpl()
       const fn = impl["experimental.chat.system.transform"] || impl["system.transform"]
       return fn ? await fn(_input, output) : output
     },
@@ -447,7 +454,7 @@ export default (({ }) => {
     ) => {
       // process.env.OPENCODE_SUBAGENT guard
       if (isSubagent()) return
-      const impl = loadHotModule("enforce-session-start", defaultImpl)
+      const impl = resolveImpl()
       const fn = impl["tool.execute.before"]
       return fn ? await fn(input, _output) : undefined
     },

@@ -75,6 +75,59 @@ class TestAuditCoverageScript:
         )
         assert result.returncode == 0
 
+    def test_branch_arcs_and_contexts_are_reported(self, tmp_path):
+        coverage_json = tmp_path / "coverage.json"
+        coverage_json.write_text(json.dumps({
+            "files": {
+                "src/general_ludd/branchy.py": {
+                    "summary": {
+                        "num_statements": 10, "covered_lines": 10,
+                        "num_branches": 4, "covered_branches": 3,
+                    },
+                    "missing_branches": [[10, 12]],
+                    "contexts": {"10": ["test_branch"]},
+                },
+            }
+        }))
+        result = subprocess.run(
+            ["python3", str(AUDIT_SCRIPT), f"--json-file={coverage_json}", "--threshold=70"],
+            capture_output=True, text=True, cwd=str(ROOT),
+        )
+        assert result.returncode == 0
+        spec = importlib.util.spec_from_file_location("audit_coverage_arcs", AUDIT_SCRIPT)
+        assert spec and spec.loader
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        parsed, _, passed = module.parse_coverage_json(str(coverage_json), 70, "src/general_ludd")
+        assert passed
+        assert parsed["branch_coverage"] == 75.0
+        assert parsed["missing_arcs"]["general_ludd/branchy.py"] == [[10, 12]]
+        assert parsed["contexts"]["general_ludd/branchy.py"] == ["10"]
+
+    def test_per_file_branch_floor_fails_even_when_aggregate_passes(self, tmp_path):
+        coverage_json = tmp_path / "coverage.json"
+        coverage_json.write_text(json.dumps({
+            "files": {
+                "src/general_ludd/low.py": {"summary": {
+                    "num_statements": 10, "covered_lines": 10,
+                    "num_branches": 4, "covered_branches": 2,
+                }},
+                "src/general_ludd/high.py": {"summary": {
+                    "num_statements": 10, "covered_lines": 10,
+                    "num_branches": 100, "covered_branches": 100,
+                }},
+            }
+        }))
+        spec = importlib.util.spec_from_file_location("audit_coverage_floor", AUDIT_SCRIPT)
+        assert spec and spec.loader
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        _, under, passed = module.parse_coverage_json(
+            str(coverage_json), 85, "src/general_ludd", per_file_threshold=75
+        )
+        assert not passed
+        assert "general_ludd/low.py" in under
+
     def test_json_report_written(self, tmp_path):
         coverage_json = tmp_path / "coverage.json"
         out_json = tmp_path / "out.json"
@@ -125,6 +178,7 @@ class TestAuditCoverageScript:
         assert f"--cov-report=json:{report_path}" in args
         assert kwargs["env"]["GLUDD_COVERAGE_AUDIT"] == "1"
         assert kwargs["timeout"] == module.COVERAGE_AUDIT_TIMEOUT_SECONDS
+        assert "--cov-branch" in args
 
 
 class TestMakefileTargets:

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Coverage audit: run pytest with coverage, parse results, flag files below threshold.
+"""Coverage audit using coverage.py line and branch arc data.
 
 Usage:
   python3 scripts/audit_coverage.py [--threshold=85] [--source=src/general_ludd]
@@ -7,7 +7,7 @@ Usage:
   python3 scripts/audit_coverage.py --json-file=coverage.json --threshold=85
 
 Modes:
-  - Default mode: runs pytest with --cov and parses the JSON report it produces.
+  - Default mode: runs pytest with --cov-branch and parses the JSON report it produces.
   - --json-file mode: parses an existing coverage.json file (no pytest run).
 """
 
@@ -19,30 +19,22 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 
-def parse_coverage_json(json_path: str, threshold: float, source_path: str) -> tuple[dict, list[str], bool]:
+def parse_coverage_json(
+    json_path: str,
+    threshold: float,
+    source_path: str,
+    per_file_threshold: float = 75.0,
+) -> tuple[dict, list[str], bool]:
     with open(json_path) as f:
         raw = f.read()
     data = json.loads(raw)
 
-    # --- AgentConfig search in raw coverage.json ---
-    import re as _re
-    _matches = list(_re.finditer(r'\bAgentConfig\b', raw))
-    print(f"\n=== AgentConfig search in {json_path} ===")
-    print(f"  File size: {len(raw)} bytes")
-    print(f"  Whole-word \\bAgentConfig\\b matches: {len(_matches)}")
-    for _i, _m in enumerate(_matches):
-        _s = max(0, _m.start() - 80)
-        _e = min(len(raw), _m.end() + 80)
-        print(f"  Match {_i+1} at char {_m.start()}: ...{raw[_s:_e]}...")
-    if not _matches:
-        print("  (no whole-word matches found)")
-    _subs = len(_re.findall(r'AgentConfig', raw))
-    print(f"  Any substring 'AgentConfig' occurrences: {_subs}")
-    print("=== End AgentConfig search ===\n")
-
     files_under: list[str] = []
     files_ok: list[str] = []
     per_file: dict[str, float] = {}
+    per_file_branch: dict[str, float] = {}
+    missing_arcs: dict[str, list[list[int]]] = {}
+    total_branches = covered_branches = 0
 
     raw_files = data.get("files", {})
     for fpath, finfo in raw_files.items():
@@ -50,24 +42,46 @@ def parse_coverage_json(json_path: str, threshold: float, source_path: str) -> t
         num_stmts = summary.get("num_statements", 0)
         covered = summary.get("covered_lines", summary.get("num_lines_covered", 0))
 
-        if num_stmts == 0:
+        num_branches = int(summary.get("num_branches", 0) or 0)
+        covered_branch_count = int(summary.get("covered_branches", 0) or 0)
+        # Older reports omit branch fields. Keep line-only JSON fixtures useful,
+        # while real --cov-branch reports always provide these counters.
+        branch_pct = (
+            100.0 * covered_branch_count / num_branches
+            if num_branches
+            else (100.0 * covered / num_stmts if num_stmts else 100.0)
+        )
+        if num_stmts == 0 and num_branches == 0:
             continue
 
-        pct = round(100.0 * covered / num_stmts, 1)
+        pct = round(100.0 * covered / num_stmts, 1) if num_stmts else 100.0
 
         rel = _relative_path(fpath, source_path)
         per_file[rel] = pct
+        per_file_branch[rel] = round(branch_pct, 1)
+        total_branches += num_branches
+        covered_branches += covered_branch_count
+        missing = finfo.get("missing_branches", [])
+        if missing:
+            missing_arcs[rel] = [list(arc) for arc in missing]
 
-        if pct < threshold:
+        if pct < threshold or branch_pct < per_file_threshold:
             files_under.append(rel)
         else:
             files_ok.append(rel)
 
-    all_ok = len(files_under) == 0
+    aggregate_branch_pct = (
+        round(100.0 * covered_branches / total_branches, 1)
+        if total_branches
+        else (round(100.0 * sum(per_file.values()) / len(per_file), 1) if per_file else 100.0)
+    )
+    all_ok = len(files_under) == 0 and aggregate_branch_pct >= threshold
 
     report = {
         "generated_at": datetime.now(UTC).isoformat(),
         "threshold": threshold,
+        "branch_threshold": threshold,
+        "per_file_threshold": per_file_threshold,
         "source": source_path,
         "total_files": len(per_file),
         "files_below_threshold": len(files_under),
@@ -75,6 +89,17 @@ def parse_coverage_json(json_path: str, threshold: float, source_path: str) -> t
         "files_under_threshold": files_under,
         "files_above_threshold": len(files_ok),
         "per_file": dict(sorted(per_file.items())),
+        "per_file_branch": dict(sorted(per_file_branch.items())),
+        "branch_coverage": aggregate_branch_pct,
+        "total_branches": total_branches,
+        "covered_branches": covered_branches,
+        "missing_arcs": dict(sorted(missing_arcs.items())),
+        "contexts": {
+            rel: sorted(finfo.get("contexts", {}))
+            for fpath, finfo in raw_files.items()
+            if (rel := _relative_path(fpath, source_path)) in per_file
+            and finfo.get("contexts")
+        },
     }
 
     return report, files_under, all_ok
@@ -106,6 +131,8 @@ def run_pytest_coverage(source: str, json_out_path: str) -> int:
                 "pytest",
                 "tests/",
                 f"--cov={source}",
+                "--cov-branch",
+                "--cov-context=test",
                 f"--cov-report=json:{json_out_path}",
                 "--cov-report=term-missing",
                 "-q",
@@ -162,7 +189,14 @@ def main() -> None:
         print(f"ERROR: coverage.json not found at {json_file}", file=sys.stderr)
         sys.exit(2)
 
-    report, files_under, _all_ok = parse_coverage_json(json_file, threshold, source)
+    per_file_threshold = 75.0
+    for arg in args:
+        if arg.startswith("--per-file-threshold="):
+            per_file_threshold = float(arg.split("=", 1)[1])
+
+    report, files_under, all_ok = parse_coverage_json(
+        json_file, threshold, source, per_file_threshold
+    )
 
     report["pytest_exit_code"] = pyrc
 
@@ -174,7 +208,7 @@ def main() -> None:
     print(f"  Files analyzed: {report['total_files']}")
     print(f"  Files below {threshold}%: {report['files_below_threshold']}")
 
-    if files_under:
+    if files_under or not all_ok:
         print("\nFiles below threshold:")
         for f in sorted(files_under):
             pct = report["per_file"][f]
