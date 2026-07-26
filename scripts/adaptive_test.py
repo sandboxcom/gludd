@@ -41,8 +41,8 @@ Only stdlib is required; ``psutil`` is used when importable for the RAM reading.
 
 from __future__ import annotations
 
-import os
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -50,6 +50,7 @@ import threading
 import time
 import uuid
 from collections.abc import Mapping, Sequence
+from contextlib import suppress
 
 DEFAULT_PER_WORKER_GB = 1.5
 # Load headroom: never let the run drive the 5-minute load average above this
@@ -154,10 +155,11 @@ def compute_nproc(
     cpu_count = max(1, cpu_count)
 
     # RAM cap (original behaviour).
-    if avail_gb is None or gb_per_worker <= 0:
-        by_mem = cpu_count
-    else:
-        by_mem = max(1, int(avail_gb // gb_per_worker))
+    by_mem = (
+        cpu_count
+        if avail_gb is None or gb_per_worker <= 0
+        else max(1, int(avail_gb // gb_per_worker))
+    )
 
     # CI shards are isolated (fresh, single-purpose runner, ample per-shard RAM,
     # no competing load) and don't OOM, so the shared-LOCAL-box load cap only
@@ -237,10 +239,8 @@ def _persist_progress(path: str, payload: Mapping[str, object]) -> None:
         pass
     finally:
         if temporary is not None:
-            try:
+            with suppress(OSError):
                 os.unlink(temporary)
-            except OSError:
-                pass
 
 
 def _stream_run(cmd: Sequence[str]) -> tuple[int, str]:
