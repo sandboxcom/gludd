@@ -154,6 +154,8 @@ class ZipkinSource:
         records: list[dict[str, object]] = []
         if not isinstance(payload, list):
             return records
+        if payload and all(isinstance(item, dict) for item in payload):
+            payload = [payload]
         for trace in payload:
             if not isinstance(trace, list):
                 continue
