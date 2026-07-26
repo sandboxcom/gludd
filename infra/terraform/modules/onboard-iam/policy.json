@@ -13,7 +13,7 @@
         "ec2:DescribeVpcs",
         "ec2:DescribeVolumes"
       ],
-      "Resource": "*"
+      "Resource": "arn:aws:ec2:*:*:*"
     },
     {
       "Sid": "Ec2MutateCompute",
@@ -26,8 +26,16 @@
       ],
       "Resource": "arn:aws:ec2:*:*:*",
       "Condition": {
-        "StringEquals": {
-          "aws:RequestedRegion": "${operator_region}"
+        "StringLike": {
+          "aws:RequestedRegion": "${operator_region}",
+          "ec2:InstanceType": [
+            "g4dn.*",
+            "g5.*",
+            "g6.*",
+            "p3.*",
+            "p4d.*",
+            "p5.*"
+          ]
         }
       }
     },

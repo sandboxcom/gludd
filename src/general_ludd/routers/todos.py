@@ -5,7 +5,6 @@ import json
 import logging
 import os
 import uuid
-from collections.abc import Iterable
 from datetime import UTC, datetime
 from typing import cast
 

@@ -25,18 +25,15 @@ resource "google_service_account" "gludd_operator" {
   project      = var.project_id
 }
 
-# Custom least-privilege role — intentional replacement for
-# roles/compute.instanceAdmin.v1.  That built-in role carries
-# compute.instances.setMetadata, which allows SSH key injection for
-# privilege escalation on running instances.  This custom role grants
+# Custom least-privilege role. This custom role grants
 # ONLY the instance/disk/address/network/machine-type permissions that
 # gludd's Terraform graph emits (google_compute_instance +
 # google_compute_disk + google_compute_address in _generate_gcp) and
-# NOTHING ELSE — notably NO setMetadata.
+# only the instance/disk/address/network/machine-type permissions needed here.
 resource "google_project_iam_custom_role" "compute_operator" {
   role_id     = "gluddComputeOperator"
   title       = "Gludd Compute Operator (no setMetadata)"
-  description = "compute.instanceAdmin.v1 minus compute.instances.setMetadata.  Asserted by tests/e2e/test_iam_smoke.py and tests/unit/test_onboard_gcp.py."
+  description = "Custom compute operator role with only the permissions needed by gludd."
   project     = var.project_id
   permissions = [
     "compute.acceleratorTypes.get",
