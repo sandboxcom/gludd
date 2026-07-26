@@ -257,6 +257,22 @@ class TestHybridSearch:
         result = hybrid_search("python", mems, bm25_weight=1.0, semantic_weight=0.0)
         assert [row[0]["id"] for row in result] == ["repeated", "single"]
 
+    def test_bm25_penalizes_long_documents_using_full_length(self):
+        mems = [
+            {"id": "long", "text": "python " + "reliable " * 100},
+            {"id": "short", "text": "python reliable"},
+        ]
+        result = hybrid_search("python", mems, bm25_weight=1.0, semantic_weight=0.0)
+        assert [row[0]["id"] for row in result] == ["short", "long"]
+
+    def test_rejects_zero_total_weight(self):
+        with pytest.raises(ValueError, match="at least one weight"):
+            hybrid_search("python", [{"text": "python"}], bm25_weight=0.0, semantic_weight=0.0)
+
+    def test_negative_top_k_returns_no_results(self):
+        mems = [{"text": "python"}, {"text": "deploy"}]
+        assert hybrid_search("python", mems, top_k=-1) == []
+
     def test_rejects_negative_weights(self):
         with pytest.raises(ValueError, match="weights"):
             hybrid_search("python", [{"text": "python"}], bm25_weight=-0.1)

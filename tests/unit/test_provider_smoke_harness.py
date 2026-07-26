@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
 
 import pytest
@@ -107,3 +108,79 @@ def test_telemetry_publishes_event_and_log_without_exposing_token(monkeypatch: p
     assert b"rp-secret" not in request.data
     assert b'"kind": "events"' in request.data
     assert b'"kind": "logs"' in request.data
+    payload = json.loads(request.data)
+    assert isinstance(payload, list)
+    assert [record["kind"] for record in payload] == ["events", "logs"]
+
+
+def test_azure_live_validates_token_and_subscription_without_leaking_secret(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    requests: list[object] = []
+
+    class Response:
+        def __init__(self, payload: dict[str, object]) -> None:
+            self.payload = payload
+
+        def __enter__(self) -> Response:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return json.dumps(self.payload).encode("utf-8")
+
+    def fake_urlopen(request: object, timeout: int) -> Response:
+        requests.append(request)
+        if len(requests) == 1:
+            return Response({"access_token": "token-value"})
+        return Response({"displayName": "test-subscription", "state": "Enabled"})
+
+    monkeypatch.setattr(harness.urllib.request, "urlopen", fake_urlopen)
+    result = harness.run_harness(
+        "azure",
+        {
+            "AZURE_SUBSCRIPTION_ID": "sub-123",
+            "AZURE_TENANT_ID": "tenant-456",
+            "AZURE_CLIENT_ID": "client-789",
+            "AZURE_CLIENT_SECRET": "super-secret",
+        },
+        live=True,
+    )
+
+    assert result["checks"] == {"subscription": "test-subscription", "status": "Enabled"}
+    assert len(requests) == 2
+    assert b"super-secret" not in str(requests[1]).encode("utf-8")
+
+
+def test_runpod_live_uses_read_only_identity_query(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    class Response:
+        def __enter__(self) -> Response:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return b'{"data":{"myself":{"id":"acct-123"}}}'
+
+    def fake_urlopen(request: object, timeout: int) -> Response:
+        captured["request"] = request
+        return Response()
+
+    monkeypatch.setattr(harness.urllib.request, "urlopen", fake_urlopen)
+    result = harness.run_harness(
+        "runpod",
+        {"RUNPOD_API_KEY": "rp-secret", "RUNPOD_API_URL": "https://runpod.test/graphql"},
+        live=True,
+    )
+
+    request = captured["request"]
+    assert result["checks"] == {"account": "acct-123"}
+    assert request.full_url == "https://runpod.test/graphql"
+    assert b"myself" in request.data
+    assert b"createPod" not in request.data
+    assert b"rp-secret" not in request.data

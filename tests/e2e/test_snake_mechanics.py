@@ -60,3 +60,53 @@ def test_food_consumption_grows_body_and_increments_score() -> None:
     assert game.score == 1
     assert len(game.snake) == 2
     assert game.snake[0] == [head_x + 1, head_y]
+
+
+def test_start_accepts_menu_state_but_does_not_restart_active_game() -> None:
+    game = _snake_class()(grid_w=8, grid_h=8)
+    game.state = "menu"
+    game.start()
+    assert game.state == "playing"
+    game.input("up")
+    game.start()
+    assert game.state == "playing"
+    assert game.direction == "up"
+
+
+def test_restart_resets_terminal_and_progress_state() -> None:
+    game = _snake_class()(grid_w=8, grid_h=8)
+    game.start()
+    game.input("up")
+    game.snake = [[0, 0]]
+    game.direction = "left"
+    game.game_over = True
+    game.state = "game_over"
+    game.score = 7
+
+    game.restart()
+
+    assert game.state == "ready"
+    assert game.game_over is False
+    assert game.score == 0
+    assert game.direction == "right"
+    assert game.snake == [[4, 4]]
+    assert len(game.food) == 1
+
+
+def test_invalid_input_does_not_change_direction() -> None:
+    game = _snake_class()(grid_w=8, grid_h=8)
+    game.start()
+    game.input("teleport")
+    assert game.direction == "right"
+
+
+def test_self_collision_is_terminal() -> None:
+    game = _snake_class()(grid_w=8, grid_h=8)
+    game.start()
+    game.snake = [[2, 2], [2, 1], [1, 1], [1, 2]]
+    game.food = []
+    game.input("up")
+
+    assert game.tick() is False
+    assert game.state == "game_over"
+    assert game.game_over is True

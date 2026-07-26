@@ -76,7 +76,7 @@ def _runpod_config(env: dict[str, str], *, live: bool) -> dict[str, Any]:
     }
 
 
-def _post_json(url: str, payload: dict[str, Any], headers: dict[str, str]) -> dict[str, Any]:
+def _post_json(url: str, payload: Any, headers: dict[str, str]) -> dict[str, Any]:
     body = json.dumps(payload).encode("utf-8")
     request = urllib.request.Request(url, data=body, headers=headers, method="POST")
     try:
@@ -164,7 +164,7 @@ def _emit_telemetry(provider: str, result: dict[str, Any], env: dict[str, str]) 
     ]
     _post_json(
         url.rstrip("/") + "/ingest/webhook",
-        {"events": records},
+        records,
         {"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
     )
     return {"enabled": True, "records": len(records), "url": url}

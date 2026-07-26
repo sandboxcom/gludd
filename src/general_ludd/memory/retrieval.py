@@ -193,6 +193,10 @@ def hybrid_search(
     """
     if bm25_weight < 0 or semantic_weight < 0:
         raise ValueError("weights must be non-negative")
+    if bm25_weight == 0 and semantic_weight == 0:
+        raise ValueError("at least one weight must be positive")
+    if top_k <= 0:
+        return []
     if not memories:
         return []
 
@@ -210,7 +214,11 @@ def hybrid_search(
         doc_terms.append(Counter(_tokenize(text.lower())))
 
     N = len(memories)
-    avgdl = sum(len(t) for t in doc_terms) / N if N > 0 else 1.0
+    # BM25 document length is the number of tokens, not the number of unique
+    # terms.  Using ``len(Counter)`` makes long repetitive documents look
+    # artificially short and over-rank them.
+    document_lengths = [sum(term_counts.values()) for term_counts in doc_terms]
+    avgdl = sum(document_lengths) / N if N > 0 else 1.0
     k1 = 1.5
     b = 0.75
 
@@ -224,7 +232,7 @@ def hybrid_search(
     bm25_scores: list[float] = []
     for i in range(N):
         score = 0.0
-        dl = len(doc_terms[i])
+        dl = document_lengths[i]
         for term in query_terms:
             if df.get(term, 0) == 0:
                 continue
