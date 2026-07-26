@@ -206,6 +206,7 @@ help:
 	@echo "  provider-harness      Validate Azure/RunPod credentials, billing bounds, and optional Gludd telemetry"
 	@echo "  azure-harness         Azure provider harness (LIVE=1 for read-only credential check)"
 	@echo "  runpod-harness        RunPod provider harness (LIVE=1 for read-only credential check)"
+	@echo "  test-opa-policies     Execute Rego policy tests when opa is installed"
 	@echo "  test-and-commit       Run tests then commit if green (MSG='msg')"
 	@echo "  audit-coverage        Run coverage audit: pytest --cov + per-file threshold check"
 	@echo "  test-live-zai         Live GLM model test (requires API key)"
@@ -1690,6 +1691,10 @@ runpod-harness:
 
 iam-headless-smoke:
 	@$(UV) run python scripts/iam_headless_smoke.py
+
+test-opa-policies:
+	@command -v opa >/dev/null 2>&1 || { echo "opa MISSING — run make install-opa"; exit 1; }
+	@opa test $(OPA_ARGS) config/opa
 
 smoke:
 	@$(UV) run python scripts/smoke_daemon.py

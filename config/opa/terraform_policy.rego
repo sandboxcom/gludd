@@ -32,9 +32,34 @@ deny contains msg if {
 deny contains msg if {
 	resource := input.resource_changes[_]
 	resource.type == "aws_iam_policy"
-	policy := json.unmarshal(resource.change.after.policy)
+	policy := resource.change.after.policy
+	is_object(policy)
 	statement := policy.Statement[_]
 	statement.Effect == "Allow"
-	statement.Action[_] == "*"
+	statement.Action == ["*"]
+	msg := sprintf("IAM policy %s uses wildcard Action:*", [resource.address])
+}
+
+deny contains msg if {
+	resource := input.resource_changes[_]
+	resource.type == "aws_iam_policy"
+	raw_policy := resource.change.after.policy
+	is_string(raw_policy)
+	policy := json.unmarshal(raw_policy)
+	statement := policy.Statement[_]
+	statement.Effect == "Allow"
+	statement.Action == ["*"]
+	msg := sprintf("IAM policy %s uses wildcard Action:*", [resource.address])
+}
+
+deny contains msg if {
+	resource := input.resource_changes[_]
+	resource.type == "aws_iam_policy"
+	raw_policy := resource.change.after.policy
+	is_string(raw_policy)
+	policy := json.unmarshal(raw_policy)
+	statement := policy.Statement[_]
+	statement.Effect == "Allow"
+	statement.Action == "*"
 	msg := sprintf("IAM policy %s uses wildcard Action:*", [resource.address])
 }

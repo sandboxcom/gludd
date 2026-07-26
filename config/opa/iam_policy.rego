@@ -53,14 +53,24 @@ all_clouds_least_privilege_valid if {
 deny contains msg if {
 	statement := input.Statement[_]
 	statement.Effect == "Allow"
-	contains(statement.Action[_], "*")
+	some action in statement.Action
+	endswith(action, ":*")
 	msg := "IAM policy allows wildcard service actions"
 }
 
 deny contains msg if {
 	statement := input.Statement[_]
 	statement.Effect == "Allow"
-	statement.Action[_] == "*"
+	some action in statement.Action
+	endswith(action, ":*")
+	statement.Resource[_] == "*"
+	msg := "IAM policy allows wildcard service actions"
+}
+
+deny contains msg if {
+	statement := input.Statement[_]
+	statement.Effect == "Allow"
+	statement.Action == ["*"]
 	statement.Resource[_] == "*"
 	msg := "IAM policy grants full administrative access"
 }
