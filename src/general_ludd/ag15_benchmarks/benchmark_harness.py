@@ -115,6 +115,14 @@ class BenchmarkSuite:
         )
 
     def report(self, output_path: Path | None = None) -> dict[str, Any]:
+        # Results can be supplied directly by callers (rather than through
+        # ``run_benchmark``), so preserve their agent identity when this suite
+        # still has its default name.  A named suite remains authoritative.
+        report_agent = self.agent_name
+        if report_agent == "default" and self.results:
+            result_agents = {result.agent_name for result in self.results}
+            if len(result_agents) == 1:
+                report_agent = next(iter(result_agents))
         by_benchmark: dict[str, list[BenchmarkResult]] = {}
         for r in self.results:
             by_benchmark.setdefault(r.benchmark, []).append(r)
@@ -129,7 +137,7 @@ class BenchmarkSuite:
                 "mean_score": sum(scores) / len(scores) if scores else 0.0,
                 "duration_ms": sum(r.duration_ms for r in items),
             }
-        report = {"agent": self.agent_name, "benchmarks": summaries}
+        report = {"agent": report_agent, "benchmarks": summaries}
         if output_path:
             output_path.parent.mkdir(parents=True, exist_ok=True)
             output_path.write_text(json.dumps(report, indent=2))

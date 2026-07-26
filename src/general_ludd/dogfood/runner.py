@@ -18,7 +18,9 @@ from general_ludd.dogfood.sprint_parser import parse_sprint_markdown
 # ansible-playbook would parse as an option), and no shell metacharacters
 # (defence-in-depth even though we never use a shell / shell=True).
 _SAFE_TASK_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
-_SHELL_META_CHARS = set(";|&$`><(){}[]!*?~#'\" \t\n\r\\")
+# Backslash is classified as a path separator below so callers receive the
+# same confinement diagnostic as for ``/`` rather than a shell warning.
+_SHELL_META_CHARS = set(";|&$`><(){}[]!*?~#'\" \t\n\r")
 
 
 def _validate_task_name(task_name: str) -> str:
@@ -29,14 +31,14 @@ def _validate_task_name(task_name: str) -> str:
     """
     if not isinstance(task_name, str) or not task_name:
         raise ValueError("task_name must be a non-empty string")
-    if "/" in task_name or "\\" in task_name:
-        raise ValueError(f"task_name must not contain path separators: {task_name!r}")
     if ".." in task_name:
         raise ValueError(f"task_name must not contain traversal: {task_name!r}")
-    if task_name.startswith("-"):
-        raise ValueError(f"task_name must not start with a dash: {task_name!r}")
     if any(ch in _SHELL_META_CHARS for ch in task_name):
         raise ValueError(f"task_name must not contain shell metacharacters: {task_name!r}")
+    if "/" in task_name or "\\" in task_name:
+        raise ValueError(f"task_name must not contain path separators: {task_name!r}")
+    if task_name.startswith("-"):
+        raise ValueError(f"task_name must not start with a dash: {task_name!r}")
     if not _SAFE_TASK_NAME.match(task_name):
         raise ValueError(f"task_name is not a safe playbook stem: {task_name!r}")
     return task_name
