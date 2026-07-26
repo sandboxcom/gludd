@@ -341,7 +341,7 @@ class WindowsDefenderConnector:
             )
 
         argv = _ps_command(f"Start-MpScan -ScanType {scan_type}")
-        rc, out, _err = self._runner(argv)
+        rc, out, _err = _run(self._runner, argv)
         ts = time.time()
 
         if rc != 0:
@@ -368,7 +368,7 @@ class WindowsDefenderConnector:
             "Get-MpPreference | Select-Object ExclusionPath,ExclusionExtension,"
             "ExclusionProcess | ConvertTo-Json -Depth 5",
         ]
-        rc, out, _err = self._runner(argv)
+        rc, out, _err = _run(self._runner, argv)
         if rc != 0:
             return []
         return self._normalize_exclusions(out, "Get-MpPreference | Select-Object ExclusionPath,...")

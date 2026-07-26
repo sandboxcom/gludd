@@ -29,7 +29,7 @@ import json
 import socket
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Protocol, cast, runtime_checkable
 from urllib.parse import urlsplit
 
 from general_ludd.security.ssrf import host_is_blocked
@@ -266,8 +266,12 @@ class PodmanSource:
         self.name: str = str(config.get("name", "podman"))
         self.base_url: str = str(config.get("base_url", self._DEFAULT_BASE_URL))
         self.timeout: float = float(str(config.get("timeout", 10.0)))
-        transport = config.get("transport")
-        self._transport: Transport = transport if callable(transport) else _default_transport
+        configured_transport = config.get("transport")
+        self._transport: Transport = (
+            cast(Transport, configured_transport)
+            if callable(configured_transport)
+            else _default_transport
+        )
         self._ssrf_error: str | None = self._check_base_url(self.base_url)
 
     # -- base_url / SSRF validation ---------------------------------------- #

@@ -321,3 +321,32 @@ def test_scan_nonzero_returns_empty() -> None:
         {"target": "scan", "allow_mutate": True, "scan_type": "QuickScan"}
     )
     assert records == []
+
+
+def test_scan_accepts_runner_stdout_string_contract() -> None:
+    """String-returning runners are normalized consistently for mutating probes."""
+    calls: list[list[str]] = []
+
+    def runner(argv: list[str]) -> str:
+        calls.append(argv)
+        return SCAN_JSON
+
+    records = WindowsDefenderConnector(runner=runner).query(
+        {"target": "scan", "allow_mutate": True, "scan_type": "QuickScan"}
+    )
+
+    assert len(records) == 1
+    assert calls and "Start-MpScan" in calls[0][-1]
+
+
+def test_exclusions_accept_runner_stdout_string_contract() -> None:
+    """String-returning runners are normalized consistently for exclusions."""
+    def runner(_argv: list[str]) -> str:
+        return EXCLUSIONS_JSON
+
+    records = WindowsDefenderConnector(runner=runner).query(
+        {"target": "get_exclusions"}
+    )
+
+    assert len(records) == 1
+    assert "3 total" in records[0]["message"]

@@ -124,6 +124,11 @@ class TestContract:
         src = PodmanSource({"name": "rootless-podman"})
         assert src.name == "rootless-podman"
 
+    def test_callable_transport_injected_from_config_is_retained(self) -> None:
+        transport = FakeTransport({})
+        src = PodmanSource({"transport": transport})
+        assert src._transport is transport
+
 
 class TestPs:
     def test_ps_normalization(self) -> None:
