@@ -213,10 +213,19 @@ class TestMakefileTargets:
                 continue
             if in_target and line and not line.startswith("\t") and not line.startswith("    "):
                 in_target = False
-            if in_target and "$(PYTHON)" in line:
+            if in_target and "$(UV) run python" in line:
                 python_found = True
                 break
-        assert python_found, "audit-coverage target must use $(PYTHON) variable in its recipe"
+        assert python_found, "audit-coverage target must use the project UV interpreter in its recipe"
+
+    def test_audit_targets_use_project_environment(self):
+        """Coverage must run through uv so imports match the E2E environment."""
+        content = MAKEFILE.read_text()
+        for target in ("audit-coverage:", "coverage-json:"):
+            start = content.index(target)
+            recipe = content[start:content.find("\n\n", start)]
+            assert "$(UV) run python scripts/audit_coverage.py" in recipe
+            assert "$(PYTHON) scripts/audit_coverage.py" not in recipe
 
     def test_make_audit_coverage_help_listed(self):
         content = MAKEFILE.read_text()

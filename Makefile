@@ -4346,11 +4346,11 @@ SOURCE ?= src/general_ludd
 
 audit-coverage:
 	@mkdir -p .gate-logs
-	@$(PYTHON) scripts/audit_coverage.py --threshold=$(THRESHOLD) --source=$(SOURCE)
+	@$(UV) run python scripts/audit_coverage.py --threshold=$(THRESHOLD) --source=$(SOURCE)
 
 coverage-json:
 	@mkdir -p .gate-logs
-	@$(PYTHON) scripts/audit_coverage.py --json-file=coverage.json --threshold=$(THRESHOLD) --source=$(SOURCE)
+	@$(UV) run python scripts/audit_coverage.py --json-file=coverage.json --threshold=$(THRESHOLD) --source=$(SOURCE)
 
 # Targeted coverage check on key files (user-requested coverage report).
 coverage-key-files:
