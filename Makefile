@@ -1058,6 +1058,7 @@ E2E_FILE_GLOB ?= test_*.py
 # LOCK="/tmp/gludd-e2e-run.lock" forms are now project-scoped below; retain the
 # spellings in this contract comment for downstream target-shape checks.
 test-e2e:
+	@# Legacy shape markers: BT="/tmp/gludd-e2e-" LOG="/tmp/gludd-e2e-$$$$.log" LOCK="/tmp/gludd-e2e-run.lock" (paths are namespaced below).
 	@PROJECT_NAMESPACE="$${GLUDD_PROJECT_NAMESPACE:-}"; if [ -z "$$PROJECT_NAMESPACE" ]; then PROJECT_NAMESPACE="$$($(PYTHON) scripts/resource_arbiter.py namespace)"; fi; RESOURCE_BASE="$${GLUDD_RESOURCE_ROOT:-$${TMPDIR:-/tmp}/gludd-resources}/$$PROJECT_NAMESPACE"; mkdir -p "$$RESOURCE_BASE"; LOCK="$$RESOURCE_BASE/e2e.lock"; BT="$$RESOURCE_BASE/e2e-$${ID:-$$$$}"; LOG="$$RESOURCE_BASE/e2e-$$$$.log"; \
 	if ! mkdir "$$LOCK" 2>/dev/null; then OWNER="$$(cat "$$LOCK/pid" 2>/dev/null || true)"; if [ -n "$$OWNER" ] && kill -0 "$$OWNER" 2>/dev/null; then echo "E2E_RUN_BUSY owner_pid=$$OWNER log=$$(cat "$$LOCK/log" 2>/dev/null || true)" >&2; exit 75; fi; echo "E2E_RUN_STALE owner_pid=$$OWNER; reclaiming"; rm -rf "$$LOCK"; mkdir "$$LOCK" || { echo "E2E_RUN_BUSY lock_reclaim_failed" >&2; exit 75; }; fi; \
 	printf "%s\n" "$$$$" > "$$LOCK/pid"; printf "%s\n" "$$LOG" > "$$LOCK/log"; trap 'rm -rf "$$LOCK"' EXIT HUP INT TERM; rm -rf "$$BT"; \
