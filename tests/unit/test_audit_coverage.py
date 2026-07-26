@@ -103,6 +103,7 @@ class TestAuditCoverageScript:
         assert parsed["branch_coverage"] == 75.0
         assert parsed["e2e_branch_coverage"] == 75.0
         assert parsed["e2e_branch_totals"] == {
+            "scope": "tests/e2e",
             "total": 4,
             "covered": 3,
             "missing": 1,

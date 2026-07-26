@@ -119,6 +119,7 @@ def parse_coverage_json(
         "covered_branches": covered_branches,
         "e2e_branch_coverage": aggregate_branch_pct,
         "e2e_branch_totals": {
+            "scope": "tests/e2e",
             "total": total_branches,
             "covered": covered_branches,
             "missing": max(total_branches - covered_branches, 0),
@@ -194,8 +195,24 @@ def run_pytest_coverage(
                     "--cov-append", "--cov-fail-under=0", "--cov-report=",
                     "-n", "2", "--dist", "loadgroup", "-q",
                     f"--basetemp={basetemp}"]
-            result = subprocess.run(args, cwd=root, env=env,
-                                    timeout=COVERAGE_AUDIT_TIMEOUT_SECONDS)
+            try:
+                result = subprocess.run(
+                    args,
+                    cwd=root,
+                    env=env,
+                    timeout=COVERAGE_AUDIT_TIMEOUT_SECONDS,
+                )
+            except subprocess.TimeoutExpired:
+                results.append({
+                    "path": str(test_file.relative_to(root)),
+                    "status": "timed_out",
+                    "returncode": 124,
+                })
+                print(
+                    f"ERROR: coverage pytest timed out for {test_file}",
+                    file=sys.stderr,
+                )
+                return 124
             shard = {
                 "path": str(test_file.relative_to(root)),
                 "status": "passed" if result.returncode == 0 else "failed",
@@ -214,7 +231,7 @@ def run_pytest_coverage(
     except subprocess.TimeoutExpired:
         results = shard_results if shard_results is not None else []
         results.append({
-            "path": "<timeout>",
+            "path": "<coverage-json>",
             "status": "timed_out",
             "returncode": 124,
         })
@@ -277,7 +294,7 @@ def main() -> None:
                 "failed_shards": [
                     shard for shard in shard_results if shard["status"] != "passed"
                 ],
-                "error": "coverage JSON was not produced because an E2E shard failed",
+                "error": "coverage JSON was not produced by the audit command",
             }
             with open(json_out, "w") as f:
                 json.dump(failure_report, f, indent=2)
