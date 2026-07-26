@@ -179,6 +179,7 @@ class TestAuditCoverageScript:
         assert kwargs["env"]["GLUDD_COVERAGE_AUDIT"] == "1"
         assert kwargs["timeout"] == module.COVERAGE_AUDIT_TIMEOUT_SECONDS
         assert "--cov-branch" in args
+        assert "tests/e2e/" in args
 
 
 class TestMakefileTargets:

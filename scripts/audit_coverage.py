@@ -129,7 +129,7 @@ def run_pytest_coverage(source: str, json_out_path: str) -> int:
                 sys.executable,
                 "-m",
                 "pytest",
-                "tests/",
+                "tests/e2e/",
                 f"--cov={source}",
                 "--cov-branch",
                 "--cov-context=test",
