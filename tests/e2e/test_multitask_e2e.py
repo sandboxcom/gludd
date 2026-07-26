@@ -38,6 +38,9 @@ def _run_plugin(
     _ts_counter += 1
     tmp = Path(tempfile.mktemp(suffix=".ts", prefix=f"multitask_e2e_{_ts_counter}_"))
     state_file = Path(tempfile.mktemp(suffix=".json", prefix=f"gludd-multitask-e2e-{_ts_counter}-"))
+    ci_cache_state = state_file.with_name(state_file.stem + "-ci.json")
+    todowrite_state = state_file.with_name(state_file.stem + "-todo.json")
+    hot_module_prefix = state_file.with_name(state_file.stem + "-hot-")
     tmp.write_text(ts_code)
     try:
         env = os.environ.copy()
@@ -47,6 +50,10 @@ def _run_plugin(
             Path(tempfile.mktemp(suffix=".json", prefix=f"gludd-disengage-e2e-{_ts_counter}-"))
         )
         env["GLUDD_MULTITASK_STATE_FILE"] = str(state_file)
+        env["GLUDD_CI_CACHE_PATH"] = str(ci_cache_state)
+        env["GLUDD_TODOWRITE_STATE_PATH"] = str(todowrite_state)
+        env["GLUDD_HOT_MODULE_PREFIX"] = str(hot_module_prefix)
+        env["GLUDD_PROJECT_ROOT"] = str(Path(cwd or ROOT))
         if env_override:
             env.update(env_override)
         proc = subprocess.run(
@@ -64,6 +71,9 @@ def _run_plugin(
             tmp.unlink()
         with contextlib.suppress(OSError):
             state_file.unlink()
+        for state_path in (ci_cache_state, todowrite_state):
+            with contextlib.suppress(OSError):
+                state_path.unlink()
 
 
 def _last_json(stdout: str) -> dict[str, Any] | None:
