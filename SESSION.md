@@ -7,15 +7,15 @@
 ---
 
 ## Current Gate Status (2026-07-24)
+## Current Gate Status (2026-07-26)
 <!-- gate:begin -->
 - lint PASS 0
+- verify-feature-claims PASS
+- hot-reload PASS
+- verify-hot-reload PASS
+- check-status-table PASS
 - env-writes PASS
-- hook-runtime PASS (122 passed, 0 failed, 18 skipped)
-- typecheck PASS 0
-- collect PASS 0
-- coverage-gaps PASS 0 new gaps
-- smoke PASS
-- GATE: PASSED
+- hook-runtime
 
 <!-- gate:end -->
 
