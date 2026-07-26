@@ -180,6 +180,7 @@ class TestAuditCoverageScript:
         assert kwargs["env"]["GLUDD_COVERAGE_AUDIT"] == "1"
         assert kwargs["timeout"] == module.COVERAGE_AUDIT_TIMEOUT_SECONDS
         assert "--cov-branch" in args
+        assert "--cov-fail-under=0" in args
         assert any("tests/e2e/" in str(arg) for arg in args)
         assert "GLUDD_E2E_ACTIVE" in kwargs["env"]
 

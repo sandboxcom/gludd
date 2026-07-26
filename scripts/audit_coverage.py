@@ -137,7 +137,7 @@ def run_pytest_coverage(source: str, json_out_path: str) -> int:
             basetemp = Path(f"/tmp/gludd-audit-e2e-{os.getpid()}-{index}")
             args = [sys.executable, "-m", "pytest", str(test_file),
                     f"--cov={source}", "--cov-branch", "--cov-context=test",
-                    "--cov-append", "--cov-report=", "-n", "1",
+                    "--cov-append", "--cov-fail-under=0", "--cov-report=", "-n", "1",
                     "--dist", "loadfile", "-q", f"--basetemp={basetemp}"]
             result = subprocess.run(args, cwd=root, env=env,
                                     timeout=COVERAGE_AUDIT_TIMEOUT_SECONDS)
