@@ -2,7 +2,6 @@
 
 from pathlib import Path
 
-
 MAKEFILE = Path(__file__).parents[2] / "Makefile"
 
 
