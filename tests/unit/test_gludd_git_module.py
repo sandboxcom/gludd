@@ -210,6 +210,13 @@ def _params(**overrides: Any) -> dict[str, Any]:
         "threshold": 5,
         "force": False,
         "check_ci": True,
+        "release_tag": None,
+        "release_message": "",
+        "release_remote": "sandboxcom",
+        "release_repo": "sandboxcom/gludd",
+        "skip_readme_check": False,
+        "skip_ci_check": False,
+        "run_id": None,
         "state_ref": "",
         "state_gha_head_sha": "",
         "state_worktree_target_ref": "HEAD",
@@ -317,6 +324,58 @@ def test_branch_delete_delegates(module, monkeypatch):
     assert fake_mod.exited["changed"] is True
     assert fake_mod.exited["result"]["deleted"] is True
     assert ("delete_branch", "old/x") in git.calls
+
+
+def test_ci_verdict_is_read_only_and_dispatches(module, monkeypatch):
+    calls: list[tuple] = []
+    import general_ludd.git_automation.ci_ops as ci_ops
+
+    monkeypatch.setattr(
+        ci_ops,
+        "ci_verdict",
+        lambda branch="development", sha=None: calls.append((branch, sha))
+        or {"verdict": "GREEN", "headSha": sha or "abc"},
+    )
+    fake_mod, _ = _run(
+        module,
+        monkeypatch,
+        _params(op="ci_verdict", branch="development", sha="abc"),
+    )
+    assert fake_mod.failed is None
+    assert fake_mod.exited["changed"] is False
+    assert calls == [("development", "abc")]
+
+
+def test_release_delete_dispatches_typed_result(module, monkeypatch):
+    import general_ludd.git_automation.release_ops as release_ops
+    from general_ludd.git_automation.types import ReleaseDeleteResult
+
+    monkeypatch.setattr(
+        release_ops,
+        "release_delete",
+        lambda **kwargs: ReleaseDeleteResult(success=True, tag=kwargs["tag"], message="ok"),
+    )
+    fake_mod, _ = _run(
+        module,
+        monkeypatch,
+        _params(op="release_delete", release_tag="v1.2.3"),
+    )
+    assert fake_mod.failed is None
+    assert fake_mod.exited["changed"] is True
+    assert fake_mod.exited["result"]["tag"] == "v1.2.3"
+
+
+def test_release_cut_check_mode_has_no_side_effect(module, monkeypatch):
+    import general_ludd.git_automation.release_ops as release_ops
+    monkeypatch.setattr(release_ops, "release_cut", lambda **_: pytest.fail("called in check mode"))
+    fake_mod, _ = _run(
+        module,
+        monkeypatch,
+        _params(op="release_cut", release_tag="v1.2.3", _check_mode=True),
+    )
+    assert fake_mod.failed is None
+    assert fake_mod.exited["changed"] is True
+    assert fake_mod.exited["result"]["would_change"] is True
 
 
 # --- clone -------------------------------------------------------------------

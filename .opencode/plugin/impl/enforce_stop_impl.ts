@@ -193,7 +193,9 @@ function hasStopStatePathOverrides(): boolean {
 }
 
 function stopImpl(): HotModule {
-  return hasStopStatePathOverrides() ? defaultImpl : loadHotModule("enforce-stop", defaultImpl)
+  // enforce-stop is not proxy-converted.  Never load a legacy /tmp override:
+  // stale pass-through modules can silently disable the mandatory text gate.
+  return defaultImpl
 }
 
 interface PostResultsState {

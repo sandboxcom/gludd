@@ -52,7 +52,12 @@ DOCUMENTATION:
         - release_tag
         - checkpoint_tag
         - state
-        - batch_push
+         - batch_push
+         - release_cut
+         - release_delete
+         - release_recut
+         - ci_verdict
+         - ci_cancel
     clone_url:
       description: Repository URL for C(op=clone). Python preflight rejects unsafe transports before clone.
       type: str
@@ -228,7 +233,12 @@ def main() -> None:
                     "release_tag",
                     "checkpoint_tag",
             "state",
-                    "batch_push",
+            "batch_push",
+                    "release_cut",
+                    "release_delete",
+                    "release_recut",
+                    "ci_verdict",
+                    "ci_cancel",
                 ],
             ),
             clone_url=dict(type="str", default=None),
@@ -252,6 +262,13 @@ def main() -> None:
             threshold=dict(type="int", default=5),
             force=dict(type="bool", default=False),
             check_ci=dict(type="bool", default=True),
+            release_tag=dict(type="str", default=None),
+            release_message=dict(type="str", default=""),
+            release_remote=dict(type="str", default="sandboxcom"),
+            release_repo=dict(type="str", default="sandboxcom/gludd"),
+            skip_readme_check=dict(type="bool", default=False),
+            skip_ci_check=dict(type="bool", default=False),
+            run_id=dict(type="str", default=None),
 
             remote=dict(type="str", default="origin"),
             state_ref=dict(type="str", default=""),
@@ -283,6 +300,10 @@ def main() -> None:
             ("op", "tag_release", ["tag"]),
             ("op", "tag_checkpoint", ["tag"]),
             ("op", "checkpoint_tag", ["todo_id", "sha"]),
+            ("op", "release_cut", ["release_tag"]),
+            ("op", "release_delete", ["release_tag"]),
+            ("op", "release_recut", ["release_tag"]),
+            ("op", "ci_cancel", ["run_id"]),
         ],
         supports_check_mode=True,
     )
@@ -343,6 +364,73 @@ def main() -> None:
             module.fail_json(**error_result("git state guard failed", result=payload))
             return
         module.exit_json(**ok_result({"result": payload}, changed=False))
+        return
+
+    # Release and CI operations live in dedicated control-plane modules. Keep
+    # check-mode side-effect free while preserving the typed result payloads.
+    if op in {"release_cut", "release_delete", "release_recut", "ci_cancel"} and module.check_mode:
+        module.exit_json(
+            **ok_result(
+                {"result": {"would_change": True, "op": op, "path": path}},
+                changed=True,
+            )
+        )
+        return
+
+    if op in {"release_cut", "release_delete", "release_recut"}:
+        from general_ludd.git_automation.release_ops import (
+            release_cut,
+            release_delete,
+            release_recut,
+        )
+
+        tag = module.params["release_tag"]
+        kwargs = {
+            "tag": tag,
+            "repo_path": path,
+            "remote": module.params["release_remote"],
+        }
+        if op == "release_cut":
+            result = release_cut(
+                message=module.params["release_message"],
+                branch=module.params["branch"] or "master",
+                skip_readme_check=module.params["skip_readme_check"],
+                skip_ci_check=module.params["skip_ci_check"],
+                **kwargs,
+            )
+        elif op == "release_recut":
+            result = release_recut(
+                message=module.params["release_message"],
+                branch=module.params["branch"] or "master",
+                **kwargs,
+            )
+        else:
+            result = release_delete(repo=module.params["release_repo"], **kwargs)
+        payload = asdict(result)
+        if not payload.get("success", False):
+            module.fail_json(**error_result(f"{op} failed", result=payload))
+            return
+        module.exit_json(**ok_result({"result": payload}, changed=True))
+        return
+
+    if op == "ci_verdict":
+        from general_ludd.git_automation.ci_ops import ci_verdict
+
+        result = ci_verdict(
+            branch=module.params["branch"] or "development",
+            sha=module.params["sha"],
+        )
+        module.exit_json(**ok_result({"result": result}, changed=False))
+        return
+
+    if op == "ci_cancel":
+        from general_ludd.git_automation.ci_ops import ci_cancel
+
+        result = ci_cancel(module.params["run_id"])
+        if not result.get("success", False):
+            module.fail_json(**error_result("ci_cancel failed", result=result))
+            return
+        module.exit_json(**ok_result({"result": result}, changed=True))
         return
 
     if op == "batch_push":
