@@ -93,11 +93,21 @@ def test_task_tracking_references_in_enforce_floor():
 
 
 def test_task_tracking_references_in_enforce_verified_claims():
-    """enforce-verified-claims.ts blocks done-words without evidence (complementary)."""
-    content = _read_plugin("enforce-verified-claims.ts")
-    assert "DONE_WORDS" in content, "must define DONE_WORDS list"
-    assert "EVIDENCE_PATTERNS" in content, "must define EVIDENCE_PATTERNS"
-    assert "shouldBlock" in content, "must define shouldBlock()"
+    """The plugin delegates done-claim matching to its testable helper module.
+
+    The matcher constants intentionally live in ``plugin_test_exports.ts`` so
+    OpenCode's plugin auto-discovery only sees a default plugin export.  Keep
+    this guardrail test aligned with that loader-safe architecture instead of
+    requiring implementation details in the thin plugin entrypoint.
+    """
+    plugin_content = _read_plugin("enforce-verified-claims.ts")
+    exports_path = LIB_DIR / "plugin_test_exports.ts"
+    assert exports_path.exists(), "verified-claims helper module must exist"
+    exports_content = exports_path.read_text()
+    assert "shouldBlock" in plugin_content, "plugin must delegate to shouldBlock()"
+    assert "DONE_WORDS" in exports_content, "helper must define DONE_WORDS list"
+    assert "EVIDENCE_PATTERNS" in exports_content, "helper must define EVIDENCE_PATTERNS"
+    assert "shouldBlock" in exports_content, "helper must define shouldBlock()"
 
 
 # ── 3. Gap inventory — what's NOT enforced ───────────────────────────────────

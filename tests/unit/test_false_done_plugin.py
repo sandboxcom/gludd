@@ -16,6 +16,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).parent.parent.parent
 PLUGIN = ROOT / ".opencode" / "plugin" / "enforce-verified-claims.ts"
+HELPERS = ROOT / ".opencode" / "lib" / "plugin_test_exports.ts"
 OPENCODE_JSON = ROOT / "opencode.json"
 
 
@@ -34,14 +35,15 @@ class TestPluginFileExists:
             "features, the uncommitted '✅ Landed') is unguarded in opencode sessions."
         )
         src = PLUGIN.read_text()
-        assert "DONE_WORDS" in src, (
-            "enforce-verified-claims.ts must contain DONE_WORDS — the false-done word list."
-        )
-        assert "EVIDENCE_PATTERNS" in src, (
-            "enforce-verified-claims.ts must contain EVIDENCE_PATTERNS — the evidence regexes."
-        )
+        helpers = HELPERS.read_text()
         assert "shouldBlock" in src, (
-            "enforce-verified-claims.ts must contain shouldBlock() — the classification function."
+            "enforce-verified-claims.ts must delegate to shouldBlock()."
+        )
+        assert "DONE_WORDS" in helpers, (
+            "plugin_test_exports.ts must contain DONE_WORDS — the false-done word list."
+        )
+        assert "EVIDENCE_PATTERNS" in helpers, (
+            "plugin_test_exports.ts must contain EVIDENCE_PATTERNS — the evidence regexes."
         )
 
     def test_plugin_exports_default(self):
@@ -365,10 +367,10 @@ class TestAntiWedgeCounter:
 
 
 class TestPluginSourceMatchesPythonPort:
-    """The plugin's TS constants MUST exist in enforce-verified-claims.ts.
+    """The plugin's TS constants MUST exist in its loader-safe helper module.
 
     Since the false-done guardrail was refactored from enforce-stop.ts into
-    enforce-verified-claims.ts, the detection constants now live there as
+    plugin_test_exports.ts, the detection constants now live there as
     DONE_WORDS, EVIDENCE_PATTERNS, and shouldBlock().
 
     If someone edits the plugin's detection constants without updating these tests
@@ -376,10 +378,10 @@ class TestPluginSourceMatchesPythonPort:
     """
 
     def _src(self):
-        return PLUGIN.read_text()
+        return PLUGIN.read_text() + "\n" + HELPERS.read_text()
 
     def test_detection_constants_in_sync(self):
-        src = self._src()
+        src = PLUGIN.read_text() + "\n" + HELPERS.read_text()
         for needle in ["DONE_WORDS", "EVIDENCE_PATTERNS", "NOT_DONE_PHRASES",
                         "BLOCK_MESSAGE", "shouldBlock"]:
             assert needle in src, (
@@ -450,7 +452,7 @@ class TestPredicateNarrowedToTerminalClaims:
         the old enforce-stop.ts and has been replaced by the simpler
         shouldBlock() function in enforce-verified-claims.ts.
         """
-        src = PLUGIN.read_text()
+        src = PLUGIN.read_text() + "\n" + HELPERS.read_text()
         assert "shouldBlock" in src, (
             "Plugin must define shouldBlock() — the classification function."
         )
