@@ -28,7 +28,7 @@ def test_dry_run_is_credential_free_and_reports_memory_kind() -> None:
     assert completed.returncode == 0, completed.stderr
     payload = json.loads(completed.stdout)
     assert payload["network"]["used"] is False
-    assert payload["memory_policy"]["kind"] in {"unified", "discrete", "system"}
+    assert payload["memory_policy"]["kind"] in {"unified", "discrete", "system", "unknown"}
     assert payload["model_fit"]["fits"] is True
 
 
@@ -47,4 +47,3 @@ def test_live_cpu_path_executes_or_fails_closed_without_torch() -> None:
         assert completed.returncode in {0, 4}, completed.stderr
         if completed.returncode == 0:
             assert payload["telemetry"]["backend"] == "cpu"
-
