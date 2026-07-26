@@ -47,6 +47,14 @@ def test_resource_name_cannot_escape_namespace(tmp_path: Path) -> None:
         resource_path("../outside", tmp_path)
 
 
+def test_independent_projects_get_independent_gate_leases(tmp_path: Path) -> None:
+    first = resource_path("gate", tmp_path / "first")
+    second = resource_path("gate", tmp_path / "second")
+
+    assert first != second
+    assert first.parent != second.parent
+
+
 def test_project_root_prefers_explicit_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("GLUDD_PROJECT_ROOT", str(tmp_path))
     assert project_root() == tmp_path.resolve()

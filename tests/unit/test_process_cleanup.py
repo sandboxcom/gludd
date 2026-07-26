@@ -6,12 +6,15 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
 from scripts.process_cleanup import (
     ProcessInfo,
+    _parse_elapsed,
     descendant_processes,
     load_lock_owner,
     namespace_matches,
     parse_process_table,
+    snapshot_processes,
     terminate_tree,
 )
 
@@ -27,6 +30,39 @@ def test_parse_process_table_keeps_command_with_spaces() -> None:
         elapsed_secs=30,
         command="/tmp/gludd-alpha/pytest -q tests",
     )
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [("1-02:03:04", 93784), ("12:34", 754), ("17", 17), ("", 0)],
+)
+def test_elapsed_parser_supports_ps_formats(value: str, expected: float) -> None:
+    assert _parse_elapsed(value) == expected
+
+
+def test_elapsed_parser_rejects_malformed_values() -> None:
+    assert _parse_elapsed("not-a-duration") == 0
+    assert _parse_elapsed("1:2:3:4") == 0
+
+
+def test_parse_process_table_skips_headers_short_and_bad_rows() -> None:
+    table = parse_process_table(
+        "PID PPID ELAPSED COMMAND\n"
+        "short\n"
+        "bad parent 00:01 command\n"
+    )
+    assert table == {}
+
+
+def test_snapshot_processes_handles_ps_failure() -> None:
+    with patch("scripts.process_cleanup.subprocess.run", side_effect=OSError):
+        assert snapshot_processes() == {}
+
+
+def test_snapshot_processes_parses_ps_output() -> None:
+    result = type("Result", (), {"stdout": "1 0 00:01 /tmp/gludd-a/run\n"})()
+    with patch("scripts.process_cleanup.subprocess.run", return_value=result):
+        assert snapshot_processes()[1].command.endswith("/tmp/gludd-a/run")
 
 
 def test_descendant_processes_are_ordered_children_first() -> None:
@@ -52,6 +88,18 @@ def test_load_lock_owner_rejects_malformed_or_wrong_namespace(tmp_path: Path) ->
     assert load_lock_owner(lock, namespace="gludd-alpha") is None
 
 
+def test_load_lock_owner_accepts_matching_owner(tmp_path: Path) -> None:
+    lock = tmp_path / "lock"
+    lock.write_text(json.dumps({"pid": 123, "namespace": "gludd-alpha"}))
+    assert load_lock_owner(lock, namespace="gludd-alpha") == 123
+
+
+def test_load_lock_owner_rejects_nonpositive_pid(tmp_path: Path) -> None:
+    lock = tmp_path / "lock"
+    lock.write_text(json.dumps({"pid": 0, "namespace": "gludd-alpha"}))
+    assert load_lock_owner(lock, namespace="gludd-alpha") is None
+
+
 def test_terminate_tree_checks_identity_and_kills_children_first() -> None:
     table = {
         10: ProcessInfo(10, 1, 900, "/tmp/gludd-alpha/run"),
@@ -61,3 +109,26 @@ def test_terminate_tree_checks_identity_and_kills_children_first() -> None:
         assert terminate_tree(table, 10, namespace="/tmp/gludd-alpha") == [11, 10]
     assert [call.args[0] for call in kill.call_args_list] == [11, 10]
 
+
+def test_terminate_tree_skips_other_namespace_and_missing_root() -> None:
+    table = {10: ProcessInfo(10, 1, 900, "/tmp/gludd-beta/run")}
+    with patch("scripts.process_cleanup.os.kill") as kill:
+        assert terminate_tree(table, 10, namespace="/tmp/gludd-alpha") == []
+        assert terminate_tree(table, 99, namespace="/tmp/gludd-alpha") == []
+    kill.assert_not_called()
+
+
+def test_terminate_tree_skips_mixed_namespace_child() -> None:
+    table = {
+        10: ProcessInfo(10, 1, 900, "/tmp/gludd-alpha/run"),
+        11: ProcessInfo(11, 10, 800, "/tmp/gludd-beta/worker"),
+    }
+    with patch("scripts.process_cleanup.os.kill") as kill:
+        assert terminate_tree(table, 10, namespace="/tmp/gludd-alpha") == [10]
+    assert [call.args[0] for call in kill.call_args_list] == [10]
+
+
+def test_terminate_tree_is_fail_open_on_signal_errors() -> None:
+    table = {10: ProcessInfo(10, 1, 900, "/tmp/gludd-alpha/run")}
+    with patch("scripts.process_cleanup.os.kill", side_effect=PermissionError):
+        assert terminate_tree(table, 10, namespace="/tmp/gludd-alpha") == []
