@@ -45,3 +45,18 @@ def test_headless_smoke_reports_missing_persona(tmp_path: Path) -> None:
 
     assert report["ok"] is False
     assert "aws: missing personas: monitor" in report["violations"]
+
+
+def test_headless_smoke_reports_missing_opa_rule(tmp_path: Path) -> None:
+    module = _load_module()
+    infra = tmp_path / "infra"
+    infra.mkdir()
+    for source in (ROOT / "config" / "infra").glob("*-iam-roles.yml"):
+        (infra / source.name).write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+    opa = tmp_path / "iam_policy.rego"
+    opa.write_text("package iam\n", encoding="utf-8")
+
+    report = module.run_smoke(infra, opa_path=opa)
+
+    assert report["ok"] is False
+    assert "OPA missing rule: aws_least_privilege_valid" in report["violations"]

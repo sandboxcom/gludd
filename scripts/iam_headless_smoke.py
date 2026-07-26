@@ -10,6 +10,14 @@ from typing import Any
 import yaml
 
 REQUIRED_PERSONAS = frozenset({"terraform_deploy", "runtime_execution", "model_inference", "monitor"})
+REQUIRED_OPA_RULES = (
+    "aws_least_privilege_valid",
+    "azure_least_privilege_valid",
+    "gcp_least_privilege_valid",
+    "all_clouds_least_privilege_valid",
+    "deny_azure_missing_scope",
+    "deny_gcp_set_metadata",
+)
 PROVIDER_FILES = {
     "aws": "aws-iam-roles.yml",
     "gcp": "gcp-iam-roles.yml",
@@ -49,7 +57,11 @@ def _validate_provider(provider: str, roles: dict[str, Any]) -> list[str]:
     return violations
 
 
-def run_smoke(infra_dir: Path) -> dict[str, Any]:
+def run_smoke(
+    infra_dir: Path,
+    *,
+    opa_path: Path | None = None,
+) -> dict[str, Any]:
     """Validate IAM manifests without cloud credentials or provider CLIs."""
     providers: dict[str, int] = {}
     violations: list[str] = []
@@ -65,6 +77,14 @@ def run_smoke(infra_dir: Path) -> dict[str, Any]:
             continue
         providers[provider] = len(roles)
         violations.extend(_validate_provider(provider, roles))
+    policy_path = opa_path or Path("config/opa/iam_policy.rego")
+    if not policy_path.exists():
+        violations.append(f"OPA policy missing: {policy_path}")
+    else:
+        policy = policy_path.read_text(encoding="utf-8")
+        for rule in REQUIRED_OPA_RULES:
+            if rule not in policy:
+                violations.append(f"OPA missing rule: {rule}")
     return {"mode": "headless", "ok": not violations, "providers": providers, "violations": violations}
 
 
