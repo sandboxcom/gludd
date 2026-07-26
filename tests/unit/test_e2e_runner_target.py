@@ -15,7 +15,7 @@ def _target_body(name: str) -> str:
 def test_e2e_runner_uses_unique_basetemp() -> None:
     body = _target_body("test-e2e")
     assert 'BT="/tmp/gludd-e2e-' in body
-    assert '--basetemp=$$BT' in body
+    assert '--basetemp=$$FILE_BT' in body
 
 
 def test_e2e_runner_marks_nested_execution() -> None:
@@ -103,3 +103,24 @@ def test_e2e_runner_namespaces_progress_by_shard() -> None:
     assert "e2e-state-shard" in body
     assert "--shard" in body
     assert "--total" in body
+
+
+def test_e2e_runner_exposes_bounded_file_parallelism() -> None:
+    body = _target_body("test-e2e")
+    assert "E2E_FILE_WORKERS" in body
+    assert "active" in body
+    assert "wait" in body
+
+
+def test_e2e_runner_isolates_artifacts_per_file() -> None:
+    body = _target_body("test-e2e")
+    assert "FILE_BT" in body
+    assert "FILE_LOG" in body
+    assert "--basetemp=$$FILE_BT" in body
+    assert "LOG=\"$$FILE_LOG\"" in body
+
+
+def test_e2e_runner_keeps_file_pool_bounded() -> None:
+    body = _target_body("test-e2e")
+    assert 'active" -ge "$$FILE_WORKERS' in body
+    assert "active=$$((active - 1))" in body

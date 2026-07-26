@@ -1,5 +1,6 @@
 """TDD coverage for durable, restartable E2E execution state."""
 
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -67,3 +68,12 @@ def test_shard_rejects_invalid_coordinates() -> None:
 
     with pytest.raises(ValueError, match="shard"):
         shard_files(["tests/e2e/test_a.py"], shard=0, total=2)
+
+
+def test_concurrent_status_updates_preserve_every_file(tmp_path: Path) -> None:
+    state = tmp_path / "e2e-state.json"
+    ensure_state(state, revision="abc")
+    files = [f"tests/e2e/test_{index}.py" for index in range(8)]
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        list(pool.map(lambda name: record_status(state, name, "PASS"), files))
+    assert pending_files(state, files) == []

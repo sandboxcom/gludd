@@ -1064,6 +1064,7 @@ E2E_TEST_TIMEOUT ?= 180
 E2E_STALL_SECS ?= 180
 E2E_FILE_MAX_SECS ?= 600
 E2E_WORKERS ?= 1
+E2E_FILE_WORKERS ?= 2
 E2E_FILE_GLOB ?= test_*.py
 E2E_HEARTBEAT_SECS ?= 300
 E2E_SHARD ?= 1
@@ -1076,8 +1077,10 @@ test-e2e:
 	@# Legacy shape markers: BT="/tmp/gludd-e2e-" LOG="/tmp/gludd-e2e-$$$$.log" LOCK="/tmp/gludd-e2e-run.lock" (paths are namespaced below).
 	@PROJECT_NAMESPACE="$${GLUDD_PROJECT_NAMESPACE:-}"; if [ -z "$$PROJECT_NAMESPACE" ]; then PROJECT_NAMESPACE="$$($(PYTHON) scripts/resource_arbiter.py namespace)"; fi; RESOURCE_BASE="$${GLUDD_RESOURCE_ROOT:-$${TMPDIR:-/tmp}/gludd-resources}/$$PROJECT_NAMESPACE"; mkdir -p "$$RESOURCE_BASE"; SHARD="$(E2E_SHARD)"; TOTAL="$(E2E_TOTAL)"; LOCK="$$RESOURCE_BASE/e2e-shard-$$SHARD-of-$$TOTAL.lock"; STATE="$$RESOURCE_BASE/e2e-state-shard-$$SHARD-of-$$TOTAL.json"; BT="$$RESOURCE_BASE/e2e-shard-$$SHARD-of-$$TOTAL-$${ID:-$$$$}"; LOG="$$RESOURCE_BASE/e2e-shard-$$SHARD-of-$$TOTAL-$$$$.log"; REVISION="$$(git rev-parse HEAD)"; \
 	if ! mkdir "$$LOCK" 2>/dev/null; then OWNER="$$(cat "$$LOCK/pid" 2>/dev/null || true)"; if [ -n "$$OWNER" ] && kill -0 "$$OWNER" 2>/dev/null; then echo "E2E_RUN_BUSY owner_pid=$$OWNER log=$$(cat "$$LOCK/log" 2>/dev/null || true)" >&2; exit 75; fi; echo "E2E_RUN_STALE owner_pid=$$OWNER; reclaiming"; rm -rf "$$LOCK"; mkdir "$$LOCK" || { echo "E2E_RUN_BUSY lock_reclaim_failed" >&2; exit 75; }; fi; \
-	printf "%s\n" "$$$$" > "$$LOCK/pid"; printf "%s\n" "$$LOG" > "$$LOCK/log"; $(PYTHON) scripts/e2e_supervisor.py ensure --state "$$STATE" --revision "$$REVISION" >/dev/null; $(PYTHON) scripts/e2e_supervisor.py heartbeat-loop --state "$$STATE" --interval "$(E2E_HEARTBEAT_SECS)" & HBPID=$$!; trap 'kill "$$HBPID" 2>/dev/null || true; wait "$$HBPID" 2>/dev/null || true; rm -rf "$$LOCK"' EXIT HUP INT TERM; rm -rf "$$BT"; \
-	TEST_FILES="$$($(PYTHON) scripts/e2e_supervisor.py pending --state "$$STATE" --revision "$$REVISION" --root tests/e2e --glob "$(E2E_FILE_GLOB)" --shard "$$SHARD" --total "$$TOTAL")"; RC=0; for test_file in $$TEST_FILES; do echo "=== E2E FILE: $$test_file ==="; $(PYTHON) scripts/e2e_supervisor.py record --state "$$STATE" --file "$$test_file" --status RUNNING; $(MAKE) --no-print-directory run-watched CMD="GLUDD_E2E_ACTIVE=1 $(UV) run python -m pytest $$test_file -n $(E2E_WORKERS) --dist loadgroup -v $(PYTEST_ARGS) --timeout=$(E2E_TEST_TIMEOUT) --basetemp=$$BT" STALL_SECS="$(E2E_STALL_SECS)" MAX_SECS="$(E2E_FILE_MAX_SECS)" LOG="$$LOG"; FILE_RC=$$?; if [ "$$FILE_RC" -eq 0 ]; then STATUS=PASS; elif [ "$$FILE_RC" -eq 5 ]; then STATUS=SKIP; else STATUS=FAIL; fi; $(PYTHON) scripts/e2e_supervisor.py record --state "$$STATE" --file "$$test_file" --status "$$STATUS"; if [ "$$FILE_RC" -ne 0 ] && [ "$$FILE_RC" -ne 5 ]; then RC=$$FILE_RC; break; fi; done; \
+	printf "%s\n" "$$$$" > "$$LOCK/pid"; printf "%s\n" "$$LOG" > "$$LOCK/log"; $(PYTHON) scripts/e2e_supervisor.py ensure --state "$$STATE" --revision "$$REVISION" >/dev/null; $(PYTHON) scripts/e2e_supervisor.py heartbeat-loop --state "$$STATE" --interval "$(E2E_HEARTBEAT_SECS)" & HBPID=$$!; trap 'kill "$$HBPID" 2>/dev/null || true; wait "$$HBPID" 2>/dev/null || true; rm -rf "$$LOCK"' EXIT HUP INT TERM; rm -rf "$$BT"; mkdir -p "$$BT" "$$RESOURCE_BASE/e2e-shard-$$SHARD-of-$$TOTAL-logs-$$$$"; \
+	FILE_WORKERS="$(E2E_FILE_WORKERS)"; case "$$FILE_WORKERS" in ''|*[!0-9]*) echo "E2E_FILE_WORKERS must be a positive integer" >&2; exit 2;; esac; if [ "$$FILE_WORKERS" -lt 1 ] || [ "$$FILE_WORKERS" -gt 8 ]; then echo "E2E_FILE_WORKERS must be between 1 and 8" >&2; exit 2; fi; \
+	run_e2e_file() { test_file="$$1"; file_key="$$(printf '%s' "$$test_file" | shasum -a 256 | cut -c1-16)"; FILE_BT="$$BT/$$file_key"; FILE_LOG="$$RESOURCE_BASE/e2e-shard-$$SHARD-of-$$TOTAL-logs-$$$$/$$file_key.log"; mkdir -p "$$FILE_BT"; echo "=== E2E FILE: $$test_file key=$$file_key ==="; $(PYTHON) scripts/e2e_supervisor.py record --state "$$STATE" --file "$$test_file" --status RUNNING; $(MAKE) --no-print-directory run-watched CMD="GLUDD_E2E_ACTIVE=1 $(UV) run python -m pytest $$test_file -n $(E2E_WORKERS) --dist loadgroup -v $(PYTEST_ARGS) --timeout=$(E2E_TEST_TIMEOUT) --basetemp=$$FILE_BT" STALL_SECS="$(E2E_STALL_SECS)" MAX_SECS="$(E2E_FILE_MAX_SECS)" LOG="$$FILE_LOG"; FILE_RC=$$?; if [ "$$FILE_RC" -eq 0 ]; then STATUS=PASS; elif [ "$$FILE_RC" -eq 5 ]; then STATUS=SKIP; else STATUS=FAIL; fi; $(PYTHON) scripts/e2e_supervisor.py record --state "$$STATE" --file "$$test_file" --status "$$STATUS"; return "$$FILE_RC"; }; \
+	TEST_FILES="$$($(PYTHON) scripts/e2e_supervisor.py pending --state "$$STATE" --revision "$$REVISION" --root tests/e2e --glob "$(E2E_FILE_GLOB)" --shard "$$SHARD" --total "$$TOTAL")"; RC=0; active=0; PIDS=""; for test_file in $$TEST_FILES; do while [ "$$active" -ge "$$FILE_WORKERS" ]; do set -- $$PIDS; pid="$$1"; shift; PIDS="$$*"; wait "$$pid"; WAIT_RC=$$?; if [ "$$WAIT_RC" -ne 0 ] && [ "$$RC" -eq 0 ]; then RC="$$WAIT_RC"; fi; active=$$((active - 1)); done; run_e2e_file "$$test_file" & PIDS="$$PIDS $$!"; active=$$((active + 1)); done; for pid in $$PIDS; do wait "$$pid"; WAIT_RC=$$?; if [ "$$WAIT_RC" -ne 0 ] && [ "$$RC" -eq 0 ]; then RC="$$WAIT_RC"; fi; done; \
 	chmod -R u+rwx "$$BT" 2>/dev/null || true; rm -rf "$$BT"; exit $$RC
 
 test-games:
@@ -4404,7 +4407,16 @@ gate-kill:
 		sleep 2; \
 		kill -KILL "$$LOCK_PID" 2>/dev/null || true; \
 	fi; \
-	rm -f /tmp/gludd-gate.lock
+	PROJECT_NAMESPACE=$$($(PYTHON) scripts/resource_arbiter.py namespace); \
+	NAMESPACED_LOCK="$${TMPDIR:-/tmp}/gludd-resources/$$PROJECT_NAMESPACE/async-gate.lock"; \
+	NAMESPACED_PID=$$(cat "$$NAMESPACED_LOCK" 2>/dev/null || echo ""); \
+	if [ -n "$$NAMESPACED_PID" ] && kill -0 "$$NAMESPACED_PID" 2>/dev/null; then \
+		echo "[gate-kill] killing namespaced async-gate holder pid=$$NAMESPACED_PID"; \
+		kill -TERM "$$NAMESPACED_PID" 2>/dev/null || true; \
+		sleep 2; \
+		kill -KILL "$$NAMESPACED_PID" 2>/dev/null || true; \
+	fi; \
+	rm -f /tmp/gludd-gate.lock "$$NAMESPACED_LOCK"
 	@pkill -f 'gludd-gate' 2>/dev/null || true
 
 # Force-kill a running background gate-lite: SIGTERM then SIGKILL after 10s.

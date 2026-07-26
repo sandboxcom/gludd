@@ -8,8 +8,14 @@ import os
 import signal
 import tempfile
 import time
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - Windows uses the single-writer path.
+    fcntl = None
 
 _COMPLETED = {"PASS", "SKIP"}
 _VALID = _COMPLETED | {"FAIL", "RUNNING"}
@@ -35,36 +41,55 @@ def _write(path: Path, state: dict[str, Any]) -> dict[str, Any]:
     return state
 
 
+@contextmanager
+def _state_lock(path: Path):
+    """Serialize read-modify-write operations for concurrent file workers."""
+    lock_path = path.with_name(f"{path.name}.lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("a+", encoding="utf-8") as handle:
+        if fcntl is not None:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            if fcntl is not None:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
 def ensure_state(path: Path, *, revision: str) -> dict[str, Any]:
-    state = _read(path)
-    if state.get("revision") != revision:
-        state = {"revision": revision, "files": {}, "last_heartbeat": 0.0}
-        return _write(path, state)
-    state.setdefault("files", {})
-    state.setdefault("last_heartbeat", 0.0)
-    return state
+    with _state_lock(path):
+        state = _read(path)
+        if state.get("revision") != revision:
+            state = {"revision": revision, "files": {}, "last_heartbeat": 0.0}
+            return _write(path, state)
+        state.setdefault("files", {})
+        state.setdefault("last_heartbeat", 0.0)
+        return state
 
 
 def record_status(path: Path, file_name: str, status: str) -> dict[str, Any]:
     if status not in _VALID:
         raise ValueError(f"invalid E2E status: {status}")
-    state = _read(path)
-    state.setdefault("files", {})[file_name] = {"status": status, "updated_at": time.time()}
-    state.setdefault("last_heartbeat", 0.0)
-    return _write(path, state)
+    with _state_lock(path):
+        state = _read(path)
+        state.setdefault("files", {})[file_name] = {"status": status, "updated_at": time.time()}
+        state.setdefault("last_heartbeat", 0.0)
+        return _write(path, state)
 
 
 def pending_files(path: Path, files: list[str]) -> list[str]:
-    state = _read(path)
-    entries = state.get("files", {})
-    return [file_name for file_name in files if entries.get(file_name, {}).get("status") not in _COMPLETED]
+    with _state_lock(path):
+        state = _read(path)
+        entries = state.get("files", {})
+        return [file_name for file_name in files if entries.get(file_name, {}).get("status") not in _COMPLETED]
 
 
 def heartbeat(path: Path) -> dict[str, Any]:
-    state = _read(path)
-    state.setdefault("files", {})
-    state["last_heartbeat"] = time.time()
-    return _write(path, state)
+    with _state_lock(path):
+        state = _read(path)
+        state.setdefault("files", {})
+        state["last_heartbeat"] = time.time()
+        return _write(path, state)
 
 
 def shard_files(files: list[str], *, shard: int, total: int) -> list[str]:
