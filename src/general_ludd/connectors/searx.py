@@ -15,8 +15,9 @@ from __future__ import annotations
 import contextlib
 import json as _json
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Protocol, cast
 from urllib.parse import urljoin
 
 import httpx
@@ -164,7 +165,7 @@ class SearXConnector:
                 except TypeError:
                     # Some injected test transports replace Client.get with a
                     # plain function (without a bound ``self`` parameter).
-                    unbound_get = getattr(httpx.Client, "get")
+                    unbound_get = cast(Callable[..., httpx.Response], httpx.Client.get)
                     resp = unbound_get(url, params=params)
             content = resp.content
             body: object = None
