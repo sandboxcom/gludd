@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+import pytest
 from scripts.e2e_supervisor import ensure_state, heartbeat, pending_files, record_status
 
 
@@ -46,3 +47,23 @@ def test_heartbeat_is_persisted(tmp_path: Path) -> None:
     updated = heartbeat(state)
 
     assert updated["last_heartbeat"] > 0
+
+
+def test_sorted_files_partition_into_disjoint_shards() -> None:
+    from scripts.e2e_supervisor import shard_files
+
+    files = [f"tests/e2e/test_{name}.py" for name in ["d", "a", "c", "b", "e"]]
+
+    first = shard_files(files, shard=1, total=2)
+    second = shard_files(files, shard=2, total=2)
+
+    assert first == ["tests/e2e/test_a.py", "tests/e2e/test_c.py", "tests/e2e/test_e.py"]
+    assert second == ["tests/e2e/test_b.py", "tests/e2e/test_d.py"]
+    assert set(first).isdisjoint(second)
+
+
+def test_shard_rejects_invalid_coordinates() -> None:
+    from scripts.e2e_supervisor import shard_files
+
+    with pytest.raises(ValueError, match="shard"):
+        shard_files(["tests/e2e/test_a.py"], shard=0, total=2)
