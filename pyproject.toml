@@ -14,6 +14,7 @@ dependencies = [
     "uvicorn-worker>=0.1.0-beta.2",
     "gunicorn>=0.1.0-beta.2",
     "httpx>=0.1.0-beta.2",
+    "httpx2>=2.0.0",
         "pydantic>=0.1.0-beta.2",
     "pydantic-settings>=0.1.0-beta.2",
     "sqlalchemy>=0.1.0-beta.2",
