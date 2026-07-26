@@ -14,6 +14,8 @@ import tempfile
 import time
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_PATH = ROOT / ".opencode" / "plugin" / "enforce-deadline.ts"
 
@@ -22,6 +24,11 @@ _ts_counter = 0
 DEADLINE_STATE = "/tmp/gludd-task-deadlines-e2e.json"
 STALE_FILE = "/tmp/gludd-task-stale-e2e.json"
 WARNINGS_LOG = "/tmp/gludd-task-deadlines-e2e.warnings.log"
+
+# The plugin intentionally persists deadline state across hook invocations.
+# Keep this module on one xdist worker so its fixed, shared E2E paths cannot be
+# cleaned by a neighboring test while another hook is recording a breach.
+pytestmark = pytest.mark.xdist_group("deadline_e2e_state")
 
 
 def _clean_state() -> None:
