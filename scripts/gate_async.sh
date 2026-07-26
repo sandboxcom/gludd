@@ -29,7 +29,18 @@ REF="${1:-}"
 
 GATE_CMD="${GATE_CMD:-scripts/run_gate.sh}"
 STATUS_FILE="${STATUS_FILE:-.gate-status}"
-LOCK_FILE="${LOCK_FILE:-/tmp/gludd-gate-async.lock}"
+ARBITER_SCRIPT="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/resource_arbiter.py"
+PROJECT_NAMESPACE="${GLUDD_PROJECT_NAMESPACE:-}"
+if [ -z "${PROJECT_NAMESPACE}" ]; then
+    PROJECT_NAMESPACE="$(python3 "${ARBITER_SCRIPT}" namespace)"
+fi
+RESOURCE_BASE="${GLUDD_RESOURCE_ROOT:-${TMPDIR:-/tmp}/gludd-resources}"
+RESOURCE_DIR="${RESOURCE_BASE%/}/${PROJECT_NAMESPACE}"
+mkdir -p "${RESOURCE_DIR}"
+# LOCK_FILE remains overrideable for isolated tests; otherwise it is scoped to
+# this checkout rather than the historical global /tmp/gludd-gate-async.lock.
+LOCK_FILE="${LOCK_FILE:-${RESOURCE_DIR}/async-gate.lock}"
+mkdir -p "$(dirname -- "${LOCK_FILE}")"
 RC_FILE="${LOCK_FILE}.rc.$$"
 
 # ---------------------------------------------------------------------------

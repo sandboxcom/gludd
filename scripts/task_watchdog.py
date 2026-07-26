@@ -43,6 +43,8 @@ import time
 from contextlib import suppress
 from pathlib import Path
 
+from scripts.process_cleanup import descendant_processes, snapshot_processes
+
 DEADLINES_FILE = os.environ.get(
     "GLUDD_TASK_DEADLINE_STATE", "/tmp/gludd-task-deadlines.json"
 )
@@ -287,8 +289,41 @@ def find_hung_processes(
 # Kill
 # ---------------------------------------------------------------------------
 
-def kill_process(pid: int) -> bool:
-    """SIGTERM → 5s wait → SIGKILL. Returns True if killed, False if gone/error."""
+def kill_process(pid: int, expected_command: str | None = None) -> bool:
+    """Terminate a verified process tree, falling back to a direct PID.
+
+    ``expected_command`` closes the PID-reuse race: a stale task record cannot
+    kill a different project's process that inherited the same numeric PID.
+    When a process snapshot is available, descendants are terminated first so
+    pytest/uv workers cannot outlive their parent.
+    """
+    table = snapshot_processes()
+    root = table.get(pid)
+    if expected_command is not None and (root is None or root.command != expected_command):
+        _log(f"TASK KILL SKIP: pid={pid} identity changed")
+        return False
+
+    candidates = [*descendant_processes(table, pid), root] if root else []
+    if candidates:
+        signalled = False
+        for process in candidates:
+            try:
+                os.kill(process.pid, signal.SIGTERM)
+                signalled = True
+                _log(f"TASK KILL: SIGTERM → pid={process.pid}")
+            except (ProcessLookupError, PermissionError):
+                continue
+        time.sleep(5)
+        for process in candidates:
+            try:
+                os.kill(process.pid, signal.SIGKILL)
+                _log(f"TASK KILL: SIGKILL → pid={process.pid}")
+            except (ProcessLookupError, PermissionError):
+                continue
+        return signalled
+
+    # Keep fail-open behavior for a process that exited between discovery and
+    # cleanup, and for the small unit-test fake that has no ps row.
     try:
         os.kill(pid, signal.SIGTERM)
         _log(f"TASK KILL: SIGTERM → pid={pid}")
@@ -378,7 +413,7 @@ def run_once(
         killed = 0
 
         for proc in hung:
-            killed_pid = kill_process(proc["pid"])
+            killed_pid = kill_process(proc["pid"], expected_command=proc.get("command"))
             if killed_pid:
                 killed += 1
                 # Attribute to the oldest stale task (best-effort mapping)

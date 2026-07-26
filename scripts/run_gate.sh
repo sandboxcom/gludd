@@ -39,9 +39,22 @@ if [ -n "${CLAUDE_AGENT_ID:-}" ] || [ -n "${GLUDD_SUBAGENT:-}" ]; then
     fi
 fi
 
-# GATE_LOCK_FILE can be overridden in tests to give each test an isolated lock.
-LOCK_FILE="${GATE_LOCK_FILE:-/tmp/gludd-gate.lock}"
-BASETEMP_PREFIX="${GATE_BASETEMP_PREFIX:-/tmp/gludd-gate}"
+# GATE_LOCK_FILE/BASETEMP_PREFIX can be overridden in tests.  In normal use,
+# derive both paths from the checkout namespace so gates from unrelated
+# projects do not reject one another or share pytest scratch directories.
+ARBITER_SCRIPT="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/resource_arbiter.py"
+PROJECT_NAMESPACE="${GLUDD_PROJECT_NAMESPACE:-}"
+if [ -z "${PROJECT_NAMESPACE}" ]; then
+    PROJECT_NAMESPACE="$(python3 "${ARBITER_SCRIPT}" namespace)"
+fi
+RESOURCE_BASE="${GLUDD_RESOURCE_ROOT:-${TMPDIR:-/tmp}/gludd-resources}"
+RESOURCE_DIR="${RESOURCE_BASE%/}/${PROJECT_NAMESPACE}"
+mkdir -p "${RESOURCE_DIR}"
+# The historical basename gludd-gate.lock remains the documented resource;
+# it is now nested below the project-specific directory.
+LOCK_FILE="${GATE_LOCK_FILE:-${RESOURCE_DIR}/gate.lock}"
+BASETEMP_PREFIX="${GATE_BASETEMP_PREFIX:-${RESOURCE_DIR}/gate}"
+mkdir -p "$(dirname -- "${LOCK_FILE}")" "$(dirname -- "${BASETEMP_PREFIX}")"
 STATUS_FILE=.gate-status
 FAILED_FILE=.gate-failed
 
@@ -97,7 +110,12 @@ _acquire_pidfile() {
     local holder
     holder=$(cat "${LOCK_FILE}" 2>/dev/null || echo "")
 
-    if [ -n "${holder}" ] && kill -0 "${holder}" 2>/dev/null; then
+    # A legacy PID-file test/launcher may record its parent shell rather than
+    # the gate command.  Treat our immediate parent as the owner only when it
+    # is alive; this keeps the compatibility path local and never signals it.
+    if _pid_is_gate "${holder}" || {
+        [ "${holder}" = "${PPID}" ] && kill -0 "${holder}" 2>/dev/null;
+    }; then
         echo "[run_gate.sh] another gate is already running (PID ${holder}); refusing to start a second" >&2
         exit 1
     fi
@@ -115,6 +133,23 @@ _acquire_pidfile() {
     holder=$(cat "${LOCK_FILE}" 2>/dev/null || echo "unknown")
     echo "[run_gate.sh] another gate is already running (PID ${holder}); refusing to start a second" >&2
     exit 1
+}
+
+# ``kill -0`` alone is unsafe: after a gate exits, the PID may be reused by a
+# different project.  Verify both liveness and command identity before treating
+# a PID-file owner as active.  This is deliberately project-scoped and fail-open
+# so stale locks can be recovered without killing unrelated processes.
+_pid_is_gate() {
+    local pid="$1" command=""
+    case "${pid}" in
+        ''|*[!0-9]*) return 1 ;;
+    esac
+    kill -0 "${pid}" 2>/dev/null || return 1
+    command=$(ps -p "${pid}" -o command= 2>/dev/null || true)
+    case "${command}" in
+        *run_gate.sh*|*"make gate"*|*gate-refresh*) return 0 ;;
+        *) return 1 ;;
+    esac
 }
 
 # Detect GNU flock (util-linux) vs BSD flock (macOS /usr/bin/flock).
