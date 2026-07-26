@@ -328,6 +328,38 @@ def _http_call(
     return None
 
 
+def _add_smoke_arguments(parser: argparse.ArgumentParser) -> None:
+    """Attach the shared smoke-check command surface to a parser."""
+    parser.add_argument("provider", nargs="?", default=None, help="Provider or service slug, or 'list'")
+    parser.add_argument("test", nargs="?", default=None, help="Smoke test name, e.g. metadata or ec2-a100")
+    parser.add_argument("--list", action="store_true", help="List available smoke tests")
+    parser.add_argument("--live", action="store_true", help="Allow cheap live metadata probes")
+    parser.add_argument(
+        "--provisioned",
+        action="store_true",
+        help="Provision a real resource, run a model task, and tear it down",
+    )
+    parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
+    parser.add_argument("--output", default=None, help="Write the rendered diagnostic bundle to this file")
+    parser.add_argument(
+        "--output-template",
+        default=None,
+        help="Compiled output template for smoke list/report rendering",
+    )
+    parser.add_argument("--timeout", type=float, default=2.0, help="HTTP probe timeout in seconds")
+    parser.add_argument("--max-cost-usd", type=float, default=10.0, help="Fail if estimated cost exceeds this")
+    parser.add_argument("--base-url", default=None, help="Override endpoint base URL for this run")
+    parser.add_argument("--model", default=None, help="Override model identifier for this run")
+    parser.add_argument("--region", default=None, help="Provider region for provisioned smoke tests")
+    parser.add_argument("--gpu-count", type=int, default=1, help="GPU count for provisioned smoke tests")
+    parser.add_argument(
+        "--engine",
+        default="vllm",
+        choices=["vllm", "llamacpp"],
+        help="Inference engine for provisioned smoke tests",
+    )
+
+
 def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.ArgumentParser]]:
     parser = argparse.ArgumentParser(
         prog="gludd",
@@ -918,41 +950,11 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     connectors_query.add_argument("--daemon-url", default="http://localhost:8000")
     connectors_query.set_defaults(func=_cmd_connectors_query)
 
-    # smoke removed from standalone CLI — moved under `test smoke` below.
-    # Code retained for programmatic use.
-    # smoke_parser = sub.add_parser(
-    #     "smoke",
-    #     help="Run low-cost provider, compute, local-model, or connector smoke checks",
-    # )
-    # smoke_parser.add_argument("provider", nargs="?", default=None, help="Provider or service slug, or 'list'")
-    # smoke_parser.add_argument("test", nargs="?", default=None, help="Smoke test name, e.g. metadata or ec2-a100")
-    # smoke_parser.add_argument("--list", action="store_true", help="List available smoke tests")
-    # smoke_parser.add_argument("--live", action="store_true", help="Allow cheap live metadata probes")
-    # smoke_parser.add_argument(
-    #     "--provisioned",
-    #     action="store_true",
-    #     help="Provision a real resource, run a model task, and tear it down",
-    # )
-    # smoke_parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
-    # smoke_parser.add_argument("--output", default=None, help="Write the rendered diagnostic bundle to this file")
-    # smoke_parser.add_argument(
-    #     "--output-template",
-    #     default=None,
-    #     help="Compiled output template for smoke list/report rendering",
-    # )
-    # smoke_parser.add_argument("--timeout", type=float, default=2.0, help="HTTP probe timeout in seconds")
-    # smoke_parser.add_argument("--max-cost-usd", type=float, default=10.0, help="Fail if estimated cost exceeds this")
-    # smoke_parser.add_argument("--base-url", default=None, help="Override endpoint base URL for this run")
-    # smoke_parser.add_argument("--model", default=None, help="Override model identifier for this run")
-    # smoke_parser.add_argument("--region", default=None, help="Provider region for provisioned smoke tests")
-    # smoke_parser.add_argument("--gpu-count", type=int, default=1, help="GPU count for provisioned smoke tests")
-    # smoke_parser.add_argument(
-    #     "--engine",
-    #     default="vllm",
-    #     choices=["vllm", "llamacpp"],
-    #     help="Inference engine for provisioned smoke tests",
-    # )
-    # smoke_parser.set_defaults(func=_cmd_smoke)
+    smoke_parser = sub.add_parser(
+        "smoke", help="Run low-cost provider, compute, local-model, or connector smoke checks"
+    )
+    _add_smoke_arguments(smoke_parser)
+    smoke_parser.set_defaults(func=_cmd_smoke)
 
     login_parser = sub.add_parser("login", help="Browser-based OAuth2 / API key login for services")
     login_parser.add_argument(
@@ -1157,37 +1159,30 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     test_self_parser.set_defaults(func=_cmd_selftest)
 
     test_smoke_parser = test_sub.add_parser("smoke", help="Run provider/service smoke checks")
-    test_smoke_parser.add_argument("provider", nargs="?", default=None, help="Provider or service slug, or 'list'")
-    test_smoke_parser.add_argument("test", nargs="?", default=None, help="Smoke test name, e.g. metadata or ec2-a100")
-    test_smoke_parser.add_argument("--list", action="store_true", help="List available smoke tests")
-    test_smoke_parser.add_argument("--live", action="store_true", help="Allow cheap live metadata probes")
-    test_smoke_parser.add_argument(
-        "--provisioned",
-        action="store_true",
-        help="Provision a real resource, run a model task, and tear it down",
-    )
-    test_smoke_parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
-    test_smoke_parser.add_argument("--output", default=None, help="Write the rendered diagnostic bundle to this file")
-    test_smoke_parser.add_argument(
-        "--output-template",
-        default=None,
-        help="Compiled output template for smoke list/report rendering",
-    )
-    test_smoke_parser.add_argument("--timeout", type=float, default=2.0, help="HTTP probe timeout in seconds")
-    test_smoke_parser.add_argument(
-        "--max-cost-usd", type=float, default=10.0, help="Fail if estimated cost exceeds this"
-    )
-    test_smoke_parser.add_argument("--base-url", default=None, help="Override endpoint base URL for this run")
-    test_smoke_parser.add_argument("--model", default=None, help="Override model identifier for this run")
-    test_smoke_parser.add_argument("--region", default=None, help="Provider region for provisioned smoke tests")
-    test_smoke_parser.add_argument("--gpu-count", type=int, default=1, help="GPU count for provisioned smoke tests")
-    test_smoke_parser.add_argument(
-        "--engine",
-        default="vllm",
-        choices=["vllm", "llamacpp"],
-        help="Inference engine for provisioned smoke tests",
-    )
+    _add_smoke_arguments(test_smoke_parser)
     test_smoke_parser.set_defaults(func=_cmd_smoke)
+
+    pause_parser = sub.add_parser("pause", help="Pause project or model execution")
+    pause_parser.set_defaults(func=None)
+    pause_sub = pause_parser.add_subparsers(dest="pause_command")
+    pause_list = pause_sub.add_parser("list", help="List paused entities")
+    pause_list.add_argument("--daemon-url", default="http://localhost:8000")
+    pause_list.set_defaults(func=_cmd_pause_list)
+    for kind, handler in (("project", _cmd_pause_project), ("model", _cmd_pause_model)):
+        command = pause_sub.add_parser(kind, help=f"Pause a {kind}")
+        command.add_argument("target_id", help=f"{kind.capitalize()} identifier")
+        command.add_argument("--reason", default="", help="Reason for pausing")
+        command.add_argument("--daemon-url", default="http://localhost:8000")
+        command.set_defaults(func=handler)
+
+    resume_parser = sub.add_parser("resume", help="Resume project or model execution")
+    resume_parser.set_defaults(func=None)
+    resume_sub = resume_parser.add_subparsers(dest="resume_command")
+    for kind, handler in (("project", _cmd_resume_project), ("model", _cmd_resume_model)):
+        command = resume_sub.add_parser(kind, help=f"Resume a {kind}")
+        command.add_argument("target_id", help=f"{kind.capitalize()} identifier")
+        command.add_argument("--daemon-url", default="http://localhost:8000")
+        command.set_defaults(func=handler)
 
     subcommand_map = {
         "login": login_parser,
@@ -1223,10 +1218,58 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
         "test-bg": test_bg_parser,
         "test": test_parser,
         "chat": chat_parser,
-        # Pause state is managed via tasks/agents/infra API endpoints.
+        "pause": pause_parser,
+        "resume": resume_parser,
     }
 
     return parser, subcommand_map
+
+
+def _cmd_pause_list(args: argparse.Namespace) -> None:
+    """List paused projects and model profiles from the daemon."""
+    data = _http_call("GET", f"{args.daemon_url}/api/pause")
+    if data is not None:
+        print(json.dumps(data, indent=2))
+
+
+def _cmd_pause_project(args: argparse.Namespace) -> None:
+    """Pause a project through the daemon's durable pause controller."""
+    data = _http_call(
+        "POST",
+        f"{args.daemon_url}/api/pause/project",
+        json={"target_id": args.target_id, "reason": args.reason},
+    )
+    if data is not None:
+        print(json.dumps(data, indent=2))
+
+
+def _cmd_pause_model(args: argparse.Namespace) -> None:
+    """Pause a model profile through the daemon's durable pause controller."""
+    data = _http_call(
+        "POST",
+        f"{args.daemon_url}/api/pause/model",
+        json={"target_id": args.target_id, "reason": args.reason},
+    )
+    if data is not None:
+        print(json.dumps(data, indent=2))
+
+
+def _cmd_resume_project(args: argparse.Namespace) -> None:
+    """Resume a project through the daemon's durable pause controller."""
+    data = _http_call(
+        "POST", f"{args.daemon_url}/api/resume/project", json={"target_id": args.target_id}
+    )
+    if data is not None:
+        print(json.dumps(data, indent=2))
+
+
+def _cmd_resume_model(args: argparse.Namespace) -> None:
+    """Resume a model profile through the daemon's durable pause controller."""
+    data = _http_call(
+        "POST", f"{args.daemon_url}/api/resume/model", json={"target_id": args.target_id}
+    )
+    if data is not None:
+        print(json.dumps(data, indent=2))
 
 
 def _cmd_login(args: argparse.Namespace) -> None:
