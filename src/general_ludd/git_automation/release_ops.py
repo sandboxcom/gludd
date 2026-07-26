@@ -270,7 +270,19 @@ def release_cut(
                                 message=f"Tag {tag} already exists locally — delete it first or use release-recut")
 
     if not skip_ci_check:
-        rc, out = _run_require_ci_green(branch=branch)
+        # Resolve the candidate commit from the requested repository rather
+        # than implicitly consulting the process working directory.  This
+        # keeps release evidence tied to the exact SHA being pushed.
+        commit_sha = _git_rev_parse(repo_path, "HEAD")
+        if not commit_sha:
+            return ReleaseCutResult(
+                success=False,
+                tag=tag,
+                branch=branch,
+                message="Could not determine release commit SHA",
+                steps_completed=steps,
+            )
+        rc, out = _run_require_ci_green(sha=commit_sha, branch=branch)
         if rc == 1:
             return ReleaseCutResult(success=False, tag=tag, branch=branch,
                                     message=f"CI not green: {out}",
