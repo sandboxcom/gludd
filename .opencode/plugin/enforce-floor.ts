@@ -118,14 +118,14 @@ function openWorkExists(options?: { isCommitTool?: boolean }): boolean {
       }
     } catch {}
     try {
-      const ciCachePath = "/tmp/gludd-watchdog-ci.json"
+      const ciCachePath = process.env.GLUDD_CI_CACHE_PATH || "/tmp/gludd-watchdog-ci.json"
       if (fs.existsSync(ciCachePath)) {
         const ciData = JSON.parse(fs.readFileSync(ciCachePath, "utf8"))
         const lastCheck = ciData.last_ci_check || 0
         const lastStatus = ciData.last_ci_status || ""
         if (Date.now() - lastCheck < 120_000 && lastStatus && lastStatus !== "SUCCESS") return true
       }
-      const stopStatePath = "/tmp/gludd-stop-state.json"
+      const stopStatePath = process.env.GLUDD_STOP_STATE_PATH || "/tmp/gludd-stop-state.json"
       if (fs.existsSync(stopStatePath)) {
         const state = JSON.parse(fs.readFileSync(stopStatePath, "utf8"))
         if (state.ciVerdictPendingOrRed) return true

@@ -54,6 +54,9 @@ def _run_plugin(
     disengage_audit = session_state.with_name(session_state.stem + "-disengage-audit.jsonl")
     alive_state = session_state.with_name(session_state.stem + "-alive.json")
     grind_state = session_state.with_name(session_state.stem + "-grind.json")
+    hot_module_prefix = session_state.with_name(session_state.stem + "-hot-")
+    ci_cache_state = session_state.with_name(session_state.stem + "-ci.json")
+    stop_state = session_state.with_name(session_state.stem + "-stop.json")
     tmp.write_text(ts_code)
     try:
         env = os.environ.copy()
@@ -67,6 +70,10 @@ def _run_plugin(
         env["GLUDD_ALIVE_PATH"] = str(alive_state)
         env["GLUDD_READ_GRIND_FILE"] = str(grind_state)
         env["GLUDD_PROJECT_ROOT"] = str(Path(cwd or ROOT))
+        # Do not load a process-global hot module compiled for another shard.
+        env["GLUDD_HOT_MODULE_PREFIX"] = str(hot_module_prefix)
+        env["GLUDD_CI_CACHE_PATH"] = str(ci_cache_state)
+        env["GLUDD_STOP_STATE_PATH"] = str(stop_state)
         if env_override:
             env.update(env_override)
         proc = subprocess.run(
@@ -91,6 +98,8 @@ def _run_plugin(
             disengage_audit,
             alive_state,
             grind_state,
+            ci_cache_state,
+            stop_state,
         ):
             with contextlib.suppress(OSError):
                 state_path.unlink()
