@@ -114,6 +114,19 @@ class TestTTLExpiration:
         assert store.get("b") is None
         assert store.get("c") is not None
 
+    def test_purge_project_ttl_preserves_global_fallback(self) -> None:
+        """A project expiry must not erase the globally shared value."""
+        store = CrossConversationStore()
+        store.put("release", {"channel": "stable"})
+        store.put("release", {"channel": "canary"}, project_id="project-a", ttl=0.001)
+
+        time.sleep(0.01)
+
+        assert store.purge_expired() == 1
+        fallback = store.get("release", project_id="project-a")
+        assert fallback is not None
+        assert fallback["value"] == {"channel": "stable"}
+
 
 class TestSearch:
     def test_search_finds_items_in_namespace(self) -> None:

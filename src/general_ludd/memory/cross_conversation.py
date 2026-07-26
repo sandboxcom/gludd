@@ -144,7 +144,7 @@ class CrossConversationStore:
         global_sk = self._project_store_key(ns, key, None)
 
         if self._is_expired(sk):
-            self._evict(sk, ns, key)
+            self._evict(sk, ns, key, project_id)
             return None
 
         entry = self._ephemeral.get(sk)
@@ -282,7 +282,7 @@ class CrossConversationStore:
 
         if self._store is not None:
             self._store.delete(ns, sk)
-            if sk != raw_key:
+            if project_id is None and sk != raw_key:
                 self._store.delete(ns, raw_key)
         self._ephemeral.pop(sk, None)
         self._ttl_registry.pop(sk, None)
@@ -299,7 +299,7 @@ class CrossConversationStore:
             ns = tuple(entry.get("namespace", ("default",)))
             key = str(entry.get("key", ""))
             if key:
-                self.delete(key, ns)
+                self.delete(key, ns, entry.get("project_id"))
             else:
                 self._ephemeral.pop(sk, None)
                 self._ttl_registry.pop(sk, None)
@@ -329,11 +329,18 @@ class CrossConversationStore:
             return False
         return _now() >= deadline
 
-    def _evict(self, stored_key: str, namespace: tuple[str, ...], key: str) -> None:
+    def _evict(
+        self,
+        stored_key: str,
+        namespace: tuple[str, ...],
+        key: str,
+        project_id: str | None,
+    ) -> None:
         self._ephemeral.pop(stored_key, None)
         self._ttl_registry.pop(stored_key, None)
         if self._store is not None:
             with contextlib.suppress(Exception):
                 self._store.delete(namespace, stored_key)
-            with contextlib.suppress(Exception):
-                self._store.delete(namespace, key)
+            if project_id is None:
+                with contextlib.suppress(Exception):
+                    self._store.delete(namespace, key)
