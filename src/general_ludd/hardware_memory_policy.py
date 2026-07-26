@@ -2,11 +2,41 @@
 
 from __future__ import annotations
 
+import importlib
+import os
+import platform
+from contextlib import suppress
 from dataclasses import asdict, dataclass
 from typing import Literal
 
 MemoryKind = Literal["discrete", "unified", "unknown"]
 FitStatus = Literal["fit", "reject", "unknown"]
+
+
+@dataclass(frozen=True)
+class MemoryInfo:
+    """Runtime memory facts shared by local GPU smoke harnesses.
+
+    ``vram`` is a compatibility spelling for discrete device memory used by
+    the Mac harness; the policy otherwise uses ``discrete`` internally.
+    """
+
+    kind: Literal["vram", "unified", "unknown"]
+    total_bytes: int
+    available_bytes: int
+    backend: str
+    device: str
+
+
+@dataclass(frozen=True)
+class ModelFitEvaluation:
+    """Compatibility result with an explicit fail-closed ``fits`` boolean."""
+
+    fits: bool
+    status: FitStatus
+    required_bytes: int
+    reserved_bytes: int
+    reason: str
 
 
 @dataclass(frozen=True)
@@ -36,6 +66,79 @@ class ModelFit:
 
     def as_dict(self) -> dict[str, object]:
         return asdict(self)
+
+
+def detect_memory(backend: str | None = None) -> MemoryInfo:
+    """Detect local accelerator memory without making a device allocation."""
+    requested = (backend or "auto").lower()
+    torch = None
+    with suppress(ImportError):
+        torch = importlib.import_module("torch")
+
+    cuda = getattr(torch, "cuda", None)
+    cuda_available = bool(cuda and getattr(cuda, "is_available", lambda: False)())
+    if requested in {"cuda", "rocm", "auto"} and cuda_available:
+        props = cuda.get_device_properties(0)
+        total = int(getattr(props, "total_memory", 0))
+        available = total
+        with suppress(AttributeError, RuntimeError, TypeError, ValueError):
+            available, _ = (int(v) for v in cuda.mem_get_info(0))
+        hip = bool(getattr(getattr(torch, "version", None), "hip", None))
+        actual_backend = "rocm" if hip else "cuda"
+        if requested in {"cuda", "rocm"} and requested != actual_backend:
+            return MemoryInfo("unknown", total, available, actual_backend, str(getattr(props, "name", "GPU")))
+        return MemoryInfo("vram", total, available, actual_backend, str(getattr(props, "name", "GPU")))
+
+    mps = getattr(getattr(torch, "backends", None), "mps", None)
+    mps_available = bool(mps and getattr(mps, "is_available", lambda: False)())
+    if requested in {"mps", "auto"} and mps_available:
+        total = _system_memory_bytes()
+        return MemoryInfo("unified", total or 0, total or 0, "mps", "Apple Silicon")
+
+    is_apple_silicon = platform.system() == "Darwin" and platform.machine() in {
+        "arm64", "aarch64"
+    }
+    if requested == "mps" or (requested == "auto" and is_apple_silicon):
+        total = _system_memory_bytes()
+        return MemoryInfo("unified", total or 0, total or 0, "mps", "Apple Silicon")
+    return MemoryInfo("unknown", 0, 0, requested, "unknown")
+
+
+def _system_memory_bytes() -> int | None:
+    try:
+        pages = os.sysconf("SC_PHYS_PAGES")
+        page_size = os.sysconf("SC_PAGE_SIZE")
+    except (AttributeError, OSError, ValueError):
+        return None
+    return pages * page_size if pages > 0 and page_size > 0 else None
+
+
+def evaluate_model_fit(
+    memory: MemoryInfo,
+    parameters: int,
+    *,
+    quantization_bits: int = 4,
+    reserve_ratio: float = 0.20,
+) -> ModelFitEvaluation:
+    """Evaluate a model against detected memory before loading any tensors."""
+    if parameters <= 0:
+        raise ValueError("parameters must be greater than zero")
+    capacity = memory.available_bytes or memory.total_bytes
+    result = assess_model_fit(
+        capacity or None,
+        parameters / 1_000_000_000,
+        quantization_bits,
+        kind="unified" if memory.kind == "unified" else "discrete" if memory.kind == "vram" else "unknown",
+        reserve_fraction=reserve_ratio,
+    )
+    reason = f"{memory.kind} memory: {result.reason}"
+    return ModelFitEvaluation(
+        fits=result.status == "fit",
+        status=result.status,
+        required_bytes=result.footprint_bytes,
+        reserved_bytes=result.budget_bytes or 0,
+        reason=reason,
+    )
 
 
 def classify_memory_kind(backend: str, device_name: str, *, is_integrated: bool | None = None) -> MemoryKind:
@@ -107,3 +210,33 @@ def recommend_models(total_memory_bytes: int | None, *, reserve_fraction: float 
         if total_memory_bytes is None
         or assess_model_fit(total_memory_bytes, params_b, bits, reserve_fraction=reserve_fraction).status == "fit"
     ]
+
+
+def model_guidance(kind: str) -> dict[str, object]:
+    """Describe model choices that match unified-memory or discrete-VRAM hosts."""
+    normalized = kind.lower()
+    if normalized == "vram":
+        normalized = "discrete"
+    if normalized == "unified":
+        return {
+            "memory_kind": "unified",
+            "strategy": "capacity-first",
+            "preferred_models": ["3B Q4", "7B Q4"],
+            "avoid": ["long-context", "concurrent-models", "13B+ dense"],
+            "reason": "the operating system and accelerator share one memory pool",
+        }
+    if normalized == "discrete":
+        return {
+            "memory_kind": "discrete",
+            "strategy": "throughput",
+            "preferred_models": ["7B Q4", "13B Q4", "34B Q4 when fit"],
+            "avoid": ["models exceeding usable VRAM", "unsupported driver/runtime builds"],
+            "reason": "dedicated VRAM isolates model allocations from host system memory",
+        }
+    return {
+        "memory_kind": "unknown",
+        "strategy": "fail-closed",
+        "preferred_models": [],
+        "avoid": ["any live model"],
+        "reason": "capacity and backend could not be proven",
+    }

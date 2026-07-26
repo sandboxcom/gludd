@@ -26,6 +26,7 @@ try:
         assess_model_fit,
         classify_memory_kind,
         memory_budget,
+        model_guidance,
         recommend_models,
     )
 except ModuleNotFoundError:  # direct checkout invocation before editable install
@@ -34,6 +35,7 @@ except ModuleNotFoundError:  # direct checkout invocation before editable instal
         assess_model_fit,
         classify_memory_kind,
         memory_budget,
+        model_guidance,
         recommend_models,
     )
 
@@ -163,6 +165,7 @@ def plan_smoke(args: SmokeArgs) -> dict[str, Any]:
                 else None
             ),
             "recommendations": recommend_models(None, reserve_fraction=args.reserve_headroom),
+            "guidance": model_guidance("unknown" if args.memory_kind == "auto" else args.memory_kind),
             "note": "live mode is required to identify capacity and reject an oversized model",
         },
         "supported": {
@@ -268,6 +271,7 @@ def run_live(args: SmokeArgs, *, torch_module: Any | None = None) -> dict[str, A
             "budget": budget.as_dict(),
             "model_fit": model_fit,
             "recommendations": recommend_models(budget.total_bytes, reserve_fraction=args.reserve_headroom),
+            "guidance": model_guidance(detected_kind),
         },
         "workload": {
             "kind": "sparse-linear-inference",

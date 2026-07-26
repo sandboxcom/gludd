@@ -152,6 +152,7 @@ def _memory_info(torch_module: Any | None, backend: str) -> dict[str, Any]:
             "capacity_bytes": detected.total_bytes,
             "available_bytes": detected.available_bytes,
             "capacity_gb": detected.total_bytes / 1024**3,
+            "model_guidance": policy.model_guidance(kind),
         }
     capacity = _system_memory_bytes()
     kind = "unified" if backend == "mps" else "discrete" if backend == "cuda" else "system"
@@ -168,6 +169,10 @@ def _memory_info(torch_module: Any | None, backend: str) -> dict[str, Any]:
         "accelerator": accelerator,
         "capacity_bytes": capacity,
         "capacity_gb": capacity / 1024**3 if capacity is not None else None,
+        "model_guidance": {
+            "memory_kind": kind,
+            "strategy": "capacity-first" if kind == "unified" else "fail-closed",
+        },
     }
 
 
@@ -175,11 +180,21 @@ def _model_fit(config: SmokeConfig, memory: dict[str, Any]) -> dict[str, Any]:
     """Apply a conservative dense-storage fit policy before loading a model."""
 
     try:
+        # Unit callers may provide only a capacity fixture; keep the legacy
+        # max-memory bound for that shape. Live detection always supplies kind.
+        if "kind" not in memory:
+            raise AttributeError("memory kind unavailable")
         policy = importlib.import_module("general_ludd.hardware_memory_policy")
+        capacity = int(memory.get("capacity_bytes") or 0)
+        configured = int(config.max_memory_gb * 1024**3)
         info = policy.MemoryInfo(
             kind="vram" if memory.get("kind") == "discrete" else memory.get("kind", "unknown"),
-            total_bytes=int(memory.get("capacity_bytes") or 0),
-            available_bytes=int(memory.get("available_bytes") or memory.get("capacity_bytes") or 0),
+            total_bytes=min(capacity, configured) if configured else capacity,
+            available_bytes=(
+                min(int(memory.get("available_bytes") or capacity), configured)
+                if configured
+                else int(memory.get("available_bytes") or capacity)
+            ),
             backend=str(memory.get("accelerator", config.backend)),
             device=str(memory.get("device", "local")),
         )

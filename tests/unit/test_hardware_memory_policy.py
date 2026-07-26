@@ -5,10 +5,13 @@ from __future__ import annotations
 import pytest
 
 from general_ludd.hardware_memory_policy import (
+    MemoryInfo,
     assess_model_fit,
     classify_memory_kind,
     estimate_model_bytes,
+    evaluate_model_fit,
     memory_budget,
+    model_guidance,
     recommend_models,
 )
 
@@ -63,3 +66,41 @@ def test_invalid_memory_policy_arguments_fail_closed() -> None:
         estimate_model_bytes(0, 4)
     with pytest.raises(ValueError, match="quant_bits"):
         estimate_model_bytes(1, 3)
+
+
+def test_shared_memory_info_api_enforces_fit_before_model_load() -> None:
+    info = MemoryInfo(
+        kind="unified",
+        total_bytes=16_000_000_000,
+        available_bytes=16_000_000_000,
+        backend="mps",
+        device="Apple Silicon",
+    )
+    result = evaluate_model_fit(info, 3_000_000_000, quantization_bits=4, reserve_ratio=0.20)
+    assert result.fits is True
+    assert result.required_bytes == estimate_model_bytes(3.0, 4)
+    assert result.reserved_bytes == 12_800_000_000
+    assert "unified" in result.reason
+
+
+def test_unknown_shared_memory_info_fails_closed() -> None:
+    info = MemoryInfo(
+        kind="unknown",
+        total_bytes=0,
+        available_bytes=0,
+        backend="auto",
+        device="unknown",
+    )
+    result = evaluate_model_fit(info, 7.0, quantization_bits=4)
+    assert result.fits is False
+    assert result.status == "unknown"
+
+
+def test_model_guidance_differs_for_unified_and_discrete_memory() -> None:
+    unified = model_guidance("unified")
+    discrete = model_guidance("vram")
+    unknown = model_guidance("unknown")
+    assert "3B Q4" in unified["preferred_models"]
+    assert "long-context" in unified["avoid"]
+    assert "throughput" in discrete["strategy"]
+    assert unknown["preferred_models"] == []
