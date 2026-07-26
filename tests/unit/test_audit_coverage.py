@@ -176,7 +176,7 @@ class TestAuditCoverageScript:
         assert module.run_pytest_coverage("src/general_ludd", str(report_path)) == 0
         args, kwargs = calls[0]
         final_args, _ = calls[-1]
-        assert f"-o" in final_args and str(report_path) in final_args
+        assert "-o" in final_args and str(report_path) in final_args
         assert kwargs["env"]["GLUDD_COVERAGE_AUDIT"] == "1"
         assert kwargs["timeout"] == module.COVERAGE_AUDIT_TIMEOUT_SECONDS
         assert "--cov-branch" in args
