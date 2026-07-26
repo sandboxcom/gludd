@@ -340,7 +340,7 @@ The state-file pattern is the canonical mechanism for runtime enforcement tuning
 
 **Read/Write/Edit/Glob/Grep MUST NOT access paths outside the six allowed prefixes.** External file access prompts the user for permission and blocks work — a blocked tool call stalls the session exactly like a premature stop.
 
-**User mandate (HARD): NEVER ask for access to the user's full home directory ever again.** Access is limited to exactly five path prefixes. Any other path under `/Users/shawnwilson/` is FORBIDDEN — no `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/Documents`, `~/Desktop`, `~/Library`, or any other home-directory path outside the workspace, opencode dirs, and cache. This is a hard user mandate, not a guideline.
+**User mandate (HARD): NEVER ask for access to the user's full home directory ever again.** Access is limited to exactly six path prefixes. Any other path under `/Users/shawnwilson/` is FORBIDDEN — no `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/Documents`, `~/Desktop`, `~/Library`, or any other home-directory path outside the workspace, opencode dirs, and cache. This is a hard user mandate, not a guideline.
 
 ### Rules
 
