@@ -278,12 +278,12 @@ def test_subagent_context_bypasses_enforcement(tmp_path: Path):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 6: GLUDD_STOP_ENFORCE=0 → bypasses
+# 6: GLUDD_STOP_ENFORCE=0 → text-only pending-work block remains active
 # ═══════════════════════════════════════════════════════════════════════════════
 
 
-def test_env_disable_bypasses_enforcement(tmp_path: Path):
-    """GLUDD_STOP_ENFORCE=0 → text.complete returns output unchanged."""
+def test_env_disable_does_not_bypass_enforcement(tmp_path: Path):
+    """GLUDD_STOP_ENFORCE=0 cannot bypass the fundamental text-only gate."""
     (tmp_path / "TASKS.md").write_text("- [ ] pending work exists\n")
 
     result = _invoke_text_complete(
@@ -291,13 +291,12 @@ def test_env_disable_bypasses_enforcement(tmp_path: Path):
         "This message should pass through when enforcement is disabled.",
         env_override={"GLUDD_STOP_ENFORCE": "0"},
     )
-    assert result is not None, "Hook should output JSON even when returning undefined"
-    assert result.get("result_text") == (
-        "This message should pass through when enforcement is disabled."
-    ), f"GLUDD_STOP_ENFORCE=0 must return output unchanged. Got: {result}"
-    assert result.get("output_text") == (
-        "This message should pass through when enforcement is disabled."
-    ), f"Original text must pass through. Got: {result.get('output_text')!r}"
+    assert result is not None, "Hook should output JSON when blocking"
+    blocked = result.get("result_text") or result.get("output_text", "")
+    assert "TEXT-ONLY RESPONSE BLOCKED" in blocked, (
+        "GLUDD_STOP_ENFORCE=0 must not bypass pending-work enforcement. "
+        f"Got: {result}"
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
