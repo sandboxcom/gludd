@@ -666,7 +666,14 @@ function mainthreadBudgetBefore(tool: string, command: string): string | null {
     consumeForceDispatchSignal()
     // Git shipping operations (commit, push, tag) are NEVER blocked.
     // They are terminal actions that complete work, not grinding.
-    if (tool === "bash" && isGitShippingTarget(command)) return null
+    if (tool === "bash" && isGitShippingTarget(command)) {
+      // A commit is the one mutating operation that must still be gated when
+      // the streak is already at the hard threshold; otherwise a final
+      // ``make git-commit`` would bypass the delegate contract entirely.
+      // Other shipping targets remain terminal, streak-resetting operations.
+      const target = command.match(/(?:^|\s)make\s+(\S+)/)?.[1]
+      if (target !== "git-commit") return null
+    }
     // Quality-gate operations (lint, typecheck, collect-check, etc.) are
     // NEVER blocked — they are validation steps that complete units of work.
     if (tool === "bash" && isLintTarget(command)) return null
