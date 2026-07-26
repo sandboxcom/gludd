@@ -38,7 +38,7 @@ def test_e2e_marker_is_registered() -> None:
 def test_e2e_runner_has_suite_watchdog_bounds() -> None:
     body = _target_body("test-e2e")
     assert "run-watched" in body
-    assert "E2E_MAX_SECS" in body
+    assert "E2E_FILE_MAX_SECS" in body
     assert "E2E_STALL_SECS" in body
 
 
@@ -73,3 +73,16 @@ def test_worktree_e2e_cleanup_is_scoped_to_the_requesting_worktree() -> None:
     assert "Refusing to kill unrelated" in body
 
     assert "tree_contains_local_e2e" in body
+
+
+def test_e2e_runner_executes_files_in_bounded_serial_processes() -> None:
+    body = _target_body("test-e2e")
+    assert "find tests/e2e" in body
+    assert "for test_file in" in body
+    assert "E2E_WORKERS" in body
+
+
+def test_nested_full_unit_suite_is_rejected_during_e2e() -> None:
+    body = _target_body("test-unit")
+    assert "GLUDD_E2E_ACTIVE" in body
+    assert "nested full test-unit" in body
