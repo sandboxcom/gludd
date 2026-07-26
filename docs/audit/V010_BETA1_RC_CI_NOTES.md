@@ -7,7 +7,10 @@ Date: 2026-07-20
 - Starlette TestClient migrated to `httpx2`; plain `httpx` is deprecated for
   this path. Local mitigation: add `httpx2>=2.0.0` and regenerate `uv.lock`.
   References: https://www.starlette.io/testclient/,
-  https://www.starlette.io/release-notes/
+  https://www.starlette.io/release-notes/. User discussion evidence:
+  https://github.com/encode/starlette/discussions/2594. Revalidated for beta.3:
+  `tests/e2e/test_secrets_security_workflows.py` passes without the prior
+  `StarletteDeprecationWarning` after the dependency is installed.
 - `pkg_resources` deprecation/removal is a long-lived setuptools transition.
   The local warning comes from third-party `fs`, not direct project imports.
   Local mitigation: keep `setuptools<81` already resolved in lock and filter

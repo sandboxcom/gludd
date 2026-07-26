@@ -54,7 +54,8 @@ def test_langsmith_kept():
     assert _has_imports("langsmith"), "langsmith imports should exist in src/"
 
 
-def test_httpx2_removed():
+def test_httpx2_kept_for_starlette_testclient():
     deps = _load_deps()
-    assert "httpx2" not in deps, "httpx2 should not be declared unless src imports it"
+    assert "httpx2" in deps, "httpx2 is required by Starlette TestClient"
+    assert deps["httpx2"].startswith("httpx2>=2.0.0")
     assert not _has_imports("httpx2"), "no httpx2 imports should exist in src/"
