@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -61,3 +62,52 @@ def test_active_status_worker_count_is_bounded() -> None:
     assert worker_count >= 0
     assert worker_limit > 0
     assert worker_count <= worker_limit
+
+
+def test_concurrent_project_resource_leases_are_unique_and_bounded() -> None:
+    """Concurrent project snapshots expose one owner per namespaced lease."""
+
+    namespaces = ("project-model-alpha", "project-model-beta")
+    with ThreadPoolExecutor(max_workers=len(namespaces)) as pool:
+        payloads = list(pool.map(lambda name: _status(namespace=name), namespaces))
+
+    observed_pairs: set[tuple[str, str]] = set()
+    for payload in payloads:
+        evidence = payload["resource_observability"]
+        assert isinstance(evidence, dict)
+        namespace = evidence["project_namespace"]
+        root = evidence["resource_root"]
+        owner = evidence["lease_owner"]
+        inventory = evidence["lease_inventory"]
+        worker_count = evidence["worker_count"]
+        worker_limit = evidence["worker_limit"]
+
+        assert isinstance(namespace, str)
+        assert isinstance(root, str)
+        assert isinstance(owner, str)
+        assert isinstance(inventory, list)
+        assert isinstance(worker_count, int)
+        assert isinstance(worker_limit, int)
+        assert worker_count <= worker_limit
+
+        resources = []
+        for record in inventory:
+            assert isinstance(record, dict)
+            resource = record["resource"]
+            path = record["path"]
+            record_owner = record["owner"]
+            assert isinstance(resource, str)
+            assert isinstance(path, str)
+            assert isinstance(record_owner, str)
+            assert path.startswith(root)
+            assert record_owner == owner
+            resources.append(resource)
+            observed_pairs.add((namespace, resource))
+
+        assert {"project", "model", "searx", "terraform"}.issubset(resources)
+        assert len(resources) == len(set(resources))
+
+    assert len(observed_pairs) == sum(
+        len(payload["resource_observability"]["lease_inventory"])
+        for payload in payloads
+    )

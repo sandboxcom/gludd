@@ -700,7 +700,7 @@ check-makefile-structure:
 	@$(UV) run python -m pytest tests/unit/test_makefile_syntax.py -q -n 0
 
 collect-check:
-	@$(UV) run python -m pytest tests/ --co -q > /tmp/gludd-collect-output.txt 2>&1; EXIT=$$?; \
+	@$(UV) run python scripts/collection_lock.py --run $(UV) run python -m pytest tests/ --co -q > /tmp/gludd-collect-output.txt 2>&1; EXIT=$$?; \
 	if [ $$EXIT -ne 0 ]; then \
 		echo "COLLECTION ERRORS DETECTED"; \
 		grep -E "ERROR|error" /tmp/gludd-collect-output.txt | grep -vE '^\s+<(Function|Coroutine|Class)' | head -20; \

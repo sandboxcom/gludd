@@ -16,7 +16,10 @@ except ModuleNotFoundError:  # pragma: no cover - direct script execution
 
 ROOT = Path(__file__).resolve().parent.parent
 TASK_ID_RE = re.compile(r"^\s*-\s*\[ \]\s+([^ —|]+)", re.MULTILINE)
-_RESOURCE_LEASES = ("gate", "async-gate", "e2e")
+# Keep every externally orchestrated resource visible in one snapshot.  The
+# project namespace is represented explicitly so callers can audit that model,
+# SearX, and Terraform work do not silently fall back to a global lease.
+_RESOURCE_LEASES = ("project", "model", "searx", "terraform", "gate", "async-gate", "e2e")
 _WORKER_TASKS = frozenset(
     {
         "gate-refresh",
@@ -150,11 +153,21 @@ def _resource_observability(processes: list[dict[str, str]]) -> dict[str, object
     limit = _worker_limit()
     observed = sum(process["task"] in _WORKER_TASKS for process in processes)
     root = resource_root(ROOT)
+    lease_owner = f"pid:{os.getpid()}"
+    lease_inventory = [
+        {
+            "resource": name,
+            "path": str(resource_path(name, ROOT)),
+            "owner": lease_owner,
+        }
+        for name in _RESOURCE_LEASES
+    ]
     return {
         "project_namespace": root.name,
         "resource_root": str(root),
-        "lease_owner": f"pid:{os.getpid()}",
+        "lease_owner": lease_owner,
         "leases": [str(resource_path(name, ROOT)) for name in _RESOURCE_LEASES],
+        "lease_inventory": lease_inventory,
         "worker_count": min(observed, limit),
         "worker_limit": limit,
         "observed_worker_count": observed,

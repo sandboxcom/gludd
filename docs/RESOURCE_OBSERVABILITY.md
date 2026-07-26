@@ -15,13 +15,17 @@ is not sufficient evidence of ownership.
 | `resource_root` | The per-project lock root under `${TMPDIR}/gludd-resources/<project_namespace>`. |
 | `lease_owner` | The process identity currently producing the snapshot (`pid:<pid>`). |
 | `leases` | Lock paths owned by this project; every path must remain below `resource_root`. |
+| `lease_inventory` | One record per project, model, SearX, Terraform, gate, and E2E lease, including its namespaced path and owner. Resource names are unique within a snapshot. |
 | `worker_count` | Number of workers admitted for this project at snapshot time. |
 | `worker_limit` | Positive hard ceiling for admitted workers. `worker_count` must never exceed it. |
 
-The namespace is part of every lock identity. `gate.lock`, `async-gate.lock`,
-and `e2e.lock` in one project must not collide with the same logical lock in a
-second project. Lease owners are informational evidence; lock acquisition and
-release still verify the namespace before acting on a PID.
+The namespace is part of every lock identity. `project.lock`, `model.lock`,
+`searx.lock`, `terraform.lock`, `gate.lock`, `async-gate.lock`, and `e2e.lock`
+in one project must not collide with the same logical lock in a second project.
+Lease owners are informational evidence; lock acquisition and release still
+verify the namespace before acting on a PID. Consumers should use
+`lease_inventory` to detect duplicate resource entries and confirm that every
+path stays inside the reported project root.
 
 ## Why this is required
 
