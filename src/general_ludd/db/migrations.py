@@ -17,6 +17,9 @@ def get_alembic_config(url: str = "") -> AlembicConfig:
     script_location = str(Path(__file__).parent.parent.parent.parent / "alembic")
     cfg.set_main_option("script_location", script_location)
     resolved_url = url or os.environ.get("DATABASE_URL", "sqlite:///./test.db")
+    # Alembic executes synchronous migrations; translate SQLAlchemy's async
+    # SQLite driver URL used by the application to its sync equivalent.
+    resolved_url = resolved_url.replace("sqlite+aiosqlite://", "sqlite://", 1)
     cfg.set_main_option("sqlalchemy.url", resolved_url)
     return cfg
 

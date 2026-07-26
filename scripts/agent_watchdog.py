@@ -44,8 +44,16 @@ import signal
 import subprocess
 import sys
 import time
+import uuid
+from contextlib import suppress
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+
+try:
+    from scripts.resource_arbiter import project_namespace, resource_path
+except ImportError:  # pragma: no cover - direct execution from scripts/
+    from resource_arbiter import project_namespace, resource_path
 
 try:
     from statistics import mean, stdev
@@ -294,6 +302,215 @@ GATE_MAX_RUNTIME_SECS = int(os.environ.get("GATE_WATCHDOG_TIMEOUT", "3600"))
 _TASKS_MD = _WORKSPACE / "TASKS.md"
 _RATCHET_YML = _WORKSPACE / "config" / "ratchet.yml"
 _GATE_STATUS = _WORKSPACE / ".gate-status"
+
+# A watchdog is a singleton per project namespace.  The lock contains enough
+# identity to reject PID reuse and enough version information for an upgraded
+# daemon to retire an older implementation safely.
+WATCHDOG_VERSION = os.environ.get("GLUDD_WATCHDOG_VERSION", "1.0")
+WATCHDOG_LOCK_RESOURCE = "agent-watchdog"
+
+
+@dataclass
+class WatchdogLease:
+    """An owned watchdog lock; release only removes our own lock record."""
+
+    path: Path
+    fd: int
+    token: str
+
+
+def watchdog_lock_path(workspace: Path | str | None = None) -> Path:
+    """Return the project-namespaced singleton lock path."""
+
+    root = Path(workspace) if workspace is not None else _WORKSPACE
+    return resource_path(WATCHDOG_LOCK_RESOURCE, root)
+
+
+def _process_start_time(pid: int) -> str | None:
+    """Read a process start token where the host exposes one.
+
+    Linux exposes a monotonic start tick in ``/proc``.  macOS and other hosts
+    fall back to ``ps``'s start-date string.  A missing token is acceptable:
+    liveness is still checked with ``kill(pid, 0)`` and stale owners recover
+    once their process exits.
+    """
+
+    try:
+        stat_path = Path(f"/proc/{pid}/stat")
+        if stat_path.exists():
+            fields = stat_path.read_text(encoding="utf-8").rsplit(")", 1)[1].split()
+            if len(fields) > 19:
+                return fields[19]
+    except (OSError, ValueError, IndexError):
+        pass
+    try:
+        result = subprocess.run(
+            ["ps", "-p", str(pid), "-o", "lstart="],
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+        value = result.stdout.strip()
+        return value or None
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+def _version_key(version: str) -> tuple[tuple[int, ...], str]:
+    """Compare semantic-ish watchdog versions without requiring packaging."""
+
+    value = str(version).strip()
+    numbers = tuple(int(part) for part in re.findall(r"\d+", value))
+    while numbers and numbers[-1] == 0:
+        numbers = numbers[:-1]
+    suffix = re.sub(r"[0-9.]+", "", value).lower()
+    return numbers, suffix
+
+
+def _owner_is_alive(owner: dict) -> bool:
+    try:
+        pid = int(owner.get("pid", 0))
+    except (TypeError, ValueError):
+        return False
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        pass
+    except OSError:
+        return False
+
+    recorded = owner.get("pid_start_time")
+    current = _process_start_time(pid)
+    return not (recorded and current and str(recorded) != str(current))
+
+
+def _read_lock_owner(path: Path) -> dict | None:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+        return value if isinstance(value, dict) else None
+    except (OSError, json.JSONDecodeError, TypeError):
+        return None
+
+
+def _unlink_if_token_matches(path: Path, token: str | None) -> None:
+    """Remove a lock only if it still refers to the owner we inspected."""
+
+    current = _read_lock_owner(path)
+    if token is not None and current is not None and current.get("token") != token:
+        return
+    with suppress(FileNotFoundError):
+        path.unlink()
+
+
+def acquire_watchdog_lock(
+    *,
+    lock_path: Path | str | None = None,
+    version: str | None = None,
+    pid: int | None = None,
+) -> WatchdogLease | None:
+    """Acquire the singleton watchdog lease, recovering stale owners.
+
+    A live owner with the same or newer version wins.  A newer caller sends a
+    polite ``SIGTERM`` to an older live owner, then replaces its record.  The
+    token check in :func:`release_watchdog_lock` prevents an old process from
+    deleting the replacement lock during shutdown.
+    """
+
+    path = Path(lock_path) if lock_path is not None else watchdog_lock_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    owner_pid = int(pid if pid is not None else os.getpid())
+    owner_version = str(version if version is not None else WATCHDOG_VERSION)
+    token = uuid.uuid4().hex
+    metadata = {
+        "pid": owner_pid,
+        "pid_start_time": _process_start_time(owner_pid),
+        "started_at": time.time(),
+        "version": owner_version,
+        "namespace": project_namespace(_WORKSPACE),
+        "token": token,
+    }
+
+    for _ in range(3):
+        try:
+            fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        except FileExistsError:
+            previous = _read_lock_owner(path)
+            if previous is None:
+                _unlink_if_token_matches(path, None)
+                continue
+            if _owner_is_alive(previous):
+                old_version = str(previous.get("version", "0"))
+                if _version_key(owner_version) <= _version_key(old_version):
+                    return None
+                with suppress(
+                    KeyError,
+                    TypeError,
+                    ValueError,
+                    ProcessLookupError,
+                    PermissionError,
+                    OSError,
+                ):
+                    os.kill(int(previous["pid"]), signal.SIGTERM)
+                _unlink_if_token_matches(path, str(previous.get("token", "")))
+                continue
+            _unlink_if_token_matches(path, str(previous.get("token", "")))
+            continue
+        else:
+            try:
+                os.write(fd, json.dumps(metadata).encode("utf-8"))
+                os.fsync(fd)
+            except Exception:
+                os.close(fd)
+                _unlink_if_token_matches(path, token)
+                raise
+            return WatchdogLease(path=path, fd=fd, token=token)
+    return None
+
+
+def release_watchdog_lock(lease: WatchdogLease | None) -> None:
+    """Release a lease without touching a newer owner's lock record."""
+
+    if lease is None:
+        return
+    try:
+        owner = _read_lock_owner(lease.path)
+        if owner is not None and owner.get("token") == lease.token:
+            _unlink_if_token_matches(lease.path, lease.token)
+    finally:
+        with suppress(OSError):
+            os.close(lease.fd)
+
+
+def stop_watchdog(*, lock_path: Path | str | None = None) -> bool:
+    """Request shutdown of this project's watchdog without global ``pkill``.
+
+    A live owner's lock is intentionally left in place for its ``finally``
+    block to release.  Dead or malformed records are removed immediately.
+    """
+
+    path = Path(lock_path) if lock_path is not None else watchdog_lock_path()
+    owner = _read_lock_owner(path)
+    if owner is None:
+        _unlink_if_token_matches(path, None)
+        return False
+    if not _owner_is_alive(owner):
+        _unlink_if_token_matches(path, str(owner.get("token", "")))
+        return False
+    with suppress(
+        KeyError,
+        TypeError,
+        ValueError,
+        ProcessLookupError,
+        PermissionError,
+        OSError,
+    ):
+        os.kill(int(owner["pid"]), signal.SIGTERM)
+        return True
+    return False
 
 _UNCHECKED_PATTERN = re.compile(r"-\s+\[\s*\]|\*\s+\[\s*\]", re.IGNORECASE)
 
@@ -3163,6 +3380,11 @@ def _cli_classification(argv: list[str]) -> int:
     tasks_dir = Path(argv[0]) if argv and not argv[0].startswith("--") else Path("/tmp/gludd-tasks")
     results = scan_tasks_dir(tasks_dir)
 
+    if "--stop" in argv:
+        stopped = stop_watchdog()
+        print("watchdog stop requested" if stopped else "no watchdog owner")
+        return 0
+
     if "--once" in argv:
         result = check_and_reset()
         print(json.dumps(result, indent=2))
@@ -3194,24 +3416,34 @@ def main(argv: list[str] | None = None) -> int:
     if argv and any(a.startswith("--") or not a.startswith("-") for a in argv):
         return _cli_classification(argv)
 
-    _log(f"watchdog started — poll={POLL_SECS}s, threshold={STREAK_THRESHOLD}")
-    _check_plugin_liveness_on_startup()
-    while True:
-        if HIBERNATION_MARKER.exists():
-            _log("hibernation marker present — sleeping")
+    lease = acquire_watchdog_lock()
+    if lease is None:
+        _log(
+            "watchdog already running for namespace "
+            f"{project_namespace(_WORKSPACE)}; refusing duplicate"
+        )
+        return 0
+    try:
+        _log(f"watchdog started — poll={POLL_SECS}s, threshold={STREAK_THRESHOLD}")
+        _check_plugin_liveness_on_startup()
+        while True:
+            if HIBERNATION_MARKER.exists():
+                _log("hibernation marker present — sleeping")
+                time.sleep(POLL_SECS)
+                continue
+            try:
+                check_and_reset()
+                _check_force_dispatch()
+                check_running_tasks()
+                check_push_status()
+                _check_gate_background()
+                _check_plugin_liveness_periodic()
+                _rotate_watchdog_logs()
+            except Exception as exc:
+                _log(f"error: {exc}")
             time.sleep(POLL_SECS)
-            continue
-        try:
-            check_and_reset()
-            _check_force_dispatch()
-            check_running_tasks()
-            check_push_status()
-            _check_gate_background()
-            _check_plugin_liveness_periodic()
-            _rotate_watchdog_logs()
-        except Exception as exc:
-            _log(f"error: {exc}")
-        time.sleep(POLL_SECS)
+    finally:
+        release_watchdog_lock(lease)
 
 
 if __name__ == "__main__":

@@ -420,7 +420,7 @@ class TestDefaultAgents:
         assert build.permissions.can_bash is True
         assert build.permissions.can_read is True
         assert build.permissions.can_dispatch_subagents is True
-        assert build.max_concurrent == 1
+        assert build.max_concurrent == 3
 
     def test_plan_agent_readonly(self):
         reg = default_registry()

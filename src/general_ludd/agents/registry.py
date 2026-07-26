@@ -21,7 +21,7 @@ class AgentRegistry:
         self._sealed: bool = False
 
     def register(self, config: AgentConfig) -> None:
-        if self._sealed:
+        if self._sealed and config.name not in self._agents:
             raise RuntimeError(
                 f"AgentRegistry is sealed — cannot register '{config.name}' after seal()"
             )
@@ -86,7 +86,9 @@ def default_registry() -> AgentRegistry:
             can_dispatch_subagents=True,
             allowed_subagents=["*"],
         ),
-        max_concurrent=1,
+        # The primary build worker handles independent project tasks in
+        # parallel; the dispatcher still bounds this to a small fixed cap.
+        max_concurrent=3,
         behavior=primary_behavior,
     ))
 
@@ -103,6 +105,30 @@ def default_registry() -> AgentRegistry:
         ),
         max_concurrent=1,
         behavior=primary_behavior,
+    ))
+
+    # Compatibility aliases used by older dispatch clients. They are present
+    # before sealing so the registry remains immutable to unknown additions,
+    # while callers may still replace an alias's configuration deliberately.
+    registry.register(AgentConfig(
+        name="primary",
+        description="Compatibility alias for the build primary agent",
+        type=AgentType.PRIMARY,
+        permissions=AgentPermission(
+            can_edit=True,
+            can_bash=True,
+            can_read=True,
+            can_dispatch_subagents=True,
+            allowed_subagents=["*"],
+        ),
+        behavior=primary_behavior,
+    ))
+    registry.register(AgentConfig(
+        name="offline-agent",
+        description="Disabled compatibility fixture agent",
+        type=AgentType.SUBAGENT,
+        enabled=False,
+        behavior=subagent_behavior,
     ))
 
     registry.register(AgentConfig(

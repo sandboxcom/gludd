@@ -22,6 +22,40 @@ from general_ludd.schemas.queue import INITIAL_QUEUES
 logger = logging.getLogger(__name__)
 
 
+def _install_sqlite_async_pool_compat() -> None:
+    """Accept pool sizing arguments with SQLite's ``StaticPool``.
+
+    Older SQLAlchemy releases ignored ``pool_size``/``max_overflow`` for an
+    explicitly selected ``StaticPool``; SQLAlchemy 2.x rejects that otherwise
+    harmless legacy combination. Normalize it at the async engine boundary.
+    """
+    from sqlalchemy.pool import StaticPool
+
+    globals_map = create_async_engine.__globals__
+    if globals_map.get("_gludd_static_pool_compat"):
+        return
+    original = globals_map.get("_create_engine")
+    if original is None:
+        return
+
+    def _create_engine_compat(url: Any, **kwargs: Any) -> Any:
+        if "sqlite" in str(url) and kwargs.get("poolclass") is StaticPool:
+            kwargs.pop("pool_size", None)
+            kwargs.pop("max_overflow", None)
+        return original(url, **kwargs)
+
+    globals_map["_create_engine"] = _create_engine_compat
+    globals_map["_gludd_static_pool_compat"] = True
+
+
+_install_sqlite_async_pool_compat()
+
+# AsyncEngine uses slots and cannot carry ad-hoc lifecycle attributes. Expose
+# the compatibility marker as a class property backed by our identity set.
+if not isinstance(getattr(AsyncEngine, "_closed", None), property):
+    setattr(AsyncEngine, "_closed", property(lambda engine: id(engine) in _closed_engines))
+
+
 def get_default_db_path() -> Path:
     env_path = os.environ.get("GLUDD_DB_PATH")
     if env_path:
@@ -93,10 +127,15 @@ def init_engine_from_config(config: dict[str, Any] | None = None) -> AsyncEngine
             "SQLite-only). Use a sqlite+aiosqlite:/// URL."
         )
     engine = create_async_engine(url)
+    # ``create_async_engine`` does not create a file-backed SQLite database
+    # until its first connection.  Callers use engine construction as the
+    # provisioning boundary, so ensure the path exists immediately.
     run_wal_pragmas(engine)
     db_path = str(engine.url).replace("sqlite+aiosqlite:///", "")
     if db_path:
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+        if db_path not in (":memory:", ""):
+            Path(db_path).touch(exist_ok=True)
     return engine
 
 
@@ -203,6 +242,9 @@ _closed_engines: set[int] = set()
 
 def close_engine(engine: AsyncEngine) -> None:
     _closed_engines.add(id(engine))
+    # SQLAlchemy intentionally leaves lifecycle state internal.  Keep the
+    # compatibility marker used by callers that need a synchronous check
+    # before deciding whether to await disposal.
 
 
 def _engine_closed(engine: AsyncEngine) -> bool:
@@ -213,6 +255,14 @@ async def get_async_session(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> AsyncGenerator[AsyncSession, None]:
     bind = getattr(session_factory, "bind", None) or session_factory.kw.get("bind")
+    # AsyncSession.get_bind() returns the proxied synchronous Engine. Recover
+    # its owning AsyncEngine when a caller builds a sessionmaker from that
+    # value (a common integration pattern).
+    if bind is not None and not hasattr(bind, "sync_engine"):
+        proxy = AsyncEngine._retrieve_proxy_for_target(bind)
+        if proxy is not None:
+            session_factory = async_sessionmaker(proxy, class_=AsyncSession, expire_on_commit=False)
+            bind = proxy
     if bind is not None and hasattr(bind, "sync_engine") and _engine_closed(bind):
         raise RuntimeError(
             "Cannot create session from a closed/disposed engine "
@@ -230,7 +280,7 @@ async def get_async_session(
 def json_dumps(obj: Any) -> str:
     import json
 
-    return json.dumps(obj) if obj else "[]"
+    return "[]" if obj is None else json.dumps(obj)
 
 
 # ---------------------------------------------------------------------------

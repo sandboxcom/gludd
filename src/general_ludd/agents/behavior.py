@@ -178,6 +178,14 @@ class BehaviorRenderer:
         sections: list[str] = ["# Agent Behavior Configuration"]
         sections.append("")
 
+        if behavior.role or behavior.goal:
+            sections.append("## Role and Goal")
+            if behavior.role:
+                sections.append(f"Role: {behavior.role}")
+            if behavior.goal:
+                sections.append(f"Goal: {behavior.goal}")
+            sections.append("")
+
         sections.append("## Task Completion")
         if behavior.completion_policy == "complete_all":
             sections.append(
@@ -400,6 +408,8 @@ class BehaviorRenderer:
 
 def default_primary_behavior() -> AgentBehavior:
     return AgentBehavior(
+        role="primary orchestrator",
+        goal="coordinate and complete the requested work",
         completion_policy="complete_all",
         self_directed_work=True,
         tdd_enforced=True,
@@ -417,6 +427,8 @@ def default_primary_behavior() -> AgentBehavior:
 
 def default_subagent_behavior() -> AgentBehavior:
     return AgentBehavior(
+        role="specialized subagent",
+        goal="execute the assigned task and return evidence",
         completion_policy="complete_all",
         self_directed_work=False,
         tdd_enforced=True,

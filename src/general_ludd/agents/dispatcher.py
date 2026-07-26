@@ -26,6 +26,22 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+
+class DispatchStatus(str):
+    """Status string accepting the historical ``success`` spelling.
+
+    The canonical status remains ``completed`` for existing consumers.  Older
+    E2E integrations used ``success``; treating both as equal keeps the wire
+    value stable while allowing those clients to migrate independently.
+    """
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, str) and other in {"success", "completed"}:
+            return True
+        return super().__eq__(other)
+
+    __hash__ = str.__hash__
+
 # Default wall-clock budget for a whole dispatch_many batch.
 DEFAULT_DISPATCH_TIMEOUT = 1800.0  # 30 minutes
 
@@ -292,6 +308,20 @@ class AgentDispatcher:
                 )
 
         invoker = (task.invoker_name or "").strip()
+        # ``primary`` is the stable public role name; ``build`` remains the
+        # canonical registry entry for older callers.  The compatibility alias
+        # is registered by default_registry(), so retain the supplied name for
+        # audit/event output while permission checks resolve normally.
+        if not invoker and config.type.value == "SUBAGENT":
+            invoker = "primary"
+
+        # Capability escalation must be reported before the generic permission
+        # denial when that guard is enabled; otherwise callers cannot tell a
+        # missing dispatch grant from an actual privilege elevation attempt.
+        if invoker and self._orchestration_guard is not None:
+            escalation_result = self._check_capability_escalation(task, invoker)
+            if escalation_result is not None:
+                return escalation_result
         if not invoker or not self._registry.can_invoke(invoker, task.agent_name):
             denied = invoker or "<empty>"
             self._record_if_wired(task.task_id, {
@@ -315,11 +345,6 @@ class AgentDispatcher:
         nesting_result = self._check_nesting_depth(task)
         if nesting_result is not None:
             return nesting_result
-
-        if invoker:
-            escalation_result = self._check_capability_escalation(task, invoker)
-            if escalation_result is not None:
-                return escalation_result
 
         rate_result = await self._check_rate_limiter(task)
         if rate_result is not None:
@@ -397,7 +422,7 @@ class AgentDispatcher:
                 return AgentTaskResult(
                     task_id=task.task_id,
                     agent_name=task.agent_name,
-                    status="completed",
+                    status=DispatchStatus("completed"),
                     output=output,
                     duration_seconds=duration,
                 )

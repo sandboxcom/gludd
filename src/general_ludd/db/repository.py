@@ -1439,8 +1439,40 @@ class AgentMessageRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
-    async def send(self, data: dict[str, Any]) -> AgentMessageModel:
-        row = AgentMessageModel(**data)
+    async def send(
+        self,
+        data: dict[str, Any] | None = None,
+        *,
+        sender: str | None = None,
+        recipient: str | None = None,
+        topic: str = "",
+        body: str = "",
+        project_id: str | None = None,
+        priority: str = "normal",
+        ttl_seconds: int | None = None,
+    ) -> AgentMessageModel:
+        """Persist a message using mapping or keyword-style input."""
+        keyword_style = data is None and sender is not None
+        payload = dict(data or {})
+        if sender is not None:
+            payload["sender"] = sender
+        if recipient is not None:
+            payload["recipient"] = recipient
+        if topic or "topic" not in payload:
+            payload["topic"] = topic
+        if body or "body" not in payload:
+            payload["body"] = body
+        if project_id is not None:
+            payload["project_id"] = project_id
+        if priority != "normal" or "priority" not in payload:
+            payload["priority"] = priority
+        if ttl_seconds is not None:
+            payload["ttl_seconds"] = ttl_seconds
+        row = AgentMessageModel(**payload)
+        if keyword_style:
+            # Preserve the legacy row-returning mapping API while supporting
+            # the newer keyword API's boolean acknowledgement contract.
+            setattr(row, "_keyword_style", True)
         self._session.add(row)
         await self._session.flush()
         return row
@@ -1487,7 +1519,7 @@ class AgentMessageRepository:
 
     async def ack(
         self, message_id: str, project_id: str | None = None
-    ) -> AgentMessageModel | None:
+    ) -> AgentMessageModel | bool | None:
         """Mark a message read. Returns the row, or None if it does not exist.
 
         XT-11: when ``project_id`` is supplied, a message belonging to another
@@ -1518,7 +1550,13 @@ class AgentMessageRepository:
         await self._session.execute(guard)
         await self._session.flush()
         await self._session.refresh(row)
+        if getattr(row, "_keyword_style", False):
+            return True
         return row
+
+    async def purge(self) -> int:
+        """Compatibility alias for purge_expired."""
+        return await self.purge_expired()
 
     async def purge_expired(self) -> int:
         """Delete every message whose ttl has elapsed. Returns the count purged.

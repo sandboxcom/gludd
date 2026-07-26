@@ -98,7 +98,7 @@ _commit-lock-acquire check-clean-tree worktree-state all-worktree-state main-wor
         molecule-clean plan ps-gludd kill-stale kill-gate-force \
         gate-async gate-status floor-plan gated-merge ship-async write-gate-safe-hook \
         repo-visibility \
-        watchdog-read watchdog-start watchdog-status watchdog-stop watchdog-log \
+         watchdog-read watchdog-start watchdog-status watchdog-stop agent-watchdog-stop watchdog-log \
         task-watchdog-start task-watchdog-stop task-watchdog-status task-watchdog-log task \
         check-readme-status check-types check-types-baseline check-plugin-versions check-plugin-versions-quiet \
         check-plugin-liveness check-plugin-health write-plugin-manifest codemod-lean-enforcement-plugins restart-opencode disengage-enforcement reload-enforcement \
@@ -4490,14 +4490,10 @@ watchdog-status:
 	@tail -15 .gate-logs/watchdog.log 2>/dev/null || echo "No log yet"
 
 watchdog-stop:
-	@if [ -f .gate-logs/watchdog.pid ]; then \
-		kill $$(cat .gate-logs/watchdog.pid) 2>/dev/null || true; \
-		rm -f .gate-logs/watchdog.pid; \
-		echo "Watchdog stopped"; \
-	else \
-		echo "No watchdog running"; \
-	fi
-	@pkill -f 'agent_watchdog' 2>/dev/null || true
+	@$(UV) run python3 scripts/agent_watchdog.py --stop
+	@rm -f .gate-logs/watchdog.pid
+
+agent-watchdog-stop: watchdog-stop
 
 watchdog-read:
 	@if [ -f /tmp/gludd-continue.txt ]; then \

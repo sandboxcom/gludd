@@ -641,6 +641,7 @@ old summary table omitted entirely. Grand total across the file: **326** boxes.
 - [x] T-BETA3-CONNECTOR-RESULT-SHAPES — Pin tuple/string runner and object transport result-shape contracts for Windows/macOS/Podman compatibility | evidence: `make test-files TESTFILES='tests/e2e/test_connector_result_shapes_e2e.py'` (8 passed); `make lint-files FILES='tests/e2e/test_connector_result_shapes_e2e.py'` passed; task registration and ledger validation passed | priority: medium | effort: S | status: completed
 - [x] T-BETA3-RESOURCE-CONTENTION — Prove independent project/model/SearX/Terraform namespace admission and deterministic overload refusal | evidence: tests/unit/test_resource_namespace_budgets.py; make test-files TESTFILES='tests/unit/test_resource_namespace_budgets.py' (6 passed); make lint-files FILES='tests/unit/test_resource_namespace_budgets.py' | priority: high | effort: S | status: completed
 - [x] T-BETA3-PROCESS-CLEANUP — Namespaced process-tree teardown, PID identity validation, and stale gate-lock recovery for concurrent project workers | evidence: tests/unit/test_process_cleanup.py (5 passed); tests/unit/test_task_watchdog.py (24 passed); tests/unit/test_gate_concurrency.py (27 passed); lint passed | priority: high | effort: S | status: completed
+- [ ] T-BETA3-WATCHDOG-SINGLETON — Namespaced watchdog singleton lock with PID/start/version ownership, stale recovery, and safe upgrades | priority: high | effort: S | status: pending
 
 | T-BETA3-MAKE-TARGET-CONTRACT | Make target prompting contract: variable-aware help, safe behavioral examples, and gate enforcement | evidence: make check-make-target-contract; make test-specific TESTFILE=tests/unit/test_make_target_contract.py (3 passed); make test-specific TESTFILE=tests/e2e/test_make_e2e.py (28 passed); make test-hook-runtime (122 passed) | priority: high | effort: S | status: completed |
 
@@ -664,4 +665,5 @@ old summary table omitted entirely. Grand total across the file: **326** boxes.
  <!-- T-BETA3-CONNECTOR-BATCH5-REDFISH-SNMP paths: src/general_ludd/connectors/redfish.py src/general_ludd/connectors/snmp.py tests/unit/test_connector_redfish.py tests/unit/test_connector_snmp.py tests/e2e/test_connectors_batch5_workflows.py -->
  <!-- T-BETA3-CONNECTOR-RESULT-SHAPES paths: tests/e2e/test_connector_result_shapes_e2e.py -->
  <!-- T-BETA3-RESOURCE-CONTENTION paths: tests/unit/test_resource_namespace_budgets.py -->
-<!-- T-BETA3-PROCESS-CLEANUP paths: scripts/process_cleanup.py scripts/task_watchdog.py scripts/run_gate.sh tests/unit/test_process_cleanup.py -->
+ <!-- T-BETA3-PROCESS-CLEANUP paths: scripts/process_cleanup.py scripts/task_watchdog.py scripts/run_gate.sh tests/unit/test_process_cleanup.py -->
+ <!-- T-BETA3-WATCHDOG-SINGLETON paths: scripts/agent_watchdog.py tests/unit/test_watchdog_singleton.py Makefile -->
