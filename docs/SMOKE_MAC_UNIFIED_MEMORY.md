@@ -23,6 +23,26 @@ python scripts/mac_unified_memory_smoke.py --live --backend mps \
   --allow-cpu  # only affects auto fallback; an explicit mps request still fails closed
 ```
 
+Screen a candidate model before loading it by supplying its parameter count,
+budget, and reserved headroom directly on the CLI. A non-fitting selection
+returns exit code 3 and does not allocate model tensors:
+
+```text
+python scripts/mac_unified_memory_smoke.py --dry-run --backend mps \
+  --model-parameters 7000000000 --max-memory-gb 24 --headroom 0.2
+```
+
+The same selection command works in a Linux VM/container on the Mac. Use
+`--backend cpu` for a deterministic fallback, or `--backend cuda` only when a
+passed-through discrete GPU is present:
+
+```text
+python scripts/mac_unified_memory_smoke.py --dry-run --backend cpu \
+  --model-parameters 100000000 --max-memory-gb 8
+python scripts/mac_unified_memory_smoke.py --dry-run --backend cuda \
+  --model-parameters 1000000000 --max-memory-gb 16
+```
+
 An explicit `mps` request exits nonzero when Metal/MPS is not built or is not
 available. This prevents a false green result caused by an accidental CPU
 fallback. The model budget is checked before loading tensors and reserves 20%
@@ -71,4 +91,3 @@ large “other allocations” on unified-memory machines, and PyTorch Forum thre
 coverage and CPU-fallback surprises. The harness therefore records both MPS
 allocated and driver memory, requires explicit backend selection for live GPU
 checks, and fails closed when capability or fit checks cannot be proven.
-

@@ -127,3 +127,43 @@ def test_cli_dry_run_emits_json() -> None:
     payload = json.loads(completed.stdout)
     assert payload["ok"] is True
     assert payload["mode"] == "dry-run"
+
+
+def test_cli_model_selection_overrides_are_reported(capsys: pytest.CaptureFixture[str]) -> None:
+    assert harness.main(
+        [
+            "--dry-run",
+            "--backend",
+            "mps",
+            "--model-parameters",
+            "100",
+            "--max-memory-gb",
+            "0.000001",
+            "--headroom",
+            "0.1",
+        ]
+    ) == 0
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["model"]["model_parameters"] == 100
+    assert payload["model_fit"]["fits"] is True
+    assert payload["model_fit"]["reserve_headroom"] == pytest.approx(0.1)
+
+
+def test_cli_rejects_model_that_does_not_fit(capsys: pytest.CaptureFixture[str]) -> None:
+    exit_code = harness.main(
+        [
+            "--dry-run",
+            "--backend",
+            "mps",
+            "--model-parameters",
+            "2000000000",
+            "--max-memory-gb",
+            "0.001",
+        ]
+    )
+
+    assert exit_code == 3
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["kind"] == "capability"
+    assert "memory budget" in payload["error"]

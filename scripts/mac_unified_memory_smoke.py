@@ -368,9 +368,44 @@ def main(argv: list[str] | None = None) -> int:
     mode.add_argument("--dry-run", action="store_true", help="report capabilities without loading a model")
     parser.add_argument("--backend", choices=("auto", "mps", "cuda", "cpu"), default=None)
     parser.add_argument("--allow-cpu", action="store_true", help="allow auto mode to fall back to CPU")
+    parser.add_argument("--model-parameters", metavar="N", help="model parameter count used by the fit policy")
+    parser.add_argument("--max-memory-gb", metavar="GB", help="maximum memory budget for model selection")
+    parser.add_argument("--headroom", metavar="RATIO", help="reserved memory ratio (default: 0.2)")
+    parser.add_argument("--hidden-size", metavar="N", help="hidden width of the deterministic live model")
+    parser.add_argument("--batch-size", metavar="N", help="batch size of the deterministic live model")
+    parser.add_argument("--steps", metavar="N", help="number of measured inference steps")
+    parser.add_argument("--sparsity", metavar="RATIO", help="zero-weight ratio for the deterministic model")
     args = parser.parse_args(argv)
     try:
-        print(json.dumps(run_smoke(live=args.live, backend=args.backend, allow_cpu=args.allow_cpu), sort_keys=True))
+        values = dict(os.environ)
+        cli_overrides = {
+            "model_parameters": "GLUDD_SMOKE_MODEL_PARAMS",
+            "max_memory_gb": "GLUDD_SMOKE_MAX_MEMORY_GB",
+            "headroom": "GLUDD_SMOKE_HEADROOM",
+            "hidden_size": "GLUDD_SMOKE_HIDDEN_SIZE",
+            "batch_size": "GLUDD_SMOKE_BATCH_SIZE",
+            "steps": "GLUDD_SMOKE_STEPS",
+            "sparsity": "GLUDD_SMOKE_SPARSITY",
+        }
+        for argument, variable in cli_overrides.items():
+            value = getattr(args, argument)
+            if value is not None:
+                values[variable] = value
+        result = run_smoke(env=values, live=args.live, backend=args.backend, allow_cpu=args.allow_cpu)
+        if not result["model_fit"]["fits"]:
+            print(
+                json.dumps(
+                    {
+                        "ok": False,
+                        "error": "model does not fit within the memory budget",
+                        "kind": "capability",
+                        "result": result,
+                    },
+                    sort_keys=True,
+                )
+            )
+            return 3
+        print(json.dumps(result, sort_keys=True))
     except SmokeConfigError as exc:
         print(json.dumps({"ok": False, "error": str(exc), "kind": "config"}, sort_keys=True))
         return 2
