@@ -60,3 +60,9 @@ def test_collect_check_uses_project_collection_lock() -> None:
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
     target = makefile.split("collect-check:", 1)[1].split("\n\n", 1)[0]
     assert "scripts/collection_lock.py --run" in target
+
+
+def test_gate_refresh_uses_singleton_project_resource_lock() -> None:
+    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    target = makefile.split("gate-refresh:", 1)[1].split("\n\n", 1)[0]
+    assert "scripts/collection_lock.py --resource gate-refresh --run" in target

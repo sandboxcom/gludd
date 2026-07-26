@@ -23,11 +23,20 @@ except ModuleNotFoundError:  # pragma: no cover - direct script execution
     from resource_arbiter import resource_path
 
 
-def default_collection_lock() -> Path:
-    """Return the stable lock path for the current project checkout."""
+def default_resource_lock(resource: str = "collection") -> Path:
+    """Return a stable project-scoped lock path for one resource."""
 
-    configured = os.environ.get("GLUDD_COLLECTION_LOCK", "").strip()
-    return Path(configured).expanduser() if configured else resource_path("collection")
+    if resource == "collection":
+        configured = os.environ.get("GLUDD_COLLECTION_LOCK", "").strip()
+        if configured:
+            return Path(configured).expanduser()
+    return resource_path(resource)
+
+
+def default_collection_lock() -> Path:
+    """Return the stable lock path for repository-wide collection."""
+
+    return default_resource_lock()
 
 
 @contextmanager
@@ -71,10 +80,12 @@ def collection_lock(
             fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
-def run_locked(command: list[str], *, timeout: float | None = None) -> int:
-    """Run ``command`` while holding the current project's collection lock."""
+def run_locked(
+    command: list[str], *, timeout: float | None = None, resource: str = "collection"
+) -> int:
+    """Run ``command`` while holding one project-scoped resource lock."""
 
-    lock = default_collection_lock()
+    lock = default_resource_lock(resource)
     wait = float(os.environ.get("GLUDD_COLLECTION_LOCK_TIMEOUT", "900"))
     if timeout is not None:
         wait = timeout
@@ -88,11 +99,18 @@ def main(argv: list[str] | None = None) -> int:
     """Run a command under the project-scoped collection lock."""
 
     args = list(sys.argv[1:] if argv is None else argv)
+    resource = "collection"
+    if args[:1] == ["--resource"]:
+        if len(args) < 3:
+            print("usage: collection_lock.py --resource RESOURCE --run COMMAND [ARGS...]")
+            return 2
+        resource = args[1]
+        args = args[2:]
     if not args or args[0] != "--run" or len(args) == 1:
-        print("usage: collection_lock.py --run COMMAND [ARGS...]")
+        print("usage: collection_lock.py [--resource RESOURCE] --run COMMAND [ARGS...]")
         return 2
     try:
-        return run_locked(args[1:])
+        return run_locked(args[1:], resource=resource)
     except TimeoutError as exc:
         print(f"collection lock unavailable: {exc}", file=sys.stderr)
         return 75

@@ -18,6 +18,11 @@ is not sufficient evidence of ownership.
 | `lease_inventory` | One record per project, model, SearX, Terraform, gate, and E2E lease, including its namespaced path and owner. Resource names are unique within a snapshot. |
 | `worker_count` | Number of workers admitted for this project at snapshot time. |
 | `worker_limit` | Positive hard ceiling for admitted workers. `worker_count` must never exceed it. |
+| `leased_worker_count` | Count of unique top-level worker leases after singleton de-duplication. |
+| `top_level_worker_count` | Tracked worker roots whose parent is outside the tracked process set. |
+| `descendant_process_count` | Tracked child processes (pytest launchers, xdist workers, and shells) excluded from lease admission. |
+| `duplicate_worker_leases` | Singleton lease names observed more than once in this namespace; `gate-refresh` is rejected by its project lock and remains visible here if stale processes overlap. |
+| `leased_workers` | Auditable `{pid, task, lease}` records for admitted top-level leases. |
 
 The namespace is part of every lock identity. `project.lock`, `model.lock`,
 `searx.lock`, `terraform.lock`, `gate.lock`, `async-gate.lock`, and `e2e.lock`

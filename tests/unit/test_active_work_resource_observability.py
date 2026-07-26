@@ -8,6 +8,8 @@ import subprocess
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+from scripts.active_work_status import _resource_observability
+
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -111,3 +113,39 @@ def test_concurrent_project_resource_leases_are_unique_and_bounded() -> None:
         len(payload["resource_observability"]["lease_inventory"])
         for payload in payloads
     )
+
+
+def test_worker_accounting_separates_leases_from_descendant_processes() -> None:
+    """A gate parent and its pytest children count as one leased worker."""
+
+    processes = [
+        {"pid": "100", "ppid": "1", "command": "make gate-refresh", "task": "gate-refresh"},
+        {"pid": "101", "ppid": "100", "command": "pytest tests/unit", "task": "unit-tests"},
+        {"pid": "102", "ppid": "100", "command": "pytest tests/e2e", "task": "e2e-tests"},
+        {"pid": "200", "ppid": "1", "command": "pytest tests/e2e", "task": "e2e-tests"},
+    ]
+
+    evidence = _resource_observability(processes)
+
+    assert evidence["observed_worker_count"] == 4
+    assert evidence["top_level_worker_count"] == 2
+    assert evidence["descendant_process_count"] == 2
+    assert evidence["leased_worker_count"] == 2
+    assert evidence["worker_count"] == 2
+    assert evidence["duplicate_worker_leases"] == []
+
+
+def test_worker_accounting_reports_duplicate_gate_refresh_lease_owners() -> None:
+    """A duplicate gate owner is surfaced instead of inflating worker leases."""
+
+    processes = [
+        {"pid": "300", "ppid": "1", "command": "make gate-refresh", "task": "gate-refresh"},
+        {"pid": "301", "ppid": "1", "command": "make gate-refresh", "task": "gate-refresh"},
+    ]
+
+    evidence = _resource_observability(processes)
+
+    assert evidence["top_level_worker_count"] == 2
+    assert evidence["leased_worker_count"] == 1
+    assert evidence["worker_count"] == 1
+    assert evidence["duplicate_worker_leases"] == ["gate-refresh"]

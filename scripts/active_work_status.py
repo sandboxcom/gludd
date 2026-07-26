@@ -32,6 +32,7 @@ _WORKER_TASKS = frozenset(
         "typecheck",
     }
 )
+_SINGLETON_WORKER_LEASES = frozenset({"gate-refresh"})
 
 
 def _task_label(command: str) -> str:
@@ -148,11 +149,52 @@ def _worker_limit() -> int:
     return min(max(configured, 1), 128)
 
 
+def _worker_accounting(
+    processes: list[dict[str, str]], namespace: str
+) -> dict[str, object]:
+    """Separate top-level leases from tracked child processes.
+
+    ``ps`` reports every descendant (the gate shell, pytest launcher, and
+    xdist workers), but only top-level processes represent an admitted worker
+    lease.  Gate refresh is a singleton lease per project; duplicate roots are
+    reported and collapsed so a process-tree fan-out cannot inflate admission.
+    """
+
+    tracked = [process for process in processes if process["task"] in _WORKER_TASKS]
+    tracked_pids = {process["pid"] for process in tracked}
+    top_level = [process for process in tracked if process["ppid"] not in tracked_pids]
+    descendants = len(tracked) - len(top_level)
+
+    leased: list[dict[str, str]] = []
+    seen_singletons: set[str] = set()
+    duplicates: set[str] = set()
+    for process in top_level:
+        task = process["task"]
+        if task in _SINGLETON_WORKER_LEASES:
+            if task in seen_singletons:
+                duplicates.add(task)
+                continue
+            seen_singletons.add(task)
+            lease = f"{namespace}:{task}"
+        else:
+            lease = f"{namespace}:{task}:{process['pid']}"
+        leased.append({"pid": process["pid"], "task": task, "lease": lease})
+
+    return {
+        "observed_worker_count": len(tracked),
+        "top_level_worker_count": len(top_level),
+        "descendant_process_count": descendants,
+        "leased_worker_count": len(leased),
+        "duplicate_worker_leases": sorted(duplicates),
+        "leased_workers": leased,
+    }
+
+
 def _resource_observability(processes: list[dict[str, str]]) -> dict[str, object]:
     """Return project-scoped lease evidence and a bounded worker snapshot."""
     limit = _worker_limit()
-    observed = sum(process["task"] in _WORKER_TASKS for process in processes)
     root = resource_root(ROOT)
+    accounting = _worker_accounting(processes, root.name)
     lease_owner = f"pid:{os.getpid()}"
     lease_inventory = [
         {
@@ -168,9 +210,9 @@ def _resource_observability(processes: list[dict[str, str]]) -> dict[str, object
         "lease_owner": lease_owner,
         "leases": [str(resource_path(name, ROOT)) for name in _RESOURCE_LEASES],
         "lease_inventory": lease_inventory,
-        "worker_count": min(observed, limit),
+        "worker_count": min(int(accounting["leased_worker_count"]), limit),
         "worker_limit": limit,
-        "observed_worker_count": observed,
+        **accounting,
     }
 
 

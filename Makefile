@@ -3001,8 +3001,11 @@ dist-path-check:
 # the prior full gate run. This lets the agent prove partial gate green to
 # unblock commits while the gate-background test phase is still running.
 # Does NOT run the full test suite — that's what gate-background is for.
-.PHONY: gate-refresh
+.PHONY: gate-refresh _gate-refresh-body
 gate-refresh:
+	@$(UV) run python scripts/collection_lock.py --resource gate-refresh --run $(MAKE) --no-print-directory _gate-refresh-body
+
+_gate-refresh-body:
 	@if [ ! -f .gate-status ]; then \
 		echo "ERROR: .gate-status missing — no prior gate to refresh. Run 'make gate' first."; exit 1; \
 	fi; \
