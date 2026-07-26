@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-
 from general_ludd.skills.fetcher import RemoteSkillFetcher
 
 _URL = "https://raw.githubusercontent.com/example/repo/main/SKILL.md"
