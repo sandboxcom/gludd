@@ -17,7 +17,8 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-Runner = Callable[[list[str]], tuple[int, str, str]]
+RunnerResult = tuple[int, str, str] | str
+Runner = Callable[[list[str]], RunnerResult]
 
 _SHELL_METACHARS: frozenset[str] = frozenset(";&|`$<>(){}[]!*?#~\n\r\t \"'")
 
@@ -90,6 +91,25 @@ def _parse_json_stdout(stdout: str) -> list[dict[str, Any]]:
     return []
 
 
+def _run(runner: Runner, argv: list[str]) -> tuple[int, str, str]:
+    """Normalize injected runners while keeping the production tuple contract.
+
+    E2E callers commonly provide a function returning canned stdout directly;
+    production runners return ``(returncode, stdout, stderr)``.  Treat a string
+    result as successful stdout and retain the strict list-argv invocation.
+    """
+    try:
+        result = runner(argv)
+    except Exception as exc:
+        return 127, "", str(exc)
+    if isinstance(result, str):
+        return 0, result, ""
+    if isinstance(result, tuple) and len(result) == 3:
+        rc, stdout, stderr = result
+        return int(rc), str(stdout or ""), str(stderr or "")
+    raise TypeError("runner must return stdout or (returncode, stdout, stderr)")
+
+
 def _normalize_record(
     raw_item: dict[str, Any],
     ts: float,
@@ -148,7 +168,7 @@ class WindowsDefenderConnector:
             "AntispywareEnabled,RealTimeProtectionEnabled | ConvertTo-Json",
         ]
         try:
-            rc, out, err = self._runner(argv)
+            rc, out, err = _run(self._runner, argv)
             if rc == 0:
                 return {"ok": True, "detail": "Get-MpComputerStatus responded"}
             detail = (err or out or "").strip() or f"exit code {rc}"
@@ -209,7 +229,7 @@ class WindowsDefenderConnector:
 
     def _run_get_mp_computer_status(self) -> list[dict[str, Any]]:
         argv = _ps_command("Get-MpComputerStatus")
-        rc, out, _err = self._runner(argv)
+        rc, out, _err = _run(self._runner, argv)
         if rc != 0:
             return []
         return self._normalize_computer_status(out, "Get-MpComputerStatus")
@@ -235,7 +255,7 @@ class WindowsDefenderConnector:
 
     def _run_get_mp_preference(self) -> list[dict[str, Any]]:
         argv = _ps_command("Get-MpPreference")
-        rc, out, _err = self._runner(argv)
+        rc, out, _err = _run(self._runner, argv)
         if rc != 0:
             return []
         return self._normalize_preferences(out, "Get-MpPreference")
@@ -264,7 +284,7 @@ class WindowsDefenderConnector:
 
     def _run_get_mp_threat_detection(self) -> list[dict[str, Any]]:
         argv = _ps_command("Get-MpThreatDetection")
-        rc, out, _err = self._runner(argv)
+        rc, out, _err = _run(self._runner, argv)
         if rc != 0:
             return []
         return self._normalize_threats(out, "Get-MpThreatDetection")

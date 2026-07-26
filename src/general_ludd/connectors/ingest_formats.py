@@ -40,8 +40,10 @@ Three formats are covered:
 
 from __future__ import annotations
 
+import csv
 import json
 import struct
+from io import StringIO
 from typing import Any
 
 __all__ = [
@@ -76,6 +78,45 @@ _SYSLOG_LEVELS: dict[int, str] = {
 _GELF_CHUNK_MAGIC = b"\x1e\x0f"
 # magic(2) + message_id(8) + sequence_number(1) + sequence_count(1) = 12-byte header
 _GELF_CHUNK_HEADER_LEN = 12
+
+
+def _detect_format(payload: str | bytes) -> str:
+    """Classify a text payload as JSON, CSV, or plain text.
+
+    This is intentionally a conservative classifier for receiver helpers: JSON
+    decoding gets first refusal, CSV requires at least two consistent rows, and
+    every other value is treated as plain text.  It performs no I/O and never
+    raises for malformed or non-UTF-8 input.
+    """
+    if isinstance(payload, bytes):
+        try:
+            text = payload.decode("utf-8")
+        except UnicodeDecodeError:
+            return "plain"
+    elif isinstance(payload, str):
+        text = payload
+    else:
+        return "plain"
+
+    text = text.strip()
+    if not text:
+        return "plain"
+
+    try:
+        json.loads(text)
+    except (TypeError, ValueError):
+        pass
+    else:
+        return "json"
+
+    if "\n" in text or "\r" in text:
+        try:
+            rows = list(csv.reader(StringIO(text)))
+        except (csv.Error, ValueError):
+            rows = []
+        if len(rows) >= 2 and len(rows[0]) > 1 and all(len(row) == len(rows[0]) for row in rows[:2]):
+            return "csv"
+    return "plain"
 
 
 def _new_record(

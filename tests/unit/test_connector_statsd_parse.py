@@ -7,6 +7,8 @@ import pytest
 from general_ludd.connectors.statsd_parse import (
     StatsdParseError,
     StatsdParseSource,
+    _dispatch,
+    _strip_name,
 )
 
 
@@ -156,3 +158,20 @@ def test_query_limit() -> None:
     src = StatsdParseSource()
     recs = src.query({"lines": ["a:1|c", "b:2|c", "c:3|c"], "limit": 2})
     assert len(recs) == 2
+
+
+def test_legacy_dispatch_wrapper_is_fail_soft_and_normalizes_name() -> None:
+    records = _dispatch("stats.gauges.app.requests:1|c|@0.1|#host:web1")
+
+    assert len(records) == 1
+    assert records[0]["message"] == "app.requests"
+    assert records[0]["value"] == 1.0
+    assert records[0]["labels"]["metric_type"] == "counter"
+    assert records[0]["labels"]["sample_rate"] == "0.1"
+    assert records[0]["labels"]["host"] == "web1"
+    assert _dispatch("not a statsd line") == []
+
+
+def test_legacy_name_stripper_only_removes_known_statsd_prefixes() -> None:
+    assert _strip_name("stats.gauges.app.requests") == "app.requests"
+    assert _strip_name("service.requests") == "service.requests"

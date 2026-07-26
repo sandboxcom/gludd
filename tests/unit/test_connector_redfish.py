@@ -320,6 +320,32 @@ def test_health_not_ok_on_blocked_host() -> None:
     assert h["detail"] == "host validation failed"
 
 
+def test_empty_config_is_rejected_but_explicit_defaults_remain_valid() -> None:
+    with pytest.raises(ValueError, match="base_url"):
+        RedfishSource({})
+    assert RedfishSource({"allow_private": True}).name == "redfish"
+
+
+def test_httpx_style_transport_response_is_normalized() -> None:
+    class HttpxResponse:
+        status_code = 200
+
+        def json(self) -> dict[str, str]:
+            return {"RedfishVersion": "1.6.0"}
+
+    def transport(method: str, url: str, **kwargs: Any) -> HttpxResponse:
+        assert method == "GET"
+        assert url.endswith("/redfish/v1/")
+        return HttpxResponse()
+
+    src = RedfishSource(
+        {"base_url": "https://10.0.0.5", "allow_private": True},
+        transport=transport,
+        env=_env(),
+    )
+    assert src.health()["ok"] is True
+
+
 def test_query_does_not_raise_on_single_bad_resource() -> None:
     # 404 route for events -> .json() returns {} with no Members -> no events,
     # but a transport that throws for one chassis must be isolated by _safe.

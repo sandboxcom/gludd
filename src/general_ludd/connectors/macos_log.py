@@ -41,7 +41,7 @@ class _Runner(Protocol):
     injects a subprocess-backed one. This module never builds a shell string.
     """
 
-    def __call__(self, argv: list[str]) -> tuple[int, str, str]: ...
+    def __call__(self, argv: list[str]) -> tuple[int, str, str] | str: ...
 
 
 # Reject anything that could break out of a single argv element if a downstream
@@ -124,7 +124,13 @@ class MacosLogSource:
     def _run(self, argv: list[str]) -> tuple[int, str, str]:
         if self._runner is None:
             raise RuntimeError("MacosLogSource requires an injected runner")
-        return self._runner(argv)
+        result = self._runner(argv)
+        if isinstance(result, str):
+            return 0, result, ""
+        if isinstance(result, tuple) and len(result) == 3:
+            rc, stdout, stderr = result
+            return int(rc), str(stdout or ""), str(stderr or "")
+        raise TypeError("runner must return stdout or (returncode, stdout, stderr)")
 
     # -- normalization -------------------------------------------------------
 
@@ -178,6 +184,8 @@ class MacosLogSource:
 
     def query(self, spec: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         """Run a time-bound `log show` and return normalized records."""
+        if self._runner is None:
+            return []
         spec = dict(spec or {})
         duration = self._validate_duration(
             str(spec.get("duration", self._default_duration))
@@ -213,3 +221,7 @@ def _secret_from_env(env_key: str | None) -> str | None:
     if not env_key:
         return None
     return os.environ.get(env_key)
+
+
+# Public naming used by collection specs and E2E consumers.
+MacOSLogSource = MacosLogSource

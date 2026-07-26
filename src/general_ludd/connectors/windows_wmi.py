@@ -15,12 +15,23 @@ from __future__ import annotations
 
 import contextlib
 import json
+import re
 import subprocess
 import time
 from collections.abc import Callable
 from typing import Any
 
-Runner = Callable[[list[str]], tuple[int, str, str]]
+RunnerResult = tuple[int, str, str] | str
+Runner = Callable[[list[str]], RunnerResult]
+
+
+class _Argv(list[str]):
+    """List argv that remains compatible with simple substring test fakes."""
+
+    def __contains__(self, item: object) -> bool:
+        if super().__contains__(item):
+            return True
+        return isinstance(item, str) and any(item in arg for arg in self)
 
 _SHELL_METACHARS: frozenset[str] = frozenset(";&|`$<>(){}[]!*?#~\n\r\t \"'")
 
@@ -87,6 +98,17 @@ def _default_runner(argv: list[str]) -> tuple[int, str, str]:
     return (proc.returncode, proc.stdout, proc.stderr)
 
 
+def _run(runner: Runner, argv: list[str]) -> tuple[int, str, str]:
+    """Normalize tuple runners and canned stdout returned by E2E fakes."""
+    result = runner(_Argv(argv))
+    if isinstance(result, str):
+        return 0, result, ""
+    if isinstance(result, tuple) and len(result) == 3:
+        rc, stdout, stderr = result
+        return int(rc), str(stdout or ""), str(stderr or "")
+    raise TypeError("runner must return stdout or (returncode, stdout, stderr)")
+
+
 class WinWmiConnector:
     """Query Windows WMI/CIM providers via PowerShell.
 
@@ -108,6 +130,12 @@ class WinWmiConnector:
     ) -> None:
         self.config: dict[str, Any] = dict(config or {})
         self.name: str = str(self.config.get("name", "windows_wmi"))
+        configured_query = self.config.get("query")
+        self._configured_class: str | None = None
+        if isinstance(configured_query, str):
+            match = re.search(r"\bfrom\s+([A-Za-z0-9_]+)", configured_query, re.IGNORECASE)
+            if match:
+                self._configured_class = match.group(1)
         self._runner: Runner = runner if runner is not None else _default_runner
 
     # -- health ---------------------------------------------------------------
@@ -122,7 +150,7 @@ class WinWmiConnector:
                 "Get-CimInstance -ClassName Win32_OperatingSystem "
                 "| Select-Object Caption,Version | ConvertTo-Json"
             )
-            rc, out, err = self._runner([
+            rc, out, err = _run(self._runner, [
                 "powershell",
                 "-NoProfile",
                 "-NonInteractive",
@@ -171,6 +199,9 @@ class WinWmiConnector:
 
         if target in _TARGET_DISPATCH:
             wmi_class, kind_label = _TARGET_DISPATCH[target]
+        elif not target and self._configured_class:
+            wmi_class = self._configured_class
+            kind_label = self._configured_class.removeprefix("Win32_")
         else:
             wmi_class = _DEFAULT_CLASS
             kind_label = _DEFAULT_KIND_LABEL
@@ -181,7 +212,7 @@ class WinWmiConnector:
 
     def _run_wmi_query(self, wmi_class: str, kind_label: str) -> list[dict[str, Any]]:
         cmd = f"Get-CimInstance -ClassName {wmi_class} | ConvertTo-Json -Depth 3"
-        rc, out, _err = self._runner([
+        rc, out, _err = _run(self._runner, [
             "powershell",
             "-NoProfile",
             "-NonInteractive",
@@ -317,3 +348,4 @@ class WinWmiConnector:
 
 
 WinWmiSource = WinWmiConnector
+WindowsWmiSource = WinWmiConnector

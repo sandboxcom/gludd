@@ -28,6 +28,7 @@ raw``.
 from __future__ import annotations
 
 import base64
+import inspect
 import json
 import logging
 import os
@@ -116,6 +117,8 @@ class RedfishSource:
         transport: Transport | None = None,
         env: dict[str, str] | None = None,
     ) -> None:
+        if config is None or (isinstance(config, dict) and not config):
+            raise ValueError("config requires 'base_url'")
         if isinstance(config, RedfishConfig):
             self.config = config
         else:
@@ -170,12 +173,41 @@ class RedfishSource:
         base = self._validate_host()
         url = f"{base}/{path.lstrip('/')}"
         headers = {"Accept": "application/json", **self._auth_header()}
-        return self._transport(
-            url,
-            headers=headers,
-            timeout=self.config.timeout_seconds,
-            verify=self.config.verify_tls,
-        )
+        transport = self._transport
+        # Accept both the native URL-first transport and the common httpx-style
+        # ``(method, url, ...)`` callable used by connector integrations.
+        try:
+            params = inspect.signature(transport).parameters.values()
+            required = [
+                p
+                for p in params
+                if p.kind
+                in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
+                and p.default is inspect.Parameter.empty
+            ]
+        except (TypeError, ValueError):
+            required = []
+        if len(required) >= 2:
+            raw = transport(
+                "GET",
+                url,
+                headers=headers,
+                timeout=self.config.timeout_seconds,
+                verify=self.config.verify_tls,
+            )
+        else:
+            raw = transport(
+                url,
+                headers=headers,
+                timeout=self.config.timeout_seconds,
+                verify=self.config.verify_tls,
+            )
+        if isinstance(raw, TransportResponse):
+            return raw
+        status = getattr(raw, "status", getattr(raw, "status_code", 0))
+        payload = raw.json() if callable(getattr(raw, "json", None)) else {}
+        body = payload if isinstance(payload, str) else json.dumps(payload)
+        return TransportResponse(int(status), body)
 
     # ---- health ------------------------------------------------------------
     def health(self) -> dict[str, Any]:

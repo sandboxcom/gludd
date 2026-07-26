@@ -59,7 +59,8 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 # Injectable runner signature: (argv) -> (returncode, stdout, stderr)
-Runner = Callable[[Sequence[str]], "tuple[int, str, str]"]
+RunnerResult = tuple[int, str, str] | str
+Runner = Callable[[Sequence[str]], RunnerResult]
 
 KIND = "logs"
 
@@ -120,6 +121,17 @@ def _default_runner(argv: Sequence[str]) -> tuple[int, str, str]:
         logger.warning("windows_event_log runner error", exc_info=True)
         return 1, "", type(exc).__name__
     return proc.returncode, proc.stdout, proc.stderr
+
+
+def _run(runner: Runner, argv: Sequence[str]) -> tuple[int, str, str]:
+    """Normalize tuple runners and canned-stdout runners used by E2E tests."""
+    result = runner(argv)
+    if isinstance(result, str):
+        return 0, result, ""
+    if isinstance(result, tuple) and len(result) == 3:
+        rc, stdout, stderr = result
+        return int(rc), str(stdout or ""), str(stderr or "")
+    raise TypeError("runner must return stdout or (returncode, stdout, stderr)")
 
 
 def _reject_metachars(value: str, field: str) -> None:
@@ -243,7 +255,7 @@ class WindowsEventLogSource:
 
     KIND = KIND
 
-    def __init__(self, config: dict[str, Any], runner: Runner | None = None) -> None:
+    def __init__(self, config: dict[str, Any] | None = None, runner: Runner | None = None) -> None:
         config = config or {}
         backend = str(config.get("backend", "powershell")).strip().lower()
         if backend not in ("powershell", "wevtutil"):
@@ -330,6 +342,8 @@ class WindowsEventLogSource:
             value = float(raw_id) if raw_id is not None and not isinstance(raw_id, bool) else None
         except (TypeError, ValueError):
             value = None
+        if raw_id is not None and message:
+            message = f"{raw_id}: {message}"
 
         labels: dict[str, str] = {}
         for key, src in (
@@ -426,7 +440,7 @@ class WindowsEventLogSource:
             argv = self._wevtutil_query_argv(channel, count)
 
         try:
-            rc, stdout, stderr = self._runner(argv)
+            rc, stdout, stderr = _run(self._runner, argv)
         except Exception:  # surfaced as a record, never raised
             logger.warning("runner error in query", exc_info=True)
             return [self._error_record("runner error", {"argv": list(argv)})]
@@ -461,7 +475,7 @@ class WindowsEventLogSource:
             argv = self._wevtutil_health_argv(channel)
 
         try:
-            rc, _stdout, stderr = self._runner(argv)
+            rc, _stdout, stderr = _run(self._runner, argv)
         except Exception:  # health must never raise
             logger.warning("health check failed", exc_info=True)
             return {"ok": False, "source": self.name, "detail": "health check failed"}

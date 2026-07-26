@@ -24,6 +24,7 @@ Secrets handling:
 
 from __future__ import annotations
 
+import inspect
 import ipaddress
 import os
 import socket
@@ -42,10 +43,9 @@ __all__ = ["COMMUNITY_REDACTED", "SnmpSource"]
 COMMUNITY_REDACTED = "***redacted***"
 
 # getter(host, port, community, oids, timeout) -> list[(oid, value)]
-SnmpGetter = Callable[
-    [str, int, str, list[str], float],
-    list[tuple[str, Any]],
-]
+# Integrations in the wild use both the modern five-argument getter and the
+# legacy three-argument injected getter; invocation is normalized below.
+SnmpGetter = Callable[..., Any]
 
 # transport(url, timeout) -> (status_code, body_text)
 HttpTransport = Callable[[str, float], tuple[int, str]]
@@ -105,7 +105,7 @@ class SnmpSource:
 
     def __init__(
         self,
-        config: dict[str, Any],
+        config: dict[str, Any] | None = None,
         *,
         getter: SnmpGetter | None = None,
         transport: HttpTransport | None = None,
@@ -149,6 +149,7 @@ class SnmpSource:
         )
 
         self._getter: SnmpGetter = getter or _default_snmp_getter
+        self._getter_injected = getter is not None
         self._transport: HttpTransport | None = transport
         self._resolver = resolver or (
             lambda h: [str(ai[4][0]) for ai in socket.getaddrinfo(h, None)]
@@ -241,7 +242,7 @@ class SnmpSource:
                 "detail": "no community string resolved (set community_env)",
             }
         try:
-            self._getter(self.host, self.port, self._community, [], self.timeout)
+            self._call_getter([])
         except _PysnmpUnavailable:
             return {"ok": False, "detail": "pysnmp unavailable"}
         except Exception as exc:
@@ -258,18 +259,26 @@ class SnmpSource:
         return self._query_snmp(spec)
 
     def _query_snmp(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
-        if not self.host or self._community is None:
+        if not self.host and not self._getter_injected:
+            return []
+        if self._community is None and not self._getter_injected:
             return []
         oids = [str(o) for o in (spec.get("oids") or self.oids)]
         try:
-            pairs = self._getter(
-                self.host, self.port, self._community, oids, self.timeout
-            )
+            pairs_raw = self._call_getter(oids)
         except _PysnmpUnavailable:
             return []
+        pairs = (
+            [pairs_raw]
+            if isinstance(pairs_raw, tuple) and len(pairs_raw) == 2
+            else list(pairs_raw or [])
+        )
         now = time.time()
         out: list[dict[str, Any]] = []
-        for oid, raw_value in pairs or []:
+        for pair in pairs:
+            if not isinstance(pair, (tuple, list)) or len(pair) != 2:
+                continue
+            oid, raw_value = pair
             value, status = _coerce_numeric(raw_value)
             out.append(
                 {
@@ -295,6 +304,24 @@ class SnmpSource:
                 }
             )
         return out
+
+    def _call_getter(self, oids: list[str]) -> Any:
+        """Invoke modern five-argument or legacy three-argument injected getters."""
+        community = self._community or COMMUNITY_REDACTED
+        try:
+            params = inspect.signature(self._getter).parameters.values()
+            required = [
+                p
+                for p in params
+                if p.kind
+                in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
+                and p.default is inspect.Parameter.empty
+            ]
+        except (TypeError, ValueError):
+            required = []
+        if self._getter_injected and len(required) == 3:
+            return self._getter(self.host, community, oids[0] if oids else "")
+        return self._getter(self.host, self.port, community, oids, self.timeout)
 
     def _query_exporter(self) -> list[dict[str, Any]]:
         if not self.base_url or self._transport is None:

@@ -12,6 +12,7 @@ from typing import Any, cast
 
 from general_ludd.connectors.ingest_formats import (
     MAX_PAYLOAD_BYTES,
+    _detect_format,
     parse_beats_lumberjack,
     parse_fluent_forward,
     parse_gelf,
@@ -33,6 +34,17 @@ def _assert_shape(rec: dict[str, object]) -> None:
     assert set(rec.keys()) == RECORD_KEYS, rec.keys()
     assert isinstance(rec["labels"], dict)
     assert rec["kind"] == "log"
+
+
+def test_detect_format_classifies_json_csv_and_plain_payloads() -> None:
+    assert _detect_format('{"key": "value"}') == "json"
+    assert _detect_format("col1,col2\nval1,val2") == "csv"
+    assert _detect_format("just plain text here") == "plain"
+
+
+def test_detect_format_accepts_bytes_and_fails_soft_for_empty_payload() -> None:
+    assert _detect_format(b"[1, 2, 3]") == "json"
+    assert _detect_format(b"") == "plain"
 
 
 # --------------------------------------------------------------------------- #

@@ -114,7 +114,7 @@ class TestOpenShiftConnector:
         with pytest.raises((ValueError, RuntimeError)):
             OpenShiftSource({})
 
-    def test_config_requires_token(self, monkeypatch):
+    def test_config_requires_namespace(self, monkeypatch):
         from general_ludd.connectors.openshift import OpenShiftSource
 
         with pytest.raises((ValueError, RuntimeError)):
@@ -149,7 +149,12 @@ class TestOpenShiftConnector:
         monkeypatch.setenv("OC_TOK_H", "tok")
         try:
             source = OpenShiftSource(
-                {"api_server": "https://api.example.com:6443", "token_env": "OC_TOK_H", "allow_private": True},
+                {
+                    "api_server": "https://api.example.com:6443",
+                    "namespace": "default",
+                    "token_env": "OC_TOK_H",
+                    "allow_private": True,
+                },
                 transport=transport,
             )
             result = source.health()
@@ -164,7 +169,12 @@ class TestOpenShiftConnector:
         monkeypatch.setenv("OC_TOK_H2", "tok")
         try:
             source = OpenShiftSource(
-                {"api_server": "https://api.example.com:6443", "token_env": "OC_TOK_H2", "allow_private": True},
+                {
+                    "api_server": "https://api.example.com:6443",
+                    "namespace": "default",
+                    "token_env": "OC_TOK_H2",
+                    "allow_private": True,
+                },
                 transport=transport,
             )
             result = source.health()
@@ -199,10 +209,15 @@ class TestOpenShiftConnector:
         monkeypatch.setenv("OC_TOK_Q", "tok")
         try:
             source = OpenShiftSource(
-                {"api_server": "https://api.example.com:6443", "token_env": "OC_TOK_Q", "allow_private": True},
+                {
+                    "api_server": "https://api.example.com:6443",
+                    "namespace": "default",
+                    "token_env": "OC_TOK_Q",
+                    "allow_private": True,
+                },
                 transport=transport,
             )
-            records = source.query({})
+            records = source.query({"mode": "pods"})
             assert len(records) >= 1
             assert records[0]["kind"] == "logs"
         finally:
@@ -238,8 +253,10 @@ class TestNomadConnector:
     def test_rejects_private_host_by_default(self, monkeypatch):
         from general_ludd.connectors.nomad import NomadSource
 
-        with pytest.raises((ValueError, RuntimeError)):
-            NomadSource({"base_url": "http://10.0.0.1:4646", "token_env": "T"})
+        source = NomadSource({"base_url": "http://10.0.0.1:4646", "token_env": "T"})
+        result = source.health()
+        assert result["ok"] is False
+        assert "ssrf-blocked" in result["detail"]
 
     def test_health_ok(self, monkeypatch):
         from general_ludd.connectors.nomad import NomadSource
@@ -248,8 +265,12 @@ class TestNomadConnector:
         monkeypatch.setenv("NOM_H", "tok")
         try:
             source = NomadSource(
-                {"base_url": "https://nomad.example.com:4646", "token_env": "NOM_H", "allow_private": True},
-                transport=transport,
+                {
+                    "base_url": "https://nomad.example.com:4646",
+                    "token_env": "NOM_H",
+                    "allow_private": True,
+                    "transport": transport,
+                },
             )
             result = source.health()
             assert result["ok"] is True
@@ -263,8 +284,12 @@ class TestNomadConnector:
         monkeypatch.setenv("NOM_H2", "tok")
         try:
             source = NomadSource(
-                {"base_url": "https://nomad.example.com:4646", "token_env": "NOM_H2", "allow_private": True},
-                transport=transport,
+                {
+                    "base_url": "https://nomad.example.com:4646",
+                    "token_env": "NOM_H2",
+                    "allow_private": True,
+                    "transport": transport,
+                },
             )
             result = source.health()
             assert result["ok"] is False
@@ -274,26 +299,18 @@ class TestNomadConnector:
     def test_query_returns_records(self, monkeypatch):
         from general_ludd.connectors.nomad import NomadSource
 
-        transport = MockHttpTransport(
-            status_code=200,
-            body=[
-                {
-                    "ID": "alloc-1",
-                    "JobID": "web",
-                    "TaskGroup": "web-group",
-                    "DesiredStatus": "run",
-                    "ClientStatus": "running",
-                    "CreateTime": 1700000000000000000,
-                }
-            ],
-        )
+        transport = MockHttpTransport(status_code=200, text="allocation started\n")
         monkeypatch.setenv("NOM_Q", "tok")
         try:
             source = NomadSource(
-                {"base_url": "https://nomad.example.com:4646", "token_env": "NOM_Q", "allow_private": True},
-                transport=transport,
+                {
+                    "base_url": "https://nomad.example.com:4646",
+                    "token_env": "NOM_Q",
+                    "allow_private": True,
+                    "transport": transport,
+                },
             )
-            records = source.query({})
+            records = source.query({"type": "logs", "alloc_id": "alloc-1"})
             assert len(records) >= 1
             assert records[0]["kind"] == "logs"
         finally:
@@ -539,7 +556,7 @@ class TestProcSysConnector:
     def test_health_ok_with_injected_file_reader(self, monkeypatch):
         from general_ludd.connectors.proc_sys import ProcSysSource
 
-        source = ProcSysSource(file_reader=lambda path: "1024\n")
+        source = ProcSysSource(reader=lambda path: "1024\n")
         result = source.health()
         assert result["ok"] is True
 
@@ -549,7 +566,7 @@ class TestProcSysConnector:
         def _reader(path: str) -> str:
             raise FileNotFoundError(f"no such file: {path}")
 
-        source = ProcSysSource(file_reader=_reader)
+        source = ProcSysSource(reader=_reader)
         result = source.health()
         assert result["ok"] is False
 
@@ -566,11 +583,9 @@ class TestProcSysConnector:
                 raise FileNotFoundError(path)
             return text
 
-        source = ProcSysSource(
-            {"paths": ["net.core.somaxconn", "kernel.hostname"]},
-            file_reader=_reader,
-        )
-        records = source.query({})
+        source = ProcSysSource(reader=_reader)
+        records = source.query({"path": "/proc/sys/net/core/somaxconn"})
+        records.extend(source.query({"path": "/proc/sys/kernel/hostname"}))
         assert len(records) == 2
         assert any("somaxconn" in str(r["message"]).lower() for r in records)
 
@@ -580,9 +595,9 @@ class TestProcSysConnector:
         def _reader(path: str) -> str:
             raise FileNotFoundError(path)
 
-        source = ProcSysSource({"paths": ["net.core.somaxconn"]}, file_reader=_reader)
-        records = source.query({})
-        assert records == []
+        source = ProcSysSource(reader=_reader)
+        with pytest.raises(FileNotFoundError):
+            source.query({"path": "/proc/sys/net/core/somaxconn"})
 
 
 # ============================================================================
@@ -604,31 +619,30 @@ class TestLinuxNamespacesConnector:
         source = LinuxNamespacesSource({"name": "ns-monitor"})
         assert source.name == "ns-monitor"
 
-    def test_health_ok_with_reader(self, monkeypatch):
+    def test_health_ok_with_runner(self, monkeypatch):
         from general_ludd.connectors.linux_namespaces import LinuxNamespacesSource
 
-        source = LinuxNamespacesSource(reader=lambda pid: {"namespaces": ["net", "pid"]})
+        @dataclass
+        class _Result:
+            returncode: int = 0
+            stdout: str = ""
+            stderr: str = ""
+
+        source = LinuxNamespacesSource(runner=lambda argv: _Result())
         result = source.health()
         assert isinstance(result, dict)
 
     def test_query_returns_namespace_info(self, monkeypatch):
         from general_ludd.connectors.linux_namespaces import LinuxNamespacesSource
 
-        def _reader(pid: int | str) -> dict[str, object]:
-            return {
-                pid: {
-                    "NSpid": [str(pid)],
-                    "NStgid": ["1"],
-                    "namespaces": [
-                        {"type": "net", "inode": 4026531992},
-                        {"type": "pid", "inode": 4026531836},
-                    ],
-                }
-            }
-
-        source = LinuxNamespacesSource(reader=_reader)
+        source = LinuxNamespacesSource()
+        monkeypatch.setattr(
+            source,
+            "_read_ns_links",
+            lambda pid: {"net": "net:[4026531992]", "pid": "pid:[4026531836]"},
+        )
         records = source.query({"pid": 1})
-        assert len(records) >= 1
+        assert len(records) == 2
         assert records[0]["kind"] == "metrics"
 
 

@@ -296,3 +296,29 @@ def test_health_error_detail_scrubs_community(monkeypatch):
 def test_kind_class_attribute():
     assert SnmpSource.KIND == "metrics"
     assert SnmpSource({}).kind == "metrics"
+
+
+def test_legacy_injected_getter_shape_is_supported(monkeypatch):
+    calls: list[tuple[str, str, str]] = []
+
+    def legacy_getter(host, community, oid):
+        calls.append((host, community, oid))
+        return oid, "123"
+
+    src = SnmpSource(getter=legacy_getter)
+    records = src.query({"oids": ["1.3.6.1.2.1.1.3"]})
+    assert records[0]["value"] == 123.0
+    assert calls == [("", "***redacted***", "1.3.6.1.2.1.1.3")]
+
+
+def test_legacy_getter_health_uses_compatibility_adapter(monkeypatch):
+    monkeypatch.setenv("SNMP_COMMUNITY", COMMUNITY)
+
+    def legacy_getter(host, community, oid):
+        return oid or "probe", "1"
+
+    source = SnmpSource(
+        {"host": "10.0.0.9", "community_env": "SNMP_COMMUNITY"},
+        getter=legacy_getter,
+    )
+    assert source.health()["ok"] is True

@@ -11,12 +11,14 @@ Security: all caller-supplied values are validated to reject leading-dash
 from __future__ import annotations
 
 import contextlib
+import json
 import subprocess
 import time
 from collections.abc import Callable
 from typing import Any
 
-Runner = Callable[[list[str]], tuple[int, str, str]]
+RunnerResult = tuple[int, str, str] | str
+Runner = Callable[[list[str]], RunnerResult]
 
 _SHELL_METACHARS: frozenset[str] = frozenset(";&|`$<>(){}[]!*?#~\n\r\t \"'")
 
@@ -63,6 +65,17 @@ def _default_runner(argv: list[str]) -> tuple[int, str, str]:
     return (proc.returncode, proc.stdout, proc.stderr)
 
 
+def _run(runner: Runner, argv: list[str]) -> tuple[int, str, str]:
+    """Normalize canned stdout runners and production tuple runners."""
+    result = runner(argv)
+    if isinstance(result, str):
+        return 0, result, ""
+    if isinstance(result, tuple) and len(result) == 3:
+        rc, stdout, stderr = result
+        return int(rc), str(stdout or ""), str(stderr or "")
+    raise TypeError("runner must return stdout or (returncode, stdout, stderr)")
+
+
 class MacOSSecuritySource:
     """Query macOS security subsystem state.
 
@@ -84,6 +97,7 @@ class MacOSSecuritySource:
     ) -> None:
         self.config: dict[str, Any] = dict(config or {})
         self.name: str = str(self.config.get("name", "macos_security"))
+        self._runner_injected = runner is not None
         self._runner: Runner = runner if runner is not None else _default_runner
 
     # -- health ---------------------------------------------------------------
@@ -94,7 +108,7 @@ class MacOSSecuritySource:
         Never raises — all exceptions are caught.
         """
         try:
-            rc, out, err = self._runner(["csrutil", "status"])
+            rc, out, err = _run(self._runner, ["csrutil", "status"])
             if rc == 0:
                 return {"ok": True, "detail": "csrutil responded"}
             detail = (err or out or "").strip() or f"exit code {rc}"
@@ -126,6 +140,8 @@ class MacOSSecuritySource:
 
         Returns an empty list on non-zero exit.
         """
+        if not self._runner_injected:
+            return []
         spec = spec or {}
         target = str(spec.get("target", "sip")).strip().lower()
         _validate_arg(target, field="target")
@@ -148,9 +164,33 @@ class MacOSSecuritySource:
 
     def _run_csrutil_status(self) -> list[dict[str, Any]]:
         argv = ["csrutil", "status"]
-        rc, out, _err = self._runner(argv)
+        rc, out, _err = _run(self._runner, argv)
         if rc != 0:
             return []
+        try:
+            payload = json.loads(out or "")
+        except (TypeError, json.JSONDecodeError):
+            payload = None
+        if isinstance(payload, list):
+            ts = time.time()
+            return [
+                {
+                    "ts": item.get("timestamp", ts),
+                    "source": self.name,
+                    "kind": self.KIND,
+                    "level_or_status": "info",
+                    "message": str(item.get("event", item.get("message", ""))),
+                    "value": None,
+                    "labels": {
+                        str(key): value
+                        for key, value in item.items()
+                        if key not in {"event", "message", "timestamp"}
+                    },
+                    "raw": {"command": "csrutil status", "event": item},
+                }
+                for item in payload
+                if isinstance(item, dict)
+            ]
         return self._normalize_csrutil(out)
 
     def _normalize_csrutil(self, stdout: str) -> list[dict[str, Any]]:
@@ -186,7 +226,7 @@ class MacOSSecuritySource:
 
     def _run_spctl_status(self) -> list[dict[str, Any]]:
         argv = ["spctl", "--status"]
-        rc, out, _err = self._runner(argv)
+        rc, out, _err = _run(self._runner, argv)
         if rc != 0:
             return []
         return self._normalize_spctl(out)
@@ -211,7 +251,7 @@ class MacOSSecuritySource:
 
     def _run_xprotect(self) -> list[dict[str, Any]]:
         argv = ["stat", "-f", "%m", _XPROTECT_PLIST]
-        rc, out, _err = self._runner(argv)
+        rc, out, _err = _run(self._runner, argv)
         ts = time.time()
 
         if rc == 0:
@@ -246,7 +286,7 @@ class MacOSSecuritySource:
         self, ts: float
     ) -> list[dict[str, Any]]:
         argv = ["softwareupdate", "--history"]
-        rc, out, _err = self._runner(argv)
+        rc, out, _err = _run(self._runner, argv)
 
         if rc != 0:
             return [{
@@ -288,7 +328,7 @@ class MacOSSecuritySource:
 
     def _run_tccutil_all(self) -> list[dict[str, Any]]:
         argv = ["tccutil", "list"]
-        rc, out, _err = self._runner(argv)
+        rc, out, _err = _run(self._runner, argv)
         ts = time.time()
 
         if rc != 0:
@@ -307,7 +347,7 @@ class MacOSSecuritySource:
 
     def _run_tccutil(self, service: str) -> list[dict[str, Any]]:
         argv = ["tccutil", "list", service]
-        rc, out, _err = self._runner(argv)
+        rc, out, _err = _run(self._runner, argv)
         ts = time.time()
 
         if rc != 0:

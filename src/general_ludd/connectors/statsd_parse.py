@@ -35,6 +35,43 @@ from typing import Any
 from general_ludd.connectors.normalize import sanitize_metric_value
 
 _VALID_TYPES = {"c", "g", "ms", "h", "s"}
+_NAME_PREFIXES = frozenset({"counters", "gauges", "histograms", "sets", "timers"})
+
+
+def _strip_name(name: str) -> str:
+    """Remove the conventional ``stats.<type>.`` envelope from a metric.
+
+    Some callers used the original parser's small functional API, which stripped
+    this transport prefix before emitting a record.  The class parser keeps names
+    untouched; this helper preserves that legacy behavior without changing the
+    canonical :class:`StatsdParseSource` contract.
+    """
+    parts = name.split(".")
+    if len(parts) > 2 and parts[0] == "stats" and parts[1] in _NAME_PREFIXES:
+        return ".".join(parts[2:])
+    return name
+
+
+def _dispatch(line: str) -> list[dict[str, Any]]:
+    """Compatibility wrapper for parsing one StatsD line.
+
+    The historical functional parser returned an empty list for malformed input,
+    and preserved the sample-rate token as text.  Keep that behavior while
+    delegating all validation and normalization to ``StatsdParseSource``.
+    """
+    try:
+        record = StatsdParseSource().parse_line(str(line))
+    except StatsdParseError:
+        return []
+
+    record["message"] = _strip_name(str(record["message"]))
+    type_names = {"c": "counter", "g": "gauge", "ms": "timer", "h": "histogram", "s": "set"}
+    record["labels"]["metric_type"] = type_names[str(record["level_or_status"])]
+    for field in str(line).split("|")[2:]:
+        if field.startswith("@"):
+            record["labels"]["sample_rate"] = field[1:]
+            break
+    return [record]
 
 
 class StatsdParseError(ValueError):
