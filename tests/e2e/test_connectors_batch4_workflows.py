@@ -1030,7 +1030,7 @@ class TestLinearConnector:
         monkeypatch.setenv("LIN_TOK", "lin-api-key")
         try:
             source = LinearSource({"token_env": "LIN_TOK", "team_id": "TEAM1"})
-            assert source.KIND == "issues"
+            assert source.KIND == "tickets"
         finally:
             del os.environ["LIN_TOK"]
 
@@ -1043,7 +1043,9 @@ class TestLinearConnector:
         )
         monkeypatch.setenv("LIN_H", "tok")
         try:
-            source = LinearSource({"token_env": "LIN_H"}, transport=transport)
+            source = LinearSource(
+                {"token_env": "LIN_H", "team_id": "T1"}, transport=transport
+            )
             result = source.health()
             assert result["ok"] is True
         finally:
@@ -1055,7 +1057,9 @@ class TestLinearConnector:
         transport = MockHttpResponseTransport(status_code=401, body={"errors": [{"message": "unauthorized"}]})
         monkeypatch.setenv("LIN_H2", "tok")
         try:
-            source = LinearSource({"token_env": "LIN_H2"}, transport=transport)
+            source = LinearSource(
+                {"token_env": "LIN_H2", "team_id": "T1"}, transport=transport
+            )
             result = source.health()
             assert result["ok"] is False
         finally:
@@ -1092,7 +1096,7 @@ class TestLinearConnector:
             source = LinearSource({"token_env": "LIN_Q", "team_id": "T1"}, transport=transport)
             records = source.query({})
             assert len(records) == 1
-            assert records[0]["kind"] == "issues"
+            assert records[0]["kind"] == "tickets"
             assert "Fix login bug" in str(records[0]["message"])
         finally:
             del os.environ["LIN_Q"]
@@ -1105,7 +1109,9 @@ class TestLinearConnector:
 
         monkeypatch.setenv("LIN_ERR", "tok")
         try:
-            source = LinearSource({"token_env": "LIN_ERR"}, transport=_fail)
+            source = LinearSource(
+                {"token_env": "LIN_ERR", "team_id": "T1"}, transport=_fail
+            )
             records = source.query({})
             assert records == []
         finally:
@@ -1142,9 +1148,8 @@ class TestNotionConnector:
             source = NotionSource({
                 "token_env": "NOT_TOK",
                 "database_id": "db123",
-                "name": "my-notion",
             })
-            assert source.name == "my-notion"
+            assert source.name == "notion"
         finally:
             del os.environ["NOT_TOK"]
 
@@ -1233,7 +1238,7 @@ class TestTrelloConnector:
                 "token_env": "TRELLO_TOKEN",
                 "board_id": "board1",
             })
-            assert source.KIND == "cards"
+            assert source.KIND == "tasks"
         finally:
             del os.environ["TRELLO_KEY"], os.environ["TRELLO_TOKEN"]
 
@@ -1293,7 +1298,7 @@ class TestTrelloConnector:
             )
             records = source.query({})
             assert len(records) >= 1
-            assert records[0]["kind"] == "cards"
+            assert records[0]["kind"] == "tasks"
             assert "Fix bug" in str(records[0]["message"])
         finally:
             del os.environ["TK3"], os.environ["TT3"]
@@ -1332,7 +1337,7 @@ class TestAirtableConnector:
         monkeypatch.setenv("AT_H", "tok")
         try:
             source = AirtableSource(
-                {"token_env": "AT_H", "base_id": "app1"},
+                {"token_env": "AT_H", "base_id": "app1", "table_name": "Tasks"},
                 transport=transport,
             )
             result = source.health()
@@ -1347,7 +1352,7 @@ class TestAirtableConnector:
         monkeypatch.setenv("AT_H2", "tok")
         try:
             source = AirtableSource(
-                {"token_env": "AT_H2", "base_id": "app1"},
+                {"token_env": "AT_H2", "base_id": "app1", "table_name": "Tasks"},
                 transport=transport,
             )
             result = source.health()
@@ -1373,7 +1378,7 @@ class TestAirtableConnector:
         monkeypatch.setenv("AT_Q", "tok")
         try:
             source = AirtableSource(
-                {"token_env": "AT_Q", "base_id": "app1"},
+                {"token_env": "AT_Q", "base_id": "app1", "table_name": "Tasks"},
                 transport=transport,
             )
             records = source.query({})
@@ -1402,10 +1407,9 @@ class TestAsanaConnector:
         try:
             source = AsanaSource({
                 "token_env": "ASANA_TOK",
-                "workspace_gid": "ws1",
-                "name": "my-asana",
+                "project_gid": "project1",
             })
-            assert source.name == "my-asana"
+            assert source.name == "asana"
         finally:
             del os.environ["ASANA_TOK"]
 
@@ -1416,7 +1420,7 @@ class TestAsanaConnector:
         monkeypatch.setenv("AS_H", "tok")
         try:
             source = AsanaSource(
-                {"token_env": "AS_H"},
+                {"token_env": "AS_H", "project_gid": "project1"},
                 transport=transport,
             )
             result = source.health()
@@ -1431,7 +1435,7 @@ class TestAsanaConnector:
         monkeypatch.setenv("AS_H2", "tok")
         try:
             source = AsanaSource(
-                {"token_env": "AS_H2"},
+                {"token_env": "AS_H2", "project_gid": "project1"},
                 transport=transport,
             )
             result = source.health()
@@ -1460,7 +1464,7 @@ class TestAsanaConnector:
         monkeypatch.setenv("AS_Q", "tok")
         try:
             source = AsanaSource(
-                {"token_env": "AS_Q"},
+                {"token_env": "AS_Q", "project_gid": "project1"},
                 transport=transport,
             )
             records = source.query({})
@@ -1489,9 +1493,9 @@ class TestMondayConnector:
         try:
             source = MondaySource({
                 "token_env": "MON_TOK",
-                "board_ids": ["b1", "b2"],
+                "board_ids": [1, 2],
             })
-            assert source.KIND == "items"
+            assert source.KIND == "tasks"
         finally:
             del os.environ["MON_TOK"]
 
@@ -1504,7 +1508,9 @@ class TestMondayConnector:
         )
         monkeypatch.setenv("MON_H", "tok")
         try:
-            source = MondaySource({"token_env": "MON_H"}, transport=transport)
+            source = MondaySource(
+                {"token_env": "MON_H", "board_ids": [1]}, transport=transport
+            )
             result = source.health()
             assert result["ok"] is True
         finally:
@@ -1516,7 +1522,9 @@ class TestMondayConnector:
         transport = MockHttpResponseTransport(status_code=401, body={})
         monkeypatch.setenv("MON_H2", "tok")
         try:
-            source = MondaySource({"token_env": "MON_H2"}, transport=transport)
+            source = MondaySource(
+                {"token_env": "MON_H2", "board_ids": [1]}, transport=transport
+            )
             result = source.health()
             assert result["ok"] is False
         finally:
@@ -1531,17 +1539,15 @@ class TestMondayConnector:
                 "data": {
                     "boards": [
                         {
-                            "items_page": {
-                                "items": [
-                                    {
-                                        "id": "i1",
-                                        "name": "Fix pipeline",
-                                        "state": "In Progress",
-                                        "created_at": "2025-01-01T12:00:00Z",
-                                        "updated_at": "2025-01-02T12:00:00Z",
-                                    }
-                                ]
-                            }
+                            "items": [
+                                {
+                                    "id": "i1",
+                                    "name": "Fix pipeline",
+                                    "state": "In Progress",
+                                    "created_at": "2025-01-01T12:00:00Z",
+                                    "updated_at": "2025-01-02T12:00:00Z",
+                                }
+                            ]
                         }
                     ]
                 }
@@ -1549,10 +1555,12 @@ class TestMondayConnector:
         )
         monkeypatch.setenv("MON_Q", "tok")
         try:
-            source = MondaySource({"token_env": "MON_Q"}, transport=transport)
+            source = MondaySource(
+                {"token_env": "MON_Q", "board_ids": [1]}, transport=transport
+            )
             records = source.query({})
             assert len(records) >= 1
-            assert records[0]["kind"] == "items"
+            assert records[0]["kind"] == "tasks"
         finally:
             del os.environ["MON_Q"]
 

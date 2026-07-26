@@ -220,14 +220,19 @@ class LinearSource:
             variables: dict[str, Any] = {"teamId": self.team_id}
             if after_cursor:
                 variables["after"] = after_cursor
+            headers = self._headers()
 
-            resp = self.transport(
-                "POST",
-                self.url,
-                headers=self._headers(),
-                json={"query": _ISSUES_QUERY, "variables": variables},
-                timeout=self.timeout,
-            )
+            try:
+                resp = self.transport(
+                    "POST",
+                    self.url,
+                    headers=headers,
+                    json={"query": _ISSUES_QUERY, "variables": variables},
+                    timeout=self.timeout,
+                )
+            except Exception:
+                logger.warning("linear query transport failed", exc_info=True)
+                return out
             status = getattr(resp, "status_code", 0)
             if not (200 <= status < 300):
                 raise RuntimeError(f"linear: query failed HTTP {status}")
