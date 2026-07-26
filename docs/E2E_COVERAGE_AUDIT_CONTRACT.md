@@ -39,6 +39,34 @@ If a shard fails, the aggregate percentage is **not** a release result: fix or
 quarantine the failure with an explicit task, rerun the complete audit, and
 replace the stale report.
 
+### Durable in-flight progress
+
+While shards are running, the runner writes an atomic sidecar next to the
+requested aggregate path: `<aggregate>.progress.json`.  The sidecar is the
+auditable source for partial-run state and is intentionally not an aggregate
+coverage result.  It contains:
+
+* `schema_version`, `run_id`, `pid`, `started_at`, and `updated_at` so an
+  operator can correlate the file with one process and one invocation;
+* `current_index` and `total`, plus a stable relative `path` for every E2E
+  file; each shard summary includes the resolved environment namespace used
+  for resource isolation; and
+* `counts.attempted`, `counts.passed`, `counts.failed`, and `counts.skipped`,
+  with per-file states (`pending`, `running`, `passed`, `failed`,
+  `timed_out`, or `skipped`). Completed or failed shards also include ordered
+  per-test diagnostics from JUnit XML (`nodeid`, status, and bounded failure
+  message/text), so a failing file can be triaged without rerunning it merely
+  to discover which test ran first.
+
+The sidecar has `complete: false` for every interrupted, timed-out, or failed
+run.  Remaining files are marked `skipped` with a reason when a failure stops
+the serial audit.  Only after the final `coverage json` command succeeds is
+`status` set to `completed` and `complete` set to `true`; a sidecar must never
+be treated as proof of a branch percentage.  Updates use a temporary file and
+an atomic replace, so readers never observe truncated JSON.  This makes a
+stale or interrupted audit distinguishable from a certified aggregate even if
+the process is terminated before the normal failure report is written.
+
 ## Subprocess and shard handling
 
 E2E tests launch subprocesses and may run in parallel.  Coverage data therefore
@@ -69,4 +97,3 @@ Before recording a percentage in `TASKS.md` or a release note:
 5. Record the report path, commit SHA, command, and gate output beside the task
    evidence.  A missing or stale aggregate report means the coverage claim is
    unverified.
-
