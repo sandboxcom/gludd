@@ -66,7 +66,11 @@ def confirm(token: str, state_path: Path = STATE_PATH, audit_path: Path = AUDIT_
     if not token or not state_path.exists():
         print("STOP CONFIRMATION: rejected (missing challenge)")
         return 1
-    record = json.loads(state_path.read_text(encoding="utf-8"))
+    try:
+        record = json.loads(state_path.read_text(encoding="utf-8"))
+    except (OSError, TypeError, ValueError):
+        print("STOP CONFIRMATION: rejected (corrupt challenge state)")
+        return 1
     accepted = secrets.compare_digest(token, str(record.get("challenge", ""))) and not (
         record.get("pending_tasks") or record.get("pending_ratchet")
     )

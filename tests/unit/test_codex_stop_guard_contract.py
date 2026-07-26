@@ -67,3 +67,12 @@ def test_codex_stop_guard_requires_exact_token_before_clean_stop(tmp_path, capsy
     assert confirm(token, state, audit) == 0
     assert "accepted" in capsys.readouterr().out
     assert not state.exists()
+
+
+def test_codex_stop_guard_rejects_corrupt_state_without_crashing(tmp_path, capsys):
+    state = tmp_path / "state.json"
+    audit = tmp_path / "audit.jsonl"
+    state.write_text("{not-json", encoding="utf-8")
+
+    assert confirm("candidate", state, audit) == 1
+    assert "rejected" in capsys.readouterr().out
