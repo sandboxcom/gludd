@@ -212,7 +212,9 @@ class PromScrapeSource:
 
     def _fetch(self) -> object:
         url = f"{self._base_url}/metrics"
-        return self._transport.get(url, headers=self._headers(), timeout=self._timeout)
+        # Use the named argument so injected transports can expose ``url`` as
+        # a keyword-only parameter while remaining compatible with httpx.
+        return self._transport.get(url=url, headers=self._headers(), timeout=self._timeout)
 
     @staticmethod
     def _status_ok(resp: object) -> bool:
