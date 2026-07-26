@@ -13,6 +13,7 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path
+from typing import Any, cast
 
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_PATH = ROOT / ".opencode" / "plugin" / "enforce-floor.ts"
@@ -32,7 +33,7 @@ _ts_counter = 0
 
 def _run_plugin(
     ts_code: str,
-    env_override: dict | None = None,
+    env_override: dict[str, str] | None = None,
     cwd: str | None = None,
     timeout: int = 15,
 ) -> str:
@@ -40,10 +41,16 @@ def _run_plugin(
     global _ts_counter
     _ts_counter += 1
     tmp = Path(tempfile.mktemp(suffix=".ts", prefix=f"floor_e2e_{_ts_counter}_"))
+    session_state = Path(
+        tempfile.mktemp(suffix=".json", prefix=f"gludd-session-floor-e2e-{_ts_counter}-")
+    )
+    session_state.write_text('{"started_at": 0}\n')
     tmp.write_text(ts_code)
     try:
         env = os.environ.copy()
         env["OPENCODE_SUBAGENT"] = ""
+        # Keep concurrent shard runs from sharing the real session-start state.
+        env["GLUDD_SESSION_STATE"] = str(session_state)
         if env_override:
             env.update(env_override)
         proc = subprocess.run(
@@ -59,16 +66,20 @@ def _run_plugin(
     finally:
         with contextlib.suppress(OSError):
             tmp.unlink()
+        with contextlib.suppress(OSError):
+            session_state.unlink()
 
 
-def _last_json(stdout: str) -> dict | None:
+def _last_json(stdout: str) -> dict[str, Any] | None:
     """Parse the last JSON line from stdout."""
     for line in reversed(stdout.split("\n")):
         line = line.strip()
         if not line:
             continue
         try:
-            return json.loads(line)
+            value = json.loads(line)
+            if isinstance(value, dict):
+                return cast(dict[str, Any], value)
         except json.JSONDecodeError:
             continue
     return None
