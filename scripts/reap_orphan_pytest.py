@@ -23,6 +23,7 @@ class ProcessRecord:
     ppid: int
     elapsed_seconds: int
     command: str
+    pgid: int | None = None
 
 
 _OWNER_COMMAND_MARKERS = (
@@ -134,13 +135,27 @@ def _is_owner_command(command: str) -> bool:
 
 def _has_live_owner(
     records: list[ProcessRecord], *, project_root: Path, owner_pids: set[int]
-) -> bool:
+) -> list[ProcessRecord]:
     root = str(project_root.resolve())
-    return any(
-        _is_owner_command(record.command)
-        and (record.pid in owner_pids or root in record.command)
+    return [
+        record
         for record in records
-    )
+        if _is_owner_command(record.command)
+        and (record.pid in owner_pids or root in record.command)
+    ]
+
+
+def _tied_to_owner(record: ProcessRecord, owner: ProcessRecord) -> bool:
+    """Return whether an orphan could belong to this still-live owner.
+
+    A shared process group is definitive.  Detached roots have lost their
+    parent relationship, so for gate owners we conservatively use age: a child
+    cannot have started before its owner.  Older roots therefore remain
+    independently reclaimable even while a newer gate is active.
+    """
+    if record.pgid is not None and owner.pgid is not None:
+        return record.pgid == owner.pgid and record.elapsed_seconds <= owner.elapsed_seconds
+    return "gate" in owner.command and record.elapsed_seconds <= owner.elapsed_seconds
 
 
 def select_reapable_records(
@@ -152,20 +167,20 @@ def select_reapable_records(
 ) -> list[ProcessRecord]:
     """Select orphan trees only when no live project owner can supervise them."""
     owners = owner_pids if owner_pids is not None else set()
-    if _has_live_owner(records, project_root=project_root, owner_pids=owners):
-        return []
+    live_owners = _has_live_owner(records, project_root=project_root, owner_pids=owners)
     return [
         record
         for record in records
         if reapable_with_descendants(
             record, records, project_root=project_root, min_age_seconds=min_age_seconds
         )
+        and not any(_tied_to_owner(record, owner) for owner in live_owners)
     ]
 
 
 def _records(project_root: Path) -> list[ProcessRecord]:
     output = subprocess.run(
-        ["ps", "-axo", "pid=,ppid=,etime=,command="],
+        ["ps", "-axo", "pid=,ppid=,pgid=,etime=,command="],
         cwd=project_root,
         check=True,
         capture_output=True,
@@ -173,11 +188,19 @@ def _records(project_root: Path) -> list[ProcessRecord]:
     ).stdout
     records: list[ProcessRecord] = []
     for line in output.splitlines():
-        fields = line.strip().split(None, 3)
-        if len(fields) != 4:
+        fields = line.strip().split(None, 4)
+        if len(fields) != 5:
             continue
         try:
-            records.append(ProcessRecord(int(fields[0]), int(fields[1]), parse_elapsed_seconds(fields[2]), fields[3]))
+            records.append(
+                ProcessRecord(
+                    int(fields[0]),
+                    int(fields[1]),
+                    parse_elapsed_seconds(fields[3]),
+                    fields[4],
+                    int(fields[2]),
+                )
+            )
         except (ValueError, IndexError):
             continue
     return records
@@ -192,10 +215,16 @@ def reap(project_root: Path, *, min_age_seconds: int, apply: bool) -> int:
         min_age_seconds=min_age_seconds,
         owner_pids=owners,
     )
-    if not candidates and _has_live_owner(
-        records, project_root=project_root, owner_pids=owners
-    ):
-        print("orphan-pytest skipped: live project gate/agent owner present")
+    live_owners = _has_live_owner(records, project_root=project_root, owner_pids=owners)
+    tied = sum(
+        reapable_with_descendants(
+            record, records, project_root=project_root, min_age_seconds=min_age_seconds
+        )
+        and any(_tied_to_owner(record, owner) for owner in live_owners)
+        for record in records
+    )
+    if tied:
+        print(f"orphan-pytest preserved={tied} trees tied to live owner")
     for record in candidates:
         action = "REAP" if apply else "WOULD-REAP"
         print(f"{action} pid={record.pid} age={record.elapsed_seconds}s command={record.command}")

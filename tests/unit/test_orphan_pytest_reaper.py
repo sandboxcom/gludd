@@ -64,8 +64,8 @@ def test_reaper_preserves_orphans_while_live_gate_owner_exists() -> None:
     root = Path.cwd()
     records = [
         ProcessRecord(10, 1, 1320, f"{root}/scripts/run_gate.sh"),
-        ProcessRecord(11, 1, 3600, f"{root}/.venv/bin/python -m pytest tests/e2e/ -q"),
-        ProcessRecord(12, 11, 3500, f"{root}/.venv/bin/python -m pytest tests/e2e/ -q"),
+        ProcessRecord(11, 1, 600, f"{root}/.venv/bin/python -m pytest tests/e2e/ -q"),
+        ProcessRecord(12, 11, 500, f"{root}/.venv/bin/python -m pytest tests/e2e/ -q"),
     ]
 
     selected = select_reapable_records(
@@ -94,6 +94,24 @@ def test_reaper_ignores_stale_status_pid_with_unrelated_command() -> None:
     )
 
     assert [record.pid for record in selected] == [100]
+
+
+def test_reaper_selects_old_unrelated_tree_with_recent_live_gate() -> None:
+    """A live gate protects only orphan trees that could be its descendants."""
+    root = Path.cwd()
+    records = [
+        ProcessRecord(10, 1, 1320, f"{root}/scripts/run_gate.sh"),
+        ProcessRecord(11, 1, 3600, f"{root}/.venv/bin/python -m pytest tests/unit/ -q"),
+    ]
+
+    selected = select_reapable_records(
+        records,
+        project_root=root,
+        min_age_seconds=1800,
+        owner_pids={10},
+    )
+
+    assert [record.pid for record in selected] == [11]
 
 
 def test_owner_claims_are_scoped_to_gate_state_and_resource_namespace(tmp_path, monkeypatch) -> None:
