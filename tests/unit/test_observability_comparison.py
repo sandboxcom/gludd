@@ -97,6 +97,18 @@ class TestNoRepoOrNoData:
         assert result["summary"] == "No benchmark data available"
 
     @pytest.mark.asyncio
+    async def test_empty_iterable_repo_is_treated_as_empty_data(self):
+        """Repository adapters may return a one-shot iterable, not only a list."""
+        from general_ludd.observability.comparison import ModelComparison
+
+        repo = AsyncMock()
+        repo.get_aggregate_scores = AsyncMock(return_value=iter(()))
+        comparison = ModelComparison(benchmark_repo=repo)
+        result = await comparison.compare_models(task_type="docs")
+        assert result["rankings"] == []
+        assert result["summary"] == "No benchmark data available"
+
+    @pytest.mark.asyncio
     async def test_repo_exception_returns_empty_rankings(self):
         from general_ludd.observability.comparison import ModelComparison
 

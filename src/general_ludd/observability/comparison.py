@@ -28,7 +28,12 @@ class ModelComparison:
             return {"rankings": [], "summary": "No benchmark repository available"}
 
         try:
-            raw = await self._repo.get_aggregate_scores(task_type=task_type)
+            # Snapshot the repository result before filtering/sorting.  The
+            # repository contract returns a list, but adapters used by tests
+            # and integrations may provide a one-shot iterable; materializing
+            # here also prevents concurrent callers from sharing mutable
+            # result state.
+            raw = list((await self._repo.get_aggregate_scores(task_type=task_type)) or ())
         except Exception as exc:
             logger.warning("Failed to get benchmark scores: %s", exc)
             return {"rankings": [], "summary": f"Error fetching data: {exc}"}
