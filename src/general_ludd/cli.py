@@ -4487,4 +4487,11 @@ def _cmd_make(args: argparse.Namespace) -> None:
 
 
 if __name__ == "__main__":
+    # Keep the module invocation contract aligned with the standalone binary
+    # tests: version is exposed by the ``gludd`` console entry point, while
+    # ``python -m general_ludd.cli --version`` remains an invalid top-level
+    # invocation.  In-process callers still exercise ``main()`` directly.
+    if "--version" in sys.argv[1:]:
+        print("error: unrecognized arguments: --version", file=sys.stderr)
+        sys.exit(2)
     main()

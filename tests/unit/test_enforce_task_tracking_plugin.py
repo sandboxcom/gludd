@@ -194,7 +194,9 @@ class TestMakefileIntegration:
         content = MAKEFILE_PATH.read_text()
         gate_line = ""
         for line in content.split("\n"):
-            if re.match(r"^[^#]*gate:", line) and not line.strip().startswith("#"):
+            # Match the actual target declaration, not help text such as
+            # `@echo "  gate-all ..."` that merely contains `gate:`.
+            if re.match(r"^gate\s*:", line):
                 gate_line = line.strip()
                 break
         assert gate_line, "Could not find gate: target in Makefile"

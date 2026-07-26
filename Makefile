@@ -122,6 +122,7 @@ log-agent-result disk-guard disk-check check-disk disk tmp-gludd-usage tmp-gludd
         networking-healthcheck \
         install-bats test-install check-subagent-guards verify-plugin-manifest \
          check-task-ledger \
+         check-task-integrity \
          test-service-discovery service-discover service-catalog \
          subagent-init subagent-cleanup \
          chat chat-eval test-chat \
@@ -751,7 +752,7 @@ test-opencode-boot-e2e:
 gate-fast: lint typecheck collect-check
 	@echo "=== GATE-FAST: PASS ==="
 
-gate: check-opencode-integrity check-plugin-hooks opencode-boot-smoke validate-task-ledger check-task-registration check-dispatch-dedup check-subagent-guards verify-plugin-manifest check-skills-frontmatter check-coverage-gaps check-plugin-syntax check-plugin-runtime check-plugin-imports check-node-v26-compat check-duplicate-targets
+gate: check-opencode-integrity check-plugin-hooks opencode-boot-smoke validate-task-ledger check-task-registration check-task-integrity check-dispatch-dedup check-subagent-guards verify-plugin-manifest check-skills-frontmatter check-coverage-gaps check-plugin-syntax check-plugin-runtime check-plugin-imports check-node-v26-compat check-duplicate-targets
 	@rm -f .gate-failed
 	@echo "=== GATE $(shell date -u +%Y-%m-%dT%H:%M:%SZ) ===" > .gate-status
 	@# OBSERVABILITY INVARIANT (see AGENTS.md "No unseen events"): every gate phase
@@ -3561,6 +3562,9 @@ validate-task-ledger:
 	@$(UV) run python scripts/validate_task_ledger.py
 
 # --- Hard registration guard: active changes must map to TASKS.md or task-ID metadata ---
+check-task-integrity:
+	@$(UV) run python scripts/check_task_integrity.py
+
 check-task-registration:
 	@$(UV) run python scripts/check_task_registration.py
 
