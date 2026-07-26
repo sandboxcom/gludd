@@ -259,6 +259,10 @@ def run_live(args: SmokeArgs, *, torch_module: Any | None = None) -> dict[str, A
             "compute_capability": getattr(properties, "major", None),
             "total_memory_bytes": int(total_memory) if total_memory is not None else None,
             "memory_kind": detected_kind,
+            "vram_bytes": int(total_memory) if detected_kind == "discrete" and total_memory is not None else None,
+            "shared_memory_bytes": (
+                int(total_memory) if detected_kind == "unified" and total_memory is not None else None
+            ),
         },
         "memory_policy": {
             "budget": budget.as_dict(),
