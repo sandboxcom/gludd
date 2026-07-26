@@ -1037,8 +1037,10 @@ E2E_STALL_SECS ?= 180
 E2E_MAX_SECS ?= 3600
 
 test-e2e:
-	@BT="/tmp/gludd-e2e-$${ID:-$$$$}"; rm -rf "$$BT"; \
-	$(MAKE) --no-print-directory run-watched CMD="GLUDD_E2E_ACTIVE=1 $(UV) run python -m pytest tests/e2e/ $(_XD) -v $(PYTEST_ARGS) --timeout=$(E2E_TEST_TIMEOUT) --basetemp=$$BT" STALL_SECS="$(E2E_STALL_SECS)" MAX_SECS="$(E2E_MAX_SECS)" LOG="/tmp/gludd-e2e-$$$$.log"; \
+	@LOCK="/tmp/gludd-e2e-run.lock"; BT="/tmp/gludd-e2e-$${ID:-$$$$}"; LOG="/tmp/gludd-e2e-$$$$.log"; \
+	if ! mkdir "$$LOCK" 2>/dev/null; then OWNER="$$(cat "$$LOCK/pid" 2>/dev/null || true)"; if [ -n "$$OWNER" ] && kill -0 "$$OWNER" 2>/dev/null; then echo "E2E_RUN_BUSY owner_pid=$$OWNER log=$$(cat "$$LOCK/log" 2>/dev/null || true)" >&2; exit 75; fi; echo "E2E_RUN_STALE owner_pid=$$OWNER; reclaiming"; rm -rf "$$LOCK"; mkdir "$$LOCK" || { echo "E2E_RUN_BUSY lock_reclaim_failed" >&2; exit 75; }; fi; \
+	printf "%s\n" "$$$$" > "$$LOCK/pid"; printf "%s\n" "$$LOG" > "$$LOCK/log"; trap 'rm -rf "$$LOCK"' EXIT HUP INT TERM; rm -rf "$$BT"; \
+	$(MAKE) --no-print-directory run-watched CMD="GLUDD_E2E_ACTIVE=1 $(UV) run python -m pytest tests/e2e/ $(_XD) -v $(PYTEST_ARGS) --timeout=$(E2E_TEST_TIMEOUT) --basetemp=$$BT" STALL_SECS="$(E2E_STALL_SECS)" MAX_SECS="$(E2E_MAX_SECS)" LOG="$$LOG"; \
 	RC=$$?; chmod -R u+rwx "$$BT" 2>/dev/null || true; rm -rf "$$BT"; exit $$RC
 
 test-games:
@@ -5379,3 +5381,14 @@ release-tag-push:
 	@$(MAKE) --no-print-directory ci-active BRANCH=master || exit 1
 	@$(MAKE) --no-print-directory git-push-sandboxcom
 	@$(MAKE) --no-print-directory git-tag-push TAG="$(TAG)" MSG="$(MSG)"
+
+
+# Stop only an E2E process tree rooted in this exact worktree. The root command
+# must be this worktree's pytest tests/e2e invocation; descendants are then safe
+# to signal because they belong to that verified root. Usage: make kill-worktree-e2e PID=123
+kill-worktree-e2e:
+	@[ -n "$(PID)" ] || { echo "Usage: make kill-worktree-e2e PID=pid"; exit 1; }
+	@tree_contains_local_e2e() { pid="$$1"; cmd=$$(/bin/ps -p "$$pid" -o command= 2>/dev/null); case "$$cmd" in *"$(CURDIR)"*"pytest tests/e2e/"*) return 0 ;; esac; for child in $$(/usr/bin/pgrep -P "$$pid" 2>/dev/null || true); do tree_contains_local_e2e "$$child" && return 0; done; return 1; }; \
+	if ! tree_contains_local_e2e "$(PID)"; then cmd=$$(/bin/ps -p "$(PID)" -o command=); echo "Refusing to kill unrelated process tree: $$cmd"; exit 1; fi; \
+	kill_tree() { for child in $$(/usr/bin/pgrep -P "$$1" 2>/dev/null || true); do kill_tree "$$child"; done; /bin/kill -TERM "$$1"; }; \
+	kill_tree "$(PID)"; echo "Stopped verified E2E process tree rooted at $(PID) for $(CURDIR)"
