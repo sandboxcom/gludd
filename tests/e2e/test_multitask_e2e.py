@@ -12,6 +12,7 @@ import os
 import subprocess
 import tempfile
 from pathlib import Path
+from typing import Any, cast
 
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_PATH = ROOT / ".opencode" / "plugin" / "enforce-multitask.ts"
@@ -29,7 +30,7 @@ _ts_counter = 0
 
 def _run_plugin(
     ts_code: str,
-    env_override: dict | None = None,
+    env_override: dict[str, str] | None = None,
     cwd: str | None = None,
     timeout: int = 15,
 ) -> str:
@@ -65,13 +66,15 @@ def _run_plugin(
             state_file.unlink()
 
 
-def _last_json(stdout: str) -> dict | None:
+def _last_json(stdout: str) -> dict[str, Any] | None:
     for line in reversed(stdout.split("\n")):
         line = line.strip()
         if not line:
             continue
         try:
-            return json.loads(line)
+            value = json.loads(line)
+            if isinstance(value, dict):
+                return cast(dict[str, Any], value)
         except json.JSONDecodeError:
             continue
     return None
@@ -973,7 +976,9 @@ import * as fs from 'node:fs'
 const mod = await import('{PLUGIN_PATH}')
 const plugin = await mod.default({{}})
 {dispatches}
-const state = JSON.parse(fs.readFileSync('/tmp/gludd-multitask-state.json', 'utf8'))
+const statePath = process.env.GLUDD_MULTITASK_STATE_FILE
+if (!statePath) throw new Error('GLUDD_MULTITASK_STATE_FILE must be set by the harness')
+const state = JSON.parse(fs.readFileSync(statePath, 'utf8'))
 const r = await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
 console.log(JSON.stringify({{...r, zeroStreakBefore: state.zeroStreak}}))
 """
