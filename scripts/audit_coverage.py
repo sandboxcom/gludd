@@ -208,6 +208,10 @@ def main() -> None:
     print(f"  Files analyzed: {report['total_files']}")
     print(f"  Files below {threshold}%: {report['files_below_threshold']}")
 
+    if pyrc != 0:
+        print(f"Coverage test command failed with exit code {pyrc}", file=sys.stderr)
+        sys.exit(pyrc if pyrc > 1 else 1)
+
     if files_under or not all_ok:
         print("\nFiles below threshold:")
         for f in sorted(files_under):
