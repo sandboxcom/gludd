@@ -1114,12 +1114,11 @@ class PromptProfileRepository:
         )
         await self._session.execute(stmt)
         await self._session.flush()
-        # Resolve the row through the repository scope so a tenant-scoped
-        # repository cannot return or mutate a same-name feature from another
-        # project after the conflict update.
-        row = await self.get_by_name(
-            data.get("name", ""), project_id=self._resolve_pid(data.get("project_id"))
-        )
+        # Resolve the row through the repository's existing global name lookup.
+        # Prompt profiles are not project-scoped in the schema, so do not pass
+        # tenant-only arguments or call helpers that this repository does not
+        # define.
+        row = await self.get_by_name(data.get("name", ""))
         assert row is not None  # just upserted
         # Core INSERT ... ON CONFLICT bypasses the ORM identity map; refresh any
         # already-loaded instance so callers see the committed (updated) values.

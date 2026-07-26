@@ -97,7 +97,7 @@ _commit-lock-acquire check-clean-tree worktree-state all-worktree-state main-wor
         git-remote-sandboxcom git-push-sandboxcom git-pull-sandboxcom git-fetch-sandboxcom \
         git-add-all help grep scan-secrets-fresh untrack \
          git-tracked-keys git-ls-tracked git-history-file dist-path-check git-is-ancestor git-revlist-count check-git-hygiene \
-        molecule-clean plan ps-gludd kill-stale reap-orphan-pytest kill-gate-force \
+        molecule-clean plan ps-gludd kill-stale reap-stale-collection-locks reap-orphan-pytest kill-gate-force \
         gate-async gate-status floor-plan gated-merge ship-async write-gate-safe-hook \
         repo-visibility \
          watchdog-read watchdog-start watchdog-status watchdog-stop agent-watchdog-stop watchdog-log \
@@ -363,6 +363,7 @@ help:
 	@echo ""
 	@echo "  --- Recovery ---"
 	@echo "  reap-orphan-pytest    Report stale orphan pytest trees (APPLY=1 to terminate)"
+	@echo "  reap-stale-collection-locks  Reap only old project-owned collection/gate-refresh locks (APPLY=1)"
 	@echo "  backup-opencode       Backup .opencode/ -> .opencode.orig/ (excludes node_modules/)"
 	@echo "  check-opencode-backup  Warn if .opencode.orig/ is stale (>24h older than .opencode/)"
 	@echo "  restore-opencode      Restore .opencode/ (backup then git fallback) + clear cache"
@@ -962,7 +963,7 @@ kill-stray:
 # This make invocation's own process + its parent are always excluded, so running
 # `make kill-stale` can never kill the shell/agent driving it. See `make ps-gludd`
 # for the read-only census this acts on.
- kill-stale:
+kill-stale:
 	@SELF=$$$$; PARENT=$$(ps -o ppid= -p $$SELF 2>/dev/null | tr -d ' '); \
 	PARENTS=$$(ps -axo ppid= | tr -s ' ' '\n' | grep -E '^[0-9]+$$' | sort -u); \
 	echo "[kill-stale] self=$$SELF parent=$$PARENT — reaping orphaned gludd scratch and daemon trees"; \
@@ -989,6 +990,12 @@ kill-stray:
 		echo "  KILLED stale orphan: $$pid $$cmd"; \
 	done; \
 	echo "[kill-stale] done"
+
+# Reap only old collection/gate-refresh lock records owned by this checkout.
+# The script defaults to a dry-run; APPLY=1 enables unlinking after PID,
+# command-identity, namespace, and age checks all pass.
+reap-stale-collection-locks:
+	@$(PYTHON) scripts/reap_stale_collection_locks.py $(if $(filter 1 true yes,$(APPLY)),--apply,)
 
 reap-orphan-pytest:
 	@$(UV) run python scripts/reap_orphan_pytest.py

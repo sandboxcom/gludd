@@ -22,6 +22,9 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - direct script execution
     from resource_arbiter import resource_path
 
+DEFAULT_COLLECTION_LOCK_TIMEOUT = 900.0
+DEFAULT_GATE_REFRESH_LOCK_TIMEOUT = 120.0
+
 
 def default_resource_lock(resource: str = "collection") -> Path:
     """Return a stable project-scoped lock path for one resource."""
@@ -37,6 +40,23 @@ def default_collection_lock() -> Path:
     """Return the stable lock path for repository-wide collection."""
 
     return default_resource_lock()
+
+
+def lock_timeout(resource: str = "collection") -> float:
+    """Return the bounded wait for a lock resource.
+
+    Gate refresh is a best-effort status update; it must fail fast enough that
+    abandoned waiters cannot accumulate behind a long-running full gate. Direct
+    collection callers retain the historical 15-minute default.
+    """
+
+    configured = os.environ.get("GLUDD_COLLECTION_LOCK_TIMEOUT", "")
+    if resource == "gate-refresh":
+        configured = os.environ.get(
+            "GLUDD_GATE_REFRESH_LOCK_TIMEOUT",
+            configured or str(DEFAULT_GATE_REFRESH_LOCK_TIMEOUT),
+        )
+    return float(configured or DEFAULT_COLLECTION_LOCK_TIMEOUT)
 
 
 @contextmanager
@@ -86,7 +106,7 @@ def run_locked(
     """Run ``command`` while holding one project-scoped resource lock."""
 
     lock = default_resource_lock(resource)
-    wait = float(os.environ.get("GLUDD_COLLECTION_LOCK_TIMEOUT", "900"))
+    wait = lock_timeout(resource)
     if timeout is not None:
         wait = timeout
     print(f"collection lock waiting: {lock}", flush=True)
