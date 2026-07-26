@@ -68,7 +68,7 @@ def main() -> int:
             )
             continue
         wave_label_re = re.compile(
-            r"^(Wave\s*\d+|Waves?\s*\d+([-–]\d+)?|wave\s*\d+|Session\s*\d+|"
+            r"^(Wave\s*\d+|Waves?\s*\d+([-\u2013]\d+)?|wave\s*\d+|Session\s*\d+|"
             r"\d{4}-\d{2}-\d{2}\s+(?:waves?\s*\d+|session\s*\d+)|"
             r"session\s*\d+.*closure|wave\s*closure)$",
             re.IGNORECASE,
@@ -80,7 +80,7 @@ def main() -> int:
             )
 
     # Check 2: every item must have required fields
-    for lineno, checked, body in items:
+    for lineno, _checked, body in items:
         has_priority = re.search(r"\|\s*priority\s*:", body)
         has_effort = re.search(r"\|\s*effort\s*:", body)
         has_status = re.search(r"\|\s*status\s*:", body)
@@ -97,7 +97,7 @@ def main() -> int:
             )
 
     # Check 3: validate field values
-    for lineno, checked, body in items:
+    for lineno, _checked, body in items:
         pm = re.search(r"\|\s*priority\s*:\s*(\S+)", body)
         if pm:
             val = pm.group(1).rstrip("|").strip()
@@ -126,7 +126,7 @@ def main() -> int:
     # Check 4: no duplicate item IDs
     id_re = re.compile(r"^[ \t]*[-*]\s*\[[ xX]\]\s+(\S+)")
     seen_ids: dict[str, int] = {}
-    for lineno, checked, body in items:
+    for lineno, _checked, _body in items:
         m = id_re.match(lines[lineno - 1])
         if m:
             item_id = m.group(1)
