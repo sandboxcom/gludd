@@ -238,7 +238,8 @@ class SlackSource:
             else:
                 # Minimal injected transports may only expose ``get``; use it
                 # as a compatibility shim for deterministic test doubles.
-                resp = self._transport.get(
+                get = getattr(self._transport, "get")
+                resp = get(
                     self._webhook_url,
                     headers={"Content-Type": "application/json"},
                     json={"text": text}, timeout=self._timeout,
@@ -257,7 +258,7 @@ class SlackSource:
             headers = self._auth_headers()
             headers["Content-Type"] = "application/json; charset=utf-8"
             url = f"{self._base_url}/chat.postMessage"
-            payload = {"channel": self._channel_id, "text": text}
+            payload: dict[str, object] = {"channel": self._channel_id, "text": text}
             request = getattr(self._transport, "request", None)
             if callable(request):
                 resp = request(
@@ -268,7 +269,8 @@ class SlackSource:
                     url, headers=headers, json=payload, timeout=self._timeout,
                 )
             else:
-                resp = self._transport.get(
+                get = getattr(self._transport, "get")
+                resp = get(
                     url, headers=headers, json=payload, timeout=self._timeout,
                 )
         except Exception:

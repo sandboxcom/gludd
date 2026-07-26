@@ -35,7 +35,7 @@ _KIND = "pipeline"
 _DEFAULT_BASE_URL = "https://circleci.com"
 _DEFAULT_TIMEOUT = 10.0
 
-Transport = Callable[[str, dict[str, str]], "tuple[int, object]"]
+Transport = Callable[..., "tuple[int, object]"]
 
 
 def _parse_ts(value: object) -> float | None:

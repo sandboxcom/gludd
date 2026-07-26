@@ -164,7 +164,8 @@ class SearXConnector:
                 except TypeError:
                     # Some injected test transports replace Client.get with a
                     # plain function (without a bound ``self`` parameter).
-                    resp = httpx.Client.get(url, params=params)
+                    unbound_get = getattr(httpx.Client, "get")
+                    resp = unbound_get(url, params=params)
             content = resp.content
             body: object = None
             if content:
