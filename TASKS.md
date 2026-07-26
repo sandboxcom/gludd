@@ -671,4 +671,6 @@ old summary table omitted entirely. Grand total across the file: **326** boxes.
  <!-- T-BETA3-PROCESS-CLEANUP paths: scripts/process_cleanup.py scripts/task_watchdog.py scripts/run_gate.sh tests/unit/test_process_cleanup.py -->
 <!-- T-BETA3-WATCHDOG-SINGLETON paths: scripts/agent_watchdog.py tests/unit/test_watchdog_singleton.py Makefile -->
  <!-- T-BETA3-RELEASE-READINESS paths: scripts/release_readiness.py tests/unit/test_release_readiness.py docs/RELEASE_READINESS.md -->
- <!-- T-BETA3-GHA-SHA-HARDENING paths: scripts/require_ci_green.py tests/unit/test_require_ci_green.py tests/unit/test_ci_regression_guards.py .github/workflows/build.yml -->
+<!-- T-BETA3-GHA-SHA-HARDENING paths: scripts/require_ci_green.py tests/unit/test_require_ci_green.py tests/unit/test_ci_regression_guards.py .github/workflows/build.yml -->
+- [ ] T-BETA3-MAC-UNIFIED-MEMORY-SMOKE — Local Apple Silicon unified-memory sparse-model smoke harness with Linux/container fallback, MPS capability checks, bounded fit policy, and telemetry | paths: scripts/mac_unified_memory_smoke.py tests/unit/test_mac_unified_memory_smoke.py tests/e2e/test_mac_unified_memory_smoke_e2e.py docs/SMOKE_MAC_UNIFIED_MEMORY.md | priority: medium | effort: M | status: pending
+<!-- T-BETA3-MAC-UNIFIED-MEMORY-SMOKE paths: scripts/mac_unified_memory_smoke.py tests/unit/test_mac_unified_memory_smoke.py tests/e2e/test_mac_unified_memory_smoke_e2e.py docs/SMOKE_MAC_UNIFIED_MEMORY.md -->
