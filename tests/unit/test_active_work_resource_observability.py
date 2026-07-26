@@ -115,8 +115,13 @@ def test_concurrent_project_resource_leases_are_unique_and_bounded() -> None:
     )
 
 
-def test_worker_accounting_separates_leases_from_descendant_processes() -> None:
+def test_worker_accounting_separates_leases_from_descendant_processes(monkeypatch) -> None:
     """A gate parent and its pytest children count as one leased worker."""
+
+    monkeypatch.setattr(
+        "scripts.active_work_status._active_gate_refresh_owner",
+        lambda _namespace: "100",
+    )
 
     processes = [
         {"pid": "100", "ppid": "1", "command": "make gate-refresh", "task": "gate-refresh"},
@@ -133,19 +138,30 @@ def test_worker_accounting_separates_leases_from_descendant_processes() -> None:
     assert evidence["leased_worker_count"] == 2
     assert evidence["worker_count"] == 2
     assert evidence["duplicate_worker_leases"] == []
+    assert evidence["reclaimed_worker_pids"] == []
 
 
-def test_worker_accounting_reports_duplicate_gate_refresh_lease_owners() -> None:
-    """A duplicate gate owner is surfaced instead of inflating worker leases."""
+def test_worker_accounting_reclaims_stale_gate_refresh_owners(
+    monkeypatch,
+) -> None:
+    """Stale gate roots are removed when the lock identifies one live owner."""
+
+    monkeypatch.setattr(
+        "scripts.active_work_status._active_gate_refresh_owner",
+        lambda _namespace: "401",
+    )
 
     processes = [
-        {"pid": "300", "ppid": "1", "command": "make gate-refresh", "task": "gate-refresh"},
-        {"pid": "301", "ppid": "1", "command": "make gate-refresh", "task": "gate-refresh"},
+        {"pid": "401", "ppid": "1", "command": "make gate-refresh", "task": "gate-refresh"},
+        {"pid": "402", "ppid": "1", "command": "make gate-refresh", "task": "gate-refresh"},
+        {"pid": "403", "ppid": "1", "command": "make gate-refresh", "task": "gate-refresh"},
+        {"pid": "404", "ppid": "1", "command": "make gate-refresh", "task": "gate-refresh"},
     ]
 
     evidence = _resource_observability(processes)
 
-    assert evidence["top_level_worker_count"] == 2
+    assert evidence["top_level_worker_count"] == 1
     assert evidence["leased_worker_count"] == 1
     assert evidence["worker_count"] == 1
-    assert evidence["duplicate_worker_leases"] == ["gate-refresh"]
+    assert evidence["duplicate_worker_leases"] == []
+    assert evidence["reclaimed_worker_pids"] == ["402", "403", "404"]

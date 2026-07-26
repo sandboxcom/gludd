@@ -39,6 +39,7 @@
 import * as fs from "node:fs"
 import * as path from "node:path"
 import { createRequire } from "node:module"
+import { randomUUID } from "node:crypto"
 // import { execSync from node:child_process
 import type { Plugin } from "@opencode-ai/plugin"
 import {
@@ -769,13 +770,27 @@ const STOP_LIKE_TARGETS_RE = /^make\s+(git-commit|commit-no-verify|ship-commit|g
 const COMMIT_TARGET_RE = /^make\s+(git-commit|commit-no-verify|git-commit-file|test-and-commit|repo-commit|feature-done|git-merge)(\s|$)/
 const PUSH_TARGET_RE = /^make\s+(git-push-branch|git-push-branch-nv|git-push-sandboxcom|git-push-sandboxcom-main|git-push-master|git-tag-push|release-cut|release-promote|ship-commit|release-recut|release-branch-new)(\s|$)/
 
+function issueStopChallenge(): string {
+  const challenge_token = randomUUID().replace(/-/g, "").slice(0, 16)
+  try {
+    fs.appendFileSync(
+      process.env.GLUDD_STOP_CHALLENGE_FILE || "/tmp/gludd-stop-challenge.jsonl",
+      `${JSON.stringify({ challenge_token, timestamp: new Date().toISOString(), pid: process.pid })}\n`,
+      "utf8",
+    )
+  } catch {}
+  return challenge_token
+}
+
 function stopLikeDenyMessage(taskMd: boolean, ratchetEntries: number, extraReasons: string[] = []): string {
+  const challenge_token = issueStopChallenge()
   const reasons = [
     `TASKS.md unchecked: ${taskMd ? "yes" : "no"}, ratchet entries: ${ratchetEntries}`,
     ...extraReasons,
   ]
   return [
     "STOP-LIKE TOOL BLOCKED — PENDING WORK EXISTS:",
+    `STOP CHALLENGE: ${challenge_token}`,
     ...reasons,
     "Fix pending work first, then retry.",
   ].join("\n")
@@ -1275,6 +1290,7 @@ const defaultImpl: HotModule = {
     // CI RED / CI PENDING COMPLETION CLAIM BLOCKED: keep a CI-specific reason
     // identifier for audit trails when the pending-work source is failed CI.
     if (workState.hasPendingWork) {
+      const challenge_token = issueStopChallenge()
       const sessionBlockCount = incrementSessionBlockCounter()
       const escalationNote = sessionBlockCount > ESCALATION_THRESHOLD
         ? `\n🚨 ESCALATION: ${sessionBlockCount} stop attempts blocked this session. COMPLIANCE REQUIRED.`
@@ -1297,6 +1313,7 @@ const defaultImpl: HotModule = {
           workState.ciVerdictPendingOrRed
             ? "⛔ CI RED/PENDING COMPLETION CLAIM BLOCKED"
             : "⛔⛔⛔ TEXT-ONLY RESPONSE BLOCKED ⛔⛔⛔",
+          `STOP CHALLENGE: ${challenge_token}`,
           "",
           `PENDING WORK EXISTS: ${workState.tasksMdUncheckedCount} unchecked TASKS.md items, ` +
           `${workState.ratchetEntries} ratchet entries, ` +

@@ -22,6 +22,7 @@ is not sufficient evidence of ownership.
 | `top_level_worker_count` | Tracked worker roots whose parent is outside the tracked process set. |
 | `descendant_process_count` | Tracked child processes (pytest launchers, xdist workers, and shells) excluded from lease admission. |
 | `duplicate_worker_leases` | Singleton lease names observed more than once in this namespace; `gate-refresh` is rejected by its project lock and remains visible here if stale processes overlap. |
+| `reclaimed_worker_pids` | Gate-refresh PIDs excluded because they do not hold the live project lease. This makes stale orphan trees auditable without counting them as active work. |
 | `leased_workers` | Auditable `{pid, task, lease}` records for admitted top-level leases. |
 
 The namespace is part of every lock identity. `project.lock`, `model.lock`,

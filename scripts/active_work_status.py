@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import re
@@ -149,6 +150,27 @@ def _worker_limit() -> int:
     return min(max(configured, 1), 128)
 
 
+def _active_gate_refresh_owner(_namespace: str) -> str | None:
+    """Return the PID holding this project's gate-refresh lease, if any."""
+
+    lock_path = resource_path("gate-refresh", ROOT)
+    try:
+        with lock_path.open("a+", encoding="utf-8") as handle:
+            try:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                handle.seek(0)
+                owner = handle.read().strip()
+                if owner.startswith("pid="):
+                    owner = owner[4:].strip()
+                return owner if owner.isdigit() else None
+            else:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    except OSError:
+        return None
+    return None
+
+
 def _worker_accounting(
     processes: list[dict[str, str]], namespace: str
 ) -> dict[str, object]:
@@ -163,7 +185,15 @@ def _worker_accounting(
     tracked = [process for process in processes if process["task"] in _WORKER_TASKS]
     tracked_pids = {process["pid"] for process in tracked}
     top_level = [process for process in tracked if process["ppid"] not in tracked_pids]
-    descendants = len(tracked) - len(top_level)
+    gate_roots = [process for process in top_level if process["task"] == "gate-refresh"]
+    gate_owner = _active_gate_refresh_owner(namespace)
+    reclaimed = [
+        process["pid"]
+        for process in gate_roots
+        if gate_owner is None or process["pid"] != gate_owner
+    ]
+    top_level = [process for process in top_level if process["pid"] not in reclaimed]
+    descendants = len(tracked) - len(top_level) - len(reclaimed)
 
     leased: list[dict[str, str]] = []
     seen_singletons: set[str] = set()
@@ -186,6 +216,7 @@ def _worker_accounting(
         "descendant_process_count": descendants,
         "leased_worker_count": len(leased),
         "duplicate_worker_leases": sorted(duplicates),
+        "reclaimed_worker_pids": sorted(reclaimed),
         "leased_workers": leased,
     }
 
