@@ -1648,11 +1648,12 @@ class EventLoop:
                         project_id=project_id,
                     )
                     queue = _safe_str(todo, "queue", "core") or "core"
-                    await release_lease(
-                        self._active_session,
-                        f"{queue}:{todo.todo_id}",
-                        holder_id=holder,
-                    )
+                    if self._active_session is not None:
+                        await release_lease(
+                            self._active_session,
+                            f"{queue}:{todo.todo_id}",
+                            holder_id=holder,
+                        )
                 except Exception as exc:
                     logger.warning(
                         "Failed to defer reaped todo %s to next tick: %s",

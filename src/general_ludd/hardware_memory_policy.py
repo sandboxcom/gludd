@@ -77,7 +77,7 @@ def detect_memory(backend: str | None = None) -> MemoryInfo:
 
     cuda = getattr(torch, "cuda", None)
     cuda_available = bool(cuda and getattr(cuda, "is_available", lambda: False)())
-    if requested in {"cuda", "rocm", "auto"} and cuda_available:
+    if requested in {"cuda", "rocm", "auto"} and cuda is not None and cuda_available:
         props = cuda.get_device_properties(0)
         total = int(getattr(props, "total_memory", 0))
         available = total
@@ -92,15 +92,15 @@ def detect_memory(backend: str | None = None) -> MemoryInfo:
     mps = getattr(getattr(torch, "backends", None), "mps", None)
     mps_available = bool(mps and getattr(mps, "is_available", lambda: False)())
     if requested in {"mps", "auto"} and mps_available:
-        total = _system_memory_bytes()
-        return MemoryInfo("unified", total or 0, total or 0, "mps", "Apple Silicon")
+        system_total = _system_memory_bytes()
+        return MemoryInfo("unified", system_total or 0, system_total or 0, "mps", "Apple Silicon")
 
     is_apple_silicon = platform.system() == "Darwin" and platform.machine() in {
         "arm64", "aarch64"
     }
     if requested == "mps" or (requested == "auto" and is_apple_silicon):
-        total = _system_memory_bytes()
-        return MemoryInfo("unified", total or 0, total or 0, "mps", "Apple Silicon")
+        system_total = _system_memory_bytes()
+        return MemoryInfo("unified", system_total or 0, system_total or 0, "mps", "Apple Silicon")
     return MemoryInfo("unknown", 0, 0, requested, "unknown")
 
 
