@@ -84,9 +84,11 @@ class TerraformCollectionImporter:
             return issues
 
         rego_files = sorted(policies_dir.glob("*.rego"))
+        has_deny_reassignment = False
         for rego in rego_files:
             source = rego.read_text(encoding="utf-8")
             if _DENY_REASSIGN_RE.search(source):
+                has_deny_reassignment = True
                 issues.append(
                     ImportIssue(
                         severity="error",
@@ -98,7 +100,10 @@ class TerraformCollectionImporter:
                     )
                 )
 
-        if rego_files:
+        # A policy that attempts to reassign the protected deny set is rejected
+        # before OPA parsing; avoid reporting a secondary parser diagnostic for
+        # the same invalid policy as a separate import issue.
+        if rego_files and not has_deny_reassignment:
             issues.extend(self._run_opa_check(policies_dir))
         return issues
 
