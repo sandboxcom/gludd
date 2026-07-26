@@ -8,6 +8,8 @@ OPENCODE_DB ?= ~/.local/share/opencode/opencode.db
 VERIFY_POLLS ?= 30
 GLUDD_TASK_TIMEOUT ?= 300
 GATE_POLL_INTERVAL ?= 60
+INTERVAL ?= 300
+COUNT ?= 1
 # SSH deploy keys are credentials and must live outside the repository.
 # Override with `make ... SSH_KEY=/path/to/key` for another external key.
 SSH_KEY ?= $(HOME)/.ssh/sandboxcom_gludd_rsa
@@ -5443,6 +5445,27 @@ worktree-merge-all:
 
 pipeline-status:
 	@$(UV) run python scripts/pipeline_status.py status
+
+# Emit an auditable pipeline heartbeat at a five-minute cadence by default.
+# Use COUNT=0 for a continuous loop; artifacts are project-namespaced.
+status-heartbeat:
+	@PROJECT_NAMESPACE="$${GLUDD_PROJECT_NAMESPACE:-}"; \
+	if [ -z "$$PROJECT_NAMESPACE" ]; then PROJECT_NAMESPACE="$$($(PYTHON) scripts/resource_arbiter.py namespace)"; fi; \
+	RESOURCE_ROOT="$${GLUDD_RESOURCE_ROOT:-$${TMPDIR:-/tmp}/gludd-resources}/$$PROJECT_NAMESPACE"; \
+	mkdir -p "$$RESOURCE_ROOT"; LOG="$$RESOURCE_ROOT/status-heartbeat.log"; STATE="$$RESOURCE_ROOT/status-heartbeat.json"; \
+	INTERVAL_VALUE="$${INTERVAL:-300}"; COUNT_VALUE="$${COUNT:-1}"; \
+	case "$$INTERVAL_VALUE" in ''|*[!0-9]*) echo "INTERVAL must be a non-negative integer"; exit 2;; esac; \
+	case "$$COUNT_VALUE" in ''|*[!0-9]*) echo "COUNT must be a non-negative integer"; exit 2;; esac; \
+	if [ "$$INTERVAL_VALUE" -lt 300 ]; then echo "INTERVAL must be >= 300 seconds"; exit 2; fi; \
+	i=0; while [ "$$COUNT_VALUE" -eq 0 ] || [ "$$i" -lt "$$COUNT_VALUE" ]; do \
+		timestamp="$$(date -u +%Y-%m-%dT%H:%M:%SZ)"; sha="$$(git rev-parse HEAD 2>/dev/null || echo unknown)"; \
+		echo "=== PIPELINE HEARTBEAT $$timestamp sha=$$sha ===" | tee -a "$$LOG"; \
+		$(MAKE) --no-print-directory gate-status 2>&1 | tee -a "$$LOG" || true; \
+		$(MAKE) --no-print-directory pipeline-status 2>&1 | tee -a "$$LOG" || true; \
+		$(MAKE) --no-print-directory active-work-status 2>&1 | tee -a "$$LOG" || true; \
+		tmp="$$STATE.tmp.$$$$"; printf '{"timestamp":"%s","sha":"%s","interval_seconds":%s,"iteration":%s}\n' "$$timestamp" "$$sha" "$$INTERVAL_VALUE" "$$i" > "$$tmp"; mv -f "$$tmp" "$$STATE"; \
+		i=$$((i + 1)); if [ "$$COUNT_VALUE" -ne 0 ] && [ "$$i" -ge "$$COUNT_VALUE" ]; then break; fi; sleep "$$INTERVAL_VALUE"; \
+	done
 
 pipeline-health: pipeline-status
 	@true
