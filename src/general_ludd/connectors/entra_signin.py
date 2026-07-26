@@ -102,7 +102,12 @@ class EntraSignInSource:
         self.config = dict(config)
         self.transport: Transport = transport or _default_transport
 
-        self.token_env = str(self.config.get("token_env", "")).strip()
+        # ``secret_env`` is retained as a compatibility alias for older
+        # configurations that supplied the externally acquired Graph token
+        # under the client-credentials secret name.
+        self.token_env = str(
+            self.config.get("token_env") or self.config.get("secret_env") or ""
+        ).strip()
         if not self.token_env:
             raise ValueError("entra_signin: 'token_env' is required")
 
@@ -282,3 +287,9 @@ class EntraSignInSource:
             url, params = self._split_url_params(link)
 
         return out
+
+
+# Historical spelling used by connector manifests and callers.
+EntraSigninSource = EntraSignInSource
+
+__all__ = ["EntraSignInSource", "EntraSigninSource"]

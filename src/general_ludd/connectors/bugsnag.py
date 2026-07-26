@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Callable
 from typing import Protocol, runtime_checkable
 from urllib.parse import urlsplit
 
@@ -67,7 +68,7 @@ class BugsnagSource:
     def __init__(
         self,
         config: dict[str, object],
-        transport: HttpTransport,
+        transport: HttpTransport | Callable[..., HttpResponse],
         *,
         environ: dict[str, str] | None = None,
     ) -> None:
@@ -93,18 +94,32 @@ class BugsnagSource:
         # Bugsnag Data Access API: Authorization: token <PERSONAL_AUTH_TOKEN>
         return {"Authorization": f"token {self._token}", "Accept": "application/json"}
 
+    def _request(self, url: str, *, params: dict[str, object] | None = None) -> HttpResponse:
+        """Call either the canonical ``request`` transport or a simple callable.
+
+        Connector E2E harnesses commonly inject a callable ``(method, url, ...)``
+        while production adapters expose ``.request``. Supporting both keeps the
+        transport seam explicit without forcing every adapter to wrap itself.
+        """
+        request = getattr(self._transport, "request", None)
+        if callable(request):
+            return request("GET", url, headers=self._headers(), params=params, timeout=self._timeout)
+        if callable(self._transport):
+            try:
+                return self._transport("GET", url, headers=self._headers(), params=params, timeout=self._timeout)
+            except TypeError as first_error:
+                try:
+                    return self._transport(url, headers=self._headers(), params=params, timeout=self._timeout)
+                except TypeError:
+                    raise first_error from None
+        raise TypeError("Bugsnag transport must expose request() or be callable")
+
     def _errors_url(self) -> str:
         return f"{self.base_url}/projects/{self.project_id}/errors"
 
     def health(self) -> dict[str, object]:
         try:
-            resp = self._transport.request(
-                "GET",
-                self._errors_url(),
-                headers=self._headers(),
-                params={"per_page": 1},
-                timeout=self._timeout,
-            )
+            resp = self._request(self._errors_url(), params={"per_page": 1})
         except Exception:  # health must never raise
             logger.warning("health check failed", exc_info=True)
             return {"ok": False, "detail": "health check failed"}
@@ -118,13 +133,7 @@ class BugsnagSource:
         for key in ("status", "release_stage", "per_page", "sort"):
             if key in spec:
                 params[key] = spec[key]
-        resp = self._transport.request(
-            "GET",
-            self._errors_url(),
-            headers=self._headers(),
-            params=params,
-            timeout=self._timeout,
-        )
+        resp = self._request(self._errors_url(), params=params)
         if not (200 <= resp.status_code < 300):
             raise ConnectorConfigError(f"bugsnag query failed: HTTP {resp.status_code}")
         payload = resp.json()

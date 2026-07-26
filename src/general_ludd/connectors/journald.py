@@ -119,16 +119,25 @@ class JournaldSource:
         self,
         config: JournaldConfig | None = None,
         runner: Runner | None = None,
+        *,
+        reader: Callable[..., list[dict[str, object]]] | None = None,
     ) -> None:
         cfg: dict[str, object] = dict(config or {})
         self.name: str = str(cfg.get("name", "journald"))
         self._config = cfg
         self._runner: Runner = runner if runner is not None else _default_runner
+        self._reader = reader
 
     # -- health ---------------------------------------------------------------
 
     def health(self) -> JournaldHealthResult:
         """Return {'ok': bool, 'detail': str}; never raises."""
+        if self._reader is not None:
+            try:
+                self._reader(lines=1)
+            except Exception as exc:
+                return {"ok": False, "detail": f"journal reader unavailable: {exc}"}
+            return {"ok": True, "detail": "journal reader ok"}
         try:
             rc, out, err = self._runner(["journalctl", "--version"])
         except Exception as exc:  # health must never raise
@@ -148,8 +157,17 @@ class JournaldSource:
         since (str), priority (int 0..7).
         """
         spec_dict: dict[str, object] = dict(spec or {})
+        if self._reader is not None:
+            try:
+                entries = self._reader(**spec_dict)
+            except TypeError:
+                entries = self._reader()
+            return [self._normalize(cast("JournaldEntry", entry)) for entry in entries if isinstance(entry, dict)]
         argv = self._build_argv(spec_dict)
-        rc, out, _err = self._runner(argv)
+        try:
+            rc, out, _err = self._runner(argv)
+        except OSError:
+            return []
         if rc != 0:
             return []
         records: list[dict[str, object]] = []

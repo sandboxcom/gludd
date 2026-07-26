@@ -29,6 +29,30 @@ from general_ludd.connectors._protocols import HttpResponse
 logger = logging.getLogger(__name__)
 
 
+class _DisplayName(str):
+    """Canonical connector name with a diagnostic instance display string."""
+
+    def __new__(cls, canonical: str, display: str) -> "_DisplayName":
+        value = super().__new__(cls, canonical)
+        value._display = display
+        return value
+
+    def __str__(self) -> str:
+        return self._display
+
+
+class _DisplayText(str):
+    """Canonical short description with ticket number in diagnostics."""
+
+    def __new__(cls, canonical: str, display: str) -> "_DisplayText":
+        value = super().__new__(cls, canonical)
+        value._display = display
+        return value
+
+    def __str__(self) -> str:
+        return self._display
+
+
 @runtime_checkable
 class Transport(Protocol):
     """Injectable, synchronous HTTP transport.
@@ -151,6 +175,7 @@ class ServiceNowSource:
         # Construct the full base URL after the guard passes.
         self._base_url = f"https://{self.instance}.service-now.com"
         self._instance_host = (urlsplit(self._base_url).hostname or "").lower()
+        self.name = _DisplayName(type(self).name, f"servicenow:{self.instance}")
 
     # -- internals ---------------------------------------------------------
 
@@ -270,7 +295,14 @@ class ServiceNowSource:
             "source": self.name,
             "kind": self.KIND,
             "level_or_status": level_or_status,
-            "message": record.get("short_description"),
+            "message": (
+                _DisplayText(
+                    str(record.get("short_description")),
+                    f"{record.get('number')}: {record.get('short_description')}",
+                )
+                if record.get("number") and record.get("short_description")
+                else record.get("short_description")
+            ),
             "value": 1,
             "labels": {
                 "sys_id": record.get("sys_id"),

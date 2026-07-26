@@ -42,6 +42,16 @@ class _MockTransport:
         return self.response
 
 
+class _CallableTransport:
+    def __init__(self, response: _Resp) -> None:
+        self.response = response
+
+    def __call__(self, method: str, url: str, **_: Any) -> _Resp:
+        assert method == "GET"
+        assert url.endswith("/projects/proj-1/errors")
+        return self.response
+
+
 CANNED = [
     {
         "id": "err-abc",
@@ -184,3 +194,8 @@ def test_health_never_raises() -> None:
     h = src.health()
     assert h["ok"] is False
     assert h["detail"] == "health check failed"
+
+
+def test_callable_transport_is_supported() -> None:
+    src = BugsnagSource(CONFIG, _CallableTransport(_Resp(200, CANNED)), environ={"BUGSNAG_TOKEN": "t"})
+    assert src.health()["ok"] is True

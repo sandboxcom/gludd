@@ -221,6 +221,16 @@ class GraylogSource:
         encoded = base64.b64encode(raw).decode("ascii")
         return {"Authorization": f"Basic {encoded}", "Accept": "application/json"}
 
+    def _request(self, url: str, *, params: Mapping[str, str | int] | None = None) -> HttpResponse:
+        """Invoke URL-first and method-first injectable transport adapters."""
+        try:
+            return self._transport(url, headers=self._auth_header(), params=params, timeout=self.timeout)
+        except TypeError as first_error:
+            try:
+                return self._transport("GET", url, headers=self._auth_header(), params=params, timeout=self.timeout)  # type: ignore[arg-type]
+            except TypeError:
+                raise first_error from None
+
     # ---------------------------------------------------------------- health
     def health(self) -> dict[str, object]:
         """Probe Graylog load-balancer/system status. NEVER raises.
@@ -231,12 +241,7 @@ class GraylogSource:
         """
         url = f"{self.base_url}/api/system/lbstatus"
         try:
-            resp = self._transport(
-                url,
-                headers=self._auth_header(),
-                params=None,
-                timeout=self.timeout,
-            )
+            resp = self._request(url)
         except Exception:  # health must never raise
             # Do not leak repr(exc) (can embed the base URL / token env / internal
             # detail) into the health response; log it for operators instead.
@@ -279,12 +284,7 @@ class GraylogSource:
         spec_copy: Mapping[str, object] = dict(spec or {})
         url, params = self._build_search_request(spec_copy)
         try:
-            resp = self._transport(
-                url,
-                headers=self._auth_header(),
-                params=params,
-                timeout=self.timeout,
-            )
+            resp = self._request(url, params=params)
             if int(getattr(resp, "status_code", 0)) != 200:
                 return []
             payload = resp.json()

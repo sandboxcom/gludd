@@ -120,6 +120,54 @@ class MockHttpResponseTransport:
         resp.headers = dict(self._headers)
         return resp
 
+    def get(
+        self,
+        url: str,
+        *,
+        params: dict[str, object] | None = None,
+        headers: dict[str, str] | None = None,
+        timeout: float | None = None,
+    ) -> MockHttpResponse:
+        """Provide the protocol used by self-contained GET connectors."""
+        self.calls.append(
+            {
+                "method": "GET",
+                "url": url,
+                "headers": headers,
+                "params": params,
+                "json": None,
+                "auth": None,
+                "timeout": timeout,
+            }
+        )
+        resp = MockHttpResponse(self._status, self._body)
+        resp.headers = dict(self._headers)
+        return resp
+
+    def post(
+        self,
+        url: str,
+        *,
+        json: object = None,
+        headers: dict[str, str] | None = None,
+        timeout: float | None = None,
+    ) -> MockHttpResponse:
+        """Provide the protocol used by self-contained POST connectors."""
+        self.calls.append(
+            {
+                "method": "POST",
+                "url": url,
+                "headers": headers,
+                "params": None,
+                "json": json,
+                "auth": None,
+                "timeout": timeout,
+            }
+        )
+        resp = MockHttpResponse(self._status, self._body)
+        resp.headers = dict(self._headers)
+        return resp
+
 
 def _make_http_get(status: int = 200, body: object = None):
     """Factory: tuple-returning http_get for CircleCI/nagios-style connectors."""
@@ -1518,8 +1566,8 @@ class TestPyroscopeConnector:
     def test_constructs_with_no_config(self, monkeypatch):
         from general_ludd.connectors.pyroscope import PyroscopeSource
 
-        source = PyroscopeSource()
-        assert source.KIND == "metrics"
+        source = PyroscopeSource({"base_url": "https://pyro.example.com"})
+        assert source.KIND == "traces"
         assert source.name == "pyroscope"
 
     def test_constructs_custom_config(self, monkeypatch):
@@ -1560,8 +1608,8 @@ class TestParcaConnector:
     def test_constructs_with_no_config(self, monkeypatch):
         from general_ludd.connectors.parca import ParcaSource
 
-        source = ParcaSource()
-        assert source.KIND == "metrics"
+        source = ParcaSource({"base_url": "https://parca.example.com"})
+        assert source.KIND == "traces"
         assert source.name == "parca"
 
     def test_constructs_custom_config(self, monkeypatch):
@@ -1615,31 +1663,28 @@ class TestMacUnifiedLogConnector:
     def test_health_ok_with_injected_executor(self, monkeypatch):
         from general_ludd.connectors.mac_unified_log import MacUnifiedLogSource
 
-        def _executor(**kw: object) -> list[dict[str, object]]:
-            return [{"timestamp": "2025-01-01T12:00:00Z", "message": "test"}]
+        def _runner(argv: list[str]) -> tuple[int, str, str]:
+            return 0, "", ""
 
-        source = MacUnifiedLogSource(executor=_executor)
+        source = MacUnifiedLogSource(runner=_runner)
         result = source.health()
         assert result["ok"] is True
 
     def test_query_returns_records(self, monkeypatch):
         from general_ludd.connectors.mac_unified_log import MacUnifiedLogSource
 
-        def _executor(**kw: object) -> list[dict[str, object]]:
-            return [
-                {
-                    "timestamp": "2025-01-01T12:00:00Z",
-                    "message": "Connection from 1.2.3.4",
-                    "processImagePath": "/usr/sbin/sshd",
-                },
-                {
-                    "timestamp": "2025-01-01T12:01:00Z",
-                    "message": "Accepted publickey",
-                    "processImagePath": "/usr/sbin/sshd",
-                },
-            ]
+        def _runner(argv: list[str]) -> tuple[int, str, str]:
+            stdout = (
+                '{"timestamp":"2025-01-01T12:00:00Z",'
+                '"eventMessage":"Connection from 1.2.3.4",'
+                '"processImagePath":"/usr/sbin/sshd"}\n'
+                '{"timestamp":"2025-01-01T12:01:00Z",'
+                '"eventMessage":"Accepted publickey",'
+                '"processImagePath":"/usr/sbin/sshd"}\n'
+            )
+            return 0, stdout, ""
 
-        source = MacUnifiedLogSource(executor=_executor)
+        source = MacUnifiedLogSource(runner=_runner)
         records = source.query({})
         assert len(records) >= 2
         assert records[0]["kind"] == "logs"
@@ -1647,6 +1692,6 @@ class TestMacUnifiedLogConnector:
     def test_query_empty_without_executor(self, monkeypatch):
         from general_ludd.connectors.mac_unified_log import MacUnifiedLogSource
 
-        source = MacUnifiedLogSource()
+        source = MacUnifiedLogSource(runner=lambda _argv: (1, "", "log unavailable"))
         records = source.query({})
         assert records == []

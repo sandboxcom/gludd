@@ -155,3 +155,10 @@ def test_since_filters_lexically(tmp_path: Path) -> None:
     recs = src.query({"path": "s", "since": "B"})
     assert len(recs) == 1
     assert recs[0]["raw"].startswith("Zzz")
+
+
+def test_configured_path_can_be_used_without_explicit_root(tmp_path: Path) -> None:
+    path = _write(tmp_path, "configured.log", RFC3164_SAMPLE)
+    src = SyslogFileSource({"path": str(path)})
+    assert src.health()["ok"] is True
+    assert len(src.query({})) == 2

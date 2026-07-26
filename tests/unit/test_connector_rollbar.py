@@ -44,6 +44,13 @@ class _MockTransport:
         return self.response
 
 
+class _CallableTransport:
+    def __call__(self, method: str, url: str, **_: Any) -> _Resp:
+        assert method == "GET"
+        assert url.endswith("/api/1/items")
+        return _Resp(200, CANNED)
+
+
 CANNED = {
     "result": {
         "items": [
@@ -174,3 +181,8 @@ def test_health_never_raises_on_transport_error() -> None:
     h = src.health()
     assert h["ok"] is False
     assert "boom" in h["detail"]
+
+
+def test_optional_transport_and_callable_transport() -> None:
+    src = RollbarSource({"token_env": "ROLLBAR_TOKEN"}, _CallableTransport(), environ={"ROLLBAR_TOKEN": "t"})
+    assert src.query({})

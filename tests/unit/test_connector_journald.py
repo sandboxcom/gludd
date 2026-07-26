@@ -212,3 +212,12 @@ def test_default_runner_uses_list_argv_never_shell(monkeypatch: pytest.MonkeyPat
     kwargs = captured["kwargs"]
     assert kwargs.get("shell", False) is False  # shell never True
     assert kwargs.get("timeout")  # time-bound
+
+
+def test_reader_adapter_returns_normalized_records() -> None:
+    def reader(**_: object) -> list[dict[str, object]]:
+        return [{"MESSAGE": "reader event", "__REALTIME_TIMESTAMP": "1700000000000000"}]
+
+    src = JournaldSource(reader=reader)
+    assert src.health()["ok"] is True
+    assert src.query({})[0]["message"] == "reader event"

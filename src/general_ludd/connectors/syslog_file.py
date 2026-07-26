@@ -124,8 +124,12 @@ class SyslogFileSource:
     def __init__(self, config: dict[str, object]) -> None:
         cfg = config or {}
         root = cfg.get("root")
-        if not root:
+        configured_path = cfg.get("path")
+        if not root and not configured_path:
             raise ValueError("SyslogFileSource requires config['root'] (confinement dir)")
+        self._configured_path = str(configured_path) if configured_path else None
+        if not root:
+            root = os.path.dirname(os.path.realpath(str(configured_path))) or "."
         # realpath resolves symlinks so confinement can't be tricked by a link.
         self._root = os.path.realpath(str(root))
         self.name = str(cfg.get("name", "syslog_file"))
@@ -147,6 +151,13 @@ class SyslogFileSource:
     def health(self) -> dict[str, object]:
         """Report whether the confinement root is a usable directory. Never raises."""
         try:
+            if self._configured_path is not None:
+                target = self._resolve_confined(self._configured_path)
+                if not os.path.isfile(target):
+                    return {"ok": False, "detail": f"file not found: {target}"}
+                if not os.access(target, os.R_OK):
+                    return {"ok": False, "detail": f"file not readable: {target}"}
+                return {"ok": True, "detail": f"file ok: {target}"}
             if not os.path.isdir(self._root):
                 return {"ok": False, "detail": f"root not a directory: {self._root}"}
             if not os.access(self._root, os.R_OK):
@@ -225,7 +236,7 @@ class SyslogFileSource:
                   (cheap timestamp-prefix filter for already-ordered logs).
         """
         spec = spec or {}
-        path = spec.get("path")
+        path = spec.get("path", self._configured_path)
         if not path:
             raise ValueError("query spec requires 'path'")
         real = self._resolve_confined(str(path))

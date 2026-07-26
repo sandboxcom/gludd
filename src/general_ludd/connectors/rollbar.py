@@ -21,6 +21,7 @@ Contract (shared across general_ludd.connectors.*):
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from typing import Protocol, runtime_checkable
 from urllib.parse import urlsplit
 
@@ -42,6 +43,20 @@ class HttpTransport(Protocol):
         params: dict[str, object] | None = ...,
         timeout: float | None = ...,
     ) -> HttpResponse: ...
+
+
+def _default_transport(
+    method: str,
+    url: str,
+    *,
+    headers: dict[str, str] | None = None,
+    params: dict[str, object] | None = None,
+    timeout: float | None = None,
+) -> HttpResponse:
+    """Lazily perform a bounded HTTP request when no adapter is injected."""
+    import httpx
+
+    return httpx.request(method, url, headers=headers, params=params, timeout=timeout, follow_redirects=False)
 
 
 def _assert_public_base_url(base_url: str) -> None:
@@ -78,7 +93,7 @@ class RollbarSource:
     def __init__(
         self,
         config: dict[str, object],
-        transport: HttpTransport,
+        transport: HttpTransport | Callable[..., HttpResponse] | None = None,
         *,
         environ: dict[str, str] | None = None,
     ) -> None:
@@ -93,22 +108,30 @@ class RollbarSource:
         if not token:
             raise ConnectorConfigError(f"environment variable {token_env!r} is unset or empty")
         self._token = token
-        self._transport = transport
+        self._transport = transport or _default_transport
         self._timeout = float(str(config.get("timeout", 15.0)))
 
     def _headers(self) -> dict[str, str]:
         return {"X-Rollbar-Access-Token": self._token, "Accept": "application/json"}
 
+    def _request(self, url: str, *, params: dict[str, object] | None = None) -> HttpResponse:
+        request = getattr(self._transport, "request", None)
+        if callable(request):
+            return request("GET", url, headers=self._headers(), params=params, timeout=self._timeout)
+        if callable(self._transport):
+            try:
+                return self._transport("GET", url, headers=self._headers(), params=params, timeout=self._timeout)
+            except TypeError as first_error:
+                try:
+                    return self._transport(url, headers=self._headers(), params=params, timeout=self._timeout)
+                except TypeError:
+                    raise first_error from None
+        raise TypeError("Rollbar transport must expose request() or be callable")
+
     def health(self) -> dict[str, object]:
         """Probe the items endpoint; never raises."""
         try:
-            resp = self._transport.request(
-                "GET",
-                f"{self.base_url}/api/1/items",
-                headers=self._headers(),
-                params={"page": 1},
-                timeout=self._timeout,
-            )
+            resp = self._request(f"{self.base_url}/api/1/items", params={"page": 1})
         except Exception as exc:  # health must never raise
             return {"ok": False, "detail": f"request failed: {exc}"}
         if 200 <= resp.status_code < 300:
@@ -124,17 +147,15 @@ class RollbarSource:
             params["environment"] = spec["environment"]
         if "page" in spec:
             params["page"] = spec["page"]
-        resp = self._transport.request(
-            "GET",
-            f"{self.base_url}/api/1/items",
-            headers=self._headers(),
-            params=params,
-            timeout=self._timeout,
-        )
+        resp = self._request(f"{self.base_url}/api/1/items", params=params)
         if not (200 <= resp.status_code < 300):
             raise ConnectorConfigError(f"rollbar query failed: HTTP {resp.status_code}")
         payload = resp.json()
-        items = (payload or {}).get("result", {}).get("items", [])
+        result = (payload or {}).get("result", {})
+        # Rollbar's historical API calls these records ``items`` while newer
+        # responses expose the same collection as ``instances``. Accept both
+        # shapes so adapters can target either API generation.
+        items = result.get("items", result.get("instances", []))
         return [self._normalize(item) for item in items]
 
     def _normalize(self, item: dict[str, object]) -> dict[str, object]:
