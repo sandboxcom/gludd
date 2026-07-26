@@ -630,5 +630,6 @@ old summary table omitted entirely. Grand total across the file: **326** boxes.
 <!-- T-BETA3-RELEASE path registration: .opencode/skills/culinary-expert/SKILL.md .opencode/skills/electronics-expert/SKILL.md .opencode/skills/go-expert/SKILL.md .opencode/skills/java-expert/SKILL.md .opencode/skills/python-expert/SKILL.md -->
 <!-- T-BETA3-MAKE-AUDIT paths: scripts/active_work_status.py tests/unit/test_active_work_status.py config/make_target_contract.json docs/MAKE_TARGET_CONTRACT.md -->
 <!-- T-BETA3-GATE paths: config/dead_code_baseline.txt docs/MAKE_TARGET_CONTRACT.md -->
- <!-- T-BETA3-E2E paths: tests/e2e/test_api_routers.py -->
- <!-- T-BETA3-E2E paths: tests/e2e/test_memory_system_branches_e2e.py -->
+<!-- T-BETA3-E2E paths: tests/e2e/test_api_routers.py -->
+<!-- T-BETA3-E2E paths: tests/e2e/test_memory_system_branches_e2e.py -->
+<!-- T-BETA3-E2E paths: tests/e2e/test_snake_mechanics.py -->
