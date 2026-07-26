@@ -101,6 +101,17 @@ class TestAuditCoverageScript:
         parsed, _, passed = module.parse_coverage_json(str(coverage_json), 70, "src/general_ludd")
         assert passed
         assert parsed["branch_coverage"] == 75.0
+        assert parsed["e2e_branch_coverage"] == 75.0
+        assert parsed["e2e_branch_totals"] == {
+            "total": 4,
+            "covered": 3,
+            "missing": 1,
+            "coverage_percent": 75.0,
+            "total_branches": 4,
+            "covered_branches": 3,
+        }
+        assert parsed["per_file_thresholds"] == {"line": 70, "branch": 75.0}
+        assert parsed["per_file_results"]["general_ludd/branchy.py"]["passed"] is True
         assert parsed["missing_arcs"]["general_ludd/branchy.py"] == [[10, 12]]
         assert parsed["contexts"]["general_ludd/branchy.py"] == ["10"]
 
@@ -183,6 +194,57 @@ class TestAuditCoverageScript:
         assert "--cov-fail-under=0" in args
         assert any("tests/e2e/" in str(arg) for arg in args)
         assert kwargs["env"]["GLUDD_E2E_ACTIVE"] == "1"
+
+    def test_shard_results_are_recorded_and_failed_shards_are_reported(self, tmp_path, monkeypatch):
+        spec = importlib.util.spec_from_file_location("audit_coverage_shards", AUDIT_SCRIPT)
+        assert spec and spec.loader
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        calls = []
+
+        def fake_run(args, **kwargs):
+            calls.append(args)
+            result = type("Result", (), {})()
+            result.returncode = 7 if len(calls) == 1 else 0
+            return result
+
+        monkeypatch.setattr(module.subprocess, "run", fake_run)
+        shards = []
+        assert module.run_pytest_coverage(
+            "src/general_ludd", str(tmp_path / "coverage.json"), shards
+        ) == 7
+        assert len(shards) == 1
+        assert shards[0]["path"].startswith("tests/e2e/")
+        assert shards[0]["status"] == "failed"
+        assert shards[0]["returncode"] == 7
+
+    def test_failed_run_writes_report_with_failed_shards(self, tmp_path, monkeypatch):
+        spec = importlib.util.spec_from_file_location("audit_coverage_failure", AUDIT_SCRIPT)
+        assert spec and spec.loader
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        json_out = tmp_path / "failed-report.json"
+        monkeypatch.setattr(module, "run_pytest_coverage", lambda source, path, shards: (
+            shards.append({"path": "tests/e2e/test_broken.py", "status": "failed", "returncode": 9})
+            or 9
+        ))
+        monkeypatch.setattr(
+            module.sys,
+            "argv",
+            ["audit_coverage.py", "--json-out=" + str(json_out)],
+        )
+        try:
+            module.main()
+        except SystemExit as exc:
+            assert exc.code == 9
+        else:
+            raise AssertionError("failed coverage run must exit non-zero")
+        report = json.loads(json_out.read_text())
+        assert report["passed"] is False
+        assert report["failed_shards"] == [
+            {"path": "tests/e2e/test_broken.py", "status": "failed", "returncode": 9}
+        ]
 
     def test_e2e_environment_overrides_caller_value(self, monkeypatch):
         spec = importlib.util.spec_from_file_location("audit_coverage_env", AUDIT_SCRIPT)

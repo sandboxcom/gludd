@@ -806,7 +806,13 @@ class _FakeTimelineRepo:
         self.store: dict[str, str] = {}
         for ep_dict in (episodes or []):
             ep_key = ep_dict.get("id", f"ep-{hash(json.dumps(ep_dict, sort_keys=True, default=str))}")
-            self.store[f"agent-1:{EPISODIC_NAMESPACE}:None:{ep_key}"] = json.dumps(ep_dict, default=str)
+            base_key = f"agent-1:{EPISODIC_NAMESPACE}:None:{ep_key}"
+            key = base_key
+            suffix = 1
+            while key in self.store:
+                suffix += 1
+                key = f"{base_key}-{suffix}"
+            self.store[key] = json.dumps(ep_dict, default=str)
 
     async def list_by_namespace(self, agent_id, *, namespace="", project_id=None, limit=100):
         prefix = f"{agent_id}:{namespace}:{project_id}:"

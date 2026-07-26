@@ -149,6 +149,33 @@ class TestPluginStructure:
             "Plugin must use getProjectRoot() for workspace-relative paths"
         )
 
+    def test_hard_registration_guard_is_present(self):
+        """Source writes must prove a concrete TASKS.md registration."""
+        src = read_plugin_src()
+        assert "isRegisteredTaskPath" in src, (
+            "Plugin must verify the edited path against TASKS.md registrations"
+        )
+        assert "TASK REGISTRATION REQUIRED" in src, (
+            "Unregistered source edits must be denied with an actionable message"
+        )
+
+    def test_registration_guard_accepts_declared_task_id(self):
+        """Delegated writes may carry a declared task ID as registration evidence."""
+        src = read_plugin_src()
+        assert "declaredTaskIds" in src, (
+            "Plugin must parse declared task IDs from TASKS.md"
+        )
+        assert "taskId" in src or "task_id" in src, (
+            "Plugin must inspect task ID metadata on write requests"
+        )
+
+    def test_registration_guard_fails_closed_for_missing_path(self):
+        """A write without a target path must not bypass registration checks."""
+        src = read_plugin_src()
+        assert "WRITE TARGET PATH MISSING" in src, (
+            "Pathless write operations must be denied by the registration guard"
+        )
+
 
 class TestCheckTaskIntegrityScript:
     def test_script_exists(self):

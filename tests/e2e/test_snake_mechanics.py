@@ -29,6 +29,14 @@ def test_tick_advances_exactly_one_grid_cell() -> None:
     assert (after[0] - before[0], after[1] - before[1]) == (1, 0)
 
 
+def test_tick_before_start_is_a_noop() -> None:
+    game = _snake_class()(grid_w=8, grid_h=8)
+    before = game.render_state()
+    assert game.tick() is True
+    assert game.state == "ready"
+    assert game.render_state() == before
+
+
 def test_reverse_input_is_rejected_and_perpendicular_turn_is_applied() -> None:
     game = _snake_class()(grid_w=20, grid_h=20)
     game.start()
@@ -110,3 +118,9 @@ def test_self_collision_is_terminal() -> None:
     assert game.tick() is False
     assert game.state == "game_over"
     assert game.game_over is True
+
+
+def test_full_board_has_no_food_cells() -> None:
+    game = _snake_class()(grid_w=1, grid_h=1)
+    assert game.snake == [[0, 0]]
+    assert game.food == []

@@ -373,7 +373,16 @@ def _cascade_level_3(previous: list[dict[str, Any]] | dict[str, Any]) -> dict[st
     return {
         "total_episodes_analyzed": total,
         "insights": lessons,
-        "recommendation_priority": "high" if success_rate < 50 else "medium" if success_rate < 80 else "low",
+        # A low-priority recommendation requires both a strong success rate
+        # and enough observations to make that rate meaningful.  Tiny samples
+        # remain medium priority so a single lucky run cannot suppress review.
+        "recommendation_priority": (
+            "high"
+            if success_rate < 50
+            else "low"
+            if total >= 10 and success_rate >= 80
+            else "medium"
+        ),
         "suggested_focus_areas": sorted(dominant_words)[:5],
         "generated_at": datetime.now(UTC).isoformat(),
     }

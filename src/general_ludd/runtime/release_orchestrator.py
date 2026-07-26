@@ -62,7 +62,7 @@ def build_and_validate_release(
         }
 
     validation = ReleaseArtifactValidator(allowed_signers_path=trust_store).validate_release(
-        version=version, artifacts_dir=output_dir
+        version=version, artifacts_dir=output_dir, require_container=build_container
     )
     report["validation"] = {
         "valid": validation.valid,

@@ -137,6 +137,23 @@ class TestReleaseNoContainerTagsFile:
         assert result.container_valid is True
         assert result.valid is True
 
+    def test_required_container_without_tags_is_invalid(self, tmp_path: Path) -> None:
+        """A release requesting a container must publish its tag metadata."""
+        artifact = b"x"
+        checksum = _sha256_of(artifact)
+        (tmp_path / "artifact.whl").write_bytes(artifact)
+        manifest = {"version": "1.0.0", "checksums": {"artifact.whl": checksum}}
+        _write_file(tmp_path / "MANIFEST.json", json.dumps(manifest))
+        _write_file(tmp_path / "CHECKSUMS.sha256", f"{checksum}  artifact.whl\n")
+
+        result = ReleaseArtifactValidator().validate_release(
+            "1.0.0", str(tmp_path), require_container=True
+        )
+
+        assert result.container_valid is False
+        assert result.valid is False
+        assert "container-image-tags.json not found in artifacts dir" in result.errors
+
 
 class TestReleaseManifestVersionMismatch:
     def test_manifest_version_mismatch(self, tmp_path: Path) -> None:

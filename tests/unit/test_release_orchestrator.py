@@ -82,7 +82,7 @@ class TestBuildAndValidateReleasePipOnlyHappyPath:
         mock_pip_cls.return_value.build.assert_called_once_with(output_dir="/out", version="1.0.0")
         mock_validator_cls.assert_called_once_with(allowed_signers_path="/out/release.allowed_signers")
         mock_validator_cls.return_value.validate_release.assert_called_once_with(
-            version="1.0.0", artifacts_dir="/out"
+            version="1.0.0", artifacts_dir="/out", require_container=False
         )
         assert report == {
             "version": "1.0.0",
@@ -236,11 +236,32 @@ class TestBuildAndValidateReleaseNonShortCircuitingFailures:
         )
 
         mock_validator_cls.return_value.validate_release.assert_called_once_with(
-            version="1.0.0", artifacts_dir="/out"
+            version="1.0.0", artifacts_dir="/out", require_container=True
         )
         assert report["container"]["success"] is False
         assert report["container"]["image_digest"] == ""
         assert report["validation"]["container_valid"] is False
+
+    @patch("general_ludd.runtime.release_orchestrator.ReleaseArtifactValidator")
+    @patch("general_ludd.runtime.release_orchestrator.ContainerBuilder")
+    @patch("general_ludd.runtime.release_orchestrator.PipBundleBuilder")
+    def test_container_validation_is_required_when_requested(
+        self, mock_pip_cls, mock_container_cls, mock_validator_cls
+    ) -> None:
+        """A requested container must be passed to the validator as required."""
+        mock_pip_cls.return_value.build.return_value = _bundle_result(success=True)
+        mock_container_cls.return_value.build_image.return_value = _build_result(
+            success=False, image_digest="", logs="container build failed"
+        )
+        mock_validator_cls.return_value.validate_release.return_value = _validation_result(
+            valid=False, container_valid=False, errors=["container artifact missing"]
+        )
+
+        build_and_validate_release(version="1.0.0", output_dir="/out", build_container=True)
+
+        mock_validator_cls.return_value.validate_release.assert_called_once_with(
+            version="1.0.0", artifacts_dir="/out", require_container=True
+        )
 
     @patch("general_ludd.runtime.release_orchestrator.ReleaseArtifactValidator")
     @patch("general_ludd.runtime.release_orchestrator.ContainerBuilder")

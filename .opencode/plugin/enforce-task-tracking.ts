@@ -51,6 +51,47 @@ function getNewContent(input: any): string {
   return input.content || input.text || input.args?.content || input.args?.text || ""
 }
 
+/** Return task IDs declared on checkbox lines in TASKS.md. */
+export function declaredTaskIds(tasksContent: string): Set<string> {
+  const ids = new Set<string>()
+  const taskLine = /^[ \t]*[-*]\s*\[[ xX]\]\s+([^\s|]+)/gm
+  for (const match of tasksContent.matchAll(taskLine)) {
+    ids.add(match[1])
+  }
+  return ids
+}
+
+function extractTaskId(input: any): string {
+  if (!input || typeof input !== "object") return ""
+  return String(
+    input.taskId || input.task_id ||
+    input.args?.taskId || input.args?.task_id ||
+    input.tool_input?.taskId || input.tool_input?.task_id ||
+    input.metadata?.taskId || input.metadata?.task_id || ""
+  ).trim()
+}
+
+/**
+ * Require either an exact path registration or a declared task ID on writes.
+ * Absolute paths are canonicalized relative to the project root so a caller
+ * cannot bypass the check by changing path spelling.
+ */
+export function isRegisteredTaskPath(
+  filePath: string,
+  tasksContent: string,
+  projectRoot: string,
+  input?: any,
+): boolean {
+  if (typeof filePath !== "string" || !filePath.trim()) return false
+  const resolvedRoot = path.resolve(projectRoot)
+  const resolvedPath = path.resolve(resolvedRoot, filePath)
+  const relativePath = path.relative(resolvedRoot, resolvedPath).replace(/\\/g, "/")
+  if (!relativePath || relativePath.startsWith("../") || path.isAbsolute(relativePath)) return false
+  if (tasksContent.includes(relativePath)) return true
+  const taskId = extractTaskId(input)
+  return Boolean(taskId && declaredTaskIds(tasksContent).has(taskId))
+}
+
 const defaultImpl: HotModule = {
   "tool.execute.before": async (input: any, _output: any) => {
     if (isSubagent()) return
@@ -128,6 +169,31 @@ const defaultImpl: HotModule = {
       }
 
       const isWriteOp = WRITE_TOOLS.includes(lt)
+      if (isWriteOp && !filePath) {
+        return {
+          permissionDecision: "deny" as const,
+          message: [
+            "WRITE TARGET PATH MISSING: task registration cannot be verified.",
+            "Retry the write with a workspace-relative filePath and a registered task.",
+            "Set GLUDD_TASK_TRACKING_ENFORCE=0 to disable.",
+          ].join("\n"),
+        }
+      }
+
+      if (isWriteOp && isSourceOrTestOrDocFile(filePath)) {
+        const originalContent = fs.readFileSync(tasksPath, "utf8")
+        if (!isRegisteredTaskPath(filePath, originalContent, root, input)) {
+          return {
+            permissionDecision: "deny" as const,
+            message: [
+              "TASK REGISTRATION REQUIRED: this path is not registered in TASKS.md.",
+              "Add the workspace-relative path to an active task or provide its declared taskId, then retry.",
+              "Set GLUDD_TASK_TRACKING_ENFORCE=0 to disable.",
+            ].join("\n"),
+          }
+        }
+      }
+
       const noUnchecked = uncheckedCount(tasksPath) === 0
 
       if (noUnchecked && isWriteOp && isSourceOrTestOrDocFile(filePath)) {

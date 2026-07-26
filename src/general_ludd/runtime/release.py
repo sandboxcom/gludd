@@ -24,12 +24,20 @@ class ReleaseArtifactValidator:
     def __init__(self, allowed_signers_path: str | None = None) -> None:
         self._allowed_signers_path = allowed_signers_path
 
-    def validate_release(self, version: str, artifacts_dir: str) -> ReleaseValidationResult:
+    def validate_release(
+        self,
+        version: str,
+        artifacts_dir: str,
+        *,
+        require_container: bool = False,
+    ) -> ReleaseValidationResult:
         errors: list[str] = []
         artifacts_path = Path(artifacts_dir)
 
         pip_bundle_valid = self._check_pip_bundle(artifacts_path, errors)
-        container_valid = self._check_container(artifacts_path, version, errors)
+        container_valid = self._check_container(
+            artifacts_path, version, errors, required=require_container
+        )
         manifest_valid = self._check_manifest(artifacts_path, version, errors)
         signature_valid = self._check_signature(artifacts_path, errors)
 
@@ -131,8 +139,18 @@ class ReleaseArtifactValidator:
             entries[fname] = file_hash
         return entries
 
-    def _check_container(self, artifacts_path: Path, version: str, errors: list[str]) -> bool:
+    def _check_container(
+        self,
+        artifacts_path: Path,
+        version: str,
+        errors: list[str],
+        *,
+        required: bool = False,
+    ) -> bool:
         image_tags_file = artifacts_path / "container-image-tags.json"
+        if required and not image_tags_file.exists():
+            errors.append("container-image-tags.json not found in artifacts dir")
+            return False
         if image_tags_file.exists():
             try:
                 tags_data = json.loads(image_tags_file.read_text())

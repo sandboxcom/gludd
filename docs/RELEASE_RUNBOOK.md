@@ -155,6 +155,15 @@ it does not fall back to an unprovisioned user-home trust file. Set
 `GLUDD_ALLOWED_SIGNERS` when validation must use an externally managed trust
 store instead. Keep the public key paired with the release signing key.
 
+## Container artifact is fail-closed
+
+When release validation is run with container building enabled, the validator
+requires `dist/container-image-tags.json` and checks that it references the
+release version. A failed container build or missing tag metadata therefore
+fails validation; it cannot be silently treated as a pip-only release. The
+pip-only path remains available when container building is intentionally
+disabled.
+
 ## Traps
 
 **`make verify-release-artifact` is not the gate.** It only proves "non-draft and

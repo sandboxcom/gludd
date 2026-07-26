@@ -1688,7 +1688,7 @@ provider-smoke:
 # normalized validation event and log record to Gludd's receiver.
 provider-harness:
 	@test -n "$(PROVIDER)" || { echo "Usage: make provider-harness PROVIDER=azure|runpod [LIVE=1]"; exit 1; }
-	@$(UV) run python scripts/provider_smoke_harness.py "$(PROVIDER)" $(if $(LIVE),--live,)
+	@$(UV) run python scripts/provider_smoke_harness.py "$(PROVIDER)" $(if $(filter 1 true yes,$(LIVE)),--live,)
 
 azure-harness:
 	@$(MAKE) --no-print-directory provider-harness PROVIDER=azure LIVE=$(LIVE)
