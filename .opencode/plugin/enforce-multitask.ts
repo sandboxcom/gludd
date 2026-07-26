@@ -80,7 +80,13 @@ function readState(): MultitaskState {
   if (isStateFileMtimeStale(MULTITASK_STATE_FILE)) {
     return freshState()
   }
-  return readJsonFile<MultitaskState>(MULTITASK_STATE_FILE, freshState())
+  // Persisted state can outlive the plugin schema (or be partially written by
+  // an interrupted process). Merge it with a complete baseline before hooks
+  // touch nested fields such as waveHistory.
+  const persisted = readJsonFile<Partial<MultitaskState>>(MULTITASK_STATE_FILE, {})
+  const state = { ...freshState(), ...persisted }
+  if (!Array.isArray(state.waveHistory)) state.waveHistory = []
+  return state
 }
 function writeState(s: MultitaskState): void {
   s.lastTs = Date.now()

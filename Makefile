@@ -2751,6 +2751,10 @@ gh-actions-billing-org:
 gh-actions-billing-user:
 	@gh api /users/sandboxcom/settings/billing/actions 2>&1 || echo "gh-api-failed (likely needs admin)"
 
+# Print gh CLI version.
+gh-version:
+	@gh --version
+
 # Show jobs (name + conclusion + step that failed) for a run id, unauthenticated.
 ci-jobs-anon:
 	@if [ -z "$(RUN)" ]; then echo "Usage: make ci-jobs-anon RUN=<run-id>"; exit 1; fi

@@ -217,6 +217,14 @@ class TestStateFileRoundTrip:
             "readState must have catch block for corrupt files"
         )
 
+    def test_state_missing_wave_history_is_repaired(self):
+        """Parseable legacy state must not make boundary handling call push on undefined."""
+        src = _plugin_source()
+        read_state = src.split("function readState")[1].split("function writeState", 1)[0]
+        assert "freshState()" in read_state, "readState must merge persisted data with fresh defaults"
+        assert "Array.isArray" in read_state, "readState must repair malformed array fields"
+        assert "waveHistory = []" in read_state, "readState must repair missing waveHistory"
+
     def test_state_write_updates_last_ts(self):
         src = _plugin_source()
         assert "lastTs = Date.now()" in src, "writeState must update lastTs"
@@ -753,16 +761,22 @@ class TestSpawnGateRefresh:
 
 
 class TestHookRegistration:
-    """Single hook (tool.execute.before) only — no text.complete or session.idle."""
+    """Tool enforcement plus OpenCode's supported experimental text hook."""
 
     def test_tool_execute_before_registered(self):
         src = _plugin_source()
         assert '"tool.execute.before"' in src, "tool.execute.before must be registered"
 
-    def test_no_text_complete_hook(self):
+    def test_uses_experimental_text_complete_hook(self):
         src = _plugin_source()
-        assert '"experimental.text.complete"' not in src, (
-            "text.complete hook removed in 2026-07-13 rewrite"
+        assert '"experimental.text.complete"' in src, (
+            "OpenCode requires the experimental text.complete hook"
+        )
+        # The internal default implementation retains a compatibility alias;
+        # only the exported proxy object is consumed by OpenCode.
+        proxy = src[src.rfind("export default"):]
+        assert '"text.complete":' not in proxy, (
+            "bare text.complete hook is rejected by OpenCode 1.18.x"
         )
 
     def test_no_session_idle_hook(self):

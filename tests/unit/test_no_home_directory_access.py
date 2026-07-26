@@ -5,9 +5,10 @@ directory ever again." Access is limited to exactly five path prefixes:
 
     1. /Users/shawnwilson/gludd/**                    (the workspace)
     2. /tmp/**                                        (all of /tmp)
-    3. /Users/shawnwilson/.config/opencode/**         (opencode config)
-    4. /Users/shawnwilson/.local/share/opencode/**    (opencode data/tool-output)
-    5. /Users/shawnwilson/.cache/**                   (pre-commit/uv/tool caches)
+    3. /private/tmp/**                                (macOS /tmp realpath)
+    4. /Users/shawnwilson/.config/opencode/**         (opencode config)
+    5. /Users/shawnwilson/.local/share/opencode/**    (opencode data/tool-output)
+    6. /Users/shawnwilson/.cache/**                   (pre-commit/uv/tool caches)
 
 Every other path under /Users/shawnwilson/ is FORBIDDEN — no ~/.ssh,
 ~/.aws, ~/.gnupg, ~/Documents, ~/Desktop, ~/Library, etc.
@@ -45,6 +46,7 @@ ALLOWED_PREFIXES = (
     "/Users/shawnwilson/.local/share/opencode/**",
     "/Users/shawnwilson/.cache/**",
     "/tmp/**",
+    "/private/tmp/**",
 )
 
 # Each of these tools must have a permission block in opencode.json.

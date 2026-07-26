@@ -338,15 +338,16 @@ The state-file pattern is the canonical mechanism for runtime enforcement tuning
 
 ## CRITICAL: No External File Access
 
-**Read/Write/Edit/Glob/Grep MUST NOT access paths outside the five allowed prefixes.** External file access prompts the user for permission and blocks work — a blocked tool call stalls the session exactly like a premature stop.
+**Read/Write/Edit/Glob/Grep MUST NOT access paths outside the six allowed prefixes.** External file access prompts the user for permission and blocks work — a blocked tool call stalls the session exactly like a premature stop.
 
 **User mandate (HARD): NEVER ask for access to the user's full home directory ever again.** Access is limited to exactly five path prefixes. Any other path under `/Users/shawnwilson/` is FORBIDDEN — no `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/Documents`, `~/Desktop`, `~/Library`, or any other home-directory path outside the workspace, opencode dirs, and cache. This is a hard user mandate, not a guideline.
 
 ### Rules
 
-1. **Allowed path prefixes (exhaustive — exactly five):**
+1. **Allowed path prefixes (exhaustive — exactly six):**
    - `/Users/shawnwilson/gludd/**` (the workspace)
    - `/tmp/**` (all of `/tmp`, not just `/tmp/gludd-*` session state files)
+   - `/private/tmp/**` (macOS `/tmp` realpath used by isolated worktrees)
    - `/Users/shawnwilson/.config/opencode/**` (opencode config directory)
    - `/Users/shawnwilson/.local/share/opencode/**` (opencode data — conversation DB, tool output cache)
    - `/Users/shawnwilson/.cache/**` (pre-commit hooks, uv cache, build tool caches)
@@ -359,7 +360,7 @@ The state-file pattern is the canonical mechanism for runtime enforcement tuning
 ### Enforcement
 
 - **Prompt** — this section + Mechanical Contract rule 11 (proactive instruction).
-- **Permission layer** — `opencode.json` `permission` block: each of `read`/`write`/`edit`/`glob`/`grep` allows exactly the five prefixes above and denies everything else via `*: deny` (last-match-wins). Hard gate at the harness level.
+- **Permission layer** — `opencode.json` `permission` block: each of `read`/`write`/`edit`/`glob`/`grep` allows exactly the six prefixes above and denies everything else via `*: deny` (last-match-wins). Hard gate at the harness level.
 - **Structural test** — `tests/unit/test_no_home_directory_access.py` pins the permission block: verifies the three allowed prefixes per tool, verifies the `*: deny` catch-all, and verifies NO path under `/Users/shawnwilson/` other than `gludd/` and `.config/opencode/` is allowed.
 
 ## ⛔ PRE-GENERATION CONTRACT (READ BEFORE GENERATING ANY TEXT)

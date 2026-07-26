@@ -219,6 +219,24 @@ class TestOpencodeConfig:
                 f"'make *: allow' at position {make_idx} (last-match-wins)"
             )
 
+    def test_permissions_allow_isolated_worktree_paths(self):
+        """Binary E2E runs in /private/tmp worktrees and must load local plugins."""
+        cfg_path = PROJECT_ROOT / "opencode.json"
+        if not cfg_path.exists():
+            pytest.skip("No opencode.json")
+        cfg = json.loads(cfg_path.read_text())
+        for tool in ("read", "write", "edit", "glob", "grep"):
+            rules = cfg.get("permission", {}).get(tool, [])
+            if isinstance(rules, dict):
+                assert rules.get("/private/tmp/**") == "allow", (
+                    f"permission.{tool} must allow /private/tmp/** worktrees"
+                )
+            else:
+                assert any(
+                    isinstance(rule, dict) and rule.get("path") == "/private/tmp/**"
+                    for rule in rules
+                ), f"permission.{tool} must allow /private/tmp/** worktrees"
+
 
 class TestHookInvocation:
     """Plugin hooks must not crash when invoked with realistic inputs."""

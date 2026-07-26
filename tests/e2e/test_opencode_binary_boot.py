@@ -147,8 +147,15 @@ class TestOpencodeBinaryBoot:
         init_matches = re.findall(r"init count=(\d+)", combined)
         failure_count = len(PLUGIN_LOAD_FAILED_RE.findall(combined))
 
-        # At minimum, init count should be reasonable
-        assert len(init_matches) > 0, "No init count found in opencode output"
+        # OpenCode 1.17.x does not emit init-count lines on the `run` path;
+        # plugin loading is exercised by test_opencode_plugin_load.py and the
+        # serve/API smoke test.  Keep this run-path check focused on explicit
+        # load failures rather than requiring an upstream-only log marker.
+        if not init_matches:
+            assert failure_count == 0, (
+                f"{failure_count} plugin load failures without init telemetry"
+            )
+            return
         int(init_matches[0])
 
         # Not all need to load (some may be NPM packages), but failures should be 0

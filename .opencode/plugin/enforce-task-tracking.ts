@@ -54,6 +54,7 @@ function getNewContent(input: any): string {
 /** Return task IDs declared on checkbox lines in TASKS.md. */
 export function declaredTaskIds(tasksContent: string): Set<string> {
   const ids = new Set<string>()
+  if (typeof tasksContent !== "string") return ids
   const taskLine = /^[ \t]*[-*]\s*\[[ xX]\]\s+([^\s|]+)/gm
   for (const match of tasksContent.matchAll(taskLine)) {
     ids.add(match[1])

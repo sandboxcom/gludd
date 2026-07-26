@@ -176,6 +176,13 @@ class TestPluginStructure:
             "Pathless write operations must be denied by the registration guard"
         )
 
+    def test_declared_task_ids_handles_non_string_input(self):
+        """Malformed hook inputs must fail closed without crashing plugin load."""
+        src = read_plugin_src()
+        assert 'typeof tasksContent !== "string"' in src, (
+            "declaredTaskIds must guard non-string content before matchAll"
+        )
+
 
 class TestCheckTaskIntegrityScript:
     def test_script_exists(self):
