@@ -164,7 +164,6 @@ class TestGitWorkflowTargetRecipeContent:
         )
 
     def test_git_staging_targets_reject_sandboxcom_ssh_key_paths(self):
-        makefile_src = _makefile_src()
         add_recipe = self._recipe("git-add")
         add_all_recipe = self._recipe("git-add-all")
         assert add_recipe and add_all_recipe

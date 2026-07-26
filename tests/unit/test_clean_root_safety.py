@@ -1,6 +1,5 @@
 from pathlib import Path
 
-
 SCRIPT = Path(__file__).parents[2] / "scripts" / "clean-root.sh"
 
 
