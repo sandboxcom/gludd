@@ -5,6 +5,7 @@ Exercises real FastAPI apps with in-memory SQLite and ASGITransport/AsyncClient.
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime, timedelta
 
 import pytest
 import pytest_asyncio
@@ -653,3 +654,119 @@ class TestHumanTodos:
             data = resp.json()
             for item in data:
                 assert item["category"] == "permission_escalation"
+
+    @pytest.mark.asyncio
+    async def test_human_todo_feed_accepts_explicit_since(self, db_app):
+        """The feed honours an explicit boundary instead of its 24-hour default."""
+        app, factory = db_app
+        from general_ludd.db.repository import HumanTodoRepository
+
+        async with factory() as session:
+            repo = HumanTodoRepository(session)
+            await repo.create(
+                agent_id="agent-feed",
+                title="Feed boundary",
+                body="Include this row in the feed",
+                category="input_request",
+            )
+            await session.commit()
+
+        boundary = datetime.now(UTC) - timedelta(minutes=1)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get(
+                "/api/human-todos/feed",
+                params={"since": boundary.isoformat()},
+            )
+            assert resp.status_code == 200
+            assert any(item["agent_id"] == "agent-feed" for item in resp.json())
+
+    @pytest.mark.asyncio
+    async def test_add_human_todo_tag(self, db_app):
+        app, factory = db_app
+        from general_ludd.db.repository import HumanTodoRepository
+
+        async with factory() as session:
+            repo = HumanTodoRepository(session)
+            row = await repo.create(
+                agent_id="agent-tag",
+                title="Tag this",
+                body="Tag endpoint coverage",
+                category="decision",
+            )
+            await session.commit()
+            htid = str(row.id)
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                f"/api/human-todos/{htid}/tags",
+                json={"tag": "needs-review"},
+            )
+            assert resp.status_code == 200
+            assert "needs-review" in resp.json()["tags"]
+
+    @pytest.mark.asyncio
+    async def test_add_human_todo_tag_not_found(self, db_app):
+        app, _factory = db_app
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/api/human-todos/missing/tags",
+                json={"tag": "needs-review"},
+            )
+            assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_patch_human_todo_dismissed(self, db_app):
+        app, factory = db_app
+        from general_ludd.db.repository import HumanTodoRepository
+
+        async with factory() as session:
+            repo = HumanTodoRepository(session)
+            row = await repo.create(
+                agent_id="agent-dismiss",
+                title="Dismiss this",
+                body="Dismissal branch coverage",
+                category="decision",
+            )
+            await session.commit()
+            htid = str(row.id)
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.patch(
+                f"/api/human-todos/{htid}",
+                json={
+                    "status": "dismissed",
+                    "human_resolver": "operator-2",
+                    "human_resolution": "No longer needed.",
+                },
+            )
+            assert resp.status_code == 200
+            assert resp.json()["status"] == "dismissed"
+
+    @pytest.mark.asyncio
+    async def test_patch_human_todo_rejects_open_target(self, db_app):
+        app, factory = db_app
+        from general_ludd.db.repository import HumanTodoRepository
+
+        async with factory() as session:
+            repo = HumanTodoRepository(session)
+            row = await repo.create(
+                agent_id="agent-open",
+                title="Open target",
+                body="Reject no-op status transition",
+                category="decision",
+            )
+            await session.commit()
+            htid = str(row.id)
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.patch(
+                f"/api/human-todos/{htid}",
+                json={"status": "open"},
+            )
+            assert resp.status_code == 422
+            assert "may only move" in resp.json()["detail"]
