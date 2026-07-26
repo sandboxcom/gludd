@@ -52,6 +52,7 @@ DOCUMENTATION:
         - release_tag
         - checkpoint_tag
         - state
+        - batch_push
     clone_url:
       description: Repository URL for C(op=clone). Python preflight rejects unsafe transports before clone.
       type: str
@@ -226,7 +227,8 @@ def main() -> None:
                     "tag_checkpoint",
                     "release_tag",
                     "checkpoint_tag",
-                    "state",
+            "state",
+                    "batch_push",
                 ],
             ),
             clone_url=dict(type="str", default=None),
@@ -247,6 +249,9 @@ def main() -> None:
             expected_sha=dict(type="str", default=None),
             ssh_key_path=dict(type="str", default=None),
             ref_type=dict(type="str", default="heads", choices=["heads", "tags"]),
+            threshold=dict(type="int", default=5),
+            force=dict(type="bool", default=False),
+            check_ci=dict(type="bool", default=True),
 
             remote=dict(type="str", default="origin"),
             state_ref=dict(type="str", default=""),
@@ -338,6 +343,29 @@ def main() -> None:
             module.fail_json(**error_result("git state guard failed", result=payload))
             return
         module.exit_json(**ok_result({"result": payload}, changed=False))
+        return
+
+    if op == "batch_push":
+        if module.check_mode:
+            module.exit_json(
+                **ok_result(
+                    {"result": {"would_change": True, "op": op, "path": path}},
+                    changed=True,
+                )
+            )
+            return
+        from general_ludd.git_automation.batch_push import batch_push
+
+        result = batch_push(
+            path,
+            remote=module.params["remote"],
+            branch=module.params["branch"] or "master",
+            threshold=module.params["threshold"],
+            force=module.params["force"],
+            check_ci=module.params["check_ci"],
+        )
+        payload = asdict(result)
+        module.exit_json(**ok_result({"result": payload}, changed=bool(result.pushed)))
         return
     if op == "commit":
         message: str = module.params["message"]

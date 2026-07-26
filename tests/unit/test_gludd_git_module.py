@@ -22,6 +22,7 @@ from typing import Any, cast
 import pytest
 
 from general_ludd.git_automation.types import (
+    BatchPushResult,
     CloneResult,
     GatedCommitResult,
     GitStateResult,
@@ -206,6 +207,9 @@ def _params(**overrides: Any) -> dict[str, Any]:
         "todo_id": None,
         "sha": None,
         "remote": "origin",
+        "threshold": 5,
+        "force": False,
+        "check_ci": True,
         "state_ref": "",
         "state_gha_head_sha": "",
         "state_worktree_target_ref": "HEAD",
@@ -444,6 +448,31 @@ def test_push_delegates(module, monkeypatch):
     assert fake_mod.exited["changed"] is True
     assert fake_mod.exited["result"]["remote"] == "upstream"
     assert ("push_to_remote", "/repo", "upstream", "main") in git.calls
+
+
+def test_batch_push_delegates_threshold_and_ci_controls(module, monkeypatch):
+    result = BatchPushResult(
+        pushed=False,
+        unpushed_count=2,
+        threshold=5,
+        reason="below_threshold",
+    )
+    monkeypatch.setattr(module, "batch_push", lambda **kwargs: result, raising=False)
+    fake_mod, _git = _run(
+        module,
+        monkeypatch,
+        _params(
+            op="batch_push",
+            remote="sandboxcom",
+            branch="development",
+            threshold=5,
+            force=False,
+            check_ci=True,
+        ),
+    )
+    assert fake_mod.failed is None
+    assert fake_mod.exited["changed"] is False
+    assert fake_mod.exited["result"]["reason"] == "below_threshold"
 
 
 def test_tag_release_delegates(module, monkeypatch):

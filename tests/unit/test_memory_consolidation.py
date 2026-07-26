@@ -934,6 +934,14 @@ class TestConsolidateCascade:
         result = consolidate_cascade(memories, levels=1)
         assert len(result[0]["data"]) == 3
 
+    def test_level_1_task_types_are_deterministically_ordered(self):
+        memories = [
+            {"task_type": "zeta", "outcome": "success"},
+            {"task_type": "alpha", "outcome": "success"},
+        ]
+        result = consolidate_cascade(memories, levels=1)
+        assert [item["task_type"] for item in result[0]["data"]] == ["alpha", "zeta"]
+
     def test_level_2_success_rate(self):
         memories = [
             {"task_type": "code", "outcome": "success"},

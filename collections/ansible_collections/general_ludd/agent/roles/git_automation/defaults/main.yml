@@ -80,6 +80,11 @@ verify_ssh_key_path: ""
 verify_ref_type: "heads"
 fail_on_verify_mismatch: false
 
+# ── Batch push ───────────────────────────────────────────────────────────────
+threshold: 5
+force: false
+check_ci: true
+
 # ── Release operations ──────────────────────────────────────────────────────
 release_tag: ""
 release_message: ""

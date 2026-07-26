@@ -249,6 +249,18 @@ class TestHybridSearch:
         result = hybrid_search("alpha", mems)
         assert len(result) == 2
 
+    def test_bm25_uses_term_frequency(self):
+        mems = [
+            {"id": "repeated", "text": "python python python"},
+            {"id": "single", "text": "python"},
+        ]
+        result = hybrid_search("python", mems, bm25_weight=1.0, semantic_weight=0.0)
+        assert [row[0]["id"] for row in result] == ["repeated", "single"]
+
+    def test_rejects_negative_weights(self):
+        with pytest.raises(ValueError, match="weights"):
+            hybrid_search("python", [{"text": "python"}], bm25_weight=-0.1)
+
 
 class TestMemoryRetrieverQuery:
     def make_repo(self, episodes):

@@ -250,7 +250,8 @@ def _cascade_level_1(memories: list[dict[str, Any]]) -> list[dict[str, Any]]:
         grouped[tt].append(m)
 
     compressed: list[dict[str, Any]] = []
-    for task_type, items in grouped.items():
+    for task_type in sorted(grouped):
+        items = grouped[task_type]
         outcomes = Counter(item.get("outcome", "unknown") for item in items)
         priorities = Counter(item.get("priority", "medium") for item in items)
         durations = [float(item.get("duration_seconds", 0)) for item in items]
@@ -300,7 +301,6 @@ def _cascade_level_2(compressed: list[dict[str, Any]]) -> dict[str, Any]:
             all_outcomes[outcome] += count
 
     success_count = all_outcomes.get("success", 0)
-    failure_count = all_outcomes.get("failure", 0)
     total = sum(all_outcomes.values())
 
     all_errors: list[str] = []

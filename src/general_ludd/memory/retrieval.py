@@ -7,6 +7,7 @@ overlap, task type, outcome patterns, and recency boost.
 from __future__ import annotations
 
 import logging
+import math
 import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -190,6 +191,8 @@ def hybrid_search(
     Semantic similarity uses token overlap with Jaccard distance.
     Results are combined with the given weight ratio and sorted by score.
     """
+    if bm25_weight < 0 or semantic_weight < 0:
+        raise ValueError("weights must be non-negative")
     if not memories:
         return []
 
@@ -198,11 +201,13 @@ def hybrid_search(
         return [(m, 0.0) for m in memories[:top_k]]
 
     doc_texts: list[str] = []
-    doc_terms: list[set[str]] = []
+    from collections import Counter
+
+    doc_terms: list[Counter[str]] = []
     for m in memories:
         text = " ".join(str(v) for v in m.values() if isinstance(v, (str, int, float)))
         doc_texts.append(text.lower())
-        doc_terms.append(set(_tokenize(text.lower())))
+        doc_terms.append(Counter(_tokenize(text.lower())))
 
     N = len(memories)
     avgdl = sum(len(t) for t in doc_terms) / N if N > 0 else 1.0
@@ -223,8 +228,12 @@ def hybrid_search(
         for term in query_terms:
             if df.get(term, 0) == 0:
                 continue
-            idf = max(0, int(((N - df.get(term, 0) + 0.5) / (df.get(term, 0) + 0.5)) * 10))
-            tf = sum(1 for t in doc_terms[i] if t == term)
+            # Robertson/Sparck Jones IDF remains positive for common terms,
+            # while Counter preserves the frequency signal BM25 requires.
+            idf = max(0.0, math.log1p(
+                (N - df.get(term, 0) + 0.5) / (df.get(term, 0) + 0.5)
+            ))
+            tf = doc_terms[i].get(term, 0)
             numerator = tf * (k1 + 1)
             denominator = tf + k1 * (1 - b + b * (dl / avgdl))
             score += idf * (numerator / denominator) if denominator > 0 else 0.0
@@ -232,11 +241,8 @@ def hybrid_search(
 
     semantic_scores: list[float] = []
     for i in range(N):
-        dt = doc_terms[i]
-        if dt:
-            overlap = len(query_set & dt) / len(query_set | dt) if query_set else 0.0
-        else:
-            overlap = 0.0
+        dt = set(doc_terms[i])
+        overlap = (len(query_set & dt) / len(query_set | dt) if query_set else 0.0) if dt else 0.0
         semantic_scores.append(overlap)
 
     max_bm25 = max(bm25_scores) if bm25_scores else 1.0

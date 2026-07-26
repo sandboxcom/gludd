@@ -8,7 +8,7 @@
   ansible.builtin.assert:
     that:
       - git_op | string | length > 0
-    fail_msg: "git_op is required (clone|commit|gated_commit|push|merge|gated_merge|branch|worktree|state|release_cut|release_delete|release_recut|ci_verdict|ci_cancel)"
+    fail_msg: "git_op is required (clone|commit|gated_commit|push|merge|gated_merge|branch|worktree|batch_push|state|release_cut|release_delete|release_recut|ci_verdict|ci_cancel)"
 
 - name: "Include clone tasks"
   ansible.builtin.include_tasks: clone.yml
