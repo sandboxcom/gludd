@@ -120,27 +120,36 @@ COVERAGE_AUDIT_TIMEOUT_SECONDS = int(
 
 
 def run_pytest_coverage(source: str, json_out_path: str) -> int:
-    """Run one bounded pytest process and write only this audit's coverage data."""
+    """Run certified serial E2E files, then emit JSON only after all pass."""
     env = os.environ.copy()
     env["GLUDD_COVERAGE_AUDIT"] = "1"
+    env["GLUDD_E2E_ACTIVE"] = "1"
+    root = Path(__file__).parent.parent
+    files = sorted((root / "tests/e2e").rglob("test_*.py"))
+    if not files:
+        print("ERROR: no E2E test files found", file=sys.stderr)
+        return 2
+    coverage_file = root / f".coverage.audit.{os.getpid()}"
+    env["COVERAGE_FILE"] = str(coverage_file)
+    coverage_file.unlink(missing_ok=True)
     try:
-        return subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "pytest",
-                "tests/e2e/",
-                f"--cov={source}",
-                "--cov-branch",
-                "--cov-context=test",
-                f"--cov-report=json:{json_out_path}",
-                "--cov-report=term-missing",
-                "-q",
-            ],
-            cwd=Path(__file__).parent.parent,
-            env=env,
+        for index, test_file in enumerate(files):
+            basetemp = Path(f"/tmp/gludd-audit-e2e-{os.getpid()}-{index}")
+            args = [sys.executable, "-m", "pytest", str(test_file),
+                    f"--cov={source}", "--cov-branch", "--cov-context=test",
+                    "--cov-append", "--cov-report=", "-n", "1",
+                    "--dist", "loadfile", "-q", f"--basetemp={basetemp}"]
+            result = subprocess.run(args, cwd=root, env=env,
+                                    timeout=COVERAGE_AUDIT_TIMEOUT_SECONDS)
+            if result.returncode != 0:
+                print(f"E2E coverage file failed: {test_file}", file=sys.stderr)
+                return result.returncode
+        report = subprocess.run(
+            [sys.executable, "-m", "coverage", "json", "--show-contexts",
+             "-o", json_out_path], cwd=root, env=env,
             timeout=COVERAGE_AUDIT_TIMEOUT_SECONDS,
-        ).returncode
+        )
+        return report.returncode
     except subprocess.TimeoutExpired:
         print(
             "ERROR: coverage pytest timed out after "

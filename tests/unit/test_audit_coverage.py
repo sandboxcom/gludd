@@ -175,11 +175,13 @@ class TestAuditCoverageScript:
 
         assert module.run_pytest_coverage("src/general_ludd", str(report_path)) == 0
         args, kwargs = calls[0]
-        assert f"--cov-report=json:{report_path}" in args
+        final_args, _ = calls[-1]
+        assert f"-o" in final_args and str(report_path) in final_args
         assert kwargs["env"]["GLUDD_COVERAGE_AUDIT"] == "1"
         assert kwargs["timeout"] == module.COVERAGE_AUDIT_TIMEOUT_SECONDS
         assert "--cov-branch" in args
-        assert "tests/e2e/" in args
+        assert any("tests/e2e/" in str(arg) for arg in args)
+        assert "GLUDD_E2E_ACTIVE" in kwargs["env"]
 
 
 class TestMakefileTargets:
