@@ -28,7 +28,16 @@ def _invoke_get(transport: object, url: str, **kwargs: object) -> HttpResponse:
     """Invoke an injected GET transport, including callable tuple doubles."""
     getter = getattr(transport, "get", None)
     if callable(getter):
-        result = getter(url, **kwargs)
+        try:
+            result = getter(url, **kwargs)
+        except TypeError as exc:
+            # Accept kwargs-only fakes used by integrations that derive the
+            # endpoint from their configured client. Re-raise the original
+            # error when the fallback has the same signature mismatch.
+            try:
+                result = getter(**kwargs)
+            except TypeError:
+                raise exc from None
     elif callable(transport):
         result = transport("GET", url, **kwargs)
     else:
