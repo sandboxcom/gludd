@@ -45,3 +45,31 @@ def test_e2e_runner_has_suite_watchdog_bounds() -> None:
 def test_e2e_runner_log_is_namespaced_by_process() -> None:
     body = _target_body("test-e2e")
     assert 'LOG="/tmp/gludd-e2e-$$$$.log"' in body
+
+
+def test_e2e_runner_exclusively_owns_full_suite() -> None:
+    body = _target_body("test-e2e")
+    assert 'LOCK="/tmp/gludd-e2e-run.lock"' in body
+    assert 'mkdir "$$LOCK"' in body
+    assert "E2E_RUN_BUSY" in body
+    assert "exit 75" in body
+
+
+def test_e2e_runner_releases_its_own_lock_without_killing_owner() -> None:
+    body = _target_body("test-e2e")
+    assert "trap" in body
+    assert 'rm -rf "$$LOCK"' in body
+    assert "pkill" not in body
+
+
+def test_worktree_e2e_cleanup_is_scoped_to_the_requesting_worktree() -> None:
+    content = MAKEFILE.read_text(encoding="utf-8")
+    assert "kill-worktree-e2e:" in content
+    start = content.index("kill-worktree-e2e:")
+    body = content[start:].split("\n\n", 1)[0]
+    assert "$(CURDIR)" in body
+    assert "pytest tests/e2e/" in body
+    assert "pgrep -P" in body
+    assert "Refusing to kill unrelated" in body
+
+    assert "tree_contains_local_e2e" in body
