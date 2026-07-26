@@ -623,6 +623,7 @@ old summary table omitted entirely. Grand total across the file: **326** boxes.
 
 - [ ] T-BETA3-OPENCode — OpenCode config/runtime enforcement E2E: focused plugin suite, restart verification, TASKS/commit gating | priority: medium | effort: M | status: pending
 - [ ] T-BETA3-E2E — Full E2E certification: serial runner, binary regressions, nested-process cleanup, terminal green result | priority: medium | effort: M | status: pending | evidence: connector shard 632/632 passed; e-m shard fixes validated (language 112/112, multitask 32/32 with isolated CI/todowrite/hot-module paths, floor 19/19 with isolated enforcement state)
+- [ ] T-BETA3-STATUS-HEARTBEAT — Emit auditable five-minute local/remote pipeline and worker status checkpoints | paths: Makefile tests/unit/test_status_heartbeat_contract.py | priority: high | effort: S | status: pending
 - [ ] T-BETA3-COVERAGE — Instrumented E2E branch coverage: repair environment, prove >=85% aggregate and >=75% per file | priority: medium | effort: M | status: pending
 - [x] T-BETA3-COVERAGE-DOCS — Document the E2E branch-coverage audit contract, shard failure evidence, aggregate JSON, and per-file thresholds | evidence: docs/E2E_COVERAGE_AUDIT_CONTRACT.md; coverage.py subprocess guidance and practitioner forum finding linked; markdown/task-ledger validation passed | priority: medium | effort: S | status: completed
 - [ ] T-BETA3-HOOKS — Hook-runtime regressions: fix permission/status-summary blocking failures and rerun runtime harness | priority: medium | effort: M | status: pending
