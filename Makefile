@@ -2239,7 +2239,7 @@ release-cut:
 	@$(MAKE) -s check-readme-status TAG=$(TAG)
 	@$(MAKE) -s git-push-sandboxcom
 	@$(MAKE) -s git-tag-push TAG=$(TAG) MSG="$(MSG)"
-	@$(MAKE) -s release-view TAG=$(TAG)
+	@$(MAKE) -s release-view TAG=$(TAG) || echo "Release record not visible yet; continuing to artifact polling."
 	@echo "Polling for release artifact (up to 10 attempts, ~10 min)..."
 	@for i in 1 2 3 4 5 6 7 8 9 10; do \
 		if $(MAKE) -s verify-release-artifact TAG=$(TAG) 2>/dev/null; then \
