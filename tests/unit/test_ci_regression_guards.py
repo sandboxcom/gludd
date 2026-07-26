@@ -179,8 +179,9 @@ def test_every_molecule_scenario_is_structurally_complete() -> None:
     CI incident (run 27596845359): a molecule scenario directory was committed
     without its full file set, so ``make molecule-test-all`` ran an
     unverified/structurally-incomplete scenario and failed. A complete scenario
-    must have molecule.yml + default/converge.yml + default/verify.yml; the
-    absence of any of these is the smell that an un-runnable scenario slipped in.
+    must have molecule.yml plus converge.yml/verify.yml (under ``default/`` or
+    at the scenario root); the absence of a complete layout is the smell that
+    an un-runnable scenario slipped in.
 
     This iterates the committed scenarios at runtime, so a future incomplete
     scenario fails here BEFORE it can break `make molecule-test-all` in CI.
@@ -195,18 +196,25 @@ def test_every_molecule_scenario_is_structurally_complete() -> None:
     )
 
     incomplete: dict[str, list[str]] = {}
-    required = ("molecule.yml", "default/converge.yml", "default/verify.yml")
+    required_layouts = (
+        ("molecule.yml", "default/converge.yml", "default/verify.yml"),
+        ("molecule.yml", "converge.yml", "verify.yml"),
+    )
     for scenario in scenario_dirs:
-        missing = [rel for rel in required if not (scenario / rel).is_file()]
-        if missing:
-            incomplete[scenario.name] = missing
+        if not any(
+            all((scenario / rel).is_file() for rel in layout)
+            for layout in required_layouts
+        ):
+            incomplete[scenario.name] = [
+                " or ".join(layout) for layout in required_layouts
+            ]
 
     assert not incomplete, (
         "CI regression (molecule-test-all failure, run 27596845359 — an "
         "unverified/structurally-incomplete scenario was committed): the "
-        "following molecule/playbooks scenarios are missing required files "
-        f"{required}: {incomplete}. Every committed scenario must ship "
-        "molecule.yml + default/converge.yml + default/verify.yml so "
+        "following molecule/playbooks scenarios are missing a complete layout "
+        f"{required_layouts}: {incomplete}. Every committed scenario must ship "
+        "molecule.yml plus converge.yml/verify.yml (under default/ or at root) so "
         "`make molecule-test-all` can run it."
     )
 

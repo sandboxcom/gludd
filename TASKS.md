@@ -249,7 +249,7 @@ State backend for terraform with HTTP API (lock/unlock/get/update), replacing lo
 - [x] S53.36 — Directory structure documentation | evidence: `docs/DIRECTORY_STRUCTURE.md` documents repository layout and explicitly routes credentials/generated reports outside the repository; regression coverage in `tests/unit/test_directory_structure.py` + `tests/unit/test_root_cleanup.py` | priority: medium | effort: M | status: completed
 - [ ] S53.37 — Task tracking enforcement gap analysis + spec| priority: medium | effort: M | status: pending
 - [ ] S53.38 — Hard task-registration guard| priority: medium | effort: M | status: pending
-- [ ] T-BETA3-TASK-INTEGRITY — Reconcile legacy TASKS.md metadata and evidence so `make check-task-integrity` passes| blocker: current gate reports 439 legacy violations; keep this task open until the ledger is repaired | priority: high | effort: L | status: pending
+- [x] T-BETA3-TASK-INTEGRITY — Reconcile legacy TASKS.md metadata and evidence so `make check-task-integrity` passes | priority: high | effort: L | status: completed | evidence: commit 772078e1; make check-task-integrity PASS (382 items, 0 violations); make validate-task-ledger PASS; 3 normalization regression tests passed | history: prior blocker reported 439 legacy violations
 
 
 
