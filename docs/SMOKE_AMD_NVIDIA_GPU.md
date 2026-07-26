@@ -96,3 +96,13 @@ driver regressions. Forum reports over the long term consistently point to
 driver/runtime mismatch, unsupported ROCm GPU/OS combinations, and unified
 memory pressure as the recurring causes; keeping this bounded local probe
 separate from cloud-provider smoke tests makes those failures actionable.
+
+Long-lived reports that informed this guardrail include the [PyTorch forum
+thread on CPU-only wheels despite an installed GPU](https://discuss.pytorch.org/t/torch-being-installed-with-cpu-only-even-when-i-have-a-gpu/135060),
+the [PyTorch forum explanation of `torch.cuda.is_available()` returning false
+while `nvidia-smi` works](https://discuss.pytorch.org/t/torch-cuda-is-available-returns-false-nvidia-smi-is-working/20614),
+and the [ROCm/TheRock report on native Windows PyTorch support for newer AMD
+GPUs](https://github.com/ROCm/TheRock/issues/5113). These reports are why the
+harness checks the runtime build and refuses CPU fallback, treats Windows ROCm
+as device/release dependent, and reserves memory instead of assuming every
+byte reported by a unified-memory system is available to a model.
