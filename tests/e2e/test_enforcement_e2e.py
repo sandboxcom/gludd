@@ -49,6 +49,7 @@ PLUGIN_REGISTRATION_ORDER = [
     "enforce-deletion-gate.ts",
     "enforce-batch-push.ts",
     "enforce-depth.ts",
+    "enforce-directives.ts",
     "enforce-tdd.ts",
     "enforce-objective.ts",
     "enforce-anti-essay.ts",

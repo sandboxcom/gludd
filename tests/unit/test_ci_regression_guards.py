@@ -358,3 +358,45 @@ def test_coverage_aggregation_job_exists() -> None:
         "CI regression: the 'coverage' job does not upload the merged "
         "coverage.xml artifact, so the combined report is not retained."
     )
+
+
+def test_gate_pins_ci_evidence_to_event_sha() -> None:
+    """The gate must prove it tested the exact commit that triggered GHA.
+
+    A branch can advance while a queued run is starting.  An implicit checkout
+    ref then makes local evidence ambiguous; release readiness must never rely
+    on a stale-success run for a different commit.
+    """
+    wf = _load_build_workflow()
+    gate = wf["jobs"]["gate"]
+    checkouts = [
+        step for step in gate["steps"]
+        if str(step.get("uses", "")).startswith("actions/checkout@")
+    ]
+    assert checkouts, "CI regression: gate has no actions/checkout step"
+    assert checkouts[0].get("with", {}).get("ref") == "${{ github.sha }}", (
+        "CI regression: gate checkout must pin ref to github.sha; implicit refs "
+        "can test a moving branch instead of the triggering commit."
+    )
+    runs = "\n".join(str(step.get("run", "")) for step in gate["steps"])
+    assert "git rev-parse HEAD" in runs and "GITHUB_SHA" in runs, (
+        "CI regression: gate must assert checked-out HEAD equals GITHUB_SHA "
+        "before producing release evidence."
+    )
+
+
+def test_all_build_checkouts_pin_event_sha() -> None:
+    """Every Build and Release job must use the immutable triggering SHA."""
+    wf = _load_build_workflow()
+    unpinned: list[str] = []
+    for name, job in wf["jobs"].items():
+        for step in job.get("steps", []):
+            if (
+                str(step.get("uses", "")).startswith("actions/checkout@")
+                and step.get("with", {}).get("ref") != "${{ github.sha }}"
+            ):
+                unpinned.append(str(name))
+    assert not unpinned, (
+        "CI regression: checkout steps without ref: ${{ github.sha }} in jobs "
+        f"{sorted(set(unpinned))}; stale branch contents could be packaged."
+    )

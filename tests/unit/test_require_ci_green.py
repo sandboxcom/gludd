@@ -27,6 +27,7 @@ def _load_module():
 
 require_ci_green = _load_module()
 verdict_for = require_ci_green.verdict_for
+verdict_from_runs = require_ci_green.verdict_from_runs
 
 
 # ---------------------------------------------------------------------------
@@ -151,12 +152,28 @@ class TestCiGreen:
         assert code == 0
         assert "CI GREEN" in msg
 
-    def test_sha_prefix_match(self):
-        """verdict_for matches on SHA prefix (gh may return full 40-char sha)."""
+    def test_sha_prefix_does_not_match_exact_head(self):
+        """A successful run for a different full SHA cannot satisfy readiness."""
         full_sha = SHA + "0" * (40 - len(SHA))
         runs = [_run(1, full_sha, "completed", "success")]
-        code, _msg = verdict_for(runs, SHA)
-        assert code == 0
+        code, msg = verdict_from_runs(runs, SHA)
+        assert code == 1
+        assert "no run found" in msg
+
+    def test_cancelled_and_skipped_runs_are_red(self):
+        for conclusion in ("cancelled", "skipped"):
+            code, msg = verdict_from_runs(
+                [_run(1, SHA, "completed", conclusion)], SHA
+            )
+            assert code == 1
+            assert "CI RED" in msg
+
+    def test_stale_success_for_other_sha_is_red(self):
+        code, msg = verdict_from_runs(
+            [_run(1, "stale-sha", "completed", "success")], SHA
+        )
+        assert code == 1
+        assert "no run found" in msg
 
     def test_unknown_status_fails_closed(self):
         runs = [_run(9, SHA, "some_unknown_status", None)]
