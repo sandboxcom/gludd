@@ -607,3 +607,9 @@ old summary table omitted entirely. Grand total across the file: **326** boxes.
 - [x] log_analyzer role — Ansible role for log analysis | evidence: Wave 34
 - [x] game SearX e2e tests — end-to-end tests for SearX game integration | evidence: Wave 34
 - [x] enforce-multitask min-dispatch — fix for enforce-multitask.ts min-dispatch threshold | evidence: Wave 34
+
+- [ ] T-BETA3-OPENCode — OpenCode config/runtime enforcement E2E: focused plugin suite, restart verification, TASKS/commit gating
+- [ ] T-BETA3-E2E — Full E2E certification: serial runner, binary regressions, nested-process cleanup, terminal green result
+- [ ] T-BETA3-COVERAGE — Instrumented E2E branch coverage: repair environment, prove >=85% aggregate and >=75% per file
+- [ ] T-BETA3-HOOKS — Hook-runtime regressions: fix permission/status-summary blocking failures and rerun runtime harness
+- [ ] T-BETA3-RELEASE — Beta.3 release readiness: complete remaining release/CI Git automation operations, gate, exact-SHA CI, and release validation
