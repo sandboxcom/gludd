@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from scripts.codex_stop_guard import run
+from scripts.codex_stop_guard import confirm, run
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -49,3 +49,21 @@ def test_codex_stop_guard_allows_clean_ledger(tmp_path, capsys):
 
     assert run(tasks, ratchet, tmp_path / "audit.jsonl") == 0
     assert "Codex host boundary" in capsys.readouterr().out
+
+
+def test_codex_stop_guard_requires_exact_token_before_clean_stop(tmp_path, capsys):
+    tasks = tmp_path / "TASKS.md"
+    ratchet = tmp_path / "ratchet.yml"
+    audit = tmp_path / "audit.jsonl"
+    state = tmp_path / "state.json"
+    tasks.write_text("- [x] done\n", encoding="utf-8")
+    ratchet.write_text("# no entries\n", encoding="utf-8")
+
+    assert run(tasks, ratchet, audit, state) == 0
+    record = state.read_text(encoding="utf-8")
+    token = __import__("json").loads(record)["challenge"]
+    assert confirm("wrong", state, audit) == 1
+    assert "rejected" in capsys.readouterr().out
+    assert confirm(token, state, audit) == 0
+    assert "accepted" in capsys.readouterr().out
+    assert not state.exists()

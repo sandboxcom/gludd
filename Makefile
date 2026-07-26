@@ -126,6 +126,7 @@ log-agent-result disk-guard disk-check check-disk disk tmp-gludd-usage tmp-gludd
          check-task-ledger \
          check-task-integrity check-make-target-contract active-work-status \
          codex-stop-guard \
+         codex-stop-confirm \
          test-service-discovery service-discover service-catalog \
          subagent-init subagent-cleanup \
          chat chat-eval test-chat \
@@ -216,6 +217,7 @@ help:
 	@echo "  check-make-target-contract  Validate target variables, help, and behavioral examples"
 	@echo "  active-work-status    Emit auditable PIDs, gate state, hashes, and open tasks"
 	@echo "  codex-stop-guard      Fail closed when tracked work remains; emit a Codex stop challenge token"
+	@echo "  codex-stop-confirm    Confirm a previously issued token before recording a valid stop"
 	@echo "  iam-headless-smoke    Validate least-privilege provider manifests without credentials"
 	@echo "  check-task-integrity  Require changed files to map to registered tasks"
 	@echo "  validate-task-ledger  Validate TASKS.md metadata and completion evidence"
@@ -5476,6 +5478,10 @@ status-heartbeat:
 # it gives CI and an external runner a fail-closed, auditable decision instead.
 codex-stop-guard:
 	@$(PYTHON) scripts/codex_stop_guard.py
+
+codex-stop-confirm:
+	@[ -n "$(TOKEN)" ] || { echo "Usage: make codex-stop-confirm TOKEN='challenge'"; exit 2; }
+	@$(PYTHON) scripts/codex_stop_guard.py --confirm "$(TOKEN)"
 
 pipeline-health: pipeline-status
 	@true
