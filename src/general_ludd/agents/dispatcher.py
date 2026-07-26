@@ -314,6 +314,8 @@ class AgentDispatcher:
         # audit/event output while permission checks resolve normally.
         if not invoker and config.type.value == "SUBAGENT":
             invoker = "primary"
+        if invoker == "primary" and self._registry.get("primary") is None:
+            invoker = "build"
 
         # Capability escalation must be reported before the generic permission
         # denial when that guard is enabled; otherwise callers cannot tell a
