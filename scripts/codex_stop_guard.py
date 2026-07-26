@@ -71,7 +71,7 @@ def confirm(token: str, state_path: Path = STATE_PATH, audit_path: Path = AUDIT_
         record.get("pending_tasks") or record.get("pending_ratchet")
     )
     event = {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "challenge": token,
         "confirmed": accepted,
     }
