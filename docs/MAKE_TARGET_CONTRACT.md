@@ -12,3 +12,8 @@ Do not issue bare shell commands when a Make target exists. If a needed operatio
 no target, add the target, document its variables and safe example, and add a behavioral
 test before using it. `make check-make-target-contract` enforces this contract and is
 part of the release gate.
+
+For status claims, use `make ps` for auditable test/audit PIDs. `make ps-gludd` covers
+only namespaced Gludd daemons; it is not evidence that delegated model work is idle.
+Use `make active-work-status` for one JSON snapshot combining PIDs, gate state, git
+hashes, and unchecked task IDs.

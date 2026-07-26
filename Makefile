@@ -122,7 +122,7 @@ log-agent-result disk-guard disk-check check-disk disk tmp-gludd-usage tmp-gludd
         networking-healthcheck \
         install-bats test-install check-subagent-guards verify-plugin-manifest \
          check-task-ledger \
-         check-task-integrity check-make-target-contract \
+         check-task-integrity check-make-target-contract active-work-status \
          test-service-discovery service-discover service-catalog \
          subagent-init subagent-cleanup \
          chat chat-eval test-chat \
@@ -209,6 +209,7 @@ help:
 	@echo "  runpod-harness        RunPod provider harness (LIVE=1 for read-only credential check)"
 	@echo "  test-opa-policies     Execute Rego policy tests when opa is installed"
 	@echo "  check-make-target-contract  Validate target variables, help, and behavioral examples"
+	@echo "  active-work-status    Emit auditable PIDs, gate state, hashes, and open tasks"
 	@echo "  iam-headless-smoke    Validate least-privilege provider manifests without credentials"
 	@echo "  check-task-integrity  Require changed files to map to registered tasks"
 	@echo "  validate-task-ledger  Validate TASKS.md metadata and completion evidence"
@@ -780,7 +781,7 @@ gate: check-opencode-integrity check-plugin-hooks opencode-boot-smoke validate-t
 	@printf "hook-runtime " >> .gate-status
 	@mkdir -p .gate-logs
 	@$(MAKE) --no-print-directory test-hook-runtime > .gate-logs/hook-runtime.log 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed && tail -30 .gate-logs/hook-runtime.log)
-	$(MAKE) --no-print-directory test-opencode-e2e > .gate-logs/opencode-e2e.log 2>&1 \&\& echo "PASS" >> .gate-status || \(echo "FAIL" >> .gate-status \&\& touch .gate-failed \&\& tail -30 .gate-logs/opencode-e2e.log\); \
+	@$(MAKE) --no-print-directory test-opencode-e2e > .gate-logs/opencode-e2e.log 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed && tail -30 .gate-logs/opencode-e2e.log)
 	@echo "=== GATE PHASE: verify-enforcement ==="
 	@printf "verify-enforcement " >> .gate-status
 	@$(MAKE) --no-print-directory verify-enforcement > /dev/null 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed)
@@ -3604,6 +3605,9 @@ check-duplicate-targets:
 # --- Agent-facing Make target contract: variables, help, and safe examples ---
 check-make-target-contract:
 	@$(UV) run python scripts/check_make_target_contract.py
+
+active-work-status:
+	@$(UV) run python scripts/active_work_status.py
 
 # --- Help target coverage: prevent hidden public Make targets ---
 check-make-help:

@@ -71,6 +71,23 @@ def test_valid_config_passes(tmp_path: Path):
     assert "ALL PASSED" in result.stdout
 
 
+def test_array_permission_rules_pass(tmp_path: Path):
+    """The current OpenCode schema represents permissions as ordered rule arrays."""
+    _make_valid_opencode(tmp_path)
+    (tmp_path / "opencode.json").write_text(json.dumps({
+        "permission": {
+            "bash": [
+                {"path": "*", "allow": False},
+                {"command": "make *", "allow": True},
+            ],
+            "doom_loop": "deny",
+        },
+        "plugin": ["./.opencode/plugin/enforce-make.ts"],
+    }))
+    result = _run_checker(tmp_path)
+    assert result.returncode == 0, result.stdout
+
+
 # ── Test 2: missing required subdirectory ────────────────────────────────
 
 def test_missing_directory_fails(tmp_path: Path):

@@ -71,7 +71,7 @@ def test_telemetry_publishes_event_and_log_without_exposing_token(monkeypatch: p
     captured: dict[str, object] = {}
 
     class Response:
-        def __enter__(self) -> "Response":
+        def __enter__(self) -> Response:
             return self
 
         def __exit__(self, *_args: object) -> None:

@@ -1,6 +1,6 @@
 ---
 name: go-expert
-description: Use when writing, debugging, reviewing, or discussing Go code, goroutines, channels, Go modules, gRPC, Go tooling, profiling, or any Go ecosystem concern. Covers concurrency, standard library, testing, performance, security, cryptography, frameworks, project layout, platform-specific builds, cgo, and common pitfalls. Trigger keywords: Go, golang, goroutine, channel, go mod, go build, go test, go vet, gRPC, protobuf, delve, pprof, TinyGo, cgo, net/http, Go module, GOPATH, GOOS, GOARCH.
+description: "Use when writing, debugging, reviewing, or discussing Go code, goroutines, channels, Go modules, gRPC, Go tooling, profiling, or any Go ecosystem concern. Covers concurrency, standard library, testing, performance, security, cryptography, frameworks, project layout, platform-specific builds, cgo, and common pitfalls. Trigger keywords: Go, golang, goroutine, channel, go mod, go build, go test, go vet, gRPC, protobuf, delve, pprof, TinyGo, cgo, net/http, Go module, GOPATH, GOOS, GOARCH."
 ---
 
 # Go Expert

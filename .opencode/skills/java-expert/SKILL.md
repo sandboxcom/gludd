@@ -1,6 +1,6 @@
 ---
 name: java-expert
-description: Use when writing, debugging, reviewing, or discussing Java, Kotlin, Groovy, Scala, Clojure, J2ME, or any JVM-language code. Covers Maven, Gradle, JAR/WAR/EAR packaging, JVM internals (class format, bytecode, JIT, GC), Spring Boot, concurrency, security patterns, and XML structures. Trigger keywords: Java, JVM, Maven, Gradle, Kotlin, Groovy, Scala, JAR, WAR, EAR, Spring Boot, J2EE, Jakarta, JDBC, JPA, Hibernate, JUnit, Mockito, bytecode, classloader, GC, G1, ZGC, GraalVM, J2ME, MIDlet, XML, POM, JAXB, DOM, SAX.
+description: "Use when writing, debugging, reviewing, or discussing Java, Kotlin, Groovy, Scala, Clojure, J2ME, or any JVM-language code. Covers Maven, Gradle, JAR/WAR/EAR packaging, JVM internals (class format, bytecode, JIT, GC), Spring Boot, concurrency, security patterns, and XML structures. Trigger keywords: Java, JVM, Maven, Gradle, Kotlin, Groovy, Scala, JAR, WAR, EAR, Spring Boot, J2EE, Jakarta, JDBC, JPA, Hibernate, JUnit, Mockito, bytecode, classloader, GC, G1, ZGC, GraalVM, J2ME, MIDlet, XML, POM, JAXB, DOM, SAX."
 ---
 
 # Java / JVM Expert

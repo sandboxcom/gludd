@@ -207,28 +207,39 @@ def check_opencode_json(root: Path) -> list[str]:
         return errors
 
     bash_perm = perm.get("bash")
-    if not isinstance(bash_perm, dict):
-        errors.append("BAD CONFIG: opencode.json permission.bash missing or not a dict")
+    if isinstance(bash_perm, dict):
+        keys = list(bash_perm.keys())
+        if len(keys) < 2:
+            errors.append("BAD CONFIG: permission.bash should have at least 2 entries (* and make *)")
+            return errors
+        first_key = keys[0]
+        second_key = keys[1]
+        if first_key != "*" or bash_perm.get(first_key) != "deny":
+            errors.append(
+                f"BAD ORDER: permission.bash first entry must be '*' -> 'deny', "
+                f"got {first_key!r} -> {bash_perm.get(first_key)!r}"
+            )
+        if second_key != "make *" or bash_perm.get(second_key) != "allow":
+            errors.append(
+                f"BAD ORDER: permission.bash second entry must be 'make *' -> 'allow', "
+                f"got {second_key!r} -> {bash_perm.get(second_key)!r}"
+            )
+    elif isinstance(bash_perm, list):
+        deny_indices = [
+            index for index, rule in enumerate(bash_perm)
+            if isinstance(rule, dict) and rule.get("path") == "*" and rule.get("allow") is False
+        ]
+        allow_indices = [
+            index for index, rule in enumerate(bash_perm)
+            if isinstance(rule, dict) and rule.get("command") == "make *" and rule.get("allow") is True
+        ]
+        if not deny_indices or not allow_indices:
+            errors.append("BAD CONFIG: permission.bash requires wildcard deny and make wildcard allow rules")
+        elif min(deny_indices) > min(allow_indices):
+            errors.append("BAD ORDER: permission.bash wildcard deny must precede make wildcard allow")
+    else:
+        errors.append("BAD CONFIG: opencode.json permission.bash must be an object or ordered rule array")
         return errors
-
-    keys = list(bash_perm.keys())
-    if len(keys) < 2:
-        errors.append("BAD CONFIG: permission.bash should have at least 2 entries (* and make *)")
-        return errors
-
-    first_key = keys[0]
-    second_key = keys[1]
-
-    if first_key != "*" or bash_perm.get(first_key) != "deny":
-        errors.append(
-            f"BAD ORDER: permission.bash first entry must be '*' -> 'deny', "
-            f"got {first_key!r} -> {bash_perm.get(first_key)!r}"
-        )
-    if second_key != "make *" or bash_perm.get(second_key) != "allow":
-        errors.append(
-            f"BAD ORDER: permission.bash second entry must be 'make *' -> 'allow', "
-            f"got {second_key!r} -> {bash_perm.get(second_key)!r}"
-        )
 
     doom = perm.get("doom_loop")
     if doom != "deny":

@@ -620,4 +620,9 @@ old summary table omitted entirely. Grand total across the file: **326** boxes.
 - [x] T-BETA3-PROVIDER-HARNESS — Credential-safe Azure and RunPod read-only harnesses: subscription/billing inputs, API keys, budget bounds, and Gludd event/log ingestion | evidence: commit f9fba705; 5 harness tests passed; make azure-harness and make runpod-harness dry-run PASS; docs/PROVIDER_SMOKE_HARNESS.md | priority: medium | effort: M | status: completed
 - [ ] T-BETA3-PROVIDER-LIVE — Run credentialed Azure and RunPod read-only checks, model deployment smoke, and verified event/log delivery into Gludd using operator-supplied scopes/keys | priority: medium | effort: M | status: pending
 
-| T-BETA3-MAKE-TARGET-CONTRACT | Make target prompting contract: variable-aware help, safe behavioral examples, and gate enforcement | priority: high | effort: S | status: pending |
+| T-BETA3-MAKE-TARGET-CONTRACT | Make target prompting contract: variable-aware help, safe behavioral examples, and gate enforcement | evidence: make check-make-target-contract; make test-specific TESTFILE=tests/unit/test_make_target_contract.py (3 passed); make test-specific TESTFILE=tests/e2e/test_make_e2e.py (28 passed); make test-hook-runtime (122 passed) | priority: high | effort: S | status: completed |
+
+<!-- T-BETA3 path registrations: T-BETA3-OPENCode=.opencode/plugin/impl/enforce_make_impl.ts scripts/check_opencode_integrity.py tests/unit/test_opencode_integrity.py; T-BETA3-COVERAGE=scripts/audit_coverage.py tests/unit/test_audit_coverage.py src/general_ludd/ansible/paths.py; T-BETA3-PROVIDER-HARNESS=tests/unit/test_provider_smoke_harness.py -->
+<!-- T-BETA3-RELEASE path registration: .opencode/skills/culinary-expert/SKILL.md .opencode/skills/electronics-expert/SKILL.md .opencode/skills/go-expert/SKILL.md .opencode/skills/java-expert/SKILL.md .opencode/skills/python-expert/SKILL.md -->
+<!-- T-BETA3-MAKE-AUDIT paths: scripts/active_work_status.py tests/unit/test_active_work_status.py config/make_target_contract.json docs/MAKE_TARGET_CONTRACT.md -->
+<!-- T-BETA3-GATE paths: config/dead_code_baseline.txt docs/MAKE_TARGET_CONTRACT.md -->

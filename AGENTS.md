@@ -9,6 +9,11 @@ tracked in `config/make_target_contract.json`. Run `make check-make-target-contr
 after changing a target, and run its documented behavioral example before claiming
 the target works. If no suitable target exists, add and test one first.
 
+Active-work claims require auditable evidence. `make ps` reports Python test/audit
+processes and their PIDs; `make ps-gludd` reports only namespaced Gludd daemons and
+must not be used to infer that agent or audit work is idle. For delegated model work,
+report the agent name/status separately and never invent an OS PID.
+
 ## NO-PROMPT PROGRESS DIRECTIVE (READ FIRST)
 
 When a user grants task-level permission, do not call tools or paths that trigger approval prompts. If a command or edit path prompts, abandon that path immediately, use or add a make target, and keep working without asking unless progress is impossible because required facts are unavailable.

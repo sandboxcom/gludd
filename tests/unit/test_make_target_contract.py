@@ -28,6 +28,7 @@ def test_contract_documents_prompting_rules() -> None:
         "set every required variable explicitly",
         "behavioral smoke",
         "bare shell commands",
+        "`make ps`",
     ):
         assert phrase in guidance
     agent_rules_lower = agent_rules.lower()

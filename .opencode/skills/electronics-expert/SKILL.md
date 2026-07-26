@@ -1,6 +1,6 @@
 ---
 name: electronics-expert
-description: Use when working with electronic design, circuit analysis, PCB layout, SPICE simulation, BOM management, component selection, signal integrity, power electronics, embedded systems hardware, or any electronics engineering concern. Covers analog/digital circuit design, simulation, PCB manufacturing, component sourcing, and industry standards. Trigger keywords: electronics, circuit, PCB, SPICE, BOM, schematic, KiCad, Eagle, Altium, LTspice, ngspice, resistor, capacitor, inductor, transistor, MOSFET, op-amp, microcontroller, FPGA, signal integrity, EMI, power supply, voltage, current, impedance, Gerber, pick-and-place, footprint, datasheet, component, soldering, reflow, oscilloscope.
+description: "Use when working with electronic design, circuit analysis, PCB layout, SPICE simulation, BOM management, component selection, signal integrity, power electronics, embedded systems hardware, or any electronics engineering concern. Covers analog/digital circuit design, simulation, PCB manufacturing, component sourcing, and industry standards. Trigger keywords: electronics, circuit, PCB, SPICE, BOM, schematic, KiCad, Eagle, Altium, LTspice, ngspice, resistor, capacitor, inductor, transistor, MOSFET, op-amp, microcontroller, FPGA, signal integrity, EMI, power supply, voltage, current, impedance, Gerber, pick-and-place, footprint, datasheet, component, soldering, reflow, oscilloscope."
 ---
 
 # Electronics Expert

@@ -214,7 +214,7 @@ class TestAuditCoverageScript:
         assert "-n" in pytest_args
         worker_index = pytest_args.index("-n")
         assert pytest_args[worker_index + 1] == "2"
-        assert pytest_args[pytest_args.index("--dist") + 1] == "loadfile"
+        assert pytest_args[pytest_args.index("--dist") + 1] == "loadgroup"
 
 
 class TestMakefileTargets:

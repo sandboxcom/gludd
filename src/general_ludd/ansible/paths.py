@@ -33,7 +33,7 @@ from __future__ import annotations
 import os
 import re
 import tempfile
-from dataclasses import FrozenInstanceError, dataclass, field
+from dataclasses import dataclass, field
 from pathlib import Path
 
 _BUNDLED_COLLECTIONS_ROOT_DEFAULT = (
@@ -66,7 +66,10 @@ class CollectionsPathEntry:
 
     def __setattr__(self, name: str, value: object) -> None:
         if name in self.__dict__:
-            raise FrozenInstanceError(f"cannot assign to field {name!r}")
+            # Preserve the public contract used by callers and the E2E suite:
+            # mutation attempts are reported as a validation error while the
+            # entry remains immutable.
+            raise ValueError(f"cannot assign to field {name!r}")
         super().__setattr__(name, value)
 
 

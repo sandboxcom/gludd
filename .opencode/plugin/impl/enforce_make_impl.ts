@@ -514,17 +514,18 @@ const defaultImpl: HotModule = {
               )
             }
 
-            const targetMatch = trimmed.match(/^make\s+(\S+)/)
-            const requestedTarget = targetMatch?.[1] || ""
-            if (requestedTarget && !requestedTarget.startsWith("-") && !makeTargetExists(requestedTarget)) {
-              _bashPolicyNudge = true
-              throw new Error(
-                formatBashBlockedMessage(
-                  trimmed,
-                  `unknown Make target '${requestedTarget}'. Read 'make help' and select an existing target, or add one first.`
-                )
+          }
+
+          const targetMatch = trimmed.match(/^make\s+(\S+)/)
+          const requestedTarget = targetMatch?.[1] || ""
+          if (requestedTarget && !requestedTarget.startsWith("-") && !makeTargetExists(requestedTarget)) {
+            _bashPolicyNudge = true
+            throw new Error(
+              formatBashBlockedMessage(
+                trimmed,
+                `unknown Make target '${requestedTarget}'. Read 'make help' and select an existing target, or add one first.`
               )
-            }
+            )
           }
 
           // test-specific: warn if TESTFILE matches slow patterns (e2e, integration, redteam)

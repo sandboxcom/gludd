@@ -62,6 +62,11 @@
       "name": "check-make-target-contract",
       "make_variables": [],
       "behavior": "make check-make-target-contract"
+    },
+    {
+      "name": "active-work-status",
+      "make_variables": [],
+      "behavior": "make active-work-status"
     }
   ]
 }

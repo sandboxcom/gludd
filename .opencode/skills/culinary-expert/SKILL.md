@@ -1,6 +1,6 @@
 ---
 name: culinary-expert
-description: Use when working with recipes, cooking, nutrition, food science, meal planning, ingredient substitutions, food expiration/storage, flavor pairing, or dietary constraints. Covers nutritional data, flavor profiles, spice combinations, food safety, storage guidelines, and recipe generation from available ingredients. Trigger keywords: recipe, cooking, nutrition, chef, culinary, meal, ingredient, food, spice, flavor, dietary, calories, macros, protein, cook, bake, kitchen, pantry, menu, dish, cuisine, expiration, perishable, substitute, substitution, taste, palette, umami, sweet, sour, bitter, salty, savory.
+description: "Use when working with recipes, cooking, nutrition, food science, meal planning, ingredient substitutions, food expiration/storage, flavor pairing, or dietary constraints. Covers nutritional data, flavor profiles, spice combinations, food safety, storage guidelines, and recipe generation from available ingredients. Trigger keywords: recipe, cooking, nutrition, chef, culinary, meal, ingredient, food, spice, flavor, dietary, calories, macros, protein, cook, bake, kitchen, pantry, menu, dish, cuisine, expiration, perishable, substitute, substitution, taste, palette, umami, sweet, sour, bitter, salty, savory."
 ---
 
 # Culinary Expert
