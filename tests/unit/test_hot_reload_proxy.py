@@ -26,7 +26,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_DIR = ROOT / ".opencode" / "plugin"
-HOT_RELOAD_TS = PLUGIN_DIR / "hot_reload.ts"
+HOT_RELOAD_TS = ROOT / ".opencode" / "lib" / "hot_reload.ts"
 BUILD_SCRIPT = ROOT / "scripts" / "build_hot_modules.js"
 MAKEFILE = ROOT / "Makefile"
 HOT_PROXY_PREFIX = f"/tmp/gludd-hot-{os.getpid()}-hot-reload-proxy-"
