@@ -12,7 +12,10 @@ the target works. If no suitable target exists, add and test one first.
 Active-work claims require auditable evidence. `make ps` reports Python test/audit
 processes and their PIDs; `make ps-gludd` reports only namespaced Gludd daemons and
 must not be used to infer that agent or audit work is idle. For delegated model work,
-report the agent name/status separately and never invent an OS PID.
+report the agent name/status separately and never invent an OS PID. Use
+`make active-work-status` for a JSON snapshot with logical workstreams, parent/child
+PIDs, gate state, git hash, and open task IDs; its `agent_pids: false` field is
+intentional because model-agent turns are not OS processes.
 
 ## NO-PROMPT PROGRESS DIRECTIVE (READ FIRST)
 

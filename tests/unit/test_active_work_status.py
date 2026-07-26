@@ -6,6 +6,8 @@ import json
 import subprocess
 from pathlib import Path
 
+from scripts.active_work_status import _task_label
+
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -28,3 +30,9 @@ def test_active_work_status_is_auditable_json() -> None:
     assert payload["git"]["head"]
     assert payload["audit_contract"]["ps_command"] == "make ps"
     assert payload["audit_contract"]["agent_pids"] is False
+
+
+def test_process_labels_separate_test_workstreams() -> None:
+    assert _task_label("pytest tests/unit/test_example.py") == "unit-tests"
+    assert _task_label("pytest tests/e2e/test_opencode_plugin_load.py") == "opencode-e2e"
+    assert _task_label("pytest tests/e2e/test_api_routers.py") == "e2e-tests"

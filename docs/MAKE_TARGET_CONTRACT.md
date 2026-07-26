@@ -16,4 +16,8 @@ part of the release gate.
 For status claims, use `make ps` for auditable test/audit PIDs. `make ps-gludd` covers
 only namespaced Gludd daemons; it is not evidence that delegated model work is idle.
 Use `make active-work-status` for one JSON snapshot combining PIDs, gate state, git
-hashes, and unchecked task IDs.
+hashes, and unchecked task IDs. Each process is tagged with a logical `task`, and
+the `workstreams` map groups controller and child PIDs so a second terminal can
+verify whether one target has spawned real parallel workers. The snapshot
+intentionally reports `agent_pids: false`: model-agent turns are not OS processes;
+only their spawned Make/pytest work can have auditable PIDs.

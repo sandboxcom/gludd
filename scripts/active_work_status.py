@@ -16,15 +16,23 @@ TASK_ID_RE = re.compile(r"^\s*-\s*\[ \]\s+([^ —|]+)", re.MULTILINE)
 def _task_label(command: str) -> str:
     if "audit_coverage.py" in command:
         return "coverage-audit"
+    if "detect-secrets" in command or "multiprocessing" in command:
+        return "coverage-audit-support"
     if "test_hook_runtime.py" in command:
         return "hook-runtime"
     if "gate-refresh" in command or "make gate" in command:
         return "gate-refresh"
+    if "test_opencode" in command or "tests/e2e/test_opencode" in command:
+        return "opencode-e2e"
+    if "tests/e2e" in command:
+        return "e2e-tests"
+    if "tests/unit" in command:
+        return "unit-tests"
     if "pytest" in command:
         return "pytest"
     if "mypy" in command:
         return "typecheck"
-    if "general_ludd.cli daemon" in command:
+    if "general_ludd.cli daemon" in command or "gunicorn" in command:
         return "e2e-daemon"
     return "other"
 
@@ -43,10 +51,18 @@ def _processes() -> list[dict[str, str]]:
         if len(fields) != 3:
             continue
         pid, ppid, command = fields
-        if any(
-            token in command
-            for token in ("audit_coverage.py", "pytest", "make gate", "test_hook_runtime.py", "mypy", "general_ludd.cli daemon", "gunicorn")
-        ):
+        tracked_tokens = (
+            "audit_coverage.py",
+            "pytest",
+            "make gate",
+            "test_hook_runtime.py",
+            "mypy",
+            "general_ludd.cli daemon",
+            "gunicorn",
+            "detect-secrets",
+            "multiprocessing",
+        )
+        if any(token in command for token in tracked_tokens):
             processes.append({"pid": pid, "ppid": ppid, "command": command, "task": _task_label(command)})
     return processes
 
@@ -100,11 +116,17 @@ def _gate() -> dict[str, str | bool]:
 def collect_status() -> dict[str, object]:
     tasks = (ROOT / "TASKS.md").read_text(encoding="utf-8")
     processes = _processes()
+    gate = _gate()
+    if not gate["running_pid"]:
+        live_gate = next((process["pid"] for process in processes if process["task"] == "gate-refresh"), "")
+        if live_gate:
+            gate["running_pid"] = live_gate
+            gate["state"] = "RUNNING"
     return {
         "pid": os.getpid(),
         "processes": processes,
         "workstreams": _workstreams(processes),
-        "gate": _gate(),
+        "gate": gate,
         "git": _git(),
         "open_task_ids": TASK_ID_RE.findall(tasks),
         "audit_contract": {
