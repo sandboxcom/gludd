@@ -116,6 +116,13 @@ class TestPluginStructure:
             "Forbidden pattern: typed catch variable (Node v26 parse error)"
         )
 
+    def test_task_id_parser_avoids_unsupported_string_matchall(self):
+        """The embedded OpenCode runtime does not expose String.matchAll."""
+        src = read_plugin_src()
+        assert ".matchAll(" not in src, (
+            "Task ID parsing must use a runtime-compatible regex iteration"
+        )
+
     def test_read_tools_allowed_unconditionally(self):
         src = read_plugin_src()
         assert 'isReadTool' in src or (

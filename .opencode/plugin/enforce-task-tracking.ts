@@ -52,10 +52,15 @@ function getNewContent(input: any): string {
 }
 
 /** Return task IDs declared on checkbox lines in TASKS.md. */
-export function declaredTaskIds(tasksContent: string): Set<string> {
+export function declaredTaskIds(tasksContent: unknown): Set<string> {
   const ids = new Set<string>()
+  const content = typeof tasksContent === "string" ? tasksContent : String(tasksContent ?? "")
   const taskLine = /^[ \t]*[-*]\s*\[[ xX]\]\s+([^\s|]+)/gm
-  for (const match of tasksContent.matchAll(taskLine)) {
+  const lines = taskLine.exec(content)
+  if (!lines) return ids
+  ids.add(lines[1])
+  let match: RegExpExecArray | null
+  while ((match = taskLine.exec(content)) !== null) {
     ids.add(match[1])
   }
   return ids
@@ -87,9 +92,10 @@ export function isRegisteredTaskPath(
   const resolvedPath = path.resolve(resolvedRoot, filePath)
   const relativePath = path.relative(resolvedRoot, resolvedPath).replace(/\\/g, "/")
   if (!relativePath || relativePath.startsWith("../") || path.isAbsolute(relativePath)) return false
-  if (tasksContent.includes(relativePath)) return true
+  const content = typeof tasksContent === "string" ? tasksContent : String(tasksContent ?? "")
+  if (content.includes(relativePath)) return true
   const taskId = extractTaskId(input)
-  return Boolean(taskId && declaredTaskIds(tasksContent).has(taskId))
+  return Boolean(taskId && declaredTaskIds(content).has(taskId))
 }
 
 const defaultImpl: HotModule = {
