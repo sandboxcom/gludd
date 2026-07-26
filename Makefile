@@ -95,7 +95,7 @@ _commit-lock-acquire check-clean-tree worktree-state all-worktree-state main-wor
         git-remote-sandboxcom git-push-sandboxcom git-pull-sandboxcom git-fetch-sandboxcom \
         git-add-all help grep scan-secrets-fresh untrack \
          git-tracked-keys git-ls-tracked git-history-file dist-path-check git-is-ancestor git-revlist-count check-git-hygiene \
-        molecule-clean plan ps-gludd kill-stale kill-gate-force \
+        molecule-clean plan ps-gludd kill-stale reap-orphan-pytest kill-gate-force \
         gate-async gate-status floor-plan gated-merge ship-async write-gate-safe-hook \
         repo-visibility \
          watchdog-read watchdog-start watchdog-status watchdog-stop agent-watchdog-stop watchdog-log \
@@ -356,6 +356,7 @@ help:
 	@echo "  clean-worktree-caches  Remove generated venv/test/tool caches from worktrees"
 	@echo ""
 	@echo "  --- Recovery ---"
+	@echo "  reap-orphan-pytest    Report stale orphan pytest trees (APPLY=1 to terminate)"
 	@echo "  backup-opencode       Backup .opencode/ -> .opencode.orig/ (excludes node_modules/)"
 	@echo "  check-opencode-backup  Warn if .opencode.orig/ is stale (>24h older than .opencode/)"
 	@echo "  restore-opencode      Restore .opencode/ (backup then git fallback) + clear cache"
@@ -955,7 +956,7 @@ kill-stray:
 # This make invocation's own process + its parent are always excluded, so running
 # `make kill-stale` can never kill the shell/agent driving it. See `make ps-gludd`
 # for the read-only census this acts on.
-kill-stale:
+ kill-stale:
 	@SELF=$$$$; PARENT=$$(ps -o ppid= -p $$SELF 2>/dev/null | tr -d ' '); \
 	PARENTS=$$(ps -axo ppid= | tr -s ' ' '\n' | grep -E '^[0-9]+$$' | sort -u); \
 	echo "[kill-stale] self=$$SELF parent=$$PARENT — reaping orphaned gludd scratch and daemon trees"; \
@@ -982,6 +983,9 @@ kill-stale:
 		echo "  KILLED stale orphan: $$pid $$cmd"; \
 	done; \
 	echo "[kill-stale] done"
+
+reap-orphan-pytest:
+	@$(UV) run python scripts/reap_orphan_pytest.py
 
 # Force-kill any running gate: send SIGTERM to the process that owns the gate
 # lock, then remove the lock and any gludd-gate-XXXXXX tmp dirs so the next
