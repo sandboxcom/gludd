@@ -7,7 +7,12 @@ from pathlib import Path
 
 from scripts.collection_lock import lock_timeout
 from scripts.process_cleanup import ProcessInfo
-from scripts.reap_stale_collection_locks import assess_lock, reap_stale_locks
+from scripts.reap_stale_collection_locks import (
+    assess_lock,
+    reap_stale_gate_refresh_roots,
+    reap_stale_locks,
+    stale_gate_refresh_roots,
+)
 
 
 def _lock(path: Path, content: str, *, age: float = 1000.0, now: float = 2000.0) -> None:
@@ -133,3 +138,48 @@ def test_unrecognized_lock_names_are_ignored(tmp_path: Path) -> None:
 def test_gate_refresh_wait_is_bounded_without_changing_direct_collection_default() -> None:
     assert lock_timeout("gate-refresh") == 120.0
     assert lock_timeout("collection") == 900.0
+
+
+def test_orphaned_project_gate_refresh_root_is_reaped() -> None:
+    table = {
+        321: ProcessInfo(
+            pid=321,
+            ppid=1,
+            elapsed_secs=1000,
+            command="/work/project-a/scripts/collection_lock.py --resource gate-refresh --run /work/project-a/make",
+        )
+    }
+    roots = stale_gate_refresh_roots(
+        table,
+        namespace="project-a",
+        project_root=Path("/work/project-a"),
+        stale_after=300.0,
+    )
+    assert [root.pid for root in roots] == [321]
+
+
+def test_live_or_external_gate_refresh_roots_are_preserved() -> None:
+    table = {
+        321: ProcessInfo(
+            pid=321,
+            ppid=42,
+            elapsed_secs=1000,
+            command="/work/project-a/scripts/collection_lock.py --resource gate-refresh",
+        ),
+        654: ProcessInfo(
+            pid=654,
+            ppid=1,
+            elapsed_secs=1000,
+            command="/work/other-project/scripts/collection_lock.py --resource gate-refresh",
+        ),
+    }
+    assert (
+        reap_stale_gate_refresh_roots(
+            table,
+            namespace="project-a",
+            project_root=Path("/work/project-a"),
+            stale_after=300.0,
+            apply=True,
+        )
+        == []
+    )
