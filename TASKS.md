@@ -248,6 +248,7 @@ State backend for terraform with HTTP API (lock/unlock/get/update), replacing lo
 - [ ] S53.35 — Root directory cleanup + security hardening | status: in_progress — remove leaked keys, debug files, mislocated artifacts
 - [ ] S53.36 — Directory structure documentation | status: in_progress — docs/DIRECTORY_STRUCTURE.md
 - [ ] S53.37 — Task tracking enforcement gap analysis + spec | status: in_progress — audit behavioral guardrails
+- [ ] S53.38 — Hard task-registration guard | status: in_progress — scripts/check_task_registration.py, scripts/check_task_ledger.py, tests/unit/test_task_registration.py, Makefile gate integration
 
 
 

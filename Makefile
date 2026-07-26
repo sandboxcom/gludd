@@ -744,7 +744,7 @@ test-opencode-boot-e2e:
 gate-fast: lint typecheck collect-check
 	@echo "=== GATE-FAST: PASS ==="
 
-gate: check-opencode-integrity check-plugin-hooks opencode-boot-smoke validate-task-ledger check-dispatch-dedup check-subagent-guards verify-plugin-manifest check-skills-frontmatter check-coverage-gaps check-plugin-syntax check-plugin-runtime check-plugin-imports check-node-v26-compat check-duplicate-targets
+gate: check-opencode-integrity check-plugin-hooks opencode-boot-smoke validate-task-ledger check-task-registration check-dispatch-dedup check-subagent-guards verify-plugin-manifest check-skills-frontmatter check-coverage-gaps check-plugin-syntax check-plugin-runtime check-plugin-imports check-node-v26-compat check-duplicate-targets
 	@rm -f .gate-failed
 	@echo "=== GATE $(shell date -u +%Y-%m-%dT%H:%M:%SZ) ===" > .gate-status
 	@# OBSERVABILITY INVARIANT (see AGENTS.md "No unseen events"): every gate phase
@@ -3524,6 +3524,10 @@ check-skills-frontmatter:
 # --- Task ledger validation: duplicate IDs, re-dispatched completed items, stale in_progress, missing IDs ---
 validate-task-ledger:
 	@$(UV) run python scripts/validate_task_ledger.py
+
+# --- Hard registration guard: active changes must map to TASKS.md or task-ID metadata ---
+check-task-registration:
+	@$(UV) run python scripts/check_task_registration.py
 
 ci-cancel:
 	@gh run cancel $(RUN) -R sandboxcom/gludd 2>/dev/null && echo "CI-CANCEL: run $(RUN) cancelled" || echo "CI-CANCEL: failed to cancel run $(RUN)"

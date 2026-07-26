@@ -1,7 +1,7 @@
 import os, sys, subprocess
 
 f = "TASKS.md"
-if not os.path.exist(f):
+if not os.path.exists(f):
     print("ERROR: TASK.md not found")
     sys.exit(1)
 
