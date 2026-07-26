@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import shlex
 import shutil
@@ -14,6 +15,7 @@ import time
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
+from xml.etree import ElementTree
 
 from ci_named_shard_files import expand_shard
 
@@ -59,6 +61,7 @@ class RunningShard:
     process: subprocess.Popen[object]
     basetemp: Path
     command: list[str]
+    junit_report: Path
 
 
 def _parse_shards(raw: str) -> list[str]:
@@ -97,8 +100,55 @@ def _command_for_shard(shard: str, pytest_args: list[str], workers_per_shard: in
         "-v",
         *pytest_args,
         f"--basetemp={basetemp}",
+        f"--junitxml={basetemp / 'junit.xml'}",
     ]
     return command, basetemp
+
+
+def _read_junit_summary(report: Path) -> dict[str, object]:
+    """Return compact testcase counts and the first failing testcase IDs."""
+    try:
+        root = ElementTree.parse(report).getroot()
+    except (ElementTree.ParseError, OSError):
+        return {"passed": 0, "failed": 0, "skipped": 0, "first_failure_ids": []}
+
+    passed = failed = skipped = 0
+    first_failure_ids: list[str] = []
+    for testcase in root.iter("testcase"):
+        testcase_id = "::".join(
+            value
+            for value in (testcase.attrib.get("classname"), testcase.attrib.get("name"))
+            if value
+        )
+        if testcase.find("skipped") is not None:
+            skipped += 1
+        elif testcase.find("failure") is not None or testcase.find("error") is not None:
+            failed += 1
+            if testcase_id and len(first_failure_ids) < 5:
+                first_failure_ids.append(testcase_id)
+        else:
+            passed += 1
+    return {
+        "passed": passed,
+        "failed": failed,
+        "skipped": skipped,
+        "first_failure_ids": first_failure_ids,
+    }
+
+
+def _persist_shard_summary(
+    summary_dir: Path,
+    shard: str,
+    returncode: int,
+    counts: dict[str, object],
+) -> Path:
+    """Persist one JSON summary per shard so results survive temp cleanup."""
+    summary_dir.mkdir(parents=True, exist_ok=True)
+    safe_name = "".join(char if char.isalnum() or char in "-_" else "_" for char in shard)
+    path = summary_dir / f"{safe_name}.json"
+    payload = {"shard": shard, "returncode": returncode, **counts}
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return path
 
 
 def _state_file_for_env(state_dir: Path, name: str) -> Path:
@@ -153,6 +203,7 @@ def _cleanup(running: list[RunningShard]) -> None:
 
 def run(shards: list[str], pytest_args: list[str], workers_per_shard: int, heartbeat_seconds: int) -> int:
     running: list[RunningShard] = []
+    summary_dir = Path(os.environ.get("GLUDD_SHARD_SUMMARY_DIR", ".gate-logs/ci-shards"))
     for shard in shards:
         command, basetemp = _command_for_shard(shard, pytest_args, workers_per_shard)
         print(f"=== ci shard {shard}: launch ===", flush=True)
@@ -162,7 +213,7 @@ def run(shards: list[str], pytest_args: list[str], workers_per_shard: int, heart
         state_dir = env["GLUDD_SHARD_STATE_DIR"]
         print(f"SHARD-ISOLATION shard={shard} tmpdir={tmpdir} state_dir={state_dir}", flush=True)
         process = subprocess.Popen(command, start_new_session=True, env=env)
-        running.append(RunningShard(shard, process, basetemp, command))
+        running.append(RunningShard(shard, process, basetemp, command, basetemp / "junit.xml"))
 
     pending = {item.name for item in running}
     results: dict[str, int] = {}
@@ -177,6 +228,15 @@ def run(shards: list[str], pytest_args: list[str], workers_per_shard: int, heart
                     continue
                 pending.remove(item.name)
                 results[item.name] = rc
+                counts = _read_junit_summary(item.junit_report)
+                summary_path = _persist_shard_summary(summary_dir, item.name, rc, counts)
+                print(
+                    "SHARD-RESULT "
+                    f"shard={item.name} passed={counts['passed']} "
+                    f"failed={counts['failed']} skipped={counts['skipped']} "
+                    f"first_failures={counts['first_failure_ids']} summary={summary_path}",
+                    flush=True,
+                )
                 if rc < 0:
                     signum = -rc
                     signal_name = (

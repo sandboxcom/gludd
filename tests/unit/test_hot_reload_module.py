@@ -17,7 +17,9 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
-HOT_RELOAD = ROOT / ".opencode" / "plugin" / "hot_reload.ts"
+# The helper lives under .opencode/lib; plugin/ is reserved for auto-discovered
+# plugin entrypoints and must not contain library modules.
+HOT_RELOAD = ROOT / ".opencode" / "lib" / "hot_reload.ts"
 HOT_PREFIX = f"/tmp/gludd-hot-{os.getpid()}-hot-reload-module-"
 
 pytestmark = pytest.mark.xdist_group("hot_reload_module")

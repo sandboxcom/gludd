@@ -88,3 +88,40 @@ def test_parallel_shard_runner_does_not_use_sigterm_cleanup() -> None:
 
     assert "SIGTERM" not in source
     assert "signal.SIGINT" in source
+
+
+def test_junit_summary_counts_and_first_failure_ids(tmp_path: Path) -> None:
+    module = _load_script("run_ci_shards_parallel.py")
+    report = tmp_path / "unit-1a.xml"
+    report.write_text(
+        """<testsuite tests=\"4\" failures=\"1\" errors=\"0\" skipped=\"1\">
+        <testcase classname=\"tests.test_ok\" name=\"test_pass\" />
+        <testcase classname=\"tests.test_bad\" name=\"test_fail\"><failure /></testcase>
+        <testcase classname=\"tests.test_skip\" name=\"test_skip\"><skipped /></testcase>
+        <testcase classname=\"tests.test_ok\" name=\"test_pass_two\" />
+        </testsuite>""",
+        encoding="utf-8",
+    )
+
+    assert module._read_junit_summary(report) == {
+        "passed": 2,
+        "failed": 1,
+        "skipped": 1,
+        "first_failure_ids": ["tests.test_bad::test_fail"],
+    }
+
+
+def test_persist_shard_summary_is_durable_and_namespaced(tmp_path: Path) -> None:
+    module = _load_script("run_ci_shards_parallel.py")
+
+    path = module._persist_shard_summary(
+        tmp_path,
+        "unit/1",
+        7,
+        {"passed": 3, "failed": 1, "skipped": 0, "first_failure_ids": ["x::test_y"]},
+    )
+
+    assert path == tmp_path / "unit_1.json"
+    assert path.exists()
+    assert path.read_text(encoding="utf-8").find('"shard": "unit/1"') >= 0
+    assert '"returncode": 7' in path.read_text(encoding="utf-8")
