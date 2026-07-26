@@ -119,11 +119,25 @@ COVERAGE_AUDIT_TIMEOUT_SECONDS = int(
 )
 
 
+def _coverage_environment() -> dict[str, str]:
+    """Build the child environment for a certified E2E coverage shard.
+
+    The E2E readiness contract is intentionally independent of the caller's
+    shell.  In particular, a developer may invoke ``make audit-coverage``
+    without exporting ``GLUDD_E2E_ACTIVE``; every shard must still exercise
+    the E2E startup/readiness branches.
+    """
+    env = os.environ.copy()
+    env.update({
+        "GLUDD_COVERAGE_AUDIT": "1",
+        "GLUDD_E2E_ACTIVE": "1",
+    })
+    return env
+
+
 def run_pytest_coverage(source: str, json_out_path: str) -> int:
     """Run certified serial E2E files, then emit JSON only after all pass."""
-    env = os.environ.copy()
-    env["GLUDD_COVERAGE_AUDIT"] = "1"
-    env["GLUDD_E2E_ACTIVE"] = "1"
+    env = _coverage_environment()
     root = Path(__file__).parent.parent
     files = sorted((root / "tests/e2e").rglob("test_*.py"))
     if not files:

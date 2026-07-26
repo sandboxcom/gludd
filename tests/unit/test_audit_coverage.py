@@ -182,7 +182,18 @@ class TestAuditCoverageScript:
         assert "--cov-branch" in args
         assert "--cov-fail-under=0" in args
         assert any("tests/e2e/" in str(arg) for arg in args)
-        assert "GLUDD_E2E_ACTIVE" in kwargs["env"]
+        assert kwargs["env"]["GLUDD_E2E_ACTIVE"] == "1"
+
+    def test_e2e_environment_overrides_caller_value(self, monkeypatch):
+        spec = importlib.util.spec_from_file_location("audit_coverage_env", AUDIT_SCRIPT)
+        assert spec and spec.loader
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        monkeypatch.setenv("GLUDD_E2E_ACTIVE", "0")
+        env = module._coverage_environment()
+        assert env["GLUDD_E2E_ACTIVE"] == "1"
+        assert env["GLUDD_COVERAGE_AUDIT"] == "1"
 
     def test_e2e_shards_run_in_process_without_xdist_workers(self, tmp_path, monkeypatch):
         """Serial coverage shards must not spawn workers with a broken interpreter path."""
