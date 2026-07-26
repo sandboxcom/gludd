@@ -38,8 +38,6 @@ Scenarios:
 from __future__ import annotations
 
 import json
-import re
-import tempfile
 import time
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -47,7 +45,6 @@ from unittest.mock import MagicMock
 import pytest
 import yaml
 
-from general_ludd.notifications import NotificationDispatcher
 from general_ludd.notifications.dispatcher import (
     BACKEND_NAMES,
     FALLBACK_NOTIFICATION_CONFIG,
@@ -57,31 +54,20 @@ from general_ludd.notifications.dispatcher import (
     NotificationDispatcher,
 )
 from general_ludd.renderers.cache import RendererCache
+from general_ludd.renderers.executor import (
+    RendererFailure as ExecutorRendererFailure,
+)
+from general_ludd.renderers.executor import (
+    RendererTimeout as ExecutorRendererTimeout,
+)
+from general_ludd.renderers.executor import (
+    run_renderer as executor_run_renderer,
+)
 from general_ludd.renderers.registry import (
     RendererRegistry,
     RendererSpec,
 )
-from general_ludd.renderers.schema import (
-    ChartData,
-    ChartSection,
-    ChartSeries,
-    MarkdownSection,
-    Metric,
-    MetricGridSection,
-    RawHtmlSection,
-    RenderDocument,
-    RenderMetadata,
-    RendererOutput,
-    TableSection,
-)
-from general_ludd.renderers.schema_loader import (
-    FieldMeta,
-    extract_field_metadata,
-    load_schema,
-    validate_against_schema,
-)
 from general_ludd.renderers.runner import (
-    RENDER_ARTIFACT_NAME,
     RendererFailure,
     RendererResult,
     RendererTimeout,
@@ -92,12 +78,25 @@ from general_ludd.renderers.runner import (
     _validate_with_schema,
     run_renderer,
 )
-from general_ludd.renderers.executor import (
-    RendererFailure as ExecutorRendererFailure,
-    RendererTimeout as ExecutorRendererTimeout,
-    run_renderer as executor_run_renderer,
+from general_ludd.renderers.schema import (
+    ChartData,
+    ChartSection,
+    ChartSeries,
+    MarkdownSection,
+    Metric,
+    MetricGridSection,
+    RawHtmlSection,
+    RenderDocument,
+    RendererOutput,
+    RenderMetadata,
+    TableSection,
 )
-
+from general_ludd.renderers.schema_loader import (
+    FieldMeta,
+    extract_field_metadata,
+    load_schema,
+    validate_against_schema,
+)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 1. RendererSpec model_dump and backward-compat
@@ -181,7 +180,17 @@ class TestRendererRegistryDiscovery:
             yaml.dump([{**dict(_2_EXAMPLE_PLAYBOOK[0]), "vars": {"renderer": True, "renderer_description": "bundled"}}])
         )
         (operator / "shared.yml").write_text(
-            yaml.dump([{**dict(_2_EXAMPLE_PLAYBOOK[0]), "vars": {"renderer": True, "renderer_description": "operator-override"}}])
+            yaml.dump(
+                [
+                    {
+                        **dict(_2_EXAMPLE_PLAYBOOK[0]),
+                        "vars": {
+                            "renderer": True,
+                            "renderer_description": "operator-override",
+                        },
+                    }
+                ]
+            )
         )
 
         reg = RendererRegistry(bundled_dir=bundled, operator_dir=operator)
@@ -347,11 +356,11 @@ class TestSchemaModels:
         assert RendererOutput is RenderDocument
 
     def test_strict_forbids_extra(self):
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             MarkdownSection(content="ok", extra_field="no")  # type: ignore[call-arg]
 
     def test_empty_title_raises(self):
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             RenderDocument(title="")
 
 
@@ -386,7 +395,7 @@ class TestSchemaDiscriminator:
         assert isinstance(doc.sections[4], RawHtmlSection)
 
     def test_unknown_section_type_raises(self):
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             RenderDocument.model_validate({"title": "X", "sections": [{"type": "unknown"}]})
 
     def test_chart_allows_line_bar_pie(self):
@@ -406,7 +415,7 @@ class TestSchemaDiscriminator:
             assert doc.sections[0].chart_type == ct
 
     def test_chart_rejects_invalid_type(self):
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             ChartSection(
                 chart_type="scatter",  # type: ignore[arg-type]
                 data=ChartData(labels=[], series=[]),
@@ -471,7 +480,7 @@ class TestValidateAgainstSchema:
             "type": "object",
             "properties": {"count": {"type": "integer"}},
         }
-        ok, errors = validate_against_schema({"count": "not-an-int"}, schema)
+        ok, _errors = validate_against_schema({"count": "not-an-int"}, schema)
         assert ok is False
 
     def test_legacy_draft_07_accepted_with_warning(self):
@@ -892,6 +901,7 @@ class TestRunRendererStub:
     @pytest.mark.asyncio
     async def test_stub_returns_raw_dict(self):
         from unittest.mock import AsyncMock
+
         from fastapi import FastAPI
 
         app = FastAPI()
@@ -1334,7 +1344,6 @@ class TestNotificationErrorResilience:
 
 class TestHttpTransportProtocol:
     def test_protocol_is_runtime_checkable(self):
-        from typing import runtime_checkable
         assert hasattr(HttpTransport, "_is_runtime_protocol")
         # Verify it was decorated with @runtime_checkable
         assert isinstance(object(), HttpTransport) is False

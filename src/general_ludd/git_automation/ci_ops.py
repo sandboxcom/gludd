@@ -16,7 +16,7 @@ import os
 import subprocess
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 _COOLDOWN_SEC: int = int(os.environ.get("CI_CHECK_COOLDOWN_SEC", "600"))
 _STATE_FILE: Path = Path(
@@ -36,7 +36,7 @@ def _get_current_time() -> float:
 
 def _load_cooldown_state() -> dict[str, Any]:
     try:
-        return json.loads(_STATE_FILE.read_text())
+        return cast(dict[str, Any], json.loads(_STATE_FILE.read_text()))
     except (FileNotFoundError, json.JSONDecodeError):
         return {
             "last_check_epoch": 0.0,
@@ -130,7 +130,7 @@ def _git_head_sha() -> str:
 
 
 def _remaining_cooldown_sec(state: dict[str, Any]) -> float:
-    elapsed = _get_current_time() - state.get("last_check_epoch", 0.0)
+    elapsed = _get_current_time() - float(state.get("last_check_epoch", 0.0))
     return max(0.0, _COOLDOWN_SEC - elapsed)
 
 

@@ -182,14 +182,13 @@ def batch_push(
             reason="below_threshold",
         )
 
-    if check_ci and not force:
-        if _ci_in_flight(branch):
-            return BatchPushResult(
-                pushed=False,
-                unpushed_count=unpushed,
-                threshold=threshold,
-                reason="ci_in_flight",
-            )
+    if check_ci and not force and _ci_in_flight(branch):
+        return BatchPushResult(
+            pushed=False,
+            unpushed_count=unpushed,
+            threshold=threshold,
+            reason="ci_in_flight",
+        )
 
     push_ok = _do_push(repo_path, remote, branch)
     if not push_ok:

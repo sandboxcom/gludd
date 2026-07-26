@@ -6,8 +6,6 @@ import subprocess
 from typing import Any
 from unittest.mock import Mock, patch
 
-import pytest
-
 from general_ludd.git_automation.batch_push import BatchPushResult, batch_push
 
 

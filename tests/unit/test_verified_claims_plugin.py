@@ -390,10 +390,7 @@ def _extract_coverage_target(src: str) -> float:
 
 
 def _has_coverage_finality_claim(text: str, patterns: list[str]) -> bool:
-    for pat in patterns:
-        if re.search(pat, text, re.IGNORECASE):
-            return True
-    return False
+    return any(re.search(pat, text, re.IGNORECASE) for pat in patterns)
 
 
 class TestCoverageClaimContract:

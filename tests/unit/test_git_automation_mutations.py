@@ -6,7 +6,6 @@ git behaviour without touching the workspace checkout.
 
 from __future__ import annotations
 
-import os
 import tempfile
 from pathlib import Path
 
@@ -80,7 +79,7 @@ class TestGitStash:
 
     def test_stash_handles_clean_tree(self, temp_repo):
         ga, root = temp_repo
-        f = _write_file(root, "c.txt", "clean")
+        _write_file(root, "c.txt", "clean")
         ga._run_git("add", "--", "c.txt")
         ga._run_git("commit", "-m", "base")
 
@@ -91,7 +90,7 @@ class TestGitStash:
 
 class TestGitStashPopEmpty:
     def test_stash_pop_empty_list(self, temp_repo):
-        ga, root = temp_repo
+        ga, _root = temp_repo
         result = ga.stash_pop()
         assert result is False
 
@@ -141,7 +140,7 @@ class TestGitReset:
 
     def test_reset_to_specific_ref(self, temp_repo):
         ga, root = temp_repo
-        f = _write_file(root, "g.txt", "first")
+        _write_file(root, "g.txt", "first")
         ga._run_git("add", "--", "g.txt")
         ga._run_git("commit", "-m", "base")
         base = _head_sha(ga)
@@ -219,7 +218,7 @@ class TestGitRm:
 class TestGitMv:
     def test_mv_renames_tracked_file(self, temp_repo):
         ga, root = temp_repo
-        f = _write_file(root, "old.txt", "rename me")
+        _write_file(root, "old.txt", "rename me")
         ga._run_git("add", "--", "old.txt")
         ga._run_git("commit", "-m", "base")
         assert "old.txt" in _tracked_files(ga)
@@ -261,7 +260,7 @@ class TestGitLsTracked:
         assert set(files) == {"one.py", "two.py"}
 
     def test_ls_tracked_empty_repo(self, temp_repo):
-        ga, root = temp_repo
+        ga, _root = temp_repo
         files = ga.ls_tracked()
         assert files == []
 
@@ -281,7 +280,7 @@ class TestGitRestore:
 
     def test_restore_handles_untracked(self, temp_repo):
         ga, root = temp_repo
-        f = _write_file(root, "new.txt", "fresh")
+        _write_file(root, "new.txt", "fresh")
         # restoring an untracked file is a no-op / error; we should handle it
         result = ga.restore("new.txt")
         assert result is False

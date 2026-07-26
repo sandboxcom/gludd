@@ -17,11 +17,11 @@ Policy (from docs/ORCHESTRATION.md):
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import subprocess
 import time
-from pathlib import Path
 from typing import Any
 
 from general_ludd.git_automation.locking import git_repo_lock
@@ -271,18 +271,14 @@ def worktree_cleanup(
         cleaned = False
 
     if not cleaned and os.path.isdir(worktree_path):
-        try:
+        with contextlib.suppress(Exception):
             _run_git(
                 "worktree", "unlock", worktree_path,
                 cwd=repo_path, check=False,
             )
-        except Exception:
-            pass
 
-    try:
+    with contextlib.suppress(Exception):
         _run_git("worktree", "prune", cwd=repo_path, check=False)
-    except Exception:
-        pass
 
     branch_removed = False
     try:

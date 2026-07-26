@@ -7,10 +7,7 @@ Checks:
   4. No stale directories are documented
 """
 
-import re
 from pathlib import Path
-
-import pytest
 
 ROOT = Path(__file__).parent.parent.parent
 DOC_PATH = ROOT / "docs" / "DIRECTORY_STRUCTURE.md"

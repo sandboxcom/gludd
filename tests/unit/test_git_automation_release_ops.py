@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import ANY, MagicMock, patch
-
-import pytest
+from unittest.mock import patch
 
 from general_ludd.git_automation.release_ops import (
     ReleaseCutResult,
@@ -220,7 +218,7 @@ class TestReleaseDelete:
         mock_remote_del.return_value = (0, "")
         mock_gh.return_value = (0, "")
 
-        release_delete(tag="v0.1.0", repo_path="/tmp/repo", remote="sandboxcom")
+        result = release_delete(tag="v0.1.0", repo_path="/tmp/repo", remote="sandboxcom")
 
         assert result.remote_deleted is True
 
@@ -236,7 +234,7 @@ class TestReleaseDelete:
         mock_remote_del.return_value = (0, "")
         mock_gh.return_value = (0, "release deleted")
 
-        release_delete(tag="v0.1.0", repo_path="/tmp/repo", remote="sandboxcom")
+        result = release_delete(tag="v0.1.0", repo_path="/tmp/repo", remote="sandboxcom")
 
         mock_gh.assert_called_once_with("v0.1.0", "sandboxcom/gludd")
         assert result.gh_release_deleted is True

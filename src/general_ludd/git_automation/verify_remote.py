@@ -13,7 +13,6 @@ import subprocess
 
 from general_ludd.git_automation.types import VerifyRemoteResult
 
-
 _GIT_TIMEOUT_SECONDS = 60.0
 
 

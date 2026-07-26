@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 import yaml
@@ -314,7 +314,7 @@ class TestConditionsForBroadPermissions:
 class TestProviderCoverage:
     """Every major PaaS provider from providers.yml must have an IAM roles file."""
 
-    REQUIRED_PROVIDER_FILES = {
+    REQUIRED_PROVIDER_FILES: ClassVar[dict[str, str]] = {
         "aws": "aws-iam-roles.yml",
         "gcp": "gcp-iam-roles.yml",
         "azure": "azure-iam-roles.yml",

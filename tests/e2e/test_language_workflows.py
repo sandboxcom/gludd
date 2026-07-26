@@ -21,13 +21,13 @@ from general_ludd.language.charset_map import (
     BOM_BY_SEQUENCE,
     BOM_SIGNATURES,
     CHARDET_CONFIDENCE_THRESHOLDS,
-    MOJIBAKE_SIGNATURES,
-    UTF_ENCODINGS,
-    WINDOWS_CODE_PAGES,
-    SINGLE_BYTE_ENCODINGS,
     CJK_ENCODINGS,
     CYRILLIC_ENCODINGS,
     IBM_CODE_PAGES,
+    MOJIBAKE_SIGNATURES,
+    SINGLE_BYTE_ENCODINGS,
+    UTF_ENCODINGS,
+    WINDOWS_CODE_PAGES,
 )
 from general_ludd.language.corpus import CorpusAnalyzer
 from general_ludd.language.font_data import (
@@ -65,9 +65,9 @@ from general_ludd.language.locale_data import (
     CLDR_FIRST_DAY_OF_WEEK,
     CLDR_MEASUREMENT_SYSTEMS,
     COMMON_CURRENCIES,
-    ISO_15924_TO_NAME,
-    ISO_3166_TO_NAME,
     ISO_639_1_TO_NAME,
+    ISO_3166_TO_NAME,
+    ISO_15924_TO_NAME,
     LOCALE_FORMATS,
     RTL_SCRIPTS,
     evaluate_plural,
@@ -106,7 +106,6 @@ from general_ludd.language.unicode_data import (
     plane_of,
     surrogates_to_codepoint,
 )
-
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # helpers
@@ -410,7 +409,7 @@ class TestI18nWorkflows:
     def test_pseudolocalize_accent(self) -> None:
         result = pseudolocalize("Hello World", "accent")
         assert result != "Hello World"
-        assert "H" == PSEUDO_ACCENT_MAP.get("H", "H") or result[0] != "H"
+        assert PSEUDO_ACCENT_MAP.get("H", "H") == "H" or result[0] != "H"
 
     def test_pseudolocalize_bracket(self) -> None:
         assert pseudolocalize("Hello", "bracket") == "[Hello]"

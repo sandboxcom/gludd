@@ -2,35 +2,45 @@
 
 from __future__ import annotations
 
-import json
 import os
 import tempfile
 from pathlib import Path
 
 import pytest
 
+from general_ludd.account.backup import get_deletion_policy
+from general_ludd.account.deletion_notice import (
+    SUPPORTED_SERVICES,
+    build_deletion_notice,
+    get_all_notices,
+    get_policy_text,
+)
+from general_ludd.account.ephemeral import (
+    AccountCredentials,
+    EphemeralAccountManager,
+)
+from general_ludd.account.lifecycle_policy import (
+    LifecycleAction,
+    PolicyConfig,
+    evaluate_lifecycle,
+)
 from general_ludd.physics.analytical_chemistry import (
-    COMMON_FRAGMENTS,
     MassSpecPeak,
     calibrate_instrument,
     compute_retention_index,
     identify_from_mass_spectrum,
 )
 from general_ludd.physics.materials_science import (
-    MATERIALS_DB,
     calculate_specific_strength,
     compare_materials,
     compute_archard_wear_volume,
     compute_band_gap_from_wavelength,
-    compute_biocompatibility_score,
     compute_corrosion_rate,
     compute_galvanic_corrosion_risk,
     compute_hall_petch_strength,
-    compute_reflectivity_normal,
     compute_refractive_index_contrast,
     compute_rule_of_mixtures,
     compute_surface_to_volume_ratio,
-    compute_thermal_shock_resistance,
     get_material_properties,
     recommend_material,
 )
@@ -48,7 +58,6 @@ from general_ludd.physics.mechanistic_interpretability import (
 )
 from general_ludd.physics.research_paper_expert import (
     ExtractedData,
-    MethodologyReport,
     PaperStructure,
     ReferenceEntry,
     assess_methodology,
@@ -59,25 +68,13 @@ from general_ludd.physics.research_paper_expert import (
     search_literature,
     suggest_method_fixes,
 )
-from general_ludd.account.deletion_notice import (
-    SUPPORTED_SERVICES,
-    build_deletion_notice,
-    get_all_notices,
-    get_policy_text,
-)
-from general_ludd.account.lifecycle_policy import (
-    LifecycleAction,
-    PolicyConfig,
-    evaluate_lifecycle,
-)
-from general_ludd.account.backup import get_deletion_policy
-from general_ludd.account.ephemeral import (
-    AccountCredentials,
-    EphemeralAccountManager,
-)
-from general_ludd.validation.runner import (
-    ValidationResult,
-    ValidationRunner,
+from general_ludd.validation.backlog_auditor import (
+    FALSE_CLAIM,
+    INCOMPLETE,
+    VERIFIED_COMPLETE,
+    BacklogAuditor,
+    BacklogAuditReport,
+    TaskVerdict,
 )
 from general_ludd.validation.gap_analyzer import (
     GapAnalyzer,
@@ -89,15 +86,10 @@ from general_ludd.validation.log_auditor import (
     AuditReport,
     LogAuditor,
 )
-from general_ludd.validation.backlog_auditor import (
-    BacklogAuditor,
-    BacklogAuditReport,
-    TaskVerdict,
-    FALSE_CLAIM,
-    INCOMPLETE,
-    VERIFIED_COMPLETE,
+from general_ludd.validation.runner import (
+    ValidationResult,
+    ValidationRunner,
 )
-
 
 # ==============================================================================
 # Physics — Analytical Chemistry
@@ -136,7 +128,15 @@ class TestAnalyticalChemistryWorkflows:
 
     def test_calibrate_instrument_single_standard(self):
         result = calibrate_instrument(
-            [{"name": "NIST SRM 1643f", "certified_value": 1.0, "uncertainty": 0.02, "unit": "ug/L", "matrix": "water"}],
+            [
+                {
+                    "name": "NIST SRM 1643f",
+                    "certified_value": 1.0,
+                    "uncertainty": 0.02,
+                    "unit": "ug/L",
+                    "matrix": "water",
+                }
+            ],
             [2.5],
         )
         assert result["slope"] == 2.5

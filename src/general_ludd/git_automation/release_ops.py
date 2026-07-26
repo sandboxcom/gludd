@@ -40,7 +40,7 @@ def _run_git(args: list[str], repo_path: str, *, check: bool = False) -> tuple[i
     """Run a git command and return (returncode, output)."""
     try:
         result = subprocess.run(
-            ["git"] + args,
+            ["git", *args],
             cwd=repo_path,
             capture_output=True,
             text=True,
@@ -61,7 +61,7 @@ def _run_gh(args: list[str], *, check: bool = False) -> tuple[int, str]:
     """Run a gh CLI command and return (returncode, output)."""
     try:
         result = subprocess.run(
-            ["gh"] + args,
+            ["gh", *args],
             capture_output=True,
             text=True,
             timeout=30.0,

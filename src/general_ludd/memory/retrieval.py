@@ -241,8 +241,12 @@ def hybrid_search(
 
     semantic_scores: list[float] = []
     for i in range(N):
-        dt = set(doc_terms[i])
-        overlap = (len(query_set & dt) / len(query_set | dt) if query_set else 0.0) if dt else 0.0
+        semantic_terms: set[str] = set(doc_terms[i])
+        overlap = (
+            len(query_set & semantic_terms) / len(query_set | semantic_terms)
+            if query_set
+            else 0.0
+        ) if semantic_terms else 0.0
         semantic_scores.append(overlap)
 
     max_bm25 = max(bm25_scores) if bm25_scores else 1.0

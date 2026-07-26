@@ -6,18 +6,11 @@ governance, approval, collections, notifications.
 
 from __future__ import annotations
 
-import base64
-import json
-import os
-import re
 import tempfile
 import threading
 import time
-from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 # ============================================================================
 # issue_sources — IssueSyncEngine, NormalizedIssue, status maps
@@ -150,8 +143,8 @@ class TestIssueSourceProtocol:
     """Tests that the IssueSource protocol check works."""
 
     def test_protocol_is_runtime_checkable(self):
+
         from general_ludd.issue_sources.base import IssueSource
-        from typing import runtime_checkable
 
         assert hasattr(IssueSource, "__runtime_checkable__")
 
@@ -171,7 +164,6 @@ class TestIssueSourceProtocol:
             def add_comment(self, external_id, body):
                 return True
 
-        from typing import cast
 
         obj = Good()
         assert isinstance(obj, IssueSource)
@@ -456,8 +448,8 @@ class TestCompactionAggressive:
 
     def test_aggressive_drops_more_than_baseline(self):
         from general_ludd.agents.context import ContextMessage
-        from general_ludd.compaction.base import CompactionRequest
         from general_ludd.compaction.aggressive import AggressiveCompactor
+        from general_ludd.compaction.base import CompactionRequest
 
         msgs = [ContextMessage(role="user", content=f"msg {i}") for i in range(50)]
         req = CompactionRequest(messages=msgs, goal="compress hard", target_tokens=20)
@@ -512,7 +504,7 @@ class TestRendererRegistry:
         assert len(list(reg.iter())) == 0
 
     def test_registry_discovers_yml(self):
-        from general_ludd.renderers.registry import RendererRegistry, RendererSpec
+        from general_ludd.renderers.registry import RendererRegistry
 
         reg = RendererRegistry()
         with tempfile.TemporaryDirectory() as tmp:

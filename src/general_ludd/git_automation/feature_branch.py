@@ -144,7 +144,7 @@ def rebranch_onto(
     try:
         git._run_git("rev-parse", "--verify", f"{new_base}^{{commit}}")
     except subprocess.CalledProcessError:
-        raise ValueError(f"{new_base!r} is not a valid commit")
+        raise ValueError(f"{new_base!r} is not a valid commit") from None
 
     orig_branch = git.current_branch()
     short_base = new_base[:7]
@@ -163,7 +163,7 @@ def rebranch_onto(
                 raise RuntimeError(
                     f"cherry-pick {c} conflicted; rebranch from {orig_branch} "
                     f"onto {new_base} aborted and cleaned up"
-                )
+                ) from None
 
     return {
         "success": True,

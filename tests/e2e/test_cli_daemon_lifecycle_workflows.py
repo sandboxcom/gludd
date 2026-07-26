@@ -6,7 +6,6 @@ error recovery, route registration, and config handling.
 
 from __future__ import annotations
 
-import os
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -58,14 +57,14 @@ class _FakeTask:
 # ── Daemon startup sequence ─────────────────────────────────────────────────
 
 class TestDaemonStartupSequence:
-    def test_create_daemon_app_sets_title_and_version(self):
+    def test_create_daemon_app_sets_title_and_version(self, monkeypatch):
         import general_ludd.daemon as dm
         with patch("general_ludd.ansible.runner.AnsibleRunnerAdapter", return_value=MagicMock()):
             app = dm.create_daemon_app(tick_interval=0.01)
         assert app.title == "General Ludd Agent"
         assert app.version == __version__
 
-    def test_config_loaded_on_create(self, tmp_path):
+    def test_config_loaded_on_create(self, tmp_path, monkeypatch):
         config_dir = _make_config_dir(tmp_path)
         import general_ludd.daemon as dm
         with patch("general_ludd.ansible.runner.AnsibleRunnerAdapter", return_value=MagicMock()):
@@ -74,7 +73,7 @@ class TestDaemonStartupSequence:
         assert isinstance(startup, dict)
         assert "user_config" in startup
 
-    def test_db_engine_initialized_in_lifespan(self):
+    def test_db_engine_initialized_in_lifespan(self, monkeypatch):
         import general_ludd.daemon as dm
         with patch("general_ludd.ansible.runner.AnsibleRunnerAdapter", return_value=MagicMock()):
             app = dm.create_daemon_app(tick_interval=0.01)
@@ -82,7 +81,7 @@ class TestDaemonStartupSequence:
                 engine = app.state._db_engine
                 assert engine is not None
 
-    def test_session_factory_initialized_in_lifespan(self):
+    def test_session_factory_initialized_in_lifespan(self, monkeypatch):
         import general_ludd.daemon as dm
         with patch("general_ludd.ansible.runner.AnsibleRunnerAdapter", return_value=MagicMock()):
             app = dm.create_daemon_app(tick_interval=0.01)
@@ -90,7 +89,7 @@ class TestDaemonStartupSequence:
                 factory = app.state._session_factory
                 assert factory is not None
 
-    def test_all_core_subsystems_initialized(self):
+    def test_all_core_subsystems_initialized(self, monkeypatch):
         import general_ludd.daemon as dm
         with patch("general_ludd.ansible.runner.AnsibleRunnerAdapter", return_value=MagicMock()):
             app = dm.create_daemon_app(tick_interval=0.01)
@@ -100,7 +99,7 @@ class TestDaemonStartupSequence:
                 assert app.state._worker_broadcaster is not None
                 assert app.state._health_tracker is not None
 
-    def test_routes_registered_on_create(self):
+    def test_routes_registered_on_create(self, monkeypatch):
         import general_ludd.daemon as dm
         with patch("general_ludd.ansible.runner.AnsibleRunnerAdapter", return_value=MagicMock()):
             app = dm.create_daemon_app(tick_interval=0.01)
@@ -111,7 +110,7 @@ class TestDaemonStartupSequence:
         assert "/api/facts" in routes
         assert "/admin/config/reload" in routes
 
-    def test_daemon_state_per_app_isolation(self):
+    def test_daemon_state_per_app_isolation(self, monkeypatch):
         import general_ludd.daemon as dm
         with patch("general_ludd.ansible.runner.AnsibleRunnerAdapter", return_value=MagicMock()):
             app1 = dm.create_daemon_app(tick_interval=0.01)
@@ -133,7 +132,7 @@ class TestDaemonStartupSequence:
         startup = app.state._startup_config
         assert isinstance(startup, dict)
 
-    def test_daemon_state_fields_initialized(self):
+    def test_daemon_state_fields_initialized(self, monkeypatch):
         import general_ludd.daemon as dm
         with patch("general_ludd.ansible.runner.AnsibleRunnerAdapter", return_value=MagicMock()):
             app = dm.create_daemon_app(tick_interval=0.01)
@@ -143,7 +142,7 @@ class TestDaemonStartupSequence:
         assert "quality_gate" in ds
         assert ds["todos"] == []
 
-    def test_app_state_has_required_attrs(self):
+    def test_app_state_has_required_attrs(self, monkeypatch):
         import general_ludd.daemon as dm
         with patch("general_ludd.ansible.runner.AnsibleRunnerAdapter", return_value=MagicMock()):
             app = dm.create_daemon_app(tick_interval=0.01)
@@ -158,7 +157,7 @@ class TestDaemonStartupSequence:
 # ── Daemon health endpoints ─────────────────────────────────────────────────
 
 class TestDaemonHealthEndpoints:
-    def test_healthz_returns_200_and_healthy(self):
+    def test_healthz_returns_200_and_healthy(self, monkeypatch):
         import general_ludd.daemon as dm
         with patch("general_ludd.ansible.runner.AnsibleRunnerAdapter", return_value=MagicMock()):
             app = dm.create_daemon_app(tick_interval=0.01)
@@ -168,7 +167,7 @@ class TestDaemonHealthEndpoints:
                 data = resp.json()
                 assert data["status"] == "healthy"
 
-    def test_healthz_includes_security_posture(self):
+    def test_healthz_includes_security_posture(self, monkeypatch):
         import general_ludd.daemon as dm
         with patch("general_ludd.ansible.runner.AnsibleRunnerAdapter", return_value=MagicMock()):
             app = dm.create_daemon_app(tick_interval=0.01)
@@ -180,7 +179,7 @@ class TestDaemonHealthEndpoints:
         assert "auth_degraded" in data
         assert "budget_exhausted" in data
 
-    def test_healthz_degraded_when_flag_set(self):
+    def test_healthz_degraded_when_flag_set(self, monkeypatch):
         import general_ludd.daemon as dm
         with patch("general_ludd.ansible.runner.AnsibleRunnerAdapter", return_value=MagicMock()):
             app = dm.create_daemon_app(tick_interval=0.01)
@@ -192,7 +191,7 @@ class TestDaemonHealthEndpoints:
                 assert data["status"] == "degraded"
                 assert data["reason"] == "test degradation"
 
-    def test_healthz_degraded_when_event_loop_cancelled(self):
+    def test_healthz_degraded_when_event_loop_cancelled(self, monkeypatch):
         import general_ludd.daemon as dm
 
         class DoneTask:
@@ -210,7 +209,7 @@ class TestDaemonHealthEndpoints:
         assert data["status"] == "degraded"
         assert "event_loop" in data["reason"]
 
-    def test_readyz_503_when_not_initialized(self):
+    def test_readyz_503_when_not_initialized(self, monkeypatch):
         import general_ludd.daemon as dm
         with patch("general_ludd.ansible.runner.AnsibleRunnerAdapter", return_value=MagicMock()):
             app = dm.create_daemon_app(tick_interval=0.01)
@@ -221,7 +220,7 @@ class TestDaemonHealthEndpoints:
                 assert data["status"] == "not_ready"
                 assert data["reason"] == "daemon_not_initialized"
 
-    def test_readyz_200_when_ready(self):
+    def test_readyz_200_when_ready(self, monkeypatch):
         import general_ludd.daemon as dm
         with patch("general_ludd.ansible.runner.AnsibleRunnerAdapter", return_value=MagicMock()):
             app = dm.create_daemon_app(tick_interval=0.01)
@@ -231,7 +230,7 @@ class TestDaemonHealthEndpoints:
                 assert resp.status_code == 200
                 assert resp.json()["status"] == "ready"
 
-    def test_readyz_degraded_to_ready_transition(self):
+    def test_readyz_degraded_to_ready_transition(self, monkeypatch):
         import general_ludd.daemon as dm
         with patch("general_ludd.ansible.runner.AnsibleRunnerAdapter", return_value=MagicMock()):
             app = dm.create_daemon_app(tick_interval=0.01)
@@ -246,7 +245,7 @@ class TestDaemonHealthEndpoints:
                 assert resp.status_code == 200
                 assert resp.json()["status"] == "ready"
 
-    def test_metrics_endpoint_returns_prometheus(self):
+    def test_metrics_endpoint_returns_prometheus(self, monkeypatch):
         import general_ludd.daemon as dm
         with patch("general_ludd.ansible.runner.AnsibleRunnerAdapter", return_value=MagicMock()):
             app = dm.create_daemon_app(tick_interval=0.01)
@@ -255,7 +254,7 @@ class TestDaemonHealthEndpoints:
                 assert resp.status_code == 200
                 assert "text/plain" in resp.headers.get("content-type", "")
 
-    def test_admin_metrics_export_returns_json(self):
+    def test_admin_metrics_export_returns_json(self, monkeypatch):
         import general_ludd.daemon as dm
         with patch("general_ludd.ansible.runner.AnsibleRunnerAdapter", return_value=MagicMock()):
             app = dm.create_daemon_app(tick_interval=0.01)
@@ -275,7 +274,7 @@ class TestDaemonHealthEndpoints:
 # ── Daemon shutdown ─────────────────────────────────────────────────────────
 
 class TestDaemonShutdown:
-    def test_engine_disposed_after_context_exit(self):
+    def test_engine_disposed_after_context_exit(self, monkeypatch):
         import general_ludd.daemon as dm
         with patch("general_ludd.ansible.runner.AnsibleRunnerAdapter", return_value=MagicMock()):
             app = dm.create_daemon_app(tick_interval=0.01)
@@ -289,7 +288,7 @@ class TestDaemonShutdown:
                 )
             )
 
-    def test_event_loop_task_cancelled_after_shutdown(self):
+    def test_event_loop_task_cancelled_after_shutdown(self, monkeypatch):
         import general_ludd.daemon as dm
         with patch("general_ludd.ansible.runner.AnsibleRunnerAdapter", return_value=MagicMock()):
             app = dm.create_daemon_app(tick_interval=0.01)
@@ -299,7 +298,7 @@ class TestDaemonShutdown:
                 assert not task.done()
             assert task.cancelled() or task.done()
 
-    def test_event_bus_cleared_on_shutdown(self):
+    def test_event_bus_cleared_on_shutdown(self, monkeypatch):
         import general_ludd.daemon as dm
         with patch("general_ludd.ansible.runner.AnsibleRunnerAdapter", return_value=MagicMock()):
             app = dm.create_daemon_app(tick_interval=0.01)
@@ -308,7 +307,7 @@ class TestDaemonShutdown:
                 assert bus is not None
             assert bus is not None
 
-    def test_reload_lock_available(self):
+    def test_reload_lock_available(self, monkeypatch):
         import general_ludd.daemon as dm
         with patch("general_ludd.ansible.runner.AnsibleRunnerAdapter", return_value=MagicMock()):
             app = dm.create_daemon_app(tick_interval=0.01)
@@ -323,48 +322,48 @@ class TestDaemonShutdown:
 # ── CLI commands (no daemon needed) ─────────────────────────────────────────
 
 class TestCliHelpAndVersion:
-    def test_help_flag_exits_zero(self, capsys):
+    def test_help_flag_exits_zero(self, capsys, monkeypatch):
         _out, _err, code = _run_cli_output(["--help"], capsys)
         assert code == 0
 
-    def test_help_output_contains_key_commands(self, capsys):
+    def test_help_output_contains_key_commands(self, capsys, monkeypatch):
         out, _err, _code = _run_cli_output(["--help"], capsys)
         assert "daemon" in out
         assert "add" in out
         assert "status" in out
         assert "list" in out
 
-    def test_help_subcommand_works(self):
+    def test_help_subcommand_works(self, monkeypatch):
         with patch("general_ludd.cli._cmd_help") as mock_cmd:
             _run_cli(["help"])
         mock_cmd.assert_called_once()
 
-    def test_version_output_contains_semver(self, capsys):
+    def test_version_output_contains_semver(self, capsys, monkeypatch):
         out, _err, _code = _run_cli_output(["--version"], capsys)
         assert __version__ in out
 
-    def test_no_args_shows_help(self, capsys):
+    def test_no_args_shows_help(self, capsys, monkeypatch):
         out, _err, code = _run_cli_output([], capsys)
         assert code == 1 or "usage" in out.lower()
 
-    def test_daemon_help_shows_options(self, capsys):
+    def test_daemon_help_shows_options(self, capsys, monkeypatch):
         out, _err, _code = _run_cli_output(["daemon", "--help"], capsys)
         assert "--host" in out
         assert "--port" in out
 
-    def test_add_help_shows_options(self, capsys):
+    def test_add_help_shows_options(self, capsys, monkeypatch):
         out, _err, _code = _run_cli_output(["add", "--help"], capsys)
         assert "TITLE" in out
 
-    def test_invalid_command_exits_nonzero(self):
+    def test_invalid_command_exits_nonzero(self, monkeypatch):
         code = _run_cli(["nonexistentcommandxyz123"])
         assert code != 0
 
-    def test_unknown_subcommand_shows_error(self, capsys):
+    def test_unknown_subcommand_shows_error(self, capsys, monkeypatch):
         _out, _err, code = _run_cli_output(["nonexistentcommandxyz123"], capsys)
         assert code != 0
 
-    def test_version_flag_is_minimal(self, capsys):
+    def test_version_flag_is_minimal(self, capsys, monkeypatch):
         out, _err, code = _run_cli_output(["--version"], capsys)
         assert code == 0
         assert len(out.strip()) > 0
@@ -373,7 +372,7 @@ class TestCliHelpAndVersion:
 # ── CLI daemon subcommand parsing ───────────────────────────────────────────
 
 class TestCliDaemonParsing:
-    def test_daemon_default_args(self):
+    def test_daemon_default_args(self, monkeypatch):
         with patch("general_ludd.cli._cmd_daemon") as mock_cmd:
             _run_cli(["daemon"])
         args = mock_cmd.call_args[0][0]
@@ -383,7 +382,7 @@ class TestCliDaemonParsing:
         assert args.tick_interval == 1.0
         assert args.workers == 1
 
-    def test_daemon_custom_args(self):
+    def test_daemon_custom_args(self, monkeypatch):
         with patch("general_ludd.cli._cmd_daemon") as mock_cmd:
             _run_cli([
                 "daemon", "--host", "127.0.0.1", "--port", "9000",
@@ -398,11 +397,11 @@ class TestCliDaemonParsing:
         assert args.project == "proj-test"
         assert args.config_dir == "/tmp/cfg"
 
-    def test_daemon_invalid_log_level_blocked(self):
+    def test_daemon_invalid_log_level_blocked(self, monkeypatch):
         code = _run_cli(["daemon", "--log-level", "verbose"])
         assert code != 0
 
-    def test_daemon_all_log_levels_accepted(self):
+    def test_daemon_all_log_levels_accepted(self, monkeypatch):
         for level in ["debug", "info", "warning", "error"]:
             with patch("general_ludd.cli._cmd_daemon") as mock_cmd:
                 _run_cli(["daemon", "--log-level", level])
@@ -412,7 +411,7 @@ class TestCliDaemonParsing:
 # ── Auth middleware ──────────────────────────────────────────────────────────
 
 class TestAuthMiddleware:
-    def test_public_get_paths_no_auth_required(self):
+    def test_public_get_paths_no_auth_required(self, monkeypatch):
         import general_ludd.daemon as dm
         with patch("general_ludd.ansible.runner.AnsibleRunnerAdapter", return_value=MagicMock()):
             app = dm.create_daemon_app(tick_interval=0.01)
@@ -494,7 +493,7 @@ class TestAuthMiddleware:
 # ── Stats middleware ─────────────────────────────────────────────────────────
 
 class TestStatsMiddleware:
-    def test_stats_increment_on_request(self):
+    def test_stats_increment_on_request(self, monkeypatch):
         import general_ludd.daemon as dm
         with patch("general_ludd.ansible.runner.AnsibleRunnerAdapter", return_value=MagicMock()):
             app = dm.create_daemon_app(tick_interval=0.01)
@@ -504,7 +503,7 @@ class TestStatsMiddleware:
                 assert app.state._stats_requests == initial + 1
                 assert app.state._stats_responses == initial + 1
 
-    def test_stats_track_multiple_requests(self):
+    def test_stats_track_multiple_requests(self, monkeypatch):
         import general_ludd.daemon as dm
         with patch("general_ludd.ansible.runner.AnsibleRunnerAdapter", return_value=MagicMock()):
             app = dm.create_daemon_app(tick_interval=0.01)
@@ -514,7 +513,7 @@ class TestStatsMiddleware:
                 assert app.state._stats_requests == 5
                 assert app.state._stats_responses == 5
 
-    def test_admin_daemon_stats_endpoint(self):
+    def test_admin_daemon_stats_endpoint(self, monkeypatch):
         import general_ludd.daemon as dm
         with patch("general_ludd.ansible.runner.AnsibleRunnerAdapter", return_value=MagicMock()):
             app = dm.create_daemon_app(tick_interval=0.01)
@@ -535,7 +534,7 @@ class TestStatsMiddleware:
 # ── Config hot-reload ───────────────────────────────────────────────────────
 
 class TestConfigHotReload:
-    def test_config_reload_endpoint_exists(self):
+    def test_config_reload_endpoint_exists(self, monkeypatch):
         import general_ludd.daemon as dm
         with patch("general_ludd.ansible.runner.AnsibleRunnerAdapter", return_value=MagicMock()):
             app = dm.create_daemon_app(tick_interval=0.01)
@@ -548,7 +547,7 @@ class TestConfigHotReload:
                 data = resp.json()
                 assert "success" in data or data.get("success") is True
 
-    def test_config_reload_updates_startup_config(self, tmp_path):
+    def test_config_reload_updates_startup_config(self, tmp_path, monkeypatch):
         config_dir = _make_config_dir(
             tmp_path, "rules:\n  - name: reload-test\n    description: A rule\n"
         )
@@ -564,7 +563,7 @@ class TestConfigHotReload:
                 new = app.state._startup_config
                 assert new is not None
 
-    def test_healthz_healthy_after_reload(self, tmp_path):
+    def test_healthz_healthy_after_reload(self, tmp_path, monkeypatch):
         config_dir = _make_config_dir(tmp_path)
         import general_ludd.daemon as dm
         with patch("general_ludd.ansible.runner.AnsibleRunnerAdapter", return_value=MagicMock()):
@@ -582,7 +581,7 @@ class TestConfigHotReload:
 # ── CIDR middleware ──────────────────────────────────────────────────────────
 
 class TestCidrMiddleware:
-    def test_cidr_allows_when_empty_list(self):
+    def test_cidr_allows_when_empty_list(self, monkeypatch):
         import general_ludd.daemon as dm
         with patch("general_ludd.ansible.runner.AnsibleRunnerAdapter", return_value=MagicMock()):
             app = dm.create_daemon_app(tick_interval=0.01)
@@ -591,7 +590,7 @@ class TestCidrMiddleware:
                 resp = client.get("/healthz")
                 assert resp.status_code == 200
 
-    def test_cidr_blocked_non_matching_ip(self):
+    def test_cidr_blocked_non_matching_ip(self, monkeypatch):
         import general_ludd.daemon as dm
         with patch("general_ludd.ansible.runner.AnsibleRunnerAdapter", return_value=MagicMock()):
             app = dm.create_daemon_app(tick_interval=0.01)
@@ -603,7 +602,7 @@ class TestCidrMiddleware:
                 assert data["error"] == "forbidden"
                 assert "allowed_cidr" in data["reason"]
 
-    def test_cidr_allows_loopback(self):
+    def test_cidr_allows_loopback(self, monkeypatch):
         import general_ludd.daemon as dm
         with patch("general_ludd.ansible.runner.AnsibleRunnerAdapter", return_value=MagicMock()):
             app = dm.create_daemon_app(tick_interval=0.01)
@@ -616,7 +615,7 @@ class TestCidrMiddleware:
 # ── Error recovery / degraded startup ───────────────────────────────────────
 
 class TestErrorRecovery:
-    def test_degraded_flag_set_on_startup_failure(self):
+    def test_degraded_flag_set_on_startup_failure(self, monkeypatch):
         import general_ludd.daemon as dm
         with patch("general_ludd.ansible.runner.AnsibleRunnerAdapter", return_value=MagicMock()), patch(
             "general_ludd.daemon.ensure_tables",
@@ -628,7 +627,7 @@ class TestErrorRecovery:
                 assert degraded is not None
                 assert "simulated DB failure" in str(degraded)
 
-    def test_healthz_degraded_after_startup_failure(self):
+    def test_healthz_degraded_after_startup_failure(self, monkeypatch):
         import general_ludd.daemon as dm
         with patch("general_ludd.ansible.runner.AnsibleRunnerAdapter", return_value=MagicMock()), patch(
             "general_ludd.daemon.ensure_tables",
@@ -642,7 +641,7 @@ class TestErrorRecovery:
                 assert data["status"] == "degraded"
                 assert "simulated DB failure" in str(data.get("reason", ""))
 
-    def test_readyz_503_after_startup_failure(self):
+    def test_readyz_503_after_startup_failure(self, monkeypatch):
         import general_ludd.daemon as dm
         with patch("general_ludd.ansible.runner.AnsibleRunnerAdapter", return_value=MagicMock()), patch(
             "general_ludd.daemon.ensure_tables",
@@ -653,7 +652,7 @@ class TestErrorRecovery:
                 resp = client.get("/readyz")
                 assert resp.status_code == 503
 
-    def test_public_paths_still_accessible_on_degraded(self):
+    def test_public_paths_still_accessible_on_degraded(self, monkeypatch):
         import general_ludd.daemon as dm
         with patch("general_ludd.ansible.runner.AnsibleRunnerAdapter", return_value=MagicMock()), patch(
             "general_ludd.daemon.ensure_tables",
@@ -664,8 +663,8 @@ class TestErrorRecovery:
                 assert client.get("/healthz").status_code == 200
                 assert client.get("/docs").status_code == 200
 
-    def test_degraded_guard_blocks_dispatch_on_degraded(self):
-        os.environ["GLUDD_ALLOW_NO_AUTH"] = "1"
+    def test_degraded_guard_blocks_dispatch_on_degraded(self, monkeypatch):
+        monkeypatch.setenv("GLUDD_ALLOW_NO_AUTH", "1")
         import general_ludd.daemon as dm
         with patch("general_ludd.ansible.runner.AnsibleRunnerAdapter", return_value=MagicMock()), patch(
             "general_ludd.daemon.ensure_tables",
@@ -680,7 +679,7 @@ class TestErrorRecovery:
 # ── _lifespan shutdown robustness ──────────────────────────────────────────
 
 class TestLifespanShutdownRobustness:
-    def test_engine_disposed_even_with_exception(self):
+    def test_engine_disposed_even_with_exception(self, monkeypatch):
         import general_ludd.daemon as dm
         with patch("general_ludd.ansible.runner.AnsibleRunnerAdapter", return_value=MagicMock()):
             app = dm.create_daemon_app(tick_interval=0.01)
@@ -691,7 +690,7 @@ class TestLifespanShutdownRobustness:
                 "Pool size: 0", "Pool closed", "Overflow: -5",
             ))
 
-    def test_no_crash_on_empty_shutdown(self):
+    def test_no_crash_on_empty_shutdown(self, monkeypatch):
         import general_ludd.daemon as dm
         with patch("general_ludd.ansible.runner.AnsibleRunnerAdapter", return_value=MagicMock()), patch.object(
             dm, "ensure_tables",
@@ -702,7 +701,7 @@ class TestLifespanShutdownRobustness:
                 pass
             assert app.state._degraded is not None
 
-    def test_swallow_errors_during_cleanup(self):
+    def test_swallow_errors_during_cleanup(self, monkeypatch):
         import general_ludd.daemon as dm
 
         class BrokenEngine:
@@ -715,7 +714,7 @@ class TestLifespanShutdownRobustness:
                 app.state._db_engine = BrokenEngine()
             # Should not raise even though engine.dispose() fails
 
-    def test_event_loop_stopped_before_task_cancelled(self):
+    def test_event_loop_stopped_before_task_cancelled(self, monkeypatch):
         import general_ludd.daemon as dm
         with patch("general_ludd.ansible.runner.AnsibleRunnerAdapter", return_value=MagicMock()):
             app = dm.create_daemon_app(tick_interval=0.01)

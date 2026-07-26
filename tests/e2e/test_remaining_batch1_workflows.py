@@ -2,41 +2,41 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import tempfile
 import time
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 import yaml
-
 
 # ---------------------------------------------------------------------------
 # renderers.registry
 # ---------------------------------------------------------------------------
 
 class TestRendererRegistry:
-    def test_registry_import(self):
+    def test_registry_import(self, monkeypatch):
         from general_ludd.renderers.registry import RendererRegistry, RendererSpec
 
         assert RendererRegistry is not None
         assert RendererSpec is not None
 
-    def test_registry_default_bundled_dir(self):
+    def test_registry_default_bundled_dir(self, monkeypatch):
         from general_ludd.renderers.registry import RendererRegistry
 
         reg = RendererRegistry()
         assert reg.bundled_dir is not None
 
-    def test_registry_custom_dirs(self):
+    def test_registry_custom_dirs(self, monkeypatch):
         from general_ludd.renderers.registry import RendererRegistry
 
         reg = RendererRegistry(bundled_dir=Path("/tmp/nonexistent"))
         assert reg.bundled_dir == Path("/tmp/nonexistent")
 
-    def test_registry_discover_empty(self):
+    def test_registry_discover_empty(self, monkeypatch):
         from general_ludd.renderers.registry import RendererRegistry
 
         reg = RendererRegistry(bundled_dir=Path("/tmp/nonexistent"))
@@ -44,43 +44,43 @@ class TestRendererRegistry:
         assert len(reg) == 0
         assert reg.names() == []
 
-    def test_registry_names_empty(self):
+    def test_registry_names_empty(self, monkeypatch):
         from general_ludd.renderers.registry import RendererRegistry
 
         reg = RendererRegistry(bundled_dir=Path("/tmp/nonexistent"))
         assert reg.names() == []
 
-    def test_registry_get_missing(self):
+    def test_registry_get_missing(self, monkeypatch):
         from general_ludd.renderers.registry import RendererRegistry
 
         reg = RendererRegistry(bundled_dir=Path("/tmp/nonexistent"))
         assert reg.get("nonexistent") is None
 
-    def test_registry_metadata_empty(self):
+    def test_registry_metadata_empty(self, monkeypatch):
         from general_ludd.renderers.registry import RendererRegistry
 
         reg = RendererRegistry(bundled_dir=Path("/tmp/nonexistent"))
         assert reg.metadata() == []
 
-    def test_registry_list_all_empty(self):
+    def test_registry_list_all_empty(self, monkeypatch):
         from general_ludd.renderers.registry import RendererRegistry
 
         reg = RendererRegistry(bundled_dir=Path("/tmp/nonexistent"))
         assert reg.list_all() == []
 
-    def test_registry_iter_empty(self):
+    def test_registry_iter_empty(self, monkeypatch):
         from general_ludd.renderers.registry import RendererRegistry
 
         reg = RendererRegistry(bundled_dir=Path("/tmp/nonexistent"))
         assert list(reg) == []
 
-    def test_registry_contains_false(self):
+    def test_registry_contains_false(self, monkeypatch):
         from general_ludd.renderers.registry import RendererRegistry
 
         reg = RendererRegistry(bundled_dir=Path("/tmp/nonexistent"))
         assert "foo" not in reg
 
-    def test_renderer_spec_defaults(self):
+    def test_renderer_spec_defaults(self, monkeypatch):
         from general_ludd.renderers.registry import RendererSpec
 
         spec = RendererSpec(name="test", path=Path("/tmp/test.yml"))
@@ -92,7 +92,7 @@ class TestRendererRegistry:
         assert not spec.allow_raw_html
         assert spec.schema_path is None
 
-    def test_renderer_spec_custom(self):
+    def test_renderer_spec_custom(self, monkeypatch):
         from general_ludd.renderers.registry import RendererSpec
 
         spec = RendererSpec(
@@ -110,7 +110,7 @@ class TestRendererRegistry:
         assert spec.allow_raw_html
         assert spec.schema_path == Path("/tmp/custom.schema.json")
 
-    def test_renderer_spec_model_dump(self):
+    def test_renderer_spec_model_dump(self, monkeypatch):
         from general_ludd.renderers.registry import RendererSpec
 
         spec = RendererSpec(name="test", path=Path("/tmp/test.yml"))
@@ -118,26 +118,26 @@ class TestRendererRegistry:
         assert dump["name"] == "test"
         assert dump["path"] == "/tmp/test.yml"
 
-    def test_renderer_spec_playbook_path(self):
+    def test_renderer_spec_playbook_path(self, monkeypatch):
         from general_ludd.renderers.registry import RendererSpec
 
         spec = RendererSpec(name="test", path=Path("/tmp/test.yml"))
         assert spec.playbook_path == "/tmp/test.yml"
 
-    def test_renderer_spec_timeout_s(self):
+    def test_renderer_spec_timeout_s(self, monkeypatch):
         from general_ludd.renderers.registry import RendererSpec
 
         spec = RendererSpec(name="test", path=Path("/tmp/test.yml"), timeout_seconds=45)
         assert spec.timeout_s == 45.0
 
-    def test_renderer_spec_model_dump_schema_none(self):
+    def test_renderer_spec_model_dump_schema_none(self, monkeypatch):
         from general_ludd.renderers.registry import RendererSpec
 
         spec = RendererSpec(name="test", path=Path("/tmp/test.yml"))
         dump = spec.model_dump()
         assert dump["schema_path"] is None
 
-    def test_parse_renderer_playbook_basic(self):
+    def test_parse_renderer_playbook_basic(self, monkeypatch):
         from general_ludd.renderers.registry import RendererRegistry
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yml", delete=False) as f:
@@ -148,7 +148,7 @@ class TestRendererRegistry:
         assert spec is not None
         assert spec.name == Path(f.name).stem
 
-    def test_parse_renderer_not_a_renderer(self):
+    def test_parse_renderer_not_a_renderer(self, monkeypatch):
         from general_ludd.renderers.registry import RendererRegistry
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yml", delete=False) as f:
@@ -158,13 +158,13 @@ class TestRendererRegistry:
         Path(f.name).unlink()
         assert spec is None
 
-    def test_parse_renderer_invalid_yaml(self):
+    def test_parse_renderer_invalid_yaml(self, monkeypatch):
         from general_ludd.renderers.registry import RendererRegistry
 
         spec = RendererRegistry._parse(Path("/tmp/nonexistent_never.yml"))
         assert spec is None
 
-    def test_parse_renderer_empty_list(self):
+    def test_parse_renderer_empty_list(self, monkeypatch):
         from general_ludd.renderers.registry import RendererRegistry
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yml", delete=False) as f:
@@ -174,12 +174,12 @@ class TestRendererRegistry:
         Path(f.name).unlink()
         assert spec is None
 
-    def test_registry_meta_alias(self):
+    def test_registry_meta_alias(self, monkeypatch):
         from general_ludd.renderers.registry import RendererMeta, RendererSpec
 
         assert RendererMeta is RendererSpec
 
-    def test_registry_discover_with_yml(self):
+    def test_registry_discover_with_yml(self, monkeypatch):
         from general_ludd.renderers.registry import RendererRegistry
 
         with tempfile.TemporaryDirectory() as d:
@@ -190,7 +190,7 @@ class TestRendererRegistry:
             assert len(reg) == 1
             assert "test_renderer" in reg
 
-    def test_registry_operator_dir_override(self):
+    def test_registry_operator_dir_override(self, monkeypatch):
         from general_ludd.renderers.registry import RendererRegistry
 
         with tempfile.TemporaryDirectory() as bundled, tempfile.TemporaryDirectory() as operator:
@@ -206,7 +206,7 @@ class TestRendererRegistry:
             assert spec is not None
             assert spec.description == "operator"
 
-    def test_registry_discover_with_schema_companion(self):
+    def test_registry_discover_with_schema_companion(self, monkeypatch):
         from general_ludd.renderers.registry import RendererRegistry
 
         with tempfile.TemporaryDirectory() as d:
@@ -220,7 +220,7 @@ class TestRendererRegistry:
             assert spec is not None
             assert spec.schema_path is not None
 
-    def test_registry_discover_playbook_with_full_vars(self):
+    def test_registry_discover_playbook_with_full_vars(self, monkeypatch):
         from general_ludd.renderers.registry import RendererRegistry
 
         with tempfile.TemporaryDirectory() as d:
@@ -253,23 +253,14 @@ class TestRendererRegistry:
 # ---------------------------------------------------------------------------
 
 class TestRenderDocument:
-    def test_import_schema(self):
+    def test_import_schema(self, monkeypatch):
         from general_ludd.renderers.schema import (
-            ChartData,
-            ChartSection,
-            ChartSeries,
-            MarkdownSection,
-            Metric,
-            MetricGridSection,
-            RawHtmlSection,
             RenderDocument,
-            RenderMetadata,
-            TableSection,
         )
 
         assert RenderDocument is not None
 
-    def test_render_document_minimal(self):
+    def test_render_document_minimal(self, monkeypatch):
         from general_ludd.renderers.schema import RenderDocument
 
         doc = RenderDocument(title="Test")
@@ -277,26 +268,26 @@ class TestRenderDocument:
         assert doc.sections == []
         assert doc.metadata is not None
 
-    def test_render_document_extra_forbidden(self):
+    def test_render_document_extra_forbidden(self, monkeypatch):
         from general_ludd.renderers.schema import RenderDocument
 
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             RenderDocument(title="Test", extra_field="bad")
 
-    def test_markdown_section(self):
+    def test_markdown_section(self, monkeypatch):
         from general_ludd.renderers.schema import MarkdownSection
 
         sec = MarkdownSection(content="# Hello")
         assert sec.type == "markdown"
         assert sec.content == "# Hello"
 
-    def test_markdown_section_empty_content(self):
+    def test_markdown_section_empty_content(self, monkeypatch):
         from general_ludd.renderers.schema import MarkdownSection
 
         sec = MarkdownSection(content="")
         assert sec.content == ""
 
-    def test_metric_defaults(self):
+    def test_metric_defaults(self, monkeypatch):
         from general_ludd.renderers.schema import Metric
 
         m = Metric(label="CPU", value=42)
@@ -304,21 +295,21 @@ class TestRenderDocument:
         assert m.value == 42
         assert m.unit is None
 
-    def test_metric_grid_section(self):
+    def test_metric_grid_section(self, monkeypatch):
         from general_ludd.renderers.schema import Metric, MetricGridSection
 
         sec = MetricGridSection(metrics=[Metric(label="CPU", value=90)])
         assert sec.type == "metric_grid"
         assert len(sec.metrics) == 1
 
-    def test_table_section(self):
+    def test_table_section(self, monkeypatch):
         from general_ludd.renderers.schema import TableSection
 
         sec = TableSection(columns=["Name", "Value"], rows=[["A", 1]])
         assert sec.type == "table"
         assert sec.columns == ["Name", "Value"]
 
-    def test_chart_section(self):
+    def test_chart_section(self, monkeypatch):
         from general_ludd.renderers.schema import ChartData, ChartSection, ChartSeries
 
         sec = ChartSection(
@@ -328,20 +319,20 @@ class TestRenderDocument:
         assert sec.type == "chart"
         assert sec.chart_type == "line"
 
-    def test_raw_html_section(self):
+    def test_raw_html_section(self, monkeypatch):
         from general_ludd.renderers.schema import RawHtmlSection
 
         sec = RawHtmlSection(html="<p>hi</p>")
         assert sec.type == "raw_html"
 
-    def test_render_metadata_defaults(self):
+    def test_render_metadata_defaults(self, monkeypatch):
         from general_ludd.renderers.schema import RenderMetadata
 
         meta = RenderMetadata()
         assert meta.generated_at is None
         assert meta.playbook is None
 
-    def test_render_document_full(self):
+    def test_render_document_full(self, monkeypatch):
         from general_ludd.renderers.schema import (
             MarkdownSection,
             Metric,
@@ -360,7 +351,7 @@ class TestRenderDocument:
         )
         assert len(doc.sections) == 3
 
-    def test_renderer_output_alias(self):
+    def test_renderer_output_alias(self, monkeypatch):
         from general_ludd.renderers.schema import RenderDocument, RendererOutput
 
         assert RendererOutput is RenderDocument
@@ -371,24 +362,21 @@ class TestRenderDocument:
 # ---------------------------------------------------------------------------
 
 class TestSchemaLoader:
-    def test_import(self):
+    def test_import(self, monkeypatch):
         from general_ludd.renderers.schema_loader import (
-            FieldMeta,
-            extract_field_metadata,
             load_schema,
-            validate_against_schema,
         )
 
         assert load_schema is not None
 
-    def test_field_meta_defaults(self):
+    def test_field_meta_defaults(self, monkeypatch):
         from general_ludd.renderers.schema_loader import FieldMeta
 
         fm = FieldMeta(name="test", title="T", description="", type="string")
         assert fm.name == "test"
         assert fm.children is None
 
-    def test_field_meta_to_dict(self):
+    def test_field_meta_to_dict(self, monkeypatch):
         from general_ludd.renderers.schema_loader import FieldMeta
 
         fm = FieldMeta(name="test", title="T", description="", type="string", required=True)
@@ -396,13 +384,13 @@ class TestSchemaLoader:
         assert d["name"] == "test"
         assert d["required"] is True
 
-    def test_load_schema_missing_file(self):
+    def test_load_schema_missing_file(self, monkeypatch):
         from general_ludd.renderers.schema_loader import load_schema
 
         result = load_schema(Path("/tmp/nonexistent_schema.json"))
         assert result is None
 
-    def test_load_schema_valid(self):
+    def test_load_schema_valid(self, monkeypatch):
         from general_ludd.renderers.schema_loader import load_schema
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
@@ -413,7 +401,7 @@ class TestSchemaLoader:
         assert result is not None
         assert result["type"] == "object"
 
-    def test_load_schema_not_dict(self):
+    def test_load_schema_not_dict(self, monkeypatch):
         from general_ludd.renderers.schema_loader import load_schema
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
@@ -423,25 +411,25 @@ class TestSchemaLoader:
                 load_schema(Path(f.name))
         Path(f.name).unlink()
 
-    def test_extract_field_metadata_not_dict(self):
+    def test_extract_field_metadata_not_dict(self, monkeypatch):
         from general_ludd.renderers.schema_loader import extract_field_metadata
 
         with pytest.raises(ValueError):
             extract_field_metadata("not a dict")  # type: ignore[arg-type]
 
-    def test_extract_field_metadata_no_properties(self):
+    def test_extract_field_metadata_no_properties(self, monkeypatch):
         from general_ludd.renderers.schema_loader import extract_field_metadata
 
         result = extract_field_metadata({"type": "object"})
         assert result == []
 
-    def test_extract_field_metadata_properties_not_dict(self):
+    def test_extract_field_metadata_properties_not_dict(self, monkeypatch):
         from general_ludd.renderers.schema_loader import extract_field_metadata
 
         with pytest.raises(ValueError):
             extract_field_metadata({"type": "object", "properties": "bad"})
 
-    def test_extract_field_metadata_simple(self):
+    def test_extract_field_metadata_simple(self, monkeypatch):
         from general_ludd.renderers.schema_loader import extract_field_metadata
 
         schema = {"type": "object", "properties": {"name": {"type": "string", "title": "Name"}}}
@@ -450,7 +438,7 @@ class TestSchemaLoader:
         assert result[0].name == "name"
         assert result[0].type == "string"
 
-    def test_extract_field_metadata_required(self):
+    def test_extract_field_metadata_required(self, monkeypatch):
         from general_ludd.renderers.schema_loader import extract_field_metadata
 
         schema = {
@@ -461,7 +449,7 @@ class TestSchemaLoader:
         result = extract_field_metadata(schema)
         assert result[0].required is True
 
-    def test_extract_field_metadata_nested_object(self):
+    def test_extract_field_metadata_nested_object(self, monkeypatch):
         from general_ludd.renderers.schema_loader import extract_field_metadata
 
         schema = {
@@ -477,7 +465,7 @@ class TestSchemaLoader:
         assert result[0].children is not None
         assert len(result[0].children) == 1
 
-    def test_extract_field_metadata_array_items_object(self):
+    def test_extract_field_metadata_array_items_object(self, monkeypatch):
         from general_ludd.renderers.schema_loader import extract_field_metadata
 
         schema = {
@@ -493,7 +481,7 @@ class TestSchemaLoader:
         assert result[0].items is not None
         assert result[0].items.type == "object"
 
-    def test_field_meta_children_to_dict(self):
+    def test_field_meta_children_to_dict(self, monkeypatch):
         from general_ludd.renderers.schema_loader import FieldMeta
 
         child = FieldMeta(name="c", title="C", description="", type="string")
@@ -502,7 +490,7 @@ class TestSchemaLoader:
         assert d["children"] is not None
         assert len(d["children"]) == 1
 
-    def test_field_meta_enum(self):
+    def test_field_meta_enum(self, monkeypatch):
         from general_ludd.renderers.schema_loader import FieldMeta
 
         fm = FieldMeta(name="color", title="Color", description="", type="string", enum=["red", "blue"])
@@ -515,12 +503,12 @@ class TestSchemaLoader:
 # ---------------------------------------------------------------------------
 
 class TestRendererCache:
-    def test_import(self):
+    def test_import(self, monkeypatch):
         from general_ludd.renderers.cache import RendererCache
 
         assert RendererCache is not None
 
-    def test_cache_default_ttl(self):
+    def test_cache_default_ttl(self, monkeypatch):
         from general_ludd.renderers.cache import RendererCache
 
         c = RendererCache()
@@ -528,7 +516,7 @@ class TestRendererCache:
         assert c.get("k") == "v"
         assert len(c) == 1
 
-    def test_cache_expires(self):
+    def test_cache_expires(self, monkeypatch):
         from general_ludd.renderers.cache import RendererCache
 
         c = RendererCache()
@@ -536,13 +524,13 @@ class TestRendererCache:
         assert c.get("k") is None
         assert len(c) == 0
 
-    def test_cache_missing(self):
+    def test_cache_missing(self, monkeypatch):
         from general_ludd.renderers.cache import RendererCache
 
         c = RendererCache()
         assert c.get("nope") is None
 
-    def test_cache_clear_one(self):
+    def test_cache_clear_one(self, monkeypatch):
         from general_ludd.renderers.cache import RendererCache
 
         c = RendererCache()
@@ -550,13 +538,13 @@ class TestRendererCache:
         assert c.clear("k") is True
         assert c.get("k") is None
 
-    def test_cache_clear_missing(self):
+    def test_cache_clear_missing(self, monkeypatch):
         from general_ludd.renderers.cache import RendererCache
 
         c = RendererCache()
         assert c.clear("nope") is False
 
-    def test_cache_clear_all(self):
+    def test_cache_clear_all(self, monkeypatch):
         from general_ludd.renderers.cache import RendererCache
 
         c = RendererCache()
@@ -565,7 +553,7 @@ class TestRendererCache:
         assert c.clear_all() == 2
         assert len(c) == 0
 
-    def test_cache_contains(self):
+    def test_cache_contains(self, monkeypatch):
         from general_ludd.renderers.cache import RendererCache
 
         c = RendererCache()
@@ -573,7 +561,7 @@ class TestRendererCache:
         assert "k" in c
         assert "nope" not in c
 
-    def test_cache_overwrite(self):
+    def test_cache_overwrite(self, monkeypatch):
         from general_ludd.renderers.cache import RendererCache
 
         c = RendererCache()
@@ -581,7 +569,7 @@ class TestRendererCache:
         c.set("k", "v2")
         assert c.get("k") == "v2"
 
-    def test_cache_custom_default_ttl(self):
+    def test_cache_custom_default_ttl(self, monkeypatch):
         from general_ludd.renderers.cache import RendererCache
 
         c = RendererCache(ttl_default=0.001)
@@ -595,17 +583,14 @@ class TestRendererCache:
 # ---------------------------------------------------------------------------
 
 class TestRendererRunner:
-    def test_import(self):
+    def test_import(self, monkeypatch):
         from general_ludd.renderers.runner import (
-            RendererFailure,
             RendererResult,
-            RendererTimeout,
-            SchemaValidationError,
         )
 
         assert RendererResult is not None
 
-    def test_renderer_result_defaults(self):
+    def test_renderer_result_defaults(self, monkeypatch):
         from general_ludd.renderers.runner import RendererResult
 
         r = RendererResult()
@@ -614,21 +599,21 @@ class TestRendererRunner:
         assert r.field_metadata is None
         assert r.doc is None
 
-    def test_renderer_timeout(self):
+    def test_renderer_timeout(self, monkeypatch):
         from general_ludd.renderers.runner import RendererTimeout
 
         exc = RendererTimeout("test", 30.0)
         assert exc.name == "test"
         assert "test" in str(exc)
 
-    def test_renderer_failure(self):
+    def test_renderer_failure(self, monkeypatch):
         from general_ludd.renderers.runner import RendererFailure
 
         exc = RendererFailure("test", "details", stdout="out", stderr="err")
         assert exc.name == "test"
         assert exc.detail == "details"
 
-    def test_schema_validation_error(self):
+    def test_schema_validation_error(self, monkeypatch):
         from general_ludd.renderers.runner import SchemaValidationError
 
         exc = SchemaValidationError("test", ["error 1", "error 2"])
@@ -640,16 +625,14 @@ class TestRendererRunner:
 # ---------------------------------------------------------------------------
 
 class TestRendererExecutor:
-    def test_executor_re_exports(self):
+    def test_executor_re_exports(self, monkeypatch):
         from general_ludd.renderers.executor import (
-            RendererFailure,
-            RendererTimeout,
             run_renderer,
         )
 
         assert run_renderer is not None
 
-    def test_executor_run_renderer_is_runner_renderer(self):
+    def test_executor_run_renderer_is_runner_renderer(self, monkeypatch):
         from general_ludd.renderers.executor import run_renderer as re_run
         from general_ludd.renderers.runner import run_renderer as rn_run
 
@@ -661,21 +644,21 @@ class TestRendererExecutor:
 # ---------------------------------------------------------------------------
 
 class TestRendererMaxBytes:
-    def test_max_bytes_default(self):
+    def test_max_bytes_default(self, monkeypatch):
         from general_ludd.renderers.runner import _max_bytes
 
         assert _max_bytes() == 1024 * 1024
 
     @patch.dict(os.environ, {"GLUDD_RENDER_MAX_BYTES": ""}, clear=True)
-    def test_max_bytes_env_not_set(self):
+    def test_max_bytes_env_not_set(self, monkeypatch):
         from general_ludd.renderers.runner import _max_bytes
 
         assert _max_bytes() == 1024 * 1024
 
-    def test_max_bytes_env_set_valid(self):
+    def test_max_bytes_env_set_valid(self, monkeypatch):
         from general_ludd.renderers.runner import _max_bytes
 
-        os.environ["GLUDD_RENDER_MAX_BYTES"] = "512"
+        monkeypatch.setenv("GLUDD_RENDER_MAX_BYTES", "512")
         try:
             assert _max_bytes() == 512
         finally:
@@ -687,7 +670,7 @@ class TestRendererMaxBytes:
 # ---------------------------------------------------------------------------
 
 class TestApprovalGate:
-    def test_import_gate(self):
+    def test_import_gate(self, monkeypatch):
         from general_ludd.approval.gate import (
             ApprovalGate,
             ApprovalRequest,
@@ -698,14 +681,14 @@ class TestApprovalGate:
         assert ApprovalRequest is not None
         assert ApprovalResult is not None
 
-    def test_approval_request_creation(self):
+    def test_approval_request_creation(self, monkeypatch):
         from general_ludd.approval.gate import ApprovalRequest
 
         req = ApprovalRequest(action="deploy", target="production", by="agent-1")
         assert req.action == "deploy"
         assert req.target == "production"
 
-    def test_approval_result_default(self):
+    def test_approval_result_default(self, monkeypatch):
         from general_ludd.approval.gate import ApprovalResult
 
         result = ApprovalResult(allowed=False, reason="test")
@@ -718,26 +701,26 @@ class TestApprovalGate:
 # ---------------------------------------------------------------------------
 
 class TestCollectionsImporter:
-    def test_import_issue(self):
+    def test_import_issue(self, monkeypatch):
         from general_ludd.collections.importer import ImportIssue
 
         issue = ImportIssue(severity="error", message="bad")
         assert issue.severity == "error"
         assert issue.message == "bad"
 
-    def test_import_issue_warn(self):
+    def test_import_issue_warn(self, monkeypatch):
         from general_ludd.collections.importer import ImportIssue
 
         issue = ImportIssue(severity="warn", message="warning")
         assert issue.severity == "warn"
 
-    def test_importer_constructor(self):
+    def test_importer_constructor(self, monkeypatch):
         from general_ludd.collections.importer import TerraformCollectionImporter
 
         importer = TerraformCollectionImporter(Path("/tmp/nonexistent_collection"))
         assert importer.collection_path == Path("/tmp/nonexistent_collection")
 
-    def test_importer_no_terraform_dir(self):
+    def test_importer_no_terraform_dir(self, monkeypatch):
         from general_ludd.collections.importer import TerraformCollectionImporter
 
         with tempfile.TemporaryDirectory() as d:
@@ -748,7 +731,7 @@ class TestCollectionsImporter:
             assert len(issues) == 1
             assert issues[0].severity == "warn"
 
-    def test_importer_no_rego_policies(self):
+    def test_importer_no_rego_policies(self, monkeypatch):
         from general_ludd.collections.importer import TerraformCollectionImporter
 
         with tempfile.TemporaryDirectory() as d:
@@ -756,7 +739,7 @@ class TestCollectionsImporter:
             issues = importer._validate_rego_policies()
             assert issues == []
 
-    def test_importer_no_providers(self):
+    def test_importer_no_providers(self, monkeypatch):
         from general_ludd.collections.importer import TerraformCollectionImporter
 
         with tempfile.TemporaryDirectory() as d:
@@ -766,12 +749,10 @@ class TestCollectionsImporter:
             importer = TerraformCollectionImporter(
                 collection, operator_trust_data_path=Path("/tmp/nonexistent_trust.json")
             )
-            try:
+            with contextlib.suppress(RuntimeError):
                 importer._load_operator_trust_list()
-            except RuntimeError:
-                pass  # expected — trust file doesn't exist
 
-    def test_importer_run_optional_binary_missing(self):
+    def test_importer_run_optional_binary_missing(self, monkeypatch):
         from general_ludd.collections.importer import _run_optional_binary
 
         issues = _run_optional_binary(
@@ -783,44 +764,44 @@ class TestCollectionsImporter:
         assert len(issues) == 1
         assert issues[0].severity == "warn"
 
-    def test_parse_variable_names(self):
+    def test_parse_variable_names(self, monkeypatch):
         from general_ludd.collections.importer import _parse_variable_names
 
         names = _parse_variable_names('variable "foo" {\n  type = string\n}\nvariable "bar" {\n}')
         assert "foo" in names
         assert "bar" in names
 
-    def test_parse_tfvars_keys(self):
+    def test_parse_tfvars_keys(self, monkeypatch):
         from general_ludd.collections.importer import _parse_tfvars_keys
 
         keys = _parse_tfvars_keys("foo = 123\nbar = \"hello\"\n# comment = ignored\n")
         assert "foo" in keys
         assert "bar" in keys
 
-    def test_is_floating_version_true(self):
+    def test_is_floating_version_true(self, monkeypatch):
         from general_ludd.collections.importer import _is_floating_version
 
         assert _is_floating_version(">= 2.0")
         assert _is_floating_version("> 1.5")
         assert _is_floating_version("< 3.0")
 
-    def test_is_floating_version_false(self):
+    def test_is_floating_version_false(self, monkeypatch):
         from general_ludd.collections.importer import _is_floating_version
 
         assert not _is_floating_version("~> 2.8")
         assert not _is_floating_version("= 2.8.0")
 
-    def test_provider_in_trust_list_exact(self):
+    def test_provider_in_trust_list_exact(self, monkeypatch):
         from general_ludd.collections.importer import _provider_in_trust_list
 
         assert _provider_in_trust_list("hashicorp/aws", ["hashicorp/aws"])
 
-    def test_provider_in_trust_list_suffix(self):
+    def test_provider_in_trust_list_suffix(self, monkeypatch):
         from general_ludd.collections.importer import _provider_in_trust_list
 
         assert _provider_in_trust_list("aws", ["hashicorp/aws"])
 
-    def test_rego_deny_reassignment_detection(self):
+    def test_rego_deny_reassignment_detection(self, monkeypatch):
         from general_ludd.collections.importer import TerraformCollectionImporter
 
         with tempfile.TemporaryDirectory() as d:
@@ -834,7 +815,7 @@ class TestCollectionsImporter:
             assert len(issues) == 1
             assert issues[0].severity == "error"
 
-    def test_importer_import_collection_aggregates(self):
+    def test_importer_import_collection_aggregates(self, monkeypatch):
         from general_ludd.collections.importer import TerraformCollectionImporter
 
         with tempfile.TemporaryDirectory() as d:
@@ -850,13 +831,13 @@ class TestCollectionsImporter:
 # ---------------------------------------------------------------------------
 
 class TestRendererSpecCompat:
-    def test_playbook_path_str(self):
+    def test_playbook_path_str(self, monkeypatch):
         from general_ludd.renderers.registry import RendererSpec
 
         spec = RendererSpec(name="test", path=Path("/a/b/c.yml"))
         assert spec.playbook_path == "/a/b/c.yml"
 
-    def test_timeout_s_float(self):
+    def test_timeout_s_float(self, monkeypatch):
         from general_ludd.renderers.registry import RendererSpec
 
         spec = RendererSpec(name="test", path=Path("/tmp/t.yml"), timeout_seconds=42)

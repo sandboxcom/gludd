@@ -18,12 +18,9 @@ from general_ludd.memory.consolidation import (
 )
 from general_ludd.memory.episodic import (
     EPISODIC_NAMESPACE,
-    Episode,
     EpisodicMemoryRecorder,
     reconstruct_timeline,
 )
-
-EPISODIC_NAMESPACE = "episodic"
 
 
 class TestSafeKey:

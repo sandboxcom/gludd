@@ -6,7 +6,6 @@ Provides index statistics (get_git_stats) and direct git query functions
 
 from __future__ import annotations
 
-import os
 import subprocess
 from pathlib import Path
 

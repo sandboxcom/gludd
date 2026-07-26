@@ -5396,3 +5396,6 @@ kill-worktree-e2e:
 	if ! tree_contains_local_e2e "$(PID)"; then cmd=$$(/bin/ps -p "$(PID)" -o command=); echo "Refusing to kill unrelated process tree: $$cmd"; exit 1; fi; \
 	kill_tree() { for child in $$(/usr/bin/pgrep -P "$$1" 2>/dev/null || true); do kill_tree "$$child"; done; /bin/kill -TERM "$$1"; }; \
 	kill_tree "$(PID)"; echo "Stopped verified E2E process tree rooted at $(PID) for $(CURDIR)"
+.PHONY: migrate-test-env-writes
+migrate-test-env-writes:
+	@$(UV) run python scripts/migrate_test_env_writes.py

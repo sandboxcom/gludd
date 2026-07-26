@@ -12,7 +12,7 @@ import time
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 import pytest_asyncio
@@ -25,7 +25,7 @@ from general_ludd.sts.audit import StsAuditPipeline
 from general_ludd.sts.dashboard import CascadeConfig, StsDashboardProvider
 from general_ludd.sts.injector import SubagentTokenInjector
 from general_ludd.sts.minter import TokenMinter
-from general_ludd.sts.narrowing import CapabilityNarrowing, OpenBaoPolicyRenderer, PolicyFragment
+from general_ludd.sts.narrowing import CapabilityNarrowing, OpenBaoPolicyRenderer
 from general_ludd.sts.quotas import (
     InMemoryQuotaBackend,
     QuotaConfig,
@@ -40,7 +40,6 @@ from general_ludd.sts.revoker import TokenRevoker
 from general_ludd.sts.rotator import TokenRotationError, TokenRotator
 from general_ludd.sts.store import TokenStore
 from general_ludd.sts.visualizer import TokenTreeRenderer, _format_node, _status
-
 
 # ── helpers ──────────────────────────────────────────────────────────
 

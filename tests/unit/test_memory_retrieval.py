@@ -367,7 +367,11 @@ class TestMemoryRetrieverQuery:
     @pytest.mark.asyncio
     async def test_recency_boost(self):
         eps = [
-            _make_retrieval_ep_dict(task_type="code", takeaway="same takeaway", created_at=datetime.now(UTC).isoformat()),
+            _make_retrieval_ep_dict(
+                task_type="code",
+                takeaway="same takeaway",
+                created_at=datetime.now(UTC).isoformat(),
+            ),
             _make_retrieval_ep_dict(
                 task_type="code",
                 takeaway="same takeaway",

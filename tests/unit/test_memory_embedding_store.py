@@ -232,9 +232,15 @@ class TestMemoryEmbeddingStoreReindex:
     @pytest.mark.asyncio
     async def test_reindex_parses_json_values(self) -> None:
         mock_repo = MagicMock()
-        mock_repo.list_by_namespace = AsyncMock(return_value=[
-            _make_mock_row("rec-1", "agent-1", '{"takeaway": "fixed race", "task_type": "bug_fix", "outcome": "success"}'),
-        ])
+        mock_repo.list_by_namespace = AsyncMock(
+            return_value=[
+                _make_mock_row(
+                    "rec-1",
+                    "agent-1",
+                    '{"takeaway": "fixed race", "task_type": "bug_fix", "outcome": "success"}',
+                ),
+            ]
+        )
         store = MemoryEmbeddingStore(mock_repo, embedder=HashEmbedder())
         summary = await store.reindex_from_repo("agent-1")
         assert summary["indexed"] == 1

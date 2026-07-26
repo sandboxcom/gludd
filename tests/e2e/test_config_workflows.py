@@ -6,8 +6,6 @@ model_routing, binary_paths, project_dir.
 
 from __future__ import annotations
 
-import os
-import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -414,7 +412,10 @@ class TestBinaryPathsEndToEnd:
     def test_get_infra_binary_prefers_opentofu(self, monkeypatch):
         from general_ludd.config.binary_paths import BinaryPathResolver, BinaryPaths
 
-        monkeypatch.setattr("general_ludd.config.binary_paths.shutil.which", lambda x: "/usr/bin/tofu" if x == "tofu" else None)
+        monkeypatch.setattr(
+            "general_ludd.config.binary_paths.shutil.which",
+            lambda x: "/usr/bin/tofu" if x == "tofu" else None,
+        )
         cfg = BinaryPaths(opentofu="tofu", terraform="terraform")
         resolver = BinaryPathResolver(cfg)
         assert resolver.get_infra_binary() == "tofu"
@@ -422,7 +423,10 @@ class TestBinaryPathsEndToEnd:
     def test_get_secrets_binary_prefers_openbao(self, monkeypatch):
         from general_ludd.config.binary_paths import BinaryPathResolver, BinaryPaths
 
-        monkeypatch.setattr("general_ludd.config.binary_paths.shutil.which", lambda x: "/usr/bin/bao" if x == "bao" else None)
+        monkeypatch.setattr(
+            "general_ludd.config.binary_paths.shutil.which",
+            lambda x: "/usr/bin/bao" if x == "bao" else None,
+        )
         cfg = BinaryPaths(openbao="bao", vault="vault")
         resolver = BinaryPathResolver(cfg)
         assert resolver.get_secrets_binary() == "bao"

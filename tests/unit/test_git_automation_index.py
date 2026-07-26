@@ -5,7 +5,6 @@ import sqlite3
 import subprocess
 from pathlib import Path
 
-import pytest
 from general_ludd.git_automation.git_index import index_git_history
 from general_ludd.git_automation.git_search import search_git_history
 from general_ludd.git_automation.git_stats import get_git_stats, git_diff, git_log, git_show

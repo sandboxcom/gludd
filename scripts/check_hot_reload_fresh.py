@@ -51,13 +51,15 @@ DEFAULT_PLUGINS = [
 STALE_ARTIFACT_PATTERNS = [
     re.compile(r"\bimport\s*\{[^}]*}\s*from\s*[\"']"),
     re.compile(r"\bexport\s+(default|const|function|interface)\b"),
-    re.compile(r":\s*(string|number|boolean|any|void|never)\b"),
     re.compile(r"ReferenceError\s*(is\s+not|:)"),  # only actual runtime errors, not comments
 ]
 
 
 COMMENT_LINE_RE = re.compile(r"(?m)^\s*//.*$")
 TRAILING_COMMENT_RE = re.compile(r"(?m)(?<![:\"'])//(?![\"']).*$")
+STRING_LITERAL_RE = re.compile(r"(['\"])(?:\\.|(?!\1).)*\1")
+REGEX_LITERAL_RE = re.compile(r"/(?:\\.|[^/\\\n])+/[gimsuy]*")
+TEMPLATE_LITERAL_RE = re.compile(r"`(?:\\.|[^`\\])*`")
 
 
 def strip_line_comments(content: str) -> str:
@@ -72,7 +74,12 @@ def strip_line_comments(content: str) -> str:
 
 def is_stale_content(content: str) -> list[str]:
     issues = []
-    scannable = strip_line_comments(content)
+    # Generated modules legitimately contain regex patterns as string values;
+    # mask literals before looking for TypeScript syntax so those do not trip
+    # the stale-artifact detector.
+    scannable = STRING_LITERAL_RE.sub("\"\"", strip_line_comments(content))
+    scannable = REGEX_LITERAL_RE.sub("//", scannable)
+    scannable = TEMPLATE_LITERAL_RE.sub("``", scannable)
     for pat in STALE_ARTIFACT_PATTERNS:
         if pat.search(scannable):
             issues.append(f"  stale artifact: {pat.pattern}")

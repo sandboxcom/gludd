@@ -108,28 +108,28 @@ class MockRunResult:
 
 
 class TestOpenShiftConnector:
-    def test_config_requires_api_server(self):
+    def test_config_requires_api_server(self, monkeypatch):
         from general_ludd.connectors.openshift import OpenShiftSource
 
         with pytest.raises((ValueError, RuntimeError)):
             OpenShiftSource({})
 
-    def test_config_requires_token(self):
+    def test_config_requires_token(self, monkeypatch):
         from general_ludd.connectors.openshift import OpenShiftSource
 
         with pytest.raises((ValueError, RuntimeError)):
             OpenShiftSource({"api_server": "https://api.example.com:6443"})
 
-    def test_rejects_private_host(self):
+    def test_rejects_private_host(self, monkeypatch):
         from general_ludd.connectors.openshift import OpenShiftSource
 
         with pytest.raises((ValueError, RuntimeError)):
             OpenShiftSource({"api_server": "http://127.0.0.1:6443", "token_env": "T"})
 
-    def test_constructs_with_valid_config(self):
+    def test_constructs_with_valid_config(self, monkeypatch):
         from general_ludd.connectors.openshift import OpenShiftSource
 
-        os.environ["OC_TOK_B5"] = "sha256~abc"
+        monkeypatch.setenv("OC_TOK_B5", "sha256~abc")
         try:
             source = OpenShiftSource({
                 "api_server": "https://api.openshift.example.com:6443",
@@ -142,11 +142,11 @@ class TestOpenShiftConnector:
         finally:
             del os.environ["OC_TOK_B5"]
 
-    def test_health_ok(self):
+    def test_health_ok(self, monkeypatch):
         from general_ludd.connectors.openshift import OpenShiftSource
 
         transport = MockHttpTransport(status_code=200, body={"kind": "Status", "status": "ok"})
-        os.environ["OC_TOK_H"] = "tok"
+        monkeypatch.setenv("OC_TOK_H", "tok")
         try:
             source = OpenShiftSource(
                 {"api_server": "https://api.example.com:6443", "token_env": "OC_TOK_H", "allow_private": True},
@@ -157,11 +157,11 @@ class TestOpenShiftConnector:
         finally:
             del os.environ["OC_TOK_H"]
 
-    def test_health_not_ok_on_error(self):
+    def test_health_not_ok_on_error(self, monkeypatch):
         from general_ludd.connectors.openshift import OpenShiftSource
 
         transport = MockHttpTransport(status_code=401, body={})
-        os.environ["OC_TOK_H2"] = "tok"
+        monkeypatch.setenv("OC_TOK_H2", "tok")
         try:
             source = OpenShiftSource(
                 {"api_server": "https://api.example.com:6443", "token_env": "OC_TOK_H2", "allow_private": True},
@@ -172,7 +172,7 @@ class TestOpenShiftConnector:
         finally:
             del os.environ["OC_TOK_H2"]
 
-    def test_query_returns_pods(self):
+    def test_query_returns_pods(self, monkeypatch):
         from general_ludd.connectors.openshift import OpenShiftSource
 
         transport = MockHttpTransport(
@@ -196,7 +196,7 @@ class TestOpenShiftConnector:
                 ]
             },
         )
-        os.environ["OC_TOK_Q"] = "tok"
+        monkeypatch.setenv("OC_TOK_Q", "tok")
         try:
             source = OpenShiftSource(
                 {"api_server": "https://api.example.com:6443", "token_env": "OC_TOK_Q", "allow_private": True},
@@ -215,16 +215,16 @@ class TestOpenShiftConnector:
 
 
 class TestNomadConnector:
-    def test_config_requires_base_url(self):
+    def test_config_requires_base_url(self, monkeypatch):
         from general_ludd.connectors.nomad import NomadSource
 
         with pytest.raises((ValueError, RuntimeError)):
             NomadSource({})
 
-    def test_constructs_with_valid_config(self):
+    def test_constructs_with_valid_config(self, monkeypatch):
         from general_ludd.connectors.nomad import NomadSource
 
-        os.environ["NOMAD_TOK"] = "tok"
+        monkeypatch.setenv("NOMAD_TOK", "tok")
         try:
             source = NomadSource({
                 "base_url": "https://nomad.example.com:4646",
@@ -235,17 +235,17 @@ class TestNomadConnector:
         finally:
             del os.environ["NOMAD_TOK"]
 
-    def test_rejects_private_host_by_default(self):
+    def test_rejects_private_host_by_default(self, monkeypatch):
         from general_ludd.connectors.nomad import NomadSource
 
         with pytest.raises((ValueError, RuntimeError)):
             NomadSource({"base_url": "http://10.0.0.1:4646", "token_env": "T"})
 
-    def test_health_ok(self):
+    def test_health_ok(self, monkeypatch):
         from general_ludd.connectors.nomad import NomadSource
 
         transport = MockHttpTransport(status_code=200, body={"KnownLeader": True})
-        os.environ["NOM_H"] = "tok"
+        monkeypatch.setenv("NOM_H", "tok")
         try:
             source = NomadSource(
                 {"base_url": "https://nomad.example.com:4646", "token_env": "NOM_H", "allow_private": True},
@@ -256,11 +256,11 @@ class TestNomadConnector:
         finally:
             del os.environ["NOM_H"]
 
-    def test_health_not_ok_on_error(self):
+    def test_health_not_ok_on_error(self, monkeypatch):
         from general_ludd.connectors.nomad import NomadSource
 
         transport = MockHttpTransport(status_code=500, body={})
-        os.environ["NOM_H2"] = "tok"
+        monkeypatch.setenv("NOM_H2", "tok")
         try:
             source = NomadSource(
                 {"base_url": "https://nomad.example.com:4646", "token_env": "NOM_H2", "allow_private": True},
@@ -271,7 +271,7 @@ class TestNomadConnector:
         finally:
             del os.environ["NOM_H2"]
 
-    def test_query_returns_records(self):
+    def test_query_returns_records(self, monkeypatch):
         from general_ludd.connectors.nomad import NomadSource
 
         transport = MockHttpTransport(
@@ -287,7 +287,7 @@ class TestNomadConnector:
                 }
             ],
         )
-        os.environ["NOM_Q"] = "tok"
+        monkeypatch.setenv("NOM_Q", "tok")
         try:
             source = NomadSource(
                 {"base_url": "https://nomad.example.com:4646", "token_env": "NOM_Q", "allow_private": True},
@@ -312,19 +312,19 @@ class TestPodmanConnector:
         headers: dict[str, str] = field(default_factory=dict)
         body: bytes = b""
 
-    def test_constructs_with_defaults(self):
+    def test_constructs_with_defaults(self, monkeypatch):
         from general_ludd.connectors.podman import PodmanSource
 
         source = PodmanSource()
         assert source.KIND == "logs"
 
-    def test_constructs_custom_config(self):
+    def test_constructs_custom_config(self, monkeypatch):
         from general_ludd.connectors.podman import PodmanSource
 
         source = PodmanSource({"name": "podman-prod", "base_url": "unix:///run/podman/podman.sock"})
         assert source.name == "podman-prod"
 
-    def test_health_ok_with_injected_transport(self):
+    def test_health_ok_with_injected_transport(self, monkeypatch):
         from general_ludd.connectors.podman import PodmanSource
 
         resp = self._MockPodmanResponse(status=200, body=_json.dumps([{"Id": "c1"}]).encode())
@@ -332,7 +332,7 @@ class TestPodmanConnector:
         result = source.health()
         assert result["ok"] is True
 
-    def test_health_not_ok_on_error(self):
+    def test_health_not_ok_on_error(self, monkeypatch):
         from general_ludd.connectors.podman import PodmanSource
 
         resp = self._MockPodmanResponse(status=500, body=b"")
@@ -340,7 +340,7 @@ class TestPodmanConnector:
         result = source.health()
         assert result["ok"] is False
 
-    def test_health_not_ok_when_transport_raises(self):
+    def test_health_not_ok_when_transport_raises(self, monkeypatch):
         from general_ludd.connectors.podman import PodmanSource
 
         def _fail(*_: object, **__: object) -> object:
@@ -350,7 +350,7 @@ class TestPodmanConnector:
         result = source.health()
         assert result["ok"] is False
 
-    def test_query_returns_containers(self):
+    def test_query_returns_containers(self, monkeypatch):
         from general_ludd.connectors.podman import PodmanSource
 
         resp = self._MockPodmanResponse(
@@ -371,7 +371,7 @@ class TestPodmanConnector:
         assert len(records) >= 1
         assert records[0]["kind"] == "logs"
 
-    def test_query_empty_on_transport_error(self):
+    def test_query_empty_on_transport_error(self, monkeypatch):
         from general_ludd.connectors.podman import PodmanSource
 
         def _fail(*_: object, **__: object) -> object:
@@ -388,19 +388,19 @@ class TestPodmanConnector:
 
 
 class TestContainerdConnector:
-    def test_constructs_with_defaults(self):
+    def test_constructs_with_defaults(self, monkeypatch):
         from general_ludd.connectors.containerd import ContainerdSource
 
         source = ContainerdSource()
         assert source.KIND == "logs"
 
-    def test_constructs_custom_config(self):
+    def test_constructs_custom_config(self, monkeypatch):
         from general_ludd.connectors.containerd import ContainerdSource
 
         source = ContainerdSource({"name": "cri-prod", "runtime_endpoint": "/run/containerd/containerd.sock"})
         assert source.name == "cri-prod"
 
-    def test_health_ok_with_injected_runner(self):
+    def test_health_ok_with_injected_runner(self, monkeypatch):
         from general_ludd.connectors.containerd import ContainerdSource
 
         def _runner(argv: list[str]) -> str:
@@ -410,7 +410,7 @@ class TestContainerdConnector:
         result = source.health()
         assert result["ok"] is True
 
-    def test_health_not_ok_when_runner_fails(self):
+    def test_health_not_ok_when_runner_fails(self, monkeypatch):
         from general_ludd.connectors.containerd import ContainerdSource
 
         def _runner(argv: list[str]) -> str:
@@ -420,7 +420,7 @@ class TestContainerdConnector:
         result = source.health()
         assert result["ok"] is False
 
-    def test_query_returns_pods(self):
+    def test_query_returns_pods(self, monkeypatch):
         from general_ludd.connectors.containerd import ContainerdSource
 
         call_count = 0
@@ -444,7 +444,7 @@ class TestContainerdConnector:
         assert len(records) >= 1
         assert records[0]["kind"] == "logs"
 
-    def test_query_empty_without_runner(self):
+    def test_query_empty_without_runner(self, monkeypatch):
         from general_ludd.connectors.containerd import ContainerdSource
 
         source = ContainerdSource()
@@ -458,20 +458,20 @@ class TestContainerdConnector:
 
 
 class TestDmesgConnector:
-    def test_constructs_with_defaults(self):
+    def test_constructs_with_defaults(self, monkeypatch):
         from general_ludd.connectors.dmesg import DmesgSource
 
         source = DmesgSource()
         assert source.KIND == "logs"
         assert source.name == "dmesg"
 
-    def test_constructs_custom_name(self):
+    def test_constructs_custom_name(self, monkeypatch):
         from general_ludd.connectors.dmesg import DmesgSource
 
         source = DmesgSource({"name": "kernel-log"})
         assert source.name == "kernel-log"
 
-    def test_health_ok_with_injected_runner(self):
+    def test_health_ok_with_injected_runner(self, monkeypatch):
         from general_ludd.connectors.dmesg import DmesgSource
 
         result = MockRunResult(returncode=0, stdout=_json.dumps([{"msg": "test", "ts": 0}]))
@@ -479,7 +479,7 @@ class TestDmesgConnector:
         health = source.health()
         assert health["ok"] is True
 
-    def test_health_not_ok_when_runner_fails(self):
+    def test_health_not_ok_when_runner_fails(self, monkeypatch):
         from general_ludd.connectors.dmesg import DmesgSource
 
         result = MockRunResult(returncode=1, stderr="permission denied")
@@ -487,7 +487,7 @@ class TestDmesgConnector:
         health = source.health()
         assert health["ok"] is False
 
-    def test_query_returns_log_entries(self):
+    def test_query_returns_log_entries(self, monkeypatch):
         from general_ludd.connectors.dmesg import DmesgSource
 
         result = MockRunResult(
@@ -502,14 +502,14 @@ class TestDmesgConnector:
         assert len(records) >= 2
         assert all(r["kind"] == "logs" for r in records)
 
-    def test_query_empty_when_no_runner(self):
+    def test_query_empty_when_no_runner(self, monkeypatch):
         from general_ludd.connectors.dmesg import DmesgSource
 
         source = DmesgSource()
         records = source.query({})
         assert records == []
 
-    def test_rejects_flag_injection(self):
+    def test_rejects_flag_injection(self, monkeypatch):
         from general_ludd.connectors.dmesg import DmesgSource
 
         source = DmesgSource()
@@ -523,27 +523,27 @@ class TestDmesgConnector:
 
 
 class TestProcSysConnector:
-    def test_constructs_with_defaults(self):
+    def test_constructs_with_defaults(self, monkeypatch):
         from general_ludd.connectors.proc_sys import ProcSysSource
 
         source = ProcSysSource()
         assert source.KIND == "metrics"
         assert source.name == "proc_sys"
 
-    def test_constructs_custom_config(self):
+    def test_constructs_custom_config(self, monkeypatch):
         from general_ludd.connectors.proc_sys import ProcSysSource
 
         source = ProcSysSource({"name": "kernel-tune", "paths": ["net.core.somaxconn"]})
         assert source.name == "kernel-tune"
 
-    def test_health_ok_with_injected_file_reader(self):
+    def test_health_ok_with_injected_file_reader(self, monkeypatch):
         from general_ludd.connectors.proc_sys import ProcSysSource
 
         source = ProcSysSource(file_reader=lambda path: "1024\n")
         result = source.health()
         assert result["ok"] is True
 
-    def test_health_not_ok_when_reader_fails(self):
+    def test_health_not_ok_when_reader_fails(self, monkeypatch):
         from general_ludd.connectors.proc_sys import ProcSysSource
 
         def _reader(path: str) -> str:
@@ -553,7 +553,7 @@ class TestProcSysConnector:
         result = source.health()
         assert result["ok"] is False
 
-    def test_query_returns_sysctl_values(self):
+    def test_query_returns_sysctl_values(self, monkeypatch):
         from general_ludd.connectors.proc_sys import ProcSysSource
 
         def _reader(path: str) -> str:
@@ -574,7 +574,7 @@ class TestProcSysConnector:
         assert len(records) == 2
         assert any("somaxconn" in str(r["message"]).lower() for r in records)
 
-    def test_query_skips_missing_paths(self):
+    def test_query_skips_missing_paths(self, monkeypatch):
         from general_ludd.connectors.proc_sys import ProcSysSource
 
         def _reader(path: str) -> str:
@@ -591,27 +591,27 @@ class TestProcSysConnector:
 
 
 class TestLinuxNamespacesConnector:
-    def test_constructs_with_defaults(self):
+    def test_constructs_with_defaults(self, monkeypatch):
         from general_ludd.connectors.linux_namespaces import LinuxNamespacesSource
 
         source = LinuxNamespacesSource()
         assert source.KIND == "metrics"
         assert source.name is not None
 
-    def test_constructs_custom_name(self):
+    def test_constructs_custom_name(self, monkeypatch):
         from general_ludd.connectors.linux_namespaces import LinuxNamespacesSource
 
         source = LinuxNamespacesSource({"name": "ns-monitor"})
         assert source.name == "ns-monitor"
 
-    def test_health_ok_with_reader(self):
+    def test_health_ok_with_reader(self, monkeypatch):
         from general_ludd.connectors.linux_namespaces import LinuxNamespacesSource
 
         source = LinuxNamespacesSource(reader=lambda pid: {"namespaces": ["net", "pid"]})
         result = source.health()
         assert isinstance(result, dict)
 
-    def test_query_returns_namespace_info(self):
+    def test_query_returns_namespace_info(self, monkeypatch):
         from general_ludd.connectors.linux_namespaces import LinuxNamespacesSource
 
         def _reader(pid: int | str) -> dict[str, object]:
@@ -638,17 +638,17 @@ class TestLinuxNamespacesConnector:
 
 
 class TestRedfishConnector:
-    def test_config_requires_base_url(self):
+    def test_config_requires_base_url(self, monkeypatch):
         from general_ludd.connectors.redfish import RedfishSource
 
         with pytest.raises((ValueError, RuntimeError)):
             RedfishSource({})
 
-    def test_constructs_with_valid_config(self):
+    def test_constructs_with_valid_config(self, monkeypatch):
         from general_ludd.connectors.redfish import RedfishSource
 
-        os.environ["RF_USR"] = "admin"
-        os.environ["RF_PWD"] = "pass"  # pragma: allowlist secret
+        monkeypatch.setenv("RF_USR", "admin")
+        monkeypatch.setenv("RF_PWD", "pass")  # pragma: allowlist secret
         try:
             source = RedfishSource({
                 "base_url": "https://idrac.example.com",
@@ -659,12 +659,12 @@ class TestRedfishConnector:
         finally:
             del os.environ["RF_USR"], os.environ["RF_PWD"]
 
-    def test_health_ok(self):
+    def test_health_ok(self, monkeypatch):
         from general_ludd.connectors.redfish import RedfishSource
 
         transport = MockHttpTransport(status_code=200, body={"@odata.id": "/redfish/v1/"})
-        os.environ["RF_U"] = "a"
-        os.environ["RF_P"] = "p"
+        monkeypatch.setenv("RF_U", "a")
+        monkeypatch.setenv("RF_P", "p")
         try:
             source = RedfishSource(
                 {
@@ -679,12 +679,12 @@ class TestRedfishConnector:
         finally:
             del os.environ["RF_U"], os.environ["RF_P"]
 
-    def test_health_not_ok_on_error(self):
+    def test_health_not_ok_on_error(self, monkeypatch):
         from general_ludd.connectors.redfish import RedfishSource
 
         transport = MockHttpTransport(status_code=500, body={})
-        os.environ["RF_U2"] = "a"
-        os.environ["RF_P2"] = "p"
+        monkeypatch.setenv("RF_U2", "a")
+        monkeypatch.setenv("RF_P2", "p")
         try:
             source = RedfishSource(
                 {
@@ -699,7 +699,7 @@ class TestRedfishConnector:
         finally:
             del os.environ["RF_U2"], os.environ["RF_P2"]
 
-    def test_query_returns_thermal_data(self):
+    def test_query_returns_thermal_data(self, monkeypatch):
         from general_ludd.connectors.redfish import RedfishSource
 
         transport = MockHttpTransport(
@@ -728,8 +728,8 @@ class TestRedfishConnector:
                 ],
             },
         )
-        os.environ["RF_Q"] = "a"
-        os.environ["RF_PQ"] = "p"
+        monkeypatch.setenv("RF_Q", "a")
+        monkeypatch.setenv("RF_PQ", "p")
         try:
             source = RedfishSource(
                 {
@@ -752,14 +752,14 @@ class TestRedfishConnector:
 
 
 class TestSnmpConnector:
-    def test_constructs_with_no_config(self):
+    def test_constructs_with_no_config(self, monkeypatch):
         from general_ludd.connectors.snmp import SnmpSource
 
         source = SnmpSource()
         assert source.KIND == "metrics"
         assert source.name == "snmp"
 
-    def test_constructs_custom_config(self):
+    def test_constructs_custom_config(self, monkeypatch):
         from general_ludd.connectors.snmp import SnmpSource
 
         source = SnmpSource({
@@ -770,14 +770,14 @@ class TestSnmpConnector:
         })
         assert source.name == "router-uptime"
 
-    def test_health_ok_with_injected_getter(self):
+    def test_health_ok_with_injected_getter(self, monkeypatch):
         from general_ludd.connectors.snmp import SnmpSource
 
         source = SnmpSource(getter=lambda host, community, oid: (None, None))
         result = source.health()
         assert isinstance(result, dict)
 
-    def test_health_not_ok_when_getter_fails(self):
+    def test_health_not_ok_when_getter_fails(self, monkeypatch):
         from general_ludd.connectors.snmp import SnmpSource
 
         def _fail(*_: object, **__: object) -> object:
@@ -787,7 +787,7 @@ class TestSnmpConnector:
         result = source.health()
         assert result["ok"] is False
 
-    def test_query_returns_records(self):
+    def test_query_returns_records(self, monkeypatch):
         from general_ludd.connectors.snmp import SnmpSource
 
         def _getter(host: str, community: str, oid: str) -> tuple[object, object]:
@@ -805,26 +805,26 @@ class TestSnmpConnector:
 
 
 class TestWindowsDefenderConnector:
-    def test_constructs_with_defaults(self):
+    def test_constructs_with_defaults(self, monkeypatch):
         from general_ludd.connectors.windows_defender import WindowsDefenderSource
 
         source = WindowsDefenderSource()
         assert source.KIND == "logs"
 
-    def test_constructs_custom_name(self):
+    def test_constructs_custom_name(self, monkeypatch):
         from general_ludd.connectors.windows_defender import WindowsDefenderSource
 
         source = WindowsDefenderSource({"name": "defender-audit"})
         assert source.name == "defender-audit"
 
-    def test_health_ok_with_runner(self):
+    def test_health_ok_with_runner(self, monkeypatch):
         from general_ludd.connectors.windows_defender import WindowsDefenderSource
 
         source = WindowsDefenderSource(runner=lambda cmd: _json.dumps([{"ThreatName": "", "ActionSuccess": True}]))
         result = source.health()
         assert result["ok"] is True
 
-    def test_query_returns_detections(self):
+    def test_query_returns_detections(self, monkeypatch):
         from general_ludd.connectors.windows_defender import WindowsDefenderSource
 
         def _runner(cmd: str) -> str:
@@ -842,7 +842,7 @@ class TestWindowsDefenderConnector:
         assert len(records) >= 1
         assert records[0]["kind"] == "logs"
 
-    def test_query_empty_on_error(self):
+    def test_query_empty_on_error(self, monkeypatch):
         from general_ludd.connectors.windows_defender import WindowsDefenderSource
 
         def _runner(cmd: str) -> str:
@@ -859,13 +859,13 @@ class TestWindowsDefenderConnector:
 
 
 class TestWindowsEventLogConnector:
-    def test_constructs_with_defaults(self):
+    def test_constructs_with_defaults(self, monkeypatch):
         from general_ludd.connectors.windows_event_log import WindowsEventLogSource
 
         source = WindowsEventLogSource()
         assert source.KIND == "logs"
 
-    def test_constructs_custom_config(self):
+    def test_constructs_custom_config(self, monkeypatch):
         from general_ludd.connectors.windows_event_log import WindowsEventLogSource
 
         source = WindowsEventLogSource({
@@ -875,21 +875,21 @@ class TestWindowsEventLogConnector:
         })
         assert source.name == "sec-log"
 
-    def test_health_ok_with_runner(self):
+    def test_health_ok_with_runner(self, monkeypatch):
         from general_ludd.connectors.windows_event_log import WindowsEventLogSource
 
         source = WindowsEventLogSource(runner=lambda cmd: _json.dumps([{"Id": "1"}]))
         result = source.health()
         assert result["ok"] is True
 
-    def test_health_not_ok_when_runner_unavailable(self):
+    def test_health_not_ok_when_runner_unavailable(self, monkeypatch):
         from general_ludd.connectors.windows_event_log import WindowsEventLogSource
 
         source = WindowsEventLogSource()
         result = source.health()
         assert isinstance(result, dict)
 
-    def test_query_returns_events(self):
+    def test_query_returns_events(self, monkeypatch):
         from general_ludd.connectors.windows_event_log import WindowsEventLogSource
 
         def _runner(cmd: str) -> str:
@@ -916,33 +916,33 @@ class TestWindowsEventLogConnector:
 
 
 class TestWindowsWmiConnector:
-    def test_constructs_with_defaults(self):
+    def test_constructs_with_defaults(self, monkeypatch):
         from general_ludd.connectors.windows_wmi import WindowsWmiSource
 
         source = WindowsWmiSource()
         assert source.KIND == "metrics"
 
-    def test_constructs_custom_config(self):
+    def test_constructs_custom_config(self, monkeypatch):
         from general_ludd.connectors.windows_wmi import WindowsWmiSource
 
         source = WindowsWmiSource({"name": "wmi-cpu", "query": "SELECT * FROM Win32_Processor"})
         assert source.name == "wmi-cpu"
 
-    def test_health_ok_with_runner(self):
+    def test_health_ok_with_runner(self, monkeypatch):
         from general_ludd.connectors.windows_wmi import WindowsWmiSource
 
         source = WindowsWmiSource(runner=lambda query: _json.dumps([{"Name": "CPU0"}]))
         result = source.health()
         assert result["ok"] is True
 
-    def test_health_not_ok_when_runner_unavailable(self):
+    def test_health_not_ok_when_runner_unavailable(self, monkeypatch):
         from general_ludd.connectors.windows_wmi import WindowsWmiSource
 
         source = WindowsWmiSource()
         result = source.health()
         assert isinstance(result, dict)
 
-    def test_query_returns_wmi_results(self):
+    def test_query_returns_wmi_results(self, monkeypatch):
         from general_ludd.connectors.windows_wmi import WindowsWmiSource
 
         def _runner(query: str) -> str:
@@ -962,13 +962,13 @@ class TestWindowsWmiConnector:
 
 
 class TestMacOSLogConnector:
-    def test_constructs_with_defaults(self):
+    def test_constructs_with_defaults(self, monkeypatch):
         from general_ludd.connectors.macos_log import MacOSLogSource
 
         source = MacOSLogSource()
         assert source.KIND == "logs"
 
-    def test_constructs_custom_config(self):
+    def test_constructs_custom_config(self, monkeypatch):
         from general_ludd.connectors.macos_log import MacOSLogSource
 
         source = MacOSLogSource({
@@ -978,14 +978,14 @@ class TestMacOSLogConnector:
         })
         assert source.name == "od-log"
 
-    def test_health_ok_with_runner(self):
+    def test_health_ok_with_runner(self, monkeypatch):
         from general_ludd.connectors.macos_log import MacOSLogSource
 
         source = MacOSLogSource(runner=lambda argv: _json.dumps([{"eventMessage": "test"}]))
         result = source.health()
         assert result["ok"] is True
 
-    def test_query_returns_log_entries(self):
+    def test_query_returns_log_entries(self, monkeypatch):
         from general_ludd.connectors.macos_log import MacOSLogSource
 
         def _runner(argv: list[str]) -> str:
@@ -1007,7 +1007,7 @@ class TestMacOSLogConnector:
         assert len(records) >= 2
         assert all(r["kind"] == "logs" for r in records)
 
-    def test_query_empty_without_runner(self):
+    def test_query_empty_without_runner(self, monkeypatch):
         from general_ludd.connectors.macos_log import MacOSLogSource
 
         source = MacOSLogSource()
@@ -1021,26 +1021,26 @@ class TestMacOSLogConnector:
 
 
 class TestMacOSSecurityConnector:
-    def test_constructs_with_defaults(self):
+    def test_constructs_with_defaults(self, monkeypatch):
         from general_ludd.connectors.macos_security import MacOSSecuritySource
 
         source = MacOSSecuritySource()
         assert source.KIND == "logs"
 
-    def test_constructs_custom_name(self):
+    def test_constructs_custom_name(self, monkeypatch):
         from general_ludd.connectors.macos_security import MacOSSecuritySource
 
         source = MacOSSecuritySource({"name": "mac-sec-audit"})
         assert source.name == "mac-sec-audit"
 
-    def test_health_ok_with_runner(self):
+    def test_health_ok_with_runner(self, monkeypatch):
         from general_ludd.connectors.macos_security import MacOSSecuritySource
 
         source = MacOSSecuritySource(runner=lambda argv: _json.dumps([{"event": "AUTHENTICATION_SUCCEEDED"}]))
         result = source.health()
         assert result["ok"] is True
 
-    def test_query_returns_security_events(self):
+    def test_query_returns_security_events(self, monkeypatch):
         from general_ludd.connectors.macos_security import MacOSSecuritySource
 
         def _runner(argv: list[str]) -> str:
@@ -1054,7 +1054,7 @@ class TestMacOSSecurityConnector:
         assert len(records) >= 2
         assert all(r["kind"] == "logs" for r in records)
 
-    def test_query_empty_without_runner(self):
+    def test_query_empty_without_runner(self, monkeypatch):
         from general_ludd.connectors.macos_security import MacOSSecuritySource
 
         source = MacOSSecuritySource()
@@ -1068,19 +1068,19 @@ class TestMacOSSecurityConnector:
 
 
 class TestStatsdParseConnector:
-    def test_constructs_with_defaults(self):
+    def test_constructs_with_defaults(self, monkeypatch):
         from general_ludd.connectors.statsd_parse import StatsdParseSource
 
         source = StatsdParseSource()
         assert source.KIND == "metrics"
 
-    def test_constructs_custom_config(self):
+    def test_constructs_custom_config(self, monkeypatch):
         from general_ludd.connectors.statsd_parse import StatsdParseSource
 
         source = StatsdParseSource({"name": "statsd-parser", "port": 9125})
         assert source.name == "statsd-parser"
 
-    def test_dispatch_parses_counter(self):
+    def test_dispatch_parses_counter(self, monkeypatch):
         from general_ludd.connectors.statsd_parse import _dispatch
 
         records = _dispatch("app.requests:1|c")
@@ -1089,7 +1089,7 @@ class TestStatsdParseConnector:
         assert records[0]["value"] == 1
         assert records[0]["labels"]["metric_type"] == "counter"
 
-    def test_dispatch_parses_gauge(self):
+    def test_dispatch_parses_gauge(self, monkeypatch):
         from general_ludd.connectors.statsd_parse import _dispatch
 
         records = _dispatch("app.memory:512.5|g")
@@ -1097,7 +1097,7 @@ class TestStatsdParseConnector:
         assert records[0]["value"] == 512.5
         assert records[0]["labels"]["metric_type"] == "gauge"
 
-    def test_dispatch_parses_timer(self):
+    def test_dispatch_parses_timer(self, monkeypatch):
         from general_ludd.connectors.statsd_parse import _dispatch
 
         records = _dispatch("app.latency:42.5|ms")
@@ -1105,7 +1105,7 @@ class TestStatsdParseConnector:
         assert records[0]["value"] == 42.5
         assert records[0]["labels"]["metric_type"] == "timer"
 
-    def test_dispatch_parses_with_tags(self):
+    def test_dispatch_parses_with_tags(self, monkeypatch):
         from general_ludd.connectors.statsd_parse import _dispatch
 
         records = _dispatch("app.errors:5|c|#host:web1,region:us-east")
@@ -1113,7 +1113,7 @@ class TestStatsdParseConnector:
         assert records[0]["labels"].get("host") == "web1"
         assert records[0]["labels"].get("region") == "us-east"
 
-    def test_dispatch_parses_sampling_rate(self):
+    def test_dispatch_parses_sampling_rate(self, monkeypatch):
         from general_ludd.connectors.statsd_parse import _dispatch
 
         records = _dispatch("app.hits:10|c|@0.1")
@@ -1121,19 +1121,19 @@ class TestStatsdParseConnector:
         assert records[0]["value"] == 10
         assert records[0]["labels"]["sample_rate"] == "0.1"
 
-    def test_dispatch_returns_empty_for_invalid(self):
+    def test_dispatch_returns_empty_for_invalid(self, monkeypatch):
         from general_ludd.connectors.statsd_parse import _dispatch
 
         records = _dispatch("invalid without colon")
         assert records == []
 
-    def test_strip_name_drops_prefix(self):
+    def test_strip_name_drops_prefix(self, monkeypatch):
         from general_ludd.connectors.statsd_parse import _strip_name
 
         result = _strip_name("stats.gauges.app.requests")
         assert "app" in result
 
-    def test_query_parses_multiple_lines(self):
+    def test_query_parses_multiple_lines(self, monkeypatch):
         from general_ludd.connectors.statsd_parse import StatsdParseSource
 
         source = StatsdParseSource()
@@ -1147,19 +1147,19 @@ class TestStatsdParseConnector:
 
 
 class TestIngestFormatsConnector:
-    def test_detect_json_returns_true_for_json(self):
+    def test_detect_json_returns_true_for_json(self, monkeypatch):
         from general_ludd.connectors.ingest_formats import _detect_format
 
         fmt = _detect_format('{"key": "value"}')
         assert fmt == "json"
 
-    def test_detect_plain_returns_true_for_plain(self):
+    def test_detect_plain_returns_true_for_plain(self, monkeypatch):
         from general_ludd.connectors.ingest_formats import _detect_format
 
         fmt = _detect_format("just plain text here")
         assert fmt == "plain"
 
-    def test_detect_csv_returns_true_for_csv(self):
+    def test_detect_csv_returns_true_for_csv(self, monkeypatch):
         from general_ludd.connectors.ingest_formats import _detect_format
 
         fmt = _detect_format("col1,col2,col3\nval1,val2,val3")

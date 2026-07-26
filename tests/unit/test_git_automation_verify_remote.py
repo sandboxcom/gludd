@@ -239,7 +239,7 @@ class TestVerifyRemoteIntegration:
 
     def test_verify_against_local_head(self, tmp_path: Path) -> None:
         """Verify that ls-remote against origin in a test repo works.
-        
+
         We push to a bare repo to create a remote, then verify the pushed sha.
         """
         repo_dir = tmp_path / "repo"

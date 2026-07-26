@@ -13,11 +13,13 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from general_ludd.git_automation.ship_commit import (
+    ShipCommitError,
+    collect_check,
     gate_is_green,
     ship_commit,
+)
+from general_ludd.git_automation.ship_commit import (
     test_and_commit as _test_and_commit,
-    collect_check,
-    ShipCommitError,
 )
 
 

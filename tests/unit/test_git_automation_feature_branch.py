@@ -7,12 +7,12 @@ from unittest.mock import MagicMock
 import pytest
 
 from general_ludd.git_automation.feature_branch import (
-    feature_start,
     feature_done,
+    feature_start,
     rebranch_onto,
 )
 from general_ludd.git_automation.repo import GitAutomation
-from general_ludd.git_automation.types import MergeResult, GitStateResult
+from general_ludd.git_automation.types import GitStateResult, MergeResult
 
 
 class TestFeatureBranchCreate:
@@ -215,7 +215,7 @@ class TestRebranchOnto:
 
         git._run_git.side_effect = _side_effect
 
-        with pytest.raises(RuntimeError, match="cherry-pick .* conflicted"):
+        with pytest.raises(RuntimeError, match=r"cherry-pick .* conflicted"):
             rebranch_onto(git=git, new_base="base", commits=["bad"])
 
         git._run_git.assert_any_call("cherry-pick", "--abort", check=False)
@@ -233,7 +233,7 @@ class TestRebranchOnto:
 
         git._run_git.side_effect = _side_effect
 
-        with pytest.raises(RuntimeError, match="cherry-pick .* conflicted"):
+        with pytest.raises(RuntimeError, match=r"cherry-pick .* conflicted"):
             rebranch_onto(git=git, new_base="base", commits=["bad"])
 
         git._run_git.assert_any_call("cherry-pick", "--abort", check=False)

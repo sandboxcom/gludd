@@ -25,20 +25,20 @@ from general_ludd.memory.local import LocalAgentMemory, MemoryRecord
 from general_ludd.memory.retrieval import MemoryRetriever, hybrid_search, score_memory
 
 __all__ = [
-    "consolidate_cascade",
     "ConversationContext",
     "ConversationMeta",
     "CrossConversationMemory",
     "CrossConversationStore",
     "CrossTaskLearner",
     "EpisodicMemoryRecorder",
-    "hybrid_search",
     "LocalAgentMemory",
     "MemoryConsolidator",
     "MemoryEmbeddingStore",
     "MemoryRecord",
     "MemoryRetriever",
+    "WorkingMemoryItem",
+    "consolidate_cascade",
+    "hybrid_search",
     "reconstruct_timeline",
     "score_memory",
-    "WorkingMemoryItem",
 ]

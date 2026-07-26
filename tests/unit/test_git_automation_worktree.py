@@ -3,10 +3,7 @@
 from __future__ import annotations
 
 import subprocess
-import time
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 from general_ludd.git_automation.types import MergeResult, WorktreeInfo, WorktreeResult
 from general_ludd.git_automation.worktree import (
