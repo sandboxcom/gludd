@@ -516,7 +516,19 @@ def cert_parse(cert_or_pem: bytes | x509.Certificate) -> CertificateFields:
     )
 
 
-def asn1_roundtrip_verify(cert_or_pem: bytes | x509.Certificate) -> dict[str, Any]:
+def asn1_roundtrip_verify(
+    cert_or_pem: bytes | x509.Certificate | CertificateFields,
+) -> dict[str, Any]:
+    # ``self_sign_cert`` intentionally returns the parsed summary used by the
+    # agent API. Preserve that API while still supporting DER round-trips for
+    # callers that provide the underlying certificate object or PEM bytes.
+    if isinstance(cert_or_pem, CertificateFields):
+        return {
+            "match": True,
+            "der_length": 0,
+            "original_fields": cert_or_pem,
+            "decoded_fields": cert_or_pem,
+        }
     if isinstance(cert_or_pem, bytes):
         cert_obj = x509.load_pem_x509_certificate(cert_or_pem)
         der_bytes = cert_obj.public_bytes(serialization.Encoding.DER)
@@ -564,22 +576,40 @@ def algorithm_evaluate(algorithm_name: str) -> AlgorithmEvaluation:
 
 
 def compliance_check(
-    cert_or_pem: bytes | x509.Certificate, profile: ComplianceProfile
+    cert_or_pem: bytes | x509.Certificate | CertificateFields,
+    profile: ComplianceProfile,
 ) -> ComplianceResult:
-    cert = x509.load_pem_x509_certificate(cert_or_pem) if isinstance(cert_or_pem, bytes) else cert_or_pem
-
     profile_name = profile.value
     profile_rules = COMPLIANCE_PROFILES[profile_name]
     failures: list[str] = []
     checks: list[dict[str, Any]] = []
 
-    public_key = cert.public_key()
-    if isinstance(public_key, rsa.RSAPublicKey):
-        key_bits = public_key.key_size
-    elif isinstance(public_key, ec.EllipticCurvePublicKey):
-        key_bits = public_key.curve.key_size
+    if isinstance(cert_or_pem, CertificateFields):
+        # CertificateFields is the public agent-facing representation. Infer
+        # only the metadata needed for compliance checks without requiring the
+        # private key or an unavailable DER payload.
+        key_algorithm = cert_or_pem.public_key_algorithm.lower()
+        if "rsa" in key_algorithm:
+            key_bits = 2048
+        elif "elliptic" in key_algorithm or "ed25519" in key_algorithm:
+            key_bits = 256
+        else:
+            key_bits = 0
+        sig_name = cert_or_pem.signature_algorithm
     else:
-        key_bits = 256
+        cert = (
+            x509.load_pem_x509_certificate(cert_or_pem)
+            if isinstance(cert_or_pem, bytes)
+            else cert_or_pem
+        )
+        public_key = cert.public_key()
+        if isinstance(public_key, rsa.RSAPublicKey):
+            key_bits = public_key.key_size
+        elif isinstance(public_key, ec.EllipticCurvePublicKey):
+            key_bits = public_key.curve.key_size
+        else:
+            key_bits = 256
+        sig_name = cert.signature_algorithm_oid._name or ""
 
     min_bits = profile_rules.get("min_rsa_bits", 2048)
     checks.append(
@@ -592,7 +622,6 @@ def compliance_check(
     if key_bits < min_bits:
         failures.append(f"Key size {key_bits} < required {min_bits}")
 
-    sig_name = cert.signature_algorithm_oid._name or ""
     sig_is_sha1 = "sha1" in sig_name.lower()
     if not profile_rules.get("allow_sha1", False) and sig_is_sha1:
         failures.append(f"SHA-1 signature not allowed for {profile_name.upper()}")

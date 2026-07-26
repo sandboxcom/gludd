@@ -418,7 +418,6 @@ COMPLIANCE_STANDARDS: dict[str, dict[str, bool]] = {
         "DH-3072": True,
         "DH-4096": True,
         "X25519": True,
-        "X448": True,
         "RSA-7680": True,
         "RSA-15360": True,
         "SHAKE128": True,
@@ -512,6 +511,10 @@ def evaluate_algorithm(name: str, key_size: int | None = None) -> AlgorithmEval:
             )
 
     if algo.status == AlgorithmStatus.LEGACY:
+        # Legacy algorithms are retained for migration diagnostics only. Keep
+        # their score below the minimum acceptable deployment threshold even
+        # when their nominal security-bit estimate is relatively high.
+        score = min(score, 20)
         warnings.insert(
             0, f"{algo.name} is a legacy algorithm"
         )

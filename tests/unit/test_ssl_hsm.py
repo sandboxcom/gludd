@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from general_ludd.ssl.hsm import (
     HSMConfig,
     HSMKey,
@@ -125,11 +127,8 @@ class TestSignWithHSMKey:
     def test_sign_unknown_key_raises(self) -> None:
         config = HSMConfig(module_path="/fake.so", slot_id=0)
         session = create_mock_session(config)
-        try:
+        with pytest.raises(ValueError, match="Unknown key"):
             sign_with_hsm_key(session, "nonexistent", b"data")
-            raise AssertionError("expected KeyError")
-        except KeyError:
-            pass
 
     def test_signature_contains_key_id(self) -> None:
         config = HSMConfig(module_path="/fake.so", slot_id=0)
@@ -185,7 +184,8 @@ class TestSessionClose:
         config = HSMConfig(module_path="/fake.so", slot_id=0)
         session = create_mock_session(config)
         session.close()
-        assert len(session.list_keys()) == 0
+        with pytest.raises(RuntimeError, match="closed"):
+            session.list_keys()
 
     def test_close_sets_closed_flag(self) -> None:
         config = HSMConfig(module_path="/fake.so", slot_id=0)
@@ -200,17 +200,15 @@ class TestSessionClose:
         session.close()
         session.close()
         assert session.closed is True
-        assert len(session.list_keys()) == 0
+        with pytest.raises(RuntimeError, match="closed"):
+            session.list_keys()
 
     def test_sign_after_close_raises(self) -> None:
         config = HSMConfig(module_path="/fake.so", slot_id=0)
         session = create_mock_session(config)
         session.close()
-        try:
+        with pytest.raises(RuntimeError, match="closed"):
             sign_with_hsm_key(session, "rsa-2048-001", b"data")
-            raise AssertionError("expected KeyError")
-        except KeyError:
-            pass
 
 
 class TestHSMKeyDataclass:

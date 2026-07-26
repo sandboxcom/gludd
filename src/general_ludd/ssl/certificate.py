@@ -8,6 +8,7 @@ from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import (
     ec,
+    ed448,
     ed25519,
     padding,
     rsa,
@@ -15,6 +16,13 @@ from cryptography.hazmat.primitives.asymmetric import (
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 
 _PrivateKeyTypes = rsa.RSAPrivateKey | ec.EllipticCurvePrivateKey | ed25519.Ed25519PrivateKey
+
+
+def _signature_hash(private_key: Any) -> hashes.SHA256 | None:
+    """Return the hash required by a signing key family."""
+    if isinstance(private_key, (ed25519.Ed25519PrivateKey, ed448.Ed448PrivateKey)):
+        return None
+    return hashes.SHA256()
 
 
 def generate_key(key_type: str, key_size: int | None = None) -> bytes:
@@ -118,7 +126,7 @@ def generate_csr(
                 x509.ExtendedKeyUsage(oids), critical=False
             )
 
-    return csr_builder.sign(private_key, hashes.SHA256()).public_bytes(
+    return csr_builder.sign(private_key, _signature_hash(private_key)).public_bytes(
         serialization.Encoding.PEM
     )
 
@@ -164,7 +172,7 @@ def _build_cert(
     )
     for ext in extensions:
         cert_builder = cert_builder.add_extension(ext.value, critical=ext.critical)
-    return cert_builder.sign(signer_key, hashes.SHA256()).public_bytes(
+    return cert_builder.sign(signer_key, _signature_hash(signer_key)).public_bytes(
         serialization.Encoding.PEM
     )
 

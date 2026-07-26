@@ -72,11 +72,15 @@ class _MockHSMSession:
             self._keys[key.key_id] = key
 
     def list_keys(self) -> list[HSMKey]:
+        if self._closed:
+            raise RuntimeError("HSM session is closed")
         return list(self._keys.values())
 
     def sign(self, key_id: str, data: bytes, mechanism: str = "SHA256-RSA-PKCS") -> bytes:
+        if self._closed:
+            raise RuntimeError("HSM session is closed")
         if key_id not in self._keys:
-            raise KeyError(f"Key {key_id!r} not found")
+            raise ValueError(f"Unknown key: {key_id!r}")
         key = self._keys[key_id]
         prefix = f"MOCK_SIG:{key_id}:{mechanism}:{key.key_type}:".encode()
         suffix = b"\xff" * max(key.key_size // 8, 32)
