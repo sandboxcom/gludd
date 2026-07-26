@@ -122,7 +122,7 @@ log-agent-result disk-guard disk-check check-disk disk tmp-gludd-usage tmp-gludd
         networking-healthcheck \
         install-bats test-install check-subagent-guards verify-plugin-manifest \
          check-task-ledger \
-         check-task-integrity \
+         check-task-integrity check-make-target-contract \
          test-service-discovery service-discover service-catalog \
          subagent-init subagent-cleanup \
          chat chat-eval test-chat \
@@ -208,6 +208,10 @@ help:
 	@echo "  azure-harness         Azure provider harness (LIVE=1 for read-only credential check)"
 	@echo "  runpod-harness        RunPod provider harness (LIVE=1 for read-only credential check)"
 	@echo "  test-opa-policies     Execute Rego policy tests when opa is installed"
+	@echo "  check-make-target-contract  Validate target variables, help, and behavioral examples"
+	@echo "  iam-headless-smoke    Validate least-privilege provider manifests without credentials"
+	@echo "  check-task-integrity  Require changed files to map to registered tasks"
+	@echo "  validate-task-ledger  Validate TASKS.md metadata and completion evidence"
 	@echo "  test-and-commit       Run tests then commit if green (MSG='msg')"
 	@echo "  audit-coverage        Run coverage audit: pytest --cov + per-file threshold check"
 	@echo "  test-live-zai         Live GLM model test (requires API key)"
@@ -753,7 +757,7 @@ test-opencode-boot-e2e:
 gate-fast: lint typecheck collect-check
 	@echo "=== GATE-FAST: PASS ==="
 
-gate: check-opencode-integrity check-plugin-hooks opencode-boot-smoke validate-task-ledger check-task-registration check-task-integrity check-dispatch-dedup check-subagent-guards verify-plugin-manifest check-skills-frontmatter check-coverage-gaps check-plugin-syntax check-plugin-runtime check-plugin-imports check-node-v26-compat check-duplicate-targets
+gate: check-opencode-integrity check-plugin-hooks opencode-boot-smoke validate-task-ledger check-task-registration check-task-integrity check-make-target-contract check-dispatch-dedup check-subagent-guards verify-plugin-manifest check-skills-frontmatter check-coverage-gaps check-plugin-syntax check-plugin-runtime check-plugin-imports check-node-v26-compat check-duplicate-targets
 	@rm -f .gate-failed
 	@echo "=== GATE $(shell date -u +%Y-%m-%dT%H:%M:%SZ) ===" > .gate-status
 	@# OBSERVABILITY INVARIANT (see AGENTS.md "No unseen events"): every gate phase
@@ -3596,6 +3600,10 @@ check-gate-parity:
 
 check-duplicate-targets:
 	@$(UV) run python scripts/check_duplicate_targets.py
+
+# --- Agent-facing Make target contract: variables, help, and safe examples ---
+check-make-target-contract:
+	@$(UV) run python scripts/check_make_target_contract.py
 
 # --- Help target coverage: prevent hidden public Make targets ---
 check-make-help:

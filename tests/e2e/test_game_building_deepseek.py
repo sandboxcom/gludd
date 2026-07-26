@@ -1351,6 +1351,27 @@ def _find_position_attribute(state: dict[str, Any], axis: str) -> str | None:
     return None
 
 
+def _find_piece_y(state: dict[str, Any]) -> int | float | None:
+    """Extract the active Tetris piece row from common generated shapes."""
+    for name, value in state.items():
+        if not any(token in name.lower() for token in ("piece", "falling", "active")):
+            continue
+        if isinstance(value, dict):
+            for key in ("y", "row", "top"):
+                candidate = value.get(key)
+                if isinstance(candidate, (int, float)) and not isinstance(candidate, bool):
+                    return candidate
+        if isinstance(value, (list, tuple)) and len(value) >= 3:
+            candidate = value[2]
+            if isinstance(candidate, (int, float)) and not isinstance(candidate, bool):
+                return candidate
+    for name in ("piece_y", "current_y", "active_y", "falling_y"):
+        candidate = state.get(name)
+        if isinstance(candidate, (int, float)) and not isinstance(candidate, bool):
+            return candidate
+    return None
+
+
 def _find_game_over_attribute(state: dict[str, Any]) -> str | None:
     """Find a game-over-like boolean attribute (over/crashed/finished/ended)."""
     over_words = ("over", "crashed", "finished", "ended", "dead", "done")
@@ -1514,6 +1535,18 @@ def _verify_tetris_features(mod: Any) -> list[str]:
     if instance is None:
         return failures
     failures.extend(_check_tick_advances_state(instance))
+    tick = _find_callable_attr(instance, _TICK_NAMES)
+    before_y = _find_piece_y(_get_state_dict(instance))
+    if tick is not None and before_y is not None:
+        try:
+            tick[1]()
+            after_y = _find_piece_y(_get_state_dict(instance))
+            if after_y is not None and after_y != before_y + 1:
+                failures.append(
+                    f"gravity moved active piece by {after_y - before_y!r} rows; expected exactly one"
+                )
+        except Exception as exc:
+            failures.append(f"gravity tick raised: {type(exc).__name__}: {exc}")
     state = _get_state_dict(instance)
     if _find_board_attribute(state) is None:
         failures.append(
@@ -1629,6 +1662,30 @@ def _verify_minesweeper_features(mod: Any) -> list[str]:
             "no flag-like method found (flag/mark/toggle_flag/set_flag); "
             "minesweeper must support flagging"
         )
+    # Prove the documented terminal path by revealing an actual mine rather
+    # than an arbitrary corner that may be safe in a random board.
+    if reveal is not None:
+        board_name = _find_board_attribute(state)
+        board = state.get(board_name) if board_name else None
+        mine_coord: tuple[int, int] | None = None
+        if isinstance(board, list):
+            for y, row in enumerate(board):
+                if not isinstance(row, list):
+                    continue
+                for x, cell in enumerate(row):
+                    if isinstance(cell, dict) and cell.get("is_mine") is True:
+                        mine_coord = (x, y)
+                        break
+                if mine_coord is not None:
+                    break
+        if mine_coord is not None:
+            try:
+                result = reveal[1](*mine_coord)
+                game_over = _find_game_over_attribute(_get_state_dict(instance))
+                if result != "mine" and not (game_over and getattr(instance, game_over, False)):
+                    failures.append("revealing a known mine did not enter game-over")
+            except Exception as exc:
+                failures.append(f"revealing known mine raised: {type(exc).__name__}: {exc}")
     failures.extend(run_lifecycle_checks("minesweeper", mod))
     return failures
 

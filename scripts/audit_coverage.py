@@ -152,7 +152,8 @@ def run_pytest_coverage(source: str, json_out_path: str) -> int:
             args = [sys.executable, "-m", "pytest", str(test_file),
                     f"--cov={source}", "--cov-branch", "--cov-context=test",
                     "--cov-append", "--cov-fail-under=0", "--cov-report=",
-                    "-q", f"--basetemp={basetemp}"]
+                    "-n", "2", "--dist", "loadfile", "-q",
+                    f"--basetemp={basetemp}"]
             result = subprocess.run(args, cwd=root, env=env,
                                     timeout=COVERAGE_AUDIT_TIMEOUT_SECONDS)
             if result.returncode != 0:

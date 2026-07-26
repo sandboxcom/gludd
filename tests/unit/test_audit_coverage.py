@@ -195,8 +195,8 @@ class TestAuditCoverageScript:
         assert env["GLUDD_E2E_ACTIVE"] == "1"
         assert env["GLUDD_COVERAGE_AUDIT"] == "1"
 
-    def test_e2e_shards_run_in_process_without_xdist_workers(self, tmp_path, monkeypatch):
-        """Serial coverage shards must not spawn workers with a broken interpreter path."""
+    def test_e2e_shards_use_bounded_xdist_workers(self, tmp_path, monkeypatch):
+        """Shard workers isolate per-test resources without unbounded fan-out."""
         spec = importlib.util.spec_from_file_location("audit_coverage_serial", AUDIT_SCRIPT)
         assert spec and spec.loader
         module = importlib.util.module_from_spec(spec)
@@ -211,8 +211,10 @@ class TestAuditCoverageScript:
         monkeypatch.setattr(module.subprocess, "run", fake_run)
         assert module.run_pytest_coverage("src/general_ludd", str(tmp_path / "coverage.json")) == 0
         pytest_args = calls[0]
-        assert "-n" not in pytest_args
-        assert "--dist" not in pytest_args
+        assert "-n" in pytest_args
+        worker_index = pytest_args.index("-n")
+        assert pytest_args[worker_index + 1] == "2"
+        assert pytest_args[pytest_args.index("--dist") + 1] == "loadfile"
 
 
 class TestMakefileTargets:

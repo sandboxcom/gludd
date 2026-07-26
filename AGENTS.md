@@ -1,5 +1,14 @@
 # Agentic Harness - Agent Rules
 
+## Make Target Selection Contract
+
+Before running project work, read `make help` and choose the narrowest matching
+target. Set every documented target variable explicitly; do not substitute a bare
+shell command. Each agent-facing target's variables and safe behavioral example are
+tracked in `config/make_target_contract.json`. Run `make check-make-target-contract`
+after changing a target, and run its documented behavioral example before claiming
+the target works. If no suitable target exists, add and test one first.
+
 ## NO-PROMPT PROGRESS DIRECTIVE (READ FIRST)
 
 When a user grants task-level permission, do not call tools or paths that trigger approval prompts. If a command or edit path prompts, abandon that path immediately, use or add a make target, and keep working without asking unless progress is impossible because required facts are unavailable.

@@ -1,0 +1,67 @@
+{
+  "version": 1,
+  "targets": [
+    {
+      "name": "test-specific",
+      "make_variables": ["TESTFILE", "PYTEST_ARGS"],
+      "behavior": "make test-specific TESTFILE=tests/unit/test_make_target_contract.py::test_make_target_contract_is_valid PYTEST_ARGS=-q"
+    },
+    {
+      "name": "test-files",
+      "make_variables": ["TESTFILES", "PYTEST_ARGS"],
+      "behavior": "make test-files TESTFILES=tests/unit/test_make_target_contract.py PYTEST_ARGS=-q"
+    },
+    {
+      "name": "provider-harness",
+      "make_variables": ["PROVIDER", "LIVE"],
+      "behavior": "make provider-harness PROVIDER=runpod LIVE=0"
+    },
+    {
+      "name": "azure-harness",
+      "make_variables": ["LIVE"],
+      "environment_variables": ["AZURE_SUBSCRIPTION_ID", "AZURE_TENANT_ID"],
+      "behavior": "make azure-harness LIVE=0 AZURE_SUBSCRIPTION_ID=sub-123 AZURE_TENANT_ID=tenant-456"
+    },
+    {
+      "name": "runpod-harness",
+      "make_variables": ["LIVE"],
+      "environment_variables": ["RUNPOD_API_KEY", "RUNPOD_BUDGET_USD"],
+      "behavior": "make runpod-harness LIVE=0 RUNPOD_API_KEY=placeholder RUNPOD_BUDGET_USD=5"
+    },
+    {
+      "name": "test-opa-policies",
+      "make_variables": ["OPA_ARGS", "OPA_IMAGE"],
+      "behavior": "make test-opa-policies OPA_ARGS=--strict OPA_IMAGE=openpolicyagent/opa:1.6.0"
+    },
+    {
+      "name": "audit-coverage",
+      "make_variables": ["THRESHOLD", "SOURCE"],
+      "behavior": "make audit-coverage THRESHOLD=85 SOURCE=src/general_ludd"
+    },
+    {
+      "name": "iam-headless-smoke",
+      "make_variables": [],
+      "behavior": "make iam-headless-smoke"
+    },
+    {
+      "name": "git-commit",
+      "make_variables": ["MSG"],
+      "behavior": "make git-commit MSG='documented change'"
+    },
+    {
+      "name": "check-task-integrity",
+      "make_variables": [],
+      "behavior": "make check-task-integrity"
+    },
+    {
+      "name": "validate-task-ledger",
+      "make_variables": [],
+      "behavior": "make validate-task-ledger"
+    },
+    {
+      "name": "check-make-target-contract",
+      "make_variables": [],
+      "behavior": "make check-make-target-contract"
+    }
+  ]
+}

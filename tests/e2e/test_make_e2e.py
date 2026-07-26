@@ -101,6 +101,14 @@ def test_non_make_command_blocked():
     assert "Command does not start with 'make'" in result.get("message", "")
 
 
+def test_unknown_make_target_blocked():
+    """A make prefix is insufficient when the target does not exist."""
+    result = _bash_assert(_bash_code("make definitely-not-a-gludd-target"))
+    assert result is not None
+    assert result.get("permissionDecision") == "deny", f"Expected deny, got: {result}"
+    assert "unknown Make target" in result.get("message", "")
+
+
 def test_pipe_metachar_blocked():
     """Pipe '|' in command is blocked."""
     result = _bash_assert(_bash_code("echo foo | bar"))

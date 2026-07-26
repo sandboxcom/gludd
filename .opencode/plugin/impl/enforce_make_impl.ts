@@ -148,6 +148,18 @@ const ALLOWED_TOP_LEVEL_KEYS: ReadonlySet<string> = new Set([
 const BASETEMP = process.env.GLUDD_GATE_BASETEMP || "/tmp/gludd-gate-basetemp"
 const STALE_SECS = parseInt(process.env.GLUDD_GATE_STALE_SECS || "600", 10)
 
+function makeTargetExists(target: string): boolean {
+  if (!target) return true
+  try {
+    const root = process.env.GLUDD_REPO_ROOT || process.cwd()
+    const makefile = fs.readFileSync(path.join(root, "Makefile"), "utf8")
+    const escaped = target.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    return new RegExp(`^${escaped}:`, "m").test(makefile)
+  } catch {
+    return false
+  }
+}
+
 function basetempIsFresh(): boolean {
   try {
     const st = fs.statSync(BASETEMP)
@@ -499,6 +511,18 @@ const defaultImpl: HotModule = {
                 `Use \`make test-bg FILES='${filesStr}'\` to run in the background, ` +
                 `or batch into groups of 3 or fewer. Foreground blocking with >3 test ` +
                 `files prevents subagent dispatch.`
+              )
+            }
+
+            const targetMatch = trimmed.match(/^make\s+(\S+)/)
+            const requestedTarget = targetMatch?.[1] || ""
+            if (requestedTarget && !requestedTarget.startsWith("-") && !makeTargetExists(requestedTarget)) {
+              _bashPolicyNudge = true
+              throw new Error(
+                formatBashBlockedMessage(
+                  trimmed,
+                  `unknown Make target '${requestedTarget}'. Read 'make help' and select an existing target, or add one first.`
+                )
               )
             }
           }
