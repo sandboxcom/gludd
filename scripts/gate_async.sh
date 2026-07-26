@@ -27,7 +27,7 @@ set -euo pipefail
 
 REF="${1:-}"
 
-GATE_CMD="${GATE_CMD:-scripts/run_gate.sh}"
+GATE_CMD="${GATE_CMD:-bash scripts/run_gate.sh}"
 STATUS_FILE="${STATUS_FILE:-.gate-status}"
 ARBITER_SCRIPT="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/resource_arbiter.py"
 PROJECT_NAMESPACE="${GLUDD_PROJECT_NAMESPACE:-}"

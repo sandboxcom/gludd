@@ -15,6 +15,11 @@ from pathlib import Path
 GATE_ASYNC_SH = Path(__file__).parent.parent.parent / "scripts" / "gate_async.sh"
 
 
+def test_default_gate_command_invokes_run_gate_through_bash() -> None:
+    text = GATE_ASYNC_SH.read_text(encoding="utf-8")
+    assert 'GATE_CMD="${GATE_CMD:-bash scripts/run_gate.sh}"' in text
+
+
 def _run(
     gate_cmd: str,
     *,
