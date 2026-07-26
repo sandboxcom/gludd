@@ -549,6 +549,8 @@ test:
 test-unit:
 	@if [ -n "$(TESTFILE)" ]; then \
 		BT="/tmp/gludd-testunit-$${ID:-$$$$}"; rm -rf "$$BT"; $(UV) run python -m pytest $(TESTFILE) $(_XD) $(PYTEST_VERBOSITY) $(PYTEST_ARGS) --basetemp="$$BT"; RC=$$?; rm -rf "$$BT"; exit $$RC; \
+	elif [ "$$GLUDD_E2E_ACTIVE" = "1" ]; then \
+		echo "nested full test-unit blocked during E2E"; exit 0; \
 	else \
 		BT="/tmp/gludd-testunit-$${ID:-$$$$}"; rm -rf "$$BT"; $(UV) run python -m pytest tests/unit/ $(_XD) $(PYTEST_VERBOSITY) $(PYTEST_ARGS) --basetemp="$$BT"; RC=$$?; rm -rf "$$BT"; exit $$RC; \
 	fi
@@ -1034,14 +1036,16 @@ test-integration:
 
 E2E_TEST_TIMEOUT ?= 180
 E2E_STALL_SECS ?= 180
-E2E_MAX_SECS ?= 3600
+E2E_FILE_MAX_SECS ?= 600
+E2E_WORKERS ?= 1
+E2E_FILE_GLOB ?= test_*.py
 
 test-e2e:
 	@LOCK="/tmp/gludd-e2e-run.lock"; BT="/tmp/gludd-e2e-$${ID:-$$$$}"; LOG="/tmp/gludd-e2e-$$$$.log"; \
 	if ! mkdir "$$LOCK" 2>/dev/null; then OWNER="$$(cat "$$LOCK/pid" 2>/dev/null || true)"; if [ -n "$$OWNER" ] && kill -0 "$$OWNER" 2>/dev/null; then echo "E2E_RUN_BUSY owner_pid=$$OWNER log=$$(cat "$$LOCK/log" 2>/dev/null || true)" >&2; exit 75; fi; echo "E2E_RUN_STALE owner_pid=$$OWNER; reclaiming"; rm -rf "$$LOCK"; mkdir "$$LOCK" || { echo "E2E_RUN_BUSY lock_reclaim_failed" >&2; exit 75; }; fi; \
 	printf "%s\n" "$$$$" > "$$LOCK/pid"; printf "%s\n" "$$LOG" > "$$LOCK/log"; trap 'rm -rf "$$LOCK"' EXIT HUP INT TERM; rm -rf "$$BT"; \
-	$(MAKE) --no-print-directory run-watched CMD="GLUDD_E2E_ACTIVE=1 $(UV) run python -m pytest tests/e2e/ $(_XD) -v $(PYTEST_ARGS) --timeout=$(E2E_TEST_TIMEOUT) --basetemp=$$BT" STALL_SECS="$(E2E_STALL_SECS)" MAX_SECS="$(E2E_MAX_SECS)" LOG="$$LOG"; \
-	RC=$$?; chmod -R u+rwx "$$BT" 2>/dev/null || true; rm -rf "$$BT"; exit $$RC
+	RC=0; for test_file in $$(/usr/bin/find tests/e2e -type f -name '$(E2E_FILE_GLOB)' | /usr/bin/sort); do echo "=== E2E FILE: $$test_file ==="; $(MAKE) --no-print-directory run-watched CMD="GLUDD_E2E_ACTIVE=1 $(UV) run python -m pytest $$test_file -n $(E2E_WORKERS) --dist loadgroup -v $(PYTEST_ARGS) --timeout=$(E2E_TEST_TIMEOUT) --basetemp=$$BT" STALL_SECS="$(E2E_STALL_SECS)" MAX_SECS="$(E2E_FILE_MAX_SECS)" LOG="$$LOG" || { RC=$$?; break; }; done; \
+	chmod -R u+rwx "$$BT" 2>/dev/null || true; rm -rf "$$BT"; exit $$RC
 
 test-games:
 	@$(UV) run python -m pytest tests/e2e/test_game_building_deepseek.py $(_XD) -v $(PYTEST_ARGS)
