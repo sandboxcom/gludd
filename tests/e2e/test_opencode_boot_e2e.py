@@ -180,29 +180,20 @@ def _boot_tui(timeout: float = 12.0) -> tuple[int, str]:
         stderr=subprocess.STDOUT,
         text=True,
     )
-    deadline = time.time() + timeout
-    buf: list[str] = []
     try:
-        while time.time() < deadline:
-            if proc.poll() is not None:
-                rest = proc.stdout.read() if proc.stdout else ""
-                buf.append(rest)
-                break
-            line = proc.stdout.readline() if proc.stdout else ""
-            if not line:
-                time.sleep(0.2)
-                continue
-            buf.append(line)
-            if BOOT_RE.search(line) or LISTEN_RE.search(line):
-                break
-    finally:
+        stdout, _ = proc.communicate(timeout=timeout)
+        return proc.returncode, stdout or ""
+    except subprocess.TimeoutExpired as exc:
         proc.terminate()
         try:
-            proc.wait(timeout=5)
+            stdout, _ = proc.communicate(timeout=5)
         except subprocess.TimeoutExpired:
             proc.kill()
-            proc.wait(timeout=5)
-    return proc.returncode, "".join(buf)
+            stdout, _ = proc.communicate()
+        initial = exc.stdout or ""
+        if isinstance(initial, bytes):
+            initial = initial.decode(errors="replace")
+        return proc.returncode, str(initial) + (stdout or "")
 
 
 def _assert_no_fatal_patterns(log: str, context: str) -> None:

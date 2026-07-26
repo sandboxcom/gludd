@@ -14,9 +14,11 @@ cd "$ROOT"
 
 removed=0
 
-# ── SECURITY: leaked API keys and SSH keys (gitignored, must delete) ────────
+# ── SECURITY: leaked API keys (gitignored, must delete) ─────────────────────
+# SSH credentials are external deployment assets. This cleanup script must
+# never inspect, delete, chmod, move, or overwrite an SSH key path.
 
-for f in .deepseek.key .zai.key sandboxcom_github_rsa; do
+for f in .deepseek.key .zai.key; do
     if [ -f "$f" ]; then
         rm -f "$f"
         echo "SECURITY-REMOVED: $f"
