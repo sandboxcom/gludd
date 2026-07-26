@@ -278,3 +278,23 @@ class TestGateAsyncRunningWrittenImmediately:
         except subprocess.TimeoutExpired:
             proc.kill()
             proc.wait()
+
+
+def test_stale_pid_lock_is_reclaimed_only_when_pid_is_not_gate(tmp_path: Path) -> None:
+    """A live, unrelated PID must not make an async gate look active."""
+    status = tmp_path / "gate-status"
+    lock = tmp_path / "gate-async.lock"
+    # Force the portable PID-file path so this exercises stale-owner handling
+    # even on Linux hosts where GNU flock is installed.
+    lock.write_text(f"{os.getpid()}\n", encoding="utf-8")
+    status.write_text(f"RUNNING {int(time.time())} {os.getpid()}\n", encoding="utf-8")
+
+    result = _run(
+        gate_cmd="exit 0",
+        status_file=str(status),
+        lock_file=str(lock),
+        extra_env={"GLUDD_GATE_ASYNC_FORCE_PIDFILE": "1"},
+    )
+
+    assert result.returncode == 0, f"stderr: {result.stderr}"
+    assert status.read_text(encoding="utf-8").startswith("PASS ")

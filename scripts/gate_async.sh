@@ -43,6 +43,40 @@ LOCK_FILE="${LOCK_FILE:-${RESOURCE_DIR}/async-gate.lock}"
 mkdir -p "$(dirname -- "${LOCK_FILE}")"
 RC_FILE="${LOCK_FILE}.rc.$$"
 
+# A PID in a portable lock file is only an owner claim, not proof that the
+# process is still this gate.  PID reuse is common enough that kill -0 alone is
+# unsafe: validate the command identity before refusing to reclaim the lock.
+_pid_is_gate_async() {
+    local pid="$1" command=""
+    case "${pid}" in
+        ''|*[!0-9]*) return 1 ;;
+    esac
+    kill -0 "${pid}" 2>/dev/null || return 1
+    command=$(ps -p "${pid}" -o command= 2>/dev/null || true)
+    case "${command}" in
+        *gate_async.sh*|*"make gate-async"*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+_status_owner_pid() {
+    local status=""
+    [ -f "${STATUS_FILE}" ] || return 1
+    status=$(head -n 1 "${STATUS_FILE}" 2>/dev/null || true)
+    case "${status}" in
+        RUNNING\ *\ [0-9]*) printf '%s\n' "${status##* }"; return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+# Replace status atomically.  Readers must never observe a truncated status
+# line while a gate transitions from RUNNING to PASS/FAIL.
+_write_status() {
+    local content="$1" tmp="${STATUS_FILE}.${$}.tmp"
+    printf '%s\n' "${content}" > "${tmp}"
+    mv -f "${tmp}" "${STATUS_FILE}"
+}
+
 # ---------------------------------------------------------------------------
 # Lock acquisition (flock-based, same pattern as run_gate.sh)
 # ---------------------------------------------------------------------------
@@ -61,7 +95,8 @@ _has_gnu_flock() {
 }
 
 _acquire_lock() {
-    if command -v flock >/dev/null 2>&1 && _has_gnu_flock; then
+    if [ "${GLUDD_GATE_ASYNC_FORCE_PIDFILE:-0}" != "1" ] \
+        && command -v flock >/dev/null 2>&1 && _has_gnu_flock; then
         exec 200>"${LOCK_FILE}"
         if flock --nonblock 200; then
             printf '%s\n' "$$" > "${LOCK_FILE}" 2>/dev/null || true
@@ -83,11 +118,19 @@ _acquire_lock() {
         rm -f "${tmp}"
         local holder
         holder=$(cat "${LOCK_FILE}" 2>/dev/null || echo "")
-        if [ -n "${holder}" ] && kill -0 "${holder}" 2>/dev/null; then
-            echo "[gate_async] another gate-async is already running (PID ${holder}); refusing." >&2
+        if _pid_is_gate_async "${holder}"; then
+            local status_owner
+            status_owner=$(_status_owner_pid || true)
+            if [ -n "${status_owner}" ] && [ "${status_owner}" != "${holder}" ]; then
+                echo "[gate_async] live owner/status mismatch (lock PID ${holder}, status PID ${status_owner}); refusing." >&2
+            else
+                echo "[gate_async] another gate-async is already running (PID ${holder}); refusing." >&2
+            fi
             exit 1
         fi
-        # Stale lock — remove and retry once
+        # Stale or unrelated lock owner — remove and retry once.  The command
+        # identity check above prevents reclaiming a live gate and prevents a
+        # reused PID from blocking this project indefinitely.
         rm -f "${LOCK_FILE}"
         printf '%s\n' "$$" > "${tmp}"
         mv -n "${tmp}" "${LOCK_FILE}" 2>/dev/null || true
@@ -116,7 +159,7 @@ _acquire_lock
 # Write RUNNING status immediately
 # ---------------------------------------------------------------------------
 EPOCH=$(date +%s)
-printf 'RUNNING %s %s\n' "${EPOCH}" "$$" > "${STATUS_FILE}"
+_write_status "RUNNING ${EPOCH} $$"
 echo "[gate_async] started at epoch=${EPOCH} pid=$$ ref='${REF}' cmd='${GATE_CMD}'"
 
 # ---------------------------------------------------------------------------
@@ -136,10 +179,10 @@ GLUDD_GATE_AUTHORIZED=1 bash -c "${GATE_CMD}" || EXIT=$?
 # ---------------------------------------------------------------------------
 FINISH_EPOCH=$(date +%s)
 if [ "${EXIT}" -eq 0 ]; then
-    printf 'PASS %s\n' "${FINISH_EPOCH}" > "${STATUS_FILE}"
+    _write_status "PASS ${FINISH_EPOCH}"
     echo "[gate_async] PASS at epoch=${FINISH_EPOCH}"
 else
-    printf 'FAIL %s rc=%s\n' "${FINISH_EPOCH}" "${EXIT}" > "${STATUS_FILE}"
+    _write_status "FAIL ${FINISH_EPOCH} rc=${EXIT}"
     echo "[gate_async] FAIL rc=${EXIT} at epoch=${FINISH_EPOCH}"
 fi
 
