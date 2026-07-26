@@ -629,6 +629,109 @@ old summary table omitted entirely. Grand total across the file: **326** boxes.
 - [x] T-BETA3-GATE-ASYNC-SHELL — Ensure the asynchronous gate launcher invokes non-executable `run_gate.sh` through Bash and cannot fail before gate phases start | paths: scripts/gate_async.sh tests/unit/test_gate_async.py | priority: high | effort: S | status: completed | evidence: `make test-files TESTFILES='tests/unit/test_gate_async.py'` (8 passed); launcher default now uses `bash scripts/run_gate.sh`
 - [x] T-BETA3-CODEX-BEHAVIOR-COVERAGE — Deepen Codex stop-loop behavioral coverage across nested cwd discovery, ratchet-only blockers, malformed stdin, protocol JSON, corrupt challenge state, and repeated tokens | paths: tests/unit/test_codex_stop_hook.py tests/unit/test_codex_stop_guard_contract.py scripts/codex_stop_guard.py | priority: high | effort: S | status: completed | evidence: combined focused suite 16 passed; lint passed
 - [x] T-BETA3-CODEX-CONTINUATION-POLICY — Version a complete continuation policy covering Codex hooks, durable execution, watchdogs, resource safety, CI evidence, recovery, human review, and unavoidable host limits | paths: docs/CODEX_CONTINUATION_POLICY.md | priority: high | effort: S | status: completed | evidence: policy document verified at 2,150 words; explains enforceable controls and host boundaries without claiming impossible guarantees
+
+## Codex Continuation Specification Backlog
+
+- [ ] T-CODEX-CONT-001 — Register a project-local Stop hook and verify its schema | priority: high | effort: S | status: pending
+- [ ] T-CODEX-CONT-002 — Verify Stop hook trust state at session start | priority: high | effort: S | status: pending
+- [ ] T-CODEX-CONT-003 — Emit a continuation decision for every pending-work stop | priority: high | effort: S | status: pending
+- [ ] T-CODEX-CONT-004 — Reject unsupported plain-text Stop hook output | priority: high | effort: S | status: pending
+- [ ] T-CODEX-CONT-005 — Preserve Codex session and turn identifiers in hook audit events | priority: medium | effort: S | status: pending
+- [ ] T-CODEX-CONT-006 — Detect repeated Stop continuation attempts | priority: high | effort: S | status: pending
+- [ ] T-CODEX-CONT-007 — Prevent hook recursion from losing pending-work context | priority: high | effort: M | status: pending
+- [ ] T-CODEX-CONT-008 — Add a hook timeout diagnostic with actionable recovery | priority: medium | effort: S | status: pending
+- [ ] T-CODEX-CONT-009 — Verify hook command paths resolve from repository root | priority: high | effort: S | status: pending
+- [ ] T-CODEX-CONT-010 — Add a Codex hook smoke command for synthetic Stop events | priority: high | effort: S | status: pending
+- [ ] T-CODEX-CONT-011 — Parse unchecked TASKS.md entries deterministically | priority: high | effort: S | status: pending
+- [ ] T-CODEX-CONT-012 — Parse ratchet entries while ignoring comments and blanks | priority: high | effort: S | status: pending
+- [ ] T-CODEX-CONT-013 — Fail closed when the task ledger cannot be read | priority: high | effort: S | status: pending
+- [ ] T-CODEX-CONT-014 — Fail closed when ratchet configuration is malformed | priority: high | effort: S | status: pending
+- [ ] T-CODEX-CONT-015 — Detect task entries without evidence metadata | priority: medium | effort: S | status: pending
+- [ ] T-CODEX-CONT-016 — Detect completed tasks lacking gate evidence | priority: high | effort: M | status: pending
+- [ ] T-CODEX-CONT-017 — Prevent unregistered modified paths from being committed | priority: high | effort: M | status: pending
+- [ ] T-CODEX-CONT-018 — Detect duplicate task identifiers | priority: medium | effort: S | status: pending
+- [ ] T-CODEX-CONT-019 — Detect contradictory task status and checkbox state | priority: medium | effort: S | status: pending
+- [ ] T-CODEX-CONT-020 — Emit task and ratchet counts in every stop decision | priority: medium | effort: S | status: pending
+- [ ] T-CODEX-CONT-021 — Generate cryptographically random stop challenge tokens | priority: high | effort: S | status: pending
+- [ ] T-CODEX-CONT-022 — Guarantee token rotation across consecutive stop attempts | priority: high | effort: S | status: pending
+- [ ] T-CODEX-CONT-023 — Reject empty challenge tokens | priority: high | effort: S | status: pending
+- [ ] T-CODEX-CONT-024 — Reject stale challenge tokens | priority: high | effort: S | status: pending
+- [ ] T-CODEX-CONT-025 — Reject challenge confirmation with mismatched ledger revision | priority: high | effort: M | status: pending
+- [ ] T-CODEX-CONT-026 — Store challenge records atomically | priority: high | effort: S | status: pending
+- [ ] T-CODEX-CONT-027 — Prevent challenge replay after successful confirmation | priority: high | effort: S | status: pending
+- [ ] T-CODEX-CONT-028 — Reject corrupt challenge state without crashing | priority: high | effort: S | status: pending
+- [ ] T-CODEX-CONT-029 — Bound challenge audit-log growth | priority: medium | effort: M | status: pending
+- [ ] T-CODEX-CONT-030 — Redact secrets from challenge audit records | priority: high | effort: S | status: pending
+- [ ] T-CODEX-CONT-031 — Persist E2E file state atomically | priority: high | effort: M | status: pending
+- [ ] T-CODEX-CONT-032 — Resume E2E work from the first incomplete file | priority: high | effort: M | status: pending
+- [ ] T-CODEX-CONT-033 — Reset E2E state when the revision changes | priority: high | effort: S | status: pending
+- [ ] T-CODEX-CONT-034 — Persist per-shard progress independently | priority: high | effort: M | status: pending
+- [ ] T-CODEX-CONT-035 — Emit periodic E2E heartbeat events | priority: high | effort: S | status: pending
+- [ ] T-CODEX-CONT-036 — Detect E2E output stalls | priority: high | effort: M | status: pending
+- [ ] T-CODEX-CONT-037 — Enforce E2E maximum runtime | priority: high | effort: S | status: pending
+- [ ] T-CODEX-CONT-038 — Record interrupted E2E runs as incomplete | priority: high | effort: S | status: pending
+- [ ] T-CODEX-CONT-039 — Prevent completed files from being rerun accidentally | priority: medium | effort: S | status: pending
+- [ ] T-CODEX-CONT-040 — Produce resumable aggregate coverage reports | priority: high | effort: M | status: pending
+- [ ] T-CODEX-CONT-041 — Namespace project resource locks | priority: high | effort: M | status: pending
+- [ ] T-CODEX-CONT-042 — Namespace E2E basetemp directories | priority: high | effort: S | status: pending
+- [ ] T-CODEX-CONT-043 — Namespace gate logs and status files | priority: high | effort: S | status: pending
+- [ ] T-CODEX-CONT-044 — Enforce bounded worker admission | priority: high | effort: M | status: pending
+- [ ] T-CODEX-CONT-045 — Detect duplicate resource leases | priority: high | effort: S | status: pending
+- [ ] T-CODEX-CONT-046 — Reclaim stale owners only after identity validation | priority: high | effort: M | status: pending
+- [ ] T-CODEX-CONT-047 — Refuse to terminate unrelated project processes | priority: high | effort: M | status: pending
+- [ ] T-CODEX-CONT-048 — Add watchdog singleton ownership | priority: high | effort: M | status: pending
+- [ ] T-CODEX-CONT-049 — Record resource pressure before starting heavy work | priority: medium | effort: S | status: pending
+- [ ] T-CODEX-CONT-050 — Fail closed when resource limits cannot be measured | priority: high | effort: S | status: pending
+- [ ] T-CODEX-CONT-051 — Write gate RUNNING status before launching children | priority: high | effort: S | status: pending
+- [ ] T-CODEX-CONT-052 — Write terminal gate PASS or FAIL status atomically | priority: high | effort: S | status: pending
+- [ ] T-CODEX-CONT-053 — Invoke non-executable gate scripts through Bash | priority: high | effort: S | status: pending
+- [ ] T-CODEX-CONT-054 — Refuse duplicate asynchronous gates | priority: high | effort: S | status: pending
+- [ ] T-CODEX-CONT-055 — Reclaim stale asynchronous gate locks safely | priority: high | effort: M | status: pending
+- [ ] T-CODEX-CONT-056 — Stream gate progress instead of buffering silently | priority: high | effort: S | status: pending
+- [ ] T-CODEX-CONT-057 — Bind CI verdicts to the exact commit SHA | priority: high | effort: M | status: pending
+- [ ] T-CODEX-CONT-058 — Refuse to push while CI is busy or stale | priority: high | effort: M | status: pending
+- [ ] T-CODEX-CONT-059 — Trigger GHA only from a clean verified branch | priority: high | effort: S | status: pending
+- [ ] T-CODEX-CONT-060 — Record CI run identifiers in task evidence | priority: medium | effort: S | status: pending
+- [ ] T-CODEX-CONT-061 — Partition E2E files into deterministic disjoint shards | priority: high | effort: M | status: pending
+- [ ] T-CODEX-CONT-062 — Reject invalid shard coordinates | priority: high | effort: S | status: pending
+- [ ] T-CODEX-CONT-063 — Isolate shard logs and temporary directories | priority: high | effort: S | status: pending
+- [ ] T-CODEX-CONT-064 — Retry only failed E2E shards | priority: high | effort: M | status: pending
+- [ ] T-CODEX-CONT-065 — Preserve successful shard results during retries | priority: high | effort: S | status: pending
+- [ ] T-CODEX-CONT-066 — Report shard completion percentages from durable state | priority: medium | effort: S | status: pending
+- [ ] T-CODEX-CONT-067 — Enumerate branch candidates with a structured analyzer | priority: medium | effort: M | status: pending
+- [ ] T-CODEX-CONT-068 — Map E2E events to executed branch identities | priority: high | effort: M | status: pending
+- [ ] T-CODEX-CONT-069 — Reject coverage claims without raw event evidence | priority: high | effort: S | status: pending
+- [ ] T-CODEX-CONT-070 — Preserve coverage progress after interruption | priority: high | effort: M | status: pending
+- [ ] T-CODEX-CONT-071 — Add hook unit tests for clean ledgers | priority: high | effort: S | status: pending
+- [ ] T-CODEX-CONT-072 — Add hook unit tests for pending ledgers | priority: high | effort: S | status: pending
+- [ ] T-CODEX-CONT-073 — Add hook subprocess tests for stdin and stdout | priority: high | effort: S | status: pending
+- [ ] T-CODEX-CONT-074 — Add guard tests for corrupted state | priority: high | effort: S | status: pending
+- [ ] T-CODEX-CONT-075 — Add gate tests for production-default execution | priority: high | effort: S | status: pending
+- [ ] T-CODEX-CONT-076 — Add supervisor tests for restart and timeout | priority: high | effort: M | status: pending
+- [ ] T-CODEX-CONT-077 — Add resource tests for competing projects | priority: high | effort: M | status: pending
+- [ ] T-CODEX-CONT-078 — Add CI tests for stale SHA rejection | priority: high | effort: S | status: pending
+- [ ] T-CODEX-CONT-079 — Enforce per-file and aggregate coverage thresholds | priority: high | effort: M | status: pending
+- [ ] T-CODEX-CONT-080 — Fail collection gates on import errors | priority: high | effort: S | status: pending
+- [ ] T-CODEX-CONT-081 — Require Codex hook review before release readiness | priority: high | effort: S | status: pending
+- [ ] T-CODEX-CONT-082 — Document hook activation and trust recovery | priority: high | effort: S | status: pending
+- [ ] T-CODEX-CONT-083 — Document external host failure boundaries | priority: high | effort: S | status: pending
+- [ ] T-CODEX-CONT-084 — Redact credentials from all continuation logs | priority: high | effort: M | status: pending
+- [ ] T-CODEX-CONT-085 — Reject cleanup requests outside the worktree namespace | priority: high | effort: S | status: pending
+- [ ] T-CODEX-CONT-086 — Require human review for destructive operations | priority: high | effort: M | status: pending
+- [ ] T-CODEX-CONT-087 — Add session-start verification of policy files | priority: medium | effort: S | status: pending
+- [ ] T-CODEX-CONT-088 — Add session-end persistence of unfinished work | priority: medium | effort: M | status: pending
+- [ ] T-CODEX-CONT-089 — Add operator-visible recovery instructions | priority: medium | effort: S | status: pending
+- [ ] T-CODEX-CONT-090 — Add forum evidence for long-lived agent-loop failures | priority: medium | effort: M | status: pending
+- [ ] T-CODEX-CONT-091 — Detect disabled Codex hooks at startup | priority: high | effort: S | status: pending
+- [ ] T-CODEX-CONT-092 — Detect untrusted project-local hooks at startup | priority: high | effort: S | status: pending
+- [ ] T-CODEX-CONT-093 — Record host-level interruptions as incomplete sessions | priority: high | effort: M | status: pending
+- [ ] T-CODEX-CONT-094 — Prevent text-only completion claims with pending work | priority: high | effort: M | status: pending
+- [ ] T-CODEX-CONT-095 — Add independent external heartbeat verification | priority: medium | effort: M | status: pending
+- [ ] T-CODEX-CONT-096 — Add release smoke coverage for continuation enforcement | priority: high | effort: M | status: pending
+- [ ] T-CODEX-CONT-097 — Add exact-SHA evidence for continuation-policy changes | priority: high | effort: S | status: pending
+- [ ] T-CODEX-CONT-098 — Add rollback-safe upgrades for hook implementations | priority: medium | effort: M | status: pending
+- [ ] T-CODEX-CONT-099 — Add a documented emergency recovery procedure | priority: high | effort: S | status: pending
+- [ ] T-CODEX-CONT-100 — Verify all continuation specifications are implemented or explicitly bounded | priority: high | effort: M | status: pending
 - [x] T-BETA3-E2E-SUPERVISOR — Resume E2E shards after fixes without rerunning completed files | paths: scripts/e2e_supervisor.py Makefile tests/e2e tests/unit | priority: high | effort: M | status: completed | evidence: commit `be3c487d`, supervisor/runner contracts 16/16, real E2E 30/30, identical rerun skipped completed file
 - [x] T-BETA3-STATUS-HEARTBEAT — Emit auditable five-minute local/remote pipeline and worker status checkpoints | paths: Makefile tests/unit/test_status_heartbeat_contract.py | priority: high | effort: S | status: completed | evidence: `make test-specific TESTFILE=tests/unit/test_status_heartbeat_contract.py` (2 passed), `make check-duplicate-targets` (0 duplicates), `make status-heartbeat COUNT=1 INTERVAL=300` (auditable heartbeat emitted), commit `d91040cba036faf7a05e7602ec825063f12d8176`
 - [ ] T-BETA3-COVERAGE — Instrumented E2E branch coverage: repair environment, prove >=85% aggregate and >=75% per file | priority: medium | effort: M | status: pending
