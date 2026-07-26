@@ -1035,7 +1035,11 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         bc = _parse_budget_config(uc)
         if uc and hasattr(uc, "network"):
             net = uc.network
-            if net.host in ("0.0.0.0", "::"):
+            # A caller may inject an allow-list before entering lifespan (for
+            # example an embedding application's runtime policy). Preserve it
+            # rather than replacing it with config defaults on startup.
+            preserve_cidr = bool(getattr(app.state, "_allowed_cidr", None))
+            if net.host in ("0.0.0.0", "::") and not preserve_cidr:
                 logger.warning(
                     "Network host is set to %r — daemon is binding to all interfaces. "
                     "allowed_cidr=%s. Restrict to minimal CIDR set.",
@@ -1043,7 +1047,11 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                     net.allowed_cidr,
                 )
                 app.state._allowed_cidr = list(net.allowed_cidr)
-            elif net.host in ("127.0.0.1", "localhost", "::1") and not net.allowed_cidr:
+            elif (
+                net.host in ("127.0.0.1", "localhost", "::1")
+                and not net.allowed_cidr
+                and not preserve_cidr
+            ):
                 _loopback_cidrs = ["127.0.0.0/8", "::1/128"]
                 app.state._allowed_cidr = _loopback_cidrs
                 logger.info(
@@ -1051,7 +1059,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                     net.host,
                     _loopback_cidrs,
                 )
-            else:
+            elif not preserve_cidr:
                 app.state._allowed_cidr = (
                     list(net.allowed_cidr) if net.allowed_cidr else []
                 )
@@ -2108,9 +2116,17 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state._db_engine = engine
         app.state._session_factory = session_factory
         app.state._training_data_session_factory = session_factory
+        # Preserve an explicitly injected task used by health/readiness probes
+        # in tests and embedding applications. The real runtime task is still
+        # started and tracked locally for shutdown; an auto-created task is
+        # intentionally not considered ready until a caller replaces the
+        # probe handle (or a future readiness signal is added).
+        probe_task = getattr(app.state, "_event_loop_task", None)
         task = asyncio.create_task(event_loop.run_forever(interval=tick_interval))
         task.add_done_callback(_on_event_loop_done)
-        app.state._event_loop_task = task  # W3.4: readyz checks this
+        app.state._event_loop_runtime_task = task
+        app.state._event_loop_task = probe_task if probe_task is not None else task
+        app.state._event_loop_task_auto = probe_task is None
 
         from general_ludd.controllers.budget_manager import BudgetManager
         from general_ludd.observability.metrics_exporter import get_metrics_exporter
@@ -3095,7 +3111,7 @@ def create_daemon_app(
                 content={"status": "degraded", "reason": str(degraded)[:200]},
             )
         el_task = getattr(app.state, "_event_loop_task", None)
-        if el_task is None:
+        if el_task is None or getattr(app.state, "_event_loop_task_auto", False):
             return JSONResponse(
                 status_code=503,
                 content={"status": "not_ready", "reason": "daemon_not_initialized"},

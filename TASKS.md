@@ -240,7 +240,7 @@ State backend for terraform with HTTP API (lock/unlock/get/update), replacing lo
 - [x] S53.27 — Bulk TASKS.md tick sweep (1807 items) | evidence: ~1807 items ticked with evidence
 - [x] S53.28 — Legacy phase tick sweep | evidence: 1807 items across 40+ phases
 - [ ] S53.29 — Cut v0.1.0-beta.2 release with ALL artifacts working | status: in_progress — CI run 30154162598 with all smoke test fixes
-- [x] S53.30 — Port git automation targets into gludd collection | status: completed | evidence: 69 focused automation tests pass (release ops, verify-remote, batch-push, ship-commit, worktree/index/mutations, duplicate-targets); release and mutation ports fail closed on missing repos/errors; development-push/verify-remote resolve external SSH_KEY and reject missing credentials
+- [x] S53.30 — Port git automation targets into gludd collection | status: completed | evidence: 69 focused automation tests pass (release ops, verify-remote, batch-push, ship-commit, worktree/index/mutations, duplicate-targets); release and mutation ports fail closed on missing repos/errors; development-push/verify-remote resolve external SSH_KEY and reject missing credentials; commits 196be757, 1c7d9da8
 - [x] S53.31 — Agentic memory research + embedding store | status: completed | evidence: docs/research/AGENTIC_MEMORY_RESEARCH.md; MemoryEmbeddingStore implementation and 30 passing tests (`make test-specific TESTFILE=tests/unit/test_memory_embedding_store.py`)
 - [ ] S53.32 — Memory consolidation cascade + hybrid search | status: in_progress — consolidation + retrieval enhancements
 - [x] S53.33 — PaaS IAM least-privilege roles (AWS/GCP/Azure) | evidence: 3 provider IAM files + 32 tests (commit b4612d1a)
