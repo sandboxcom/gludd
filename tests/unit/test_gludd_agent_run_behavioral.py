@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
+from pathlib import Path
 from unittest import mock
 from unittest.mock import MagicMock, patch
 
@@ -56,6 +57,17 @@ def _import_run_local():
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
         return mod._run_local
+
+
+def test_agent_module_explicitly_bundles_ansible_sentinel_dependency() -> None:
+    """Keep Ansible's dynamically imported serializer dependency in module payloads."""
+    module_path = Path(__file__).parents[2] / (
+        "collections/ansible_collections/general_ludd/agent/plugins/modules/"
+        "gludd_agent_run.py"
+    )
+    source = module_path.read_text(encoding="utf-8")
+
+    assert "ansible.module_utils.common.sentinel" in source
 
 
 # ---------------------------------------------------------------------------

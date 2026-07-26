@@ -1,5 +1,4 @@
 #!/usr/bin/python
-# -*- coding: utf-8 -*-
 # Copyright: Agentic Harness
 # SPDX-License-Identifier: MIT
 """
@@ -89,6 +88,13 @@ import os
 
 from ansible.module_utils.basic import AnsibleModule  # type: ignore[import]
 
+# ansible-core's JSON serializer imports Sentinel dynamically.  Explicitly
+# reference it so Ansible's module payload bundler includes the dependency.
+try:
+    from ansible.module_utils.common.sentinel import Sentinel as _AnsibleSentinel
+except ImportError:  # pragma: no cover - older controller versions
+    _AnsibleSentinel = None
+
 try:
     from ansible_collections.general_ludd.agent.plugins.module_utils.gludd import (
         GluddClient,
@@ -132,11 +138,12 @@ def _run_local(
     """Run ToolCallLoop in-process (same venv)."""
     try:
         import asyncio
+        import uuid as _uuid
+
         from general_ludd.execution.tool_loop import ToolCallLoop  # type: ignore[import]
         from general_ludd.models.gateway import ModelGateway  # type: ignore[import]
         from general_ludd.schemas.job import JobSpec  # type: ignore[import]
 
-        import uuid as _uuid
         gw = ModelGateway()
         loop_runner = ToolCallLoop(model_gateway=gw, max_iterations=max_iterations)
         job = JobSpec(
@@ -153,7 +160,7 @@ def _run_local(
         return ok_result({"answer": answer, "tool_calls": [], "usage": {}, "iterations": 1})
     except ImportError as exc:
         return error_result(f"general_ludd not importable for local run: {exc}")
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return error_result(f"local agent run failed: {exc}")
 
 
