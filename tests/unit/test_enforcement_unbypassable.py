@@ -226,6 +226,12 @@ def _stop_env(base: Path) -> dict[str, str]:
     }
 
 
+def test_stop_env_isolates_ci_cache_path(tmp_path: Path) -> None:
+    """CI cache state must be per-test so xdist shards cannot race globally."""
+    env = _stop_env(tmp_path)
+    assert Path(env["GLUDD_WATCHDOG_CI_FILE"]).is_relative_to(tmp_path)
+
+
 def _text_complete_driver(bundle: Path, text: str, pre_js: str = "") -> str:
     return f"""
 import {{ createRequire }} from "node:module";

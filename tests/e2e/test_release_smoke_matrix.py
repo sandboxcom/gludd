@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -125,6 +126,37 @@ def test_opencode_plugin_verifier_passes_when_node_is_available() -> None:
     assert result.returncode == 0, result.stderr[-2000:]
     payload = json.loads(result.stdout)
     assert payload.get("failures", []) == []
+
+
+def test_verified_claims_plugin_runtime_blocks_low_coverage_completion_claim() -> None:
+    """The loaded enforcement plugin must block a low-coverage completion claim."""
+
+    if shutil.which("node") is None:
+        pytest.skip("node is not available in this environment")
+    plugin = ROOT / ".opencode" / "plugin" / "enforce-verified-claims.ts"
+    script = f"""
+const mod = await import({json.dumps(str(plugin))})
+const hooks = mod.default()
+const output = await hooks["experimental.text.complete"](
+  {{}}, {{ text: "final e2e coverage push at 84%" }},
+)
+console.log(JSON.stringify({{ blocked: output.text.startsWith("BLOCKED:") }}))
+"""
+    env = os.environ.copy()
+    env["OPENCODE_SUBAGENT"] = ""
+    env["GLUDD_VERIFIED_CLAIMS_ENFORCE"] = "1"
+    env["GLUDD_DISENGAGE_PATH"] = f"/tmp/gludd-release-smoke-disengage-{os.getpid()}.json"
+    result = subprocess.run(
+        ["node", "--experimental-strip-types", "--input-type=module", "-e", script],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+        env=env,
+    )
+    assert result.returncode == 0, result.stderr[-2000:]
+    assert json.loads(result.stdout.strip().splitlines()[-1]) == {"blocked": True}
 
 
 def test_release_version_check_uses_canonical_helper() -> None:
