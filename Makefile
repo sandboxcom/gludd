@@ -995,7 +995,7 @@ kill-stale:
 # The script defaults to a dry-run; APPLY=1 enables unlinking after PID,
 # command-identity, namespace, and age checks all pass.
 reap-stale-collection-locks:
-	@$(PYTHON) scripts/reap_stale_collection_locks.py $(if $(filter 1 true yes,$(APPLY)),--apply,)
+	@$(PYTHON) scripts/reap_stale_collection_locks.py --stale-after "$(or $(STALE_AFTER),900)" $(if $(filter 1 true yes,$(APPLY)),--apply,)
 
 reap-orphan-pytest:
 	@$(UV) run python scripts/reap_orphan_pytest.py

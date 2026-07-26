@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import os
 import signal
+import subprocess
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -53,11 +54,42 @@ def _owner_pid(path: Path) -> int | None:
     return pid if pid > 0 else None
 
 
-def _command_is_project_owner(command: str, root: Path) -> bool:
+def _process_cwd(pid: int) -> Path | None:
+    """Read a process cwd without trusting a command-line-only identity."""
+
+    proc_link = Path(f"/proc/{pid}/cwd")
+    if proc_link.exists():
+        try:
+            return proc_link.resolve()
+        except OSError:
+            return None
+    try:
+        result = subprocess.run(
+            ["lsof", "-a", "-p", str(pid), "-d", "cwd", "-Fn"],
+            capture_output=True,
+            text=True,
+            timeout=2,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    for line in result.stdout.splitlines():
+        if line.startswith("n"):
+            try:
+                return Path(line[1:]).resolve()
+            except OSError:
+                return None
+    return None
+
+
+def _command_is_project_owner(command: str, root: Path, *, pid: int | None = None) -> bool:
     """Recognize only collection/gate-refresh commands from this checkout."""
 
     command_root = str(root.resolve())
-    return command_root in command and (
+    command_matches = command_root in command or (
+        pid is not None and _process_cwd(pid) == root.resolve()
+    )
+    return command_matches and (
         "scripts/collection_lock.py" in command or "gate-refresh" in command
     )
 
@@ -83,7 +115,9 @@ def assess_lock(
     process = process_table.get(pid) if pid is not None else None
     if process is not None and pid == os.getpid():
         return LockAssessment(path, False, "current-process-owner", pid, age)
-    if process is not None and _command_is_project_owner(process.command, project_root):
+    if process is not None and _command_is_project_owner(
+        process.command, project_root, pid=process.pid
+    ):
         return LockAssessment(path, False, "live-project-owner", pid, age)
     # A live PID with a different command identity may belong to another
     # checkout.  Never infer staleness from age alone: PID reuse and external
@@ -153,9 +187,12 @@ def stale_gate_refresh_roots(
             continue
         if process.elapsed_secs < max(0.0, stale_after):
             continue
-        if namespace not in command or "gate-refresh" not in command:
+        # The process command usually contains the absolute checkout path but
+        # not the derived hash namespace; the lock-root check supplies that
+        # second identity boundary.  Do not require the hash in argv.
+        if "gate-refresh" not in command:
             continue
-        if not _command_is_project_owner(command, root):
+        if not _command_is_project_owner(command, root, pid=process.pid):
             continue
         candidates.append(process)
     return sorted(candidates, key=lambda item: item.pid)
