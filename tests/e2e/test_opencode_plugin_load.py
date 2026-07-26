@@ -19,6 +19,7 @@ These tests are the mechanical fix.
 import json
 import subprocess
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
@@ -29,10 +30,14 @@ PLUGINS_DIR = PROJECT_ROOT / ".opencode" / "plugins"
 NODE_BIN = "node"
 
 
-def _run_verifier() -> dict:
+def _run_verifier() -> dict[str, Any]:
     """Run the Node.js verifier script and return parsed JSON results."""
-    if not VERIFIER_SCRIPT.exists():
-        pytest.skip(f"Verifier script not found: {VERIFIER_SCRIPT}")
+    # The verifier is the executable E2E contract.  Skipping when it is absent
+    # silently turns a missing OpenCode safety check into a passing suite.
+    assert VERIFIER_SCRIPT.is_file(), (
+        "OpenCode verifier is required at "
+        f"{VERIFIER_SCRIPT}; refusing to skip plugin-load coverage"
+    )
 
     result = subprocess.run(
         [NODE_BIN, "--experimental-strip-types", str(VERIFIER_SCRIPT)],
@@ -52,11 +57,19 @@ def _run_verifier() -> dict:
         print(f"STDERR:\n{stderr[:2000]}")
         pytest.fail(f"Verifier output is not valid JSON (exit={result.returncode})")
 
-    return data
+    return cast(dict[str, Any], data)
 
 
 class TestPluginLoad:
     """Every .ts file in plugin directories must import and instantiate cleanly."""
+
+    def test_verifier_script_is_checked_in(self):
+        """The executable verifier must exist before any plugin E2E can pass."""
+        assert VERIFIER_SCRIPT.is_file(), (
+            "Missing .opencode/scripts/verify-plugins.mjs would make the plugin "
+            "E2E suite unverifiable"
+        )
+        assert VERIFIER_SCRIPT.stat().st_size > 0, "Verifier script is empty"
 
     def test_all_plugins_load_without_errors(self):
         """No plugin import or factory call throws an error."""
