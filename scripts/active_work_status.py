@@ -14,6 +14,8 @@ TASK_ID_RE = re.compile(r"^\s*-\s*\[ \]\s+([^ —|]+)", re.MULTILINE)
 
 
 def _task_label(command: str) -> str:
+    if "task_watchdog.py" in command or "agent_watchdog.py" in command:
+        return "watchdog"
     if "audit_coverage.py" in command:
         return "coverage-audit"
     if "detect-secrets" in command or "multiprocessing" in command:
@@ -61,6 +63,8 @@ def _processes() -> list[dict[str, str]]:
             "gunicorn",
             "detect-secrets",
             "multiprocessing",
+            "task_watchdog.py",
+            "agent_watchdog.py",
         )
         if any(token in command for token in tracked_tokens):
             processes.append({"pid": pid, "ppid": ppid, "command": command, "task": _task_label(command)})

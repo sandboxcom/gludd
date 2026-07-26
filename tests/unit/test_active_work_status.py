@@ -36,3 +36,4 @@ def test_process_labels_separate_test_workstreams() -> None:
     assert _task_label("pytest tests/unit/test_example.py") == "unit-tests"
     assert _task_label("pytest tests/e2e/test_opencode_plugin_load.py") == "opencode-e2e"
     assert _task_label("pytest tests/e2e/test_api_routers.py") == "e2e-tests"
+    assert _task_label("python scripts/task_watchdog.py") == "watchdog"
