@@ -140,6 +140,14 @@ class TestGitWorkflowTargetRecipeContent:
             "git-cherry-pick must use 'git cherry-pick'"
         )
 
+    def test_cherry_pick_list_preflights_shared_file_overlap(self):
+        recipe = self._recipe("git-cherry-pick-list")
+        assert recipe, "git-cherry-pick-list recipe not found"
+        assert "git diff --name-only" in recipe
+        assert "TASKS.md" in recipe
+        assert "Makefile" in recipe
+        assert "git status --porcelain" in recipe
+
     def test_documented_targets_all_exist(self):
         """All 17 targets listed in AGENTS.md git workflow section must exist."""
         documented = [

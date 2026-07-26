@@ -3278,8 +3278,19 @@ git-cherry-pick:
 
 git-cherry-pick-list:
 	@[ -n "$(SHAS)" ] || { echo "Usage: make git-cherry-pick-list SHAS='sha1 sha2 ...'"; exit 1; }
+	@[ -z "$$(git status --porcelain)" ] || { echo "ERROR: clean tree required before cherry-pick preflight"; exit 1; }
 	@for SHA in $(SHAS); do \
 		echo "=== cherry-pick $$SHA ==="; \
+		BASE=$$(git merge-base HEAD "$$SHA") || exit 1; \
+		INCOMING=$$(git diff --name-only "$$SHA^" "$$SHA"); \
+		LOCAL=$$(git diff --name-only "$$BASE" HEAD); \
+		for SHARED in Makefile TASKS.md opencode.json AGENTS.md .claude/settings.json; do \
+			if echo "$$INCOMING" | grep -qx "$$SHARED" && echo "$$LOCAL" | grep -qx "$$SHARED"; then \
+				echo "ERROR: $$SHA overlaps locally changed shared file $$SHARED"; \
+				echo "Resolve intentionally with a reviewed merge, then retry this target."; \
+				exit 1; \
+			fi; \
+		done; \
 		git cherry-pick "$$SHA" || exit 1; \
 	done
 
