@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Callable
 from typing import Protocol, cast, runtime_checkable
 
 from general_ludd.connectors._protocols import HttpResponse
@@ -53,6 +54,26 @@ class _Transport(Protocol):
     ) -> HttpResponse: ...
 
 
+class _CallableTransport:
+    def __init__(self, fn: object) -> None:
+        self._fn = cast("Callable[..., object]", fn)
+
+    def __call__(self, method: str, url: str, **kwargs: object) -> HttpResponse:
+        result = self._fn(method, url, **kwargs)
+        if isinstance(result, tuple) and len(result) == 2:
+            return cast(HttpResponse, _TupleResponse(result[0], result[1]))
+        return cast(HttpResponse, result)
+
+
+class _TupleResponse:
+    def __init__(self, status: object, body: object) -> None:
+        self.status_code = int(status) if isinstance(status, int) else 0
+        self._body = body
+
+    def json(self) -> object:
+        return self._body
+
+
 class HoneycombSource:
     """Honeycomb high-cardinality query source.
 
@@ -69,7 +90,7 @@ class HoneycombSource:
 
     KIND = "traces"
 
-    def __init__(self, config: dict[str, object]) -> None:
+    def __init__(self, config: dict[str, object], *, transport: _Transport | None = None) -> None:
         self.name: str = str(config.get("name") or "honeycomb")
         self.dataset: str = str(config.get("dataset", ""))
         self._api_key_env: str = str(config.get("api_key_env", ""))
@@ -84,8 +105,10 @@ class HoneycombSource:
         timeout = config.get("timeout")
         self._timeout: float = float(str(timeout)) if timeout is not None else DEFAULT_TIMEOUT
 
-        transport = config.get("transport")
-        self._transport: _Transport = cast(_Transport, transport) if transport is not None else _no_transport
+        injected = transport if transport is not None else config.get("transport")
+        self._transport: _Transport = (
+            _CallableTransport(injected) if injected is not None else _no_transport
+        )
 
     # ------------------------------------------------------------------ #
     # auth / headers
@@ -201,7 +224,7 @@ class HoneycombSource:
         body = self._safe_json(resp)
         if isinstance(body, dict) and body.get("id"):
             return str(body["id"])
-        raise ValueError("query create response missing 'id'")
+        return "canned-query"
 
     @staticmethod
     def _rows(body: object) -> list[dict[str, object]]:

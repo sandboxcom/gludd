@@ -27,6 +27,7 @@ from __future__ import annotations
 import logging
 import os
 from collections.abc import Callable, Mapping
+from typing import cast
 from urllib.parse import urlsplit
 
 from general_ludd.connectors._protocols import HttpResponse
@@ -36,6 +37,24 @@ logger = logging.getLogger(__name__)
 
 # (method, url, headers, json_body, timeout) -> response with ``.status_code`` + ``.json()``.
 Transport = Callable[[str, str, Mapping[str, str], object, float], HttpResponse]
+
+
+class _TupleResponse:
+    def __init__(self, status: object, body: object) -> None:
+        self.status_code = int(status) if isinstance(status, int) else 0
+        self._body = body
+
+    def json(self) -> object:
+        return self._body
+
+
+def _adapt_http_get(fn: object) -> Transport:
+    def call(method: str, url: str, headers: Mapping[str, str], body: object, timeout: float) -> HttpResponse:
+        result = fn(method, url, headers=headers, json=body, timeout=timeout)  # type: ignore[operator]
+        if isinstance(result, tuple) and len(result) == 2:
+            return cast(HttpResponse, _TupleResponse(result[0], result[1]))
+        return cast(HttpResponse, result)
+    return call
 
 
 # --- literal-host SSRF block (NO DNS) -------------------------------------------------
@@ -102,13 +121,13 @@ class AzureResourceGraphSource:
     DEFAULT_BASE_URL = "https://management.azure.com"
     API_VERSION = "2021-03-01"
 
-    def __init__(self, config: dict[str, object]) -> None:
+    def __init__(self, config: dict[str, object], *, http_get: object | None = None) -> None:
         if not isinstance(config, dict):
             raise TypeError("config must be a dict")
 
         self.name: str = str(config.get("name", "azure-resource-graph"))
 
-        subs: object = config.get("subscriptions", [])
+        subs: object = config.get("subscriptions", config.get("subscription_id", []))
         if isinstance(subs, str):
             subs = [subs]
         if not isinstance(subs, list):
@@ -117,7 +136,7 @@ class AzureResourceGraphSource:
         if not self._subscriptions:
             raise ValueError("config['subscriptions'] must list at least one subscription id")
 
-        self._token_env: str = str(config.get("token_env", "")).strip()
+        self._token_env: str = str(config.get("token_env", "AZURE_TOKEN")).strip()
         if not self._token_env:
             raise ValueError("config['token_env'] is required")
 
@@ -127,12 +146,15 @@ class AzureResourceGraphSource:
 
         self._timeout: float = float(str(config.get("timeout", 30.0)))
 
-        transport = config.get("transport")
+        transport = http_get if http_get is not None else config.get("transport")
         if transport is None:
             transport = _default_transport
         if not callable(transport):
             raise TypeError("config['transport'] must be callable")
-        self._transport: Transport = transport
+        if http_get is not None:
+            self._transport = _adapt_http_get(transport)
+        else:
+            self._transport = cast(Transport, transport)
 
     # -- internals ---------------------------------------------------------------------
 

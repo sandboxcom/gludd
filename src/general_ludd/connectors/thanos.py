@@ -134,13 +134,14 @@ class ThanosSource:
         config: dict[str, object],
         http_get: HttpGet | None = None,
         *,
+        transport: HttpGet | None = None,
         timeout: float = _DEFAULT_TIMEOUT,
     ) -> None:
         base_url = config.get("base_url", "")
         self._base_url = _validate_base_url(str(base_url))
         # Bearer token is optional (Thanos may sit behind an auth proxy).
         self._token_env = config.get("token_env")
-        self._http_get = http_get or _default_http_get
+        self._http_get = http_get or transport or _default_http_get
         self._timeout = float(timeout)
         self.kind = KIND
         host = urlsplit(self._base_url).netloc
@@ -199,7 +200,7 @@ class ThanosSource:
         Range mode is selected when ``start``/``end``/``step`` are present.
         Never raises: failures become a single error record.
         """
-        promql = spec.get("promql")
+        promql = spec.get("promql") or spec.get("query")
         if not promql:
             return [self._error_record("missing 'promql' in spec", {"spec": spec})]
 

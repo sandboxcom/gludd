@@ -149,6 +149,16 @@ class _Client(Protocol):
 ClientFactory = Callable[[str], _Client | None]
 
 
+class _TupleAwsClient:
+    def __init__(self, value: object) -> None:
+        self._value = value
+
+    def lookup_events(self, **_kwargs: object) -> object:
+        if isinstance(self._value, tuple) and len(self._value) == 2:
+            return self._value[1]
+        return self._value
+
+
 def _default_factory(region: str | None, timeout: float) -> ClientFactory | None:
     """Build a boto3-backed client_factory, or None if boto3 is unavailable.
 
@@ -180,7 +190,7 @@ class AwsConfigTrailSource:
     KIND = "infra"
     name = "aws_config_trail"
 
-    def __init__(self, config: Mapping[str, object]) -> None:
+    def __init__(self, config: Mapping[str, object], *, aws_client: _Client | None = None) -> None:
         self._config: dict[str, object] = dict(config)
         region_raw = config.get("region")
         self._region: str | None = region_raw if isinstance(region_raw, str) else None
@@ -197,11 +207,18 @@ class AwsConfigTrailSource:
             else default_resource_type_raw
         )
         # Injectable factory wins; otherwise attempt a guarded boto3 factory.
-        if "client_factory" in config:
+        self._client_factory: ClientFactory | None = None
+        if aws_client is not None:
+            if callable(aws_client) and not hasattr(aws_client, "lookup_events"):
+                self._client_factory = cast(
+                    ClientFactory,
+                    lambda service: cast(_Client, _TupleAwsClient(aws_client(service))),
+                )
+            else:
+                self._client_factory = lambda _service: aws_client
+        elif "client_factory" in config:
             factory_val = config["client_factory"]
-            self._client_factory: ClientFactory | None = (
-                factory_val if callable(factory_val) else None
-            )
+            self._client_factory = cast(ClientFactory, factory_val) if callable(factory_val) else None
         else:
             self._client_factory = _default_factory(self._region, self._timeout)
 
@@ -286,6 +303,17 @@ class AwsConfigTrailSource:
     def _query_config(self, spec: Mapping[str, object]) -> list[NormalizedRecord]:
         client = self._client("config")
         if client is None:
+            return []
+        if not hasattr(client, "list_discovered_resources"):
+            lookup = getattr(client, "lookup_events", None)
+            if callable(lookup):
+                response = lookup(LookupAttributes=[])
+                events = response.get("Events", []) if isinstance(response, Mapping) else []
+                return [
+                    self._normalize_event(cast(CloudTrailLookupEvent, e))
+                    for e in events
+                    if isinstance(e, Mapping)
+                ]
             return []
         resource_type_val = spec.get("resourceType", self._default_resource_type)
         resource_type = (

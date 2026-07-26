@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Callable
 from typing import Protocol, cast, runtime_checkable
 from urllib.parse import urlsplit
 
@@ -66,6 +67,17 @@ class _Transport(Protocol):
         params: dict[str, object] | None = ...,
         timeout: float | None = ...,
     ) -> tuple[int, object]: ...
+
+
+class _CallableTransport:
+    def __init__(self, fn: object) -> None:
+        self._fn = cast(Callable[..., object], fn)
+
+    def request(self, method: str, url: str, **kwargs: object) -> tuple[int, object]:
+        result = self._fn(method, url, **kwargs)
+        if isinstance(result, tuple) and len(result) == 2:
+            return int(result[0]), result[1]
+        return 0, {}
 
 
 def _validate_base_url(base_url: str) -> str:
@@ -110,7 +122,11 @@ class SigNozSource:
         self.name = "signoz"
         self._base_url = _validate_base_url(str(config.get("base_url", "")))
         self._token_env = str(config.get("token_env", ""))
-        self._transport = transport
+        self._transport = (
+            _CallableTransport(transport)
+            if callable(transport) and not hasattr(transport, "request")
+            else transport
+        )
         self._timeout = float(timeout)
 
     # -- internals ---------------------------------------------------------

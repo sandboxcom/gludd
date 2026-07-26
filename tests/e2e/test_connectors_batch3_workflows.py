@@ -627,7 +627,10 @@ class TestSentryConnector:
 
         transport = MockHttpTransport(default_status=200, default_body=[{"id": "1"}])
         monkeypatch.setenv("SENTRY_TOKEN", "test-auth")
-        src = SentrySource({"token_env": "SENTRY_TOKEN"}, transport=cast(Any, transport))
+        src = SentrySource(
+            {"token_env": "SENTRY_TOKEN", "org": "demo", "project": "backend"},
+            transport=cast(Any, transport),
+        )
         result = src.health()
         assert isinstance(result, dict)
 
@@ -648,7 +651,10 @@ class TestSentryConnector:
             ],
         )
         monkeypatch.setenv("SENTRY_TOKEN", "test-auth")
-        src = SentrySource({"token_env": "SENTRY_TOKEN"}, transport=cast(Any, transport))
+        src = SentrySource(
+            {"token_env": "SENTRY_TOKEN", "org": "demo", "project": "backend"},
+            transport=cast(Any, transport),
+        )
         records = src.query({"mode": "issues"})
         assert isinstance(records, list)
         assert len(records) >= 1
@@ -658,7 +664,12 @@ class TestSentryConnector:
 
         with pytest.raises((ValueError, RuntimeError)):
             SentrySource(
-                {"token_env": "SENTRY_TOKEN", "base_url": "http://169.254.169.254/"},
+                {
+                    "token_env": "SENTRY_TOKEN",
+                    "org": "demo",
+                    "project": "backend",
+                    "base_url": "http://169.254.169.254/",
+                },
                 transport=cast(Any, MockHttpTransport()),
             )
 
@@ -1205,6 +1216,7 @@ class TestAzureResourceGraphConnector:
         from general_ludd.connectors.azure_resource_graph import AzureResourceGraphSource
 
         transport = MockHttpTransport(default_status=200, default_body={"data": []})
+        monkeypatch.setenv("AZURE_TOKEN", "test-token")
         src = AzureResourceGraphSource({"subscription_id": "sub-1"}, http_get=transport.__call__)  # type: ignore[arg-type]
         result = src.health()
         assert isinstance(result, dict)
@@ -1224,6 +1236,7 @@ class TestAzureResourceGraphConnector:
                 ]
             },
         )
+        monkeypatch.setenv("AZURE_TOKEN", "test-token")
         src = AzureResourceGraphSource({"subscription_id": "sub-1"}, http_get=transport.__call__)  # type: ignore[arg-type]
         records = src.query({"query": "Resources"})
         assert isinstance(records, list)

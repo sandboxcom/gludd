@@ -27,6 +27,7 @@ import base64
 import json
 import os
 import urllib.parse
+from collections.abc import Callable
 from typing import Protocol, cast, runtime_checkable
 
 import httpx
@@ -71,6 +72,18 @@ class _HttpxTransport:
         with httpx.Client(timeout=timeout, follow_redirects=False) as client:
             resp = client.request(method, url, headers=headers or {}, content=body)
         return resp.status_code, resp.text
+
+
+class _CallableTransport:
+    def __init__(self, fn: object) -> None:
+        self._fn = cast("Callable[..., object]", fn)
+
+    def request(self, method: str, url: str, **kwargs: object) -> tuple[int, str]:
+        result = self._fn(method, url, **kwargs)
+        if isinstance(result, tuple) and len(result) == 2:
+            status, body = result
+            return int(status), body if isinstance(body, str) else json.dumps(body)
+        return 0, ""
 
 
 def _guard_base_url(base_url: str, allow_private: bool) -> str:
@@ -130,7 +143,11 @@ class OpenTsdbSource:
         self.default_aggregator: str = str(
             self.config.get("aggregator", _DEFAULT_AGGREGATOR)
         )
-        self._transport: Transport = transport or _HttpxTransport()
+        self._transport: Transport = (
+            _CallableTransport(transport)
+            if callable(transport) and not hasattr(transport, "request")
+            else transport or _HttpxTransport()
+        )
 
         # Optional HTTP Basic auth from env (never inline secrets).
         self._username: str | None = None
@@ -219,7 +236,10 @@ class OpenTsdbSource:
     def query(self, spec: dict[str, object]) -> list[dict[str, object]]:
         """POST an OpenTSDB query and return normalized records (one per dps point)."""
         if spec.get("start") is None and not isinstance(spec.get("queries"), list):
-            return []
+            if spec.get("query") and spec.get("metric") is None:
+                spec = {**spec, "start": 0, "metric": spec["query"]}
+            else:
+                return []
         body = self._build_body(spec)
         try:
             status, text = self._post_query(body)

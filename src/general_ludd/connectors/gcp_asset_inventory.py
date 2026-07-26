@@ -25,7 +25,8 @@ from __future__ import annotations
 import ipaddress
 import logging
 import os
-from typing import Any, Protocol, runtime_checkable
+from collections.abc import Callable
+from typing import Any, Protocol, cast, runtime_checkable
 from urllib.parse import urlsplit
 
 from general_ludd.security.ssrf import is_url_blocked
@@ -57,6 +58,30 @@ class _Transport(Protocol):
         params: dict[str, Any] | None = ...,
         timeout: float | None = ...,
     ) -> Any: ...
+
+
+class _TupleResponse:
+    def __init__(self, status: object, body: object) -> None:
+        self.status_code = int(status) if isinstance(status, int) else 0
+        self._body = body
+
+    def json(self) -> object:
+        return self._body
+
+    def raise_for_status(self) -> None:
+        if self.status_code >= 400:
+            raise RuntimeError(f"HTTP {self.status_code}")
+
+
+class _CallableTransport:
+    def __init__(self, fn: object) -> None:
+        self._fn = cast(Callable[..., object], fn)
+
+    def get(self, url: str, **kwargs: object) -> _TupleResponse:
+        result = self._fn("GET", url, **kwargs)
+        if isinstance(result, tuple) and len(result) == 2:
+            return _TupleResponse(result[0], result[1])
+        return cast(_TupleResponse, result)
 
 
 def _host_is_internal(host: str) -> bool:
@@ -119,14 +144,20 @@ class GcpAssetInventorySource:
     KIND = "infra"
     name = "gcp_asset_inventory"
 
-    def __init__(self, config: dict[str, Any]) -> None:
+    def __init__(self, config: dict[str, Any], *, transport: object | None = None) -> None:
         self._config = dict(config)
-        self._scope: str = str(config.get("scope", "")).strip()
+        scope = config.get("scope")
+        if not scope and config.get("project_id"):
+            scope = f"projects/{config['project_id']}"
+        self._scope: str = str(scope or "").strip()
         self._token_env: str = str(config.get("token_env", "GOOGLE_OAUTH_ACCESS_TOKEN"))
         self._endpoint = _validate_endpoint(str(config.get("endpoint", DEFAULT_ENDPOINT)))
         self._timeout = float(config.get("timeout", 10.0))
         self._page_size = int(config.get("page_size", 500))
-        self._transport: _Transport | None = config.get("transport")
+        injected = transport if transport is not None else config.get("transport")
+        if callable(injected) and not hasattr(injected, "get"):
+            injected = _CallableTransport(injected)
+        self._transport = cast(_Transport | None, injected)
 
     # -- internals -----------------------------------------------------------
 
@@ -206,7 +237,11 @@ class GcpAssetInventorySource:
         if callable(raise_for_status):
             raise_for_status()
         body = resp.json()
-        results = body.get("results", []) if isinstance(body, dict) else []
+        results: object = []
+        if isinstance(body, dict):
+            results = body.get("results", body.get("assets", []))
+        if not isinstance(results, list):
+            results = []
         rows: list[dict[str, Any]] = []
         for resource in results:
             if isinstance(resource, dict):

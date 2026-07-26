@@ -28,6 +28,7 @@ import json
 import logging
 import os
 import urllib.parse
+from collections.abc import Callable
 from typing import Protocol, cast, runtime_checkable
 from urllib.parse import urlsplit
 
@@ -104,6 +105,20 @@ class _UrllibTransport:
         return _SentryResponse(status=resp.status_code, body=resp.content)
 
 
+class _CallableTransport:
+    def __init__(self, fn: object) -> None:
+        self._fn = cast("Callable[..., object]", fn)
+
+    def get(self, url: str, *, headers: dict[str, str], timeout: float) -> _SentryResponse:
+        result = self._fn("GET", url, headers=headers, timeout=timeout)
+        if isinstance(result, tuple) and len(result) == 2:
+            status, body = result
+            if isinstance(body, (dict, list)):
+                body = json.dumps(body)
+            return _SentryResponse(int(status), str(body))
+        return cast(_SentryResponse, result)
+
+
 class SentrySource:
     """Sentry issues/events connector.
 
@@ -124,7 +139,7 @@ class SentrySource:
     #: Connector kind — Sentry surfaces error/issue events as logs.
     KIND: str = "logs"
 
-    def __init__(self, config: dict[str, object]) -> None:
+    def __init__(self, config: dict[str, object], *, transport: Transport | None = None) -> None:
         if not isinstance(config, dict):
             raise TypeError("config must be a dict")
 
@@ -154,10 +169,12 @@ class SentrySource:
         except (TypeError, ValueError) as exc:
             raise ValueError("config['timeout'] must be a number") from exc
 
-        transport = config.get("transport")
-        if transport is None:
-            transport = _UrllibTransport()
-        self._transport: Transport = cast(Transport, transport)
+        injected = transport if transport is not None else config.get("transport")
+        if injected is None:
+            injected = _UrllibTransport()
+        if callable(injected) and not hasattr(injected, "get"):
+            injected = _CallableTransport(injected)
+        self._transport: Transport = cast(Transport, injected)
 
     # ------------------------------------------------------------------ #
     # Construction-time validation
