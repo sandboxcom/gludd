@@ -479,6 +479,9 @@ function computeHealthScore(state: {
 // ── WORK-STATE CHECKERS (filesystem, no tоdowrite dependency) ───────────────
 
 interface WorkState {
+  /** Quality evidence gaps remain blockers even when task ledgers are clean. */
+  coverageIncomplete?: boolean
+  fullE2eIncomplete?: boolean
   tasksMdUnchecked: boolean
   tasksMdUncheckedCount: number
   ratchetEntries: number
@@ -486,6 +489,8 @@ interface WorkState {
   gateStatusMissing: boolean
   gateStale: boolean
   gateStatusRed: boolean
+  coverageIncomplete?: boolean
+  fullE2eIncomplete?: boolean
   ciVerdictPendingOrRed: boolean
   ciVerdictUnknown: boolean
   releaseIncomplete: boolean
@@ -558,6 +563,8 @@ function hasRealPendingWork(): WorkState {
   let gateStatusMissing = false
   let gateStale = false
   let gateStatusRed = false
+  let coverageIncomplete = false
+  let fullE2eIncomplete = false
 
   try {
     const tasksPath = path.join(root, "TASKS.md")
@@ -600,7 +607,12 @@ function hasRealPendingWork(): WorkState {
       for (const line of content.split("\n")) {
         if (line.startsWith("===")) continue
         if (/^(lint |typecheck |collect |test |smoke |env-writes |dead-code |hook-runtime |verify-enforcement |coverage-gaps )/.test(line)) {
-          if (/FAIL/.test(line)) { gateStatusRed = true; break }
+          if (/FAIL/.test(line)) { gateStatusRed = true; coverageIncomplete = /^coverage-gaps /.test(line); break }
+        }
+        if (/^e2e /.test(line) && /FAIL/.test(line)) {
+          gateStatusRed = true
+          fullE2eIncomplete = true
+          break
         }
       }
     }
@@ -710,6 +722,7 @@ function hasRealPendingWork(): WorkState {
     ciVerdictPendingOrRed, ciVerdictUnknown, releaseIncomplete, testFailures, repoPending,
     multitaskingBacklogOpen, backlogOpen: multitaskingBacklogOpen, backlogItems, underFloor,
     hasPendingWork, hasLocalWork, healthScore, ts: now,
+    coverageIncomplete, fullE2eIncomplete,
   }
 
   try {

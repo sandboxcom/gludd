@@ -677,25 +677,10 @@ def test_text_only_blocked_by_quality_evidence_gaps(
     """Coverage/full-E2E gaps are real pending work, not informational state."""
     _clean_leaked_state_files()
     now_ms = int(time.time() * 1000)
-    state_path = hook_plugin_env.state_path("GLUDD_STOP_STATE_FILE")
-    state_path.write_text(json.dumps({
-        "ts": now_ms,
-        "tasksMdUnchecked": False,
-        "tasksMdUncheckedCount": 0,
-        "ratchetEntries": 0,
-        "bugsOpen": False,
-        "gateStatusMissing": False,
-        "gateStale": False,
-        "gateStatusRed": False,
-        "ciVerdictPendingOrRed": False,
-        "releaseIncomplete": False,
-        "testFailures": False,
-        "repoPending": False,
-        "hasPendingWork": False,
-        "hasLocalWork": False,
-        "healthScore": 100,
-        pending_field: True,
-    }))
+    phase = "coverage-gaps" if pending_field == "coverageIncomplete" else "e2e"
+    (hook_plugin_env.cwd / ".gate-status").write_text(
+        f"=== GATE-STATUS ===\n{phase} FAIL 1\n"
+    )
     parsed, raw, stderr, rc = _invoke_text_complete(
         hook_plugin_env,
         "Quality evidence review remains pending.",
