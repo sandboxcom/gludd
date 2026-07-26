@@ -112,6 +112,14 @@ async def test_scoped_get_by_id_blocks_cross_tenant(session: AsyncSession) -> No
     assert own is not None and own.id == "FEAT-A1"
 
 
+async def test_scoped_get_by_name_blocks_cross_tenant(session: AsyncSession) -> None:
+    """Name lookups must honor the same tenant scope as ID lookups."""
+    repo = FeatureRepository.scoped(session, "proj-a")
+    assert await repo.get_by_name("b-one") is None
+    own = await repo.get_by_name("a-one")
+    assert own is not None and own.id == "FEAT-A1"
+
+
 async def test_unscoped_list_all_returns_everything(session: AsyncSession) -> None:
     # Back-compat: an unscoped repo (admin path) still sees all tenants' rows.
     repo = FeatureRepository(session)

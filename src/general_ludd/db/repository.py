@@ -1114,7 +1114,12 @@ class PromptProfileRepository:
         )
         await self._session.execute(stmt)
         await self._session.flush()
-        row = await self.get_by_name(data.get("name", ""))
+        # Resolve the row through the repository scope so a tenant-scoped
+        # repository cannot return or mutate a same-name feature from another
+        # project after the conflict update.
+        row = await self.get_by_name(
+            data.get("name", ""), project_id=self._resolve_pid(data.get("project_id"))
+        )
         assert row is not None  # just upserted
         # Core INSERT ... ON CONFLICT bypasses the ORM identity map; refresh any
         # already-loaded instance so callers see the committed (updated) values.
@@ -1752,8 +1757,13 @@ class FeatureRepository:
     # Read operations
     # ------------------------------------------------------------------
 
-    async def get_by_name(self, name: str) -> FeatureModel | None:
+    async def get_by_name(
+        self, name: str, project_id: str | None = None
+    ) -> FeatureModel | None:
+        _pid = self._resolve_pid(project_id)
         stmt = select(FeatureModel).where(FeatureModel.name == name)
+        if _pid is not None:
+            stmt = stmt.where(FeatureModel.project_id == _pid)
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
 

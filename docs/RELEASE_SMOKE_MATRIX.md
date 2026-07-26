@@ -8,6 +8,8 @@ The release smoke matrix is credential-safe and fail-closed:
   outages remain failed smoke checks.
 - OpenCode's registered plugins are resolved locally, and the Node verifier
   dynamically imports each factory when Node is available.
+- The verified-claims helper is executed through Node and must block a
+  completion claim that reports only 84% coverage.
 - Release preflight uses the canonical version helper and blocks unchecked
   `T-BETA3-*` task IDs while ignoring unrelated backlog items.
 

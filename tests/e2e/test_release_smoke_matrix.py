@@ -133,14 +133,10 @@ def test_verified_claims_plugin_runtime_blocks_low_coverage_completion_claim() -
 
     if shutil.which("node") is None:
         pytest.skip("node is not available in this environment")
-    plugin = ROOT / ".opencode" / "plugin" / "enforce-verified-claims.ts"
+    helpers = ROOT / ".opencode" / "lib" / "plugin_test_exports.ts"
     script = f"""
-const mod = await import({json.dumps(str(plugin))})
-const hooks = mod.default()
-const output = await hooks["experimental.text.complete"](
-  {{}}, {{ text: "final e2e coverage push at 84%" }},
-)
-console.log(JSON.stringify({{ blocked: output.text.startsWith("BLOCKED:") }}))
+const mod = await import({json.dumps(str(helpers))})
+console.log(JSON.stringify({{ blocked: mod.shouldBlockCoverageClaim("final e2e push at 84%") }}))
 """
     env = os.environ.copy()
     env["OPENCODE_SUBAGENT"] = ""
