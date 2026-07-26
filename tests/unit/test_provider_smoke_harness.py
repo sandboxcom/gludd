@@ -65,3 +65,45 @@ def test_runpod_requires_api_key_for_live() -> None:
 def test_telemetry_is_optional_and_reports_disabled() -> None:
     result = harness.run_harness("runpod", {"RUNPOD_API_KEY": "rp-secret"}, live=False)
     assert result["telemetry"]["enabled"] is False
+
+
+def test_telemetry_publishes_event_and_log_without_exposing_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    class Response:
+        def __enter__(self) -> "Response":
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return b"{}"
+
+    def fake_urlopen(request: object, timeout: int) -> Response:
+        captured["request"] = request
+        captured["timeout"] = timeout
+        return Response()
+
+    monkeypatch.setattr(harness.urllib.request, "urlopen", fake_urlopen)
+    result = harness.run_harness(
+        "runpod",
+        {
+            "RUNPOD_API_KEY": "rp-secret",
+            "GLUDD_INGEST_URL": "http://gludd.test",
+            "GLUDD_INGEST_TOKEN": "ingest-secret",
+        },
+        live=False,
+    )
+
+    request = captured["request"]
+    assert result["telemetry"] == {
+        "enabled": True,
+        "records": 2,
+        "url": "http://gludd.test",
+    }
+    assert request.full_url == "http://gludd.test/ingest/webhook"
+    assert b"ingest-secret" not in request.data
+    assert b"rp-secret" not in request.data
+    assert b'"kind": "events"' in request.data
+    assert b'"kind": "logs"' in request.data
