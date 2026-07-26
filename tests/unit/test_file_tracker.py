@@ -131,6 +131,30 @@ def test_event_handler_rejects_missing_event_key(mock_run):
 
 
 @patch("general_ludd.ansible.file_tracker.subprocess.run")
+def test_event_handler_rejects_non_dict_outer_event(mock_run):
+    """Malformed callback payloads must be ignored instead of raising."""
+    mock_run.return_value = _fake_run_ok(_HEAD_SHA + "\n")
+    tracker = FileChangeTracker(_REPO)
+
+    tracker.event_handler(None)
+    tracker.event_handler([])
+
+    assert tracker._file_events == []
+
+
+@patch("general_ludd.ansible.file_tracker.subprocess.run")
+def test_event_handler_rejects_non_string_task_name(mock_run):
+    """Ansible callback task metadata can be malformed; reject it safely."""
+    mock_run.return_value = _fake_run_ok(_HEAD_SHA + "\n")
+    tracker = FileChangeTracker(_REPO)
+
+    tracker.event_handler({"event": "runner_on_ok", "event_data": {"task": None}})
+    tracker.event_handler({"event": "runner_on_ok", "event_data": {"task": 42}})
+
+    assert tracker._file_events == []
+
+
+@patch("general_ludd.ansible.file_tracker.subprocess.run")
 def test_event_handler_rejects_non_dict_event_data(mock_run):
     mock_run.return_value = _fake_run_ok(_HEAD_SHA + "\n")
     tracker = FileChangeTracker(_REPO)

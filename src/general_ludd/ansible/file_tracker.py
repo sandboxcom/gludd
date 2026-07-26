@@ -49,7 +49,7 @@ class FileChangeTracker:
 
     # -- event ingestion ---------------------------------------------------
 
-    def event_handler(self, event_data: dict[str, Any]) -> None:
+    def event_handler(self, event_data: object) -> None:
         """Ingest an ansible-runner callback event.
 
         Only ``runner_on_ok`` events whose resolved module name is in
@@ -57,10 +57,12 @@ class FileChangeTracker:
         src, checksum, changed, diff) are extracted from
         ``event_data["event_data"]["res"]``.
         """
+        if not isinstance(event_data, dict):
+            return
         if event_data.get("event") != _RUNNER_ON_OK:
             return
 
-        ed = event_data.get("event_data", {}) if isinstance(event_data, dict) else {}
+        ed = event_data.get("event_data", {})
         if not isinstance(ed, dict):
             return
         task_name = ed.get("task", "")
@@ -139,7 +141,7 @@ class FileChangeTracker:
 
 # -- helpers ---------------------------------------------------------------
 
-def _task_uses_file_module(task_name: str) -> bool:
+def _task_uses_file_module(task_name: object) -> bool:
     """Return ``True`` when *task_name* references a file-management module.
 
     The event's task field is of the form ``module_name [action_name]``
@@ -147,6 +149,8 @@ def _task_uses_file_module(task_name: str) -> bool:
     We extract the leading module name before the first space and check it
     against ``FILE_MODULES``.
     """
+    if not isinstance(task_name, str):
+        return False
     module = task_name.split(" ", 1)[0]
     return module in FILE_MODULES
 
