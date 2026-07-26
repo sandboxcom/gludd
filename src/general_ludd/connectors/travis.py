@@ -126,6 +126,7 @@ class TravisSource:
         self.timeout = float(cast(float | int | str | bool, self._config.get("timeout", 10.0)))
         self._token_env = str(self._config.get("token_env", "TRAVIS_TOKEN"))
         self._token = os.environ.get(self._token_env, "")
+        transport_impl: Transport
         if http_get is not None:
             def _legacy(_method: str, url: str, headers: Mapping[str, str], _timeout: float) -> tuple[int, bytes]:
                 status, body = http_get(url, dict(headers))
@@ -134,9 +135,10 @@ class TravisSource:
                 if isinstance(body, str):
                     return status, body.encode()
                 return status, json.dumps(body).encode()
-            self._transport = _legacy
+            transport_impl = _legacy
         else:
-            self._transport = transport or _httpx_transport
+            transport_impl = transport or _httpx_transport
+        self._transport = transport_impl
 
     # -- internals ---------------------------------------------------------
     def _headers(self) -> dict[str, str]:

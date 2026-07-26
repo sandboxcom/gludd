@@ -102,6 +102,7 @@ class ClickHouseStatsSource:
         self._url: str = str(cfg.get("url", "http://localhost:8123")).rstrip("/")
         self._user: str = str(cfg.get("user", "default"))
         self._password_env: str = str(cfg.get("password_env", "CLICKHOUSE_PASSWORD"))
+        self._executor: Executor | None
         if cursor is not None:
             def _cursor_executor(query: str) -> Sequence[ClickhouseRow]:
                 cursor_obj = cast(Any, cursor)

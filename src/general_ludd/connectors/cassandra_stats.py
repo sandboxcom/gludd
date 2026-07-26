@@ -101,6 +101,7 @@ class CassandraStatsSource:
         self._config = cfg
         self._jmx_url: str = str(cfg.get("jmx_url", "http://localhost:7070/metrics"))
         self._token_env: str = str(cfg.get("token_env", "CASSANDRA_JMX_TOKEN"))
+        self._executor: Executor | None
         if cursor is not None:
             def _cursor_executor(command: str) -> Sequence[CassandraRow]:
                 cursor_obj = cast(Any, cursor)

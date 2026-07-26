@@ -136,6 +136,7 @@ class MysqlStatsSource:
         cursor: object | None = None,
     ) -> None:
         self.config: dict[str, object] = dict(config or {})
+        self._executor: Executor | None
         if cursor is not None:
             def _cursor_executor(query: str) -> Sequence[MysqlRow]:
                 cursor_obj = cast(Any, cursor)
