@@ -188,11 +188,31 @@ class TestOpencodeConfig:
             pytest.skip("No opencode.json")
         cfg = json.loads(cfg_path.read_text())
         bash_perms = cfg.get("permission", {}).get("bash", {})
-        if not isinstance(bash_perms, dict):
-            return
-        keys = list(bash_perms.keys())
-        star_idx = next((i for i, k in enumerate(keys) if k == "*"), -1)
-        make_idx = next((i for i, k in enumerate(keys) if k.startswith("make")), -1)
+        if isinstance(bash_perms, list):
+            # OpenCode's current schema is an ordered rule list.  Rules are
+            # matched last-to-first, so the specific make allow must follow
+            # the catch-all deny in the source list.
+            star_idx = next(
+                (i for i, rule in enumerate(bash_perms)
+                 if isinstance(rule, dict)
+                 and rule.get("path") == "*"
+                 and rule.get("allow") is False),
+                -1,
+            )
+            make_idx = next(
+                (i for i, rule in enumerate(bash_perms)
+                 if isinstance(rule, dict)
+                 and str(rule.get("command", "")).startswith("make")
+                 and rule.get("allow") is True),
+                -1,
+            )
+        elif isinstance(bash_perms, dict):
+            # Preserve compatibility with older object-map configs.
+            keys = list(bash_perms.keys())
+            star_idx = next((i for i, k in enumerate(keys) if k == "*"), -1)
+            make_idx = next((i for i, k in enumerate(keys) if k.startswith("make")), -1)
+        else:
+            pytest.fail("permission.bash must be an ordered rule list or object map")
         if star_idx != -1 and make_idx != -1:
             assert star_idx < make_idx, (
                 f"'*: deny' at position {star_idx} must come BEFORE "
