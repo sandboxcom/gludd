@@ -6,6 +6,8 @@ while substituting the process registry so no host process is signalled.
 
 from __future__ import annotations
 
+import builtins
+from io import StringIO
 from types import SimpleNamespace
 
 import psutil
@@ -137,3 +139,120 @@ async def test_stats_collection_errors_are_fail_closed(monkeypatch, error, statu
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://e2e") as client:
         response = await client.get("/admin/processes/123/stats")
     assert response.status_code == status
+
+
+def test_read_proc_locks_filters_malformed_and_other_pids(monkeypatch):
+    payload = """1: POSIX ADVISORY WRITE 123 fd:01:999 0 EOF
+2: FLOCK ADVISORY READ 456 fd:02:111 4 8
+short line
+3: POSIX ADVISORY WRITE nope fd:03:222 0 EOF
+"""
+    monkeypatch.setattr(builtins, "open", lambda *args, **kwargs: StringIO(payload))
+
+    locks = processes._read_proc_locks(123)
+
+    assert locks == [
+        {
+            "type": "POSIX",
+            "kind": "ADVISORY",
+            "mode": "WRITE",
+            "pid": 123,
+            "region": "fd:01:999",
+            "start": "0",
+            "end": "EOF",
+        }
+    ]
+
+
+def test_read_proc_locks_fails_closed_when_procfs_unavailable(monkeypatch):
+    def _missing(*args, **kwargs):
+        raise OSError("procfs unavailable")
+
+    monkeypatch.setattr(builtins, "open", _missing)
+
+    assert processes._read_proc_locks(123) == []
+
+
+def test_collect_stats_success_and_procfs_lock_integration(monkeypatch):
+    class _Process:
+        def cpu_percent(self, interval):
+            assert interval == 0.1
+            return 12.5
+
+        def memory_info(self):
+            return SimpleNamespace(rss=100, vms=200)
+
+        def io_counters(self):
+            return SimpleNamespace(read_bytes=1, write_bytes=2, read_count=3, write_count=4)
+
+        def num_fds(self):
+            return 5
+
+        def num_ctx_switches(self):
+            return SimpleNamespace(voluntary=6, involuntary=7)
+
+        def open_files(self):
+            return ["a", "b"]
+
+        def num_threads(self):
+            return 8
+
+        def status(self):
+            return "running"
+
+    monkeypatch.setattr(psutil, "Process", lambda pid: _Process())
+    monkeypatch.setattr(processes, "_read_proc_locks", lambda pid: [{"pid": pid}])
+
+    result = processes._collect_stats(123)
+
+    assert result["cpu_percent"] == 12.5
+    assert result["memory"] == {"rss": 100, "vms": 200}
+    assert result["io"] == {
+        "read_bytes": 1,
+        "write_bytes": 2,
+        "read_count": 3,
+        "write_count": 4,
+    }
+    assert result["num_fds"] == 5
+    assert result["num_ctx_switches"] == {"voluntary": 6, "involuntary": 7}
+    assert result["open_files"] == 2
+    assert result["locks"] == [{"pid": 123}]
+
+
+def test_collect_stats_degrades_when_optional_psutil_fields_fail(monkeypatch):
+    class _Process:
+        def cpu_percent(self, interval):
+            raise RuntimeError("cpu unavailable")
+
+        def memory_info(self):
+            return SimpleNamespace(rss=10, vms=20)
+
+        def io_counters(self):
+            raise RuntimeError("io unavailable")
+
+        def num_fds(self):
+            raise RuntimeError("fds unavailable")
+
+        def num_ctx_switches(self):
+            raise RuntimeError("ctx unavailable")
+
+        def open_files(self):
+            raise RuntimeError("files unavailable")
+
+        def num_threads(self):
+            return 1
+
+        def status(self):
+            return "sleeping"
+
+    monkeypatch.setattr(psutil, "Process", lambda pid: _Process())
+    monkeypatch.setattr(processes, "_read_proc_locks", lambda pid: [])
+
+    result = processes._collect_stats(321)
+
+    assert result["cpu_percent"] == 0.0
+    assert result["memory"] == {"rss": 10, "vms": 20}
+    assert result["io"] is None
+    assert result["num_fds"] is None
+    assert result["num_ctx_switches"] is None
+    assert result["open_files"] == 0
