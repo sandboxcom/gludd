@@ -49,10 +49,14 @@ coverage result.  It contains:
 * `schema_version`, `run_id`, `pid`, `started_at`, and `updated_at` so an
   operator can correlate the file with one process and one invocation;
 * `current_index` and `total`, plus a stable relative `path` for every E2E
-  file; and
+  file; each shard summary includes the resolved environment namespace used
+  for resource isolation; and
 * `counts.attempted`, `counts.passed`, `counts.failed`, and `counts.skipped`,
   with per-file states (`pending`, `running`, `passed`, `failed`,
-  `timed_out`, or `skipped`).
+  `timed_out`, or `skipped`). Completed or failed shards also include ordered
+  per-test diagnostics from JUnit XML (`nodeid`, status, and bounded failure
+  message/text), so a failing file can be triaged without rerunning it merely
+  to discover which test ran first.
 
 The sidecar has `complete: false` for every interrupted, timed-out, or failed
 run.  Remaining files are marked `skipped` with a reason when a failure stops

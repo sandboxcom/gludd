@@ -214,3 +214,50 @@ def test_progress_json_marks_timeout_without_claiming_complete(monkeypatch, tmp_
     assert progress["counts"]["failed"] == 1
     assert progress["counts"]["skipped"] == 1
     assert progress["files"][0]["status"] == "timed_out"
+
+
+def test_progress_json_records_ordered_test_failure_context_and_namespace(
+    monkeypatch, tmp_path
+):
+    """Shard summaries retain deterministic JUnit order and namespace context."""
+    module = _load_audit_module("audit_coverage_progress_diagnostics")
+    _stub_e2e_files(monkeypatch, module, ["test_diagnostics.py"])
+    monkeypatch.setenv("GLUDD_PROJECT_NAMESPACE", "project-diagnostics")
+
+    def fake_run(args, **kwargs):
+        junit_arg = next(arg for arg in args if str(arg).startswith("--junitxml="))
+        junit_path = Path(str(junit_arg).split("=", 1)[1])
+        junit_path.parent.mkdir(parents=True, exist_ok=True)
+        junit_path.write_text(
+            "<testsuite tests='2' failures='1'>"
+            "<testcase classname='tests.e2e.test_diagnostics' name='test_first'/>"
+            "<testcase classname='tests.e2e.test_diagnostics' name='test_second'>"
+            "<failure message='assertion failed'>expected value</failure>"
+            "</testcase></testsuite>"
+        )
+        return type("Result", (), {"returncode": 23})()
+
+    monkeypatch.setattr(module.subprocess, "run", fake_run)
+    progress_path = tmp_path / "coverage.progress.json"
+    shards: list[dict[str, object]] = []
+    assert module.run_pytest_coverage(
+        "src/general_ludd",
+        str(tmp_path / "coverage.json"),
+        shards,
+        str(progress_path),
+    ) == 23
+
+    progress = json.loads(progress_path.read_text())
+    assert progress["environment_namespace"] == "project-diagnostics"
+    summary = progress["files"][0]
+    assert summary["environment_namespace"] == "project-diagnostics"
+    assert [test["order"] for test in summary["tests"]] == [1, 2]
+    assert [test["nodeid"] for test in summary["tests"]] == [
+        "tests.e2e.test_diagnostics::test_first",
+        "tests.e2e.test_diagnostics::test_second",
+    ]
+    assert summary["tests"][1]["status"] == "failed"
+    assert summary["tests"][1]["failure_context"] == {
+        "message": "assertion failed",
+        "text": "expected value",
+    }

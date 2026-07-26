@@ -18,6 +18,7 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
+from xml.etree import ElementTree
 
 
 def parse_coverage_json(
@@ -158,6 +159,43 @@ COVERAGE_AUDIT_TIMEOUT_SECONDS = int(
 PROGRESS_SCHEMA_VERSION = 1
 
 
+def _read_shard_diagnostics(junit_path: Path) -> list[dict[str, object]]:
+    """Read deterministic per-test order and failure context from JUnit XML."""
+    if not junit_path.exists():
+        return []
+    try:
+        root = ElementTree.parse(junit_path).getroot()
+    except (ElementTree.ParseError, OSError):
+        return []
+
+    diagnostics: list[dict[str, object]] = []
+    for order, testcase in enumerate(root.iter("testcase"), start=1):
+        classname = testcase.get("classname", "")
+        name = testcase.get("name", "")
+        nodeid = f"{classname}::{name}" if classname else name
+        entry: dict[str, object] = {
+            "order": order,
+            "nodeid": nodeid,
+            "status": "passed",
+        }
+        failure = next(
+            (child for child in testcase if child.tag in {"failure", "error"}),
+            None,
+        )
+        skipped = next((child for child in testcase if child.tag == "skipped"), None)
+        if failure is not None:
+            entry["status"] = "failed"
+            entry["failure_context"] = {
+                "message": failure.get("message", "")[:2000],
+                "text": (failure.text or "").strip()[:4000],
+            }
+        elif skipped is not None:
+            entry["status"] = "skipped"
+            entry["skip_reason"] = skipped.get("message", "")
+        diagnostics.append(entry)
+    return diagnostics
+
+
 def _progress_path(json_out_path: str) -> Path:
     """Return the durable sidecar path for an in-flight audit.
 
@@ -185,6 +223,7 @@ def _progress_snapshot(
     current_index: int,
     status: str,
     complete: bool,
+    environment_namespace: str = "unknown",
     error: str | None = None,
 ) -> dict[str, object]:
     counts = {
@@ -207,6 +246,7 @@ def _progress_snapshot(
         "updated_at": datetime.now(UTC).isoformat(),
         "status": status,
         "complete": complete,
+        "environment_namespace": environment_namespace,
         "current_index": current_index,
         "total": len(files),
         "counts": counts,
@@ -227,6 +267,7 @@ def _publish_progress(
     current_index: int,
     status: str,
     complete: bool,
+    environment_namespace: str = "unknown",
     error: str | None = None,
 ) -> None:
     _write_progress(
@@ -239,6 +280,7 @@ def _publish_progress(
             current_index=current_index,
             status=status,
             complete=complete,
+            environment_namespace=environment_namespace,
             error=error,
         ),
     )
@@ -275,10 +317,20 @@ def run_pytest_coverage(
         return 2
     progress_path = Path(progress_json_path) if progress_json_path else _progress_path(json_out_path)
     relative_files = [str(path.relative_to(root)) for path in files]
+    environment_namespace = (
+        env.get("GLUDD_PROJECT_NAMESPACE", "").strip()
+        or env.get("GLUDD_RESOURCE_NAMESPACE", "").strip()
+        or "unscoped"
+    )
     run_id = f"{os.getpid()}-{datetime.now(UTC).strftime('%Y%m%dT%H%M%S%fZ')}"
     started_at = datetime.now(UTC).isoformat()
     states: list[dict[str, object]] = [
-        {"path": path, "status": "pending"} for path in relative_files
+        {
+            "path": path,
+            "status": "pending",
+            "environment_namespace": environment_namespace,
+        }
+        for path in relative_files
     ]
     _publish_progress(
         progress_path,
@@ -289,6 +341,7 @@ def run_pytest_coverage(
         current_index=0,
         status="running",
         complete=False,
+        environment_namespace=environment_namespace,
     )
     coverage_file = root / f".coverage.audit.{os.getpid()}"
     env["COVERAGE_FILE"] = str(coverage_file)
@@ -299,6 +352,7 @@ def run_pytest_coverage(
             states[index] = {
                 "path": relative_files[index],
                 "status": "running",
+                "environment_namespace": environment_namespace,
                 "started_at": datetime.now(UTC).isoformat(),
             }
             _publish_progress(
@@ -310,12 +364,15 @@ def run_pytest_coverage(
                 current_index=index,
                 status="running",
                 complete=False,
+                environment_namespace=environment_namespace,
             )
             basetemp = Path(f"/tmp/gludd-audit-e2e-{os.getpid()}-{index}")
+            junit_path = basetemp / "junit.xml"
             args = [sys.executable, "-m", "pytest", str(test_file),
                     f"--cov={source}", "--cov-branch", "--cov-context=test",
                     "--cov-append", "--cov-fail-under=0", "--cov-report=",
                     "-n", "2", "--dist", "loadgroup", "-q",
+                    f"--junitxml={junit_path}",
                     f"--basetemp={basetemp}"]
             try:
                 result = subprocess.run(
@@ -328,6 +385,7 @@ def run_pytest_coverage(
                 states[index] = {
                     "path": relative_files[index],
                     "status": "timed_out",
+                    "environment_namespace": environment_namespace,
                     "returncode": 124,
                     "finished_at": datetime.now(UTC).isoformat(),
                 }
@@ -335,6 +393,7 @@ def run_pytest_coverage(
                     states[remaining] = {
                         "path": relative_files[remaining],
                         "status": "skipped",
+                        "environment_namespace": environment_namespace,
                         "reason": "stopped_after_failure",
                     }
                 _publish_progress(
@@ -346,6 +405,7 @@ def run_pytest_coverage(
                     current_index=index + 1,
                     status="failed",
                     complete=False,
+                    environment_namespace=environment_namespace,
                     error="pytest shard timed out",
                 )
                 results.append({
@@ -366,6 +426,10 @@ def run_pytest_coverage(
             results.append(shard)
             states[index] = {
                 **shard,
+                "environment_namespace": environment_namespace,
+                "tests": _read_shard_diagnostics(
+                    basetemp / "junit.xml"
+                ),
                 "finished_at": datetime.now(UTC).isoformat(),
             }
             if result.returncode != 0:
@@ -373,6 +437,7 @@ def run_pytest_coverage(
                     states[remaining] = {
                         "path": relative_files[remaining],
                         "status": "skipped",
+                        "environment_namespace": environment_namespace,
                         "reason": "stopped_after_failure",
                     }
                 _publish_progress(
@@ -384,6 +449,7 @@ def run_pytest_coverage(
                     current_index=index + 1,
                     status="failed",
                     complete=False,
+                    environment_namespace=environment_namespace,
                     error=f"pytest shard exited with {result.returncode}",
                 )
                 print(f"E2E coverage file failed: {test_file}", file=sys.stderr)
@@ -397,6 +463,7 @@ def run_pytest_coverage(
                 current_index=index + 1,
                 status="running",
                 complete=False,
+                environment_namespace=environment_namespace,
             )
         report = subprocess.run(
             [sys.executable, "-m", "coverage", "json", "--show-contexts",
@@ -413,6 +480,7 @@ def run_pytest_coverage(
                 current_index=len(files),
                 status="completed",
                 complete=True,
+                environment_namespace=environment_namespace,
             )
         else:
             _publish_progress(
@@ -424,6 +492,7 @@ def run_pytest_coverage(
                 current_index=len(files),
                 status="failed",
                 complete=False,
+                environment_namespace=environment_namespace,
                 error=f"coverage json exited with {report.returncode}",
             )
         return report.returncode
@@ -436,7 +505,11 @@ def run_pytest_coverage(
         })
         for entry in states:
             if entry.get("status") in {"pending", "running"}:
-                entry.update({"status": "skipped", "reason": "stopped_after_failure"})
+                entry.update({
+                    "status": "skipped",
+                    "reason": "stopped_after_failure",
+                    "environment_namespace": environment_namespace,
+                })
         _publish_progress(
             progress_path,
             run_id=run_id,
@@ -446,6 +519,7 @@ def run_pytest_coverage(
             current_index=sum(entry.get("status") != "skipped" for entry in states),
             status="failed",
             complete=False,
+            environment_namespace=environment_namespace,
             error="coverage command timed out",
         )
         print(
