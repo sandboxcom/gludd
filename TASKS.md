@@ -657,6 +657,7 @@ old summary table omitted entirely. Grand total across the file: **326** boxes.
 <!-- T-BETA3-E2E paths: tests/e2e/test_memory_system_branches_e2e.py -->
 <!-- T-BETA3-E2E paths: tests/e2e/test_snake_mechanics.py -->
 <!-- T-BETA3-E2E paths: tests/e2e/test_floor_e2e.py tests/e2e/test_language_workflows.py -->
+<!-- T-BETA3-E2E paths: tests/e2e/test_obj07_model_gateway.py src/general_ludd/models/provider_registry.py src/general_ludd/models/openai_compat.py -->
  <!-- T-BETA3-CONCURRENT-PROJECT-WORKERS paths: tests/e2e/test_concurrent_project_workers_e2e.py scripts/resource_arbiter.py scripts/run_gate.sh scripts/gate_async.sh Makefile tests/unit/test_resource_arbiter.py tests/unit/test_gate_concurrency.py tests/unit/test_gate_async.py tests/unit/test_e2e_runner_target.py -->
  <!-- T-BETA3-CONCURRENT-CONNECTOR-WORKERS paths: tests/e2e/test_concurrent_connector_workers_e2e.py -->
  <!-- T-BETA3-RESOURCE-OBSERVABILITY paths: scripts/active_work_status.py scripts/resource_arbiter.py docs/RESOURCE_OBSERVABILITY.md tests/unit/test_active_work_resource_observability.py tests/unit/test_resource_arbiter.py -->

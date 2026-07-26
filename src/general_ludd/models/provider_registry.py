@@ -108,6 +108,10 @@ class ProviderRegistry:
         if info is None:
             return False
         spec = importlib.util.find_spec(info.package_name)
+        if spec is None and info.package_name == _DEFAULT_PROVIDER_PACKAGE:
+            # LangChain adapters are optional; the built-in compatibility
+            # adapter keeps provider discovery available after dependency trim.
+            return True
         return spec is not None
 
     def install_provider(self, provider_name: str) -> Todo | None:
@@ -136,7 +140,14 @@ class ProviderRegistry:
             raise ValueError(f"Provider '{provider_name}' is not registered")
         if not self.is_installed(provider_name):
             raise ImportError(f"Provider package '{info.package_name}' is not installed")
-        module = importlib.import_module(info.package_name)
+        try:
+            module = importlib.import_module(info.package_name)
+        except ModuleNotFoundError:
+            if info.package_name != _DEFAULT_PROVIDER_PACKAGE:
+                raise
+            from general_ludd.models import openai_compat
+
+            module = openai_compat
         cls: type = getattr(module, info.class_hint)
         return cls
 
