@@ -24,8 +24,14 @@ import time
 from collections import defaultdict
 from pathlib import Path
 
-ID_PATTERN = re.compile(r"\b([A-Z]{1,3}\d*(?:\.\d+(?:\.\d+)*|-\d+))\b")
-PRIMARY_ID_PATTERN = re.compile(r"^-\s*\[[ x]\]\s+([A-Z]{1,3}\d*(?:\.\d+(?:\.\d+)*|-\d+))\b")
+# Support dotted phase IDs (``S53.31``), legacy hyphenated IDs (``FIX-3``),
+# and the multi-segment Beta.3 ledger IDs (``T-BETA3-E2E``).
+ID_PATTERN = re.compile(
+    r"\b((?:[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)+)|(?:[A-Z]{1,3}\d*(?:\.\d+(?:\.\d+)*)?))\b"
+)
+PRIMARY_ID_PATTERN = re.compile(
+    r"^-\s*\[[ x]\]\s+((?:[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)+)|(?:[A-Z]{1,3}\d*(?:\.\d+(?:\.\d+)*)?))\b"
+)
 EPOCH_PATTERN = re.compile(r"epoch\s+(\d{10,})")
 STALE_SECONDS = 24 * 3600
 

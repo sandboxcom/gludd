@@ -241,12 +241,12 @@ State backend for terraform with HTTP API (lock/unlock/get/update), replacing lo
 - [x] S53.28 — Legacy phase tick sweep | evidence: 1807 items across 40+ phases
 - [ ] S53.29 — Cut v0.1.0-beta.2 release with ALL artifacts working | status: in_progress — CI run 30154162598 with all smoke test fixes
 - [ ] S53.30 — Port git automation targets into gludd collection | status: in_progress — verify-remote, batch-push, release-ops, CI-ops, ship-commit, worktree, index, feature-branch, mutations, duplicate-targets on development
-- [ ] S53.31 — Agentic memory research + embedding store | status: done — docs/research/AGENTIC_MEMORY_RESEARCH.md + MemoryEmbeddingStore (commit ed9f9f5a)
+- [x] S53.31 — Agentic memory research + embedding store | status: completed | evidence: docs/research/AGENTIC_MEMORY_RESEARCH.md; MemoryEmbeddingStore implementation and 30 passing tests (`make test-specific TESTFILE=tests/unit/test_memory_embedding_store.py`)
 - [ ] S53.32 — Memory consolidation cascade + hybrid search | status: in_progress — consolidation + retrieval enhancements
 - [x] S53.33 — PaaS IAM least-privilege roles (AWS/GCP/Azure) | evidence: 3 provider IAM files + 32 tests (commit b4612d1a)
 - [x] S53.34 — OPA policies for Terraform + IAM validation | evidence: 4 OPA policy files + tests (commit pending)
-- [ ] S53.35 — Root directory cleanup + security hardening | status: in_progress — remove leaked keys, debug files, mislocated artifacts
-- [ ] S53.36 — Directory structure documentation | status: in_progress — docs/DIRECTORY_STRUCTURE.md
+- [x] S53.35 — Root directory cleanup + security hardening | evidence: removed root deploy key and leaked `.coverage.audit.*` artifacts; regression coverage in `tests/unit/test_root_cleanup.py` (3 tests)
+- [x] S53.36 — Directory structure documentation | evidence: `docs/DIRECTORY_STRUCTURE.md` documents repository layout and explicitly routes credentials/generated reports outside the repository; regression coverage in `tests/unit/test_directory_structure.py` + `tests/unit/test_root_cleanup.py`
 - [ ] S53.37 — Task tracking enforcement gap analysis + spec | status: in_progress — audit behavioral guardrails
 - [ ] S53.38 — Hard task-registration guard | status: in_progress — scripts/check_task_registration.py, scripts/check_task_ledger.py, tests/unit/test_task_registration.py, Makefile gate integration
 

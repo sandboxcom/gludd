@@ -54,7 +54,6 @@
 | `CONTRIBUTING.md` | Contribution guide |
 | `THIRD_PARTY_LICENSES.md` | Third-party license notices |
 | `Containerfile` / `Dockerfile` | Container image build |
-| `Makefile.pushwait` | CI push-wait helper (scripts/) |
 | `.secrets.baseline` | detect-secrets baseline |
 | `.pre-commit-config.yaml` | Pre-commit hook configuration |
 | `.gitignore` | Git ignore rules |
@@ -63,10 +62,13 @@
 | `.mcp.json` | MCP server manifest |
 | `ansible.cfg` | Ansible configuration |
 | `alembic.ini` | DB migration config |
-| `messages.pot` | Gettext translation template (locale/) |
-| `coverage.json` | Coverage data export (build/) |
 | `project.yml` | Project-level config |
-| `sandboxcom_github_rsa` | SSH key for sandboxcom GitHub remote |
+
+Credentials and generated reports are deliberately not root files. Deploy keys
+must be supplied through an operator-managed path outside the repository (or a
+`GIT_SSH_COMMAND`/agent), and rotated independently of source history. Coverage
+databases and reports belong under the audit scratch directory or `build/` and
+must never be committed.
 
 ---
 

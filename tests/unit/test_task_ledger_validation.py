@@ -19,6 +19,9 @@ class TestIdPattern:
     def test_hyphenated_ids_supported(self) -> None:
         assert ID_PATTERN.findall("FIX-3 — hotfix id") == ["FIX-3"]
 
+    def test_beta3_hyphenated_ids_supported(self) -> None:
+        assert ID_PATTERN.findall("T-BETA3-E2E — certification") == ["T-BETA3-E2E"]
+
     def test_does_not_match_plain_text(self) -> None:
         assert not ID_PATTERN.findall("description with 1.2 value")
 
@@ -37,6 +40,11 @@ class TestExtractTasks:
         assert len(checked) == 0
         assert len(unchecked) == 1
         assert unchecked[0]["ids"] == ["A.1"]
+
+    def test_parses_beta3_unchecked_item(self) -> None:
+        content = "- [ ] T-BETA3-COVERAGE — Branch coverage | status: pending\n"
+        _checked, unchecked = extract_tasks_content(content)
+        assert unchecked[0]["ids"] == ["T-BETA3-COVERAGE"]
 
     def test_mixed_items(self) -> None:
         content = (
