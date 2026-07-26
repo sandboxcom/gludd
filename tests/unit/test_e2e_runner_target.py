@@ -77,7 +77,7 @@ def test_worktree_e2e_cleanup_is_scoped_to_the_requesting_worktree() -> None:
 
 def test_e2e_runner_executes_files_in_bounded_serial_processes() -> None:
     body = _target_body("test-e2e")
-    assert "find tests/e2e" in body
+    assert "e2e_supervisor.py pending" in body
     assert "for test_file in" in body
     assert "E2E_WORKERS" in body
 
@@ -86,3 +86,11 @@ def test_nested_full_unit_suite_is_rejected_during_e2e() -> None:
     body = _target_body("test-unit")
     assert "GLUDD_E2E_ACTIVE" in body
     assert "nested full test-unit" in body
+
+
+def test_e2e_runner_uses_durable_restart_supervisor() -> None:
+    body = _target_body("test-e2e")
+    assert "e2e_supervisor.py pending" in body
+    assert "e2e_supervisor.py record" in body
+    assert "heartbeat-loop" in body
+    assert "E2E_HEARTBEAT_SECS" in body
