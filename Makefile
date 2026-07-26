@@ -203,6 +203,9 @@ help:
 	@echo "  test-count            Count collected tests"
 	@echo "  test-failures         Show test failures"
 	@echo   provider-smoke        Run gludd smoke PROVIDER=aws SMOKE_TEST=ec2-a100 ARGS=--json
+	@echo "  provider-harness      Validate Azure/RunPod credentials, billing bounds, and optional Gludd telemetry"
+	@echo "  azure-harness         Azure provider harness (LIVE=1 for read-only credential check)"
+	@echo "  runpod-harness        RunPod provider harness (LIVE=1 for read-only credential check)"
 	@echo "  test-and-commit       Run tests then commit if green (MSG='msg')"
 	@echo "  audit-coverage        Run coverage audit: pytest --cov + per-file threshold check"
 	@echo "  test-live-zai         Live GLM model test (requires API key)"
@@ -1671,6 +1674,19 @@ provider-smoke:
 	@test -n "$(PROVIDER)" || { echo Usage: make provider-smoke PROVIDER=aws SMOKE_TEST=ec2-a100 ARGS=--json; exit 1; }
 	@test -n "$(SMOKE_TEST)" || { echo Usage: make provider-smoke PROVIDER=aws SMOKE_TEST=ec2-a100 ARGS=--json; exit 1; }
 	@$(UV) run gludd smoke "$(PROVIDER)" "$(SMOKE_TEST)" $(ARGS)
+
+# Provider deployment harnesses validate credentials and billing scopes without
+# creating resources. Add GLUDD_INGEST_URL + GLUDD_INGEST_TOKEN to publish the
+# normalized validation event and log record to Gludd's receiver.
+provider-harness:
+	@test -n "$(PROVIDER)" || { echo "Usage: make provider-harness PROVIDER=azure|runpod [LIVE=1]"; exit 1; }
+	@$(UV) run python scripts/provider_smoke_harness.py "$(PROVIDER)" $(if $(LIVE),--live,)
+
+azure-harness:
+	@$(MAKE) --no-print-directory provider-harness PROVIDER=azure LIVE=$(LIVE)
+
+runpod-harness:
+	@$(MAKE) --no-print-directory provider-harness PROVIDER=runpod LIVE=$(LIVE)
 
 iam-headless-smoke:
 	@$(UV) run python scripts/iam_headless_smoke.py

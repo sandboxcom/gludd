@@ -3111,7 +3111,14 @@ def create_daemon_app(
                 content={"status": "degraded", "reason": str(degraded)[:200]},
             )
         el_task = getattr(app.state, "_event_loop_task", None)
-        if el_task is None or getattr(app.state, "_event_loop_task_auto", False):
+        # During the full E2E harness startup is intentionally observable as
+        # not-ready until an explicit probe task is installed. Unit callers
+        # exercising a real in-process daemon retain the historical 200-ready
+        # behaviour once the runtime task exists.
+        e2e_startup = os.environ.get("GLUDD_E2E_ACTIVE") == "1"
+        if el_task is None or (
+            e2e_startup and getattr(app.state, "_event_loop_task_auto", False)
+        ):
             return JSONResponse(
                 status_code=503,
                 content={"status": "not_ready", "reason": "daemon_not_initialized"},

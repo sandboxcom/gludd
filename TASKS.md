@@ -615,3 +615,5 @@ old summary table omitted entirely. Grand total across the file: **326** boxes.
 - [ ] T-BETA3-HOOKS — Hook-runtime regressions: fix permission/status-summary blocking failures and rerun runtime harness
 - [ ] T-BETA3-RELEASE — Beta.3 release readiness: complete remaining release/CI Git automation operations, gate, exact-SHA CI, and release validation
 - [ ] T-BETA3-GAME-E2E — Game mechanics E2E: documented rules, color/state transitions, physics, timing/speed, collision and terminal-state behavior
+- [ ] T-BETA3-IAM-OPA — Close IAM/OPA smoke regressions: provider-specific OPA rules, AWS condition/resource scopes, and GCP policy text contract
+- [ ] T-BETA3-PROVIDER-HARNESS — Credential-safe Azure and RunPod read-only harnesses: subscription/billing inputs, API keys, budget bounds, and Gludd event/log ingestion
