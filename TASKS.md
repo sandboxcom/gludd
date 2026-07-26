@@ -613,3 +613,4 @@ old summary table omitted entirely. Grand total across the file: **326** boxes.
 - [ ] T-BETA3-COVERAGE — Instrumented E2E branch coverage: repair environment, prove >=85% aggregate and >=75% per file
 - [ ] T-BETA3-HOOKS — Hook-runtime regressions: fix permission/status-summary blocking failures and rerun runtime harness
 - [ ] T-BETA3-RELEASE — Beta.3 release readiness: complete remaining release/CI Git automation operations, gate, exact-SHA CI, and release validation
+- [ ] T-BETA3-GAME-E2E — Game mechanics E2E: documented rules, color/state transitions, physics, timing/speed, collision and terminal-state behavior

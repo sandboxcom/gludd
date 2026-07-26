@@ -49,6 +49,20 @@ and since all 12 games passed, the class-level `_gaps` list was empty.)
 
 ## Observed Behaviors (What Worked)
 
+### 0. Mechanics contract research (2026-07-25)
+
+The new E2E assertions follow long-lived Snake implementation guidance found
+in community and reference material: logical updates move one grid cell,
+wall/body contact ends the run, and eating food grows the body while updating
+score.  A current game reference describes a roughly 110 ms logical tick and
+one-cell movement ([Toolnest Snake](https://lab.golamrabbani.org/games/snake));
+the TDD Buddy kata states the same one-cell-per-tick and wall-collision rules
+([Snake Game Kata](https://tddbuddy.com/katas/snake-game)).  A Godot forum thread
+also documents the common collision bug caused by moving in multi-cell chunks
+([Godot Forum](https://forum.godotengine.org/t/what-collision-objects-to-use-in-a-snake-game/4536)).
+The tests pin deterministic logical behavior without assuming a rendering
+palette or a wall-clock scheduler, since those vary by frontend.
+
 ### 1. Code Extraction Pipeline
 - `_extract_python_module()` correctly extracted fenced ` ```python ` blocks from every game
 - `_parse_ast()` confirmed parseable Python with class definitions and imports in all cases
