@@ -43,7 +43,12 @@ class ServiceDiscoveryPipeline:
         catalog_path: str = DEFAULT_CATALOG_PATH,
         search_terms: list[str] | None = None,
     ) -> None:
-        self._searx = SearXConnector({"base_url": searx_url})
+        self._searx = SearXConnector({
+            "base_url": searx_url,
+            # The bundled managed SearX service binds to loopback; this is an
+            # explicit local-service opt-in, while external URLs remain guarded.
+            "allow_private": searx_url.startswith("http://localhost"),
+        })
         self._catalog = ServiceCatalog(path=catalog_path)
         self._search_terms = search_terms or DEFAULT_SEARCH_TERMS
 

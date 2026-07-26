@@ -123,12 +123,14 @@ class SearXConnector:
         if host.startswith("[") and host.endswith("]"):
             host = host[1:-1]
 
-        if host_is_blocked(host):
+        allow_private = bool(config.get("allow_private", False))
+        if host_is_blocked(host) and not allow_private:
             raise ConnectorConfigError(
                 f"base_url host is blocked (loopback/private/metadata): {host!r}"
             )
 
         self.base_url = base_url
+        self.allow_private = allow_private
         timeout_raw = config.get("timeout", _DEFAULT_TIMEOUT)
         if not isinstance(timeout_raw, (str, int, float)):
             timeout_raw = _DEFAULT_TIMEOUT
