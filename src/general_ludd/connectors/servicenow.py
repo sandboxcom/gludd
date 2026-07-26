@@ -32,7 +32,9 @@ logger = logging.getLogger(__name__)
 class _DisplayName(str):
     """Canonical connector name with a diagnostic instance display string."""
 
-    def __new__(cls, canonical: str, display: str) -> "_DisplayName":
+    _display: str
+
+    def __new__(cls, canonical: str, display: str) -> _DisplayName:
         value = super().__new__(cls, canonical)
         value._display = display
         return value
@@ -44,7 +46,9 @@ class _DisplayName(str):
 class _DisplayText(str):
     """Canonical short description with ticket number in diagnostics."""
 
-    def __new__(cls, canonical: str, display: str) -> "_DisplayText":
+    _display: str
+
+    def __new__(cls, canonical: str, display: str) -> _DisplayText:
         value = super().__new__(cls, canonical)
         value._display = display
         return value

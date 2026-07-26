@@ -565,10 +565,11 @@ class TestZendeskConnector:
         from general_ludd.connectors.zendesk import ZendeskSource
 
         transport = MockHttpResponseTransport(status_code=200, body={"tickets": []})
+        monkeypatch.setenv("ZD_EMAIL", "e2e@example.com")
         monkeypatch.setenv("ZD_TOK", "tok")
         try:
             source = ZendeskSource(
-                {"subdomain": "test", "token_env": "ZD_TOK"},
+                {"subdomain": "test", "email_env": "ZD_EMAIL", "token_env": "ZD_TOK"},
                 transport=transport,
             )
             result = source.health()
@@ -580,10 +581,11 @@ class TestZendeskConnector:
         from general_ludd.connectors.zendesk import ZendeskSource
 
         transport = MockHttpResponseTransport(status_code=500, body={})
+        monkeypatch.setenv("ZD_EMAIL_2", "e2e@example.com")
         monkeypatch.setenv("ZD_TOK_2", "tok")
         try:
             source = ZendeskSource(
-                {"subdomain": "test", "token_env": "ZD_TOK_2"},
+                {"subdomain": "test", "email_env": "ZD_EMAIL_2", "token_env": "ZD_TOK_2"},
                 transport=transport,
             )
             result = source.health()
@@ -607,10 +609,11 @@ class TestZendeskConnector:
                 ]
             },
         )
+        monkeypatch.setenv("ZD_EMAIL_Q", "e2e@example.com")
         monkeypatch.setenv("ZD_T_Q", "tok")
         try:
             source = ZendeskSource(
-                {"subdomain": "test", "token_env": "ZD_T_Q"},
+                {"subdomain": "test", "email_env": "ZD_EMAIL_Q", "token_env": "ZD_T_Q"},
                 transport=transport,
             )
             records = source.query({})
