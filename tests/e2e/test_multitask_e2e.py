@@ -12,6 +12,7 @@ import os
 import subprocess
 import tempfile
 from pathlib import Path
+from typing import Any, cast
 
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_PATH = ROOT / ".opencode" / "plugin" / "enforce-multitask.ts"
@@ -29,7 +30,7 @@ _ts_counter = 0
 
 def _run_plugin(
     ts_code: str,
-    env_override: dict | None = None,
+    env_override: dict[str, str] | None = None,
     cwd: str | None = None,
     timeout: int = 15,
 ) -> str:
@@ -37,6 +38,9 @@ def _run_plugin(
     _ts_counter += 1
     tmp = Path(tempfile.mktemp(suffix=".ts", prefix=f"multitask_e2e_{_ts_counter}_"))
     state_file = Path(tempfile.mktemp(suffix=".json", prefix=f"gludd-multitask-e2e-{_ts_counter}-"))
+    ci_cache_state = state_file.with_name(state_file.stem + "-ci.json")
+    todowrite_state = state_file.with_name(state_file.stem + "-todo.json")
+    hot_module_prefix = state_file.with_name(state_file.stem + "-hot-")
     tmp.write_text(ts_code)
     try:
         env = os.environ.copy()
@@ -46,6 +50,10 @@ def _run_plugin(
             Path(tempfile.mktemp(suffix=".json", prefix=f"gludd-disengage-e2e-{_ts_counter}-"))
         )
         env["GLUDD_MULTITASK_STATE_FILE"] = str(state_file)
+        env["GLUDD_CI_CACHE_PATH"] = str(ci_cache_state)
+        env["GLUDD_TODOWRITE_STATE_PATH"] = str(todowrite_state)
+        env["GLUDD_HOT_MODULE_PREFIX"] = str(hot_module_prefix)
+        env["GLUDD_PROJECT_ROOT"] = str(Path(cwd or ROOT))
         if env_override:
             env.update(env_override)
         proc = subprocess.run(
@@ -63,15 +71,20 @@ def _run_plugin(
             tmp.unlink()
         with contextlib.suppress(OSError):
             state_file.unlink()
+        for state_path in (ci_cache_state, todowrite_state):
+            with contextlib.suppress(OSError):
+                state_path.unlink()
 
 
-def _last_json(stdout: str) -> dict | None:
+def _last_json(stdout: str) -> dict[str, Any] | None:
     for line in reversed(stdout.split("\n")):
         line = line.strip()
         if not line:
             continue
         try:
-            return json.loads(line)
+            value = json.loads(line)
+            if isinstance(value, dict):
+                return cast(dict[str, Any], value)
         except json.JSONDecodeError:
             continue
     return None
@@ -973,7 +986,9 @@ import * as fs from 'node:fs'
 const mod = await import('{PLUGIN_PATH}')
 const plugin = await mod.default({{}})
 {dispatches}
-const state = JSON.parse(fs.readFileSync('/tmp/gludd-multitask-state.json', 'utf8'))
+const statePath = process.env.GLUDD_MULTITASK_STATE_FILE
+if (!statePath) throw new Error('GLUDD_MULTITASK_STATE_FILE must be set by the harness')
+const state = JSON.parse(fs.readFileSync(statePath, 'utf8'))
 const r = await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
 console.log(JSON.stringify({{...r, zeroStreakBefore: state.zeroStreak}}))
 """

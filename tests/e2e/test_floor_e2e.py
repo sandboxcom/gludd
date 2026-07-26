@@ -13,6 +13,7 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path
+from typing import Any, cast
 
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_PATH = ROOT / ".opencode" / "plugin" / "enforce-floor.ts"
@@ -32,7 +33,7 @@ _ts_counter = 0
 
 def _run_plugin(
     ts_code: str,
-    env_override: dict | None = None,
+    env_override: dict[str, str] | None = None,
     cwd: str | None = None,
     timeout: int = 15,
 ) -> str:
@@ -40,10 +41,39 @@ def _run_plugin(
     global _ts_counter
     _ts_counter += 1
     tmp = Path(tempfile.mktemp(suffix=".ts", prefix=f"floor_e2e_{_ts_counter}_"))
+    session_state = Path(
+        tempfile.mktemp(suffix=".json", prefix=f"gludd-session-floor-e2e-{_ts_counter}-")
+    )
+    session_state.write_text('{"started_at": 0}\n')
+    # Every plugin state file must be per-test: concurrent E2E shards otherwise
+    # race through shared /tmp streak/disengage/heartbeat state and make
+    # enforcement assertions order-dependent.
+    streak_state = session_state.with_name(session_state.stem + "-streak.json")
+    disengage_state = session_state.with_name(session_state.stem + "-disengage.json")
+    disengage_next = session_state.with_name(session_state.stem + "-disengage-next")
+    disengage_audit = session_state.with_name(session_state.stem + "-disengage-audit.jsonl")
+    alive_state = session_state.with_name(session_state.stem + "-alive.json")
+    grind_state = session_state.with_name(session_state.stem + "-grind.json")
+    hot_module_prefix = session_state.with_name(session_state.stem + "-hot-")
+    ci_cache_state = session_state.with_name(session_state.stem + "-ci.json")
+    stop_state = session_state.with_name(session_state.stem + "-stop.json")
     tmp.write_text(ts_code)
     try:
         env = os.environ.copy()
         env["OPENCODE_SUBAGENT"] = ""
+        # Keep concurrent shard runs from sharing the real session-start state.
+        env["GLUDD_SESSION_STATE"] = str(session_state)
+        env["GLUDD_STREAK_FILE"] = str(streak_state)
+        env["GLUDD_DISENGAGE_PATH"] = str(disengage_state)
+        env["GLUDD_DISENGAGE_NEXT_PATH"] = str(disengage_next)
+        env["GLUDD_DISENGAGE_AUDIT_PATH"] = str(disengage_audit)
+        env["GLUDD_ALIVE_PATH"] = str(alive_state)
+        env["GLUDD_READ_GRIND_FILE"] = str(grind_state)
+        env["GLUDD_PROJECT_ROOT"] = str(Path(cwd or ROOT))
+        # Do not load a process-global hot module compiled for another shard.
+        env["GLUDD_HOT_MODULE_PREFIX"] = str(hot_module_prefix)
+        env["GLUDD_CI_CACHE_PATH"] = str(ci_cache_state)
+        env["GLUDD_STOP_STATE_PATH"] = str(stop_state)
         if env_override:
             env.update(env_override)
         proc = subprocess.run(
@@ -59,16 +89,32 @@ def _run_plugin(
     finally:
         with contextlib.suppress(OSError):
             tmp.unlink()
+        with contextlib.suppress(OSError):
+            session_state.unlink()
+        for state_path in (
+            streak_state,
+            disengage_state,
+            disengage_next,
+            disengage_audit,
+            alive_state,
+            grind_state,
+            ci_cache_state,
+            stop_state,
+        ):
+            with contextlib.suppress(OSError):
+                state_path.unlink()
 
 
-def _last_json(stdout: str) -> dict | None:
+def _last_json(stdout: str) -> dict[str, Any] | None:
     """Parse the last JSON line from stdout."""
     for line in reversed(stdout.split("\n")):
         line = line.strip()
         if not line:
             continue
         try:
-            return json.loads(line)
+            value = json.loads(line)
+            if isinstance(value, dict):
+                return cast(dict[str, Any], value)
         except json.JSONDecodeError:
             continue
     return None
@@ -336,11 +382,11 @@ console.log(JSON.stringify(r ?? {{allowed: true}}))
     assert r is not None and r.get("permissionDecision") == "deny", (
         f"Message-shape violation should block, got: {r}"
     )
-    assert "MESSAGE-SHAPE" in r.get("message", "")
+    assert "WAVE WIDTH VIOLATION" in r.get("message", "")
 
 
-def test_message_shape_allows_after_5plus_dispatch_wave(tmp_path):
-    """After a 5-dispatch wave (non-thin), next non-dispatch is allowed."""
+def test_message_shape_allows_after_10_dispatch_wave(tmp_path):
+    """After an exact 10-dispatch wave, next non-dispatch is allowed."""
     ws = tmp_path / "msg-ok"
     ws.mkdir()
     _make_working_workspace(ws)
@@ -348,11 +394,16 @@ def test_message_shape_allows_after_5plus_dispatch_wave(tmp_path):
     code = f"""\
 const mod = await import('{PLUGIN_PATH}')
 const plugin = await mod.default({{}})
-await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
-await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
-await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
-await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
-await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
+    await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
+    await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
+    await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
+    await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
+    await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
+    await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
+    await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
+    await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
+    await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
+    await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
 {_BOUNDARY_SLEEP_JS}
 const r = await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
 console.log(JSON.stringify(r ?? {{allowed: true}}))
@@ -360,7 +411,7 @@ console.log(JSON.stringify(r ?? {{allowed: true}}))
     result = _run_plugin(code, cwd=str(ws), env_override=_BOUNDARY_ENV)
     r = _last_json(result)
     assert r is None or r.get("permissionDecision") != "deny", (
-        f"5+ dispatch wave should allow next non-dispatch, got: {r}"
+        f"10-dispatch wave should allow next non-dispatch, got: {r}"
     )
 
 

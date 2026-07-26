@@ -121,7 +121,7 @@ function hasPendingWork(): boolean {
       if (/test REQUIRED/.test(content) || /smoke REQUIRED/.test(content)) return true
     }
 
-    const ciCachePath = "/tmp/gludd-watchdog-ci.json"
+    const ciCachePath = process.env.GLUDD_CI_CACHE_PATH || "/tmp/gludd-watchdog-ci.json"
     if (fs.existsSync(ciCachePath)) {
       const ciData = JSON.parse(fs.readFileSync(ciCachePath, "utf8"))
       const rawLastCheck: number = ciData.last_ci_check || 0
@@ -131,7 +131,7 @@ function hasPendingWork(): boolean {
     }
 
     try {
-      const todowritePath = "/tmp/gludd-todowrite-state.json"
+      const todowritePath = process.env.GLUDD_TODOWRITE_STATE_PATH || "/tmp/gludd-todowrite-state.json"
       if (fs.existsSync(todowritePath)) {
         const tdData = JSON.parse(fs.readFileSync(todowritePath, "utf8"))
         const items: any[] = Array.isArray(tdData.items) ? tdData.items : []
