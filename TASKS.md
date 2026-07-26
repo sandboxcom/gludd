@@ -624,6 +624,7 @@ old summary table omitted entirely. Grand total across the file: **326** boxes.
 - [ ] T-BETA3-OPENCode — OpenCode config/runtime enforcement E2E: focused plugin suite, restart verification, TASKS/commit gating | priority: medium | effort: M | status: pending
 - [ ] T-BETA3-E2E — Full E2E certification: serial runner, binary regressions, nested-process cleanup, terminal green result | priority: medium | effort: M | status: pending
 - [ ] T-BETA3-COVERAGE — Instrumented E2E branch coverage: repair environment, prove >=85% aggregate and >=75% per file | priority: medium | effort: M | status: pending
+- [ ] T-BETA3-COVERAGE-PROGRESS — Durable per-file E2E audit progress sidecar with run identity, counters, and fail-closed partial state | priority: medium | effort: S | status: pending
 - [x] T-BETA3-COVERAGE-DOCS — Document the E2E branch-coverage audit contract, shard failure evidence, aggregate JSON, and per-file thresholds | evidence: docs/E2E_COVERAGE_AUDIT_CONTRACT.md; coverage.py subprocess guidance and practitioner forum finding linked; markdown/task-ledger validation passed | priority: medium | effort: S | status: completed
 - [ ] T-BETA3-HOOKS — Hook-runtime regressions: fix permission/status-summary blocking failures and rerun runtime harness | priority: medium | effort: M | status: pending
 - [ ] T-BETA3-RELEASE — Beta.3 release readiness: complete remaining release/CI Git automation operations, gate, exact-SHA CI, and release validation | priority: medium | effort: M | status: pending
@@ -671,3 +672,4 @@ old summary table omitted entirely. Grand total across the file: **326** boxes.
  <!-- T-BETA3-PROCESS-CLEANUP paths: scripts/process_cleanup.py scripts/task_watchdog.py scripts/run_gate.sh tests/unit/test_process_cleanup.py -->
 <!-- T-BETA3-WATCHDOG-SINGLETON paths: scripts/agent_watchdog.py tests/unit/test_watchdog_singleton.py Makefile -->
 <!-- T-BETA3-RELEASE-READINESS paths: scripts/release_readiness.py tests/unit/test_release_readiness.py docs/RELEASE_READINESS.md -->
+<!-- T-BETA3-COVERAGE-PROGRESS paths: scripts/audit_coverage.py tests/unit/test_audit_coverage_progress.py docs/E2E_COVERAGE_AUDIT_CONTRACT.md -->

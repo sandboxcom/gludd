@@ -125,3 +125,92 @@ def test_progress_test_does_not_mutate_process_arguments(monkeypatch):
     original_argv = list(sys.argv)
     _load_audit_module("audit_coverage_progress_import")
     assert sys.argv == original_argv
+
+
+def test_progress_json_records_per_file_counts_and_run_identity(monkeypatch, tmp_path):
+    """Every shard update is durable and exposes auditable run identity/counts."""
+    module = _load_audit_module("audit_coverage_progress_durable")
+    _stub_e2e_files(monkeypatch, module, ["test_first.py", "test_second.py"])
+
+    def fake_run(args, **kwargs):
+        return type("Result", (), {"returncode": 0})()
+
+    monkeypatch.setattr(module.subprocess, "run", fake_run)
+    report_path = tmp_path / "coverage.json"
+    progress_path = tmp_path / "coverage.progress.json"
+    shards: list[dict[str, object]] = []
+    assert module.run_pytest_coverage(
+        "src/general_ludd", str(report_path), shards, str(progress_path)
+    ) == 0
+
+    progress = json.loads(progress_path.read_text())
+    assert progress["schema_version"] == 1
+    assert progress["status"] == "completed"
+    assert progress["complete"] is True
+    assert progress["pid"] == module.os.getpid()
+    assert progress["run_id"]
+    assert progress["current_index"] == 2
+    assert progress["total"] == 2
+    assert progress["counts"] == {
+        "attempted": 2,
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0,
+    }
+    assert [entry["status"] for entry in progress["files"]] == ["passed", "passed"]
+
+
+def test_progress_json_marks_unattempted_files_skipped_after_failure(
+    monkeypatch, tmp_path
+):
+    """A stopped audit records skipped files instead of implying completion."""
+    module = _load_audit_module("audit_coverage_progress_partial")
+    _stub_e2e_files(monkeypatch, module, ["test_first.py", "test_second.py"])
+
+    def fake_run(args, **kwargs):
+        return type("Result", (), {"returncode": 23})()
+
+    monkeypatch.setattr(module.subprocess, "run", fake_run)
+    report_path = tmp_path / "coverage.json"
+    progress_path = tmp_path / "coverage.progress.json"
+    shards: list[dict[str, object]] = []
+    assert module.run_pytest_coverage(
+        "src/general_ludd", str(report_path), shards, str(progress_path)
+    ) == 23
+
+    progress = json.loads(progress_path.read_text())
+    assert progress["status"] == "failed"
+    assert progress["complete"] is False
+    assert progress["current_index"] == 1
+    assert progress["counts"] == {
+        "attempted": 1,
+        "passed": 0,
+        "failed": 1,
+        "skipped": 1,
+    }
+    assert [entry["status"] for entry in progress["files"]] == ["failed", "skipped"]
+    assert progress["files"][1]["reason"] == "stopped_after_failure"
+
+
+def test_progress_json_marks_timeout_without_claiming_complete(monkeypatch, tmp_path):
+    """Timeouts persist a failed partial state with remaining files skipped."""
+    module = _load_audit_module("audit_coverage_progress_timeout")
+    _stub_e2e_files(monkeypatch, module, ["test_first.py", "test_second.py"])
+
+    def fake_run(args, **kwargs):
+        raise module.subprocess.TimeoutExpired(args, 3)
+
+    monkeypatch.setattr(module.subprocess, "run", fake_run)
+    report_path = tmp_path / "coverage.json"
+    progress_path = tmp_path / "coverage.progress.json"
+    shards: list[dict[str, object]] = []
+    assert module.run_pytest_coverage(
+        "src/general_ludd", str(report_path), shards, str(progress_path)
+    ) == 124
+
+    progress = json.loads(progress_path.read_text())
+    assert progress["status"] == "failed"
+    assert progress["complete"] is False
+    assert progress["counts"]["failed"] == 1
+    assert progress["counts"]["skipped"] == 1
+    assert progress["files"][0]["status"] == "timed_out"

@@ -17,6 +17,7 @@ import subprocess
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import cast
 
 
 def parse_coverage_json(
@@ -24,7 +25,7 @@ def parse_coverage_json(
     threshold: float,
     source_path: str,
     per_file_threshold: float = 75.0,
-) -> tuple[dict, list[str], bool]:
+) -> tuple[dict[str, object], list[str], bool]:
     with open(json_path) as f:
         raw = f.read()
     data = json.loads(raw)
@@ -154,6 +155,94 @@ COVERAGE_AUDIT_TIMEOUT_SECONDS = int(
     os.environ.get("GLUDD_COVERAGE_AUDIT_TIMEOUT_SECONDS", "1800")
 )
 
+PROGRESS_SCHEMA_VERSION = 1
+
+
+def _progress_path(json_out_path: str) -> Path:
+    """Return the durable sidecar path for an in-flight audit.
+
+    The sidecar intentionally differs from the aggregate report: aggregate
+    coverage is written only after every E2E file passes, while this file is
+    updated after each state transition so an interrupted run is observable.
+    """
+    return Path(f"{json_out_path}.progress.json")
+
+
+def _write_progress(path: Path, payload: dict[str, object]) -> None:
+    """Atomically publish a progress snapshot without exposing half-written JSON."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    temporary.write_text(json.dumps(payload, indent=2, sort_keys=True))
+    os.replace(temporary, path)
+
+
+def _progress_snapshot(
+    *,
+    run_id: str,
+    started_at: str,
+    files: list[str],
+    states: list[dict[str, object]],
+    current_index: int,
+    status: str,
+    complete: bool,
+    error: str | None = None,
+) -> dict[str, object]:
+    counts = {
+        "attempted": sum(
+            entry.get("status") in {"running", "passed", "failed", "timed_out"}
+            for entry in states
+        ),
+        "passed": sum(entry.get("status") == "passed" for entry in states),
+        "failed": sum(
+            entry.get("status") in {"failed", "timed_out"} for entry in states
+        ),
+        "skipped": sum(entry.get("status") == "skipped" for entry in states),
+    }
+    payload: dict[str, object] = {
+        "schema_version": PROGRESS_SCHEMA_VERSION,
+        "kind": "coverage_audit_progress",
+        "run_id": run_id,
+        "pid": os.getpid(),
+        "started_at": started_at,
+        "updated_at": datetime.now(UTC).isoformat(),
+        "status": status,
+        "complete": complete,
+        "current_index": current_index,
+        "total": len(files),
+        "counts": counts,
+        "files": states,
+    }
+    if error:
+        payload["error"] = error
+    return payload
+
+
+def _publish_progress(
+    path: Path,
+    *,
+    run_id: str,
+    started_at: str,
+    files: list[str],
+    states: list[dict[str, object]],
+    current_index: int,
+    status: str,
+    complete: bool,
+    error: str | None = None,
+) -> None:
+    _write_progress(
+        path,
+        _progress_snapshot(
+            run_id=run_id,
+            started_at=started_at,
+            files=files,
+            states=states,
+            current_index=current_index,
+            status=status,
+            complete=complete,
+            error=error,
+        ),
+    )
+
 
 def _coverage_environment() -> dict[str, str]:
     """Build the child environment for a certified E2E coverage shard.
@@ -175,20 +264,53 @@ def run_pytest_coverage(
     source: str,
     json_out_path: str,
     shard_results: list[dict[str, object]] | None = None,
+    progress_json_path: str | None = None,
 ) -> int:
-    """Run certified serial E2E files, then emit JSON only after all pass."""
+    """Run E2E files and publish durable progress before aggregate coverage."""
     env = _coverage_environment()
     root = Path(__file__).parent.parent
     files = sorted((root / "tests/e2e").rglob("test_*.py"))
     if not files:
         print("ERROR: no E2E test files found", file=sys.stderr)
         return 2
+    progress_path = Path(progress_json_path) if progress_json_path else _progress_path(json_out_path)
+    relative_files = [str(path.relative_to(root)) for path in files]
+    run_id = f"{os.getpid()}-{datetime.now(UTC).strftime('%Y%m%dT%H%M%S%fZ')}"
+    started_at = datetime.now(UTC).isoformat()
+    states: list[dict[str, object]] = [
+        {"path": path, "status": "pending"} for path in relative_files
+    ]
+    _publish_progress(
+        progress_path,
+        run_id=run_id,
+        started_at=started_at,
+        files=relative_files,
+        states=states,
+        current_index=0,
+        status="running",
+        complete=False,
+    )
     coverage_file = root / f".coverage.audit.{os.getpid()}"
     env["COVERAGE_FILE"] = str(coverage_file)
     coverage_file.unlink(missing_ok=True)
     try:
         results = shard_results if shard_results is not None else []
         for index, test_file in enumerate(files):
+            states[index] = {
+                "path": relative_files[index],
+                "status": "running",
+                "started_at": datetime.now(UTC).isoformat(),
+            }
+            _publish_progress(
+                progress_path,
+                run_id=run_id,
+                started_at=started_at,
+                files=relative_files,
+                states=states,
+                current_index=index,
+                status="running",
+                complete=False,
+            )
             basetemp = Path(f"/tmp/gludd-audit-e2e-{os.getpid()}-{index}")
             args = [sys.executable, "-m", "pytest", str(test_file),
                     f"--cov={source}", "--cov-branch", "--cov-context=test",
@@ -203,6 +325,29 @@ def run_pytest_coverage(
                     timeout=COVERAGE_AUDIT_TIMEOUT_SECONDS,
                 )
             except subprocess.TimeoutExpired:
+                states[index] = {
+                    "path": relative_files[index],
+                    "status": "timed_out",
+                    "returncode": 124,
+                    "finished_at": datetime.now(UTC).isoformat(),
+                }
+                for remaining in range(index + 1, len(states)):
+                    states[remaining] = {
+                        "path": relative_files[remaining],
+                        "status": "skipped",
+                        "reason": "stopped_after_failure",
+                    }
+                _publish_progress(
+                    progress_path,
+                    run_id=run_id,
+                    started_at=started_at,
+                    files=relative_files,
+                    states=states,
+                    current_index=index + 1,
+                    status="failed",
+                    complete=False,
+                    error="pytest shard timed out",
+                )
                 results.append({
                     "path": str(test_file.relative_to(root)),
                     "status": "timed_out",
@@ -213,20 +358,74 @@ def run_pytest_coverage(
                     file=sys.stderr,
                 )
                 return 124
-            shard = {
+            shard: dict[str, object] = {
                 "path": str(test_file.relative_to(root)),
                 "status": "passed" if result.returncode == 0 else "failed",
                 "returncode": result.returncode,
             }
             results.append(shard)
+            states[index] = {
+                **shard,
+                "finished_at": datetime.now(UTC).isoformat(),
+            }
             if result.returncode != 0:
+                for remaining in range(index + 1, len(states)):
+                    states[remaining] = {
+                        "path": relative_files[remaining],
+                        "status": "skipped",
+                        "reason": "stopped_after_failure",
+                    }
+                _publish_progress(
+                    progress_path,
+                    run_id=run_id,
+                    started_at=started_at,
+                    files=relative_files,
+                    states=states,
+                    current_index=index + 1,
+                    status="failed",
+                    complete=False,
+                    error=f"pytest shard exited with {result.returncode}",
+                )
                 print(f"E2E coverage file failed: {test_file}", file=sys.stderr)
                 return result.returncode
+            _publish_progress(
+                progress_path,
+                run_id=run_id,
+                started_at=started_at,
+                files=relative_files,
+                states=states,
+                current_index=index + 1,
+                status="running",
+                complete=False,
+            )
         report = subprocess.run(
             [sys.executable, "-m", "coverage", "json", "--show-contexts",
              "-o", json_out_path], cwd=root, env=env,
             timeout=COVERAGE_AUDIT_TIMEOUT_SECONDS,
         )
+        if report.returncode == 0:
+            _publish_progress(
+                progress_path,
+                run_id=run_id,
+                started_at=started_at,
+                files=relative_files,
+                states=states,
+                current_index=len(files),
+                status="completed",
+                complete=True,
+            )
+        else:
+            _publish_progress(
+                progress_path,
+                run_id=run_id,
+                started_at=started_at,
+                files=relative_files,
+                states=states,
+                current_index=len(files),
+                status="failed",
+                complete=False,
+                error=f"coverage json exited with {report.returncode}",
+            )
         return report.returncode
     except subprocess.TimeoutExpired:
         results = shard_results if shard_results is not None else []
@@ -235,6 +434,20 @@ def run_pytest_coverage(
             "status": "timed_out",
             "returncode": 124,
         })
+        for entry in states:
+            if entry.get("status") in {"pending", "running"}:
+                entry.update({"status": "skipped", "reason": "stopped_after_failure"})
+        _publish_progress(
+            progress_path,
+            run_id=run_id,
+            started_at=started_at,
+            files=relative_files,
+            states=states,
+            current_index=sum(entry.get("status") != "skipped" for entry in states),
+            status="failed",
+            complete=False,
+            error="coverage command timed out",
+        )
         print(
             "ERROR: coverage pytest timed out after "
             f"{COVERAGE_AUDIT_TIMEOUT_SECONDS}s",
@@ -282,6 +495,9 @@ def main() -> None:
 
     if not Path(json_file).exists():
         if pyrc != 0:
+            failed_shards = [
+                shard for shard in shard_results if shard["status"] != "passed"
+            ]
             failure_report = {
                 "generated_at": datetime.now(UTC).isoformat(),
                 "threshold": threshold,
@@ -291,16 +507,14 @@ def main() -> None:
                 "passed": False,
                 "pytest_exit_code": pyrc,
                 "shards": shard_results,
-                "failed_shards": [
-                    shard for shard in shard_results if shard["status"] != "passed"
-                ],
+                "failed_shards": failed_shards,
                 "error": "coverage JSON was not produced by the audit command",
             }
-            with open(json_out, "w") as f:
-                json.dump(failure_report, f, indent=2)
+            with open(json_out, "w") as output_file:
+                json.dump(failure_report, output_file, indent=2)
             print(f"Coverage audit failed — report: {json_out}", file=sys.stderr)
             print(
-                f"  Failed shards: {len(failure_report['failed_shards'])}",
+                f"  Failed shards: {len(failed_shards)}",
                 file=sys.stderr,
             )
             sys.exit(pyrc if pyrc > 1 else 1)
@@ -322,8 +536,8 @@ def main() -> None:
         shard for shard in shard_results if shard["status"] != "passed"
     ]
 
-    with open(json_out, "w") as f:
-        json.dump(report, f, indent=2)
+    with open(json_out, "w") as output_file:
+        json.dump(report, output_file, indent=2)
 
     print(f"Coverage audit complete — report: {json_out}")
     print(f"  Threshold: {threshold}%")
@@ -336,9 +550,10 @@ def main() -> None:
 
     if files_under or not all_ok:
         print("\nFiles below threshold:")
-        for f in sorted(files_under):
-            pct = report["per_file"][f]
-            print(f"  {pct:5.1f}%  {f}")
+        for file_path in sorted(files_under):
+            per_file = cast(dict[str, float], report["per_file"])
+            pct = per_file[file_path]
+            print(f"  {pct:5.1f}%  {file_path}")
         sys.exit(1)
 
     print(f"\nAll {report['total_files']} files meet the {threshold}% threshold.")
