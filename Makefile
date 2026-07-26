@@ -1641,9 +1641,11 @@ repo-log:
 
 git-add:
 	@if [ -z "$(FILES)" ]; then echo "Usage: make git-add FILES='file1 file2 ...'"; exit 1; fi
+	@for path in $(FILES); do case "$$path" in *sandboxcom_*rsa*|*sandboxcom_*ed25519*|*id_rsa*|*id_ed25519*) echo "REFUSING to stage SSH key path: $$path" >&2; exit 1;; esac; done
 	@git add $(FILES)
 
 git-add-all:
+	@KEY_PATHS="$$(git ls-files --others --exclude-standard; git diff --name-only)"; if printf '%s\n' "$$KEY_PATHS" | grep -E '(^|/)(sandboxcom_[^/]+|id_(rsa|ed25519))(\.pub)?$$' >/dev/null 2>&1; then echo "REFUSING to stage SSH key path" >&2; exit 1; fi
 	@git add -A
 
 git-lock-clean:
