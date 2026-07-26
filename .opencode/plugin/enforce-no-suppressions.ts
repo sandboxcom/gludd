@@ -5,7 +5,32 @@
 import type { Plugin } from "@opencode-ai/plugin";
 import { loadHotModule, type HotModule } from "../lib/hot_reload.ts";
 import { isSubagent, reportAlive } from "../lib/shared.ts";
-import { shouldAllowEdit } from "../lib/plugin_test_exports.ts";
+
+const SUPPRESSION_PATTERNS: RegExp[] = [
+  /#\s*noqa/, /#\s*type:\s*ignore/, /#\s*pylint:/,
+  /#\s*fmt:\s*(?:off|skip|on)/, /#\s*isort:\s*skip/,
+];
+const ALLOWLIST_PATHS = [
+  "src/general_ludd/security/fix_not_disable.py",
+  "tests/unit/test_type_safety_guardrails.py",
+];
+
+function shouldAllowEdit(
+  filePath: string,
+  content: string,
+): { allow: boolean; reason?: string } {
+  try {
+    if (ALLOWLIST_PATHS.some((allowed) => filePath.includes(allowed))) {
+      return { allow: true };
+    }
+    if (typeof content === "string" && SUPPRESSION_PATTERNS.some((re) => re.test(content))) {
+      return { allow: false, reason: DENY_MESSAGE };
+    }
+    return { allow: true };
+  } catch {
+    return { allow: true };
+  }
+}
 
 const DENY_MESSAGE =
   "Lint-suppression comments forbidden. Fix the underlying issue. " +
