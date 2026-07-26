@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable
-from typing import Protocol, runtime_checkable
+from typing import Protocol, cast, runtime_checkable
 from urllib.parse import urlsplit
 
 from general_ludd.connectors._errors import ConnectorConfigError
@@ -47,7 +47,7 @@ class HttpTransport(Protocol):
 
 def _default_transport(
     method: str,
-    url: str,
+    url: str | None = None,
     *,
     headers: dict[str, str] | None = None,
     params: dict[str, object] | None = None,
@@ -56,7 +56,21 @@ def _default_transport(
     """Lazily perform a bounded HTTP request when no adapter is injected."""
     import httpx
 
-    return httpx.request(method, url, headers=headers, params=params, timeout=timeout, follow_redirects=False)
+    if url is None:
+        url = method
+        method = "GET"
+    safe_params = {key: str(value) for key, value in (params or {}).items()}
+    return cast(
+        HttpResponse,
+        httpx.request(
+            method,
+            url,
+            headers=headers,
+            params=safe_params,
+            timeout=timeout,
+            follow_redirects=False,
+        ),
+    )
 
 
 def _assert_public_base_url(base_url: str) -> None:
@@ -117,7 +131,10 @@ class RollbarSource:
     def _request(self, url: str, *, params: dict[str, object] | None = None) -> HttpResponse:
         request = getattr(self._transport, "request", None)
         if callable(request):
-            return request("GET", url, headers=self._headers(), params=params, timeout=self._timeout)
+            return cast(
+                HttpResponse,
+                request("GET", url, headers=self._headers(), params=params, timeout=self._timeout),
+            )
         if callable(self._transport):
             try:
                 return self._transport("GET", url, headers=self._headers(), params=params, timeout=self._timeout)

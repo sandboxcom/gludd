@@ -42,7 +42,7 @@ from __future__ import annotations
 import base64
 import logging
 import os
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from typing import Protocol, TypedDict, cast
 from urllib.parse import urlsplit
@@ -227,7 +227,8 @@ class GraylogSource:
             return self._transport(url, headers=self._auth_header(), params=params, timeout=self.timeout)
         except TypeError as first_error:
             try:
-                return self._transport("GET", url, headers=self._auth_header(), params=params, timeout=self.timeout)  # type: ignore[arg-type]
+                method_transport = cast(Callable[..., HttpResponse], self._transport)
+                return method_transport("GET", url, headers=self._auth_header(), params=params, timeout=self.timeout)
             except TypeError:
                 raise first_error from None
 

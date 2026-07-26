@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 import os
 from collections.abc import Callable
-from typing import Protocol, runtime_checkable
+from typing import Protocol, cast, runtime_checkable
 from urllib.parse import urlsplit
 
 from general_ludd.connectors._errors import ConnectorConfigError
@@ -103,7 +103,10 @@ class BugsnagSource:
         """
         request = getattr(self._transport, "request", None)
         if callable(request):
-            return request("GET", url, headers=self._headers(), params=params, timeout=self._timeout)
+            return cast(
+                HttpResponse,
+                request("GET", url, headers=self._headers(), params=params, timeout=self._timeout),
+            )
         if callable(self._transport):
             try:
                 return self._transport("GET", url, headers=self._headers(), params=params, timeout=self._timeout)
