@@ -669,7 +669,14 @@ class TestGrafanaOnCallConnector:
 
         transport = MockHttpTransport(default_status=200, default_body={"results": []})
         monkeypatch.setenv("GRAFANA_ONCALL_TOKEN", "test-token")
-        src = GrafanaOnCallSource({"token_env": "GRAFANA_ONCALL_TOKEN"}, transport=cast(Any, transport))
+        src = GrafanaOnCallSource(
+            {
+                "base_url": "https://grafana.example.com/",
+                "token_env": "GRAFANA_ONCALL_TOKEN",
+                "allow_private": True,
+            },
+            transport=cast(Any, transport),
+        )
         result = src.health()
         assert isinstance(result, dict)
 
@@ -691,7 +698,14 @@ class TestGrafanaOnCallConnector:
             },
         )
         monkeypatch.setenv("GRAFANA_ONCALL_TOKEN", "test-token")
-        src = GrafanaOnCallSource({"token_env": "GRAFANA_ONCALL_TOKEN"}, transport=cast(Any, transport))
+        src = GrafanaOnCallSource(
+            {
+                "base_url": "https://grafana.example.com/",
+                "token_env": "GRAFANA_ONCALL_TOKEN",
+                "allow_private": True,
+            },
+            transport=cast(Any, transport),
+        )
         records = src.query({})
         assert isinstance(records, list)
         assert len(records) >= 1
@@ -756,7 +770,11 @@ class TestAppDynamicsConnector:
         transport = MockHttpTransport(default_status=200, default_body={"items": []})
         monkeypatch.setenv("APPD_TOKEN", "test-token")
         src = AppDynamicsSource(
-            {"token_env": "APPD_TOKEN", "base_url": "https://appd.example.com/"},
+            {
+                "token_env": "APPD_TOKEN",
+                "base_url": "https://appd.example.com/",
+                "application": "DemoApp",
+            },
             transport=cast(Any, transport),
         )
         result = src.health()
@@ -771,7 +789,11 @@ class TestAppDynamicsConnector:
         )
         monkeypatch.setenv("APPD_TOKEN", "test-token")
         src = AppDynamicsSource(
-            {"token_env": "APPD_TOKEN", "base_url": "https://appd.example.com/"},
+            {
+                "token_env": "APPD_TOKEN",
+                "base_url": "https://appd.example.com/",
+                "application": "DemoApp",
+            },
             transport=cast(Any, transport),
         )
         records = src.query({})
@@ -784,7 +806,10 @@ class TestSplunkConnector:
 
         transport = MockHttpTransport(default_status=200, default_body={"results": []})
         monkeypatch.setenv("SPLUNK_TOKEN", "test-token")
-        src = SplunkSource({"token_env": "SPLUNK_TOKEN"}, transport=cast(Any, transport))
+        src = SplunkSource(
+            {"base_url": "https://splunk.example.com/", "token_env": "SPLUNK_TOKEN"},
+            transport=cast(Any, transport),
+        )
         result = src.health()
         assert isinstance(result, dict)
 
@@ -804,7 +829,10 @@ class TestSplunkConnector:
             },
         )
         monkeypatch.setenv("SPLUNK_TOKEN", "test-token")
-        src = SplunkSource({"token_env": "SPLUNK_TOKEN"}, transport=cast(Any, transport))
+        src = SplunkSource(
+            {"base_url": "https://splunk.example.com/", "token_env": "SPLUNK_TOKEN"},
+            transport=cast(Any, transport),
+        )
         records = src.query({"search": "error"})
         assert isinstance(records, list)
         assert len(records) >= 1
@@ -1400,11 +1428,11 @@ class TestInfluxDBConnector:
         from general_ludd.connectors.influxdb import InfluxDBSource
 
         transport = MockHttpTransport(default_status=200, default_body={"data": []})
+        monkeypatch.setenv("INFLUX_TOKEN", "test-token")
         src = InfluxDBSource(
             {"base_url": "https://influx.example.com/", "token_env": "INFLUX_TOKEN"},
             transport=cast(Any, transport),
         )
-        monkeypatch.setenv("INFLUX_TOKEN", "test-token")
         result = src.health()
         assert isinstance(result, dict)
 

@@ -23,7 +23,7 @@ from __future__ import annotations
 import datetime as _dt
 import logging
 import os
-from typing import Protocol, runtime_checkable
+from typing import Protocol, cast, runtime_checkable
 from urllib.parse import urlsplit
 
 from general_ludd.connectors._errors import SSRFError
@@ -35,6 +35,28 @@ logger = logging.getLogger(__name__)
 __all__ = ["HttpTransport", "SplunkSource"]
 
 KIND = "logs"
+
+
+class _TupleResponse:
+    def __init__(self, status: object, body: object) -> None:
+        self.status_code = int(status) if isinstance(status, int) else 0
+        self._body = body
+
+    def json(self) -> object:
+        return self._body
+
+
+def _invoke(transport: object, method: str, url: str, **kwargs: object) -> HttpResponse:
+    fn = getattr(transport, method.lower(), None)
+    if callable(fn):
+        result = fn(url, **kwargs)
+    elif callable(transport):
+        result = transport(method, url, **kwargs)
+    else:
+        raise TypeError("transport must expose get/post or be callable")
+    if isinstance(result, tuple) and len(result) == 2:
+        return cast(HttpResponse, _TupleResponse(result[0], result[1]))
+    return cast(HttpResponse, result)
 
 
 @runtime_checkable
@@ -187,7 +209,9 @@ class SplunkSource:
         result: dict[str, object] = {"ok": False, "name": self.name, "kind": self.kind}
         try:
             headers = self._auth_headers()
-            resp = self._transport.get(
+            resp = _invoke(
+                self._transport,
+                "GET",
                 f"{self._base_url}/services/server/info",
                 headers=headers,
                 params={"output_mode": "json"},
@@ -234,7 +258,9 @@ class SplunkSource:
                 data[key] = spec[key]
 
         headers = self._auth_headers()
-        resp = self._transport.post(
+        resp = _invoke(
+            self._transport,
+            "POST",
             f"{self._base_url}/services/search/jobs",
             headers=headers,
             data=data,

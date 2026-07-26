@@ -34,7 +34,7 @@ from __future__ import annotations
 import datetime as _dt
 import logging
 import os
-from typing import Protocol, runtime_checkable
+from typing import Protocol, cast, runtime_checkable
 from urllib.parse import urlsplit
 
 from general_ludd.connectors._errors import SSRFError
@@ -42,6 +42,28 @@ from general_ludd.connectors._protocols import HttpResponse
 from general_ludd.security.ssrf import is_url_blocked
 
 logger = logging.getLogger(__name__)
+
+
+def _invoke_transport(transport: object, method: str, url: str, **kwargs: object) -> HttpResponse:
+    """Support object-, request-, and callable-style injected transports."""
+    fn = getattr(transport, method.lower(), None)
+    if callable(fn):
+        result = fn(url, **kwargs)
+    else:
+        request = getattr(transport, "request", None)
+        if callable(request):
+            result = request(method, url, **kwargs)
+        elif callable(transport):
+            result = transport(method, url, **kwargs)
+        else:
+            raise TypeError("transport must expose get/post/request or be callable")
+    if isinstance(result, tuple) and len(result) == 2:
+        class _TupleResponse:
+            status_code = int(result[0]) if isinstance(result[0], int) else 0
+            def json(self) -> object:
+                return result[1]
+        return cast(HttpResponse, _TupleResponse())
+    return cast(HttpResponse, result)
 
 __all__ = ["HttpTransport", "SlackSource"]
 
@@ -176,7 +198,9 @@ class SlackSource:
         result: dict[str, object] = {"ok": False, "name": self.name}
         try:
             headers = self._auth_headers()
-            resp = self._transport.get(
+            resp = _invoke_transport(
+                self._transport,
+                "GET",
                 f"{self._base_url}/auth.test",
                 headers=headers,
                 timeout=self._timeout,
@@ -222,28 +246,14 @@ class SlackSource:
     def _post_to_webhook(self, text: str) -> dict[str, object]:
         assert self._webhook_url is not None
         try:
-            request = getattr(self._transport, "request", None)
-            if callable(request):
-                resp = request(
-                    "POST", self._webhook_url,
-                    headers={"Content-Type": "application/json"},
-                    json={"text": text}, timeout=self._timeout,
-                )
-            elif hasattr(self._transport, "post"):
-                resp = self._transport.post(
-                    self._webhook_url,
-                    headers={"Content-Type": "application/json"},
-                    json={"text": text}, timeout=self._timeout,
-                )
-            else:
-                # Minimal injected transports may only expose ``get``; use it
-                # as a compatibility shim for deterministic test doubles.
-                get = getattr(self._transport, "get")
-                resp = get(
-                    self._webhook_url,
-                    headers={"Content-Type": "application/json"},
-                    json={"text": text}, timeout=self._timeout,
-                )
+            resp = _invoke_transport(
+                self._transport,
+                "POST",
+                self._webhook_url,
+                headers={"Content-Type": "application/json"},
+                json={"text": text},
+                timeout=self._timeout,
+            )
         except Exception:
             logger.warning("slack webhook post failed", exc_info=True)
             return {"ok": False, "error": "slack webhook post failed"}
@@ -259,20 +269,14 @@ class SlackSource:
             headers["Content-Type"] = "application/json; charset=utf-8"
             url = f"{self._base_url}/chat.postMessage"
             payload: dict[str, object] = {"channel": self._channel_id, "text": text}
-            request = getattr(self._transport, "request", None)
-            if callable(request):
-                resp = request(
-                    "POST", url, headers=headers, json=payload, timeout=self._timeout,
-                )
-            elif hasattr(self._transport, "post"):
-                resp = self._transport.post(
-                    url, headers=headers, json=payload, timeout=self._timeout,
-                )
-            else:
-                get = getattr(self._transport, "get")
-                resp = get(
-                    url, headers=headers, json=payload, timeout=self._timeout,
-                )
+            resp = _invoke_transport(
+                self._transport,
+                "POST",
+                url,
+                headers=headers,
+                json=payload,
+                timeout=self._timeout,
+            )
         except Exception:
             logger.warning("slack chat.postMessage failed", exc_info=True)
             return {"ok": False, "error": "slack chat.postMessage failed"}
@@ -309,7 +313,9 @@ class SlackSource:
 
         try:
             headers = self._auth_headers()
-            resp = self._transport.get(
+            resp = _invoke_transport(
+                self._transport,
+                "GET",
                 f"{self._base_url}/conversations.history",
                 headers=headers,
                 params=params,

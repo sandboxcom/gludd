@@ -23,6 +23,28 @@ from general_ludd.connectors.normalize import sanitize_metric_value
 from general_ludd.security.ssrf import is_url_blocked
 
 
+class _TupleResponse:
+    def __init__(self, status: object, body: object) -> None:
+        self.status_code = int(status) if isinstance(status, int) else 0
+        self._body = body
+
+    def json(self) -> object:
+        return self._body
+
+
+def _request(transport: object, method: str, url: str, **kwargs: object) -> HttpResponse:
+    request = getattr(transport, "request", None)
+    if callable(request):
+        result = request(method, url, **kwargs)
+    elif callable(transport):
+        result = transport(method, url, **kwargs)
+    else:
+        raise TypeError("transport must expose request or be callable")
+    if isinstance(result, tuple) and len(result) == 2:
+        return cast(HttpResponse, _TupleResponse(result[0], result[1]))
+    return cast(HttpResponse, result)
+
+
 @runtime_checkable
 class HttpTransport(Protocol):
     def request(
@@ -91,7 +113,8 @@ class GraphiteSource:
 
     def health(self) -> dict[str, object]:
         try:
-            resp = self._transport.request(
+            resp = _request(
+                self._transport,
                 "GET",
                 f"{self.base_url}/render",
                 headers=self._headers(),
@@ -106,7 +129,9 @@ class GraphiteSource:
 
     def query(self, spec: dict[str, object] | None = None) -> list[dict[str, object]]:
         spec = spec or {}
-        target = spec.get("target")
+        # ``query`` is accepted as a convenience alias for generic source
+        # callers while the native Graphite name remains ``target``.
+        target = spec.get("target") or spec.get("query")
         if not target:
             raise ConnectorConfigError("spec must set 'target'")
         params: dict[str, object] = {"target": target, "format": "json"}
@@ -114,7 +139,8 @@ class GraphiteSource:
             params["from"] = spec["from"]
         if "until" in spec:
             params["until"] = spec["until"]
-        resp = self._transport.request(
+        resp = _request(
+            self._transport,
             "GET",
             f"{self.base_url}/render",
             headers=self._headers(),

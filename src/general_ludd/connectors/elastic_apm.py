@@ -27,7 +27,7 @@ from __future__ import annotations
 import logging
 import os
 from collections.abc import Callable
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlsplit
 
 from general_ludd.connectors._errors import SSRFError
@@ -37,6 +37,21 @@ from general_ludd.security.ssrf import is_url_blocked
 logger = logging.getLogger(__name__)
 
 KIND = "traces"
+
+
+class _TupleResponse:
+    def __init__(self, status: object, body: object) -> None:
+        self.status_code = int(status) if isinstance(status, int) else 0
+        self._body = body
+
+    def json(self) -> object:
+        return self._body
+
+
+def _coerce_response(value: object) -> HttpResponse:
+    if isinstance(value, tuple) and len(value) == 2:
+        return cast(HttpResponse, _TupleResponse(value[0], value[1]))
+    return cast(HttpResponse, value)
 
 
 # Injectable transport signature: (method, url, *, headers, params, json,
@@ -139,12 +154,12 @@ class ElasticApmSource:
     def health(self) -> dict[str, Any]:
         """Probe the cluster root; never raises."""
         try:
-            resp = self._transport(
+            resp = _coerce_response(self._transport(
                 "GET",
                 f"{self.base_url}/",
                 headers=self._headers(),
                 timeout=self.timeout,
-            )
+            ))
         except Exception:  # health() must never raise
             logger.warning("health check failed", exc_info=True)
             return {"ok": False, "detail": "health check failed"}
@@ -156,15 +171,22 @@ class ElasticApmSource:
         body: dict[str, Any] = spec.get("body") or {"query": {"match_all": {}}}
         if "size" not in body and spec.get("size") is not None:
             body["size"] = int(spec["size"])
-        resp = self._transport(
+        resp = _coerce_response(self._transport(
             "POST",
             self._search_url(),
             headers=self._headers(),
             json=body,
             timeout=self.timeout,
-        )
+        ))
         payload = resp.json() or {}
         hits = (payload.get("hits") or {}).get("hits") or []
+        if not hits and isinstance(payload.get("data"), list):
+            # Accept compact gateway responses that expose documents directly.
+            hits = [
+                item if isinstance(item, dict) and "_source" in item else {"_source": item}
+                for item in payload["data"]
+                if isinstance(item, dict)
+            ]
         return [self._normalize_hit(hit) for hit in hits]
 
     def _normalize_hit(self, hit: dict[str, Any]) -> dict[str, Any]:

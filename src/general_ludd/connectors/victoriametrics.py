@@ -36,6 +36,21 @@ from general_ludd.security.ssrf import is_url_blocked
 KIND = "metrics"
 
 
+class _TupleResponse:
+    def __init__(self, status: object, body: object) -> None:
+        self.status_code = int(status) if isinstance(status, int) else 0
+        self._body = body
+
+    def json(self) -> object:
+        return self._body
+
+
+def _coerce_response(value: object) -> HttpResponse:
+    if isinstance(value, tuple) and len(value) == 2:
+        return cast(HttpResponse, _TupleResponse(value[0], value[1]))
+    return cast(HttpResponse, value)
+
+
 Transport = Callable[..., HttpResponse]
 
 
@@ -120,12 +135,12 @@ class VictoriaMetricsSource:
     def health(self) -> dict[str, object]:
         """Probe the VictoriaMetrics /health endpoint; never raises."""
         try:
-            resp = self._transport(
+            resp = _coerce_response(self._transport(
                 "GET",
                 f"{self.base_url}/health",
                 headers=self._headers(),
                 timeout=self.timeout,
-            )
+            ))
         except Exception as exc:  # health() must never raise
             return {"ok": False, "detail": f"{type(exc).__name__}: {exc}"}
         ok = 200 <= resp.status_code < 300
@@ -145,13 +160,13 @@ class VictoriaMetricsSource:
             path = "/api/v1/query"
             if spec.get("time") is not None:
                 params["time"] = spec["time"]
-        resp = self._transport(
+        resp = _coerce_response(self._transport(
             "GET",
             f"{self.base_url}{path}",
             headers=self._headers(),
             params=params,
             timeout=self.timeout,
-        )
+        ))
         payload = resp.json() or {}
         data = payload.get("data") or {}
         result = data.get("result") or []

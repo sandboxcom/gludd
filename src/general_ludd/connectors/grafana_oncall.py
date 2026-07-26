@@ -122,7 +122,9 @@ class GrafanaOnCallSource:
             )
         return token
 
-    def _client(self) -> httpx.Client:
+    def _client(self) -> httpx.Client | _CallableClient:
+        if callable(self._transport) and not isinstance(self._transport, httpx.BaseTransport):
+            return _CallableClient(self._transport)
         return httpx.Client(timeout=self._timeout, transport=self._transport)
 
     # -- health ------------------------------------------------------------
@@ -215,6 +217,38 @@ class GrafanaOnCallSource:
 
 class _MissingToken(RuntimeError):
     """Raised internally when the configured token env var is absent."""
+
+
+class _CallableClient:
+    """Minimal context-managed client for ``(method, url) -> (status, body)`` fakes."""
+
+    def __init__(self, transport: object) -> None:
+        self._transport = transport
+
+    def __enter__(self) -> _CallableClient:
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        return None
+
+    def get(self, url: str, **kwargs: object) -> _TupleResponse:
+        result = self._transport("GET", url, **kwargs)  # type: ignore[operator]
+        if isinstance(result, tuple) and len(result) == 2:
+            return _TupleResponse(result[0], result[1])
+        return cast(_TupleResponse, result)
+
+
+class _TupleResponse:
+    def __init__(self, status: object, body: object) -> None:
+        self.status_code = int(status) if isinstance(status, int) else 0
+        self._body = body
+
+    def json(self) -> object:
+        return self._body
+
+    def raise_for_status(self) -> None:
+        if self.status_code >= 400:
+            raise RuntimeError(f"HTTP {self.status_code}")
 
 
 def _auth_header(token: str) -> dict[str, str]:

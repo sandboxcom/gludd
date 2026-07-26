@@ -23,6 +23,28 @@ from general_ludd.connectors._protocols import HttpResponse
 from general_ludd.security.ssrf import is_url_blocked
 
 
+class _TupleResponse:
+    def __init__(self, status: object, body: object) -> None:
+        self.status_code = int(status) if isinstance(status, int) else 0
+        self._body = body
+
+    def json(self) -> object:
+        return self._body
+
+
+def _request(transport: object, method: str, url: str, **kwargs: object) -> HttpResponse:
+    request = getattr(transport, "request", None)
+    if callable(request):
+        result = request(method, url, **kwargs)
+    elif callable(transport):
+        result = transport(method, url, **kwargs)
+    else:
+        raise TypeError("transport must expose request or be callable")
+    if isinstance(result, tuple) and len(result) == 2:
+        return cast(HttpResponse, _TupleResponse(result[0], result[1]))
+    return cast(HttpResponse, result)
+
+
 @runtime_checkable
 class HttpTransport(Protocol):
     def request(
@@ -87,7 +109,8 @@ class InfluxDbSource:
 
     def health(self) -> dict[str, object]:
         try:
-            resp = self._transport.request(
+            resp = _request(
+                self._transport,
                 "GET",
                 f"{self.base_url}/health",
                 headers=self._headers(),
@@ -107,13 +130,14 @@ class InfluxDbSource:
         return self._normalize(resp.json())
 
     def _query_flux(self, spec: dict[str, object]) -> HttpResponse:
-        flux = spec.get("flux")
+        flux = spec.get("flux") or spec.get("query")
         if not flux:
             raise ConnectorConfigError("flux dialect requires spec['flux']")
         params: dict[str, object] = {}
         if self.org:
             params["org"] = self.org
-        return self._transport.request(
+        return _request(
+            self._transport,
             "POST",
             f"{self.base_url}/api/v2/query",
             headers={**self._headers(), "Content-Type": "application/vnd.flux"},
@@ -130,7 +154,8 @@ class InfluxDbSource:
         db = spec.get("db") or self.database
         if db:
             params["db"] = db
-        return self._transport.request(
+        return _request(
+            self._transport,
             "GET",
             f"{self.base_url}/query",
             headers=self._headers(),
@@ -147,7 +172,13 @@ class InfluxDbSource:
         # Canonical normalized Flux shape: a list of tables, each with records
         # carrying _time/_value/_measurement and arbitrary tag columns.
         records: list[dict[str, object]] = []
-        tables = (payload or {}).get("tables", []) if isinstance(payload, dict) else []
+        if isinstance(payload, dict) and isinstance(payload.get("tables"), list):
+            tables = payload.get("tables", [])
+        elif isinstance(payload, dict) and isinstance(payload.get("data"), list):
+            # Accept the compact row shape used by lightweight API gateways.
+            tables = [{"records": [{"values": row} for row in payload["data"]]}]
+        else:
+            tables = []
         for table in tables:
             for row in table.get("records", []):
                 values = row.get("values", row)
@@ -200,3 +231,7 @@ class InfluxDbSource:
                         }
                     )
         return records
+
+
+# Backward-compatible acronym spelling used by early connector manifests.
+InfluxDBSource = InfluxDbSource

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from typing import Protocol, cast, runtime_checkable
 from urllib.parse import urlparse
@@ -23,6 +23,24 @@ from general_ludd.connectors._protocols import HttpResponse
 from general_ludd.security.ssrf import is_url_blocked
 
 logger = logging.getLogger(__name__)
+
+
+def _invoke_get(transport: object, url: str, **kwargs: object) -> HttpResponse:
+    """Invoke an injected GET transport, including callable tuple doubles."""
+    getter = getattr(transport, "get", None)
+    if callable(getter):
+        result = getter(url, **kwargs)
+    elif callable(transport):
+        result = transport("GET", url, **kwargs)
+    else:
+        raise TypeError("transport must expose get or be callable")
+    if isinstance(result, tuple) and len(result) == 2:
+        class _TupleResponse:
+            status_code = int(result[0]) if isinstance(result[0], int) else 0
+            def json(self) -> object:
+                return result[1]
+        return cast(HttpResponse, _TupleResponse())
+    return cast(HttpResponse, result)
 
 DEFAULT_BASE_URL = "https://api.opsgenie.com"
 DEFAULT_TIMEOUT = 15.0
@@ -96,6 +114,27 @@ class _DefaultTransport:
         )
 
 
+class _TupleTransport:
+    def __init__(self, fn: object) -> None:
+        self._fn = cast("Callable[..., object]", fn)
+
+    def get(
+        self,
+        url: str,
+        *,
+        headers: dict[str, str] | None = None,
+        params: Mapping[str, object] | None = None,
+        timeout: float | None = None,
+    ) -> HttpResponse:
+        result = self._fn(url, headers or {})
+        status, payload = result if isinstance(result, tuple) and len(result) == 2 else (0, {})
+        class Response:
+            status_code = int(status)
+            def json(self_nonlocal) -> object:
+                return payload
+        return cast(HttpResponse, Response())
+
+
 class OpsgenieSource:
     """Incident source backed by the Opsgenie Alerts API."""
 
@@ -115,7 +154,10 @@ class OpsgenieSource:
         self.token_env = str(self.config.get("token_env", "OPSGENIE_API_KEY"))
         self.timeout = float(str(self.config.get("timeout", DEFAULT_TIMEOUT)))
         self.default_limit = int(str(self.config.get("limit", DEFAULT_LIMIT)))
-        self._transport: HttpTransport = transport or _DefaultTransport()
+        self._transport: HttpTransport = (
+            _TupleTransport(transport) if callable(transport) and not hasattr(transport, "get")
+            else transport or _DefaultTransport()
+        )
 
     # -- internals --------------------------------------------------------
 
@@ -141,7 +183,8 @@ class OpsgenieSource:
         if spec.get("query"):
             params["query"] = spec["query"]
 
-        resp = self._transport.get(
+        resp = _invoke_get(
+            self._transport,
             f"{self.base_url}/v2/alerts",
             headers=self._headers(),
             params=params,
@@ -157,7 +200,8 @@ class OpsgenieSource:
 
     def health(self) -> dict[str, object]:
         try:
-            resp = self._transport.get(
+            resp = _invoke_get(
+                self._transport,
                 f"{self.base_url}/v2/alerts",
                 headers=self._headers(),
                 params={"limit": 1},

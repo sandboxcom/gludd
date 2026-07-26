@@ -20,13 +20,28 @@ Security posture:
 from __future__ import annotations
 
 import os
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Protocol, cast, runtime_checkable
 from urllib.parse import urlsplit
 
 from general_ludd.connectors._protocols import HttpResponse
 from general_ludd.security.ssrf import is_url_blocked
 
 _DEFAULT_API = "https://api.cloudflare.com/client/v4"
+
+
+class _TupleResponse:
+    def __init__(self, status: object, body: object) -> None:
+        self.status_code = int(status) if isinstance(status, int) else 0
+        self._body = body
+
+    def json(self) -> object:
+        return self._body
+
+
+def _coerce_response(value: object) -> HttpResponse:
+    if isinstance(value, tuple) and len(value) == 2:
+        return cast(HttpResponse, _TupleResponse(value[0], value[1]))
+    return cast(HttpResponse, value)
 
 
 @runtime_checkable
@@ -211,13 +226,13 @@ class CloudflareSource:
     def health(self) -> dict[str, Any]:
         """Probe the endpoint with a 1-record page; never raises."""
         try:
-            resp = self.transport(
+            resp = _coerce_response(self.transport(
                 "GET",
                 self.base_url,
                 headers=self._headers(),
                 params={"per_page": "1", "page": "1"},
                 timeout=self.timeout,
-            )
+            ))
         except Exception as exc:  # health must never raise
             return {"ok": False, "detail": f"{type(exc).__name__}: {exc}"}
         status = getattr(resp, "status_code", 0)
@@ -247,13 +262,13 @@ class CloudflareSource:
         while page <= max(1, self.max_pages):
             params = dict(base_params)
             params["page"] = str(page)
-            resp = self.transport(
+            resp = _coerce_response(self.transport(
                 "GET",
                 self.base_url,
                 headers=self._headers(),
                 params=params,
                 timeout=self.timeout,
-            )
+            ))
             status = getattr(resp, "status_code", 0)
             if not (200 <= status < 300):
                 raise RuntimeError(f"cloudflare: query failed HTTP {status}")
