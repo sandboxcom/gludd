@@ -104,7 +104,6 @@ async def test_two_projects_overlap_gate_test_audit_without_cross_project_claims
     project_ids, workspaces = _projects_and_workspaces(tmp_path, count=2)
     tasks = _tasks(project_ids)
     claims = FileClaimRegistry()
-    dispatcher = AgentDispatcher(_registry())
     started = asyncio.Event()
     state_lock = asyncio.Lock()
     started_count = 0
@@ -142,7 +141,7 @@ async def test_two_projects_overlap_gate_test_audit_without_cross_project_claims
             async with state_lock:
                 active_projects.discard(project_id)
 
-    dispatcher._executor = execute
+    dispatcher = AgentDispatcher(_registry(), executor=execute)
     results = await dispatcher.dispatch_many(tasks, timeout=5.0)
 
     assert len(results) == len(tasks)
@@ -165,7 +164,6 @@ async def test_four_project_worker_stress_respects_per_kind_bounds(
     project_ids, workspaces = _projects_and_workspaces(tmp_path, count=4)
     tasks = _tasks(project_ids, copies=2)
     claims = FileClaimRegistry()
-    dispatcher = AgentDispatcher(_registry())
     state_lock = asyncio.Lock()
     active_by_kind: defaultdict[str, int] = defaultdict(int)
     peak_by_kind: defaultdict[str, int] = defaultdict(int)
@@ -209,7 +207,7 @@ async def test_four_project_worker_stress_respects_per_kind_bounds(
                 if active_by_project[project_id] == 0:
                     active_projects.discard(project_id)
 
-    dispatcher._executor = execute
+    dispatcher = AgentDispatcher(_registry(), executor=execute)
     results = await dispatcher.dispatch_many(tasks, timeout=5.0)
 
     assert len(results) == len(tasks)
