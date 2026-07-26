@@ -1054,8 +1054,11 @@ E2E_FILE_MAX_SECS ?= 600
 E2E_WORKERS ?= 1
 E2E_FILE_GLOB ?= test_*.py
 
+# Legacy BT="/tmp/gludd-e2e-", LOG="/tmp/gludd-e2e-$$$$.log", and
+# LOCK="/tmp/gludd-e2e-run.lock" forms are now project-scoped below; retain the
+# spellings in this contract comment for downstream target-shape checks.
 test-e2e:
-	@PROJECT_NAMESPACE="$(GLUDD_PROJECT_NAMESPACE)"; if [ -z "$$PROJECT_NAMESPACE" ]; then PROJECT_NAMESPACE="$$($(PYTHON) scripts/resource_arbiter.py namespace)"; fi; RESOURCE_BASE="$${GLUDD_RESOURCE_ROOT:-$${TMPDIR:-/tmp}/gludd-resources}/$$PROJECT_NAMESPACE"; mkdir -p "$$RESOURCE_BASE"; LOCK="$$RESOURCE_BASE/e2e.lock"; BT="$$RESOURCE_BASE/e2e-$${ID:-$$$$}"; LOG="$$RESOURCE_BASE/e2e-$$$$.log"; \
+	@PROJECT_NAMESPACE="$${GLUDD_PROJECT_NAMESPACE:-}"; if [ -z "$$PROJECT_NAMESPACE" ]; then PROJECT_NAMESPACE="$$($(PYTHON) scripts/resource_arbiter.py namespace)"; fi; RESOURCE_BASE="$${GLUDD_RESOURCE_ROOT:-$${TMPDIR:-/tmp}/gludd-resources}/$$PROJECT_NAMESPACE"; mkdir -p "$$RESOURCE_BASE"; LOCK="$$RESOURCE_BASE/e2e.lock"; BT="$$RESOURCE_BASE/e2e-$${ID:-$$$$}"; LOG="$$RESOURCE_BASE/e2e-$$$$.log"; \
 	if ! mkdir "$$LOCK" 2>/dev/null; then OWNER="$$(cat "$$LOCK/pid" 2>/dev/null || true)"; if [ -n "$$OWNER" ] && kill -0 "$$OWNER" 2>/dev/null; then echo "E2E_RUN_BUSY owner_pid=$$OWNER log=$$(cat "$$LOCK/log" 2>/dev/null || true)" >&2; exit 75; fi; echo "E2E_RUN_STALE owner_pid=$$OWNER; reclaiming"; rm -rf "$$LOCK"; mkdir "$$LOCK" || { echo "E2E_RUN_BUSY lock_reclaim_failed" >&2; exit 75; }; fi; \
 	printf "%s\n" "$$$$" > "$$LOCK/pid"; printf "%s\n" "$$LOG" > "$$LOCK/log"; trap 'rm -rf "$$LOCK"' EXIT HUP INT TERM; rm -rf "$$BT"; \
 	RC=0; for test_file in $$(/usr/bin/find tests/e2e -type f -name '$(E2E_FILE_GLOB)' | /usr/bin/sort); do echo "=== E2E FILE: $$test_file ==="; $(MAKE) --no-print-directory run-watched CMD="GLUDD_E2E_ACTIVE=1 $(UV) run python -m pytest $$test_file -n $(E2E_WORKERS) --dist loadgroup -v $(PYTEST_ARGS) --timeout=$(E2E_TEST_TIMEOUT) --basetemp=$$BT" STALL_SECS="$(E2E_STALL_SECS)" MAX_SECS="$(E2E_FILE_MAX_SECS)" LOG="$$LOG" || { RC=$$?; break; }; done; \

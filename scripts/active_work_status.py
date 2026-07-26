@@ -9,8 +9,23 @@ import re
 import subprocess
 from pathlib import Path
 
+from scripts.resource_arbiter import resource_path, resource_root
+
 ROOT = Path(__file__).resolve().parent.parent
 TASK_ID_RE = re.compile(r"^\s*-\s*\[ \]\s+([^ —|]+)", re.MULTILINE)
+_RESOURCE_LEASES = ("gate", "async-gate", "e2e")
+_WORKER_TASKS = frozenset(
+    {
+        "gate-refresh",
+        "unit-tests",
+        "e2e-tests",
+        "opencode-e2e",
+        "coverage-audit",
+        "hook-runtime",
+        "e2e-daemon",
+        "typecheck",
+    }
+)
 
 
 def _task_label(command: str) -> str:
@@ -117,6 +132,32 @@ def _gate() -> dict[str, str | bool]:
     }
 
 
+def _worker_limit() -> int:
+    """Read a safe worker ceiling without allowing an unbounded value."""
+    raw = os.environ.get("GLUDD_WORKER_LIMIT", "8").strip()
+    try:
+        configured = int(raw)
+    except ValueError:
+        configured = 8
+    return min(max(configured, 1), 128)
+
+
+def _resource_observability(processes: list[dict[str, str]]) -> dict[str, object]:
+    """Return project-scoped lease evidence and a bounded worker snapshot."""
+    limit = _worker_limit()
+    observed = sum(process["task"] in _WORKER_TASKS for process in processes)
+    root = resource_root(ROOT)
+    return {
+        "project_namespace": root.name,
+        "resource_root": str(root),
+        "lease_owner": f"pid:{os.getpid()}",
+        "leases": [str(resource_path(name, ROOT)) for name in _RESOURCE_LEASES],
+        "worker_count": min(observed, limit),
+        "worker_limit": limit,
+        "observed_worker_count": observed,
+    }
+
+
 def collect_status() -> dict[str, object]:
     tasks = (ROOT / "TASKS.md").read_text(encoding="utf-8")
     processes = _processes()
@@ -131,6 +172,7 @@ def collect_status() -> dict[str, object]:
         "processes": processes,
         "workstreams": _workstreams(processes),
         "gate": gate,
+        "resource_observability": _resource_observability(processes),
         "git": _git(),
         "open_task_ids": TASK_ID_RE.findall(tasks),
         "audit_contract": {
