@@ -124,3 +124,9 @@ def test_e2e_runner_keeps_file_pool_bounded() -> None:
     body = _target_body("test-e2e")
     assert 'active" -ge "$$FILE_WORKERS' in body
     assert "active=$$((active - 1))" in body
+
+
+def test_e2e_runner_treats_collection_skip_as_success() -> None:
+    body = _target_body("test-e2e")
+    assert 'FILE_RC" -eq 5' in body
+    assert "return 0" in body
