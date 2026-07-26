@@ -24,6 +24,7 @@ from sqlalchemy.pool import StaticPool
 from general_ludd.db.models import (
     Base,
     BucketLeaseModel,
+    ProjectModel,
     TodoEventModel,
     TodoModel,
 )
@@ -89,6 +90,19 @@ async def async_engine():
     engine = _make_async_engine()
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    # TodoModel.project_id is an enforced foreign key.  Seed the tenant used
+    # by every workflow so these E2E fixtures exercise real integrity checks.
+    async with engine.begin() as conn:
+        await conn.run_sync(
+            lambda sync_conn: sync_conn.execute(
+                ProjectModel.__table__.insert().values(
+                    project_id=_E2E_PROJECT,
+                    name=_E2E_PROJECT,
+                    description="event-loop E2E project",
+                    workspace_path="/tmp/event-loop-e2e",
+                )
+            )
+        )
     yield engine
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
@@ -133,7 +147,24 @@ def _simple_todo(todo_id: str, **kw) -> dict:
 
 
 async def _seed_todo(repo: TodoRepository, todo_id: str, **kw) -> TodoModel:
-    return await repo.create(_simple_todo(todo_id, **kw))
+    data = _simple_todo(todo_id, **kw)
+    updated_at = data.pop("updated_at", None)
+    todo = await repo.create(data)
+    if updated_at is not None:
+        todo.updated_at = updated_at
+        await repo._session.flush()
+    return todo
+
+
+async def _create_todo(repo: TodoRepository, data: dict) -> TodoModel:
+    """Create a fixture row while preserving repository audit-field guards."""
+    payload = dict(data)
+    updated_at = payload.pop("updated_at", None)
+    todo = await repo.create(payload)
+    if updated_at is not None:
+        todo.updated_at = updated_at
+        await repo._session.flush()
+    return todo
 
 
 async def _seed_queued(session: AsyncSession, repo: TodoRepository, todo_id: str, **kw):
@@ -400,7 +431,7 @@ class TestSchedulerWithinTick:
         repo = TodoRepository(db_session)
         fixed = datetime(2026, 7, 20, 12, 0, 0, tzinfo=UTC)
         past = fixed - timedelta(hours=1)
-        await repo.create({
+        await _create_todo(repo, {
             "todo_id": "TODO-ONESHOT", "title": "one", "queue": "core",
             "priority": 5, "work_type": "code", "status": TodoStatus.SCHEDULED.value,
             "scheduled_at": past,
@@ -419,7 +450,7 @@ class TestSchedulerWithinTick:
     async def test_scheduler_cron_spawns_child(self, db_session: AsyncSession):
         repo = TodoRepository(db_session)
         fixed = datetime(2026, 7, 20, 12, 0, 0, tzinfo=UTC)
-        await repo.create({
+        await _create_todo(repo, {
             "todo_id": "TODO-CRON", "title": "cron", "queue": "core",
             "priority": 5, "work_type": "code", "status": TodoStatus.SCHEDULED.value,
             "cron": "0 * * * *",
@@ -441,7 +472,7 @@ class TestSchedulerWithinTick:
     async def test_scheduler_max_runs_cancels(self, db_session: AsyncSession):
         repo = TodoRepository(db_session)
         fixed = datetime(2026, 7, 20, 12, 0, 0, tzinfo=UTC)
-        await repo.create({
+        await _create_todo(repo, {
             "todo_id": "TODO-MAX", "title": "max", "queue": "core",
             "priority": 5, "work_type": "code", "status": TodoStatus.SCHEDULED.value,
             "cron": "0 * * * *", "next_run_at": fixed - timedelta(hours=1),
@@ -460,7 +491,7 @@ class TestSchedulerWithinTick:
     async def test_scheduler_skips_paused(self, db_session: AsyncSession):
         repo = TodoRepository(db_session)
         fixed = datetime(2026, 7, 20, 12, 0, 0, tzinfo=UTC)
-        await repo.create({
+        await _create_todo(repo, {
             "todo_id": "TODO-PAUSED", "title": "paused", "queue": "core",
             "priority": 5, "work_type": "code", "status": TodoStatus.SCHEDULED.value,
             "scheduled_at": fixed - timedelta(hours=1),
@@ -478,7 +509,7 @@ class TestSchedulerWithinTick:
         repo = TodoRepository(db_session)
         fixed = datetime(2026, 7, 20, 12, 0, 0, tzinfo=UTC)
         future = fixed + timedelta(hours=2)
-        await repo.create({
+        await _create_todo(repo, {
             "todo_id": "TODO-FUTURE", "title": "future", "queue": "core",
             "priority": 5, "work_type": "code", "status": TodoStatus.SCHEDULED.value,
             "scheduled_at": future,
@@ -962,7 +993,7 @@ class TestBlockerDetector:
     @pytest.mark.asyncio
     async def test_scan_blocked_on_human_finds_stale(self, db_session: AsyncSession):
         repo = TodoRepository(db_session)
-        await repo.create({
+        await _create_todo(repo, {
             "todo_id": "TODO-BH-1", "title": "blocked task", "queue": "core",
             "priority": 5, "work_type": "code", "status": TodoStatus.BLOCKED_ON_HUMAN.value,
             "updated_at": _now_minus(30),
@@ -979,7 +1010,7 @@ class TestBlockerDetector:
     @pytest.mark.asyncio
     async def test_scan_stale_under_threshold_not_surfaced(self, db_session: AsyncSession):
         repo = TodoRepository(db_session)
-        await repo.create({
+        await _create_todo(repo, {
             "todo_id": "TODO-BH-2", "title": "fresh block", "queue": "core",
             "priority": 5, "work_type": "code", "status": TodoStatus.BLOCKED_ON_HUMAN.value,
             "updated_at": _now_minus(2),  # only 2h — under 24h threshold
@@ -998,7 +1029,7 @@ class TestBlockerDetector:
         htrepo = HumanTodoRepository(db_session)
         repo = TodoRepository(db_session)
 
-        await repo.create({
+        await _create_todo(repo, {
             "todo_id": "TODO-PERM", "title": "cred task", "queue": "core",
             "priority": 5, "work_type": "code", "status": TodoStatus.BLOCKED_ON_HUMAN.value,
             "updated_at": _now_minus(6),  # 6h — above 4h threshold
@@ -1022,7 +1053,7 @@ class TestBlockerDetector:
     @pytest.mark.asyncio
     async def test_chronic_requeues_detected(self, db_session: AsyncSession):
         repo = TodoRepository(db_session)
-        await repo.create({
+        await _create_todo(repo, {
             "todo_id": "TODO-CRQ", "title": "re-queued", "queue": "core",
             "priority": 5, "work_type": "code", "status": TodoStatus.QUEUED.value,
             "run_count": 5,
@@ -1081,7 +1112,7 @@ class TestBlockerDetector:
         # Seed 6 BLOCKED_ON_HUMAN events for the same work_type
         for i in range(6):
             tid = f"TODO-CB-{i}"
-            await repo.create({
+            await _create_todo(repo, {
                 "todo_id": tid, "title": f"chronic {i}", "queue": "core",
                 "priority": 5, "work_type": "code", "status": TodoStatus.BLOCKED_ON_HUMAN.value,
             })
@@ -1106,9 +1137,20 @@ class TestBlockerDetector:
         detector = BlockerDetector(
             session=db_session,
             config=RemediationConfig(min_chronic_incidents=5),
-        )
+    )
         # only 2 events
         for i in range(2):
+            await _create_todo(
+                TodoRepository(db_session),
+                {
+                    "todo_id": f"TODO-LOW-{i}",
+                    "title": f"low blocker {i}",
+                    "queue": "core",
+                    "priority": 5,
+                    "work_type": "code",
+                    "status": TodoStatus.BLOCKED_ON_HUMAN.value,
+                },
+            )
             db_session.add(TodoEventModel(
                 todo_id=f"TODO-LOW-{i}", event_type="status_changed",
                 new_status=TodoStatus.BLOCKED_ON_HUMAN.value,
@@ -1332,7 +1374,7 @@ class TestIntegrationWorkflows:
     @pytest.mark.asyncio
     async def test_detect_then_dispatch(self, db_session: AsyncSession):
         repo = TodoRepository(db_session)
-        await repo.create({
+        await _create_todo(repo, {
             "todo_id": "TODO-FULL", "title": "test full flow", "queue": "core",
             "priority": 5, "work_type": "code", "status": TodoStatus.BLOCKED_ON_HUMAN.value,
             "updated_at": _now_minus(30),
@@ -1362,7 +1404,7 @@ class TestIntegrationWorkflows:
             repo = TodoRepository(s)
             await _seed_queued(s, repo, "TODO-INT-1")
             # Also create a blocked task
-            await repo.create({
+            await _create_todo(repo, {
                 "todo_id": "TODO-INT-BLK", "title": "blocked integration",
                 "queue": "core", "priority": 5, "work_type": "code",
                 "status": TodoStatus.BLOCKED_ON_HUMAN.value,

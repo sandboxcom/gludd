@@ -670,4 +670,5 @@ old summary table omitted entirely. Grand total across the file: **326** boxes.
  <!-- T-BETA3-RESOURCE-CONTENTION paths: tests/unit/test_resource_namespace_budgets.py -->
  <!-- T-BETA3-PROCESS-CLEANUP paths: scripts/process_cleanup.py scripts/task_watchdog.py scripts/run_gate.sh tests/unit/test_process_cleanup.py -->
 <!-- T-BETA3-WATCHDOG-SINGLETON paths: scripts/agent_watchdog.py tests/unit/test_watchdog_singleton.py Makefile -->
-<!-- T-BETA3-RELEASE-READINESS paths: scripts/release_readiness.py tests/unit/test_release_readiness.py docs/RELEASE_READINESS.md -->
+ <!-- T-BETA3-RELEASE-READINESS paths: scripts/release_readiness.py tests/unit/test_release_readiness.py docs/RELEASE_READINESS.md -->
+ <!-- T-BETA3-GHA-SHA-HARDENING paths: scripts/require_ci_green.py tests/unit/test_require_ci_green.py tests/unit/test_ci_regression_guards.py .github/workflows/build.yml -->
