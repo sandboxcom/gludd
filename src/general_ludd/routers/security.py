@@ -364,8 +364,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         events = audit.query(agent_id=agent_id, since=since, capability=capability)
         return {"events": events}
 
-    @app.api_route("/admin/perm/spec/{agent_type}", methods=["GET", "PUT"])
-    async def admin_perm_spec_get(agent_type: str, request: Request) -> object:
+    async def _admin_perm_spec(agent_type: str, request: Request) -> object:
         import yaml
 
         from general_ludd.security.permissions import default_spec
@@ -419,6 +418,14 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             return {"agent_type": agent_type, "spec_yaml": spec_yaml}
         spec_yaml = path.read_text()
         return {"agent_type": agent_type, "spec_yaml": spec_yaml}
+
+    @app.get("/admin/perm/spec/{agent_type}", operation_id="admin_perm_spec_get")
+    async def admin_perm_spec_get(agent_type: str, request: Request) -> object:
+        return await _admin_perm_spec(agent_type, request)
+
+    @app.put("/admin/perm/spec/{agent_type}", operation_id="admin_perm_spec_put")
+    async def admin_perm_spec_put(agent_type: str, request: Request) -> object:
+        return await _admin_perm_spec(agent_type, request)
 
     @app.get("/admin/perm/spec")
     async def admin_perm_spec_list() -> object:

@@ -363,6 +363,7 @@ help:
 	@echo "  --- Complete Target Index ---"
 	@$(PYTHON) scripts/check_make_help.py --print-index
 	@echo "  --- New Targets ---"
+	@echo "  normalize-task-integrityNormalize legacy TASKS metadata and reopen unsupported completions"
 	@echo "  install-opa             install opa via brew"
 	@echo "  gate-local              fast local gate: lint + typecheck + collect + hook-runtime + fast structural tests"
 	@echo "  bump-version            bump version in all files (pyproject.toml, __init__.py, README) at once"
@@ -1694,8 +1695,16 @@ iam-headless-smoke:
 	@$(UV) run python scripts/iam_headless_smoke.py
 
 test-opa-policies:
-	@command -v opa >/dev/null 2>&1 || { echo "opa MISSING — run make install-opa"; exit 1; }
-	@opa test $(OPA_ARGS) config/opa
+	@if command -v opa >/dev/null 2>&1; then \
+		opa test $(OPA_ARGS) config/opa; \
+	elif command -v docker >/dev/null 2>&1; then \
+		echo "opa MISSING — running policy tests in $(OPA_IMAGE)"; \
+		docker run --rm --volume "$(CURDIR)/config/opa:/workspace/config/opa:ro" \
+			--workdir /workspace $(OPA_IMAGE) test $(OPA_ARGS) config/opa; \
+	else \
+		echo "opa MISSING and docker unavailable — run make install-opa"; \
+		exit 1; \
+	fi
 
 smoke:
 	@$(UV) run python scripts/smoke_daemon.py
@@ -5407,7 +5416,10 @@ bump-version:
 	@$(UV) run python scripts/bump_version.py $(NEW)
 	@$(MAKE) --no-print-directory check-version-consistency
 
-# --- New Targets (auto-categorized add-target) ---
+# Normalize legacy TASKS.md records while preserving unsupported evidence.
+normalize-task-integrity:
+	@$(PYTHON) scripts/normalize_task_integrity.py
+
 
 # install opa via brew
 install-opa:

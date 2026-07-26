@@ -97,6 +97,41 @@ def test_gate_job_sets_gludd_xdist_auto() -> None:
     )
 
 
+def test_gate_runs_opa_policy_validation() -> None:
+    """Guard: CI gate must execute the Terraform/IAM OPA policy suite.
+
+    The provider deployment policies are a security boundary. A previous gate
+    only exercised Python smoke tests, allowing Rego regressions to merge
+    unnoticed. Keep the invocation on the gate job and route it through the
+    repository's ``make test-opa-policies`` target so local and CI behavior
+    remain identical.
+    """
+    wf = _load_build_workflow()
+    gate = wf["jobs"].get("gate")
+    assert gate is not None
+    runs = "\n".join(
+        str(step.get("run", ""))
+        for step in gate.get("steps", [])
+        if isinstance(step, dict)
+    )
+    assert "make test-opa-policies" in runs, (
+        "CI regression: gate no longer runs make test-opa-policies; Terraform "
+        "and IAM OPA policies must be validated before merge."
+    )
+
+
+def test_opa_make_target_has_container_fallback() -> None:
+    """Guard: OPA validation must work on runners without a host OPA binary."""
+    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    start = makefile.find("test-opa-policies:")
+    assert start >= 0, "Makefile lost the test-opa-policies target"
+    block = makefile[start : makefile.find("\n\n", start)]
+    assert "docker run" in block and "OPA_IMAGE" in block, (
+        "OPA policy target must fall back to the pinned Docker OPA image when "
+        "the host binary is unavailable."
+    )
+
+
 def test_windows_job_is_non_blocking() -> None:
     """Guard: the windows build job must keep continue-on-error: true.
 

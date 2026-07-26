@@ -102,6 +102,13 @@ jobs:
         env:
           GLUDD_PSK: ""
           GLUDD_XDIST: auto
+      - name: Validate Terraform and IAM OPA policies
+        # The make target uses a local OPA binary when available and otherwise
+        # runs the pinned OPA image through Docker. This keeps policy checks
+        # deterministic on GitHub-hosted runners without mutating the runner.
+        run: make test-opa-policies OPA_IMAGE=openpolicyagent/opa:1.6.0
+        env:
+          GLUDD_PSK: ""
       - name: Verify feature claims (full evidence check)
         # Runs the ansible playbook that loads docs/features.yml and verifies
         # EVERY evidence ref (test:, file:, role:, module:, molecule:) — including
