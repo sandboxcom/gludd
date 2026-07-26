@@ -29,7 +29,7 @@ import logging
 import os
 import time
 from collections.abc import Callable, Sequence
-from typing import TYPE_CHECKING, TypedDict, cast
+from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 if TYPE_CHECKING:
     from general_ludd.connectors.base import NormalizedRecord
@@ -89,14 +89,27 @@ class ClickHouseStatsSource:
 
     KIND = "metrics"
 
-    def __init__(self, config: ClickhouseConfig | None = None, executor: Executor | None = None) -> None:
+    def __init__(
+        self,
+        config: ClickhouseConfig | None = None,
+        executor: Executor | None = None,
+        *,
+        cursor: object | None = None,
+    ) -> None:
         cfg: dict[str, object] = dict(config or {})
         self.name: str = str(cfg.get("name", "clickhouse"))
         self._config = cfg
         self._url: str = str(cfg.get("url", "http://localhost:8123")).rstrip("/")
         self._user: str = str(cfg.get("user", "default"))
         self._password_env: str = str(cfg.get("password_env", "CLICKHOUSE_PASSWORD"))
-        self._executor = executor
+        if cursor is not None:
+            def _cursor_executor(query: str) -> Sequence[ClickhouseRow]:
+                cursor_obj = cast(Any, cursor)
+                cursor_obj.execute(query)
+                return list(cursor_obj)
+            self._executor = _cursor_executor
+        else:
+            self._executor = executor
         self._driver_error: str | None = None
 
     # -- executor wiring ---------------------------------------------------

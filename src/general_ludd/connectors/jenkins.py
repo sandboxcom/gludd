@@ -156,7 +156,7 @@ class JenkinsSource:
     def _extract_builds(payload: object) -> list[dict[str, object]]:
         builds: list[dict[str, object]] = []
         if isinstance(payload, dict):
-            raw_builds = payload.get("builds")
+            raw_builds = payload.get("builds") or payload.get("jobs")
             if isinstance(raw_builds, list):
                 for item in raw_builds:
                     if isinstance(item, dict):

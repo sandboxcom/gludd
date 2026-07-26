@@ -21,7 +21,7 @@ import logging
 import os
 from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
-from typing import TypedDict
+from typing import Any, TypedDict, cast
 
 logger = logging.getLogger(__name__)
 
@@ -132,9 +132,18 @@ class MysqlStatsSource:
         self,
         config: Mapping[str, object] | None = None,
         executor: Executor | None = None,
+        *,
+        cursor: object | None = None,
     ) -> None:
         self.config: dict[str, object] = dict(config or {})
-        self._executor = executor
+        if cursor is not None:
+            def _cursor_executor(query: str) -> Sequence[MysqlRow]:
+                cursor_obj = cast(Any, cursor)
+                cursor_obj.execute(query)
+                return list(cursor_obj)
+            self._executor = _cursor_executor
+        else:
+            self._executor = executor
 
     # -- credential / driver plumbing ------------------------------------
 

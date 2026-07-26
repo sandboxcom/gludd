@@ -160,15 +160,43 @@ class AwsPipelineSource:
 
     KIND: str = "pipeline"
 
-    def __init__(self, config: Mapping[str, object]) -> None:
+    def __init__(
+        self,
+        config: Mapping[str, object],
+        *,
+        aws_client: Callable[..., object] | None = None,
+    ) -> None:
         self._config: dict[str, object] = dict(config)
         self.region: str = str(config.get("region", ""))
-        pipeline_raw = config.get("pipeline")
+        pipeline_raw = config.get("pipeline") or config.get("name")
         self.pipeline: str | None = pipeline_raw if isinstance(pipeline_raw, str) else None
         log_group_raw = config.get("log_group")
         self.log_group: str | None = log_group_raw if isinstance(log_group_raw, str) else None
 
         factory = config.get("client_factory")
+        if aws_client is not None:
+            class _LegacyClient:
+                def __init__(self, fn: Callable[..., object]) -> None:
+                    self._fn = fn
+
+                def _call(self, operation: str, **kwargs: object) -> Mapping[str, object]:
+                    result = self._fn(operation, **kwargs)
+                    if isinstance(result, tuple) and len(result) == 2:
+                        _status, payload = result
+                        return payload if isinstance(payload, Mapping) else {}
+                    return result if isinstance(result, Mapping) else {}
+
+                def list_pipeline_executions(self, **kwargs: object) -> Mapping[str, object]:
+                    return self._call("list_pipeline_executions", **kwargs)
+
+                def filter_log_events(self, **kwargs: object) -> Mapping[str, object]:
+                    return self._call("filter_log_events", **kwargs)
+
+            legacy_client = _LegacyClient(aws_client)
+            def _legacy_factory(_service: str) -> _AwsClient:
+                return cast(_AwsClient, legacy_client)
+
+            factory = _legacy_factory
         self._client_factory: ClientFactory = (
             factory if callable(factory) else self._default_client_factory
         )

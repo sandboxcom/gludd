@@ -28,7 +28,7 @@ import logging
 import os
 import time
 from collections.abc import Callable, Sequence
-from typing import TypedDict
+from typing import Any, TypedDict, cast
 
 from general_ludd.connectors.normalize import sanitize_metric_value
 
@@ -89,13 +89,26 @@ class CassandraStatsSource:
 
     KIND = "metrics"
 
-    def __init__(self, config: CassandraConfig | None = None, executor: Executor | None = None) -> None:
+    def __init__(
+        self,
+        config: CassandraConfig | None = None,
+        executor: Executor | None = None,
+        *,
+        cursor: object | None = None,
+    ) -> None:
         cfg = dict(config or {})
         self.name: str = str(cfg.get("name", "cassandra"))
         self._config = cfg
         self._jmx_url: str = str(cfg.get("jmx_url", "http://localhost:7070/metrics"))
         self._token_env: str = str(cfg.get("token_env", "CASSANDRA_JMX_TOKEN"))
-        self._executor = executor
+        if cursor is not None:
+            def _cursor_executor(command: str) -> Sequence[CassandraRow]:
+                cursor_obj = cast(Any, cursor)
+                cursor_obj.execute(command)
+                return list(cursor_obj)
+            self._executor = _cursor_executor
+        else:
+            self._executor = executor
         self._driver_error: str | None = None
 
     # -- executor wiring ---------------------------------------------------
