@@ -127,7 +127,7 @@ log-agent-result disk-guard disk-check check-disk disk tmp-gludd-usage tmp-gludd
          subagent-init subagent-cleanup \
          chat chat-eval test-chat \
 git-tag-delete git-tag-move release-deploy append-text write-text-b64 replace-text-b64 mkdir-p replace-lines _no-raw-git-guard \
-         git-push-committed-head-nv ci-trigger-committed-head ci-push-committed-head provider-smoke check-no-prompt-prone-edit-tools add-target edit-target edit-makefile-target validate-makefile
+         git-push-committed-head-nv ci-trigger-committed-head ci-push-committed-head provider-smoke mac-unified-memory-smoke gpu-hardware-smoke check-no-prompt-prone-edit-tools add-target edit-target edit-makefile-target validate-makefile
 
 help:
 	@echo "Usage: make [target]"
@@ -204,6 +204,8 @@ help:
 	@echo "  test-count            Count collected tests"
 	@echo "  test-failures         Show test failures"
 	@echo   provider-smoke        Run gludd smoke PROVIDER=aws SMOKE_TEST=ec2-a100 ARGS=--json
+	@echo "  mac-unified-memory-smoke  Local Apple unified-memory smoke (LIVE=1 BACKEND=mps ARGS=...)"
+	@echo "  gpu-hardware-smoke        Local AMD/NVIDIA GPU smoke (LIVE=1 BACKEND=cuda|rocm ARGS=...)"
 	@echo "  provider-harness      Validate Azure/RunPod credentials, billing bounds, and optional Gludd telemetry"
 	@echo "  azure-harness         Azure provider harness (LIVE=1 for read-only credential check)"
 	@echo "  runpod-harness        RunPod provider harness (LIVE=1 for read-only credential check)"
@@ -1686,6 +1688,14 @@ provider-smoke:
 	@test -n "$(PROVIDER)" || { echo Usage: make provider-smoke PROVIDER=aws SMOKE_TEST=ec2-a100 ARGS=--json; exit 1; }
 	@test -n "$(SMOKE_TEST)" || { echo Usage: make provider-smoke PROVIDER=aws SMOKE_TEST=ec2-a100 ARGS=--json; exit 1; }
 	@$(UV) run gludd smoke "$(PROVIDER)" "$(SMOKE_TEST)" $(ARGS)
+
+# Local hardware smoke targets are dry-run by default; LIVE=1 opts into bounded
+# inference on the attached device. BACKEND and ARGS are forwarded verbatim.
+mac-unified-memory-smoke:
+	@$(UV) run python scripts/mac_unified_memory_smoke.py $(if $(filter 1 true yes,$(LIVE)),--live,) --backend $(or $(BACKEND),auto) $(ARGS)
+
+gpu-hardware-smoke:
+	@$(UV) run python scripts/gpu_hardware_smoke.py $(if $(filter 1 true yes,$(LIVE)),--live,) --backend $(or $(BACKEND),auto) $(ARGS)
 
 # Provider deployment harnesses validate credentials and billing scopes without
 # creating resources. Add GLUDD_INGEST_URL + GLUDD_INGEST_TOKEN to publish the
