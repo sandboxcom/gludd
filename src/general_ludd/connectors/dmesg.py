@@ -127,6 +127,10 @@ class DmesgSource:
     def query(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
         """Run dmesg and return normalized log records."""
         argv = self._build_argv(spec or {})
+        if self._runner is None:
+            # Query is best-effort when dmesg is unavailable.  Health reports
+            # the detailed availability state; callers can safely poll query.
+            return []
         result = self._run(argv)
         if result.returncode != 0:
             detail = (result.stderr or "").strip() or f"exit code {result.returncode}"

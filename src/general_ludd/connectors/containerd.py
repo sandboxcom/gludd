@@ -123,8 +123,11 @@ class ContainerdSource:
     ) -> None:
         if isinstance(config, ContainerdConfig):
             self.config = config
+            self.name = "containerd"
         else:
-            self.config = ContainerdConfig.from_dict(config)
+            raw_config = dict(config or {})
+            self.config = ContainerdConfig.from_dict(raw_config)
+            self.name = str(raw_config.get("name", "containerd"))
         self._runner = runner
         self._env = env if env is not None else os.environ
 
@@ -179,7 +182,16 @@ class ContainerdSource:
     def _run(self, argv: Sequence[str]) -> str:
         if self._runner is None:
             raise RuntimeError("no runner injected")
-        return self._runner(list(argv), timeout=self.config.timeout_seconds)
+        args = list(argv)
+        try:
+            return self._runner(args, timeout=self.config.timeout_seconds)
+        except TypeError as exc:
+            # Older runner integrations accepted argv only.  Preserve that
+            # public contract while preferring the timeout-aware signature.
+            try:
+                return self._runner(args)
+            except TypeError:
+                raise exc from None
 
     # ---- health ------------------------------------------------------------
     def health(self) -> dict[str, Any]:
@@ -234,7 +246,10 @@ class ContainerdSource:
         out = self._run(self._base_argv(sock, "ps", "-a", "-o", "json"))
         data = json.loads(out) if out.strip() else {}
         recs: list[dict[str, Any]] = []
-        for c in data.get("containers", []):
+        containers = data.get("containers")
+        if containers is None:
+            containers = data.get("items", [])
+        for c in containers:
             meta = c.get("metadata", {}) or {}
             labels_in = c.get("labels", {}) or {}
             state = c.get("state", "")
@@ -248,7 +263,9 @@ class ContainerdSource:
                     labels={
                         "pod": labels_in.get("io.kubernetes.pod.name", ""),
                         "container": meta.get("name", ""),
-                        "namespace": labels_in.get("io.kubernetes.pod.namespace", ""),
+                        "namespace": labels_in.get(
+                            "io.kubernetes.pod.namespace", meta.get("namespace", "")
+                        ),
                     },
                     raw=c,
                     ts=_norm_ts(c.get("createdAt")),

@@ -252,8 +252,17 @@ class PodmanSource:
 
     _DEFAULT_BASE_URL = "unix:///run/podman/podman.sock"
 
-    def __init__(self, config: dict[str, object] | None = None) -> None:
-        config = config or {}
+    def __init__(
+        self,
+        config: dict[str, object] | None = None,
+        *,
+        transport: Transport | None = None,
+    ) -> None:
+        config = dict(config or {})
+        # Keep the historical config-injection API while also accepting the
+        # keyword form used by connector factories and older integrations.
+        if transport is not None:
+            config["transport"] = transport
         self.name: str = str(config.get("name", "podman"))
         self.base_url: str = str(config.get("base_url", self._DEFAULT_BASE_URL))
         self.timeout: float = float(str(config.get("timeout", 10.0)))
@@ -316,7 +325,12 @@ class PodmanSource:
         query: dict[str, object] = {}
         if spec.get("all"):
             query["all"] = "1"
-        payload = self._get_json("/containers/json", query or None)
+        try:
+            payload = self._get_json("/containers/json", query or None)
+        except (ConnectionError, OSError, TimeoutError):
+            # A down socket is an empty inventory, not a fatal connector
+            # failure.  Health still exposes the transport error to callers.
+            return []
         records: list[dict[str, object]] = []
         for entry in payload:
             names = entry.get("Names") or []
