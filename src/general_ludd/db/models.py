@@ -20,6 +20,7 @@ from sqlalchemy import (
     UniqueConstraint,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.types import TypeDecorator
 
 from general_ludd.schemas.todo import TodoStatus
 
@@ -50,6 +51,37 @@ def _len_check(column: str, table: str, max_len: int = MAX_JSON_BLOB_LEN) -> Che
 
 def _utcnow() -> datetime:
     return datetime.now(UTC)
+
+
+class UTCDateTime(TypeDecorator[datetime]):
+    """Persist UTC timestamps and restore timezone awareness on every backend.
+
+    SQLite stores ``DateTime(timezone=True)`` values without an offset.  Returning
+    those naive values from the ORM makes normal UTC comparisons fail at runtime,
+    while PostgreSQL returns aware values.  This decorator keeps the model API
+    consistent across both backends and normalizes caller-provided timestamps to
+    UTC before persistence.
+    """
+
+    impl = DateTime
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect: Any) -> Any:
+        return dialect.type_descriptor(DateTime(timezone=True))
+
+    def process_bind_param(self, value: datetime | None, dialect: Any) -> datetime | None:
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
+
+    def process_result_value(self, value: datetime | None, dialect: Any) -> datetime | None:
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
 
 
 def _gen_todo_id() -> str:
@@ -225,17 +257,17 @@ class TodoModel(Base):
     manual_hold_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     approval_policy: Mapped[str] = mapped_column(String(32), nullable=False, default="none")
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow
+        UTCDateTime(), nullable=False, default=_utcnow, onupdate=_utcnow
     )
-    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
 
     # ── Scheduling / cron-style recurrence ──────────────────────────────────
     # scheduled_at: one-shot fire time. The scheduler promotes the todo
     # SCHEDULED→QUEUED when now >= scheduled_at (cron must be None).
     scheduled_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
+        UTCDateTime(), nullable=True
     )
     # cron: 5-field cron expression (croniter grammar). When set, this row
     # is a TEMPLATE that stays SCHEDULED; the scheduler spawns a QUEUED
@@ -245,7 +277,7 @@ class TodoModel(Base):
         String(64), nullable=False, default="UTC"
     )
     next_run_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
+        UTCDateTime(), nullable=True
     )
     last_run_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
@@ -317,7 +349,7 @@ class TodoEventModel(Base):
     new_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
     actor: Mapped[str] = mapped_column(String(64), nullable=False, default="agent")
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=_utcnow)
 
     todo: Mapped[TodoModel] = relationship(back_populates="events")
 
@@ -535,8 +567,8 @@ class BucketLeaseModel(Base):
         index=True,
     )
     holder_id: Mapped[str] = mapped_column(String(128), nullable=False)
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
+    expires_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=_utcnow)
 
     __table_args__ = (
         UniqueConstraint("bucket_key", "holder_id", name="uq_bucket_lease"),

@@ -531,6 +531,11 @@ class EventLoop:
         # gather a snapshot (never the live set) with return_exceptions so a
         # cancelled/failed background task can't propagate into shutdown.
         await asyncio.gather(*pending, return_exceptions=True)
+        # A done-callback is scheduled by asyncio after the gather callback
+        # resumes. Remove the drained snapshot synchronously as well, so callers
+        # can rely on the shutdown postcondition before the next loop turn.
+        async with self._bg_tasks_lock:
+            self._background_tasks.difference_update(pending)
 
     async def _append_message_queue_section(
         self, prompt_text: str | None, todo: Any, project_id: str | None
@@ -707,6 +712,7 @@ class EventLoop:
                     )
                     continue
                 reaped += 1
+                self._tick_state.setdefault("reaped_todo_ids", set()).add(todo.todo_id)
             if reaped:
                 logger.info("Reaped %d stuck ACTIVE todos (no live lease)", reaped)
         except Exception as exc:
@@ -1623,6 +1629,37 @@ class EventLoop:
         claimed = await self._todo_repo.claim_runnable(
             limit=effective_limit, project_id=project_id
         )
+        # A stale todo requeued during the refill phase must not be reclaimed
+        # immediately in the same tick.  Leave it queued for the next worker
+        # tick, releasing the transient claim lease as part of the rollback.
+        reaped_ids = self._tick_state.get("reaped_todo_ids", set())
+        if reaped_ids:
+            retained: list[Any] = []
+            holder = f"tick-{self._total_ticks}"
+            for todo in claimed:
+                if todo.todo_id not in reaped_ids:
+                    retained.append(todo)
+                    continue
+                try:
+                    await self._todo_repo.transition(
+                        todo.todo_id,
+                        TodoStatus.QUEUED,
+                        todo.version,
+                        project_id=project_id,
+                    )
+                    queue = _safe_str(todo, "queue", "core") or "core"
+                    await release_lease(
+                        self._active_session,
+                        f"{queue}:{todo.todo_id}",
+                        holder_id=holder,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "Failed to defer reaped todo %s to next tick: %s",
+                        todo.todo_id,
+                        exc,
+                    )
+            claimed = retained
         self._tick_state["claimed_todos"] = claimed
         # ── Resource estimation: set estimated_cost_usd per claimed todo ──
         if claimed and self._active_session is not None:

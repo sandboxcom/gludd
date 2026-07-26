@@ -28,7 +28,7 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.pool import StaticPool
 
 from general_ludd.controllers.floor import FloorController
-from general_ludd.db.models import Base, BucketLeaseModel, TodoModel
+from general_ludd.db.models import Base, BucketLeaseModel, ProjectModel, TodoModel
 from general_ludd.db.repository import TodoRepository
 from general_ludd.event_loop.lease import (
     acquire_lease,
@@ -63,6 +63,16 @@ async def db_engine():
     try:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        async with factory() as session:
+            session.add(
+                ProjectModel(
+                    project_id=_PIPELINE_PROJECT_ID,
+                    name="E2E workflows",
+                    workspace_path="/tmp/e2e-workflows",
+                )
+            )
+            await session.commit()
         yield engine
     finally:
         await engine.dispose()
@@ -282,6 +292,7 @@ class TestStuckTodoDetection:
                 "priority": 5,
                 "work_type": "code",
                 "status": TodoStatus.ACTIVE.value,
+                "project_id": _PIPELINE_PROJECT_ID,
             })
             await session.commit()
 
@@ -329,8 +340,15 @@ class TestStuckTodoDetection:
                 "priority": 5,
                 "work_type": "code",
                 "status": TodoStatus.ACTIVE.value,
+                "project_id": _PIPELINE_PROJECT_ID,
             })
-            await acquire_lease(session, "core:TODO-LIVE-1", "alive-worker", ttl_seconds=600)
+            await acquire_lease(
+                session,
+                "core:TODO-LIVE-1",
+                "alive-worker",
+                ttl_seconds=600,
+                project_id=_PIPELINE_PROJECT_ID,
+            )
             await session.commit()
 
         async with session_factory() as session:
@@ -374,6 +392,7 @@ class TestStuckTodoDetection:
                 "priority": 5,
                 "work_type": "code",
                 "status": TodoStatus.ACTIVE.value,
+                "project_id": _PIPELINE_PROJECT_ID,
             })
             await session.commit()
 
