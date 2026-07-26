@@ -622,7 +622,7 @@ old summary table omitted entirely. Grand total across the file: **326** boxes.
 - [ ] LEGACY-MULTITASK-DISPATCH-1 — enforce-multitask min-dispatch — fix for enforce-multitask.ts min-dispatch threshold| priority: medium | effort: M | status: pending | prior-evidence: Wave 34
 
 - [ ] T-BETA3-OPENCode — OpenCode config/runtime enforcement E2E: focused plugin suite, restart verification, TASKS/commit gating | priority: medium | effort: M | status: pending
-- [ ] T-BETA3-E2E — Full E2E certification: serial runner, binary regressions, nested-process cleanup, terminal green result | priority: medium | effort: M | status: pending
+- [ ] T-BETA3-E2E — Full E2E certification: serial runner, binary regressions, nested-process cleanup, terminal green result | priority: medium | effort: M | status: pending | evidence: connector shard 632/632 passed; e-m shard passed through 20 files before language-workflow fixture fixes
 - [ ] T-BETA3-COVERAGE — Instrumented E2E branch coverage: repair environment, prove >=85% aggregate and >=75% per file | priority: medium | effort: M | status: pending
 - [x] T-BETA3-COVERAGE-DOCS — Document the E2E branch-coverage audit contract, shard failure evidence, aggregate JSON, and per-file thresholds | evidence: docs/E2E_COVERAGE_AUDIT_CONTRACT.md; coverage.py subprocess guidance and practitioner forum finding linked; markdown/task-ledger validation passed | priority: medium | effort: S | status: completed
 - [ ] T-BETA3-HOOKS — Hook-runtime regressions: fix permission/status-summary blocking failures and rerun runtime harness | priority: medium | effort: M | status: pending
@@ -656,6 +656,7 @@ old summary table omitted entirely. Grand total across the file: **326** boxes.
 <!-- T-BETA3-E2E paths: tests/e2e/test_api_routers.py tests/e2e/test_connectors_batch5_procsys_edges_e2e.py -->
 <!-- T-BETA3-E2E paths: tests/e2e/test_memory_system_branches_e2e.py -->
 <!-- T-BETA3-E2E paths: tests/e2e/test_snake_mechanics.py -->
+<!-- T-BETA3-E2E paths: tests/e2e/test_floor_e2e.py tests/e2e/test_language_workflows.py -->
  <!-- T-BETA3-CONCURRENT-PROJECT-WORKERS paths: tests/e2e/test_concurrent_project_workers_e2e.py scripts/resource_arbiter.py scripts/run_gate.sh scripts/gate_async.sh Makefile tests/unit/test_resource_arbiter.py tests/unit/test_gate_concurrency.py tests/unit/test_gate_async.py tests/unit/test_e2e_runner_target.py -->
  <!-- T-BETA3-CONCURRENT-CONNECTOR-WORKERS paths: tests/e2e/test_concurrent_connector_workers_e2e.py -->
  <!-- T-BETA3-RESOURCE-OBSERVABILITY paths: scripts/active_work_status.py scripts/resource_arbiter.py docs/RESOURCE_OBSERVABILITY.md tests/unit/test_active_work_resource_observability.py tests/unit/test_resource_arbiter.py -->

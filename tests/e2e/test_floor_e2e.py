@@ -336,11 +336,11 @@ console.log(JSON.stringify(r ?? {{allowed: true}}))
     assert r is not None and r.get("permissionDecision") == "deny", (
         f"Message-shape violation should block, got: {r}"
     )
-    assert "MESSAGE-SHAPE" in r.get("message", "")
+    assert "WAVE WIDTH VIOLATION" in r.get("message", "")
 
 
-def test_message_shape_allows_after_5plus_dispatch_wave(tmp_path):
-    """After a 5-dispatch wave (non-thin), next non-dispatch is allowed."""
+def test_message_shape_allows_after_10_dispatch_wave(tmp_path):
+    """After an exact 10-dispatch wave, next non-dispatch is allowed."""
     ws = tmp_path / "msg-ok"
     ws.mkdir()
     _make_working_workspace(ws)
@@ -348,11 +348,16 @@ def test_message_shape_allows_after_5plus_dispatch_wave(tmp_path):
     code = f"""\
 const mod = await import('{PLUGIN_PATH}')
 const plugin = await mod.default({{}})
-await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
-await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
-await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
-await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
-await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
+    await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
+    await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
+    await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
+    await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
+    await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
+    await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
+    await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
+    await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
+    await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
+    await plugin['tool.execute.before']({{tool: 'task'}}, undefined)
 {_BOUNDARY_SLEEP_JS}
 const r = await plugin['tool.execute.before']({{tool: 'write'}}, undefined)
 console.log(JSON.stringify(r ?? {{allowed: true}}))
@@ -360,7 +365,7 @@ console.log(JSON.stringify(r ?? {{allowed: true}}))
     result = _run_plugin(code, cwd=str(ws), env_override=_BOUNDARY_ENV)
     r = _last_json(result)
     assert r is None or r.get("permissionDecision") != "deny", (
-        f"5+ dispatch wave should allow next non-dispatch, got: {r}"
+        f"10-dispatch wave should allow next non-dispatch, got: {r}"
     )
 
 
