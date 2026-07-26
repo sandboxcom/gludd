@@ -19,11 +19,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
     def _now_iso() -> str:
         return datetime.datetime.now(datetime.UTC).isoformat()
 
-    @app.api_route(
-        "/api/terraform/state/{stack_name}",
-        methods=["GET", "POST", "DELETE"],
-    )
-    async def terraform_state(request: Request, stack_name: str) -> JSONResponse:
+    async def _terraform_state(request: Request, stack_name: str) -> JSONResponse:
         if request.method == "GET":
             state = _state_store.get(stack_name)
             if state is None:
@@ -43,6 +39,27 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             return JSONResponse(content={})
 
         raise HTTPException(status_code=405, detail="Method not allowed")
+
+    @app.get(
+        "/api/terraform/state/{stack_name}",
+        operation_id="terraform_state_get",
+    )
+    async def terraform_state(request: Request, stack_name: str) -> JSONResponse:
+        return await _terraform_state(request, stack_name)
+
+    @app.post(
+        "/api/terraform/state/{stack_name}",
+        operation_id="terraform_state_post",
+    )
+    async def terraform_state_post(request: Request, stack_name: str) -> JSONResponse:
+        return await _terraform_state(request, stack_name)
+
+    @app.delete(
+        "/api/terraform/state/{stack_name}",
+        operation_id="terraform_state_delete",
+    )
+    async def terraform_state_delete(request: Request, stack_name: str) -> JSONResponse:
+        return await _terraform_state(request, stack_name)
 
     @app.api_route(
         "/api/terraform/state/{stack_name}",

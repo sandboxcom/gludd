@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import sys
 import types
+import warnings
 from typing import Any
 
 import pytest
@@ -156,6 +157,20 @@ class TestRegisterAllMountsEveryRouter:
             f"register_all only mounted {len(paths)} paths; expected at least "
             f"{len(EXPECTED_ROUTES)} (one per router module)"
         )
+
+    def test_openapi_has_no_duplicate_operation_id_warnings(
+        self, registered_app: FastAPI
+    ) -> None:
+        """Every mounted method must have a unique OpenAPI operation id."""
+        with warnings.catch_warnings(record=True) as captured:
+            warnings.simplefilter("always")
+            registered_app.openapi()
+        duplicates = [
+            str(item.message)
+            for item in captured
+            if "Duplicate Operation ID" in str(item.message)
+        ]
+        assert not duplicates, "duplicate FastAPI operation IDs: " + "; ".join(duplicates)
 
 
 class TestRegisterAllImportErrorPropagation:
