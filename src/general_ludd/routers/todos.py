@@ -140,17 +140,8 @@ _MAX_INMEMORY_TODOS = 1000
 
 
 def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
-    # Replace whatever the daemon factory seeded (a plain list) with a bounded
-    # deque, preserving any pre-existing entries. Idempotent if already a deque
-    # with the right cap.
-    _existing = _daemon_state.get("todos", [])
-    if not (
-        isinstance(_existing, collections.deque)
-        and _existing.maxlen == _MAX_INMEMORY_TODOS
-    ):
-        _daemon_state["todos"] = collections.deque(
-            cast(Iterable[object], _existing), maxlen=_MAX_INMEMORY_TODOS
-        )
+    # Keep the factory's plain list untouched until degraded-mode writes need
+    # it. `_todos()` below performs the bounded conversion lazily on first use.
     def _todos() -> collections.deque[dict[str, object]]:
         td = _daemon_state.get("todos")
         if not isinstance(td, collections.deque):

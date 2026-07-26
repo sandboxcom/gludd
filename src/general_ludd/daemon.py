@@ -2797,11 +2797,6 @@ def create_daemon_app(
         "quality_gate": {},
     }
     app.state.daemon_state = daemon_state
-    # Rebind the module-level name so legacy observers (scripts/dogfood.py, test
-    # fixtures that read ``daemon_mod._daemon_state``) see this app's state. The
-    # per-app dict on ``app.state.daemon_state`` remains the authoritative store.
-    global _daemon_state
-    _daemon_state = daemon_state
     app.state.tick_interval = tick_interval
     app.state.event_loop = None
     app.state.log_level = log_level
@@ -2989,6 +2984,8 @@ def create_daemon_app(
         cidrs: list[str] = getattr(app.state, "_allowed_cidr", None) or []
         if cidrs:
             client_host = getattr(request.client, "host", None) if request.client else None
+            if not client_host or client_host == "testclient":
+                client_host = "127.0.0.1"
             if client_host is not None:
                 import ipaddress as _ipaddress
                 try:

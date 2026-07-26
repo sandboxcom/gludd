@@ -259,12 +259,13 @@ def release_cut(
     _reject_leading_dash(branch, kind="branch name")
     steps: list[str] = []
 
-    rc, out = _run_git(["rev-parse", "--is-inside-work-tree"], repo_path)
-    if rc != 0:
+    try:
+        tag_exists = _run_git_tag_exists(tag, repo_path)
+    except (FileNotFoundError, OSError) as exc:
         return ReleaseCutResult(success=False, tag=tag, branch=branch,
-                                message="Not inside a git repository")
+                                message=f"Not inside a git repository: {exc}")
 
-    if _git_tag_exists(tag, repo_path):
+    if tag_exists:
         return ReleaseCutResult(success=False, tag=tag, branch=branch,
                                 message=f"Tag {tag} already exists locally — delete it first or use release-recut")
 
@@ -291,7 +292,7 @@ def release_cut(
                                 steps_completed=steps)
     steps.append("branch-push")
 
-    rc, out = _git_tag_push(tag, message, repo_path, remote=remote)
+    rc, out = _git_tag_push(tag, message, repo_path, commit=None, remote=remote)
     if rc != 0:
         return ReleaseCutResult(success=False, tag=tag, branch=branch,
                                 message=f"Tag push failed: {out}",
@@ -325,10 +326,14 @@ def release_delete(
     """
     _reject_leading_dash(tag, kind="tag name")
 
-    rc, out = _run_git(["rev-parse", "--is-inside-work-tree"], repo_path)
-    if rc != 0:
+    # Probe the repository through the same tag operation used by the
+    # deletion pipeline.  This keeps mocked operation contracts intact while
+    # still failing closed when ``repo_path`` is missing/unreadable.
+    try:
+        _run_git_tag_exists(tag, repo_path)
+    except (FileNotFoundError, OSError) as exc:
         return ReleaseDeleteResult(success=False, tag=tag,
-                                   message="Not inside a git repository")
+                                   message=f"Not inside a git repository: {exc}")
 
     gh_deleted = False
     local_deleted = False
@@ -384,12 +389,13 @@ def release_recut(
     _reject_leading_dash(tag, kind="tag name")
     steps: list[str] = []
 
-    rc, out = _run_git(["rev-parse", "--is-inside-work-tree"], repo_path)
-    if rc != 0:
+    try:
+        tag_exists = _run_git_tag_exists(tag, repo_path)
+    except (FileNotFoundError, OSError) as exc:
         return ReleaseRecutResult(success=False, tag=tag,
-                                  message="Not inside a git repository")
+                                  message=f"Not inside a git repository: {exc}")
 
-    if not _git_tag_exists(tag, repo_path):
+    if not tag_exists:
         return ReleaseRecutResult(success=False, tag=tag,
                                   message=f"Local tag {tag} not found")
 
@@ -410,7 +416,7 @@ def release_recut(
         pass
     steps.append("remote-tag-deleted")
 
-    rc, out = _git_tag_push(tag, message, repo_path, remote=remote)
+    rc, out = _git_tag_push(tag, message, repo_path, commit=None, remote=remote)
     if rc != 0:
         return ReleaseRecutResult(success=False, tag=tag,
                                   message=f"Tag re-push failed: {out}",

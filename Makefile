@@ -8,6 +8,9 @@ OPENCODE_DB ?= ~/.local/share/opencode/opencode.db
 VERIFY_POLLS ?= 30
 GLUDD_TASK_TIMEOUT ?= 300
 GATE_POLL_INTERVAL ?= 60
+# SSH deploy keys are credentials and must live outside the repository.
+# Override with `make ... SSH_KEY=/path/to/key` for another external key.
+SSH_KEY ?= $(HOME)/.ssh/sandboxcom_github_rsa
 
 _MULTIWORD_VALUE_GOALS := \
     copy-file feature-done feature-start git-add git-branch git-checkout git-cherry-pick-list \
@@ -72,7 +75,7 @@ PYTEST_VERBOSITY ?= -v
         feature-start feature-done test-and-commit preflight \
         agent-worktree agent-worktree-base agent-merge agent-cleanup agent-worktree-list \
         agent-worktree-dev agent-merge-dev \
-        development-push development-merge-to-master development-start development-status \
+         development-push development-merge-to-master development-start development-status require-sandboxcom-ssh-key \
         git-commit-no-verify git-amend-msg \
 _commit-lock-acquire check-clean-tree worktree-state all-worktree-state main-worktree-state worktree-guard main-worktree-guard \
         release-worktree-guard status-claim-guard workflow-state workflow-gate commit-ready gha-ready merge-ready ship-commit-files remove-workspace-file-b64 \
@@ -1951,9 +1954,18 @@ git-fetch-sandboxcom:
 	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git fetch sandboxcom
 	@echo "Fetched from sandboxcom/gludd"
 
-verify-remote:
+require-sandboxcom-ssh-key:
+	@KEY="$(SSH_KEY)"; \
+	if [ ! -f "$$KEY" ] || [ ! -r "$$KEY" ]; then \
+		echo "ERROR: sandboxcom SSH key is missing or unreadable: $$KEY"; \
+		echo "Set SSH_KEY=/path/to/an external deploy key (never store credentials in the repository)."; \
+		exit 1; \
+	fi; \
+	echo "sandboxcom SSH key available: $$KEY"
+
+verify-remote: require-sandboxcom-ssh-key
 	@SHA=$(or $(SHA),$$(git rev-parse HEAD)); BR=$(or $(BRANCH),master); \
-	REMOTE=$$(GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git ls-remote sandboxcom refs/heads/$$BR | awk '{print $$1}'); \
+	REMOTE=$$(GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git ls-remote sandboxcom refs/heads/$$BR | awk '{print $$1}'); \
 	echo "remote=$$REMOTE expected=$$SHA"; \
 	REMOTE_SHORT=$$(echo $$REMOTE | cut -c1-$${#SHA}); \
 	if [ "$$SHA" = "$$REMOTE_SHORT" ]; then echo "VERIFIED $$BR@$$SHA"; else echo "REMOTE MISMATCH: remote=$$REMOTE expected=$$SHA" && exit 1; fi
@@ -3372,13 +3384,15 @@ agent-merge-dev:
 # Push the development branch to the sandboxcom remote.
 development-push: check-clean-tree ci-busy-check
 	@$(MAKE) ci-busy-check BRANCH=development
-	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push --no-verify -u sandboxcom development
+	@$(MAKE) require-sandboxcom-ssh-key
+	@GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git push --no-verify -u sandboxcom development
 	@$(MAKE) verify-remote BRANCH=development SHA=$$(git rev-parse development)
 	@echo "Development branch pushed and verified"
 
 # Force-push the development branch (when rebase rewrites history).
 development-force-push:
-	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push --force --no-verify -u sandboxcom development
+	@$(MAKE) require-sandboxcom-ssh-key
+	@GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git push --force --no-verify -u sandboxcom development
 	@$(MAKE) verify-remote BRANCH=development SHA=$$(git rev-parse development)
 	@echo "Development branch force-pushed and verified"
 

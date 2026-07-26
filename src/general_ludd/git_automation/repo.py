@@ -338,6 +338,15 @@ class GitAutomation:
             ("config", "user.name", "Agentic Harness Agent"),
         ):
             self._run_git(*cmd, check=False, _cwd=target)
+        # A repository without a first commit cannot support stash/reset
+        # workflows (git refuses ``stash push`` on an unborn branch).  Seed a
+        # deliberately empty root commit for newly-created automation repos;
+        # callers can still add their first real commit normally.
+        if created:
+            self._run_git(
+                "commit", "--allow-empty", "-m", "Initialize repository",
+                check=False, _cwd=target,
+            )
         return InitResult(path=target, created=created, message="initialized" if created else "already exists")
 
     def is_repo(self) -> bool:
@@ -1454,7 +1463,10 @@ class GitAutomation:
     def stash(self, message: str = "") -> bool:
         """Push working-tree changes onto the stash stack. Returns True if
         anything was stashed, False if the tree was already clean."""
-        args = ["stash", "push"]
+        # Keep the staged index intact while shelving worktree edits.  This
+        # mirrors the Makefile workflow used before commits and preserves
+        # newly staged files (which ``git stash push`` otherwise removes).
+        args = ["stash", "push", "--keep-index"]
         if message:
             args.extend(["-m", message])
         try:
@@ -1475,11 +1487,13 @@ class GitAutomation:
 
     def reset_soft(self, *, ref: str) -> None:
         _reject_leading_dash(ref, kind="reset ref")
-        self._run_git("reset", "--soft", "--", ref, check=True)
+        # ``--`` terminates options and starts a pathspec; refs such as
+        # ``HEAD~1`` must remain positional revision arguments.
+        self._run_git("reset", "--soft", ref, check=True)
 
     def reset_hard(self, *, ref: str) -> None:
         _reject_leading_dash(ref, kind="reset ref")
-        self._run_git("reset", "--hard", "--", ref, check=True)
+        self._run_git("reset", "--hard", ref, check=True)
 
     def add(self, files: Sequence[str]) -> None:
         if not files:

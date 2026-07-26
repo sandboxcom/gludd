@@ -73,6 +73,19 @@ def verify_remote(
             ref=ref,
             message=f"git ls-remote timed out after {_GIT_TIMEOUT_SECONDS}s",
         )
+    except subprocess.CalledProcessError as exc:
+        # Some callers (and test doubles) request ``check=True``.  Preserve
+        # the fail-closed UNREACHABLE contract instead of leaking the process
+        # exception through the automation boundary.
+        detail = exc.stderr or exc.stdout or str(exc)
+        return VerifyRemoteResult(
+            status="UNREACHABLE",
+            remote_sha="",
+            expected_sha=expected_sha,
+            remote=remote,
+            ref=ref,
+            message=str(detail).strip(),
+        )
     except OSError as exc:
         return VerifyRemoteResult(
             status="UNREACHABLE",
