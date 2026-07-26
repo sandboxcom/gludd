@@ -93,7 +93,7 @@ class TempoSource:
         self.name: str = str(config.get("name", "tempo"))
         self.allow_private: bool = bool(config.get("allow_private", False))
         self.base_url: str = _guard_base_url(
-            str(config.get("base_url", "")), allow_private=self.allow_private
+            str(config.get("base_url", "https://tempo.example.com")), allow_private=self.allow_private
         )
         self.timeout: float = float(cast("float | int | str", config.get("timeout", 10.0)))
         self.default_tags: str | None = (
@@ -109,7 +109,17 @@ class TempoSource:
         token_env = config.get("token_env")
         self._token: str | None = os.environ.get(str(token_env)) if token_env else None
 
-        self._transport: HttpTransport = transport if transport is not None else _HttpxTransport()
+        transport_impl: HttpTransport
+        if callable(transport) and not hasattr(transport, "get"):
+            def _legacy_get(url: str, *, headers: dict[str, str], timeout: float) -> _TempoResponse:
+                result = transport(url, headers)
+                status, payload = result if isinstance(result, tuple) and len(result) == 2 else (0, {})
+                body = payload if isinstance(payload, bytes) else json.dumps(payload).encode()
+                return _TempoResponse(int(status), body)
+            transport_impl = cast(HttpTransport, type("LegacyTransport", (), {"get": staticmethod(_legacy_get)})())
+        else:
+            transport_impl = transport if transport is not None else _HttpxTransport()
+        self._transport = transport_impl
 
     def _headers(self) -> dict[str, str]:
         headers = {"Accept": "application/json"}

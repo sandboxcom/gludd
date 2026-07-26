@@ -33,3 +33,4 @@ class HttpResponse(Protocol):
 
     def json(self) -> Any:  # pragma: no cover - structural typing only
         ...
+
