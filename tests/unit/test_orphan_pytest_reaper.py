@@ -8,6 +8,7 @@ from pathlib import Path
 from scripts.reap_orphan_pytest import (
     ProcessRecord,
     is_reapable,
+    owner_pids,
     parse_elapsed_seconds,
     reapable_with_descendants,
     select_reapable_records,
@@ -93,3 +94,17 @@ def test_reaper_ignores_stale_status_pid_with_unrelated_command() -> None:
     )
 
     assert [record.pid for record in selected] == [100]
+
+
+def test_owner_claims_are_scoped_to_gate_state_and_resource_namespace(tmp_path, monkeypatch) -> None:
+    root = tmp_path / "checkout"
+    root.mkdir()
+    resource_root = tmp_path / "resources"
+    monkeypatch.setenv("GLUDD_RESOURCE_ROOT", str(resource_root))
+    from scripts.resource_arbiter import resource_path
+
+    resource_path("gate", root).parent.mkdir(parents=True)
+    resource_path("gate", root).write_text("41\n", encoding="utf-8")
+    (root / ".gate-status").write_text("RUNNING 123 42\n", encoding="utf-8")
+
+    assert owner_pids(root) == {41, 42}

@@ -185,14 +185,15 @@ def _records(project_root: Path) -> list[ProcessRecord]:
 
 def reap(project_root: Path, *, min_age_seconds: int, apply: bool) -> int:
     records = _records(project_root)
+    owners = owner_pids(project_root)
     candidates = select_reapable_records(
         records,
         project_root=project_root,
         min_age_seconds=min_age_seconds,
-        owner_pids=owner_pids(project_root),
+        owner_pids=owners,
     )
     if not candidates and _has_live_owner(
-        records, project_root=project_root, owner_pids=owner_pids(project_root)
+        records, project_root=project_root, owner_pids=owners
     ):
         print("orphan-pytest skipped: live project gate/agent owner present")
     for record in candidates:
