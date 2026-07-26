@@ -732,6 +732,34 @@ old summary table omitted entirely. Grand total across the file: **326** boxes.
 - [ ] T-CODEX-CONT-098 — Add rollback-safe upgrades for hook implementations | priority: medium | effort: M | status: pending
 - [ ] T-CODEX-CONT-099 — Add a documented emergency recovery procedure | priority: high | effort: S | status: pending
 - [ ] T-CODEX-CONT-100 — Verify all continuation specifications are implemented or explicitly bounded | priority: high | effort: M | status: pending
+
+## Codex Multitasking Specification Backlog
+
+- [ ] T-CODEX-MULTI-101 — Record every dispatched agent with an immutable task hash | priority: high | effort: S | status: pending
+- [ ] T-CODEX-MULTI-102 — Reject duplicate dispatches for the same task hash | priority: high | effort: S | status: pending
+- [ ] T-CODEX-MULTI-103 — Require every agent prompt to name its deliverable | priority: high | effort: S | status: pending
+- [ ] T-CODEX-MULTI-104 — Require every agent prompt to include available make targets | priority: medium | effort: S | status: pending
+- [ ] T-CODEX-MULTI-105 — Require every agent prompt to state tool boundaries | priority: medium | effort: S | status: pending
+- [ ] T-CODEX-MULTI-106 — Require every agent prompt to end with a fix-not-report instruction | priority: high | effort: S | status: pending
+- [ ] T-CODEX-MULTI-107 — Assign one owner to each shared infrastructure file | priority: high | effort: M | status: pending
+- [ ] T-CODEX-MULTI-108 — Reject concurrent edits to the same Makefile or config file | priority: high | effort: M | status: pending
+- [ ] T-CODEX-MULTI-109 — Require isolated worktrees for independent coding agents | priority: high | effort: M | status: pending
+- [ ] T-CODEX-MULTI-110 — Verify each agent worktree has a named branch | priority: high | effort: S | status: pending
+- [ ] T-CODEX-MULTI-111 — Reject detached-head agent worktrees | priority: high | effort: S | status: pending
+- [ ] T-CODEX-MULTI-112 — Verify agent branches share the intended base commit | priority: high | effort: M | status: pending
+- [ ] T-CODEX-MULTI-113 — Serialize merges into development | priority: high | effort: M | status: pending
+- [ ] T-CODEX-MULTI-114 — Detect overlapping changed paths before merge | priority: high | effort: M | status: pending
+- [ ] T-CODEX-MULTI-115 — Preserve unrelated valid work during conflict resolution | priority: high | effort: M | status: pending
+- [ ] T-CODEX-MULTI-116 — Require focused tests before an agent merge | priority: high | effort: S | status: pending
+- [ ] T-CODEX-MULTI-117 — Require task-ledger evidence before an agent merge | priority: high | effort: S | status: pending
+- [ ] T-CODEX-MULTI-118 — Reconcile agent commits into a single-source history | priority: medium | effort: M | status: pending
+- [ ] T-CODEX-MULTI-119 — Record agent commit hashes and test evidence centrally | priority: medium | effort: S | status: pending
+- [ ] T-CODEX-MULTI-120 — Detect agents that exit without a deliverable | priority: high | effort: M | status: pending
+- [ ] T-CODEX-MULTI-121 — Apply per-agent deadlines with visible expiry events | priority: high | effort: M | status: pending
+- [ ] T-CODEX-MULTI-122 — Resume expired agent work from durable state | priority: high | effort: M | status: pending
+- [ ] T-CODEX-MULTI-123 — Bound concurrent agent count by host resources | priority: high | effort: M | status: pending
+- [ ] T-CODEX-MULTI-124 — Report active agents separately from OS process counts | priority: high | effort: S | status: pending
+- [ ] T-CODEX-MULTI-125 — Verify multitask status claims against agent ledger evidence | priority: high | effort: M | status: pending
 - [x] T-BETA3-E2E-SUPERVISOR — Resume E2E shards after fixes without rerunning completed files | paths: scripts/e2e_supervisor.py Makefile tests/e2e tests/unit | priority: high | effort: M | status: completed | evidence: commit `be3c487d`, supervisor/runner contracts 16/16, real E2E 30/30, identical rerun skipped completed file
 - [x] T-BETA3-STATUS-HEARTBEAT — Emit auditable five-minute local/remote pipeline and worker status checkpoints | paths: Makefile tests/unit/test_status_heartbeat_contract.py | priority: high | effort: S | status: completed | evidence: `make test-specific TESTFILE=tests/unit/test_status_heartbeat_contract.py` (2 passed), `make check-duplicate-targets` (0 duplicates), `make status-heartbeat COUNT=1 INTERVAL=300` (auditable heartbeat emitted), commit `d91040cba036faf7a05e7602ec825063f12d8176`
 - [ ] T-BETA3-COVERAGE — Instrumented E2E branch coverage: repair environment, prove >=85% aggregate and >=75% per file | priority: medium | effort: M | status: pending
