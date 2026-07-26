@@ -41,6 +41,14 @@ model/quantization or close other workloads first. The estimate covers weights
 plus a 20% runtime overhead, but long contexts and multiple concurrent models
 need additional headroom.
 
+The JSON `memory_policy.guidance` field makes the selection rule explicit:
+
+| Memory kind | Prefer | Do not run |
+| --- | --- | --- |
+| `discrete`/VRAM | 7B-34B Q4/Q8 models that fit the reserved VRAM; throughput-oriented batches | Anything above usable VRAM or with an incompatible CUDA/ROCm runtime |
+| `unified`/shared | 3B-7B Q4 models with short context and one active model | Long-context, concurrent, or 13B+ dense models when system-memory pressure is high |
+| `unknown` | None until capacity and backend are proven | Any live model; the harness fails closed |
+
 ## Linux
 
 Dry-run (safe on a developer laptop):

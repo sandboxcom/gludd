@@ -61,6 +61,13 @@ when the recommendation says **do not run this model**; do not bypass the
 budget by setting an unbounded value. The default hidden size, batch, and step
 limits are intentionally bounded for shared development hosts.
 
+Use the `memory_policy.model_guidance` field as the device rule: unified-memory
+hosts prefer a single small/quantized model (normally 3B-7B Q4), while long
+contexts, concurrent models, and dense 13B+ models are rejected when the shared
+pool is pressured. A discrete-VRAM result may prefer larger throughput-oriented
+7B-34B Q4/Q8 models, but only after the reserved-VRAM fit check passes. Unknown
+capacity always means **do not run** until the backend and capacity are proven.
+
 ## Telemetry and long-lived issues
 
 The output is local JSON and contains no credentials. MPS memory accounting has
@@ -71,4 +78,3 @@ large “other allocations” on unified-memory machines, and PyTorch Forum thre
 coverage and CPU-fallback surprises. The harness therefore records both MPS
 allocated and driver memory, requires explicit backend selection for live GPU
 checks, and fails closed when capability or fit checks cannot be proven.
-
