@@ -26,7 +26,9 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_DIR = ROOT / ".opencode" / "plugin"
-HOT_RELOAD_TS = PLUGIN_DIR / "hot_reload.ts"
+# The shared loader lives outside the auto-discovered plugin directory. Keeping
+# it in .opencode/plugin/ would make OpenCode attempt to load the utility itself.
+HOT_RELOAD_TS = ROOT / ".opencode" / "lib" / "hot_reload.ts"
 BUILD_SCRIPT = ROOT / "scripts" / "build_hot_modules.js"
 MAKEFILE = ROOT / "Makefile"
 HOT_PROXY_PREFIX = f"/tmp/gludd-hot-{os.getpid()}-hot-reload-proxy-"
@@ -202,7 +204,7 @@ class TestHotModuleOverridesDefault:
     HOT_PREFIX = HOT_PROXY_PREFIX
 
     @staticmethod
-    def _call_load_hot_module(name: str, ts_defaults: str) -> dict | None:
+    def _call_load_hot_module(name: str, ts_defaults: str) -> dict[str, bool] | None:
         """Invoke loadHotModule(name, defaults) via node."""
         code = (
             "import { loadHotModule, type HotModule } from "

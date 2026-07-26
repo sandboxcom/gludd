@@ -29,10 +29,16 @@ const PLUGINS = [
   "enforce-verified-claims",
   "enforce-clean-tree",
   "enforce-deletion-gate",
+  "enforce-deliverable",
+  "enforce-directives",
   "enforce-objective",
+  "enforce-floor-v2",
   "enforce-tdd",
   "enforce-test-integrity",
+  "enforce-task-tracking",
   "enforce-worktree",
+  "enforce-no-ci-poll",
+  "enforce-release-deadline",
 ];
 
 function tsToJs(content) {
