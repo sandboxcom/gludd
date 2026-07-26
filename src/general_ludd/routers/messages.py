@@ -155,6 +155,13 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
                 if row is None:
                     raise HTTPException(status_code=404, detail="message not found")
                 await session.commit()
+                if isinstance(row, bool):
+                    # The repository keeps a keyword-style compatibility path
+                    # that returns a boolean rather than an ORM row.  Preserve
+                    # the acknowledgement contract without dereferencing it.
+                    if not row:
+                        raise HTTPException(status_code=404, detail="message not found")
+                    return {"acked": True, "id": message_id, "read_at": None}
                 return {"acked": True, "id": row.id, "read_at": str(row.read_at)}
         for m in messages:
             if m.get("id") == message_id:
