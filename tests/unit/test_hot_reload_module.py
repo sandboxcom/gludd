@@ -13,6 +13,7 @@ import os
 import subprocess
 import time
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
@@ -24,7 +25,7 @@ HOT_PREFIX = f"/tmp/gludd-hot-{os.getpid()}-hot-reload-module-"
 
 pytestmark = pytest.mark.xdist_group("hot_reload_module")
 
-def _call_load_hot_module(name: str, ts_defaults: str) -> dict | None:
+def _call_load_hot_module(name: str, ts_defaults: str) -> dict[str, Any] | None:
     """Write a small TS wrapper that calls loadHotModule(name, defaults) and
     returns the parsed JSON result."""
     code = (
@@ -49,7 +50,9 @@ def _call_load_hot_module(name: str, ts_defaults: str) -> dict | None:
         raise AssertionError(
             f"Node exit {proc.returncode}\nstderr: {proc.stderr[:800]}\nstdout: {proc.stdout[:400]}"
         )
-    return json.loads(proc.stdout.strip()) if proc.stdout.strip() else None
+    if not proc.stdout.strip():
+        return None
+    return cast(dict[str, Any], json.loads(proc.stdout.strip()))
 
 
 def _write_hot_module(name: str, exports_js: str) -> str:

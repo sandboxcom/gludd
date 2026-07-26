@@ -202,7 +202,7 @@ class TestHotModuleOverridesDefault:
     HOT_PREFIX = HOT_PROXY_PREFIX
 
     @staticmethod
-    def _call_load_hot_module(name: str, ts_defaults: str) -> dict | None:
+    def _call_load_hot_module(name: str, ts_defaults: str) -> dict[str, bool] | None:
         """Invoke loadHotModule(name, defaults) via node."""
         code = (
             "import { loadHotModule, type HotModule } from "

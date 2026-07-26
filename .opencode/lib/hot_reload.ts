@@ -89,7 +89,10 @@ export function loadHotModule(name: string, defaults: HotModule): HotModule {
   const hotPrefix = process.env.GLUDD_HOT_MODULE_PREFIX || "/tmp/gludd-hot-"
   const hotPath = `${hotPrefix}${name}.js`
   try {
-    if (!fs.existsSync(hotPath)) return withJsonHookKeys(defaults)
+    if (!fs.existsSync(hotPath)) {
+      withJsonHookKeys(defaults)
+      return defaults
+    }
     const mtime = fs.statSync(hotPath).mtimeMs
     if (hotCache[name] && hotCache[name].mtime === mtime) {
       return withJsonHookKeys(hotCache[name].module)
@@ -101,7 +104,8 @@ export function loadHotModule(name: string, defaults: HotModule): HotModule {
       mod = _require(hotPath) as HotModule
     } catch (e) {
       console.warn(`gludd-hot: require("${hotPath}") failed (${String(e).slice(0, 200)}) — falling back to compiled-in defaultImpl`)
-      return withJsonHookKeys(defaults)
+      withJsonHookKeys(defaults)
+      return defaults
     }
     if (Object.keys(mod).length === 0) {
       mod = legacyExportsObject(fs.readFileSync(hotPath, "utf8"))
@@ -110,6 +114,7 @@ export function loadHotModule(name: string, defaults: HotModule): HotModule {
     hotCache[name] = { mtime, module: mod }
     return withJsonHookKeys(mod)
   } catch {
-    return withJsonHookKeys(defaults)
+    withJsonHookKeys(defaults)
+    return defaults
   }
 }
