@@ -359,6 +359,7 @@ help:
 	@echo "  tmp-gludd-usage       Print largest /tmp/gludd-* entries sorted by size"
 	@echo "  tmp-gludd-worktree-usage  Print largest generated entries under /tmp/gludd-worktrees"
 	@echo "  tmp-gludd-clean-ci-shards  Remove stale generated CI shard scratch dirs"
+	@echo "  tmp-gludd-clean-ci-shards-now  Remove all inactive CI shard scratch dirs"
 	@echo "  clean-worktree-caches  Remove generated venv/test/tool caches from worktrees"
 	@echo ""
 	@echo "  --- Recovery ---"
@@ -1335,6 +1336,9 @@ tmp-gludd-worktree-usage:
 
 tmp-gludd-clean-ci-shards:
 	@$(SYSTEM_PYTHON) scripts/clean_ci_shard_scratch.py
+
+tmp-gludd-clean-ci-shards-now:
+	@$(SYSTEM_PYTHON) scripts/clean_ci_shard_scratch.py --min-age-seconds 0
 
 # Remove regenerable .venv dirs from agent worktrees (source is preserved;
 # `uv sync` recreates on demand). The main disk hog when many worktree agents run.

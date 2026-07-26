@@ -4,12 +4,22 @@
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import time
 from pathlib import Path
 
 DEFAULT_MIN_AGE_SECONDS = 6 * 60 * 60
-PATTERNS = ("gludd-ci-shard-*", "gludd-unit-shard-*")
+PATTERNS = (
+    "gludd-ci-shard-*",
+    "gludd-unit-shard-*",
+    "gludd-audit-e2e-*",
+    "gludd-e2e-*",
+    "gludd-test-*",
+    "gludd-testunit-*",
+    "gludd-testspecific-*",
+    "gludd-testfiles-*",
+)
 
 
 def iter_candidates(tmp_root: Path) -> list[Path]:
@@ -26,6 +36,21 @@ def is_stale(path: Path, *, now: float, min_age_seconds: int) -> bool:
     except FileNotFoundError:
         return False
     return now - stat.st_mtime >= min_age_seconds
+
+
+def _remove_tree(path: Path) -> None:
+    """Remove stale scratch even when a test left a restrictive mode behind."""
+    for root, dirs, files in os.walk(path, topdown=True, onerror=lambda _error: None):
+        for name in (*dirs, *files):
+            try:
+                os.chmod(Path(root) / name, 0o700)
+            except OSError:
+                pass
+        try:
+            os.chmod(root, 0o700)
+        except OSError:
+            pass
+    shutil.rmtree(path)
 
 
 def clean_ci_shard_scratch(
@@ -47,7 +72,7 @@ def clean_ci_shard_scratch(
             skipped.append(f"{path}:recent")
             continue
         if not dry_run:
-            shutil.rmtree(path)
+            _remove_tree(path)
         removed.append(str(path))
     return {"removed": removed, "skipped": skipped}
 
