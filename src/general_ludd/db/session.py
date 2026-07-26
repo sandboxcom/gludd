@@ -53,7 +53,9 @@ _install_sqlite_async_pool_compat()
 # AsyncEngine uses slots and cannot carry ad-hoc lifecycle attributes. Expose
 # the compatibility marker as a class property backed by our identity set.
 if not isinstance(getattr(AsyncEngine, "_closed", None), property):
-    setattr(AsyncEngine, "_closed", property(lambda engine: id(engine) in _closed_engines))
+    AsyncEngine._closed = property(  # type: ignore[attr-defined]
+        lambda engine: id(engine) in _closed_engines
+    )
 
 
 def get_default_db_path() -> Path:
