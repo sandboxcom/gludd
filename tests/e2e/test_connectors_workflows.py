@@ -996,6 +996,85 @@ class TestConnectorRegistry:
         )
         reg.close()  # should not raise
 
+    def test_registry_sanitizes_failed_health_and_continues_sweep(self):
+        """A broken configured backend must not leak its DSN or stop healthy peers."""
+
+        class _SecretHealthFailure(_FakeSource):
+            def health(self) -> dict[str, object]:
+                raise RuntimeError("postgres://admin:super-secret@db.internal/gludd")
+
+        reg = ConnectorRegistry.from_config(
+            [
+                {"name": "broken-db", "kind": "metrics", "factory": "broken"},
+                {"name": "healthy-log", "kind": "logs", "factory": "healthy"},
+            ],
+            factories={"broken": _SecretHealthFailure, "healthy": _FakeSource},
+        )
+
+        health = reg.health_all()
+
+        assert health["broken-db"] == {
+            "ok": False,
+            "source": "broken-db",
+            "error": "health check failed",
+        }
+        assert health["healthy-log"]["ok"] is True
+        assert "super-secret" not in repr(health)
+        assert "db.internal" not in repr(health)
+
+    def test_registry_query_failure_is_normalized_and_secret_safe(self):
+        """A connector exception becomes a normalized record, not an API failure."""
+
+        class _SecretQueryFailure(_FakeSource):
+            def query(self, spec: dict[str, object]) -> list[dict[str, object]]:
+                raise RuntimeError("Bearer top-secret-token rejected by upstream")
+
+        reg = ConnectorRegistry.from_config(
+            [{"name": "broken-api", "kind": "traces", "factory": "broken"}],
+            factories={"broken": _SecretQueryFailure},
+        )
+
+        records = reg.query("broken-api", {"operation": "recent"})
+
+        assert records == [
+            {
+                "ts": None,
+                "source": "broken-api",
+                "kind": "traces",
+                "level_or_status": "error",
+                "message": "query failed",
+                "value": None,
+                "labels": {},
+                "raw": "query failed",
+            }
+        ]
+        assert "top-secret-token" not in repr(records)
+
+    def test_registry_close_continues_after_failed_disconnect(self):
+        """Reload teardown must still release later connectors after one fails."""
+        closed: list[str] = []
+
+        class _FailingDisconnect(_FakeSource):
+            def disconnect(self) -> None:
+                closed.append("failing")
+                raise RuntimeError("disconnect failed")
+
+        class _ClosingSource(_FakeSource):
+            def close(self) -> None:
+                closed.append("healthy")
+
+        reg = ConnectorRegistry.from_config(
+            [
+                {"name": "first", "kind": "logs", "factory": "first"},
+                {"name": "second", "kind": "metrics", "factory": "second"},
+            ],
+            factories={"first": _FailingDisconnect, "second": _ClosingSource},
+        )
+
+        reg.close()
+
+        assert closed == ["failing", "healthy"]
+
     def test_validate_class_name_good(self):
         _validate_class_name("MyConnectorSource")
 

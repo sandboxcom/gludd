@@ -2865,13 +2865,20 @@ class MemoryRepository:
         project_id: str | None = None,
         ttl_seconds: int | None = None,
     ) -> MemoryRecordModel:
-        from sqlalchemy.dialects.sqlite import insert as sqlite_insert
-
         async with self._resolve_session() as session:
             now = datetime.now(UTC)
-            stmt = (
-                sqlite_insert(MemoryRecordModel)
-                .values(
+            stmt = select(MemoryRecordModel).where(
+                MemoryRecordModel.agent_id == agent_id,
+                MemoryRecordModel.key == key,
+                MemoryRecordModel.namespace == namespace,
+            )
+            if project_id is None:
+                stmt = stmt.where(MemoryRecordModel.project_id.is_(None))
+            else:
+                stmt = stmt.where(MemoryRecordModel.project_id == project_id)
+            existing = (await session.execute(stmt)).scalar_one_or_none()
+            if existing is None:
+                existing = MemoryRecordModel(
                     agent_id=agent_id,
                     key=key,
                     value=value,
@@ -2881,17 +2888,14 @@ class MemoryRepository:
                     created_at=now,
                     updated_at=now,
                 )
-                .on_conflict_do_update(
-                    index_elements=["agent_id", "key", "namespace"],
-                    set_={"value": value, "project_id": project_id, "ttl_seconds": ttl_seconds, "updated_at": now},
-                )
-            )
-            await session.execute(stmt)
+                session.add(existing)
+            else:
+                existing.value = value
+                existing.ttl_seconds = ttl_seconds
+                existing.updated_at = now
             await session.flush()
-            row = await self._get_with_session(session, agent_id, key, namespace, project_id)
-            assert row is not None
-            await session.refresh(row)
-            return row
+            await session.refresh(existing)
+            return existing
 
     async def delete(
         self, agent_id: str, key: str, namespace: str = "default",

@@ -791,7 +791,10 @@ class MemoryRecordModel(Base):
     )
 
     __table_args__ = (
-        UniqueConstraint("agent_id", "key", "namespace", name="uq_memory_agent_key_ns"),
+        UniqueConstraint(
+            "agent_id", "key", "namespace", "project_id",
+            name="uq_memory_agent_key_ns_project",
+        ),
         Index("ix_memory_namespace", "namespace"),
     )
 

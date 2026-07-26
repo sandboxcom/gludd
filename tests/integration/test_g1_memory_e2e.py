@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from general_ludd.db.models import Base
+from general_ludd.db.models import Base, ProjectModel
 from general_ludd.db.repository import MemoryRepository
 
 
@@ -205,3 +205,51 @@ class TestG1MemoryE2E:
         results = await repo.list_by_namespace("a", "default", limit=50)
         assert len(results) <= 100
         assert len(results) >= 50
+
+    @pytest.mark.asyncio
+    async def test_wildcard_listing_returns_all_namespaces_in_key_order(self, session: AsyncSession):
+        """The prompt-memory caller can request every namespace with ``*``."""
+        repo = MemoryRepository(session)
+        await repo.set(agent_id="agent-1", key="z-last", value="default")
+        await repo.set(agent_id="agent-1", key="a-first", value="preferences", namespace="prefs")
+        await repo.set(agent_id="other-agent", key="middle", value="hidden", namespace="prefs")
+
+        records = await repo.list_by_namespace("agent-1", namespace="*")
+
+        assert [(record.key, record.namespace, record.value) for record in records] == [
+            ("a-first", "prefs", "preferences"),
+            ("z-last", "default", "default"),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_expired_get_removes_record_before_a_later_delete(self, session: AsyncSession):
+        """A lazy expiration read must remove the stale row, not only hide it."""
+        repo = MemoryRepository(session)
+        record = await repo.set(agent_id="agent-1", key="temporary", value="stale", ttl_seconds=1)
+        record.created_at = datetime.now(UTC) - timedelta(seconds=10)
+        await session.flush()
+
+        assert await repo.get("agent-1", "temporary") is None
+        assert await repo.delete("agent-1", "temporary") is False
+
+    @pytest.mark.asyncio
+    async def test_project_scoped_records_do_not_overwrite_each_other(self, session: AsyncSession):
+        """The same agent key may hold independent values in separate projects."""
+        repo = MemoryRepository(session)
+        session.add_all([
+            ProjectModel(project_id="project-a", name="Project A"),
+            ProjectModel(project_id="project-b", name="Project B"),
+        ])
+        await session.flush()
+        await repo.set(
+            agent_id="agent-1", key="deployment", value="blue", project_id="project-a",
+        )
+        await repo.set(
+            agent_id="agent-1", key="deployment", value="green", project_id="project-b",
+        )
+
+        project_a = await repo.get("agent-1", "deployment", project_id="project-a")
+        project_b = await repo.get("agent-1", "deployment", project_id="project-b")
+
+        assert project_a is not None and project_a.value == "blue"
+        assert project_b is not None and project_b.value == "green"
