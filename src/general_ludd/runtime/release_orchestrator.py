@@ -7,9 +7,11 @@ build/validate classes live on a real call path. Returns a serializable report.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from general_ludd.runtime.container import ContainerBuilder
+from general_ludd.runtime.manifest_signer import ManifestSigner
 from general_ludd.runtime.pip_bundle import PipBundleBuilder
 from general_ludd.runtime.release import ReleaseArtifactValidator
 
@@ -21,9 +23,20 @@ def build_and_validate_release(
     context_dir: str = ".",
     image_ref: str | None = None,
     container_runtime: str = "podman",
+    allowed_signers_path: str | None = None,
 ) -> dict[str, Any]:
     """Build the pip bundle (and optionally a container), then validate."""
     bundle = PipBundleBuilder().build(output_dir=output_dir, version=version)
+    trust_store = allowed_signers_path or str(
+        Path(output_dir) / "release.allowed_signers"
+    )
+    if bundle.success and bundle.signature_valid:
+        signer = ManifestSigner()
+        public_key_path = Path(f"{signer.private_key_path}.pub")
+        if public_key_path.exists():
+            signer.make_allowed_signers(
+                "release-bundle", public_key_path.read_text().strip(), trust_store
+            )
     report: dict[str, Any] = {
         "version": version,
         "bundle": {
@@ -48,7 +61,7 @@ def build_and_validate_release(
             "image_digest": build.image_digest,
         }
 
-    validation = ReleaseArtifactValidator().validate_release(
+    validation = ReleaseArtifactValidator(allowed_signers_path=trust_store).validate_release(
         version=version, artifacts_dir=output_dir
     )
     report["validation"] = {

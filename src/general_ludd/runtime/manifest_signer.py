@@ -44,6 +44,11 @@ class ManifestSigner:
             "GLUDD_ALLOWED_SIGNERS", os.path.expanduser("~/.ssh/allowed_signers")
         )
 
+    @property
+    def private_key_path(self) -> str:
+        """Return the configured private-key path without exposing key material."""
+        return self._private_key
+
     def sign(self, manifest_path: str) -> SignResult:
         errors: list[str] = []
         sig_path = f"{manifest_path}.sig"

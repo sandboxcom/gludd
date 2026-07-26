@@ -146,6 +146,15 @@ be zero-size**.
 CI runs this script as a **blocking step** in the release job — an incomplete
 release fails the workflow.
 
+## Local signature validation
+
+`make release-validate` signs `MANIFEST.json` with `GLUDD_SIGNING_KEY` (or the
+default SSH key) and verifies it with `ssh-keygen -Y verify`. The command creates
+an artifact-scoped `dist/release.allowed_signers` from the matching public key;
+it does not fall back to an unprovisioned user-home trust file. Set
+`GLUDD_ALLOWED_SIGNERS` when validation must use an externally managed trust
+store instead. Keep the public key paired with the release signing key.
+
 ## Traps
 
 **`make verify-release-artifact` is not the gate.** It only proves "non-draft and

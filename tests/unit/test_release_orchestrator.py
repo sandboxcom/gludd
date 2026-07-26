@@ -16,6 +16,7 @@ Run: make test-iso TESTFILE='tests/unit/test_release_orchestrator.py'
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import patch
 
 from general_ludd.runtime.container import BuildResult
@@ -79,6 +80,7 @@ class TestBuildAndValidateReleasePipOnlyHappyPath:
 
         mock_container_cls.return_value.build_image.assert_not_called()
         mock_pip_cls.return_value.build.assert_called_once_with(output_dir="/out", version="1.0.0")
+        mock_validator_cls.assert_called_once_with(allowed_signers_path="/out/release.allowed_signers")
         mock_validator_cls.return_value.validate_release.assert_called_once_with(
             version="1.0.0", artifacts_dir="/out"
         )
@@ -102,6 +104,35 @@ class TestBuildAndValidateReleasePipOnlyHappyPath:
                 "errors": [],
             },
         }
+
+    @patch("general_ludd.runtime.release_orchestrator.ReleaseArtifactValidator")
+    @patch("general_ludd.runtime.release_orchestrator.ManifestSigner")
+    @patch("general_ludd.runtime.release_orchestrator.PipBundleBuilder")
+    def test_provisions_artifact_scoped_allowed_signers_for_validation(
+        self, mock_pip_cls, mock_signer_cls, mock_validator_cls, tmp_path: Path
+    ) -> None:
+        signing_key = tmp_path / "release_key"
+        public_key = signing_key.with_suffix(".pub")
+        public_key.write_text("ssh-ed25519 AAAATEST release@example.com\n")
+        allowed_signers = tmp_path / "allowed_signers"
+        mock_pip_cls.return_value.build.return_value = _bundle_result(
+            manifest_path=str(tmp_path / "MANIFEST.json"),
+            sig_path=str(tmp_path / "MANIFEST.json.sig"),
+            signature_valid=True,
+        )
+        mock_signer_cls.return_value.private_key_path = str(signing_key)
+        mock_validator_cls.return_value.validate_release.return_value = _validation_result()
+
+        build_and_validate_release(
+            version="1.0.0",
+            output_dir=str(tmp_path),
+            allowed_signers_path=str(allowed_signers),
+        )
+
+        mock_signer_cls.return_value.make_allowed_signers.assert_called_once_with(
+            "release-bundle", public_key.read_text().strip(), str(allowed_signers)
+        )
+        mock_validator_cls.assert_called_once_with(allowed_signers_path=str(allowed_signers))
 
 
 class TestBuildAndValidateReleaseAllThree:

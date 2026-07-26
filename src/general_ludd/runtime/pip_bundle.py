@@ -89,6 +89,15 @@ class PipBundleBuilder:
         output_dir = _validate_output_dir(output_dir)
         os.makedirs(output_dir, exist_ok=True)
 
+        # Metadata is regenerated below.  Leaving a prior manifest, checksum
+        # list, or signature in place would cause the new manifest to hash
+        # those stale bytes and then overwrite them, invalidating its own
+        # integrity record.
+        for name in ("MANIFEST.json", "MANIFEST.json.sig", "CHECKSUMS.sha256"):
+            generated_path = Path(output_dir, name)
+            if generated_path.exists():
+                generated_path.unlink()
+
         build_result = subprocess.run(
             ["uv", "build", "--out-dir", output_dir],
             capture_output=True,

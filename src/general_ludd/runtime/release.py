@@ -21,6 +21,9 @@ class ReleaseValidationResult:
 
 
 class ReleaseArtifactValidator:
+    def __init__(self, allowed_signers_path: str | None = None) -> None:
+        self._allowed_signers_path = allowed_signers_path
+
     def validate_release(self, version: str, artifacts_dir: str) -> ReleaseValidationResult:
         errors: list[str] = []
         artifacts_path = Path(artifacts_dir)
@@ -164,7 +167,9 @@ class ReleaseArtifactValidator:
         if not sig_file.exists():
             return False
 
-        result = ManifestSigner().verify(str(manifest_file), str(sig_file))
+        result = ManifestSigner(
+            allowed_signers_path=self._allowed_signers_path
+        ).verify(str(manifest_file), str(sig_file))
         if not result.success:
             errors.extend(result.errors)
             return False

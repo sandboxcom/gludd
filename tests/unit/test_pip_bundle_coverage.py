@@ -54,6 +54,31 @@ class TestPipBundleBuilderSuccessfulBuild:
         assert "pkg-1.0.0-py3-none-any.whl" in checksums_text
         assert "pkg-1.0.0.tar.gz" in checksums_text
 
+    @patch("general_ludd.runtime.pip_bundle.subprocess.run")
+    def test_build_excludes_previous_generated_metadata_from_new_manifest(
+        self, mock_run, tmp_path: Path
+    ) -> None:
+        wheel = tmp_path / "pkg-1.0.0-py3-none-any.whl"
+        sdist = tmp_path / "pkg-1.0.0.tar.gz"
+        wheel.write_bytes(b"wheel-content")
+        sdist.write_bytes(b"sdist-content")
+        for name in ("MANIFEST.json", "MANIFEST.json.sig", "CHECKSUMS.sha256"):
+            (tmp_path / name).write_text("stale generated metadata")
+
+        def side_effect(cmd, **kwargs):
+            if "uv" in cmd:
+                return _make_completed(returncode=0)
+            if "git" in cmd:
+                return _make_completed(returncode=0, stdout="abc123\n")
+            return _make_completed()
+
+        mock_run.side_effect = side_effect
+
+        result = PipBundleBuilder().build(str(tmp_path), "1.0.0")
+
+        manifest = json.loads(Path(result.manifest_path).read_text())
+        assert set(manifest["checksums"]) == {wheel.name, sdist.name}
+
 
 class TestPipBundleBuilderFailedBuild:
     @patch("general_ludd.runtime.pip_bundle.subprocess.run")
