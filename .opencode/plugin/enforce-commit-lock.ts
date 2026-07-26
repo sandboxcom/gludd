@@ -58,12 +58,40 @@ async function afterHook(input: { tool: string }): Promise<void> {
   } catch {}
 }
 
-export default async function commitLockPlugin(
-  _input: unknown,
-  _options?: unknown,
-): Promise<{
+type CommitLockHooks = {
   "tool.execute.before": (input: { tool: string }, output: unknown) => Promise<{permissionDecision: string, message: string} | undefined>
   "tool.execute.after": (input: { tool: string }, output: unknown) => Promise<void>
-}> {
-  return { "tool.execute.before": beforeHook, "tool.execute.after": afterHook }
+};
+
+type PluginRegistrationApi = {
+  tool?: {
+    execute?: {
+      before?: (hook: CommitLockHooks["tool.execute.before"]) => void;
+      after?: (hook: CommitLockHooks["tool.execute.after"]) => void;
+    };
+  };
+};
+
+function isPluginRegistrationApi(value: unknown): value is PluginRegistrationApi {
+  const api = value as PluginRegistrationApi | null;
+  return typeof api?.tool?.execute?.before === "function" &&
+    typeof api.tool.execute.after === "function";
+}
+
+export default async function commitLockPlugin(
+  inputOrApi: unknown,
+  _options?: unknown,
+): Promise<CommitLockHooks> {
+  const hooks: CommitLockHooks = {
+    "tool.execute.before": beforeHook,
+    "tool.execute.after": afterHook,
+  };
+  // Keep the direct registration form used by the E2E harness. OpenCode's
+  // loader receives the returned hook map, while older integrations pass an
+  // API object and expect callbacks to be registered immediately.
+  if (isPluginRegistrationApi(inputOrApi)) {
+    inputOrApi.tool?.execute?.before?.(hooks["tool.execute.before"]);
+    inputOrApi.tool?.execute?.after?.(hooks["tool.execute.after"]);
+  }
+  return hooks;
 }
