@@ -378,6 +378,30 @@ def test_release_cut_check_mode_has_no_side_effect(module, monkeypatch):
     assert fake_mod.exited["result"]["would_change"] is True
 
 
+def test_release_recut_dispatches_typed_result(module, monkeypatch):
+    import general_ludd.git_automation.release_ops as release_ops
+    from general_ludd.git_automation.types import ReleaseRecutResult
+
+    monkeypatch.setattr(
+        release_ops,
+        "release_recut",
+        lambda **kwargs: ReleaseRecutResult(success=True, tag=kwargs["tag"], message="ok"),
+    )
+    fake_mod, _ = _run(module, monkeypatch, _params(op="release_recut", release_tag="v1.2.3"))
+    assert fake_mod.failed is None
+    assert fake_mod.exited["result"]["tag"] == "v1.2.3"
+
+
+def test_ci_cancel_dispatches_and_surfaces_failure(module, monkeypatch):
+    import general_ludd.git_automation.ci_ops as ci_ops
+
+    monkeypatch.setattr(ci_ops, "ci_cancel", lambda run_id: {"success": True, "run_id": run_id})
+    fake_mod, _ = _run(module, monkeypatch, _params(op="ci_cancel", run_id="42"))
+    assert fake_mod.failed is None
+    assert fake_mod.exited["changed"] is True
+    assert fake_mod.exited["result"]["run_id"] == "42"
+
+
 # --- clone -------------------------------------------------------------------
 
 
