@@ -9,7 +9,10 @@ import re
 import subprocess
 from pathlib import Path
 
-from scripts.resource_arbiter import resource_path, resource_root
+try:
+    from scripts.resource_arbiter import resource_path, resource_root
+except ModuleNotFoundError:  # pragma: no cover - direct script execution
+    from resource_arbiter import resource_path, resource_root
 
 ROOT = Path(__file__).resolve().parent.parent
 TASK_ID_RE = re.compile(r"^\s*-\s*\[ \]\s+([^ —|]+)", re.MULTILINE)
