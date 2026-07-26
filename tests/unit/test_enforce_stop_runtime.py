@@ -676,7 +676,6 @@ def test_text_only_blocked_by_quality_evidence_gaps(
 ):
     """Coverage/full-E2E gaps are real pending work, not informational state."""
     _clean_leaked_state_files()
-    now_ms = int(time.time() * 1000)
     phase = "coverage-gaps" if pending_field == "coverageIncomplete" else "e2e"
     (hook_plugin_env.cwd / ".gate-status").write_text(
         f"=== GATE-STATUS ===\n{phase} FAIL 1\n"
