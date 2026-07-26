@@ -615,5 +615,6 @@ old summary table omitted entirely. Grand total across the file: **326** boxes.
 - [ ] T-BETA3-HOOKS — Hook-runtime regressions: fix permission/status-summary blocking failures and rerun runtime harness
 - [ ] T-BETA3-RELEASE — Beta.3 release readiness: complete remaining release/CI Git automation operations, gate, exact-SHA CI, and release validation
 - [ ] T-BETA3-GAME-E2E — Game mechanics E2E: documented rules, color/state transitions, physics, timing/speed, collision and terminal-state behavior
-- [ ] T-BETA3-IAM-OPA — Close IAM/OPA smoke regressions: provider-specific OPA rules, AWS condition/resource scopes, and GCP policy text contract
-- [ ] T-BETA3-PROVIDER-HARNESS — Credential-safe Azure and RunPod read-only harnesses: subscription/billing inputs, API keys, budget bounds, and Gludd event/log ingestion
+- [x] T-BETA3-IAM-OPA — Close IAM/OPA smoke regressions: provider-specific OPA rules, AWS condition/resource scopes, and GCP policy text contract | evidence: commit f9fba705; make test-opa-policies 26/26; IAM E2E + Terraform and provider unit suite 77 passed; make iam-headless-smoke PASS
+- [x] T-BETA3-PROVIDER-HARNESS — Credential-safe Azure and RunPod read-only harnesses: subscription/billing inputs, API keys, budget bounds, and Gludd event/log ingestion | evidence: commit f9fba705; 5 harness tests passed; make azure-harness and make runpod-harness dry-run PASS; docs/PROVIDER_SMOKE_HARNESS.md
+- [ ] T-BETA3-PROVIDER-LIVE — Run credentialed Azure and RunPod read-only checks, model deployment smoke, and verified event/log delivery into Gludd using operator-supplied scopes/keys
