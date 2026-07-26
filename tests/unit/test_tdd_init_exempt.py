@@ -157,21 +157,23 @@ class TestExistingAllowlistTestUpdate:
 
 
 # --------------------------------------------------------------------------- #
-# Behavioral: invoke the actual exported shouldAllowEdit() via Node subprocess.
+# Behavioral: invoke the actual default plugin hook via Node subprocess.
 # These tests create real temp directories and verify the runtime verdict.
 # --------------------------------------------------------------------------- #
 class TestInitExemptBehavioral:
-    """Invoke the plugin's exported shouldAllowEdit() with real filesystem
-    state to verify the __init__.py exemption works at runtime."""
+    """Invoke the plugin's default hook with real filesystem state to verify
+    the __init__.py exemption works at runtime."""
 
     def _verdict(self, file_path: str, project_root: str) -> dict:
-        """Call shouldAllowEdit via Node --experimental-strip-types."""
+        """Call the default hook via Node --experimental-strip-types."""
         script = (
             "(async () => {\n"
+            f"  process.env.GLUDD_PROJECT_ROOT = {json.dumps(project_root)};\n"
             f"  const m = await import({json.dumps(str(PLUGIN_PATH))});\n"
-            f"  const v = m.shouldAllowEdit("
-            f"{json.dumps(file_path)}, {json.dumps(project_root)});\n"
-            "  process.stdout.write(JSON.stringify(v));\n"
+            "  const plugin = await m.default({});\n"
+            "  const v = await plugin['tool.execute.before']("
+            f"{{tool: 'write'}}, {{args: {{filePath: {json.dumps(file_path)}}}}});\n"
+            "  process.stdout.write(JSON.stringify({allow: !v || v.permissionDecision !== 'deny'}));\n"
             "  process.exit(0);\n"
             "})();\n"
         )
@@ -242,11 +244,8 @@ class TestInitExemptBehavioral:
             f"Non-init .py with test must be allowed. Got: {verdict}"
         )
 
-    def test_should_allow_edit_is_exported(self):
-        """Bullet 1: the allowlist mechanism exists and is testable —
-        shouldAllowEdit is an exported function."""
+    def test_plugin_exposes_only_default_factory(self):
+        """OpenCode's loader requires plugin modules to expose only default."""
         src = PLUGIN_PATH.read_text()
-        assert re.search(
-            r"export\s+function\s+shouldAllowEdit",
-            src,
-        ), "shouldAllowEdit must be exported for behavioral testing"
+        assert not re.search(r"export\s+(?:async\s+)?function\s+(?!default)", src)
+        assert "export default" in src

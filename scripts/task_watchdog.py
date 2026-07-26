@@ -39,8 +39,8 @@ import os
 import re
 import signal
 import subprocess
-import sys
 import time
+from contextlib import suppress
 from pathlib import Path
 
 DEADLINES_FILE = os.environ.get(
@@ -108,7 +108,7 @@ def load_deadlines(path: str = DEADLINES_FILE) -> dict[str, float]:
     any error (missing file, corrupt JSON, wrong shape) — fail-open.
     """
     try:
-        with open(path, "r", encoding="utf-8") as fh:
+        with open(path, encoding="utf-8") as fh:
             data = json.load(fh)
         if not isinstance(data, dict):
             return {}
@@ -156,7 +156,7 @@ def load_stale_ids(path: str = STALE_FILE) -> set[str]:
     Returns a set of task_id strings. Fail-open on any error.
     """
     try:
-        with open(path, "r", encoding="utf-8") as fh:
+        with open(path, encoding="utf-8") as fh:
             data = json.load(fh)
         if isinstance(data, list):
             return {str(e.get("task_id", "")) for e in data if isinstance(e, dict)}
@@ -200,6 +200,30 @@ def _read_gate_pid(gate_pid_file: str = str(GATE_PID_FILE)) -> int | None:
         return None
 
 
+def _descendant_pids(lines: list[str], root_pid: int) -> set[int]:
+    """Return the gate process and every descendant represented in ``ps``."""
+    parents: dict[int, int] = {}
+    for line in lines:
+        parts = line.strip().split(None, 3)
+        if len(parts) < 2:
+            continue
+        try:
+            pid, ppid = int(parts[0]), int(parts[1])
+        except ValueError:
+            continue
+        parents[pid] = ppid
+
+    excluded = {root_pid}
+    changed = True
+    while changed:
+        changed = False
+        for pid, ppid in parents.items():
+            if pid not in excluded and ppid in excluded:
+                excluded.add(pid)
+                changed = True
+    return excluded
+
+
 def find_hung_processes(
     timeout_secs: float = TIMEOUT_SECS,
     gate_pid_file: str = str(GATE_PID_FILE),
@@ -225,6 +249,7 @@ def find_hung_processes(
     gate_pid = _read_gate_pid(gate_pid_file)
     hung: list[dict] = []
     lines = result.stdout.splitlines()[1:]  # skip header
+    gate_tree = _descendant_pids(lines, gate_pid) if gate_pid is not None else set()
 
     for line in lines:
         parts = line.strip().split(None, 3)
@@ -242,7 +267,7 @@ def find_hung_processes(
             continue
         if pid == _SELF_PID:
             continue
-        if gate_pid is not None and pid == gate_pid:
+        if pid in gate_tree:
             continue
         if any(pat.search(command) for pat in EXCLUDE_PATTERNS):
             continue
@@ -395,17 +420,13 @@ def main() -> None:
     except KeyboardInterrupt:
         _log("task_watchdog stopped (interrupted)")
     finally:
-        try:
+        with suppress(Exception):
             Path(WATCHDOG_PID_FILE).unlink(missing_ok=True)
-        except Exception:
-            pass
 
 
 def _write_pid() -> None:
-    try:
+    with suppress(Exception):
         Path(WATCHDOG_PID_FILE).write_text(str(_SELF_PID))
-    except Exception:
-        pass
 
 
 if __name__ == "__main__":

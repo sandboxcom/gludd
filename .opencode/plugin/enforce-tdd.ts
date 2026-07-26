@@ -59,7 +59,7 @@ function isAllowlisted(filePath: string): boolean {
   const normalized = filePath.replace(/\\/g, "/");
   return ALLOWLIST_PATTERNS.some(re => re.test(normalized));
 }
-export function isInitInEmptyDir(filePath: string): boolean {
+function isInitInEmptyDir(filePath: string): boolean {
   const normalized = filePath.replace(/\\/g, "/");
   if (path.basename(normalized) !== "__init__.py") return false;
   const dir = path.dirname(normalized);
@@ -84,7 +84,7 @@ interface TddVerdict {
   reason?: string;
   candidates?: string[];
 }
-export function shouldAllowEdit(
+function shouldAllowEdit(
   filePath: string,
   projectRoot: string,
 ): TddVerdict {

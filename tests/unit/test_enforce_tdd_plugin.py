@@ -81,16 +81,15 @@ class TestPluginStructure:
             "write-only check by using edit, and vice versa"
         )
 
-    def test_exports_named_helpers(self):
+    def test_plugin_has_no_named_exports(self):
         if not PLUGIN_PATH.exists():
             pytest_skip("plugin not yet written — TDD red phase")
         src = PLUGIN_PATH.read_text()
-        # Must export the decision function so this test can pin behavior.
-        assert re.search(
-            r"export\s+function\s+shouldAllowEdit|"
-            r"export\s+const\s+shouldAllowEdit",
-            src,
-        ), "plugin must export shouldAllowEdit() so tests can pin the verdict"
+        # OpenCode auto-loads every module export and requires each export to
+        # be a plugin factory.  Named helper exports therefore crash startup;
+        # behavioral coverage exercises the default hook instead.
+        assert not re.search(r"export\s+(?:async\s+)?function\s+(?!default)", src)
+        assert not re.search(r"export\s+const\s+(?!default)", src)
 
     def test_subagent_guard_present(self):
         if not PLUGIN_PATH.exists():
@@ -170,7 +169,7 @@ class TestCandidateTestPaths:
 
 # --------------------------------------------------------------------------- #
 # Behavioral verdicts — the contract.
-# These exercise the exported shouldAllowEdit() with realistic inputs using
+# These exercise the hook's shouldAllowEdit() path with realistic inputs using
 # a temp tests/ tree so "test exists" checks reflect the real filesystem.
 # --------------------------------------------------------------------------- #
 class TestTDDVerdicts:

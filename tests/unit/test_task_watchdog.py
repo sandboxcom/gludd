@@ -228,6 +228,24 @@ class TestFindHungProcesses:
         pids = [p["pid"] for p in procs]
         assert gate_pid not in pids
 
+    def test_excludes_gate_descendants(self, tmp_path: Path):
+        """A gate timeout must not orphan-kill its pytest descendants."""
+        gate_pid = 55555
+        gate_pid_file = tmp_path / ".gate-background.pid"
+        gate_pid_file.write_text(str(gate_pid))
+        ps_output = (
+            "  PID  PPID ELAPSED COMMAND\n"
+            f"{gate_pid}     1 30:00 make gate\n"
+            "66666 55555 30:00 uv run python -m pytest tests/unit\n"
+            "77777 66666 30:00 python3 -m pytest tests/unit\n"
+        )
+        with patch("scripts.task_watchdog.subprocess.run") as mock_run:
+            mock_run.return_value = mock_run.return_value.__class__(
+                stdout=ps_output, returncode=0)
+            procs = find_hung_processes(
+                timeout_secs=300, gate_pid_file=str(gate_pid_file))
+        assert [p["pid"] for p in procs] == []
+
 
 # ---------------------------------------------------------------------------
 # run_once (integration of the above)
