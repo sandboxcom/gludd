@@ -94,3 +94,12 @@ def test_e2e_runner_uses_durable_restart_supervisor() -> None:
     assert "e2e_supervisor.py record" in body
     assert "heartbeat-loop" in body
     assert "E2E_HEARTBEAT_SECS" in body
+
+
+def test_e2e_runner_namespaces_progress_by_shard() -> None:
+    body = _target_body("test-e2e")
+    assert "E2E_SHARD" in body
+    assert "E2E_TOTAL" in body
+    assert "e2e-state-shard" in body
+    assert "--shard" in body
+    assert "--total" in body

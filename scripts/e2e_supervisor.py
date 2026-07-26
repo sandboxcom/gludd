@@ -67,6 +67,13 @@ def heartbeat(path: Path) -> dict[str, Any]:
     return _write(path, state)
 
 
+def shard_files(files: list[str], *, shard: int, total: int) -> list[str]:
+    """Return the stable one-based shard of sorted E2E file paths."""
+    if total < 1 or shard < 1 or shard > total:
+        raise ValueError("shard must be between 1 and total")
+    return [file_name for index, file_name in enumerate(sorted(files)) if index % total == shard - 1]
+
+
 def _files(root: Path, pattern: str) -> list[str]:
     return [str(path) for path in sorted(root.rglob(pattern)) if path.is_file()]
 
@@ -100,6 +107,8 @@ def main() -> int:
         if name == "pending":
             command.add_argument("--root", type=Path, required=True)
             command.add_argument("--glob", required=True)
+            command.add_argument("--shard", type=int, default=1)
+            command.add_argument("--total", type=int, default=1)
     record = subparsers.add_parser("record")
     record.add_argument("--state", type=Path, required=True)
     record.add_argument("--file", required=True)
@@ -112,7 +121,8 @@ def main() -> int:
         print(json.dumps(ensure_state(args.state, revision=args.revision), sort_keys=True))
     elif args.command == "pending":
         ensure_state(args.state, revision=args.revision)
-        print("\n".join(pending_files(args.state, _files(args.root, args.glob))))
+        files = shard_files(_files(args.root, args.glob), shard=args.shard, total=args.total)
+        print("\n".join(pending_files(args.state, files)))
     elif args.command == "record":
         record_status(args.state, args.file, args.status)
     else:
