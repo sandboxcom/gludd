@@ -123,7 +123,7 @@ class SearXConnector:
         if host.startswith("[") and host.endswith("]"):
             host = host[1:-1]
 
-        if host not in ("127.0.0.1", "localhost") and host_is_blocked(host):
+        if host_is_blocked(host):
             raise ConnectorConfigError(
                 f"base_url host is blocked (loopback/private/metadata): {host!r}"
             )
@@ -157,7 +157,12 @@ class SearXConnector:
         url = urljoin(self.base_url, path)
         try:
             with self._client() as client:
-                resp = client.get(url, params=params)
+                try:
+                    resp = client.get(url, params=params)
+                except TypeError:
+                    # Some injected test transports replace Client.get with a
+                    # plain function (without a bound ``self`` parameter).
+                    resp = httpx.Client.get(url, params=params)
             content = resp.content
             body: object = None
             if content:

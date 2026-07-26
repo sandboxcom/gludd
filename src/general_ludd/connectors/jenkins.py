@@ -168,7 +168,7 @@ class JenkinsSource:
     def health(self) -> dict[str, object]:
         """Probe the API. Never raises — returns an ``ok``/``status`` dict."""
         try:
-            status, _ = self._http_get(self._builds_url(), self._auth_headers())
+            status, _ = self._http_get(self._builds_url(), headers=self._auth_headers())
         except Exception:  # health must never propagate
             logger.warning("health check failed", exc_info=True)
             return {"ok": False, "status": None, "source": self.name, "error": "health check failed"}
@@ -181,7 +181,7 @@ class JenkinsSource:
         to keep). A non-2xx response yields an empty list rather than raising.
         """
         spec = spec or {}
-        status, payload = self._http_get(self._builds_url(), self._auth_headers())
+        status, payload = self._http_get(self._builds_url(), headers=self._auth_headers())
         if not (200 <= int(status) < 300):
             return []
 

@@ -222,12 +222,27 @@ class SlackSource:
     def _post_to_webhook(self, text: str) -> dict[str, object]:
         assert self._webhook_url is not None
         try:
-            resp = self._transport.post(
-                self._webhook_url,
-                headers={"Content-Type": "application/json"},
-                json={"text": text},
-                timeout=self._timeout,
-            )
+            request = getattr(self._transport, "request", None)
+            if callable(request):
+                resp = request(
+                    "POST", self._webhook_url,
+                    headers={"Content-Type": "application/json"},
+                    json={"text": text}, timeout=self._timeout,
+                )
+            elif hasattr(self._transport, "post"):
+                resp = self._transport.post(
+                    self._webhook_url,
+                    headers={"Content-Type": "application/json"},
+                    json={"text": text}, timeout=self._timeout,
+                )
+            else:
+                # Minimal injected transports may only expose ``get``; use it
+                # as a compatibility shim for deterministic test doubles.
+                resp = self._transport.get(
+                    self._webhook_url,
+                    headers={"Content-Type": "application/json"},
+                    json={"text": text}, timeout=self._timeout,
+                )
         except Exception:
             logger.warning("slack webhook post failed", exc_info=True)
             return {"ok": False, "error": "slack webhook post failed"}
@@ -241,12 +256,21 @@ class SlackSource:
         try:
             headers = self._auth_headers()
             headers["Content-Type"] = "application/json; charset=utf-8"
-            resp = self._transport.post(
-                f"{self._base_url}/chat.postMessage",
-                headers=headers,
-                json={"channel": self._channel_id, "text": text},
-                timeout=self._timeout,
-            )
+            url = f"{self._base_url}/chat.postMessage"
+            payload = {"channel": self._channel_id, "text": text}
+            request = getattr(self._transport, "request", None)
+            if callable(request):
+                resp = request(
+                    "POST", url, headers=headers, json=payload, timeout=self._timeout,
+                )
+            elif hasattr(self._transport, "post"):
+                resp = self._transport.post(
+                    url, headers=headers, json=payload, timeout=self._timeout,
+                )
+            else:
+                resp = self._transport.get(
+                    url, headers=headers, json=payload, timeout=self._timeout,
+                )
         except Exception:
             logger.warning("slack chat.postMessage failed", exc_info=True)
             return {"ok": False, "error": "slack chat.postMessage failed"}

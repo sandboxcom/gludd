@@ -168,7 +168,7 @@ class CircleCiSource:
     def health(self) -> dict[str, object]:
         """Probe the pipeline endpoint. Never raises."""
         try:
-            status, _ = self._http_get(self._pipeline_url(), self._headers())
+            status, _ = self._http_get(self._pipeline_url(), headers=self._headers())
         except Exception:  # health must never propagate
             logger.warning("health check failed", exc_info=True)
             return {"ok": False, "detail": "health check failed"}
@@ -183,7 +183,7 @@ class CircleCiSource:
         """
         spec = spec or {}
         try:
-            status, body = self._http_get(self._pipeline_url(), self._headers())
+            status, body = self._http_get(self._pipeline_url(), headers=self._headers())
         except Exception:
             return []
         if not (200 <= status < 300) or not isinstance(body, dict):
@@ -207,7 +207,7 @@ class CircleCiSource:
             f"{urllib.parse.quote(str(pipeline_id), safe='')}/workflow"
         )
         try:
-            status, body = self._http_get(url, self._headers())
+            status, body = self._http_get(url, headers=self._headers())
         except Exception:
             return []
         if not (200 <= status < 300) or not isinstance(body, dict):

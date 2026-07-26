@@ -189,7 +189,7 @@ class PagerDutySource:
             params["service_ids[]"] = list(service_ids)
 
         resp = self._transport.get(
-            f"{self.base_url}/incidents",
+            url=f"{self.base_url}/incidents",
             headers=self._headers(),
             params=params,
             timeout=self.timeout,
@@ -212,7 +212,7 @@ class PagerDutySource:
 
     def fetch_log_entries(self, incident_id: str) -> list[Mapping[str, object]]:
         resp = self._transport.get(
-            f"{self.base_url}/incidents/{incident_id}/log_entries",
+            url=f"{self.base_url}/incidents/{incident_id}/log_entries",
             headers=self._headers(),
             params={},
             timeout=self.timeout,
@@ -231,7 +231,7 @@ class PagerDutySource:
     def health(self) -> dict[str, object]:
         try:
             resp = self._transport.get(
-                f"{self.base_url}/incidents",
+                url=f"{self.base_url}/incidents",
                 headers=self._headers(),
                 params={"limit": 1},
                 timeout=self.timeout,

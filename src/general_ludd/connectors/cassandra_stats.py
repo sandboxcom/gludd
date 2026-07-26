@@ -159,13 +159,23 @@ class CassandraStatsSource:
 
         ts = time.time()
         out: list[CassandraRecord] = []
+        seen: set[tuple[object, object, object, object]] = set()
         for command in _COMMANDS:
             try:
                 rows = executor(command)
             except Exception as exc:
                 logger.debug("command %s failed: %s", command, exc)
                 continue
-            out.extend(self._rows_to_records(rows, command, ts))
+            for record in self._rows_to_records(rows, command, ts):
+                labels = record["labels"]
+                key = (
+                    record["message"], record["value"],
+                    labels.get("keyspace"), labels.get("table"),
+                )
+                if key in seen:
+                    continue
+                seen.add(key)
+                out.append(record)
         return out
 
     # -- normalization helpers --------------------------------------------
