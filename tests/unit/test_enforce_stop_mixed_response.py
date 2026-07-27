@@ -36,6 +36,7 @@ from tests.unit._hook_fixtures import (
 
 ROOT = Path(__file__).parent.parent.parent
 PLUGIN = ROOT / ".opencode" / "plugin" / "enforce-stop.ts"
+EXPORTS = ROOT / ".opencode" / "lib" / "plugin_test_exports.ts"
 PERSIST_BLOCK_ENV = "GLUDD_PERSIST_STOP_BLOCK_FILE"
 
 # hasRealPendingWork() reads live filesystem state — the cwd TASKS.md and the
@@ -77,18 +78,26 @@ def _ci_cache_guard():
 def _seed_ci_cache(status: str) -> None:
     """Write a fresh CI verdict into the live CI cache hasRealPendingWork()
     reads. status="SUCCESS" → CI clean; anything else → ciVerdictPendingOrRed."""
-    CI_CACHE_PATH.write_text(json.dumps({
-        "last_ci_check": int(_time.time() * 1000),
-        "last_ci_status": status,
-        "run_id": "000000",
-        "head_sha": "000000000",
-    }))
+    CI_CACHE_PATH.write_text(
+        json.dumps(
+            {
+                "last_ci_check": int(_time.time() * 1000),
+                "last_ci_status": status,
+                "run_id": "000000",
+                "head_sha": "000000000",
+            }
+        )
+    )
 
 
 # ── Source extraction helpers ─────────────────────────────────────────────────
 
+
 def _src() -> str:
-    return PLUGIN.read_text()
+    s = PLUGIN.read_text()
+    if EXPORTS.exists():
+        s += "\n" + EXPORTS.read_text()
+    return s
 
 
 def _extract_status_summary_re() -> re.Pattern:
@@ -131,6 +140,7 @@ def _extract_completion_words() -> re.Pattern:
 
 # ── Harness helpers ──────────────────────────────────────────────────────────
 
+
 def _invoke_text_complete(
     env: HookEnv,
     text: str,
@@ -138,6 +148,7 @@ def _invoke_text_complete(
     env_overrides: dict[str, str] | None = None,
 ) -> tuple[dict | None, str, str, int]:
     import contextlib
+
     overrides = (env_overrides or {}).copy()
     overrides.setdefault(PERSIST_BLOCK_ENV, str(env.cwd / "persist-stop-block.json"))
     result = env.invoke(
@@ -188,31 +199,34 @@ def _seed_pending_work(env: HookEnv, **overrides) -> None:
     # a real TASKS.md in the harness cwd → hasLocalWork (race-free per-test
     # tmp dir), plus a fresh non-SUCCESS CI cache → ciVerdictPendingOrRed.
     (env.cwd / "TASKS.md").write_text(
-        "- [ ] Pending item A\n- [ ] Pending item B\n- [ ] Pending item C\n"
-        "- [ ] Pending item D\n- [ ] Pending item E\n"
+        "- [ ] Pending item A\n- [ ] Pending item B\n- [ ] Pending item C\n- [ ] Pending item D\n- [ ] Pending item E\n"
     )
     _seed_ci_cache("failure")
 
 
 def _seed_clean_state(env: HookEnv) -> None:
     state_path = env.state_path("GLUDD_STOP_STATE_FILE")
-    state_path.write_text(json.dumps({
-        "ts": int(_time.time() * 1000),
-        "tasksMdUnchecked": False,
-        "tasksMdUncheckedCount": 0,
-        "ratchetEntries": 0,
-        "bugsOpen": False,
-        "gateStatusMissing": False,
-        "gateStale": False,
-        "gateStatusRed": False,
-        "ciVerdictPendingOrRed": False,
-        "releaseIncomplete": False,
-        "testFailures": False,
-        "repoPending": False,
-        "hasPendingWork": False,
-        "hasLocalWork": False,
-        "healthScore": 100,
-    }))
+    state_path.write_text(
+        json.dumps(
+            {
+                "ts": int(_time.time() * 1000),
+                "tasksMdUnchecked": False,
+                "tasksMdUncheckedCount": 0,
+                "ratchetEntries": 0,
+                "bugsOpen": False,
+                "gateStatusMissing": False,
+                "gateStale": False,
+                "gateStatusRed": False,
+                "ciVerdictPendingOrRed": False,
+                "releaseIncomplete": False,
+                "testFailures": False,
+                "repoPending": False,
+                "hasPendingWork": False,
+                "hasLocalWork": False,
+                "healthScore": 100,
+            }
+        )
+    )
     # hasRealPendingWork() reads the LIVE CI cache — seed a fresh SUCCESS
     # verdict so live CI state from the host session can't leak in.
     _seed_ci_cache("SUCCESS")
@@ -252,8 +266,7 @@ class TestStatusSummaryRegexDetection:
     def test_status_summary_re_exists_in_plugin(self):
         src = _src()
         assert "getStatusSummaryRe" in src, (
-            "getStatusSummaryRe() must be defined in enforce-stop.ts — "
-            "commits 0c816e34/ea0a419e added it."
+            "getStatusSummaryRe() must be defined in enforce-stop.ts — commits 0c816e34/ea0a419e added it."
         )
 
     def test_status_summary_re_catches_final_status(self):
@@ -264,39 +277,27 @@ class TestStatusSummaryRegexDetection:
 
     def test_status_summary_re_catches_session_number_pattern(self):
         ss = _extract_status_summary_re()
-        assert ss.search("Session 38 final summary"), (
-            "STATUS_SUMMARY_RE must catch 'Session N final summary'"
-        )
+        assert ss.search("Session 38 final summary"), "STATUS_SUMMARY_RE must catch 'Session N final summary'"
 
     def test_status_summary_re_catches_wrap_up(self):
         ss = _extract_status_summary_re()
-        assert ss.search("Session 36 wrap-up"), (
-            "STATUS_SUMMARY_RE must catch 'Session N wrap-up'"
-        )
+        assert ss.search("Session 36 wrap-up"), "STATUS_SUMMARY_RE must catch 'Session N wrap-up'"
 
     def test_status_summary_re_catches_recap(self):
         ss = _extract_status_summary_re()
-        assert ss.search("Session 37 recap"), (
-            "STATUS_SUMMARY_RE must catch 'Session N recap'"
-        )
+        assert ss.search("Session 37 recap"), "STATUS_SUMMARY_RE must catch 'Session N recap'"
 
     def test_status_summary_re_catches_markdown_headers(self):
         ss = _extract_status_summary_re()
         assert ss.search("# Session 38 Status Summary"), (
             "STATUS_SUMMARY_RE must catch markdown headers with status/summary"
         )
-        assert ss.search("## Status Report"), (
-            "STATUS_SUMMARY_RE must catch '## Status Report'"
-        )
+        assert ss.search("## Status Report"), "STATUS_SUMMARY_RE must catch '## Status Report'"
 
     def test_status_summary_re_catches_status_report_colon(self):
         ss = _extract_status_summary_re()
-        assert ss.search("Status report: all items"), (
-            "STATUS_SUMMARY_RE must catch 'Status report:'"
-        )
-        assert ss.search("Status update: CI pending"), (
-            "STATUS_SUMMARY_RE must catch 'Status update:'"
-        )
+        assert ss.search("Status report: all items"), "STATUS_SUMMARY_RE must catch 'Status report:'"
+        assert ss.search("Status update: CI pending"), "STATUS_SUMMARY_RE must catch 'Status update:'"
 
     def test_status_summary_re_catches_final_status_before_continuing(self):
         ss = _extract_status_summary_re()
@@ -306,9 +307,7 @@ class TestStatusSummaryRegexDetection:
 
     def test_status_summary_re_is_case_insensitive(self):
         ss = _extract_status_summary_re()
-        assert ss.search("FINAL STATUS OF SESSION 42"), (
-            "STATUS_SUMMARY_RE must be case-insensitive"
-        )
+        assert ss.search("FINAL STATUS OF SESSION 42"), "STATUS_SUMMARY_RE must be case-insensitive"
 
     def test_status_summary_re_catches_final_status_without_session_number(self):
         ss = _extract_status_summary_re()
@@ -318,17 +317,14 @@ class TestStatusSummaryRegexDetection:
 
     def test_status_summary_re_catches_heres_final_status(self):
         ss = _extract_status_summary_re()
-        assert ss.search("Here is the final status"), (
-            "STATUS_SUMMARY_RE must catch 'Here is the final status'"
-        )
-        assert ss.search("Here's the final status"), (
-            "STATUS_SUMMARY_RE must catch contracted form"
-        )
+        assert ss.search("Here is the final status"), "STATUS_SUMMARY_RE must catch 'Here is the final status'"
+        assert ss.search("Here's the final status"), "STATUS_SUMMARY_RE must catch contracted form"
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # (b) looksLikeStatusSummary structural detection
 # ─── ──────────────────────────────────────────────────────────────────────────
+
 
 class TestLooksLikeStatusSummary:
     """looksLikeStatusSummary() uses both regex matching and structural
@@ -337,30 +333,25 @@ class TestLooksLikeStatusSummary:
 
     def test_function_exists_and_exported(self):
         src = _src()
-        assert "function looksLikeStatusSummary" in src, (
-            "looksLikeStatusSummary must be defined"
-        )
+        assert "function looksLikeStatusSummary" in src, "looksLikeStatusSummary must be defined"
 
     def test_wired_in_text_complete(self):
         src = _src()
         # Must be called in experimental.text.complete
-        assert "looksLikeStatusSummary" in src, (
-            "looksLikeStatusSummary must be referenced somewhere in the plugin"
-        )
+        assert "looksLikeStatusSummary" in src, "looksLikeStatusSummary must be referenced somewhere in the plugin"
 
     def test_text_with_bolded_headers_and_table_is_status_summary(self):
         """looksLikeStatusSummary returns true for bolded headers + table structure."""
         # We can't invoke the function directly from Python, but we verify
         # the STATUS_SUMMARY_RE component catches the markdown headers.
         ss = _extract_status_summary_re()
-        assert ss.search("## Status"), (
-            "At minimum, the markdown header form must be caught"
-        )
+        assert ss.search("## Status"), "At minimum, the markdown header form must be caught"
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # (c) Status-summary block fires BEFORE evidence check
 # ─── ──────────────────────────────────────────────────────────────────────────
+
 
 class TestStatusSummaryBlocksBeforeEvidenceCheck:
     """The status-summary block (line 696-725) is checked BEFORE the
@@ -391,7 +382,7 @@ class TestStatusSummaryBlocksBeforeEvidenceCheck:
         ss_section_start = src.find("STATUS-SUMMARY BLOCK")
         assert ss_section_start > 0, "Status-summary block comment must exist"
         # Extract ~60 lines after the comment
-        section = src[ss_section_start:ss_section_start + 4000]
+        section = src[ss_section_start : ss_section_start + 4000]
         # There should be NO "disengaged" or "isDisengaged" check in the status-summary block
         # The disengage check at the top of text.complete applies to other sections
         # but the status-summary block itself bypasses it
@@ -401,6 +392,7 @@ class TestStatusSummaryBlocksBeforeEvidenceCheck:
 # ═══════════════════════════════════════════════════════════════════════════════
 # (d) COMPLETION_SMELL_RE coverage of completion-adjacent words
 # ─── ──────────────────────────────────────────────────────────────────────────
+
 
 class TestCompletionSmellCoverage:
     """COMPLETION_SMELL_RE catches completion-adjacent words in status-summary
@@ -434,13 +426,15 @@ class TestCompletionSmellCoverage:
 # (e) Runtime: text.complete blanks status-summary text with pending work
 # ─── ──────────────────────────────────────────────────────────────────────────
 
+
 class TestRuntimeStatusSummaryBlanked:
     """The text.complete hook must blank status-summary text when pending
     work exists. The status-summary block fires BEFORE the hasStructuredEvidence
     gate, so even text with commit hashes is blocked."""
 
     def test_status_summary_with_pending_work_is_blocked(
-        self, hook_plugin_env: HookEnv,
+        self,
+        hook_plugin_env: HookEnv,
     ):
         """Status-summary text ('final status') + pending work → blocked."""
         _seed_pending_work(hook_plugin_env)
@@ -456,18 +450,16 @@ class TestRuntimeStatusSummaryBlanked:
         if parsed is None:
             pb = _read_persist_block(hook_plugin_env)
             assert pb is not None, (
-                f"Status-summary text with pending work MUST be blocked. "
-                f"persist_block={pb}, raw={raw}"
+                f"Status-summary text with pending work MUST be blocked. persist_block={pb}, raw={raw}"
             )
             assert pb.get("blocked") is True, f"Got: {pb}"
         else:
             block_text = parsed.get("text", "")
-            assert "BLOCKED" in block_text.upper(), (
-                f"MUST be blocked. Response: {raw[:300]}"
-            )
+            assert "BLOCKED" in block_text.upper(), f"MUST be blocked. Response: {raw[:300]}"
 
     def test_bolded_header_status_summary_blocked(
-        self, hook_plugin_env: HookEnv,
+        self,
+        hook_plugin_env: HookEnv,
     ):
         """Bolded-header + table status summary with pending work → blocked."""
         _seed_pending_work(hook_plugin_env)
@@ -488,16 +480,14 @@ class TestRuntimeStatusSummaryBlanked:
 
         if parsed is None:
             pb = _read_persist_block(hook_plugin_env)
-            assert pb is not None, (
-                f"Bolded-header status with pending work MUST be blocked. "
-                f"persist_block={pb}"
-            )
+            assert pb is not None, f"Bolded-header status with pending work MUST be blocked. persist_block={pb}"
             assert pb.get("blocked") is True
         else:
             assert "BLOCKED" in parsed.get("text", "").upper()
 
     def test_final_status_without_pending_work_passes(
-        self, hook_plugin_env: HookEnv,
+        self,
+        hook_plugin_env: HookEnv,
     ):
         """Status-summary text with NO pending work → allowed through.
 
@@ -510,17 +500,15 @@ class TestRuntimeStatusSummaryBlanked:
         _seed_clean_state(hook_plugin_env)
         _parsed, _raw, stderr, rc = _invoke_text_complete(
             hook_plugin_env,
-            "Here's the final status — all items complete, "
-            "CI GREEN (commit abc1234f), 42 passed, gate passed. Done.",
+            "Here's the final status — all items complete, CI GREEN (commit abc1234f), 42 passed, gate passed. Done.",
         )
         assert rc == 0, stderr
         pb = _read_persist_block(hook_plugin_env)
-        assert pb is None or pb.get("blocked") is not True, (
-            f"No pending work → must not block. persist_block={pb}"
-        )
+        assert pb is None or pb.get("blocked") is not True, f"No pending work → must not block. persist_block={pb}"
 
     def test_text_without_status_patterns_passes(
-        self, hook_plugin_env: HookEnv,
+        self,
+        hook_plugin_env: HookEnv,
     ):
         """Text without status-summary patterns and no pending work → passes."""
         _seed_clean_state(hook_plugin_env)
@@ -540,12 +528,14 @@ class TestRuntimeStatusSummaryBlanked:
 # (f) Runtime: QA_RESPONSE_PATTERNS applied to bolded-header summaries
 # ─── ──────────────────────────────────────────────────────────────────────────
 
+
 class TestRuntimeQaPatternsInStatusText:
     """QA_RESPONSE_PATTERNS catches Q&A-style stop patterns even in
     status-summary text."""
 
     def test_completed_in_this_session_blocked(
-        self, hook_plugin_env: HookEnv,
+        self,
+        hook_plugin_env: HookEnv,
     ):
         """'completed in this session' + pending work → blocked."""
         _seed_pending_work(hook_plugin_env)
@@ -564,7 +554,8 @@ class TestRuntimeQaPatternsInStatusText:
             assert "BLOCKED" in parsed.get("text", "").upper()
 
     def test_bolded_qa_headers_blocked(
-        self, hook_plugin_env: HookEnv,
+        self,
+        hook_plugin_env: HookEnv,
     ):
         """'**What changed?**' bolded Q&A header + pending work → blocked."""
         _seed_pending_work(hook_plugin_env)
@@ -583,7 +574,8 @@ class TestRuntimeQaPatternsInStatusText:
             assert "BLOCKED" in parsed.get("text", "").upper()
 
     def test_everything_committed_merged_blocked(
-        self, hook_plugin_env: HookEnv,
+        self,
+        hook_plugin_env: HookEnv,
     ):
         """'Everything committed and merged' + pending work → blocked."""
         _seed_pending_work(hook_plugin_env)
@@ -604,6 +596,7 @@ class TestRuntimeQaPatternsInStatusText:
 # ═══════════════════════════════════════════════════════════════════════════════
 # (g) Runtime: Persist block carry-forward
 # ─── ──────────────────────────────────────────────────────────────────────────
+
 
 class TestPersistBlockCarryForward:
     """When text.complete blanks text, the persist block denies subsequent
@@ -626,7 +619,8 @@ class TestPersistBlockCarryForward:
         )
 
     def test_persist_block_denies_next_non_dispatch_tool(
-        self, hook_plugin_env: HookEnv,
+        self,
+        hook_plugin_env: HookEnv,
     ):
         _seed_pending_work(hook_plugin_env)
 
@@ -645,6 +639,7 @@ class TestPersistBlockCarryForward:
         out = result.stdout.strip()
         if out:
             import contextlib
+
             parsed_out = None
             with contextlib.suppress(json.JSONDecodeError):
                 parsed_out = json.loads(out)
@@ -654,7 +649,8 @@ class TestPersistBlockCarryForward:
                 )
 
     def test_persist_block_cleared_by_dispatch(
-        self, hook_plugin_env: HookEnv,
+        self,
+        hook_plugin_env: HookEnv,
     ):
         _seed_pending_work(hook_plugin_env)
 
@@ -676,10 +672,9 @@ class TestPersistBlockCarryForward:
         out = result.stdout.strip()
         if out:
             import contextlib
+
             parsed_out = None
             with contextlib.suppress(json.JSONDecodeError):
                 parsed_out = json.loads(out)
             if parsed_out and isinstance(parsed_out, dict):
-                assert parsed_out.get("permissionDecision") != "deny", (
-                    f"Dispatch must not be denied. Got: {parsed_out}"
-                )
+                assert parsed_out.get("permissionDecision") != "deny", f"Dispatch must not be denied. Got: {parsed_out}"
