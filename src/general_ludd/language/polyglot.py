@@ -23,6 +23,7 @@ rather than re-implementing them.
 
 from __future__ import annotations
 
+import re as _re
 from pathlib import Path
 from typing import TypedDict, cast
 
@@ -144,11 +145,25 @@ _MARKER_MAP: dict[str, str] = {
 # Files we skip during the directory walk. ``.git`` is universal; the rest
 # are common vendored/build directories whose inclusion would inflate counts
 # and mis-attribute languages (e.g. ``node_modules`` has its own .js files).
-_SKIP_DIRS: frozenset[str] = frozenset({
-    ".git", ".hg", ".svn", "node_modules", ".venv", "venv",
-    "__pycache__", ".mypy_cache", ".pytest_cache", ".ruff_cache",
-    "dist", "build", "target", ".tox", ".eggs",
-})
+_SKIP_DIRS: frozenset[str] = frozenset(
+    {
+        ".git",
+        ".hg",
+        ".svn",
+        "node_modules",
+        ".venv",
+        "venv",
+        "__pycache__",
+        ".mypy_cache",
+        ".pytest_cache",
+        ".ruff_cache",
+        "dist",
+        "build",
+        "target",
+        ".tox",
+        ".eggs",
+    }
+)
 
 # How many bytes of a file to read for homoglyph scanning. Source files are
 # typically small; capping at 1 MiB keeps the scan cheap on huge files and
@@ -303,14 +318,14 @@ def detect_languages_in_directory(path: str | Path) -> dict[str, object]:
 
     languages = []
     for language, count in counts.items():
-        languages.append({
-            "language": language,
-            "file_count": count,
-            "extensions": sorted(extensions_seen.get(language, set())),
-            "marker_files": sorted(
-                m for m, lang in marker_hits.items() if lang == language
-            ),
-        })
+        languages.append(
+            {
+                "language": language,
+                "file_count": count,
+                "extensions": sorted(extensions_seen.get(language, set())),
+                "marker_files": sorted(m for m, lang in marker_hits.items() if lang == language),
+            }
+        )
     languages.sort(key=lambda p: (-cast(int, p["file_count"]), p["language"]))
 
     return {
@@ -354,12 +369,14 @@ def cross_language_homoglyph_scan(
             continue
 
         language = _language_for_extension(path.suffix) or "unknown"
-        findings.append({
-            "file": str(path),
-            "language": language,
-            "confusables": confusables,
-            "severity": _severity_for(len(confusables)),
-        })
+        findings.append(
+            {
+                "file": str(path),
+                "language": language,
+                "confusables": confusables,
+                "severity": _severity_for(len(confusables)),
+            }
+        )
     return findings
 
 
@@ -400,9 +417,7 @@ def encoding_conflict_report(
 
     conflicts: list[str] = []
     if len(encodings_present) > 1:
-        conflicts.append(
-            "Multiple encodings present: " + ", ".join(encodings_present)
-        )
+        conflicts.append("Multiple encodings present: " + ", ".join(encodings_present))
 
     # Mixed BOM presence within UTF-8 specifically is a common repo smell.
     utf8_rows = [r for r in rows if r["encoding"] == "UTF-8"]
@@ -411,10 +426,7 @@ def encoding_conflict_report(
         if len(bom_set) > 1:
             with_bom = sum(1 for r in utf8_rows if r["has_bom"])
             without_bom = len(utf8_rows) - with_bom
-            conflicts.append(
-                f"Inconsistent UTF-8 BOM: {with_bom} file(s) with BOM, "
-                f"{without_bom} without"
-            )
+            conflicts.append(f"Inconsistent UTF-8 BOM: {with_bom} file(s) with BOM, {without_bom} without")
 
     # Multiple distinct BOMs always indicate a real conflict.
     if len(boms_present) > 1:
@@ -431,9 +443,260 @@ def encoding_conflict_report(
     }
 
 
+# ── Shebang → language mapping ──────────────────────────────────────────────
+
+
+_SHEBANG_MAP: dict[str, str] = {
+    "python": "python",
+    "python3": "python",
+    "python2": "python",
+    "node": "javascript",
+    "nodejs": "javascript",
+    "bash": "shell",
+    "sh": "shell",
+    "zsh": "shell",
+    "ruby": "ruby",
+    "perl": "perl",
+    "php": "php",
+    "lua": "lua",
+    "julia": "julia",
+}
+
+# Comment syntax per language. Used by analyze_code_density to classify
+# lines as comment vs code vs blank. Languages in the same group share
+# syntax (e.g. hash-comment languages: python, ruby, perl, shell).
+_COMMENT_STYLES: dict[str, str | list[str]] = {
+    "python": "#",
+    "ruby": "#",
+    "shell": "#",
+    "perl": "#",
+    "r": "#",
+    "php": "#",
+    "elixir": "#",
+    "haskell": "--",
+    "lua": "--",
+    "sql": "--",
+    "javascript": ["//", "/*"],
+    "typescript": ["//", "/*"],
+    "go": "//",
+    "rust": "//",
+    "c": "//",
+    "cpp": "//",
+    "csharp": "//",
+    "java": "//",
+    "kotlin": "//",
+    "scala": "//",
+    "swift": "//",
+    "dart": "//",
+    "zig": "//",
+    "julia": "#",
+}
+
+
+def _shebang_language(first_line: str) -> str | None:
+    if not first_line.startswith("#!"):
+        return None
+    path = first_line[2:].strip().rpartition("/")[2]
+    for token in path.split():
+        token = token.strip()
+        if token in _SHEBANG_MAP:
+            return _SHEBANG_MAP[token]
+    return None
+
+
+def _is_blank(line: str) -> bool:
+    return line.strip() == ""
+
+
+def _is_comment(line: str, style: str | list[str] | None) -> bool:
+    if style is None:
+        return False
+    stripped = line.strip()
+    if isinstance(style, str):
+        return stripped.startswith(style)
+    return any(stripped.startswith(s) for s in style)
+
+
+# ── classify_files_by_structure ─────────────────────────────────────────────
+
+
+def classify_files_by_structure(
+    files: list[str | Path],
+) -> list[dict[str, object]]:
+    """Classify files by content-based language markers beyond extension.
+
+    For each file, checks the shebang line, magic comments, and key
+    syntax patterns to determine the language. This is useful when a
+    file lacks a standard extension (e.g. an executable script with
+    no ``.py`` suffix) or has an ambiguous one.
+
+    Returns a list of :class:`FileClassification` entries, one per
+    file successfully classified. Files that cannot be read are
+    silently skipped; files with no detectable markers are included
+    with ``detected_language=None`` and an empty ``markers`` list.
+    """
+    results: list[dict[str, object]] = []
+    for raw in files:
+        path = Path(raw)
+        if not path.is_file():
+            continue
+        try:
+            with path.open("r", encoding="utf-8", errors="strict") as fh:
+                text = fh.read(4096)
+        except (OSError, UnicodeDecodeError):
+            continue
+
+        extension_lang = _language_for_extension(path.suffix)
+        markers: list[str] = []
+        detected: str | None = None
+
+        first_line = text.split("\n", 1)[0] if text else ""
+
+        shebang_lang = _shebang_language(first_line)
+        if shebang_lang is not None:
+            markers.append("shebang")
+            detected = shebang_lang
+
+        # Go package declaration is a strong signal.
+        if _re.match(r"^package\s+\w+", text, _re.MULTILINE):
+            markers.append("package_declaration")
+            if detected is None:
+                detected = "go"
+
+        if text.lstrip().startswith("defmodule ") or "use GenServer" in text:
+            markers.append("elixir_module")
+            if detected is None:
+                detected = "elixir"
+
+        if detected is None:
+            detected = extension_lang
+
+        results.append(
+            {
+                "file": str(path),
+                "detected_language": detected,
+                "language_from_extension": extension_lang,
+                "markers": markers,
+                "extension_match": extension_lang == detected if extension_lang is not None else False,
+            }
+        )
+    return results
+
+
+# ── analyze_code_density ────────────────────────────────────────────────────
+
+
+def analyze_code_density(
+    files: list[str | Path],
+) -> list[dict[str, object]]:
+    """Compute comment-to-code ratios per file.
+
+    For each file, determines the language (via extension), applies
+    that language's comment syntax, and reports total / code / comment
+    / blank line counts. Binary files and files that cannot be decoded
+    as UTF-8 are skipped.
+
+    Returns a list of :class:`CodeDensityReport` entries.
+    """
+    reports: list[dict[str, object]] = []
+    for raw in files:
+        path = Path(raw)
+        if not path.is_file():
+            continue
+        language = _language_for_extension(path.suffix) or "unknown"
+        try:
+            with path.open("r", encoding="utf-8", errors="strict") as fh:
+                lines = fh.readlines()
+        except (OSError, UnicodeDecodeError):
+            continue
+
+        comment_style = _COMMENT_STYLES.get(language)
+        total = len(lines)
+        blank = 0
+        comment = 0
+        code = 0
+
+        in_block: bool = False
+        for line in lines:
+            if _is_blank(line):
+                blank += 1
+                in_block = False
+            elif comment_style and "/*" in str(comment_style):
+                if in_block:
+                    comment += 1
+                    if "*/" in line:
+                        in_block = False
+                elif line.strip().startswith("/*"):
+                    comment += 1
+                    if "*/" not in line:
+                        in_block = True
+                elif _is_comment(line, comment_style):
+                    comment += 1
+                else:
+                    code += 1
+            elif _is_comment(line, comment_style):
+                comment += 1
+            else:
+                code += 1
+
+        reports.append(
+            {
+                "file": str(path),
+                "language": language,
+                "total_lines": total,
+                "comment_lines": comment,
+                "code_lines": code,
+                "blank_lines": blank,
+            }
+        )
+    return reports
+
+
+# ── detect_language_markers ─────────────────────────────────────────────────
+
+
+def detect_language_markers(text: str) -> dict[str, str]:
+    """Detect content-based language signatures in *text*.
+
+    Scans the first few lines of ``text`` for well-known markers like
+    shebangs, encoding cookies, doctype declarations, and XML
+    declarations. Returns a dict of ``{marker_name: value}`` with
+    only the markers that were found.
+
+    This is a pure-text function — no filesystem access needed.
+    """
+    markers: dict[str, str] = {}
+    if not text:
+        return markers
+
+    first_line = text.split("\n", 1)[0]
+
+    shebang_lang = _shebang_language(first_line)
+    if shebang_lang is not None:
+        markers["shebang"] = shebang_lang
+
+    m = _re.search(r"coding[:=]\s*([-\w.]+)", text[:200])
+    if m:
+        markers["encoding_cookie"] = m.group(1)
+
+    if _re.match(r"^package\s+(\w+)", first_line):
+        markers["package_declaration"] = "go"
+
+    if text.lstrip().startswith("<!DOCTYPE html"):
+        markers["doctype"] = "html"
+
+    if text.lstrip().startswith("<?xml"):
+        markers["xml_declaration"] = "xml"
+
+    return markers
+
+
 __all__ = [
     "FileEncoding",
+    "analyze_code_density",
+    "classify_files_by_structure",
     "cross_language_homoglyph_scan",
+    "detect_language_markers",
     "detect_languages_in_directory",
     "encoding_conflict_report",
 ]
