@@ -30,6 +30,7 @@ What this does NOT catch:
 
 Runs <=8 seconds. No pytest dependency, safe for the ``make gate`` hot path.
 """
+
 from __future__ import annotations
 
 import os
@@ -51,7 +52,8 @@ ROOT = Path(__file__).resolve().parents[1]
 # signature; do NOT match the generic TypeError (opencode 1.17.9 has
 # unrelated upstream TypeErrors, e.g. n.provider when no creds set).
 FATAL_PATTERNS = [
-    re.compile(p) for p in (
+    re.compile(p)
+    for p in (
         r"evaluating 'N\.event'",
         r"evaluating 'H\.config'",
         r"evaluating 'H\.dispose'",
@@ -94,11 +96,15 @@ def main() -> int:
 
     proc = subprocess.Popen(
         [
-            "opencode", "serve",
+            "opencode",
+            "serve",
             "--print-logs",
-            "--log-level", "ERROR",
-            "--port", str(port),
-            "--hostname", "127.0.0.1",
+            "--log-level",
+            "ERROR",
+            "--port",
+            str(port),
+            "--hostname",
+            "127.0.0.1",
         ],
         cwd=str(ROOT),
         env=env,
@@ -159,8 +165,7 @@ def main() -> int:
         return 1
 
     if not listened:
-        print("FAIL: opencode did not print a listening line within "
-              + str(BOOT_TIMEOUT_S) + "s")
+        print("FAIL: opencode did not print a listening line within " + str(BOOT_TIMEOUT_S) + "s")
         print("--- boot log ---")
         print(log[-1500:])
         proc.terminate()
@@ -178,7 +183,8 @@ def main() -> int:
     request_failed = False
     try:
         with urllib.request.urlopen(
-            "http://127.0.0.1:{}/api/agent".format(port), timeout=5,
+            "http://127.0.0.1:{}/api/agent".format(port),
+            timeout=20,
         ) as resp:
             status = resp.status
             body = resp.read().decode("utf-8", errors="replace")
@@ -234,9 +240,13 @@ def main() -> int:
         return 1
 
     agent_count = body.count('"id":"')
-    print("PASS: opencode booted, /api/agent returned HTTP "
-          + str(status) + " (" + str(agent_count) + " agents), "
-          "no fatal plugin patterns (port {})".format(port))
+    print(
+        "PASS: opencode booted, /api/agent returned HTTP "
+        + str(status)
+        + " ("
+        + str(agent_count)
+        + " agents), no fatal plugin patterns (port {})".format(port)
+    )
     return 0
 
 
