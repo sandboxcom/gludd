@@ -975,6 +975,63 @@ audit-agent-script-discipline:
 audit-agent-context-size:
 	@$(UV) run python3 scripts/audit_agent_behavior.py --filter AB060
 
+# ── AB061-AB080: Observability & Operations Integrity ──────────────────
+# audit-observability runs ALL AB061-AB080 checks; individual filters
+# call scripts/audit_observability.py --filter <spec>.  Wired into gate
+# via audit-observability-gate.
+
+audit-observability:
+	@$(UV) run python3 scripts/audit_observability.py
+
+audit-observability-gate:
+	@$(UV) run python3 scripts/audit_observability.py --json | \
+		$(UV) run python3 -c "import sys,json; r=json.load(sys.stdin); \
+		sys.exit(0 if all(x['status']=='PASS' for x in r) else 1)"
+
+# Individual spec audits — AB061-AB080
+audit-state-file-integrity:     ; @$(UV) run python3 scripts/audit_observability.py --filter AB061
+audit-silent-operations:        ; @$(UV) run python3 scripts/audit_observability.py --filter AB062
+audit-stale-state-files:        ; @$(UV) run python3 scripts/audit_observability.py --filter AB063
+audit-plugin-load-health:       ; @$(UV) run python3 scripts/audit_observability.py --filter AB064
+audit-gate-observability:       ; @$(UV) run python3 scripts/audit_observability.py --filter AB065
+audit-enforcement-coverage:     ; @$(UV) run python3 scripts/audit_observability.py --filter AB066
+audit-make-target-timeouts:     ; @$(UV) run python3 scripts/audit_observability.py --filter AB067
+audit-disk-metrics:             ; @$(UV) run python3 scripts/audit_observability.py --filter AB068
+audit-subagent-timeout-evidence:; @$(UV) run python3 scripts/audit_observability.py --filter AB069
+audit-enforcement-state-freshness:; @$(UV) run python3 scripts/audit_observability.py --filter AB070
+audit-push-cooldown-integrity:  ; @$(UV) run python3 scripts/audit_observability.py --filter AB071
+audit-hot-module-health:        ; @$(UV) run python3 scripts/audit_observability.py --filter AB072
+audit-observability-regression: ; @$(UV) run python3 scripts/audit_observability.py --filter AB073
+audit-ci-verdict-history:       ; @$(UV) run python3 scripts/audit_observability.py --filter AB074
+audit-watchdog-heartbeat:       ; @$(UV) run python3 scripts/audit_observability.py --filter AB075
+audit-enforcement-decisions:    ; @$(UV) run python3 scripts/audit_observability.py --filter AB076
+audit-make-target-invocations:  ; @$(UV) run python3 scripts/audit_observability.py --filter AB077
+audit-error-context-preservation:; @$(UV) run python3 scripts/audit_observability.py --filter AB078
+audit-session-boundary-state:   ; @$(UV) run python3 scripts/audit_observability.py --filter AB079
+audit-observability-gate-check: ; @$(UV) run python3 scripts/audit_observability.py --filter AB080
+
+# Individual spec audits — AB081-AB100
+audit-result-nonempty:          ; @$(UV) run python3 scripts/audit_observability.py --filter AB081
+audit-target-drift:             ; @$(UV) run python3 scripts/audit_observability.py --filter AB082
+audit-plugin-version-sync:      ; @$(UV) run python3 scripts/audit_observability.py --filter AB083
+audit-dispatchwave-composition: ; @$(UV) run python3 scripts/audit_observability.py --filter AB084
+audit-orphaned-ratchet:         ; @$(UV) run python3 scripts/audit_observability.py --filter AB085
+audit-lost-results:             ; @$(UV) run python3 scripts/audit_observability.py --filter AB086
+audit-recipe-side-effects:      ; @$(UV) run python3 scripts/audit_observability.py --filter AB087
+audit-gate-dependencies:        ; @$(UV) run python3 scripts/audit_observability.py --filter AB088
+audit-plugin-deprecation:       ; @$(UV) run python3 scripts/audit_observability.py --filter AB089
+audit-precommit-order:          ; @$(UV) run python3 scripts/audit_observability.py --filter AB090
+audit-test-per-module:          ; @$(UV) run python3 scripts/audit_observability.py --filter AB091
+audit-artifact-versions:        ; @$(UV) run python3 scripts/audit_observability.py --filter AB092
+audit-wave-completion:          ; @$(UV) run python3 scripts/audit_observability.py --filter AB093
+audit-bypass-trail:             ; @$(UV) run python3 scripts/audit_observability.py --filter AB094
+audit-makefile-vars:            ; @$(UV) run python3 scripts/audit_observability.py --filter AB095
+audit-timeout-proportionality:  ; @$(UV) run python3 scripts/audit_observability.py --filter AB096
+audit-task-hopping:             ; @$(UV) run python3 scripts/audit_observability.py --filter AB097
+audit-config-drift:             ; @$(UV) run python3 scripts/audit_observability.py --filter AB098
+audit-hygiene-score:            ; @$(UV) run python3 scripts/audit_observability.py --filter AB099
+audit-enforcement-boot:         ; @$(UV) run python3 scripts/audit_observability.py --filter AB100
+
 # Codified live boot smoke: launches `opencode serve`, waits for the
 # listening line, scans the boot log for the plugin-crash signatures
 # (N.event / H.config / H.dispose / failed to load plugin / Plugin.add).
@@ -2532,6 +2589,93 @@ release-recut:
 
 # The single release command. 6 steps, fail-closed at every gate:
 #   0. require-ci-green        — abort if CI is not GREEN for HEAD (or SHA=...)
+# Pre-release checklist: runs every pre-flight check and prints READY or BLOCKERS.
+# Does NOT cut the release — that is still release-cut below.
+# Usage: make release-checklist TAG=v0.1.0-beta.3 [--human]
+release-checklist:
+	@[ -n "$(TAG)" ] || { echo "Usage: make release-checklist TAG=v0.1.0-beta.N"; exit 1; }
+	@$(UV) run python scripts/release_cut_checklist.py $(TAG) --human
+
+# === AC001-AC020 Release Pipeline Integrity Guards ===
+
+_release-completeness-guard:
+	@$(UV) run python scripts/check_release_completeness_guard.py $(TAG)
+
+_release-branch-guard:
+	@$(UV) run python scripts/check_release_branch_discipline.py
+
+_tag-immutability-guard:
+	@$(UV) run python scripts/check_tag_immutability.py $(TAG)
+
+_release-dry-run-guard:
+	@$(UV) run python scripts/check_runbook_currency.py $(TAG)
+	@$(UV) run python scripts/check_changelog_accuracy.py $(TAG)
+	@$(UV) run python scripts/check_version_bump_atomicity.py $(TAG)
+	@$(UV) run python scripts/check_prerelease_flag.py $(TAG)
+
+_tag-signing-guard:
+	@$(UV) run python scripts/check_tag_signing.py $(TAG)
+
+check-release-completeness-guard:
+	@$(UV) run python scripts/check_release_completeness_guard.py $(TAG)
+
+check-release-branch-discipline:
+	@$(UV) run python scripts/check_release_branch_discipline.py
+
+check-tag-immutability:
+	@$(UV) run python scripts/check_tag_immutability.py $(TAG)
+
+check-prerelease-flag:
+	@$(UV) run python scripts/check_prerelease_flag.py $(TAG)
+
+validate-release-checksums:
+	@$(UV) run python scripts/validate_release_checksums.py $(TAG)
+
+check-sbom-freshness:
+	@$(UV) run python scripts/check_sbom_freshness.py $(TAG)
+
+verify-container-push:
+	@$(UV) run python scripts/verify_container_push.py $(IMAGE) $(TAG)
+
+check-rollback-procedure:
+	@$(UV) run python scripts/check_rollback_procedure.py $(TAG)
+
+check-multiplatform-consistency:
+	@$(UV) run python scripts/check_multiplatform_consistency.py $(TAG)
+
+check-provenance-attestation:
+	@$(UV) run python scripts/check_provenance_attestation.py $(TAG)
+
+check-dependency-pinning:
+	@$(UV) run python scripts/check_dependency_pinning.py
+
+check-runbook-currency:
+	@$(UV) run python scripts/check_runbook_currency.py $(TAG)
+
+check-changelog-accuracy:
+	@$(UV) run python scripts/check_changelog_accuracy.py $(TAG)
+
+check-version-bump-atomicity:
+	@$(UV) run python scripts/check_version_bump_atomicity.py $(TAG)
+
+check-tag-signing:
+	@$(UV) run python scripts/check_tag_signing.py $(TAG)
+
+generate-release-notes:
+	@$(UV) run python scripts/generate_release_notes.py $(TAG)
+
+check-asset-retention:
+	@$(UV) run python scripts/check_asset_retention.py
+
+check-release-audit-trail:
+	@$(UV) run python scripts/check_release_audit_trail.py $(TAG)
+
+release-dry-run: _release-dry-run-guard
+	@echo "=== DRY RUN: All preconditions met for $(TAG) ==="
+	@echo "=== Run 'make release-cut TAG=$(TAG) MSG=\"release notes\"' to cut ==="
+
+# === End AC001-AC020 Guards ===
+
 #   1. check-readme-status     — README status table is current for this TAG
 #   2. git-push-sandboxcom     — push master
 #   3. git-tag-push            — annotated tag + push (triggers CI release job)
@@ -2953,7 +3097,7 @@ ci-active:
 # Usage: make ci-busy-check BRANCH=development
 # Exits 1 if CI is busy, 0 if safe to push. FORCE=1 bypasses (hotfix only).
 ci-busy-check: _require-gh
-	@BRANCH="$(BRANCH)"; if [ -z "$$BRANCH" ]; then BRANCH=$$(git branch --show-current); fi; if [ -z "$$BRANCH" ]; then echo "Cannot check CI from detached HEAD; pass BRANCH=..."; exit 1; fi; $(PYTHON) scripts/ci_push_guard.py "$$BRANCH"
+	@BRANCH="$(BRANCH)"; if [ -z "$$BRANCH" ]; then BRANCH=$$(git branch --show-current); fi; if [ -z "$$BRANCH" ]; then echo "Cannot check CI from detached HEAD; pass BRANCH=..."; exit 1; fi; FORCE="$(FORCE)" GLUDD_FORCE_PUSH="$(GLUDD_FORCE_PUSH)" $(PYTHON) scripts/ci_push_guard.py "$$BRANCH"
 
 # ci-safe-push: check CI idle on target branch, then push. Blocks if CI busy.
 # Usage: make ci-safe-push BRANCH=development

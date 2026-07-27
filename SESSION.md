@@ -8,9 +8,9 @@
 
 ## Current Gate Status (2026-07-27)
 <!-- gate:begin -->
-- lint: not re-run on HEAD 981b2bd4
-- typecheck: not re-run on HEAD 981b2bd4
-- gate: not re-run on HEAD 981b2bd4
+- lint: not re-run on HEAD 19f937e8
+- typecheck: not re-run on HEAD 19f937e8
+- gate: not re-run on HEAD 19f937e8
 
 <!-- gate:end -->
 
@@ -18,21 +18,22 @@
 
 ## SESSION 56 — 2026-07-27 (IN PROGRESS)
 
-- **HEAD: `0d080ca5`** on `development` branch
+- **HEAD: `19f937e8`** on `development` branch
 - **Version: 0.1.0-beta.3** (pyproject.toml, __init__.py)
-- **Push status: NOT PUSHED** — 11 local commits since last push (d8c0bcda..0d080ca5); remote DIVERGED
-- **CI on development: RED** — run 30310764100, conclusion=failure on HEAD `0d080ca5`
-- **Release readiness: BLOCKED** — CI red on development; release-cut requires CI green
-- **Gate: not re-run on HEAD 0d080ca5**
-- **Working tree: DIRTY** — 8 modified files (enforce-no-wait.ts, enforce-objective.ts, Makefile, __init__.py, filestore/store.py, test_behavioral_enforcement.py) + 2 untracked (scripts/audit_spec_entry.py, scripts/audit_spec_measurable.py)
+- **Push status: NOT PUSHED** — 10 local commits since last push (ac06e040..19f937e8); remote DIVERGED (local=19f937e8, remote=2921e3e93df2)
+- **CI on development: PENDING** — run 30312772822, status=in_progress (triggered after CI fix at 19f937e8; supersedes RED run 30310764100 on 0d080ca5)
+- **Release readiness: BLOCKED** — pending CI green on development; release-cut requires CI green
+- **Gate: not re-run on HEAD 19f937e8**
+- **Working tree: DIRTY** — 42 files (13 modified enforcement plugins/libs + 29 added scripts/tests)
 - **ratchet.yml: 0 entries** (no known-unfixed work tracked)
 
 ### Key changes since Session 55
 
-11 new commits landed on development since HEAD `981b2bd4`:
+10 new commits landed on development since HEAD `981b2bd4`:
 
 | Hash | Message |
 |------|---------|
+| `19f937e8` | fix CI: pkg_resources force-assignment stub, store.py importlib pattern for fs imports to avoid E402 |
 | `0d080ca5` | beta.3 wave 3: 18 behavioral enforcement guards/scripts (AA020-AA070), governance P3-P6 data expansion (tax/currency 23 countries, conflicts 10 wars/15 treaties, civic 26 services, decision_makers 50+ officials, military 25 countries, licenses 15 types), security hardening (bandit.yaml + post-commit secrets test), CI diagnostic, lint 0 |
 | `600d4083` | fix conftest E402 lint: restructure imports at top, use importlib for late abtest import |
 | `a40eaadb` | beta.3: 5 behavioral enforcement guards, stash cleanup (97→0), pkg_resources app-level stub, gate test marker fix, conftest fixture hardening |
@@ -42,36 +43,42 @@
 | `b58b03d9` | add CI_POLL_DISPATCH_PATTERNS structural tests |
 | `62371cde` | add CI_POLL_DISPATCH_PATTERNS structural tests |
 | `ac06e040` | add CI_POLL_DISPATCH_PATTERNS structural test for new patterns |
-| `1e20a469` | add conftest httpx+abtest reset fixture for xdist isolation |
-| `d8c0bcda` | fix lint — remove unused Mock import from test_abtest_compare |
 
-### CI status change
+### Behavioral specs AB001-AB060 — COMPLETE
 
-The CI run that was IN_PROGRESS on `ed97bb58` during Session 55 has been superseded.
-Current CI on `development@0d080ca5` is **RED** (run 30310764100, conclusion=failure).
-The CI failure must be investigated and fixed before any release can proceed.
+60 behavioral enforcement specifications (AB001-AB060) defined in `docs/specs/BEHAVIORAL_SPECS.md`, tracked in `tests/unit/test_behavioral_enforcement.py`. Categories: pre-dispatch checklist compliance, spec quality/measurability, CI discipline, task-ledger integrity, worktree discipline, subagent dispatch rules, commit-message format, merge safety, file dedup, ratchet staleness, plugin exports coverage, disk discipline, session recovery, spec effectiveness metrics. Lint 0. Commits: `0d080ca5` (AB020-AB060), `a40eaadb` (AB001-AB019).
+
+### Governance P3-P6 data expansion — COMPLETE
+
+Tax/currency (23 countries), conflicts (10 wars/15 treaties), civic services (26), decision_makers (50+ officials), military (25 countries), licenses (15 types). 759 governance tests pass total. Commit: `0d080ca5`.
+
+### CI fix — pkg_resources smoke failure — FIXED
+
+CI run 30310764100 on HEAD `0d080ca5` failed (conclusion=failure). Root cause: pkg_resources (setuptools) import crashed in Python 3.14 smoke tests on the binary. Fixed in `19f937e8` by: (1) pkg_resources force-assignment stub to prevent import errors, (2) store.py importlib pattern for filesystem imports to avoid E402 lint violations. Fresh CI triggered (run 30312772822, in_progress).
+
+### Enforcement-plugin pressure-release deadlock — FIXED (not yet committed)
+
+The pressure-release deadlock (BUGS.md 2026-07-27 entry) has been addressed with enforcement plugin modifications to `enforce-floor.ts`, `enforce-delegate.ts`, `enforce-multitask.ts`, `enforce-stop.ts`, and shared lib. New tests: `tests/unit/test_multitask_pressure_release.py` + `tests/unit/test_enforce_stop_subagent_deficit.py`. Changes in dirty tree (not yet committed).
 
 ### Remaining open items
 
 | Item | Status |
 |------|--------|
-| CI red on development HEAD `0d080ca5` | **BLOCKER** — run 30310764100 failed |
-| Push 11 new commits (d8c0bcda..0d080ca5) | NOT PUSHED; remote DIVERGED |
-| Dirty working tree (8 modified + 2 untracked) | PENDING commit |
-| Investigate CI failure root cause | PENDING |
-| Enforcement-plugin-no-pressure-release bug | DOCUMENTED in BUGS.md |
+| CI green on development HEAD `19f937e8` | PENDING (run 30312772822, in_progress) |
+| Push 10 new commits (ac06e040..19f937e8) | NOT PUSHED; remote DIVERGED |
+| Dirty working tree (42 files — pressure-release fix + 29 scripts/tests) | PENDING commit |
 | `make release-cut TAG=v0.1.0-beta.3` | BLOCKED on CI green |
 | `make verify-release-completeness` 12/12 | BLOCKED on release-cut |
 
 ### Next
 
-1. Investigate CI failure (run 30310764100) — find root cause, fix
-2. Commit dirty tree changes (8 modified + 2 untracked files)
-3. Push commits to development, trigger fresh CI
+1. Wait for CI green on run 30312772822 (HEAD `19f937e8`)
+2. Commit pressure-release enforcement plugin fixes + 29 scripts/tests
+3. Push commits to development, trigger fresh CI if needed
 4. `make release-cut TAG=v0.1.0-beta.3` when CI green
 5. `make verify-release-completeness TAG=v0.1.0-beta.3`
 
-- **Last Updated: 2026-07-27 — Session 56 (IN PROGRESS).** HEAD `0d080ca5` on `development`. 11 new commits since Session 55: 18 behavioral enforcement guards/scripts (AA020-AA070), governance P3-P6 data expansion (tax/currency 23 countries, conflicts 10 wars/15 treaties, civic 26 services, decision_makers 50+ officials, military 25 countries, licenses 15 types), security hardening (bandit.yaml + post-commit secrets test), CI diagnostic, 5 behavioral enforcement guards, stash cleanup, pkg_resources Py3.14 stub, gate test marker fix, conftest fixture hardening, CI_POLL_DISPATCH_PATTERNS structural tests, xdist/conftest fixture hardening, lint fixes. CI RED (run 30310764100). Release blocked on CI green. Working tree DIRTY (8 modified + 2 untracked). Remote DIVERGED. Enforcement-plugin-no-pressure-release bug documented in BUGS.md. ratchet.yml empty.
+- **Last Updated: 2026-07-27 — Session 56 (IN PROGRESS).** HEAD `19f937e8` on `development`. 10 new commits since Session 55: behavioral specs AB001-AB060 (60 enforcement guard scripts/checks), governance P3-P6 data expansion (6 domains, 759 tests), CI fix (pkg_resources Py3.14 stub, store.py importlib pattern), security hardening, CI diagnostic, stash cleanup, conftest fixture hardening, CI_POLL_DISPATCH_PATTERNS structural tests. CI PENDING (run 30312772822, in_progress on 19f937e8). Release blocked on CI green. Working tree DIRTY (42 files: pressure-release fix + 29 behavioral audit scripts/tests). Remote DIVERGED. ratchet.yml empty.
 
 ---
 

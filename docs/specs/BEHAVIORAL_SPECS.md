@@ -808,12 +808,320 @@
 **Enforcement:** `scripts/audit_agent_behavior.py` + `make audit-agent-context-size`
 **Behavior:** AGENTS.md + CLAUDE.md combined size exceeds 20,000 lines / 600 KB, making it practically unreadable for human operators. New policies are added but old policies are never pruned or consolidated. At session start, the combined policy files MUST be checked: if total > 20,000 lines, the agent MUST flag a consolidation task. Policies with overlapping content MUST be merged. Dead policies (referencing removed plugins/targets) MUST be pruned.
 
+### AB061 — state-file-integrity-auto-detect
+**Category:** Observability
+**Enforcement:** `scripts/audit_observability.py` + `make audit-state-file-integrity`
+**Behavior:** Corrupt or truncated `/tmp/gludd-*.json` state files cause enforcement plugins to fail or silently default to allow-all. State files MUST be validated on read: JSON parse check, required-keys check, value-range check. Corrupt state files MUST be auto-reset to defaults with a warning logged. A state file that fails to parse is NOT a reason to disable enforcement.
+
+### AB062 — silent-long-operation-must-emit-heartbeat
+**Category:** Observability
+**Enforcement:** `scripts/audit_observability.py` + `make audit-silent-operations`
+**Behavior:** Makefile targets that run >30 seconds without emitting output are indistinguishable from hung processes. Any target expected to take >30 seconds MUST emit a heartbeat (timestamp line) every 15 seconds. The audit detects targets calling long-running commands without `tee` or progress markers. Background targets without `nohup ... &` are also flagged.
+
+### AB063 — stale-state-file-auto-reset
+**Category:** Observability
+**Enforcement:** `scripts/audit_observability.py` + `make audit-stale-state-files`
+**Behavior:** `/tmp/gludd-*.json` state files with PIDs that no longer point to running processes are stale and cause false enforcement behavior (e.g., crash-recovery flag never reset, allowing bypass indefinitely). State files older than the oldest running gludd process PID lifetime MUST be detected and auto-reset. State files with PIDs absent from `ps` output MUST be marked stale and reset on next read.
+
+### AB064 — enforcement-plugin-load-verified
+**Category:** Guardrail Integrity
+**Enforcement:** `scripts/audit_observability.py` + `make audit-plugin-load-health`
+**Behavior:** When opencode loads enforcement plugins at startup, a single plugin with a ReferenceError or SyntaxError silently disables ALL enforcement. The load-health audit runs `make check-plugin-hook-invoke` and verifies zero failures. Any plugin with a load error MUST be flagged and the agent alerted. After any plugin edit, the agent MUST run this audit before considering enforcement active.
+
+### AB065 — gate-log-output-must-be-observable
+**Category:** Observability
+**Enforcement:** `scripts/audit_observability.py` + `make audit-gate-observability`
+**Behavior:** Gate output redirected to `/dev/null` or a buffered file with no live signal is an unobservable operation — the "No Unseen Events" rule violation. All gate targets MUST `tee` output to both stdout and a log file. Background gates MUST write PID to `.gate-background.pid` and emit phase markers. The audit verifies the gate log file exists, is non-empty, and contains phase markers after a gate run.
+
+### AB066 — enforcement-plugin-hook-coverage
+**Category:** Test Integrity
+**Enforcement:** `scripts/audit_observability.py` + `make audit-enforcement-coverage`
+**Behavior:** Enforcement plugins with 0 runtime tests are functionally untested — their behavior is unverified. Every enforce-*.ts plugin MUST have at least 1 runtime test in test_hook_runtime.py that actually calls the hook function and asserts on behavior. The coverage audit cross-references plugin exports against the test harness and flags plugins with zero runtime tests.
+
+### AB067 — make-target-timeout-enforcement
+**Category:** Subagent Discipline
+**Enforcement:** `scripts/audit_observability.py` + `make audit-make-target-timeouts`
+**Behavior:** `make gate` and `make test-unit` run 30-40 minutes — subagents dispatched to run them will hit step limits and leave half-done work. The timeout audit checks that long-running make targets have corresponding `-background` variants or `make task CMD=...` wrappers. Targets running >5 minutes without background variants are flagged. Subagents dispatched to run long foreground targets are misconfigured.
+
+### AB068 — disk-space-metric-surfaced-pre-commit
+**Category:** Disk Discipline
+**Enforcement:** `scripts/audit_observability.py` + `make audit-disk-metrics`
+**Behavior:** Disk usage creeping above 85% causes ENOSPC errors that corrupt state files and break git operations. The disk-metrics audit runs before commit/push: checks `df` output and `/tmp/gludd-*` total size. If >85% disk or >100MB in gludd temp files, commit is BLOCKED until `make clean-tmp` runs. The metric must be surfaced in the block message, not just an exit code.
+
+### AB069 — subagent-timeout-evidence-preserved
+**Category:** Subagent Discipline
+**Enforcement:** `scripts/audit_observability.py` + `make audit-subagent-timeout-evidence`
+**Behavior:** When `scripts/task_watchdog.py` kills a timed-out subagent, the kill event MUST be recorded in `/tmp/gludd-task-killed.json` with: task_id, kill_time, PID, command, and exit code. The orphaned subagent's partial output MUST be preserved to `/tmp/gludd-task-output-<id>.log` for diagnosis. A timed-out subagent without preserved evidence is an invisible failure.
+
+### AB070 — enforcement-state-reset-on-restart
+**Category:** Guardrail Integrity
+**Enforcement:** `scripts/audit_observability.py` + `make audit-enforcement-state-freshness`
+**Behavior:** After opencode restarts (enforcement plugins reload), stale state files from the prior session can cause false enforcement: streak counters frozen, session-start flags holding over, disengage signals persisting. At plugin load time, each plugin MUST check its state file's `session_start_epoch` against the current process start time. State from prior sessions MUST be reset. The audit verifies each state file has a `session_id` field and that `crash-recovery` correctly resets all state.
+
+### AB071 — push-cooldown-persists-across-sessions
+**Category:** CI Discipline
+**Enforcement:** `scripts/audit_observability.py` + `make audit-push-cooldown-integrity`
+**Behavior:** Push cooldown state (`/tmp/gludd-ci-check-state.json`) writes `last_push_epoch`. If this state file is lost or reset between sessions, the cooldown guard is defeated and agent can push immediately. The cooldown state MUST persist across sessions — the file MUST NOT be in `make clean-tmp`'s cleanup set. The audit verifies the cooldown state file is excluded from cleanup and preserves its timestamp across `make reload-enforcement`.
+
+### AB072 — hot-module-warning-blocks-gate
+**Category:** Quality Gate
+**Enforcement:** `scripts/audit_observability.py` + `make audit-hot-module-health`
+**Behavior:** Hot-reload modules with warnings ("invalid JS", "failed to require", "Unexpected token") load successfully but carry stale/incorrect enforcement logic. The hot-module-health audit runs `make check-hot-reload-fresh` and verifies zero warnings on all hot modules. Any warning on a BLOCKING plugin's hot module MUST fail the gate. Warnings on hot modules are functional bugs, not cosmetic issues.
+
+### AB073 — observability-baseline-regression-check
+**Category:** Quality Gate
+**Enforcement:** `scripts/audit_observability.py` + `make audit-observability-regression`
+**Behavior:** As enforcement mechanisms are added, observability MUST not regress. Gate-log output word count, phase-marker count, and heartbeat frequency establish a baseline. If a commit reduces observable output (removes phase markers, shortens log, drops heartbeat), it's an observability regression. The audit records previous-baseline metrics and flags any commit that reduces observability below 90% of baseline.
+
+### AB074 — ci-verdict-history-integrity
+**Category:** CI Discipline
+**Enforcement:** `scripts/audit_observability.py` + `make audit-ci-verdict-history`
+**Behavior:** `_ci-verdict-history-guard` records verdicts in `/tmp/gludd-ci-verdict-history.json`. If this file is corrupted or truncated, the agent can claim CI green without a recorded verdict. The history file MUST be append-only — each new verdict check appends, never overwrites. The audit verifies the history file is valid JSON, entries are timestamped, and the last N entries form a coherent timeline (no timestamp regression).
+
+### AB075 — watchdog-heartbeat-observable
+**Category:** Observability
+**Enforcement:** `scripts/audit_observability.py` + `make audit-watchdog-heartbeat`
+**Behavior:** `agent_watchdog.py` runs as a background daemon that detects and unjams agent stops. If the watchdog dies silently, no one knows until the agent stalls. The watchdog MUST write a heartbeat timestamp to `/tmp/gludd-watchdog-heartbeat.json` every 10 seconds. The audit verifies the heartbeat file exists and its timestamp is < 30 seconds old. A missing or stale heartbeat means the watchdog is dead — all enforcement relying on it is compromised.
+
+### AB076 — enforcement-decision-audit-trail
+**Category:** Guardrail Integrity
+**Enforcement:** `scripts/audit_observability.py` + `make audit-enforcement-decisions`
+**Behavior:** When an enforcement plugin BLOCKS a tool call, the decision MUST be logged with: timestamp, plugin name, tool name, reason, and decision (deny/allow). Without an audit trail, blocked tool calls are invisible — the agent and operator cannot diagnose why work is stuck. The audit verifies that at least one enforcement plugin writes decisions to a state file and that `make enforcement-log` surfaces recent decisions.
+
+### AB077 — make-target-audit-trail
+**Category:** Observability
+**Enforcement:** `scripts/audit_observability.py` + `make audit-make-target-invocations`
+**Behavior:** Make target invocations are the primary agent action mechanism — every git operation, test run, and gate check goes through make. Without an invocation log, it's impossible to reconstruct what happened in a session. The audit verifies that `make` invocations write to a log (`/tmp/gludd-make-invocations.log`) with: timestamp, target name, variables, exit code. This is particularly important for destructive targets (push, merge, tag, release).
+
+### AB078 — error-context-preserved-on-failure
+**Category:** Observability
+**Enforcement:** `scripts/audit_observability.py` + `make audit-error-context-preservation`
+**Behavior:** When a gate, test, or build fails, the last N lines of output (the error context) MUST be preserved — not just the exit code. An exit code of 1 with no context is unactionable. The audit verifies that failure-surfacing targets (`make gate-status-check`, CI log tail, test-failures) include at least the last 40 lines of the failure output. Truncation that hides the actual error is an observability failure.
+
+### AB079 — session-boundary-state-consistency
+**Category:** Task Tracking
+**Enforcement:** `scripts/audit_observability.py` + `make audit-session-boundary-state`
+**Behavior:** At session boundaries, enforcement state can drift: TASKS.md items marked complete but no commit recorded; ratchet entries added but never committed; session-start sequence initiated but never completed. The boundary audit cross-references TASKS.md, ratchet.yml, git log, and state files for consistency. Items marked complete without evidence, ratchet entries without dates, and stale session-start records are flagged.
+
+### AB080 — observability-gate-in-gate-pipeline
+**Category:** Quality Gate
+**Enforcement:** `scripts/audit_observability.py` + `make audit-observability-gate`
+**Behavior:** Observability checks (AB061-AB079 enforcement verification) MUST themselves be part of `make gate`. An observability audit that is not gated is a documentation exercise — it can be skipped. The audit target runs ALL AB061-AB079 checks in sequence, returns consolidated results, and exits non-zero on any violation. It is wired as a `make gate` prerequisite so observability failures block commits just like lint or typecheck failures.
+
+### AB081 — subagent-result-nonempty-verification
+**Category:** Subagent Discipline
+**Enforcement:** `scripts/audit_observability.py` + `make audit-result-nonempty`
+**Behavior:** Agent dispatches subagents, gets results, and codifies them — but never verifies the result contains actual output. A subagent that returned "no output" or an empty string is marked complete as if work was done. Every subagent result MUST be verified non-empty and non-truncated before being codified. Results shorter than 10 characters or ending with "[TRUNCATED]" are INVALID and must trigger re-dispatch or explicit cancellation.
+
+### AB082 — makefile-target-drift-detection
+**Category:** Repo Convention
+**Enforcement:** `scripts/audit_observability.py` + `make audit-target-drift`
+**Behavior:** AGENTS.md and CLAUDE.md reference Makefile targets that have been renamed, removed, or refactored. Agents read these docs and try to invoke nonexistent targets, getting "No rule to make target" errors and wasting turns diagnosing missing targets. The drift audit cross-references all Makefile target names against those referenced in AGENTS.md, CLAUDE.md, and SESSION.md. Any doc-referenced target not found in the Makefile is flagged STALE-DOC-REFERENCE.
+
+### AB083 — enforcement-plugin-version-sync
+**Category:** Guardrail Integrity
+**Enforcement:** `scripts/audit_observability.py` + `make audit-plugin-version-sync`
+**Behavior:** Hot-reload modules in `/tmp/gludd-hot-enforce-*.js` can diverge from source plugins in `.opencode/plugin/`. The agent runs `make hot-reload-plugins` but never verifies the output modules match source. If a hot module compiles with errors, its behavior silently differs from source. The version-sync audit byte-compares hot-module content against source content (after stripping type annotations) and flags any mismatch. Modules differing by more than 5% in size are flagged DIVERGENT.
+
+### AB084 — agent-dispatchwave-composition-log
+**Category:** Subagent Discipline
+**Enforcement:** `scripts/audit_observability.py` + `make audit-dispatchwave-composition`
+**Behavior:** Agent dispatches waves without recording wave composition (model breakdown, task types, file targets). There is no mechanical record of dispatch wave structure, making it impossible to audit cost, model utilization, or task distribution. The composition log records: wave number, timestamp, subagent count, model distribution (sonnet/haiku/opus), task type distribution (edit/research/test/commit), and targeted files. Records persist in `/tmp/gludd-dispatchwave-composition.json`.
+
+### AB085 — orphaned-ratchet-entry-auto-prune
+**Category:** Test Integrity
+**Enforcement:** `scripts/audit_observability.py` + `make audit-orphaned-ratchet`
+**Behavior:** Ratchet entries track pre-existing test failures. When the failing code is deleted or the test is fixed, the ratchet entry remains — permanently suppressing a check that no longer applies and masking genuine regressions. The orphan detection scans each ratchet entry's referenced test path. If the test file or the source it references no longer exists, the entry is ORPHANED. Orphaned entries must be pruned within 1 session of detection.
+
+### AB086 — subagent-lost-result-recovery
+**Category:** Subagent Discipline
+**Enforcement:** `scripts/audit_observability.py` + `make audit-lost-results`
+**Behavior:** Subagent results arrive asynchronously, but the agent's main thread may be in a different context when they land. Results that arrive while the agent is processing other work can be "lost" — read but never codified. The lost-result detector scans the conversation history for subagent completion markers and cross-references against TASKS.md updates. Any completion marker without a corresponding TASKS.md status update within 3 tool calls is a LOST RESULT.
+
+### AB087 — makefile-recipe-state-file-side-effect-isolation
+**Category:** Obserability
+**Enforcement:** `scripts/audit_observability.py` + `make audit-recipe-side-effects`
+**Behavior:** Makefile targets can have unintended side effects on `/tmp/gludd-*` state files. A `make clean-tmp` that deletes CI cooldown state, a `make reload-enforcement` that resets session-start counters — these side effects compromise enforcement integrity. The audit scans each Makefile target's recipe for writes to `/tmp/gludd-*.json` and cross-references against the target's declared purpose. Side-effect writes not matching the target's documented intent are flagged UNINTENDED-SIDE-EFFECT.
+
+### AB088 — gate-target-dependency-integrity
+**Category:** Quality Gate
+**Enforcement:** `scripts/audit_observability.py` + `make audit-gate-dependencies`
+**Behavior:** Gate targets (`make gate`, `make gate-lite`, `make preflight`) have prerequisite chains. When a prerequisite target is removed, renamed, or refactored without updating the gate chain, the gate silently skips or fails with confusing errors. The integrity audit parses each gate target's recipe, extracts prerequisite target names, and verifies each exists. Missing prerequisites are flagged GATE-CHAIN-BROKEN.
+
+### AB089 — enforcement-plugin-deprecation-window
+**Category:** Guardrail Integrity
+**Enforcement:** `scripts/audit_observability.py` + `make audit-plugin-deprecation`
+**Behavior:** Enforcement plugins are sometimes replaced, merged, or removed. When a plugin is deleted without a deprecation window, agents that were trained to expect that enforcement behavior suddenly operate with it missing — a silent enforcement gap. Any plugin scheduled for removal MUST first emit a deprecation warning via console.warn for 2 full sessions before being removed. The audit detects plugins present in source but not in opencode.json registration (unloaded) and flags them as DEPRECATION-CANDIDATES.
+
+### AB090 — pre-commit-hook-chain-execution-order
+**Category:** Commit Discipline
+**Enforcement:** `scripts/audit_observability.py` + `make audit-precommit-order`
+**Behavior:** Pre-commit hooks (secrets scan, lint, collection check, dedup, spec quality) must execute in a specific order: fast checks first (lint, secrets), structural checks second (collect, dedup), slow checks last (spec quality). When hooks run out of order, a slow hook can delay feedback on a fast-detected failure. The order audit reads `.pre-commit-config.yaml` and verifies hook ordering matches the optimal sequence. Out-of-order hooks are flagged.
+
+### AB091 — test-module-coverage-per-source-module
+**Category:** Test Integrity
+**Enforcement:** `scripts/audit_observability.py` + `make audit-test-per-module`
+**Behavior:** Some source modules in `src/general_ludd/` have zero test files importing from them. These modules are untested code — bugs in them are invisible. The per-module audit enumerates every `.py` file in `src/general_ludd/`, finds matching test files, and checks that the test file actually imports from the source module. Modules with zero test coverage are flagged UNTESTED-MODULE.
+
+### AB092 — ci-artifact-version-consistency
+**Category:** Release Discipline
+**Enforcement:** `scripts/audit_observability.py` + `make audit-artifact-versions`
+**Behavior:** CI builds artifacts (binaries, SBOMs, checksums) across multiple platforms. If the version-stamp on linux vs macos artifacts differs (build-number drift, timestamp variance), the release is inconsistent. The audit verifies that all built artifacts from the same tag carry identical version strings in their filenames (`v0.1.0-beta.2-macos` vs `v0.1.0-beta.2-linux`). Version-mismatched artifacts are flagged RELEASE-INCONSISTENCY.
+
+### AB093 — dispatch-wave-completion-attestation
+**Category:** Task Tracking
+**Enforcement:** `scripts/audit_observability.py` + `make audit-wave-completion`
+**Behavior:** After dispatching a wave of subagents, the agent must attest: "all N results processed." Without attestation, partially-processed waves are indistinguishable from fully-processed ones. The attestation audit cross-references dispatch records (wave composition log) against TASKS.md update timestamps. A dispatched wave with no corresponding TASKS.md update within 2 minutes of dispatching is WAVE-UNATTESTED.
+
+### AB094 — enforcement-bypass-audit-trail
+**Category:** Guardrail Integrity
+**Enforcement:** `scripts/audit_observability.py` + `make audit-bypass-trail`
+**Behavior:** Every use of enforcement bypass mechanisms (FORCE=1, GLUDD_*_ENFORCE=0 set at invocation, COMMIT_THRESHOLD=1, --no-verify, GLUDD_FORCE_PUSH=1) MUST leave an audit trail: timestamp, bypass type, target, justification. A bypass without a log entry is indistinguishable from guardrail failure. The audit scans conversation and invocation logs for bypass usage patterns and verifies a corresponding log entry exists. Unlogged bypasses are flagged UNLOGGED-BYPASS.
+
+### AB095 — makefile-variable-reference-validation
+**Category:** Repo Convention
+**Enforcement:** `scripts/audit_observability.py` + `make audit-makefile-vars`
+**Behavior:** Makefile recipes reference variables (`$(VAR)`, `${VAR}`) that may be undefined — either never declared or conditionally declared under a branch not taken. Undefined variable references silently expand to empty strings, producing broken commands with no error. The variable audit parses the Makefile, collects all variable declarations, and checks each reference resolves. Unresolved references are flagged UNDEFINED-VARIABLE.
+
+### AB096 — subagent-timeout-proportionality
+**Category:** Subagent Discipline
+**Enforcement:** `scripts/audit_observability.py` + `make audit-timeout-proportionality`
+**Behavior:** All subagents share a flat 5-minute timeout (GLUDD_TASK_TIMEOUT_MS=300000) regardless of task complexity. A grep-search task gets the same deadline as a full test suite run. Research tasks complete in 30 seconds; test-suite tasks need 15+ minutes. Timeout values must be proportional: research/read-only = 2min, file-edit = 5min, test-run = 15min, gate-run = 40min. The audit verifies the timeout configuration supports tiered timeouts.
+
+### AB097 — agent-task-hopping-detection
+**Category:** User Intent
+**Enforcement:** `scripts/audit_observability.py` + `make audit-task-hopping`
+**Behavior:** Agent switches between >3 unrelated task areas (CI checking, spec writing, bug fixing, refactoring) within 5 minutes without completing any. This context thrashing causes zero-completion throughput — 50 tool calls across 8 task areas with 0 commits. The hopping detector tracks task area transitions via file writes. If >3 distinct task areas are touched within 5 minutes with no commit between transitions, CONTEXT-THRASHING is flagged.
+
+### AB098 — plugin-config-value-drift-logging
+**Category:** Guardrail Integrity
+**Enforcement:** `scripts/audit_observability.py` + `make audit-config-drift`
+**Behavior:** Enforcement plugin behavior can be altered at runtime via env vars (GLUDD_FLOOR_ENFORCE=0, GLUDD_SESSION_START_ENFORCE=0) or state files. When a config value differs from the compiled-in default, enforcement behavior is changed — but this change is invisible unless logged. The drift audit compares loaded config values against source defaults. Any value differing from default MUST be logged with a reason. Unlogged config change = enforcement degradation.
+
+### AB099 — repo-hygiene-score-trending
+**Category:** Quality Gate
+**Enforcement:** `scripts/audit_observability.py` + `make audit-hygiene-score`
+**Behavior:** Repo hygiene metrics (dead code count, lint violations, test coverage %, ratchet entry count, stale worktree count) form a composite hygiene score. If the score drops below the prior session's baseline, quality is regressing — new enforcement specs are being written while existing ones degrade. The hygiene audit computes the composite score from all measurable metrics, compares against the prior session's recorded baseline, and flags regressions. A score drop of >5% is HARD-REGRESSION.
+
+### AB100 — enforcement-self-validating-boot
+**Category:** Guardrail Integrity
+**Enforcement:** `scripts/audit_observability.py` + `make audit-enforcement-boot`
+**Behavior:** When opencode starts and loads enforcement plugins, a failing plugin silently disables ALL enforcement. The agent cannot detect this mid-session because enforcement failure is indistinguishable from "no violations occurring." The boot audit runs `make check-plugin-hook-invoke` at session start and verifies ≥80% of plugins load without error. If the loaded-vs-registered ratio drops below 80%, enforcement is DEGRADED and MUST be flagged. The boot check result is recorded in `/tmp/gludd-enforcement-boot-result.json`.
+
 Each spec defines a behavioral invariant. Each spec MUST have a corresponding
 enforcement mechanism (plugin, Makefile guard, or AGENTS.md policy section) and
 a structural test verifying that mechanism exists.
 
 Groups P-Z (20 groups × 100-125 specs each), H-V-J-L-Y (5 groups × 100 each), I (120 specs).
 Total: 4000 specs across 26 groups.
+
+---
+
+## AC001-AC020 — Release Pipeline Integrity Specs
+
+### AC001 — artifact-verification-gate
+**Category:** Release Discipline
+**Enforcement:** `make verify-release-completeness` + `_release-completeness-guard` in Makefile
+**Behavior:** `make release-cut` MUST NOT proceed unless `make verify-release-completeness TAG=<tag>` exits 0. The artifact-verification gate checks 12 artifact categories (binary-linux, binary-macos, sbom, checksums, container-image, provenance, install-sh, systemd-unit, deb-package, rpm-package, windows-installer, release-notes). If any category is missing, release-cut is BLOCKED with a list of missing artifacts. CI may not yet have built artifacts — the guard must distinguish between "CI still running" (abort, retry later) and "CI finished, artifacts missing" (block, fix build). The guard uses `make verify-release-completeness-safe` which respects the artifact-check cooldown (no re-check within 10 min without FORCE=1) to prevent API quota exhaustion.
+
+### AC002 — release-branch-discipline
+**Category:** Release Discipline
+**Enforcement:** `_release-branch-guard` in Makefile + `scripts/check_release_branch_discipline.py`
+**Behavior:** A release branch (named `release/*`) MUST have CI green on its remote tip before any promotion to master. `make release-promote TAG=<tag>` must verify: (a) current branch is a release branch, (b) remote tip CI is green, (c) local HEAD matches remote tip, (d) no uncommitted changes. If any check fails, promotion is BLOCKED. The guard prevents the class of failure where a release is promoted from a branch whose CI was never green. Non-release branches (master, development, feature/*) are exempt.
+
+### AC003 — tag-immutability
+**Category:** Release Discipline
+**Enforcement:** `_tag-immutability-guard` in Makefile + `scripts/check_tag_immutability.py`
+**Behavior:** Once a tag's CI run is GREEN, the tag MUST NOT be moved, deleted, or overwritten. `make git-tag-move` must check: if the target tag exists with a CI-GREEN verdict, the move is BLOCKED without `FORCE=1`. The only sanctioned tag movement is `make release-recut TAG=<tag>` (delete + re-push) when the Build-and-Release job itself failed (artifact upload flake) but the commit is known-good. Recutting a tag that had green CI and complete artifacts is PROHIBITED. The tag-immutability script checks `gh release view` for existing artifacts and CI verdict for the tagged commit.
+
+### AC004 — release-completeness-12-categories
+**Category:** Release Discipline
+**Enforcement:** `scripts/verify_release_completeness.py` extended
+**Behavior:** Every release MUST have artifacts in all 12 categories: binary-linux, binary-macos, sbom-spdx, sbom-cyclonedx, checksums-sha256, container-image-amd64, container-image-arm64, provenance-attestation, install-sh, systemd-service, release-notes, changelog. `make verify-release-completeness` now validates all 12 categories (was 10). Any zero-size asset counts as MISSING. Version-stamped asset names must match the tag (e.g., `gludd-v1.0.0-linux-amd64` for tag `v1.0.0`). Categories can be extended via `config/release_artifact_categories.yml` without modifying the script.
+
+### AC005 — prerelease-flag-vs-tag-shape
+**Category:** Release Discipline
+**Enforcement:** `scripts/check_prerelease_flag.py` + `make check-prerelease-flag`
+**Behavior:** The GitHub Release `prerelease` flag MUST match the tag's semver shape: tags containing `-alpha`, `-beta`, `-rc` → `prerelease: true`; tags matching `v[0-9]+.[0-9]+.[0-9]+` exactly → `prerelease: false`. `make release-cut` runs this check as step 1.5. If the flag is wrong, the tag push is ABORTED. Setting the flag correctly must happen BEFORE artifact upload because changing prerelease status post-publish changes notification behavior. The check is fail-closed: if the gh API is unreachable, abort with exit 2 (inconclusive).
+
+### AC006 — checksum-validation
+**Category:** Release Discipline
+**Enforcement:** `scripts/validate_release_checksums.py` + `make validate-release-checksums`
+**Behavior:** Every release artifact listed in `checksums.txt` MUST be downloadable and its SHA256 MUST match the listed checksum. The validation script downloads each artifact, computes SHA256, compares. Any mismatch exits non-zero with the artifact name. The checksums file MUST itself be one of the release assets. The check is gated behind the verify-release-completeness cooldown to prevent API abuse; use `FORCE=1` for immediate re-check. Network-unreachable or gh API down → exit 2 (inconclusive/fail-open), not exit 1.
+
+### AC007 — sbom-freshness
+**Category:** Release Discipline
+**Enforcement:** `scripts/check_sbom_freshness.py` + `make check-sbom-freshness`
+**Behavior:** The SBOM (Software Bill of Materials) MUST be regenerated on every release cut, not copied from a prior release. The freshness check verifies: (a) SBOM generation timestamp ≥ tag creation timestamp, (b) SBOM includes the current version string, (c) SBOM dependency list matches current `uv.lock` / `requirements.txt`. A stale SBOM (copied from prior release) is BLOCKED. `make release-cut` runs this check before SBOM upload. The script cross-references the SBOM's `metadata.timestamp` against the tag's `taggerdate`.
+
+### AC008 — container-push-verification
+**Category:** Release Discipline
+**Enforcement:** `scripts/verify_container_push.py` + `make verify-container-push`
+**Behavior:** After `make container-push`, the agent MUST verify the image exists in the registry with the correct tag. The verification script uses `skopeo inspect` or `docker manifest inspect` to confirm: (a) image exists at `registry/name:tag`, (b) image digest is non-empty, (c) image architecture matches build target. If `skopeo` is unavailable, falls back to `crane` or `docker`. If no tool is available, exits 2 (inconclusive). A push without verification is a policy violation — the agent MUST NOT claim a container is pushed without the verification output.
+
+### AC009 — release-rollback
+**Category:** Release Discipline
+**Enforcement:** `scripts/check_rollback_procedure.py` + `make check-rollback-procedure`
+**Behavior:** Every release MUST have a documented rollback procedure that includes: (a) target tag/version to roll back to, (b) container image pin, (c) binary download URL, (d) configuration compatibility check. The rollback check verifies `docs/RELEASE_RUNBOOK.md` contains a `## Rollback` section with these four fields for the current version. If the rollback section is missing or stale (no update in last 2 releases), the release is BLOCKED. The check also verifies the rollback target (previous release) actually exists (has artifacts from `gh release view`).
+
+### AC010 — multi-platform-consistency
+**Category:** Release Discipline
+**Enforcement:** `scripts/check_multiplatform_consistency.py` + `make check-multiplatform-consistency`
+**Behavior:** Every release MUST have artifacts for all target platforms (linux-amd64, linux-arm64, macos-amd64, macos-arm64, windows-amd64). The consistency check verifies: (a) each platform has a binary artifact, (b) each platform binary is similarly-sized (±50% of mean), (c) each binary has a matching checksum entry. A missing platform (e.g., only linux built, macOS CI flaked) is BLOCKED. Platform count must be ≥4 (2 OS × 2 arch minimum). This prevents the "we shipped but only Linux built" class of partial release.
+
+### AC011 — provenance-attestation
+**Category:** Release Discipline
+**Enforcement:** `scripts/check_provenance_attestation.py` + `make check-provenance-attestation`
+**Behavior:** Every release MUST include a SLSA provenance attestation for each binary artifact. The attestation check verifies: (a) `.build.provenance` file exists in release assets, (b) provenance `subject.digest` matches the binary's SHA256, (c) provenance `builder.id` references the CI workflow. If attestation is missing or mismatched, the release is BLOCKED. The check uses `gh attestation verify` if available, falling back to manual digest comparison. This is a SHALL requirement, not a SHOULD — releases without provenance are not shippable.
+
+### AC012 — dependency-pinning
+**Category:** Release Discipline
+**Enforcement:** `scripts/check_dependency_pinning.py` + `make check-dependency-pinning`
+**Behavior:** All production dependencies MUST be pinned to exact versions in `uv.lock` and `requirements.txt`. No version ranges (`>=`, `~=`, `^`) allowed in production deps. The pinning check scans `pyproject.toml` for any dependency without an exact version pin in `uv.lock`. Development dependencies may use ranges. The check also verifies that the lock file is up-to-date (no pending `uv lock` changes). A release with unpinned or stale deps is BLOCKED. This prevents the "dependency resolution changed between dev and prod" class of failure.
+
+### AC013 — release-runbook-currency
+**Category:** Release Discipline
+**Enforcement:** `scripts/check_runbook_currency.py` + `make check-runbook-currency`
+**Behavior:** `docs/RELEASE_RUNBOOK.md` MUST be updated before every release cut. The currency check verifies: (a) runbook `Last updated` date ≥ last release date, (b) runbook mentions the current version being cut, (c) runbook's described procedure matches actual make targets (no targets referenced that don't exist). A stale runbook (not updated since prior release) is BLOCKED. The check cross-references each `make <target>` mentioned in the runbook against the Makefile — any nonexistent target exits non-zero.
+
+### AC014 — dry-run-releases
+**Category:** Release Discipline
+**Enforcement:** `make release-dry-run TAG=<tag>` + `_release-dry-run-guard` in Makefile
+**Behavior:** A dry-run release path MUST exist that validates all preconditions without pushing a tag or publishing artifacts. `make release-dry-run TAG=<tag>` runs: (a) gate status check, (b) CI green check, (c) README currency, (d) changelog accuracy, (e) version bump atomicity, (f) artifact completeness prediction (which artifacts SHOULD build based on CI matrix). It does NOT: push a tag, upload artifacts, modify the GitHub Release, or trigger CI. Exit 0 means "all preconditions met, safe to cut." Exit 1 means "blockers exist — fix before cutting."
+
+### AC015 — changelog-accuracy
+**Category:** Release Discipline
+**Enforcement:** `scripts/check_changelog_accuracy.py` + `make check-changelog-accuracy`
+**Behavior:** `CHANGELOG.md` MUST accurately reflect all commits between the prior release tag and the current tag. The accuracy check: (a) computes the commit range between tags, (b) extracts `CHANGELOG.md` entries for the current version, (c) verifies every commit in the range is referenced (by hash or description) in the changelog, (d) verifies no changelog entry references a commit NOT in the range. Missing entries or phantom entries exit non-zero. High-level summaries are acceptable; the check uses keyword matching and commit hash cross-reference.
+
+### AC016 — version-bump-atomicity
+**Category:** Release Discipline
+**Enforcement:** `scripts/check_version_bump_atomicity.py` + `make check-version-bump-atomicity`
+**Behavior:** A version bump MUST update all version-bearing files in a single atomic commit. Files checked: `pyproject.toml` (`project.version`), `src/general_ludd/__init__.py` (`__version__`), `CHANGELOG.md` (version header), `README.md` (`Status as of` line). The atomicity check verifies all four files carry the same version string. Any file with a stale/divergent version exits non-zero. The check also verifies the version bump commit touches exactly those files (plus any test updates) — a bump that silently changes other files is suspicious.
+
+### AC017 — git-tag-signing
+**Category:** Release Discipline
+**Enforcement:** `scripts/check_tag_signing.py` + `make check-tag-signing`
+**Behavior:** All release tags MUST be GPG-signed (`git tag -s`). The signing check runs `git verify-tag <tag>` and exits non-zero if: (a) tag is not signed, (b) signature cannot be verified, (c) signing key is expired. Unsigned release tags are BLOCKED from pushing. `make git-tag-push` must create annotated+signed tags (`-a -s`). Lightweight tags are forbidden. The check is run by `_tag-signing-guard` in the Makefile before any `git push --tags`.
+
+### AC018 — release-notes-automation
+**Category:** Release Discipline
+**Enforcement:** `scripts/generate_release_notes.py` + `make generate-release-notes`
+**Behavior:** Release notes MUST be auto-generated from commit messages between the prior and current tag, not hand-written. The automation script: (a) computes the commit range, (b) categorizes commits by conventional-commit prefix (feat:, fix:, docs:, refactor:, test:, chore:), (c) generates a structured markdown `## What's Changed` section with categorized lists, (d) appends contributor attribution from git shortlog. Hand-edited release notes that don't match the auto-generated structure are flagged. The generated notes are validated against the actual GitHub Release body — mismatch exits non-zero.
+
+### AC019 — asset-retention-policy
+**Category:** Release Discipline
+**Enforcement:** `scripts/check_asset_retention.py` + `make check-asset-retention`
+**Behavior:** Release assets MUST be retained per policy: (a) last 3 releases: all assets, (b) releases 4-10: binaries + SBOM only, (c) releases >10: SBOM only. The retention check scans `gh release list` and flags violations. Assets beyond the retention window must be pruned within 24h of the next release cut. Releases without any retained assets (all pruned) fail — at minimum SBOM must survive. The check runs as a pre-release step; if pruning is needed, it prints the commands to run. Automatic pruning is behind `--prune` flag.
+
+### AC020 — release-audit-trail
+**Category:** Release Discipline
+**Enforcement:** `scripts/check_release_audit_trail.py` + `make check-release-audit-trail`
+**Behavior:** Every release MUST leave a complete audit trail in `docs/releases/audit-<version>.json`. The audit file records: (a) tag SHA, (b) CI run ID + conclusion, (c) artifact list with digests, (d) release-cut timestamp, (e) gate status at cut time, (f) changelog range, (g) signing key fingerprint, (h) operator/agent that cut the release. The audit check verifies the file exists, is valid JSON, and all required fields are populated. Missing audit files or incomplete entries exit non-zero. The audit file is generated by `make release-cut` as a post-cut step and committed alongside the version bump.
+
+Each spec defines a behavioral invariant. Each spec MUST have a corresponding
+enforcement mechanism (Makefile target, script, or plugin) and a structural
+test verifying that mechanism exists.
 
 ---
 

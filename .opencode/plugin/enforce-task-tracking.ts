@@ -229,7 +229,7 @@ export default (({ }) => {
         return { allow: true };
       }
     },
-    "text.complete": async (_input: unknown, output: unknown) => {
+    "experimental.text.complete": async (_input: unknown, output: unknown) => {
       try {
         if (isSubagent()) return output;
         const impl = loadHotModule("task-tracking", defaultImpl);
