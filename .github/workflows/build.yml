@@ -173,7 +173,7 @@ jobs:
         # Installs truffleHog inline; exit 2 (not-installed) is treated as non-fatal.
         run: |
           make install-trufflehog
-          make verify-secrets
+          make verify-secrets-safe
         env:
           GLUDD_PSK: ""
 

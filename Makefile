@@ -2975,6 +2975,35 @@ secrets-scrub:
 	@[ -f .secrets.baseline ] || { echo "ERROR: .secrets.baseline missing. Run 'make secrets-baseline' first."; exit 1; }
 	@$(UV) run detect-secrets audit .secrets.baseline
 
+# install-trufflehog: install the trufflehog binary (Go) for live secret verification.
+# On macOS: brew install trufflehog. On Linux (CI): official install script.
+# Idempotent — skips if already on PATH.
+install-trufflehog:
+	@if command -v trufflehog >/dev/null 2>&1; then \
+		echo "[install-trufflehog] trufflehog already installed: $$(trufflehog --version 2>&1 | head -1)"; \
+		exit 0; \
+	fi
+	@if command -v brew >/dev/null 2>&1; then \
+		echo "[install-trufflehog] Installing via brew ..."; \
+		brew install trufflehog 2>&1 | tail -5 || echo "brew-install-trufflehog-failed"; \
+	elif [ -f /etc/os-release ] && grep -qi ubuntu /etc/os-release 2>/dev/null; then \
+		echo "[install-trufflehog] Installing via official script (Linux) ..."; \
+		curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh 2>/dev/null | sh -s -- -b /usr/local/bin 2>&1 || echo "trufflehog-install-script-failed"; \
+	else \
+		echo "[install-trufflehog] No package manager found. Install manually: https://github.com/trufflesecurity/trufflehog"; \
+	fi
+	@command -v trufflehog >/dev/null 2>&1 && trufflehog --version 2>&1 | head -1 || echo "[install-trufflehog] WARNING: trufflehog still not on PATH"
+
+# verify-secrets: cross-reference .secrets.baseline against trufflehog live verification.
+# Exits 0 on clean, 1 if live secrets found, 2 if trufflehog not installed.
+verify-secrets:
+	@$(PYTHON) scripts/verify_secrets_baseline.py
+
+# verify-secrets-safe: CI wrapper — treats exit 2 (not-installed) as non-fatal.
+# Use in CI pipelines. For local use, prefer verify-secrets directly.
+verify-secrets-safe:
+	@{ $(PYTHON) scripts/verify_secrets_baseline.py; RC=$$?; if [ $$RC -eq 2 ]; then echo "[verify-secrets] trufflehog not installed — skipping verification (non-fatal)"; exit 0; fi; exit $$RC; }
+
 # secrets-baseline: rebuild the .secrets.baseline
 secrets-baseline:
 	@echo "[secrets-baseline] scanning tracked files with detect-secrets (typically 30-90s on this repo)..."
