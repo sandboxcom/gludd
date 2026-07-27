@@ -8,6 +8,7 @@ _run_test_local_memory.py
 .mypy_cache/
 .ruff_cache/
 .coverage
+.coverage.audit.*
 coverage.xml
 htmlcov/
 # dist/ is HALF-TRACKED: hand-authored build INPUTS are committed (install.sh,
