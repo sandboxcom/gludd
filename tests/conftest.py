@@ -43,22 +43,16 @@ from pathlib import Path
 
 import httpx
 import pytest
+import yaml as _yaml_mod
+
+# Captured ONCE at module load so the fixture always restores to the
+# canonical reference, never to a value that a prior test leaked onto
+# the module attribute.
+_CANONICAL_HTTPX_GET = httpx.get
 
 # Python 3.14: yaml C extension (CSafeLoader) fails parsing ansible config.
 # Force-load yaml first, then strip C classes so ansible falls back to
 # the pure-Python SafeLoader via its existing (ImportError, AttributeError) catch.
-import yaml as _yaml_mod
-
-# Python 3.14: pkg_resources was removed from the stdlib.
-# The ``fs`` (pyfilesystem) package calls ``__import__("pkg_resources").declare_namespace``
-# at module load time, which fails with ModuleNotFoundError.
-# Provide a stub ``pkg_resources`` module that exposes a no-op
-# ``declare_namespace`` so ``fs`` can import without error.
-_FAKE_PKG_RESOURCES = type(sys)("pkg_resources")
-_FAKE_PKG_RESOURCES.declare_namespace = lambda _name: None
-sys.modules.setdefault("pkg_resources", _FAKE_PKG_RESOURCES)
-del _FAKE_PKG_RESOURCES
-
 for _name in ("CSafeLoader", "CSafeDumper", "CParser"):
     _yaml_mod.__dict__.pop(_name, None)
 del _yaml_mod, _name
@@ -80,29 +74,32 @@ def _safe_is_async_obj(obj: object) -> bool:
 
 _mock_mod._is_async_obj = _safe_is_async_obj
 
+# Python 3.14: pkg_resources was removed from the stdlib.
+# The ``fs`` (pyfilesystem) package calls ``__import__("pkg_resources").declare_namespace``
+# at module load time, which fails with ModuleNotFoundError.
+# Provide a stub ``pkg_resources`` module that exposes a no-op
+# ``declare_namespace`` so ``fs`` can import without error.
+_FAKE_PKG_RESOURCES = type(sys)("pkg_resources")
+_FAKE_PKG_RESOURCES.declare_namespace = lambda _name: None
+sys.modules.setdefault("pkg_resources", _FAKE_PKG_RESOURCES)
+del _FAKE_PKG_RESOURCES
+
+# Path setup for test imports — must happen before importing project modules
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _SCRIPTS_DIR = _REPO_ROOT / "scripts"
 _SRC_DIR = _REPO_ROOT / "src"
-
-for _path in (str(_SCRIPTS_DIR), str(_SRC_DIR)):
-    if _path not in sys.path:
-        sys.path.insert(0, _path)
+for _p in (str(_SCRIPTS_DIR), str(_SRC_DIR)):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
 importlib.import_module("general_ludd.routing_roles")
 
-# Captured ONCE at module load so the fixture always restores to the
-# canonical reference, never to a value that a prior test leaked onto
-# the module attribute.  The per-fixture-invocation snapshot pattern was
-# the root cause of cross-test pollution: a corrupt teardown of test N
-# left a mock/sentinel on ``httpx.get``, and test N+1's fixture snapshot
-# captured and re-applied the corrupt value, making the pollution
-# self-reinforcing.
-import httpx
-
-_CANONICAL_HTTPX_GET = httpx.get
-
-import general_ludd.abtest.compare as _ab_compare
-
+# The per-fixture-invocation snapshot pattern was the root cause of
+# cross-test pollution: a corrupt teardown of test N left a mock/sentinel
+# on ``httpx.get``, and test N+1's fixture snapshot captured and
+# re-applied the corrupt value, making the pollution self-reinforcing.
+# _CANONICAL_HTTPX_GET is captured above at import time.
+_ab_compare = importlib.import_module("general_ludd.abtest.compare")
 _CANONICAL_RUN_CANDIDATE = _ab_compare.run_candidate_in_subprocess
 
 
