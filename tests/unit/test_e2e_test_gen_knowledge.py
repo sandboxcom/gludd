@@ -47,7 +47,7 @@ class TestE2EScenariosCatalog:
 
     def test_all_have_names_and_descriptions(self):
         for s in E2E_SCENARIOS:
-            assert s.name, f"scenario missing name"
+            assert s.name, "scenario missing name"
             assert s.description, f"scenario '{s.name}' missing description"
 
     def test_all_have_tags(self):

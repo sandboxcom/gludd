@@ -27,7 +27,6 @@ from typing import Any, cast
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
 
-from general_ludd.agents.hibernation import HibernationHandle
 from general_ludd.controllers.pause_controller import PauseController
 
 logger = logging.getLogger(__name__)
@@ -78,10 +77,7 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             return {"paused": [], "count": 0}
         records = controller.list_paused()
         return {
-            "paused": [
-                _format_pause_record(r)
-                for r in records
-            ],
+            "paused": [_format_pause_record(r) for r in records],
             "count": len(records),
         }
 
@@ -203,7 +199,9 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
         dispatcher = getattr(app.state, "_agent_dispatcher", None)
         hibernation = getattr(app.state, "_hibernation_controller", None)
         quiesce_result = await controller.quiesce_project(
-            req.target_id, dispatcher=dispatcher, hibernation=hibernation,
+            req.target_id,
+            dispatcher=dispatcher,
+            hibernation=hibernation,
         )
         handles: list[object]
         if isinstance(quiesce_result, tuple):
@@ -271,40 +269,16 @@ def register(app: FastAPI, _daemon_state: dict[str, object]) -> None:
             dispatcher = getattr(app.state, "_agent_dispatcher", None)
             hibernation = getattr(app.state, "_hibernation_controller", None)
             if dispatcher is not None and hibernation is not None:
-                from general_ludd.agents.types import AgentTask
-                for handle_raw in record.agent_handles:
-                    try:
-                        if isinstance(handle_raw, dict):
-                            handle_obj = HibernationHandle(**handle_raw)
-                        else:
-                            handle_obj = HibernationHandle(
-                                task_id=getattr(handle_raw, "task_id", ""),
-                                path=getattr(handle_raw, "path", ""),
-                                checksum=getattr(handle_raw, "checksum", ""),
-                                size_bytes=getattr(handle_raw, "size_bytes", 0),
-                                depth=getattr(handle_raw, "depth", 0),
-                            )
-                        snapshot = hibernation._store.hydrate(handle_obj)
-                        task = AgentTask(
-                            task_id=snapshot.task_id,
-                            agent_name=snapshot.agent_name,
-                            description=snapshot.scratch.get("description", ""),
-                            prompt=snapshot.scratch.get("prompt", ""),
-                            parent_task_id=snapshot.parent_task_id,
-                            invoker_name=snapshot.invoker_name,
-                            project_id=snapshot.scratch.get("project_id"),
-                        )
-                        await dispatcher.dispatch_one(task)
-                        rehydrated_count += 1
-                    except Exception as exc:
-                        rehydrate_errors.append(str(exc))
-                        logger.warning(
-                            "Rehydrate failed for task=%s: %s",
-                            getattr(handle_raw, "task_id", handle_raw)
-                            if not isinstance(handle_raw, dict)
-                            else handle_raw.get("task_id", "?"),
-                            exc,
-                        )
+                # S8: Use resume_rehydrate (canonical path) instead of inline
+                # rehydration loop that drops depth/messages on AgentTask.
+                snapshots, _status, errors = await controller.resume_rehydrate(
+                    "project",
+                    req.target_id,
+                    dispatcher=dispatcher,
+                    hibernation=hibernation,
+                )
+                rehydrated_count = len(snapshots)
+                rehydrate_errors = list(errors)
         return {
             "resumed": True,
             "kind": "project",

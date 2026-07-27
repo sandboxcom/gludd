@@ -326,6 +326,18 @@ export function getProjectRoot(): string {
       dir = parent
     }
   } catch { /* ignore */ }
+  // Hardcoded project root fallback: when the walk-up fails (e.g. opencode
+  // worker processes whose cwd is NOT the project root), try the known
+  // workspace path directly. This lets hasPendingWork() find TASKS.md and
+  // enables the enforce-multitask.ts UNDER-FLOOR block to fire.
+  const KNOWN_PROJECT_ROOT = "/Users/shawnwilson/gludd"
+  try {
+    if (fs.existsSync(path.join(KNOWN_PROJECT_ROOT, "TASKS.md"))) {
+      _cachedRoot = KNOWN_PROJECT_ROOT
+      _cachedRootKey = key
+      return _cachedRoot
+    }
+  } catch { /* ignore */ }
   _cachedRoot = process.cwd()
   _cachedRootKey = key
   return _cachedRoot

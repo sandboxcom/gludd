@@ -833,7 +833,7 @@ def _build_pipeline_controller(pipeline_cfg: Any, dispatcher: Any) -> Any:
 
     repo_path = os.getcwd()
     cfg = PipelineConfig(
-        enabled=True,
+        enabled=bool(getattr(pipeline_cfg, "enabled", False)),
         floor=int(getattr(pipeline_cfg, "floor", 1)),
         target=int(getattr(pipeline_cfg, "target", 3)),
         gate_debounce_s=float(getattr(pipeline_cfg, "gate_debounce_s", 30.0)),

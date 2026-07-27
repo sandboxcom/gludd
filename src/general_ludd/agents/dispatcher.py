@@ -561,10 +561,11 @@ class AgentDispatcher:
         project_id: str,
         rehydrated_snapshots: Sequence[object],
     ) -> list[AgentTask]:
-        """Re-enqueue tasks rehydrated from pause-saved snapshots.
+        """Re-enqueue and dispatch tasks rehydrated from pause-saved snapshots.
 
         Each *rehydrated_snapshots* entry is an
         :class:`AgentEnvironmentSnapshot` recovered from the disk store.
+        Tasks are built, then dispatched via ``dispatch_one``.
         Returns the list of successfully re-enqueued tasks.
         """
         from general_ludd.agents.hibernation import AgentEnvironmentSnapshot
@@ -582,8 +583,13 @@ class AgentDispatcher:
                 invoker_name=snap.invoker_name,
                 project_id=project_id,
                 depth=snap.depth,
+                messages=list(snap.messages),
             )
             re_enqueued.append(task)
+        # S8: Actually dispatch the rehydrated tasks so they resume execution.
+        for task in re_enqueued:
+            with contextlib.suppress(Exception):
+                await self.dispatch_one(task)
         return re_enqueued
 
     @staticmethod

@@ -92,6 +92,7 @@ class CompletedUnit:
     unit_id: str
     worktree_path: str
     branch: str | None = None
+    base_sha: str | None = None  # S4: fork-point SHA for 3-way merge base
 
 
 @dataclass(frozen=True)

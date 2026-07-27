@@ -239,6 +239,8 @@ class PauseController:
                     agent_name=task.agent_name,
                     parent_task_id=task.parent_task_id,
                     invoker_name=task.invoker_name,
+                    depth=getattr(task, "depth", 0),
+                    messages=getattr(task, "messages", []),
                     scratch={
                         "description": getattr(task, "description", ""),
                         "prompt": getattr(task, "prompt", ""),
@@ -363,7 +365,9 @@ class PauseController:
             stored_agent_handles = (
                 agent_handles[:]
                 if isinstance(agent_handles, QuiesceNoopResult)
-                else agent_handles if agent_handles is not None else []
+                else agent_handles
+                if agent_handles is not None
+                else []
             )
             record = PauseRecord(
                 kind=kind,

@@ -107,7 +107,7 @@ class TestStreamingEdgeCases:
         code = fmt.feed("``")
         assert code == ""
         code = fmt.feed("`\n")
-        assert code or True
+        assert True
 
     def test_three_backticks_only(self) -> None:
         fmt = StreamingChatFormatter()

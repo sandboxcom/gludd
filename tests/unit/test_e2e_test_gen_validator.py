@@ -5,9 +5,6 @@ from __future__ import annotations
 import asyncio
 from unittest.mock import MagicMock
 
-import pytest
-
-from general_ludd.agents.test_generation.code_path_analyzer import Symbol
 from general_ludd.agents.test_generation.scenario_generator import GeneratedScenario, ScenarioStep
 from general_ludd.agents.test_generation.validator import ScenarioValidator
 
@@ -195,7 +192,7 @@ class TestMaxQueriesPerBatch:
         researcher.search.return_value = {"findings": [1, 2, 3, 4, 5, 6]}  # 6 findings → hit_count=6 → confidence=1.0
         validator = ScenarioValidator(researcher=researcher, max_queries_per_batch=2)
         scenarios = [_make_scenario(f"scenario_{i}") for i in range(5)]
-        valid, discarded, queries = _run(validator, scenarios)
+        valid, _discarded, queries = _run(validator, scenarios)
         # only first 2 get queries; remaining 3 appended without checking
         assert len(valid) >= 2
         assert len(queries) == 2
@@ -224,7 +221,7 @@ class TestConfidenceThreshold:
             _make_scenario("crud_lifecycle"),
             _make_scenario("auth_flow"),
         ]
-        valid, discarded, queries = _run(validator, scenarios)
+        valid, discarded, _queries = _run(validator, scenarios)
         assert len(valid) == 1
         assert valid[0].name == "auth_flow"
         assert len(discarded) == 1

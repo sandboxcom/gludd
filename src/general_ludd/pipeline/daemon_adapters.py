@@ -47,7 +47,7 @@ def make_dispatch_fn(
     agent_name: str = "general",
     invoker_name: str = "build",
     project_id: str | None = None,
-        task_builder: Callable[[str], object] | None = None,
+    task_builder: Callable[[str], object] | None = None,
 ) -> Callable[[str], Awaitable[object]]:
     """Build a ``DispatchFn`` that launches a role-agent for a backlog unit id.
 
@@ -104,6 +104,30 @@ def _read(path: str) -> str | None:
         return None
 
 
+def _read_fork_point(repo_path: str, base_sha: str, relpath: str) -> str | None:
+    """Read the file content at *base_sha* via ``git show``.
+
+    Returns ``None`` when the file did not exist at that commit (e.g. new file
+    added by the agent) or the git command fails, so the caller falls back to
+    the repo-as-base safe_merge path.
+    """
+    import subprocess
+
+    try:
+        out = subprocess.run(
+            ["git", "-C", repo_path, "show", f"{base_sha}:{relpath}"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+        if out.returncode == 0:
+            return out.stdout
+        return None
+    except Exception:
+        return None
+
+
 def make_merge_fn(
     repo_path: str,
     *,
@@ -135,7 +159,10 @@ def make_merge_fn(
         try:
             out = subprocess.run(
                 ["git", "-C", unit.worktree_path, "diff", "--name-only", "HEAD"],
-                capture_output=True, text=True, timeout=15, check=False,
+                capture_output=True,
+                text=True,
+                timeout=15,
+                check=False,
             )
             return [ln for ln in out.stdout.splitlines() if ln.strip()]
         except Exception:  # pragma: no cover - git absent / odd worktree
@@ -148,9 +175,11 @@ def make_merge_fn(
 
         try:
             subprocess.run(
-                ["git", "-C", repo_path, "worktree", "remove", "--force", "--",
-                 worktree_path],
-                capture_output=True, text=True, timeout=30, check=False,
+                ["git", "-C", repo_path, "worktree", "remove", "--force", "--", worktree_path],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
             )
         except Exception:  # pragma: no cover
             with __import__("contextlib").suppress(OSError):
@@ -180,15 +209,18 @@ def make_merge_fn(
                     # New file added by the agent: no base to clobber.
                     merged_texts[repo_file] = wt_text
                     continue
-                # base == repo (current repo state). theirs == worktree.
-                result = safe_merge(repo_text, repo_text, wt_text)
+                base_text: str | None = None
+                result = safe_merge(base_text or repo_text, repo_text, wt_text)
                 if result.conflict:
                     logger.warning(
                         "pipeline merge: REFUSING clobber on %s for unit %s",
-                        rel, unit.unit_id,
+                        rel,
+                        unit.unit_id,
                     )
                     return MergeOutcome(
-                        unit_id=unit.unit_id, merged=False, clobber_refused=True,
+                        unit_id=unit.unit_id,
+                        merged=False,
+                        clobber_refused=True,
                         detail=f"conflict:{rel}",
                     )
                 merged_texts[repo_file] = result.text

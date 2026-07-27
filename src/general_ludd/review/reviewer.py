@@ -139,7 +139,7 @@ class ReturnReviewer:
                 actual = TaskActual(
                     todo_id=task_return.todo_id or task_return.return_id,
                     actual_cost_usd=float(actual_cost),
-                    actual_time_minutes=float(task_return.duration_seconds or 0.0) / 60.0,
+                    actual_time_minutes=float(getattr(task_return, "duration_seconds", 0.0) or 0.0) / 60.0,
                     actual_loc=0,
                     exit_code=task_return.exit_code,
                 )
