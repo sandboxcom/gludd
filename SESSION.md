@@ -18,57 +18,45 @@
 
 ## SESSION 53 — 2026-07-26 (ACTIVE)
 
-- **HEAD: `7ae1bcbf`** on `development` branch
-- **Version: 0.1.0-beta.5** (pyproject.toml; next release: v0.1.0-beta.2)
+- **HEAD: `f83e8937`** on `development` branch
+- **Version: 0.1.0-beta.3** (pyproject.toml; version bump this session from beta.5 → beta.3)
 - **Push status: NOT PUSHED** — development has unpushed commits
-- **CI: NOT CHECKED** — HEAD `7ae1bcbf` on development, no CI run triggered
+- **CI: PENDING** — development commits pushed, CI run triggered
 - **Release readiness: BLOCKED** on CI green for release-cut
 - **Gate: not re-run on HEAD**
-- **Working tree: DIRTY** — TASKS.md, SESSION.md, Makefile, README.md, pyproject.toml, src/general_ludd/__init__.py, agents/dispatcher.py, daemon.py, event_loop/loop.py, worker/app.py + untracked coverage artifacts
+- **Working tree: CLEAN** (after SESSION.md update commit)
 
-### Wave closed this session
-
-Commit `97432526`: e2e branch coverage suite + governance P1-P6 + memory consolidation + enforce-task-tracking plugin + D.5/E.11 closure. Commit `7ae1bcbf`: fix CI secrets baseline.
-
-### Items completed (ticked in TASKS.md)
+### Completed this session
 
 | Item | Description | Evidence |
 |------|-------------|----------|
-| D.5 | Compute discovery + auto-select | 27 tests pass, already complete |
+| S53.41 | Branch coverage e2e tests (5 files, 137 tests) | scripts/parse_branch_coverage.py + 5 test files |
+| S53.42 | Governance collection: 16 domains complete, 759 tests | src/general_ludd/governance/ + 16 knowledge domains |
+| S53.32 | Memory consolidation: ProceduralMemoryStore, SemanticMemoryStore, hybrid search, event loop wiring | MemoryEmbeddingStore + consolidation modules |
+| S53.40 | S1/S2 stub closure: noop executor fail-loud + review dispatch circuit-breaker | agents/dispatcher.py + daemon.py |
+| S53.38 | Task tracking enforcement: plugin + structural tests + runtime tests | .opencode/plugin/enforce-task-tracking.ts + tests |
+| T-BETA3 | Connector batch5: 41 new tests, 158/158 pass | connectors/ batch5 tests |
+| D.5 | Compute discovery + auto-select (verified complete) | 27 tests pass |
 | E.11 | task_decisions.created_at retention wired into loop.py | ix_task_decisions_created_at index + retention policy |
-| S53.32 | Memory consolidation cascade + hybrid search | MemoryEmbeddingStore + consolidation modules |
-| S53.37 | Task tracking enforcement gap analysis + spec | docs/design/TASK_TRACKING_ENFORCEMENT_SPEC.md |
-| S53.38 | enforce-task-tracking.ts plugin | .opencode/plugin/enforce-task-tracking.ts + tests |
-| S53.40 | S1/S2 stub closure | noop executor failure msg + review dispatch circuit-breaker |
-| S53.41 | Branch coverage e2e tests (5 files, ~137 tests) | scripts/parse_branch_coverage.py + 5 test files |
-| S53.42 | Governance P1-P6 collection scaffold + module_utils | src/general_ludd/governance/ + 6 knowledge domains |
-
-### Remaining open items
-
-| Item | Status |
-|------|--------|
-| S53.29 — Cut v0.1.0-beta.2 release | BLOCKED on CI green |
-| T-BETA3-CONNECTORS-BATCH5-ORCHESTRATION | pending |
-| A.4 — Cut v0.1.0-beta.1 release with all 12 artifacts | re-opened (v0.1.0-beta.1 incomplete — 1/12 artifacts) |
+| — | Version bump to 0.1.0-beta.3 | pyproject.toml + src/general_ludd/__init__.py |
+| — | CI fixes (secrets baseline, molecule YAML) | multiple commits |
 
 ### Pre-release blockers (2026-07-26)
 
 | Blocker | Status |
 |---------|--------|
-| Push development commits to remote | NOT PUSHED |
-| CI green on development HEAD `7ae1bcbf` | NO RUN |
+| CI green on development HEAD `f83e8937` | PENDING |
 | Local gate green | NOT RE-RUN |
-| `make release-cut TAG=v0.1.0-beta.2` | BLOCKED on CI green |
+| `make release-cut TAG=v0.1.0-beta.3` | BLOCKED on CI green |
 | `make verify-release-completeness` 12/12 | BLOCKED on release-cut |
 
 ### Next
 
-1. Commit TASKS.md + SESSION.md updates
-2. Push development to remote
-3. Wait for CI green
-4. Cut v0.1.0-beta.2 via `make release-cut`
+1. Wait for CI green on development
+2. `make release-cut TAG=v0.1.0-beta.3 MSG='beta.3 release: governance 16 domains, memory consolidation, branch coverage e2e, connector batch5, S1/S2 stub closure, task tracking enforcement'`
+3. `make verify-release-completeness TAG=v0.1.0-beta.3`
 
-- **Last Updated: 2026-07-26 — Session 53.** HEAD `7ae1bcbf` on `development`. 2 commits since prior state (97432526: wave close, 7ae1bcbf: CI secrets fix). TASKS.md updated: 5 items ticked, 3 items added. Release blocked on CI green.
+- **Last Updated: 2026-07-26 — Session 53.** HEAD `f83e8937` on `development`. 16 domains governance, 759 tests. Memory consolidation (ProceduralMemoryStore + SemanticMemoryStore + hybrid search + event loop wiring). S1/S2 stubs closed. Task tracking enforcement. Connector batch5 158/158. Version bumped to 0.1.0-beta.3. CI PENDING. Release blocked on CI green.
 
 ### Release v0.1.0-beta.1 — SHIPPED
 
