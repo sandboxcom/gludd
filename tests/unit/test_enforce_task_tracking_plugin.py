@@ -61,6 +61,16 @@ class TestPluginStructure:
         content = PLUGIN_PATH.read_text()
         assert '"tool.execute.before"' in content, "Plugin must register tool.execute.before hook"
 
+    def test_text_complete_hook_registered(self):
+        content = PLUGIN_PATH.read_text()
+        assert '"text.complete"' in content, "Plugin must register text.complete hook for advisory injection"
+
+    def test_system_transform_hook_registered(self):
+        content = PLUGIN_PATH.read_text()
+        assert '"experimental.chat.system.transform"' in content, (
+            "Plugin must register system.transform hook for directive injection"
+        )
+
     def test_imports_shared_helpers(self):
         content = PLUGIN_PATH.read_text()
         assert "isSubagent" in content, "Plugin must import isSubagent guard"
@@ -148,6 +158,23 @@ class TestSpecCompliance:
     def test_missing_tasks_md_no_op(self):
         content = PLUGIN_PATH.read_text()
         assert "existsSync" in content, "Plugin must check TASKS.md existence before enforcing"
+
+    def test_advisory_injection_levels(self):
+        content = PLUGIN_PATH.read_text()
+        assert "CRITICAL" in content, "Plugin must inject CRITICAL at 5+ missed updates"
+        assert "WARNING" in content, "Plugin must inject WARNING at 3+ missed updates"
+        assert "NOTE" in content, "Plugin must inject NOTE at 1 missed update"
+        assert "missed_update_count" in content, "Plugin must track missed_update_count in state"
+
+    def test_system_transform_directive_content(self):
+        content = PLUGIN_PATH.read_text()
+        assert "TASK TRACKING DIRECTIVE" in content, "system.transform must inject directive header"
+        assert "single source of truth" in content, "Directive must reference TASKS.md as single source of truth"
+        assert "enforce-task-tracking.ts" in content, "Directive must name the enforcing plugin"
+
+    def test_spec_reference_in_header(self):
+        content = PLUGIN_PATH.read_text()
+        assert "SPEC_TASK_TRACKING_ENFORCEMENT" in content, "Plugin header must reference the spec document"
 
 
 # --------------------------------------------------------------------------- #

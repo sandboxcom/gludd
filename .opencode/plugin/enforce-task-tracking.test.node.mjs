@@ -22,6 +22,15 @@
 //   T12 Fail-open: garbage input does not throw and does not deny
 //   T13 DENY message references TASKS.md and AGENTS.md
 //   T14 Non-edit/write tools pass through (read, glob, grep)
+//   T15 text.complete returns output unchanged on first call
+//   T16 text.complete injects NOTE after 1 missed update
+//   T17 text.complete resets count when TASKS.md is updated
+//   T18 text.complete fail-open on corrupt state
+//   T19 text.complete subagent guard
+//   T20 text.complete ENFORCE=0 bypass
+//   T21 system.transform prepends task-tracking directive
+//   T22 system.transform returns non-string output unchanged
+//   T23 system.transform subagent guard
 //
 // Runner: node --test .opencode/plugin/enforce-task-tracking.test.node.mjs
 
@@ -513,6 +522,138 @@ describe('enforce-task-tracking', { concurrency: 1 }, () => {
         { args: { filePath: path.join(TMP_ROOT, 'src/general_ludd/') } },
       )
       assertAllow(r, 'grep tool must pass through freely')
+    })
+  })
+
+  // ==========================================================================
+  // T15-T18: text.complete advisory injection
+  // ==========================================================================
+  describe('TEXT.COMPLETE advisory injection', () => {
+    async function freshPluginTextComplete(opts = {}) {
+      delete process.env.OPENCODE_SUBAGENT
+      if (opts.enforce !== undefined) {
+        process.env.GLUDD_TASK_TRACKING_ENFORCE = opts.enforce
+      } else {
+        delete process.env.GLUDD_TASK_TRACKING_ENFORCE
+      }
+      if (opts.subagent) process.env.OPENCODE_SUBAGENT = '1'
+      process.env.GLUDD_PROJECT_ROOT = TMP_ROOT
+      if (!opts.keepState) {
+        try { fs.rmSync(STATE_FILE, { force: true }) } catch {}
+      }
+      delete _require.cache[_require.resolve(OUTFILE)]
+      const m = _require(OUTFILE)
+      if (m.invalidateProjectRootCache) m.invalidateProjectRootCache()
+      const instance = await m.default({})
+      return { m, hook: instance['text.complete'] }
+    }
+
+    it('T15: text.complete returns output unchanged on first call', async () => {
+      try { fs.rmSync(STATE_FILE, { force: true }) } catch {}
+      const original = 'Hello, agent response.'
+      const { hook } = await freshPluginTextComplete()
+      const r = await hook(null, original)
+      assert.strictEqual(r, original, 'first call must return output unchanged')
+    })
+
+    it('T16: text.complete injects NOTE after 1 missed update', async () => {
+      // Record baseline state.
+      const { hook: h1 } = await freshPluginTextComplete()
+      const r1 = await h1(null, 'msg1')
+      assert.strictEqual(r1, 'msg1', 'first call must return unchanged')
+
+      // Second call with same TASKS.md mtime → increment count → NOTE.
+      const { hook: h2 } = await freshPluginTextComplete({ keepState: true })
+      const r2 = await h2(null, 'msg2')
+      assert.ok(typeof r2 === 'string' && r2.includes('[TASK TRACKING: NOTE'),
+        `expected NOTE injection, got: ${typeof r2 === 'string' ? r2.substring(0, 200) : String(r2)}`)
+    })
+
+    it('T17: text.complete resets count when TASKS.md is updated', async () => {
+      // Two missed cycles → count = 2 (WARNING not triggered yet).
+      const { hook: h1 } = await freshPluginTextComplete()
+      await h1(null, 'a')
+      await new Promise(r => setTimeout(r, 10))
+      const { hook: h2 } = await freshPluginTextComplete({ keepState: true })
+      await h2(null, 'b')
+
+      // Now update TASKS.md.
+      touchTasksMd(2000)
+      await new Promise(r => setTimeout(r, 10))
+
+      // Next call should see updated mtime → reset count → no injection.
+      const { hook: h3 } = await freshPluginTextComplete({ keepState: true })
+      const r3 = await h3(null, 'c')
+      assert.strictEqual(r3, 'c', 'after TASKS.md update, output must be unchanged')
+    })
+
+    it('T18: text.complete fail-open on corrupt state', async () => {
+      try { fs.rmSync(STATE_FILE, { force: true }) } catch {}
+      // Write garbage state.
+      fs.writeFileSync(STATE_FILE, 'not valid json {{{')
+      const { hook } = await freshPluginTextComplete()
+      const r = await hook(null, 'garbage state recovery')
+      assert.strictEqual(r, 'garbage state recovery', 'corrupt state must fail-open')
+      try { fs.rmSync(STATE_FILE, { force: true }) } catch {}
+    })
+
+    it('T19: text.complete subagent guard returns output unchanged', async () => {
+      const original = 'subagent output'
+      const { hook } = await freshPluginTextComplete({ subagent: true })
+      const r = await hook(null, original)
+      assert.strictEqual(r, original, 'subagent must bypass text.complete')
+    })
+
+    it('T20: text.complete ENFORCE=0 returns output unchanged', async () => {
+      // Record baseline.
+      const { hook: h1 } = await freshPluginTextComplete()
+      await h1(null, 'baseline')
+      // Now with enforcement disabled.
+      const { hook: h2 } = await freshPluginTextComplete({ keepState: true, enforce: '0' })
+      const r2 = await h2(null, 'enforcement off')
+      assert.strictEqual(r2, 'enforcement off', 'ENFORCE=0 must bypass text.complete')
+    })
+  })
+
+  // ==========================================================================
+  // T21: system.transform directive injection
+  // ==========================================================================
+  describe('SYSTEM.TRANSFORM directive', () => {
+    async function freshPluginSysTransform(opts = {}) {
+      delete process.env.OPENCODE_SUBAGENT
+      if (opts.subagent) process.env.OPENCODE_SUBAGENT = '1'
+      process.env.GLUDD_PROJECT_ROOT = TMP_ROOT
+      delete _require.cache[_require.resolve(OUTFILE)]
+      const m = _require(OUTFILE)
+      if (m.invalidateProjectRootCache) m.invalidateProjectRootCache()
+      const instance = await m.default({})
+      return { m, hook: instance['experimental.chat.system.transform'] }
+    }
+
+    it('T21: system.transform prepends task-tracking directive to string output', async () => {
+      const original = 'You are a helpful coding assistant.'
+      const { hook } = await freshPluginSysTransform()
+      const r = await hook(null, original)
+      assert.ok(typeof r === 'string' && r.includes('TASK TRACKING DIRECTIVE'),
+        `directive must be prepended, got: ${typeof r === 'string' ? r.substring(0, 200) : String(r)}`)
+      assert.ok(typeof r === 'string' && r.includes('single source of truth'),
+        'directive must include "single source of truth"')
+      assert.ok(typeof r === 'string' && r.includes(original),
+        'original content must be preserved after directive')
+    })
+
+    it('T22: system.transform returns non-string output unchanged', async () => {
+      const obj = { role: 'system', content: 'system prompt' }
+      const { hook } = await freshPluginSysTransform()
+      const r = await hook(null, obj)
+      assert.strictEqual(r, obj, 'non-string output must pass through')
+    })
+
+    it('T23: system.transform subagent guard returns output unchanged', async () => {
+      const original = 'subagent system prompt'
+      const { hook } = await freshPluginSysTransform({ subagent: true })
+      const r = await hook(null, original)
+      assert.strictEqual(r, original, 'subagent must bypass system.transform')
     })
   })
 })

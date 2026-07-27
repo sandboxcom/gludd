@@ -2040,6 +2040,7 @@ Plugins fire in opencode.json registration order. Earlier plugins win on ties.
 | enforce-objective.ts | edit/write/bash when PRIMARY OBJECTIVE unmet | GLUDD_OBJECTIVE_ENFORCE=0 |
 | enforce-verified-claims.ts | bash push without verification | GLUDD_VERIFIED_CLAIMS_ENFORCE=0 |
 | enforce-commit-lock.ts | concurrent git operations | GLUDD_COMMIT_LOCK_ENFORCE=0 |
+| enforce-task-tracking.ts | edit/write to src/ when TASKS.md unchanged | GLUDD_TASK_TRACKING_ENFORCE=0 |
 | enforce-test-integrity.ts | edit/write with CI anti-patterns | GLUDD_TEST_INTEGRITY_ENFORCE=0 |
 
 ### Text-Output Plugins (fire on response, not on tool calls)
