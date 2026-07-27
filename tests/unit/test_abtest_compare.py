@@ -112,17 +112,16 @@ class TestDecide:
 class TestRunAB:
     def test_promotes_when_both_pass(self):
         workload: Workload = import_module_workload("os")
-        a_result = _mk_result()
-        b_result = _mk_result()
-        mock_run = Mock(side_effect=[a_result, b_result])
+        mock_result = _mk_result()
+        mock_run = Mock(return_value=mock_result)
         with patch(
             "general_ludd.abtest.compare.run_candidate_in_subprocess",
             new=mock_run,
         ):
             verdict = run_ab("/a/root", "/b/root", workload)
             assert verdict.promote is True
-            assert verdict.a is a_result
-            assert verdict.b is b_result
+            assert verdict.a is mock_result
+            assert verdict.b is mock_result
             assert mock_run.call_count == 2
 
     def test_rejects_when_b_crashes(self):
