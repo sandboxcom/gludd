@@ -142,7 +142,7 @@ class TestTaskTrackingBehavioral:
         assert "catch" in src, "plugin must wrap logic in try/catch for fail-open behavior"
 
     def test_non_python_files_not_checked(self, temp_project):
-        tmp, tasks_md, state_file = temp_project
+        tmp, _tasks_md, _state_file = temp_project
 
         assert not is_implementation_file(os.path.join(tmp, "tests", "unit", "test_mod.py")), (
             "tests/ files must not be treated as implementation files"
