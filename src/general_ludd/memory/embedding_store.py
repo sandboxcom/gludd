@@ -38,6 +38,44 @@ from general_ludd.skills.embeddings import (
 logger = logging.getLogger(__name__)
 
 
+def _tokenize(text: str) -> list[str]:
+    import re
+
+    return re.findall(r"[a-z0-9]+", text.lower())
+
+
+def _compute_keyword_scores(
+    record_texts: dict[str, str],
+    keywords: list[str],
+    record_meta: dict[str, dict[str, Any]],
+    agent_id: str | None = None,
+    namespace: str | None = None,
+    project_id: str | None = None,
+) -> dict[str, float]:
+    if not keywords:
+        return {}
+    keyword_set = set(keywords)
+    scores: dict[str, float] = {}
+    for record_id, text in record_texts.items():
+        meta = record_meta.get(record_id, {})
+        if agent_id is not None and meta.get("agent_id") != agent_id:
+            continue
+        if namespace is not None and meta.get("namespace") != namespace:
+            continue
+        if project_id is not None:
+            stored_pid = meta.get("project_id")
+            if stored_pid is not None and stored_pid != project_id:
+                continue
+        doc_terms = set(_tokenize(text))
+        if not doc_terms:
+            continue
+        common = keyword_set & doc_terms
+        score = len(common) / max(len(keyword_set), 1)
+        if score > 0:
+            scores[record_id] = score
+    return scores
+
+
 class MemoryEmbeddingStore:
     """In-memory vector index for semantic search over memory records.
 
@@ -137,14 +175,16 @@ class MemoryEmbeddingStore:
         results: list[dict[str, Any]] = []
         for record_id, score in scored[:top_k]:
             meta = self._record_meta.get(record_id, {})
-            results.append({
-                "record_id": record_id,
-                "text": self._record_texts.get(record_id, ""),
-                "score": round(score, 6),
-                "agent_id": meta.get("agent_id", ""),
-                "namespace": meta.get("namespace", "default"),
-                "project_id": meta.get("project_id"),
-            })
+            results.append(
+                {
+                    "record_id": record_id,
+                    "text": self._record_texts.get(record_id, ""),
+                    "score": round(score, 6),
+                    "agent_id": meta.get("agent_id", ""),
+                    "namespace": meta.get("namespace", "default"),
+                    "project_id": meta.get("project_id"),
+                }
+            )
         return results
 
     def delete(self, record_id: str) -> bool:
@@ -172,7 +212,10 @@ class MemoryEmbeddingStore:
         populates the in-memory index. Returns a summary dict with counts.
         """
         rows = await self._repo.list_by_namespace(
-            agent_id, namespace=namespace, project_id=project_id, limit=limit,
+            agent_id,
+            namespace=namespace,
+            project_id=project_id,
+            limit=limit,
         )
         indexed = 0
         skipped = 0
@@ -213,7 +256,10 @@ class MemoryEmbeddingStore:
 
         logger.info(
             "reindexed %d records (skipped %d) from namespace=%s agent=%s",
-            indexed, skipped, namespace, agent_id,
+            indexed,
+            skipped,
+            namespace,
+            agent_id,
         )
         return {
             "indexed": indexed,
@@ -221,6 +267,125 @@ class MemoryEmbeddingStore:
             "total_in_repo": len(rows),
             "total_in_index": self.count,
         }
+
+    async def hybrid_search(
+        self,
+        query: str,
+        keywords: list[str] | None = None,
+        top_k: int = 10,
+        min_score: float = 0.0,
+        vector_weight: float = 0.6,
+        keyword_weight: float = 0.4,
+        agent_id: str | None = None,
+        namespace: str | None = None,
+        project_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        if not query.strip() or not self._embeddings:
+            return []
+
+        vector_results = await self.search(
+            query,
+            top_k=len(self._embeddings),
+            min_score=0.0,
+            agent_id=agent_id,
+            namespace=namespace,
+            project_id=project_id,
+        )
+        vector_scores: dict[str, float] = {r["record_id"]: r["score"] for r in vector_results}
+
+        all_keywords = list(keywords or [])
+        query_terms = _tokenize(query.lower())
+        all_keywords.extend(query_terms)
+        keyword_scores = _compute_keyword_scores(
+            self._record_texts,
+            all_keywords,
+            self._record_meta,
+            agent_id,
+            namespace,
+            project_id,
+        )
+
+        combined: list[tuple[str, float]] = []
+        for record_id in self._record_texts:
+            meta = self._record_meta.get(record_id, {})
+            if agent_id is not None and meta.get("agent_id") != agent_id:
+                continue
+            if namespace is not None and meta.get("namespace") != namespace:
+                continue
+            if project_id is not None:
+                stored_pid = meta.get("project_id")
+                if stored_pid is not None and stored_pid != project_id:
+                    continue
+            if self._is_expired(record_id):
+                continue
+
+            vec_score = vector_scores.get(record_id, 0.0)
+            kw_score = keyword_scores.get(record_id, 0.0)
+            final_score = vector_weight * vec_score + keyword_weight * kw_score
+
+            if final_score >= min_score:
+                combined.append((record_id, final_score))
+
+        combined.sort(key=lambda item: item[1], reverse=True)
+        results: list[dict[str, Any]] = []
+        for record_id, score in combined[:top_k]:
+            meta = self._record_meta.get(record_id, {})
+            results.append(
+                {
+                    "record_id": record_id,
+                    "text": self._record_texts.get(record_id, ""),
+                    "score": round(score, 6),
+                    "vector_score": round(vector_scores.get(record_id, 0.0), 6),
+                    "keyword_score": round(keyword_scores.get(record_id, 0.0), 6),
+                    "agent_id": meta.get("agent_id", ""),
+                    "namespace": meta.get("namespace", "default"),
+                    "project_id": meta.get("project_id"),
+                }
+            )
+        return results
+
+    async def keyword_search(
+        self,
+        query: str,
+        top_k: int = 10,
+        min_score: float = 0.0,
+        agent_id: str | None = None,
+        namespace: str | None = None,
+        project_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        if not query.strip() or not self._embeddings:
+            return []
+
+        query_terms = _tokenize(query.lower())
+        keyword_scores = _compute_keyword_scores(
+            self._record_texts,
+            query_terms,
+            self._record_meta,
+            agent_id,
+            namespace,
+            project_id,
+        )
+
+        scored: list[tuple[str, float]] = []
+        for record_id, kw_score in keyword_scores.items():
+            if kw_score >= min_score:
+                scored.append((record_id, kw_score))
+
+        scored.sort(key=lambda item: item[1], reverse=True)
+        results: list[dict[str, Any]] = []
+        for record_id, score in scored[:top_k]:
+            meta = self._record_meta.get(record_id, {})
+            results.append(
+                {
+                    "record_id": record_id,
+                    "text": self._record_texts.get(record_id, ""),
+                    "score": round(score, 6),
+                    "agent_id": meta.get("agent_id", ""),
+                    "namespace": meta.get("namespace", "default"),
+                    "project_id": meta.get("project_id"),
+                }
+            )
+        return results
 
     def _is_expired(self, record_id: str) -> bool:
         meta = self._record_meta.get(record_id, {})

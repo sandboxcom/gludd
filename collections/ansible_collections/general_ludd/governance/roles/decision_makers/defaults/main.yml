@@ -1,0 +1,4 @@
+---
+decision_makers_enabled: false
+decision_makers_query: "all"
+decision_makers_output_dir: /tmp/gludd-governance-dm

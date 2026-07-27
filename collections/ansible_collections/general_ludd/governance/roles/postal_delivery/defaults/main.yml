@@ -1,0 +1,4 @@
+---
+postal_delivery_enabled: false
+postal_delivery_query: "all"
+postal_delivery_output_dir: /tmp/gludd-governance-postal

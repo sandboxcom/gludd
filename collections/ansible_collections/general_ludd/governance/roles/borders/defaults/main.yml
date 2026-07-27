@@ -1,0 +1,4 @@
+---
+borders_enabled: false
+borders_query: "all"
+borders_output_dir: /tmp/gludd-governance-borders

@@ -1,0 +1,18 @@
+---
+galaxy_info:
+  role_name: postal_delivery
+  author: Agentic Harness Agent
+  description: >
+    Postal codes, address normalization, courier tracking URLs, customs
+    declaration formats, and delivery/postage lookups across countries.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+  galaxy_tags: [governance, postal, delivery, courier, customs]
+dependencies: []

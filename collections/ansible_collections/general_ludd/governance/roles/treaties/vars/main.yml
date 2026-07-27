@@ -1,0 +1,2 @@
+---
+_treaties_module: "{{ role_path }}/../../plugins/module_utils/conflicts_treaties.py"

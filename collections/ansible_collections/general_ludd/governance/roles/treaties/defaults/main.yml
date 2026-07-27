@@ -1,0 +1,4 @@
+---
+treaties_enabled: false
+treaties_query: "all"
+treaties_output_dir: /tmp/gludd-governance-treaties

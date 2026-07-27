@@ -1,0 +1,4 @@
+---
+civic_services_enabled: false
+civic_services_query: "all"
+civic_services_output_dir: /tmp/gludd-governance-civic

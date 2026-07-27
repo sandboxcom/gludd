@@ -1,0 +1,18 @@
+---
+galaxy_info:
+  role_name: currencies
+  author: Agentic Harness Agent
+  description: >
+    Currency info lookup by ISO 4217 code: legal tender, FX regimes,
+    monetary authorities, CBDCs, and sanctions currencies.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+  galaxy_tags: [governance, currencies, monetary, fx]
+dependencies: []

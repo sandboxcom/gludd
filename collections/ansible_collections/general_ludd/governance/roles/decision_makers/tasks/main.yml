@@ -1,0 +1,39 @@
+---
+- name: Validate decision_makers parameters
+  ansible.builtin.assert:
+    that:
+      - decision_makers_enabled | bool
+    fail_msg: "decision_makers role requires enabled=true."
+
+- name: Ensure output directory
+  ansible.builtin.file:
+    path: "{{ decision_makers_output_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Copy decision_makers.py module_util
+  ansible.builtin.copy:
+    src: "{{ _decision_makers_module }}"
+    dest: "{{ decision_makers_output_dir }}/decision_makers.py"
+    mode: "0755"
+
+- name: Run decision makers lookup
+  ansible.builtin.command: >
+    {{ ansible_python_interpreter | default('python3') }}
+    {{ decision_makers_output_dir }}/decision_makers.py
+    --query "{{ decision_makers_query | default('all') }}"
+  register: _dm_result
+  changed_when: false
+  failed_when: false
+
+- name: Parse result
+  ansible.builtin.set_fact:
+    decision_makers_result: "{{ (_dm_result.stdout | from_json) if _dm_result.stdout | default('') | length > 0 else {} }}"
+  when: _dm_result.stdout | default('') | length > 0
+
+- name: Write JSON output
+  ansible.builtin.copy:
+    content: "{{ decision_makers_result | to_nice_json }}"
+    dest: "{{ decision_makers_output_dir }}/decision_makers.json"
+    mode: "0644"
+  when: decision_makers_result is defined

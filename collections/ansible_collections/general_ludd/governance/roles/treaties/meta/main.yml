@@ -1,0 +1,18 @@
+---
+galaxy_info:
+  role_name: treaties
+  author: Agentic Harness Agent
+  description: >
+    Treaty database lookup: bilateral/multilateral agreements, ratification
+    status, parties, obligations, reservations, and international courts.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+  galaxy_tags: [governance, treaties, international_law, courts]
+dependencies: []

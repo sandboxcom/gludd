@@ -1,0 +1,39 @@
+---
+- name: Validate civic_services parameters
+  ansible.builtin.assert:
+    that:
+      - civic_services_enabled | bool
+    fail_msg: "civic_services role requires enabled=true."
+
+- name: Ensure output directory
+  ansible.builtin.file:
+    path: "{{ civic_services_output_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Copy civic_services.py module_util
+  ansible.builtin.copy:
+    src: "{{ _civic_services_module }}"
+    dest: "{{ civic_services_output_dir }}/civic_services.py"
+    mode: "0755"
+
+- name: Run civic services lookup
+  ansible.builtin.command: >
+    {{ ansible_python_interpreter | default('python3') }}
+    {{ civic_services_output_dir }}/civic_services.py
+    --query "{{ civic_services_query | default('all') }}"
+  register: _civic_result
+  changed_when: false
+  failed_when: false
+
+- name: Parse result
+  ansible.builtin.set_fact:
+    civic_services_result: "{{ (_civic_result.stdout | from_json) if _civic_result.stdout | default('') | length > 0 else {} }}"
+  when: _civic_result.stdout | default('') | length > 0
+
+- name: Write JSON output
+  ansible.builtin.copy:
+    content: "{{ civic_services_result | to_nice_json }}"
+    dest: "{{ civic_services_output_dir }}/civic_services.json"
+    mode: "0644"
+  when: civic_services_result is defined

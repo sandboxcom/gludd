@@ -115,6 +115,31 @@ def get_public_finance() -> ModuleType:
     return _get_module("public_finance")
 
 
+def get_info_classification() -> ModuleType:
+    """Return the ``info_classification`` knowledge module."""
+    return _get_module("info_classification")
+
+
+def get_decision_makers() -> ModuleType:
+    """Return the ``decision_makers`` knowledge module."""
+    return _get_module("decision_makers")
+
+
+def get_postal_delivery() -> ModuleType:
+    """Return the ``postal_delivery`` knowledge module."""
+    return _get_module("postal_delivery")
+
+
+def get_military_service() -> ModuleType:
+    """Return the ``military_service`` knowledge module."""
+    return _get_module("military_service")
+
+
+def get_licenses_permits() -> ModuleType:
+    """Return the ``licenses_permits`` knowledge module."""
+    return _get_module("licenses_permits")
+
+
 def clear_cache() -> None:
     """Clear the module cache (useful for tests)."""
     for name in list(_GOVERNANCE_MODULE_UTILS_CACHE):

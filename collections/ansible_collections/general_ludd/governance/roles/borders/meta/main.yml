@@ -1,0 +1,18 @@
+---
+galaxy_info:
+  role_name: borders
+  author: Agentic Harness Agent
+  description: >
+    Border crossing info, visa regimes, recognition status, and crossing
+    requirements across international boundaries.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+  galaxy_tags: [governance, borders, visas, crossings]
+dependencies: []

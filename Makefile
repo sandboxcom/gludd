@@ -1154,7 +1154,7 @@ for d in ['.opencode/plugin','.opencode/plugins'] if os.path.isdir(d) \
 for p in [os.path.join(d,f) for f in os.listdir(d) if f.endswith('.ts')]]"
 	@echo "Fixed all plugin exports for Bun compatibility"
 
-# Re-add binary boot test target (lost in git restore)  
+# Re-add binary boot test target (lost in git restore)
 test-opencode-binary-boot:
 	@$(UV) run python -m pytest tests/e2e/test_opencode_binary_boot.py -v
 
@@ -5434,47 +5434,7 @@ worktree-health-check:
 # development via --no-ff, report conflicts, clean up successful merges.
 # Usage: make worktree-merge-all
 worktree-merge-all:
-	@echo "=== Bulk merging worktrees into development ==="; \\
-	TMP_COUNTS="/tmp/gludd-merge-all-$$$$.tmp"; \\
-	echo "0 0 0" > "$$TMP_COUNTS"; \\
-	in_main=false; wt=""; br=""; hd=""; \\
-	git worktree list --porcelain | { \\
-		while IFS= read -r line; do \\
-			case "$$line" in \\
-				worktree\\ *) wt="$${line#worktree }"; \\
-					if [ "$$wt" = "/Users/shawnwilson/gludd" ]; then in_main=true; else in_main=false; fi ;; \\
-				branch\\ *)  br="$${line#branch }" ;; \\
-				HEAD\\ *)    hd="$${line#HEAD }" ;; \\
-				"") \\
-					if [ "$$in_main" = false ] && [ -n "$$br" ]; then \\
-						read cnt mrg cnf < "$$TMP_COUNTS"; \\
-						cnt=$$((cnt + 1)); \\
-						echo "--- [$$cnt] $$br ($$wt) ---"; \\
-						if git merge-base --is-ancestor "$$br" development 2>/dev/null; then \\
-							echo "  Already merged into development — cleaning up"; \\
-							\$(MAKE) agent-cleanup BRANCH="$$br"; \\
-							mrg=$$((mrg + 1)); \\
-						elif git merge --no-ff "$$br" -m "merge: $$br worktree work into development" 2>/dev/null; then \\
-							echo "  Merged $$br into development"; \\
-							\$(MAKE) agent-cleanup BRANCH="$$br"; \\
-							mrg=$$((mrg + 1)); \\
-						else \\
-							echo "  CONFLICT: $$br — manual resolution required"; \\
-							git merge --abort 2>/dev/null || true; \\
-							cnf=$$((cnf + 1)); \\
-						fi; \\
-						echo "$$cnt $$mrg $$cnf" > "$$TMP_COUNTS"; \\
-					fi; \\
-					wt=""; br=""; hd=""; \\
-					;; \\
-			esac; \\
-		done; \\
-		read final_cnt final_mrg final_cnf < "$$TMP_COUNTS"; \\
-		rm -f "$$TMP_COUNTS"; \\
-		git worktree prune; \\
-		echo; \\
-		echo "=== Worktree merge complete: $${final_cnt:-0} total, $${final_mrg:-0} merged, $${final_cnf:-0} conflicts ==="; \\
-	}
+	@$(UV) run python scripts/worktree_merge_all.py
 
 pipeline-status:
 	@$(UV) run python scripts/pipeline_status.py status

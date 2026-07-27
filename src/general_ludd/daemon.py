@@ -193,11 +193,19 @@ _STARTUP_UNSET: object = object()
 during _lifespan.  Distinct from None so 'intentionally None' is not conflated
 with 'not yet initialized'."""
 
-_PUBLIC_PATHS_FROZEN = frozenset({
-    "/healthz", "/readyz", "/api/status", "/api/todos", "/api/human-todos",
-    "/api/webmcp",
-    "/docs", "/openapi.json", "/redoc",
-})
+_PUBLIC_PATHS_FROZEN = frozenset(
+    {
+        "/healthz",
+        "/readyz",
+        "/api/status",
+        "/api/todos",
+        "/api/human-todos",
+        "/api/webmcp",
+        "/docs",
+        "/openapi.json",
+        "/redoc",
+    }
+)
 _RECEIVER_PREFIXES_FROZEN = ("/v1/", "/ingest/")
 _SAFE_METHODS_FROZEN = frozenset({"GET", "HEAD", "OPTIONS"})
 
@@ -220,9 +228,7 @@ def _get_app_adaptive_router(app: FastAPI) -> Any:
     """
     val = getattr(app.state, "_adaptive_router", _STARTUP_UNSET)
     if val is _STARTUP_UNSET:
-        logger.warning(
-            "_adaptive_router accessed before initialization on app.state"
-        )
+        logger.warning("_adaptive_router accessed before initialization on app.state")
         return None
     return val
 
@@ -337,14 +343,10 @@ def load_startup_config(config_dir: str | None = None) -> dict[str, Any]:
         try:
             validate_project_overlay(proj_data)
         except Exception as exc:
-            logger.warning(
-                "Project config overlay rejected (dangerous fields): %s", exc
-            )
+            logger.warning("Project config overlay rejected (dangerous fields): %s", exc)
             return
         uc = cfg["user_config"]
-        user_dict: dict[str, Any] = (
-            uc.model_dump() if hasattr(uc, "model_dump") else dict(vars(uc))
-        )
+        user_dict: dict[str, Any] = uc.model_dump() if hasattr(uc, "model_dump") else dict(vars(uc))
         merged = merge_config(user_dict, proj_data)
         try:
             cfg["user_config"] = UserConfig(**merged)
@@ -530,6 +532,7 @@ def build_secrets_resolver(
         class _LazyProjectSecrets:
             def __init__(self, base: Any):
                 self._base = base
+
             def resolve(self, alias_name: str, project_id: str | None = None) -> str | None:
                 if project_id:
                     return self.for_project(project_id).resolve(alias_name)
@@ -537,15 +540,15 @@ def build_secrets_resolver(
                 if isinstance(result, str):
                     return result
                 return None
+
             def for_project(self, project_id: str) -> ProjectSecretsManager:
                 return ProjectSecretsManager(base_manager=self._base, project_id=project_id)
+
         return _LazyProjectSecrets(base)
     return base
 
 
-def resolve_secret_manager_for_call(
-    app: FastAPI, authorization: str | None
-) -> Any:
+def resolve_secret_manager_for_call(app: FastAPI, authorization: str | None) -> Any:
     """Return a SecretsManager scoped to the request's auth context.
 
     When ``authorization`` carries an STS Bearer token (``Bearer <sts_token>``)
@@ -655,8 +658,7 @@ async def _restore_persisted_spend(
         records = [(float(r.ts), float(r.cost_usd)) for r in rows]
         spend_limiter.restore(records)
         logger.info(
-            "SpendLimiter: restored %d persisted spend record(s) from DB "
-            "(window_spend=%.6f USD)",
+            "SpendLimiter: restored %d persisted spend record(s) from DB (window_spend=%.6f USD)",
             len(records),
             spend_limiter.window_spend(),
         )
@@ -926,11 +928,7 @@ def build_event_loop_mcp_dispatcher(
     )
     from general_ludd.dispatch.dynamic_dispatcher import DynamicDispatcher
 
-    if (
-        mcp_client is None
-        and skill_registry is None
-        and agent_dispatcher is None
-    ):
+    if mcp_client is None and skill_registry is None and agent_dispatcher is None:
         return None
 
     # make_mcp_handler / make_role_handler return `async def` handlers.
@@ -1003,8 +1001,7 @@ def _build_self_update_audit_sink(
             # No running loop (e.g. a unit test invoking apply_plan directly):
             # audit is best-effort, so drop the row rather than raise.
             logger.warning(
-                "self_update audit-sink skipped: no running event loop "
-                "(outcome=%s)",
+                "self_update audit-sink skipped: no running event loop (outcome=%s)",
                 getattr(record, "outcome", "?"),
             )
             return
@@ -1022,7 +1019,9 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     # caller invokes the lifespan on a bare app (unit tests), materialise a fresh
     # per-app dict rather than falling back to the shared module global.
     daemon_state: dict[str, Any] = getattr(app.state, "daemon_state", None) or {
-        "todos": [], "tick_metrics": {}, "quality_gate": {}
+        "todos": [],
+        "tick_metrics": {},
+        "quality_gate": {},
     }
     event_loop = None
     task = None
@@ -1047,11 +1046,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                     net.allowed_cidr,
                 )
                 app.state._allowed_cidr = list(net.allowed_cidr)
-            elif (
-                net.host in ("127.0.0.1", "localhost", "::1")
-                and not net.allowed_cidr
-                and not preserve_cidr
-            ):
+            elif net.host in ("127.0.0.1", "localhost", "::1") and not net.allowed_cidr and not preserve_cidr:
                 _loopback_cidrs = ["127.0.0.0/8", "::1/128"]
                 app.state._allowed_cidr = _loopback_cidrs
                 logger.info(
@@ -1060,9 +1055,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                     _loopback_cidrs,
                 )
             elif not preserve_cidr:
-                app.state._allowed_cidr = (
-                    list(net.allowed_cidr) if net.allowed_cidr else []
-                )
+                app.state._allowed_cidr = list(net.allowed_cidr) if net.allowed_cidr else []
             app.state._network_host = net.host
             app.state._network_port = net.port
         if uc and hasattr(uc, "database"):
@@ -1080,8 +1073,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         writer_mode = os.environ.get("GLUDD_WRITER_MODE", "inline").strip().lower()
         if writer_mode not in {"inline", "subprocess"}:
             logger.warning(
-                "GLUDD_WRITER_MODE=%r is not 'inline' or 'subprocess'; "
-                "falling back to inline",
+                "GLUDD_WRITER_MODE=%r is not 'inline' or 'subprocess'; falling back to inline",
                 writer_mode,
             )
             writer_mode = "inline"
@@ -1108,8 +1100,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             _wp.start()
             writer_process: WriterProcess | None = _wp
             logger.info(
-                "GLUDD_WRITER_MODE=subprocess: read-only engine + WriteQueue "
-                "+ WriterProcess(pid=%s) started",
+                "GLUDD_WRITER_MODE=subprocess: read-only engine + WriteQueue + WriterProcess(pid=%s) started",
                 _wp.pid,
             )
         else:
@@ -1130,6 +1121,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
         # Orphan detection: flag Slurm jobs from a prior daemon instance.
         import os as _os
+
         _current_pid = _os.getpid()
         try:
             async with session_factory() as session:
@@ -1149,6 +1141,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
         # Bill-3: preemption handler for Slurm jobs
         from general_ludd.infra.slurm_preemption import SlurmPreemptionHandler
+
         app.state._slurm_preemption_handler = SlurmPreemptionHandler()
         logger.info("Slurm preemption handler initialised")
 
@@ -1157,13 +1150,12 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         # the /admin/self-update/plan router can pass it through to apply_plan.
         # Built once here (after session_factory exists) so every request reuses
         # the same sink; the sink opens its own short-lived session per record.
-        app.state._self_update_audit_sink = _build_self_update_audit_sink(
-            session_factory
-        )
+        app.state._self_update_audit_sink = _build_self_update_audit_sink(session_factory)
 
         if is_sqlite_url(str(engine.url)):
             try:
                 from general_ludd.db.migrations import get_alembic_config, stamp_head
+
                 alembic_cfg = get_alembic_config(str(engine.url))
                 # Run the synchronous alembic stamp off the event loop so it
                 # doesn't stall every other coroutine during daemon startup.
@@ -1184,9 +1176,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
 
         _proj_gludd = startup_config.get("project_gludd_dir")
-        _initial_project_root = (
-            str(Path(_proj_gludd).parent) if _proj_gludd is not None else None
-        )
+        _initial_project_root = str(Path(_proj_gludd).parent) if _proj_gludd is not None else None
         _collections_paths = resolve_collections_paths(_initial_project_root)
         _ansible_env: dict[str, str] = to_ansible_env(_collections_paths)
         app.state._collections_paths = _collections_paths
@@ -1203,24 +1193,29 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             str(Path.cwd() / "infra" / "terraform" / "stacks"),
         )
         from general_ludd.infra.terraform_watchdog import TerraformWatchdog
+
         app.state._terraform_watchdog = TerraformWatchdog(stacks_dir=stacks_dir)
         logger.info("Terraform watchdog initialised for stacks: %s", stacks_dir)
 
         from general_ludd.infra.spot_validator import SpotConfigValidator
+
         app.state._spot_config_validator = SpotConfigValidator(default_spot=True)
 
         # G3: Construct a shared CodebaseIndexer for semantic codebase retrieval.
         # Uses diskcache in .gludd/retrieval_cache by default.
         from general_ludd.retrieval.indexer import CodebaseIndexer
+
         _codebase_indexer = CodebaseIndexer()
         app.state._codebase_indexer = _codebase_indexer
         logger.info("CodebaseIndexer initialised (cache: %s)", _codebase_indexer.cache_dir)
 
         from general_ludd.retrieval.searx_client import SearxNGClient
+
         app.state._searx_client = SearxNGClient()
 
         from general_ludd.searx.install import ensure_searx_initialized, ensure_searx_installed
         from general_ludd.searx.server import SearXServer
+
         ensure_searx_installed()
         ensure_searx_initialized()
         searx_server = SearXServer()
@@ -1229,11 +1224,10 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.info("SearXNG server started on %s", searx_server.get_instance_url())
 
         from general_ludd.retrieval.research_index import ResearchIndex
+
         app.state._research_index = ResearchIndex()
 
-        def _update_ansible_env(
-            paths: list[Any], env: dict[str, str]
-        ) -> None:
+        def _update_ansible_env(paths: list[Any], env: dict[str, str]) -> None:
             """Callback the EventLoop invokes on project switch.
 
             Republishes the resolved paths/env on app.state. The adapter's own
@@ -1270,6 +1264,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         # The tracker starts empty (no detections yet) but is the live instance
         # that /admin/quantization/detect will populate at runtime.
         from general_ludd.models.quantization import QuantizationTracker as _QuantizationTracker
+
         app.state._quantization_tracker = _QuantizationTracker()
 
         # Tier 2 RAG routing: construct + seed TaskEmbeddingStore before the
@@ -1344,14 +1339,10 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             _auto_profiles = AutoConfigurator().auto_configure_profiles()
             if _auto_profiles:
                 _existing_ids = {
-                    getattr(_p, "model_profile_id", None)
-                    if not isinstance(_p, dict)
-                    else _p.get("model_profile_id")
+                    getattr(_p, "model_profile_id", None) if not isinstance(_p, dict) else _p.get("model_profile_id")
                     for _p in model_profiles
                 }
-                _added = [
-                    _p for _p in _auto_profiles if _p.model_profile_id not in _existing_ids
-                ]
+                _added = [_p for _p in _auto_profiles if _p.model_profile_id not in _existing_ids]
                 if _added:
                     model_profiles = list(model_profiles) + _added
                     logger.info(
@@ -1361,17 +1352,13 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                     )
         except Exception:
             logger.warning(
-                "Auto-config: env-var profile discovery failed; continuing with "
-                "explicit config only",
+                "Auto-config: env-var profile discovery failed; continuing with explicit config only",
                 exc_info=True,
             )
 
         if model_profiles and hasattr(secrets_resolver, "write_secret"):
             try:
-                profile_dicts = [
-                    p.model_dump() if hasattr(p, "model_dump") else p
-                    for p in model_profiles
-                ]
+                profile_dicts = [p.model_dump() if hasattr(p, "model_dump") else p for p in model_profiles]
                 result = migrate_profile_secrets(secrets_resolver, profile_dicts)
                 logger.info(
                     "Secret migration: %d migrated, %d skipped",
@@ -1446,6 +1433,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.langsmith_tracer = LangSmithTracer()
 
         from general_ludd.controllers.pause_controller import PauseController
+
         app.state._pause_controller = PauseController()
 
         from general_ludd.agents.hibernation import (
@@ -1453,6 +1441,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             HibernationStore,
             _load_hibernate_mac_key,
         )
+
         pause_base = app.state._pause_controller._store.base_dir
         hibernate_mac_key = _load_hibernate_mac_key(str(pause_base))
         app.state._hibernation_controller = HibernationController(
@@ -1460,15 +1449,18 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
 
         from general_ludd.controllers.floor import FloorController
+
         floor_controller = FloorController()
         app.state._floor_controller = floor_controller
 
         from general_ludd.controllers.compaction_aggressiveness import (
             CompactionAggressivenessController,
         )
+
         app.state._compaction_aggressiveness_controller = CompactionAggressivenessController()
 
         from general_ludd.approval.gate import ApprovalGate
+
         app.state._approval_gate = ApprovalGate()
 
         model_gateway = None
@@ -1630,9 +1622,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 langgraph_reviewer = LangGraphReflexiveReviewer(
                     call_model=_langgraph_call_model,
                     max_iterations=startup_config.get("review", {}).get("max_iterations", 3),
-                    confidence_threshold=startup_config.get("review", {}).get(
-                        "confidence_threshold", 0.8
-                    ),
+                    confidence_threshold=startup_config.get("review", {}).get("confidence_threshold", 0.8),
                 )
                 logger.info(
                     "LangGraphReflexiveReviewer enabled: max_iterations=%d confidence_threshold=%.2f",
@@ -1677,9 +1667,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 self_improve_interval = int(si_cfg.get("interval", 10))
         if not self_improve_interval:
             with contextlib.suppress(Exception):
-                self_improve_interval = int(
-                    startup_config.get("self_improve_interval", 10)
-                )
+                self_improve_interval = int(startup_config.get("self_improve_interval", 10))
 
         # Compaction eval wiring: build a self-improving compactor with the
         # default candidate pool. The arena can be re-run at runtime via the
@@ -1690,6 +1678,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         _summary_fn = None
         if model_gateway is not None and hasattr(model_gateway, "_profiles"):
             from general_ludd.compaction.slm import make_slm_summarize_fn
+
             try:
                 _summary_fn = make_slm_summarize_fn(model_gateway, profile_id="compactor")
             except Exception:
@@ -1743,6 +1732,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                     # reuses one cache across calls instead of creating a fresh
                     # diskcache per invocation.
                     from general_ludd.retrieval.web import WebRetriever
+
                     _web_retriever = WebRetriever()
                     app.state._web_retriever = _web_retriever
 
@@ -1755,8 +1745,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                         register_builtins(mcp_client, web_retriever=_web_retriever)
                     except Exception:
                         logger.warning(
-                            "builtin MCP tool registration failed; continuing "
-                            "with external MCP servers only",
+                            "builtin MCP tool registration failed; continuing with external MCP servers only",
                             exc_info=True,
                         )
                     logger.info("MCPClient started with %d server(s)", len(typed_configs))
@@ -1853,6 +1842,24 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state._local_memory = local_memory
         logger.info("LocalAgentMemory initialised (cache: %s)", local_memory.cache_dir)
 
+        from general_ludd.memory.procedural import ProceduralMemoryStore
+
+        procedural_memory = ProceduralMemoryStore(memory_repo=memory_repo)
+        app.state._procedural_memory = procedural_memory
+        logger.info("ProceduralMemoryStore wired into daemon")
+
+        from general_ludd.memory.semantic import SemanticMemoryStore
+
+        semantic_memory = SemanticMemoryStore(memory_repo=memory_repo)
+        app.state._semantic_memory = semantic_memory
+        logger.info("SemanticMemoryStore wired into daemon")
+
+        from general_ludd.memory.embedding_store import MemoryEmbeddingStore
+
+        embedding_memory = MemoryEmbeddingStore(memory_repo=memory_repo)
+        app.state._embedding_memory = embedding_memory
+        logger.info("MemoryEmbeddingStore wired into daemon (in-memory index)")
+
         # P3: VM sandbox config — load from UserConfig, override SandboxConfig,
         # and optionally pre-build the default image at startup.
         vm_sandbox_cfg = VmSandboxConfig()
@@ -1915,6 +1922,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             issues_cfg = getattr(uc, "issues", None)
             if issues_cfg is not None and getattr(issues_cfg, "polling_enabled", False):
                 from general_ludd.git_automation.issue_ingestor import GitHubIssueIngestor
+
                 issue_ingestor = GitHubIssueIngestor(
                     owner=getattr(issues_cfg, "github_owner", ""),
                     repo=getattr(issues_cfg, "github_repo", ""),
@@ -1934,9 +1942,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
         _checkpointing_cfg = getattr(uc, "checkpointing", {}) if uc else {}
         _checkpointing_enabled = (
-            bool(_checkpointing_cfg.get("enabled", False))
-            if isinstance(_checkpointing_cfg, dict)
-            else False
+            bool(_checkpointing_cfg.get("enabled", False)) if isinstance(_checkpointing_cfg, dict) else False
         )
         if _checkpointing_enabled:
             app.state.checkpointer = get_checkpointer(
@@ -1944,6 +1950,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             )
         else:
             from general_ludd.execution.graph_checkpointer import TickCheckpointer
+
             app.state.checkpointer = TickCheckpointer(saver=None)
 
         # Cost-tracking deps constructed BEFORE the EventLoop so the bill-7
@@ -1966,9 +1973,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         deployment_manager = getattr(app.state, "_deployment_manager", None)
         if deployment_manager is None:
             _cfg_dir = getattr(app.state, "_config_dir", None)
-            _deploy_working_dir = (
-                os.path.join(_cfg_dir, "deployments") if _cfg_dir else None
-            )
+            _deploy_working_dir = os.path.join(_cfg_dir, "deployments") if _cfg_dir else None
             deployment_manager = DeploymentManager(
                 secrets_resolver=secrets_resolver,
                 working_dir=_deploy_working_dir,
@@ -1978,9 +1983,11 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         service_discovery = None
         if uc is not None and getattr(uc, "service_discovery_enabled", True):
             from general_ludd.infra.service_catalog import DEFAULT_CATALOG_PATH
+
             searx_url = getattr(uc, "service_discovery_searx_url", "http://localhost:8888")
             catalog_path = getattr(uc, "service_discovery_catalog_path", DEFAULT_CATALOG_PATH)
             from general_ludd.service_discovery.pipeline import ServiceDiscoveryPipeline
+
             service_discovery = ServiceDiscoveryPipeline(
                 searx_url=searx_url,
                 catalog_path=catalog_path,
@@ -1991,6 +1998,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         if model_gateway is not None:
             from general_ludd.infra.model_search import SEARX_DEFAULT_URL
             from general_ludd.models.searx_discoverer import SearxModelDiscoverer
+
             _srv = getattr(app.state, "_searx_server", None)
             _discover_url = _srv.get_instance_url() if _srv else None
             searx_model_discoverer = SearxModelDiscoverer(
@@ -2043,13 +2051,14 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 "repo_root": os.getcwd(),
                 "review": review_cfg,
                 "use_langgraph_tool_loop": bool(getattr(uc, "use_langgraph_tool_loop", False)) if uc else False,
-                "compute_idle_check_interval_ticks": getattr(uc, "compute_idle_check_interval_ticks", 60)
-                if uc else 60,
+                "compute_idle_check_interval_ticks": getattr(uc, "compute_idle_check_interval_ticks", 60) if uc else 60,
                 "compute_idle_teardown_threshold_ticks": getattr(uc, "compute_idle_teardown_threshold_ticks", 3)
-                if uc else 3,
+                if uc
+                else 3,
                 "compute_idle_gpu_sm_pct": getattr(uc, "compute_idle_gpu_sm_pct", 5.0) if uc else 5.0,
                 "compute_idle_preemption_notice_ticks": getattr(uc, "compute_idle_preemption_notice_ticks", 1)
-                if uc else 1,
+                if uc
+                else 1,
                 # #52: auto-remediation tick-phase cadence + per-tick action cap.
                 # The RemediationConfig thresholds themselves are NOT read from
                 # here — they live on daemon_state["remediation_config"] (set
@@ -2060,12 +2069,10 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 # SPD-1: how often the EventLoop persists in-memory spend
                 # records to the spend_records table (in ticks). 60 ticks ≈
                 # 60 seconds at the default 1 s tick interval.  <=0 disables.
-                "spend_persist_interval_ticks": getattr(uc, "spend_persist_interval_ticks", 60)
-                if uc else 60,
+                "spend_persist_interval_ticks": getattr(uc, "spend_persist_interval_ticks", 60) if uc else 60,
                 # STS token reaper: sweep TTL-expired tokens every N ticks.
                 # Default 60 (~60s at the 1s tick interval). <=0 disables.
-                "sts_reap_interval_ticks": getattr(uc, "sts_reap_interval_ticks", 60)
-                if uc else 60,
+                "sts_reap_interval_ticks": getattr(uc, "sts_reap_interval_ticks", 60) if uc else 60,
             },
             adaptive_router=ext["adaptive_router"],
             daemon_state=daemon_state,
@@ -2097,9 +2104,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             floor_controller=floor_controller,
             issue_ingestor=issue_ingestor,
             infra_tracker=infra_tracker,
-            compaction_controller=getattr(
-                app.state, "_compaction_aggressiveness_controller", None
-            ),
+            compaction_controller=getattr(app.state, "_compaction_aggressiveness_controller", None),
             credit_tracker=getattr(app.state, "_credit_tracker", None),
             service_discovery=service_discovery,
         )
@@ -2160,11 +2165,13 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         from general_ludd.models.performance_router import (
             ModelPerformanceRouter,
         )
+
         app.state._model_performance_router = ModelPerformanceRouter(
             perf_repo=cast(_PerfRepoProtocol, model_perf_repo),
         )
 
         from general_ludd.worktree.core import WorktreeMonitor, WorktreeMonitorConfig
+
         config_dir = getattr(app.state, "_config_dir", None)
         wt_monitor = WorktreeMonitor(
             config=WorktreeMonitorConfig(
@@ -2175,6 +2182,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
         from general_ludd.quantization.monitor import MonitorConfig as QuantMonitorConfig
         from general_ludd.quantization.monitor import QuantizationMonitor
+
         quant_monitor = QuantizationMonitor(QuantMonitorConfig())
         app.state._quantization_monitor = quant_monitor
         await quant_monitor.start()
@@ -2230,13 +2238,9 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 _project_in = min(_default_profile.max_input_tokens, 1000)
                 _project_out = _default_profile.max_output_tokens
                 if spend_limiter is not None:
-                    _projected_cost_usd = spend_limiter.token_cost_usd(
-                        _project_model, _project_in, _project_out
-                    )
+                    _projected_cost_usd = spend_limiter.token_cost_usd(_project_model, _project_in, _project_out)
                 else:
-                    _projected_cost_usd = token_cost_usd(
-                        _project_model, _project_in, _project_out
-                    )
+                    _projected_cost_usd = token_cost_usd(_project_model, _project_in, _project_out)
 
             async def _gateway_executor(task: AgentTask) -> str:
                 profile_id = "default"
@@ -2256,18 +2260,14 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
                 try:
                     if budget_manager is not None:
-                        daily = budget_manager.check_daily_budget_reserved(
-                            task.task_id, _projected_cost_usd
-                        )
+                        daily = budget_manager.check_daily_budget_reserved(task.task_id, _projected_cost_usd)
                         if not daily.get("allowed", True):
                             logger.warning(
                                 "Gateway executor deferred for %s: daily budget exhausted",
                                 task.task_id,
                             )
                             return "deferred:budget_exhausted"
-                        per_todo = budget_manager.check_todo_budget(
-                            task.task_id, _projected_cost_usd
-                        )
+                        per_todo = budget_manager.check_todo_budget(task.task_id, _projected_cost_usd)
                         if not per_todo.get("allowed", True):
                             logger.warning(
                                 "Gateway executor deferred for %s: per-todo budget exhausted",
@@ -2279,6 +2279,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                             return "deferred:budget_exhausted"
                     if task.agent_name == "research":
                         from general_ludd.agents.researcher import ResearcherAgent
+
                         searx = getattr(app.state, "_searx_client", None)
                         agent = ResearcherAgent(searx_client=searx)
                         report = await agent.research(query=task.prompt)
@@ -2336,7 +2337,8 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         if pipeline_cfg is not None and getattr(pipeline_cfg, "enabled", False):
             try:
                 pipeline_controller = _build_pipeline_controller(
-                    pipeline_cfg, app.state._agent_dispatcher,
+                    pipeline_cfg,
+                    app.state._agent_dispatcher,
                 )
                 await pipeline_controller.start()
                 app.state._pipeline_controller = pipeline_controller
@@ -2454,6 +2456,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     if _session_factory is not None:
         try:
             import os as _os
+
             _current_pid = _os.getpid()
             async with _session_factory() as session:
                 slurm_repo = SlurmJobRepository(session)
@@ -2467,15 +2470,12 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 for job in active_jobs:
                     try:
                         from general_ludd.infra.slurm import SlurmAdapter
+
                         adapter = SlurmAdapter()
                         adapter.cancel(job.job_id)
-                        logger.info(
-                            "Slurm shutdown: cancelled job %s", job.job_id
-                        )
+                        logger.info("Slurm shutdown: cancelled job %s", job.job_id)
                         async with _session_factory() as session:
-                            await SlurmJobRepository(session).update_status(
-                                job.job_id, "cancelled"
-                            )
+                            await SlurmJobRepository(session).update_status(job.job_id, "cancelled")
                     except Exception as cancel_exc:
                         logger.warning(
                             "Slurm shutdown: failed to cancel job %s: %s",
@@ -2501,18 +2501,14 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         try:
             await pipeline_controller.stop()
         except Exception:
-            logger.warning(
-                "pipeline_controller.stop() failed during shutdown", exc_info=True
-            )
+            logger.warning("pipeline_controller.stop() failed during shutdown", exc_info=True)
             raise
     mcp_client_ref = getattr(app.state, "_mcp_client", None)
     if mcp_client_ref is not None:
         try:
             await mcp_client_ref.stop_all()
         except Exception:
-            logger.warning(
-                "mcp_client.stop_all() failed during shutdown", exc_info=True
-            )
+            logger.warning("mcp_client.stop_all() failed during shutdown", exc_info=True)
             raise
     _el = event_loop if event_loop is not None else getattr(app.state, "event_loop", None)
     if _el is not None:
@@ -2613,6 +2609,7 @@ def _build_sts_reaper(session_factory: Any, secrets_resolver: Any) -> Any:
 
 def _build_sts_audit_logger(session_factory: Any) -> Any:
     """Build a callable that records STS token usage events to sts_audit rows."""
+
     async def _log_sts_usage(token_id: str, event: str, agent_id: str) -> None:
         import json as _json
 
@@ -2621,9 +2618,7 @@ def _build_sts_audit_logger(session_factory: Any) -> Any:
         from general_ludd.db.models import StsAuditModel
 
         async with session_factory() as session:
-            result = await session.execute(
-                select(StsAuditModel).where(StsAuditModel.token_id == token_id)
-            )
+            result = await session.execute(select(StsAuditModel).where(StsAuditModel.token_id == token_id))
             row = result.scalar_one_or_none()
             if row is None:
                 return
@@ -2645,12 +2640,15 @@ def _build_slow_op_publisher(bus: Any) -> Any:
 
     def _publish_slow(operation: str, duration_s: float, baseline_s: float, factor: float) -> None:
         from general_ludd.events.types import SlowOperationEvent
-        bus.publish(SlowOperationEvent(
-            operation=operation,
-            duration_s=duration_s,
-            baseline_s=baseline_s,
-            factor=factor,
-        ))
+
+        bus.publish(
+            SlowOperationEvent(
+                operation=operation,
+                duration_s=duration_s,
+                baseline_s=baseline_s,
+                factor=factor,
+            )
+        )
 
     return _publish_slow
 
@@ -2679,9 +2677,11 @@ def _get_or_create_extended_subsystems(
         app.state._metrics_collector = MetricsCollector()
     if not hasattr(app.state, "_recent_traces") or app.state._recent_traces is None:
         from general_ludd.observability.trace_store import RecentTracesBuffer
+
         app.state._recent_traces = RecentTracesBuffer()
     if not hasattr(app.state, "_receiver_buffer") or app.state._receiver_buffer is None:
         from general_ludd.receiver.buffer import OverflowPolicy, ReceiverBuffer
+
         app.state._receiver_buffer = ReceiverBuffer(
             maxlen=10_000,
             overflow=OverflowPolicy.REJECT,
@@ -2718,17 +2718,13 @@ def _get_or_create_extended_subsystems(
     ):
         if getattr(app.state, "_adaptive_router", None) is _STARTUP_UNSET:
             logger.warning(
-                "_adaptive_router was still _STARTUP_UNSET during "
-                "_get_or_create_extended_subsystems; constructing now"
+                "_adaptive_router was still _STARTUP_UNSET during _get_or_create_extended_subsystems; constructing now"
             )
         benchmark_repo = BenchmarkRepository(session_factory=session_factory)
         quantization_map: dict[str, tuple[str, float]] = {}
         tracker = getattr(app.state, "_quantization_tracker", None)
         if tracker is not None:
-            quantization_map = {
-                mid: (info.precision, info.confidence)
-                for mid, info in tracker._data.items()
-            }
+            quantization_map = {mid: (info.precision, info.confidence) for mid, info in tracker._data.items()}
         # Project-hierarchy phase 3: derive cross-project borrowing flags from
         # UserConfig.relationship_routing (default None → borrowing OFF, router
         # behaves exactly as before). The app-level router is GLOBAL
@@ -2847,9 +2843,11 @@ def create_daemon_app(
     app.state._stats_responses = 0
 
     from general_ludd.planning.critique import PlanCritique
+
     app.state.plan_critique = PlanCritique()
 
     from general_ludd.hardware.probe import probe_hardware
+
     app.state._hardware = probe_hardware()
 
     # C20: use the SHARED load_auth_posture helper so the daemon and worker
@@ -2889,9 +2887,15 @@ def create_daemon_app(
         )
 
     _PUBLIC_PATHS = {
-        "/healthz", "/readyz", "/api/status", "/api/todos", "/api/human-todos",
+        "/healthz",
+        "/readyz",
+        "/api/status",
+        "/api/todos",
+        "/api/human-todos",
         "/api/webmcp",
-        "/docs", "/openapi.json", "/redoc",
+        "/docs",
+        "/openapi.json",
+        "/redoc",
     }
 
     # Receiver ingest paths use their own ingest-token auth (GLUDD_INGEST_TOKEN),
@@ -2924,6 +2928,7 @@ def create_daemon_app(
     async def auth_and_stats_middleware(request: Any, call_next: Any) -> Any:
         app.state._stats_requests += 1
         from general_ludd.observability.metrics_exporter import get_metrics_exporter
+
         metrics = get_metrics_exporter()
         metrics.counter_inc("gludd_http_requests_total", {"method": request.method})
         start = time.monotonic()
@@ -3004,16 +3009,17 @@ def create_daemon_app(
                 client_host = "127.0.0.1"
             if client_host is not None:
                 import ipaddress as _ipaddress
+
                 try:
                     client_ip = _ipaddress.ip_address(client_host)
                 except ValueError:
                     client_ip = None
                 allowed = client_ip is not None and any(
-                    client_ip in _ipaddress.ip_network(cidr, strict=False)
-                    for cidr in cidrs
+                    client_ip in _ipaddress.ip_network(cidr, strict=False) for cidr in cidrs
                 )
                 if not allowed:
                     from fastapi.responses import JSONResponse
+
                     logger.warning("CIDR deny: %s not in allowed_cidr=%s", client_host, cidrs)
                     return JSONResponse(
                         status_code=403,
@@ -3029,8 +3035,7 @@ def create_daemon_app(
         "/healthz",
         summary="Liveness probe — daemon process is alive",
         description=(
-            "Returns 200 with security-posture + budget flags when alive; "
-            "503 on degraded startup. Public, no auth."
+            "Returns 200 with security-posture + budget flags when alive; 503 on degraded startup. Public, no auth."
         ),
     )
     async def healthz() -> dict[str, Any]:
@@ -3064,9 +3069,7 @@ def create_daemon_app(
         # (the `_degraded` flag alone only catches STARTUP failures).
         el_task = getattr(app.state, "_event_loop_task", None)
         if el_task is not None and el_task.done():
-            degraded = degraded or (
-                "event_loop_cancelled" if el_task.cancelled() else "event_loop_done"
-            )
+            degraded = degraded or ("event_loop_cancelled" if el_task.cancelled() else "event_loop_done")
         if degraded:
             return {
                 "status": "degraded",
@@ -3090,10 +3093,7 @@ def create_daemon_app(
         "/readyz",
         response_model=None,
         summary="Readiness probe — daemon can accept work",
-        description=(
-            "200 when ready (not degraded, event loop alive); 503 otherwise. "
-            "Public, no auth."
-        ),
+        description=("200 when ready (not degraded, event loop alive); 503 otherwise. Public, no auth."),
     )
     async def readyz() -> JSONResponse | dict[str, str]:
         """Readiness probe (N1/C6, W3.4): 503 when degraded or event-loop done/cancelled.
@@ -3116,9 +3116,7 @@ def create_daemon_app(
         # exercising a real in-process daemon retain the historical 200-ready
         # behaviour once the runtime task exists.
         e2e_startup = os.environ.get("GLUDD_E2E_ACTIVE") == "1"
-        if el_task is None or (
-            e2e_startup and getattr(app.state, "_event_loop_task_auto", False)
-        ):
+        if el_task is None or (e2e_startup and getattr(app.state, "_event_loop_task_auto", False)):
             return JSONResponse(
                 status_code=503,
                 content={"status": "not_ready", "reason": "daemon_not_initialized"},
@@ -3134,11 +3132,13 @@ def create_daemon_app(
     @app.get("/metrics")
     async def metrics_prometheus() -> PlainTextResponse:
         from general_ludd.observability.metrics_exporter import get_metrics_exporter
+
         return PlainTextResponse(content=get_metrics_exporter().render_prometheus())
 
     @app.get("/admin/metrics/export")
     async def admin_metrics_export() -> dict[str, Any]:
         from general_ludd.observability.metrics_exporter import get_metrics_exporter
+
         m = get_metrics_exporter()
         return {
             "counters": m.get_counters(),
@@ -3148,9 +3148,7 @@ def create_daemon_app(
 
     @app.get("/admin/dashboard/overview")
     async def admin_dashboard_overview() -> dict[str, Any]:
-        provider: DashboardDataProvider | None = getattr(
-            app.state, "_dashboard_data", None
-        )
+        provider: DashboardDataProvider | None = getattr(app.state, "_dashboard_data", None)
         if provider is not None:
             return await provider.get_overview()
         return {"error": "Dashboard data provider not initialized"}
@@ -3378,6 +3376,7 @@ def create_daemon_app(
     # _get_or_create_extended_subsystems reuses this same instance.
     if getattr(app.state, "_receiver_buffer", None) is None:
         from general_ludd.receiver.buffer import OverflowPolicy, ReceiverBuffer
+
         app.state._receiver_buffer = ReceiverBuffer(
             maxlen=10_000,
             overflow=OverflowPolicy.REJECT,
@@ -3385,6 +3384,7 @@ def create_daemon_app(
         )
     daemon_state["receiver_buffer"] = app.state._receiver_buffer
     from general_ludd.receiver import router as receiver_router
+
     receiver_router.register(app, daemon_state)
     # Dynamic dispatch router — handlers close over ``app`` and look up
     # subsystems lazily at call time so they resolve against the live
@@ -3443,15 +3443,20 @@ def create_daemon_app(
     spend.register(app, daemon_state)
     pause.register(app, daemon_state)
     from general_ludd.routers import approval as _approval_router
+
     _approval_router.register(app, daemon_state)
     from general_ludd.routers import compaction_aggressiveness as _compaction_aggr_router
+
     _compaction_aggr_router.register(app, daemon_state)
     from general_ludd.routers import coordination as _coord_router
+
     _coord_router.register(app, daemon_state)
 
     from general_ludd.routers import stream as _stream_router
+
     _stream_router.register(app, daemon_state)
     from general_ludd.routers import terraform_state as _terraform_state_router
+
     _terraform_state_router.register(app, daemon_state)
 
     from general_ludd.routers.observe import wire_observability
@@ -3467,7 +3472,7 @@ def create_daemon_app(
             "Returns health() across EVERY connector in the ConnectorRegistry. "
             "When no registry is wired (no connectors configured), returns an "
             "empty result rather than erroring. Each source is reported as "
-            "{\"ok\": true/false, ...} — a failed backend is a data point, not "
+            '{"ok": true/false, ...} — a failed backend is a data point, not '
             "an exception. This path is PSK-gated (NOT in _PUBLIC_PATHS)."
         ),
     )

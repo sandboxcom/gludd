@@ -1,0 +1,39 @@
+---
+- name: Validate treaties parameters
+  ansible.builtin.assert:
+    that:
+      - treaties_enabled | bool
+    fail_msg: "treaties role requires enabled=true."
+
+- name: Ensure output directory
+  ansible.builtin.file:
+    path: "{{ treaties_output_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Copy conflicts_treaties.py module_util
+  ansible.builtin.copy:
+    src: "{{ _treaties_module }}"
+    dest: "{{ treaties_output_dir }}/conflicts_treaties.py"
+    mode: "0755"
+
+- name: Run treaties lookup
+  ansible.builtin.command: >
+    {{ ansible_python_interpreter | default('python3') }}
+    {{ treaties_output_dir }}/conflicts_treaties.py
+    --query "{{ treaties_query | default('all') }}"
+  register: _treaties_result
+  changed_when: false
+  failed_when: false
+
+- name: Parse result
+  ansible.builtin.set_fact:
+    treaties_result: "{{ (_treaties_result.stdout | from_json) if _treaties_result.stdout | default('') | length > 0 else {} }}"
+  when: _treaties_result.stdout | default('') | length > 0
+
+- name: Write JSON output
+  ansible.builtin.copy:
+    content: "{{ treaties_result | to_nice_json }}"
+    dest: "{{ treaties_output_dir }}/treaties.json"
+    mode: "0644"
+  when: treaties_result is defined

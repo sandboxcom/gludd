@@ -1,0 +1,2 @@
+---
+_postal_delivery_module: "{{ role_path }}/../../plugins/module_utils/postal_delivery.py"

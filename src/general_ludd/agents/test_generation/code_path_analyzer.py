@@ -11,12 +11,12 @@ from typing import Any, cast
 
 logger = logging.getLogger(__name__)
 
-_PARSER: object | None = None
+_PARSER: object | None = False
 
 
 def _get_parser() -> object | None:
     global _PARSER
-    if _PARSER is not None:
+    if _PARSER is not False:
         return _PARSER
     try:
         import tree_sitter_python as tspython
@@ -24,6 +24,7 @@ def _get_parser() -> object | None:
 
         _PARSER = Parser(Language(tspython.language()))
     except ImportError:
+        _PARSER = None
         logger.warning("tree-sitter not available, code_path_analyzer disabled")
     return _PARSER
 
@@ -36,7 +37,6 @@ ModuleSymbols = namedtuple("ModuleSymbols", ["name", "functions", "classes"])
 
 
 class CodePathAnalyzer:
-
     def analyze(self, file_path: str) -> ModuleSymbols:
         parser = _get_parser()
         if parser is None:

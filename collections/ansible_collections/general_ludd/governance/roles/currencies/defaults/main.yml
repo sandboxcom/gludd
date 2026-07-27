@@ -1,0 +1,4 @@
+---
+currencies_enabled: false
+currencies_query: "all"
+currencies_output_dir: /tmp/gludd-governance-currencies

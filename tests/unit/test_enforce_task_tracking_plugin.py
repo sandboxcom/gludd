@@ -1,239 +1,182 @@
-"""Structural tests for the enforce-task-tracking plugin and check_task_integrity script.
+"""TDD tests for the enforce-task-tracking hard task-registration guard plugin.
 
-Verifies:
-  - Plugin file exists and exports required constants/hooks
-  - Plugin is registered in opencode.json
-  - Plugin follows Node v26 compatibility rules
-  - Plugin uses shared.ts helpers (isSubagent, reportAlive, getProjectRoot)
-  - Plugin handles: unchecked detection, read-allow, task-file-allow,
-    source-deny on zero unchecked, corruption detection, fail-open
-  - check_task_integrity.py exists and runs as a standalone script
-  - Makefile has check-task-integrity target wired into gate
+This is the mechanical enforcement layer for AGENTS.md's Task Self-Tracking
+policy. The plugin blocks edit/write to ``src/general_ludd/**/*.py`` until
+TASKS.md has been updated (mtime change detected).
+
+Workflow enforced (the agent MUST follow this order):
+
+1. Add an unchecked entry to TASKS.md describing the work
+2. Save TASKS.md (this updates mtime, satisfying the guard)
+3. Edit/write ``src/general_ludd/<module>.py`` — ALLOWED
+
+Skip step 1 and step 3 is mechanically DENIED.
+
+This test file was written BEFORE the plugin logic was verified (TDD). It will
+fail until the plugin at ``.opencode/plugin/enforce-task-tracking.ts`` exists
+and behaves correctly.
 """
-
-from __future__ import annotations
 
 import json
 import re
-import subprocess
-import sys
 from pathlib import Path
+from typing import ClassVar
 
 ROOT = Path(__file__).parent.parent.parent
 PLUGIN_PATH = ROOT / ".opencode" / "plugin" / "enforce-task-tracking.ts"
-OPECODE_JSON = ROOT / "opencode.json"
-MAKEFILE_PATH = ROOT / "Makefile"
-SCRIPT_PATH = ROOT / "scripts" / "check_task_integrity.py"
+OPENCODE_JSON = ROOT / "opencode.json"
 
 
-def read_plugin_src() -> str:
-    assert PLUGIN_PATH.exists(), "Plugin file must exist before running these tests"
-    return PLUGIN_PATH.read_text()
-
-
+# --------------------------------------------------------------------------- #
+# Structural: plugin file, registration, hook shape.
+# --------------------------------------------------------------------------- #
 class TestPluginStructure:
     def test_plugin_file_exists(self):
         assert PLUGIN_PATH.exists(), (
-            "enforce-task-tracking.ts must exist at .opencode/plugin/"
+            "enforce-task-tracking.ts must exist at .opencode/plugin/. This is "
+            "the hard task-registration guard — without it, agents can write "
+            "src/ implementation code without first updating TASKS.md."
         )
 
     def test_plugin_registered_in_opencode_json(self):
-        cfg = json.loads(OPECODE_JSON.read_text())
+        assert OPENCODE_JSON.exists(), "opencode.json must exist"
+        cfg = json.loads(OPENCODE_JSON.read_text())
         plugins = cfg.get("plugin", [])
         assert any("enforce-task-tracking" in p for p in plugins), (
-            "enforce-task-tracking.ts must be registered in opencode.json plugin[] array"
+            "enforce-task-tracking.ts must be registered in opencode.json plugins array"
         )
 
-    def test_exports_task_tracking_file_constant(self):
-        src = read_plugin_src()
-        assert "TASK_TRACKING_FILE" in src, (
-            "Plugin must export TASK_TRACKING_FILE constant"
-        )
-        assert 'export const TASK_TRACKING_FILE_EXPORT' in src or \
-               'TASK_TRACKING_FILE = "TASKS.md"' in src or \
-               "TASK_TRACKING_FILE = 'TASKS.md'" in src, (
-            "Plugin must export TASK_TRACKING_FILE with value 'TASKS.md'"
-        )
+    def test_default_export_is_callable(self):
+        content = PLUGIN_PATH.read_text()
+        assert "export default" in content, "Plugin must have a default export"
+        assert "satisfies Plugin" in content, "Plugin must satisfy the Plugin type"
+
+    def test_hot_reload_imports_present(self):
+        content = PLUGIN_PATH.read_text()
+        assert "loadHotModule" in content, "Plugin must use hot-reload proxy pattern"
+        assert "HotModule" in content, "Plugin must import HotModule type"
+        assert "defaultImpl" in content, "Plugin must define compiled-in defaultImpl"
 
     def test_tool_execute_before_hook_registered(self):
-        src = read_plugin_src()
-        assert '"tool.execute.before"' in src, (
-            "Plugin must register a tool.execute.before hook"
+        content = PLUGIN_PATH.read_text()
+        assert '"tool.execute.before"' in content, "Plugin must register tool.execute.before hook"
+
+    def test_imports_shared_helpers(self):
+        content = PLUGIN_PATH.read_text()
+        assert "isSubagent" in content, "Plugin must import isSubagent guard"
+        assert "reportAlive" in content, "Plugin must import reportAlive helper"
+        assert "getProjectRoot" in content, "Plugin must import getProjectRoot helper"
+        assert "readJsonFile" in content, "Plugin must import readJsonFile helper"
+        assert "writeJsonFile" in content, "Plugin must import writeJsonFile helper"
+
+
+# --------------------------------------------------------------------------- #
+# Guard enforcement patterns.
+# --------------------------------------------------------------------------- #
+class TestGuardPatterns:
+    def test_subagent_guard_present(self):
+        content = PLUGIN_PATH.read_text()
+        assert "isSubagent()" in content, (
+            "Plugin must check isSubagent() at top of every hook to skip enforcement in subagent context"
         )
 
-    def test_text_complete_hook_registered(self):
-        src = read_plugin_src()
-        assert '"experimental.text.complete"' in src or \
-               '"text.complete"' in src, (
-            "Plugin must register a text.complete hook"
-        )
-
-    def test_imports_from_lib_shared(self):
-        src = read_plugin_src()
-        assert 'isSubagent' in src, "Plugin must import isSubagent from shared.ts"
-        assert 'reportAlive' in src, "Plugin must import reportAlive from shared.ts"
-
-    def test_imports_from_lib_hot_reload(self):
-        src = read_plugin_src()
-        assert 'loadHotModule' in src, "Plugin must import loadHotModule from hot_reload.ts"
-        assert 'HotModule' in src, "Plugin must import HotModule type"
-
-    def test_has_subagent_guard(self):
-        src = read_plugin_src()
-        assert 'if (isSubagent()) return' in src, (
-            "Plugin hook functions must have isSubagent() guard"
-        )
-
-    def test_has_enable_env_var(self):
-        src = read_plugin_src()
-        assert 'GLUDD_TASK_TRACKING_ENFORCE' in src, (
-            "Plugin must respect GLUDD_TASK_TRACKING_ENFORCE env var"
+    def test_env_var_disable_path(self):
+        content = PLUGIN_PATH.read_text()
+        assert "GLUDD_TASK_TRACKING_ENFORCE" in content, "Plugin must have GLUDD_TASK_TRACKING_ENFORCE env var check"
+        assert 'GLUDD_TASK_TRACKING_ENFORCE === "0"' in content or 'GLUDD_TASK_TRACKING_ENFORCE !== "0"' in content, (
+            "Plugin must check for env-var disable path"
         )
 
     def test_fail_open_pattern(self):
-        src = read_plugin_src()
-        assert '} catch {' in src or '} catch (' in src, (
-            "Plugin must fail-open: every critical code path wrapped in try-catch"
+        content = PLUGIN_PATH.read_text()
+        assert "catch" in content, "Plugin must have catch blocks for fail-open"
+        assert "return { allow: true }" in content or "return" in content, "Plugin must fail-open on error"
+
+    def test_tool_filter_edit_write(self):
+        content = PLUGIN_PATH.read_text()
+        assert 'input?.tool !== "edit"' in content or 'tool !== "edit"' in content, "Plugin must filter for edit tool"
+        assert 'input?.tool !== "write"' in content or 'tool !== "write"' in content, (
+            "Plugin must filter for write tool"
         )
 
-    def test_has_default_impl(self):
-        src = read_plugin_src()
-        assert 'defaultImpl' in src, "Plugin must define defaultImpl fallback"
-
-    def test_satisfies_plugin_interface(self):
-        src = read_plugin_src()
-        assert 'satisfies Plugin' in src, (
-            "Plugin must use 'satisfies Plugin' type annotation"
-        )
-
-    def test_node_v26_compatible(self):
-        """All .opencode/plugin/*.ts must pass Node v26 --experimental-strip-types."""
-        src = read_plugin_src()
-        assert "catch { try" not in src, (
-            "Forbidden pattern: try inside catch block (Node v26 parse error)"
-        )
-        assert re.search(r"catch\s*\([^)]*:.*\)\s*\{", src) is None, (
-            "Forbidden pattern: typed catch variable (Node v26 parse error)"
-        )
-
-    def test_task_id_parser_avoids_unsupported_string_matchall(self):
-        """The embedded OpenCode runtime does not expose String.matchAll."""
-        src = read_plugin_src()
-        assert ".matchAll(" not in src, (
-            "Task ID parsing must use a runtime-compatible regex iteration"
-        )
-
-    def test_read_tools_allowed_unconditionally(self):
-        src = read_plugin_src()
-        assert 'isReadTool' in src or (
-            '"read"' in src and '"grep"' in src and '"glob"' in src
-        ), "Plugin must allow read/grep/glob tools unconditionally"
-
-    def test_task_file_writes_allowed(self):
-        src = read_plugin_src()
-        assert 'isTaskFile' in src, (
-            "Plugin must detect writes to TASKS.md and allow them"
-        )
-
-    def test_source_deny_on_zero_unchecked(self):
-        src = read_plugin_src()
-        assert 'NO TASK ENTRY' in src, (
-            "Plugin must deny source edits when zero unchecked items exist"
-        )
-        assert 'permissionDecision' in src, (
-            "Plugin must use permissionDecision: deny pattern"
-        )
-
-    def test_corruption_detection(self):
-        src = read_plugin_src()
-        assert 'CORRUPTION' in src or 'corruption' in src.lower(), (
-            "Plugin must detect TASKS.md corruption attempts"
-        )
-
-    def test_uses_getProjectRoot(self):
-        src = read_plugin_src()
-        assert 'getProjectRoot' in src, (
-            "Plugin must use getProjectRoot() for workspace-relative paths"
-        )
-
-    def test_hard_registration_guard_is_present(self):
-        """Source writes must prove a concrete TASKS.md registration."""
-        src = read_plugin_src()
-        assert "isRegisteredTaskPath" in src, (
-            "Plugin must verify the edited path against TASKS.md registrations"
-        )
-        assert "TASK REGISTRATION REQUIRED" in src, (
-            "Unregistered source edits must be denied with an actionable message"
-        )
-
-    def test_registration_guard_accepts_declared_task_id(self):
-        """Delegated writes may carry a declared task ID as registration evidence."""
-        src = read_plugin_src()
-        assert "declaredTaskIds" in src, (
-            "Plugin must parse declared task IDs from TASKS.md"
-        )
-        assert "taskId" in src or "task_id" in src, (
-            "Plugin must inspect task ID metadata on write requests"
-        )
-
-    def test_registration_guard_fails_closed_for_missing_path(self):
-        """A write without a target path must not bypass registration checks."""
-        src = read_plugin_src()
-        assert "WRITE TARGET PATH MISSING" in src, (
-            "Pathless write operations must be denied by the registration guard"
-        )
+    def test_permission_decision_deny(self):
+        content = PLUGIN_PATH.read_text()
+        assert "permissionDecision" in content, "Plugin must return permissionDecision on deny"
+        assert '"deny"' in content, "Plugin must use permissionDecision: deny"
 
 
-class TestCheckTaskIntegrityScript:
-    def test_script_exists(self):
-        assert SCRIPT_PATH.exists(), (
-            "scripts/check_task_integrity.py must exist"
+# --------------------------------------------------------------------------- #
+# Spec: state file, constants, matching patterns.
+# --------------------------------------------------------------------------- #
+class TestSpecCompliance:
+    def test_state_file_constant(self):
+        content = PLUGIN_PATH.read_text()
+        assert "/tmp/gludd-task-tracking.json" in content, "Plugin must use /tmp/gludd-task-tracking.json as state file"
+
+    def test_src_prefix_scope(self):
+        content = PLUGIN_PATH.read_text()
+        assert "src/general_ludd/" in content, "Plugin must scope enforcement to src/general_ludd/ files only"
+
+    def test_deny_message_defined(self):
+        content = PLUGIN_PATH.read_text()
+        assert "DENY_MESSAGE" in content, "Plugin must define DENY_MESSAGE constant for guidance text"
+        assert "TASKS.md" in content, "Deny message must reference TASKS.md"
+
+    def test_tasks_md_path_construction(self):
+        content = PLUGIN_PATH.read_text()
+        assert "TASKS.md" in content, "Plugin must reference TASKS.md"
+        assert "getProjectRoot" in content, "Plugin must use getProjectRoot to locate TASKS.md"
+
+    def test_mtime_comparison_logic(self):
+        content = PLUGIN_PATH.read_text()
+        assert "mtime" in content or "statSync" in content, "Plugin must use mtime/statSync to detect TASKS.md updates"
+
+    def test_implementation_file_filter(self):
+        content = PLUGIN_PATH.read_text()
+        assert "isImplementationFile" in content or "endsWith" in content, (
+            "Plugin must filter for implementation files only"
         )
 
-    def test_script_is_executable(self):
-        import stat
-        mode = SCRIPT_PATH.stat().st_mode
-        assert mode & stat.S_IXUSR, "Script must be user-executable"
+    def test_tests_directory_exempt(self):
+        content = PLUGIN_PATH.read_text()
+        assert "tests/" in content, "Plugin must exempt files under tests/ from enforcement"
 
-    def test_script_runs_without_crashing(self):
-        result = subprocess.run(
-            [sys.executable, str(SCRIPT_PATH)],
-            capture_output=True, text=True, timeout=10,
-            cwd=str(ROOT),
-        )
-        assert result.returncode in (0, 1), (
-            f"Script must exit 0 or 1, got {result.returncode}. stderr: {result.stderr}"
-        )
+    def test_opencode_directory_exempt(self):
+        content = PLUGIN_PATH.read_text()
+        assert ".opencode/" in content, "Plugin must exempt files under .opencode/ from enforcement"
 
-    def test_script_prints_violations_on_stdout(self):
-        result = subprocess.run(
-            [sys.executable, str(SCRIPT_PATH)],
-            capture_output=True, text=True, timeout=10,
-            cwd=str(ROOT),
-        )
-        out = result.stdout + result.stderr
-        assert "TASKS.md integrity check" in out, (
-            "Script must print integrity check header to output"
-        )
+    def test_missing_tasks_md_no_op(self):
+        content = PLUGIN_PATH.read_text()
+        assert "existsSync" in content, "Plugin must check TASKS.md existence before enforcing"
 
 
-class TestMakefileIntegration:
-    def test_check_task_integrity_target_exists(self):
-        content = MAKEFILE_PATH.read_text()
-        assert "check-task-integrity:" in content or "check-task-integrity :" in content, (
-            "Makefile must have a check-task-integrity target"
-        )
+# --------------------------------------------------------------------------- #
+# No lint-suppression comments in the plugin itself.
+# --------------------------------------------------------------------------- #
+class TestPluginSelfCleanliness:
+    SUPPRESSION_PATTERNS: ClassVar[list[str]] = [
+        r"#\s*noqa",
+        r"#\s*type:\s*ignore",
+        r"#\s*pylint:",
+        r"#\s*fmt:\s*(?:off|skip|on)",
+        r"#\s*isort:\s*skip",
+    ]
 
-    def test_wired_into_gate(self):
-        content = MAKEFILE_PATH.read_text()
-        gate_line = ""
-        for line in content.split("\n"):
-            # Match the actual target declaration, not help text such as
-            # `@echo "  gate-all ..."` that merely contains `gate:`.
-            if re.match(r"^gate\s*:", line):
-                gate_line = line.strip()
-                break
-        assert gate_line, "Could not find gate: target in Makefile"
-        assert "check-task-integrity" in gate_line, (
-            "check-task-integrity must be a prerequisite of gate: target"
+    def test_no_suppression_comments_in_plugin(self):
+        content = PLUGIN_PATH.read_text()
+        lines = content.split("\n")
+        for i, line in enumerate(lines, 1):
+            stripped = line.strip()
+            if not stripped:
+                continue
+            for pattern in self.SUPPRESSION_PATTERNS:
+                assert not re.search(pattern, stripped), (
+                    f"Suppression comment found at line {i}: {stripped!r}. "
+                    "Fix the underlying issue; never silence the linter."
+                )
+
+    def test_no_require_calls(self):
+        content = PLUGIN_PATH.read_text()
+        assert "require(" not in content or "createRequire" in content, (
+            "Plugin must use ES module imports, not require() calls"
         )

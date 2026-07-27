@@ -1,0 +1,18 @@
+---
+galaxy_info:
+  role_name: licenses_permits
+  author: Agentic Harness Agent
+  description: >
+    Professional licenses, business permits, export controls, license
+    validity checking, and regulating body lookups across countries.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+  galaxy_tags: [governance, licenses, permits, export_control, professional]
+dependencies: []

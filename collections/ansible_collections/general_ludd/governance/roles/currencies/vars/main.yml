@@ -1,0 +1,2 @@
+---
+_currencies_module: "{{ role_path }}/../../plugins/module_utils/tax_currency.py"

@@ -1,0 +1,18 @@
+---
+galaxy_info:
+  role_name: tax_systems
+  author: Agentic Harness Agent
+  description: >
+    Tax system info, filing requirements, tax treaties, and revenue
+    authority lookups by country.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+  galaxy_tags: [governance, tax, revenue, filing]
+dependencies: []

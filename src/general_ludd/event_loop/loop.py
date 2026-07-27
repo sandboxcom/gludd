@@ -38,6 +38,10 @@ from general_ludd.db.repository import (
     TodoRepository,
     VariableNamespaceRepository,
 )
+from general_ludd.db.task_decisions_retention import (
+    DEFAULT_RETENTION_DAYS,
+    cleanup_old_task_decisions,
+)
 from general_ludd.db.tenant import reset_tenant as _reset_tenant
 from general_ludd.db.tenant import set_tenant as _set_tenant
 from general_ludd.event_loop.lease import reclaim_expired_leases, release_lease
@@ -110,6 +114,7 @@ PHASE_ORDER = [
     "poll_issue_sources",
     "service_discovery",
     "reap_expired_sts_tokens",
+    "purge_old_task_decisions",
     "emit_tick_metrics",
 ]
 
@@ -135,9 +140,7 @@ _TOOL_USE_WORK_TYPES: frozenset[str] = frozenset(
     {"analysis", "audit", "code", "bug_fix", "refactor", "feature", "test"}
 )
 
-_CODE_WORK_TYPES: frozenset[str] = frozenset(
-    {"code", "bug_fix", "refactor", "feature", "test"}
-)
+_CODE_WORK_TYPES: frozenset[str] = frozenset({"code", "bug_fix", "refactor", "feature", "test"})
 
 
 def _safe_str(obj: Any, attr: str, default: str | None = None) -> str | None:
@@ -200,18 +203,19 @@ def _resolve_prompt_text_static(
         return None
     if project_templates_dir is not None:
         from pathlib import Path as _Path
+
         tmpl_path = _Path(str(project_templates_dir)) / prompt_profile
         if tmpl_path.is_file():
             try:
                 from jinja2 import FileSystemLoader as _FSL
                 from jinja2.sandbox import SandboxedEnvironment as _Env
+
                 env = _Env(loader=_FSL(str(project_templates_dir)), autoescape=True)
                 tmpl = env.get_template(prompt_profile)
                 return tmpl.render(**kwargs)
             except Exception:
                 logger.debug(
-                    "Jinja project-template render failed for profile %r; "
-                    "falling through to registry render",
+                    "Jinja project-template render failed for profile %r; falling through to registry render",
                     prompt_profile,
                     exc_info=True,
                 )
@@ -230,12 +234,23 @@ def _resolve_prompt_text_static(
 
 
 _WORK_TYPE_TASK_TYPE_MAP: dict[str, str] = {
-    "bug_fix": "bug_fix", "code": "feature", "test": "test_write",
-    "review": "code_review", "refactor": "refactor", "docs": "documentation",
-    "infra": "feature", "prompt": "feature", "analysis": "feature",
-    "audit": "feature", "release": "feature", "dependency": "feature",
-    "security": "security_fix", "model": "feature", "unknown": "feature",
-    "model_decision": "feature", "langgraph_generate": "feature",
+    "bug_fix": "bug_fix",
+    "code": "feature",
+    "test": "test_write",
+    "review": "code_review",
+    "refactor": "refactor",
+    "docs": "documentation",
+    "infra": "feature",
+    "prompt": "feature",
+    "analysis": "feature",
+    "audit": "feature",
+    "release": "feature",
+    "dependency": "feature",
+    "security": "security_fix",
+    "model": "feature",
+    "unknown": "feature",
+    "model_decision": "feature",
+    "langgraph_generate": "feature",
     "enforcement_gate": "feature",
     "enforcement_gate_push_guard": "feature",
     "enforcement_gate_check": "feature",
@@ -251,12 +266,19 @@ def _work_type_to_task_type(work_type: str) -> TaskType:
 
 
 _WORK_TYPE_PLAYBOOK_MAP: dict[str, str] = {
-    "code": "validate_task.yml", "test": "molecule_test.yml",
-    "analysis": "gap_analysis.yml", "audit": "log_audit.yml",
-    "prompt": "prompt_eval.yml", "self_improve": "self_improve_harness.yml",
-    "dependency": "dependency_update.yml", "review": "return_review.yml",
-    "docs": "noop.yml", "infra": "noop.yml", "security": "noop.yml",
-    "model": "noop.yml", "release": "noop.yml",
+    "code": "validate_task.yml",
+    "test": "molecule_test.yml",
+    "analysis": "gap_analysis.yml",
+    "audit": "log_audit.yml",
+    "prompt": "prompt_eval.yml",
+    "self_improve": "self_improve_harness.yml",
+    "dependency": "dependency_update.yml",
+    "review": "return_review.yml",
+    "docs": "noop.yml",
+    "infra": "noop.yml",
+    "security": "noop.yml",
+    "model": "noop.yml",
+    "release": "noop.yml",
     "model_decision": "langgraph_decide.yml",
     "langgraph_generate": "langchain_generate.yml",
     "enforcement_gate": "enforcement_gate.yml",
@@ -275,6 +297,7 @@ def _playbook_for_work_type(
     ws = workspaces.get(project_id) if workspaces and project_id else None
     if ws is not None and hasattr(ws, "playbooks_dir"):
         from pathlib import Path as _Path
+
         pb_path = _Path(ws.playbooks_dir) / f"{work_type}.yml"
         if pb_path.is_file():
             return str(pb_path)
@@ -481,9 +504,7 @@ class EventLoop:
         # a None gateway leaves the evaluator on its deterministic structural
         # fallback so this is never a hard dependency.
         self._debt_evaluator = DebtEvaluator(
-            make_debt_evaluate_fn(self._model_gateway)
-            if self._model_gateway
-            else None
+            make_debt_evaluate_fn(self._model_gateway) if self._model_gateway else None
         )
         self._human_gate = HumanGate(config=self.config)
         self._issue_ingestor: Any = issue_ingestor
@@ -555,6 +576,7 @@ class EventLoop:
         if factory is not None:
             try:
                 from general_ludd.db.repository import AgentMessageRepository
+
                 async with factory() as session:
                     repo = AgentMessageRepository(session)
                     msgs = await repo.inbox(role, unread_only=True, project_id=project_id)
@@ -562,8 +584,7 @@ class EventLoop:
                     senders = [m.sender for m in msgs]
             except Exception:
                 logger.warning(
-                    "MQ inbox lookup failed for role %r (project %s): "
-                    "falling back to empty inbox",
+                    "MQ inbox lookup failed for role %r (project %s): falling back to empty inbox",
                     role,
                     project_id,
                     exc_info=True,
@@ -571,27 +592,27 @@ class EventLoop:
                 unread = 0
                 senders = []
         from general_ludd.prompts.registry import render_message_queue_section
-        section = render_message_queue_section(
-            role=role, unread_count=unread, senders=senders, enabled=True
-        )
+
+        section = render_message_queue_section(role=role, unread_count=unread, senders=senders, enabled=True)
         if not section:
             return prompt_text
         return f"{prompt_text}\n\n{section}" if prompt_text else section
 
-    async def _build_memory_section(
-        self, prompt_text: str | None, todo: Any
-    ) -> str | None:
+    async def _build_memory_section(self, prompt_text: str | None, todo: Any) -> str | None:
         if self._memory_repo is None:
             return prompt_text
         assigned_agent = _safe_str(todo, "assigned_agent") or _safe_str(todo, "work_type") or "agent"
         try:
             records = await self._memory_repo.list_by_namespace(
-                agent_id=assigned_agent, namespace="default", limit=50,
+                agent_id=assigned_agent,
+                namespace="default",
+                limit=50,
             )
         except Exception:
             logger.warning(
                 "Memory lookup failed for agent %r; skipping memory section",
-                assigned_agent, exc_info=True,
+                assigned_agent,
+                exc_info=True,
             )
             return prompt_text
         if not records:
@@ -606,9 +627,7 @@ class EventLoop:
         self, todo: Any, default_model_profile: str = "default"
     ) -> tuple[str | None, str | None, Any | None]:
         if self._adaptive_router is None:
-            logger.warning(
-                "_adaptive_router not initialized; skipping adaptive prompt routing"
-            )
+            logger.warning("_adaptive_router not initialized; skipping adaptive prompt routing")
             return None, None, None
         work_type = _safe_str(todo, "work_type", "feature") or "feature"
         task_type = _work_type_to_task_type(work_type)
@@ -658,6 +677,7 @@ class EventLoop:
             return
         try:
             from general_ludd.db.models import BucketLeaseModel, TodoModel
+
             now = datetime.now(UTC)
             cutoff = now - timedelta(minutes=self._stuck_timeout_minutes)
             stmt = (
@@ -673,10 +693,7 @@ class EventLoop:
             # Batch-fetch all live leases for candidate todos in one query
             # instead of per-todo N+1 lookups. Build bucket_keys from
             # queue:todo_id pairs, then query BucketLeaseModel with IN.
-            bucket_keys = [
-                f"{_safe_str(t, 'queue', 'core')}:{_safe_str(t, 'todo_id', '')}"
-                for t in candidates
-            ]
+            bucket_keys = [f"{_safe_str(t, 'queue', 'core')}:{_safe_str(t, 'todo_id', '')}" for t in candidates]
             live_lease_stmt = (
                 select(BucketLeaseModel.bucket_key)
                 .where(BucketLeaseModel.bucket_key.in_(bucket_keys))
@@ -702,13 +719,12 @@ class EventLoop:
                 # concurrent status write (the check-then-act race this method
                 # previously had when it assigned the ORM attribute directly).
                 try:
-                    await self._todo_repo.transition(
-                        todo.todo_id, TodoStatus.QUEUED, todo.version
-                    )
+                    await self._todo_repo.transition(todo.todo_id, TodoStatus.QUEUED, todo.version)
                 except ConcurrencyError as exc:
                     logger.info(
                         "Reaper lost version race for todo %s: %s — skipping",
-                        todo.todo_id, exc,
+                        todo.todo_id,
+                        exc,
                     )
                     continue
                 reaped += 1
@@ -723,9 +739,12 @@ class EventLoop:
         self._total_ticks += 1
         tick_id = f"tick_{self._total_ticks}"
         self._tick_metrics = {
-            "total_ticks": self._total_ticks, "phases_completed": 0,
-            "tick_duration_ms": 0.0, "returns_reviewed": 0,
-            "todos_dispatched": 0, "decisions_applied": 0,
+            "total_ticks": self._total_ticks,
+            "phases_completed": 0,
+            "tick_duration_ms": 0.0,
+            "returns_reviewed": 0,
+            "todos_dispatched": 0,
+            "decisions_applied": 0,
             "leases_reclaimed": 0,
         }
         if self._checkpointer is not None:
@@ -763,9 +782,7 @@ class EventLoop:
                     self._clear_repos()
                 # Dispatch phase: NO tick session held.  Isolated per-job
                 # sessions are opened inside _dispatch_execute_job_isolated.
-                await self._run_phase_range(
-                    DISPATCH_PHASE_INDEX, DISPATCH_PHASE_INDEX + 1
-                )
+                await self._run_phase_range(DISPATCH_PHASE_INDEX, DISPATCH_PHASE_INDEX + 1)
                 assert self._session_factory is not None
                 for phase_idx in range(DISPATCH_PHASE_INDEX + 1, len(PHASE_ORDER)):
                     async with self._session_factory() as session:
@@ -884,8 +901,7 @@ class EventLoop:
                 return
             if self._session_factory is None:
                 logger.warning(
-                    "Dropping inbound envelope (no DB session factory): "
-                    "topic=%s payload_keys=%s",
+                    "Dropping inbound envelope (no DB session factory): topic=%s payload_keys=%s",
                     envelope.topic,
                     list(envelope.payload.keys()),
                 )
@@ -954,6 +970,7 @@ class EventLoop:
 
     async def _phase_load_config_snapshot(self) -> None:
         import copy
+
         self._config_snapshot = copy.deepcopy(self.config)
         if self._variable_repo is not None and self._active_session is not None:
             shared_vars = await self._variable_repo.load_vars_for_project(None)
@@ -979,9 +996,7 @@ class EventLoop:
             self._last_ansible_env_project_id = project_id
         return project_id
 
-    def _resolve_project_root_for_collections(
-        self, project_id: str | None
-    ) -> str | None:
+    def _resolve_project_root_for_collections(self, project_id: str | None) -> str | None:
         """Resolve the directory whose ``.gludd/collections/`` holds the
         project-local Ansible content.
 
@@ -994,11 +1009,7 @@ class EventLoop:
         """
         if project_id is None:
             return None
-        workspaces = (
-            self._project_workspace
-            if isinstance(self._project_workspace, dict)
-            else None
-        )
+        workspaces = self._project_workspace if isinstance(self._project_workspace, dict) else None
         if not workspaces or project_id not in workspaces:
             return None
         ws = workspaces[project_id]
@@ -1068,9 +1079,7 @@ class EventLoop:
     async def _phase_dispatch_return_review_jobs(self) -> None:
         claimed = self._tick_state.get("claimed_returns", [])
         if self._budget_guard is not None:
-            check = self._budget_guard.check_all_limits(
-                estimated_cost=self._estimated_dispatch_cost(len(claimed))
-            )
+            check = self._budget_guard.check_all_limits(estimated_cost=self._estimated_dispatch_cost(len(claimed)))
             if not check["allowed"]:
                 logger.warning("Budget exceeded, skipping return review dispatch: %s", check["reason"])
                 self._tick_metrics["returns_reviewed"] = 0
@@ -1094,14 +1103,8 @@ class EventLoop:
             and bool(self.config.get("consensus_review", {}).get("enabled", False))
             and self._consensus_reviewer is not None
         )
-        review_cfg = (
-            self.config.get("review", {}) if isinstance(self.config, dict) else {}
-        )
-        if (
-            (_has_standard or _has_consensus)
-            and self._active_session is not None
-            and self._todo_repo is not None
-        ):
+        review_cfg = self.config.get("review", {}) if isinstance(self.config, dict) else {}
+        if (_has_standard or _has_consensus) and self._active_session is not None and self._todo_repo is not None:
             in_process_timeout = float(review_cfg.get("in_process_timeout", 600.0))
             try:
                 await asyncio.wait_for(
@@ -1128,31 +1131,36 @@ class EventLoop:
                     with contextlib.suppress(Exception):
                         todo = await self._todo_repo.get_by_id(tr.todo_id)
                         if todo is not None:
-                            await self._todo_repo.transition(
-                                tr.todo_id, TodoStatus.BLOCKED, todo.version
-                            )
+                            await self._todo_repo.transition(tr.todo_id, TodoStatus.BLOCKED, todo.version)
             return
         project_id_val = getattr(tr, "project_id", None)
         if not isinstance(project_id_val, str):
             project_id_val = None
         job = JobSpec(
-            job_id=f"REVIEW-{tr.return_id}", return_id=tr.return_id,
-            todo_id=tr.todo_id, playbook="return_review.yml",
+            job_id=f"REVIEW-{tr.return_id}",
+            return_id=tr.return_id,
+            todo_id=tr.todo_id,
+            playbook="return_review.yml",
             queue=_safe_str(tr, "queue", "model") or "model",
-            work_type="review", resource_profile="ai_heavy",
+            work_type="review",
+            resource_profile="ai_heavy",
             plan_artifact=_safe_str(tr, "plan_artifact"),
             project_id=project_id_val,
         )
-        review_cfg = (
-            self.config.get("review", {}) if isinstance(self.config, dict) else {}
-        )
+        review_cfg = self.config.get("review", {}) if isinstance(self.config, dict) else {}
         if self._runner is not None:
             dirs = self._runner.prepare_job_dirs(job.job_id)
-            self._runner.write_vars(job.job_id, job_vars={
-                "job_id": job.job_id, "todo_id": job.todo_id,
-                "return_id": job.return_id, "queue": job.queue,
-                "work_type": job.work_type,
-            }, shared_vars=None)
+            self._runner.write_vars(
+                job.job_id,
+                job_vars={
+                    "job_id": job.job_id,
+                    "todo_id": job.todo_id,
+                    "return_id": job.return_id,
+                    "queue": job.queue,
+                    "work_type": job.work_type,
+                },
+                shared_vars=None,
+            )
             review_playbook_timeout = float(review_cfg.get("playbook_timeout", 600.0))
             try:
                 await asyncio.wait_for(
@@ -1191,9 +1199,7 @@ class EventLoop:
                     with contextlib.suppress(Exception):
                         todo = await self._todo_repo.get_by_id(tr.todo_id)
                         if todo is not None:
-                            await self._todo_repo.transition(
-                                tr.todo_id, TodoStatus.BLOCKED, todo.version
-                            )
+                            await self._todo_repo.transition(tr.todo_id, TodoStatus.BLOCKED, todo.version)
             return
         if self._http_client is None:
             return
@@ -1227,9 +1233,7 @@ class EventLoop:
                 with contextlib.suppress(Exception):
                     todo = await self._todo_repo.get_by_id(tr.todo_id)
                     if todo is not None:
-                        await self._todo_repo.transition(
-                            tr.todo_id, TodoStatus.BLOCKED, todo.version
-                        )
+                        await self._todo_repo.transition(tr.todo_id, TodoStatus.BLOCKED, todo.version)
 
     def _resolve_repo_root(self, project_id: str | None) -> str | None:
         """Resolve the repository root for a project.
@@ -1264,16 +1268,8 @@ class EventLoop:
     async def _review_in_process(self, tr: Any) -> None:
         from general_ludd.review.decision_applier import apply_decision
 
-        review_cfg = (
-            self.config.get("review", {})
-            if isinstance(self.config, dict)
-            else {}
-        )
-        consensus_cfg = (
-            self.config.get("consensus_review", {})
-            if isinstance(self.config, dict)
-            else {}
-        )
+        review_cfg = self.config.get("review", {}) if isinstance(self.config, dict) else {}
+        consensus_cfg = self.config.get("consensus_review", {}) if isinstance(self.config, dict) else {}
         if review_cfg.get("use_langgraph") and self._langgraph_reviewer is not None:
             effective_reviewer = self._langgraph_reviewer
         elif consensus_cfg.get("enabled", False) and self._consensus_reviewer is not None:
@@ -1354,9 +1350,7 @@ class EventLoop:
                     return_id,
                     exc_info=True,
                 )
-        logger.info(
-            "In-process review for return %s -> %s", return_id, decision.decision
-        )
+        logger.info("In-process review for return %s -> %s", return_id, decision.decision)
         # Compaction feedback loop: feed review outcome into the adaptive controller
         # so compaction aggressiveness auto-tunes from accuracy signal.
         if self._compaction_controller is not None:
@@ -1368,30 +1362,23 @@ class EventLoop:
                 total=self._compaction_total,
             )
             if self._compaction_level is None:
-                _cfg = (
-                    self.config.get("compaction", {})
-                    if isinstance(self.config, dict)
-                    else {}
-                )
+                _cfg = self.config.get("compaction", {}) if isinstance(self.config, dict) else {}
                 _cfg_level = _cfg.get("level", 1) if _cfg.get("enabled") else 0
                 self._compaction_level = _cfg_level
-            _next = self._compaction_controller.compute(
-                self._compaction_level, _sample
-            )
+            _next = self._compaction_controller.compute(self._compaction_level, _sample)
             if _next != self._compaction_level:
                 logger.info(
                     "Compaction level adjusted: %d -> %d (passed=%d total=%d)",
-                    self._compaction_level, _next,
-                    self._compaction_passed, self._compaction_total,
+                    self._compaction_level,
+                    _next,
+                    self._compaction_passed,
+                    self._compaction_total,
                 )
                 self._compaction_level = _next
-            self._compaction_disabled = self._compaction_controller.disable_signaled(
-                self._compaction_level, _sample
-            )
+            self._compaction_disabled = self._compaction_controller.disable_signaled(self._compaction_level, _sample)
             if self._compaction_disabled:
                 logger.warning(
-                    "Compaction disabled by adaptive controller "
-                    "(level=%d, passed=%d total=%d, rate=%.2f)",
+                    "Compaction disabled by adaptive controller (level=%d, passed=%d total=%d, rate=%.2f)",
                     self._compaction_level,
                     self._compaction_passed,
                     self._compaction_total,
@@ -1411,6 +1398,7 @@ class EventLoop:
                 data = getattr(resp, "body", None)
                 if data is not None:
                     import json as _json
+
                     data = _json.loads(data)
                 else:
                     return
@@ -1439,6 +1427,7 @@ class EventLoop:
             return
         try:
             import psutil
+
             load_1, load_5, load_10 = psutil.getloadavg() if hasattr(psutil, "getloadavg") else (0.0, 0.0, 0.0)
             cpu_count = psutil.cpu_count(logical=True) or 1
             cpu_pct = psutil.cpu_percent(interval=0)
@@ -1460,9 +1449,13 @@ class EventLoop:
                         exc_info=True,
                     )
             snapshot = LoadSnapshot(
-                loadavg_1m=load_1, loadavg_5m=load_5, loadavg_10m=load_10,
-                logical_cpu_count=cpu_count, cpu_percent=cpu_pct,
-                memory_available_percent=mem.percent, disk_free_percent=disk_free_pct,
+                loadavg_1m=load_1,
+                loadavg_5m=load_5,
+                loadavg_10m=load_10,
+                logical_cpu_count=cpu_count,
+                cpu_percent=cpu_pct,
+                memory_available_percent=mem.percent,
+                disk_free_percent=disk_free_pct,
                 active_jobs=active_jobs,
             )
             outputs = controller.evaluate_snapshot(snapshot, queues)
@@ -1482,13 +1475,14 @@ class EventLoop:
             context = {"todo": todo_ctx}
             actions = evaluate_rules(rules, context)
             if actions:
-                all_results.append({
-                    "todo_id": _safe_str(todo_ctx, "todo_id", ""),
-                    "actions": [
-                        {"rule_id": a.rule_id, "action_type": a.action_type, "params": a.params}
-                        for a in actions
-                    ],
-                })
+                all_results.append(
+                    {
+                        "todo_id": _safe_str(todo_ctx, "todo_id", ""),
+                        "actions": [
+                            {"rule_id": a.rule_id, "action_type": a.action_type, "params": a.params} for a in actions
+                        ],
+                    }
+                )
         self._tick_state["rule_evaluation_results"] = all_results
 
     async def _phase_refill_task_buckets(self) -> None:
@@ -1548,21 +1542,15 @@ class EventLoop:
                 artifact_path = Path(required_artifact_dir)
                 if not artifact_path.exists():
                     stage_result["entry_passed"] = False
-                    entry_checks.append(
-                        f"artifact_dir missing: {required_artifact_dir}"
-                    )
+                    entry_checks.append(f"artifact_dir missing: {required_artifact_dir}")
             for gate_name, gate_spec in entry_gates.items():
                 if isinstance(gate_spec, dict) and gate_spec.get("required"):
                     stage_result["entry_passed"] = False
-                    entry_checks.append(
-                        f"entry gate unsatisfied: {gate_name}"
-                    )
+                    entry_checks.append(f"entry gate unsatisfied: {gate_name}")
             for gate_name, gate_spec in exit_gates.items():
                 if isinstance(gate_spec, dict) and gate_spec.get("required"):
                     stage_result["exit_passed"] = False
-                    exit_checks.append(
-                        f"exit gate unsatisfied: {gate_name}"
-                    )
+                    exit_checks.append(f"exit gate unsatisfied: {gate_name}")
             if not stage_result["entry_passed"] or not stage_result["exit_passed"]:
                 results["stages_blocked"] += 1
             results["stages_checked"] += 1
@@ -1583,9 +1571,9 @@ class EventLoop:
             and self._tick_project_id is not None
             and self._pause_controller.is_paused("project", self._tick_project_id)
         ):
-                logger.info("Project %s is paused — skipping claim", self._tick_project_id)
-                self._tick_state["claimed_todos"] = []
-                return
+            logger.info("Project %s is paused — skipping claim", self._tick_project_id)
+            self._tick_state["claimed_todos"] = []
+            return
         project_id = self._tick_project_id
         if project_id is None:
             logger.warning("Claim skipped: no active project selected")
@@ -1626,9 +1614,7 @@ class EventLoop:
             self._tick_state["claimed_todos"] = []
             return
 
-        claimed = await self._todo_repo.claim_runnable(
-            limit=effective_limit, project_id=project_id
-        )
+        claimed = await self._todo_repo.claim_runnable(limit=effective_limit, project_id=project_id)
         # A stale todo requeued during the refill phase must not be reclaimed
         # immediately in the same tick.  Leave it queued for the next worker
         # tick, releasing the transient claim lease as part of the rollback.
@@ -1670,6 +1656,7 @@ class EventLoop:
         # work can be reclaimed once the lease expires.
         if claimed and self._active_session is not None:
             from general_ludd.event_loop.lease import acquire_leases_batch
+
             holder = f"tick-{self._total_ticks}"
             bucket_keys = []
             for todo in claimed:
@@ -1686,7 +1673,8 @@ class EventLoop:
             except Exception as exc:
                 logger.warning(
                     "Batch lease acquisition failed for %d todos: %s",
-                    len(bucket_keys), exc,
+                    len(bucket_keys),
+                    exc,
                     exc_info=True,
                 )
 
@@ -1731,9 +1719,7 @@ class EventLoop:
         claimed = list(self._tick_state.get("claimed_todos", []))
         claimed = await self._trim_claimed_to_pid_cap(claimed)
         if self._budget_guard is not None:
-            check = self._budget_guard.check_all_limits(
-                estimated_cost=self._estimated_dispatch_cost(len(claimed))
-            )
+            check = self._budget_guard.check_all_limits(estimated_cost=self._estimated_dispatch_cost(len(claimed)))
             if not check["allowed"]:
                 logger.warning("Budget exceeded, skipping execute dispatch: %s", check["reason"])
                 self._tick_metrics["todos_dispatched"] = 0
@@ -1786,9 +1772,7 @@ class EventLoop:
             # serialization is explicitly needed (opt-in via config).
             queue_exclusive = self._config_snapshot.get("scheduler_queue_exclusive", False)
             resources: frozenset[str] = (
-                frozenset({f"queue:{queue}", f"todo:{todo_id}"})
-                if queue_exclusive
-                else frozenset({f"todo:{todo_id}"})
+                frozenset({f"queue:{queue}", f"todo:{todo_id}"}) if queue_exclusive else frozenset({f"todo:{todo_id}"})
             )
             items.append(WorkItem(id=todo_id, resources=resources))
 
@@ -1816,14 +1800,11 @@ class EventLoop:
             if can_concurrent and len(batch_todos) > 1:
                 # Concurrent: each coroutine opens its own session.
                 logger.info(
-                    "Scheduler batch: %d jobs concurrent (session-per-coroutine, "
-                    "max_concurrent=%d)",
-                    len(batch_todos), self._dispatch_semaphore._value,
+                    "Scheduler batch: %d jobs concurrent (session-per-coroutine, max_concurrent=%d)",
+                    len(batch_todos),
+                    self._dispatch_semaphore._value,
                 )
-                tasks = [
-                    asyncio.ensure_future(self._dispatch_with_semaphore(t))
-                    for t in batch_todos
-                ]
+                tasks = [asyncio.ensure_future(self._dispatch_with_semaphore(t)) for t in batch_todos]
                 batch_timeout = min(300.0 * len(batch_todos), 1800.0)
                 try:
                     results = await asyncio.wait_for(
@@ -1832,8 +1813,7 @@ class EventLoop:
                     )
                 except TimeoutError:
                     logger.error(
-                        "Concurrent dispatch batch timed out after %.0fs; "
-                        "cancelling %d pending job(s)",
+                        "Concurrent dispatch batch timed out after %.0fs; cancelling %d pending job(s)",
                         batch_timeout,
                         sum(1 for t in tasks if not t.done()),
                     )
@@ -1907,7 +1887,8 @@ class EventLoop:
                 except Exception as exc:
                     logger.warning(
                         "Failed to commit isolated job session for %s: %s",
-                        getattr(todo, "todo_id", "?"), exc,
+                        getattr(todo, "todo_id", "?"),
+                        exc,
                     )
         finally:
             if sandbox_handle is not None:
@@ -1923,6 +1904,7 @@ class EventLoop:
         """
         try:
             from general_ludd.security.sandboxes import SandboxTarget, detect
+
             backend = detect.auto()
             if backend is None:
                 logger.warning(
@@ -1965,7 +1947,9 @@ class EventLoop:
         except Exception as exc:
             logger.error(
                 "Sandbox apply raised for todo %s — dispatching UNSANDBOXED: %s",
-                _safe_str(todo, "todo_id", "?"), exc, exc_info=True,
+                _safe_str(todo, "todo_id", "?"),
+                exc,
+                exc_info=True,
             )
             return None
 
@@ -1973,6 +1957,7 @@ class EventLoop:
         """Release a sandbox handle; best-effort + fail-open."""
         try:
             from general_ludd.security.sandboxes import detect
+
             backend = detect.auto()
             if backend is None or handle is None:
                 return
@@ -1980,7 +1965,8 @@ class EventLoop:
         except Exception as exc:
             logger.warning(
                 "Sandbox release raised (token=%s): %s",
-                getattr(handle, "token", "?"), exc,
+                getattr(handle, "token", "?"),
+                exc,
             )
 
     def _resolve_permission_spec(self, todo: Any) -> Any | None:
@@ -2086,10 +2072,10 @@ class EventLoop:
         except Exception as exc:
             logger.warning(
                 "could not resolve human_input for todo %s: %s",
-                todo_id, exc,
+                todo_id,
+                exc,
             )
             return None
-
 
     def _get_rule_overrides_for_todo(self, todo: Any) -> dict[str, Any]:
         results = self._tick_state.get("rule_evaluation_results", [])
@@ -2141,8 +2127,7 @@ class EventLoop:
             accepted = limiter.try_charge(projected, kind="token")
             if not accepted:
                 logger.warning(
-                    "SpendLimiter: deferring dispatch for todo %s — projected=%.6f "
-                    "window_spend=%.6f remaining=%.6f",
+                    "SpendLimiter: deferring dispatch for todo %s — projected=%.6f window_spend=%.6f remaining=%.6f",
                     _safe_str(todo, "todo_id", "?"),
                     projected,
                     limiter.window_spend(),
@@ -2154,9 +2139,7 @@ class EventLoop:
             return
         # Resolve which repos/session to use: per-job overrides (concurrent path)
         # or the shared tick-level ones (sequential fallback path).
-        eff_variable_repo = (
-            _variable_repo_override if _variable_repo_override is not None else self._variable_repo
-        )
+        eff_variable_repo = _variable_repo_override if _variable_repo_override is not None else self._variable_repo
         eff_task_return_repo = (
             _task_return_repo_override if _task_return_repo_override is not None else self._task_return_repo
         )
@@ -2167,14 +2150,14 @@ class EventLoop:
             budget_context["mcp_tools"] = self._mcp_tool_registry.tool_names()
         default_playbook = self._config_snapshot.get("default_playbook", "noop.yml")
         work_type = _safe_str(todo, "work_type", "code") or "code"
-        project_id_val = (
-            todo.project_id if hasattr(todo, "project_id") and isinstance(todo.project_id, str)
-            else None
-        )
+        project_id_val = todo.project_id if hasattr(todo, "project_id") and isinstance(todo.project_id, str) else None
         workspaces = self._project_workspace if isinstance(self._project_workspace, dict) else None
         ws = workspaces.get(project_id_val) if workspaces and project_id_val else None
         playbook = _playbook_for_work_type(
-            work_type, default_playbook, project_id=project_id_val, workspaces=workspaces,
+            work_type,
+            default_playbook,
+            project_id=project_id_val,
+            workspaces=workspaces,
         )
         rule_overrides = self._get_rule_overrides_for_todo(todo)
         adaptive_prompt_id, adaptive_model_id, routing_decision = await self._resolve_adaptive_prompt(todo)
@@ -2192,19 +2175,17 @@ class EventLoop:
             "work_type": work_type,
             "queue": _safe_str(todo, "queue") or "core",
             "priority": str(getattr(todo, "priority", "medium") or "medium"),
-            "acceptance_criteria": _format_acceptance_criteria(
-                _safe_str(todo, "acceptance_criteria")
-            ),
+            "acceptance_criteria": _format_acceptance_criteria(_safe_str(todo, "acceptance_criteria")),
             "definition_of_done": _safe_str(todo, "definition_of_done") or "",
         }
         project_templates_dir = (
-            str(ws.templates_dir)
-            if ws and hasattr(ws, "templates_dir") and ws.templates_dir.is_dir()
-            else None
+            str(ws.templates_dir) if ws and hasattr(ws, "templates_dir") and ws.templates_dir.is_dir() else None
         )
         prompt_text = _resolve_prompt_text_static(
-            self._prompt_registry, resolved_prompt_profile,
-            project_templates_dir=project_templates_dir, **task_context,
+            self._prompt_registry,
+            resolved_prompt_profile,
+            project_templates_dir=project_templates_dir,
+            **task_context,
         )
         # Fallback: the prompt_profile path above is PRIMARY, but a generation
         # todo submitted via POST /api/todos has no prompt_profile, so
@@ -2225,7 +2206,9 @@ class EventLoop:
                     getattr(todo, "todo_id", "?"),
                 )
         prompt_text = await self._append_message_queue_section(
-            prompt_text, todo, project_id_val,
+            prompt_text,
+            todo,
+            project_id_val,
         )
         # B3.1.5 checkpoint — pre-model boundary. After claim + prompt
         # resolution, before the model is called. A crash here resumes with
@@ -2262,28 +2245,14 @@ class EventLoop:
                 from general_ludd.planning.debt_applier import apply_debt_findings
 
                 plan = PlanArtifact.from_todo(todo)
-                goal = (
-                    _safe_str(todo, "title")
-                    or _safe_str(todo, "description")
-                    or plan.todo_id
-                )
-                findings = await self._bounded_to_thread(
-                    self._debt_evaluator.evaluate, plan, goal
-                )
-                repo = (
-                    TodoRepository(eff_session)
-                    if eff_session is not None
-                    else self._todo_repo
-                )
+                goal = _safe_str(todo, "title") or _safe_str(todo, "description") or plan.todo_id
+                findings = await self._bounded_to_thread(self._debt_evaluator.evaluate, plan, goal)
+                repo = TodoRepository(eff_session) if eff_session is not None else self._todo_repo
                 if repo is not None:
-                    result = await apply_debt_findings(
-                        findings, plan, todo, repo, project_id=project_id_val
-                    )
+                    result = await apply_debt_findings(findings, plan, todo, repo, project_id=project_id_val)
                     if result.prompt_addendum:
                         prompt_text = (
-                            f"{prompt_text}\n\n{result.prompt_addendum}"
-                            if prompt_text
-                            else result.prompt_addendum
+                            f"{prompt_text}\n\n{result.prompt_addendum}" if prompt_text else result.prompt_addendum
                         )
             except Exception:
                 logger.warning(
@@ -2337,6 +2306,7 @@ class EventLoop:
         if self._runner is not None:
             if ws is not None and hasattr(ws, "private_data_dir"):
                 import os as _os
+
                 job_dir = _os.path.join(str(ws.private_data_dir), job_id)
                 _os.makedirs(job_dir, exist_ok=True)
                 _os.makedirs(_os.path.join(job_dir, "env"), exist_ok=True)
@@ -2353,9 +2323,7 @@ class EventLoop:
             _model_call_success = False
             _model_call_error: str | None = None
             _eff_gateway = self._mock_gateway if self._mock_gateway is not None else self._model_gateway
-            if _eff_gateway is not None and is_generation_work_type(
-                _safe_str(todo, "work_type", "code") or "code"
-            ):
+            if _eff_gateway is not None and is_generation_work_type(_safe_str(todo, "work_type", "code") or "code"):
                 # Deployment health check: before calling the model, verify
                 # the targeted deployment is healthy. If unhealthy, the
                 # self-healing router picks the first healthy fallback.
@@ -2369,8 +2337,7 @@ class EventLoop:
                         _deployment_id = _routed
                     elif _routed is None:
                         logger.warning(
-                            "Deployment %s is unhealthy with no healthy fallback; "
-                            "proceeding with original profile",
+                            "Deployment %s is unhealthy with no healthy fallback; proceeding with original profile",
                             _deployment_id,
                         )
                 _call_start = time.monotonic()
@@ -2379,43 +2346,19 @@ class EventLoop:
                 # dynamically-tuned level; otherwise fall back to static config.
                 if self._compaction_controller is not None:
                     if self._compaction_level is None:
-                        _compaction_cfg = (
-                            self.config.get("compaction", {})
-                            if isinstance(self.config, dict)
-                            else {}
-                        )
-                        _cfg_level = (
-                            _compaction_cfg.get("level", 1)
-                            if _compaction_cfg.get("enabled")
-                            else 0
-                        )
+                        _compaction_cfg = self.config.get("compaction", {}) if isinstance(self.config, dict) else {}
+                        _cfg_level = _compaction_cfg.get("level", 1) if _compaction_cfg.get("enabled") else 0
                         self._compaction_level = _cfg_level
-                    _use_slm_compaction = (
-                        not self._compaction_disabled
-                        and self._compaction_level > 0
-                    )
-                    _compaction_level = (
-                        _level_at(self._compaction_level)
-                        if _use_slm_compaction
-                        else None
-                    )
+                    _use_slm_compaction = not self._compaction_disabled and self._compaction_level > 0
+                    _compaction_level = _level_at(self._compaction_level) if _use_slm_compaction else None
                 else:
-                    _compaction_cfg = (
-                        self.config.get("compaction", {})
-                        if isinstance(self.config, dict)
-                        else {}
-                    )
+                    _compaction_cfg = self.config.get("compaction", {}) if isinstance(self.config, dict) else {}
                     _use_slm_compaction = bool(_compaction_cfg.get("enabled", False))
-                    _compaction_level = (
-                        _level_at(_compaction_cfg.get("level", 1))
-                        if _use_slm_compaction
-                        else None
-                    )
+                    _compaction_level = _level_at(_compaction_cfg.get("level", 1)) if _use_slm_compaction else None
                 try:
                     from general_ludd.scheduling.scheduler import ComputeSchedulingHint
-                    _sched_hint = ComputeSchedulingHint.for_work_type(
-                        _safe_str(todo, "work_type", "code") or "code"
-                    )
+
+                    _sched_hint = ComputeSchedulingHint.for_work_type(_safe_str(todo, "work_type", "code") or "code")
                     model_response, model_tool_calls = await self._bounded_to_thread(
                         invoke_model_for_generation,
                         _eff_gateway,
@@ -2437,21 +2380,25 @@ class EventLoop:
                     _model_call_success = model_response is not None
                     if self._run_recorder is not None:
                         with contextlib.suppress(Exception):
-                            self._run_recorder.record(job_id, {
-                                "type": "model_generation",
-                                "timestamp": datetime.now(UTC).isoformat(),
-                                "success": _model_call_success,
-                                "model_profile": resolved_model_profile,
-                                "input_tokens": len(prompt_text or "") // 4,
-                                "output_tokens": len(model_response or "") // 4,
-                            })
+                            self._run_recorder.record(
+                                job_id,
+                                {
+                                    "type": "model_generation",
+                                    "timestamp": datetime.now(UTC).isoformat(),
+                                    "success": _model_call_success,
+                                    "model_profile": resolved_model_profile,
+                                    "input_tokens": len(prompt_text or "") // 4,
+                                    "output_tokens": len(model_response or "") // 4,
+                                },
+                            )
                 except Exception as _exc:
                     model_response = None
                     model_tool_calls = None
                     _model_call_error = str(_exc)
                     logger.warning(
                         "Model call raised in EventLoop for job %s: %s",
-                        job_id, _exc,
+                        job_id,
+                        _exc,
                     )
             else:
                 model_response = None
@@ -2522,13 +2469,15 @@ class EventLoop:
                 except Exception as _rec_exc:
                     logger.debug(
                         "Model perf recording failed for %s: %s",
-                        job_id, _rec_exc,
+                        job_id,
+                        _rec_exc,
                     )
             if model_response is not None:
                 from general_ludd.dispatch.dynamic_dispatcher import (
                     structured_tool_calls_to_calls,
                 )
                 from general_ludd.routers.dispatch import MAX_CALLS_PER_REQUEST
+
                 # Dispatch the model's STRUCTURED tool_calls directly. The legacy
                 # path re-parsed the TEXT (parse_tool_calls(model_response)) which
                 # cannot recover the structured calls, so model-driven tool actions
@@ -2536,8 +2485,7 @@ class EventLoop:
                 calls = structured_tool_calls_to_calls(model_tool_calls)
                 if len(calls) > MAX_CALLS_PER_REQUEST:
                     logger.error(
-                        "EventLoop: model returned %d tool calls which exceeds cap %d — "
-                        "denying all (job %s)",
+                        "EventLoop: model returned %d tool calls which exceeds cap %d — denying all (job %s)",
                         len(calls),
                         MAX_CALLS_PER_REQUEST,
                         job_id,
@@ -2576,22 +2524,24 @@ class EventLoop:
                                         # swallowing per-result so one bad write
                                         # does not abort the rest, but log it.
                                         logger.debug(
-                                            "Failed to persist tool_result for %s "
-                                            "(job %s)",
+                                            "Failed to persist tool_result for %s (job %s)",
                                             r.name,
                                             job_id,
                                             exc_info=True,
                                         )
                         if self._run_recorder is not None:
                             with contextlib.suppress(Exception):
-                                self._run_recorder.record(job_id, {
-                                    "type": "tool_calls_dispatched",
-                                    "timestamp": datetime.now(UTC).isoformat(),
-                                    "total": len(results),
-                                    "ok": ok_count,
-                                    "error_count": err_count,
-                                    "calls": [r.to_dict() for r in results],
-                                })
+                                self._run_recorder.record(
+                                    job_id,
+                                    {
+                                        "type": "tool_calls_dispatched",
+                                        "timestamp": datetime.now(UTC).isoformat(),
+                                        "total": len(results),
+                                        "ok": ok_count,
+                                        "error_count": err_count,
+                                        "calls": [r.to_dict() for r in results],
+                                    },
+                                )
             # Phase 2 (keystone): autonomous tool use via the ToolCallLoop.
             #
             # Phase 1 above is tool-free by design (CA-T9): it produces text and,
@@ -2608,16 +2558,10 @@ class EventLoop:
             # the iterative tool loop so they can react to test failures. Still
             # gated on MCP client + model gateway presence. Wrapped so any
             # failure logs + falls through without breaking the tick.
-            if (
-                work_type in _TOOL_USE_WORK_TYPES
-                and self._mcp_client is not None
-                and self._model_gateway is not None
-            ):
+            if work_type in _TOOL_USE_WORK_TYPES and self._mcp_client is not None and self._model_gateway is not None:
                 try:
                     _use_langgraph = (
-                        self.config.get("use_langgraph_tool_loop", False)
-                        if isinstance(self.config, dict)
-                        else False
+                        self.config.get("use_langgraph_tool_loop", False) if isinstance(self.config, dict) else False
                     )
 
                     tool_loop: Any = None
@@ -2627,12 +2571,9 @@ class EventLoop:
                         auditor = ToolCallAuditor()
                         _adversarial_detector = None
                         if self._daemon_state is not None:
-                            _adversarial_detector = self._daemon_state.get(
-                                "_adversarial_detector"
-                            )
+                            _adversarial_detector = self._daemon_state.get("_adversarial_detector")
                         _max_total_tokens = (
-                            self.config.get("tool_loop", {})
-                            .get("max_total_tokens", None)
+                            self.config.get("tool_loop", {}).get("max_total_tokens", None)
                             if isinstance(self.config, dict)
                             else None
                         )
@@ -2646,9 +2587,7 @@ class EventLoop:
                             adversarial_detector=_adversarial_detector,
                             max_total_tokens=_max_total_tokens,
                         )
-                        logger.debug(
-                            "EventLoop: using LangGraphAgentLoop for Phase-2"
-                        )
+                        logger.debug("EventLoop: using LangGraphAgentLoop for Phase-2")
                     else:
                         from general_ludd.execution.tool_loop import ToolCallLoop
 
@@ -2658,65 +2597,48 @@ class EventLoop:
                         _tl_level = None
                         _tl_summarize_fn = None
                         if self._compaction_controller is not None:
-                            _use_tl = (
-                                not self._compaction_disabled
-                                and (self._compaction_level or 0) > 0
-                            )
+                            _use_tl = not self._compaction_disabled and (self._compaction_level or 0) > 0
                             if _use_tl:
                                 from general_ludd.compaction.slm import (
                                     make_slm_summarize_fn,
                                 )
-                                _tl_level = _level_at(
-                                    self._compaction_level or 1
-                                )
-                                _tl_summarize_fn = make_slm_summarize_fn(
-                                    self._model_gateway, "compactor"
-                                )
+
+                                _tl_level = _level_at(self._compaction_level or 1)
+                                _tl_summarize_fn = make_slm_summarize_fn(self._model_gateway, "compactor")
                         else:
                             _tl_compaction_cfg = (
-                                self.config.get("compaction", {})
-                                if isinstance(self.config, dict)
-                                else {}
+                                self.config.get("compaction", {}) if isinstance(self.config, dict) else {}
                             )
                             if bool(_tl_compaction_cfg.get("enabled", False)):
                                 from general_ludd.compaction.slm import (
                                     make_slm_summarize_fn,
                                 )
-                                _tl_level = _level_at(
-                                    _tl_compaction_cfg.get("level", 1)
-                                )
-                                _tl_summarize_fn = make_slm_summarize_fn(
-                                    self._model_gateway, "compactor"
-                                )
+
+                                _tl_level = _level_at(_tl_compaction_cfg.get("level", 1))
+                                _tl_summarize_fn = make_slm_summarize_fn(self._model_gateway, "compactor")
 
                         auditor = ToolCallAuditor()
                         store = BadCallSituationStore()
                         _adversarial_detector = None
                         if self._daemon_state is not None:
-                            _adversarial_detector = self._daemon_state.get(
-                                "_adversarial_detector"
-                            )
+                            _adversarial_detector = self._daemon_state.get("_adversarial_detector")
                         _code_max_iters = (
-                            self.config.get("tool_loop", {})
-                            .get("code_max_iterations", 5)
+                            self.config.get("tool_loop", {}).get("code_max_iterations", 5)
                             if isinstance(self.config, dict)
                             else 5
                         )
                         _analysis_max_iters = (
-                            self.config.get("tool_loop", {})
-                            .get("analysis_max_iterations", 10)
+                            self.config.get("tool_loop", {}).get("analysis_max_iterations", 10)
                             if isinstance(self.config, dict)
                             else 10
                         )
                         _max_total_tokens = (
-                            self.config.get("tool_loop", {})
-                            .get("max_total_tokens", None)
+                            self.config.get("tool_loop", {}).get("max_total_tokens", None)
                             if isinstance(self.config, dict)
                             else None
                         )
                         _per_iteration_timeout = (
-                            self.config.get("tool_loop", {})
-                            .get("per_iteration_timeout_seconds", None)
+                            self.config.get("tool_loop", {}).get("per_iteration_timeout_seconds", None)
                             if isinstance(self.config, dict)
                             else None
                         )
@@ -2756,9 +2678,7 @@ class EventLoop:
                     phase2_user = prompt_text or ""
                     if model_response:
                         phase2_user = (
-                            f"{phase2_user}\n\n"
-                            f"Initial analysis (refine using the available tools):\n"
-                            f"{model_response}"
+                            f"{phase2_user}\n\nInitial analysis (refine using the available tools):\n{model_response}"
                         ).strip()
                     phase2_job = JobSpec(
                         job_id=job_id,
@@ -2766,8 +2686,7 @@ class EventLoop:
                         playbook=playbook,
                         queue=_safe_str(todo, "queue", "core") or "core",
                         work_type=work_type,
-                        resource_profile=_safe_str(todo, "resource_profile", "low_resource")
-                        or "low_resource",
+                        resource_profile=_safe_str(todo, "resource_profile", "low_resource") or "low_resource",
                         model_profile=resolved_model_profile,
                         prompt_profile=resolved_prompt_profile,
                         prompt_text=phase2_user,
@@ -2780,19 +2699,21 @@ class EventLoop:
                         phase2_user,
                     )
                     logger.info(
-                        "EventLoop: Phase-2 ToolCallLoop completed for %s job %s "
-                        "(work_type=%s)",
+                        "EventLoop: Phase-2 ToolCallLoop completed for %s job %s (work_type=%s)",
                         _safe_str(todo, "todo_id", "?"),
                         job_id,
                         work_type,
                     )
                     if self._run_recorder is not None:
                         with contextlib.suppress(Exception):
-                            self._run_recorder.record(job_id, {
-                                "type": "tool_loop_completed",
-                                "timestamp": datetime.now(UTC).isoformat(),
-                                "output": str(tool_result) if tool_result else None,
-                            })
+                            self._run_recorder.record(
+                                job_id,
+                                {
+                                    "type": "tool_loop_completed",
+                                    "timestamp": datetime.now(UTC).isoformat(),
+                                    "output": str(tool_result) if tool_result else None,
+                                },
+                            )
                     # Persist the tool-loop output alongside the Phase-1 dispatch
                     # results so the autonomous tool action is recorded on the job
                     # trace (mirrors how dispatch_all results are persisted above).
@@ -2823,6 +2744,7 @@ class EventLoop:
             if model_response is not None and self._benchmark_recorder is not None:
                 try:
                     from general_ludd.event_loop.benchmark import record_job_benchmark
+
                     _bt = asyncio.create_task(
                         record_job_benchmark(
                             self._benchmark_recorder,
@@ -2851,6 +2773,7 @@ class EventLoop:
                 # recent-traces buffer reflects actually-captured telemetry.
                 try:
                     from general_ludd.observability.tracer import ExecutionTrace
+
                     _input_tokens = len(prompt_text or "") // 4
                     _output_tokens = len(model_response or "") // 4
                     _trace = ExecutionTrace(
@@ -2882,7 +2805,8 @@ class EventLoop:
                             self._active_traces.pop(_k, None)
                     _tbt = asyncio.create_task(
                         self._benchmark_recorder.record_from_trace(
-                            _trace, success=True,
+                            _trace,
+                            success=True,
                         )
                     )
                     self._track_background_task(_tbt)
@@ -2900,20 +2824,26 @@ class EventLoop:
             # text as ``human_input`` so the agent receives the human's answer
             # to a blocker it raised. None when no human-todo resolved for
             # this todo (the common case).
-            _human_input: str | None = await self._resolve_human_input_for_todo(
-                todo.todo_id
+            _human_input: str | None = await self._resolve_human_input_for_todo(todo.todo_id)
+            await self._bounded_to_thread(
+                self._runner.write_vars,
+                job_id,
+                job_vars={
+                    "job_id": job_id,
+                    "todo_id": todo.todo_id,
+                    "queue": _safe_str(todo, "queue", "core"),
+                    "work_type": _safe_str(todo, "work_type", "unknown"),
+                    "model_profile": resolved_model_profile,
+                    "prompt_profile": resolved_prompt_profile,
+                    "prompt_text": prompt_text,
+                    "skill_body": skill_body,
+                    "model_response": model_response,
+                    "playbook": playbook,
+                    **budget_context,
+                    **({"human_input": _human_input} if _human_input else {}),
+                },
+                shared_vars=shared_vars,
             )
-            await self._bounded_to_thread(self._runner.write_vars, job_id, job_vars={
-                "job_id": job_id, "todo_id": todo.todo_id,
-                "queue": _safe_str(todo, "queue", "core"),
-                "work_type": _safe_str(todo, "work_type", "unknown"),
-                "model_profile": resolved_model_profile,
-                "prompt_profile": resolved_prompt_profile,
-                "prompt_text": prompt_text, "skill_body": skill_body,
-                "model_response": model_response,
-                "playbook": playbook, **budget_context,
-                **({"human_input": _human_input} if _human_input else {}),
-            }, shared_vars=shared_vars)
             runner_env: dict[str, str] = {}
             if ws is not None and hasattr(ws, "roles_dir") and ws.roles_dir.is_dir():
                 runner_env["ANSIBLE_ROLES_PATH"] = str(ws.roles_dir)
@@ -2930,12 +2860,15 @@ class EventLoop:
             )
             if self._run_recorder is not None:
                 with contextlib.suppress(Exception):
-                    self._run_recorder.record(job_id, {
-                        "type": "dispatch_completed",
-                        "timestamp": datetime.now(UTC).isoformat(),
-                        "success": True,
-                        "playbook": playbook,
-                    })
+                    self._run_recorder.record(
+                        job_id,
+                        {
+                            "type": "dispatch_completed",
+                            "timestamp": datetime.now(UTC).isoformat(),
+                            "success": True,
+                            "playbook": playbook,
+                        },
+                    )
             if (
                 self._prompt_variant_selector is not None
                 and self._prompt_variant_selector.variant_metrics is not None
@@ -2951,24 +2884,21 @@ class EventLoop:
             return
         if self._http_client is None:
             return
-        roles_path = (
-            str(ws.roles_dir)
-            if ws and hasattr(ws, "roles_dir") and ws.roles_dir.is_dir()
-            else None
-        )
-        tpl_dir = (
-            str(ws.templates_dir)
-            if ws and hasattr(ws, "templates_dir") and ws.templates_dir.is_dir()
-            else None
-        )
+        roles_path = str(ws.roles_dir) if ws and hasattr(ws, "roles_dir") and ws.roles_dir.is_dir() else None
+        tpl_dir = str(ws.templates_dir) if ws and hasattr(ws, "templates_dir") and ws.templates_dir.is_dir() else None
         job = JobSpec(
-            job_id=f"EXEC-{todo.todo_id}", todo_id=todo.todo_id, playbook=playbook,
+            job_id=f"EXEC-{todo.todo_id}",
+            todo_id=todo.todo_id,
+            playbook=playbook,
             queue=_safe_str(todo, "queue", "core") or "core",
             work_type=_safe_str(todo, "work_type", "unknown") or "unknown",
             resource_profile=_safe_str(todo, "resource_profile", "low_resource") or "low_resource",
-            model_profile=resolved_model_profile, prompt_profile=resolved_prompt_profile,
+            model_profile=resolved_model_profile,
+            prompt_profile=resolved_prompt_profile,
             plan_artifact=_safe_str(todo, "plan_artifact"),
-            prompt_text=prompt_text, skill_body=skill_body, budget_context=budget_context,
+            prompt_text=prompt_text,
+            skill_body=skill_body,
+            budget_context=budget_context,
             project_id=project_id_val,
             artifact_dir=str(ws.artifacts_dir) if ws and hasattr(ws, "artifacts_dir") else None,
             vars_namespace_refs=list(shared_vars.keys()) if shared_vars else [],
@@ -2981,18 +2911,23 @@ class EventLoop:
             json=job.model_dump(mode="json"),
         )
         await self._persist_task_return(
-            todo, job, resp,
+            todo,
+            job,
+            resp,
             _task_return_repo_override=eff_task_return_repo,
             _session_override=eff_session,
         )
         if self._run_recorder is not None:
             with contextlib.suppress(Exception):
-                self._run_recorder.record(job_id, {
-                    "type": "dispatch_completed",
-                    "timestamp": datetime.now(UTC).isoformat(),
-                    "success": True,
-                    "playbook": playbook,
-                })
+                self._run_recorder.record(
+                    job_id,
+                    {
+                        "type": "dispatch_completed",
+                        "timestamp": datetime.now(UTC).isoformat(),
+                        "success": True,
+                        "playbook": playbook,
+                    },
+                )
         # B3.1.5 checkpoint — clear-on-persist boundary. The dispatch
         # committed (persist_task_return wrote the task return), so the
         # checkpoint is no longer actionable and MUST be removed so the
@@ -3042,18 +2977,16 @@ class EventLoop:
                         exc_info=True,
                     )
         actionable = self._checkpoint_manager.filter_actionable_sync(
-            interrupted, statuses=statuses,
+            interrupted,
+            statuses=statuses,
         )
         for snap in actionable:
-            phase = (
-                snap.dispatch_state.phase_marker
-                if snap.dispatch_state is not None
-                else "pre_model"
-            )
+            phase = snap.dispatch_state.phase_marker if snap.dispatch_state is not None else "pre_model"
             self._checkpoint_manager.mark_resumed(snap.task_id, phase=phase)
             logger.info(
                 "B3.1.5: resumed dispatch for todo %s from phase=%s",
-                snap.task_id, phase,
+                snap.task_id,
+                phase,
             )
 
     def _make_daemon_health_probe(self) -> Callable[[], bool]:
@@ -3079,11 +3012,7 @@ class EventLoop:
         """
         state = self._daemon_state
         si_cfg = self.config.get("self_improve", {}) if isinstance(self.config, dict) else {}
-        allow_unverified = (
-            bool(si_cfg.get("allow_unverified_reload", False))
-            if isinstance(si_cfg, dict)
-            else False
-        )
+        allow_unverified = bool(si_cfg.get("allow_unverified_reload", False)) if isinstance(si_cfg, dict) else False
 
         def _probe() -> bool:
             if state is None:
@@ -3093,10 +3022,7 @@ class EventLoop:
             # Dict-style access (the EventLoop holds the shared dict) and
             # attribute-style access (a Starlette ``app.state``-like object may
             # be wired in tests) are both acceptable surfaces.
-            degraded: object = (
-                state.get("_degraded") if isinstance(state, dict)
-                else getattr(state, "_degraded", None)
-            )
+            degraded: object = state.get("_degraded") if isinstance(state, dict) else getattr(state, "_degraded", None)
             return not bool(degraded)
 
         return _probe
@@ -3167,12 +3093,16 @@ class EventLoop:
 
         if not module_name or not candidate_path:
             logger.error(
-                "Step 6: self_update todo %s missing module/candidate tags "
-                "(module=%r, candidate=%r) — failing closed",
-                todo_id, module_name, candidate_path,
+                "Step 6: self_update todo %s missing module/candidate tags (module=%r, candidate=%r) — failing closed",
+                todo_id,
+                module_name,
+                candidate_path,
             )
             await self._transition_self_update_todo(
-                todo_repo, todo_id, TodoStatus.FAILED, version,
+                todo_repo,
+                todo_id,
+                TodoStatus.FAILED,
+                version,
             )
             return
 
@@ -3204,10 +3134,15 @@ class EventLoop:
         except Exception as exc:
             logger.error(
                 "Step 6: reload_if_needed raised for todo %s (module=%s): %s",
-                todo_id, module_name, exc,
+                todo_id,
+                module_name,
+                exc,
             )
             await self._transition_self_update_todo(
-                todo_repo, todo_id, TodoStatus.FAILED, version,
+                todo_repo,
+                todo_id,
+                TodoStatus.FAILED,
+                version,
             )
             return
 
@@ -3215,12 +3150,18 @@ class EventLoop:
         reload_ok = reload_status == "success"
         logger.info(
             "Step 6: self_update todo %s reload verdict=%s ok=%s (module=%s)",
-            todo_id, reload_status, reload_ok, module_name,
+            todo_id,
+            reload_status,
+            reload_ok,
+            module_name,
         )
 
         target_status = TodoStatus.COMPLETE if reload_ok else TodoStatus.FAILED
         await self._transition_self_update_todo(
-            todo_repo, todo_id, target_status, version,
+            todo_repo,
+            todo_id,
+            target_status,
+            version,
         )
 
         if self._daemon_state is not None and isinstance(self._daemon_state, dict):
@@ -3232,13 +3173,15 @@ class EventLoop:
             # daemon consumers that surface it via app.state; we trim from the FRONT
             # so the most recent applies (the ones an operator cares about) survive.
             applies = self._daemon_state.setdefault("self_update_applies", [])
-            applies.append({
-                "todo_id": todo_id,
-                "module": module_name,
-                "candidate": candidate_path,
-                "verdict": reload_status,
-                "ok": reload_ok,
-            })
+            applies.append(
+                {
+                    "todo_id": todo_id,
+                    "module": module_name,
+                    "candidate": candidate_path,
+                    "verdict": reload_status,
+                    "ok": reload_ok,
+                }
+            )
             if len(applies) > self._MAX_SELF_UPDATE_APPLIES:
                 del applies[: len(applies) - self._MAX_SELF_UPDATE_APPLIES]
 
@@ -3259,7 +3202,8 @@ class EventLoop:
         if todo_repo is None:
             logger.warning(
                 "Step 6: no todo_repo available to transition %s -> %s",
-                todo_id, target.value,
+                todo_id,
+                target.value,
             )
             return
         try:
@@ -3267,19 +3211,24 @@ class EventLoop:
         except ConcurrencyError as exc:
             logger.info(
                 "Step 6: lost version race transitioning %s -> %s: %s",
-                todo_id, target.value, exc,
+                todo_id,
+                target.value,
+                exc,
             )
         except Exception as exc:
             logger.error(
                 "Step 6: transition failed for %s -> %s: %s",
-                todo_id, target.value, exc,
+                todo_id,
+                target.value,
+                exc,
             )
 
     async def _dispatch_validate_job(self, todo: Any) -> None:
         if self._http_client is None:
             return
         job = JobSpec(
-            job_id=f"VALIDATE-{todo.todo_id}", todo_id=todo.todo_id,
+            job_id=f"VALIDATE-{todo.todo_id}",
+            todo_id=todo.todo_id,
             playbook="validate_task.yml",
             queue=_safe_str(todo, "queue", "core") or "core",
             work_type=_safe_str(todo, "work_type", "unknown") or "unknown",
@@ -3314,14 +3263,18 @@ class EventLoop:
                 return
             if not isinstance(data, dict):
                 return
-            await eff_repo.create(data={
-                "return_id": data.get("return_id", f"RET-{job.job_id}"),
-                "todo_id": todo.todo_id, "job_id": job.job_id,
-                "playbook": job.playbook, "queue": job.queue,
-                "exit_code": data.get("exit_code", 0),
-                "result_summary": data.get("result_summary", ""),
-                "project_id": job.project_id,
-            })
+            await eff_repo.create(
+                data={
+                    "return_id": data.get("return_id", f"RET-{job.job_id}"),
+                    "todo_id": todo.todo_id,
+                    "job_id": job.job_id,
+                    "playbook": job.playbook,
+                    "queue": job.queue,
+                    "exit_code": data.get("exit_code", 0),
+                    "result_summary": data.get("result_summary", ""),
+                    "project_id": job.project_id,
+                }
+            )
             if eff_session is not None:
                 await eff_session.flush()
             logger.info("Persisted TaskReturn for todo %s", todo.todo_id)
@@ -3374,10 +3327,7 @@ class EventLoop:
                 # (F3) is still status=COMPLETE-but-unpushed; that push must be
                 # retried independently of the apply ledger (keyed on work id),
                 # or the work would be silently lost.
-                if (
-                    d.decision == "complete"
-                    and d.matched_todo_id not in self._pushed_work
-                ):
+                if d.decision == "complete" and d.matched_todo_id not in self._pushed_work:
                     todo = todo_map.get(d.matched_todo_id)
                     if todo is not None and await self._attempt_completed_push(todo):
                         push_failures += 1
@@ -3391,6 +3341,7 @@ class EventLoop:
             # Layer 2: gate COMPLETE transitions behind evidence verification.
             if d.decision == "complete":
                 from general_ludd.review.completion_verifier import verify_completion
+
                 try:
                     _ev_refs: list[str] = json.loads(getattr(d, "evidence_refs", None) or "[]")
                     _audit_notes: list[str] = json.loads(getattr(d, "audit_notes", None) or "[]")
@@ -3410,20 +3361,18 @@ class EventLoop:
                     # stays REVIEWING_RETURN for a later tick. Mirrors the
                     # per-iteration resilience used elsewhere in this loop.
                     logger.warning(
-                        "Reconcile: skipping decision %s for todo %s — could not "
-                        "parse/build evidence for gating: %s",
-                        decision_id, d.matched_todo_id, exc,
+                        "Reconcile: skipping decision %s for todo %s — could not parse/build evidence for gating: %s",
+                        decision_id,
+                        d.matched_todo_id,
+                        exc,
                     )
                     continue
                 _decision_project_id = getattr(d, "project_id", None) or getattr(todo, "project_id", None) or None
                 _repo_root = self._resolve_repo_root(_decision_project_id)
-                _verified = await self._bounded_to_thread(
-                    verify_completion, _schema_dec, None, _repo_root
-                )
+                _verified = await self._bounded_to_thread(verify_completion, _schema_dec, None, _repo_root)
                 if _verified.decision != "complete":
                     logger.warning(
-                        "Reconcile: evidence gate downgraded %s from complete to %s "
-                        "for todo %s",
+                        "Reconcile: evidence gate downgraded %s from complete to %s for todo %s",
                         decision_id,
                         _verified.decision,
                         d.matched_todo_id,
@@ -3441,16 +3390,17 @@ class EventLoop:
                 _ws = Path(_repo_root)
                 if (_ws / "project.yml").is_file():
                     from general_ludd.quality.project_gate import run_project_gate
+
                     try:
-                        _gate_report = await self._bounded_to_thread(
-                            run_project_gate, str(_ws)
-                        )
+                        _gate_report = await self._bounded_to_thread(run_project_gate, str(_ws))
                     except Exception as exc:
                         logger.warning(
                             "Reconcile: project gate errored for decision %s "
                             "(repo_root=%s): %s — leaving decision unchanged "
                             "(fail-safe)",
-                            decision_id, _repo_root, exc,
+                            decision_id,
+                            _repo_root,
+                            exc,
                         )
                     else:
                         if isinstance(_gate_report, dict) and not _gate_report.get("passed"):
@@ -3458,26 +3408,18 @@ class EventLoop:
                             _lines: list[str] = []
                             if isinstance(_checks, list):
                                 for _c in _checks:
-                                    if (
-                                        isinstance(_c, dict)
-                                        and not _c.get("passed", True)
-                                    ):
+                                    if isinstance(_c, dict) and not _c.get("passed", True):
                                         _s = _c.get("summary")
                                         if isinstance(_s, str) and _s:
                                             _lines.append(_s)
                                         else:
-                                            _lines.append(
-                                                f"{_c.get('name', 'check')}: FAIL"
-                                            )
-                            _fail_summary = (
-                                "; ".join(_lines)
-                                if _lines
-                                else "project gate FAILED"
-                            )
+                                            _lines.append(f"{_c.get('name', 'check')}: FAIL")
+                            _fail_summary = "; ".join(_lines) if _lines else "project gate FAILED"
                             logger.warning(
                                 "Reconcile: project gate FAILED for decision %s "
                                 "— downgrading complete -> needs_more_work: %s",
-                                decision_id, _fail_summary,
+                                decision_id,
+                                _fail_summary,
                             )
                             new_status = TodoStatus.NEEDS_MORE_WORK
             # Human-in-the-loop gate: when config ``review.human_in_the_loop`` is
@@ -3509,9 +3451,10 @@ class EventLoop:
                 await self._todo_repo.transition(todo.todo_id, new_status, todo.version)
             except ConcurrencyError as exc:
                 logger.info(
-                    "Reconcile lost version race for todo %s (decision %s): %s — "
-                    "skipping stale reconcile",
-                    todo.todo_id, decision_id, exc,
+                    "Reconcile lost version race for todo %s (decision %s): %s — skipping stale reconcile",
+                    todo.todo_id,
+                    decision_id,
+                    exc,
                 )
                 continue
             # Transition committed: this decision is now applied exactly once.
@@ -3519,9 +3462,7 @@ class EventLoop:
             self._ledger_add(self._applied_decisions, decision_id)
             reconciled += 1
             # AutoMemory: record an episodic memory for this task outcome.
-            self._track_background_task(
-                asyncio.create_task(self._auto_record_episode(todo, new_status, d))
-            )
+            self._track_background_task(asyncio.create_task(self._auto_record_episode(todo, new_status, d)))
             if (
                 new_status == TodoStatus.COMPLETE
                 and d.decision == "complete"
@@ -3534,22 +3475,20 @@ class EventLoop:
             # finished job cannot leave a live credential behind. Best-effort
             # — a provider failure is logged, not raised (the reconcile phase
             # must not abort because cleanup hiccupped on one account).
-            if (
-                new_status == TodoStatus.COMPLETE
-                and self._ephemeral_account_manager is not None
-            ):
-                self._track_background_task(
-                    asyncio.create_task(self._maybe_cleanup_ephemeral(todo))
-                )
+            if new_status == TodoStatus.COMPLETE and self._ephemeral_account_manager is not None:
+                self._track_background_task(asyncio.create_task(self._maybe_cleanup_ephemeral(todo)))
             if self._audit_repo is not None:
                 try:
                     from general_ludd.db.models import AuditEventType
+
                     await self._audit_repo.record_typed(
                         AuditEventType.TODO_STATUS_CHANGED,
-                        entity_type="todo", entity_id=todo.todo_id,
+                        entity_type="todo",
+                        entity_id=todo.todo_id,
                         project_id=todo.project_id,
                         details={
-                            "old": todo.status, "new": new_status.value,
+                            "old": todo.status,
+                            "new": new_status.value,
                             "decision": d.decision,
                         },
                     )
@@ -3592,7 +3531,8 @@ class EventLoop:
         if todo_status in (TodoStatus.BLOCKED.value, TodoStatus.BLOCKED_ON_HUMAN.value):
             logger.debug(
                 "#53: todo %s is %s — push skipped (livelock already escaped)",
-                tid, todo_status,
+                tid,
+                todo_status,
             )
             return False
 
@@ -3610,14 +3550,20 @@ class EventLoop:
             if (tick + offset) % window != 0:
                 logger.debug(
                     "#53: backoff skip for %s (retry %d, tick %d, window %d, offset %d)",
-                    tid, retry_count, tick, window, offset,
+                    tid,
+                    retry_count,
+                    tick,
+                    window,
+                    offset,
                 )
                 return True  # signal failure so ledger skips marking pushed
             # D10: jittered backoff to break retry-phase alignment
-            jitter_sec = random.uniform(0.1, min(5.0, 0.5 * (2 ** retry_count)))
+            jitter_sec = random.uniform(0.1, min(5.0, 0.5 * (2**retry_count)))
             logger.debug(
                 "#53: jittered backoff for %s (retry %d, %.2fs)",
-                tid, retry_count, jitter_sec,
+                tid,
+                retry_count,
+                jitter_sec,
             )
             await asyncio.sleep(jitter_sec)
 
@@ -3631,7 +3577,10 @@ class EventLoop:
                 logger.error(
                     "#53: livelock ESCAPE — todo %s failed push %d times "
                     "(max %d). Transitioning to BLOCKED. Last error: %s",
-                    tid, new_retry, self._MAX_PUSH_RETRIES, exc,
+                    tid,
+                    new_retry,
+                    self._MAX_PUSH_RETRIES,
+                    exc,
                 )
                 await self._escape_push_livelock(todo, new_retry, exc)
                 return False
@@ -3639,7 +3588,10 @@ class EventLoop:
                 "Reconcile: completed-work push FAILED for %s "
                 "(state diverged COMPLETE vs unpushed) — will retry "
                 "(attempt %d/%d): %s",
-                tid, new_retry, self._MAX_PUSH_RETRIES, exc,
+                tid,
+                new_retry,
+                self._MAX_PUSH_RETRIES,
+                exc,
             )
             return True
 
@@ -3649,7 +3601,10 @@ class EventLoop:
         return False
 
     async def _escape_push_livelock(
-        self, todo: Any, retry_count: int, last_error: Exception,
+        self,
+        todo: Any,
+        retry_count: int,
+        last_error: Exception,
     ) -> None:
         """#53: transition the todo to BLOCKED after exhausting push retries.
 
@@ -3663,12 +3618,14 @@ class EventLoop:
                 todo_version = getattr(todo, "version", None)
                 if todo_version is not None:
                     await self._todo_repo.transition(
-                        tid, TodoStatus.BLOCKED, todo_version,
+                        tid,
+                        TodoStatus.BLOCKED,
+                        todo_version,
                     )
                     logger.info(
-                        "#53: todo %s transitioned to BLOCKED after %d "
-                        "failed push attempts",
-                        tid, retry_count,
+                        "#53: todo %s transitioned to BLOCKED after %d failed push attempts",
+                        tid,
+                        retry_count,
                     )
                 else:
                     logger.warning(
@@ -3685,7 +3642,10 @@ class EventLoop:
                 "#53: BLOCKED transition failed for %s after livelock escape "
                 "(retries=%d, push_error=%s, transition_error=%s). "
                 "The todo may remain stuck but the retry loop is broken.",
-                tid, retry_count, last_error, transition_exc,
+                tid,
+                retry_count,
+                last_error,
+                transition_exc,
             )
 
         # Clear the retry counter so a future status change (manual unblock)
@@ -3696,7 +3656,8 @@ class EventLoop:
         mapping: dict[str, TodoStatus] = {
             "complete": TodoStatus.COMPLETE,
             "needs_more_work": TodoStatus.NEEDS_MORE_WORK,
-            "failed": TodoStatus.FAILED, "blocked": TodoStatus.BLOCKED,
+            "failed": TodoStatus.FAILED,
+            "blocked": TodoStatus.BLOCKED,
             "manual_hold": TodoStatus.MANUAL_HOLD,
         }
         return mapping.get(decision)
@@ -3719,6 +3680,7 @@ class EventLoop:
         worktree = getattr(todo, "worktree", None)
         if worktree:
             from general_ludd.git_automation.repo import GitAutomation
+
             repo = GitAutomation(worktree)
             registry = self._file_claims
             worker_id = _safe_str(todo, "todo_id", "") or str(id(todo))
@@ -3746,8 +3708,7 @@ class EventLoop:
                                 sorted(affected),
                             )
                             raise _FileClaimConflict(
-                                f"file-claim conflict for {worker_id}: "
-                                f"{sorted(affected)} contested"
+                                f"file-claim conflict for {worker_id}: {sorted(affected)} contested"
                             )
                         claimed = True
                 # M (LIVE stall fix): commit/push shell out to blocking git.
@@ -3755,9 +3716,7 @@ class EventLoop:
                 # the async tick would freeze every other coroutine. Offload to a
                 # worker thread (mirrors the playbook dispatch's asyncio.to_thread)
                 # so blocking git can never stall the event loop.
-                await self._bounded_to_thread(
-                    repo.commit, f"[{todo.todo_id}] {todo.title}"
-                )
+                await self._bounded_to_thread(repo.commit, f"[{todo.todo_id}] {todo.title}")
                 # Record the per-commit LOC delta into the accounting ledger
                 # (counted via git show --numstat). Best-effort: a counting
                 # failure must never abort the commit/push flow that follows.
@@ -3769,7 +3728,8 @@ class EventLoop:
                     except Exception as loc_exc:
                         logger.debug(
                             "loc_changed recording failed for %s: %s",
-                            todo.todo_id, loc_exc,
+                            todo.todo_id,
+                            loc_exc,
                         )
                 await self._bounded_to_thread(repo.push, branch=branch_name)
                 logger.info("H6: committed + pushed %s to %s", todo.todo_id, branch_name)
@@ -3841,9 +3801,7 @@ class EventLoop:
 
                 claimed = self._tick_state.get("claimed_todos", [])
                 dispatched = self._tick_metrics.get("todos_dispatched", 0)
-                dispatch_success_rate = (
-                    (dispatched / len(claimed) * 100) if claimed else 100.0
-                )
+                dispatch_success_rate = (dispatched / len(claimed) * 100) if claimed else 100.0
 
                 queue_depth = 0
                 if self._todo_repo is not None:
@@ -3887,6 +3845,7 @@ class EventLoop:
             import time as _time
 
             from general_ludd.infra.gpu_metrics import GPUMetricsCollector
+
             metrics = GPUMetricsCollector.collect_all_gpu_metrics()
             if self._daemon_state is not None:
                 self._daemon_state["_last_gpu_metrics"] = metrics
@@ -3896,7 +3855,8 @@ class EventLoop:
         teardown_ticks = self.config.get("compute_idle_teardown_threshold_ticks", 3)
         notice_ticks = self.config.get("compute_idle_preemption_notice_ticks", 1)
         idle_endpoints = self._utilization_tracker.find_idle_gpus(
-            threshold=float(threshold), window=900,
+            threshold=float(threshold),
+            window=900,
         )
         daemon_state = self._daemon_state if self._daemon_state is not None else {}
         idle_tracking: dict[str, Any] = daemon_state.setdefault("idle_endpoints", {})
@@ -3906,6 +3866,7 @@ class EventLoop:
         import time as _time
 
         from general_ludd.infra.gpu_metrics import GPUMetricsCollector
+
         metrics = GPUMetricsCollector.collect_all_gpu_metrics()
         daemon_state["_last_gpu_metrics"] = metrics
         daemon_state["_last_gpu_metrics_at"] = _time.time()
@@ -3924,18 +3885,23 @@ class EventLoop:
             count = idle_tracking[ep.endpoint_id]["idle_ticks"]
             logger.warning(
                 "Idle GPU endpoint %s (%s, %s): %d consecutive idle ticks",
-                ep.endpoint_id, ep.model, ep.gpu_type, count,
+                ep.endpoint_id,
+                ep.model,
+                ep.gpu_type,
+                count,
             )
             # bill-7: preemption notice — warn N ticks before teardown.
             if notice_ticks > 0 and count == teardown_ticks - notice_ticks:
                 logger.warning(
                     "[COMPUTE] endpoint %s will be torn down in %d ticks if idle persists",
-                    ep.endpoint_id, notice_ticks,
+                    ep.endpoint_id,
+                    notice_ticks,
                 )
             if count >= teardown_ticks:
                 logger.warning(
                     "Tearing down idle GPU endpoint %s after %d idle ticks",
-                    ep.endpoint_id, count,
+                    ep.endpoint_id,
+                    count,
                 )
                 # bill-7: record infra cost on teardown.
                 if self._infra_tracker is not None:
@@ -3951,12 +3917,12 @@ class EventLoop:
                     except Exception as _exc:
                         logger.warning(
                             "Failed to record infra cost for teardown of %s: %s",
-                            ep.endpoint_id, _exc,
+                            ep.endpoint_id,
+                            _exc,
                         )
                 else:
                     logger.warning(
-                        "_infra_tracker not initialized; cannot record GPU cost "
-                        "for teardown of %s",
+                        "_infra_tracker not initialized; cannot record GPU cost for teardown of %s",
                         ep.endpoint_id,
                     )
                 if self._deployment_manager is not None:
@@ -3965,13 +3931,13 @@ class EventLoop:
                     except Exception as exc:
                         logger.error(
                             "Failed to tear down idle endpoint %s: %s",
-                            ep.endpoint_id, exc,
+                            ep.endpoint_id,
+                            exc,
                         )
                         continue
                 else:
                     logger.warning(
-                        "_deployment_manager not initialized; cannot destroy "
-                        "idle endpoint %s",
+                        "_deployment_manager not initialized; cannot destroy idle endpoint %s",
                         ep.endpoint_id,
                     )
                 self._utilization_tracker.unregister_endpoint(ep.endpoint_id)
@@ -4010,9 +3976,9 @@ class EventLoop:
             self._daemon_state["credits"] = results
         # Surface low-balance providers in tick metrics for the dashboard.
         low = [
-            svc for svc, r in results.items()
-            if r.get("balance_usd") is not None
-            and self._credit_tracker.should_refill(svc)
+            svc
+            for svc, r in results.items()
+            if r.get("balance_usd") is not None and self._credit_tracker.should_refill(svc)
         ]
         if low:
             self._tick_metrics["low_credit_services"] = low
@@ -4060,8 +4026,7 @@ class EventLoop:
                 await session.commit()
             self._spend_limiter.mark_flushed(max_seq)
             logger.info(
-                "SpendLimiter: flushed %d record(s) to spend_records "
-                "(upto_seq=%d)",
+                "SpendLimiter: flushed %d record(s) to spend_records (upto_seq=%d)",
                 len(unflushed),
                 max_seq,
             )
@@ -4110,11 +4075,7 @@ class EventLoop:
             )
             from general_ludd.remediation.dispatcher import RemediationDispatcher
 
-            cfg = (
-                self._daemon_state.get("remediation_config")
-                if self._daemon_state is not None
-                else None
-            )
+            cfg = self._daemon_state.get("remediation_config") if self._daemon_state is not None else None
             if not isinstance(cfg, RemediationConfig):
                 cfg = RemediationConfig()
             human_todo_repo = HumanTodoRepository(self._active_session)
@@ -4147,9 +4108,7 @@ class EventLoop:
                 acted += 1
             self._tick_metrics["remediation_actions"] = acted
         except Exception as exc:
-            logger.warning(
-                "Auto-remediation tick phase failed: %s", exc, exc_info=True
-            )
+            logger.warning("Auto-remediation tick phase failed: %s", exc, exc_info=True)
 
     async def _phase_self_improve(self) -> None:
         interval = self._self_improve_interval
@@ -4190,12 +4149,11 @@ class EventLoop:
             if grinding_todos:
                 todos.extend(grinding_todos)
             if todos:
-                enqueued = await self._persist_self_improve_todos(
-                    todos, project_id=self._tick_project_id
-                )
+                enqueued = await self._persist_self_improve_todos(todos, project_id=self._tick_project_id)
                 if self._daemon_state is not None:
                     self._daemon_state["self_improve_last_analysis"] = {
-                        "findings": findings, "findings_count": len(findings),
+                        "findings": findings,
+                        "findings_count": len(findings),
                         "grinding_todos": len(grinding_todos),
                         "todos_enqueued": enqueued,
                     }
@@ -4203,7 +4161,9 @@ class EventLoop:
                 self._tick_metrics["self_improve_todos_persisted"] = enqueued
                 logger.info(
                     "Self-improve cycle: %d gaps, %d grinding todos → %d persisted",
-                    len(findings), len(grinding_todos), enqueued,
+                    len(findings),
+                    len(grinding_todos),
+                    enqueued,
                 )
             else:
                 self._tick_metrics["self_improve_gaps"] = 0
@@ -4279,6 +4239,7 @@ class EventLoop:
                 BlockerDetector,
                 RemediationConfig,
             )
+
             rc_kwargs: dict[str, Any] = {}
             if "chronic_lookback_days" in si_cfg:
                 rc_kwargs["chronic_lookback_days"] = int(si_cfg["chronic_lookback_days"])
@@ -4299,8 +4260,7 @@ class EventLoop:
             return list(records)
         except Exception as exc:
             logger.warning(
-                "Self-improve: recurring-failure ingest failed (%s); "
-                "continuing with static/model gap scan",
+                "Self-improve: recurring-failure ingest failed (%s); continuing with static/model gap scan",
                 exc,
                 exc_info=True,
             )
@@ -4343,29 +4303,19 @@ class EventLoop:
                 # the N+1 query pattern (one query per entity type, not
                 # one query per row).
                 return_ids = [tr.return_id for tr in returns]
-                todo_ids = [
-                    tr.todo_id for tr in returns if tr.todo_id
-                ]
+                todo_ids = [tr.todo_id for tr in returns if tr.todo_id]
 
                 dec_map: dict[str, TaskDecisionModel] = {}
                 if return_ids:
-                    dec_stmt = select(TaskDecisionModel).where(
-                        TaskDecisionModel.return_id.in_(return_ids)
-                    )
+                    dec_stmt = select(TaskDecisionModel).where(TaskDecisionModel.return_id.in_(return_ids))
                     dec_result = await session.execute(dec_stmt)
-                    dec_map = {
-                        d.return_id: d for d in dec_result.scalars().all()
-                    }
+                    dec_map = {d.return_id: d for d in dec_result.scalars().all()}
 
                 todo_map: dict[str, TodoModel] = {}
                 if todo_ids:
-                    todo_stmt = select(TodoModel).where(
-                        TodoModel.todo_id.in_(todo_ids)
-                    )
+                    todo_stmt = select(TodoModel).where(TodoModel.todo_id.in_(todo_ids))
                     todo_result = await session.execute(todo_stmt)
-                    todo_map = {
-                        t.todo_id: t for t in todo_result.scalars().all()
-                    }
+                    todo_map = {t.todo_id: t for t in todo_result.scalars().all()}
 
                 recorded = 0
                 for tr in returns:
@@ -4378,14 +4328,8 @@ class EventLoop:
                             if todo_row.description:
                                 instruction = f"{instruction}: {todo_row.description}"
 
-                    decision = (
-                        decision_row.decision if decision_row else "unknown"
-                    )
-                    outcome_status = (
-                        "succeeded"
-                        if decision == "complete"
-                        else "rejected_by_review"
-                    )
+                    decision = decision_row.decision if decision_row else "unknown"
+                    outcome_status = "succeeded" if decision == "complete" else "rejected_by_review"
 
                     try:
                         pair = await collector.capture(
@@ -4395,9 +4339,7 @@ class EventLoop:
                             agent_id=tr.producer_worker_id or "",
                             project_id=tr.project_id,
                         )
-                        await collector.resolve_outcome(
-                            pair.id, outcome_status
-                        )
+                        await collector.resolve_outcome(pair.id, outcome_status)
                         recorded += 1
                     except Exception as pair_exc:
                         logger.debug(
@@ -4441,8 +4383,7 @@ class EventLoop:
                 report = await collector.quality_report()
 
                 logger.info(
-                    "Self-improve quality report: total=%d resolved=%d "
-                    "positive=%d negative=%d",
+                    "Self-improve quality report: total=%d resolved=%d positive=%d negative=%d",
                     report["total_pairs"],
                     report["resolved"],
                     report["positive_examples"],
@@ -4465,25 +4406,15 @@ class EventLoop:
                 for ex in rejected:
                     instr = ex.instruction.lower()
                     if any(kw in instr for kw in stop_keywords):
-                        error_patterns["premature_stop"] = (
-                            error_patterns.get("premature_stop", 0) + 1
-                        )
+                        error_patterns["premature_stop"] = error_patterns.get("premature_stop", 0) + 1
                     if any(kw in instr for kw in grind_keywords):
-                        error_patterns["grind_failure"] = (
-                            error_patterns.get("grind_failure", 0) + 1
-                        )
-                    if not any(
-                        kw in instr
-                        for kw in stop_keywords | grind_keywords
-                    ):
-                        error_patterns["generic_failure"] = (
-                            error_patterns.get("generic_failure", 0) + 1
-                        )
+                        error_patterns["grind_failure"] = error_patterns.get("grind_failure", 0) + 1
+                    if not any(kw in instr for kw in stop_keywords | grind_keywords):
+                        error_patterns["generic_failure"] = error_patterns.get("generic_failure", 0) + 1
 
                 if error_patterns:
                     logger.warning(
-                        "Self-improve: detected error patterns across %d "
-                        "rejected examples: %s",
+                        "Self-improve: detected error patterns across %d rejected examples: %s",
                         len(rejected),
                         error_patterns,
                     )
@@ -4495,21 +4426,22 @@ class EventLoop:
                         }
                 else:
                     logger.info(
-                        "Self-improve: no error patterns detected in %d "
-                        "rejected examples",
+                        "Self-improve: no error patterns detected in %d rejected examples",
                         len(rejected),
                     )
 
                 outcome_analyzer = OutcomeAnalyzer()
                 outcome_records: list[dict[str, Any]] = []
                 for ex in rejected:
-                    outcome_records.append({
-                        "task_type": getattr(ex, "work_type", "unknown"),
-                        "model": getattr(ex, "model", "unknown"),
-                        "passed": getattr(ex, "exit_code", 1) == 0,
-                        "tokens_used": getattr(ex, "tokens_used", 0),
-                        "duration_ms": getattr(ex, "duration_ms", 0),
-                    })
+                    outcome_records.append(
+                        {
+                            "task_type": getattr(ex, "work_type", "unknown"),
+                            "model": getattr(ex, "model", "unknown"),
+                            "passed": getattr(ex, "exit_code", 1) == 0,
+                            "tokens_used": getattr(ex, "tokens_used", 0),
+                            "duration_ms": getattr(ex, "duration_ms", 0),
+                        }
+                    )
                 suggestions = outcome_analyzer.analyze(
                     outcomes=outcome_records,
                 )
@@ -4520,7 +4452,9 @@ class EventLoop:
                     )
         except Exception as exc:
             logger.warning(
-                "Self-improve analysis failed: %s", exc, exc_info=True,
+                "Self-improve analysis failed: %s",
+                exc,
+                exc_info=True,
             )
 
     # Maximum entries kept in the per-instance idempotency ledgers.
@@ -4557,6 +4491,7 @@ class EventLoop:
         # after every insert regardless of prior state.
         while len(ledger) > self._MAX_LEDGER_SIZE:
             ledger.popitem(last=False)
+
     # Maximum in-memory ExecutionTrace entries. Each trace is small (~1 KB)
     # so 1 000 entries is safe even under heavy dispatch rates.
     _MAX_ACTIVE_TRACES: ClassVar[int] = 1_000
@@ -4566,12 +4501,13 @@ class EventLoop:
     _MAX_SELF_UPDATE_APPLIES: ClassVar[int] = 500
 
     _PRIORITY_MAP: ClassVar[dict[str, int]] = {
-        "low": 0, "medium": 5, "high": 10, "critical": 20,
+        "low": 0,
+        "medium": 5,
+        "high": 10,
+        "critical": 20,
     }
 
-    async def _persist_self_improve_todos(
-        self, todos: list[dict[str, Any]], project_id: str | None = None
-    ) -> int:
+    async def _persist_self_improve_todos(self, todos: list[dict[str, Any]], project_id: str | None = None) -> int:
         if self._todo_repo is None or self._active_session is None:
             return 0
         # Admission gate (W3.7 / C13): cap how many self-improve todos may be
@@ -4593,12 +4529,8 @@ class EventLoop:
         }
         # W3.7/H2: scope the open-todo count per project so one tenant's
         # self-improve todos cannot consume another tenant's max_open cap.
-        existing = await self._todo_repo.list_by_work_type(
-            "self_improve", project_id=project_id
-        )
-        open_count = sum(
-            1 for t in existing if _safe_str(t, "status") not in terminal
-        )
+        existing = await self._todo_repo.list_by_work_type("self_improve", project_id=project_id)
+        open_count = sum(1 for t in existing if _safe_str(t, "status") not in terminal)
         persisted = 0
         for todo in todos:
             decision = gate.evaluate(todo, open_count=open_count)
@@ -4676,16 +4608,15 @@ class EventLoop:
         # Log current routing decisions.
         router: Any = getattr(self, "_adaptive_router", None)
         if router is None:
-            logger.warning(
-                "_adaptive_router not initialized; skipping routing decision capture"
-            )
+            logger.warning("_adaptive_router not initialized; skipping routing decision capture")
         elif hasattr(router, "current_routing_decisions"):
             try:
                 decisions = await router.current_routing_decisions()
                 self._tick_metrics["model_routing_decisions"] = len(decisions)
             except Exception as exc:
                 logger.debug(
-                    "Model routing decision capture failed: %s", exc,
+                    "Model routing decision capture failed: %s",
+                    exc,
                 )
 
     async def _phase_poll_issue_sources(self) -> None:
@@ -4764,6 +4695,25 @@ class EventLoop:
         except Exception as exc:
             logger.warning("STS reap phase failed: %s: %s", type(exc).__name__, exc)
 
+    async def _phase_purge_old_task_decisions(self) -> None:
+        if self._active_session is None:
+            return
+        interval = int(self.config.get("task_decisions_retention_interval_ticks", 3600))
+        if interval <= 0 or self._total_ticks % interval != 0:
+            return
+        try:
+            deleted = await cleanup_old_task_decisions(
+                self._active_session,
+                retention_days=int(self.config.get("task_decisions_retention_days", DEFAULT_RETENTION_DAYS)),
+            )
+            self._tick_metrics["task_decisions_purged"] = deleted
+        except Exception as exc:
+            logger.warning(
+                "task_decisions retention purge failed: %s: %s",
+                type(exc).__name__,
+                exc,
+            )
+
     async def _phase_emit_tick_metrics(self) -> None:
         logger.info("Tick metrics: %s", self._tick_metrics)
 
@@ -4771,9 +4721,13 @@ class EventLoop:
         if task_return.status != TaskReturnStatus.CREATED:
             return {"status": "skipped", "reason": "not_created"}
         job = JobSpec(
-            job_id=f"REVIEW-{task_return.return_id}", return_id=task_return.return_id,
-            todo_id=task_return.todo_id, playbook="return_review.yml",
-            queue="model", work_type="review", resource_profile="ai_heavy",
+            job_id=f"REVIEW-{task_return.return_id}",
+            return_id=task_return.return_id,
+            todo_id=task_return.todo_id,
+            playbook="return_review.yml",
+            queue="model",
+            work_type="review",
+            resource_profile="ai_heavy",
         )
         logger.info("Dispatching return review for %s", task_return.return_id)
         return {"status": "dispatched", "job_id": job.job_id}
@@ -4799,6 +4753,7 @@ class EventLoop:
             return
         try:
             from general_ludd.account.ephemeral import maybe_delete_ephemeral_after_task
+
             # The ephemeral stamp is propagated via the todo's tags dict
             # (the deployment path set it there when provisioning the account).
             tags = getattr(todo, "tags", None) or {}
@@ -4810,7 +4765,8 @@ class EventLoop:
             if result is not None and result.get("deleted"):
                 logger.info(
                     "Ephemeral cleanup: deleted account %s for completed todo %s",
-                    result.get("account_id"), getattr(todo, "todo_id", "?"),
+                    result.get("account_id"),
+                    getattr(todo, "todo_id", "?"),
                 )
         except Exception:
             logger.warning(
@@ -4820,33 +4776,26 @@ class EventLoop:
             )
 
     async def _auto_record_episode(
-        self, todo: Any, new_status: Any, decision: Any,
+        self,
+        todo: Any,
+        new_status: Any,
+        decision: Any,
     ) -> None:
         if self._memory_repo is None:
             return
         try:
             recorder = EpisodicMemoryRecorder(self._memory_repo)
-            agent_id = (
-                getattr(todo, "assigned_agent", None)
-                or getattr(todo, "work_type", None)
-                or "agent"
-            )
+            agent_id = getattr(todo, "assigned_agent", None) or getattr(todo, "work_type", None) or "agent"
             work_type = getattr(todo, "work_type", "code") or "code"
             outcome = (
-                "success" if str(new_status.value).upper() == "COMPLETE"
-                else "failure" if str(new_status.value).upper() == "FAILED"
+                "success"
+                if str(new_status.value).upper() == "COMPLETE"
+                else "failure"
+                if str(new_status.value).upper() == "FAILED"
                 else "partial"
             )
-            takeaway = (
-                getattr(decision, "summary", None)
-                or getattr(todo, "title", None)
-                or ""
-            )
-            error_msg = (
-                getattr(decision, "failure_reason", None)
-                or getattr(todo, "last_error", None)
-                or ""
-            )
+            takeaway = getattr(decision, "summary", None) or getattr(todo, "title", None) or ""
+            error_msg = getattr(decision, "failure_reason", None) or getattr(todo, "last_error", None) or ""
             await recorder.record_completion(
                 agent_id=str(agent_id),
                 task_type=getattr(todo, "task_type", None) or work_type,
@@ -4880,12 +4829,11 @@ class EventLoop:
             result = await consolidator.consolidate(agent_id, project_id=self._tick_project_id)
             if result["consolidated"] > 0:
                 self._tick_metrics["memory_consolidated"] = result["consolidated"]
-                self._tick_metrics["memory_episodes_consolidated"] = result.get(
-                    "episodes_consolidated", 0
-                )
+                self._tick_metrics["memory_episodes_consolidated"] = result.get("episodes_consolidated", 0)
                 logger.info(
                     "Memory consolidation: %d summaries from %d episodes",
-                    result["consolidated"], result.get("episodes_consolidated", 0),
+                    result["consolidated"],
+                    result.get("episodes_consolidated", 0),
                 )
         except Exception as exc:
             logger.warning("Memory consolidation failed: %s", exc)
@@ -4905,29 +4853,34 @@ class EventLoop:
                 self._tick_metrics["cross_task_improvements"] = len(improvements)
                 logger.info(
                     "Cross-task learning: %d improvements identified across %d episodes",
-                    len(improvements), report.get("total_episodes", 0),
+                    len(improvements),
+                    report.get("total_episodes", 0),
                 )
                 # Fold cross-task improvement suggestions into self-improve todos
                 # so they get tracked and actioned like gap-analysis findings.
                 cross_todos: list[dict[str, Any]] = []
                 for imp in improvements:
-                    cross_todos.append({
-                        "title": f"AutoMemory: {imp.get('suggested_action', 'Improve task performance')}",
-                        "description": json.dumps(imp, default=str),
-                        "work_type": "self_improve",
-                        "priority": "medium",
-                        "source": "cross_task_learner",
-                        "gap_type": "cross_task_insight",
-                    })
+                    cross_todos.append(
+                        {
+                            "title": f"AutoMemory: {imp.get('suggested_action', 'Improve task performance')}",
+                            "description": json.dumps(imp, default=str),
+                            "work_type": "self_improve",
+                            "priority": "medium",
+                            "source": "cross_task_learner",
+                            "gap_type": "cross_task_insight",
+                        }
+                    )
                 if cross_todos:
                     try:
                         enqueued = await self._persist_self_improve_todos(
-                            cross_todos, project_id=self._tick_project_id,
+                            cross_todos,
+                            project_id=self._tick_project_id,
                         )
                         self._tick_metrics["cross_task_todos_persisted"] = enqueued
                     except Exception as exc:
                         logger.warning(
-                            "Cross-task todo persistence failed: %s", exc,
+                            "Cross-task todo persistence failed: %s",
+                            exc,
                         )
         except Exception as exc:
             logger.warning("Cross-task learning failed: %s", exc)

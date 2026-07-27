@@ -1,0 +1,18 @@
+---
+galaxy_info:
+  role_name: decision_makers
+  author: Agentic Harness Agent
+  description: >
+    Decision-maker profiles, role types, influence networks, and proclivity
+    assessment for political office-holders, regulators, and officials.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+  galaxy_tags: [governance, decision_makers, political, officials]
+dependencies: []

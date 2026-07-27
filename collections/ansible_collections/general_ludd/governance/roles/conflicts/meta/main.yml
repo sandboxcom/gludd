@@ -1,0 +1,18 @@
+---
+galaxy_info:
+  role_name: conflicts
+  author: Agentic Harness Agent
+  description: >
+    Active/ongoing armed conflicts, conflict type taxonomy, sanctions
+    regimes, and conflict-status lookups.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+  galaxy_tags: [governance, conflicts, sanctions, armed_conflict]
+dependencies: []

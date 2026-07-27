@@ -22,7 +22,9 @@ from general_ludd.memory.cross_task import CrossTaskLearner
 from general_ludd.memory.embedding_store import MemoryEmbeddingStore
 from general_ludd.memory.episodic import EpisodicMemoryRecorder, reconstruct_timeline
 from general_ludd.memory.local import LocalAgentMemory, MemoryRecord
+from general_ludd.memory.procedural import ProceduralMemoryStore, Procedure
 from general_ludd.memory.retrieval import MemoryRetriever, hybrid_search, score_memory
+from general_ludd.memory.semantic import Fact, SemanticMemoryStore
 
 __all__ = [
     "ConversationContext",
@@ -31,11 +33,15 @@ __all__ = [
     "CrossConversationStore",
     "CrossTaskLearner",
     "EpisodicMemoryRecorder",
+    "Fact",
     "LocalAgentMemory",
     "MemoryConsolidator",
     "MemoryEmbeddingStore",
     "MemoryRecord",
     "MemoryRetriever",
+    "ProceduralMemoryStore",
+    "Procedure",
+    "SemanticMemoryStore",
     "WorkingMemoryItem",
     "consolidate_cascade",
     "hybrid_search",

@@ -1,0 +1,39 @@
+---
+- name: Validate currencies parameters
+  ansible.builtin.assert:
+    that:
+      - currencies_enabled | bool
+    fail_msg: "currencies role requires enabled=true."
+
+- name: Ensure output directory
+  ansible.builtin.file:
+    path: "{{ currencies_output_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Copy tax_currency.py module_util
+  ansible.builtin.copy:
+    src: "{{ _currencies_module }}"
+    dest: "{{ currencies_output_dir }}/tax_currency.py"
+    mode: "0755"
+
+- name: Run currencies lookup
+  ansible.builtin.command: >
+    {{ ansible_python_interpreter | default('python3') }}
+    {{ currencies_output_dir }}/tax_currency.py
+    --query "{{ currencies_query | default('all') }}"
+  register: _cur_result
+  changed_when: false
+  failed_when: false
+
+- name: Parse result
+  ansible.builtin.set_fact:
+    currencies_result: "{{ (_cur_result.stdout | from_json) if _cur_result.stdout | default('') | length > 0 else {} }}"
+  when: _cur_result.stdout | default('') | length > 0
+
+- name: Write JSON output
+  ansible.builtin.copy:
+    content: "{{ currencies_result | to_nice_json }}"
+    dest: "{{ currencies_output_dir }}/currencies.json"
+    mode: "0644"
+  when: currencies_result is defined

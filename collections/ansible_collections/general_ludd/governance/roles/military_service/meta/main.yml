@@ -1,0 +1,18 @@
+---
+galaxy_info:
+  role_name: military_service
+  author: Agentic Harness Agent
+  description: >
+    Conscription data, military branches, enlistment processes, and veteran
+    benefits lookup across countries.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+  galaxy_tags: [governance, military, conscription, veterans, defense]
+dependencies: []

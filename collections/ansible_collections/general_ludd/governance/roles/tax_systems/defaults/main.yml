@@ -1,0 +1,4 @@
+---
+tax_systems_enabled: false
+tax_systems_query: "all"
+tax_systems_output_dir: /tmp/gludd-governance-tax

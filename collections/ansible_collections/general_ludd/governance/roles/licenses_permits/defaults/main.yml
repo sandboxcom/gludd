@@ -1,0 +1,4 @@
+---
+licenses_permits_enabled: false
+licenses_permits_query: "all"
+licenses_permits_output_dir: /tmp/gludd-governance-licenses

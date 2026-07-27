@@ -1,0 +1,39 @@
+---
+- name: Validate military_service parameters
+  ansible.builtin.assert:
+    that:
+      - military_service_enabled | bool
+    fail_msg: "military_service role requires enabled=true."
+
+- name: Ensure output directory
+  ansible.builtin.file:
+    path: "{{ military_service_output_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Copy military_service.py module_util
+  ansible.builtin.copy:
+    src: "{{ _military_service_module }}"
+    dest: "{{ military_service_output_dir }}/military_service.py"
+    mode: "0755"
+
+- name: Run military service lookup
+  ansible.builtin.command: >
+    {{ ansible_python_interpreter | default('python3') }}
+    {{ military_service_output_dir }}/military_service.py
+    --query "{{ military_service_query | default('all') }}"
+  register: _ms_result
+  changed_when: false
+  failed_when: false
+
+- name: Parse result
+  ansible.builtin.set_fact:
+    military_service_result: "{{ (_ms_result.stdout | from_json) if _ms_result.stdout | default('') | length > 0 else {} }}"
+  when: _ms_result.stdout | default('') | length > 0
+
+- name: Write JSON output
+  ansible.builtin.copy:
+    content: "{{ military_service_result | to_nice_json }}"
+    dest: "{{ military_service_output_dir }}/military_service.json"
+    mode: "0644"
+  when: military_service_result is defined

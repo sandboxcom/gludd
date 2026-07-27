@@ -1,0 +1,39 @@
+---
+- name: Validate postal_delivery parameters
+  ansible.builtin.assert:
+    that:
+      - postal_delivery_enabled | bool
+    fail_msg: "postal_delivery role requires enabled=true."
+
+- name: Ensure output directory
+  ansible.builtin.file:
+    path: "{{ postal_delivery_output_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Copy postal_delivery.py module_util
+  ansible.builtin.copy:
+    src: "{{ _postal_delivery_module }}"
+    dest: "{{ postal_delivery_output_dir }}/postal_delivery.py"
+    mode: "0755"
+
+- name: Run postal/delivery lookup
+  ansible.builtin.command: >
+    {{ ansible_python_interpreter | default('python3') }}
+    {{ postal_delivery_output_dir }}/postal_delivery.py
+    --query "{{ postal_delivery_query | default('all') }}"
+  register: _pd_result
+  changed_when: false
+  failed_when: false
+
+- name: Parse result
+  ansible.builtin.set_fact:
+    postal_delivery_result: "{{ (_pd_result.stdout | from_json) if _pd_result.stdout | default('') | length > 0 else {} }}"
+  when: _pd_result.stdout | default('') | length > 0
+
+- name: Write JSON output
+  ansible.builtin.copy:
+    content: "{{ postal_delivery_result | to_nice_json }}"
+    dest: "{{ postal_delivery_output_dir }}/postal_delivery.json"
+    mode: "0644"
+  when: postal_delivery_result is defined

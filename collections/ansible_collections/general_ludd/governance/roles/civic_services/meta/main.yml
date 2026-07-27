@@ -1,0 +1,19 @@
+---
+galaxy_info:
+  role_name: civic_services
+  author: Agentic Harness Agent
+  description: >
+    Civic service lookup: passport, national ID, driver's license, marriage,
+    business registration, building permits, FOIA requests, voter
+    registration, tax filing, benefits claims, and postal services.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+  galaxy_tags: [governance, civic_services, government_services, permits]
+dependencies: []

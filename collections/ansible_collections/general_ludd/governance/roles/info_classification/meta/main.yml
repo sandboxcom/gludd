@@ -1,0 +1,19 @@
+---
+galaxy_info:
+  role_name: info_classification
+  author: Agentic Harness Agent
+  description: >
+    Information classification, clearance hierarchies, classification
+    markings (US/UK/NATO/EU), FOIA procedures, and official information
+    sources across jurisdictions.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+  galaxy_tags: [governance, classification, clearance, foia, security]
+dependencies: []

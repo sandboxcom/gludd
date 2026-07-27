@@ -1,0 +1,4 @@
+---
+info_classification_enabled: false
+info_classification_query: "all"
+info_classification_output_dir: /tmp/gludd-governance-classification

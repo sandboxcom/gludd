@@ -1,0 +1,2 @@
+---
+_licenses_permits_module: "{{ role_path }}/../../plugins/module_utils/licenses_permits.py"

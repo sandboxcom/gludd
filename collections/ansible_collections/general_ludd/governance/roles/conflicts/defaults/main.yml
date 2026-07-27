@@ -1,0 +1,4 @@
+---
+conflicts_enabled: false
+conflicts_query: "all"
+conflicts_output_dir: /tmp/gludd-governance-conflicts

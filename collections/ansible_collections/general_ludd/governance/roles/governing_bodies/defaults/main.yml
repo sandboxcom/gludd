@@ -1,0 +1,4 @@
+---
+governing_bodies_enabled: false
+governing_bodies_query: "all"
+governing_bodies_output_dir: /tmp/gludd-governance-bodies

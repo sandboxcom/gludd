@@ -1,0 +1,2 @@
+---
+_military_service_module: "{{ role_path }}/../../plugins/module_utils/military_service.py"
