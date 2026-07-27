@@ -25,6 +25,8 @@ const CI_POLL_DISPATCH_PATTERNS: readonly RegExp[] = Object.freeze([
   /\bloop\s+(?:on\s+)?make\s+ci-verdict\b/i,
   /\bevery\s+\d+\s+seconds?[\s\S]{0,200}?\b(?:up\s+to|iterations?|until)\b/i,
   /\buntil\s+conclusion\s+(?:is\s+)?success\b/i,
+  /\bmake\s+ci-await\b/i,
+  /\bci-await\b/i,
 ]) as readonly RegExp[];
 const CI_POLL_DENY_MESSAGE =
   "CI-poll dispatch forbidden (AGENTS.md 'CI-Poll Subagents Are Forbidden' + " +

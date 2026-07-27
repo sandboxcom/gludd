@@ -1,4 +1,5 @@
 """Repository implementations for the agentic harness."""
+
 from __future__ import annotations
 
 import contextlib
@@ -61,6 +62,7 @@ def scoped_to(project_id: str) -> Generator[None, None, None]:
     finally:
         reset_tenant(token)
 
+
 VALID_TRANSITIONS: dict[TodoStatus, set[TodoStatus]] = {
     TodoStatus.BACKLOG: {TodoStatus.QUEUED, TodoStatus.SCHEDULED, TodoStatus.CANCELLED},
     # SCHEDULED: one-shot todos flip to QUEUED when due; cron templates stay
@@ -77,20 +79,28 @@ VALID_TRANSITIONS: dict[TodoStatus, set[TodoStatus]] = {
     TodoStatus.APPROVAL_REQUIRED: {TodoStatus.QUEUED, TodoStatus.CANCELLED, TodoStatus.MANUAL_HOLD},
     TodoStatus.QUEUED: {TodoStatus.ACTIVE, TodoStatus.FAILED, TodoStatus.BLOCKED, TodoStatus.BLOCKED_ON_HUMAN},
     TodoStatus.ACTIVE: {
-        TodoStatus.COMPLETE, TodoStatus.FAILED, TodoStatus.BLOCKED,
+        TodoStatus.COMPLETE,
+        TodoStatus.FAILED,
+        TodoStatus.BLOCKED,
         TodoStatus.BLOCKED_ON_HUMAN,
-        TodoStatus.REVIEWING_RETURN, TodoStatus.MANUAL_HOLD,
-        TodoStatus.NEEDS_MORE_WORK, TodoStatus.QUEUED,
+        TodoStatus.REVIEWING_RETURN,
+        TodoStatus.MANUAL_HOLD,
+        TodoStatus.NEEDS_MORE_WORK,
+        TodoStatus.QUEUED,
     },
     TodoStatus.REVIEWING_RETURN: {
-        TodoStatus.COMPLETE, TodoStatus.NEEDS_MORE_WORK,
-        TodoStatus.FAILED, TodoStatus.BLOCKED, TodoStatus.MANUAL_HOLD,
+        TodoStatus.COMPLETE,
+        TodoStatus.NEEDS_MORE_WORK,
+        TodoStatus.FAILED,
+        TodoStatus.BLOCKED,
+        TodoStatus.MANUAL_HOLD,
     },
     TodoStatus.NEEDS_MORE_WORK: {TodoStatus.QUEUED, TodoStatus.ACTIVE},
     TodoStatus.MANUAL_HOLD: {TodoStatus.QUEUED, TodoStatus.ACTIVE},
     TodoStatus.BLOCKED: {TodoStatus.QUEUED},
     TodoStatus.BLOCKED_ON_HUMAN: {TodoStatus.QUEUED, TodoStatus.CANCELLED},
     TodoStatus.FAILED: {TodoStatus.QUEUED},
+    TodoStatus.BUDGET_EXCEEDED: {TodoStatus.QUEUED, TodoStatus.FAILED},
     TodoStatus.COMPLETE: set(),
 }
 
@@ -102,49 +112,51 @@ _PRIORITY_LABELS: dict[str, int] = {"low": 0, "medium": 1, "high": 2, "critical"
 # Fields that callers are permitted to set via TodoRepository.create().
 # Excludes auto-managed columns (id, version, created_at, updated_at) to
 # prevent mass-assignment of internal state.
-ALLOWED_TODO_CREATE_FIELDS: frozenset[str] = frozenset({
-    "todo_id",
-    "project_id",
-    "title",
-    "description",
-    "status",
-    "priority",
-    "queue",
-    "tags",
-    "risk_level",
-    "work_type",
-    "resource_profile",
-    "parent_todo_id",
-    "child_todo_ids",
-    "acceptance_criteria",
-    "test_commands",
-    "molecule_scenarios",
-    "molecule_evidence_refs",
-    "coverage_requirements",
-    "dependencies",
-    "created_by",
-    "assigned_agent",
-    "model_profile",
-    "prompt_profile",
-    "worktree",
-    "branch_name",
-    "artifacts",
-    "evidence_refs",
-    "plan_artifact",
-    "confidence",
-    "manual_hold_reason",
-    "approval_policy",
-    "completed_at",
-    # Scheduling fields (integrated cron / one-shot scheduling).
-    "scheduled_at",
-    "cron",
-    "schedule_timezone",
-    "next_run_at",
-    "last_run_at",
-    "run_count",
-    "max_runs",
-    "schedule_paused",
-})
+ALLOWED_TODO_CREATE_FIELDS: frozenset[str] = frozenset(
+    {
+        "todo_id",
+        "project_id",
+        "title",
+        "description",
+        "status",
+        "priority",
+        "queue",
+        "tags",
+        "risk_level",
+        "work_type",
+        "resource_profile",
+        "parent_todo_id",
+        "child_todo_ids",
+        "acceptance_criteria",
+        "test_commands",
+        "molecule_scenarios",
+        "molecule_evidence_refs",
+        "coverage_requirements",
+        "dependencies",
+        "created_by",
+        "assigned_agent",
+        "model_profile",
+        "prompt_profile",
+        "worktree",
+        "branch_name",
+        "artifacts",
+        "evidence_refs",
+        "plan_artifact",
+        "confidence",
+        "manual_hold_reason",
+        "approval_policy",
+        "completed_at",
+        # Scheduling fields (integrated cron / one-shot scheduling).
+        "scheduled_at",
+        "cron",
+        "schedule_timezone",
+        "next_run_at",
+        "last_run_at",
+        "run_count",
+        "max_runs",
+        "schedule_paused",
+    }
+)
 
 # Maximum UTF-8 byte length for any single string field on a TodoModel create.
 _TODO_STR_FIELD_MAX_BYTES = 65536
@@ -181,9 +193,7 @@ class TodoRepository:
     # caller), set at creation time — distinct from the DB primary key `id`. Rejecting
     # it at create() broke every legitimate create path (the router and direct repo
     # callers both supply it). The real-primary-key forgery risk is covered by `id`.
-    _IMMUTABLE_FIELDS: frozenset[str] = frozenset(
-        {"id", "version", "created_at", "updated_at"}
-    )
+    _IMMUTABLE_FIELDS: frozenset[str] = frozenset({"id", "version", "created_at", "updated_at"})
     # Finding #10: Fields that must NEVER change via update(). These are the
     # identity / tenant / audit columns — set once at create() and frozen
     # thereafter. This is a SEPARATE set from _IMMUTABLE_FIELDS (which guards
@@ -194,10 +204,10 @@ class TodoRepository:
     # namespace); letting todo_id through would swap the entity's identity.
     _IMMUTABLE_UPDATE_FIELDS: frozenset[str] = frozenset(
         {
-            "id",          # DB primary key
-            "todo_id",     # application business key — swap = identity change
+            "id",  # DB primary key
+            "todo_id",  # application business key — swap = identity change
             "project_id",  # tenant scope — reassign = cross-tenant escape
-            "version",     # managed by update() via the expected_version protocol
+            "version",  # managed by update() via the expected_version protocol
             "created_at",  # audit origin
             "updated_at",  # managed by update() itself
             "created_by",  # set-once audit attribution
@@ -332,12 +342,9 @@ class TodoRepository:
         # this write commits. Carry the version (and scope) into the WHERE clause
         # so a concurrent writer at the same version makes one of us affect zero
         # rows -> ConcurrencyError, instead of silently losing an update.
-        guard = (
-            _update(TodoModel)
-            .where(
-                TodoModel.id == todo.id,
-                TodoModel.version == expected_version,
-            )
+        guard = _update(TodoModel).where(
+            TodoModel.id == todo.id,
+            TodoModel.version == expected_version,
         )
         if _pid is not None:
             guard = guard.where(TodoModel.project_id == _pid)
@@ -345,8 +352,7 @@ class TodoRepository:
         res = await self._session.execute(guard)
         if (cast("CursorResult[Any]", res).rowcount or 0) != 1:
             raise ConcurrencyError(
-                f"Lost update on todo {todo_id}: row changed concurrently "
-                f"(expected version {expected_version})"
+                f"Lost update on todo {todo_id}: row changed concurrently (expected version {expected_version})"
             )
         # Sync the in-memory ORM object to the committed values.
         for key, value in updates.items():
@@ -367,9 +373,7 @@ class TodoRepository:
         if _pid is not None:
             stmt = stmt.where(TodoModel.project_id == _pid)
         # P12: always cap — explicit limit is clamped at _DEFAULT_LIST_LIMIT.
-        stmt = stmt.limit(
-            min(limit, _DEFAULT_LIST_LIMIT) if limit is not None else _DEFAULT_LIST_LIMIT
-        )
+        stmt = stmt.limit(min(limit, _DEFAULT_LIST_LIMIT) if limit is not None else _DEFAULT_LIST_LIMIT)
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
@@ -397,9 +401,7 @@ class TodoRepository:
         if offset:
             stmt = stmt.offset(offset)
         # P12: always cap — explicit limit is clamped at _DEFAULT_LIST_LIMIT.
-        stmt = stmt.limit(
-            min(limit, _DEFAULT_LIST_LIMIT) if limit is not None else _DEFAULT_LIST_LIMIT
-        )
+        stmt = stmt.limit(min(limit, _DEFAULT_LIST_LIMIT) if limit is not None else _DEFAULT_LIST_LIMIT)
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
@@ -414,9 +416,7 @@ class TodoRepository:
         if _pid is not None:
             stmt = stmt.where(TodoModel.project_id == _pid)
         # P12: always cap — explicit limit is clamped at _DEFAULT_LIST_LIMIT.
-        stmt = stmt.limit(
-            min(limit, _DEFAULT_LIST_LIMIT) if limit is not None else _DEFAULT_LIST_LIMIT
-        )
+        stmt = stmt.limit(min(limit, _DEFAULT_LIST_LIMIT) if limit is not None else _DEFAULT_LIST_LIMIT)
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
@@ -454,9 +454,7 @@ class TodoRepository:
         if _pid is not None:
             stmt = stmt.where(TodoModel.project_id == _pid)
         # P12: always cap — explicit limit is clamped at _DEFAULT_LIST_LIMIT.
-        stmt = stmt.limit(
-            min(limit, _DEFAULT_LIST_LIMIT) if limit is not None else _DEFAULT_LIST_LIMIT
-        )
+        stmt = stmt.limit(min(limit, _DEFAULT_LIST_LIMIT) if limit is not None else _DEFAULT_LIST_LIMIT)
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
@@ -484,9 +482,7 @@ class TodoRepository:
         # ORDER BY, row order is database-defined (undefined) and starvation is
         # possible under load. id is a deterministic tiebreaker for same-instant
         # created_at (e.g. todos inserted within the same microsecond in tests).
-        stmt = stmt.order_by(
-            TodoModel.priority.desc(), TodoModel.created_at, TodoModel.id
-        )
+        stmt = stmt.order_by(TodoModel.priority.desc(), TodoModel.created_at, TodoModel.id)
         # P12: cap even an explicit caller limit so a huge value can't load an
         # unbounded result set (claim semantics are per-batch, so a cap is safe).
         stmt = stmt.limit(min(limit, _DEFAULT_LIST_LIMIT))
@@ -548,10 +544,9 @@ class TodoRepository:
 
     async def count_active(self, project_id: str | None = None) -> int:
         from sqlalchemy import func
+
         _pid = self._resolve_pid(project_id)
-        stmt = select(func.count()).select_from(TodoModel).where(
-            TodoModel.status == TodoStatus.ACTIVE.value
-        )
+        stmt = select(func.count()).select_from(TodoModel).where(TodoModel.status == TodoStatus.ACTIVE.value)
         if _pid is not None:
             stmt = stmt.where(TodoModel.project_id == _pid)
         result = await self._session.execute(stmt)
@@ -587,9 +582,7 @@ class TodoRepository:
         oldest_age_seconds: float | None = None
         if oldest_created is not None:
             oldest_age_seconds = (datetime.now(UTC) - oldest_created).total_seconds()
-        backlog = by_status.get(TodoStatus.BACKLOG.value, 0) + by_status.get(
-            TodoStatus.QUEUED.value, 0
-        )
+        backlog = by_status.get(TodoStatus.BACKLOG.value, 0) + by_status.get(TodoStatus.QUEUED.value, 0)
         return {
             "total": sum(by_status.values()),
             "by_status": by_status,
@@ -623,19 +616,14 @@ class TodoRepository:
         # validated the transition against: a concurrent writer that moved the
         # row out from under us (changing version or status) makes this affect
         # zero rows -> ConcurrencyError, never a silent lost transition.
-        guard = (
-            _update(TodoModel)
-            .where(
-                TodoModel.id == todo.id,
-                TodoModel.version == expected_version,
-                TodoModel.status == current.value,
-            )
+        guard = _update(TodoModel).where(
+            TodoModel.id == todo.id,
+            TodoModel.version == expected_version,
+            TodoModel.status == current.value,
         )
         if _pid is not None:
             guard = guard.where(TodoModel.project_id == _pid)
-        guard = guard.values(
-            status=new_status.value, version=expected_version + 1, updated_at=now
-        )
+        guard = guard.values(status=new_status.value, version=expected_version + 1, updated_at=now)
         res = await self._session.execute(guard)
         if (cast("CursorResult[Any]", res).rowcount or 0) != 1:
             raise ConcurrencyError(
@@ -693,9 +681,7 @@ class TaskReturnRepository:
             "by_work_type": by_work_type,
         }
 
-    async def history_summary(
-        self, project_id: str | None = None, recent_limit: int = 10
-    ) -> dict[str, Any]:
+    async def history_summary(self, project_id: str | None = None, recent_limit: int = 10) -> dict[str, Any]:
         """Recent returns + success/failure rates (exit_code 0 == success).
 
         Split into (a) an aggregate count query (total + successes via
@@ -721,9 +707,7 @@ class TaskReturnRepository:
         recent_stmt = select(TaskReturnModel)
         if project_id is not None:
             recent_stmt = recent_stmt.where(TaskReturnModel.project_id == project_id)
-        recent_stmt = recent_stmt.order_by(
-            TaskReturnModel.created_at.desc()
-        ).limit(recent_limit)
+        recent_stmt = recent_stmt.order_by(TaskReturnModel.created_at.desc()).limit(recent_limit)
         recent_rows = list((await self._session.execute(recent_stmt)).scalars().all())
         recent = [
             {
@@ -807,8 +791,7 @@ class AuditEventRepository:
     ) -> AuditEventModel:
         if project_id is None:
             raise ValueError(
-                "project_id is required for audit events — "
-                "NULL project_id silently orphans the event from its project"
+                "project_id is required for audit events — NULL project_id silently orphans the event from its project"
             )
         row = AuditEventModel(
             event_type=event_type,
@@ -874,13 +857,8 @@ class VariableNamespaceRepository:
         stmt = (
             select(VariableValueModel)
             .join(VariableNamespaceModel)
-            .where(
-                (VariableNamespaceModel.project_id == project_id)
-                | (VariableNamespaceModel.project_id.is_(None))
-            )
-            .order_by(
-                VariableNamespaceModel.project_id.is_(None).desc()
-            )
+            .where((VariableNamespaceModel.project_id == project_id) | (VariableNamespaceModel.project_id.is_(None)))
+            .order_by(VariableNamespaceModel.project_id.is_(None).desc())
             # P12: defensive cap; variable sets are expected to be small but
             # an unbounded JOIN load is still a risk surface.
             .limit(_DEFAULT_LIST_LIMIT)
@@ -898,9 +876,7 @@ class VariableNamespaceRepository:
         await self._session.flush()
         return row
 
-    async def set_var(
-        self, namespace: str, key: str, value: str, project_id: str | None = None
-    ) -> VariableValueModel:
+    async def set_var(self, namespace: str, key: str, value: str, project_id: str | None = None) -> VariableValueModel:
         from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
         # Resolve (or atomically create) the namespace. get-then-insert here is a
@@ -917,9 +893,7 @@ class VariableNamespaceRepository:
             ns_insert = (
                 sqlite_insert(VariableNamespaceModel)
                 .values(namespace=namespace, project_id=project_id)
-                .on_conflict_do_nothing(
-                    index_elements=["namespace", "project_id"]
-                )
+                .on_conflict_do_nothing(index_elements=["namespace", "project_id"])
             )
             await self._session.execute(ns_insert)
             await self._session.flush()
@@ -965,10 +939,10 @@ class BenchmarkRepository:
     async def _execute_with_session(self, fn: Callable[[AsyncSession], Any]) -> Any:
         if self._session_factory is not None:
             async with self._session_factory() as session, session.begin():
-                    result = await fn(session)
-                    if hasattr(result, "_sa_instance_state"):
-                        session.expunge(result)
-                    return result
+                result = await fn(session)
+                if hasattr(result, "_sa_instance_state"):
+                    session.expunge(result)
+                return result
         if self._session is not None:
             return await fn(self._session)
         raise RuntimeError("BenchmarkRepository: no session or session_factory")
@@ -979,6 +953,7 @@ class BenchmarkRepository:
             session.add(row)
             await session.flush()
             return row
+
         return cast(BenchmarkResultModel, await self._execute_with_session(_do))
 
     async def get_aggregate_scores(
@@ -1003,8 +978,10 @@ class BenchmarkRepository:
         comparisons. When provided, results are filtered to that role.
         ``task_role`` is included as a group-by key and returned in every row.
         """
+
         async def _do(session: AsyncSession) -> list[dict[str, Any]]:
             from sqlalchemy import func
+
             stmt = (
                 select(
                     BenchmarkResultModel.prompt_profile_id,
@@ -1059,6 +1036,7 @@ class BenchmarkRepository:
                 }
                 for r in rows
             ]
+
         return cast("list[dict[str, Any]]", await self._execute_with_session(_do))
 
     async def get_best_for_task(self, task_type: str, min_samples: int = 3) -> list[dict[str, Any]]:
@@ -1078,6 +1056,7 @@ class BenchmarkRepository:
             )
             result = await session.execute(stmt)
             return list(result.scalars().all())
+
         return cast("list[BenchmarkResultModel]", await self._execute_with_session(_do))
 
     async def list_recent(self, limit: int = 50) -> list[BenchmarkResultModel]:
@@ -1089,6 +1068,7 @@ class BenchmarkRepository:
             )
             result = await session.execute(stmt)
             return list(result.scalars().all())
+
         return cast("list[BenchmarkResultModel]", await self._execute_with_session(_do))
 
 
@@ -1135,9 +1115,7 @@ class PromptProfileRepository:
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def list_all(
-        self, limit: int | None = None, offset: int = 0
-    ) -> list[PromptProfileModel]:
+    async def list_all(self, limit: int | None = None, offset: int = 0) -> list[PromptProfileModel]:
         stmt = (
             select(PromptProfileModel)
             .offset(offset)
@@ -1146,9 +1124,7 @@ class PromptProfileRepository:
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
-    async def list_by_source(
-        self, source: str, limit: int | None = None, offset: int = 0
-    ) -> list[PromptProfileModel]:
+    async def list_by_source(self, source: str, limit: int | None = None, offset: int = 0) -> list[PromptProfileModel]:
         stmt = (
             select(PromptProfileModel)
             .where(PromptProfileModel.source == source)
@@ -1161,10 +1137,7 @@ class PromptProfileRepository:
     async def list_for_task_type(self, task_type: str) -> list[PromptProfileModel]:
         import json as _json
 
-        stmt = (
-            select(PromptProfileModel)
-            .limit(_DEFAULT_LIST_LIMIT)
-        )
+        stmt = select(PromptProfileModel).limit(_DEFAULT_LIST_LIMIT)
         result = await self._session.execute(stmt)
         rows = list(result.scalars().all())
         out: list[PromptProfileModel] = []
@@ -1199,9 +1172,7 @@ class QueueRepository:
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def list_all(
-        self, limit: int | None = None, offset: int = 0
-    ) -> list[QueueModel]:
+    async def list_all(self, limit: int | None = None, offset: int = 0) -> list[QueueModel]:
         stmt = (
             select(QueueModel)
             .offset(offset)
@@ -1210,9 +1181,7 @@ class QueueRepository:
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
-    async def list_enabled(
-        self, limit: int | None = None, offset: int = 0
-    ) -> list[QueueModel]:
+    async def list_enabled(self, limit: int | None = None, offset: int = 0) -> list[QueueModel]:
         stmt = (
             select(QueueModel)
             .where(QueueModel.queue_enabled.is_(True))
@@ -1306,23 +1275,16 @@ class ProjectRelationshipRepository:
             RelationType(relation_type)
         except ValueError as exc:
             valid = ", ".join(r.value for r in RelationType)
-            raise ValueError(
-                f"invalid relation_type {relation_type!r}; must be one of: {valid}"
-            ) from exc
+            raise ValueError(f"invalid relation_type {relation_type!r}; must be one of: {valid}") from exc
         try:
             LocationKind(location_kind)
         except ValueError as exc:
             valid = ", ".join(k.value for k in LocationKind)
-            raise ValueError(
-                f"invalid location_kind {location_kind!r}; must be one of: {valid}"
-            ) from exc
+            raise ValueError(f"invalid location_kind {location_kind!r}; must be one of: {valid}") from exc
 
         related_project_id = data.get("related_project_id")
         if related_project_id is not None and related_project_id == project_id:
-            raise ValueError(
-                f"self-edge rejected: related_project_id {related_project_id!r} "
-                f"== project_id"
-            )
+            raise ValueError(f"self-edge rejected: related_project_id {related_project_id!r} == project_id")
 
         existing = await self._get_edge(
             project_id,
@@ -1355,9 +1317,7 @@ class ProjectRelationshipRepository:
         # ``uq_one_parent`` partial unique index already added in migration 008,
         # which rejects a concurrent second parent at the database level.
         if relation_type in self._SINGLETON_RELATIONS:
-            for prior in await self.list_for_project(
-                project_id, relation_type=relation_type
-            ):
+            for prior in await self.list_for_project(project_id, relation_type=relation_type):
                 await self._session.delete(prior)
 
         row = ProjectRelationshipModel(**data)
@@ -1389,9 +1349,7 @@ class ProjectRelationshipRepository:
         limit: int | None = None,
         offset: int = 0,
     ) -> list[ProjectRelationshipModel]:
-        stmt = select(ProjectRelationshipModel).where(
-            ProjectRelationshipModel.project_id == project_id
-        )
+        stmt = select(ProjectRelationshipModel).where(ProjectRelationshipModel.project_id == project_id)
         if relation_type is not None:
             stmt = stmt.where(ProjectRelationshipModel.relation_type == relation_type)
         stmt = (
@@ -1402,12 +1360,8 @@ class ProjectRelationshipRepository:
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
-    async def get_parent(
-        self, project_id: str
-    ) -> ProjectRelationshipModel | None:
-        edges = await self.list_for_project(
-            project_id, relation_type=RelationType.PARENT.value
-        )
+    async def get_parent(self, project_id: str) -> ProjectRelationshipModel | None:
+        edges = await self.list_for_project(project_id, relation_type=RelationType.PARENT.value)
         return edges[0] if edges else None
 
     async def list_children(
@@ -1422,9 +1376,7 @@ class ProjectRelationshipRepository:
 
     async def remove(self, rel_id: str) -> bool:
         """Delete one edge by its primary key. Returns True iff a row was removed."""
-        stmt = select(ProjectRelationshipModel).where(
-            ProjectRelationshipModel.id == rel_id
-        )
+        stmt = select(ProjectRelationshipModel).where(ProjectRelationshipModel.id == rel_id)
         result = await self._session.execute(stmt)
         row = result.scalar_one_or_none()
         if row is None:
@@ -1521,9 +1473,7 @@ class AgentMessageRepository:
         now = datetime.now(UTC)
         return [r for r in rows if not self._is_expired(r, now)]
 
-    async def ack(
-        self, message_id: str, project_id: str | None = None
-    ) -> AgentMessageModel | bool | None:
+    async def ack(self, message_id: str, project_id: str | None = None) -> AgentMessageModel | bool | None:
         """Mark a message read. Returns the row, or None if it does not exist.
 
         XT-11: when ``project_id`` is supplied, a message belonging to another
@@ -1574,9 +1524,7 @@ class AgentMessageRepository:
         """
         from sqlalchemy import delete, func
 
-        elapsed_seconds = (
-            func.julianday("now") - func.julianday(AgentMessageModel.created_at)
-        ) * 86400.0
+        elapsed_seconds = (func.julianday("now") - func.julianday(AgentMessageModel.created_at)) * 86400.0
         stmt = delete(AgentMessageModel).where(
             AgentMessageModel.ttl_seconds.isnot(None),
             elapsed_seconds > AgentMessageModel.ttl_seconds,
@@ -1598,9 +1546,7 @@ class AgentMessageRepository:
         """
         from sqlalchemy import func, or_
 
-        elapsed_seconds = (
-            func.julianday("now") - func.julianday(AgentMessageModel.created_at)
-        ) * 86400.0
+        elapsed_seconds = (func.julianday("now") - func.julianday(AgentMessageModel.created_at)) * 86400.0
         stmt = (
             select(AgentMessageModel.recipient, func.count())
             .where(
@@ -1703,9 +1649,7 @@ class FeatureRepository:
         update_cols = {k: v for k, v in serialized.items() if k not in ("id", "name")}
         stmt = sqlite_insert(FeatureModel).values(**serialized)
         if update_cols:
-            stmt = stmt.on_conflict_do_update(
-                index_elements=["name"], set_=update_cols
-            )
+            stmt = stmt.on_conflict_do_update(index_elements=["name"], set_=update_cols)
         else:
             stmt = stmt.on_conflict_do_nothing(index_elements=["name"])
         await self._session.execute(stmt)
@@ -1740,11 +1684,7 @@ class FeatureRepository:
             values["verified_at"] = verified_at
         if detail is not None:
             values["last_verify_detail"] = _json.dumps(detail)
-        guard = (
-            _update(FeatureModel)
-            .where(FeatureModel.id == feature_id)
-            .values(**values)
-        )
+        guard = _update(FeatureModel).where(FeatureModel.id == feature_id).values(**values)
         res = await self._session.execute(guard)
         if (cast("CursorResult[Any]", res).rowcount or 0) != 1:
             raise KeyError(f"Feature {feature_id!r} not found")
@@ -1756,9 +1696,7 @@ class FeatureRepository:
     # Read operations
     # ------------------------------------------------------------------
 
-    async def get_by_name(
-        self, name: str, project_id: str | None = None
-    ) -> FeatureModel | None:
+    async def get_by_name(self, name: str, project_id: str | None = None) -> FeatureModel | None:
         _pid = self._resolve_pid(project_id)
         stmt = select(FeatureModel).where(FeatureModel.name == name)
         if _pid is not None:
@@ -1766,9 +1704,7 @@ class FeatureRepository:
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def get_by_id(
-        self, feature_id: str, project_id: str | None = None
-    ) -> FeatureModel | None:
+    async def get_by_id(self, feature_id: str, project_id: str | None = None) -> FeatureModel | None:
         _pid = self._resolve_pid(project_id)
         stmt = select(FeatureModel).where(FeatureModel.id == feature_id)
         if _pid is not None:
@@ -1783,9 +1719,7 @@ class FeatureRepository:
         stmt = select(FeatureModel)
         if _pid is not None:
             stmt = stmt.where(FeatureModel.project_id == _pid)
-        stmt = stmt.offset(offset).limit(
-            min(limit, _DEFAULT_LIST_LIMIT) if limit is not None else _DEFAULT_LIST_LIMIT
-        )
+        stmt = stmt.offset(offset).limit(min(limit, _DEFAULT_LIST_LIMIT) if limit is not None else _DEFAULT_LIST_LIMIT)
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
@@ -1800,9 +1734,7 @@ class FeatureRepository:
         stmt = select(FeatureModel).where(FeatureModel.status == status.value)
         if _pid is not None:
             stmt = stmt.where(FeatureModel.project_id == _pid)
-        stmt = stmt.offset(offset).limit(
-            min(limit, _DEFAULT_LIST_LIMIT) if limit is not None else _DEFAULT_LIST_LIMIT
-        )
+        stmt = stmt.offset(offset).limit(min(limit, _DEFAULT_LIST_LIMIT) if limit is not None else _DEFAULT_LIST_LIMIT)
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
@@ -1817,9 +1749,7 @@ class FeatureRepository:
         stmt = select(FeatureModel).where(FeatureModel.category == category)
         if _pid is not None:
             stmt = stmt.where(FeatureModel.project_id == _pid)
-        stmt = stmt.offset(offset).limit(
-            min(limit, _DEFAULT_LIST_LIMIT) if limit is not None else _DEFAULT_LIST_LIMIT
-        )
+        stmt = stmt.offset(offset).limit(min(limit, _DEFAULT_LIST_LIMIT) if limit is not None else _DEFAULT_LIST_LIMIT)
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
@@ -1904,9 +1834,7 @@ class SpendRepository:
         """
         from sqlalchemy import func
 
-        stmt = select(func.sum(SpendRecordModel.cost_usd)).where(
-            SpendRecordModel.ts >= since_epoch
-        )
+        stmt = select(func.sum(SpendRecordModel.cost_usd)).where(SpendRecordModel.ts >= since_epoch)
         if project_id is not None:
             stmt = stmt.where(SpendRecordModel.project_id == project_id)
         result = await self._session.execute(stmt)
@@ -1955,9 +1883,7 @@ class RoleRunRepository:
         stmt = select(RoleRunModel)
         if project_id is not None:
             stmt = stmt.where(RoleRunModel.project_id == project_id)
-        stmt = stmt.offset(offset).limit(
-            min(limit, _DEFAULT_LIST_LIMIT) if limit is not None else _DEFAULT_LIST_LIMIT
-        )
+        stmt = stmt.offset(offset).limit(min(limit, _DEFAULT_LIST_LIMIT) if limit is not None else _DEFAULT_LIST_LIMIT)
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
@@ -1966,9 +1892,7 @@ class RoleRunRepository:
 # HumanTodo — bot→human request store (separate from agent TodoModel)
 # ---------------------------------------------------------------------------
 
-HUMAN_TODO_STATUSES: frozenset[str] = frozenset(
-    {"open", "in_progress", "done", "dismissed", "superseded"}
-)
+HUMAN_TODO_STATUSES: frozenset[str] = frozenset({"open", "in_progress", "done", "dismissed", "superseded"})
 HUMAN_TODO_TERMINAL: frozenset[str] = frozenset({"done", "dismissed", "superseded"})
 HUMAN_TODO_CATEGORIES: frozenset[str] = frozenset(
     {
@@ -2007,26 +1931,18 @@ class HumanTodoRepository:
     @staticmethod
     def _validate_category(category: str) -> None:
         if category not in HUMAN_TODO_CATEGORIES:
-            raise ValueError(
-                f"invalid category {category!r}; must be one of: "
-                f"{sorted(HUMAN_TODO_CATEGORIES)}"
-            )
+            raise ValueError(f"invalid category {category!r}; must be one of: {sorted(HUMAN_TODO_CATEGORIES)}")
 
     @staticmethod
     def _validate_priority(priority: str) -> None:
         if priority not in HUMAN_TODO_PRIORITIES:
-            raise ValueError(
-                f"invalid priority {priority!r}; must be one of: "
-                f"{sorted(HUMAN_TODO_PRIORITIES)}"
-            )
+            raise ValueError(f"invalid priority {priority!r}; must be one of: {sorted(HUMAN_TODO_PRIORITIES)}")
 
     @staticmethod
     def _validate_transition(current: str, target: str) -> None:
         allowed = _HUMAN_TODO_TRANSITIONS.get(current, frozenset())
         if target not in allowed:
-            raise InvalidTransitionError(
-                f"invalid human-todo transition: {current!r} -> {target!r}"
-            )
+            raise InvalidTransitionError(f"invalid human-todo transition: {current!r} -> {target!r}")
 
     async def create(
         self,
@@ -2194,9 +2110,7 @@ class HumanTodoRepository:
             resolution_text=f"superseded by {new_id}: {reason}",
         )
 
-    async def get_done_for_parent(
-        self, parent_todo_id: str
-    ) -> HumanTodoModel | None:
+    async def get_done_for_parent(self, parent_todo_id: str) -> HumanTodoModel | None:
         """Return the most-recently-resolved DONE human-todo for a parent agent todo.
 
         Filters in SQL (not Python) so callers are not loading every recent
@@ -2252,9 +2166,7 @@ class HumanTodoRepository:
             return []
         from sqlalchemy import or_
 
-        escaped = (
-            query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-        )
+        escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         like = f"%{escaped}%"
         stmt = (
             select(HumanTodoModel)
@@ -2312,9 +2224,7 @@ class RemediationActionRepository:
         return row
 
     async def get(self, remediation_id: str) -> RemediationActionModel | None:
-        stmt = select(RemediationActionModel).where(
-            RemediationActionModel.id == remediation_id
-        )
+        stmt = select(RemediationActionModel).where(RemediationActionModel.id == remediation_id)
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
 
@@ -2324,18 +2234,14 @@ class RemediationActionRepository:
         limit: int = 100,
         offset: int = 0,
     ) -> list[RemediationActionModel]:
-        stmt = select(RemediationActionModel).order_by(
-            RemediationActionModel.created_at.desc()
-        )
+        stmt = select(RemediationActionModel).order_by(RemediationActionModel.created_at.desc())
         if project_id is not None:
             stmt = stmt.where(RemediationActionModel.project_id == project_id)
         stmt = stmt.offset(max(0, offset)).limit(min(limit, _DEFAULT_LIST_LIMIT))
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
-    async def list_since(
-        self, since: datetime, project_id: str | None = None
-    ) -> list[RemediationActionModel]:
+    async def list_since(self, since: datetime, project_id: str | None = None) -> list[RemediationActionModel]:
         stmt = (
             select(RemediationActionModel)
             .where(RemediationActionModel.created_at >= since)
@@ -2387,9 +2293,7 @@ class RemediationActionRepository:
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none() is not None
 
-    async def find_by_idempotency_key(
-        self, idempotency_key: str
-    ) -> list[RemediationActionModel]:
+    async def find_by_idempotency_key(self, idempotency_key: str) -> list[RemediationActionModel]:
         stmt = (
             select(RemediationActionModel)
             .where(RemediationActionModel.idempotency_key == idempotency_key)
@@ -2560,23 +2464,11 @@ class ModelPerformanceRepository:
                 _func.max(ModelCallLogModel.model_name).label("model_name"),
                 _func.max(ModelCallLogModel.service).label("service"),
                 _func.count().label("total_calls"),
-                _func.sum(
-                    _func.cast(ModelCallLogModel.success, _Integer)
-                ).label("successful_calls"),
-                (
-                    _func.count() - _func.sum(
-                        _func.cast(ModelCallLogModel.success, _Integer)
-                    )
-                ).label("failed_calls"),
-                _func.coalesce(
-                    _func.sum(ModelCallLogModel.input_tokens), 0
-                ).label("total_input_tokens"),
-                _func.coalesce(
-                    _func.sum(ModelCallLogModel.output_tokens), 0
-                ).label("total_output_tokens"),
-                _func.coalesce(
-                    _func.sum(ModelCallLogModel.cost_usd), 0.0
-                ).label("total_cost_usd"),
+                _func.sum(_func.cast(ModelCallLogModel.success, _Integer)).label("successful_calls"),
+                (_func.count() - _func.sum(_func.cast(ModelCallLogModel.success, _Integer))).label("failed_calls"),
+                _func.coalesce(_func.sum(ModelCallLogModel.input_tokens), 0).label("total_input_tokens"),
+                _func.coalesce(_func.sum(ModelCallLogModel.output_tokens), 0).label("total_output_tokens"),
+                _func.coalesce(_func.sum(ModelCallLogModel.cost_usd), 0.0).label("total_cost_usd"),
                 _func.avg(ModelCallLogModel.duration_ms).label("avg_duration_ms"),
                 _func.max(ModelCallLogModel.created_at).label("last_call_at"),
                 _func.min(ModelCallLogModel.created_at).label("first_call_at"),
@@ -2592,9 +2484,7 @@ class ModelPerformanceRepository:
         for row in rows:
             profile_id = row.model_profile_id
             existing = await eff_session.execute(
-                select(ModelPerformanceModel).where(
-                    ModelPerformanceModel.model_profile_id == profile_id
-                )
+                select(ModelPerformanceModel).where(ModelPerformanceModel.model_profile_id == profile_id)
             )
             perf: ModelPerformanceModel | None = existing.scalar_one_or_none()
             if perf is None:
@@ -2612,9 +2502,7 @@ class ModelPerformanceRepository:
             perf.total_input_tokens = int(row.total_input_tokens or 0)
             perf.total_output_tokens = int(row.total_output_tokens or 0)
             perf.total_cost_usd = float(row.total_cost_usd or 0.0)
-            perf.avg_duration_ms = (
-                float(row.avg_duration_ms) if row.avg_duration_ms is not None else 0.0
-            )
+            perf.avg_duration_ms = float(row.avg_duration_ms) if row.avg_duration_ms is not None else 0.0
             perf.last_call_at = row.last_call_at
             perf.first_call_at = row.first_call_at
             perf.updated_at = now
@@ -2638,9 +2526,7 @@ class ModelPerformanceRepository:
         eff_session = session or self._resolve_session()
         stmt = select(ModelPerformanceModel)
         if model_profile_id is not None:
-            stmt = stmt.where(
-                ModelPerformanceModel.model_profile_id == model_profile_id
-            )
+            stmt = stmt.where(ModelPerformanceModel.model_profile_id == model_profile_id)
         stmt = stmt.order_by(ModelPerformanceModel.total_cost_usd.desc())
         result = await eff_session.execute(stmt)
         return list(result.scalars().all())
@@ -2653,15 +2539,9 @@ class ModelPerformanceRepository:
     ) -> list[ModelCallLogModel]:
         """Return the most recent call log entries."""
         eff_session = session or self._resolve_session()
-        stmt = (
-            select(ModelCallLogModel)
-            .order_by(ModelCallLogModel.created_at.desc())
-            .limit(min(limit, 1000))
-        )
+        stmt = select(ModelCallLogModel).order_by(ModelCallLogModel.created_at.desc()).limit(min(limit, 1000))
         if model_profile_id is not None:
-            stmt = stmt.where(
-                ModelCallLogModel.model_profile_id == model_profile_id
-            )
+            stmt = stmt.where(ModelCallLogModel.model_profile_id == model_profile_id)
         result = await eff_session.execute(stmt)
         return list(result.scalars().all())
 
@@ -2678,9 +2558,7 @@ class ModelPerformanceRepository:
                 ModelPerformanceModel.service,
                 _func.count().label("profile_count"),
                 _func.sum(ModelPerformanceModel.total_calls).label("total_calls"),
-                _func.sum(ModelPerformanceModel.successful_calls).label(
-                    "successful_calls"
-                ),
+                _func.sum(ModelPerformanceModel.successful_calls).label("successful_calls"),
                 _func.sum(ModelPerformanceModel.total_cost_usd).label("total_cost"),
             )
             .group_by(ModelPerformanceModel.service)
@@ -2717,18 +2595,10 @@ class ModelPerformanceRepository:
             select(
                 _func.date(ModelCallLogModel.created_at).label("day"),
                 _func.count().label("total_calls"),
-                _func.sum(
-                    _func.cast(ModelCallLogModel.success, _Integer)
-                ).label("successful_calls"),
-                _func.coalesce(
-                    _func.sum(ModelCallLogModel.input_tokens), 0
-                ).label("total_input_tokens"),
-                _func.coalesce(
-                    _func.sum(ModelCallLogModel.output_tokens), 0
-                ).label("total_output_tokens"),
-                _func.coalesce(
-                    _func.sum(ModelCallLogModel.cost_usd), 0.0
-                ).label("total_cost_usd"),
+                _func.sum(_func.cast(ModelCallLogModel.success, _Integer)).label("successful_calls"),
+                _func.coalesce(_func.sum(ModelCallLogModel.input_tokens), 0).label("total_input_tokens"),
+                _func.coalesce(_func.sum(ModelCallLogModel.output_tokens), 0).label("total_output_tokens"),
+                _func.coalesce(_func.sum(ModelCallLogModel.cost_usd), 0.0).label("total_cost_usd"),
             )
             .where(ModelCallLogModel.created_at >= cutoff)
             .group_by(_func.date(ModelCallLogModel.created_at))
@@ -2758,10 +2628,7 @@ class ModelPerformanceRepository:
                 "creation via an explicit session= override."
             )
         if self._session is None:
-            raise RuntimeError(
-                "ModelPerformanceRepository: no session configured and "
-                "no session= override provided."
-            )
+            raise RuntimeError("ModelPerformanceRepository: no session configured and no session= override provided.")
         return self._session
 
 
@@ -2810,31 +2677,21 @@ class SlurmJobRepository:
         await self._session.flush()
         return (cast("CursorResult[Any]", res).rowcount or 0) > 0
 
-    async def list_active(
-        self, daemon_pid: int | None = None
-    ) -> list[SlurmJobModel]:
+    async def list_active(self, daemon_pid: int | None = None) -> list[SlurmJobModel]:
         """Return jobs with status 'submitted' or 'running'.
 
         When ``daemon_pid`` is provided, only jobs matching that pid are returned.
         """
         stmt = (
-            select(SlurmJobModel)
-            .where(SlurmJobModel.status.in_(["submitted", "running"]))
-            .limit(_DEFAULT_LIST_LIMIT)
+            select(SlurmJobModel).where(SlurmJobModel.status.in_(["submitted", "running"])).limit(_DEFAULT_LIST_LIMIT)
         )
         if daemon_pid is not None:
             stmt = stmt.where(SlurmJobModel.daemon_pid == daemon_pid)
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
-    async def list_by_deployment(
-        self, deployment_id: str
-    ) -> list[SlurmJobModel]:
-        stmt = (
-            select(SlurmJobModel)
-            .where(SlurmJobModel.deployment_id == deployment_id)
-            .limit(_DEFAULT_LIST_LIMIT)
-        )
+    async def list_by_deployment(self, deployment_id: str) -> list[SlurmJobModel]:
+        stmt = select(SlurmJobModel).where(SlurmJobModel.deployment_id == deployment_id).limit(_DEFAULT_LIST_LIMIT)
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
@@ -2878,7 +2735,11 @@ class MemoryRepository:
             raise RuntimeError("MemoryRepository: no session or session_factory")
 
     async def _get_with_session(
-        self, session: AsyncSession, agent_id: str, key: str, namespace: str,
+        self,
+        session: AsyncSession,
+        agent_id: str,
+        key: str,
+        namespace: str,
         project_id: str | None = None,
     ) -> MemoryRecordModel | None:
         stmt = select(MemoryRecordModel).where(
@@ -2897,7 +2758,10 @@ class MemoryRepository:
         return row
 
     async def get(
-        self, agent_id: str, key: str, namespace: str = "default",
+        self,
+        agent_id: str,
+        key: str,
+        namespace: str = "default",
         project_id: str | None = None,
     ) -> MemoryRecordModel | None:
         async with self._resolve_session() as session:
@@ -2945,7 +2809,10 @@ class MemoryRepository:
             return existing
 
     async def delete(
-        self, agent_id: str, key: str, namespace: str = "default",
+        self,
+        agent_id: str,
+        key: str,
+        namespace: str = "default",
         project_id: str | None = None,
     ) -> bool:
         async with self._resolve_session() as session:
@@ -2984,9 +2851,7 @@ class MemoryRepository:
         from sqlalchemy import delete, func
 
         async with self._resolve_session() as session:
-            elapsed_seconds = (
-                func.julianday("now") - func.julianday(MemoryRecordModel.created_at)
-            ) * 86400.0
+            elapsed_seconds = (func.julianday("now") - func.julianday(MemoryRecordModel.created_at)) * 86400.0
             stmt = delete(MemoryRecordModel).where(
                 MemoryRecordModel.ttl_seconds.isnot(None),
                 elapsed_seconds > MemoryRecordModel.ttl_seconds,

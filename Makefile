@@ -847,7 +847,7 @@ gate: check-opencode-integrity check-plugin-hooks opencode-boot-smoke validate-t
 # "No Unseen Events" invariant in AGENTS.md). The _gate-fresh-check used by
 # commit targets still requires the FULL `make gate`; gate-lite is for fast
 # local feedback between commits, not a commit prerequisite.
-gate-lite: check-opencode-integrity verify-opencode-backup check-subagent-guards check-skills-frontmatter check-coverage-gaps check-make-help check-plugin-syntax check-plugin-runtime check-plugin-imports check-no-prompt-prone-edit-tools
+gate-lite: check-opencode-integrity verify-opencode-backup check-subagent-guards check-skills-frontmatter check-coverage-gaps check-make-help check-plugin-syntax check-plugin-runtime check-plugin-imports check-no-prompt-prone-edit-tools check-task-integrity
 	@rm -f .gate-lite-failed
 	@echo "=== GATE-LITE $(shell date -u +%Y-%m-%dT%H:%M:%SZ) ===" > .gate-lite-status
 	@# OBSERVABILITY INVARIANT (AGENTS.md "No unseen events"): every phase
