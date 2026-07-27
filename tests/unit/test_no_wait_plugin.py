@@ -150,6 +150,39 @@ class TestCiPollDispatchPatterns:
     @pytest.mark.parametrize(
         "prompt",
         [
+            "check every 5 min whether CI finished",
+            "run every 2 minutes up to 10 iterations to check CI",
+            "poll every 10 min and report status",
+            "check every 1 minute until CI passes",
+        ],
+    )
+    def test_ci_poll_every_n_min_caught(self, patterns, prompt):
+        assert any(p.search(prompt) for p in patterns), f"Should deny every-N-min prompt: {prompt!r}"
+
+    @pytest.mark.parametrize(
+        "prompt",
+        [
+            "poll the make ci-verdict output and summarize",
+            "poll make ci-verdict every 30 seconds",
+        ],
+    )
+    def test_ci_poll_ci_verdict_caught(self, patterns, prompt):
+        assert any(p.search(prompt) for p in patterns), f"Should deny poll-ci-verdict prompt: {prompt!r}"
+
+    @pytest.mark.parametrize(
+        "prompt",
+        [
+            "make ci-await for the current branch",
+            "dispatch ci-await and wait until green",
+            "run ci-await in a loop",
+        ],
+    )
+    def test_ci_poll_ci_await_caught(self, patterns, prompt):
+        assert any(p.search(prompt) for p in patterns), f"Should deny ci-await prompt: {prompt!r}"
+
+    @pytest.mark.parametrize(
+        "prompt",
+        [
             "add a new test for the enforce-no-wait plugin",
             "fix lint errors in src/general_ludd/daemon.py",
             "run make ci-verdict-safe FORCE=1 to check CI once",
