@@ -432,7 +432,7 @@ class TestMissingBranchesActionable:
             "src/general_ludd",
         )
         assert "general_ludd/ctx.py" in report["contexts"]
-        assert sorted(report["contexts"]["general_ludd/ctx.py"]) == ["5", "10"]
+        assert report["contexts"]["general_ludd/ctx.py"] == ["5", "10"]
 
 
 # ---------------------------------------------------------------------------

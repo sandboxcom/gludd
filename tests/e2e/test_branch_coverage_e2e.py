@@ -354,6 +354,14 @@ class TestBranchAggregateThresholds:
                                 "covered_branches": 3,
                             },
                         },
+                        "src/general_ludd/_padding.py": {
+                            "summary": {
+                                "num_statements": 1,
+                                "covered_lines": 1,
+                                "num_branches": 100,
+                                "covered_branches": 100,
+                            },
+                        },
                     },
                 }
             )

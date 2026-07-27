@@ -205,6 +205,14 @@ class TestPerFileBelowThreshold:
                                 "covered_branches": 3,
                             },
                         },
+                        "src/general_ludd/_padding.py": {
+                            "summary": {
+                                "num_statements": 1,
+                                "covered_lines": 1,
+                                "num_branches": 100,
+                                "covered_branches": 100,
+                            },
+                        },
                     },
                 }
             )
@@ -302,6 +310,14 @@ class TestPerFileBelowThreshold:
                                 "covered_lines": 10,
                                 "num_branches": 10,
                                 "covered_branches": 6,
+                            },
+                        },
+                        "src/general_ludd/_padding.py": {
+                            "summary": {
+                                "num_statements": 1,
+                                "covered_lines": 1,
+                                "num_branches": 100,
+                                "covered_branches": 100,
                             },
                         },
                     },
