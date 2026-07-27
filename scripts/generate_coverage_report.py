@@ -39,7 +39,7 @@ def main():
     env["COVERAGE_FILE"] = str(data_file.absolute())
 
     result = subprocess.run(
-        [sys.executable, "-m", "coverage", "json", "--show-contexts", "-o", str(json_out)],
+        [sys.executable, "-m", "coverage", "json", "--show-contexts", "--fail-under=0", "-o", str(json_out)],
         cwd=ROOT,
         env=env,
         timeout=300,
