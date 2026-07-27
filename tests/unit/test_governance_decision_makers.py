@@ -9,11 +9,7 @@ from pathlib import Path
 import pytest
 
 _COLLECTION_ROOT = (
-    Path(__file__).resolve().parents[2]
-    / "collections"
-    / "ansible_collections"
-    / "general_ludd"
-    / "governance"
+    Path(__file__).resolve().parents[2] / "collections" / "ansible_collections" / "general_ludd" / "governance"
 )
 _PLUGIN_ROOT = _COLLECTION_ROOT / "plugins"
 
@@ -36,6 +32,10 @@ get_decision_authority = dm.get_decision_authority
 get_influence_network = dm.get_influence_network
 find_decision_maker = dm.find_decision_maker
 assess_proclivity = dm.assess_proclivity
+DECISION_MAKERS = dm.DECISION_MAKERS
+list_countries = dm.list_countries
+lookup_decision_makers = dm.lookup_decision_makers
+BRANCHES = dm.BRANCHES
 
 
 class TestRoleTypes:
@@ -44,8 +44,15 @@ class TestRoleTypes:
 
     def test_role_types_contains_all_required(self):
         required = {
-            "head_of_state", "minister", "legislator", "judge", "regulator",
-            "military_leader", "diplomat", "bureaucrat", "local_official",
+            "head_of_state",
+            "minister",
+            "legislator",
+            "judge",
+            "regulator",
+            "military_leader",
+            "diplomat",
+            "bureaucrat",
+            "local_official",
         }
         assert required.issubset(set(ROLE_TYPES))
 
@@ -56,10 +63,18 @@ class TestRoleTypes:
 class TestProfileTemplate:
     def test_template_has_required_fields(self):
         required = {
-            "name", "title", "body", "jurisdiction", "term",
-            "appointment_process", "decision_authority", "known_positions",
-            "voting_record_summary", "public_statements",
-            "campaign_finance", "lobbying_connections",
+            "name",
+            "title",
+            "body",
+            "jurisdiction",
+            "term",
+            "appointment_process",
+            "decision_authority",
+            "known_positions",
+            "voting_record_summary",
+            "public_statements",
+            "campaign_finance",
+            "lobbying_connections",
         }
         assert required.issubset(set(DECISION_MAKER_PROFILE_TEMPLATE))
 
@@ -228,8 +243,10 @@ class TestAssessProclivity:
 class TestBiasIndicators:
     def test_bias_indicators_has_required_keys(self):
         required = {
-            "voting_patterns", "campaign_donors",
-            "board_memberships", "statements_on_topic",
+            "voting_patterns",
+            "campaign_donors",
+            "board_memberships",
+            "statements_on_topic",
         }
         assert required.issubset(set(BIAS_INDICATORS))
 
@@ -237,3 +254,47 @@ class TestBiasIndicators:
         for _key, desc in BIAS_INDICATORS.items():
             assert isinstance(desc, str)
             assert len(desc) > 10
+
+
+class TestLegacyDecisionMakers:
+    def test_decision_makers_has_expanded_countries(self):
+        assert len(DECISION_MAKERS) >= 15
+        required = {"US", "GB", "DE", "FR", "JP", "IN", "AU", "IT", "ES", "MX", "ZA", "KR", "SE", "NL", "BR"}
+        assert required.issubset(set(DECISION_MAKERS))
+
+    def test_list_countries_returns_sorted(self):
+        countries = list_countries()
+        assert isinstance(countries, list)
+        assert len(countries) >= 15
+        assert countries == sorted(countries)
+
+    def test_lookup_known_country(self):
+        result = lookup_decision_makers("US")
+        assert result["found"] is True
+        assert result["count"] >= 3
+
+    def test_lookup_unknown_country(self):
+        result = lookup_decision_makers("ZZ")
+        assert result["found"] is False
+
+    def test_lookup_with_branch_filter(self):
+        result = lookup_decision_makers("US", branch="executive")
+        assert result["found"] is True
+        for dm_entry in result["decision_makers"]:
+            assert dm_entry["branch"] == "executive"
+
+    def test_new_countries_present(self):
+        for country in ("IT", "ES", "MX", "ZA", "KR", "SE", "NL", "BR"):
+            result = lookup_decision_makers(country)
+            assert result["found"] is True, f"Missing {country}"
+            assert result["count"] >= 3, f"{country} has fewer than 3 office holders"
+
+    def test_every_country_has_branches(self):
+        for country in DECISION_MAKERS:
+            result = lookup_decision_makers(country)
+            assert "available_branches" in result
+            assert len(result["available_branches"]) >= 2
+
+    def test_branches_set_has_key_types(self):
+        expected = {"executive", "head of state", "legislative", "judicial"}
+        assert expected.issubset(BRANCHES)

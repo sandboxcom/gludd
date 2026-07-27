@@ -21,10 +21,7 @@ from pathlib import Path
 
 import pytest
 
-_COLLECTION_ROOT = (
-    Path(__file__).resolve().parents[2]
-    / "collections/ansible_collections/general_ludd/governance"
-)
+_COLLECTION_ROOT = Path(__file__).resolve().parents[2] / "collections/ansible_collections/general_ludd/governance"
 _MODULE_UTILS = _COLLECTION_ROOT / "plugins" / "module_utils"
 
 if str(_MODULE_UTILS) not in sys.path:
@@ -49,20 +46,54 @@ try:
 except ModuleNotFoundError:
     pytest.skip("civic_services module not available", allow_module_level=True)
 
-EXPECTED_SERVICES = frozenset({
-    "passport", "national_id", "drivers_license", "marriage_license",
-    "business_registration", "property_deed", "building_permit",
-    "library_card", "postal_services", "military_enlistment",
-    "voter_registration", "tax_filing", "benefits_claims", "foia_request",
-})
+EXPECTED_SERVICES = frozenset(
+    {
+        "passport",
+        "national_id",
+        "drivers_license",
+        "marriage_license",
+        "business_registration",
+        "property_deed",
+        "building_permit",
+        "library_card",
+        "postal_services",
+        "military_enlistment",
+        "voter_registration",
+        "tax_filing",
+        "benefits_claims",
+        "foia_request",
+        "birth_certificate",
+        "death_certificate",
+        "name_change",
+        "immigration_visa",
+        "unemployment_benefits",
+        "disability_benefits",
+        "vehicle_registration",
+        "business_license",
+        "liquor_license",
+        "gun_permit",
+        "food_service_permit",
+        "childcare_license",
+        "health_insurance",
+        "divorce_filing",
+    }
+)
 
-EXPECTED_CATEGORIES = frozenset({
-    "identification", "licenses", "permits", "registrations",
-    "benefits", "complaints", "information_request",
-})
+EXPECTED_CATEGORIES = frozenset(
+    {
+        "identification",
+        "licenses",
+        "permits",
+        "registrations",
+        "benefits",
+        "complaints",
+        "information_request",
+    }
+)
 
 
 # ---- SERVICE_CATEGORIES ------------------------------------------------------
+
 
 class TestServiceCategories:
     def test_categories_contain_all_expected(self):
@@ -74,22 +105,20 @@ class TestServiceCategories:
     def test_every_service_maps_to_a_valid_category(self):
         for sid, info in SERVICES.items():
             cat = info["category"]
-            assert cat in SERVICE_CATEGORIES, (
-                f"{sid}: category {cat!r} not in SERVICE_CATEGORIES"
-            )
+            assert cat in SERVICE_CATEGORIES, f"{sid}: category {cat!r} not in SERVICE_CATEGORIES"
 
 
 # ---- SERVICES knowledge base -------------------------------------------------
 
+
 class TestServicesKnowledgeBase:
     def test_all_fourteen_services_present(self):
         assert set(SERVICES) == EXPECTED_SERVICES, (
-            f"missing: {EXPECTED_SERVICES - set(SERVICES)} | "
-            f"extra: {set(SERVICES) - EXPECTED_SERVICES}"
+            f"missing: {EXPECTED_SERVICES - set(SERVICES)} | extra: {set(SERVICES) - EXPECTED_SERVICES}"
         )
 
-    def test_service_count_at_least_fourteen(self):
-        assert len(SERVICES) >= 14
+    def test_service_count_at_least_twenty_six(self):
+        assert len(SERVICES) >= 26
 
     def test_every_service_has_required_keys(self):
         for sid, info in SERVICES.items():
@@ -128,12 +157,11 @@ class TestServicesKnowledgeBase:
     def test_appeal_process_is_nonempty_string(self):
         for sid, info in SERVICES.items():
             ap = info["appeal_process"]
-            assert isinstance(ap, str) and ap.strip(), (
-                f"{sid}: empty appeal_process"
-            )
+            assert isinstance(ap, str) and ap.strip(), f"{sid}: empty appeal_process"
 
 
 # ---- lookup_service ----------------------------------------------------------
+
 
 class TestLookupService:
     def test_returns_service_info_for_known_service(self):
@@ -189,6 +217,7 @@ class TestLookupService:
 
 # ---- get_requirements --------------------------------------------------------
 
+
 class TestGetRequirements:
     def test_returns_list_for_known_service(self):
         reqs = get_requirements("passport")
@@ -205,13 +234,13 @@ class TestGetRequirements:
     def test_drivers_license_has_id_proof_requirement(self):
         reqs = get_requirements("drivers_license")
         joined = " ".join(reqs).lower()
-        assert any(
-            kw in joined
-            for kw in ("identity", "proof of", "birth", "residence", "photo")
-        ), f"drivers_license requirements lack identity/birth/residence: {reqs}"
+        assert any(kw in joined for kw in ("identity", "proof of", "birth", "residence", "photo")), (
+            f"drivers_license requirements lack identity/birth/residence: {reqs}"
+        )
 
 
 # ---- get_processing_time -----------------------------------------------------
+
 
 class TestGetProcessingTime:
     def test_returns_dict_for_known_service(self):
@@ -228,12 +257,13 @@ class TestGetProcessingTime:
 
     def test_expedited_tier_exists_for_passport(self):
         pt = get_processing_time("passport")
-        assert "expedited" in pt or "urgent" in pt.lower() or any(
-            k in pt for k in pt
-        ), "passport should expose an expedited/urgent tier"
+        assert "expedited" in pt or "urgent" in pt.lower() or any(k in pt for k in pt), (
+            "passport should expose an expedited/urgent tier"
+        )
 
 
 # ---- find_service_office -----------------------------------------------------
+
 
 class TestFindServiceOffice:
     def test_returns_office_for_known_service_and_location(self):
@@ -257,6 +287,7 @@ class TestFindServiceOffice:
 
 
 # ---- POSTAL_SYSTEMS ----------------------------------------------------------
+
 
 class TestPostalSystems:
     def test_contains_usps(self):
@@ -283,14 +314,13 @@ class TestPostalSystems:
         for cc, info in POSTAL_SYSTEMS.items():
             assert "name" in info, f"{cc}: missing name"
             assert "services" in info, f"{cc}: missing services"
-            assert isinstance(info["services"], list) and info["services"], (
-                f"{cc}: empty services"
-            )
+            assert isinstance(info["services"], list) and info["services"], f"{cc}: empty services"
             assert "tracking_url" in info, f"{cc}: missing tracking_url"
             assert "customs_required" in info, f"{cc}: missing customs_required"
 
 
 # ---- get_postal_info ---------------------------------------------------------
+
 
 class TestGetPostalInfo:
     def test_returns_postal_system_for_known_country(self):
@@ -315,6 +345,7 @@ class TestGetPostalInfo:
 
 
 # ---- get_postage_rate --------------------------------------------------------
+
 
 class TestGetPostageRate:
     def test_returns_rate_for_domestic_route(self):
@@ -358,3 +389,88 @@ class TestGetPostageRate:
         assert rate.service_class
         assert isinstance(rate.estimated_days, int)
         assert rate.estimated_days > 0
+
+
+# ---- New Service Lookup Tests (P5-P6 Expansion) -------------------------------
+
+
+class TestNewServiceLookups:
+    def test_birth_certificate_us(self):
+        result = lookup_service("birth_certificate", "US")
+        assert result is not None
+        assert result.category == "identification"
+
+    def test_death_certificate_gb(self):
+        result = lookup_service("death_certificate", "GB")
+        assert result is not None
+        assert result.category == "identification"
+
+    def test_immigration_visa_multiple_countries(self):
+        us = lookup_service("immigration_visa", "US")
+        gb = lookup_service("immigration_visa", "GB")
+        ca = lookup_service("immigration_visa", "CA")
+        au = lookup_service("immigration_visa", "AU")
+        assert us is not None
+        assert gb is not None
+        assert ca is not None
+        assert au is not None
+        assert us.issuing_body != gb.issuing_body
+
+    def test_unemployment_benefits_us(self):
+        result = lookup_service("unemployment_benefits", "US")
+        assert result is not None
+        assert result.category == "benefits"
+
+    def test_disability_benefits_gb(self):
+        result = lookup_service("disability_benefits", "GB")
+        assert result is not None
+        assert result.category == "benefits"
+
+    def test_vehicle_registration_de(self):
+        result = lookup_service("vehicle_registration", "DE")
+        assert result is not None
+        assert result.category == "registrations"
+
+    def test_liquor_license_us(self):
+        result = lookup_service("liquor_license", "US")
+        assert result is not None
+        assert result.category == "licenses"
+
+    def test_gun_permit_country_variants(self):
+        us = lookup_service("gun_permit", "US")
+        gb = lookup_service("gun_permit", "GB")
+        ca = lookup_service("gun_permit", "CA")
+        assert us is not None
+        assert gb is not None
+        assert ca is not None
+        assert "Firearms" in gb.issuing_body
+
+    def test_food_service_permit_us(self):
+        result = lookup_service("food_service_permit", "US")
+        assert result is not None
+        assert result.category == "permits"
+
+    def test_childcare_license_gb(self):
+        result = lookup_service("childcare_license", "GB")
+        assert result is not None
+        assert result.category == "licenses"
+
+    def test_health_insurance_fr(self):
+        result = lookup_service("health_insurance", "FR")
+        assert result is not None
+        assert result.category == "benefits"
+
+    def test_divorce_filing_gb(self):
+        result = lookup_service("divorce_filing", "GB")
+        assert result is not None
+        assert result.category == "registrations"
+
+    def test_business_license_us(self):
+        result = lookup_service("business_license", "US")
+        assert result is not None
+        assert result.category == "licenses"
+
+    def test_name_change_us(self):
+        result = lookup_service("name_change", "US")
+        assert result is not None
+        assert result.category == "registrations"

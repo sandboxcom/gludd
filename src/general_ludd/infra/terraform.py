@@ -73,12 +73,7 @@ def escape_tfvar_value(s: str) -> str:
     """
     # Order matters: backslash must be doubled first so we don't double the
     # backslashes introduced by the later escapes.
-    escaped = (
-        s.replace("\\", "\\\\")
-        .replace('"', '\\"')
-        .replace("${", "\\${")
-        .replace("\n", "\\n")
-    )
+    escaped = s.replace("\\", "\\\\").replace('"', '\\"').replace("${", "\\${").replace("\n", "\\n")
     return f'"{escaped}"'
 
 
@@ -108,13 +103,16 @@ def _engine_serve_cmd(config: ComputeConfig) -> str:
     """
     image = _container_image(config)
     base_argv = [
-        "docker", "run",
-        "--gpus", "all",
-        "-p", "8000:8000",
+        "docker",
+        "run",
+        "--gpus",
+        "all",
+        "-p",
+        "8000:8000",
         shlex.quote(image),
     ]
     if config.engine == InferenceEngine.LLAMACPP:
-        argv = [*base_argv, "-m", shlex.quote(config.model_name), "--host", "0.0.0.0", "--port", "8000"]
+        argv = [*base_argv, "-m", shlex.quote(config.model_name), "--host", "0.0.0.0", "--port", "8000"]  # nosec B104
         # Workload-aware flags for llama.cpp
         if config.workload_type:
             profile = config.deployment_profile or {}
@@ -132,7 +130,7 @@ def _engine_serve_cmd(config: ComputeConfig) -> str:
                 argv.extend(["--threads", str(threads)])
     else:
         # vLLM — build serve command with model name first
-        argv = [*base_argv, "--model", shlex.quote(config.model_name), "--host", "0.0.0.0", "--port", "8000"]
+        argv = [*base_argv, "--model", shlex.quote(config.model_name), "--host", "0.0.0.0", "--port", "8000"]  # nosec B104
         # Workload-aware flags for vLLM
         if config.workload_type:
             profile = config.deployment_profile or {}
@@ -182,6 +180,7 @@ def _override_apply(terraform_config: object | None) -> Callable[[str, object], 
     If terraform_config is set and has a non-default/non-empty value for the
     given field, that value wins. Otherwise the compute default is returned.
     """
+
     def _resolve(key: str, compute_default: object) -> object:
         if terraform_config is None:
             return compute_default
@@ -196,6 +195,7 @@ def _override_apply(terraform_config: object | None) -> Callable[[str, object], 
             # 0 is a valid override for gpu_count=1 etc. — allow it.
             pass
         return tcv
+
     return _resolve
 
 
@@ -292,7 +292,7 @@ class TerraformGenerator:
             f"extra_args      = {escape_tfvar_value(str(_apply_override('extra_args', '')))}",
             f"instance_type   = {escape_tfvar_value(str(_apply_override('instance_type', '')))}",
         ]
-        region_val = _apply_override('region', config.region or "us-east-1")
+        region_val = _apply_override("region", config.region or "us-east-1")
         lines.append(f"region         = {escape_tfvar_value(str(region_val))}")
 
         # Workload-aware deployment tfvars.
@@ -342,18 +342,18 @@ class TerraformGenerator:
         # User-configurable overrides from TerraformConfig for inference feature flags.
         if self._terraform_config is not None:
             gdb = _apply_override(
-                'guided_decoding_backend',
-                getattr(config, 'guided_decoding_backend', 'outlines'),
+                "guided_decoding_backend",
+                getattr(config, "guided_decoding_backend", "outlines"),
             )
             lines.append(f"guided_decoding_backend    = {escape_tfvar_value(str(gdb))}")
             eso = _apply_override(
-                'enable_structured_outputs',
-                getattr(config, 'enable_structured_outputs', True),
+                "enable_structured_outputs",
+                getattr(config, "enable_structured_outputs", True),
             )
             lines.append(f"enable_structured_outputs  = {str(eso).lower()}")
             grammar = _apply_override(
-                'grammar_file',
-                getattr(config, 'grammar_file', None) or "",
+                "grammar_file",
+                getattr(config, "grammar_file", None) or "",
             )
             if grammar:
                 lines.append(f"grammar_file               = {escape_tfvar_value(str(grammar))}")

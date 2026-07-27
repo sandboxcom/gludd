@@ -32,25 +32,56 @@ lp = _load_module()
 class TestLicenseTypes:
     def test_types_present(self) -> None:
         assert isinstance(lp.LICENSE_TYPES, frozenset)
-        assert len(lp.LICENSE_TYPES) >= 20
+        assert len(lp.LICENSE_TYPES) >= 28
 
     def test_required_types_present(self) -> None:
-        required = {"driving", "medical_practitioner", "lawyer", "export_controlled", "business_operating"}
+        required = {
+            "driving",
+            "medical_practitioner",
+            "lawyer",
+            "export_controlled",
+            "business_operating",
+            "architect",
+            "electrician",
+            "plumber",
+            "teacher_educator",
+            "accountant",
+            "real_estate_agent",
+            "security_guard",
+            "firearm",
+            "broadcasting",
+            "liquor_alcohol",
+            "food_service",
+            "childcare",
+            "nursing",
+            "pharmacist",
+            "notary",
+        }
         assert required.issubset(lp.LICENSE_TYPES)
 
 
 class TestLicenseRegistries:
     def test_registries_present(self) -> None:
         assert isinstance(lp.LICENSE_REGISTRIES, dict)
-        assert len(lp.LICENSE_REGISTRIES) >= 4
+        assert len(lp.LICENSE_REGISTRIES) >= 8
 
     def test_known_countries(self) -> None:
-        for code in ("US", "GB", "CA", "DE", "AU"):
+        for code in ("US", "GB", "CA", "DE", "AU", "FR", "JP"):
             assert code in lp.LICENSE_REGISTRIES, f"Missing {code}"
 
     def test_each_country_has_common_licenses(self) -> None:
         for code, registries in lp.LICENSE_REGISTRIES.items():
             assert "driving" in registries, f"{code} missing driving"
+
+    def test_new_professions_registered(self) -> None:
+        fr_registries = lp.LICENSE_REGISTRIES.get("FR", {})
+        assert "pharmacist" in fr_registries
+        assert "notary" in fr_registries
+        assert "real_estate_agent" in fr_registries
+        au_registries = lp.LICENSE_REGISTRIES.get("AU", {})
+        assert "architect" in au_registries
+        assert "accountant" in au_registries
+        assert "electrician" in au_registries
 
 
 class TestGetLicenseInfo:

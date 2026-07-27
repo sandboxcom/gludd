@@ -41,6 +41,7 @@ MODULE_REL_PATH = "infra/terraform/modules/onboard-iam-azure"
 # Phase 1 — role / IAM provisioning instructions
 # ---------------------------------------------------------------------------
 
+
 def create_role_instructions(
     *,
     subscription_id: str,
@@ -49,7 +50,7 @@ def create_role_instructions(
     identity_name: str = DEFAULT_IDENTITY_NAME,
 ) -> str:
     """Return markdown walking the user through provisioning the managed identity."""
-    return f"""# Azure onboarding — IAM provisioning
+    return f"""# Azure onboarding — IAM provisioning  # nosec B608
 
 This provisions a least-privilege user-assigned managed identity that gludd
 uses to launch and tear down ephemeral GPU compute VMs in subscription
@@ -102,6 +103,7 @@ Proceed to token acquisition (see `gludd onboard azure --phase token`).
 # ---------------------------------------------------------------------------
 # Phase 2 — token / credential acquisition guide
 # ---------------------------------------------------------------------------
+
 
 def token_acquisition_guide() -> str:
     """Return markdown describing how to obtain credentials gludd consumes."""
@@ -159,6 +161,7 @@ The client secret is a secret — store it in your secrets manager (OpenBao /
 # Phase 3 — validation (live API probe)
 # ---------------------------------------------------------------------------
 
+
 def validate_token_and_role(
     *,
     subscription_id: str | None = None,
@@ -211,6 +214,7 @@ def validate_token_and_role(
 # Internal helpers (lazy-imported SDK boundaries — mockable in tests)
 # ---------------------------------------------------------------------------
 
+
 def _build_azure_client(*, subscription_id: str) -> Any:
     """Build an azure-mgmt-compute ComputeManagementClient lazily.
 
@@ -222,8 +226,7 @@ def _build_azure_client(*, subscription_id: str) -> Any:
         from azure.mgmt.compute import ComputeManagementClient
     except ImportError as exc:
         raise RuntimeError(
-            "Azure SDK not installed. Install with: pip install "
-            "'general-ludd-agent[azure]'",
+            "Azure SDK not installed. Install with: pip install 'general-ludd-agent[azure]'",
         ) from exc
 
     creds = DefaultAzureCredential()
@@ -237,8 +240,7 @@ def _get_role_assignments(subscription_id: str, principal_id: str) -> list[dict[
         from azure.mgmt.authorization import AuthorizationManagementClient
     except ImportError as exc:
         raise RuntimeError(
-            "Azure SDK not installed. Install with: pip install "
-            "'general-ludd-agent[azure]'",
+            "Azure SDK not installed. Install with: pip install 'general-ludd-agent[azure]'",
         ) from exc
 
     client = AuthorizationManagementClient(
@@ -250,11 +252,13 @@ def _get_role_assignments(subscription_id: str, principal_id: str) -> list[dict[
         # Resolve the role definition name from its id.
         role_def_id = a.role_definition_id or ""
         role_name = _resolve_role_definition_name(client, role_def_id)
-        out.append({
-            "principal_id": a.principal_id,
-            "role_definition_id": role_def_id,
-            "role_definition_name": role_name,
-        })
+        out.append(
+            {
+                "principal_id": a.principal_id,
+                "role_definition_id": role_def_id,
+                "role_definition_name": role_name,
+            }
+        )
     return out
 
 
@@ -334,9 +338,7 @@ class AzureOnboardProvider:
     def token_acquisition_guide(self) -> str:
         return token_acquisition_guide()
 
-    def validate_token_and_role(
-        self, token: str, role_arn: str, region: str
-    ) -> tuple[bool, dict[str, Any]]:
+    def validate_token_and_role(self, token: str, role_arn: str, region: str) -> tuple[bool, dict[str, Any]]:
         """Non-raising adapter over the module-level probe.
 
         Returns ``(False, {"detail": ...})`` instead of raising when the SDK

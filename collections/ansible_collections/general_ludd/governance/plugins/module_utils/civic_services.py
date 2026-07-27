@@ -33,25 +33,29 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-SERVICE_CATEGORIES: frozenset[str] = frozenset({
-    "identification",
-    "licenses",
-    "permits",
-    "registrations",
-    "benefits",
-    "complaints",
-    "information_request",
-})
+SERVICE_CATEGORIES: frozenset[str] = frozenset(
+    {
+        "identification",
+        "licenses",
+        "permits",
+        "registrations",
+        "benefits",
+        "complaints",
+        "information_request",
+    }
+)
 
-REQUIRED_SERVICE_KEYS: frozenset[str] = frozenset({
-    "category",
-    "issuing_body",
-    "requirements",
-    "processing_time",
-    "cost",
-    "online_portal",
-    "appeal_process",
-})
+REQUIRED_SERVICE_KEYS: frozenset[str] = frozenset(
+    {
+        "category",
+        "issuing_body",
+        "requirements",
+        "processing_time",
+        "cost",
+        "online_portal",
+        "appeal_process",
+    }
+)
 
 
 def _merge(country_variant: dict[str, Any], base: dict[str, Any]) -> dict[str, Any]:
@@ -70,14 +74,7 @@ def _normalize_service_name(name: str) -> str:
     "Passport"         -> "passport"
     "FOIA Request"     -> "foia_request"  (mapped below)
     """
-    return (
-        name.strip()
-        .lower()
-        .replace("'", "")
-        .replace("\u2019", "")
-        .replace("-", "_")
-        .replace(" ", "_")
-    )
+    return name.strip().lower().replace("'", "").replace("\u2019", "").replace("-", "_").replace(" ", "_")
 
 
 # ---------------------------------------------------------------------------
@@ -355,8 +352,7 @@ SERVICES: dict[str, dict[str, Any]] = {
         },
         "online_portal": "secretary of state / companies house portal",
         "appeal_process": (
-            "Name rejection or filing denials may be appealed to the "
-            "secretary of state or equivalent registrar."
+            "Name rejection or filing denials may be appealed to the secretary of state or equivalent registrar."
         ),
         "countries": {
             "US": {
@@ -453,8 +449,7 @@ SERVICES: dict[str, dict[str, Any]] = {
         },
         "online_portal": "municipal permitting portal",
         "appeal_process": (
-            "Permit denials may be appealed to the local Board of Zoning "
-            "Appeals or Building Code Board of Appeals."
+            "Permit denials may be appealed to the local Board of Zoning Appeals or Building Code Board of Appeals."
         ),
         "countries": {
             "US": {
@@ -630,8 +625,7 @@ SERVICES: dict[str, dict[str, Any]] = {
         },
         "online_portal": "national/state election office portal",
         "appeal_process": (
-            "Registration denials may be appealed to the local board of "
-            "elections or election commission."
+            "Registration denials may be appealed to the local board of elections or election commission."
         ),
         "countries": {
             "US": {
@@ -822,6 +816,848 @@ SERVICES: dict[str, dict[str, Any]] = {
             },
         },
     },
+    "birth_certificate": {
+        "category": "identification",
+        "issuing_body": "National vital records office / civil registry",
+        "requirements": [
+            "Completed application form",
+            "Parent(s) valid photo identification",
+            "Proof of parentage (if applying on behalf of minor)",
+            "Full name and date of birth of registrant",
+            "Applicable filing or copy fee",
+        ],
+        "processing_time": {
+            "routine": "2-6 weeks (initial registration at birth within 5-10 days; certified copies later)",
+            "expedited": "same-day or 3-5 day expedited copy service",
+        },
+        "cost": {
+            "currency": "varies",
+            "routine": "$10-$30 per certified copy",
+        },
+        "online_portal": "national/state vital records portal (e.g., VitalChek)",
+        "appeal_process": (
+            "Corrections (name, parentage, date) require a court order or "
+            "administrative amendment form filed with the vital records office."
+        ),
+        "countries": {
+            "US": {
+                "issuing_body": "State Vital Records Office / County Clerk-Recorder",
+                "requirements": [
+                    "Completed application for certified copy",
+                    "Valid government-issued photo ID of requester",
+                    "Full name at birth, date and place of birth",
+                    "Parent(s) names",
+                    "Fee $10-$30 per certified copy (varies by state)",
+                ],
+                "cost": {"currency": "USD", "certified_copy": "10-30"},
+                "online_portal": "https://www.vitalchek.com",
+            },
+            "GB": {
+                "issuing_body": "General Register Office (GRO)",
+                "requirements": [
+                    "Online or postal application",
+                    "Full name, date and place of birth",
+                    "Parent(s) names",
+                    "Fee GBP 11 for standard certificate",
+                ],
+                "cost": {"currency": "GBP", "standard": 11},
+                "online_portal": "https://www.gov.uk/order-copy-birth-death-marriage-certificate",
+            },
+        },
+    },
+    "death_certificate": {
+        "category": "identification",
+        "issuing_body": "National vital records office / civil registry",
+        "requirements": [
+            "Full name of deceased",
+            "Date and place of death",
+            "Medical certificate of cause of death (completed by physician/coroner)",
+            "Informant details (next of kin or funeral director)",
+            "Applicable copy fee",
+        ],
+        "processing_time": {
+            "routine": "1-4 weeks from death registration",
+            "expedited": "same-day or 3-5 day expedited copy service",
+        },
+        "cost": {
+            "currency": "varies",
+            "routine": "$10-$30 per certified copy",
+        },
+        "online_portal": "national/state vital records portal",
+        "appeal_process": (
+            "Corrections to cause of death require medical certification; clerical errors corrected via amendment form."
+        ),
+        "countries": {
+            "US": {
+                "issuing_body": "State Vital Records Office / County Clerk-Recorder",
+                "requirements": [
+                    "Valid government-issued photo ID of requester",
+                    "Full name, date and place of death",
+                    "Relationship to deceased or legal interest justification",
+                    "Fee $10-$25 per certified copy",
+                ],
+                "cost": {"currency": "USD", "certified_copy": "10-25"},
+                "online_portal": "https://www.vitalchek.com",
+            },
+            "GB": {
+                "issuing_body": "General Register Office (GRO)",
+                "requirements": [
+                    "Full name, date and place of death",
+                    "Certificate of cause of death (registered by medical professional)",
+                    "Fee GBP 11 for standard certificate",
+                ],
+                "cost": {"currency": "GBP", "standard": 11},
+                "online_portal": "https://www.gov.uk/order-copy-birth-death-marriage-certificate",
+            },
+            "CA": {
+                "issuing_body": "Provincial Vital Statistics Agency",
+                "requirements": [
+                    "Completed application stating relationship to deceased",
+                    "Full name, date and place of death",
+                    "Fee varies by province (CAD $15-$35)",
+                ],
+                "cost": {"currency": "CAD", "certified_copy": "15-35"},
+                "online_portal": "https://www.canada.ca/en/services/health/vital-statistics.html",
+            },
+        },
+    },
+    "name_change": {
+        "category": "registrations",
+        "issuing_body": "Court clerk / civil registry / local government office",
+        "requirements": [
+            "Petition for name change (filed in appropriate court)",
+            "Proof of identity (valid government-issued photo ID)",
+            "Proof of residency",
+            "Fingerprint-based criminal background check (most jurisdictions)",
+            "Publication of name change in a local newspaper (some jurisdictions)",
+            "Filing fee",
+            "Court hearing (if contested or for minors)",
+        ],
+        "processing_time": {
+            "routine": "4-8 weeks from petition to court order",
+            "expedited": "2-3 weeks (emergency or protective order cases)",
+        },
+        "cost": {
+            "currency": "varies",
+            "routine": "$100-$450 by jurisdiction",
+        },
+        "online_portal": "county court clerk / Superior Court website",
+        "appeal_process": (
+            "Name change petitions denied by a judge may be re-filed with "
+            "additional supporting documentation or appealed to a higher court."
+        ),
+        "countries": {
+            "US": {
+                "issuing_body": "County Superior Court / District Court",
+                "requirements": [
+                    "Petition for Change of Name (form varies by state)",
+                    "Valid government-issued photo ID",
+                    "Fingerprint-based criminal background check",
+                    "Publication in newspaper of general circulation (4 weeks, waivable)",
+                    "Filing fee $100-$435",
+                    "Court hearing (mandatory for minors or contested changes)",
+                ],
+                "cost": {"currency": "USD", "court_filing": "100-435"},
+                "online_portal": "county superior/district court self-help portals",
+            },
+            "GB": {
+                "issuing_body": "HM Courts & Tribunals Service / Deed Poll",
+                "requirements": [
+                    "Deed Poll (enrolled or unenrolled)",
+                    "Statutory declaration before a solicitor or commissioner for oaths",
+                    "Published in the London Gazette (for enrolled deed poll)",
+                    "Fee GBP 42.44 for enrolled deed poll",
+                ],
+                "cost": {"currency": "GBP", "enrolled": 42.44},
+                "online_portal": "https://www.gov.uk/change-name-deed-poll",
+            },
+        },
+    },
+    "immigration_visa": {
+        "category": "permits",
+        "issuing_body": "National immigration authority / consular service",
+        "requirements": [
+            "Valid passport with at least 6 months remaining validity",
+            "Completed visa application form",
+            "Passport-sized photograph(s) meeting biometric specifications",
+            "Fee payment receipt",
+            "Supporting documents (purpose-of-travel, financial means, ties to home country)",
+            "Biometrics appointment (fingerprints and photograph)",
+            "Medical examination and police certificate (for certain visa categories)",
+            "Interview at embassy/consulate (for most categories)",
+        ],
+        "processing_time": {
+            "routine": "2-12 weeks depending on category, nationality, and consular workload",
+            "expedited": "1-2 weeks premium processing (where available)",
+        },
+        "cost": {
+            "currency": "varies",
+            "routine": "$30-$1,500 by visa category and nationality",
+        },
+        "online_portal": "national immigration authority online portal",
+        "appeal_process": (
+            "Visa denials may be appealed through an administrative review "
+            "or judicial review process. Time limits are typically 30-90 days "
+            "from denial notification. Re-application is often permissible."
+        ),
+        "countries": {
+            "US": {
+                "issuing_body": "U.S. Department of State / U.S. Citizenship and Immigration Services (USCIS)",
+                "requirements": [
+                    "Form DS-160 (non-immigrant) or DS-260 (immigrant)",
+                    "Valid passport (6+ months validity past intended stay)",
+                    "5x5 cm biometric photo (digital and physical)",
+                    "Visa fee (varies: $160 non-immigrant tourist, $190 B1/B2)",
+                    "Interview at U.S. embassy/consulate",
+                    "Supporting documents: ties to home, financial evidence, itinerary",
+                ],
+                "cost": {"currency": "USD", "tourist_B1B2": 185, "immigrant": "325-535"},
+                "online_portal": "https://travel.state.gov/content/travel/en/us-visas.html",
+            },
+            "GB": {
+                "issuing_body": "UK Visas and Immigration (UKVI)",
+                "requirements": [
+                    "Online application via UKVI portal",
+                    "Biometric residence permit (BRP) appointment",
+                    "Proof of funds and English language requirement",
+                    "Visa fee (e.g., GBP 115 standard visitor, varies by category)",
+                    "Immigration Health Surcharge (IHS) for long-term visas",
+                ],
+                "cost": {"currency": "GBP", "standard_visitor": 115},
+                "online_portal": "https://www.gov.uk/apply-uk-visa",
+            },
+            "CA": {
+                "issuing_body": "Immigration, Refugees and Citizenship Canada (IRCC)",
+                "requirements": [
+                    "Online application via IRCC portal",
+                    "Biometrics (fingerprints and photo)",
+                    "Fee CAD $100 (visitor) to CAD $1,365 (economic immigrant)",
+                    "Medical exam and police certificates for long-term categories",
+                ],
+                "cost": {"currency": "CAD", "visitor": 100, "express_entry": 1365},
+                "online_portal": "https://www.canada.ca/en/immigration-refugees-citizenship/services/application/account.html",
+            },
+            "AU": {
+                "issuing_body": "Department of Home Affairs",
+                "requirements": [
+                    "Online ImmiAccount application",
+                    "Health examination for long-stay visas",
+                    "Character requirements (police certificates)",
+                    "Visa application charge (AUD $150 visitor; significantly higher for skilled/permanent)",
+                ],
+                "cost": {"currency": "AUD", "visitor_subclass_600": 150},
+                "online_portal": "https://immi.homeaffairs.gov.au/visas/getting-a-visa",
+            },
+        },
+    },
+    "unemployment_benefits": {
+        "category": "benefits",
+        "issuing_body": "National employment insurance / labor department",
+        "requirements": [
+            "Proof of prior employment and earnings (base period wages)",
+            "Proof of job separation (layoff, not voluntary quit or discharge for cause)",
+            "Active work search documentation (weekly)",
+            "Ability and availability to work",
+            "Registration with public employment service",
+            "Completed claim application (online or phone)",
+        ],
+        "processing_time": {
+            "routine": "1-3 weeks for initial claim determination",
+            "expedited": "direct deposit payment within 1-2 weeks of approval",
+        },
+        "cost": {
+            "currency": "varies",
+            "routine": "no cost to file a claim; employer-funded insurance",
+        },
+        "online_portal": "national employment insurance / labor department portal",
+        "appeal_process": (
+            "Denied claims may be appealed to an administrative hearing or "
+            "tribunal within 10-30 days of the denial notice."
+        ),
+        "countries": {
+            "US": {
+                "issuing_body": "State Unemployment Insurance Agency (U.S. Department of Labor oversight)",
+                "requirements": [
+                    "Monetary determination: minimum base period wages (varies by state)",
+                    "Non-monetary: laid off through no fault of own, not fired for cause",
+                    "Weekly work search: 2-5 employer contacts per week",
+                    "Claim filed via state UI portal or phone",
+                    "Typical benefit: 50% of prior wages, $200-$700/week",
+                    "Maximum duration: 12-26 weeks (varies by state)",
+                ],
+                "cost": {"currency": "USD", "state_max_weekly": "235-1,015"},
+                "online_portal": "https://www.dol.gov/general/topic/unemployment-insurance",
+            },
+            "GB": {
+                "issuing_body": "Department for Work and Pensions (Jobcentre Plus)",
+                "requirements": [
+                    "National Insurance number",
+                    "Jobseeker's Allowance or Universal Credit application",
+                    "Attend fortnightly appointments at Jobcentre Plus",
+                    "Show active job search in Claimant Commitment",
+                    "Be available for and actively seeking work",
+                    "Aged 18+ to State Pension age",
+                ],
+                "cost": {"currency": "GBP", "JSA_25plus_weekly": 71.70},
+                "online_portal": "https://www.gov.uk/jobs-seeking-allowance",
+            },
+            "CA": {
+                "issuing_body": "Employment and Social Development Canada (Service Canada / EI program)",
+                "requirements": [
+                    "EI regular benefits: 420-700 hours of insurable employment (varies by regional rate)",
+                    "Separation through no fault of own (Record of Employment)",
+                    "Active job search; report bi-weekly via My Service Canada Account",
+                    "Typical benefit: 55% of insurable earnings, max CAD $650/week",
+                ],
+                "cost": {"currency": "CAD", "max_weekly_benefit": 650},
+                "online_portal": "https://www.canada.ca/en/services/benefits/ei.html",
+            },
+        },
+    },
+    "disability_benefits": {
+        "category": "benefits",
+        "issuing_body": "National social security / disability benefits administration",
+        "requirements": [
+            "Medical documentation establishing the disabling condition",
+            "Work history and credits (for social-insurance-based systems)",
+            "Physician's statement of functional limitations",
+            "Completed disability claim application",
+            "Financial records (for income-tested or supplemental programs)",
+            "Attendance at consultative medical examination if requested",
+        ],
+        "processing_time": {
+            "routine": "3-6 months initial decision; 12-18 months through appeals",
+            "expedited": "expedited processing for terminal illness or extreme hardship",
+        },
+        "cost": {
+            "currency": "varies",
+            "routine": "no cost to file a claim",
+        },
+        "online_portal": "national disability benefits portal",
+        "appeal_process": (
+            "Multi-level appeal: reconsideration -> administrative law judge "
+            "-> appeals council -> federal/district court."
+        ),
+        "countries": {
+            "US": {
+                "issuing_body": "Social Security Administration (SSDI/SSI)",
+                "requirements": [
+                    "SSDI: 20+ work credits (typically 5+ of last 10 years worked)",
+                    "SSI: limited income and resources ($2,000 individual / $3,000 couple)",
+                    "Medical evidence: condition expected to last 12+ months or result in death",
+                    "Unable to perform substantial gainful activity (SGA: $1,470/month in 2024)",
+                    "File online, by phone, or at local SSA office",
+                ],
+                "cost": {"currency": "USD", "SGA_threshold_2024": 1550},
+                "online_portal": "https://www.ssa.gov/disability",
+            },
+            "GB": {
+                "issuing_body": "Department for Work and Pensions (PIP / ESA)",
+                "requirements": [
+                    "Personal Independence Payment (PIP) for daily living and mobility needs",
+                    "Employment and Support Allowance (ESA) for limited work capacity",
+                    "Work Capability Assessment (WCA) with healthcare professional",
+                    "GP/specialist medical evidence",
+                ],
+                "cost": {"currency": "GBP", "PIP_enhanced_daily_living_weekly": 101.75},
+                "online_portal": "https://www.gov.uk/pip",
+            },
+            "CA": {
+                "issuing_body": "Service Canada (CPP Disability) / provincial disability programs",
+                "requirements": [
+                    "CPP Disability: severe and prolonged disability preventing any gainful work",
+                    "Minimum contribution requirements (4 of last 6 years)",
+                    "Medical report from treating physician",
+                    "Provincial disability supplements: income-tested",
+                ],
+                "cost": {"currency": "CAD", "CPPD_max_monthly": 1538.67},
+                "online_portal": "https://www.canada.ca/en/services/benefits/publicpensions/cpp/cpp-disability-benefit.html",
+            },
+        },
+    },
+    "vehicle_registration": {
+        "category": "registrations",
+        "issuing_body": "State/provincial department of motor vehicles or equivalent",
+        "requirements": [
+            "Proof of ownership (title, bill of sale, or manufacturer's certificate of origin)",
+            "Proof of insurance meeting minimum liability requirements",
+            "Valid government-issued photo identification",
+            "Safety inspection certificate (where required)",
+            "Emissions test certificate (where required)",
+            "Vehicle identification number (VIN) verification",
+            "Registration fee and applicable taxes",
+        ],
+        "processing_time": {
+            "routine": "same day to 2 weeks (dependent on inspection requirements)",
+            "expedited": "instant online renewal for existing registrations",
+        },
+        "cost": {
+            "currency": "varies",
+            "routine": "$30-$300/year depending on vehicle type and jurisdiction",
+        },
+        "online_portal": "state/provincial DMV or equivalent portal",
+        "appeal_process": (
+            "Registration denials (failed inspection, title issues) may be "
+            "resolved by correcting the deficiency and re-submitting."
+        ),
+        "countries": {
+            "US": {
+                "issuing_body": "State Department of Motor Vehicles (DMV)",
+                "requirements": [
+                    "Vehicle title (or Manufacturer's Statement of Origin for new)",
+                    "Proof of insurance (minimum liability per state law)",
+                    "Smog certificate (CA, NV, and ~30 other states)",
+                    "Safety inspection (varies by state: TX, VA, PA, etc.)",
+                    "Registration fee based on vehicle value/weight/age",
+                    "Sales/use tax if purchased from private party or out-of-state dealer",
+                ],
+                "cost": {"currency": "USD", "annual_registration": "30-300"},
+                "online_portal": "state DMV portals",
+            },
+            "GB": {
+                "issuing_body": "Driver and Vehicle Licensing Agency (DVLA)",
+                "requirements": [
+                    "Valid MOT certificate (for vehicles 3+ years old)",
+                    "Vehicle insurance (continuous insurance enforcement)",
+                    "Vehicle tax paid (VED, based on CO2 emissions)",
+                    "V5C registration certificate (log book)",
+                ],
+                "cost": {"currency": "GBP", "VED": "0-2,365 (based on CO2)"},
+                "online_portal": "https://www.gov.uk/vehicle-tax",
+            },
+            "DE": {
+                "issuing_body": "Kfz-Zulassungsstelle (local vehicle registration office)",
+                "requirements": [
+                    "Valid TUEV/HU inspection certificate",
+                    "Proof of liability insurance (eVB-Nummer)",
+                    "Fahrzeugbrief (vehicle title) and Fahrzeugschein (registration)",
+                    "Registration fee and motor vehicle tax (Kfz-Steuer, based on displacement/CO2)",
+                ],
+                "cost": {"currency": "EUR", "licence_plate_fee": "10-30"},
+                "online_portal": "https://www.kba.de",
+            },
+        },
+    },
+    "business_license": {
+        "category": "licenses",
+        "issuing_body": "Municipal / county business license office",
+        "requirements": [
+            "Completed business license application",
+            "Trade name / DBA registration (if using a fictitious business name)",
+            "Business entity registration (LLC, corporation, etc.)",
+            "Zoning clearance from planning department",
+            "Proof of liability insurance (for in-person businesses)",
+            "Health department clearance (for food/beauty businesses)",
+            "Professional qualifications (for regulated trades)",
+            "License fee",
+        ],
+        "processing_time": {
+            "routine": "2-6 weeks",
+            "expedited": "1-5 business days (premium processing where available)",
+        },
+        "cost": {
+            "currency": "varies",
+            "routine": "$50-$500 depending on business type and jurisdiction",
+        },
+        "online_portal": "city/county business license portal",
+        "appeal_process": (
+            "License denials or revocations may be appealed through the "
+            "local hearing examiner or Business License Review Board."
+        ),
+        "countries": {
+            "US": {
+                "issuing_body": "City Hall / County Business License Division",
+                "requirements": [
+                    "Business license application (city/county specific)",
+                    "Fictitious business name (DBA) registration at county clerk",
+                    "Zoning clearance or home occupation permit",
+                    "State seller's permit (for retail/wholesale businesses)",
+                    "Professional/occupational license (if regulated: contractor, cosmetologist, etc.)",
+                    "Fee varies by business type and gross receipts estimate",
+                ],
+                "cost": {"currency": "USD", "initial_fee": "50-500"},
+                "online_portal": "city/county business license portals",
+            },
+            "GB": {
+                "issuing_body": "Local Authority (district/borough council)",
+                "requirements": [
+                    "Business rates registration with Valuation Office Agency",
+                    "Planning permission for change of use (if applicable)",
+                    "Trading Standards compliance",
+                    "Environmental health registration (food businesses)",
+                    "Premises licence (if selling alcohol, entertainment, late-night refreshment)",
+                ],
+                "cost": {"currency": "GBP", "council_fees": "varies by activity"},
+                "online_portal": "https://www.gov.uk/set-up-business-uk",
+            },
+        },
+    },
+    "liquor_license": {
+        "category": "licenses",
+        "issuing_body": "State/provincial liquor control board / local alcohol licensing authority",
+        "requirements": [
+            "Completed license application",
+            "Background check of all owners and managers",
+            "Proof of age (21+ in US, 18+ in most jurisdictions)",
+            "Zoning approval and distance-measurement from schools/churches",
+            "Public notice / posting period",
+            "Responsible beverage service training",
+            "Liability insurance",
+            "License fee (varies widely by type: on-premise, off-premise, manufacturer)",
+        ],
+        "processing_time": {
+            "routine": "2-6 months from application to hearing",
+            "expedited": "temporary event permits within 1-2 weeks",
+        },
+        "cost": {
+            "currency": "varies",
+            "routine": "$300-$15,000+ depending on license type and jurisdiction",
+        },
+        "online_portal": "state liquor control board / local council licensing portal",
+        "appeal_process": (
+            "Denied applications or license revocations may be appealed to "
+            "the liquor control board's appeals division or state administrative court."
+        ),
+        "countries": {
+            "US": {
+                "issuing_body": "State Alcoholic Beverage Control (ABC) Board / local council",
+                "requirements": [
+                    "State ABC license application (on-premise = bar/restaurant, off-premise = liquor store)",
+                    "FBI and state criminal background check for all principals",
+                    "Zoning compliance: typically 500-1000 ft from schools, churches, parks",
+                    "Posted public notice at premises for 30 days",
+                    "Responsible vendor / TIPS certification",
+                    "License fee: $300-$15,000+ depending on class and county population",
+                ],
+                "cost": {"currency": "USD", "annual_on_premise": "300-15000"},
+                "online_portal": "state ABC board portals",
+            },
+            "GB": {
+                "issuing_body": "Local Authority Licensing Board",
+                "requirements": [
+                    "Premises licence application with operating schedule",
+                    "Designated Premises Supervisor (DPS) with personal licence",
+                    "Personal licence (requires accredited qualification, GBP 37 application fee)",
+                    "28-day public consultation period (blue notice on premises)",
+                    "Licensing objectives: crime prevention, public safety, public nuisance, child protection",
+                    "Licensing hearing if objections received from responsible authorities or residents",
+                ],
+                "cost": {"currency": "GBP", "premises_licence": "100-1,905 (rateable-value based)"},
+                "online_portal": "https://www.gov.uk/apply-for-a-licence/premises-licence",
+            },
+        },
+    },
+    "gun_permit": {
+        "category": "permits",
+        "issuing_body": "National/state firearms licensing authority or police service",
+        "requirements": [
+            "Completed application form",
+            "Proof of age (typically 18+ for long guns, 21+ for handguns)",
+            "Government-issued photo identification",
+            "Criminal background check (fingerprints)",
+            "Mental health records check",
+            "Firearms safety training certificate",
+            "Safe storage declaration or inspection",
+            "Application fee",
+            "Waiting period (jurisdiction dependent)",
+        ],
+        "processing_time": {
+            "routine": "1-6 months depending on jurisdiction",
+            "expedited": "N/A (required checks cannot be bypassed)",
+        },
+        "cost": {
+            "currency": "varies",
+            "routine": "$30-$500 depending on jurisdiction and permit type",
+        },
+        "online_portal": "police service / firearms registry portal",
+        "appeal_process": (
+            "Denials may be appealed to the licensing authority's review board "
+            "or a firearms appeals tribunal. Judicial review is typically available."
+        ),
+        "countries": {
+            "US": {
+                "issuing_body": "ATF (federal) / State Bureau of Firearms or local sheriff (varies by state)",
+                "requirements": [
+                    "Federal: ATF Form 4473 background check (NICS) at licensed dealer for all firearm purchases",
+                    "State: concealed carry permit (16 states require may-issue or shall-issue permit)",
+                    "Fingerprints and FBI background check",
+                    "Firearm safety training course (typically 8-16 hours for CCW permits)",
+                    "Real ID-compliant driver's license or government ID",
+                    "States with strict requirements (CA, NY, IL, MA): firearm safety certificate, roster of approved handguns, ammunition background check",
+                ],
+                "cost": {"currency": "USD", "ATF_transfer": "15-50 (dealer fee)"},
+                "online_portal": "state DOJ / ATF portals",
+            },
+            "GB": {
+                "issuing_body": "Police firearms licensing department (local force)",
+                "requirements": [
+                    "Firearm Certificate (FAC) or Shotgun Certificate application to local police",
+                    "Good reason for firearm ownership (hunting, target shooting, deer stalking)",
+                    "GP medical report on mental and physical fitness",
+                    "Two character referees",
+                    "Secure storage: approved gun safe bolted to structure; ammunition separate",
+                    "In-person home visit by Firearms Enquiry Officer (FEO)",
+                    "Certificate valid 5 years; renewal required",
+                    "Section 1 firearms: ammunition limits specified on FAC; expanding ammunition now restricted",
+                ],
+                "cost": {"currency": "GBP", "FAC_grant": 88, "FAC_renewal": 62},
+                "online_portal": "https://www.gov.uk/shotgun-and-firearm-certificates",
+            },
+            "CA": {
+                "issuing_body": "Royal Canadian Mounted Police (RCMP) Canadian Firearms Program",
+                "requirements": [
+                    "Possession and Acquisition Licence (PAL) for non-restricted firearms",
+                    "Restricted PAL (RPAL) for handguns and restricted long guns",
+                    "Canadian Firearms Safety Course (CFSC) for PAL; + restricted course for RPAL",
+                    "RCMP background check (daily continuous-eligibility screening post-licensing)",
+                    "Spouse/partner notification and 28-day mandatory waiting period",
+                    "Safe storage: trigger lock + locked container or safe; ammunition stored separately",
+                ],
+                "cost": {"currency": "CAD", "PAL_non_restricted": "62.55 (5yr)"},
+                "online_portal": "https://www.rcmp-grc.gc.ca/en/firearms",
+            },
+        },
+    },
+    "food_service_permit": {
+        "category": "permits",
+        "issuing_body": "Local health department / environmental health agency",
+        "requirements": [
+            "Completed permit application",
+            "Floor plan and facility layout (for new establishments)",
+            "Menu and food preparation procedures",
+            "Certified Food Protection Manager on staff (ServSafe or equivalent)",
+            "Handwashing sink, warewashing equipment, and refrigeration specifications",
+            "Waste disposal plan and grease trap compliance",
+            "Water supply testing (if on private well)",
+            "Permit fee and plan review fee",
+        ],
+        "processing_time": {
+            "routine": "2-6 weeks from application to permit issuance (after inspections)",
+            "expedited": "1-2 weeks for low-risk operations (pre-packaged foods only)",
+        },
+        "cost": {
+            "currency": "varies",
+            "routine": "$100-$1,000 depending on risk category and jurisdiction",
+        },
+        "online_portal": "local health department / environmental health portal",
+        "appeal_process": (
+            "Permit denials or violations may be appealed to the local Board "
+            "of Health or Environmental Health Hearing Board."
+        ),
+        "countries": {
+            "US": {
+                "issuing_body": "County/City Environmental Health Department",
+                "requirements": [
+                    "Food service establishment permit application",
+                    "Plan review for new construction or remodel ($100-$500)",
+                    "Certified Food Protection Manager (CFPM) certificate (ServSafe, NRFSP)",
+                    "Pre-opening health inspection",
+                    "Routine inspections: 1-3 per year (risk-based frequency)",
+                    "HACCP plan for specialized processes (sushi, sous vide, smoking)",
+                ],
+                "cost": {"currency": "USD", "annual_permit": "100-1000"},
+                "online_portal": "county environmental health portals",
+            },
+            "GB": {
+                "issuing_body": "Local Authority Environmental Health / Food Standards Agency",
+                "requirements": [
+                    "Food business registration (free, at least 28 days before opening)",
+                    "Food Safety Management System (HACCP-based, typically Safer Food Better Business)",
+                    "Level 2 Food Safety certificate for food handlers",
+                    "Food Hygiene Rating Scheme inspection (0-5 score; displayed at premises)",
+                    "Approval required for handling products of animal origin (meat, dairy, fish)",
+                ],
+                "cost": {"currency": "GBP", "registration": "free"},
+                "online_portal": "https://www.food.gov.uk/business-guidance/register-a-food-business",
+            },
+        },
+    },
+    "childcare_license": {
+        "category": "licenses",
+        "issuing_body": "State/provincial childcare licensing division",
+        "requirements": [
+            "Completed application with facility details",
+            "Criminal background check and child abuse registry clearance for all staff",
+            "Facility meets health, safety, and fire codes",
+            "Staff-to-child ratios meet minimum standards",
+            "Lead staff have required education and early childhood credentials",
+            "Immunization records for children (or exemption documentation)",
+            "CPR and first aid certification for staff",
+            "Indoor and outdoor space requirements per child",
+            "Liability insurance",
+        ],
+        "processing_time": {
+            "routine": "2-6 months from application to license",
+            "expedited": "not typically available (background checks are rate-limiting)",
+        },
+        "cost": {
+            "currency": "varies",
+            "routine": "$50-$300 application fee + annual license fee",
+        },
+        "online_portal": "state childcare licensing portal",
+        "appeal_process": (
+            "License denials or revocations may be appealed through an "
+            "administrative hearing with the licensing division."
+        ),
+        "countries": {
+            "US": {
+                "issuing_body": "State Department of Social Services / Department of Children and Family Services",
+                "requirements": [
+                    "FBI and state criminal background check + child abuse/neglect registry for every adult in facility",
+                    "Health and safety pre-licensing inspection (fire marshal, building code, lead paint for pre-1978 buildings)",
+                    "Staff-to-child ratio: 1:4 for infants (0-12mo), 1:6 for toddlers, 1:10-12 for preschool",
+                    "Director qualified: BA in ECE or related + experience",
+                    "Lead teacher qualified: CDA or AA in ECE",
+                    "CPR/first aid certified staff present at all times",
+                ],
+                "cost": {"currency": "USD", "application": "50-200", "annual": "25-300"},
+                "online_portal": "state childcare licensing portals",
+            },
+            "GB": {
+                "issuing_body": "Ofsted (Office for Standards in Education) / Childminder Agencies",
+                "requirements": [
+                    "Ofsted registration (Early Years Register for 0-5; Childcare Register for 5-8)",
+                    "DBS (Disclosure and Barring Service) enhanced check for all staff",
+                    "EYFS (Early Years Foundation Stage) framework compliance",
+                    "Paediatric first aid certificate",
+                    "Safeguarding training and designated safeguarding lead",
+                    "Health declaration and GP reference",
+                ],
+                "cost": {"currency": "GBP", "Ofsted_registration": "35-220"},
+                "online_portal": "https://www.gov.uk/register-childminder-childcare-provider",
+            },
+        },
+    },
+    "health_insurance": {
+        "category": "benefits",
+        "issuing_body": "National health insurance authority / public health exchange",
+        "requirements": [
+            "Proof of identity and citizenship/residency status",
+            "Household income documentation (for subsidized plans)",
+            "Employer coverage information (if applicable)",
+            "Enrollment during open enrollment period or qualifying life event",
+            "Premium payment (first month's premium for coverage to be active)",
+        ],
+        "processing_time": {
+            "routine": "immediate enrollment; coverage begins 1st of following month (or faster for QLEs)",
+            "expedited": "immediate coverage for qualifying life events",
+        },
+        "cost": {
+            "currency": "varies",
+            "routine": "subsidized premiums based on income; full-cost premiums vary by plan tier",
+        },
+        "online_portal": "national health insurance exchange / marketplace portal",
+        "appeal_process": (
+            "Coverage denials or eligibility determinations may be appealed "
+            "through the health insurance appeals process within 90 days."
+        ),
+        "countries": {
+            "US": {
+                "issuing_body": "HealthCare.gov (federal marketplace) / state-based exchanges",
+                "requirements": [
+                    "Application during Open Enrollment (Nov 1 - Jan 15) or after Qualifying Life Event",
+                    "SSN and income verification (tax return or pay stubs)",
+                    "ACA-compliant plan tiers: Bronze (60% covered), Silver (70%), Gold (80%), Platinum (90%)",
+                    "Subsidies: premium tax credit (income 100-400% FPL) and cost-sharing reductions (Silver only, 100-250% FPL)",
+                    "Employer coverage must be unaffordable (>9.02% of household income) for marketplace subsidy eligibility",
+                ],
+                "cost": {"currency": "USD", "bronze_avg_monthly": "320-420"},
+                "online_portal": "https://www.healthcare.gov",
+            },
+            "GB": {
+                "issuing_body": "National Health Service (NHS)",
+                "requirements": [
+                    "NHS care is residence-based and free at the point of use",
+                    "GP registration at local surgery (bring proof of address and ID)",
+                    "No enrollment period: register any time",
+                    "Immigration Health Surcharge (IHS) for non-UK residents on visas >6 months",
+                    "Private health insurance is supplementary and voluntary",
+                ],
+                "cost": {"currency": "GBP", "NHS": "free at point of use (tax-funded)"},
+                "online_portal": "https://www.nhs.uk/nhs-services/gps/how-to-register-with-a-gp-surgery/",
+            },
+            "CA": {
+                "issuing_body": "Provincial/Territorial Health Insurance Plan",
+                "requirements": [
+                    "Provincial health card application (e.g., OHIP in Ontario, MSP in BC)",
+                    "Proof of residency and immigration status",
+                    "Waiting period: up to 3 months in some provinces (BC, ON for new residents)",
+                    "Provincial plan covers medically necessary hospital and physician services",
+                    "Extended health benefits (dental, drugs, vision) typically employer-provided or private",
+                ],
+                "cost": {"currency": "CAD", "provincial_plan": "tax-funded (no direct premium)"},
+                "online_portal": "https://www.canada.ca/en/health-canada/services/health-cards.html",
+            },
+            "FR": {
+                "issuing_body": "Caisse Primaire d'Assurance Maladie (CPAM) / Protection Universelle Maladie (PUMA)",
+                "requirements": [
+                    "PUMA provides continuous healthcare coverage to all legal residents",
+                    "Carte Vitale (green health insurance card) issued upon registration",
+                    "State covers ~70% of costs; complementary insurance (mutuelle) covers remainder",
+                    "CMU-C / ACS: free or subsidized complementary insurance for low-income residents",
+                    "Registration at local CPAM office with proof of residence and identity",
+                ],
+                "cost": {"currency": "EUR", "public_coverage": "70% (complementaire for remainder)"},
+                "online_portal": "https://www.ameli.fr",
+            },
+        },
+    },
+    "divorce_filing": {
+        "category": "registrations",
+        "issuing_body": "Family court / civil court clerk's office",
+        "requirements": [
+            "Petition for dissolution of marriage (or legal separation)",
+            "Proof of residency (typically 3 months - 1 year in the jurisdiction)",
+            "Grounds for divorce (no-fault: irreconcilable differences; or fault-based grounds)",
+            "Marriage certificate",
+            "Financial disclosure (income, assets, debts)",
+            "Parenting plan (if children under 18) and child support calculation",
+            "Filing fee (fee waiver available for low-income petitioners)",
+            "Service of process on respondent",
+        ],
+        "processing_time": {
+            "routine": "6-12 months from filing to final decree (uncontested; longer if contested)",
+            "expedited": "summary dissolution in 1-3 months (short marriage, no children, limited assets)",
+        },
+        "cost": {
+            "currency": "varies",
+            "routine": "$200-$450 filing fee + service costs + attorney fees (if represented)",
+        },
+        "online_portal": "family court / court clerk e-filing portal",
+        "appeal_process": (
+            "Final decrees may be appealed to the appellate division within "
+            "30-60 days. Modifications to custody/support may be filed at any time "
+            "based on material change in circumstances."
+        ),
+        "countries": {
+            "US": {
+                "issuing_body": "County Superior/Family Court Clerk",
+                "requirements": [
+                    "Petition for Dissolution (FL-100 in CA; state-specific form otherwise)",
+                    "Residency: petitioner or respondent must have lived in state for 3-6 months (varies) and county for 3 months",
+                    "No-fault: irreconcilable differences / irretrievable breakdown (all 50 states)",
+                    "Financial disclosure: income & expense declaration, schedule of assets & debts",
+                    "Mandatory parenting class for divorcing parents (children under 18)",
+                    "Filing fee: $200-$450 (fee waiver available for low-income petitioners)",
+                ],
+                "cost": {"currency": "USD", "filing_fee": "200-450"},
+                "online_portal": "county superior court e-filing portals (e.g., Odyssey eFileCA, TurboCourt)",
+            },
+            "GB": {
+                "issuing_body": "HM Courts & Tribunals Service (Family Court)",
+                "requirements": [
+                    "Divorce application (Form D8) filed online or by post",
+                    "Marriage certificate (original or certified copy)",
+                    "Grounds: irretrievable breakdown established by one of five facts (England/Wales)",
+                    "No-fault divorce (since April 2022): 20-week minimum from application to Conditional Order",
+                    "Court fee: GBP 593 (help with fees available for low-income applicants)",
+                    "Financial remedy application (Form A) for financial settlement (separate from divorce itself)",
+                ],
+                "cost": {"currency": "GBP", "court_fee": 593},
+                "online_portal": "https://www.gov.uk/apply-for-divorce",
+            },
+        },
+    },
 }
 
 
@@ -892,8 +1728,12 @@ POSTAL_SYSTEMS: dict[str, dict[str, Any]] = {
         "name": "USPS",
         "full_name": "United States Postal Service",
         "services": [
-            "First-Class Mail", "Priority Mail", "Priority Mail Express",
-            "Media Mail", "Retail Ground", "International shipping",
+            "First-Class Mail",
+            "Priority Mail",
+            "Priority Mail Express",
+            "Media Mail",
+            "Retail Ground",
+            "International shipping",
         ],
         "tracking_url": "https://tools.usps.com/go/TrackConfirmAction",
         "rate_url": "https://postcalc.usps.com",
@@ -910,8 +1750,12 @@ POSTAL_SYSTEMS: dict[str, dict[str, Any]] = {
         "name": "Royal Mail",
         "full_name": "Royal Mail Group Ltd",
         "services": [
-            "1st Class", "2nd Class", "Signed For", "Special Delivery Guaranteed",
-            "International Standard", "International Tracked",
+            "1st Class",
+            "2nd Class",
+            "Signed For",
+            "Special Delivery Guaranteed",
+            "International Standard",
+            "International Tracked",
         ],
         "tracking_url": "https://www.royalmail.com/track-your-item",
         "rate_url": "https://www.royalmail.com/prices",
@@ -928,7 +1772,10 @@ POSTAL_SYSTEMS: dict[str, dict[str, Any]] = {
         "name": "Canada Post",
         "full_name": "Canada Post Corporation",
         "services": [
-            "Lettermail", "Registered Mail", "Xpresspost", "Priority",
+            "Lettermail",
+            "Registered Mail",
+            "Xpresspost",
+            "Priority",
             "International Parcel (Air/Surface)",
         ],
         "tracking_url": "https://www.canadapost.ca/trackweb",
@@ -946,8 +1793,12 @@ POSTAL_SYSTEMS: dict[str, dict[str, Any]] = {
         "name": "Deutsche Post",
         "full_name": "Deutsche Post AG (DHL Group)",
         "services": [
-            "Standardbrief", "Kompaktbrief", "Grossbrief", "Einschreiben",
-            "DHL Paket", "DHL Express International",
+            "Standardbrief",
+            "Kompaktbrief",
+            "Grossbrief",
+            "Einschreiben",
+            "DHL Paket",
+            "DHL Express International",
         ],
         "tracking_url": "https://www.deutschepost.de/de/s/sendungsverfolgung.html",
         "rate_url": "https://www.deutschepost.de/de/p/paketpreise.html",
@@ -964,8 +1815,11 @@ POSTAL_SYSTEMS: dict[str, dict[str, Any]] = {
         "name": "La Poste",
         "full_name": "Groupe La Poste",
         "services": [
-            "Lettre Prioritaire", "Lettre Vert", "Lettre Suivie",
-            "Colissimo", "Chronopost International",
+            "Lettre Prioritaire",
+            "Lettre Vert",
+            "Lettre Suivie",
+            "Colissimo",
+            "Chronopost International",
         ],
         "tracking_url": "https://www.laposte.fr/outils/suivre-vos-envois",
         "rate_url": "https://www.laposte.fr/tarifs",
@@ -982,8 +1836,12 @@ POSTAL_SYSTEMS: dict[str, dict[str, Any]] = {
         "name": "Australia Post",
         "full_name": "Australia Post",
         "services": [
-            "Letter", "Large Letter", "Registered Post", "Express Post",
-            "International Standard", "International Express",
+            "Letter",
+            "Large Letter",
+            "Registered Post",
+            "Express Post",
+            "International Standard",
+            "International Express",
         ],
         "tracking_url": "https://auspost.com.au/mystatus",
         "rate_url": "https://auspost.com.au/parcels-mail/calculate-postage-delivery-time",
@@ -1000,7 +1858,10 @@ POSTAL_SYSTEMS: dict[str, dict[str, Any]] = {
         "name": "Japan Post",
         "full_name": "Japan Post Holdings Co., Ltd.",
         "services": [
-            "Yu-Pack", "Yu-Mail", "Kan-i-Kaki-Komi", "EMS",
+            "Yu-Pack",
+            "Yu-Mail",
+            "Kan-i-Kaki-Komi",
+            "EMS",
             "International Parcel (AIR/SAL/SEA)",
         ],
         "tracking_url": "https://trackings.post.japanpost.jp/services/srv/search/",
@@ -1020,6 +1881,7 @@ POSTAL_SYSTEMS: dict[str, dict[str, Any]] = {
 # ---------------------------------------------------------------------------
 # Dataclasses
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class ServiceInfo:
@@ -1098,6 +1960,7 @@ class PostageRate:
 # Service functions
 # ---------------------------------------------------------------------------
 
+
 def lookup_service(service_name: str, country: str) -> ServiceInfo | None:
     """Look up a civic service by name and country.
 
@@ -1140,9 +2003,7 @@ def lookup_service(service_name: str, country: str) -> ServiceInfo | None:
     )
 
 
-def get_requirements(
-    service_id: str, country: str | None = None
-) -> list[str] | None:
+def get_requirements(service_id: str, country: str | None = None) -> list[str] | None:
     """Return the document/preparation requirements for a service.
 
     If *country* is provided and a country-specific variant exists, its
@@ -1174,9 +2035,7 @@ def get_processing_time(service_id: str) -> dict[str, Any] | None:
     return dict(base.get("processing_time", {}))
 
 
-def find_service_office(
-    service_id: str, location: str
-) -> ServiceOffice | None:
+def find_service_office(service_id: str, location: str) -> ServiceOffice | None:
     """Find a physical office for an in-person civic service.
 
     Parameters
@@ -1211,6 +2070,7 @@ def find_service_office(
 # Postal functions
 # ---------------------------------------------------------------------------
 
+
 def get_postal_info(country: str) -> PostalSystem | None:
     """Return postal operator information for a country.
 
@@ -1238,9 +2098,7 @@ def get_postal_info(country: str) -> PostalSystem | None:
     )
 
 
-def get_postage_rate(
-    origin: str, destination: str, weight: int
-) -> PostageRate | None:
+def get_postage_rate(origin: str, destination: str, weight: int) -> PostageRate | None:
     """Estimate postage for a route and package weight.
 
     Parameters

@@ -106,16 +106,18 @@ def _parse_tshark_json(raw: list[dict[str, Any]]) -> list[PacketSummary]:
         sport = _first_int(tcp_sport) or _first_int(udp_sport)
         dport = _first_int(tcp_dport) or _first_int(udp_dport)
 
-        packets.append(PacketSummary(
-            timestamp=float(ts[0]) if ts and ts[0] else 0.0,
-            length=int(length_raw[0]) if length_raw and length_raw[0] else 0,
-            src_ip=ip_src[0] if ip_src else "",
-            dst_ip=ip_dst[0] if ip_dst else "",
-            protocol=proto,
-            src_port=sport,
-            dst_port=dport,
-            flags=tcp_flags[0] if tcp_flags and tcp_flags[0] else None,
-        ))
+        packets.append(
+            PacketSummary(
+                timestamp=float(ts[0]) if ts and ts[0] else 0.0,
+                length=int(length_raw[0]) if length_raw and length_raw[0] else 0,
+                src_ip=ip_src[0] if ip_src else "",
+                dst_ip=ip_dst[0] if ip_dst else "",
+                protocol=proto,
+                src_port=sport,
+                dst_port=dport,
+                flags=tcp_flags[0] if tcp_flags and tcp_flags[0] else None,
+            )
+        )
     return packets
 
 
@@ -133,14 +135,34 @@ def _read_pcap_tshark(path: Path) -> list[PacketSummary]:
     try:
         result = subprocess.run(
             [
-                "tshark", "-r", str(path), "-T", "json",
-                "-e", "frame.time_epoch", "-e", "frame.len",
-                "-e", "frame.protocols",
-                "-e", "ip.src", "-e", "ip.dst",
-                "-e", "tcp.srcport", "-e", "tcp.dstport", "-e", "tcp.flags.str",
-                "-e", "udp.srcport", "-e", "udp.dstport",
+                "tshark",
+                "-r",
+                str(path),
+                "-T",
+                "json",
+                "-e",
+                "frame.time_epoch",
+                "-e",
+                "frame.len",
+                "-e",
+                "frame.protocols",
+                "-e",
+                "ip.src",
+                "-e",
+                "ip.dst",
+                "-e",
+                "tcp.srcport",
+                "-e",
+                "tcp.dstport",
+                "-e",
+                "tcp.flags.str",
+                "-e",
+                "udp.srcport",
+                "-e",
+                "udp.dstport",
             ],
-            capture_output=True, timeout=120,
+            capture_output=True,
+            timeout=120,
         )
         if result.returncode != 0:
             return []
@@ -153,6 +175,7 @@ def _read_pcap_tshark(path: Path) -> list[PacketSummary]:
 def _read_pcap_scapy(path: Path) -> list[PacketSummary]:
     try:
         from scapy.all import rdpcap
+
         pkts = rdpcap(str(path))
     except Exception:
         return []
@@ -172,6 +195,7 @@ def _parse_scapy_packets(pkts: list[Any]) -> list[PacketSummary]:
 
             if hasattr(pkt, "haslayer"):
                 from scapy.all import IP, TCP, UDP
+
                 if pkt.haslayer(IP):
                     ip_layer = pkt.getlayer(IP)
                     src_ip = ip_layer.src
@@ -187,11 +211,19 @@ def _parse_scapy_packets(pkts: list[Any]) -> list[PacketSummary]:
                         src_port = u.sport
                         dst_port = u.dport
 
-            summaries.append(PacketSummary(
-                timestamp=ts, length=length, src_ip=src_ip, dst_ip=dst_ip,
-                protocol=proto, src_port=src_port, dst_port=dst_port,
-                flags=flags, info="",
-            ))
+            summaries.append(
+                PacketSummary(
+                    timestamp=ts,
+                    length=length,
+                    src_ip=src_ip,
+                    dst_ip=dst_ip,
+                    protocol=proto,
+                    src_port=src_port,
+                    dst_port=dst_port,
+                    flags=flags,
+                    info="",
+                )
+            )
         except Exception:
             summaries.append(PacketSummary())
     return summaries
@@ -219,10 +251,11 @@ def write_pcap(packets: list[PacketSummary], path: str | Path) -> None:
 
 def _write_pcap_scapy(packets: list[PacketSummary], path: Path) -> None:
     from scapy.all import IP, TCP, UDP, Ether, PcapWriter
+
     with open(path, "wb") as f:
         writer = PcapWriter(f)
         for p in packets:
-            pkt = Ether() / IP(src=p.src_ip or "0.0.0.0", dst=p.dst_ip or "0.0.0.0")
+            pkt = Ether() / IP(src=p.src_ip or "0.0.0.0", dst=p.dst_ip or "0.0.0.0")  # nosec B104
             if p.protocol.upper() == "TCP":
                 pkt = pkt / TCP(sport=p.src_port or 0, dport=p.dst_port or 0)
             elif p.protocol.upper() == "UDP":
@@ -257,7 +290,8 @@ def send_packet(spec: dict[str, Any], iface: str, count: int = 1) -> dict[str, A
     try:
         subprocess.run(
             ["nping", "--tcp", "-c", str(count), "-p", str(dport), dst],
-            capture_output=True, timeout=30,
+            capture_output=True,
+            timeout=30,
         )
         return {"tool": "nping", "count": count}
     except FileNotFoundError:
@@ -278,14 +312,32 @@ def sniff_packets(
     try:
         result = subprocess.run(
             [
-                "tshark", "-i", "any", "-c", str(count),
-                "-a", f"duration:{timeout}",
-                "-f", filter_str, "-T", "json",
-                "-e", "frame.time_epoch", "-e", "frame.len",
-                "-e", "ip.src", "-e", "ip.dst",
-                "-e", "tcp.srcport", "-e", "tcp.dstport",
+                "tshark",
+                "-i",
+                "any",
+                "-c",
+                str(count),
+                "-a",
+                f"duration:{timeout}",
+                "-f",
+                filter_str,
+                "-T",
+                "json",
+                "-e",
+                "frame.time_epoch",
+                "-e",
+                "frame.len",
+                "-e",
+                "ip.src",
+                "-e",
+                "ip.dst",
+                "-e",
+                "tcp.srcport",
+                "-e",
+                "tcp.dstport",
             ],
-            capture_output=True, timeout=timeout + 5,
+            capture_output=True,
+            timeout=timeout + 5,
         )
         if result.returncode != 0:
             return []
@@ -337,7 +389,10 @@ def parse_asn_whois(whois_text: str) -> AsnInfo:
         elif "route:" in line_lower:
             prefix_val = line.split(":", 1)[-1].strip()
     return AsnInfo(
-        asn=asn, name=name, organization=org, country=country,
+        asn=asn,
+        name=name,
+        organization=org,
+        country=country,
         prefix=prefix_val,
     )
 
@@ -392,7 +447,8 @@ def analyze_pcap(path: str | Path) -> TrafficReport:
         try:
             result = subprocess.run(
                 ["tshark", "-r", path, "-q", "-z", "io,stat,0"],
-                capture_output=True, timeout=120,
+                capture_output=True,
+                timeout=120,
             )
             if result.returncode == 0 and result.stdout:
                 return _parse_tshark_stats(result.stdout.decode(errors="replace"))
@@ -491,6 +547,7 @@ def dissect_packet(raw_bytes: bytes) -> dict[str, Any]:
 def _dissect_scapy(raw_bytes: bytes) -> dict[str, Any]:
     try:
         from scapy.all import Ether
+
         pkt = Ether(raw_bytes)
         result: dict[str, Any] = {"layers": {}, "raw_hex": raw_bytes.hex()}
         current = pkt

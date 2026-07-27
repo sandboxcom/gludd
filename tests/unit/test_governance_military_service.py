@@ -32,10 +32,36 @@ ms = _load_module()
 class TestConscriptionData:
     def test_data_present(self) -> None:
         assert isinstance(ms.CONSCRIPTION_DATA, dict)
-        assert len(ms.CONSCRIPTION_DATA) >= 8
+        assert len(ms.CONSCRIPTION_DATA) >= 25
 
     def test_known_countries(self) -> None:
-        for code in ("US", "GB", "DE", "FR", "IL", "KR", "RU", "FI", "CH", "BR", "CA", "AU"):
+        for code in (
+            "US",
+            "GB",
+            "DE",
+            "FR",
+            "IL",
+            "KR",
+            "RU",
+            "FI",
+            "CH",
+            "BR",
+            "CA",
+            "AU",
+            "JP",
+            "SE",
+            "NO",
+            "SG",
+            "GR",
+            "TR",
+            "DK",
+            "TW",
+            "EE",
+            "LT",
+            "AT",
+            "UA",
+            "NG",
+        ):
             assert code in ms.CONSCRIPTION_DATA, f"Missing {code}"
 
     def test_each_entry_has_required_keys(self) -> None:
@@ -63,9 +89,11 @@ class TestListMandatoryServiceCountries:
     def test_returns_list(self) -> None:
         countries = ms.list_mandatory_service_countries()
         assert isinstance(countries, list)
-        assert len(countries) >= 5
+        assert len(countries) >= 14
         assert "IL" in countries
         assert "KR" in countries
+        assert "SE" in countries
+        assert "UA" in countries
 
     def test_all_entries_active(self) -> None:
         countries = ms.list_mandatory_service_countries()
@@ -142,3 +170,86 @@ class TestGetEnlistmentProcess:
 
     def test_unknown_country(self) -> None:
         assert ms.get_enlistment_process("XX") is None
+
+
+class TestNewConscriptionCountries:
+    def test_japan_volunteer(self) -> None:
+        result = ms.get_conscription_info("JP")
+        assert result is not None
+        assert result["active"] is False
+        assert result["type"] == "volunteer_only"
+
+    def test_sweden_gender_neutral(self) -> None:
+        result = ms.get_conscription_info("SE")
+        assert result is not None
+        assert result["active"] is True
+        assert "both sexes" in result["notes"]
+
+    def test_norway_gender_neutral(self) -> None:
+        result = ms.get_conscription_info("NO")
+        assert result is not None
+        assert result["active"] is True
+
+    def test_singapore_ns_22months(self) -> None:
+        result = ms.get_conscription_info("SG")
+        assert result is not None
+        assert result["active"] is True
+        assert result["duration_months"] >= 22
+
+    def test_greece_mandatory(self) -> None:
+        result = ms.get_conscription_info("GR")
+        assert result is not None
+        assert result["active"] is True
+
+    def test_turkey_reduced_6mo(self) -> None:
+        result = ms.get_conscription_info("TR")
+        assert result is not None
+        assert result["active"] is True
+        assert result["duration_months"] == 6
+
+    def test_ukraine_martial_law(self) -> None:
+        result = ms.get_conscription_info("UA")
+        assert result is not None
+        assert result["active"] is True
+        assert "mobilization" in result["notes"].lower() or "martial law" in result["notes"].lower()
+
+    def test_nigeria_volunteer(self) -> None:
+        result = ms.get_conscription_info("NG")
+        assert result is not None
+        assert result["active"] is False
+
+    def test_estonia_mandatory_8mo(self) -> None:
+        result = ms.get_conscription_info("EE")
+        assert result is not None
+        assert result["active"] is True
+        assert result["duration_months"] == 8
+
+    def test_lithuania_selective(self) -> None:
+        result = ms.get_conscription_info("LT")
+        assert result is not None
+        assert result["active"] is True
+        assert result["type"] == "selective_conscription"
+
+    def test_denmark_lottery(self) -> None:
+        result = ms.get_conscription_info("DK")
+        assert result is not None
+        assert result["active"] is True
+
+    def test_taiwan_mandatory(self) -> None:
+        result = ms.get_conscription_info("TW")
+        assert result is not None
+        assert result["active"] is True
+
+    def test_austria_6mo(self) -> None:
+        result = ms.get_conscription_info("AT")
+        assert result is not None
+        assert result["active"] is True
+        assert result["duration_months"] == 6
+
+    def test_all_new_countries_have_notes(self) -> None:
+        new_countries = ("JP", "SE", "NO", "SG", "GR", "TR", "DK", "TW", "EE", "LT", "AT", "UA", "NG")
+        for code in new_countries:
+            result = ms.get_conscription_info(code)
+            assert result is not None
+            assert isinstance(result["notes"], str)
+            assert len(result["notes"]) > 20

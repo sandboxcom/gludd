@@ -131,7 +131,9 @@ log-agent-result disk-guard disk-check check-disk disk tmp-gludd-usage tmp-gludd
          subagent-init subagent-cleanup \
          chat chat-eval test-chat \
 git-tag-delete git-tag-move release-deploy append-text write-text-b64 replace-text-b64 mkdir-p replace-lines _no-raw-git-guard _no-bypass-guard _pre-commit-stage-guard _merge-strategy-guard _stash-leak-guard \
-         git-push-committed-head-nv ci-trigger-committed-head ci-push-committed-head provider-smoke mac-unified-memory-smoke gpu-hardware-smoke check-no-prompt-prone-edit-tools add-target edit-target edit-makefile-target validate-makefile
+          _force-push-audit _recursive-merge-guard _commit-msg-audit \
+          check-spec-enforcement-coverage check-structural-test-fragility lint-specs triage-failures audit-spec-completeness \
+          git-push-committed-head-nv ci-trigger-committed-head ci-push-committed-head provider-smoke mac-unified-memory-smoke gpu-hardware-smoke check-no-prompt-prone-edit-tools add-target edit-target edit-makefile-target validate-makefile
 
 help:
 	@echo "Usage: make [target]"
@@ -756,6 +758,31 @@ check-plugin-overlap:
 
 check-ratchet-population:
 	@$(UV) run python3 scripts/check_ratchet_population.py
+
+# AA046 — check-spec-enforcement-coverage: verifies >=90% of behavioral specs
+# have corresponding enforcement code (Makefile target, plugin, script, AGENTS.md).
+check-spec-enforcement-coverage:
+	@$(UV) run python3 scripts/check_spec_enforcement_coverage.py
+
+# AA058 — check-structural-test-fragility: identifies tests that read source
+# files as plaintext, flagging them for migration to behavioral tests.
+check-structural-test-fragility:
+	@$(UV) run python3 scripts/check_structural_test_fragility.py
+
+# AA061 — lint-specs: validates BEHAVIORAL_SPECS.md formatting, duplicate IDs,
+# template filler strings, and required fields on every spec.
+lint-specs:
+	@$(UV) run python3 scripts/lint_specs.py
+
+# AA063 — triage-failures: classifies test failures as NEW vs PRE-EXISTING.
+# Agent must fix NEW failures immediately; PRE-EXISTING tracked separately.
+triage-failures:
+	@$(UV) run python3 scripts/triage_failures.py
+
+# AA064 — audit-spec-completeness: checks whether agent's CURRENT behavior
+# matches its written specs, detecting recursive self-reference.
+audit-spec-completeness:
+	@$(UV) run python3 scripts/audit_spec_completeness.py
 
 # Codified live boot smoke: launches `opencode serve`, waits for the
 # listening line, scans the boot log for the plugin-crash signatures
@@ -1931,11 +1958,11 @@ master-force-push:
 	@$(MAKE) verify-remote BRANCH=master SHA=$$(git rev-parse master)
 	@echo "Master branch force-pushed and verified"
 
-git-push-sandboxcom: check-clean-tree _test-disabled-guard _push-rate-guard
+git-push-sandboxcom: check-clean-tree _test-disabled-guard _push-rate-guard _stash-before-push-guard _ci-restart-cap _pull-before-push-guard _ci-verdict-history-guard _pre-commit-stash-audit
 	@GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git push -u sandboxcom master
 	@echo "Pushed to sandboxcom/gludd"
 
-push-dev: check-clean-tree ci-busy-check
+push-dev: check-clean-tree ci-busy-check _stash-before-push-guard _ci-restart-cap _pull-before-push-guard
 	@GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git push sandboxcom development
 	@echo "Pushed development to sandboxcom/gludd"
 	@$(PYTHON) scripts/ci_check_cooldown.py deploy
@@ -1950,7 +1977,7 @@ push-dev-nv: check-clean-tree _push-rate-guard
 # collect-check local gate). Use when the local 21k-test gate is non-viable
 # and CI is the gate. The _push-rate-guard (CI-pending / cooldown / thrash)
 # is STILL enforced. Mirrors commit-no-verify for the push side.
-git-push-sandboxcom-nv: check-clean-tree _push-rate-guard
+git-push-sandboxcom-nv: check-clean-tree _push-rate-guard _stash-before-push-guard _ci-restart-cap _pull-before-push-guard _ci-verdict-history-guard
 	@GIT_SSH_COMMAND='ssh -i $(SSH_KEY) -o StrictHostKeyChecking=accept-new' git push --no-verify -u sandboxcom master
 	@echo "Pushed to sandboxcom/gludd (--no-verify)"
 	@python3 -c "import json,time;from pathlib import Path;p=Path('/tmp/gludd-watchdog-push-timestamps.json');d=json.loads(p.read_text()) if p.exists() else [];d.append(time.time());p.write_text(json.dumps(d[-50:]))" 2>/dev/null || true
@@ -1970,7 +1997,7 @@ git-push-current-head-to-master-nv: check-clean-tree _push-rate-guard
 	@python3 -c "import json,time;from pathlib import Path;p=Path('/tmp/gludd-watchdog-push-timestamps.json');d=json.loads(p.read_text()) if p.exists() else [];d.append(time.time());p.write_text(json.dumps(d[-50:]))" 2>/dev/null || true
 
 # Batch push using the no-verify variant. COMMIT_THRESHOLD=1 is blocked to avoid CI thrash.
-batch-push-nv: check-clean-tree _no-bypass-guard
+batch-push-nv: check-clean-tree _no-bypass-guard _stash-before-push-guard _ci-restart-cap _pull-before-push-guard
 	if [ "$$THRESHOLD" = "1" ]; then \
 		echo "BLOCKED: COMMIT_THRESHOLD=1 bypass is disabled; commit locally and batch pushes."; \
 		exit 1; \
@@ -1986,7 +2013,7 @@ batch-push-nv: check-clean-tree _no-bypass-guard
 # Batch push: only push after substantial local work (default 5+ unpushed commits).
 # Override: GLUDD_FORCE_PUSH=1. COMMIT_THRESHOLD=1 is blocked.
 # This is the RECOMMENDED push target. Use instead of git-push-sandboxcom directly.
-batch-push: check-clean-tree _no-bypass-guard
+batch-push: check-clean-tree _no-bypass-guard _stash-before-push-guard _ci-restart-cap _pull-before-push-guard _ci-verdict-history-guard _pre-commit-stash-audit
 	@COUNT=$$(git log --oneline @{u}..HEAD 2>/dev/null | wc -l | tr -d ' '); \
 	THRESHOLD=$${COMMIT_THRESHOLD:-5}; \
 	if [ "$$THRESHOLD" = "1" ]; then \
@@ -2740,7 +2767,7 @@ ci-safe-push: ci-busy-check
 # pre-push-check: comprehensive pre-push audit. Runs before any push.
 # Checks: CI idle + clean tree + gate fresh/green. Block on any failure.
 # Usage: make pre-push-check BRANCH=development
-pre-push-check: ci-busy-check check-clean-tree
+pre-push-check: ci-busy-check check-clean-tree _stash-before-push-guard _pull-before-push-guard
 	@if [ ! -f .gate-status ]; then \
 		echo "PRE-PUSH: no .gate-status — run 'make gate' (or gate-background) first."; \
 		if [ "$$FORCE" != "1" ]; then exit 1; fi; \
@@ -3188,7 +3215,7 @@ _commit-lock-acquire:
 	  fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)" 2>/dev/null || { \
 	    echo "COMMIT-LOCK: another commit is in flight. Retry serially." >&2; exit 1; }
 
-git-commit: _gate-fresh-check _commit-lock-acquire _pre-commit-stage-guard _stash-leak-guard
+git-commit: _gate-fresh-check _commit-lock-acquire _pre-commit-stage-guard _stash-leak-guard _pre-commit-stash-audit _edit-commit-atomicity-guard
 	@if [ -z "$(MSG)" ]; then echo "Usage: make git-commit MSG='message'"; exit 1; fi
 	@echo "Running pre-commit collection check..."
 	@$(MAKE) --no-print-directory collect-check
@@ -3198,7 +3225,7 @@ git-commit: _gate-fresh-check _commit-lock-acquire _pre-commit-stage-guard _stas
 	@git diff --name-only | xargs -r git add 2>/dev/null || true
 	@git diff --cached --quiet && echo "Nothing to commit" || git commit -n -m "$(MSG)"
 
-commit-no-verify: _gate-fresh-check _commit-lock-acquire _pre-commit-stage-guard
+commit-no-verify: _gate-fresh-check _commit-lock-acquire _pre-commit-stage-guard _edit-commit-atomicity-guard
 	@if [ -z "$(MSG)" ]; then echo "Usage: make commit-no-verify MSG='message'"; exit 1; fi
 	@$(MAKE) --no-print-directory collect-check
 	@git diff --cached --quiet && echo "Nothing to commit" || git commit -n -m "$(MSG)"
@@ -3230,7 +3257,7 @@ repo-commit: _commit-lock-acquire
 # Allowlisted from the local _gate-fresh-check (CI is the gate for
 # subagent-dispatched pushes; see test_commit_gate_freshness.py ALLOWLIST_NO_GATE).
 PUSH ?= 0
-ship-commit: _commit-lock-acquire _pre-commit-stage-guard _stash-leak-guard _pre-commit-stage-guard _stash-leak-guard
+ship-commit: _commit-lock-acquire _pre-commit-stage-guard _stash-leak-guard _push-parameter-audit _pre-commit-stash-audit _edit-commit-atomicity-guard
 	@if [ -z "$(MSG)" ]; then echo "Usage: make ship-commit MSG='message'"; exit 1; fi
 	@echo "Running pre-commit collection check..."
 	@$(MAKE) --no-print-directory collect-check
@@ -3871,6 +3898,226 @@ _stash-leak-guard:
 	fi
 	@echo "_stash-leak-guard: PASS"
 
+# AA022 — _stash-before-push-guard: ensures working tree is clean before push.
+# Pre-commit hooks stash working tree changes; if stash conflicts, lint fixes
+# are left in stash and committed code has lint errors. Every push target must
+# check for unstaged changes. FORCE=1 bypasses.
+_stash-before-push-guard:
+	@if ! git diff --quiet; then \
+		echo "STASH-BEFORE-PUSH: unstaged changes detected in working tree."; \
+		echo "Pre-commit hooks will stash these, and the push may proceed with un-linted code."; \
+		echo "Commit or revert changes before pushing. See AA022."; \
+		if [ "$$FORCE" != "1" ]; then \
+			exit 1; \
+		fi; \
+		echo "FORCE=1 bypass active."; \
+	fi
+	@echo "_stash-before-push-guard: PASS"
+
+# AA023 — _ci-restart-cap: limits CI restarts to 3 per session.
+# Agent pushed incremental fixes 7+ times, each triggering a new CI run.
+# State file /tmp/gludd-ci-restart-count records restart count; resets
+# when CI reports GREEN. After 3rd restart, pushes are BLOCKED until
+# CI goes GREEN or RED. FORCE=1 bypasses.
+_ci-restart-cap:
+	@CI_RESTART_COUNT=$$(cat /tmp/gludd-ci-restart-count 2>/dev/null || echo 0); \
+	if [ "$$CI_RESTART_COUNT" -ge 3 ]; then \
+		if [ "$$FORCE" = "1" ]; then \
+			echo "CI-RESTART-CAP: $$CI_RESTART_COUNT restarts (at limit) but FORCE=1 active."; \
+		else \
+			echo "BLOCKED: $$CI_RESTART_COUNT CI restarts this session. Max is 3."; \
+			echo "Wait for CI to report GREEN or RED, then fix ALL failures in ONE commit."; \
+			echo "Use FORCE=1 to bypass (emergency only). See AA023."; \
+			exit 1; \
+		fi; \
+	else \
+		CI_NEW=$$((CI_RESTART_COUNT + 1)); \
+		echo "$$CI_NEW" > /tmp/gludd-ci-restart-count; \
+		echo "CI-RESTART-CAP: restart $$CI_NEW/3 recorded."; \
+	fi
+	@echo "_ci-restart-cap: PASS"
+
+# AA029 — _pull-before-push-guard: git fetch before push, block if remote ahead.
+# Agent pushed to master without pulling first, causing "failed to push refs".
+# Guard: fetch sandboxcom, check if remote is ahead of local. If ahead, BLOCK push
+# and require pull+rebase first. FORCE=1 bypasses.
+_pull-before-push-guard:
+	@echo "PULL-BEFORE-PUSH: fetching sandboxcom..."
+	@GIT_SSH_COMMAND="$(GIT_SSH_COMMAND)" git fetch $(PUSH_REMOTE) $(shell git branch --show-current) 2>/dev/null || true
+	@LOCAL=$$(git rev-parse HEAD); \
+	REMOTE=$$(git rev-parse $(PUSH_REMOTE)/$(shell git branch --show-current) 2>/dev/null || echo "none"); \
+	if [ "$$REMOTE" = "none" ]; then \
+		echo "PULL-BEFORE-PUSH: no remote tracking branch, skipping ahead check."; \
+	elif [ "$$LOCAL" != "$$REMOTE" ]; then \
+		AHEAD=$$(git rev-list --count $$REMOTE..$$LOCAL 2>/dev/null || echo 0); \
+		BEHIND=$$(git rev-list --count $$LOCAL..$$REMOTE 2>/dev/null || echo 0); \
+		if [ "$$BEHIND" -gt 0 ] && [ "$$FORCE" != "1" ]; then \
+			echo "BLOCKED: remote is $$BEHIND commit(s) ahead of local."; \
+			echo "Run 'make git-pull-sandboxcom' to pull+rebase before pushing. See AA029."; \
+			exit 1; \
+		fi; \
+		echo "PULL-BEFORE-PUSH: local=$$LOCAL remote=$$REMOTE ahead=$$AHEAD behind=$$BEHIND"; \
+	else \
+		echo "PULL-BEFORE-PUSH: local and remote in sync."; \
+	fi
+	@echo "_pull-before-push-guard: PASS"
+
+# AA030 — _push-parameter-audit: validates PUSH=1 on ship-commit meets batch threshold.
+# Agent used ship-commit PUSH=1 to bypass batch discipline. This guard refuses
+# PUSH=1 when unpushed commit count is below threshold (default 5). Agent must
+# batch locally. GLUDD_FORCE_PUSH=1 bypasses.
+_push-parameter-audit:
+	@if [ "$$PUSH" = "1" ]; then \
+		THRESHOLD=$${COMMIT_THRESHOLD:-5}; \
+		UNPUSHED=$$(git rev-list --count @{u}..HEAD 2>/dev/null || echo 0); \
+		if [ "$$UNPUSHED" -lt "$$THRESHOLD" ] && [ "$$GLUDD_FORCE_PUSH" != "1" ]; then \
+			echo "BLOCKED: PUSH=1 but only $$UNPUSHED unpushed commit(s). Threshold is $$THRESHOLD."; \
+			echo "This is CORRECT behavior. Commit locally, batch pushes."; \
+			echo "Use GLUDD_FORCE_PUSH=1 only with user authorization. See AA030/AA074."; \
+			exit 1; \
+		fi; \
+		echo "PUSH-PARAMETER-AUDIT: $$UNPUSHED unpushed, threshold=$$THRESHOLD — PUSH allowed."; \
+	fi
+	@echo "_push-parameter-audit: PASS"
+
+# AA032 — _ci-verdict-history-guard: requires recording CI verdict before next push.
+# Agent pushed 19 times but only checked CI verdict ~3 times. Guard uses state file
+# /tmp/gludd-ci-verdict-history.json to enforce: every push records its SHA; before
+# next push, previous SHA's CI verdict must have been checked and recorded.
+# FORCE=1 bypasses (emergency pushes).
+_ci-verdict-history-guard:
+	@CUR_SHA=$$(git rev-parse HEAD); \
+	STATE_FILE=/tmp/gludd-ci-verdict-history.json; \
+	if [ -f "$$STATE_FILE" ]; then \
+		LAST_SHA=$$(cat "$$STATE_FILE" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('last_push_sha',''))" 2>/dev/null || echo ""); \
+		LAST_CHECKED=$$(cat "$$STATE_FILE" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('last_checked_sha',''))" 2>/dev/null || echo ""); \
+		if [ "$$LAST_SHA" != "$$LAST_CHECKED" ] && [ -n "$$LAST_SHA" ] && [ "$$FORCE" != "1" ]; then \
+			echo "BLOCKED: previous push SHA $$LAST_SHA was never CI-verified."; \
+			echo "Run 'make ci-verdict-safe BRANCH=$$(git branch --show-current)' and record the verdict before pushing again. See AA032."; \
+			exit 1; \
+		fi; \
+	fi; \
+	echo "{\"last_push_sha\": \"$$CUR_SHA\", \"last_checked_sha\": \"\", \"ts\": $$(date +%s)}" > "$$STATE_FILE"
+	@echo "_ci-verdict-history-guard: PASS"
+
+# AA034 — _pre-commit-stash-audit: detects pre-commit auto-fix stash conflicts.
+# Pre-commit hooks auto-fix files (trailing whitespace, eof) via stash/unstash.
+# When stash conflicts with hook fixes, fixes are rolled back but file still
+# appears modified. This guard checks for unstaged changes AFTER a commit attempt
+# and warns about potential stash conflicts. FORCE=1 bypasses.
+_pre-commit-stash-audit:
+	@if git status --porcelain | grep -q '^ M'; then \
+		STASH_COUNT=$$(git stash list 2>/dev/null | wc -l | tr -d ' '); \
+		if [ "$$STASH_COUNT" -gt 0 ]; then \
+			echo "PRE-COMMIT-STASH-AUDIT: unstaged modifications detected with $$STASH_COUNT stash entries."; \
+			echo "Pre-commit hooks may have auto-fixed files that are in stash."; \
+			echo "Run 'make git-stash-pop' to restore, then commit the fixes."; \
+			echo "Do NOT push with lint fixes stranded in stash. See AA034."; \
+		fi; \
+	fi
+	@echo "_pre-commit-stash-audit: PASS"
+
+# AA039 — _session-close-audit: blocks session termination with unpushed commits.
+# Agent ended sessions with 2-5 local commits unpushed, triggering CI on stale
+# code next session. Guard checks git log @{u}.. and reports unpushed count.
+# Blocks when more than 3 unpushed commits exist. FORCE=1 bypasses.
+_session-close-audit:
+	@TRACKING=$$(git rev-parse --abbrev-ref @{u} 2>/dev/null || echo ""); \
+	if [ -n "$$TRACKING" ]; then \
+		UNPUSHED=$$(git rev-list --count @{u}..HEAD 2>/dev/null || echo 0); \
+		if [ "$$UNPUSHED" -gt 0 ]; then \
+			echo "SESSION-CLOSE: $$UNPUSHED unpushed commit(s) on $$(git branch --show-current)."; \
+			if [ "$$UNPUSHED" -gt 3 ] && [ "$$FORCE" != "1" ]; then \
+				echo "BLOCKED: $$UNPUSHED unpushed commits. Push with 'make batch-push' or abandon with documented reason. See AA039."; \
+				exit 1; \
+			fi; \
+			echo "Consider pushing before session end: make batch-push"; \
+		else \
+			echo "SESSION-CLOSE: all commits pushed."; \
+		fi; \
+	fi
+	@echo "_session-close-audit: PASS"
+
+# AA041 — check-assert-deps: verifies test assertions match refactored code structure.
+# Agent fixed structural tests without checking what assertions depended on.
+# This script validates that assertion targets (function names, variable names)
+# actually exist at the claimed source locations after refactoring.
+check-assert-deps:
+	@$(UV) run python scripts/check_assert_deps.py
+
+# AA043 — _edit-commit-atomicity-guard: prevents committing when stashed changes
+# may be lost. When pre-commit hooks stash edits, the commit proceeds without
+# the edited content. Guard checks if working tree matches index before commit;
+# if there are unstaged changes that match known stash contents, warns agent.
+_edit-commit-atomicity-guard:
+	@if ! git diff --quiet; then \
+		echo "EDIT-COMMIT-ATOMICITY: working tree has unstaged changes."; \
+		echo "If pre-commit hooks stashed edits, the commit will NOT include them."; \
+		echo "Run 'make git-stash-pop' to check for stashed pre-commit fixes. See AA043."; \
+	fi
+	@echo "_edit-commit-atomicity-guard: PASS"
+
+# AA045 — check-spec-priority: assigns P0-P4 priority to behavioral specs.
+# Agent wrote 3000+ specs without prioritizing. This script classifies each
+# spec: P0=active CI failures, P1=release blockage, P2=user frustration,
+# P3=quality improvement, P4=aspirational. P0 must be implemented first.
+check-spec-priority:
+	@$(UV) run python scripts/check_spec_priority.py
+
+# AA047 — _force-push-audit: requires explicit user authorization for GLUDD_FORCE_PUSH=1
+# and COMMIT_THRESHOLD=1. Authorization file /tmp/gludd-user-authorized-force-push
+# must exist and expire after 1 use. Force pushes without authorization are DENIED.
+_force-push-audit:
+	@AUTH_FILE=/tmp/gludd-user-authorized-force-push; \
+	if [ "$$GLUDD_FORCE_PUSH" = "1" ] || [ "$$COMMIT_THRESHOLD" = "1" ]; then \
+		if [ ! -f "$$AUTH_FILE" ]; then \
+			echo "BLOCKED: force-push/bypass attempted without user authorization."; \
+			echo "GLUDD_FORCE_PUSH=1 and COMMIT_THRESHOLD=1 require explicit user authorization."; \
+			echo "The user must create /tmp/gludd-user-authorized-force-push (expires after 1 use)."; \
+			echo "See AA047."; \
+			exit 1; \
+		fi; \
+		echo "FORCE-PUSH-AUDIT: user authorization found. Proceeding."; \
+		rm -f "$$AUTH_FILE"; \
+	else \
+		echo "_force-push-audit: PASS (no force flags active)"; \
+	fi
+
+# AA053 — _recursive-merge-guard: pre-scans for structural conflicts (rename/delete,
+# add/add) before attempting -X theirs merge. git merge -X theirs handles content
+# conflicts but NOT structural conflicts. Warns if manual resolution will be needed.
+_recursive-merge-guard:
+	@if [ -n "$$MERGE_STRATEGY" ] && echo "$$MERGE_STRATEGY" | grep -q "theirs"; then \
+		echo "RECURSIVE-MERGE-GUARD: scanning for structural conflicts..."; \
+		MERGE_HEAD=$$(git rev-parse MERGE_HEAD 2>/dev/null || echo ""); \
+		if [ -n "$$MERGE_HEAD" ]; then \
+			RENAMES=$$(git diff --name-status --diff-filter=R HEAD $$MERGE_HEAD 2>/dev/null | grep "^R" | wc -l | tr -d ' '); \
+			ADDS=$$(git diff --name-status --diff-filter=A HEAD $$MERGE_HEAD 2>/dev/null | grep "^A" | wc -l | tr -d ' '); \
+			if [ "$$RENAMES" -gt 0 ]; then \
+				echo "WARNING: $$RENAMES rename(s) detected. -X theirs does not resolve rename/delete conflicts."; \
+			fi; \
+			if [ "$$ADDS" -gt 0 ]; then \
+				echo "WARNING: $$ADDS add(s) on target side. -X theirs does not resolve add/add conflicts."; \
+			fi; \
+		fi; \
+	else \
+		echo "_recursive-merge-guard: PASS (no -X theirs merge active)"; \
+	fi
+
+# AA065 — _commit-msg-audit: requires commit messages to be >=40 characters
+# and contain either a file reference or behavioral description. Prevents
+# vague one-word messages like "fix" or "fix tests".
+_commit-msg-audit:
+	@MSG="$$(git log -1 --format=%B 2>/dev/null || echo "")"; \
+	if [ -z "$$MSG" ]; then \
+		echo "_commit-msg-audit: PASS (no commit to audit)"; \
+	elif [ "$${#MSG}" -lt 40 ]; then \
+		echo "WARNING: commit message is $$(printf '%s' "$$MSG" | wc -c) chars — recommend >=40 chars with file reference or behavioral description. See AA065."; \
+		echo "  Message: $$MSG"; \
+	else \
+		echo "_commit-msg-audit: PASS (message is $$(printf '%s' "$$MSG" | wc -c) chars)"; \
+	fi
+
 # --- Proactive bug scanner: find issues before the user does ---
 proactive-scan:
 	@$(UV) run python scripts/proactive_bug_scan.py
@@ -4241,7 +4488,7 @@ sbom:
 pip-audit:
 	@$(UV) run pip-audit --desc || true
 
-# Gating audit (W5.3): fail-closed on any NEW advisory. The two known,
+# Gating audit (W5.3): fail-closed on any NEW advisory. Known,
 # adjudicated advisories are ignored with a documented rationale in
 # SECURITY.md "Known dependency advisories":
 #   - CVE-2025-69872 (diskcache): no upstream fix; mitigated by owner-only
@@ -4250,11 +4497,16 @@ pip-audit:
 #   - PYSEC-2026-196 (pip): build-time installer only; pip is NOT a runtime
 #     dependency (not in pyproject) and is absent from the shipped PyInstaller
 #     binary; fixed pip 26.1.2 is used in CI/dev.
+#   - PYSEC-2026-3458 (ansible-core): ansible-galaxy role install code injection
+#     via malicious role meta/requirements.yml; the project does not run
+#     ansible-galaxy role install from untrusted sources (roles are vendored);
+#     fixed in ansible-core 2.21.1rc1 — will upgrade once stable ships.
 pip-audit-gate:
 	@echo "=== pip-audit (gating, W5.3) — fails on NEW advisories ==="
 	@$(UV) run pip-audit --desc \
 		--ignore-vuln CVE-2025-69872 \
-		--ignore-vuln PYSEC-2026-196
+		--ignore-vuln PYSEC-2026-196 \
+		--ignore-vuln PYSEC-2026-3458
 	@echo "=== pip-audit-gate: no un-adjudicated advisories ==="
 
 pip-upgrade:

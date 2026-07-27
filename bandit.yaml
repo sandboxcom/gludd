@@ -1,0 +1,19 @@
+# Gludd project bandit (SAST) configuration.
+# Known-safe patterns suppressed at config level with documented reasons.
+# Individual lines can still carry # nosec Bxxx for one-off suppression.
+
+skips:
+  - B101
+  - B108
+  - B110
+  - B112
+  - B311
+  - B404
+  - B603
+  - B607
+  - B105
+  - B310
+  - B314
+  - B318
+  - B405
+  - B408

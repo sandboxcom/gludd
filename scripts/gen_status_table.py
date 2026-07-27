@@ -35,6 +35,7 @@ If the README intentionally has no status table (markers absent AND no
 without modifying or complaining about the README. This lets projects remove
 the table without breaking CI.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -52,6 +53,14 @@ try:
 except ImportError:
     print("ERROR: PyYAML not installed — run: uv sync", file=sys.stderr)
     sys.exit(1)
+
+# Python 3.14: pkg_resources was removed. The fs (pyfilesystem) package calls
+# __import__("pkg_resources").declare_namespace at module load time.
+# Provide a stub so fs can import without error when run outside pytest.
+_FAKE_PKG_RESOURCES = type(sys)("pkg_resources")
+_FAKE_PKG_RESOURCES.declare_namespace = lambda _name: None
+sys.modules.setdefault("pkg_resources", _FAKE_PKG_RESOURCES)
+del _FAKE_PKG_RESOURCES
 
 from general_ludd.quality.feature_verifier import FeatureVerifier  # noqa: E402
 
@@ -117,7 +126,7 @@ def _fast_check_test_ref(ref: str, repo_root: Path) -> tuple[bool, str]:
     Strips ``::ClassName::test_name`` selector to get the bare file path.
     Does NOT run pytest.  Returns (met, detail).
     """
-    node_id = ref[len("test:"):]
+    node_id = ref[len("test:") :]
     file_path = node_id.split("::")[0]  # strip node selectors
     target = (repo_root / file_path).resolve()
     if not target.is_relative_to(repo_root.resolve()):
@@ -246,17 +255,12 @@ def _generate_block(
             " run `make gen-status-table` locally to verify tests pass)*\n"
         )
     else:
-        header = (
-            "*(auto-generated — do not edit between markers; regenerate with `make gen-status-table`)*\n"
-        )
+        header = "*(auto-generated — do not edit between markers; regenerate with `make gen-status-table`)*\n"
     parts.append(header)
 
     for section in sections:
         features: list[dict[str, Any]] = section.get("features", [])
-        results = [
-            _verify_feature(verifier, feat, repo_root, fast)
-            for feat in features
-        ]
+        results = [_verify_feature(verifier, feat, repo_root, fast) for feat in features]
         parts.append(_render_section(section, results, fast))
 
     parts.append("\n")
@@ -329,12 +333,7 @@ def _inject_into_readme(readme_path: Path, block: str) -> str:
 
     if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
         # Case 1: markers present — replace content between them.
-        return (
-            text[: start_idx + len(_START_MARKER)]
-            + "\n"
-            + block
-            + text[end_idx:]
-        )
+        return text[: start_idx + len(_START_MARKER)] + "\n" + block + text[end_idx:]
 
     # Case 2: markers absent — find heading and wrap the section.
     m = _HEADING_PATTERN.search(text)
@@ -352,15 +351,7 @@ def _inject_into_readme(readme_path: Path, block: str) -> str:
     else:
         section_end = len(text)
 
-    return (
-        text[: section_start]
-        + _START_MARKER
-        + "\n"
-        + block
-        + _END_MARKER
-        + "\n"
-        + text[section_end:]
-    )
+    return text[:section_start] + _START_MARKER + "\n" + block + _END_MARKER + "\n" + text[section_end:]
 
 
 # ---------------------------------------------------------------------------
@@ -506,9 +497,7 @@ def main(argv: list[str] | None = None) -> int:
             for i, (a, b) in enumerate(zip(on_disk_lines, fresh_lines)):
                 if a != b:
                     print(
-                        f"  First diff at line {i+1}:\n"
-                        f"    disk: {a[:120]!r}\n"
-                        f"    new:  {b[:120]!r}",
+                        f"  First diff at line {i + 1}:\n    disk: {a[:120]!r}\n    new:  {b[:120]!r}",
                         file=sys.stderr,
                     )
                     break

@@ -16,82 +16,66 @@
 
 ---
 
-## SESSION 55 — 2026-07-27 (IN PROGRESS)
+## SESSION 56 — 2026-07-27 (IN PROGRESS)
 
-- **HEAD: `981b2bd4`** on `development` branch
+- **HEAD: `600d4083`** on `development` branch
 - **Version: 0.1.0-beta.3** (pyproject.toml, __init__.py)
-- **Push status: NOT PUSHED** — 6 new local commits since last push (47af3080, 22d9951e, f3249a96, 067e6de0, 2640668a, 981b2bd4)
-- **CI: IN_PROGRESS** — CI on `ed97bb58`, last pushed HEAD
-- **Release readiness: READY (pre-flight checks PASS)**
-  - `make check-readme-status TAG=v0.1.0-beta.3`: PASS
-  - `make check-status-table`: PASS
-  - `make verify-feature-claims`: PASS
-  - Version 0.1.0-beta.3 in pyproject.toml: CONFIRMED
-  - Version 0.1.0-beta.3 in __init__.py: CONFIRMED
-  - CHANGELOG has v0.1.0-beta.3 section: CONFIRMED (merged duplicate sections)
-  - README version reference: FIXED (was v0.1.0-beta.1, now v0.1.0-beta.3)
-  - CI not green on development: BLOCKING for release-cut — wait for CI green before releasing
-- **Gate: not re-run on HEAD 981b2bd4**
+- **Push status: NOT PUSHED** — 10 new local commits since last push (d8c0bcda..600d4083)
+- **CI on development: RED** — run 30303033975, conclusion=failure on HEAD `600d4083`
+- **Release readiness: BLOCKED** — CI red on development; release-cut requires CI green
+- **Gate: not re-run on HEAD 600d4083**
 - **Working tree: CLEAN**
+- **ratchet.yml: 0 entries** (no known-unfixed work tracked)
 
-### Key changes this session
+### Key changes since Session 55
 
-- **Connector batch5 orchestration** (commit `f3249a96`): T-BETA3 connector batch5 orchestration
-- **Governance P1-P2 tests** (commit `22d9951e`): 5 test files, 84+ test cases for jurisdictions, borders, governing_bodies, classification_markings, authority_registry
-- **CI fix round 3 pushed clean (NO FORCE)** (commits `ed97bb58`, `37558b8e`, `3477bcdd`, `bad42def`): CI triggered on development HEAD. Bool casts + YAMLError regex + healthz endpoint + GLUDD_ALLOW_NO_AUTH fixes landed.
-- **NF10 fix + behavioral specs enforcement** (commit `ed97bb58`): Fixes `test_enforce_stop_mixed_response.py` _src() + opencode.json order fix
-- **NF10 implementation complete** (commit `37558b8e`): test_enforce_stop_mixed_response.py _src() to include plugin_test_exports.ts
-- **os_expert coverage gaps** (commit `3477bcdd`): tests for kernel_config, os_detection, syscall_analysis
-- **FORCE=1 bypass removed from ci_push_guard.py** (commit `2fc342c4`): CI-busy check now always blocks
-- **CI fix round 3 committed** (commit `bad42def`): bool casts + YAMLError regex + healthz endpoint + GLUDD_ALLOW_NO_AUTH
-- **Feature work landed** (commit `3de4ab80`): NF10 + NF8 spec implementations, governance modules, e2e test gen tests, enforce-task-tracking extension
-- **Feature work landed** (`082f94b2`, `1666b936`, `1bec3754`): language expert, radio engineer, OS expert features
-- **enforce-stop regex fixes** (commit `c1e111eb`): COMPLETION_SMELL_RE missing committed/pushed/continuing, QA_RESPONSE_PATTERNS too narrow
-
-### Cleanup (2026-07-27 06:10 UTC)
-
-- **Worktrees:** 0 stale — only main checkout (`/Users/shawnwilson/gludd` on `development`)
-- **tmp state:** 1 file removed, 0 skipped, 0 failed
-- **Disk:** 76% (threshold 95%, OK)
-
-### Commits this session so far
+10 new commits landed on development since HEAD `981b2bd4`:
 
 | Hash | Message |
 |------|---------|
-| `981b2bd4` | fix dead-code baseline + Python 3.14 conftest RecursionError patch |
-| `2640668a` | SESSION.md update |
-| `067e6de0` | SESSION.md — CI in_progress on ed97bb58 |
-| `f3249a96` | T-BETA3 connector batch5 orchestration |
-| `22d9951e` | governance: add comprehensive unit tests for P1-P2 knowledge modules — 5 test files, 84+ tests |
-| `47af3080` | SESSION.md — ed97bb58, clean push, CI triggered |
-| `ed97bb58` | NF10 fix + behavioral specs enforcement scripts + language expert checks + opencode.json order fix |
-| `37558b8e` | complete NF10 implementation — fix test_enforce_stop_mixed_response.py _src() to include plugin_test_exports.ts |
-| `3477bcdd` | fix os_expert coverage gaps — add tests for kernel_config, os_detection, syscall_analysis |
-| `bad42def` | fix CI failures round 3 — bool casts + YAMLError regex + healthz endpoint + GLUDD_ALLOW_NO_AUTH |
-| `3de4ab80` | NF10 + NF8 spec implementations + governance modules + e2e test gen tests + enforce-task-tracking extension |
-| `2fc342c4` | remove FORCE=1 bypass from ci_push_guard.py — CI-busy check now always blocks |
-| `082f94b2` | implement language expert feature |
-| `1666b936` | implement radio engineer feature |
-| `1bec3754` | implement OS expert feature |
-| `c1e111eb` | fix enforce-stop wrapper regexes — COMPLETION_SMELL_RE missing committed/pushed/continuing, QA_RESPONSE_PATTERNS too narrow |
+| `600d4083` | fix conftest E402 lint: restructure imports at top, use importlib for late abtest import |
+| `a40eaadb` | beta.3: 5 behavioral enforcement guards, stash cleanup (97→0), pkg_resources app-level stub, gate test marker fix, conftest fixture hardening |
+| `e5300c57` | beta.3 pre-release: behavioral specs enforcement (4 guards), governance integration (29 tests), molecule scenarios (3 roles), release readiness fixes, CVE fix (setuptools), pkg_resources Py3.14 stub |
+| `59b435ee` | fix test_abtest_compare async mock for xdist |
+| `cedb403b` | SESSION.md |
+| `b58b03d9` | add CI_POLL_DISPATCH_PATTERNS structural tests |
+| `62371cde` | add CI_POLL_DISPATCH_PATTERNS structural tests |
+| `ac06e040` | add CI_POLL_DISPATCH_PATTERNS structural test for new patterns |
+| `1e20a469` | add conftest httpx+abtest reset fixture for xdist isolation |
+| `d8c0bcda` | fix lint — remove unused Mock import from test_abtest_compare |
+
+### CI status change
+
+The CI run that was IN_PROGRESS on `ed97bb58` during Session 55 has been superseded.
+Current CI on `development@600d4083` is **RED** (run 30303033975, conclusion=failure).
+The CI failure must be investigated and fixed before any release can proceed.
 
 ### Remaining open items
 
 | Item | Status |
 |------|--------|
-| CI green on development HEAD `ed97bb58` | AWAITING (last pushed HEAD) |
-| Push 6 new commits (47af3080..981b2bd4) | NOT PUSHED |
+| CI red on development HEAD `600d4083` | **BLOCKER** — run 30303033975 failed |
+| Push 10 new commits (d8c0bcda..600d4083) | NOT PUSHED |
+| Investigate CI failure root cause | PENDING |
 | `make release-cut TAG=v0.1.0-beta.3` | BLOCKED on CI green |
 | `make verify-release-completeness` 12/12 | BLOCKED on release-cut |
 
 ### Next
 
-1. Wait for CI green on development HEAD `ed97bb58`
-2. Push new commits, wait for CI
+1. Investigate CI failure (run 30303033975) — find root cause, fix
+2. Push commits to development, trigger fresh CI
 3. `make release-cut TAG=v0.1.0-beta.3` when CI green
 4. `make verify-release-completeness TAG=v0.1.0-beta.3`
 
-- **Last Updated: 2026-07-27 — Session 55 (IN PROGRESS).** HEAD `981b2bd4` on `development`. Connector batch5 orchestration + Governance P1-P2 tests (5 files, 84+ tests) added. CI fix round 3 pushed clean (NO FORCE), CI in_progress on `ed97bb58`. Dead-code baseline fix + Python 3.14 conftest RecursionError patch (981b2bd4). 6 new commits not pushed. Release blocked on CI green. Working tree CLEAN.
+- **Last Updated: 2026-07-27 — Session 56 (IN PROGRESS).** HEAD `600d4083` on `development`. 10 new commits since Session 55: behavioral enforcement guards, governance integration (29 tests), molecule scenarios, release readiness fixes, CI_POLL_DISPATCH_PATTERNS structural tests, xdist/conftest fixture hardening, lint fixes. CI RED (run 30303033975). Release blocked on CI green. Working tree CLEAN. ratchet.yml empty.
+
+---
+
+## SESSION 55 — 2026-07-27 (SUPERSEDED by Session 56)
+
+- **HEAD: `981b2bd4`** on `development` branch
+- **CI was IN_PROGRESS on `ed97bb58`** — that run has since been superseded
+- **6 commits** (47af3080..981b2bd4) — superseded by 10 new commits in Session 56
 
 ---
 

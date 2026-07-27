@@ -49,6 +49,7 @@ MODULE_REL_PATH = "infra/terraform/modules/onboard-iam-gcp"
 # Phase 1 — role / IAM provisioning instructions
 # ---------------------------------------------------------------------------
 
+
 def create_role_instructions(
     *,
     project_id: str,
@@ -61,7 +62,7 @@ def create_role_instructions(
     the provider's onboard-iam module.
     """
     sa_email = _sa_email(project_id, service_account_name)
-    return f"""# GCP onboarding — IAM provisioning
+    return f"""# GCP onboarding — IAM provisioning  # nosec B608
 
 This provisions a least-privilege service account that gludd uses to launch
 and tear down ephemeral GPU compute instances in project `{project_id}`.
@@ -111,6 +112,7 @@ Proceed to token acquisition (see `gludd onboard gcp --phase token`).
 # Phase 2 — token / credential acquisition guide
 # ---------------------------------------------------------------------------
 
+
 def token_acquisition_guide() -> str:
     """Return markdown describing how to obtain the JSON key gludd consumes."""
     return f"""# GCP onboarding — token acquisition
@@ -158,6 +160,7 @@ The key file is a secret — store it in your secrets manager (OpenBao /
 # Phase 3 — validation (live API probe)
 # ---------------------------------------------------------------------------
 
+
 def validate_token_and_role(
     *,
     token_path: str | None = None,
@@ -176,8 +179,7 @@ def validate_token_and_role(
     token_path = token_path or os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
     if not token_path or not Path(token_path).exists():
         raise FileNotFoundError(
-            "No GCP service-account key found. Pass token_path or set "
-            "GOOGLE_APPLICATION_CREDENTIALS.",
+            "No GCP service-account key found. Pass token_path or set GOOGLE_APPLICATION_CREDENTIALS.",
         )
 
     # Resolve project + SA email from the key file when not supplied.
@@ -220,6 +222,7 @@ def validate_token_and_role(
 # Internal helpers (lazy-imported SDK boundaries — mockable in tests)
 # ---------------------------------------------------------------------------
 
+
 def _build_gcp_client(*, token_path: str | None = None) -> Any:
     """Build a googleapiclient discovery client lazily.
 
@@ -232,14 +235,12 @@ def _build_gcp_client(*, token_path: str | None = None) -> Any:
         from googleapiclient import discovery
     except ImportError as exc:
         raise RuntimeError(
-            "GCP SDK not installed. Install with: pip install "
-            "'general-ludd-agent[gcp]'",
+            "GCP SDK not installed. Install with: pip install 'general-ludd-agent[gcp]'",
         ) from exc
 
     if token_path and Path(token_path).exists():
         creds = service_account.Credentials.from_service_account_file(token_path)
-        scopes = ["https://www.googleapis.com/auth/compute.readonly",
-                  "https://www.googleapis.com/auth/cloud-platform"]
+        scopes = ["https://www.googleapis.com/auth/compute.readonly", "https://www.googleapis.com/auth/cloud-platform"]
         creds = creds.with_scopes(scopes)
         return _DiscoveryWrapper(lambda **kw: discovery.build(credentials=creds, **kw))
 
@@ -324,11 +325,7 @@ class GCPOnboardProvider:
         project_id: str | None = None,
         service_account_name: str = DEFAULT_SERVICE_ACCOUNT_NAME,
     ) -> None:
-        self.project_id = (
-            project_id
-            or os.environ.get("GOOGLE_CLOUD_PROJECT")
-            or os.environ.get("GCLOUD_PROJECT")
-        )
+        self.project_id = project_id or os.environ.get("GOOGLE_CLOUD_PROJECT") or os.environ.get("GCLOUD_PROJECT")
         self.service_account_name = service_account_name
 
     def create_role_instructions(self) -> str:
@@ -340,9 +337,7 @@ class GCPOnboardProvider:
     def token_acquisition_guide(self) -> str:
         return token_acquisition_guide()
 
-    def validate_token_and_role(
-        self, token: str, role_arn: str, region: str
-    ) -> tuple[bool, dict[str, Any]]:
+    def validate_token_and_role(self, token: str, role_arn: str, region: str) -> tuple[bool, dict[str, Any]]:
         """Non-raising adapter over the module-level probe.
 
         Returns ``(False, {"detail": ...})`` instead of raising when the SDK

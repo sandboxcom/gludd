@@ -15,17 +15,19 @@ from typing import Any
 
 # ── Role taxonomy ───────────────────────────────────────────────────────────
 
-ROLE_TYPES: frozenset[str] = frozenset({
-    "head_of_state",
-    "minister",
-    "legislator",
-    "judge",
-    "regulator",
-    "military_leader",
-    "diplomat",
-    "bureaucrat",
-    "local_official",
-})
+ROLE_TYPES: frozenset[str] = frozenset(
+    {
+        "head_of_state",
+        "minister",
+        "legislator",
+        "judge",
+        "regulator",
+        "military_leader",
+        "diplomat",
+        "bureaucrat",
+        "local_official",
+    }
+)
 
 # ── Profile template ────────────────────────────────────────────────────────
 
@@ -303,9 +305,7 @@ BIAS_INDICATORS: dict[str, str] = {
 
 # ── Index ───────────────────────────────────────────────────────────────────
 
-_PROFILES_BY_ID: dict[str, dict[str, Any]] = {
-    p["person_id"]: p for p in DECISION_MAKER_PROFILES
-}
+_PROFILES_BY_ID: dict[str, dict[str, Any]] = {p["person_id"]: p for p in DECISION_MAKER_PROFILES}
 
 
 def _match_topic(topic: str, profile: dict[str, Any]) -> bool:
@@ -322,9 +322,8 @@ def _match_topic(topic: str, profile: dict[str, Any]) -> bool:
 
 # ── Public functions ────────────────────────────────────────────────────────
 
-def lookup_decision_maker(
-    body: str, role: str | None = None
-) -> list[dict[str, Any]]:
+
+def lookup_decision_maker(body: str, role: str | None = None) -> list[dict[str, Any]]:
     """Return decision-maker profiles associated with a governing body.
 
     Args:
@@ -367,9 +366,7 @@ def get_influence_network(person_id: str) -> dict[str, list[dict[str, str]]] | N
     return _PERSON_NETWORKS.get(person_id, {})
 
 
-def find_decision_maker(
-    topic: str, jurisdiction: str | None = None
-) -> list[dict[str, Any]]:
+def find_decision_maker(topic: str, jurisdiction: str | None = None) -> list[dict[str, Any]]:
     """Find decision makers whose known positions or authority scope cover
     ``topic``, optionally filtered by jurisdiction.
 
@@ -408,35 +405,39 @@ def assess_proclivity(person_id: str, topic: str) -> dict[str, Any]:
     for pos in profile.get("known_positions", []):
         if t in pos.get("topic", "").lower():
             stance = pos.get("stance", "neutral")
-            signals.append({
-                "source": "known_position",
-                "topic": pos["topic"],
-                "stance": stance,
-                "summary": pos.get("summary", ""),
-            })
+            signals.append(
+                {
+                    "source": "known_position",
+                    "topic": pos["topic"],
+                    "stance": stance,
+                    "summary": pos.get("summary", ""),
+                }
+            )
 
     # 2. Voting record
     voting = profile.get("voting_record_summary", "")
     if voting and voting != "N/A (non-voting appointed role).":
         vr_lower = voting.lower()
         if t in vr_lower:
-            signals.append({
-                "source": "voting_record",
-                "summary": voting,
-            })
+            signals.append(
+                {
+                    "source": "voting_record",
+                    "summary": voting,
+                }
+            )
 
     # 3. Influence networks (only when topic-relevant signals exist above)
-    has_topic_signal = bool(
-        [s for s in signals if s["source"] in ("known_position", "voting_record")]
-    )
+    has_topic_signal = bool([s for s in signals if s["source"] in ("known_position", "voting_record")])
     if has_topic_signal:
         networks = _PERSON_NETWORKS.get(person_id, {})
         for category, entries in networks.items():
-            signals.append({
-                "source": "influence_network",
-                "category": category,
-                "entries": entries,
-            })
+            signals.append(
+                {
+                    "source": "influence_network",
+                    "category": category,
+                    "entries": entries,
+                }
+            )
 
     # 4. Campaign finance (only when topic-relevant signals exist above)
     if has_topic_signal:
@@ -445,10 +446,12 @@ def assess_proclivity(person_id: str, topic: str) -> dict[str, Any]:
         if campaign:
             for item in campaign:
                 if any(kw in item.lower() for kw in t_lower.split()):
-                    signals.append({
-                        "source": "campaign_finance",
-                        "contributor": item,
-                    })
+                    signals.append(
+                        {
+                            "source": "campaign_finance",
+                            "contributor": item,
+                        }
+                    )
 
     # Compute score and lean
     if not signals:
@@ -513,72 +516,382 @@ def assess_proclivity(person_id: str, topic: str) -> dict[str, Any]:
 
 DECISION_MAKERS: dict[str, list[dict[str, Any]]] = {
     "US": [
-        {"role": "President of the United States", "institution": "Executive Office",
-         "branch": "executive", "selection": "elected (Electoral College, 4-yr term)"},
-        {"role": "Speaker of the House", "institution": "House of Representatives",
-         "branch": "legislative", "selection": "elected by chamber"},
-        {"role": "Senate Majority Leader", "institution": "Senate",
-         "branch": "legislative", "selection": "elected by caucus"},
-        {"role": "Chief Justice of the United States", "institution": "Supreme Court",
-         "branch": "judicial", "selection": "appointed (lifetime)"},
+        {
+            "role": "President of the United States",
+            "institution": "Executive Office",
+            "branch": "executive",
+            "selection": "elected (Electoral College, 4-yr term)",
+        },
+        {
+            "role": "Speaker of the House",
+            "institution": "House of Representatives",
+            "branch": "legislative",
+            "selection": "elected by chamber",
+        },
+        {
+            "role": "Senate Majority Leader",
+            "institution": "Senate",
+            "branch": "legislative",
+            "selection": "elected by caucus",
+        },
+        {
+            "role": "Chief Justice of the United States",
+            "institution": "Supreme Court",
+            "branch": "judicial",
+            "selection": "appointed (lifetime)",
+        },
     ],
     "GB": [
-        {"role": "Prime Minister", "institution": "Crown / Parliament",
-         "branch": "executive", "selection": "appointed by monarch (leader of majority)"},
-        {"role": "Monarch", "institution": "The Crown",
-         "branch": "head of state", "selection": "hereditary"},
-        {"role": "Lord Speaker", "institution": "House of Lords",
-         "branch": "legislative", "selection": "elected by chamber"},
-        {"role": "Speaker of the House of Commons", "institution": "House of Commons",
-         "branch": "legislative", "selection": "elected by chamber"},
+        {
+            "role": "Prime Minister",
+            "institution": "Crown / Parliament",
+            "branch": "executive",
+            "selection": "appointed by monarch (leader of majority)",
+        },
+        {"role": "Monarch", "institution": "The Crown", "branch": "head of state", "selection": "hereditary"},
+        {
+            "role": "Lord Speaker",
+            "institution": "House of Lords",
+            "branch": "legislative",
+            "selection": "elected by chamber",
+        },
+        {
+            "role": "Speaker of the House of Commons",
+            "institution": "House of Commons",
+            "branch": "legislative",
+            "selection": "elected by chamber",
+        },
     ],
     "DE": [
-        {"role": "Bundeskanzler (Federal Chancellor)", "institution": "Bundesregierung",
-         "branch": "executive", "selection": "elected by Bundestag"},
-        {"role": "Bundespräsident (Federal President)", "institution": "Head of state",
-         "branch": "head of state", "selection": "elected by Federal Convention"},
-        {"role": "President of the Bundestag", "institution": "Bundestag",
-         "branch": "legislative", "selection": "elected by chamber"},
+        {
+            "role": "Bundeskanzler (Federal Chancellor)",
+            "institution": "Bundesregierung",
+            "branch": "executive",
+            "selection": "elected by Bundestag",
+        },
+        {
+            "role": "Bundespräsident (Federal President)",
+            "institution": "Head of state",
+            "branch": "head of state",
+            "selection": "elected by Federal Convention",
+        },
+        {
+            "role": "President of the Bundestag",
+            "institution": "Bundestag",
+            "branch": "legislative",
+            "selection": "elected by chamber",
+        },
     ],
     "FR": [
-        {"role": "Président de la République", "institution": "Presidency",
-         "branch": "executive", "selection": "elected (5-yr term)"},
-        {"role": "Prime Minister", "institution": "Government",
-         "branch": "executive", "selection": "appointed by President"},
-        {"role": "President of the National Assembly", "institution": "National Assembly",
-         "branch": "legislative", "selection": "elected by chamber"},
+        {
+            "role": "Président de la République",
+            "institution": "Presidency",
+            "branch": "executive",
+            "selection": "elected (5-yr term)",
+        },
+        {
+            "role": "Prime Minister",
+            "institution": "Government",
+            "branch": "executive",
+            "selection": "appointed by President",
+        },
+        {
+            "role": "President of the National Assembly",
+            "institution": "National Assembly",
+            "branch": "legislative",
+            "selection": "elected by chamber",
+        },
     ],
     "JP": [
-        {"role": "Prime Minister of Japan", "institution": "Cabinet",
-         "branch": "executive", "selection": "designated by Diet"},
-        {"role": "Emperor", "institution": "Imperial House",
-         "branch": "head of state", "selection": "hereditary"},
-        {"role": "President of the House of Representatives", "institution": "National Diet",
-         "branch": "legislative", "selection": "elected by chamber"},
+        {
+            "role": "Prime Minister of Japan",
+            "institution": "Cabinet",
+            "branch": "executive",
+            "selection": "designated by Diet",
+        },
+        {"role": "Emperor", "institution": "Imperial House", "branch": "head of state", "selection": "hereditary"},
+        {
+            "role": "President of the House of Representatives",
+            "institution": "National Diet",
+            "branch": "legislative",
+            "selection": "elected by chamber",
+        },
     ],
     "IN": [
-        {"role": "Prime Minister of India", "institution": "Union Council of Ministers",
-         "branch": "executive", "selection": "appointed by President (majority of Lok Sabha)"},
-        {"role": "President of India", "institution": "Rashtrapati Bhavan",
-         "branch": "head of state", "selection": "elected by Electoral College"},
-        {"role": "Speaker of the Lok Sabha", "institution": "Lok Sabha",
-         "branch": "legislative", "selection": "elected by chamber"},
-        {"role": "Chief Justice of India", "institution": "Supreme Court",
-         "branch": "judicial", "selection": "appointed"},
+        {
+            "role": "Prime Minister of India",
+            "institution": "Union Council of Ministers",
+            "branch": "executive",
+            "selection": "appointed by President (majority of Lok Sabha)",
+        },
+        {
+            "role": "President of India",
+            "institution": "Rashtrapati Bhavan",
+            "branch": "head of state",
+            "selection": "elected by Electoral College",
+        },
+        {
+            "role": "Speaker of the Lok Sabha",
+            "institution": "Lok Sabha",
+            "branch": "legislative",
+            "selection": "elected by chamber",
+        },
+        {
+            "role": "Chief Justice of India",
+            "institution": "Supreme Court",
+            "branch": "judicial",
+            "selection": "appointed",
+        },
     ],
     "AU": [
-        {"role": "Prime Minister of Australia", "institution": "Cabinet",
-         "branch": "executive", "selection": "commissioned by Governor-General"},
-        {"role": "Governor-General", "institution": "Crown representative",
-         "branch": "head of state", "selection": "appointed (representing the Monarch)"},
-        {"role": "Speaker of the House of Representatives", "institution": "Parliament",
-         "branch": "legislative", "selection": "elected by chamber"},
+        {
+            "role": "Prime Minister of Australia",
+            "institution": "Cabinet",
+            "branch": "executive",
+            "selection": "commissioned by Governor-General",
+        },
+        {
+            "role": "Governor-General",
+            "institution": "Crown representative",
+            "branch": "head of state",
+            "selection": "appointed (representing the Monarch)",
+        },
+        {
+            "role": "Speaker of the House of Representatives",
+            "institution": "Parliament",
+            "branch": "legislative",
+            "selection": "elected by chamber",
+        },
+    ],
+    "IT": [
+        {
+            "role": "President of the Council of Ministers (Prime Minister)",
+            "institution": "Palazzo Chigi",
+            "branch": "executive",
+            "selection": "appointed by President of the Republic",
+        },
+        {
+            "role": "President of the Republic",
+            "institution": "Quirinale",
+            "branch": "head of state",
+            "selection": "elected by Parliament in joint session (7-yr term)",
+        },
+        {
+            "role": "President of the Chamber of Deputies",
+            "institution": "Montecitorio",
+            "branch": "legislative",
+            "selection": "elected by chamber",
+        },
+        {
+            "role": "President of the Senate",
+            "institution": "Palazzo Madama",
+            "branch": "legislative",
+            "selection": "elected by chamber",
+        },
+        {
+            "role": "President of the Constitutional Court",
+            "institution": "Corte Costituzionale",
+            "branch": "judicial",
+            "selection": "elected by the Court from among its judges",
+        },
+    ],
+    "ES": [
+        {
+            "role": "President of the Government (Prime Minister)",
+            "institution": "Palacio de la Moncloa",
+            "branch": "executive",
+            "selection": "invested by Congress of Deputies",
+        },
+        {
+            "role": "King of Spain (Monarch)",
+            "institution": "La Zarzuela Palace",
+            "branch": "head of state",
+            "selection": "hereditary (constitutional monarchy)",
+        },
+        {
+            "role": "President of the Congress of Deputies",
+            "institution": "Congreso de los Diputados",
+            "branch": "legislative",
+            "selection": "elected by chamber",
+        },
+        {
+            "role": "President of the Senate",
+            "institution": "Senado",
+            "branch": "legislative",
+            "selection": "elected by chamber",
+        },
+        {
+            "role": "President of the Constitutional Court",
+            "institution": "Tribunal Constitucional",
+            "branch": "judicial",
+            "selection": "appointed by King on proposal of Congress, Senate, Government, and CGPJ",
+        },
+    ],
+    "MX": [
+        {
+            "role": "President of the United Mexican States",
+            "institution": "National Palace (Palacio Nacional)",
+            "branch": "executive",
+            "selection": "directly elected (6-yr single term, no re-election)",
+        },
+        {
+            "role": "President of the Chamber of Deputies",
+            "institution": "Camara de Diputados",
+            "branch": "legislative",
+            "selection": "elected by chamber annually",
+        },
+        {
+            "role": "President of the Senate",
+            "institution": "Camara de Senadores",
+            "branch": "legislative",
+            "selection": "elected by chamber annually",
+        },
+        {
+            "role": "Chief Justice of the Supreme Court",
+            "institution": "Suprema Corte de Justicia de la Nacion",
+            "branch": "judicial",
+            "selection": "elected by the full court from among its ministers (4-yr term)",
+        },
+    ],
+    "ZA": [
+        {
+            "role": "President of the Republic of South Africa",
+            "institution": "Union Buildings",
+            "branch": "executive",
+            "selection": "elected by National Assembly from its members",
+        },
+        {
+            "role": "Speaker of the National Assembly",
+            "institution": "Parliament of South Africa",
+            "branch": "legislative",
+            "selection": "elected by chamber",
+        },
+        {
+            "role": "Chairperson of the National Council of Provinces",
+            "institution": "Parliament of South Africa",
+            "branch": "legislative",
+            "selection": "elected by chamber",
+        },
+        {
+            "role": "Chief Justice of the Constitutional Court",
+            "institution": "Constitutional Court (Braamfontein)",
+            "branch": "judicial",
+            "selection": "appointed by President after consultation with JSC",
+        },
+    ],
+    "KR": [
+        {
+            "role": "President of the Republic of Korea",
+            "institution": "Blue House",
+            "branch": "executive",
+            "selection": "directly elected (single 5-yr term)",
+        },
+        {
+            "role": "Prime Minister",
+            "institution": "Government Complex Sejong/Seoul",
+            "branch": "executive",
+            "selection": "appointed by President, confirmed by National Assembly",
+        },
+        {
+            "role": "Speaker of the National Assembly",
+            "institution": "National Assembly (Yeouido)",
+            "branch": "legislative",
+            "selection": "elected by chamber (2-yr term)",
+        },
+        {
+            "role": "Chief Justice of the Supreme Court",
+            "institution": "Supreme Court of Korea (Seocho)",
+            "branch": "judicial",
+            "selection": "appointed by President, confirmed by National Assembly (6-yr term, non-renewable)",
+        },
+    ],
+    "SE": [
+        {
+            "role": "Prime Minister of Sweden (Statsminister)",
+            "institution": "Rosenbad / Government Offices",
+            "branch": "executive",
+            "selection": "proposed by Speaker of Riksdag, confirmed by negative vote",
+        },
+        {
+            "role": "Monarch (King of Sweden)",
+            "institution": "Royal Palace (Stockholm)",
+            "branch": "head of state",
+            "selection": "hereditary (ceremonial constitutional monarch)",
+        },
+        {
+            "role": "Speaker of the Riksdag (Talman)",
+            "institution": "Riksdag (Parliament)",
+            "branch": "legislative",
+            "selection": "elected by chamber",
+        },
+        {
+            "role": "Chief Justice of the Supreme Court",
+            "institution": "Hoegsta Domstolen",
+            "branch": "judicial",
+            "selection": "appointed by Government",
+        },
+    ],
+    "NL": [
+        {
+            "role": "Prime Minister of the Netherlands",
+            "institution": "Binnenhof (Catshuis)",
+            "branch": "executive",
+            "selection": "appointed by monarch (leader of governing coalition)",
+        },
+        {
+            "role": "Monarch (King of the Netherlands)",
+            "institution": "Huis ten Bosch",
+            "branch": "head of state",
+            "selection": "hereditary (constitutional monarchy)",
+        },
+        {
+            "role": "President of the House of Representatives",
+            "institution": "Tweede Kamer (Binnenhof)",
+            "branch": "legislative",
+            "selection": "elected by chamber",
+        },
+        {
+            "role": "President of the Senate",
+            "institution": "Eerste Kamer (Binnenhof)",
+            "branch": "legislative",
+            "selection": "elected by chamber",
+        },
+        {
+            "role": "President of the Supreme Court",
+            "institution": "Hoge Raad der Nederlanden (The Hague)",
+            "branch": "judicial",
+            "selection": "appointed by Government on recommendation of the Court (lifetime)",
+        },
+    ],
+    "BR": [
+        {
+            "role": "President of the Federative Republic of Brazil",
+            "institution": "Palacio do Planalto",
+            "branch": "executive",
+            "selection": "directly elected (4-yr term, renewable once)",
+        },
+        {
+            "role": "President of the Chamber of Deputies",
+            "institution": "Camara dos Deputados (Congresso Nacional)",
+            "branch": "legislative",
+            "selection": "elected by chamber (2-yr term)",
+        },
+        {
+            "role": "President of the Federal Senate",
+            "institution": "Senado Federal (Congresso Nacional)",
+            "branch": "legislative",
+            "selection": "elected by chamber (2-yr term)",
+        },
+        {
+            "role": "President of the Supreme Federal Court (STF)",
+            "institution": "Supremo Tribunal Federal (Praca dos Tres Poderes)",
+            "branch": "judicial",
+            "selection": "elected by the full court from among its ministers (2-yr term)",
+        },
     ],
 }
 
-BRANCHES = frozenset(
-    {dm["branch"] for makers in DECISION_MAKERS.values() for dm in makers}
-)
+BRANCHES = frozenset({dm["branch"] for makers in DECISION_MAKERS.values() for dm in makers})
 
 
 def list_countries() -> list[str]:

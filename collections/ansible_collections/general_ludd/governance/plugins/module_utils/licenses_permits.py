@@ -206,6 +206,132 @@ LICENSE_REGISTRIES: dict[str, dict[str, Any]] = {
             "typical_duration": "Annual practising certificate",
             "renewal_requirements": ["CPD units (10/year)", "practising certificate fee"],
         },
+        "architect": {
+            "issuing_body": "Architects Accreditation Council of Australia (AACA) / state registration boards",
+            "verification_url": "https://www.aaca.org.au/architect-register/",
+            "typical_duration": "Annual (state registration)",
+            "renewal_requirements": ["CPD points", "registration fee", "professional indemnity insurance"],
+        },
+        "accountant": {
+            "issuing_body": "CPA Australia / Chartered Accountants ANZ / IPA",
+            "verification_url": "https://www.cpaaustralia.com.au/about-cpa-australia/find-a-cpa",
+            "typical_duration": "Annual CPA/CA membership",
+            "renewal_requirements": ["CPD hours (120 over 3 years for CA ANZ)", "membership fee"],
+        },
+        "real_estate_agent": {
+            "issuing_body": "State/territory real estate licensing authority (e.g., NSW Fair Trading)",
+            "verification_url": "https://www.fairtrading.nsw.gov.au/licensing",
+            "typical_duration": "1-5 years (varies by state)",
+            "renewal_requirements": ["CPD", "license fee", "no disqualifying offences"],
+        },
+        "electrician": {
+            "issuing_body": "State electrical licensing authority (e.g., Energy Safe Victoria, NSW Fair Trading)",
+            "verification_url": "State electrical licence registers",
+            "typical_duration": "1-5 years",
+            "renewal_requirements": ["CPD", "safety compliance", "license fee"],
+        },
+    },
+    "FR": {
+        "driving": {
+            "issuing_body": "Prefecture (via ANTS — Agence Nationale des Titres Securises)",
+            "verification_url": "https://ants.gouv.fr",
+            "typical_duration": "15 years (permis de conduire format carte bancaire)",
+            "renewal_requirements": ["medical exam (for commercial/heavy vehicle licences only)"],
+        },
+        "medical_practitioner": {
+            "issuing_body": "Conseil Departemental de l'Ordre des Medecins",
+            "verification_url": "https://www.conseil-national.medecin.fr/annuaire",
+            "typical_duration": "Lifetime (Inscription au Tableau de l'Ordre; annual renewal)",
+            "renewal_requirements": ["DPC (Developpement Professionnel Continu)", "ordre dues", "insurance"],
+        },
+        "lawyer": {
+            "issuing_body": "Barreau (Ordre des Avocats local — e.g., Barreau de Paris)",
+            "verification_url": "https://www.cnb.avocat.fr/fr/annualre-des-avocats",
+            "typical_duration": "Annual (exercice professionnel + stage initial de 18 mois)",
+            "renewal_requirements": ["Formation continue (20 heures/an)", "cotisation ordinale", "assurance RC"],
+        },
+        "engineer_professional": {
+            "issuing_body": "CTI (Commission des Titres d'Ingenieur)",
+            "verification_url": "https://www.cti-commission.fr",
+            "typical_duration": "Diplome d'ingenieur (lifetime qualification)",
+            "renewal_requirements": ["Diploma is permanent", "professional registration optional via IESF"],
+        },
+        "architect": {
+            "issuing_body": "Ordre des Architectes (Conseil Regional de l'Ordre)",
+            "verification_url": "https://www.architectes.org/annualre",
+            "typical_duration": "Annual inscription au Tableau",
+            "renewal_requirements": ["Formation continue", "cotisation ordinale", "assurance decennale obligatoire"],
+        },
+        "accountant": {
+            "issuing_body": "Ordre des Experts-Comptables (Conseil Regional)",
+            "verification_url": "https://www.experts-comptables.fr/annualre",
+            "typical_duration": "Annual inscription au Tableau",
+            "renewal_requirements": ["Formation continue (120 heures sur 3 ans)", "cotisation ordinale"],
+        },
+        "pharmacist": {
+            "issuing_body": "Conseil National de l'Ordre des Pharmaciens",
+            "verification_url": "https://www.ordre.pharmacien.fr/annualre",
+            "typical_duration": "Annual inscription au Tableau (Section A/B/C/D/E selon mode d'exercice)",
+            "renewal_requirements": ["DPC obligatoire", "cotisation ordinale", "assurance"],
+        },
+        "real_estate_agent": {
+            "issuing_body": "CCI (Chambre de Commerce et d'Industrie) / Prefecture",
+            "verification_url": "CCI territoriale — Registre des agents immobiliers",
+            "typical_duration": "Carte professionnelle renouvelable (3 ans, puis annuelle)",
+            "renewal_requirements": [
+                "Garantie financière",
+                "assurance RC professionnelle",
+                "formation continue (Alur)",
+            ],
+        },
+        "notary": {
+            "issuing_body": "Conseil Superieur du Notariat / Chambre Departementale des Notaires",
+            "verification_url": "https://www.notaires.fr/fr/annualre-notaire",
+            "typical_duration": "Nomination ministerielle (a vie)",
+            "renewal_requirements": ["Formation continue", "cotisation professionnelle", "inspection periodique"],
+        },
+    },
+    "JP": {
+        "driving": {
+            "issuing_body": "Prefectural Public Safety Commission (via local Driver's License Center)",
+            "verification_url": "Prefectural police driver's license centers",
+            "typical_duration": "3-5 years (gold licence = 5 years; blue licence = 3 years)",
+            "renewal_requirements": [
+                "vision test",
+                "2-hour lecture (first renewal)",
+                "no traffic violations for gold licence",
+            ],
+        },
+        "medical_practitioner": {
+            "issuing_body": "Ministry of Health, Labour and Welfare (MHLW)",
+            "verification_url": "https://www.mhlw.go.jp/stf/seisakunitsuite/bunya/0000089685.html",
+            "typical_duration": "Lifetime (ishi menkyo — 医師免許)",
+            "renewal_requirements": [
+                "Medical Practitioners Act registration",
+                "clinical training completion (2 years post-graduation)",
+            ],
+        },
+        "lawyer": {
+            "issuing_body": "Japan Federation of Bar Associations (Nichibenren / 日本弁護士連合会)",
+            "verification_url": "https://www.nichibenren.or.jp/en/",
+            "typical_duration": "Annual (Bengoshi registration)",
+            "renewal_requirements": ["Annual bar registration fee", "CPD requirements via local bar"],
+        },
+        "pharmacist": {
+            "issuing_body": "Ministry of Health, Labour and Welfare (MHLW)",
+            "verification_url": "https://www.mhlw.go.jp/stf/seisakunitsuite/bunya/0000089698.html",
+            "typical_duration": "Lifetime (yakuzaishi menkyo — 薬剤師免許)",
+            "renewal_requirements": ["No mandatory CPD; encouraged by Japan Pharmaceutical Association"],
+        },
+        "architect": {
+            "issuing_body": "Ministry of Land, Infrastructure, Transport and Tourism (MLIT) / prefectural government",
+            "verification_url": "MLIT — Kenchikushi (建築士) registration",
+            "typical_duration": "First-class Kenchikushi (一級建築士): lifetime; Second-class Kenchikushi (二級建築士): lifetime",
+            "renewal_requirements": [
+                "Registration with prefectural government",
+                "optional CPD via JIA (Japan Institute of Architects)",
+            ],
+        },
     },
 }
 

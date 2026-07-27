@@ -86,6 +86,8 @@ class TestTaxSystems:
             "capital_gains",
             "digital_services",
             "carbon",
+            "excise",
+            "tariff",
         ],
     )
     def test_tax_system_defined(self, tc, tax_type):
@@ -113,7 +115,33 @@ class TestTaxSystems:
 
 
 class TestTaxData:
-    @pytest.mark.parametrize("country", ["US", "GB", "DE", "FR", "JP", "CA", "AU"])
+    @pytest.mark.parametrize(
+        "country",
+        [
+            "US",
+            "GB",
+            "DE",
+            "FR",
+            "JP",
+            "CA",
+            "AU",
+            "IN",
+            "BR",
+            "MX",
+            "ZA",
+            "KR",
+            "SG",
+            "IT",
+            "ES",
+            "NL",
+            "CH",
+            "SE",
+            "NO",
+            "IE",
+            "NZ",
+            "DK",
+        ],
+    )
     def test_major_countries_present(self, tc, country):
         assert country in tc.TAX_DATA, f"missing tax data for {country}"
         data = tc.TAX_DATA[country]
@@ -125,9 +153,7 @@ class TestTaxData:
     def test_country_currency_links_to_currencies_table(self, tc):
         for code, data in tc.TAX_DATA.items():
             cur = data["currency"]
-            assert cur in tc.CURRENCIES, (
-                f"{code} currency {cur} missing from CURRENCIES table"
-            )
+            assert cur in tc.CURRENCIES, f"{code} currency {cur} missing from CURRENCIES table"
 
     def test_us_has_progressive_brackets(self, tc):
         us = tc.TAX_DATA["US"]
@@ -176,10 +202,7 @@ class TestCurrencies:
         assert tc.CURRENCIES["JPY"]["decimal_places"] == 0
 
     def test_digital_currencies_present(self, tc):
-        digital_found = [
-            code for code, info in tc.CURRENCIES.items()
-            if info.get("type") == "digital"
-        ]
+        digital_found = [code for code, info in tc.CURRENCIES.items() if info.get("type") == "digital"]
         assert len(digital_found) >= 2, "expected at least 2 digital currencies"
         for sym in ("BTC", "ETH"):
             assert sym in tc.CURRENCIES, f"missing digital currency {sym}"
@@ -302,10 +325,162 @@ class TestListAccessors:
         countries = tc.list_countries()
         assert isinstance(countries, list)
         assert "US" in countries
-        assert len(countries) >= 7
+        assert len(countries) >= 20
 
     def test_list_currencies(self, tc):
         currencies = tc.list_currencies()
         assert isinstance(currencies, list)
         assert "USD" in currencies
-        assert len(currencies) >= 10
+        assert len(currencies) >= 50
+
+
+# ── Expanded coverage tests for new jurisdictions ────────────────────────
+
+
+class TestExpandedTaxData:
+    def test_all_countries_have_currency_in_currencies_table(self, tc):
+        for code, data in tc.TAX_DATA.items():
+            cur = data["currency"]
+            assert cur in tc.CURRENCIES, f"{code} currency {cur} missing"
+
+    def test_countries_without_income_tax(self, tc):
+        ae = tc.TAX_DATA.get("AE")
+        sa = tc.TAX_DATA.get("SA")
+        assert ae is not None
+        assert sa is not None
+        assert "income_progressive" not in ae["tax_types"]
+        assert "income_progressive" not in sa["tax_types"]
+
+    def test_russia_has_flat_tax(self, tc):
+        ru = tc.TAX_DATA.get("RU")
+        assert ru is not None
+        assert "income_flat" in ru["tax_types"]
+
+    def test_singapore_has_many_brackets(self, tc):
+        sg = tc.TAX_DATA.get("SG")
+        assert sg is not None
+        brackets = sg.get("income_brackets")
+        assert brackets is not None
+        assert len(brackets) >= 10
+
+    def test_brazil_token_fields(self, tc):
+        br = tc.TAX_DATA.get("BR")
+        assert br is not None
+        assert br["currency"] == "BRL"
+        assert len(br["tax_types"]) >= 3
+
+    def test_nordic_countries_have_carbon_tax(self, tc):
+        for c in ["SE", "NO"]:
+            data = tc.TAX_DATA.get(c)
+            assert data is not None, f"missing {c}"
+            assert "carbon" in data["tax_types"], f"{c} missing carbon tax"
+
+
+class TestExpandedTaxSystems:
+    def test_excise_tax_defined(self, tc):
+        assert "excise" in tc.TAX_SYSTEMS
+        excise = tc.TAX_SYSTEMS["excise"]
+        assert excise["structure"] == "per_unit_specific"
+
+    def test_tariff_defined(self, tc):
+        assert "tariff" in tc.TAX_SYSTEMS
+        tariff = tc.TAX_SYSTEMS["tariff"]
+        assert tariff["base"] == "import_value_or_quantity"
+
+
+class TestExpandedFilingRequirements:
+    def test_ae_no_personal_income_tax_deadline(self, tc):
+        req = tc.get_filing_requirements("AE", "individual")
+        assert req is not None
+        dl = req["deadline"].lower()
+        assert "n/a" in dl or "no personal" in dl
+
+    def test_sa_no_personal_income_tax_deadline(self, tc):
+        req = tc.get_filing_requirements("SA", "individual")
+        assert req is not None
+        dl = req["deadline"].lower()
+        assert "n/a" in dl or "no personal" in dl
+
+    def test_in_corporation_deadline(self, tc):
+        req = tc.get_filing_requirements("IN", "corporation")
+        assert req is not None
+        assert "deadline" in req
+
+    def test_kr_individual_deadline(self, tc):
+        req = tc.get_filing_requirements("KR", "individual")
+        assert req is not None
+        assert "May" in req["deadline"]
+
+
+class TestExpandedCurrencies:
+    @pytest.mark.parametrize(
+        "code,name_substr",
+        [
+            ("TRY", "Lira"),
+            ("SAR", "Riyal"),
+            ("DKK", "Krone"),
+            ("PLN", "Zloty"),
+            ("THB", "Baht"),
+            ("MYR", "Ringgit"),
+            ("IDR", "Rupiah"),
+            ("PHP", "Peso"),
+            ("ARS", "Peso"),
+            ("NGN", "Naira"),
+            ("ILS", "Shekel"),
+            ("UAH", "Hryvnia"),
+            ("QAR", "Riyal"),
+            ("KWD", "Dinar"),
+            ("PKR", "Rupee"),
+            ("EGP", "Pound"),
+            ("VND", "Dong"),
+            ("TWD", "Dollar"),
+        ],
+    )
+    def test_expanded_fiat_currencies(self, tc, code, name_substr):
+        assert code in tc.CURRENCIES, f"missing currency {code}"
+        info = tc.CURRENCIES[code]
+        assert name_substr in info["name"]
+        assert "symbol" in info
+
+    def test_kwd_has_three_decimal_places(self, tc):
+        assert tc.CURRENCIES["KWD"]["decimal_places"] == 3
+
+    def test_cfa_francs_present(self, tc):
+        assert "XOF" in tc.CURRENCIES
+        assert "XAF" in tc.CURRENCIES
+        assert tc.CURRENCIES["XOF"]["type"] == "fiat"
+        assert tc.CURRENCIES["XAF"]["type"] == "fiat"
+
+
+class TestExpandedTaxAuthorities:
+    @pytest.mark.parametrize(
+        "key,expected_name_substr",
+        [
+            ("IN", "Income Tax"),
+            ("BR", "Receita Federal"),
+            ("MX", "SAT"),
+            ("ZA", "SARS"),
+            ("KR", "National Tax Service"),
+            ("SG", "IRAS"),
+            ("RU", "Federal Tax Service"),
+            ("AE", "Federal Tax Authority"),
+            ("SA", "ZATCA"),
+            ("TR", "Gelir"),
+            ("IT", "Agenzia delle Entrate"),
+            ("ES", "AEAT"),
+            ("NL", "Belastingdienst"),
+            ("CH", "ESTV"),
+            ("SE", "Skatteverket"),
+            ("NO", "Skatteetaten"),
+            ("IE", "Revenue"),
+            ("NZ", "Inland Revenue"),
+            ("DK", "Skattestyrelsen"),
+        ],
+    )
+    def test_expanded_authorities(self, tc, key, expected_name_substr):
+        assert key in tc.TAX_AUTHORITIES, f"missing authority for {key}"
+        auth = tc.TAX_AUTHORITIES[key]
+        assert expected_name_substr in auth["name"]
+        assert "portal_url" in auth
+        assert auth["portal_url"].startswith(("http://", "https://"))
+        assert "filing_system" in auth

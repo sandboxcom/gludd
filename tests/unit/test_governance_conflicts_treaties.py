@@ -14,11 +14,7 @@ from typing import ClassVar
 import pytest
 
 _COLLECTION_ROOT = (
-    Path(__file__).resolve().parents[2]
-    / "collections"
-    / "ansible_collections"
-    / "general_ludd"
-    / "governance"
+    Path(__file__).resolve().parents[2] / "collections" / "ansible_collections" / "general_ludd" / "governance"
 )
 _MODULE_UTILS = _COLLECTION_ROOT / "plugins" / "module_utils"
 
@@ -49,8 +45,13 @@ except ModuleNotFoundError:
 class TestConflictTypes:
     def test_all_seven_required_types_present(self):
         required = {
-            "interstate", "intrastate", "asymmetric",
-            "cyber", "economic", "proxy", "frozen",
+            "interstate",
+            "intrastate",
+            "asymmetric",
+            "cyber",
+            "economic",
+            "proxy",
+            "frozen",
         }
         for name in required:
             assert name in ConflictType, f"missing conflict type: {name}"
@@ -74,7 +75,7 @@ class TestConflictTypes:
 class TestActiveConflicts:
     def test_active_conflicts_is_nonempty_list(self):
         assert isinstance(ACTIVE_CONFLICTS, list)
-        assert len(ACTIVE_CONFLICTS) >= 3
+        assert len(ACTIVE_CONFLICTS) >= 10
 
     def test_each_conflict_has_required_fields(self):
         required = {"id", "name", "region", "type", "parties", "status"}
@@ -84,9 +85,7 @@ class TestActiveConflicts:
 
     def test_each_conflict_type_is_valid_enum(self):
         for c in ACTIVE_CONFLICTS:
-            assert c["type"] in ConflictType, (
-                f"conflict {c['id']} has invalid type {c['type']!r}"
-            )
+            assert c["type"] in ConflictType, f"conflict {c['id']} has invalid type {c['type']!r}"
 
     def test_parties_are_lists(self):
         for c in ACTIVE_CONFLICTS:
@@ -134,14 +133,29 @@ class TestLookupConflict:
 
 
 class TestTreatyDatabase:
-    REQUIRED_TREATIES: ClassVar[frozenset[str]] = frozenset({
-        "geneva_conventions", "paris_agreement", "nato",
-        "npt", "unclos", "cptpp", "usmca",
-    })
+    REQUIRED_TREATIES: ClassVar[frozenset[str]] = frozenset(
+        {
+            "geneva_conventions",
+            "paris_agreement",
+            "nato",
+            "npt",
+            "unclos",
+            "cptpp",
+            "usmca",
+            "refugee_convention",
+            "chemical_weapons",
+            "biological_diversity",
+            "rights_of_child",
+            "montreal_protocol",
+            "ctbt",
+            "arms_trade",
+            "tobacco_control",
+        }
+    )
 
     def test_treaty_database_is_list(self):
         assert isinstance(TREATY_DATABASE, list)
-        assert len(TREATY_DATABASE) >= 7
+        assert len(TREATY_DATABASE) >= 15
 
     def test_all_required_treaties_present(self):
         ids = {t["id"] for t in TREATY_DATABASE}
@@ -150,7 +164,11 @@ class TestTreatyDatabase:
 
     def test_each_treaty_has_required_fields(self):
         required = {
-            "id", "name", "subject", "parties", "enforcement",
+            "id",
+            "name",
+            "subject",
+            "parties",
+            "enforcement",
         }
         for t in TREATY_DATABASE:
             missing = required - set(t.keys())
@@ -159,9 +177,7 @@ class TestTreatyDatabase:
     def test_enforcement_is_dict_or_str(self):
         for t in TREATY_DATABASE:
             enf = t["enforcement"]
-            assert isinstance(enf, (dict, str, list)), (
-                f"treaty {t['id']} enforcement has bad type {type(enf)}"
-            )
+            assert isinstance(enf, (dict, str, list)), f"treaty {t['id']} enforcement has bad type {type(enf)}"
 
 
 # ============================================================================
@@ -267,9 +283,7 @@ class TestGetTreatyObligations:
 
 
 class TestInternationalCourts:
-    REQUIRED_COURTS: ClassVar[frozenset[str]] = frozenset(
-        {"icj", "icc", "icty", "ictr", "wto_dsb"}
-    )
+    REQUIRED_COURTS: ClassVar[frozenset[str]] = frozenset({"icj", "icc", "icty", "ictr", "wto_dsb"})
 
     def test_all_required_courts_present(self):
         ids = {c["id"] for c in INTERNATIONAL_COURTS}
