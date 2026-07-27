@@ -5,6 +5,7 @@ the main thread must dispatch subagents and poll — never sleep. This test
 extracts the plugin's exported WAIT_PATTERNS regex list and DENY_MESSAGE
 from the TypeScript source and exercises each against the spec cases.
 """
+
 from __future__ import annotations
 
 import re
@@ -28,6 +29,13 @@ def _extract_regex_literals(src: str) -> list[str]:
 def _extract_wait_patterns(src: str) -> list[re.Pattern[str]]:
     block_match = re.search(r"WAIT_PATTERNS[^=]*=\s*Object\.freeze\(\[(.*?)\]\)", src, re.DOTALL)
     assert block_match, "WAIT_PATTERNS export not found in plugin source"
+    block = block_match.group(1)
+    return [re.compile(lit.strip().strip("/")) for lit in re.findall(r"/(.*?)/", block)]
+
+
+def _extract_ci_poll_patterns(src: str) -> list[re.Pattern[str]]:
+    block_match = re.search(r"CI_POLL_DISPATCH_PATTERNS[^=]*=\s*Object\.freeze\(\[(.*?)\]\)", src, re.DOTALL)
+    assert block_match, "CI_POLL_DISPATCH_PATTERNS export not found in plugin source"
     block = block_match.group(1)
     return [re.compile(lit.strip().strip("/")) for lit in re.findall(r"/(.*?)/", block)]
 
@@ -91,6 +99,68 @@ class TestWaitPatternMatcher:
         assert not any(p.search(cmd) for p in patterns), f"Should allow: {cmd!r}"
 
 
+class TestCiPollDispatchPatterns:
+    """Structural + behavioral pin on CI_POLL_DISPATCH_PATTERNS.
+
+    Per AGENTS.md 'CI-Poll Subagents Are Forbidden' (2026-07-08):
+    dispatch prompts matching poll/loop/wait-for-CI patterns are denied.
+    """
+
+    @pytest.fixture(scope="class")
+    def patterns(self) -> list[re.Pattern[str]]:
+        return _extract_ci_poll_patterns(_plugin_source())
+
+    @pytest.fixture(scope="class")
+    def src(self) -> str:
+        return _plugin_source()
+
+    def test_exports_ci_poll_dispatch_patterns(self, src):
+        assert "CI_POLL_DISPATCH_PATTERNS" in src, "CI_POLL_DISPATCH_PATTERNS export missing from plugin source"
+
+    def test_exports_ci_poll_deny_message(self, src):
+        assert "CI_POLL_DENY_MESSAGE" in src, "CI_POLL_DENY_MESSAGE export missing from plugin source"
+
+    def test_pattern_every_n_min_exists(self, src):
+        assert re.search(r"/\\bevery\\s\+\\d\+\\s\*\(\?:min\|minutes\?\)\\b/i", src), (
+            "Pattern for 'every N min' not found in CI_POLL_DISPATCH_PATTERNS"
+        )
+
+    def test_pattern_poll_ci_verdict_exists(self, src):
+        assert re.search(r"/\\bpoll\\s\.\*\\bmake\\s\+ci-verdict/i", src), (
+            "Pattern for 'poll.*ci-verdict' not found in CI_POLL_DISPATCH_PATTERNS"
+        )
+
+    @pytest.mark.parametrize(
+        "prompt",
+        [
+            "poll CI until terminal and report back",
+            "wait for CI green then commit",
+            "loop make ci-verdict every 30 seconds until it passes",
+            "wait until CI is green",
+            "polling for CI status until green",
+            "make ci-await for the current branch",
+            "check every 5 min whether CI finished",
+            "poll the make ci-verdict output and summarize",
+            "run every 2 minutes up to 10 iterations to check CI",
+        ],
+    )
+    def test_deny_on_ci_poll_prompts(self, patterns, prompt):
+        assert any(p.search(prompt) for p in patterns), f"Should deny CI-poll dispatch prompt: {prompt!r}"
+
+    @pytest.mark.parametrize(
+        "prompt",
+        [
+            "add a new test for the enforce-no-wait plugin",
+            "fix lint errors in src/general_ludd/daemon.py",
+            "run make ci-verdict-safe FORCE=1 to check CI once",
+            "write a structural test for the guardrail-pattern skill",
+            "make gate-background and poll gate-status-check from a subagent",
+        ],
+    )
+    def test_allow_on_normal_prompts(self, patterns, prompt):
+        assert not any(p.search(prompt) for p in patterns), f"Should allow normal dispatch prompt: {prompt!r}"
+
+
 class TestDenyMessageContract:
     def test_message_mentions_dispatch(self):
         src = _plugin_source()
@@ -100,6 +170,4 @@ class TestDenyMessageContract:
 
     def test_message_mentions_env_override(self):
         src = _plugin_source()
-        assert "GLUDD_NO_WAIT_ENFORCE=0" in src, (
-            "DENY_MESSAGE or plugin should name the env-var override"
-        )
+        assert "GLUDD_NO_WAIT_ENFORCE=0" in src, "DENY_MESSAGE or plugin should name the env-var override"
