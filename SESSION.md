@@ -21,7 +21,7 @@
 - **HEAD: `fbb9e985`** on `development` branch
 - **Version: 0.1.0-beta.3** (pyproject.toml, __init__.py, README.md, CHANGELOG)
 - **Push status: PUSHED** — molecule fix commit on development
-- **CI: PENDING** — run 30235375951 on `fbb9e985`, status='in_progress'
+- **CI: PENDING** — run 30235375950 on `fbb9e985`, status='in_progress', molecule fix pushed
 - **Release readiness: BLOCKED** on CI green for release-cut
 - **Gate-lite: pre-existing failures only** — lint 0, typecheck ≤ baseline, collect OK
 - **Working tree: CLEAN**
@@ -73,7 +73,7 @@
 
 | Blocker | Status |
 |---------|--------|
-| CI green on development HEAD `fbb9e985` | PENDING (run 30235375951, in_progress) |
+| CI green on development HEAD `fbb9e985` | PENDING (run 30235375950, in_progress) |
 | Local gate green | PRE-EXISTING FAILURES ONLY |
 | `make release-cut TAG=v0.1.0-beta.3` | BLOCKED on CI green |
 | `make verify-release-completeness` 12/12 | BLOCKED on release-cut |
@@ -84,7 +84,7 @@
 2. `make release-cut TAG=v0.1.0-beta.3 MSG='beta.3 release: governance 16 domains (759 tests), memory consolidation (97 tests), branch coverage e2e (137 tests), connector batch5 (158/158), S1/S2 stub closure (120 tests), task tracking enforcement (46 tests), ci-await forbidden codification (3-layer), release pipeline E2E (37 tests), VALID_TRANSITIONS fix'`
 3. `make verify-release-completeness TAG=v0.1.0-beta.3`
 
-- **Last Updated: 2026-07-26 — Session 54 (COMPREHENSIVE).** HEAD `fbb9e985` on `development` (pushed). CI PENDING (run 30235375951, in_progress on `fbb9e985`). Molecule CI fix pushed. 506+ new tests across 17 files all passing. Category breakout: branch coverage 137 tests (5 files), governance 759 tests (16 domains), memory consolidation 97 tests, S1/S2 stub closure 120 tests, task tracking enforcement 46 tests, connector batch5 158 tests. ci-await codified at 3 layers (AGENTS.md policy + enforce-no-wait.ts plugin + structural test). VALID_TRANSITIONS fixed. Release pipeline E2E 37 tests + contract 8 tests all passing. Gate-lite: pre-existing failures only. Release v0.1.0-beta.3 blocked on CI green.
+- **Last Updated: 2026-07-26 — Session 54 (COMPREHENSIVE).** HEAD `fbb9e985` on `development` (pushed). CI PENDING (run 30235375950, in_progress on `fbb9e985`). Molecule CI fix pushed. 506+ new tests across 17 files all passing. Category breakout: branch coverage 137 tests (5 files), governance 759 tests (16 domains), memory consolidation 97 tests, S1/S2 stub closure 120 tests, task tracking enforcement 46 tests, connector batch5 158 tests. ci-await codified at 3 layers (AGENTS.md policy + enforce-no-wait.ts plugin + structural test). VALID_TRANSITIONS fixed. Release pipeline E2E 37 tests + contract 8 tests all passing. Gate-lite: pre-existing failures only. Release v0.1.0-beta.3 blocked on CI green.
 
 ---
 
