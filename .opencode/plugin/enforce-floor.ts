@@ -49,6 +49,39 @@ const MESSAGE_BOUNDARY_MS = parseInt(
 )
 const POST_DISPATCH_GRACE_MS = 15000
 const RESULT_PHASE_READ_LIMIT = 3
+const THROTTLE_PATH = "/tmp/gludd-load-throttle"
+const THROTTLE_ACTIVE_MS = 120_000
+const THROTTLE_STALE_MS = 300_000
+function getEffectiveFloor(): { floor: number; waveWidth: number; target: number; throttled: boolean } {
+  try {
+    if (!fs.existsSync(THROTTLE_PATH)) return { floor: FLOOR, waveWidth: WAVE_WIDTH, target: TARGET, throttled: false }
+    const raw = JSON.parse(fs.readFileSync(THROTTLE_PATH, "utf8"))
+    const ts = typeof raw.ts === "number" ? raw.ts : 0
+    const age = Date.now() - ts
+    if (ts === 0 || age > THROTTLE_STALE_MS || age < 0) {
+      return { floor: FLOOR, waveWidth: WAVE_WIDTH, target: TARGET, throttled: false }
+    }
+    if (age > THROTTLE_ACTIVE_MS) {
+      return { floor: FLOOR, waveWidth: WAVE_WIDTH, target: TARGET, throttled: false }
+    }
+    const load = typeof raw.load === "number" ? raw.load : 0
+    const throttleFloor = typeof raw.floor === "number" && raw.floor > 0 ? raw.floor : FLOOR
+    const effectiveFloor = Math.min(FLOOR, throttleFloor)
+    const ratio = effectiveFloor / FLOOR
+    console.warn(
+      `LOAD THROTTLE ACTIVE: load=${load.toFixed(2)}, age=${Math.round(age / 1000)}s, ` +
+      `throttle_floor=${throttleFloor}, effective_floor=${effectiveFloor}, normal_floor=${FLOOR}`
+    )
+    return {
+      floor: effectiveFloor,
+      waveWidth: Math.max(2, Math.round(WAVE_WIDTH * ratio)),
+      target: Math.max(2, Math.round(TARGET * ratio)),
+      throttled: true,
+    }
+  } catch {
+    return { floor: FLOOR, waveWidth: WAVE_WIDTH, target: TARGET, throttled: false }
+  }
+}
 // ── Helpers ────────────────────────────────────────────────────────────────
 function isCommitBashCommand(cmd: string): boolean {
   return /^make\s+(git-commit|commit-no-verify|git-commit-file|test-and-commit|repo-commit|feature-done|git-merge)(\s|$)/.test(cmd)
@@ -274,7 +307,7 @@ function _isInSessionStartWindow(): boolean {
 }
 const COMPULSIVE_CHECK_RE = /^make\s+(git-log|ci-verdict|git-diff|gate-refresh)(\s|\/|$)/
 // ── Block-message builders ─────────────────────────────────────────────────
-function _buildFloorBreachBlock(streakCount: number, effectiveMax: number, commands: DispatchCommand[]): string {
+function _buildFloorBreachBlock(streakCount: number, effectiveMax: number, commands: DispatchCommand[], displayFloor: number, displayTarget: number): string {
   const lines = [
     "",
     "█████████████████████████████████████████████████████████████████████████████",
@@ -283,7 +316,7 @@ function _buildFloorBreachBlock(streakCount: number, effectiveMax: number, comma
     "█  ⛔  AGENT-FLOOR BREACH — NON-DISPATCH CALL BLOCKED  ⛔                      █",
     "█                                                                               █",
     `█  ${streakCount} consecutive non-dispatch calls (MAX allowed: ${effectiveMax}).                      █`,
-    `█  FLOOR = ${FLOOR} subagents.  TARGET = ${TARGET}.  Current pool: BELOW FLOOR.                  █`,
+    `█  FLOOR = ${displayFloor} subagents.  TARGET = ${displayTarget}.  Current pool: BELOW FLOOR.                  █`,
     "█                                                                               █",
     "█  THE ONLY ALLOWED TOOL CALLS RIGHT NOW:                                       █",
     "█    → task   (launch a subagent on concrete work)                              █",
@@ -322,6 +355,7 @@ const defaultImpl: HotModule = {
     if (_floorInitPid !== process.pid || getSessionStartMtimeMs() !== _floorSessionStartMtime) {
       _resetFloorState()
     }
+    const eff = getEffectiveFloor()
     try {
       if (!FLOOR_ENFORCE) return
       const tool = (input?.tool ?? "") as string
@@ -344,13 +378,13 @@ const defaultImpl: HotModule = {
       // ── Time-based result-processing phase detection ─────────────────
       const msSinceDispatch = now - _lastDispatchTs
       const inResultPhase = _dispatchCount > 0 && msSinceDispatch < POST_DISPATCH_GRACE_MS && msSinceDispatch > 2000
-      if (isDispatchTool(tool) && _thisMessageDispatchCount >= WAVE_WIDTH && openWorkExists()) {
+      if (isDispatchTool(tool) && _thisMessageDispatchCount >= eff.waveWidth && openWorkExists()) {
         return {
           permissionDecision: "deny" as const,
           message: [
             "⛔ WAVE WIDTH VIOLATION — DISPATCH BLOCKED",
             "",
-            `This wave already contains ${_thisMessageDispatchCount} dispatches; the required width is ${WAVE_WIDTH}.`,
+            `This wave already contains ${_thisMessageDispatchCount} dispatches; the required width is ${eff.waveWidth}.`,
             "Do not exceed the configured concurrent-agent ceiling.",
           ].join("\n"),
         }
@@ -369,7 +403,7 @@ const defaultImpl: HotModule = {
         _sessionDispatchCount++
         if (_dispatchCount > _dispatchPeak) _dispatchPeak = _dispatchCount
         _consecutiveReadsInResultPhase = 0
-        if (_thisMessageDispatchCount === WAVE_WIDTH) {
+        if (_thisMessageDispatchCount === eff.waveWidth) {
           recordDispatchWaveComplete(_thisMessageDispatchCount)
         }
         return
@@ -378,7 +412,7 @@ const defaultImpl: HotModule = {
       // ten-wide wave before the main thread can resume inline activity.
       if (
         _prevMessageDispatchCount > 0 &&
-        _prevMessageDispatchCount < WAVE_WIDTH &&
+        _prevMessageDispatchCount < eff.waveWidth &&
         openWorkExists()
       ) {
         return {
@@ -386,7 +420,7 @@ const defaultImpl: HotModule = {
           message: [
             "⛔ WAVE WIDTH VIOLATION — INLINE WORK BLOCKED",
             "",
-            `Previous message dispatched ${_prevMessageDispatchCount}; required wave width is ${WAVE_WIDTH}.`,
+            `Previous message dispatched ${_prevMessageDispatchCount}; required wave width is ${eff.waveWidth}.`,
             "Run the pre-dispatch audit and submit one parallel wave of exactly 10 concrete tasks.",
             "Do not resume reads, edits, or bash calls after an undersized wave.",
           ].join("\n"),
@@ -577,7 +611,7 @@ const defaultImpl: HotModule = {
       const commands = _buildDispatchCommands()
       return {
         permissionDecision: "deny" as const,
-        message: _buildFloorBreachBlock(_streakCount, effectiveMax, commands),
+        message: _buildFloorBreachBlock(_streakCount, effectiveMax, commands, eff.floor, eff.target),
       }
     } catch {
       return
