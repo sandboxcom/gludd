@@ -89,7 +89,7 @@ def _mock_agent_token_model() -> ExitStack:
     config (the ``order_by=lambda: TodoEventModel.id`` at db/models.py:307
     raises ``NotImplementedError`` during mapper configuration)."""
     stack = ExitStack()
-    mock_model = stack.enter_context(patch("general_ludd.db.models.AgentTokenModel"))
+    mock_model = stack.enter_context(patch("general_ludd.db.models.AgentTokenModel", new_callable=MagicMock))
     mock_model.side_effect = lambda **kw: type("_Record", (), kw)()
     return stack
 
