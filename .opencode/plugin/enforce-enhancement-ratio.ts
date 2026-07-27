@@ -2,7 +2,6 @@ import type { Plugin } from "@opencode-ai/plugin"
 import * as fs from "node:fs"
 import { loadHotModule, type HotModule } from "../lib/hot_reload.ts"
 import { isSubagent, reportAlive, writeHeartbeat } from "../lib/shared.ts"
-// AGENTS.md ratio guard marker; s.early_warned = false
 // enforce-enhancement-ratio.ts — per-wave enhancement/fix dispatch ratio enforcement.
 //
 // AGENTS.md COST-EFFICIENCY DIRECTIVE §5 (2026-07-12): at least 50% of every
@@ -49,12 +48,11 @@ interface RatioState {
   session_enhancements: number
   session_fixes: number
   session_unknown: number
-  early_warned: boolean
   lastPid: number
   lastTs: number
 }
 function _freshState(): RatioState {
-  return { wave: [], session_enhancements: 0, session_fixes: 0, session_unknown: 0, early_warned: false, lastPid: process.pid, lastTs: 0 }
+  return { wave: [], session_enhancements: 0, session_fixes: 0, session_unknown: 0, lastPid: process.pid, lastTs: 0 }
 }
 function _isStale(raw: any): boolean {
   if (typeof raw.lastPid === "number" && raw.lastPid !== process.pid) return true
@@ -71,7 +69,6 @@ function loadState(): RatioState {
         session_enhancements: typeof raw.session_enhancements === "number" ? raw.session_enhancements : 0,
         session_fixes: typeof raw.session_fixes === "number" ? raw.session_fixes : 0,
         session_unknown: typeof raw.session_unknown === "number" ? raw.session_unknown : 0,
-        early_warned: typeof raw.early_warned === "boolean" ? raw.early_warned : false,
         lastPid: typeof raw.lastPid === "number" ? raw.lastPid : process.pid,
         lastTs: typeof raw.lastTs === "number" ? raw.lastTs : Date.now(),
       }
@@ -137,7 +134,6 @@ const defaultImpl: HotModule = {
         if (fixRatio > 0.5) {
           const fixPct = (fixRatio * 100).toFixed(0)
           const enhCount = s.wave.length - fixCount
-          s.early_warned = false
           s.wave = []
           saveState(s)
           if (BLOCK) {
@@ -150,7 +146,6 @@ const defaultImpl: HotModule = {
             return
           }
         }
-        s.early_warned = false
         s.wave = []
       }
       saveState(s)
