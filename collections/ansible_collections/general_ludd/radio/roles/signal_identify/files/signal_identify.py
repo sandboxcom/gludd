@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 import os
 import sys
 from typing import Any
@@ -70,7 +69,7 @@ def signal_identify(
             magnitude = np.abs(iq)
 
             if estimated_bandwidth is None or estimated_shape == "":
-                f, t, Sxx = spectrogram(
+                f, _t, Sxx = spectrogram(
                     magnitude,
                     sample_rate,
                     nperseg=min(1024, len(magnitude) // 4),
@@ -137,15 +136,17 @@ def signal_identify(
 
     results = []
     for c in candidates[:10]:
-        results.append({
-            "scheme": c["scheme"],
-            "category": c["category"],
-            "score": c["score"],
-            "bandwidth_hz_typical": c["bandwidth_hz_typical"],
-            "spectrum_shape": c["spectrum_shape"],
-            "confidence": round(c["score"] / 8.0, 3),
-            "typical_use": c["typical_use"],
-        })
+        results.append(
+            {
+                "scheme": c["scheme"],
+                "category": c["category"],
+                "score": c["score"],
+                "bandwidth_hz_typical": c["bandwidth_hz_typical"],
+                "spectrum_shape": c["spectrum_shape"],
+                "confidence": round(c["score"] / 8.0, 3),
+                "typical_use": c["typical_use"],
+            }
+        )
 
     protocol_candidates = _deduce_protocols(results, freq_mhz)
 
