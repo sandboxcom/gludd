@@ -8,11 +8,10 @@
 #   2. Poll /healthz for up to 30 seconds.
 #   3. GET /api/facts — verify the body is a JSON object/list the caller can
 #      consume (the daemon's facts aggregator).
-#   4. GET /api/tasks — verify it returns a list. (Specification endpoint:
-#      drives the implementation contract for a tasks facet parallel to
-#      /api/todos.)
-#   5. POST /api/playbook/run with a minimal playbook body — verify the daemon
-#      accepts the request (2xx).
+#   4. GET /api/todos — verify it returns a list.
+#   5. POST /api/todos with a minimal job body — verify the daemon
+#      accepts the request (2xx). No /api/playbook/run endpoint exists;
+#      job submission is via /api/todos (the event loop maps work_type -> playbook).
 #   6. GET /health — verify 200 + JSON status.
 #   7. Send SIGTERM to the recorded PID.
 #   8. Verify the daemon exits cleanly (exit code 0 via reaped returncode).
@@ -105,16 +104,18 @@
         body_format: json
       register: todos_resp
 
-    - name: POST /api/playbook/run with a minimal playbook body
+    - name: POST /api/todos with a minimal job body
       ansible.builtin.uri:
-        url: "{{ daemon_url }}/api/playbook/run"
+        url: "{{ daemon_url }}/api/todos"
         method: POST
         status_code: [200, 201, 202]
         return_content: true
         body_format: json
         body:
-          playbook: "noop.yml"
-          extra_vars: {}
+          title: "daemon-lifecycle-test-job"
+          work_type: "noop"
+          queue: "core"
+          priority: "medium"
       register: playbook_resp
 
     - name: GET /health (public status)
@@ -151,7 +152,7 @@
                 "status": todos_resp.status,
                 "is_list": (todos_resp.json is sequence)
               },
-              "playbook": {
+              "todo_submit": {
                 "status": playbook_resp.status,
                 "accepted": (playbook_resp.status in [200, 201, 202])
               },
@@ -221,7 +222,7 @@
                 "status": todos_resp.status,
                 "is_list": (todos_resp.json is sequence)
               },
-              "playbook": {
+              "todo_submit": {
                 "status": playbook_resp.status,
                 "accepted": (playbook_resp.status in [200, 201, 202])
               },

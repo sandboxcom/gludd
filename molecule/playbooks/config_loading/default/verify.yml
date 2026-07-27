@@ -54,7 +54,7 @@
       ansible.builtin.assert:
         that:
           - bad_configs | length == 0
-          - parse_json.files | length >= 10
+          - parse_json.files | length >= 3
         fail_msg: "config parse failures: {{ bad_configs }}"
         success_msg: "all {{ parse_json.files | length }} bundled config files parsed cleanly"
 

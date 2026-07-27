@@ -17,7 +17,7 @@
     _smoke_out_dir: /tmp/gludd-binary-smoke-macos
     _daemon_port: "{{ lookup('env', 'GLUDD_SMOKE_PORT') | default('18000', true) }}"
     _daemon_url: "http://127.0.0.1:{{ _daemon_port }}"
-    _project_root: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') | default(playbook_dir | dirname | dirname, true) }}"
+    _project_root: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') | default(playbook_dir | dirname | dirname | dirname | dirname, true) }}"
     _local_binary: "{{ _project_root }}/dist/gludd"
     _override_binary: "{{ lookup('env', 'GLUDD_BINARY_PATH') }}"
     _resolved_binary: "{{ _override_binary if _override_binary | length > 0 else _local_binary }}"

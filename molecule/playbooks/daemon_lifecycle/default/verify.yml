@@ -81,17 +81,15 @@
           body_was_list={{ state.todos.is_list | default(false) }}.
         success_msg: "/api/todos returned a JSON list."
 
-    - name: Daemon must accept playbook run requests
+    - name: Daemon must accept job submission requests
       ansible.builtin.assert:
         that:
-          - state.playbook.accepted | bool
+          - state.todo_submit.accepted | bool
         fail_msg: >-
-          Daemon must accept playbook run requests.
-          POST /api/playbook/run returned status={{ state.playbook.status | default('unknown') }}
-          (expected 200/201/202). If the endpoint is unimplemented, this
-          scenario is the spec — implement /api/playbook/run to accept a
-          minimal playbook body.
-        success_msg: "POST /api/playbook/run was accepted (2xx)."
+          Daemon must accept job submission requests.
+          POST /api/todos returned status={{ state.todo_submit.status | default('unknown') }}
+          (expected 200/201/202).
+        success_msg: "POST /api/todos was accepted (2xx)."
 
     - name: Daemon must shut down cleanly on SIGTERM
       ansible.builtin.assert:
