@@ -105,7 +105,7 @@ _commit-lock-acquire check-clean-tree worktree-state all-worktree-state main-wor
         check-readme-status check-types check-types-baseline check-plugin-versions check-plugin-versions-quiet \
         check-plugin-liveness check-plugin-health write-plugin-manifest codemod-lean-enforcement-plugins restart-opencode disengage-enforcement reload-enforcement \
         rearm-enforcement enforcement-status \
-        hot-reload-plugins hot-reload-status hot-reload-clean \
+        hot-reload-plugins hot-reload-status hot-reload-clean check-plugin-restart-needed \
          verify-release-artifact verify-release-completeness git-tag-rm git-tag-delete git-tag-move release-cut release-recut release-create release-delete \
          release-upload-assets git-restore-from release-deploy \
         build-sandbox-image verify-sandbox-image clean-sandbox-images \
@@ -3082,6 +3082,9 @@ _gate-refresh-body:
 	echo "=== GATE PHASE: verify-hot-reload ==="; \
 	printf "verify-hot-reload " >> .gate-status; \
 	$(MAKE) --no-print-directory check-hot-reload-fresh > .gate-logs/verify-hot-reload.log 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed && tail -30 .gate-logs/verify-hot-reload.log); \
+	echo "=== GATE PHASE: restart-needed ==="; \
+	printf "restart-needed " >> .gate-status; \
+	$(MAKE) --no-print-directory check-plugin-restart-needed > .gate-logs/restart-needed.log 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed && tail -30 .gate-logs/restart-needed.log); \
 	echo "=== GATE PHASE: check-status-table ==="; \
 	printf "check-status-table " >> .gate-status; \
 	$(MAKE) --no-print-directory check-status-table > .gate-logs/check-status-table.log 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed && tail -30 .gate-logs/check-status-table.log); \
@@ -4732,6 +4735,16 @@ check-hot-reload-fresh:
 		echo "CI environment — skipping hot-reload freshness check (modules in /tmp/ don't persist across steps)"; \
 	else \
 		$(UV) run python3 scripts/check_hot_reload_fresh.py; \
+	fi
+
+# Mechanical restart-needed check: compares session-start timestamp against
+# every .ts source file under .opencode/plugin/ (including impl/ sub-files).
+# Exit 1 = restart needed; exit 0 = current.  CI-safe (skipped when GLUDD_CI=1).
+check-plugin-restart-needed:
+	@if [ "$${CI:-}" = "true" ] || [ "$${GLUDD_CI:-}" = "1" ]; then \
+		echo "CI environment — skipping plugin restart-needed check (no running session)"; \
+	else \
+		$(UV) run python3 scripts/check_plugin_restart_needed.py; \
 	fi
 
 # --- Restart opencode for plugin changes to take effect ---
