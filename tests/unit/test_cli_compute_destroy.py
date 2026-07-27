@@ -24,9 +24,10 @@ class TestComputeDestroyParserWiring:
     """The ``compute destroy`` subcommand must parse like sibling subcommands."""
 
     def test_destroy_invokes_cmd(self):
-        with patch("sys.argv", ["gludd", "compute", "destroy", "inst-1234"]), patch(
-            "general_ludd.cli._cmd_compute_destroy"
-        ) as mock_cmd:
+        with (
+            patch("sys.argv", ["gludd", "compute", "destroy", "inst-1234"]),
+            patch("general_ludd.cli._cmd_compute_destroy") as mock_cmd,
+        ):
             main()
         mock_cmd.assert_called_once()
         args = mock_cmd.call_args[0][0]
@@ -34,10 +35,13 @@ class TestComputeDestroyParserWiring:
         assert args.daemon_url == "http://localhost:8000"
 
     def test_destroy_custom_daemon_url(self):
-        with patch(
-            "sys.argv",
-            ["gludd", "compute", "destroy", "inst-5678", "--daemon-url", "http://node-2:9000"],
-        ), patch("general_ludd.cli._cmd_compute_destroy") as mock_cmd:
+        with (
+            patch(
+                "sys.argv",
+                ["gludd", "compute", "destroy", "inst-5678", "--daemon-url", "http://node-2:9000"],
+            ),
+            patch("general_ludd.cli._cmd_compute_destroy") as mock_cmd,
+        ):
             main()
         args = mock_cmd.call_args[0][0]
         assert args.instance_id == "inst-5678"
@@ -58,7 +62,7 @@ class TestComputeDestroy:
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {"destroyed": "inst-1234"}
-        with patch("httpx.delete", return_value=mock_resp):
+        with patch("general_ludd.cli.httpx.delete", return_value=mock_resp):
             _cmd_compute_destroy(_ns(instance_id="inst-1234"))
         out = capsys.readouterr().out
         assert "Destroyed" in out
@@ -70,7 +74,7 @@ class TestComputeDestroy:
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {"destroyed": "inst-42"}
-        with patch("httpx.delete", return_value=mock_resp) as mock_delete:
+        with patch("general_ludd.cli.httpx.delete", return_value=mock_resp) as mock_delete:
             _cmd_compute_destroy(_ns(instance_id="inst-42", daemon_url="http://daemon:8000"))
         called_url = mock_delete.call_args.args[0]
         assert called_url == "http://daemon:8000/admin/compute/destroy/inst-42"
@@ -81,7 +85,7 @@ class TestComputeDestroy:
         mock_resp = MagicMock()
         mock_resp.status_code = 404
         mock_resp.text = "Unknown instance_id"
-        with patch("httpx.delete", return_value=mock_resp), pytest.raises(SystemExit):
+        with patch("general_ludd.cli.httpx.delete", return_value=mock_resp), pytest.raises(SystemExit):
             _cmd_compute_destroy(_ns(instance_id="inst-ghost"))
 
     def test_destroy_server_error_exits(self):
@@ -90,7 +94,7 @@ class TestComputeDestroy:
         mock_resp = MagicMock()
         mock_resp.status_code = 500
         mock_resp.text = "compute destroy failed"
-        with patch("httpx.delete", return_value=mock_resp), pytest.raises(SystemExit):
+        with patch("general_ludd.cli.httpx.delete", return_value=mock_resp), pytest.raises(SystemExit):
             _cmd_compute_destroy(_ns(instance_id="inst-broken"))
 
     def test_destroy_connect_error_exits(self):
@@ -98,7 +102,8 @@ class TestComputeDestroy:
 
         from general_ludd.cli import _cmd_compute_destroy
 
-        with patch("httpx.delete", side_effect=httpx.ConnectError("refused")), pytest.raises(
-            SystemExit
+        with (
+            patch("general_ludd.cli.httpx.delete", side_effect=httpx.ConnectError("refused")),
+            pytest.raises(SystemExit),
         ):
             _cmd_compute_destroy(_ns(instance_id="inst-1234"))
