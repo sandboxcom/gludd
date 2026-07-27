@@ -719,6 +719,14 @@ def _cmd_list(args: argparse.Namespace) -> None:
     relations = get_international_relations()
     legal = get_legal_systems()
     finance = get_public_finance()
+    jurisd = get_jurisdictions()
+    classif = get_classification_markings()
+    author = get_authority_registry()
+    info_cls = get_info_classification()
+    dm = get_decision_makers()
+    postal = get_postal_delivery()
+    military = get_military_service()
+    licenses = get_licenses_permits()
 
     domains = {
         "borders": {
@@ -738,8 +746,8 @@ def _cmd_list(args: argparse.Namespace) -> None:
             "examples": [c["name"] for c in ct.ACTIVE_CONFLICTS[:3]],
         },
         "tax_currency": {
-            "count": len(tax_cur.TAX_CURRENCY),
-            "examples": list(sorted(tax_cur.TAX_CURRENCY))[:3],
+            "count": len(tax_cur.TAX_DATA),
+            "examples": list(sorted(tax_cur.TAX_DATA))[:3],
         },
         "civic_services": {
             "count": len(civic.CIVIC_SERVICES),
@@ -760,6 +768,38 @@ def _cmd_list(args: argparse.Namespace) -> None:
         "public_finance": {
             "count": len(finance.COUNTRY_BUDGETS),
             "examples": sorted(finance.COUNTRY_BUDGETS)[:3],
+        },
+        "jurisdictions": {
+            "count": len(jurisd.JURISDICTION_CODES),
+            "examples": list(sorted(jurisd.JURISDICTION_CODES))[:3],
+        },
+        "classification_markings": {
+            "count": len(classif.BANNER_FORMATS),
+            "examples": sorted(classif.BANNER_FORMATS.keys())[:3],
+        },
+        "authority_registry": {
+            "count": len(author.AUTHORITY_INSTRUMENTS),
+            "examples": sorted(author.AUTHORITY_INSTRUMENTS.keys())[:3],
+        },
+        "info_classification": {
+            "count": len(info_cls.CLASSIFICATION_BY_COUNTRY),
+            "examples": sorted(info_cls.CLASSIFICATION_BY_COUNTRY.keys())[:3],
+        },
+        "decision_makers": {
+            "count": len(dm.DECISION_MAKERS),
+            "examples": sorted(dm.DECISION_MAKERS.keys())[:3],
+        },
+        "postal_delivery": {
+            "count": len(postal.POSTAL_CODE_PATTERNS),
+            "examples": sorted(postal.POSTAL_CODE_PATTERNS.keys())[:3],
+        },
+        "military_service": {
+            "count": len(military.CONSCRIPTION_DATA),
+            "examples": sorted(military.CONSCRIPTION_DATA.keys())[:3],
+        },
+        "licenses_permits": {
+            "count": len(licenses.LICENSE_TYPES),
+            "examples": sorted(licenses.LICENSE_TYPES)[:3],
         },
     }
     for key in list(domains.keys()):
@@ -860,16 +900,116 @@ def add_governance_subparser(
     list_p.add_argument("--json", action="store_true", dest="json", help="Output as JSON")
     list_p.set_defaults(func=_cmd_list)
 
+    # jurisdictions <code> [--subdivisions]
+    jurisdictions_p = gov_sub.add_parser("jurisdictions", help="Jurisdiction lookup by ISO code")
+    jurisdictions_p.add_argument("code", help="ISO 3166-1 alpha-2, alpha-3, numeric, or subdivision code")
+    jurisdictions_p.add_argument("--subdivisions", action="store_true", help="List subdivisions instead")
+    jurisdictions_p.add_argument("--json", action="store_true", dest="json", help="Output as JSON")
+    jurisdictions_p.set_defaults(func=_cmd_jurisdictions)
+
+    # classification [system] [--banner <level>] [--caveat <code>]
+    classification_p = gov_sub.add_parser("classification", help="Classification markings lookup")
+    classification_p.add_argument(
+        "system", nargs="?", default="", help="Classification system: US, UK, NATO, EU, FR, DE, CA, AU"
+    )
+    classification_p.add_argument(
+        "--banner", dest="banner", help="Banner line lookup by level (e.g. 'secret', 'top_secret')"
+    )
+    classification_p.add_argument("--caveat", dest="caveat", help="Caveat code lookup (e.g. 'NOFORN', 'SI', 'COSMIC')")
+    classification_p.add_argument("--json", action="store_true", dest="json", help="Output as JSON")
+    classification_p.set_defaults(func=_cmd_classification)
+
+    # authority [<code>] [--instrument <type>]
+    authority_p = gov_sub.add_parser("authority", help="Issuing authority lookup")
+    authority_p.add_argument("query", nargs="?", default="", help="Authority code (e.g. 'US-DOS', 'UK-HMPO')")
+    authority_p.add_argument("--code", dest="code", help="Direct authority code lookup")
+    authority_p.add_argument(
+        "--instrument",
+        dest="instrument",
+        help="Find authorities by instrument type (e.g. 'passport', 'export_license')",
+    )
+    authority_p.add_argument("--json", action="store_true", dest="json", help="Output as JSON")
+    authority_p.set_defaults(func=_cmd_authority)
+
+    # info-class <country> [--foia] [--source <topic>] [--equiv <level>,<country_a>,<country_b>]
+    info_class_p = gov_sub.add_parser("info-class", help="Info classification, FOIA, and official sources")
+    info_class_p.add_argument("country", help="ISO 3166-1 alpha-2 country code (e.g. 'US', 'GB')")
+    info_class_p.add_argument("--foia", action="store_true", help="Show FOIA request procedure")
+    info_class_p.add_argument(
+        "--source", dest="source", help="Find official info source by keyword (e.g. 'court', 'gazette', 'audit')"
+    )
+    info_class_p.add_argument(
+        "--equiv", dest="equiv", help="Check clearance equivalence: <level>,<country_a>,<country_b>"
+    )
+    info_class_p.add_argument("--json", action="store_true", dest="json", help="Output as JSON")
+    info_class_p.set_defaults(func=_cmd_info_classification)
+
+    # decision-makers <country> [--person <id>] [--topic <topic>]
+    dm_p = gov_sub.add_parser("decision-makers", help="Decision-maker profiles and proclivity")
+    dm_p.add_argument("country", nargs="?", default="US", help="ISO 3166-1 alpha-2 country code (default: US)")
+    dm_p.add_argument("--person", dest="person", help="Person ID lookup (e.g. 'us-sen-01')")
+    dm_p.add_argument("--topic", dest="topic", help="Filter/topic assessment (e.g. 'taxation', 'healthcare')")
+    dm_p.add_argument("--json", action="store_true", dest="json", help="Output as JSON")
+    dm_p.set_defaults(func=_cmd_decision_makers)
+
+    # postal <country> [--courier <name>] [--tracking <number>] [--customs]
+    postal_p = gov_sub.add_parser("postal", help="Postal codes, courier tracking, and customs")
+    postal_p.add_argument("country", nargs="?", default="US", help="ISO 3166-1 alpha-2 country code (default: US)")
+    postal_p.add_argument("--courier", dest="courier", help="Courier tracking URL lookup (e.g. 'usps', 'fedex', 'dhl')")
+    postal_p.add_argument("--tracking", dest="tracking", help="Tracking number for courier URL")
+    postal_p.add_argument("--customs", action="store_true", help="Show customs declaration format instead")
+    postal_p.add_argument("--json", action="store_true", dest="json", help="Output as JSON")
+    postal_p.set_defaults(func=_cmd_postal)
+
+    # military <country> [--branches] [--benefits <category>] [--conscription]
+    military_p = gov_sub.add_parser("military", help="Military service, branches, and veteran benefits")
+    military_p.add_argument("country", nargs="?", default="US", help="ISO 3166-1 alpha-2 country code (default: US)")
+    military_p.add_argument("--branches", action="store_true", help="Show military branches")
+    military_p.add_argument(
+        "--benefits",
+        dest="benefits",
+        nargs="?",
+        const="all",
+        help="Show veteran benefits (optionally filter by category)",
+    )
+    military_p.add_argument("--conscription", action="store_true", help="List countries with active conscription")
+    military_p.add_argument("--json", action="store_true", dest="json", help="Output as JSON")
+    military_p.set_defaults(func=_cmd_military)
+
+    # licenses <country> [--license-type <type>] [--export-control <country>,<category>]
+    licenses_p = gov_sub.add_parser("licenses", help="Professional licenses, permits, and export controls")
+    licenses_p.add_argument("country", nargs="?", default="US", help="ISO 3166-1 alpha-2 country code (default: US)")
+    licenses_p.add_argument(
+        "--license-type",
+        dest="license_type",
+        help="License type lookup (e.g. 'driving', 'medical_practitioner', 'lawyer')",
+    )
+    licenses_p.add_argument(
+        "--export-control",
+        dest="export_control",
+        help="Export license lookup: <country>,<category> (e.g. 'US,military_items')",
+    )
+    licenses_p.add_argument("--json", action="store_true", dest="json", help="Output as JSON")
+    licenses_p.set_defaults(func=_cmd_licenses)
+
 
 __all__ = [
+    "_cmd_authority",
     "_cmd_body",
     "_cmd_borders",
+    "_cmd_classification",
     "_cmd_currency",
+    "_cmd_decision_makers",
     "_cmd_elections",
     "_cmd_finance",
+    "_cmd_info_classification",
+    "_cmd_jurisdictions",
     "_cmd_legal",
+    "_cmd_licenses",
     "_cmd_list",
+    "_cmd_military",
     "_cmd_navigate",
+    "_cmd_postal",
     "_cmd_relations",
     "_cmd_service",
     "_cmd_tax",

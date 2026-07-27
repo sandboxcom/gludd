@@ -603,6 +603,120 @@ class TestOpenShiftConnector:
         finally:
             del os.environ["OC_TOK_TD"]
 
+    # -- edge cases: base_url alias ----------------------------------------
+
+    def test_config_accepts_base_url_alias(self, monkeypatch):
+        from general_ludd.connectors.openshift import OpenShiftSource
+
+        monkeypatch.setenv("OC_TOK_ALIAS", "sha256~abc")
+        try:
+            source = OpenShiftSource(
+                {
+                    "base_url": "https://api.openshift.example.com:6443",
+                    "namespace": "default",
+                    "token_env": "OC_TOK_ALIAS",
+                    "allow_private": True,
+                }
+            )
+            assert source.KIND == "logs"
+            assert source.name is not None
+        finally:
+            del os.environ["OC_TOK_ALIAS"]
+
+    def test_config_rejects_invalid_scheme(self, monkeypatch):
+        from general_ludd.connectors.openshift import OpenShiftSource
+
+        with pytest.raises((ValueError, RuntimeError)):
+            OpenShiftSource(
+                {
+                    "api_server": "ftp://api.example.com:6443",
+                    "namespace": "default",
+                    "token_env": "T",
+                    "allow_private": True,
+                }
+            )
+
+    def test_health_no_token(self, monkeypatch):
+        from general_ludd.connectors.openshift import OpenShiftSource
+
+        # Unset the default env var so the source has no token.
+        monkeypatch.delenv("OPENSHIFT_TOKEN", raising=False)
+        source = OpenShiftSource(
+            {
+                "api_server": "https://api.example.com:6443",
+                "namespace": "default",
+                "allow_private": True,
+            },
+            transport=MockHttpTransport(status_code=200, body={"kind": "Status"}),
+        )
+        result = source.health()
+        assert result["ok"] is False
+        assert "no Bearer token" in result["detail"]
+
+    def test_query_builds_mode_empty_on_non_200(self, monkeypatch):
+        from general_ludd.connectors.openshift import OpenShiftSource
+
+        transport = MockHttpTransport(status_code=404, body={})
+        monkeypatch.setenv("OC_TOK_404", "tok")
+        try:
+            source = OpenShiftSource(
+                {
+                    "api_server": "https://api.example.com:6443",
+                    "namespace": "default",
+                    "token_env": "OC_TOK_404",
+                    "allow_private": True,
+                },
+                transport=transport,
+            )
+            records = source.query({"mode": "builds"})
+            assert records == []
+        finally:
+            del os.environ["OC_TOK_404"]
+
+    def test_query_pods_mode_empty_on_non_200(self, monkeypatch):
+        from general_ludd.connectors.openshift import OpenShiftSource
+
+        transport = MockHttpTransport(status_code=500, body={})
+        monkeypatch.setenv("OC_TOK_500", "tok")
+        try:
+            source = OpenShiftSource(
+                {
+                    "api_server": "https://api.example.com:6443",
+                    "namespace": "default",
+                    "token_env": "OC_TOK_500",
+                    "allow_private": True,
+                },
+                transport=transport,
+            )
+            records = source.query({"mode": "pods"})
+            assert records == []
+        finally:
+            del os.environ["OC_TOK_500"]
+
+    def test_health_transport_exception_returns_not_ok(self, monkeypatch):
+        from general_ludd.connectors.openshift import OpenShiftSource
+
+        class _FailingTransport:
+            def get(self, url: str, *, headers: dict[str, str], timeout: float) -> MockHttpResponse:
+                raise OSError("connection refused")
+
+        transport = _FailingTransport()
+        monkeypatch.setenv("OC_TOK_FAIL", "tok")
+        try:
+            source = OpenShiftSource(
+                {
+                    "api_server": "https://api.example.com:6443",
+                    "namespace": "default",
+                    "token_env": "OC_TOK_FAIL",
+                    "allow_private": True,
+                },
+                transport=transport,
+            )
+            result = source.health()
+            assert result["ok"] is False
+        finally:
+            del os.environ["OC_TOK_FAIL"]
+
 
 # ============================================================================
 # 2. Nomad Connector
@@ -917,6 +1031,86 @@ class TestNomadConnector:
         )
         result = source.health()
         assert isinstance(result, dict)
+
+    # -- edge cases: keyword transport injection (aligned with OpenShift) ---
+
+    def test_constructs_with_keyword_transport(self, monkeypatch):
+        from general_ludd.connectors.nomad import NomadSource
+
+        transport = MockHttpTransport(status_code=200, body={"KnownLeader": True})
+        monkeypatch.setenv("NOM_KWT", "tok")
+        try:
+            source = NomadSource(
+                {"base_url": "https://nomad.example.com:4646", "token_env": "NOM_KWT", "allow_private": True},
+                transport=transport,
+            )
+            assert source.KIND == "logs"
+        finally:
+            del os.environ["NOM_KWT"]
+
+    def test_health_ok_with_keyword_transport(self, monkeypatch):
+        from general_ludd.connectors.nomad import NomadSource
+
+        transport = MockHttpTransport(status_code=200, body={"KnownLeader": True})
+        monkeypatch.setenv("NOM_KWH", "tok")
+        try:
+            source = NomadSource(
+                {"base_url": "https://nomad.example.com:4646", "token_env": "NOM_KWH", "allow_private": True},
+                transport=transport,
+            )
+            result = source.health()
+            assert result["ok"] is True
+        finally:
+            del os.environ["NOM_KWH"]
+
+    def test_keyword_transport_takes_precedence_over_config(self, monkeypatch):
+        from general_ludd.connectors.nomad import NomadSource
+
+        kw_transport = MockHttpTransport(status_code=200, body={"KnownLeader": True})
+        cfg_transport = MockHttpTransport(status_code=500, body={})
+        monkeypatch.setenv("NOM_KWPREC", "tok")
+        try:
+            source = NomadSource(
+                {
+                    "base_url": "https://nomad.example.com:4646",
+                    "token_env": "NOM_KWPREC",
+                    "allow_private": True,
+                    "transport": cfg_transport,
+                },
+                transport=kw_transport,
+            )
+            result = source.health()
+            assert result["ok"] is True
+        finally:
+            del os.environ["NOM_KWPREC"]
+
+    # -- edge cases: config with name --------------------------------------
+
+    def test_constructs_with_custom_name(self, monkeypatch):
+        from general_ludd.connectors.nomad import NomadSource
+
+        source = NomadSource(
+            {"base_url": "https://nomad.example.com:4646", "name": "nomad-prod-east", "allow_private": True}
+        )
+        assert source.name == "nomad-prod-east"
+
+    # -- edge cases: query spec defaults -----------------------------------
+
+    def test_query_defaults_to_logs_type(self, monkeypatch):
+        from general_ludd.connectors.nomad import NomadSource
+
+        transport = MockHttpTransport(status_code=200, text="allocation started\n")
+        monkeypatch.setenv("NOM_DEFTYPE", "tok")
+        try:
+            source = NomadSource(
+                {"base_url": "https://nomad.example.com:4646", "token_env": "NOM_DEFTYPE", "allow_private": True},
+                transport=transport,
+            )
+            records = source.query({"alloc_id": "alloc-1"})
+            assert len(records) >= 1
+            assert records[0]["kind"] == "logs"
+        finally:
+            del os.environ["NOM_DEFTYPE"]
 
 
 # ============================================================================
