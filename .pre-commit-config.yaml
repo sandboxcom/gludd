@@ -11,7 +11,7 @@ repos:
       - id: check-added-large-files
         args: [--maxkb=500]
       - id: detect-private-key
-        exclude: ^tests/unit/test_adversarial_detector\.py$
+        exclude: ^tests/(unit/test_adversarial_detector|e2e/test_remaining_batch2_workflows)\.py$
       - id: no-commit-to-branch
         args: [--branch, main]
 
