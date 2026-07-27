@@ -37,11 +37,10 @@ class TestAuditPluginsParserWiring:
         assert "audit-plugins" in subcommand_map
 
     def test_audit_plugins_invokes_cmd(self):
-        with patch(
-            "sys.argv", ["gludd", "audit-plugins"]
-        ), patch(
-            "general_ludd.cli_audit_plugins._cmd_audit_plugins"
-        ) as mock_cmd:
+        with (
+            patch("sys.argv", ["gludd", "audit-plugins"]),
+            patch("general_ludd.cli_audit_plugins._cmd_audit_plugins") as mock_cmd,
+        ):
             main()
         mock_cmd.assert_called_once()
         args = mock_cmd.call_args[0][0]
@@ -49,12 +48,13 @@ class TestAuditPluginsParserWiring:
         assert args.limit is None
 
     def test_audit_plugins_parses_flags(self):
-        with patch(
-            "sys.argv",
-            ["gludd", "audit-plugins", "--project", "acme", "--limit", "agent_floor_check"],
-        ), patch(
-            "general_ludd.cli_audit_plugins._cmd_audit_plugins"
-        ) as mock_cmd:
+        with (
+            patch(
+                "sys.argv",
+                ["gludd", "audit-plugins", "--project", "acme", "--limit", "agent_floor_check"],
+            ),
+            patch("general_ludd.cli_audit_plugins._cmd_audit_plugins") as mock_cmd,
+        ):
             main()
         args = mock_cmd.call_args[0][0]
         assert args.project == "acme"
@@ -62,23 +62,23 @@ class TestAuditPluginsParserWiring:
 
     def test_audit_plugins_supports_enforce_disengage_flag(self):
         """--enforce-disengage flag opt-in for the destructive role (default false)."""
-        with patch(
-            "sys.argv",
-            ["gludd", "audit-plugins", "--enforce-disengage"],
-        ), patch(
-            "general_ludd.cli_audit_plugins._cmd_audit_plugins"
-        ) as mock_cmd:
+        with (
+            patch(
+                "sys.argv",
+                ["gludd", "audit-plugins", "--enforce-disengage"],
+            ),
+            patch("general_ludd.cli_audit_plugins._cmd_audit_plugins") as mock_cmd,
+        ):
             main()
         args = mock_cmd.call_args[0][0]
         assert args.enforce_disengage is True
 
     def test_audit_plugins_enforce_disengage_defaults_false(self):
         """Without the flag, enforce_disengage must be False (opt-in only)."""
-        with patch(
-            "sys.argv", ["gludd", "audit-plugins"]
-        ), patch(
-            "general_ludd.cli_audit_plugins._cmd_audit_plugins"
-        ) as mock_cmd:
+        with (
+            patch("sys.argv", ["gludd", "audit-plugins"]),
+            patch("general_ludd.cli_audit_plugins._cmd_audit_plugins") as mock_cmd,
+        ):
             main()
         args = mock_cmd.call_args[0][0]
         assert args.enforce_disengage is False
@@ -88,9 +88,10 @@ class TestAuditPluginsHandler:
     """Handler behaviour: adapter invocation + output."""
 
     def test_calls_runner_with_correct_playbook_name(self):
+        from general_ludd.ansible.runner import AnsibleRunnerAdapter
         from general_ludd.cli_audit_plugins import _cmd_audit_plugins
 
-        mock_adapter = MagicMock()
+        mock_adapter = MagicMock(spec=AnsibleRunnerAdapter)
         mock_adapter.run_playbook.return_value = {
             "status": "successful",
             "rc": 0,
@@ -106,9 +107,7 @@ class TestAuditPluginsHandler:
 
         mock_adapter.run_playbook.assert_called_once()
         call_kwargs = mock_adapter.run_playbook.call_args
-        playbook_name = call_kwargs.args[0] if call_kwargs.args else call_kwargs[1].get(
-            "playbook_name"
-        )
+        playbook_name = call_kwargs.args[0] if call_kwargs.args else call_kwargs[1].get("playbook_name")
         assert playbook_name == "audit_plugins.yml"
 
     def test_passes_project_and_limit_as_extravars(self):
@@ -205,9 +204,12 @@ class TestAuditPluginsHandler:
         }
         mock_adapter.list_playbooks.return_value = ["audit_plugins.yml"]
 
-        with patch(
-            "general_ludd.cli_audit_plugins.AnsibleRunnerAdapter",
-            return_value=mock_adapter,
-        ), pytest.raises(SystemExit) as exc_info:
+        with (
+            patch(
+                "general_ludd.cli_audit_plugins.AnsibleRunnerAdapter",
+                return_value=mock_adapter,
+            ),
+            pytest.raises(SystemExit) as exc_info,
+        ):
             _cmd_audit_plugins(_ns())
         assert exc_info.value.code != 0

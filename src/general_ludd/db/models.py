@@ -91,33 +91,29 @@ def _gen_todo_id() -> str:
 class ProjectModel(Base):
     __tablename__ = "projects"
 
-    project_id: Mapped[str] = mapped_column(
-        String(32), primary_key=True, default=lambda: f"proj-{uuid4().hex[:8]}"
-    )
+    project_id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: f"proj-{uuid4().hex[:8]}")
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")
     workspace_path: Mapped[str] = mapped_column(String(512), nullable=False, default="")
     config: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=_utcnow
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow
     )
 
 
 class RelationType(enum.StrEnum):
-    PARENT = "parent"      # the environment THIS project runs inside
-    CHILD = "child"        # a project that runs inside THIS one
-    SIBLING = "sibling"    # peer under a shared parent (gludd may control it)
+    PARENT = "parent"  # the environment THIS project runs inside
+    CHILD = "child"  # a project that runs inside THIS one
+    SIBLING = "sibling"  # peer under a shared parent (gludd may control it)
     EXTERNAL = "external"  # a neighbor gludd does NOT control
 
 
 class LocationKind(enum.StrEnum):
     GLUDD_PROJECT_NAME = "gludd_project_name"  # resolves to a ProjectModel.name
-    DIRECTORY = "directory"                    # absolute/relative path on disk
-    URL = "url"                                # git/https/service URL
+    DIRECTORY = "directory"  # absolute/relative path on disk
+    URL = "url"  # git/https/service URL
 
 
 def _gen_rel_id() -> str:
@@ -167,17 +163,13 @@ class ProjectRelationshipModel(Base):
         nullable=True,
         index=True,
     )
-    controlled_by_gludd: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=False
-    )
+    controlled_by_gludd: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     # Optional free-form hint describing the interface this edge implies
     # (e.g. "GET /health", "publishes kafka topic orders").
     interface_hint: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     # Optional structured interface contract (JSON-in-Text). Empty by default.
     interface_contract: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=_utcnow
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow
     )
@@ -258,30 +250,20 @@ class TodoModel(Base):
     approval_policy: Mapped[str] = mapped_column(String(32), nullable=False, default="none")
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=_utcnow)
-    updated_at: Mapped[datetime] = mapped_column(
-        UTCDateTime(), nullable=False, default=_utcnow, onupdate=_utcnow
-    )
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=_utcnow, onupdate=_utcnow)
     completed_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
 
     # ── Scheduling / cron-style recurrence ──────────────────────────────────
     # scheduled_at: one-shot fire time. The scheduler promotes the todo
     # SCHEDULED→QUEUED when now >= scheduled_at (cron must be None).
-    scheduled_at: Mapped[datetime | None] = mapped_column(
-        UTCDateTime(), nullable=True
-    )
+    scheduled_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     # cron: 5-field cron expression (croniter grammar). When set, this row
     # is a TEMPLATE that stays SCHEDULED; the scheduler spawns a QUEUED
     # child clone on each fire and advances next_run_at.
     cron: Mapped[str | None] = mapped_column(String(256), nullable=True)
-    schedule_timezone: Mapped[str] = mapped_column(
-        String(64), nullable=False, default="UTC"
-    )
-    next_run_at: Mapped[datetime | None] = mapped_column(
-        UTCDateTime(), nullable=True
-    )
-    last_run_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    schedule_timezone: Mapped[str] = mapped_column(String(64), nullable=False, default="UTC")
+    next_run_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     run_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     max_runs: Mapped[int | None] = mapped_column(Integer, nullable=True)
     schedule_paused: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
@@ -322,7 +304,7 @@ class TodoModel(Base):
 
     events: Mapped[list[TodoEventModel]] = relationship(
         back_populates="todo",
-        order_by="TodoEventModel.id",
+        order_by=lambda: TodoEventModel.id,
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
@@ -521,9 +503,7 @@ class VariableNamespaceModel(Base):
         DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow
     )
 
-    __table_args__ = (
-        UniqueConstraint("namespace", "project_id", name="uq_namespace_project"),
-    )
+    __table_args__ = (UniqueConstraint("namespace", "project_id", name="uq_namespace_project"),)
 
     values: Mapped[list[VariableValueModel]] = relationship(
         back_populates="namespace", cascade="all, delete-orphan", passive_deletes=True
@@ -550,9 +530,7 @@ class VariableValueModel(Base):
 
     namespace: Mapped[VariableNamespaceModel] = relationship(back_populates="values")
 
-    __table_args__ = (
-        UniqueConstraint("namespace_id", "key", name="uq_variable_namespace_key"),
-    )
+    __table_args__ = (UniqueConstraint("namespace_id", "key", name="uq_variable_namespace_key"),)
 
 
 class BucketLeaseModel(Base):
@@ -602,9 +580,7 @@ class FeatureModel(Base):
 
     __tablename__ = "features"
 
-    id: Mapped[str] = mapped_column(
-        String(32), primary_key=True, default=_gen_feature_id
-    )
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_gen_feature_id)
     project_id: Mapped[str | None] = mapped_column(
         String(32),
         ForeignKey("projects.project_id", ondelete="SET NULL"),
@@ -614,18 +590,14 @@ class FeatureModel(Base):
     name: Mapped[str] = mapped_column(String(256), nullable=False, unique=True)
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")
     category: Mapped[str] = mapped_column(String(64), nullable=False, default="general")
-    status: Mapped[str] = mapped_column(
-        String(32), nullable=False, default=FeatureStatus.REQUESTED, index=True
-    )
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default=FeatureStatus.REQUESTED, index=True)
     # JSON list of acceptance-criterion strings
     acceptance_criteria: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     # JSON list of evidence-reference strings (grammar: test: role: module: molecule: file:)
     evidence: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     verifier_kind: Mapped[str] = mapped_column(String(64), nullable=False, default="evidence")
     requested_by: Mapped[str] = mapped_column(String(128), nullable=False, default="agent")
-    requested_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=_utcnow
-    )
+    requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
     verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # JSON object: per-ref pass/fail detail from last verify run
     last_verify_detail: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
@@ -634,9 +606,7 @@ class FeatureModel(Base):
 class PromptProfileModel(Base):
     __tablename__ = "prompt_profiles"
 
-    id: Mapped[str] = mapped_column(
-        String(64), primary_key=True, default=lambda: f"pp-{uuid4().hex[:8]}"
-    )
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=lambda: f"pp-{uuid4().hex[:8]}")
     name: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
     source: Mapped[str] = mapped_column(String(64), nullable=False)
     source_url: Mapped[str] = mapped_column(String(512), nullable=False, default="")
@@ -644,9 +614,7 @@ class PromptProfileModel(Base):
     task_types: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     tags: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     version: Mapped[str] = mapped_column(String(32), nullable=False, default="latest")
-    collected_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=_utcnow
-    )
+    collected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
@@ -661,9 +629,7 @@ class AgentMessageModel(Base):
 
     __tablename__ = "agent_messages"
 
-    id: Mapped[str] = mapped_column(
-        String(40), primary_key=True, default=lambda: f"MSG-{uuid4().hex[:12].upper()}"
-    )
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: f"MSG-{uuid4().hex[:12].upper()}")
     project_id: Mapped[str | None] = mapped_column(
         String(32),
         ForeignKey("projects.project_id", ondelete="SET NULL"),
@@ -675,15 +641,11 @@ class AgentMessageModel(Base):
     topic: Mapped[str] = mapped_column(String(256), nullable=False, default="")
     body: Mapped[str] = mapped_column(Text, nullable=False, default="")
     priority: Mapped[str] = mapped_column(String(16), nullable=False, default="normal")
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=_utcnow, index=True
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow, index=True)
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     ttl_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
-    __table_args__ = (
-        Index("ix_agent_messages_recipient_read", "recipient", "read_at"),
-    )
+    __table_args__ = (Index("ix_agent_messages_recipient_read", "recipient", "read_at"),)
 
 
 class SpendRecordModel(Base):
@@ -708,13 +670,9 @@ class SpendRecordModel(Base):
     cost_usd: Mapped[float] = mapped_column(Float, nullable=False)
     kind: Mapped[str] = mapped_column(String(64), nullable=False)
     model: Mapped[str | None] = mapped_column(String(256), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=_utcnow
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
 
-    __table_args__ = (
-        Index("ix_spend_records_ts_kind", "ts", "kind"),
-    )
+    __table_args__ = (Index("ix_spend_records_ts_kind", "ts", "kind"),)
 
 
 class RoleRunModel(Base):
@@ -732,9 +690,7 @@ class RoleRunModel(Base):
     role: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
 
-    __table_args__ = (
-        Index("ix_role_runs_project_role", "project_id", "role"),
-    )
+    __table_args__ = (Index("ix_role_runs_project_role", "project_id", "role"),)
 
 
 class BenchmarkResultModel(Base):
@@ -772,12 +728,8 @@ class BenchmarkResultModel(Base):
     success: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     error_message: Mapped[str] = mapped_column(Text, nullable=False, default="")
     raw_output: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    task_role: Mapped[str | None] = mapped_column(
-        String(32), nullable=True, default=None, index=True
-    )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=_utcnow
-    )
+    task_role: Mapped[str | None] = mapped_column(String(32), nullable=True, default=None, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
 
     __table_args__ = (
         Index("ix_benchmark_task_model", "task_type", "model_profile_id"),
@@ -815,16 +767,17 @@ class MemoryRecordModel(Base):
     value: Mapped[str] = mapped_column(Text, nullable=False, default="")
     namespace: Mapped[str] = mapped_column(String(128), nullable=False, default="default", index=True)
     ttl_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=_utcnow
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow
     )
 
     __table_args__ = (
         UniqueConstraint(
-            "agent_id", "key", "namespace", "project_id",
+            "agent_id",
+            "key",
+            "namespace",
+            "project_id",
             name="uq_memory_agent_key_ns_project",
         ),
         Index("ix_memory_namespace", "namespace"),
@@ -868,13 +821,9 @@ class StsAuditModel(Base):
     last_used_at: Mapped[float | None] = mapped_column(Float, nullable=True)
     use_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     events: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=_utcnow
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
 
-    __table_args__ = (
-        Index("ix_sts_audit_agents", "issuer_agent_id", "subject_agent_id"),
-    )
+    __table_args__ = (Index("ix_sts_audit_agents", "issuer_agent_id", "subject_agent_id"),)
 
 
 class AgentTokenModel(Base):
@@ -894,13 +843,17 @@ class AgentTokenModel(Base):
     scope_hash: Mapped[str] = mapped_column(String(128), nullable=False, default="")
     scope_actions: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=_utcnow,
+        DateTime(timezone=True),
+        nullable=False,
+        default=_utcnow,
     )
     expires_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True,
+        DateTime(timezone=True),
+        nullable=True,
     )
     revoked_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True,
+        DateTime(timezone=True),
+        nullable=True,
     )
     hydration_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
@@ -926,20 +879,12 @@ class PermissionEscalationRequestModel(Base):
     current_spec_yaml: Mapped[str] = mapped_column(Text, nullable=False)
     requested_capabilities_yaml: Mapped[str] = mapped_column(Text, nullable=False)
     reason: Mapped[str] = mapped_column(Text, nullable=False)
-    alternatives_tried_json: Mapped[str] = mapped_column(
-        Text, nullable=False, default="[]"
-    )
-    status: Mapped[str] = mapped_column(
-        String(32), nullable=False, default="pending", index=True
-    )
+    alternatives_tried_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending", index=True)
     human_reviewer: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    decided_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     decided_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=_utcnow, index=True
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow, index=True)
 
 
 def _gen_human_todo_id() -> str:
@@ -963,9 +908,7 @@ class HumanTodoModel(Base):
 
     __tablename__ = "human_todos"
 
-    id: Mapped[str] = mapped_column(
-        String(32), primary_key=True, default=_gen_human_todo_id
-    )
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_gen_human_todo_id)
     # The agent todo whose progress is blocked on this human-todo. NULL when
     # the agent is merely logging a need (no parent todo to block).
     parent_agent_todo_id: Mapped[str | None] = mapped_column(
@@ -983,15 +926,11 @@ class HumanTodoModel(Base):
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="open", index=True)
     human_resolution: Mapped[str | None] = mapped_column(Text, nullable=True)
     human_resolver: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=_utcnow, index=True
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow, index=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow
     )
-    resolved_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # JSON array of tag strings, following the JSON-in-Text convention.
     tags: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
@@ -1021,9 +960,7 @@ class RemediationActionModel(Base):
 
     __tablename__ = "remediation_actions"
 
-    id: Mapped[str] = mapped_column(
-        String(32), primary_key=True, default=_gen_remediation_id
-    )
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_gen_remediation_id)
     # The blocked task that triggered this action. Synthetic id
     # (``HTODO:<id>``) when the finding came from a stale human-todo with
     # no parent agent todo.
@@ -1046,12 +983,8 @@ class RemediationActionModel(Base):
     # always ok=True with a reason.
     ok: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     reason: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=_utcnow, index=True
-    )
-    idempotency_key: Mapped[str | None] = mapped_column(
-        String(256), nullable=True, unique=True, index=True
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow, index=True)
+    idempotency_key: Mapped[str | None] = mapped_column(String(256), nullable=True, unique=True, index=True)
 
     __table_args__ = (
         Index("ix_remediation_actions_project_created", "project_id", "created_at"),
@@ -1080,19 +1013,13 @@ class ModelCallLogModel(Base):
 
     __tablename__ = "model_call_logs"
 
-    id: Mapped[str] = mapped_column(
-        String(36), primary_key=True, default=_gen_model_call_id
-    )
-    todo_id: Mapped[str | None] = mapped_column(
-        String(64), nullable=True, index=True
-    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_gen_model_call_id)
+    todo_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     job_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # Provider name (e.g. ``"openai"``, ``"anthropic"``).
     service: Mapped[str] = mapped_column(String(64), nullable=False)
     model_name: Mapped[str] = mapped_column(String(128), nullable=False)
-    model_profile_id: Mapped[str] = mapped_column(
-        String(64), nullable=False, index=True
-    )
+    model_profile_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     task_type: Mapped[str] = mapped_column(String(32), nullable=False, default="generation")
     work_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
     success: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
@@ -1102,9 +1029,7 @@ class ModelCallLogModel(Base):
     duration_ms: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     error_code: Mapped[str | None] = mapped_column(String(32), nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=_utcnow, index=True
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow, index=True)
 
     __table_args__ = (
         Index("ix_model_call_logs_created", "created_at"),
@@ -1123,31 +1048,19 @@ class ModelPerformanceModel(Base):
 
     __tablename__ = "model_performance"
 
-    id: Mapped[str] = mapped_column(
-        String(36), primary_key=True, default=_gen_model_call_id
-    )
-    model_profile_id: Mapped[str] = mapped_column(
-        String(64), unique=True, nullable=False, index=True
-    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_gen_model_call_id)
+    model_profile_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
     model_name: Mapped[str] = mapped_column(String(128), nullable=False, default="")
     service: Mapped[str] = mapped_column(String(64), nullable=False, default="")
     total_calls: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     successful_calls: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     failed_calls: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    total_input_tokens: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=0
-    )
-    total_output_tokens: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=0
-    )
+    total_input_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    total_output_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     total_cost_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     avg_duration_ms: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
-    last_call_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    first_call_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    last_call_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    first_call_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow
     )
@@ -1170,12 +1083,8 @@ class OrnithTrainingPairModel(Base):
 
     __tablename__ = "ornith_training_pairs"
 
-    id: Mapped[str] = mapped_column(
-        String(36), primary_key=True, default=_gen_ornith_pair_id
-    )
-    invoked_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=_utcnow, index=True
-    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_gen_ornith_pair_id)
+    invoked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow, index=True)
     task_description: Mapped[str] = mapped_column(Text, nullable=False)
     # JSON array of target file paths.
     target_files: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
@@ -1185,20 +1094,14 @@ class OrnithTrainingPairModel(Base):
     iterations_used: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     tokens_consumed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     model_sha: Mapped[str] = mapped_column(String(128), nullable=False, default="")
-    outcome_status: Mapped[str] = mapped_column(
-        String(32), nullable=False, default="pending", index=True
-    )
+    outcome_status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending", index=True)
     # JSON dict: gate output, review notes, reverted-because, etc.
     outcome_details: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
-    outcome_set_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    outcome_set_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     project_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     agent_id: Mapped[str] = mapped_column(String(128), nullable=False)
 
-    __table_args__ = (
-        Index("ix_ornith_pairs_status_invoked", "outcome_status", "invoked_at"),
-    )
+    __table_args__ = (Index("ix_ornith_pairs_status_invoked", "outcome_status", "invoked_at"),)
 
 
 class SlurmJobModel(Base):
@@ -1223,15 +1126,9 @@ class SlurmJobModel(Base):
     max_cost_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     hourly_rate_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     cost_incurred: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
-    status: Mapped[str] = mapped_column(
-        String(32), nullable=False, default="submitted", index=True
-    )
-    submitted_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=_utcnow
-    )
-    completed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="submitted", index=True)
+    submitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     daemon_pid: Mapped[int] = mapped_column(Integer, nullable=False)
 
     __table_args__ = (
