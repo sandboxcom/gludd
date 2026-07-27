@@ -4,7 +4,7 @@ import json
 import os
 import tempfile
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import httpx
 import pytest
@@ -616,6 +616,22 @@ class TestRunOnceSuccess:
             assert "Error" in result
 
 
+class _AsyncIter:
+    """Real async iterator for mocking httpx aiter_lines()."""
+
+    def __init__(self, items: list[str]) -> None:
+        self._items = iter(items)
+
+    def __aiter__(self) -> _AsyncIter:
+        return self
+
+    async def __anext__(self) -> str:
+        try:
+            return next(self._items)
+        except StopIteration:
+            raise StopAsyncIteration
+
+
 class TestStreamResponseSuccess:
     @pytest.mark.asyncio
     async def test_stream_response_chunks(self) -> None:
@@ -628,22 +644,19 @@ class TestStreamResponseSuccess:
         chunk2 = 'data: {"choices":[{"delta":{"content":" there"}}]}\n'
         chunk3 = "data: [DONE]\n"
 
-        mock_aiter_lines = Mock()
-        mock_aiter_lines.return_value.__aiter__.return_value = [chunk1, chunk2, chunk3]
+        mock_aiter_lines = Mock(return_value=_AsyncIter([chunk1, chunk2, chunk3]))
 
-        mock_stream = Mock()
-        mock_stream.__aenter__ = Mock()
-        mock_stream.__aexit__ = Mock()
-        mock_stream.__aenter__.return_value = mock_stream
+        mock_stream = MagicMock()
+        mock_stream.__aenter__ = AsyncMock(return_value=mock_stream)
+        mock_stream.__aexit__ = AsyncMock(return_value=None)
         mock_stream.aiter_lines = mock_aiter_lines
         mock_stream.raise_for_status = Mock()
 
         with patch("httpx.AsyncClient") as mock_client_cls:
-            mock_client = Mock()
+            mock_client = MagicMock()
             mock_client.stream.return_value = mock_stream
-            mock_client.__aenter__ = Mock()
-            mock_client.__aexit__ = Mock()
-            mock_client.__aenter__.return_value = mock_client
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=None)
             mock_client_cls.return_value = mock_client
 
             result = await session.stream_response("say hi")
@@ -662,22 +675,19 @@ class TestStreamResponseSuccess:
         )
         chunk = "data: [DONE]\n"
 
-        mock_aiter_lines = Mock()
-        mock_aiter_lines.return_value.__aiter__.return_value = [chunk]
+        mock_aiter_lines = Mock(return_value=_AsyncIter([chunk]))
 
-        mock_stream = Mock()
-        mock_stream.__aenter__ = Mock()
-        mock_stream.__aexit__ = Mock()
-        mock_stream.__aenter__.return_value = mock_stream
+        mock_stream = MagicMock()
+        mock_stream.__aenter__ = AsyncMock(return_value=mock_stream)
+        mock_stream.__aexit__ = AsyncMock(return_value=None)
         mock_stream.aiter_lines = mock_aiter_lines
         mock_stream.raise_for_status = Mock()
 
         with patch("httpx.AsyncClient") as mock_client_cls:
-            mock_client = Mock()
+            mock_client = MagicMock()
             mock_client.stream.return_value = mock_stream
-            mock_client.__aenter__ = Mock()
-            mock_client.__aexit__ = Mock()
-            mock_client.__aenter__.return_value = mock_client
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=None)
             mock_client_cls.return_value = mock_client
 
             result = await session.stream_response("test")
