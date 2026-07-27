@@ -41,6 +41,7 @@ import unittest.mock as _mock_mod
 from contextlib import suppress
 from pathlib import Path
 
+import httpx
 import pytest
 
 # Python 3.14: yaml C extension (CSafeLoader) fails parsing ansible config.
@@ -88,6 +89,21 @@ for _path in (str(_SCRIPTS_DIR), str(_SRC_DIR)):
         sys.path.insert(0, _path)
 
 importlib.import_module("general_ludd.routing_roles")
+
+# Captured ONCE at module load so the fixture always restores to the
+# canonical reference, never to a value that a prior test leaked onto
+# the module attribute.  The per-fixture-invocation snapshot pattern was
+# the root cause of cross-test pollution: a corrupt teardown of test N
+# left a mock/sentinel on ``httpx.get``, and test N+1's fixture snapshot
+# captured and re-applied the corrupt value, making the pollution
+# self-reinforcing.
+import httpx
+
+_CANONICAL_HTTPX_GET = httpx.get
+
+import general_ludd.abtest.compare as _ab_compare
+
+_CANONICAL_RUN_CANDIDATE = _ab_compare.run_candidate_in_subprocess
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -611,9 +627,9 @@ def _reset_httpx_and_abtest_runner():
     ``httpx.get`` or ``general_ludd.abtest.compare.run_candidate_in_subprocess``
     via ``patch()`` context-managers / decorators, but setup-method-level
     patching, ``start()``/``stop()`` mismatches, or teardown exceptions can
-    leak mock objects into sibling tests on the same worker. Snapshotting both
-    references before and restoring after every test ensures a clean slate
-    regardless of per-test cleanup discipline.
+    leak mock objects into sibling tests on the same worker.  This fixture
+    always restores the canonical (module-load-time) reference so a single
+    corrupt teardown cannot poison all subsequent tests.
 
     ``httpx.get`` is the target because ~100+ test sites across the suite
     mock it (cli, e2e, connector SSRF, skills, TUI, etc.).  The
@@ -621,18 +637,13 @@ def _reset_httpx_and_abtest_runner():
     the import that tests actually patch (NOT the ``runner`` module source),
     so it is the reference that must be reset.
     """
-    import httpx
+    import httpx as _httpx
 
-    _orig_httpx_get = httpx.get
-
-    import general_ludd.abtest.compare as _ab_compare
-
-    _orig_run_candidate = _ab_compare.run_candidate_in_subprocess
-
+    _httpx.get = _CANONICAL_HTTPX_GET
+    _ab_compare.run_candidate_in_subprocess = _CANONICAL_RUN_CANDIDATE
     yield
-
-    httpx.get = _orig_httpx_get
-    _ab_compare.run_candidate_in_subprocess = _orig_run_candidate
+    _httpx.get = _CANONICAL_HTTPX_GET
+    _ab_compare.run_candidate_in_subprocess = _CANONICAL_RUN_CANDIDATE
 
 
 @pytest.fixture(autouse=True, scope="session")

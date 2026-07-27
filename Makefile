@@ -1448,6 +1448,10 @@ git-stash:
 git-stash-pop:
 	@git stash pop || echo "No stash to pop"
 
+git-stash-clear:
+	@COUNT=$$(git stash list 2>/dev/null | wc -l | tr -d ' '); \
+	git stash clear && echo "Cleared $$COUNT stash entries." || echo "No stashes to clear."
+
 repo-staged:
 	@git diff --cached --stat || echo "Nothing staged"
 
