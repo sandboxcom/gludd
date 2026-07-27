@@ -152,12 +152,14 @@ class TestTruncateInput:
 
     def test_input_exceeds_limit(self) -> None:
         from general_ludd.chat.session import MAX_INPUT_LENGTH
+
         long_input = "x" * (MAX_INPUT_LENGTH + 100)
         result = ChatSession._truncate_input(long_input)
         assert len(result) == MAX_INPUT_LENGTH
 
     def test_input_at_limit(self) -> None:
         from general_ludd.chat.session import MAX_INPUT_LENGTH
+
         exact = "x" * MAX_INPUT_LENGTH
         result = ChatSession._truncate_input(exact)
         assert len(result) == MAX_INPUT_LENGTH
@@ -173,9 +175,7 @@ class TestEmptyModelResponse:
         )
         with patch.object(session, "_post_with_retry") as mock_post:
             mock_response = Mock()
-            mock_response.json.return_value = {
-                "choices": [{"message": {"content": ""}}]
-            }
+            mock_response.json.return_value = {"choices": [{"message": {"content": ""}}]}
             mock_post.return_value = mock_response
             result = await session.run_once("hello")
             assert "empty response" in result.lower()
@@ -437,11 +437,13 @@ class TestHistoryPersistence:
             from general_ludd.chat.session import ChatSession as CS
 
             hist_file = Path(tmpdir) / "session_resume.jsonl"
-            messages = "\n".join([
-                json.dumps({"role": "system", "content": "custom prompt"}),
-                json.dumps({"role": "user", "content": "previous question"}),
-                json.dumps({"role": "assistant", "content": "previous answer"}),
-            ])
+            messages = "\n".join(
+                [
+                    json.dumps({"role": "system", "content": "custom prompt"}),
+                    json.dumps({"role": "user", "content": "previous question"}),
+                    json.dumps({"role": "assistant", "content": "previous answer"}),
+                ]
+            )
             hist_file.write_text(messages + "\n", encoding="utf-8")
 
             index_path = Path(tmpdir) / "index.json"
@@ -525,3 +527,159 @@ class TestHistoryPersistence:
             assert "preview" in entry
             assert "timestamp" in entry
             assert "file" in entry
+
+
+class TestRunOnceSuccess:
+    @pytest.mark.asyncio
+    async def test_run_once_successful_response(self) -> None:
+        session = ChatSession(
+            model="deepseek/deepseek-chat",
+            api_base_url="https://test.api/v1",
+            api_key="sk-test",
+            system_prompt="Be concise.",
+        )
+        response_json = {"choices": [{"message": {"content": "The answer is 42."}}]}
+        mock_response = Mock()
+        mock_response.json.return_value = response_json
+
+        with patch.object(session, "_post_with_retry") as mock_post:
+            mock_post.return_value = mock_response
+            result = await session.run_once("What is the answer?")
+
+        assert "The answer is 42." in result
+        assert len(session.history) == 3
+        assert session.history[1]["role"] == "user"
+        assert session.history[1]["content"] == "What is the answer?"
+        assert session.history[2]["role"] == "assistant"
+        assert "The answer is 42." in session.history[2]["content"]
+
+    @pytest.mark.asyncio
+    async def test_run_once_preserves_system_prompt(self) -> None:
+        session = ChatSession(
+            model="openai/gpt-4o",
+            api_base_url="https://test.api/v1",
+            api_key="sk-test",
+            system_prompt="Custom system prompt.",
+        )
+        response_json = {"choices": [{"message": {"content": "OK"}}]}
+        mock_response = Mock()
+        mock_response.json.return_value = response_json
+
+        with patch.object(session, "_post_with_retry") as mock_post:
+            mock_post.return_value = mock_response
+            await session.run_once("hi")
+
+        assert session.history[0]["role"] == "system"
+        assert session.history[0]["content"] == "Custom system prompt."
+
+    @pytest.mark.asyncio
+    async def test_run_once_formats_code_blocks(self) -> None:
+        session = ChatSession(
+            model="deepseek/deepseek-chat",
+            api_base_url="https://test.api/v1",
+            api_key="sk-test",
+        )
+        code_response = "```python\ndef foo():\n    return 42\n```"
+        response_json = {"choices": [{"message": {"content": code_response}}]}
+        mock_response = Mock()
+        mock_response.json.return_value = response_json
+
+        with patch.object(session, "_post_with_retry") as mock_post:
+            mock_post.return_value = mock_response
+            result = await session.run_once("write a function")
+
+        assert "def" in result
+
+    @pytest.mark.asyncio
+    async def test_run_once_http_error_raises(self) -> None:
+        session = ChatSession(
+            model="deepseek/deepseek-chat",
+            api_base_url="https://test.api/v1",
+            api_key="sk-test",
+        )
+        import httpx
+
+        mock_response = Mock()
+        mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
+            "Bad Gateway",
+            request=httpx.Request("POST", "https://test.api/v1"),
+            response=httpx.Response(502),
+        )
+
+        with patch.object(session, "_post_with_retry") as mock_post:
+            mock_post.side_effect = httpx.HTTPStatusError(
+                "Bad Gateway",
+                request=httpx.Request("POST", "https://test.api/v1"),
+                response=httpx.Response(502),
+            )
+            result = await session.run_once("test")
+            assert "Error" in result
+
+
+class TestStreamResponseSuccess:
+    @pytest.mark.asyncio
+    async def test_stream_response_chunks(self) -> None:
+        session = ChatSession(
+            model="deepseek/deepseek-chat",
+            api_base_url="https://test.api/v1",
+            api_key="sk-test",
+        )
+        chunk1 = 'data: {"choices":[{"delta":{"content":"Hello"}}]}\n'
+        chunk2 = 'data: {"choices":[{"delta":{"content":" there"}}]}\n'
+        chunk3 = "data: [DONE]\n"
+
+        mock_aiter_lines = Mock()
+        mock_aiter_lines.return_value.__aiter__.return_value = [chunk1, chunk2, chunk3]
+
+        mock_stream = Mock()
+        mock_stream.__aenter__ = Mock()
+        mock_stream.__aexit__ = Mock()
+        mock_stream.__aenter__.return_value = mock_stream
+        mock_stream.aiter_lines = mock_aiter_lines
+        mock_stream.raise_for_status = Mock()
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            mock_client = Mock()
+            mock_client.stream.return_value = mock_stream
+            mock_client.__aenter__ = Mock()
+            mock_client.__aexit__ = Mock()
+            mock_client.__aenter__.return_value = mock_client
+            mock_client_cls.return_value = mock_client
+
+            result = await session.stream_response("say hi")
+
+        assert "Hello there" in result
+        assert len(session.history) == 3
+        assert session.history[2]["role"] == "assistant"
+        assert "Hello there" in session.history[2]["content"]
+
+    @pytest.mark.asyncio
+    async def test_stream_response_empty(self) -> None:
+        session = ChatSession(
+            model="deepseek/deepseek-chat",
+            api_base_url="https://test.api/v1",
+            api_key="sk-test",
+        )
+        chunk = "data: [DONE]\n"
+
+        mock_aiter_lines = Mock()
+        mock_aiter_lines.return_value.__aiter__.return_value = [chunk]
+
+        mock_stream = Mock()
+        mock_stream.__aenter__ = Mock()
+        mock_stream.__aexit__ = Mock()
+        mock_stream.__aenter__.return_value = mock_stream
+        mock_stream.aiter_lines = mock_aiter_lines
+        mock_stream.raise_for_status = Mock()
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            mock_client = Mock()
+            mock_client.stream.return_value = mock_stream
+            mock_client.__aenter__ = Mock()
+            mock_client.__aexit__ = Mock()
+            mock_client.__aenter__.return_value = mock_client
+            mock_client_cls.return_value = mock_client
+
+            result = await session.stream_response("test")
+
+        assert "empty response" in result.lower()
