@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from general_ludd.abtest.compare import ABVerdict, decide, run_ab
 from general_ludd.abtest.runner import Result
@@ -114,10 +114,11 @@ class TestRunAB:
         workload: Workload = import_module_workload("os")
         a_result = _mk_result()
         b_result = _mk_result()
+        mock_run = Mock(side_effect=[a_result, b_result])
         with patch(
             "general_ludd.abtest.compare.run_candidate_in_subprocess",
-            side_effect=[a_result, b_result],
-        ) as mock_run:
+            new=mock_run,
+        ):
             verdict = run_ab("/a/root", "/b/root", workload)
             assert verdict.promote is True
             assert verdict.a is a_result
@@ -130,7 +131,7 @@ class TestRunAB:
         b_result = _mk_result(crashed=True)
         with patch(
             "general_ludd.abtest.compare.run_candidate_in_subprocess",
-            side_effect=[a_result, b_result],
+            new=Mock(side_effect=[a_result, b_result]),
         ):
             verdict = run_ab("/a", "/b", workload)
             assert verdict.promote is False
@@ -140,10 +141,11 @@ class TestRunAB:
         workload: Workload = import_module_workload("os")
         a_result = _mk_result()
         b_result = _mk_result()
+        mock_run = Mock(side_effect=[a_result, b_result])
         with patch(
             "general_ludd.abtest.compare.run_candidate_in_subprocess",
-            side_effect=[a_result, b_result],
-        ) as mock_run:
+            new=mock_run,
+        ):
             run_ab("/a", "/b", workload, timeout=30.0, mem_limit_mb=256)
             for call in mock_run.call_args_list:
                 assert call.kwargs["timeout"] == 30.0

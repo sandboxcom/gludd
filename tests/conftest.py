@@ -63,7 +63,7 @@ _orig_is_async_obj = _mock_mod._is_async_obj
 def _safe_is_async_obj(obj: object) -> bool:
     try:
         return _orig_is_async_obj(obj)
-    except RecursionError:
+    except BaseException:
         return False
 
 

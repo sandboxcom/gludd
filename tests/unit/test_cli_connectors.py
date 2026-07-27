@@ -150,7 +150,7 @@ class TestConnectorsHealth:
             },
             "count": 2,
         }
-        with patch("httpx.get", return_value=mock_resp):
+        with patch("general_ludd.cli.httpx.get", return_value=mock_resp):
             _cmd_connectors_health(_ns())
         out = capsys.readouterr().out
         assert "prod-logs" in out
@@ -163,7 +163,7 @@ class TestConnectorsHealth:
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {"health": {}, "count": 0}
-        with patch("httpx.get", return_value=mock_resp):
+        with patch("general_ludd.cli.httpx.get", return_value=mock_resp):
             _cmd_connectors_health(_ns())
         out = capsys.readouterr().out.lower()
         assert "no" in out and "source" in out
@@ -173,7 +173,7 @@ class TestConnectorsHealth:
 
         mock_resp = MagicMock()
         mock_resp.status_code = 500
-        with patch("httpx.get", return_value=mock_resp), pytest.raises(SystemExit):
+        with patch("general_ludd.cli.httpx.get", return_value=mock_resp), pytest.raises(SystemExit):
             _cmd_connectors_health(_ns())
 
     def test_health_calls_correct_endpoint(self):
@@ -182,7 +182,7 @@ class TestConnectorsHealth:
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {"health": {}, "count": 0}
-        with patch("httpx.get", return_value=mock_resp) as mock_get:
+        with patch("general_ludd.cli.httpx.get", return_value=mock_resp) as mock_get:
             _cmd_connectors_health(_ns(daemon_url="http://daemon:8000"))
         called_url = mock_get.call_args.args[0]
         assert called_url == "http://daemon:8000/api/observe/health"
@@ -211,7 +211,7 @@ class TestConnectorsQuery:
             ],
             "count": 2,
         }
-        with patch("httpx.post", return_value=mock_resp) as mock_post:
+        with patch("general_ludd.cli.httpx.post", return_value=mock_resp) as mock_post:
             _cmd_connectors_query(self._ns())
         out = capsys.readouterr().out
         assert "prod-logs" in out
@@ -232,7 +232,7 @@ class TestConnectorsQuery:
             "records": [],
             "count": 0,
         }
-        with patch("httpx.post", return_value=mock_resp):
+        with patch("general_ludd.cli.httpx.post", return_value=mock_resp):
             _cmd_connectors_query(self._ns())
         out = capsys.readouterr().out.lower()
         assert "no" in out and "record" in out
@@ -242,7 +242,7 @@ class TestConnectorsQuery:
 
         mock_resp = MagicMock()
         mock_resp.status_code = 500
-        with patch("httpx.post", return_value=mock_resp), pytest.raises(SystemExit):
+        with patch("general_ludd.cli.httpx.post", return_value=mock_resp), pytest.raises(SystemExit):
             _cmd_connectors_query(self._ns())
 
     def test_query_calls_correct_endpoint(self):
@@ -255,7 +255,7 @@ class TestConnectorsQuery:
             "records": [],
             "count": 0,
         }
-        with patch("httpx.post", return_value=mock_resp) as mock_post:
+        with patch("general_ludd.cli.httpx.post", return_value=mock_resp) as mock_post:
             _cmd_connectors_query(self._ns(daemon_url="http://daemon:8000"))
         called_url = mock_post.call_args.args[0]
         assert called_url == "http://daemon:8000/api/observe/query"
@@ -290,7 +290,7 @@ class TestConnectorsQuery:
             "records": [],
             "count": 0,
         }
-        with patch("httpx.post", return_value=mock_resp) as mock_post:
+        with patch("general_ludd.cli.httpx.post", return_value=mock_resp) as mock_post:
             _cmd_connectors_query(self._ns(spec='{"limit": 5, "level": "error"}'))
         posted_json = mock_post.call_args.kwargs.get("json") or {}
         assert posted_json.get("spec") == {"limit": 5, "level": "error"}
