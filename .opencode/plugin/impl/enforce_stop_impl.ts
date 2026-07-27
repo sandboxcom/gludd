@@ -1143,6 +1143,39 @@ const defaultImpl: HotModule = {
       }
     }
 
+    // ── UNDER-DISPATCH FLOOR (2026-07-27) ─────────────────────────────────
+    // The agent can send text + a few bash/read calls with <10 dispatches,
+    // bypassing the text-only and status-summary blocks. This check ensures
+    // that when work is pending and the current message has fewer than 10
+    // subagent dispatches, the text is blanked with a dispatch directive.
+    // Fires for messages with 1–9 dispatches (not text-only, not zero).
+    if (
+      (workState.hasPendingWork || workState.hasLocalWork || forceDispatchDirective) &&
+      turnState.dispatchCount > 0 &&
+      turnState.dispatchCount < 10 &&
+      !hasWorkArtifact
+    ) {
+      const GIT_SHIPPING_PHRASE = /\b(ship-commit|git-commit|batch-push|development-push|development-merge|release-cut)\b/i
+      if (!GIT_SHIPPING_PHRASE.test(text)) {
+        recordBlock("under-dispatch-floor")
+        recordBlankedResponse("under-dispatch-floor", text)
+        writePersistBlock(true, "under-dispatch-floor")
+
+        return {
+          text: [
+            "⛔ UNDER-DISPATCH FLOOR: only " + String(turnState.dispatchCount) + " dispatches in current message.",
+            "Floor is 10. When work is pending, every message MUST have ≥10 task/agent/workflow dispatches.",
+            "Bash/read/grep calls do NOT count toward the floor.",
+            "DISPATCH 10 SUBAGENTS NOW.",
+            "",
+            `PENDING: ${workState.tasksMdUncheckedCount} tasks, ` +
+            `CI ${workState.ciVerdictPendingOrRed ? "RED/PENDING" : "N/A"}, ` +
+            `gate ${workState.gateStatusRed ? "RED" : "OK"}.`,
+          ].join("\n"),
+        }
+      }
+    }
+
     // ── CONSECUTIVE TEXT-ONLY RESPONSES ────────────────────────────────────
     // hasLocalWork text-only attempts are blocked here as well as by the
     // broader pending-work block below; this is the session-level repeat guard.
