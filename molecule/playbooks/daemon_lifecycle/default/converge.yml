@@ -120,7 +120,7 @@
 
     - name: GET /health (public status)
       ansible.builtin.uri:
-        url: "{{ daemon_url }}/health"
+        url: "{{ daemon_url }}/healthz"
         method: GET
         status_code: 200
         return_content: true

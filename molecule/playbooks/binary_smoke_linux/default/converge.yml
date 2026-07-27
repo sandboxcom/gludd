@@ -127,6 +127,7 @@
     - name: Start daemon in background on port {{ _daemon_port }}
       ansible.builtin.shell: |
         set -e
+        export GLUDD_ALLOW_NO_AUTH=1
         nohup {{ _binary | quote }} daemon \
           --host 127.0.0.1 \
           --port {{ _daemon_port }} \

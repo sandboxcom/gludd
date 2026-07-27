@@ -3674,6 +3674,23 @@ check-task-registration:
 ci-cancel:
 	@gh run cancel $(RUN) -R sandboxcom/gludd 2>/dev/null && echo "CI-CANCEL: run $(RUN) cancelled" || echo "CI-CANCEL: failed to cancel run $(RUN)"
 
+ci-cancel-zombies-dev:
+	@echo "=== Listing queued Build and Release runs on development ==="; \
+	IDS=$$(gh run list --workflow "Build and Release" --branch development --status queued --limit 10 --json databaseId -R sandboxcom/gludd 2>/dev/null | python3 -c "import sys,json; [print(r['databaseId']) for r in json.load(sys.stdin)]" 2>/dev/null); \
+	if [ -z "$$IDS" ]; then \
+		echo "No queued zombie runs on development."; \
+	else \
+		CANCELLED=0; \
+		for id in $$IDS; do \
+			echo "Cancelling run $$id..."; \
+			gh run cancel $$id -R sandboxcom/gludd 2>/dev/null && CANCELLED=$$((CANCELLED+1)) || echo "  (already terminal or failed to cancel)"; \
+		done; \
+		echo "=== Cancelled: $$CANCELLED ==="; \
+	fi; \
+	echo "=== Verify: listing remaining queued ==="; \
+	gh run list --workflow "Build and Release" --branch development --status queued --limit 10 -R sandboxcom/gludd 2>/dev/null; \
+	echo "=== Done ==="
+
 auto-update-ledger:
 	@$(UV) run python scripts/auto_update_task_ledger.py
 
