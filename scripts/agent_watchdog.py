@@ -58,6 +58,7 @@ except ImportError:  # pragma: no cover - direct execution from scripts/
 try:
     from statistics import mean, stdev
 except ImportError:
+
     def _simple_mean(values):
         if not values:
             return 0.0
@@ -77,7 +78,11 @@ except ImportError:
 DEFAULT_WINDOW_SECS: float = 90.0
 
 DONE_MARKERS = ("result:", "summary:", "complete", "finished", "passed", "failed:")
-STALL_MARKERS = ("continuing", "let me", "next",)
+STALL_MARKERS = (
+    "continuing",
+    "let me",
+    "next",
+)
 
 
 class State(enum.Enum):
@@ -209,6 +214,11 @@ _ALERTED_PRUNE_SECS = 1800  # 30 minutes
 _POLL_CYCLE_COUNT = 0
 _POLL_CYCLE_PRUNE_INTERVAL = 100  # prune every ~17 min (100 * 10s)
 
+LOAD_THROTTLE_FILE = "/tmp/gludd-load-throttle"
+LOAD_WARN = 8
+LOAD_THROTTLE = 12
+LOAD_HARD = 20
+MAX_CHILD_PROCESSES = 30
 
 WATCHDOG_LOG_ROTATION_MB = 10
 WATCHDOG_LOG_KEEP_MB = 1
@@ -250,7 +260,9 @@ def _rotate_watchdog_logs() -> None:
                     tail = f.read()
                 log_path.write_bytes(tail)
                 new_sz = log_path.stat().st_size
-                _log(f"LOG ROTATION: {name} {sz / (1024*1024):.1f}MB → {new_sz / (1024*1024):.1f}MB (threshold {WATCHDOG_LOG_ROTATION_MB}MB)")
+                _log(
+                    f"LOG ROTATION: {name} {sz / (1024 * 1024):.1f}MB → {new_sz / (1024 * 1024):.1f}MB (threshold {WATCHDOG_LOG_ROTATION_MB}MB)"
+                )
             except Exception:
                 pass
 
@@ -261,9 +273,7 @@ def _prune_alerted_anomalies(now_epoch: float | None = None) -> None:
     if now_epoch is None:
         now_epoch = time.time()
     cutoff = now_epoch - _ALERTED_PRUNE_SECS
-    _alerted_anomalies = {
-        k: v for k, v in _alerted_anomalies.items() if v > cutoff
-    }
+    _alerted_anomalies = {k: v for k, v in _alerted_anomalies.items() if v > cutoff}
 
 
 ANOMALY_COUNT_FILE = "/tmp/gludd-watchdog-anomaly-count.json"
@@ -512,6 +522,7 @@ def stop_watchdog(*, lock_path: Path | str | None = None) -> bool:
         return True
     return False
 
+
 _UNCHECKED_PATTERN = re.compile(r"-\s+\[\s*\]|\*\s+\[\s*\]", re.IGNORECASE)
 
 
@@ -569,11 +580,7 @@ def _reset_streak() -> None:
 def _pending_todos() -> list[str]:
     try:
         todos = json.loads(Path(TODOWRITE_STATE).read_text())
-        return [
-            t.get("content", "?")
-            for t in todos
-            if t.get("status") in ("pending", "in_progress")
-        ]
+        return [t.get("content", "?") for t in todos if t.get("status") in ("pending", "in_progress")]
     except Exception:
         return []
 
@@ -602,15 +609,17 @@ def _read_deadlines() -> list[dict]:
             if start_ts <= 0:
                 continue
             elapsed = now - start_ts
-            result.append({
-                "id": task_id,
-                "task_id": task_id,
-                "type": entry.get("type", _guess_task_type(str(task_id))),
-                "description": entry.get("description", str(task_id)),
-                "dispatched_at": start_ts,
-                "start_ts": start_ts,
-                "elapsed": elapsed,
-            })
+            result.append(
+                {
+                    "id": task_id,
+                    "task_id": task_id,
+                    "type": entry.get("type", _guess_task_type(str(task_id))),
+                    "description": entry.get("description", str(task_id)),
+                    "dispatched_at": start_ts,
+                    "start_ts": start_ts,
+                    "elapsed": elapsed,
+                }
+            )
         return result
     except Exception:
         return []
@@ -624,11 +633,13 @@ def _detect_stalled_tasks(
     stalled: list[dict] = []
     for d in deadlines:
         if d["elapsed"] > max_seconds:
-            stalled.append({
-                "task_id": d["task_id"],
-                "elapsed_seconds": round(d["elapsed"], 1),
-                "elapsed_minutes": round(d["elapsed"] / 60.0, 1),
-            })
+            stalled.append(
+                {
+                    "task_id": d["task_id"],
+                    "elapsed_seconds": round(d["elapsed"], 1),
+                    "elapsed_minutes": round(d["elapsed"] / 60.0, 1),
+                }
+            )
     return stalled
 
 
@@ -651,13 +662,15 @@ def _detect_anomalies(
     anomalies: list[dict] = []
     for d in deadlines:
         if d["elapsed"] > median * multiplier:
-            anomalies.append({
-                "task_id": d["task_id"],
-                "elapsed_seconds": round(d["elapsed"], 1),
-                "elapsed_minutes": round(d["elapsed"] / 60.0, 1),
-                "median_seconds": round(median, 1),
-                "ratio": round(d["elapsed"] / median, 2) if median > 0 else 0,
-            })
+            anomalies.append(
+                {
+                    "task_id": d["task_id"],
+                    "elapsed_seconds": round(d["elapsed"], 1),
+                    "elapsed_minutes": round(d["elapsed"] / 60.0, 1),
+                    "median_seconds": round(median, 1),
+                    "ratio": round(d["elapsed"] / median, 2) if median > 0 else 0,
+                }
+            )
     return anomalies
 
 
@@ -819,7 +832,9 @@ def _ci_is_pending_or_red() -> tuple[bool, str | None]:
     try:
         result = subprocess.run(
             ["make", "ci-verdict", "BRANCH=master"],
-            capture_output=True, text=True, timeout=CI_VERDICT_TIMEOUT,
+            capture_output=True,
+            text=True,
+            timeout=CI_VERDICT_TIMEOUT,
             cwd=str(_WORKSPACE),
         )
         output = (result.stdout + result.stderr).upper()
@@ -856,9 +871,7 @@ def _ci_pending_for_too_long_minutes() -> float | None:
 
 def _write_watchdog_activity(ts: float | None = None) -> None:
     ts_value = ts if ts is not None else time.time()
-    Path(WATCHDOG_ACTIVITY_FILE).write_text(
-        json.dumps({"last_activity_ts": ts_value})
-    )
+    Path(WATCHDOG_ACTIVITY_FILE).write_text(json.dumps({"last_activity_ts": ts_value}))
 
 
 def _read_watchdog_activity_age() -> float | None:
@@ -1018,7 +1031,10 @@ def _get_local_head() -> str | None:
     try:
         result = subprocess.run(
             ["git", "rev-parse", "HEAD"],
-            capture_output=True, text=True, timeout=5, cwd=str(_WORKSPACE),
+            capture_output=True,
+            text=True,
+            timeout=5,
+            cwd=str(_WORKSPACE),
         )
         if result.returncode == 0:
             return result.stdout.strip()
@@ -1060,7 +1076,9 @@ def _check_ci_stall() -> None:
     try:
         result = subprocess.run(
             ["make", "ci-verdict", "BRANCH=master"],
-            capture_output=True, text=True, timeout=CI_VERDICT_TIMEOUT,
+            capture_output=True,
+            text=True,
+            timeout=CI_VERDICT_TIMEOUT,
             cwd=str(_WORKSPACE),
         )
         output = result.stdout + result.stderr
@@ -1135,10 +1153,7 @@ def _check_gate_background() -> None:
             return
 
         if elapsed > GATE_MAX_RUNTIME_SECS:
-            _log(
-                f"GATE STALLED: background gate pid={pid_str} running "
-                f"{elapsed:.0f}s (>1h) - auto-killing"
-            )
+            _log(f"GATE STALLED: background gate pid={pid_str} running {elapsed:.0f}s (>1h) - auto-killing")
             try:
                 _GATE_STATUS.write_text("GATE_TIMEOUT\n=== GATE: ABORTED (watchdog timeout) ===\n")
             except Exception:
@@ -1173,7 +1188,9 @@ def _check_push_health() -> None:
 
         result = subprocess.run(
             ["sh", "-c", "git log --oneline @{u}..HEAD 2>&1 | wc -l"],
-            capture_output=True, text=True, timeout=VERIFY_REMOTE_TIMEOUT,
+            capture_output=True,
+            text=True,
+            timeout=VERIFY_REMOTE_TIMEOUT,
             cwd=str(_WORKSPACE),
         )
         output = result.stdout.strip()
@@ -1297,7 +1314,9 @@ def _check_push_stalled() -> None:
 
         result = subprocess.run(
             ["ps", "-eo", "pid,etime,command"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         for line in result.stdout.splitlines():
             if "git push" in line and "grep" not in line and "ps -eo" not in line:
@@ -1342,7 +1361,9 @@ def _check_ci_pending_stall() -> None:
             return
         result = subprocess.run(
             ["gh", "run", "list", f"--commit={head}", "--json", "status,createdAt", "--jq", ".[0]"],
-            capture_output=True, text=True, timeout=15,
+            capture_output=True,
+            text=True,
+            timeout=15,
         )
         if not result.stdout.strip():
             return
@@ -1413,6 +1434,7 @@ def _record_stalled(task_id: str) -> None:
 
 def kill_stalled_task(pid: int) -> None:
     import signal
+
     try:
         os.kill(pid, signal.SIGTERM)
         _log(f"TASK KILL: sent SIGTERM to pid={pid}")
@@ -1497,7 +1519,13 @@ def _flag_anomaly(task_name: str, expected_secs: float, actual_secs: float) -> N
             existing = directive_p.read_text()
         except Exception:
             pass
-    directive_p.write_text((existing + f"[{_now()}] TIMING ANOMALY: {task_name} took {actual_secs:.0f}s vs expected {expected_secs:.0f}s\n").strip() + "\n")
+    directive_p.write_text(
+        (
+            existing
+            + f"[{_now()}] TIMING ANOMALY: {task_name} took {actual_secs:.0f}s vs expected {expected_secs:.0f}s\n"
+        ).strip()
+        + "\n"
+    )
 
 
 def _kill_stalled_task(task_name: str, pid: int | None) -> None:
@@ -1617,8 +1645,7 @@ def _write_anomaly_count(count: int) -> None:
     Path(ANOMALY_COUNT_FILE).write_text(json.dumps({"count": count}))
 
 
-def _increment_anomaly_count(key: str | None = None,
-                           counts: dict[str, int] | None = None) -> int:
+def _increment_anomaly_count(key: str | None = None, counts: dict[str, int] | None = None) -> int:
     if key is not None:
         if counts is None:
             counts = _read_anomaly_counts()
@@ -1735,12 +1762,14 @@ def check_task_anomalies() -> dict:
             gate_elapsed = time.time() - gp.stat().st_mtime
             if gate_elapsed > 45 * 60:
                 _log(f"GATE STALLED: background gate running {gate_elapsed:.0f}s (>45min)")
-                findings.setdefault("stalled", []).append({
-                    "task_id": "gate-process",
-                    "elapsed_s": round(gate_elapsed, 1),
-                    "expected_s": 2700,
-                    "type": "gate",
-                })
+                findings.setdefault("stalled", []).append(
+                    {
+                        "task_id": "gate-process",
+                        "elapsed_s": round(gate_elapsed, 1),
+                        "expected_s": 2700,
+                        "type": "gate",
+                    }
+                )
     except Exception:
         pass
 
@@ -1881,7 +1910,9 @@ def _detect_stalled_push() -> str | None:
     try:
         result = subprocess.run(
             ["sh", "-c", "git log --oneline @{u}..HEAD 2>&1 | wc -l"],
-            capture_output=True, text=True, timeout=VERIFY_REMOTE_TIMEOUT,
+            capture_output=True,
+            text=True,
+            timeout=VERIFY_REMOTE_TIMEOUT,
             cwd=str(_WORKSPACE),
         )
         unpushed = result.stdout.strip()
@@ -1906,8 +1937,12 @@ def _detect_stalled_push() -> str | None:
 
 
 def _compute_health_score(
-    tasks_unchecked: bool, ratchet_count: int, gate_red: bool,
-    ci_pending: bool, repo_pending: bool, agent_active: bool,
+    tasks_unchecked: bool,
+    ratchet_count: int,
+    gate_red: bool,
+    ci_pending: bool,
+    repo_pending: bool,
+    agent_active: bool,
 ) -> int:
     score = 100
     if tasks_unchecked:
@@ -1971,14 +2006,23 @@ def _detect_ci_true_stall() -> bool:
 
 
 def _write_orchestrator_state(
-    tasks_unchecked: bool, ratchet_count: int, gate_red: bool,
-    ci_pending: bool, repo_pending: bool, agent_active: bool,
-    ci_run_id: str | None = None, stop_detected: bool = False,
+    tasks_unchecked: bool,
+    ratchet_count: int,
+    gate_red: bool,
+    ci_pending: bool,
+    repo_pending: bool,
+    agent_active: bool,
+    ci_run_id: str | None = None,
+    stop_detected: bool = False,
 ) -> None:
     try:
         health = _compute_health_score(
-            tasks_unchecked, ratchet_count, gate_red,
-            ci_pending, repo_pending, agent_active,
+            tasks_unchecked,
+            ratchet_count,
+            gate_red,
+            ci_pending,
+            repo_pending,
+            agent_active,
         )
         ci_loop = _detect_ci_loop()
         ci_stall = _detect_ci_true_stall()
@@ -2006,12 +2050,16 @@ def _write_orchestrator_state(
 def _write_disengage_signal(minutes: int = 5, reason: str = "") -> None:
     try:
         disengage_until = int(time.time() * 1000 + minutes * 60 * 1000)
-        Path(DISENGAGE_FILE).write_text(json.dumps({
-            "disengage_until": disengage_until,
-            "disengage_until_epoch_ms": disengage_until,
-            "reason": reason,
-            "ts": _now(),
-        }))
+        Path(DISENGAGE_FILE).write_text(
+            json.dumps(
+                {
+                    "disengage_until": disengage_until,
+                    "disengage_until_epoch_ms": disengage_until,
+                    "reason": reason,
+                    "ts": _now(),
+                }
+            )
+        )
         _log(f"DISENGAGE: sent signal for {minutes}min — {reason}")
     except Exception:
         pass
@@ -2088,12 +2136,16 @@ def _check_plugin_hashes() -> None:
         _write_disengage_signal(minutes=60, reason=f"plugin_version_mismatch: {reason}")
 
         try:
-            Path(BLOCK_COUNTER_FILE).write_text(json.dumps({
-                "consecutiveBlocks": 0,
-                "totalBlocks": 0,
-                "lastBlockTs": 0,
-                "disengageUntil": 9999999999999,
-            }))
+            Path(BLOCK_COUNTER_FILE).write_text(
+                json.dumps(
+                    {
+                        "consecutiveBlocks": 0,
+                        "totalBlocks": 0,
+                        "lastBlockTs": 0,
+                        "disengageUntil": 9999999999999,
+                    }
+                )
+            )
         except Exception:
             pass
 
@@ -2120,7 +2172,9 @@ def _is_push_running() -> bool:
     try:
         result = subprocess.run(
             ["ps", "-eo", "command"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         for line in result.stdout.splitlines():
             if "git push" in line and "grep" not in line and "ps -eo" not in line:
@@ -2216,12 +2270,16 @@ def _auto_reengage_enforcement(mtime_age: float | None) -> None:
 
     # -- Re-engage: clear block counter and disengage file --
     try:
-        Path(BLOCK_COUNTER_FILE).write_text(json.dumps({
-            "consecutiveBlocks": 0,
-            "totalBlocks": 0,
-            "lastBlockTs": 0,
-            "disengageUntil": 0,
-        }))
+        Path(BLOCK_COUNTER_FILE).write_text(
+            json.dumps(
+                {
+                    "consecutiveBlocks": 0,
+                    "totalBlocks": 0,
+                    "lastBlockTs": 0,
+                    "disengageUntil": 0,
+                }
+            )
+        )
     except Exception:
         pass
 
@@ -2289,8 +2347,7 @@ def _write_continue_directive(
     )
     if extra_message:
         txt += (
-            "\n----------------------------------------------------------------------\n"
-            f"ESCALATION: {extra_message}\n"
+            f"\n----------------------------------------------------------------------\nESCALATION: {extra_message}\n"
         )
     txt += (
         "======================================================================\n"
@@ -2337,37 +2394,41 @@ def _build_continue_directive(
             for line in content.splitlines():
                 if _UNCHECKED_PATTERN.search(line):
                     item_text = line.strip()
-                    dispatch_commands.append({
-                        "index": task_index,
-                        "task_item": item_text,
-                        "tool": "task",
-                        "command": f"dispatch subagent: {item_text}",
-                    })
+                    dispatch_commands.append(
+                        {
+                            "index": task_index,
+                            "task_item": item_text,
+                            "tool": "task",
+                            "command": f"dispatch subagent: {item_text}",
+                        }
+                    )
                     task_index += 1
         except Exception:
             pass
 
     if ratchet_count > 0:
-        dispatch_commands.append({
-            "index": task_index,
-            "task_item": f"ratchet: {ratchet_count} entries",
-            "tool": "task",
-            "command": f"dispatch subagents to fix {ratchet_count} ratchet entries",
-        })
+        dispatch_commands.append(
+            {
+                "index": task_index,
+                "task_item": f"ratchet: {ratchet_count} entries",
+                "tool": "task",
+                "command": f"dispatch subagents to fix {ratchet_count} ratchet entries",
+            }
+        )
         task_index += 1
 
     if gate_red:
-        dispatch_commands.append({
-            "index": task_index,
-            "task_item": "gate: red — fix failures",
-            "tool": "task",
-            "command": "dispatch subagent to investigate and fix red gate",
-        })
+        dispatch_commands.append(
+            {
+                "index": task_index,
+                "task_item": "gate: red — fix failures",
+                "tool": "task",
+                "command": "dispatch subagent to investigate and fix red gate",
+            }
+        )
         task_index += 1
 
-    msg_parts = [
-        f"FORCE DISPATCH: {len(dispatch_commands)} specific tasks below. Dispatch ALL of them NOW."
-    ]
+    msg_parts = [f"FORCE DISPATCH: {len(dispatch_commands)} specific tasks below. Dispatch ALL of them NOW."]
     if work_hint.strip():
         msg_parts.append(work_hint.strip())
     if extra_message.strip():
@@ -2413,9 +2474,7 @@ def _liveness_startup_in_backoff() -> bool:
 
 def _liveness_write_backoff_ts() -> None:
     try:
-        Path(LIVENESS_STARTUP_BACKOFF_FILE).write_text(
-            json.dumps({"last_check_ts": time.time()})
-        )
+        Path(LIVENESS_STARTUP_BACKOFF_FILE).write_text(json.dumps({"last_check_ts": time.time()}))
     except Exception:
         pass
 
@@ -2428,22 +2487,27 @@ def _check_plugin_liveness_on_startup() -> None:
     """
     global _last_liveness_check
     if _liveness_startup_in_backoff():
-        _log("plugin-liveness: backoff active — skipping startup check "
-             f"(last check <{LIVENESS_STARTUP_BACKOFF_SECS}s ago)")
+        _log(
+            "plugin-liveness: backoff active — skipping startup check "
+            f"(last check <{LIVENESS_STARTUP_BACKOFF_SECS}s ago)"
+        )
         _last_liveness_check = time.time()
         return
     _log("plugin-liveness: running startup check...")
     try:
         result = subprocess.run(
             ["make", "check-plugin-liveness"],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True,
+            text=True,
+            timeout=30,
             cwd=str(_WORKSPACE),
         )
         if result.returncode == 0:
             _log("plugin-liveness: PASSED — enforce-stop.ts structurally intact and firing")
         else:
-            _log(f"plugin-liveness: FAILED (exit={result.returncode}) — "
-                 f"enforce-stop.ts may be dead or silently disabled")
+            _log(
+                f"plugin-liveness: FAILED (exit={result.returncode}) — enforce-stop.ts may be dead or silently disabled"
+            )
             _log(f"  stderr: {result.stderr.strip()[:300]}")
         _last_liveness_check = time.time()
         _liveness_write_backoff_ts()
@@ -2464,7 +2528,9 @@ def _check_plugin_liveness_periodic() -> None:
     try:
         result = subprocess.run(
             ["make", "check-plugin-liveness"],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True,
+            text=True,
+            timeout=30,
             cwd=str(_WORKSPACE),
         )
         if result.returncode != 0:
@@ -2520,29 +2586,35 @@ def _check_force_dispatch() -> bool:
             for line in content.splitlines():
                 if _UNCHECKED_PATTERN.search(line):
                     item_text = line.strip()
-                    dispatch_commands.append({
-                        "index": task_index,
-                        "task_item": item_text,
-                        "tool": "task",
-                        "command": f"dispatch subagent: {item_text}",
-                    })
+                    dispatch_commands.append(
+                        {
+                            "index": task_index,
+                            "task_item": item_text,
+                            "tool": "task",
+                            "command": f"dispatch subagent: {item_text}",
+                        }
+                    )
                     task_index += 1
 
         if ratchet_count > 0:
-            dispatch_commands.append({
-                "index": task_index,
-                "task_item": f"ratchet: {ratchet_count} entries",
-                "tool": "task",
-                "command": f"dispatch subagents to fix {ratchet_count} ratchet entries",
-            })
+            dispatch_commands.append(
+                {
+                    "index": task_index,
+                    "task_item": f"ratchet: {ratchet_count} entries",
+                    "tool": "task",
+                    "command": f"dispatch subagents to fix {ratchet_count} ratchet entries",
+                }
+            )
 
         if gate_red:
-            dispatch_commands.append({
-                "index": task_index + 1,
-                "task_item": "gate: red — fix failures",
-                "tool": "task",
-                "command": "dispatch subagent to investigate and fix red gate",
-            })
+            dispatch_commands.append(
+                {
+                    "index": task_index + 1,
+                    "task_item": "gate: red — fix failures",
+                    "tool": "task",
+                    "command": "dispatch subagent to investigate and fix red gate",
+                }
+            )
 
         if dispatch_commands:
             directive = {
@@ -2591,7 +2663,9 @@ def _check_under_floor_dispatch() -> None:
 
     if dispatch_count >= 10:
         if zero_streak > 0:
-            _log(f"DISPATCH OK: {dispatch_count} dispatches this wave, {estimated_in_flight} estimated in flight — floor satisfied")
+            _log(
+                f"DISPATCH OK: {dispatch_count} dispatches this wave, {estimated_in_flight} estimated in flight — floor satisfied"
+            )
         return
 
     if not _pending_work_exists():
@@ -2659,9 +2733,12 @@ def check_and_reset() -> dict:
             ci_status = _WORKSPACE / ".ci-status"
             ci_status.parent.mkdir(parents=True, exist_ok=True)
             ci_status.write_text(
-                f"=== CI {stamp} ===" + newline
-                + f"CI FAIL pending (run {ci_run_id})" + newline
-                + "suggested_action: wait_for_ci" + newline
+                f"=== CI {stamp} ==="
+                + newline
+                + f"CI FAIL pending (run {ci_run_id})"
+                + newline
+                + "suggested_action: wait_for_ci"
+                + newline
             )
             if not gate_red:
                 gate_text = _GATE_STATUS.read_text(encoding="utf-8") if _GATE_STATUS.exists() else ""
@@ -2677,21 +2754,26 @@ def check_and_reset() -> dict:
 
     # ── HEARTBEAT: write every poll cycle so operator can see watchdog is alive ──
     try:
-        Path(HEARTBEAT_FILE).write_text(json.dumps({
-            "ts": _now(),
-            "epoch": time.time(),
-            "poll_cycle": _POLL_CYCLE_COUNT + 1,
-            "streak": streak,
-            "mtime_age_s": round(mtime_age, 1) if mtime_age else None,
-            "has_pending_work": has_pending_work,
-            "tasks_md_unchecked": tasks_unchecked,
-            "ratchet_entries": ratchet_count,
-            "gate_status_red": gate_red,
-            "ci_pending_or_red": ci_pending,
-            "ci_run_id": ci_run_id,
-            "pending_todo_count": len(pending),
-            "stop_count": _read_stop_count(),
-        }, indent=2))
+        Path(HEARTBEAT_FILE).write_text(
+            json.dumps(
+                {
+                    "ts": _now(),
+                    "epoch": time.time(),
+                    "poll_cycle": _POLL_CYCLE_COUNT + 1,
+                    "streak": streak,
+                    "mtime_age_s": round(mtime_age, 1) if mtime_age else None,
+                    "has_pending_work": has_pending_work,
+                    "tasks_md_unchecked": tasks_unchecked,
+                    "ratchet_entries": ratchet_count,
+                    "gate_status_red": gate_red,
+                    "ci_pending_or_red": ci_pending,
+                    "ci_run_id": ci_run_id,
+                    "pending_todo_count": len(pending),
+                    "stop_count": _read_stop_count(),
+                },
+                indent=2,
+            )
+        )
     except Exception:
         pass
 
@@ -2711,7 +2793,11 @@ def check_and_reset() -> dict:
             sources.append("gate")
         if ci_pending:
             sources.append(f"CI(run={ci_run_id})")
-        _log(f"watchdog: pending work detected — sources={sources} mtime_age={mtime_age:.0f}s" if mtime_age else f"watchdog: pending work detected — sources={sources}")
+        _log(
+            f"watchdog: pending work detected — sources={sources} mtime_age={mtime_age:.0f}s"
+            if mtime_age
+            else f"watchdog: pending work detected — sources={sources}"
+        )
 
     # ── Stop detection via pending-work + streak mtime ───────────────────
     # Fire when: agent is silent (streak==0/None) + mtime old + work pending
@@ -2742,8 +2828,7 @@ def check_and_reset() -> dict:
                 )
             else:
                 work_hint = (
-                    "CI pending. Work on wiring/coding gaps while waiting. "
-                    "Do NOT push new commits until CI is green."
+                    "CI pending. Work on wiring/coding gaps while waiting. Do NOT push new commits until CI is green."
                 )
 
         _write_continue_directive(
@@ -2769,7 +2854,13 @@ def check_and_reset() -> dict:
 
     # ── ALSO detect grinding-in-place: agent has streak>0 (making calls) ──
     # but hasn't cleared pending work and streak file is very stale (>30s)
-    elif has_pending_work and streak is not None and streak > 0 and mtime_age is not None and mtime_age > STOP_IDLE_SECS * 2:
+    elif (
+        has_pending_work
+        and streak is not None
+        and streak > 0
+        and mtime_age is not None
+        and mtime_age > STOP_IDLE_SECS * 2
+    ):
         reset_needed = True
         work_sources = ["local"]
         reason = (
@@ -2819,9 +2910,7 @@ def check_and_reset() -> dict:
         result["task_anomalies"] = task_result["anomalies"]
     if task_result["stalled"]:
         result["task_stalled"] = task_result["stalled"]
-        Path(EX_STALLED_TASKS_FILE).write_text(
-            json.dumps({"ts": _now(), "stalled": task_result["stalled"]}, indent=2)
-        )
+        Path(EX_STALLED_TASKS_FILE).write_text(json.dumps({"ts": _now(), "stalled": task_result["stalled"]}, indent=2))
         _log(f"STALLED TASK DETECTED: {len(task_result['stalled'])} task(s) — writing {EX_STALLED_TASKS_FILE}")
 
     _check_push_stalled()
@@ -2830,10 +2919,12 @@ def check_and_reset() -> dict:
 
     # ── ALWAYS: Max out false-done block counter to unjam agent ──────────
     # Item 11: Smart false-done maxout — only when CI-only pending + agent active
-    if (ci_pending and not has_pending_work and mtime_age is not None and mtime_age < PURE_IDLE_SECS) or has_pending_work:
+    if (
+        ci_pending and not has_pending_work and mtime_age is not None and mtime_age < PURE_IDLE_SECS
+    ) or has_pending_work:
         _max_out_false_done()
     # else: leave false-done blocks alone (agent may be genuinely stopped)
-        # ── Pure idle detection (ANY idle >PURE_IDLE_SECS, regardless of pending work) ──
+    # ── Pure idle detection (ANY idle >PURE_IDLE_SECS, regardless of pending work) ──
     if not reset_needed and mtime_age is not None and mtime_age > PURE_IDLE_SECS:
         last_flag = _read_last_flag_time()
         now = time.time()
@@ -2862,9 +2953,7 @@ def check_and_reset() -> dict:
     if history_anomalies:
         result["history_anomalies"] = history_anomalies
         try:
-            Path(TASK_ANOMALIES_FILE).write_text(
-                json.dumps({"ts": _now(), "anomalies": history_anomalies}, indent=2)
-            )
+            Path(TASK_ANOMALIES_FILE).write_text(json.dumps({"ts": _now(), "anomalies": history_anomalies}, indent=2))
         except Exception:
             pass
         for a in history_anomalies:
@@ -2984,10 +3073,14 @@ def check_and_reset() -> dict:
     ci_loop = _detect_ci_loop()
     ci_true_stall = _detect_ci_true_stall()
     if ci_loop:
-        _log(f"CI LOOP DETECTED: >{CI_LOOP_THRESHOLD_PUSHES} pushes in <{CI_LOOP_THRESHOLD_MINUTES}min while CI pending. STOP PUSHING.")
+        _log(
+            f"CI LOOP DETECTED: >{CI_LOOP_THRESHOLD_PUSHES} pushes in <{CI_LOOP_THRESHOLD_MINUTES}min while CI pending. STOP PUSHING."
+        )
         _write_disengage_signal(minutes=10, reason="ci_loop")
     if ci_true_stall:
-        _log(f"CI TRUE STALL: pending >{CI_TRUE_STALL_MINUTES}min with no pushes for {CI_TRUE_STALL_NO_PUSH_MINUTES}min. CI may be broken.")
+        _log(
+            f"CI TRUE STALL: pending >{CI_TRUE_STALL_MINUTES}min with no pushes for {CI_TRUE_STALL_NO_PUSH_MINUTES}min. CI may be broken."
+        )
 
     # ── Under-floor dispatch detection ────────────────────────────────────
     _check_under_floor_dispatch()
@@ -3046,7 +3139,9 @@ def _get_tags() -> list[str]:
     try:
         result = subprocess.run(
             ["git", "tag", "--sort=-creatordate"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
             cwd=str(_WORKSPACE),
         )
         if result.returncode != 0:
@@ -3060,9 +3155,10 @@ def _get_tags_with_commits() -> list[tuple[str, str]]:
     """Return list of (tag, commit_hash) for all tags, newest first."""
     try:
         result = subprocess.run(
-            ["git", "for-each-ref", "--sort=-creatordate",
-             "--format=%(refname:short) %(objectname)", "refs/tags"],
-            capture_output=True, text=True, timeout=10,
+            ["git", "for-each-ref", "--sort=-creatordate", "--format=%(refname:short) %(objectname)", "refs/tags"],
+            capture_output=True,
+            text=True,
+            timeout=10,
             cwd=str(_WORKSPACE),
         )
         if result.returncode != 0:
@@ -3088,7 +3184,9 @@ def _gh_release_exists(tag: str) -> tuple[bool, dict]:
     try:
         result = subprocess.run(
             ["gh", "release", "view", tag, "--json", "isDraft,isPrerelease,assets,publishedAt,url"],
-            capture_output=True, text=True, timeout=15,
+            capture_output=True,
+            text=True,
+            timeout=15,
         )
         if result.returncode != 0:
             return False, {}
@@ -3124,9 +3222,19 @@ def _check_ci_red_after_tag_push() -> dict | None:
         latest_tag, tag_sha = tags[0]
 
         result = subprocess.run(
-            ["gh", "run", "list", f"--commit={tag_sha}", "--json", "status,conclusion,createdAt,databaseId",
-             "--jq", ".[0]"],
-            capture_output=True, text=True, timeout=15,
+            [
+                "gh",
+                "run",
+                "list",
+                f"--commit={tag_sha}",
+                "--json",
+                "status,conclusion,createdAt,databaseId",
+                "--jq",
+                ".[0]",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=15,
         )
         _mark_check_run("ci_red_after_tag")
 
@@ -3173,9 +3281,15 @@ def _check_release_completeness() -> dict | None:
         tags = _get_tags()
         if not tags:
             _mark_check_run("release_completeness")
-            Path(RELEASE_COMPLETENESS_FILE).write_text(json.dumps({
-                "ts": time.time(), "incomplete": False, "reason": "no tags found",
-            }))
+            Path(RELEASE_COMPLETENESS_FILE).write_text(
+                json.dumps(
+                    {
+                        "ts": time.time(),
+                        "incomplete": False,
+                        "reason": "no tags found",
+                    }
+                )
+            )
             return None
 
         latest_tag = tags[0]
@@ -3231,14 +3345,18 @@ def _check_release_completeness() -> dict | None:
             _mark_check_run("release_completeness")
             return result_data
 
-        Path(RELEASE_COMPLETENESS_FILE).write_text(json.dumps({
-            "ts": time.time(),
-            "tag": latest_tag,
-            "incomplete": False,
-            "reason": f"ok — {asset_count} assets",
-            "assetCount": asset_count,
-            "isDraft": is_draft,
-        }))
+        Path(RELEASE_COMPLETENESS_FILE).write_text(
+            json.dumps(
+                {
+                    "ts": time.time(),
+                    "tag": latest_tag,
+                    "incomplete": False,
+                    "reason": f"ok — {asset_count} assets",
+                    "assetCount": asset_count,
+                    "isDraft": is_draft,
+                }
+            )
+        )
         _mark_check_run("release_completeness")
         return None
 
@@ -3260,7 +3378,9 @@ def _check_secrets_committed() -> dict | None:
     try:
         result = subprocess.run(
             ["make", "secrets-scan"],
-            capture_output=True, text=True, timeout=60,
+            capture_output=True,
+            text=True,
+            timeout=60,
             cwd=str(_WORKSPACE),
         )
         _mark_check_run("secrets_scan")
@@ -3278,9 +3398,14 @@ def _check_secrets_committed() -> dict | None:
             Path(SECRETS_VIOLATION_FILE).write_text(json.dumps(violation_data))
             return violation_data
 
-        Path(SECRETS_VIOLATION_FILE).write_text(json.dumps({
-            "ts": time.time(), "violation": False,
-        }))
+        Path(SECRETS_VIOLATION_FILE).write_text(
+            json.dumps(
+                {
+                    "ts": time.time(),
+                    "violation": False,
+                }
+            )
+        )
         return None
 
     except subprocess.TimeoutExpired:
@@ -3307,9 +3432,14 @@ def _check_stale_release() -> dict | None:
         tag_commits = _get_tags_with_commits()
         if not tag_commits:
             _mark_check_run("stale_release")
-            Path(STALE_RELEASE_FILE).write_text(json.dumps({
-                "ts": time.time(), "stale": False,
-            }))
+            Path(STALE_RELEASE_FILE).write_text(
+                json.dumps(
+                    {
+                        "ts": time.time(),
+                        "stale": False,
+                    }
+                )
+            )
             return None
 
         stale_findings: list[dict] = []
@@ -3319,7 +3449,9 @@ def _check_stale_release() -> dict | None:
             try:
                 commit_result = subprocess.run(
                     ["git", "log", "-1", "--format=%ct", sha],
-                    capture_output=True, text=True, timeout=5,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
                     cwd=str(_WORKSPACE),
                 )
                 commit_ts = float(commit_result.stdout.strip() or 0)
@@ -3340,12 +3472,14 @@ def _check_stale_release() -> dict | None:
                 continue
 
             _log(f"STALE RELEASE: tag {tag} (age {tag_age_minutes:.0f}m) has no GitHub Release")
-            stale_findings.append({
-                "tag": tag,
-                "sha": sha,
-                "age_minutes": round(tag_age_minutes, 1),
-                "reason": "no release created within timeout",
-            })
+            stale_findings.append(
+                {
+                    "tag": tag,
+                    "sha": sha,
+                    "age_minutes": round(tag_age_minutes, 1),
+                    "reason": "no release created within timeout",
+                }
+            )
 
             if len(tag) > 0 and commit_ts > 0:
                 break
@@ -3360,9 +3494,14 @@ def _check_stale_release() -> dict | None:
             _mark_check_run("stale_release")
             return stale_data
 
-        Path(STALE_RELEASE_FILE).write_text(json.dumps({
-            "ts": time.time(), "stale": False,
-        }))
+        Path(STALE_RELEASE_FILE).write_text(
+            json.dumps(
+                {
+                    "ts": time.time(),
+                    "stale": False,
+                }
+            )
+        )
         _mark_check_run("stale_release")
         return None
 
@@ -3370,6 +3509,53 @@ def _check_stale_release() -> dict | None:
         _log(f"_check_stale_release error: {e}")
         _mark_check_run("stale_release")
         return None
+
+
+def _check_load_average() -> None:
+    """Check 1-min load average and throttle/submit dispatch accordingly.
+
+    - LOAD_WARN (8): log warning
+    - LOAD_THROTTLE (12): write /tmp/gludd-load-throttle → floor=3
+    - LOAD_HARD (20): write /tmp/gludd-load-throttle → floor=0
+    - Below LOAD_WARN: remove throttle file if present
+
+    Also monitors child-process count of the parent (opencode) process.
+    """
+    try:
+        load: float = os.getloadavg()[0]
+    except OSError:
+        return
+
+    now_epoch: float = time.time()
+
+    if load >= LOAD_HARD:
+        _log(f"LOAD HARD: {load:.1f} >= {LOAD_HARD} — stopping all dispatches")
+        Path(LOAD_THROTTLE_FILE).write_text(json.dumps({"floor": 0, "load": round(load, 2), "ts": now_epoch}))
+    elif load >= LOAD_THROTTLE:
+        _log(f"LOAD THROTTLE: {load:.1f} >= {LOAD_THROTTLE} — reducing dispatch floor to 3")
+        Path(LOAD_THROTTLE_FILE).write_text(json.dumps({"floor": 3, "load": round(load, 2), "ts": now_epoch}))
+    elif load >= LOAD_WARN:
+        _log(f"LOAD WARN: {load:.1f} >= {LOAD_WARN}")
+        if Path(LOAD_THROTTLE_FILE).exists():
+            Path(LOAD_THROTTLE_FILE).unlink()
+    else:
+        if Path(LOAD_THROTTLE_FILE).exists():
+            Path(LOAD_THROTTLE_FILE).unlink()
+
+    # Process count: count direct children of the opencode parent process
+    try:
+        result = subprocess.run(
+            ["pgrep", "-P", str(os.getppid())],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        child_pids = [p for p in result.stdout.strip().splitlines() if p]
+        child_count = len(child_pids)
+        if child_count > MAX_CHILD_PROCESSES:
+            _log(f"CHILD PROCESS WARN: {child_count} children of opencode > {MAX_CHILD_PROCESSES}")
+    except Exception:
+        pass
 
 
 # -- CLI ----------------------------------------------------------------------
@@ -3418,10 +3604,7 @@ def main(argv: list[str] | None = None) -> int:
 
     lease = acquire_watchdog_lock()
     if lease is None:
-        _log(
-            "watchdog already running for namespace "
-            f"{project_namespace(_WORKSPACE)}; refusing duplicate"
-        )
+        _log(f"watchdog already running for namespace {project_namespace(_WORKSPACE)}; refusing duplicate")
         return 0
     try:
         _log(f"watchdog started — poll={POLL_SECS}s, threshold={STREAK_THRESHOLD}")
@@ -3437,6 +3620,7 @@ def main(argv: list[str] | None = None) -> int:
                 check_running_tasks()
                 check_push_status()
                 _check_gate_background()
+                _check_load_average()
                 _check_plugin_liveness_periodic()
                 _rotate_watchdog_logs()
             except Exception as exc:
