@@ -29,25 +29,28 @@ class TestConnectorsParserWiring:
     """The `connectors` subcommand must parse like sibling subcommands."""
 
     def test_connectors_list_invokes_cmd(self):
-        with patch("sys.argv", ["gludd", "connectors", "list"]), patch(
-            "general_ludd.cli._cmd_connectors_list"
-        ) as mock_cmd:
+        with (
+            patch("sys.argv", ["gludd", "connectors", "list"]),
+            patch("general_ludd.cli._cmd_connectors_list") as mock_cmd,
+        ):
             main()
         mock_cmd.assert_called_once()
         args = mock_cmd.call_args[0][0]
         assert args.daemon_url == "http://localhost:8000"
 
     def test_connectors_health_invokes_cmd(self):
-        with patch("sys.argv", ["gludd", "connectors", "health"]), patch(
-            "general_ludd.cli._cmd_connectors_health"
-        ) as mock_cmd:
+        with (
+            patch("sys.argv", ["gludd", "connectors", "health"]),
+            patch("general_ludd.cli._cmd_connectors_health") as mock_cmd,
+        ):
             main()
         mock_cmd.assert_called_once()
 
     def test_connectors_query_invokes_cmd(self):
-        with patch(
-            "sys.argv", ["gludd", "connectors", "query", "prod-logs"]
-        ), patch("general_ludd.cli._cmd_connectors_query") as mock_cmd:
+        with (
+            patch("sys.argv", ["gludd", "connectors", "query", "prod-logs"]),
+            patch("general_ludd.cli._cmd_connectors_query") as mock_cmd,
+        ):
             main()
         mock_cmd.assert_called_once()
         args = mock_cmd.call_args[0][0]
@@ -63,10 +66,13 @@ class TestConnectorsParserWiring:
         assert "query" in out
 
     def test_connectors_custom_daemon_url(self):
-        with patch(
-            "sys.argv",
-            ["gludd", "connectors", "list", "--daemon-url", "http://node-2:9000"],
-        ), patch("general_ludd.cli._cmd_connectors_list") as mock_cmd:
+        with (
+            patch(
+                "sys.argv",
+                ["gludd", "connectors", "list", "--daemon-url", "http://node-2:9000"],
+            ),
+            patch("general_ludd.cli._cmd_connectors_list") as mock_cmd,
+        ):
             main()
         args = mock_cmd.call_args[0][0]
         assert args.daemon_url == "http://node-2:9000"
@@ -92,7 +98,7 @@ class TestConnectorsList:
             "by_kind": {"logs": ["prod-logs"], "metrics": ["metrics-1"]},
             "count": 2,
         }
-        with patch("httpx.get", return_value=mock_resp):
+        with patch("general_ludd.cli.httpx.get", return_value=mock_resp):
             _cmd_connectors_list(_ns())
         out = capsys.readouterr().out
         assert "prod-logs" in out
@@ -106,7 +112,7 @@ class TestConnectorsList:
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {"sources": [], "by_kind": {}, "count": 0}
-        with patch("httpx.get", return_value=mock_resp):
+        with patch("general_ludd.cli.httpx.get", return_value=mock_resp):
             _cmd_connectors_list(_ns())
         out = capsys.readouterr().out.lower()
         assert "no" in out and "source" in out
@@ -116,7 +122,7 @@ class TestConnectorsList:
 
         mock_resp = MagicMock()
         mock_resp.status_code = 500
-        with patch("httpx.get", return_value=mock_resp), pytest.raises(SystemExit):
+        with patch("general_ludd.cli.httpx.get", return_value=mock_resp), pytest.raises(SystemExit):
             _cmd_connectors_list(_ns())
 
     def test_list_calls_correct_endpoint(self):
@@ -125,7 +131,7 @@ class TestConnectorsList:
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {"sources": [], "by_kind": {}, "count": 0}
-        with patch("httpx.get", return_value=mock_resp) as mock_get:
+        with patch("general_ludd.cli.httpx.get", return_value=mock_resp) as mock_get:
             _cmd_connectors_list(_ns(daemon_url="http://daemon:8000"))
         called_url = mock_get.call_args.args[0]
         assert called_url == "http://daemon:8000/api/observe/sources"
@@ -255,17 +261,20 @@ class TestConnectorsQuery:
         assert called_url == "http://daemon:8000/api/observe/query"
 
     def test_query_custom_daemon_url(self):
-        with patch(
-            "sys.argv",
-            [
-                "gludd",
-                "connectors",
-                "query",
-                "metrics-1",
-                "--daemon-url",
-                "http://node-2:9000",
-            ],
-        ), patch("general_ludd.cli._cmd_connectors_query") as mock_cmd:
+        with (
+            patch(
+                "sys.argv",
+                [
+                    "gludd",
+                    "connectors",
+                    "query",
+                    "metrics-1",
+                    "--daemon-url",
+                    "http://node-2:9000",
+                ],
+            ),
+            patch("general_ludd.cli._cmd_connectors_query") as mock_cmd,
+        ):
             main()
         args = mock_cmd.call_args[0][0]
         assert args.daemon_url == "http://node-2:9000"

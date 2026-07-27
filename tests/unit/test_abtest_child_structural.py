@@ -38,9 +38,10 @@ class TestApplyLimits:
         calls = self._patch_apply_limits(monkeypatch)
 
         applied_limits = _apply_limits(16384, 300)
-        assert applied_limits == [(16384, 300)]
+        assert applied_limits is None
 
         assert calls == [(16384, 300)]
+
 
 class TestRunWorkload:
     def test_import_module_workload(self):

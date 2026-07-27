@@ -35,7 +35,6 @@ class TestApplyLimits:
         calls = self._patch_apply_limits(monkeypatch)
 
         _apply_limits(256, 30)
-        assert applied_limits == [(256, 30)]
 
         assert calls == [(256, 30)]
 
@@ -43,7 +42,6 @@ class TestApplyLimits:
         calls = self._patch_apply_limits(monkeypatch)
 
         _apply_limits(0, 30)
-        assert applied_limits == [(0, 30)]
 
         assert calls == [(0, 30)]
 
@@ -51,7 +49,6 @@ class TestApplyLimits:
         calls = self._patch_apply_limits(monkeypatch)
 
         _apply_limits(8192, 3600)
-        assert applied_limits == [(8192, 3600)]
 
         assert calls == [(8192, 3600)]
 
@@ -111,9 +108,16 @@ class TestMainSyntactic:
 
     def test_main_valid_args_workload_succeeds(self, tmp_path: Path):
         result_path = str(tmp_path / "result.json")
-        exit_code = main([
-            "prog", "/tmp", json.dumps({"kind": "import_module", "module": "os"}),
-            "256", "30", result_path, "test-nonce",
-        ])
+        exit_code = main(
+            [
+                "prog",
+                "/tmp",
+                json.dumps({"kind": "import_module", "module": "os"}),
+                "256",
+                "30",
+                result_path,
+                "test-nonce",
+            ]
+        )
         assert exit_code == 0
         assert Path(result_path).exists()
