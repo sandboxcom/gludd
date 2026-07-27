@@ -88,7 +88,7 @@ class ApprovalGate:
                     priority="high",
                 )
             )
-            assert task is not None  # noqa: S101
+            assert task is not None
             return ApprovalResponse(request=request)
         except Exception:
             return ApprovalResponse(request=request)
