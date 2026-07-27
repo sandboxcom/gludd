@@ -152,10 +152,10 @@ class TestS13PermissionOverrideFailClosed:
 class TestS14WorkerStalenessLifecycle:
     def test_heartbeat_method_exists(self) -> None:
         """WorkerBroadcaster.heartbeat exists and updates last_seen."""
-        from general_ludd.reload.worker_broadcast import WorkerBroadcaster
+        from general_ludd.reload.worker_broadcast import WorkerBroadcaster, WorkerInfo
 
         bc = WorkerBroadcaster()
-        bc.register("w1", "https://example.com")
+        bc.register(WorkerInfo(worker_id="w1", address="https://example.com"))
         bc.heartbeat("w1")
         workers = bc.list_workers()
         assert len(workers) == 1
@@ -163,10 +163,10 @@ class TestS14WorkerStalenessLifecycle:
 
     def test_cleanup_stale_method_exists(self) -> None:
         """WorkerBroadcaster.cleanup_stale removes workers past threshold."""
-        from general_ludd.reload.worker_broadcast import WorkerBroadcaster
+        from general_ludd.reload.worker_broadcast import WorkerBroadcaster, WorkerInfo
 
         bc = WorkerBroadcaster(stale_threshold_seconds=0.0)
-        bc.register("w1", "https://example.com")
+        bc.register(WorkerInfo(worker_id="w1", address="https://example.com"))
         bc.cleanup_stale()
         workers = bc.list_workers()
         # With threshold=0 and immediately calling cleanup, w1 should be removed
@@ -265,7 +265,7 @@ class TestS16WriterSubprocessStructuralGaps:
         """The writer child reads inbound_spool_path from config, defaulting to ''."""
         import general_ludd.writer._child as child
 
-        source = inspect.getsource(child.main)
+        source = inspect.getsource(child)
         assert "inbound_spool_path" in source
         assert 'config.get("inbound_spool_path", "")' in source
 
