@@ -48,6 +48,16 @@ import pytest
 # the pure-Python SafeLoader via its existing (ImportError, AttributeError) catch.
 import yaml as _yaml_mod
 
+# Python 3.14: pkg_resources was removed from the stdlib.
+# The ``fs`` (pyfilesystem) package calls ``__import__("pkg_resources").declare_namespace``
+# at module load time, which fails with ModuleNotFoundError.
+# Provide a stub ``pkg_resources`` module that exposes a no-op
+# ``declare_namespace`` so ``fs`` can import without error.
+_FAKE_PKG_RESOURCES = type(sys)("pkg_resources")
+_FAKE_PKG_RESOURCES.declare_namespace = lambda _name: None
+sys.modules.setdefault("pkg_resources", _FAKE_PKG_RESOURCES)
+del _FAKE_PKG_RESOURCES
+
 for _name in ("CSafeLoader", "CSafeDumper", "CParser"):
     _yaml_mod.__dict__.pop(_name, None)
 del _yaml_mod, _name

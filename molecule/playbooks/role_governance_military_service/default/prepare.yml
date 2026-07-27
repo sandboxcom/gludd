@@ -1,0 +1,6 @@
+---
+- name: Prepare - military_service role (no daemon needed)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks: []

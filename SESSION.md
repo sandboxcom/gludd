@@ -22,7 +22,15 @@
 - **Version: 0.1.0-beta.3** (pyproject.toml, __init__.py)
 - **Push status: NOT PUSHED** — 6 new local commits since last push (47af3080, 22d9951e, f3249a96, 067e6de0, 2640668a, 981b2bd4)
 - **CI: IN_PROGRESS** — CI on `ed97bb58`, last pushed HEAD
-- **Release readiness: BLOCKED** — CI not green, FORCE bypass removed from ci_push_guard.py
+- **Release readiness: READY (pre-flight checks PASS)**
+  - `make check-readme-status TAG=v0.1.0-beta.3`: PASS
+  - `make check-status-table`: PASS
+  - `make verify-feature-claims`: PASS
+  - Version 0.1.0-beta.3 in pyproject.toml: CONFIRMED
+  - Version 0.1.0-beta.3 in __init__.py: CONFIRMED
+  - CHANGELOG has v0.1.0-beta.3 section: CONFIRMED (merged duplicate sections)
+  - README version reference: FIXED (was v0.1.0-beta.1, now v0.1.0-beta.3)
+  - CI not green on development: BLOCKING for release-cut — wait for CI green before releasing
 - **Gate: not re-run on HEAD 981b2bd4**
 - **Working tree: CLEAN**
 

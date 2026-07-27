@@ -1,0 +1,17 @@
+---
+- name: Converge - run borders governance role
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8901', true) }}"
+    stub_dir: "{{ lookup('env', 'MOLECULE_SCENARIO_DIRECTORY') }}/default"
+  tasks:
+    - name: Invoke borders role with stub module_util
+      ansible.builtin.include_role:
+        name: general_ludd.governance.borders
+      vars:
+        borders_enabled: true
+        borders_query: all
+        borders_output_dir: "/tmp/gludd-governance-borders-{{ mock_port }}"
+        _borders_module: "{{ stub_dir }}/borders_stub.py"

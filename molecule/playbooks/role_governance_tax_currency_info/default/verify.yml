@@ -1,0 +1,40 @@
+---
+- name: Verify - tax_currency_info role wrote JSON output
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8902', true) }}"
+    artifact: "/tmp/gludd-governance-tax-{{ mock_port }}/tax_currency_info.json"
+  tasks:
+    - name: Assert tax_currency_info.json exists
+      ansible.builtin.stat:
+        path: "{{ artifact }}"
+      register: art
+      failed_when: not art.stat.exists
+
+    - name: Load artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact }}"
+      register: art_raw
+
+    - name: Parse artifact
+      ansible.builtin.set_fact:
+        result: "{{ art_raw.content | b64decode | from_json }}"
+
+    - name: Assert tax_currency result structure
+      ansible.builtin.assert:
+        that:
+          - result is mapping
+          - result.currency_code == 'USD'
+          - result.tax_authority == 'Internal Revenue Service (IRS)'
+          - result.found == true
+          - result.country == 'US'
+        fail_msg: "tax_currency_info artifact structure wrong: {{ result }}"
+        success_msg: "tax_currency_info role ran end-to-end; tax_currency_info.json valid"
+
+    - name: Remove artifact dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-governance-tax-{{ mock_port }}"
+        state: absent
+      failed_when: false

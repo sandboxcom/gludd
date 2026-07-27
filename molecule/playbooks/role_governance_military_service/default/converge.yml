@@ -1,0 +1,17 @@
+---
+- name: Converge - run military_service governance role
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8903', true) }}"
+    stub_dir: "{{ lookup('env', 'MOLECULE_SCENARIO_DIRECTORY') }}/default"
+  tasks:
+    - name: Invoke military_service role with stub module_util
+      ansible.builtin.include_role:
+        name: general_ludd.governance.military_service
+      vars:
+        military_service_enabled: true
+        military_service_query: all
+        military_service_output_dir: "/tmp/gludd-governance-military-{{ mock_port }}"
+        _military_service_module: "{{ stub_dir }}/military_service_stub.py"

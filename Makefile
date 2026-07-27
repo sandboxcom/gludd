@@ -130,7 +130,7 @@ log-agent-result disk-guard disk-check check-disk disk tmp-gludd-usage tmp-gludd
          test-service-discovery service-discover service-catalog \
          subagent-init subagent-cleanup \
          chat chat-eval test-chat \
-git-tag-delete git-tag-move release-deploy append-text write-text-b64 replace-text-b64 mkdir-p replace-lines _no-raw-git-guard \
+git-tag-delete git-tag-move release-deploy append-text write-text-b64 replace-text-b64 mkdir-p replace-lines _no-raw-git-guard _no-bypass-guard _pre-commit-stage-guard _merge-strategy-guard _stash-leak-guard \
          git-push-committed-head-nv ci-trigger-committed-head ci-push-committed-head provider-smoke mac-unified-memory-smoke gpu-hardware-smoke check-no-prompt-prone-edit-tools add-target edit-target edit-makefile-target validate-makefile
 
 help:
@@ -320,6 +320,11 @@ help:
 	@echo "  vm-image-clean            Remove all cached VM sandbox images"
 	@echo "  verify-sandbox-image      Integrity check on cached sandbox rootfs"
 	@echo "  clean-sandbox-images      Remove cached sandbox images"
+	@echo ""
+	@echo "  --- Governance ---"
+	@echo "  test-governance       Run governance collection unit tests"
+	@echo "  governance-syntax     Validate governance role YAML syntax"
+	@echo "  governance-health     Check governance module_utils imports"
 	@echo ""
 	@echo "  --- Ansible ---"
 	@echo "  ansible-syntax        Validate playbook syntax"
@@ -1961,9 +1966,7 @@ git-push-current-head-to-master-nv: check-clean-tree _push-rate-guard
 	@python3 -c "import json,time;from pathlib import Path;p=Path('/tmp/gludd-watchdog-push-timestamps.json');d=json.loads(p.read_text()) if p.exists() else [];d.append(time.time());p.write_text(json.dumps(d[-50:]))" 2>/dev/null || true
 
 # Batch push using the no-verify variant. COMMIT_THRESHOLD=1 is blocked to avoid CI thrash.
-batch-push-nv: check-clean-tree
-	@COUNT=$$(git log --oneline @{u}..HEAD 2>/dev/null | wc -l | tr -d ' '); \
-	THRESHOLD=$${COMMIT_THRESHOLD:-5}; \
+batch-push-nv: check-clean-tree _no-bypass-guard
 	if [ "$$THRESHOLD" = "1" ]; then \
 		echo "BLOCKED: COMMIT_THRESHOLD=1 bypass is disabled; commit locally and batch pushes."; \
 		exit 1; \
@@ -1979,7 +1982,7 @@ batch-push-nv: check-clean-tree
 # Batch push: only push after substantial local work (default 5+ unpushed commits).
 # Override: GLUDD_FORCE_PUSH=1. COMMIT_THRESHOLD=1 is blocked.
 # This is the RECOMMENDED push target. Use instead of git-push-sandboxcom directly.
-batch-push: check-clean-tree
+batch-push: check-clean-tree _no-bypass-guard
 	@COUNT=$$(git log --oneline @{u}..HEAD 2>/dev/null | wc -l | tr -d ' '); \
 	THRESHOLD=$${COMMIT_THRESHOLD:-5}; \
 	if [ "$$THRESHOLD" = "1" ]; then \
@@ -3181,7 +3184,7 @@ _commit-lock-acquire:
 	  fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)" 2>/dev/null || { \
 	    echo "COMMIT-LOCK: another commit is in flight. Retry serially." >&2; exit 1; }
 
-git-commit: _gate-fresh-check _commit-lock-acquire
+git-commit: _gate-fresh-check _commit-lock-acquire _pre-commit-stage-guard _stash-leak-guard
 	@if [ -z "$(MSG)" ]; then echo "Usage: make git-commit MSG='message'"; exit 1; fi
 	@echo "Running pre-commit collection check..."
 	@$(MAKE) --no-print-directory collect-check
@@ -3191,7 +3194,7 @@ git-commit: _gate-fresh-check _commit-lock-acquire
 	@git diff --name-only | xargs -r git add 2>/dev/null || true
 	@git diff --cached --quiet && echo "Nothing to commit" || git commit -n -m "$(MSG)"
 
-commit-no-verify: _gate-fresh-check _commit-lock-acquire
+commit-no-verify: _gate-fresh-check _commit-lock-acquire _pre-commit-stage-guard
 	@if [ -z "$(MSG)" ]; then echo "Usage: make commit-no-verify MSG='message'"; exit 1; fi
 	@$(MAKE) --no-print-directory collect-check
 	@git diff --cached --quiet && echo "Nothing to commit" || git commit -n -m "$(MSG)"
@@ -3223,7 +3226,7 @@ repo-commit: _commit-lock-acquire
 # Allowlisted from the local _gate-fresh-check (CI is the gate for
 # subagent-dispatched pushes; see test_commit_gate_freshness.py ALLOWLIST_NO_GATE).
 PUSH ?= 0
-ship-commit: _commit-lock-acquire
+ship-commit: _commit-lock-acquire _pre-commit-stage-guard _stash-leak-guard _pre-commit-stage-guard _stash-leak-guard
 	@if [ -z "$(MSG)" ]; then echo "Usage: make ship-commit MSG='message'"; exit 1; fi
 	@echo "Running pre-commit collection check..."
 	@$(MAKE) --no-print-directory collect-check
@@ -3346,7 +3349,7 @@ git-checkout:
 	@if [ -z "$(MSG)" ]; then echo "Usage: make git-checkout MSG='branch-name'"; exit 1; fi
 	@git checkout "$(MSG)"
 
-git-merge:
+git-merge: _merge-strategy-guard
 	@if [ -z "$(MSG)" ]; then echo "Usage: make git-merge MSG='branch-name'"; exit 1; fi
 	@git merge --no-ff "$(MSG)"
 
@@ -3800,7 +3803,69 @@ _no-raw-git-guard:
 		echo "See AGENTS.md \"Critical: Bash Command Policy\" and \"No-Manual-Default Policy\""; \
 		exit 1; \
 	fi
-	@echo "_no-raw-git-guard: PASS (all git push commands use GIT_SSH_COMMAND)"
+	 	@echo "_no-raw-git-guard: PASS (all git push commands use GIT_SSH_COMMAND)"
+
+# AA008 — _no-bypass-guard: prevents bypassing CI-idle checks via alternate targets
+# or Makefile.tmp. Agent used `make development-push` (which originally bypassed
+# ci-busy-check) instead of `make batch-push`. Also used Makefile.tmp raw git commands.
+# This guard: (a) rejects Makefile.tmp in the workspace, (b) ensures every push target
+# that touches sandboxcom calls ci-busy-check or another approved guard.
+_no-bypass-guard:
+	@if [ -f Makefile.tmp ]; then \
+		echo "BLOCKED: Makefile.tmp found in workspace. All git operations must use Makefile targets."; \
+		echo "Remove Makefile.tmp and use sanctioned targets. See AA008."; \
+		exit 1; \
+	fi
+	@echo "_no-bypass-guard: PASS (no Makefile.tmp, all pushes gated)"
+
+# AA009 — _pre-commit-stage-guard: blocks commit targets when nothing is staged.
+# Agent ran `make ship-commit` multiple times without staging files, producing
+# "Nothing to commit" errors. Every commit target must check for staged changes
+# before proceeding.
+# Usage: wired as prerequisite on git-commit, ship-commit, commit-no-verify.
+# FORCE=1 bypasses (hotfix where staged content is intentionally empty).
+_pre-commit-stage-guard:
+	@if ! git diff --cached --quiet; then \
+		echo "STAGED: changes detected in index."; \
+	elif [ "$$FORCE" = "1" ]; then \
+		echo "STAGED: no changes staged, but FORCE=1 bypass active."; \
+	else \
+		echo "BLOCKED: no staged changes. Stage files with 'make git-add FILES=...' before committing."; \
+		echo "Use FORCE=1 to bypass (e.g. for amend-only operations)."; \
+		exit 1; \
+	fi
+
+# AA011 — _merge-strategy-guard: blocks `make git-merge MSG=<sha>` when MSG looks
+# like a SHA (7-40 hex chars). Merging SHAs as branch names caused 80+ conflicts.
+# Cherry-pick must be used for single commits. FORCE=1 bypasses.
+_merge-strategy-guard:
+	@MSG="$(MSG)"; \
+	if echo "$$MSG" | grep -qE '^[0-9a-f]{7,40}$$'; then \
+		if [ "$$FORCE" != "1" ]; then \
+			echo "BLOCKED: MSG='$$MSG' looks like a commit SHA — use 'make git-cherry-pick SHA=$$MSG' instead of merge."; \
+			echo "Merging a SHA as if it's a branch name will produce massive conflicts. See AA011."; \
+			echo "Use FORCE=1 to override if this is intentional."; \
+			exit 1; \
+		fi; \
+		echo "MERGE: MSG='$$MSG' looks like a SHA but FORCE=1 active."; \
+	fi
+	@echo "_merge-strategy-guard: PASS"
+
+# AA028 — _stash-leak-guard: checks stash depth after commit operations.
+# Agent's git stash stack grew unbounded without popping. Stashed changes
+# must be popped or committed immediately. If stash size > 0 after a commit
+# that auto-stashed pre-commit fixes, this guard forces attention.
+_stash-leak-guard:
+	@STASH_COUNT=$$(git stash list 2>/dev/null | wc -l | tr -d ' '); \
+	if [ "$$STASH_COUNT" -gt 0 ]; then \
+		echo "STASH-LEAK: $$STASH_COUNT stash entries exist. Pre-commit hooks may have stashed changes without popping."; \
+		echo "Run 'make git-stash-pop' to restore stashed work. See AA028."; \
+		if [ "$$STASH_COUNT" -gt 3 ] && [ "$$FORCE" != "1" ]; then \
+			echo "BLOCKED: >3 stash entries — must pop before continuing."; \
+			exit 1; \
+		fi; \
+	fi
+	@echo "_stash-leak-guard: PASS"
 
 # --- Proactive bug scanner: find issues before the user does ---
 proactive-scan:
@@ -5108,7 +5173,44 @@ test-vm:
 	@$(UV) run python -m pytest tests/unit/test_vm_lifecycle.py tests/unit/test_security_sandboxes_vm_lifecycle.py tests/unit/test_vm_sandbox_backends.py tests/unit/test_vm_image_builder.py tests/unit/test_vm_image_builder_self_test.py tests/unit/test_vm_p4_real_executor.py tests/unit/test_vm_p5_real_firecracker.py tests/integration/test_vm_sandbox_integration.py tests/integration/sandboxes/test_vm_sandbox_integration.py tests/bench/test_vm_sandbox_overhead.py -v --tb=short
 
 # Run all collection test suites
-test-collections: test-binary-re test-radio test-os-expert test-e2e-test-gen test-language
+test-collections: test-binary-re test-radio test-os-expert test-e2e-test-gen test-language test-governance
+
+# governance collection: 20 roles + 18 module_utils (borders, bodies, tax, currency, conflicts, treaties, civic services, etc.)
+test-governance:
+	@if [ -d collections/ansible_collections/general_ludd/governance/tests ]; then \
+		$(UV) run python -m pytest collections/ansible_collections/general_ludd/governance/tests/ -v; \
+	else \
+		echo "governance collection has no Python tests yet (Ansible roles + knowledge modules only)"; \
+	fi
+
+governance-syntax:
+	@GOV_ROLE_DIR=collections/ansible_collections/general_ludd/governance/roles; \
+	if [ -d "$$GOV_ROLE_DIR" ]; then \
+		for d in $$GOV_ROLE_DIR/*/; do \
+			for f in $$(find "$$d" -name '*.yml' -o -name '*.yaml' 2>/dev/null); do \
+				echo "Checking $$f..."; \
+				$(UV) run python -c "import yaml; yaml.safe_load(open('$$f'))" || exit 1; \
+			done; \
+		done; \
+		echo "governance collection YAML syntax OK"; \
+	else \
+		echo "governance roles not found (skipping syntax check)"; \
+	fi
+
+governance-health:
+	@GOV_UTIL_DIR=collections/ansible_collections/general_ludd/governance/plugins/module_utils; \
+	if [ -d "$$GOV_UTIL_DIR" ]; then \
+		for f in $$GOV_UTIL_DIR/*.py; do \
+			basename=$$(basename "$$f" .py); \
+			[ "$$basename" = "__init__" ] && continue; \
+			echo "Importing governance.$$basename..."; \
+			sys_path_entry="$(CURDIR)/collections/ansible_collections/general_ludd/governance/plugins/module_utils"; \
+			$(UV) run python -c "import sys; sys.path.insert(0, '$$sys_path_entry'); __import__('$$basename')" || exit 1; \
+		done; \
+		echo "governance module_utils imports OK"; \
+	else \
+		echo "governance module_utils not found (skipping health check)"; \
+	fi
 
 # e2e_test_gen collection: 5 roles (analyze_code_paths, write_e2e_tests, generate_scenarios, verify_coverage, validate_scenarios)
 test-e2e-test-gen:

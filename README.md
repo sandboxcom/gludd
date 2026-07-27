@@ -63,7 +63,7 @@ may only shrink). The gate passes only when `make test` exits 0.
 
 **Status as of v0.1.0-beta.3 — 2026-07-26**
 
-Version: `v0.1.0-beta.1` — release binaries (Linux x86_64, macOS arm64, Windows x86_64, and
+Version: `v0.1.0-beta.3` — release binaries (Linux x86_64, macOS arm64, Windows x86_64, and
 more) are built as CI artifacts on every push to master, but a GitHub Release is only cut
 when a `v*` tag is pushed (the `release` job in `.github/workflows/build.yml` is gated on
 `startsWith(github.ref, 'refs/tags/v')`).

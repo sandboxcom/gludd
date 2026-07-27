@@ -1,0 +1,6 @@
+---
+- name: Prepare - tax_currency_info role (no daemon needed)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks: []

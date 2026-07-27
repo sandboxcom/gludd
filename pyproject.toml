@@ -72,6 +72,7 @@ dev = [
     "cyclonedx-py>=0.1.0-beta.2",
     "pip-audit>=0.1.0-beta.2",
     "pip>=0.1.0-beta.2",
+    "setuptools>=83.0.0",
 ]
 local-inference = [
     "llama-cpp-python>=0.1.0-beta.2",

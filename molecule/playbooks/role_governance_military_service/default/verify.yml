@@ -1,0 +1,42 @@
+---
+- name: Verify - military_service role wrote JSON output
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8903', true) }}"
+    artifact: "/tmp/gludd-governance-military-{{ mock_port }}/military_service.json"
+  tasks:
+    - name: Assert military_service.json exists
+      ansible.builtin.stat:
+        path: "{{ artifact }}"
+      register: art
+      failed_when: not art.stat.exists
+
+    - name: Load artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact }}"
+      register: art_raw
+
+    - name: Parse artifact
+      ansible.builtin.set_fact:
+        result: "{{ art_raw.content | b64decode | from_json }}"
+
+    - name: Assert military_service result structure
+      ansible.builtin.assert:
+        that:
+          - result is mapping
+          - "'US' in result"
+          - result.US.active == false
+          - result.US.type == 'volunteer_only'
+          - "'IL' in result"
+          - result.IL.active == true
+          - result.IL.type == 'mandatory_conscription'
+        fail_msg: "military_service artifact structure wrong: {{ result }}"
+        success_msg: "military_service role ran end-to-end; military_service.json valid"
+
+    - name: Remove artifact dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-governance-military-{{ mock_port }}"
+        state: absent
+      failed_when: false

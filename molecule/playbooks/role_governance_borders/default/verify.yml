@@ -1,0 +1,39 @@
+---
+- name: Verify - borders role wrote JSON output
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8901', true) }}"
+    artifact: "/tmp/gludd-governance-borders-{{ mock_port }}/borders.json"
+  tasks:
+    - name: Assert borders.json exists
+      ansible.builtin.stat:
+        path: "{{ artifact }}"
+      register: art
+      failed_when: not art.stat.exists
+
+    - name: Load artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact }}"
+      register: art_raw
+
+    - name: Parse artifact
+      ansible.builtin.set_fact:
+        result: "{{ art_raw.content | b64decode | from_json }}"
+
+    - name: Assert borders result structure
+      ansible.builtin.assert:
+        that:
+          - result is mapping
+          - "'US-Canada land border' in result"
+          - result['US-Canada land border'].type == 'land'
+          - result['US-Canada land border'].recognition == 'universal'
+        fail_msg: "borders artifact structure wrong: {{ result }}"
+        success_msg: "borders role ran end-to-end; borders.json valid"
+
+    - name: Remove artifact dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-governance-borders-{{ mock_port }}"
+        state: absent
+      failed_when: false
