@@ -80,6 +80,11 @@ class TestValidTransitions:
         transitions = VALID_TRANSITIONS[TodoStatus.FAILED]
         assert TodoStatus.QUEUED in transitions
 
+    def test_budget_exceeded_transitions(self):
+        transitions = VALID_TRANSITIONS[TodoStatus.BUDGET_EXCEEDED]
+        assert TodoStatus.QUEUED in transitions
+        assert TodoStatus.FAILED in transitions
+
     def test_approval_required_transitions(self):
         transitions = VALID_TRANSITIONS[TodoStatus.APPROVAL_REQUIRED]
         assert TodoStatus.QUEUED in transitions
@@ -375,10 +380,11 @@ class TestTodoRepositoryUpdate:
     @pytest.mark.asyncio
     async def test_update_version_mismatch_raises(self):
         session = AsyncMock()
-        session.execute = AsyncMock()
+        mock_result = MagicMock()
         todo_mock = MagicMock()
         todo_mock.version = 2
-        session.execute.return_value.scalar_one_or_none.return_value = todo_mock
+        mock_result.scalar_one_or_none.return_value = todo_mock
+        session.execute.return_value = mock_result
         repo = TodoRepository(session)
         with pytest.raises(ConcurrencyError, match="Version mismatch"):
             await repo.update("TODO-001", {"title": "new"}, expected_version=1)
@@ -386,8 +392,9 @@ class TestTodoRepositoryUpdate:
     @pytest.mark.asyncio
     async def test_update_not_found_raises(self):
         session = AsyncMock()
-        session.execute = AsyncMock()
-        session.execute.return_value.scalar_one_or_none.return_value = None
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = None
+        session.execute.return_value = mock_result
         repo = TodoRepository(session)
         with pytest.raises(InvalidTransitionError, match="not found"):
             await repo.update("TODO-001", {"title": "new"}, expected_version=1)
@@ -405,11 +412,12 @@ class TestTodoRepositoryTransition:
     @pytest.mark.asyncio
     async def test_transition_invalid_raises(self):
         session = AsyncMock()
-        session.execute = AsyncMock()
+        mock_result = MagicMock()
         todo_mock = MagicMock()
         todo_mock.status = TodoStatus.QUEUED
         todo_mock.version = 1
-        session.execute.return_value.scalar_one_or_none.return_value = todo_mock
+        mock_result.scalar_one_or_none.return_value = todo_mock
+        session.execute.return_value = mock_result
         repo = TodoRepository(session)
         with pytest.raises(InvalidTransitionError, match="not a valid transition"):
             await repo.transition("TODO-001", new_status=TodoStatus.BACKLOG, expected_version=1)

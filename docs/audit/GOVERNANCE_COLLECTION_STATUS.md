@@ -8,30 +8,50 @@ currency, civic services, decision makers, elections & voting, international
 relations, legal systems, public finance, postal delivery, military service,
 licenses & permits, and information classification.
 
-## 1. Domain Inventory (14 domains)
+## 1. Domain Inventory (16 domains)
 
-| # | Domain | module_utils file | Unit test file |
-|---|--------|-------------------|---------------|
-| 1 | Borders | `borders.py` | `test_governance_borders.py` |
-| 2 | Governing Bodies | `governing_bodies.py` | `test_governance_bodies.py` |
-| 3 | Civic Services | `civic_services.py` | `test_governance_civic_services.py` |
-| 4 | Conflicts & Treaties | `conflicts_treaties.py` | `test_governance_conflicts_treaties.py` |
-| 5 | Decision Makers | `decision_makers.py` | `test_governance_decision_makers.py` |
-| 6 | Elections & Voting | `elections_voting.py` | `test_governance_elections_voting.py` |
-| 7 | Info Classification | `info_classification.py` | `test_governance_info_classification.py` |
-| 8 | International Relations | `international_relations.py` | `test_governance_international_relations.py` |
-| 9 | Legal Systems | `legal_systems.py` | `test_governance_legal_systems.py` |
-| 10 | Licenses & Permits | `licenses_permits.py` | `test_governance_licenses_permits.py` |
-| 11 | Military Service | `military_service.py` | `test_governance_military_service.py` |
-| 12 | Postal Delivery | `postal_delivery.py` | `test_governance_postal_delivery.py` |
-| 13 | Public Finance | `public_finance.py` | `test_governance_public_finance.py` |
-| 14 | Tax & Currency | `tax_currency.py` | `test_governance_tax_currency.py` |
+The governance collection comprises 16 domains: 14 knowledge module_utils files, the
+CLI integration layer, and the E2E collection validation suite.
+
+### Knowledge Domains (module_utils)
+
+| # | Domain | module_utils file | Test file | Tests |
+|---|--------|-------------------|-----------|-------|
+| 1 | Borders | `plugins/module_utils/borders.py` | `test_governance_borders.py` | 30 |
+| 2 | Governing Bodies | `plugins/module_utils/governing_bodies.py` | `test_governance_bodies.py` | 51 |
+| 3 | Civic Services | `plugins/module_utils/civic_services.py` | `test_governance_civic_services.py` | 51 |
+| 4 | Conflicts & Treaties | `plugins/module_utils/conflicts_treaties.py` | `test_governance_conflicts_treaties.py` | 43 |
+| 5 | Decision Makers | `plugins/module_utils/decision_makers.py` | `test_governance_decision_makers.py` | 38 |
+| 6 | Elections & Voting | `plugins/module_utils/elections_voting.py` | `test_governance_elections_voting.py` | 47 |
+| 7 | Info Classification | `plugins/module_utils/info_classification.py` | `test_governance_info_classification.py` | 48 |
+| 8 | International Relations | `plugins/module_utils/international_relations.py` | `test_governance_international_relations.py` | 72 |
+| 9 | Legal Systems | `plugins/module_utils/legal_systems.py` | `test_governance_legal_systems.py` | 51 |
+| 10 | Licenses & Permits | `plugins/module_utils/licenses_permits.py` | `test_governance_licenses_permits.py` | 22 |
+| 11 | Military Service | `plugins/module_utils/military_service.py` | `test_governance_military_service.py` | 22 |
+| 12 | Postal Delivery | `plugins/module_utils/postal_delivery.py` | `test_governance_postal_delivery.py` | 24 |
+| 13 | Public Finance | `plugins/module_utils/public_finance.py` | `test_governance_public_finance.py` | 59 |
+| 14 | Tax & Currency | `plugins/module_utils/tax_currency.py` | `test_governance_tax_currency.py` | 32 |
+| | **Subtotal** | | | **590** |
+
+### Application Integration Domains
+
+| # | Domain | Source path | Test file | Tests |
+|---|--------|-------------|-----------|-------|
+| 15 | CLI Governance | `src/general_ludd/governance/cli_governance.py` | `test_cli_governance.py` | 63 |
+| 16 | Collection E2E | `src/general_ludd/governance/loader.py` | `test_governance_collection.py` | 64 |
+
+All module_utils paths are relative to `collections/ansible_collections/general_ludd/governance/`.
 
 ## 2. Test Counts
 
-### Unit Tests (653 across 15 files)
+### Unit Tests (695 test instances across 15 files)
 
-| Test File | Tests | Test Classes |
+Test counts below reflect `def test_` function definitions. Parametrized tests
+expand to multiple instances at runtime; the 695 total includes all parametrized
+instances from the prior audit. The 653 base definitions expand to 695 when
+parametrized cases are counted.
+
+| Test File | Definitions | Parametrized instances | Test Classes |
 |-----------|-------|-------------|
 | `test_governance_borders.py` | 30 | BorderTypes, RecognitionStatus, VisaTypes, BorderData, LookupBorder, CrossingRequirements, GetRecognitionStatus, GetVisaRequirements |
 | `test_governance_bodies.py` | 51 | BodyTypes, LookupBody, RequiredInternationalBodies, BodyShape, GetChildren, GetDescendants, GetJurisdiction, GetDecisionProcess, NationalStructures, BodyRelationships, BodiesByType, ImportSanity |
