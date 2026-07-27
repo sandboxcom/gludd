@@ -11,7 +11,7 @@ Covers:
 from __future__ import annotations
 
 import argparse
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
@@ -100,7 +100,7 @@ class TestAuditPluginsHandler:
 
         with patch(
             "general_ludd.cli_audit_plugins.AnsibleRunnerAdapter",
-            return_value=mock_adapter,
+            new=Mock(return_value=mock_adapter),
         ):
             _cmd_audit_plugins(_ns())
 
@@ -122,7 +122,7 @@ class TestAuditPluginsHandler:
 
         with patch(
             "general_ludd.cli_audit_plugins.AnsibleRunnerAdapter",
-            return_value=mock_adapter,
+            new=Mock(return_value=mock_adapter),
         ):
             _cmd_audit_plugins(_ns(project="acme", limit="delegate_discipline_check"))
 
@@ -144,7 +144,7 @@ class TestAuditPluginsHandler:
 
         with patch(
             "general_ludd.cli_audit_plugins.AnsibleRunnerAdapter",
-            return_value=mock_adapter,
+            new=Mock(return_value=mock_adapter),
         ):
             _cmd_audit_plugins(_ns(enforce_disengage=True))
 
@@ -165,7 +165,7 @@ class TestAuditPluginsHandler:
 
         with patch(
             "general_ludd.cli_audit_plugins.AnsibleRunnerAdapter",
-            return_value=mock_adapter,
+            new=Mock(return_value=mock_adapter),
         ):
             _cmd_audit_plugins(_ns())
 
@@ -185,7 +185,7 @@ class TestAuditPluginsHandler:
 
         with patch(
             "general_ludd.cli_audit_plugins.AnsibleRunnerAdapter",
-            return_value=mock_adapter,
+            new=Mock(return_value=mock_adapter),
         ):
             _cmd_audit_plugins(_ns())
 

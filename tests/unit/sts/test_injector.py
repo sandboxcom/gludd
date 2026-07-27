@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from contextlib import ExitStack
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -84,14 +83,13 @@ def _make_registry() -> AgentRegistry:
 
 
 @pytest.fixture(autouse=True)
-def _mock_agent_token_model() -> ExitStack:
+def _mock_agent_token_model():
     """Prevent AgentTokenModel instantiation from triggering SQLAlchemy mapper
     config (the ``order_by=lambda: TodoEventModel.id`` at db/models.py:307
     raises ``NotImplementedError`` during mapper configuration)."""
-    stack = ExitStack()
-    mock_model = stack.enter_context(patch("general_ludd.db.models.AgentTokenModel", new_callable=MagicMock))
-    mock_model.side_effect = lambda **kw: type("_Record", (), kw)()
-    return stack
+    with patch("general_ludd.db.models.AgentTokenModel", new_callable=MagicMock) as mock_model:
+        mock_model.side_effect = lambda **kw: type("_Record", (), kw)()
+        yield
 
 
 # ------------------------------------------------------------------ minter
