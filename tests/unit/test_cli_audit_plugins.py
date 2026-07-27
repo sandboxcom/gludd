@@ -206,7 +206,7 @@ class TestAuditPluginsHandler:
         with (
             patch(
                 "general_ludd.cli_audit_plugins.AnsibleRunnerAdapter",
-                return_value=mock_adapter,
+                new=Mock(return_value=mock_adapter),
             ),
             pytest.raises(SystemExit) as exc_info,
         ):
