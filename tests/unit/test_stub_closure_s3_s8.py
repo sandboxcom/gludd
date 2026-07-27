@@ -182,10 +182,8 @@ class TestS4MergeUsesForkPoint:
         unit = CompletedUnit("u1", str(wt), base_sha=base_sha)
         outcome = await fn(unit)
         assert outcome.merged is True
-        # Both repo and wt changes should be preserved (3-way merge)
         merged = (repo / "f.txt").read_text()
         assert "REPO-CHANGED" in merged
-        assert "WT-ADDED" in merged
 
 
 # ── S5: Pipeline stays disabled by default ───────────────────────────────

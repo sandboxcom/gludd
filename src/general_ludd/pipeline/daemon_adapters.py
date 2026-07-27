@@ -187,6 +187,25 @@ def make_merge_fn(
 
     do_reclaim = reclaim or _default_reclaim
 
+    def _read_base(repo: str, unit: CompletedUnit, rel: str) -> str | None:
+        if not unit.base_sha:
+            return None
+        import subprocess
+
+        try:
+            result = subprocess.run(
+                ["git", "-C", repo, "show", f"{unit.base_sha}:{rel}"],
+                capture_output=True,
+                text=True,
+                timeout=15,
+                check=False,
+            )
+            if result.returncode == 0:
+                return result.stdout
+        except Exception:
+            pass
+        return None
+
     def _merge_sync(unit: CompletedUnit) -> MergeOutcome:
         files = list_changed(unit)
         if not files:
@@ -209,7 +228,7 @@ def make_merge_fn(
                     # New file added by the agent: no base to clobber.
                     merged_texts[repo_file] = wt_text
                     continue
-                base_text: str | None = None
+                base_text: str | None = _read_base(repo_path, unit, rel)
                 result = safe_merge(base_text or repo_text, repo_text, wt_text)
                 if result.conflict:
                     logger.warning(
