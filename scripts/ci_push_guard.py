@@ -28,13 +28,21 @@ def _gh_run_list(branch: str) -> list[dict]:
     runs_by_id: dict[str, dict] = {}
     for status in _ACTIVE_STATUSES:
         cmd = [
-            "gh", "run", "list",
-            "--workflow", "Build and Release",
-            "--branch", branch,
-            "--status", status,
-            "--limit", "20",
-            "--json", "status,conclusion,databaseId,headSha,createdAt",
-            "-R", "sandboxcom/gludd",
+            "gh",
+            "run",
+            "list",
+            "--workflow",
+            "Build and Release",
+            "--branch",
+            branch,
+            "--status",
+            status,
+            "--limit",
+            "20",
+            "--json",
+            "status,conclusion,databaseId,headSha,createdAt",
+            "-R",
+            "sandboxcom/gludd",
         ]
         try:
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
@@ -46,16 +54,14 @@ def _gh_run_list(branch: str) -> list[dict]:
             return []
         except (subprocess.TimeoutExpired, OSError) as exc:
             print(
-                f"CI-BUSY-CHECK: error while checking {status}: {exc} "
-                "- fail-open (allow push)",
+                f"CI-BUSY-CHECK: error while checking {status}: {exc} - fail-open (allow push)",
                 file=sys.stderr,
             )
             return []
 
         if result.returncode != 0:
             print(
-                f"CI-BUSY-CHECK: gh error while checking {status}: "
-                f"{result.stderr.strip()}",
+                f"CI-BUSY-CHECK: gh error while checking {status}: {result.stderr.strip()}",
                 file=sys.stderr,
             )
             continue
@@ -63,8 +69,7 @@ def _gh_run_list(branch: str) -> list[dict]:
             runs = json.loads(result.stdout) if result.stdout.strip() else []
         except json.JSONDecodeError as exc:
             print(
-                f"CI-BUSY-CHECK: bad gh JSON while checking {status}: {exc} "
-                "- fail-open (allow push)",
+                f"CI-BUSY-CHECK: bad gh JSON while checking {status}: {exc} - fail-open (allow push)",
                 file=sys.stderr,
             )
             return []
@@ -89,14 +94,13 @@ def ci_busy_check(branch: str, force: bool = False) -> int:
     run_id = run.get("databaseId", "?")
     status = run.get("status", "?")
 
-    if force:
-        print(f"CI-BUSY-FORCED: run {run_id} is {status} on {branch}. "
-              f"FORCE=1 bypass — pushing anyway.")
-        return 0
-
-    print(f"CI BUSY: run {run_id} is {status} on {branch}. "
-          f"Wait for it to complete before pushing. "
-          f"Use FORCE=1 to bypass (hotfixes only, discouraged).")
+    print(
+        f"CI BUSY: run {run_id} is {status} on {branch}. "
+        f"Wait for it to complete before pushing. "
+        f"Bypassing this guard cancels the running CI, producing zero validation. "
+        f"The sanctioned push is `make batch-push` when CI is idle. "
+        f"Set GLUDD_FORCE_PUSH=1 in the make target environment to override."
+    )
     return 1
 
 
