@@ -110,6 +110,7 @@ PHASE_ORDER = [
     "check_service_credits",
     "flush_spend_ledger",
     "remediate_blocked_tasks",
+    "consolidate_memory",
     "self_improve",
     "poll_issue_sources",
     "service_discovery",
@@ -357,6 +358,9 @@ class EventLoop:
         model_performance_interval: int = 10,
         deployment_health_router: Any | None = None,
         memory_repo: Any = None,
+        procedural_memory: Any = None,
+        semantic_memory: Any = None,
+        consolidation_interval_ticks: int = 100,
         sandbox_executor: Any | None = None,
         sandbox_config: Any | None = None,
         run_recorder: Any | None = None,
@@ -497,6 +501,10 @@ class EventLoop:
         self._model_performance_interval: int = model_performance_interval
         self._deployment_health_router: Any = deployment_health_router
         self._memory_repo: Any = memory_repo
+        self._procedural_memory: Any = procedural_memory
+        self._semantic_memory: Any = semantic_memory
+        self._consolidation_interval_ticks: int = consolidation_interval_ticks
+        self._consolidation_tick_counter: int = 0
         self._sandbox_executor = sandbox_executor
         self._sandbox_config = sandbox_config
         # Task #48: plan-time technical-debt evaluator (config-gated at the
@@ -4871,6 +4879,69 @@ class EventLoop:
                         )
         except Exception as exc:
             logger.warning("Cross-task learning failed: %s", exc)
+
+    async def _phase_consolidate_memory(self) -> None:
+        self._consolidation_tick_counter += 1
+        interval = self._config_snapshot.get("consolidation_interval_ticks", self._consolidation_interval_ticks)
+        if self._consolidation_tick_counter < interval:
+            return
+        self._consolidation_tick_counter = 0
+
+        if self._memory_repo is None:
+            return
+
+        agent_id = str(self._tick_project_id or "system")
+        project_id = self._tick_project_id
+        consolidated = {"procedures": 0, "facts": 0}
+
+        from general_ludd.memory.consolidation import MemoryConsolidator
+        from general_ludd.memory.episodic import EpisodicMemoryRecorder
+        from general_ludd.memory.procedural import ProceduralMemoryStore
+        from general_ludd.memory.semantic import SemanticMemoryStore
+
+        procedural_store: Any = self._procedural_memory or ProceduralMemoryStore(memory_repo=self._memory_repo)
+        semantic_store: Any = self._semantic_memory or SemanticMemoryStore(memory_repo=self._memory_repo)
+
+        try:
+            recorder = EpisodicMemoryRecorder(self._memory_repo)
+            created_procs = await procedural_store.consolidate_from_episodes(
+                recorder,
+                agent_id,
+                project_id=project_id,
+            )
+            consolidated["procedures"] = created_procs
+        except Exception as exc:
+            logger.warning(
+                "Procedural memory consolidation failed: %s",
+                exc,
+            )
+
+        try:
+            consolidator = MemoryConsolidator(
+                self._memory_repo,
+                model_gateway=self._model_gateway,
+            )
+            created_facts = await semantic_store.consolidate_from_consolidated(
+                consolidator,
+                agent_id,
+                project_id=project_id,
+            )
+            consolidated["facts"] = created_facts
+        except Exception as exc:
+            logger.warning(
+                "Semantic memory consolidation failed: %s",
+                exc,
+            )
+
+        if consolidated["procedures"] or consolidated["facts"]:
+            logger.info(
+                "Memory consolidation cascade: %d procedures, %d facts (tick %d)",
+                consolidated["procedures"],
+                consolidated["facts"],
+                self._total_ticks,
+            )
+            self._tick_metrics["memory_consolidated_procedures"] = consolidated["procedures"]
+            self._tick_metrics["memory_consolidated_facts"] = consolidated["facts"]
 
     async def reconcile_decision(self, decision: TaskDecision, todo: Todo) -> Todo:
         if decision.decision == "complete":
