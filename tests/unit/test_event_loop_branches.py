@@ -355,7 +355,7 @@ class TestPhaseRunScheduler:
         loop._todo_repo = MagicMock()
         loop._active_session = MagicMock()
         loop._tick_metrics = {}
-        with patch("general_ludd.event_loop.loop.TodoScheduler") as sched_cls:
+        with patch("general_ludd.event_loop.scheduler.TodoScheduler") as sched_cls:
             sched_cls.return_value.tick = AsyncMock(return_value=(2, 1))
             await loop._phase_run_scheduler()
         assert loop._tick_metrics["scheduled_promoted"] == 2
