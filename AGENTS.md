@@ -131,6 +131,7 @@ The `enforce-enhancement-ratio.ts` plugin mechanically enforces the ratio rule:
 | Forbidden prompt phrase | Why forbidden | Correct alternative |
 |---|---|---|
 | "check CI status" / "check if CI is green" | Read-only poll; produces no fix | "Find AND fix the CI failure" |
+| "ci-await" / "make ci-await" | Blocks subagent slot for up to 1hr polling CI; CI runs on its own schedule | Check CI once with `make ci-verdict BRANCH=<b>` at natural breaks |
 | "audit lint" / "run lint and report" | Read-only; produces no fix | "Fix all lint errors" |
 | "check for type errors" / "audit typecheck" | Read-only; produces no fix | "Fix all typecheck errors" |
 | "check dirty tree" / "check git status" | <0.1s read-only; never needs a subagent | Run `make git-status` inline |
